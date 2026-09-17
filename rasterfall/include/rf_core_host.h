@@ -29,6 +29,7 @@ struct rf_core_gpu_frame_stats {
     double raster_abi_pack_ms, texture_table_build_ms;
     double cpu_oracle_ms, presentation_copy_ms, present_ms, frame_total_ms;
     struct rf_gpu_raster_timing last_timing;
+    struct rf_gpu_native_present_timing native_present_timing;
 };
 
 struct rf_core_gpu_frame {
@@ -44,7 +45,7 @@ struct rf_core_gpu_frame {
     unsigned long oracle_pixel_capacity;
     struct rf_core_gpu_frame_stats stats;
     int64_t frontend_begin_us, frame_begin_us;
-    int renderer, armed, initialized;
+    int renderer, armed, initialized, native_present, native_presented;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the
@@ -101,6 +102,7 @@ struct rf_core_config {
     enum rf_core_renderer renderer_mode;
     const struct rf_gpu_backend *gpu_backend;
     void *gpu_backend_context;
+    int native_present;
 };
 
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,

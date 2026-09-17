@@ -3040,6 +3040,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             RF_GPU_POLICY_DISABLED;
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
+        core_config.native_present = options.gpu_native_present;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
         if (options.renderer_mode) {
@@ -3058,7 +3059,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             rf_gpu_policy_name(core.gpu.policy));
 #ifdef TOYC_WINDOWS
         {
-            char gpu_log[192];
+            char gpu_log[320];
             snprintf(gpu_log, sizeof(gpu_log),
                      "renderer=%s gpu-policy=%s gpu-state=%s adapter=%s",
                      rf_core_renderer_name(core.gpu_frame.renderer),
@@ -4093,7 +4094,7 @@ startup_again:
         struct rf_core_gpu_frame_stats gpu_stats;
         if (rf_core_get_gpu_frame_stats(&core, &gpu_stats) == 0 &&
             gpu_stats.frames_attempted) {
-            char gpu_log[192];
+            char gpu_log[320];
             snprintf(gpu_log, sizeof(gpu_log),
                      "gpu-frame attempted=%llu rendered=%llu fallback=%llu texture=%llu transparent=%llu exec=%.3fms readback=%.3fms total=%.3fms",
                      gpu_stats.frames_attempted, gpu_stats.gpu_frames,
@@ -4104,6 +4105,24 @@ startup_again:
                      gpu_stats.last_timing.readback_ms,
                      gpu_stats.last_timing.total_ms);
             rf_windows_log(gpu_log);
+            if (core.gpu_frame.native_present) {
+                snprintf(gpu_log, sizeof(gpu_log),
+                    "gpu-native world-only=1 acquire=%.3fms raster-wait=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
+                    gpu_stats.native_present_timing.acquire_ms,
+                    gpu_stats.native_present_timing.gpu_raster_ms,
+                    gpu_stats.native_present_timing.buffer_to_swapchain_ms,
+                    gpu_stats.native_present_timing.submit_ms,
+                    gpu_stats.native_present_timing.present_ms,
+                    gpu_stats.native_present_timing.total_ms,
+                    gpu_stats.native_present_timing.color_readback_bytes,
+                    gpu_stats.native_present_timing.cpu_framebuffer_copy_bytes,
+                    gpu_stats.native_present_timing.format,
+                    gpu_stats.native_present_timing.present_mode,
+                    gpu_stats.native_present_timing.image_count,
+                    gpu_stats.native_present_timing.width,
+                    gpu_stats.native_present_timing.height);
+                rf_windows_log(gpu_log);
+            }
         }
     }
     rf_core_shutdown(&core);

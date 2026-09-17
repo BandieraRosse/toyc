@@ -251,6 +251,25 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             frame->stats.cpu_fallback_frames++;
             return -1;
         }
+        if (frame->native_present) {
+            gpu_world_log("gpu-world: native present begin (world-only)");
+            if (rf_gpu_raster_present_textured_timed(&core->gpu, &frame->raster,
+                    frame->stream, written, resources.descs,
+                    resources.desc_count, resources.texels,
+                    resources.texel_size, renderer->surface.width,
+                    renderer->surface.height, &frame->stats.last_timing,
+                    &frame->stats.native_present_timing) < 0) {
+                gpu_world_log("gpu-world: native present failed; software fallback");
+                frame->stats.cpu_fallback_frames++;
+                return -1;
+            }
+            frame->native_presented = 1;
+            frame->stats.unique_textures = resources.desc_count;
+            frame->stats.texture_upload_bytes = resources.texel_size;
+            frame->stats.texture_commands += texture;
+            frame->stats.gpu_frames++;
+            return 0;
+        }
 #ifdef TOYC_WINDOWS
         {
             unsigned long pixels = (unsigned long)renderer->surface.width *
@@ -407,12 +426,39 @@ int rf_core_init_config(struct rf_core *core,
     result = rf_core_init(core, config->title, config->width, config->height,
                           config->input, config->renderer);
     if (result < 0) return result;
+    if (config->native_present && config->gpu_backend) {
+        struct toy_native_window_handle native;
+        struct rf_gpu_native_window gpu_native;
+        int native_result = toy_window_get_native_handle(core->window, &native);
+        memset(&gpu_native, 0, sizeof(gpu_native));
+        if (native_result > 0) {
+            gpu_native.type = native.type;
+            gpu_native.window = native.window;
+            gpu_native.instance = native.instance;
+        }
+        if (native_result <= 0 || rf_gpu_set_native_window(config->gpu_backend,
+                config->gpu_backend_context, &gpu_native) < 0) {
+            if (config->gpu_policy == RF_GPU_POLICY_REQUIRED) {
+                rf_core_shutdown(core);
+                return -1;
+            }
+        }
+    }
     if (rf_gpu_init(&core->gpu, config->gpu_policy, config->gpu_backend,
                     config->gpu_backend_context) < 0) {
         rf_core_shutdown(core);
         return -1;
     }
     core->gpu_frame.renderer = config->renderer_mode;
+    core->gpu_frame.native_present = config->native_present != 0;
+    if (core->gpu_frame.native_present) {
+        struct rf_gpu_status gpu_status;
+        if (rf_gpu_get_status(&core->gpu, &gpu_status) < 0 ||
+            !gpu_status.renderer.native_presentation_v1) {
+            __printf("GPU native presentation V1 unsupported; using software-present fallback\n");
+            core->gpu_frame.native_present = 0;
+        }
+    }
     if (config->renderer_mode == RF_CORE_RENDERER_GPU_COMPUTE) {
         if (rf_gpu_raster_init(&core->gpu, &core->gpu_frame.raster,
                 (unsigned int)config->width, (unsigned int)config->height) < 0) {
@@ -487,6 +533,10 @@ int rf_core_end_frame(struct rf_core *core)
     int result;
     if (!core || !core->window) return -1;
     if (toy_renderer_flush(core->renderer) < 0) return -1;
+    if (core->gpu_frame.native_presented) {
+        core->gpu_frame.native_presented = 0;
+        return 0;
+    }
     present_start = rf_core_clock_now_us();
     result = toy_window_present(core->window);
     core->gpu_frame.stats.present_ms =
@@ -558,6 +608,24 @@ void rf_core_shutdown(struct rf_core *core)
                  s->frontend_ms, s->classification_ms,
                  s->texture_measure_ms, s->raster_abi_pack_ms,
                  s->cpu_oracle_ms, s->present_ms, s->frame_total_ms);
+        if (core->gpu_frame.native_present)
+            __printf("GPU-NATIVE world-only=1 acquire=%.3f raster=%.3f "
+                     "buffer-copy=%.3f submit=%.3f present=%.3f total=%.3f "
+                     "color-readback=%u cpu-framebuffer-copy=%u "
+                     "format=%u mode=%u images=%u extent=%ux%u\n",
+                     s->native_present_timing.acquire_ms,
+                     s->native_present_timing.gpu_raster_ms,
+                     s->native_present_timing.buffer_to_swapchain_ms,
+                     s->native_present_timing.submit_ms,
+                     s->native_present_timing.present_ms,
+                     s->native_present_timing.total_ms,
+                     s->native_present_timing.color_readback_bytes,
+                     s->native_present_timing.cpu_framebuffer_copy_bytes,
+                     s->native_present_timing.format,
+                     s->native_present_timing.present_mode,
+                     s->native_present_timing.image_count,
+                     s->native_present_timing.width,
+                     s->native_present_timing.height);
     }
     if (core->renderer)
         toy_renderer_set_command_consumer(core->renderer, NULL, NULL);

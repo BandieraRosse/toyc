@@ -71,7 +71,7 @@ void rasterfall_options_usage(int fd)
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
-        "  --renderer <cpu|gpu-compute> [--gpu-required]\n"
+        "  --renderer <cpu|gpu-compute> [--gpu-required] [--gpu-native-present]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
@@ -166,6 +166,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             else {__fprintf(2,"rasterfall: renderer must be cpu or gpu-compute\n");return -1;}
         }
         else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
+        else if (!strcmp(option,"--gpu-native-present")) o->gpu_native_present=1;
         else if (!strcmp(option,"--textures")) o->textures_enabled=1;
         else if (!strcmp(option,"--no-textures")) o->textures_enabled=0;
         else if (!strcmp(option,"--edge-pass")) o->edge_pass_enabled=1;
@@ -381,6 +382,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
     }
     if ((o->visual_scenario != 0) != (o->visual_output != 0)) {
         __fprintf(2,"rasterfall: --visual-capture and --visual-output are required together\n");
+        return -1;
+    }
+    if (o->gpu_native_present && !o->renderer_mode) {
+        __fprintf(2,"rasterfall: --gpu-native-present requires --renderer gpu-compute\n");
         return -1;
     }
     return 0;

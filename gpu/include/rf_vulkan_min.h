@@ -64,13 +64,38 @@
 #define RF_VK_WHOLE_SIZE (~(uint64_t)0)
 #define RF_VK_TRUE 1
 #define RF_VK_TIMEOUT 2
+#define RF_VK_SUBOPTIMAL_KHR 1000001003
+#define RF_VK_ERROR_OUT_OF_DATE_KHR (-1000001004)
+#define RF_VK_ERROR_SURFACE_LOST_KHR (-1000000000)
+#define RF_VK_ERROR_DEVICE_LOST (-4)
+#define RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO 9
+#define RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER 45
+#define RF_VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR 1000009000
+#define RF_VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR 1000001000
+#define RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR 1000001001
 #define RF_VK_ACCESS_SHADER_WRITE_BIT 0x00000040U
 #define RF_VK_ACCESS_SHADER_READ_BIT 0x00000020U
 #define RF_VK_ACCESS_HOST_WRITE_BIT 0x00004000U
 #define RF_VK_ACCESS_TRANSFER_READ_BIT 0x00000800U
+#define RF_VK_ACCESS_TRANSFER_WRITE_BIT 0x00001000U
 #define RF_VK_PIPELINE_STAGE_HOST_BIT 0x00004000U
 #define RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT 0x00000800U
 #define RF_VK_PIPELINE_STAGE_TRANSFER_BIT 0x00001000U
+#define RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT 0x00000001U
+#define RF_VK_IMAGE_USAGE_TRANSFER_DST_BIT 0x00000002U
+#define RF_VK_IMAGE_LAYOUT_UNDEFINED 0
+#define RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL 7
+#define RF_VK_IMAGE_LAYOUT_PRESENT_SRC_KHR 1000001002
+#define RF_VK_IMAGE_ASPECT_COLOR_BIT 1
+#define RF_VK_FORMAT_B8G8R8A8_UNORM 44
+#define RF_VK_FORMAT_B8G8R8A8_SRGB 50
+#define RF_VK_COLOR_SPACE_SRGB_NONLINEAR_KHR 0
+#define RF_VK_PRESENT_MODE_IMMEDIATE_KHR 0
+#define RF_VK_PRESENT_MODE_MAILBOX_KHR 1
+#define RF_VK_PRESENT_MODE_FIFO_KHR 2
+#define RF_VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR 1
+#define RF_VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR 1
+#define RF_VK_EXTENT_UNDEFINED 0xffffffffU
 
 #define RF_VK_QUEUE_GRAPHICS_BIT 0x00000001U
 #define RF_VK_QUEUE_COMPUTE_BIT  0x00000002U
@@ -107,6 +132,10 @@ typedef struct rf_vk_pipeline_cache_t *rf_vk_pipeline_cache;
 typedef struct rf_vk_command_pool_t *rf_vk_command_pool;
 typedef struct rf_vk_command_buffer_t *rf_vk_command_buffer;
 typedef struct rf_vk_fence_t *rf_vk_fence;
+typedef struct rf_vk_surface_t *rf_vk_surface;
+typedef struct rf_vk_swapchain_t *rf_vk_swapchain;
+typedef struct rf_vk_image_t *rf_vk_image;
+typedef struct rf_vk_semaphore_t *rf_vk_semaphore;
 typedef void (RF_VK_CALL *rf_vk_void_function)(void);
 
 struct rf_vk_application_info {
@@ -334,6 +363,41 @@ struct rf_vk_submit_info {
 struct rf_vk_fence_create_info {
     uint32_t s_type; const void *next; rf_vk_flags flags;
 };
+struct rf_vk_semaphore_create_info { uint32_t s_type; const void *next; rf_vk_flags flags; };
+struct rf_vk_extent2d { uint32_t width, height; };
+struct rf_vk_surface_capabilities {
+    uint32_t min_image_count, max_image_count;
+    struct rf_vk_extent2d current_extent, min_image_extent, max_image_extent;
+    uint32_t max_image_array_layers; rf_vk_flags supported_transforms;
+    uint32_t current_transform; rf_vk_flags supported_composite_alpha;
+    rf_vk_flags supported_usage_flags;
+};
+struct rf_vk_surface_format { uint32_t format, color_space; };
+struct rf_vk_win32_surface_create_info { uint32_t s_type; const void *next;
+    rf_vk_flags flags; void *instance; void *window; };
+struct rf_vk_swapchain_create_info { uint32_t s_type; const void *next;
+    rf_vk_flags flags; rf_vk_surface surface; uint32_t min_image_count;
+    uint32_t image_format, image_color_space; struct rf_vk_extent2d image_extent;
+    uint32_t image_array_layers; rf_vk_flags image_usage; uint32_t image_sharing_mode;
+    uint32_t queue_family_index_count; const uint32_t *queue_family_indices;
+    uint32_t pre_transform, composite_alpha, present_mode; rf_vk_bool32 clipped;
+    rf_vk_swapchain old_swapchain; };
+struct rf_vk_present_info { uint32_t s_type; const void *next;
+    uint32_t wait_semaphore_count; const rf_vk_semaphore *wait_semaphores;
+    uint32_t swapchain_count; const rf_vk_swapchain *swapchains;
+    const uint32_t *image_indices; rf_vk_result *results; };
+struct rf_vk_image_subresource_range { rf_vk_flags aspect_mask;
+    uint32_t base_mip_level, level_count, base_array_layer, layer_count; };
+struct rf_vk_image_memory_barrier { uint32_t s_type; const void *next;
+    rf_vk_flags src_access_mask, dst_access_mask; uint32_t old_layout, new_layout;
+    uint32_t src_queue_family_index, dst_queue_family_index; rf_vk_image image;
+    struct rf_vk_image_subresource_range subresource_range; };
+struct rf_vk_image_subresource_layers { rf_vk_flags aspect_mask;
+    uint32_t mip_level, base_array_layer, layer_count; };
+struct rf_vk_offset3d { int32_t x, y, z; };
+struct rf_vk_buffer_image_copy { uint64_t buffer_offset; uint32_t buffer_row_length;
+    uint32_t buffer_image_height; struct rf_vk_image_subresource_layers image_subresource;
+    struct rf_vk_offset3d image_offset; struct { uint32_t width,height,depth; } image_extent; };
 
 typedef rf_vk_void_function (RF_VK_CALL *rf_vk_get_instance_proc_addr_fn)(
     rf_vk_instance instance, const char *name);
@@ -448,5 +512,32 @@ typedef rf_vk_result (RF_VK_CALL *rf_vk_queue_submit_fn)(rf_vk_queue, uint32_t,
     const struct rf_vk_submit_info *, rf_vk_fence);
 typedef rf_vk_result (RF_VK_CALL *rf_vk_wait_for_fences_fn)(rf_vk_device,
     uint32_t, const rf_vk_fence *, rf_vk_bool32, uint64_t);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_create_win32_surface_fn)(rf_vk_instance,
+    const struct rf_vk_win32_surface_create_info *, const void *, rf_vk_surface *);
+typedef void (RF_VK_CALL *rf_vk_destroy_surface_fn)(rf_vk_instance, rf_vk_surface, const void *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_surface_support_fn)(rf_vk_physical_device,
+    uint32_t, rf_vk_surface, rf_vk_bool32 *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_surface_capabilities_fn)(rf_vk_physical_device,
+    rf_vk_surface, struct rf_vk_surface_capabilities *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_surface_formats_fn)(rf_vk_physical_device,
+    rf_vk_surface, uint32_t *, struct rf_vk_surface_format *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_surface_present_modes_fn)(rf_vk_physical_device,
+    rf_vk_surface, uint32_t *, uint32_t *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_create_swapchain_fn)(rf_vk_device,
+    const struct rf_vk_swapchain_create_info *, const void *, rf_vk_swapchain *);
+typedef void (RF_VK_CALL *rf_vk_destroy_swapchain_fn)(rf_vk_device, rf_vk_swapchain, const void *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_swapchain_images_fn)(rf_vk_device,
+    rf_vk_swapchain, uint32_t *, rf_vk_image *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_acquire_next_image_fn)(rf_vk_device,
+    rf_vk_swapchain, uint64_t, rf_vk_semaphore, rf_vk_fence, uint32_t *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_queue_present_fn)(rf_vk_queue,
+    const struct rf_vk_present_info *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_queue_wait_idle_fn)(rf_vk_queue);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_create_semaphore_fn)(rf_vk_device,
+    const struct rf_vk_semaphore_create_info *, const void *, rf_vk_semaphore *);
+typedef void (RF_VK_CALL *rf_vk_destroy_semaphore_fn)(rf_vk_device, rf_vk_semaphore, const void *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_reset_fences_fn)(rf_vk_device,uint32_t,const rf_vk_fence *);
+typedef void (RF_VK_CALL *rf_vk_cmd_copy_buffer_to_image_fn)(rf_vk_command_buffer,
+    rf_vk_buffer, rf_vk_image, uint32_t, uint32_t, const struct rf_vk_buffer_image_copy *);
 
 #endif

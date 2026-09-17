@@ -75,14 +75,29 @@ struct rf_gpu_capabilities {
     unsigned int host_visible_readback_memory;
     unsigned int coherent_readback;
     unsigned int non_coherent_readback;
+    unsigned int native_presentation_v1;
 };
 
 struct rf_gpu_renderer_capabilities {
     unsigned int compute;
     unsigned int framebuffer;
     unsigned int raster_v1;
+    unsigned int native_presentation_v1;
     unsigned int raster_work_group_x;
     unsigned int raster_work_group_y;
+};
+
+struct rf_gpu_native_window {
+    unsigned int type;
+    unsigned long long window;
+    unsigned long long instance;
+};
+
+struct rf_gpu_native_present_timing {
+    double acquire_ms, gpu_raster_ms, buffer_to_swapchain_ms;
+    double submit_ms, present_ms, total_ms;
+    unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
+    unsigned int format, present_mode, image_count, width, height;
 };
 
 struct rf_gpu_backend_info {
@@ -150,6 +165,16 @@ struct rf_gpu_backend {
                          char *message, unsigned long message_capacity);
     void (*raster_set_full_scan_diagnostic)(void *context, void *raster,
                                              int enabled);
+    int (*set_native_window)(void *context,
+                             const struct rf_gpu_native_window *window);
+    int (*raster_present)(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int width, unsigned int height,
+                         struct rf_gpu_raster_timing *raster_timing,
+                         struct rf_gpu_native_present_timing *present_timing,
+                         char *message, unsigned long message_capacity);
 };
 
 struct rf_gpu_framebuffer {
@@ -193,6 +218,9 @@ struct rf_gpu_status {
 
 int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,
                 const struct rf_gpu_backend *backend, void *backend_context);
+int rf_gpu_set_native_window(const struct rf_gpu_backend *backend,
+                             void *backend_context,
+                             const struct rf_gpu_native_window *window);
 void rf_gpu_shutdown(struct rf_gpu *gpu);
 int rf_gpu_get_status(const struct rf_gpu *gpu, struct rf_gpu_status *status);
 void rf_gpu_evaluate_capabilities(const struct rf_gpu_capabilities *capabilities,
@@ -239,5 +267,13 @@ int rf_gpu_raster_render_textured_timed(
 int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
                                             int enabled);
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
+int rf_gpu_raster_present_textured_timed(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int width, unsigned int height,
+                         struct rf_gpu_raster_timing *raster_timing,
+                         struct rf_gpu_native_present_timing *present_timing);
 
 #endif

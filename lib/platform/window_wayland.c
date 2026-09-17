@@ -79,6 +79,14 @@ int toy_window_present(struct toy_window *window)
     return toywl_present(window->wayland);
 }
 
+int toy_window_get_native_handle(struct toy_window *window,
+                                 struct toy_native_window_handle *handle)
+{
+    if (!window || !handle) return -1;
+    memset(handle, 0, sizeof(*handle));
+    return 0;
+}
+
 int toy_window_pointer_lock_supported(struct toy_window *window)
 {
     return window && toywl_pointer_lock_supported(window->wayland);

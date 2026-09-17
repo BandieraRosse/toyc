@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-8A 建立 `toy_window_get_native_handle()` 的 Win32 HWND/HINSTANCE 无 SDL 类型契约，并以 `--gpu-native-present` 启用独立 Native Presentation V1。Intel Iris Xe 实机 10/10 帧 PASS，resize 后 300/300 PASS；BGRA8/FIFO/3 images，最终 984×661，color readback 与 CPU framebuffer copy 均为零。
 > 源码核对基线补充：GPU-7C/7D 已完成并冻结。Windows package 在 Intel Iris Xe 上完成 optional/required Outpost 及 required Campaign normal oracle；Outpost、near/0、near/30 均 3/3 GPU frames、零 fallback、color/depth 0 mismatch，mid/30 因透明命令按契约整批 CPU fallback。readback 58.529--64.471 ms，明显高于 9.027--27.813 ms execution-wait，下一阶段选择 GPU-8。
 > 源码核对基线补充：GPU-7C 的 Windows normal binary 已链接共用 Vulkan backend、Raster V1 packer/binner；显式 `--renderer gpu-compute` 使用 Core-owned whole-world-batch GPU execution/readback，默认 CPU 不变。freestanding Linux normal binary 保留 optional-unavailable CPU fallback，WSL correctness 继续由 hosted differential 验证。
 > 源码核对基线补充：RTX 3050 normal required short run 已确认 Texture V1 Outpost 3/3 GPU frames；首帧 access violation 根因为 readback stride 字节/元素单位错配，修正后 attempted=3、rendered=3、fallback=0。
@@ -49,6 +50,25 @@ normal GPU 实机必须从 package 目录启动，确保 exe-relative 的 `raste
 `build/rasterfall.exe` 会按其所在目录寻找 `build/rasterfall/assets`，不代表 GPU 初始化失败。
 
 ## GPU 探针
+
+GPU-8A 不把 SDL 私有对象交给 Vulkan backend。`windows/src/window_sdl.c` 在平台层内部通过
+`SDL_GetWindowWMInfo` 取得 HWND，并只通过 `toy_native_window_handle` 暴露类型、window 与 module
+三个整数句柄。backend 在明确请求 native present 时启用 `VK_KHR_surface`、
+`VK_KHR_win32_surface` 与 device `VK_KHR_swapchain`；能力失败只关闭 Native Presentation V1，
+不改变 compute/Raster V1 service READY。swapchain 只接受 query 返回的
+`B8G8R8A8_UNORM + SRGB_NONLINEAR` 与 transfer-destination usage，使用 FIFO 和 single-frame-in-flight，
+并保持 Raster V1 color/depth buffer 所有权不变。运行入口：
+
+```sh
+rasterfall.exe --renderer gpu-compute --gpu-native-present --gpu-normal-scene near 0 --frames 120
+```
+
+该入口是 world-only proof，不是完整 normal presentation；正常 software-present A/B 去掉
+`--gpu-native-present`。shutdown 的 `GPU-NATIVE` 行报告 acquire、combined GPU raster wait、
+buffer-copy command record、submit、present、total，以及必须为零的 color readback/CPU framebuffer copy。
+Intel Iris Xe near/0 同机 10 帧最后观测为 native total 29.009 ms（raster wait 23.989 ms、present
+1.990 ms、readback 0），software-present total 102.399 ms（execution 36.672 ms、readback 63.316 ms）。
+窗口由 1280×720 resize 后，300/300 native frames、零 fallback，最终 swapchain extent 984×661。
 
 `make gpu-probe` 构建 Linux `build/rf-gpu-probe`；`make win-gpu-probe` 使用 MinGW 构建
 Windows 控制台程序 `build/rf-gpu-probe.exe`。两者都是 hosted 开发工具，不进入 `LIBC_A`、

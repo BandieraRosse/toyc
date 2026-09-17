@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-8A Windows native presentation world-only diagnostic 已完成并冻结；共享/Linux 与 MinGW 门禁通过，Intel Iris Xe native 10/10、resize 300/300、零 fallback/readback/copy。入口、timing 与 frame layering 见 runtime.md、rendering.md、build-platforms.md。
 > 源码核对基线补充：GPU-7C/7D 已完成并冻结；Intel Iris Xe normal Outpost、Campaign near/0、near/30 的同帧 CPU oracle 均 3/3 GPU frames 且 color/depth 0 mismatch，mid/30 的 transparent command 继续按契约 whole-batch CPU fallback。下一阶段选择 GPU-8 native presentation。
 > 源码核对基线补充：GPU-7D Texture V1 已进入 Core-owned normal frame 路径；Windows RTX Outpost 修正 readback stride 单位错配后 3/3 GPU frames。默认 renderer 仍为 CPU，冻结状态以上方最新基线为准。
 > 源码核对基线补充：GPU-7A 与 GPU-7B 已完成并冻结；vertex-lit planar V1 command-kind extension 在 WSL/RTX fixtures、stress、combined-world 均 0 mismatch，coverage 99.85--99.91%。正常 renderer 仍为 CPU。

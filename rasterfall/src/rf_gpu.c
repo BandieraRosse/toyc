@@ -73,6 +73,16 @@ void rf_gpu_evaluate_capabilities(const struct rf_gpu_capabilities *caps,
     renderer->raster_work_group_y = y;
     renderer->raster_v1 = renderer->framebuffer && caps->shader_int64 &&
         caps->max_storage_buffer_range && x && y;
+    renderer->native_presentation_v1 = renderer->raster_v1 &&
+        caps->native_presentation_v1;
+}
+
+int rf_gpu_set_native_window(const struct rf_gpu_backend *backend,
+                             void *backend_context,
+                             const struct rf_gpu_native_window *window)
+{
+    if (!backend || !backend->set_native_window) return 0;
+    return backend->set_native_window(backend_context, window);
 }
 
 static int framebuffer_create(struct rf_gpu *gpu,
@@ -274,6 +284,24 @@ void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster)
         raster->backend->raster_destroy(raster->backend_context,
                                         raster->implementation);
     zero_bytes(raster, sizeof(*raster));
+}
+
+int rf_gpu_raster_present_textured_timed(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int width, unsigned int height,
+                         struct rf_gpu_raster_timing *raster_timing,
+                         struct rf_gpu_native_present_timing *present_timing)
+{
+    if (!gpu || gpu->state != RF_GPU_STATE_READY || !raster ||
+        raster->backend != gpu->backend || !gpu->backend->raster_present)
+        return -1;
+    return gpu->backend->raster_present(gpu->backend_context,
+        raster->implementation, stream, stream_size, texture_descs,
+        texture_count, texture_texels, texture_bytes, width, height,
+        raster_timing, present_timing, gpu->message, sizeof(gpu->message));
 }
 
 int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,

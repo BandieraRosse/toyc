@@ -5,6 +5,7 @@
  * only presents that buffer and translates native events.
  */
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_syswm.h>
 #include <windows.h>
 
 #include "toy_window.h"
@@ -17,6 +18,7 @@ struct toy_window {
     int width;
     int height;
     int pointer_locked;
+    int minimized;
 };
 
 /* Linux input numbers are part of the existing game-facing key contract. Keep
@@ -198,13 +200,7 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
     out->height = height;
     out->window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED, width, height,
-                                   /* The software surface and streaming
-                                    * texture are fixed-size.  Do not expose
-                                    * SDL resize handles until a real
-                                    * realloc/resize path exists; otherwise a
-                                    * resized Windows client presents a
-                                    * stretched or stale framebuffer. */
-                                   0);
+                                   SDL_WINDOW_RESIZABLE);
     out->renderer = out->window ? SDL_CreateRenderer(out->window, -1,
                                                       SDL_RENDERER_PRESENTVSYNC) : NULL;
     out->texture = out->renderer ? SDL_CreateTexture(out->renderer,
@@ -244,10 +240,31 @@ dispatch:
         switch (event.type) {
         case SDL_QUIT: events->close_requested = 1; break;
         case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_MINIMIZED)
+                window->minimized = 1;
+            if (event.window.event == SDL_WINDOWEVENT_RESTORED ||
+                event.window.event == SDL_WINDOWEVENT_MAXIMIZED)
+                window->minimized = 0;
             if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                events->resized = 1;
-                events->width = event.window.data1;
-                events->height = event.window.data2;
+                int new_width = event.window.data1, new_height = event.window.data2;
+                if (new_width > 0 && new_height > 0) {
+                    size_t count = (size_t)new_width * (size_t)new_height;
+                    SDL_Texture *texture = SDL_CreateTexture(window->renderer,
+                        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                        new_width, new_height);
+                    uint32_t *pixels = texture ? (uint32_t *)SDL_calloc(
+                        count, sizeof(*pixels)) : NULL;
+                    if (texture && pixels) {
+                        SDL_DestroyTexture(window->texture);
+                        SDL_free(window->pixels);
+                        window->texture = texture; window->pixels = pixels;
+                        window->width = new_width; window->height = new_height;
+                        events->resized = 1;
+                        events->width = new_width; events->height = new_height;
+                    } else {
+                        SDL_DestroyTexture(texture); SDL_free(pixels);
+                    }
+                }
             }
             if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED ||
                 event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
@@ -307,6 +324,7 @@ dispatch:
 int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surface)
 {
     if (!window || !surface) return -1;
+    if (window->minimized) return 0;
     surface->pixels = window->pixels;
     surface->width = window->width;
     surface->height = window->height;
@@ -323,6 +341,22 @@ int toy_window_present(struct toy_window *window)
     if (SDL_RenderCopy(window->renderer, window->texture, NULL, NULL) < 0) return -1;
     SDL_RenderPresent(window->renderer);
     return 0;
+}
+
+int toy_window_get_native_handle(struct toy_window *window,
+                                 struct toy_native_window_handle *handle)
+{
+    SDL_SysWMinfo info;
+    if (!window || !handle) return -1;
+    memset(handle, 0, sizeof(*handle));
+    SDL_VERSION(&info.version);
+    if (!SDL_GetWindowWMInfo(window->window, &info) ||
+        info.subsystem != SDL_SYSWM_WINDOWS || !info.info.win.window)
+        return 0;
+    handle->type = TOY_NATIVE_WINDOW_WIN32;
+    handle->window = (unsigned long long)(uintptr_t)info.info.win.window;
+    handle->instance = (unsigned long long)(uintptr_t)GetModuleHandleW(NULL);
+    return 1;
 }
 
 int toy_window_pointer_lock_supported(struct toy_window *window)

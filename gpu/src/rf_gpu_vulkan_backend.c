@@ -80,6 +80,22 @@ struct rf_vk_api {
     rf_vk_destroy_fence_fn destroy_fence;
     rf_vk_queue_submit_fn queue_submit;
     rf_vk_wait_for_fences_fn wait_for_fences;
+    rf_vk_create_win32_surface_fn create_win32_surface;
+    rf_vk_destroy_surface_fn destroy_surface;
+    rf_vk_get_surface_support_fn get_surface_support;
+    rf_vk_get_surface_capabilities_fn get_surface_capabilities;
+    rf_vk_get_surface_formats_fn get_surface_formats;
+    rf_vk_get_surface_present_modes_fn get_surface_present_modes;
+    rf_vk_create_swapchain_fn create_swapchain;
+    rf_vk_destroy_swapchain_fn destroy_swapchain;
+    rf_vk_get_swapchain_images_fn get_swapchain_images;
+    rf_vk_acquire_next_image_fn acquire_next_image;
+    rf_vk_queue_present_fn queue_present;
+    rf_vk_queue_wait_idle_fn queue_wait_idle;
+    rf_vk_create_semaphore_fn create_semaphore;
+    rf_vk_destroy_semaphore_fn destroy_semaphore;
+    rf_vk_reset_fences_fn reset_fences;
+    rf_vk_cmd_copy_buffer_to_image_fn cmd_copy_buffer_to_image;
 };
 
 #if defined(_WIN32)
@@ -230,6 +246,29 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(destroy_fence, "vkDestroyFence");
     RF_LOAD_DEVICE(queue_submit, "vkQueueSubmit");
     RF_LOAD_DEVICE(wait_for_fences, "vkWaitForFences");
+#define RF_LOAD_OPTIONAL(member, name) do {                                  \
+    void *rf_optional = load_instance(api, instance, name);                  \
+    if (rf_optional) memcpy(&api->member, &rf_optional,                       \
+        sizeof(api->member) < sizeof(rf_optional) ? sizeof(api->member)      \
+                                                   : sizeof(rf_optional));    \
+} while (0)
+    RF_LOAD_OPTIONAL(create_win32_surface, "vkCreateWin32SurfaceKHR");
+    RF_LOAD_OPTIONAL(destroy_surface, "vkDestroySurfaceKHR");
+    RF_LOAD_OPTIONAL(get_surface_support, "vkGetPhysicalDeviceSurfaceSupportKHR");
+    RF_LOAD_OPTIONAL(get_surface_capabilities, "vkGetPhysicalDeviceSurfaceCapabilitiesKHR");
+    RF_LOAD_OPTIONAL(get_surface_formats, "vkGetPhysicalDeviceSurfaceFormatsKHR");
+    RF_LOAD_OPTIONAL(get_surface_present_modes, "vkGetPhysicalDeviceSurfacePresentModesKHR");
+    RF_LOAD_OPTIONAL(create_swapchain, "vkCreateSwapchainKHR");
+    RF_LOAD_OPTIONAL(destroy_swapchain, "vkDestroySwapchainKHR");
+    RF_LOAD_OPTIONAL(get_swapchain_images, "vkGetSwapchainImagesKHR");
+    RF_LOAD_OPTIONAL(acquire_next_image, "vkAcquireNextImageKHR");
+    RF_LOAD_OPTIONAL(queue_present, "vkQueuePresentKHR");
+    RF_LOAD_OPTIONAL(queue_wait_idle, "vkQueueWaitIdle");
+    RF_LOAD_OPTIONAL(create_semaphore, "vkCreateSemaphore");
+    RF_LOAD_OPTIONAL(destroy_semaphore, "vkDestroySemaphore");
+    RF_LOAD_OPTIONAL(reset_fences, "vkResetFences");
+    RF_LOAD_OPTIONAL(cmd_copy_buffer_to_image, "vkCmdCopyBufferToImage");
+#undef RF_LOAD_OPTIONAL
 #undef RF_LOAD_DEVICE
     return 0;
 }
@@ -551,6 +590,8 @@ struct rf_gpu_vulkan_impl {
     uint32_t queue_family;
     uint32_t shader_int64_enabled;
     uint64_t max_storage_buffer_range;
+    rf_vk_surface surface;
+    int native_presentation_supported;
 };
 
 struct rf_gpu_vulkan_framebuffer {
@@ -904,6 +945,12 @@ struct rf_gpu_vulkan_raster {
     uint32_t work_group_x, work_group_y;
     int full_scan_diagnostic;
     struct rf_gpu_raster_tile_lists tile_lists;
+    rf_vk_swapchain swapchain;
+    rf_vk_image *swapchain_images;
+    uint32_t swapchain_image_count, swapchain_width, swapchain_height;
+    uint32_t swapchain_format, present_mode;
+    rf_vk_semaphore acquire_semaphore, complete_semaphore;
+    struct rf_gpu_native_present_timing *pending_present_timing;
 };
 
 static int raster_buffer_create(struct rf_gpu_vulkan_impl *impl,
@@ -952,6 +999,139 @@ static void raster_buffer_destroy(struct rf_gpu_vulkan_impl *impl,
     memset(buffer, 0, sizeof(*buffer));
 }
 
+static void raster_swapchain_destroy(struct rf_gpu_vulkan_impl *impl,
+                                     struct rf_gpu_vulkan_raster *r)
+{
+    if (r->acquire_semaphore)
+        impl->api.destroy_semaphore(impl->device, r->acquire_semaphore, NULL);
+    if (r->complete_semaphore)
+        impl->api.destroy_semaphore(impl->device, r->complete_semaphore, NULL);
+    if (r->swapchain)
+        impl->api.destroy_swapchain(impl->device, r->swapchain, NULL);
+    free(r->swapchain_images);
+    r->acquire_semaphore = r->complete_semaphore = NULL;
+    r->swapchain = NULL; r->swapchain_images = NULL;
+    r->swapchain_image_count = 0;
+}
+
+static int raster_swapchain_create(struct rf_gpu_vulkan_impl *impl,
+                                   struct rf_gpu_vulkan_raster *r,
+                                   uint32_t width, uint32_t height)
+{
+    struct rf_vk_surface_capabilities caps;
+    struct rf_vk_surface_format *formats = NULL;
+    uint32_t *modes = NULL, format_count = 0, mode_count = 0, i;
+    struct rf_vk_swapchain_create_info info;
+    struct rf_vk_semaphore_create_info semaphore_info;
+    rf_vk_swapchain replacement = NULL;
+    rf_vk_image *images = NULL;
+    rf_vk_semaphore acquire = NULL, complete = NULL;
+    uint32_t image_count, chosen_format = 0, chosen_mode = RF_VK_PRESENT_MODE_FIFO_KHR;
+    struct rf_vk_extent2d extent;
+    if (!impl->native_presentation_supported || !width || !height) return -1;
+    if (impl->api.get_surface_capabilities(impl->physical_device, impl->surface,
+            &caps) != RF_VK_SUCCESS ||
+        !(caps.supported_usage_flags & RF_VK_IMAGE_USAGE_TRANSFER_DST_BIT))
+        return -1;
+    if (impl->api.get_surface_formats(impl->physical_device, impl->surface,
+            &format_count, NULL) != RF_VK_SUCCESS || !format_count) return -1;
+    formats = calloc(format_count, sizeof(*formats));
+    if (!formats || impl->api.get_surface_formats(impl->physical_device,
+            impl->surface, &format_count, formats) != RF_VK_SUCCESS) goto fail;
+    for (i = 0; i < format_count; ++i)
+        if (formats[i].format == RF_VK_FORMAT_B8G8R8A8_UNORM &&
+            formats[i].color_space == RF_VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+            chosen_format = i + 1; break;
+        }
+    if (!chosen_format) goto fail;
+    if (impl->api.get_surface_present_modes(impl->physical_device, impl->surface,
+            &mode_count, NULL) != RF_VK_SUCCESS || !mode_count) goto fail;
+    modes = calloc(mode_count, sizeof(*modes));
+    if (!modes || impl->api.get_surface_present_modes(impl->physical_device,
+            impl->surface, &mode_count, modes) != RF_VK_SUCCESS) goto fail;
+    /* FIFO is required by Vulkan and gives the diagnostic deterministic pacing. */
+    for (i = 0; i < mode_count; ++i)
+        if (modes[i] == RF_VK_PRESENT_MODE_FIFO_KHR) chosen_mode = modes[i];
+    extent = caps.current_extent;
+    if (extent.width == RF_VK_EXTENT_UNDEFINED) {
+        extent.width = width < caps.min_image_extent.width ? caps.min_image_extent.width :
+            (width > caps.max_image_extent.width ? caps.max_image_extent.width : width);
+        extent.height = height < caps.min_image_extent.height ? caps.min_image_extent.height :
+            (height > caps.max_image_extent.height ? caps.max_image_extent.height : height);
+    }
+    if (!extent.width || !extent.height) goto fail;
+    image_count = caps.min_image_count + 1;
+    if (caps.max_image_count && image_count > caps.max_image_count)
+        image_count = caps.max_image_count;
+    memset(&info, 0, sizeof(info));
+    info.s_type = RF_VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    info.surface = impl->surface; info.min_image_count = image_count;
+    info.image_format = formats[chosen_format - 1].format;
+    info.image_color_space = formats[chosen_format - 1].color_space;
+    info.image_extent = extent; info.image_array_layers = 1;
+    info.image_usage = RF_VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info.image_sharing_mode = RF_VK_SHARING_MODE_EXCLUSIVE;
+    info.pre_transform = caps.current_transform;
+    info.composite_alpha = RF_VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    info.present_mode = chosen_mode; info.clipped = RF_VK_TRUE;
+    info.old_swapchain = r->swapchain;
+    if (impl->api.create_swapchain(impl->device, &info, NULL, &replacement) !=
+        RF_VK_SUCCESS) goto fail;
+    image_count = 0;
+    if (impl->api.get_swapchain_images(impl->device, replacement, &image_count,
+            NULL) != RF_VK_SUCCESS || !image_count) goto fail;
+    images = calloc(image_count, sizeof(*images));
+    if (!images || impl->api.get_swapchain_images(impl->device, replacement,
+            &image_count, images) != RF_VK_SUCCESS) goto fail;
+    memset(&semaphore_info, 0, sizeof(semaphore_info));
+    semaphore_info.s_type = RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    if (impl->api.create_semaphore(impl->device, &semaphore_info, NULL, &acquire) != RF_VK_SUCCESS ||
+        impl->api.create_semaphore(impl->device, &semaphore_info, NULL, &complete) != RF_VK_SUCCESS)
+        goto fail;
+    raster_swapchain_destroy(impl, r);
+    r->swapchain = replacement; r->swapchain_images = images;
+    r->swapchain_image_count = image_count;
+    r->swapchain_width = extent.width; r->swapchain_height = extent.height;
+    r->swapchain_format = info.image_format; r->present_mode = chosen_mode;
+    r->acquire_semaphore = acquire; r->complete_semaphore = complete;
+    free(formats); free(modes); return 0;
+fail:
+    if (acquire) impl->api.destroy_semaphore(impl->device, acquire, NULL);
+    if (complete) impl->api.destroy_semaphore(impl->device, complete, NULL);
+    if (replacement) impl->api.destroy_swapchain(impl->device, replacement, NULL);
+    free(images); free(formats); free(modes); return -1;
+}
+
+static int raster_surface_recreate(struct rf_gpu_vulkan_context *context,
+                                   struct rf_gpu_vulkan_impl *impl,
+                                   struct rf_gpu_vulkan_raster *r)
+{
+    struct rf_vk_win32_surface_create_info info;
+    rf_vk_surface replacement = NULL;
+    rf_vk_bool32 supported = 0;
+    if (!context || !context->native_window.window ||
+        !context->native_window.instance || !impl->api.create_win32_surface)
+        return -1;
+    memset(&info, 0, sizeof(info));
+    info.s_type = RF_VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+    info.instance = (void *)(uintptr_t)context->native_window.instance;
+    info.window = (void *)(uintptr_t)context->native_window.window;
+    if (impl->api.create_win32_surface(impl->instance, &info, NULL,
+            &replacement) != RF_VK_SUCCESS || !replacement)
+        return -1;
+    if (impl->api.get_surface_support(impl->physical_device,
+            impl->queue_family, replacement, &supported) != RF_VK_SUCCESS ||
+        !supported) {
+        impl->api.destroy_surface(impl->instance, replacement, NULL);
+        return -1;
+    }
+    raster_swapchain_destroy(impl, r);
+    if (impl->surface)
+        impl->api.destroy_surface(impl->instance, impl->surface, NULL);
+    impl->surface = replacement;
+    return 0;
+}
+
 static void raster_destroy(void *context, void *raster)
 {
     struct rf_gpu_vulkan_context *backend_context = context;
@@ -960,6 +1140,7 @@ static void raster_destroy(void *context, void *raster)
         ? backend_context->implementation : NULL;
     if (!r) return;
     if (!impl || r->owner != impl) { free(r); return; }
+    raster_swapchain_destroy(impl, r);
     if (r->command_pool)
         impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
     if (r->pipeline) impl->api.destroy_pipeline(impl->device, r->pipeline, NULL);
@@ -1205,6 +1386,9 @@ static int raster_render(void *context, void *raster,
     uint64_t byte_size = (uint64_t)width * height * 4;
     unsigned int y;
     rf_vk_result result;
+    int native_present = color == NULL && depth == NULL;
+    uint32_t swapchain_image = 0;
+    struct rf_gpu_native_present_timing *native_timing = NULL;
     double total_start = now_ms(), segment_start;
     static const uint32_t empty_texture[6] = {0, 1, 1, 4, 2, 1};
     static const uint32_t empty_texel = 0xffffffffU;
@@ -1217,6 +1401,29 @@ static int raster_render(void *context, void *raster,
         ((const uint32_t *)stream)[5] != width ||
         ((const uint32_t *)stream)[6] != height)
         return -1;
+    if (native_present) {
+        double acquire_start;
+        native_timing = r->pending_present_timing;
+        if (!native_timing) return -1;
+        if (!r->swapchain || r->swapchain_width != width ||
+            r->swapchain_height != height)
+            if (raster_swapchain_create(impl, r, width, height) < 0) return -1;
+        acquire_start = now_ms();
+        result = impl->api.acquire_next_image(impl->device, r->swapchain,
+            UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
+        if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
+            if (raster_surface_recreate(backend_context, impl, r) < 0)
+                return -1;
+            result = RF_VK_ERROR_OUT_OF_DATE_KHR;
+        }
+        if (result == RF_VK_ERROR_OUT_OF_DATE_KHR) {
+            if (raster_swapchain_create(impl, r, width, height) < 0) return -1;
+            result = impl->api.acquire_next_image(impl->device, r->swapchain,
+                UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
+        }
+        if (result != RF_VK_SUCCESS && result != RF_VK_SUBOPTIMAL_KHR) return -1;
+        native_timing->acquire_ms = now_ms() - acquire_start;
+    }
     if ((texture_count && (!texture_descs || !texture_texels || !texture_bytes)) ||
         (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) >
             impl->max_storage_buffer_range ||
@@ -1343,12 +1550,48 @@ static int raster_render(void *context, void *raster,
         impl->api.cmd_pipeline_barrier(r->command_buffer,
             RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
-        memset(copies, 0, sizeof(copies));
-        copies[0].size = byte_size; copies[1].size = byte_size;
-        impl->api.cmd_copy_buffer(r->command_buffer, r->color.buffer,
-                                  r->color_readback.buffer, 1, &copies[0]);
-        impl->api.cmd_copy_buffer(r->command_buffer, r->depth.buffer,
-                                  r->depth_readback.buffer, 1, &copies[1]);
+        if (native_present) {
+            struct rf_vk_image_memory_barrier image_barrier;
+            struct rf_vk_buffer_image_copy region;
+            double copy_start = now_ms();
+            memset(&image_barrier, 0, sizeof(image_barrier));
+            image_barrier.s_type = RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image_barrier.old_layout = RF_VK_IMAGE_LAYOUT_UNDEFINED;
+            image_barrier.new_layout = RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_barrier.dst_access_mask = RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_barrier.src_queue_family_index = 0xffffffffU;
+            image_barrier.dst_queue_family_index = 0xffffffffU;
+            image_barrier.image = r->swapchain_images[swapchain_image];
+            image_barrier.subresource_range.aspect_mask = RF_VK_IMAGE_ASPECT_COLOR_BIT;
+            image_barrier.subresource_range.level_count = 1;
+            image_barrier.subresource_range.layer_count = 1;
+            impl->api.cmd_pipeline_barrier(r->command_buffer,
+                RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+                0, 0, NULL, 0, NULL, 1, &image_barrier);
+            memset(&region, 0, sizeof(region));
+            region.image_subresource.aspect_mask = RF_VK_IMAGE_ASPECT_COLOR_BIT;
+            region.image_subresource.layer_count = 1;
+            region.image_extent.width = width; region.image_extent.height = height;
+            region.image_extent.depth = 1;
+            impl->api.cmd_copy_buffer_to_image(r->command_buffer, r->color.buffer,
+                r->swapchain_images[swapchain_image],
+                RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            image_barrier.src_access_mask = RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+            image_barrier.dst_access_mask = 0;
+            image_barrier.old_layout = RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            image_barrier.new_layout = RF_VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            impl->api.cmd_pipeline_barrier(r->command_buffer,
+                RF_VK_PIPELINE_STAGE_TRANSFER_BIT, RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                0, 0, NULL, 0, NULL, 1, &image_barrier);
+            native_timing->buffer_to_swapchain_ms = now_ms() - copy_start;
+        } else {
+            memset(copies, 0, sizeof(copies));
+            copies[0].size = byte_size; copies[1].size = byte_size;
+            impl->api.cmd_copy_buffer(r->command_buffer, r->color.buffer,
+                                      r->color_readback.buffer, 1, &copies[0]);
+            impl->api.cmd_copy_buffer(r->command_buffer, r->depth.buffer,
+                                      r->depth_readback.buffer, 1, &copies[1]);
+        }
         if (impl->api.end_command_buffer(r->command_buffer) != RF_VK_SUCCESS)
             goto failed;
     }
@@ -1361,6 +1604,14 @@ static int raster_render(void *context, void *raster,
             RF_VK_SUCCESS) goto failed;
         memset(&submit, 0, sizeof(submit));
         submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        if (native_present) {
+            static const rf_vk_flags wait_stage = RF_VK_PIPELINE_STAGE_TRANSFER_BIT;
+            submit.wait_semaphore_count = 1;
+            submit.wait_semaphores = &r->acquire_semaphore;
+            submit.wait_dst_stage_mask = &wait_stage;
+            submit.signal_semaphore_count = 1;
+            submit.signal_semaphores = &r->complete_semaphore;
+        }
         submit.command_buffer_count = 1;
         submit.command_buffers = &r->command_buffer;
         segment_start = now_ms();
@@ -1377,6 +1628,40 @@ static int raster_render(void *context, void *raster,
         }
         if (result != RF_VK_SUCCESS) goto failed;
         if (timing) timing->execution_wait_ms = now_ms() - segment_start;
+    }
+    if (native_present) {
+        struct rf_vk_present_info present;
+        double present_start = now_ms();
+        memset(&present, 0, sizeof(present));
+        present.s_type = RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        present.wait_semaphore_count = 1;
+        present.wait_semaphores = &r->complete_semaphore;
+        present.swapchain_count = 1; present.swapchains = &r->swapchain;
+        present.image_indices = &swapchain_image;
+        result = impl->api.queue_present(impl->queue, &present);
+        if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR)
+            impl->api.queue_wait_idle(impl->queue);
+        native_timing->present_ms = now_ms() - present_start;
+        native_timing->submit_ms = timing ? timing->submit_ms : 0.0;
+        native_timing->gpu_raster_ms = timing ? timing->execution_wait_ms : 0.0;
+        native_timing->total_ms = now_ms() - total_start;
+        native_timing->color_readback_bytes = 0;
+        native_timing->cpu_framebuffer_copy_bytes = 0;
+        native_timing->format = r->swapchain_format;
+        native_timing->present_mode = r->present_mode;
+        native_timing->image_count = r->swapchain_image_count;
+        native_timing->width = r->swapchain_width;
+        native_timing->height = r->swapchain_height;
+        impl->api.destroy_fence(impl->device, fence, NULL);
+        if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
+            if (raster_surface_recreate(backend_context, impl, r) < 0)
+                return -1;
+        } else if (result == RF_VK_ERROR_OUT_OF_DATE_KHR ||
+                   result == RF_VK_SUBOPTIMAL_KHR)
+            raster_swapchain_create(impl, r, width, height);
+        else if (result != RF_VK_SUCCESS) return -1;
+        snprintf(message, message_capacity, "GPU Raster V1 native-presented");
+        return 0;
     }
     segment_start = now_ms();
     if (impl->api.map_memory(impl->device, r->color_readback.memory, 0,
@@ -1418,6 +1703,27 @@ static void raster_set_full_scan_diagnostic(void *context, void *raster,
     struct rf_gpu_vulkan_raster *r=raster;
     if(backend_context && r && r->owner==backend_context->implementation)
         r->full_scan_diagnostic=enabled!=0;
+}
+
+static int raster_present(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         const void *texture_descs, unsigned int texture_count,
+                         const void *texture_texels, unsigned long texture_bytes,
+                         unsigned int width, unsigned int height,
+                         struct rf_gpu_raster_timing *raster_timing,
+                         struct rf_gpu_native_present_timing *present_timing,
+                         char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_raster *r = raster;
+    int result;
+    if (!r || !present_timing) return -1;
+    memset(present_timing, 0, sizeof(*present_timing));
+    r->pending_present_timing = present_timing;
+    result = raster_render(context, raster, stream, stream_size, texture_descs,
+        texture_count, texture_texels, texture_bytes, NULL, NULL, width, height,
+        0, 0, raster_timing, message, message_capacity);
+    r->pending_present_timing = NULL;
+    return result;
 }
 
 static unsigned int adapter_type(uint32_t type)
@@ -1523,6 +1829,8 @@ static void backend_cleanup(struct rf_gpu_vulkan_impl *impl)
     if (!impl) return;
     if (impl->device && impl->api.destroy_device)
         impl->api.destroy_device(impl->device, NULL);
+    if (impl->surface && impl->api.destroy_surface)
+        impl->api.destroy_surface(impl->instance, impl->surface, NULL);
     if (impl->instance && impl->api.destroy_instance)
         impl->api.destroy_instance(impl->instance, NULL);
     api_close(&impl->api);
@@ -1548,6 +1856,10 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     uint32_t selected_index = 0;
     char selected_name[RF_VK_MAX_PHYSICAL_DEVICE_NAME_SIZE] = {0};
     uint32_t i;
+    int want_present = backend_context &&
+        backend_context->native_window.type == 1 &&
+        backend_context->native_window.window &&
+        backend_context->native_window.instance;
 
     if (!backend_context || !info || backend_context->implementation) {
         snprintf(message, message_capacity, "invalid Vulkan backend context");
@@ -1581,12 +1893,46 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     memset(&instance_info, 0, sizeof(instance_info));
     instance_info.s_type = RF_VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.application_info = &app_info;
+    if (want_present) {
+        static const char *extensions[] = {
+            "VK_KHR_surface", "VK_KHR_win32_surface"
+        };
+        instance_info.enabled_extension_count = 2;
+        instance_info.enabled_extension_names = extensions;
+    }
     result = api->create_instance(&instance_info, NULL, &impl->instance);
+    if ((result != RF_VK_SUCCESS || !impl->instance) && want_present) {
+        /* Presentation is an independent optional capability.  Retry the
+         * persistent compute service without WSI if the extensions are absent. */
+        want_present = 0;
+        instance_info.enabled_extension_count = 0;
+        instance_info.enabled_extension_names = NULL;
+        impl->instance = NULL;
+        result = api->create_instance(&instance_info, NULL, &impl->instance);
+    }
     if (result != RF_VK_SUCCESS || !impl->instance) {
         fprintf(stderr, "rf-gpu-probe: vkCreateInstance failed (%d)\n", result);
         goto done;
     }
     if (api_load_instance(api, impl->instance) < 0) goto done;
+    if (want_present) {
+        struct rf_vk_win32_surface_create_info surface_info;
+        if (!api->create_win32_surface || !api->destroy_surface ||
+            !api->get_surface_support || !api->get_surface_capabilities ||
+            !api->get_surface_formats || !api->get_surface_present_modes)
+            want_present = 0;
+        else {
+            memset(&surface_info, 0, sizeof(surface_info));
+            surface_info.s_type = RF_VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+            surface_info.instance = (void *)(uintptr_t)
+                backend_context->native_window.instance;
+            surface_info.window = (void *)(uintptr_t)
+                backend_context->native_window.window;
+            if (api->create_win32_surface(impl->instance, &surface_info, NULL,
+                                          &impl->surface) != RF_VK_SUCCESS)
+                want_present = 0;
+        }
+    }
 
     result = api->enumerate_physical_devices(impl->instance, &device_count, NULL);
     if (result != RF_VK_SUCCESS || !device_count) {
@@ -1655,6 +2001,13 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         backend_result = RF_GPU_BACKEND_UNAVAILABLE;
         goto done;
     }
+    if (want_present) {
+        rf_vk_bool32 supported = 0;
+        if (api->get_surface_support(selected_device, selected_family,
+                                     impl->surface, &supported) != RF_VK_SUCCESS ||
+            !supported)
+            want_present = 0;
+    }
     {
         float priority = 1.0f;
         struct rf_vk_device_queue_create_info queue_info;
@@ -1675,8 +2028,21 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         device_info.queue_create_info_count = 1;
         device_info.queue_create_infos = &queue_info;
         device_info.enabled_features = &enabled_features;
+        if (want_present) {
+            static const char *extensions[] = { "VK_KHR_swapchain" };
+            device_info.enabled_extension_count = 1;
+            device_info.enabled_extension_names = extensions;
+        }
         result = api->create_device(selected_device, &device_info, NULL,
                                     &impl->device);
+        if ((result != RF_VK_SUCCESS || !impl->device) && want_present) {
+            want_present = 0;
+            device_info.enabled_extension_count = 0;
+            device_info.enabled_extension_names = NULL;
+            impl->device = NULL;
+            result = api->create_device(selected_device, &device_info, NULL,
+                                        &impl->device);
+        }
         if (result != RF_VK_SUCCESS || !impl->device) goto done;
         api->get_device_queue(impl->device, selected_family, 0, &impl->queue);
         if (!impl->queue) goto done;
@@ -1695,6 +2061,13 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
                           &info->capabilities);
     impl->max_storage_buffer_range =
         info->capabilities.max_storage_buffer_range;
+    impl->native_presentation_supported = want_present && impl->surface &&
+        api->create_swapchain && api->destroy_swapchain &&
+        api->get_swapchain_images && api->acquire_next_image &&
+        api->queue_present && api->queue_wait_idle && api->create_semaphore &&
+        api->destroy_semaphore && api->cmd_copy_buffer_to_image;
+    info->capabilities.native_presentation_v1 =
+        impl->native_presentation_supported != 0;
     snprintf(message, message_capacity, "Vulkan ready; compute/readback passed");
     backend_context->implementation = impl;
     impl = NULL;
@@ -1716,6 +2089,17 @@ static void backend_shutdown(void *context)
     backend_context->implementation = NULL;
 }
 
+static int backend_set_native_window(void *context,
+                                     const struct rf_gpu_native_window *window)
+{
+    struct rf_gpu_vulkan_context *backend_context = context;
+    if (!backend_context || backend_context->implementation) return -1;
+    memset(&backend_context->native_window, 0,
+           sizeof(backend_context->native_window));
+    if (window) backend_context->native_window = *window;
+    return 0;
+}
+
 const struct rf_gpu_backend rf_gpu_vulkan_backend = {
     backend_init,
     backend_shutdown,
@@ -1725,5 +2109,7 @@ const struct rf_gpu_backend rf_gpu_vulkan_backend = {
     raster_create,
     raster_destroy,
     raster_render,
-    raster_set_full_scan_diagnostic
+    raster_set_full_scan_diagnostic,
+    backend_set_native_window,
+    raster_present
 };

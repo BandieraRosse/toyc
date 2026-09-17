@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-7D 已冻结；下一阶段选择 GPU-8 Native Presentation）
+> 状态：执行中（GPU-0 至 GPU-8A 已完成并冻结；GPU-8B composition decision 待继续）
 > 进展同步：2026-09-17
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -27,6 +27,7 @@
 | GPU-7B Vertex-Lit Planar Extension | 已完成 / FROZEN | V1 96-byte 新 command kind；CPU/GPU 共享 raster truth，WSL/RTX fixed、stress、combined-world 全部 0 mismatch，world coverage 99.85--99.91% |
 | GPU-7C Normal GPU Frame Integration | 已完成 / FROZEN | Core-owned normal frame、same-frame CPU oracle、mismatch artifact/replay 与完整恢复；Intel Outpost/near supported batches 逐 color/depth 0 mismatch；默认 CPU |
 | GPU-7D Texture V1 | 已完成 / FROZEN | buffer-backed nearest RGB8/RGBA8；hosted CPU/full-scan/binned 与 Intel normal textured frames 均 0 mismatch；transparent 保持 whole-batch fallback |
+| GPU-8A Native Presentation | 已完成 / FROZEN | Win32 handle contract、surface/swapchain query、BGRA8 transfer copy、single-frame sync 与 world-only diagnostic；Intel 10/10、resize 300/300、零 fallback/readback/copy |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1203,6 +1204,32 @@ Windows Rasterfall 的窗口、输入与 framebuffer presentation 不再依赖 S
 ## GPU-8 — Native Presentation
 
 Vulkan renderer 直接向 Windows swapchain present，不再执行 GPU → CPU framebuffer readback。
+
+### GPU-8A — Windows Native Presentation Bring-up
+
+当前实现是显式 world-only diagnostic，而非完整 normal frame：
+
+```text
+Windows SDL platform（内部取得 HWND/HINSTANCE）
+  → toy_native_window_handle（无 SDL 类型）
+  → RF GPU Native Presentation V1 capability
+  → VkSurfaceKHR / queried BGRA8 FIFO transfer-dst swapchain
+  → Raster V1 device-local XRGB8888 VkBuffer
+  → acquire / barriers / vkCmdCopyBufferToImage / present
+```
+
+小端 `0xffRRGGBB` 的内存字节顺序为 B、G、R、A，因而只接受 surface query 实际返回的
+`B8G8R8A8_UNORM + SRGB_NONLINEAR`；不支持时 presentation 为 unsupported，不交换 R/B。
+同步为单帧 acquire semaphore、submit fence 与 completion semaphore；present 后 queue idle 后才复用。
+swapchain query 同时验证 queue present support、surface capabilities、formats、present modes 与
+`TRANSFER_DST` usage。out-of-date/suboptimal 触发 replacement-first 重建；minimized 时 Core 不开始帧。
+
+该路径在 world ordering barrier present，此后 CPU-only 层不进入可见 swapchain frame。正常
+`gpu-compute + software-present`、same-frame CPU oracle 和 mismatch artifact 路径均保留。当前完成
+Linux/WSL ABI 与 Raster V1 回归、MinGW 完整构建。Intel Iris Xe near/0 同机 10 帧：native total
+29.009 ms、raster wait 23.989 ms、present 1.990 ms、readback 0；software-present total 102.399 ms、
+execution 36.672 ms、readback 63.316 ms。resize 后 300/300 native frames、零 fallback，最终 extent
+984×661。GPU-8A DONE / FROZEN；完整 HUD/GUI composition 留给 GPU-8B。
 
 ## GPU-9 — Native Visual Renderer
 

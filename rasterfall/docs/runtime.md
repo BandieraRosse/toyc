@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-8A Windows native-present world-only diagnostic 已接入 `--renderer gpu-compute --gpu-native-present`；它在 world barrier 直接执行 buffer→swapchain present，明确跳过最终 software present，HUD/GUI 等 CPU-only 层不进入可见帧。Intel Iris Xe 10/10 与 resize 300/300 实机帧均零 fallback、零 color readback/CPU copy。
 > 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Windows Intel normal same-frame oracle 在 Outpost、Campaign near/0、near/30 均 3/3 GPU frames 且逐 color/depth 0 mismatch；`--gpu-normal-scene <near|mid> <0|30>` 固定 seed、Campaign、camera/enemy fixture，但仍执行正常 window/Core/present 主循环。mid/30 的透明命令按契约整批 CPU fallback。
 > 源码核对基线补充：GPU-7D Texture V1 已接入显式 `--renderer gpu-compute` normal world batch。Windows RTX Outpost 修正 GPU readback stride 字节/元素单位错配后 3/3 frames；默认仍为 CPU，冻结状态以上方最新基线为准。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。

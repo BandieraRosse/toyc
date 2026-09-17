@@ -5,6 +5,19 @@
 
 struct toy_window;
 
+enum toy_native_window_type {
+    TOY_NATIVE_WINDOW_NONE = 0,
+    TOY_NATIVE_WINDOW_WIN32 = 1
+};
+
+/* Stable platform boundary for APIs such as Vulkan presentation.  Handles
+ * are opaque integers here so consumers never include SDL or Win32 headers. */
+struct toy_native_window_handle {
+    unsigned int type;
+    unsigned long long window;
+    unsigned long long instance;
+};
+
 struct toy_surface {
     uint32_t *pixels;
     int width;
@@ -49,6 +62,8 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
                     int timeout_ms);
 int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surface);
 int toy_window_present(struct toy_window *window);
+int toy_window_get_native_handle(struct toy_window *window,
+                                 struct toy_native_window_handle *handle);
 int toy_window_pointer_lock_supported(struct toy_window *window);
 int toy_window_set_pointer_lock(struct toy_window *window, int locked);
 int toy_window_set_pointer_confine(struct toy_window *window, int confined);
