@@ -1622,7 +1622,7 @@ static int run_logic_test(void)
         seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
         seed.x = camera.x + 200;
         seed.y = -350;
-        seed.z = camera.z - 2000;
+        seed.z = camera.z + 2000;
         seed.lifetime_ms = 100;
         seed.size = 1000;
         seed.alpha = 256;
@@ -1638,7 +1638,7 @@ static int run_logic_test(void)
         seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH;
         seed.x = camera.x;
         seed.y = -350;
-        seed.z = camera.z - 2000;
+        seed.z = camera.z + 2000;
         seed.lifetime_ms = 100;
         seed.alpha = 256;
         if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 249;
@@ -1647,8 +1647,9 @@ static int run_logic_test(void)
         rasterfall_render_effects(&renderer, &camera, &effect_stats);
         if (effect_stats.direct_pixels || renderer.cmd_count - command_begin != 2)
             return 250;
-        /* Local tracer screen lines still exercise direct-debt accounting,
-         * including an endpoint outside the right edge. */
+        /* The local tracer covers its axial screen segment; a generic ray
+         * separately covers clipping at the right edge.  Both retain
+         * projected inverse depth without direct framebuffer writes. */
         rasterfall_effects_init(&effects);
         memset(&ray_event, 0, sizeof(ray_event));
         ray_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
@@ -1658,14 +1659,34 @@ static int run_logic_test(void)
         ray_event.sz = camera.z;
         ray_event.ex = camera.x;
         ray_event.ey = RASTERFALL_TRACER_Y;
-        ray_event.ez = camera.z - 3000;
+        ray_event.ez = camera.z + 3000;
         ray_event.life_ms = 100;
         rasterfall_effects_consume(&effects, &ray_event);
-        ray_event.ex = camera.x + 4000;
-        rasterfall_effects_consume(&effects, &ray_event);
+        rasterfall_effects_update(&effects, 50);
         memset(&effect_stats, 0, sizeof(effect_stats));
+        command_begin = renderer.cmd_count;
         rasterfall_render_effects(&renderer, &camera, &effect_stats);
-        if (!effect_stats.direct_pixels) return 251;
+        if (effect_stats.direct_pixels || renderer.cmd_count - command_begin != 4)
+            return 251;
+        rasterfall_effects_init(&effects);
+        memset(&seed, 0, sizeof(seed));
+        seed.type = RASTERFALL_EFFECT_INSTANCE_RAY;
+        seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENTITY_HIT_RAY;
+        seed.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
+        seed.x = camera.x;
+        seed.y = RASTERFALL_TRACER_Y;
+        seed.z = camera.z + 1000;
+        seed.ex = camera.x + 4000;
+        seed.ey = RASTERFALL_TRACER_Y;
+        seed.ez = camera.z + 3000;
+        seed.lifetime_ms = 100;
+        seed.ray_width = 2;
+        if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 253;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        command_begin = renderer.cmd_count;
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (effect_stats.direct_pixels || renderer.cmd_count - command_begin != 2)
+            return 252;
         rasterfall_effects_init(&effects);
     }
     /* Molotov flames are represented by the same runtime particle pool as

@@ -2838,14 +2838,6 @@ static int world_distance(const struct camera *camera, int x, int z)
     return (int)isqrt(dx * dx + dz * dz);
 }
 
-/* Map floor paint is an authored area colour, not a lightmap preview. */
-static void put_pixel(struct toy_surface *surface, int x, int y, uint32_t color)
-{
-    uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                 y * surface->stride);
-    row[x] = color;
-}
-
 static void copy_vec3(struct vec3 *out, const struct vec3 *in)
 {
     out->x = in->x; out->y = in->y; out->z = in->z;
@@ -7215,81 +7207,6 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
 
 /* ── 子弹轨迹与命中粒子（纯视觉；逻辑步进 16ms 推进） ──────────── */
 
-static unsigned long draw_effect_line(struct toy_surface *surface,
-                                      int x0, int y0, int x1, int y1,
-                                      uint32_t color)
-{
-    int bound_x = surface->width * 4;
-    int bound_y = surface->height * 4;
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
-    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
-    int sx = x0 < x1 ? 1 : -1;
-    int sy = y0 < y1 ? 1 : -1;
-    int err = dx + dy;
-    int steps = 0;
-    unsigned long pixels = 0;
-    int max_steps = (surface->width + surface->height) * 4;
-    x0 = clampi(x0, -bound_x, bound_x);
-    x1 = clampi(x1, -bound_x, bound_x);
-    y0 = clampi(y0, -bound_y, bound_y);
-    y1 = clampi(y1, -bound_y, bound_y);
-    dx = x1 > x0 ? x1 - x0 : x0 - x1;
-    dy = y1 > y0 ? y0 - y1 : y1 - y0;
-    sx = x0 < x1 ? 1 : -1;
-    sy = y0 < y1 ? 1 : -1;
-    err = dx + dy;
-    for (;;) {
-        if (x0 >= 0 && x0 < surface->width &&
-            y0 >= 0 && y0 < surface->height)
-        {
-            put_pixel(surface, x0, y0, color);
-            pixels++;
-        }
-        if (x0 == x1 && y0 == y1) break;
-        if (++steps > max_steps) break;
-        {
-            int e2 = 2 * err;
-            if (e2 >= dy) { err += dy; x0 += sx; }
-            if (e2 <= dx) { err += dx; y0 += sy; }
-        }
-    }
-    return pixels;
-}
-
-static unsigned long draw_depth_effect_line(struct toy_renderer *renderer,
-                                            int x0, int y0, long inv0,
-                                            int x1, int y1, long inv1,
-                                            uint32_t color)
-{
-    struct toy_surface *surface = &renderer->surface;
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
-    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
-    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-    int err = dx - dy, step = 0;
-    int total = dx > dy ? dx : dy;
-    int max_steps = surface->width + surface->height;
-    unsigned long pixels = 0;
-    for (;;) {
-        if (x0 >= 0 && x0 < surface->width && y0 >= 0 && y0 < surface->height) {
-            long inv = total > 0 ? inv0 + (inv1 - inv0) * step / total : inv0;
-            int at = y0 * surface->width + x0;
-            if (!renderer->depth || inv >= renderer->depth[at]) {
-                put_pixel(surface, x0, y0, color);
-                pixels++;
-            }
-        }
-        if (x0 == x1 && y0 == y1) break;
-        {
-            int e2 = 2 * err;
-            if (e2 > -dy) { err -= dy; x0 += sx; }
-            if (e2 < dx) { err += dx; y0 += sy; }
-        }
-        step++;
-        if (step > max_steps) break;
-    }
-    return pixels;
-}
-
 /* 用世界空间小方柱表现非第一人称 tracer。屏幕线宽在沿射线观察时
  * 会盖过被透视压缩的长度，变成横线；方柱的截面则随深度缩放，沿射线
  * 观察时只留下正确的方形截面，侧视时才显出细长体积。 */
@@ -7357,18 +7274,24 @@ static void render_effect_ray_volume(struct toy_renderer *renderer,
     }
 }
 
+static int submit_effect_screen_rect(struct toy_renderer *renderer,
+                                     int left, int top, int right, int bottom,
+                                     long z, long inv_z, uint32_t color);
+
 /* 弹道投影为屏幕线段：起点（枪口）与终点（命中点）都从世界空间投影，
  * 先裁剪到近平面，再 Liang-Barsky 裁剪到屏幕。 */
-static unsigned long render_effect_ray(struct toy_renderer *renderer,
+static int render_effect_ray(struct toy_renderer *renderer,
                                const struct camera *camera,
                                int sx, int sy, int sz, int ex, int ey, int ez,
-                               uint32_t color, int depth_test, int width)
+                               uint32_t color, int width)
 {
     struct toy_surface *surface = &renderer->surface;
     struct vec3 a, b, clipped;
     struct toy_screen_vertex pa, pb;
+    struct toy_screen_vertex quad[4];
     int x0, y0, x1, y1, t0, t1, t_in, t_out, tmp;
-    unsigned long pixels = 0;
+    int dx, dy, adx, ady, normal_len;
+    int low_x, low_y, high_x, high_y;
     a.x = sx; a.y = sy; a.z = sz;
     b.x = ex; b.y = ey; b.z = ez;
     world_to_view(camera, &a, &a);
@@ -7428,35 +7351,34 @@ static unsigned long render_effect_ray(struct toy_renderer *renderer,
     }
     if (width < 1) width = 1;
     if (width > 4) width = 4;
-    if (depth_test) {
-        int offset, dx = x1 - x0, dy = y1 - y0;
-        int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
-        int normal_len = adx > ady ? adx : ady;
-        if (normal_len < 1) normal_len = 1;
-        /* The old (+offset,+offset) expansion changed the direction of the
-         * projected tracer and made a nearly-on-axis projectile look like a
-         * horizontal bar.  Expand along the screen-space normal of the
-         * projected 3D segment instead, keeping its world direction intact. */
-        for (offset = -(width / 2); offset < width - width / 2; offset++) {
-            int ox = -dy * offset / normal_len;
-            int oy = dx * offset / normal_len;
-            pixels += draw_depth_effect_line(renderer, x0 + ox, y0 + oy,
-                                             pa.inv_z, x1 + ox, y1 + oy,
-                                             pb.inv_z, color);
-        }
-    } else {
-        int offset, dx = x1 - x0, dy = y1 - y0;
-        int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
-        int normal_len = adx > ady ? adx : ady;
-        if (normal_len < 1) normal_len = 1;
-        for (offset = -(width / 2); offset < width - width / 2; offset++) {
-            int ox = -dy * offset / normal_len;
-            int oy = dx * offset / normal_len;
-            pixels += draw_effect_line(surface, x0 + ox, y0 + oy,
-                                       x1 + ox, y1 + oy, color);
-        }
+    dx = x1 - x0;
+    dy = y1 - y0;
+    adx = dx < 0 ? -dx : dx;
+    ady = dy < 0 ? -dy : dy;
+    normal_len = adx > ady ? adx : ady;
+    if (normal_len < 1) {
+        int half = width / 2;
+        return submit_effect_screen_rect(renderer, x0 - half, y0 - half,
+                                         x0 - half + width,
+                                         y0 - half + width,
+                                         pa.z, pa.inv_z, color) > 0 ? 2 : 0;
     }
-    return pixels;
+    /* Expand the clipped segment along its screen-space normal.  Both ends
+     * retain their projected z/inv_z, so Raster V1 interpolates the same
+     * inverse-depth gradient as the former direct line walker. */
+    low_x = -dy * (-(width / 2)) / normal_len;
+    low_y = dx * (-(width / 2)) / normal_len;
+    high_x = -dy * (width - width / 2) / normal_len;
+    high_y = dx * (width - width / 2) / normal_len;
+    memset(quad, 0, sizeof(quad));
+    quad[0] = pa; quad[0].x = x0 + low_x;  quad[0].y = y0 + low_y;
+    quad[1] = pb; quad[1].x = x1 + low_x;  quad[1].y = y1 + low_y;
+    quad[2] = pb; quad[2].x = x1 + high_x; quad[2].y = y1 + high_y;
+    quad[3] = pa; quad[3].x = x0 + high_x; quad[3].y = y0 + high_y;
+    quad[0].light = quad[1].light = quad[2].light = quad[3].light = 256;
+    toy_renderer_triangle(renderer, &quad[0], &quad[1], &quad[2], color);
+    toy_renderer_triangle(renderer, &quad[0], &quad[2], &quad[3], color);
+    return 2;
 }
 
 static int ray_lerp(int a, int b, int t)
@@ -7506,8 +7428,7 @@ static void render_knockback_trail(struct toy_renderer *renderer,
 }
 
 static int render_effect_rays(struct toy_renderer *renderer,
-                              const struct camera *camera,
-                              unsigned long *direct_pixels)
+                              const struct camera *camera)
 {
     int i, pixels = 0;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
@@ -7600,8 +7521,8 @@ static int render_effect_rays(struct toy_renderer *renderer,
                 render_effect_ray_volume(renderer, camera, tx, ty, tz,
                                          hx, hy, hz, color, width);
             else
-                *direct_pixels += render_effect_ray(renderer, camera,
-                    tx, ty, tz, hx, hy, hz, color, 0, width);
+                render_effect_ray(renderer, camera, tx, ty, tz,
+                                  hx, hy, hz, color, width);
             /* The second pass keeps the segment readable at its head without
              * introducing a second color. */
             if (!local_tracer)
@@ -7610,14 +7531,13 @@ static int render_effect_rays(struct toy_renderer *renderer,
                     ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
                     ray_lerp(tz, hz, 32768), hx, hy, hz, color, width);
             else
-                *direct_pixels += render_effect_ray(
-                    renderer, camera,
+                render_effect_ray(renderer, camera,
                     ray_lerp(tx, hx, 32768), ray_lerp(ty, hy, 32768),
-                    ray_lerp(tz, hz, 32768), hx, hy, hz, color, 0, width);
+                    ray_lerp(tz, hz, 32768), hx, hy, hz, color, width);
         } else {
-            *direct_pixels += render_effect_ray(renderer, camera,
+            render_effect_ray(renderer, camera,
                 t->x, t->y, t->z, t->ex, t->ey, t->ez, color,
-                (t->flags & RASTERFALL_EFFECT_EVENT_DEPTH_TEST) != 0, width);
+                width);
         }
         pixels++;
     }
@@ -7683,8 +7603,7 @@ static int render_effect_billboard(struct toy_renderer *renderer,
 }
 
 static int render_effect_billboards(struct toy_renderer *renderer,
-                                    const struct camera *camera,
-                                    unsigned long *direct_pixels)
+                                    const struct camera *camera)
 {
     int i, pixels = 0;
     for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
@@ -7735,7 +7654,6 @@ static int render_effect_billboards(struct toy_renderer *renderer,
                                                         intensity, 256));
         }
     }
-    *direct_pixels += (unsigned long)pixels;
     return pixels;
 }
 
@@ -8098,8 +8016,8 @@ int rasterfall_render_effects(struct toy_renderer *renderer,
     /* Preserve the established world-effect draw order while callers move to
      * one runtime entry point.  Overlay instances stay in the frame-tail
      * screen-space pass. */
-    result = render_effect_rays(renderer, camera, &direct_pixels) +
-             render_effect_billboards(renderer, camera, &direct_pixels) +
+    result = render_effect_rays(renderer, camera) +
+             render_effect_billboards(renderer, camera) +
              render_effect_particles(renderer, camera, &direct_pixels);
     if (stats) stats->direct_pixels = direct_pixels;
     return result;

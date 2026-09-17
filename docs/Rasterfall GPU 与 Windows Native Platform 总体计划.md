@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-17
 > 源码核对基线：`4c1ac6a` + GPU-8B2 retained pre-post consumer 工作区
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；billboard 与普通 particle 已提交带逆深度的 opaque raster commands，effects direct debt 现集中在本地 tracer 等屏幕线 producer。transparent、剩余 direct producer 和 viewmodel 仍整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；billboard、普通 particle 与屏幕线 ray 已提交带逆深度的 opaque raster commands，`effects_direct_pixels=0` 门禁已建立。transparent 和 viewmodel 仍整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -46,7 +46,7 @@ normal world frontend
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
 | RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；不改变排序或 fallback，透明 GPU blend 仍属 GPU-8B2 |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
-| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard/普通 particle 已迁移，transparent、本地 tracer direct pixels 与 viewmodel 仍待迁移 |
+| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；effects opaque producer 已完成 command 化并建立 direct-pixel 零门禁，transparent 与 viewmodel 仍待迁移 |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
@@ -97,9 +97,9 @@ GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewm
    被误计为 direct pixels。
 2. **B2b — effects producer 收敛：** world-space ray、ribbon、billboard、particle 按实际 depth/
    blend 语义转成明确 raster input；damage vignette 等 Post 之后效果显式归 overlay。完成标志为
-   `effects_direct_pixels=0`。当前 billboard 和普通 hit/fire/explosion particle 已改为使用投影
-   `inv_z` 的 opaque raster triangles，并由固定 fixture 断言各提交两条 command、direct debt 为零；
-   本地 tracer 屏幕线仍是已知 direct producer，尚未达到该完成标志。
+   `effects_direct_pixels=0`。billboard、普通 hit/fire/explosion particle 与屏幕线 ray 已改为使用
+   投影 `inv_z` 的 opaque raster triangles；固定 fixture 覆盖两条 command 的矩形、四条 command 的
+   本地 tracer 双段以及越过屏幕边界的 ray，并断言 direct debt 为零。该完成标志已达到。
 3. **B2c — viewmodel：** 依次迁移 opaque weapon geometry、hands/pill/attachments 和
    viewmodel-local effects；保留独立层、投影/depth policy 和既有 animation/frontend 所有权。
 4. **B2d — transparent consumer：** Raster V1 显式表达 material/texture alpha、source-over、
