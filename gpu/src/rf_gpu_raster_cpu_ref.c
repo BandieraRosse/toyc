@@ -65,15 +65,17 @@ static void cpu_sky(uint32_t *color, uint32_t stride, uint32_t width,
     }
 }
 
-int rf_gpu_raster_cpu_reference_textured_v1(
+int rf_gpu_raster_cpu_reference_textured_domains_v1(
                                    const void *stream, size_t stream_size,
                                    const struct rf_gpu_texture_desc_v1 *descs,
                                    uint32_t desc_count,
                                    const unsigned char *texels,
                                    size_t texel_size,
                                    uint32_t *color, int32_t *depth,
+                                   unsigned char *viewmodel_coverage,
                                    uint32_t color_stride,
                                    uint32_t depth_stride,
+                                   uint32_t coverage_stride,
                                    struct rf_gpu_cpu_reference_timing *timing)
 {
     const struct rf_gpu_raster_stream_header_v1 *header = stream;
@@ -83,11 +85,13 @@ int rf_gpu_raster_cpu_reference_textured_v1(
     double start;
     uint32_t i, y;
     struct toy_texture_view *texture_views = NULL;
-    int result = -1;
+    int result = -1, viewmodel_started = 0;
+    int32_t *viewmodel_depth = NULL, *world_depth = NULL;
     if (timing) memset(timing, 0, sizeof(*timing));
     if (rf_gpu_raster_validate_v1(stream, stream_size) || !color || !depth ||
         color_stride < header->framebuffer_width ||
-        depth_stride < header->framebuffer_width) return -1;
+        depth_stride < header->framebuffer_width ||
+        (viewmodel_coverage && coverage_stride < header->framebuffer_width)) return -1;
     surface.pixels = color;
     surface.width = (int)header->framebuffer_width;
     surface.height = (int)header->framebuffer_height;
@@ -104,6 +108,9 @@ int rf_gpu_raster_cpu_reference_textured_v1(
     commands = (const void *)(header + 1);
     if (toy_renderer_begin(&renderer, &surface,
                            commands[0].payload.clear.value) < 0) goto done;
+    if (viewmodel_coverage)
+        memset(viewmodel_coverage, 0,
+               (size_t)coverage_stride * header->framebuffer_height);
     if (commands[0].kind == RF_GPU_RASTER_CMD_SKY_V1)
         cpu_sky(color,color_stride,header->framebuffer_width,
                 header->framebuffer_height,&commands[0].payload.sky);
@@ -111,6 +118,26 @@ int rf_gpu_raster_cpu_reference_textured_v1(
         const struct rf_gpu_raster_flat_triangle_v1 *t =
             &commands[i].payload.flat_triangle;
         struct toy_screen_vertex a, b, c;
+        if (commands[i].kind == RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1) {
+            uint32_t row;
+            unsigned long pixels = (unsigned long)header->framebuffer_width *
+                                   header->framebuffer_height;
+            if (viewmodel_started) goto done;
+            viewmodel_depth = calloc(pixels, sizeof(*viewmodel_depth));
+            if (!viewmodel_depth || toy_renderer_flush(&renderer) < 0)
+                goto done;
+            for (row = 0; row < header->framebuffer_height; ++row)
+                memcpy(depth + (size_t)row * depth_stride,
+                       renderer.depth + (size_t)row * header->framebuffer_width,
+                       (size_t)header->framebuffer_width * sizeof(*depth));
+            world_depth = renderer.depth;
+            renderer.depth = viewmodel_depth;
+            if (viewmodel_coverage)
+                toy_renderer_bind_coverage(&renderer, viewmodel_coverage,
+                                           coverage_stride);
+            viewmodel_started = 1;
+            continue;
+        }
         memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b));
         memset(&c, 0, sizeof(c));
         a.x = t->a.x; a.y = t->a.y; a.inv_z = t->a.inv_z;
@@ -164,16 +191,39 @@ int rf_gpu_raster_cpu_reference_textured_v1(
         uint32_t x;
         for (x = 0; x < header->framebuffer_width; ++x)
             color[(size_t)y * color_stride + x] |= 0xff000000u;
-        memcpy(depth + (size_t)y * depth_stride,
-               renderer.depth + (size_t)y * header->framebuffer_width,
-               (size_t)header->framebuffer_width * sizeof(*depth));
+        if (!viewmodel_started)
+            memcpy(depth + (size_t)y * depth_stride,
+                   renderer.depth + (size_t)y * header->framebuffer_width,
+                   (size_t)header->framebuffer_width * sizeof(*depth));
     }
     if (timing) timing->raster_ms = cpu_now_ms() - start;
     result = 0;
 done:
+    toy_renderer_bind_coverage(&renderer, NULL, 0);
+    /* VM depth is caller-owned and replaces the renderer's world depth for
+     * the second span; detach it before destroy to avoid a double free. */
+    if (renderer.depth == viewmodel_depth) renderer.depth = NULL;
     toy_renderer_destroy(&renderer);
+    free(world_depth);
+    free(viewmodel_depth);
     free(texture_views);
     return result;
+}
+
+int rf_gpu_raster_cpu_reference_textured_v1(
+                                   const void *stream, size_t stream_size,
+                                   const struct rf_gpu_texture_desc_v1 *descs,
+                                   uint32_t desc_count,
+                                   const unsigned char *texels,
+                                   size_t texel_size,
+                                   uint32_t *color, int32_t *depth,
+                                   uint32_t color_stride,
+                                   uint32_t depth_stride,
+                                   struct rf_gpu_cpu_reference_timing *timing)
+{
+    return rf_gpu_raster_cpu_reference_textured_domains_v1(
+        stream, stream_size, descs, desc_count, texels, texel_size,
+        color, depth, NULL, color_stride, depth_stride, 0, timing);
 }
 
 int rf_gpu_raster_cpu_reference_v1(const void *stream, size_t stream_size,

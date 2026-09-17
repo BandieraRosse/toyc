@@ -17,7 +17,10 @@ enum rf_gpu_raster_cmd_kind_v1 {
      * offsets, with the final three Q8 words interpreted as vertex lights. */
     RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 = 4,
     RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 = 5,
-    RF_GPU_RASTER_CMD_SKY_V1 = 6
+    RF_GPU_RASTER_CMD_SKY_V1 = 6,
+    /* Retained VIEWMODEL span barrier.  This is a generic depth-domain
+     * control command; triangle records remain business-agnostic. */
+    RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1 = 7
 };
 
 enum rf_gpu_raster_cmd_flags_v1 {

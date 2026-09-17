@@ -35,6 +35,16 @@ int rf_gpu_raster_pack_toy_textured_v1(
                               void *destination, size_t destination_size,
                               size_t *written_size,
                               struct rf_gpu_texture_resources_v1 *resources);
+/* Pack a retained command stream and insert one generic VIEWMODEL span
+ * barrier before viewmodel_offset.  The offset is measured in source
+ * triangle commands; UINT32_MAX disables the marker. */
+int rf_gpu_raster_pack_toy_textured_spans_v1(
+                              const struct toy_renderer *renderer,
+                              uint32_t clear_color, int32_t clear_depth,
+                              void *destination, size_t destination_size,
+                              size_t *written_size,
+                              struct rf_gpu_texture_resources_v1 *resources,
+                              uint32_t viewmodel_offset);
 int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size);
 
 #endif

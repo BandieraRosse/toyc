@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；Viewmodel Render Contract V1 已冻结 near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth 与 coverage mask，CPU/reference consumer 已按 VIEWMODEL span 切换域；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，`viewmodel_direct_pixels=0` 与 command fixture 已建立；GPU consumer、local muzzle 与 transparent 仍未迁移。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；Viewmodel Render Contract V1 已冻结 near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth 与 coverage mask，CPU/reference consumer 已按 VIEWMODEL span 切换域；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，`viewmodel_direct_pixels=0` 与 command fixture 已建立；Phase 4 已接入 GPU VIEWMODEL span consumer、独立 depth/coverage 与 Post fog skip；local muzzle 与 transparent 仍未迁移。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -98,9 +98,10 @@ B3 通过 `rf_core_render_frame_record_world_v1()` 在不改变 command pool 与
 world batch 按 `transparent || material_alpha != 255` 分类：`world` 只记录 opaque command，
 `transparent` 记录透明 command，CPU 与 GPU fallback 的 frame audit 因而使用同一层真值。这个 checkpoint
 只冻结层边界，不把透明命令误当 opaque：transparent 仍按既有契约使完整 world batch 回退 CPU，因为
-Raster V1 尚未表达禁止 depth write、材质 alpha 与 texture alpha blend。effects/viewmodel 当前也只进入
-RenderFrame 审计，尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
-因而仍是 GPU-8B2 后续工作，不能把已建立层描述误称为 native GPU 覆盖。
+Raster V1 尚未表达禁止 depth write、材质 alpha 与 texture alpha blend。effects 的 direct-pixel 与
+transparent debt 仍会使整帧回退；opaque viewmodel command 已迁入 native GPU frame，并由 span marker
+切换独立 depth/coverage 域。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
+仍不能误称为 native GPU 覆盖。
 
 GPU-8B2 的 interactables vertical slice 已将拾取物、按钮等 depth-tested world geometry
 移入首个 world flush 之前；Core 现在对 normal world 与 interactables 执行一次完整分类、
@@ -114,8 +115,8 @@ cursor，跳层或退回旧层的提交都会失败并增加 `invalid_layer_tran
 effects、viewmodel，二者都是 Post V1 之前的 scene layer。只有这些 barrier 全部完成后才能调用
 `rf_core_begin_screen_overlay()`；该入口同时切换返回的 surface 与 `renderer->surface`，使 HUD、Console、
 Desktop、名字/提示和 effect overlay 共享同一 Core-owned color+coverage truth。禁止把 effects/viewmodel
-的直接 framebuffer 部分归入 screen overlay 来规避 GPU consumer 缺口；native GPU 仍将这两层标为
-unsupported，直到它们的 renderer-command 与 direct producer 都迁入明确的 pre-post consumer。
+的直接 framebuffer 部分归入 screen overlay 来规避 GPU consumer 缺口；effects direct producer 与
+transparent 仍标为 unsupported，viewmodel 则要求使用明确的 pre-post span consumer。
 
 GPU-8B2 retained pre-post consumer 使 Core 在 world、effects 和 viewmodel 的各次 flush 中按层
 保留原始 `toy_raster_cmd`，到 viewmodel barrier 后再做唯一整帧决策。当 effects/viewmodel
@@ -124,10 +125,12 @@ GPU-8B2 retained pre-post consumer 使 Core 在 world、effects 和 viewmodel �
 不会 present 的 CPU surface 这种半帧状态。只有全部 pre-post 输入可无损表达时才进入
 Raster V1/Post/native present。frame audit 的 `retained_pre_post` 和 `pre_post_cpu_fallback`
 分别记录本帧保留命令数和整帧回退决策。这是消费与 fallback 契约，不代表
-effects/viewmodel 已获得 GPU backend。后续 B2a 将审计拆为每层 command 和 direct pixels：
+effects/viewmodel 已获得 GPU backend。B2c 的 VIEWMODEL span 在 pack 时插入通用
+`BEGIN_VIEWMODEL_V1` marker，GPU/CPU consumer 以 retained layer range 切换独立 inverse-Z depth，
+不读取或改写 world depth，并写独立 coverage；Post fog 在 coverage 像素跳过。后续 B2a 将审计拆为每层 command 和 direct pixels：
 `pixel_count` 继续表示层的总绘制结果，`direct_pixel_count` 只表示绕过 command consumer 的
 surface 写入，`pre_post_fallback_reason` 记录 transparent、effects direct pixels、viewmodel
-commands/direct pixels、generic unsupported 或 consumer failure。已能无损表达的 effects command
+direct pixels、generic unsupported 或 consumer failure。已能无损表达的 effects/viewmodel command
 不再因层名被禁止，且 effects facade 通过独立 stats 回传实际 direct producer
 结果，不再把同次调用中的 triangle command 结果数整体记为 direct debt。任一真实
 direct producer 或 unsupported command 仍使整帧回放。
@@ -140,7 +143,7 @@ GPU-8B2b 已把 billboard、普通 hit/fire/explosion particle 和屏幕线 ray 
 
 GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
 producer 分成 pre-post raster input 或真正的 post-overlay，然后由 Phase 3 的 viewmodel frontend
-共享 opaque flat/lit/textured triangle command；下一 checkpoint 接入 VIEWMODEL GPU consumer，再
+共享 opaque flat/lit/textured triangle command；B2c 已接入 VIEWMODEL GPU consumer，下一 checkpoint
 扩展 local muzzle，最后扩展 transparent Raster V1。transparent V1 必须显式冻结 source-over、material/texture alpha、
 depth test/write 与原始顺序，不以 OIT 或重排作为首版前提。
 
@@ -407,8 +410,9 @@ Core end：overlay final flush → software present，或 overlay composite → 
 ```
 
 GPU-8B1 只恢复 post 之后的 screen-space 层。interactables、world effects、viewmodel 均明确位于 post
-之前；其 GPU consumer 尚未实现时保持 unsupported，不能因其中存在直接 framebuffer producer 就把它们
-上传为 overlay。B4 冻结的是 submission/target/order 契约，不宣称 GPU-8B2 完成。
+之前；opaque viewmodel command 由 GPU-8B2c consumer 消费，local muzzle 与 transparent 仍保持
+unsupported，不能因其中存在直接 framebuffer producer 就把它们上传为 overlay。B4 冻结的是
+submission/target/order 契约，不宣称 GPU-8B2 完成。
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
 读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的

@@ -32,6 +32,9 @@ layout(set = 0, binding = 5, std430) readonly buffer TextureDescriptors {
 layout(set = 0, binding = 6, std430) readonly buffer TextureTexels {
     uint words[];
 } texture_texels;
+layout(set = 0, binding = 11, std430) writeonly buffer ViewmodelCoverage {
+    uint values[];
+} viewmodel_coverage;
 
 const uint HEADER_WORDS = 8u;
 const uint COMMAND_WORDS = 24u;
@@ -41,6 +44,7 @@ const uint CMD_FLAT_TRIANGLE = 3u;
 const uint CMD_VERTEX_LIT_TRIANGLE = 4u;
 const uint CMD_TEXTURED_TRIANGLE = 5u;
 const uint CMD_SKY = 6u;
+const uint CMD_BEGIN_VIEWMODEL = 7u;
 const uint FLAG_TEXTURE_REPEAT = 16u;
 
 uint texture_byte(uint offset)
@@ -145,6 +149,9 @@ void main()
 
     uint color = 0xff000000u;
     int depth = 0;
+    int viewmodel_depth = 0;
+    bool viewmodel_active = false;
+    uint covered = 0u;
     uint tiles_x = (width + RF_RASTER_LOCAL_SIZE - 1u) / RF_RASTER_LOCAL_SIZE;
     uint tile_id = gl_WorkGroupID.y * tiles_x + gl_WorkGroupID.x;
     uint list_begin = tile_offsets.offsets[tile_id];
@@ -159,6 +166,12 @@ void main()
             color = stream.words[base + 4u] | 0xff000000u;
         } else if (kind == CMD_CLEAR_DEPTH) {
             depth = int(stream.words[base + 4u]);
+        } else if (kind == CMD_BEGIN_VIEWMODEL) {
+            /* Generic retained-span barrier: all following opaque triangles
+             * use a fresh inverse-Z domain and mark independent coverage. */
+            viewmodel_active = true;
+            viewmodel_depth = 0;
+            covered = 0u;
         } else if (kind == CMD_FLAT_TRIANGLE ||
                    kind == CMD_VERTEX_LIT_TRIANGLE ||
                    kind == CMD_TEXTURED_TRIANGLE) {
@@ -189,7 +202,7 @@ void main()
                     e1 * int64_t(int(stream.words[base + 11u])) +
                     e2 * int64_t(int(stream.words[base + 14u]));
                 int candidate = int(weighted / area);
-                if (candidate >= depth) {
+                if (candidate >= (viewmodel_active ? viewmodel_depth : depth)) {
                     int light = int(stream.words[base + 20u]);
                     if (kind == CMD_VERTEX_LIT_TRIANGLE) {
                         int64_t light_weighted =
@@ -198,7 +211,12 @@ void main()
                             e2 * int64_t(int(stream.words[base + 23u]));
                         light = int(light_weighted / area);
                     }
-                    depth = candidate;
+                    if (viewmodel_active) {
+                        viewmodel_depth = candidate;
+                        covered = 255u;
+                    } else {
+                        depth = candidate;
+                    }
                     if (kind == CMD_TEXTURED_TRIANGLE) {
                         int64_t uoz = e0 * int64_t(int(stream.words[base + 15u])) +
                             e1 * int64_t(int(stream.words[base + 17u])) +
@@ -223,4 +241,5 @@ void main()
     uint index = y * width + x;
     color_out.pixels[index] = color;
     depth_out.values[index] = depth;
+    viewmodel_coverage.values[index] = covered;
 }

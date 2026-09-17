@@ -8,6 +8,7 @@ layout(local_size_x=RF_RASTER_LOCAL_SIZE,local_size_y=RF_RASTER_LOCAL_SIZE,local
 layout(set=0,binding=0,std430) readonly buffer Header { uint words[]; } header;
 layout(set=0,binding=1,std430) readonly buffer RasterColor { uint pixels[]; } input_color;
 layout(set=0,binding=2,std430) readonly buffer RasterDepth { int values[]; } input_depth;
+layout(set=0,binding=11,std430) readonly buffer ViewmodelCoverage { uint values[]; } viewmodel_coverage;
 layout(set=0,binding=9,std430) writeonly buffer PostColor { uint pixels[]; } output_color;
 layout(set=0,binding=10,std430) readonly buffer PostParams {
     uint mode;
@@ -23,6 +24,7 @@ void main()
     uint width=header.words[5],height=header.words[6];
     if(x>=width||y>=height)return;
     uint p=y*width+x,scene=input_color.pixels[p]|0xff000000u;
+    if(viewmodel_coverage.values[p]!=0u){output_color.pixels[p]=scene;return;}
     if(post.mode!=2u){output_color.pixels[p]=scene;return;}
     int d=input_depth.values[p];
     uint factor=0u;

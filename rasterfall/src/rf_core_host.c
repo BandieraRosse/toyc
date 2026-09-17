@@ -3,6 +3,7 @@
 #include "rf_core_host.h"
 #include "rf_gpu_raster_pack.h"
 #include "fb_draw.h"
+#include <limits.h>
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_raster_cpu_ref.h"
 #endif
@@ -134,6 +135,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     size_t texture_bytes = 0;
     uint32_t unique_textures = 0;
     unsigned long texture = 0, transparent = 0, overlay = 0, edge = 0, other = 0;
+    uint32_t viewmodel_offset = UINT_MAX;
+    int has_viewmodel = 0;
     unsigned int color_stride;
     char diagnostic[192];
     int64_t stage_start, consumer_start = rf_core_clock_now_us();
@@ -181,7 +184,20 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         frame->stats.cpu_fallback_frames++;
         return -1;
     }
-    needed = rf_gpu_raster_stream_size_v1((uint32_t)count + 2U);
+    if (core->gpu_frame.retained_batch_count[RF_RENDER_LAYER_VIEWMODEL]) {
+        unsigned long offset =
+            frame->retained_batch_count[RF_RENDER_LAYER_WORLD] +
+            frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] +
+            frame->retained_batch_count[RF_RENDER_LAYER_EFFECTS];
+        if (offset > (unsigned long)count || offset > UINT_MAX) {
+            frame->stats.cpu_fallback_frames++;
+            return -1;
+        }
+        viewmodel_offset = (uint32_t)offset;
+        has_viewmodel = 1;
+    }
+    needed = rf_gpu_raster_stream_size_v1((uint32_t)count + 2U +
+                                           (has_viewmodel ? 1U : 0U));
     if (needed > frame->stream_capacity) {
         unsigned char *grown = tlibc_malloc(needed);
         if (!grown) { frame->stats.cpu_fallback_frames++; return -1; }
@@ -229,9 +245,10 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         resources.texel_capacity = frame->texture_texel_capacity;
         gpu_world_log("gpu-world: pack begin");
         stage_start = rf_core_clock_now_us();
-        if (rf_gpu_raster_pack_toy_textured_v1(&packed,
+        if (rf_gpu_raster_pack_toy_textured_spans_v1(&packed,
                 renderer->job_clear_color, 0, frame->stream,
-                frame->stream_capacity, &written, &resources) !=
+                frame->stream_capacity, &written, &resources,
+                viewmodel_offset) !=
             RF_GPU_RASTER_PACK_OK) {
             gpu_world_log("gpu-world: pack failed");
             frame->stats.cpu_fallback_frames++;
@@ -513,7 +530,6 @@ static int gpu_pre_post_finalize(struct rf_core *core)
         rf_core_render_frame_fallback_reason_v1(&core->render_frame);
     unsupported_post_world =
         core->render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
-        core->render_frame.command_count[RF_RENDER_LAYER_VIEWMODEL] != 0 ||
         core->render_frame.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0;
     if (!unsupported_post_world && frame->retained_command_count) {
         frame->armed = 1;
@@ -863,8 +879,6 @@ unsigned int rf_core_render_frame_fallback_reason_v1(
         reason |= RF_PRE_POST_FALLBACK_TRANSPARENT;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_EFFECTS])
         reason |= RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS;
-    if (frame->command_count[RF_RENDER_LAYER_VIEWMODEL])
-        reason |= RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL])
         reason |= RF_PRE_POST_FALLBACK_VIEWMODEL_DIRECT_PIXELS;
     return reason;
@@ -954,7 +968,7 @@ int rf_core_end_frame(struct rf_core *core)
         core->render_frame.layer_backend[RF_RENDER_LAYER_EFFECTS] =
             RF_RENDER_BACKEND_UNSUPPORTED;
         core->render_frame.layer_backend[RF_RENDER_LAYER_VIEWMODEL] =
-            RF_RENDER_BACKEND_UNSUPPORTED;
+            RF_RENDER_BACKEND_GPU;
         core->render_frame.layer_backend[RF_RENDER_LAYER_OVERLAY] =
             RF_RENDER_BACKEND_COMPOSITE;
         frame->stats.overlay_upload_bytes +=

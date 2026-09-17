@@ -931,6 +931,7 @@ struct rf_gpu_vulkan_raster {
     struct rf_gpu_vulkan_raster_buffer tile_indices;
     struct rf_gpu_vulkan_raster_buffer texture_descs;
     struct rf_gpu_vulkan_raster_buffer texture_texels;
+    struct rf_gpu_vulkan_raster_buffer viewmodel_coverage;
     struct rf_gpu_vulkan_raster_buffer overlay_color;
     struct rf_gpu_vulkan_raster_buffer overlay_coverage;
     struct rf_gpu_vulkan_raster_buffer post_color;
@@ -1180,6 +1181,7 @@ static void raster_destroy(void *context, void *raster)
     raster_buffer_destroy(impl, &r->tile_offsets);
     raster_buffer_destroy(impl, &r->texture_descs);
     raster_buffer_destroy(impl, &r->texture_texels);
+    raster_buffer_destroy(impl, &r->viewmodel_coverage);
     raster_buffer_destroy(impl, &r->overlay_color);
     raster_buffer_destroy(impl, &r->overlay_coverage);
     raster_buffer_destroy(impl, &r->post_params);
@@ -1222,6 +1224,10 @@ static int raster_create(void *context, unsigned int width,
             RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->depth) < 0 ||
         raster_buffer_create(impl, byte_size,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
+            &r->viewmodel_coverage) < 0 ||
+        raster_buffer_create(impl, byte_size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->post_color) < 0 ||
@@ -1234,10 +1240,10 @@ static int raster_create(void *context, unsigned int width,
             RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &r->depth_readback) < 0) goto failed;
     {
-        struct rf_vk_descriptor_set_layout_binding bindings[11];
+        struct rf_vk_descriptor_set_layout_binding bindings[12];
         struct rf_vk_descriptor_set_layout_create_info info;
         memset(bindings, 0, sizeof(bindings));
-        for (i = 0; i < 11; ++i) {
+        for (i = 0; i < 12; ++i) {
             bindings[i].binding = i;
             bindings[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             bindings[i].descriptor_count = 1;
@@ -1245,7 +1251,7 @@ static int raster_create(void *context, unsigned int width,
         }
         memset(&info, 0, sizeof(info));
         info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.binding_count = 11; info.bindings = bindings;
+        info.binding_count = 12; info.bindings = bindings;
         if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
                                                    &r->set_layout) != RF_VK_SUCCESS)
             goto failed;
@@ -1255,7 +1261,7 @@ static int raster_create(void *context, unsigned int width,
         struct rf_vk_descriptor_pool_create_info pool_info;
         struct rf_vk_descriptor_set_allocate_info allocation;
         size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        size.descriptor_count = 11;
+        size.descriptor_count = 12;
         memset(&pool_info, 0, sizeof(pool_info));
         pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.max_sets = 1; pool_info.pool_size_count = 1;
@@ -1562,8 +1568,8 @@ static int raster_render(void *context, void *raster,
     if (post_enabled && raster_upload(impl, &r->post_params, &r->post,
                                      sizeof(r->post)) < 0) goto failed;
     {
-        struct rf_vk_descriptor_buffer_info infos[11];
-        struct rf_vk_write_descriptor_set writes[11];
+        struct rf_vk_descriptor_buffer_info infos[12];
+        struct rf_vk_write_descriptor_set writes[12];
         memset(infos, 0, sizeof(infos)); memset(writes, 0, sizeof(writes));
         infos[0].buffer = r->command.buffer; infos[0].range = stream_size;
         infos[1].buffer = r->color.buffer; infos[1].range = byte_size;
@@ -1577,6 +1583,8 @@ static int raster_render(void *context, void *raster,
             (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture);
         infos[6].buffer = r->texture_texels.buffer;
         infos[6].range = texture_count ? texture_bytes : sizeof(empty_texel);
+        infos[11].buffer = r->viewmodel_coverage.buffer;
+        infos[11].range = byte_size;
         if (composite) {
             infos[7].buffer = r->overlay_color.buffer;
             infos[7].range = byte_size;
@@ -1589,14 +1597,14 @@ static int raster_render(void *context, void *raster,
         infos[9].range = byte_size;
         infos[10].buffer = post_enabled ? r->post_params.buffer : r->command.buffer;
         infos[10].range = post_enabled ? sizeof(r->post) : stream_size;
-        for (y = 0; y < 11; ++y) {
+        for (y = 0; y < 12; ++y) {
             writes[y].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[y].dst_set = r->descriptor_set; writes[y].dst_binding = y;
             writes[y].descriptor_count = 1;
             writes[y].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[y].buffer_info = &infos[y];
         }
-        impl->api.update_descriptor_sets(impl->device, 11, writes, 0, NULL);
+        impl->api.update_descriptor_sets(impl->device, 12, writes, 0, NULL);
     }
     if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
         RF_VK_SUCCESS) goto failed;

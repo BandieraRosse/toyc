@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-17
-> 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 可随 retained stream 消费；transparent、effects direct pixels、viewmodel 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
+> 文档更新：2026-09-18
+> 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
 > 当前平台边界：GPU-8A 已冻结，GPU-8B1/GPU-9A 待 normal-frame 实机冻结；Windows window/input/audio 仍由 SDL2 提供，尚未进入 SDL-free Native Platform 阶段。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。

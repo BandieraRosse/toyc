@@ -25,5 +25,17 @@ int rf_gpu_raster_cpu_reference_textured_v1(
                                    uint32_t color_stride,
                                    uint32_t depth_stride,
                                    struct rf_gpu_cpu_reference_timing *timing);
+int rf_gpu_raster_cpu_reference_textured_domains_v1(
+                                   const void *stream, size_t stream_size,
+                                   const struct rf_gpu_texture_desc_v1 *descs,
+                                   uint32_t desc_count,
+                                   const unsigned char *texels,
+                                   size_t texel_size,
+                                   uint32_t *color, int32_t *depth,
+                                   unsigned char *viewmodel_coverage,
+                                   uint32_t color_stride,
+                                   uint32_t depth_stride,
+                                   uint32_t coverage_stride,
+                                   struct rf_gpu_cpu_reference_timing *timing);
 
 #endif

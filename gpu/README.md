@@ -1,8 +1,8 @@
 # Rasterfall GPU 目录
 
-> 文档更新：2026-09-17
+> 文档更新：2026-09-18
 > 源码核对基线：`fc045ad`
-> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B1 已实现未冻结，GPU-8B2 未开始，GPU-9A 本地正确性通过但 normal-frame 验收阻塞。
+> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip 及 CPU/GPU differential；GPU-8B1 已实现未冻结，local muzzle/transparent 与 GPU-9A normal-frame 验收仍待完成。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
 参考性外部代码。GPU 路线的 checkpoint、最终目标和剩余问题统一见

@@ -437,8 +437,7 @@ static int run_logic_test(void)
             rf_core_render_frame_fallback_reason_v1(
                 &frame_core.render_frame) !=
                 (RF_PRE_POST_FALLBACK_TRANSPARENT |
-                 RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS |
-                 RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS) ||
+                 RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS) ||
             rf_core_begin_screen_overlay(&frame_core) != &frame_core.surface ||
             frame_core.render_frame.current_layer != RF_RENDER_LAYER_OVERLAY ||
             rf_core_render_frame_enter_layer_v1(
