@@ -2655,14 +2655,19 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     if (rf_core_render_frame_enter_layer_v1(
             runtime->core, RF_RENDER_LAYER_EFFECTS) < 0) return -1;
     raster_commands = (unsigned long)renderer->cmd_count;
-    flushed = rasterfall_render_effects(renderer, render_camera);
+    {
+        struct rasterfall_effect_render_stats effect_stats;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        flushed = rasterfall_render_effects(renderer, render_camera,
+                                             &effect_stats);
+        rf_core_render_frame_record_direct_pixels_v1(runtime->core,
+            RF_RENDER_LAYER_EFFECTS, effect_stats.direct_pixels);
+    }
     if (flushed < 0) return -1;
     pixels += flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
         (unsigned long)renderer->cmd_count - raster_commands,
         (unsigned long)flushed);
-    rf_core_render_frame_record_direct_pixels_v1(runtime->core,
-        RF_RENDER_LAYER_EFFECTS, (unsigned long)flushed);
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
     pixels += flushed;

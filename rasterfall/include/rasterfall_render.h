@@ -233,8 +233,13 @@ void rasterfall_render_network_teammate_status(
 /* Unified runtime facade for world-space ray, billboard and particle
  * instances.  Screen-space overlay instances are submitted separately at
  * the frame tail. */
+struct rasterfall_effect_render_stats {
+    unsigned long direct_pixels;
+};
+
 int rasterfall_render_effects(struct toy_renderer *renderer,
-                              const struct camera *camera);
+                              const struct camera *camera,
+                              struct rasterfall_effect_render_stats *stats);
 int rasterfall_render_overlays(struct toy_renderer *renderer);
 
 /* Normal world frame scope; shared local-player sample for the viewmodel. */

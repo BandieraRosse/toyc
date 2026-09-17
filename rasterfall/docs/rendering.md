@@ -128,7 +128,9 @@ effects/viewmodel 已获得 GPU backend。后续 B2a 将审计拆为每层 comma
 `pixel_count` 继续表示层的总绘制结果，`direct_pixel_count` 只表示绕过 command consumer 的
 surface 写入，`pre_post_fallback_reason` 记录 transparent、effects direct pixels、viewmodel
 commands/direct pixels、generic unsupported 或 consumer failure。已能无损表达的 effects command
-不再因层名被禁止，但任一 direct producer 或 unsupported command 仍使整帧回放。
+不再因层名被禁止，且 effects facade 通过独立 stats 回传实际 direct producer
+结果，不再把同次调用中的 triangle command 结果数整体记为 direct debt。任一真实
+direct producer 或 unsupported command 仍使整帧回放。
 
 GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
 producer 分成 pre-post raster input 或真正的 post-overlay，然后迁移 opaque viewmodel 与 hands/pill，

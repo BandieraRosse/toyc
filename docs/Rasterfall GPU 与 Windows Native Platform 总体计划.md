@@ -92,7 +92,9 @@ GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewm
 
 1. **B2a — producer debt 审计与 opaque effects：** frame audit 分别记录 effects/viewmodel
    command 与 direct pixels，并输出 transparent、direct producer、viewmodel 和 generic unsupported
-   的 reason mask。已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream。
+   的 reason mask。已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream；
+   effects facade 现在独立返回 direct producer 统计，triangle command 的逻辑结果数不再
+   被误计为 direct pixels。
 2. **B2b — effects producer 收敛：** world-space ray、ribbon、billboard、particle 按实际 depth/
    blend 语义转成明确 raster input；damage vignette 等 Post 之后效果显式归 overlay。完成标志为
    `effects_direct_pixels=0`。

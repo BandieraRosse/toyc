@@ -1612,6 +1612,7 @@ static int run_logic_test(void)
     {
         struct rasterfall_effect_event ray_event;
         struct rasterfall_effect_instance seed;
+        struct rasterfall_effect_render_stats effect_stats;
         memset(&ray_event, 0, sizeof(ray_event));
         ray_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
         ray_event.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
@@ -1635,7 +1636,9 @@ static int run_logic_test(void)
         seed.size = 1000;
         seed.alpha = 256;
         if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 64;
-        rasterfall_render_effects(&renderer, &camera);
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (!effect_stats.direct_pixels) return 248;
         rasterfall_effects_reset_fire(&effects);
     }
     /* Molotov flames are represented by the same runtime particle pool as
@@ -1999,7 +2002,7 @@ static int run_logic_test(void)
                             -1024, 0, 100);
         sync_fire_effects(&camera);
         rasterfall_effects_update(&effects, 16);
-        rasterfall_render_effects(&renderer, &camera);
+        rasterfall_render_effects(&renderer, &camera, NULL);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
         rasterfall_viewmodel_render(&renderer, &game, &effects, 256);
         rasterfall_effects_reset_fire(&effects);
