@@ -1,8 +1,8 @@
 # Rasterfall GPU 与 Windows Native Platform 阶段计划
 
-> 文档更新：2026-09-17
-> 源码核对基线：`4c1ac6a` + GPU-8B2 retained pre-post consumer 工作区
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；billboard、普通 particle 与屏幕线 ray 已提交带逆深度的 opaque raster commands，`effects_direct_pixels=0` 门禁已建立。transparent 和 viewmodel 仍整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
+> 文档更新：2026-09-18
+> 源码核对基线：GPU-8B2c Phase 5 工作区（2026-09-18）
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；billboard、普通 particle 与屏幕线 ray 已提交带逆深度的 opaque raster commands，`effects_direct_pixels=0` 门禁已建立；GPU-8B2c 已完成 Contract V1、weapon/hands/pill producer、VIEWMODEL GPU span 及 LOCAL_VIEW opaque muzzle core 分流，outer/lobe alpha/blend 仍属 GPU-8B2d debt。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -46,7 +46,8 @@ normal world frontend
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
 | RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；不改变排序或 fallback，透明 GPU blend 仍属 GPU-8B2 |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
-| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；effects opaque producer 已完成 command 化并建立 direct-pixel 零门禁，transparent 与 viewmodel 仍待迁移 |
+| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；effects opaque producer 已完成 command 化并建立 direct-pixel 零门禁，transparent 仍待 GPU-8B2d |
+| GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW opaque muzzle core 复用 VIEWMODEL Contract V1 projection/depth；remote/AI muzzle 保留 world EFFECTS；outer/lobe 以 generic transparent marker 保留 CPU fallback，透明语义留给 GPU-8B2d；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
@@ -102,6 +103,8 @@ GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewm
    本地 tracer 双段以及越过屏幕边界的 ray，并断言 direct debt 为零。该完成标志已达到。
 3. **B2c — viewmodel：** 依次迁移 opaque weapon geometry、hands/pill/attachments 和
    viewmodel-local effects；保留独立层、投影/depth policy 和既有 animation/frontend 所有权。
+   Contract V1、CPU oracle、GPU VIEWMODEL span 与 LOCAL_VIEW opaque muzzle core 已完成；remote/AI
+   muzzle 保持 world EFFECTS，alpha-bearing outer/lobe 明确进入 B2d debt。
 4. **B2d — transparent consumer：** Raster V1 显式表达 material/texture alpha、source-over、
    depth test 与 depth-write policy；透明 pass 保持 frontend 原始顺序，不在首版引入 OIT 或自动重排。
 5. **normal-frame 冻结：** 在 Windows Intel 实机完成 GPU-8B1/GPU-9A 的视觉、Console/

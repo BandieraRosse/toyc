@@ -1691,6 +1691,78 @@ static int run_logic_test(void)
             return 252;
         rasterfall_effects_init(&effects);
     }
+    /* LOCAL_VIEW muzzle split: the opaque core is a VM child, while the
+     * alpha-bearing outer/lobe stay in world EFFECTS and deliberately trip
+     * the existing Transparent V1 fallback.  A remote fire event keeps all
+     * three billboards in EFFECTS. */
+    {
+        struct rasterfall_effect_event local_fire, remote_fire;
+        struct rasterfall_effect_render_stats effect_stats;
+        struct rf_core audit_core;
+        int effect_begin, effect_count, vm_begin, vm_count;
+        int transparent_count = 0, i, vm_direct_pixels;
+        rasterfall_effects_init(&effects);
+        memset(&local_fire, 0, sizeof(local_fire));
+        local_fire.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+        local_fire.flags = RASTERFALL_EFFECT_EVENT_LOCAL_VIEW;
+        local_fire.sx = camera.x; local_fire.sy = -350;
+        local_fire.sz = camera.z + 2000;
+        local_fire.life_ms = RASTERFALL_MUZZLE_FLASH_LIFE_MS;
+        local_fire.weapon = TOY_GAME_WEAPON_PISTOL;
+        remote_fire = local_fire;
+        remote_fire.flags = 0;
+        rasterfall_effects_consume(&effects, &local_fire);
+        rasterfall_effects_consume(&effects, &remote_fire);
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        effect_begin = renderer.cmd_count;
+        if (rasterfall_render_effects(&renderer, &camera, &effect_stats) < 0)
+            return 254;
+        effect_count = renderer.cmd_count - effect_begin;
+        for (i = effect_begin; i < renderer.cmd_count; ++i)
+            if (renderer.cmds[i].transparent) transparent_count++;
+        if (effect_count != 10 || transparent_count != 8 ||
+            effect_stats.direct_pixels != 0)
+            return 255;
+        vm_begin = renderer.cmd_count;
+        vm_direct_pixels = rasterfall_viewmodel_render(
+            &renderer, &game, &effects, 256);
+        vm_count = renderer.cmd_count - vm_begin;
+        if (vm_direct_pixels != 0 || vm_count < 2)
+            return 256;
+        memset(&audit_core, 0, sizeof(audit_core));
+        audit_core.renderer = &renderer;
+        if (rf_core_render_frame_enter_layer_v1(
+                &audit_core, RF_RENDER_LAYER_WORLD) < 0)
+            return 257;
+        rf_core_render_frame_record_world_v1(
+                &audit_core, renderer.cmds + effect_begin, effect_count);
+        if (rf_core_render_frame_enter_layer_v1(
+                &audit_core, RF_RENDER_LAYER_TRANSPARENT) < 0 ||
+            rf_core_render_frame_enter_layer_v1(
+                &audit_core, RF_RENDER_LAYER_EFFECTS) < 0)
+            return 257;
+        rf_core_render_frame_record_v1(
+                &audit_core, RF_RENDER_LAYER_EFFECTS,
+                (unsigned long)(effect_count - transparent_count), 0);
+        if (rf_core_render_frame_enter_layer_v1(
+                &audit_core, RF_RENDER_LAYER_VIEWMODEL) < 0)
+            return 257;
+        rf_core_render_frame_record_v1(
+                &audit_core, RF_RENDER_LAYER_VIEWMODEL,
+                (unsigned long)vm_count, 0);
+        /* record_world_v1 classifies opaque versus unsupported transparent;
+         * no direct pixels are injected by either producer. */
+        if (audit_core.render_frame.command_count[RF_RENDER_LAYER_EFFECTS] != 2 ||
+            audit_core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 8 ||
+            audit_core.render_frame.command_count[RF_RENDER_LAYER_VIEWMODEL] < 2 ||
+            audit_core.render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
+            audit_core.render_frame.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0 ||
+            rf_core_render_frame_fallback_reason_v1(&audit_core.render_frame) !=
+                RF_PRE_POST_FALLBACK_TRANSPARENT)
+            return 258;
+        toy_renderer_flush(&renderer);
+        rasterfall_effects_init(&effects);
+    }
     /* Molotov flames are represented by the same runtime particle pool as
      * hit sparks; the gameplay burn zone remains the source of truth. */
     {

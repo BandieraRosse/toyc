@@ -7570,9 +7570,32 @@ static int submit_effect_screen_rect(struct toy_renderer *renderer,
     return (right - left) * (bottom - top);
 }
 
-static int render_fire_point(struct toy_renderer *renderer,
-                             const struct camera *camera,
-                             int x, int y, int z, int size, uint32_t color)
+/* Preserve the existing CPU color-ramp result while advertising the
+ * alpha-bearing muzzle child as unsupported to the B2c GPU consumer.  The
+ * generic command flag keeps this policy out of the effect business API; the
+ * command remains opaque on the reference raster path until Transparent V1
+ * defines its blend semantics. */
+static int submit_effect_screen_rect_transparent_debt(
+    struct toy_renderer *renderer, int left, int top, int right, int bottom,
+    long z, long inv_z, uint32_t color)
+{
+    int begin, i, pixels;
+    if (!renderer) return 0;
+    begin = renderer->cmd_count;
+    pixels = submit_effect_screen_rect(renderer, left, top, right, bottom,
+                                       z, inv_z, color);
+    for (i = begin; i < renderer->cmd_count; ++i)
+        renderer->cmds[i].transparent = 1;
+    return pixels;
+}
+
+/* A billboard primitive currently uses the same small camera-facing screen
+ * rectangle as the original procedural fire point.  Keeping this boundary
+ * separate lets textured or larger billboard quads replace it later. */
+static int render_effect_billboard(struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   int x, int y, int z, int size,
+                                   uint32_t color, int transparent_debt)
 {
     struct vec3 world, view;
     struct toy_screen_vertex screen;
@@ -7582,24 +7605,17 @@ static int render_fire_point(struct toy_renderer *renderer,
     if (view.z < NEAR_Z) return 0;
     project_vertex(&renderer->surface, &view, &screen);
     if (screen.x < -size || screen.x >= renderer->surface.width ||
-        screen.y < -size || screen.y >= renderer->surface.height) return 0;
+        screen.y < -size || screen.y >= renderer->surface.height)
+        return 0;
     left = screen.x - size / 2;
     top = screen.y - size;
     right = left + size;
     bottom = top + size * 2;
+    if (transparent_debt)
+        return submit_effect_screen_rect_transparent_debt(
+            renderer, left, top, right, bottom, screen.z, screen.inv_z, color);
     return submit_effect_screen_rect(renderer, left, top, right, bottom,
                                      screen.z, screen.inv_z, color);
-}
-
-/* A billboard primitive currently uses the same small camera-facing screen
- * rectangle as the original procedural fire point.  Keeping this boundary
- * separate lets textured or larger billboard quads replace it later. */
-static int render_effect_billboard(struct toy_renderer *renderer,
-                                   const struct camera *camera,
-                                   int x, int y, int z, int size,
-                                   uint32_t color)
-{
-    return render_fire_point(renderer, camera, x, y, z, size, color);
 }
 
 static int render_effect_billboards(struct toy_renderer *renderer,
@@ -7622,10 +7638,15 @@ static int render_effect_billboards(struct toy_renderer *renderer,
             size = f->size > 0 ? f->size :
                    (f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 16 : 12);
             if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE) {
+                /* LOCAL_VIEW core is emitted by the viewmodel frontend so it
+                 * shares VM projection/depth.  Remote cores remain world
+                 * effects. */
+                if ((f->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW) != 0)
+                    continue;
                 pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                                   f->z, size,
                                                   mix_color(0xFFFFFF, 0xFFF0A0,
-                                                            intensity, 256));
+                                                            intensity, 256), 0);
             } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE) {
                 forward = (f->lifetime_ms - remaining) / 2;
                 pixels += render_effect_billboard(renderer, camera,
@@ -7634,24 +7655,24 @@ static int render_effect_billboards(struct toy_renderer *renderer,
                                                   f->z + f->dir_z * forward / 1024,
                                                   size,
                                                   mix_color(0xFFD050, 0x7A1D08,
-                                                            intensity, 256));
+                                                            intensity, 256), 1);
             } else {
                 pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                                   f->z, size,
                                                   mix_color(0xFFF4A0, 0xB63A08,
-                                                            intensity, 256));
+                                                            intensity, 256), 1);
             }
         } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH) {
             size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
             pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                               f->z, size,
                                               mix_color(0xFFF4A0, 0xB63A08,
-                                                        intensity, 256));
+                                                        intensity, 256), 0);
         } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH) {
             pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                               f->z, 7,
                                               mix_color(0xFF6060, 0x641010,
-                                                        intensity, 256));
+                                                        intensity, 256), 0);
         }
     }
     return pixels;

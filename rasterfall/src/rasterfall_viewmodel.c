@@ -269,6 +269,64 @@ static int viewmodel_submit_screen_quad(struct toy_renderer *renderer,
     return 0;
 }
 
+/* The local muzzle core is an opaque viewmodel child.  Its existing fade is
+ * a color ramp (the old world billboard never blended its framebuffer
+ * writes), so keeping that ramp here does not introduce Transparent V1
+ * semantics.  The alpha-bearing outer/lobe children deliberately stay in
+ * the world EFFECTS producer until that contract is available. */
+static uint32_t viewmodel_mix_color(uint32_t from, uint32_t to,
+                                    int numerator, int denominator)
+{
+    int r, g, b;
+    if (denominator <= 0) return to & 0xffffffU;
+    if (numerator < 0) numerator = 0;
+    if (numerator > denominator) numerator = denominator;
+    r = ((int)((from >> 16) & 255) * (denominator - numerator) +
+         (int)((to >> 16) & 255) * numerator) / denominator;
+    g = ((int)((from >> 8) & 255) * (denominator - numerator) +
+         (int)((to >> 8) & 255) * numerator) / denominator;
+    b = ((int)(from & 255) * (denominator - numerator) +
+         (int)(to & 255) * numerator) / denominator;
+    return (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
+}
+
+static int render_local_muzzle_core(struct toy_renderer *renderer,
+                                    const struct rasterfall_effects *effects)
+{
+    int i;
+    if (!renderer || !effects) return 0;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; ++i) {
+        const struct rasterfall_effect_instance *f = &effects->instances[i];
+        struct rf_viewmodel_vertex_v1 view;
+        struct toy_screen_vertex screen;
+        int size;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
+            f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_CORE ||
+            !(f->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW))
+            continue;
+        rasterfall_viewmodel_muzzle_offset(f->weapon, effects->weapon_kick,
+                                           &view.x, &view.y, &view.z);
+        view.u = view.v = 0;
+        view.light = viewmodel_scene_light_q8;
+        view.fog = 0;
+        if (rf_viewmodel_project_vertex_v1(
+                &view, renderer->surface.width, renderer->surface.height,
+                &screen) < 0)
+            continue;
+        size = f->size > 0 ? f->size :
+               (f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 7 : 5);
+        if (screen.x < -size || screen.x >= renderer->surface.width + size ||
+            screen.y < -size || screen.y >= renderer->surface.height + size)
+            continue;
+        viewmodel_submit_screen_quad(
+            renderer, screen.x - size / 2, screen.y - size, size, size * 2,
+            viewmodel_mix_color(0xFFFFFF, 0xFFF0A0, f->alpha, 256),
+            screen.inv_z);
+        return 0;
+    }
+    return 0;
+}
+
 /* First-person arms are deliberately procedural for now.  Keeping the two
  * limbs as small rigid pieces gives us useful hand/weapon motion without
  * committing RFM2 to bones or skinning.  Coordinates are view-space: X is
@@ -713,5 +771,6 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                      player ? player->animation.time_ms : 0, bob_x, bob_y,
                                      switch_pitch);
     }
+    drawn += render_local_muzzle_core(renderer, effects);
     return drawn;
 }
