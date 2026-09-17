@@ -83,8 +83,26 @@ struct rf_gpu_renderer_capabilities {
     unsigned int framebuffer;
     unsigned int raster_v1;
     unsigned int native_presentation_v1;
+    unsigned int post_raster_v1;
     unsigned int raster_work_group_x;
     unsigned int raster_work_group_y;
+};
+
+enum rf_gpu_post_mode {
+    RF_GPU_POST_DISABLED = 0,
+    RF_GPU_POST_IDENTITY = 1,
+    RF_GPU_POST_DEPTH_FOG_V0 = 2
+};
+
+/* Depth values are Raster V1 signed Q20 inverse camera-space Z: 1048576/z.
+ * Fog thresholds therefore use this exact encoding and are ordered
+ * far_inv_z < near_inv_z.  Color is canonical 0xffRRGGBB. */
+struct rf_gpu_post_params_v1 {
+    unsigned int mode;
+    int fog_far_inv_z;
+    int fog_near_inv_z;
+    unsigned int fog_color;
+    unsigned int max_density_q8;
 };
 
 struct rf_gpu_native_window {
@@ -95,7 +113,7 @@ struct rf_gpu_native_window {
 
 struct rf_gpu_native_present_timing {
     double acquire_ms, gpu_raster_ms, buffer_to_swapchain_ms;
-    double overlay_upload_ms, overlay_composite_ms;
+    double post_raster_ms, overlay_upload_ms, overlay_composite_ms;
     double submit_ms, present_ms, total_ms;
     unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
     unsigned int overlay_upload_bytes;
@@ -192,6 +210,8 @@ struct rf_gpu_backend {
                          unsigned int color_stride,
                          unsigned int depth_stride,
                          char *message, unsigned long message_capacity);
+    int (*raster_set_post)(void *context, void *raster,
+                          const struct rf_gpu_post_params_v1 *params);
 };
 
 struct rf_gpu_framebuffer {
@@ -283,6 +303,8 @@ int rf_gpu_raster_render_textured_timed(
                          struct rf_gpu_raster_timing *timing);
 int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
                                             int enabled);
+int rf_gpu_raster_set_post(struct rf_gpu_raster *raster,
+                           const struct rf_gpu_post_params_v1 *params);
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
 int rf_gpu_raster_present_textured_timed(
                          struct rf_gpu *gpu, struct rf_gpu_raster *raster,

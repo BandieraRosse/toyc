@@ -1,6 +1,7 @@
 # GPU 目录概览
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-9A Post-Raster V1 在 Raster 与 overlay 之间增加可 bypass compute pass；独立 post color 避免 in-place hazard，identity/fog hosted differential 均为 0 mismatch，depth 契约为 signed Q20 inverse-Z。
 > 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Intel Iris Xe normal same-frame oracle 在 Outpost、Campaign near/0 与 near/30 均为 3/3 GPU frames、color/depth 0 mismatch；mid/30 因透明命令按契约整批 CPU fallback。normal mismatch 自动保存 stream、texture bundle、颜色/depth 与报告，并以完整 CPU oracle 结果恢复画面。
 > 源码核对基线补充：GPU-7D Texture V1 使用 buffer-backed descriptor/texel storage 和 shader 手工 nearest sampling；WSL/RTX hosted differential 为 0 mismatch。Windows RTX normal Outpost 修正 readback stride 字节/元素单位错配后 3/3 GPU frames；该阶段性未冻结状态已由上方 Intel normal oracle 门禁收束。
 > 源码核对基线补充：GPU-7A normal-world capture 由正常 Rasterfall binary 输出 selected Raster V1 stream；本目录 hosted differential 对 replay 默认执行 tile-binned CPU/GPU authority，大型 real-world replay 不执行 full-scan。

@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-9A 使用独立 device-local `post_color`，Post V1 只读 Raster V1 color 与 signed Q20 inverse-Z depth、只写 presentation color。默认 bypass；`--gpu-post-fog` 显式启用 Fog V0。overlay composite 随后写 presentation color，HUD/Console/Desktop 不进入 post。
 > 源码核对基线补充：GPU-8B1 保留 fb_draw/fb_font、HUD、Console、GUI 与 runtime panels 为唯一 screen-space truth。native path 使用 XRGB8888 + 8-bit coverage；普通写入为 255，空白为 0，Console 背景保留 190；compute 在 Raster V1 device-local color buffer 原位 source-over。独立 diagnostic API 允许测试模式读回 composite 结果，7×5 odd-size/non-tight-stride 的 Intel 与 Linux Vulkan differential 均为 0 mismatch；normal native path 不调用该 API。
 > 源码核对基线补充：GPU-8A 增加 Windows native-present world-only proof。正常 GPU software-present 与 CPU oracle 保留；native diagnostic 不 readback color/depth，也不声称包含 world barrier 后的 viewmodel、effects、HUD、scoreboard、console 或 GUI。
 > 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Intel normal same-frame CPU/GPU oracle 覆盖 Outpost 与 Campaign near/0、near/30，均逐 color/depth 0 mismatch；mid/30 的透明命令保持 whole-batch CPU fallback。normal mismatch 以 CPU oracle 完整恢复并保存可 replay artifact。
@@ -89,6 +90,32 @@ HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模�
 地面锚点属于 renderer；不会创建 enemy、碰撞体、AI 或网络状态。
 
 ## 渲染边界
+
+### GPU-9A Post-Raster Compute Pass V1
+
+normal native frame 的当前所有权和顺序为：
+
+```text
+Core 收集/pack Raster V1 stream
+  → backend 同一 primary command buffer dispatch Raster V1
+  → device-local raster color + depth
+  → compute-write → compute-read barrier
+  → 可选 Post V1（raster color/depth → 独立 post_color）
+  → compute-write → compute-read/write barrier
+  → CPU color+coverage overlay upload / GPU source-over composite
+  → compute-write → transfer-read barrier
+  → presentation color buffer → swapchain image
+  → 单次 queue submit/fence → present
+```
+
+Post disabled 时 presentation color 直接别名选择 raster color，不 dispatch、不复制；identity/fog
+enabled 时选择同尺寸、device-local、replacement-first 随 raster resize 重建的 `post_color`。Raster V1
+ABI 不变，且避免 Raster 与 Post 的原位读写 hazard。Raster→Post dependency 是
+`COMPUTE_SHADER / SHADER_WRITE` → `COMPUTE_SHADER / SHADER_READ`。depth 是真实的 signed 32-bit
+`inv_z = 1048576 / camera_z`，不是线性米制距离；Fog V0 在 far/near inverse-depth 阈值间做单调反向
+插值，输出始终 canonical `0xffRRGGBB`。shader/pipeline 不可用时 post setter 失败并保持 bypass，不把
+GPU service 或 Raster V1 标为失败。显式 diagnostic readback 可比较结果，normal native path仍为
+color readback 0、CPU framebuffer copy 0。
 
 GPU-7A 的捕获边界是 `toy_renderer_flush()` 消费和透明排序命令前的只读 observer。诊断不建立
 第二套 traversal/camera/culling/lighting；它使用固定 Campaign near/mid camera 与 0/30 enemies，按

@@ -1183,7 +1183,7 @@ wayland_fps: $(BUILD)/wayland_fps
 # has a stable ABI and fallback policy.
 .PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test gpu-overlay-test \
 	gpu-raster-test gpu-raster-diff-test win-gpu-probe win-gpu-framebuffer-test \
-	gpu-raster-binning-test win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test
+	gpu-raster-binning-test win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test win-gpu-overlay-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
@@ -1192,6 +1192,7 @@ gpu-raster-test: $(BUILD)/rf-gpu-raster-test
 gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test
 gpu-raster-binning-test: $(BUILD)/rf-gpu-raster-binning-test
 gpu-overlay-test: $(BUILD)/rf-gpu-overlay-test
+win-gpu-overlay-test: $(BUILD)/rf-gpu-overlay-test.exe
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
 win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
@@ -1210,6 +1211,7 @@ GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
 	gpu/src/rf_gpu_raster_v1_full_spirv.inc gpu/shaders/raster_v1.comp \
 	gpu/shaders/raster_v1_full_scan.comp gpu/src/rf_gpu_overlay_spirv.inc \
 	gpu/shaders/overlay_composite.comp rasterfall/include/rf_gpu.h \
+	gpu/src/rf_gpu_post_spirv.inc gpu/shaders/post_raster_v1.comp \
 	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
 
 GPU_RASTER_TEST_DEPS += rasterfall/include/rf_gpu_raster_bin.h

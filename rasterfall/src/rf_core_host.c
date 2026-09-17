@@ -464,6 +464,19 @@ int rf_core_init_config(struct rf_core *core,
             core->gpu_frame.renderer = RF_CORE_RENDERER_CPU;
         } else {
             core->gpu_frame.initialized = 1;
+            if (config->gpu_post_fog && core->gpu_frame.native_present) {
+                struct rf_gpu_post_params_v1 post;
+                memset(&post,0,sizeof(post));
+                post.mode=RF_GPU_POST_DEPTH_FOG_V0;
+                /* Raster depth is Q20 inverse Z.  512--4096 RFU provides a
+                 * monotonic diagnostic fog without claiming metre units. */
+                post.fog_near_inv_z=1048576/512;
+                post.fog_far_inv_z=1048576/4096;
+                post.fog_color=0xff7890a0U;
+                post.max_density_q8=192;
+                if (rf_gpu_raster_set_post(&core->gpu_frame.raster,&post)<0)
+                    __printf("GPU Post-Raster V1 unavailable; bypassing post pass\n");
+            }
             toy_renderer_set_command_consumer(core->renderer,
                                                gpu_world_consume, core);
         }

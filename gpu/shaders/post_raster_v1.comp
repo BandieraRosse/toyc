@@ -1,0 +1,40 @@
+#version 450
+
+#ifndef RF_RASTER_LOCAL_SIZE
+#define RF_RASTER_LOCAL_SIZE 16
+#endif
+
+layout(local_size_x=RF_RASTER_LOCAL_SIZE,local_size_y=RF_RASTER_LOCAL_SIZE,local_size_z=1) in;
+layout(set=0,binding=0,std430) readonly buffer Header { uint words[]; } header;
+layout(set=0,binding=1,std430) readonly buffer RasterColor { uint pixels[]; } input_color;
+layout(set=0,binding=2,std430) readonly buffer RasterDepth { int values[]; } input_depth;
+layout(set=0,binding=9,std430) writeonly buffer PostColor { uint pixels[]; } output_color;
+layout(set=0,binding=10,std430) readonly buffer PostParams {
+    uint mode;
+    int fog_far_inv_z;
+    int fog_near_inv_z;
+    uint fog_color;
+    uint max_density_q8;
+} post;
+
+void main()
+{
+    uint x=gl_GlobalInvocationID.x,y=gl_GlobalInvocationID.y;
+    uint width=header.words[5],height=header.words[6];
+    if(x>=width||y>=height)return;
+    uint p=y*width+x,scene=input_color.pixels[p]|0xff000000u;
+    if(post.mode!=2u){output_color.pixels[p]=scene;return;}
+    int d=input_depth.values[p];
+    uint factor=0u;
+    if(d<=post.fog_far_inv_z)factor=post.max_density_q8;
+    else if(d<post.fog_near_inv_z){
+        uint span=uint(post.fog_near_inv_z-post.fog_far_inv_z);
+        factor=uint(post.fog_near_inv_z-d)*post.max_density_q8/span;
+    }
+    factor=min(factor,256u);
+    uint inv=256u-factor,fog=post.fog_color;
+    uint r=(((scene>>16u)&255u)*inv+((fog>>16u)&255u)*factor)>>8u;
+    uint g=(((scene>>8u)&255u)*inv+((fog>>8u)&255u)*factor)>>8u;
+    uint b=((scene&255u)*inv+(fog&255u)*factor)>>8u;
+    output_color.pixels[p]=0xff000000u|(r<<16u)|(g<<8u)|b;
+}

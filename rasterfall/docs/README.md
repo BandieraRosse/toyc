@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-9A Post-Raster Compute Pass V1 已建立独立 raster color/depth → second device-local post color contract；identity 与 inverse-depth Fog V0 经显式 oracle 验证，overlay 仍在 post 之后，normal native-present 不读回。
 > 源码核对基线补充：GPU-8B1 已接入 Core-owned XRGB8888 color + 8-bit coverage overlay；现有 HUD/Console/GUI CPU truth 经 Vulkan compute 合成到 device-local world color。Console alpha=190 保留；post-world renderer layers 仍归 GPU-8B2。
 > 源码核对基线补充：GPU-8A Windows native presentation world-only diagnostic 已完成并冻结；共享/Linux 与 MinGW 门禁通过，Intel Iris Xe native 10/10、resize 300/300、零 fallback/readback/copy。入口、timing 与 frame layering 见 runtime.md、rendering.md、build-platforms.md。
 > 源码核对基线补充：GPU-7C/7D 已完成并冻结；Intel Iris Xe normal Outpost、Campaign near/0、near/30 的同帧 CPU oracle 均 3/3 GPU frames 且 color/depth 0 mismatch，mid/30 的 transparent command 继续按契约 whole-batch CPU fallback。下一阶段选择 GPU-8 native presentation。

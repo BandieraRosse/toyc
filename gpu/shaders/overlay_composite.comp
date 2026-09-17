@@ -7,7 +7,7 @@
 layout(local_size_x = RF_RASTER_LOCAL_SIZE,
        local_size_y = RF_RASTER_LOCAL_SIZE, local_size_z = 1) in;
 layout(set=0,binding=0,std430) readonly buffer Header { uint words[]; } header;
-layout(set=0,binding=1,std430) buffer WorldColor { uint pixels[]; } world;
+layout(set=0,binding=9,std430) buffer WorldColor { uint pixels[]; } world;
 layout(set=0,binding=7,std430) readonly buffer OverlayColor { uint pixels[]; } overlay;
 layout(set=0,binding=8,std430) readonly buffer OverlayCoverage { uint words[]; } coverage;
 

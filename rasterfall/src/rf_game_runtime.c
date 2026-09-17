@@ -3046,6 +3046,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
         core_config.native_present = options.gpu_native_present;
+        core_config.gpu_post_fog = options.gpu_post_fog;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
         if (options.renderer_mode) {
@@ -4112,9 +4113,10 @@ startup_again:
             rf_windows_log(gpu_log);
             if (core.gpu_frame.native_present) {
                 snprintf(gpu_log, sizeof(gpu_log),
-                    "gpu-native overlay-composite=ready acquire=%.3fms raster-wait=%.3fms overlay-draw=%.3fms overlay-upload=%.3fms overlay-composite=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms overlay-bytes=%u readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
+                    "gpu-native overlay-composite=ready acquire=%.3fms raster-wait=%.3fms post=%.3fms overlay-draw=%.3fms overlay-upload=%.3fms overlay-composite=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms overlay-bytes=%u readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
                     gpu_stats.native_present_timing.acquire_ms,
                     gpu_stats.native_present_timing.gpu_raster_ms,
+                    gpu_stats.native_present_timing.post_raster_ms,
                     gpu_stats.overlay_cpu_draw_ms,
                     gpu_stats.native_present_timing.overlay_upload_ms,
                     gpu_stats.native_present_timing.overlay_composite_ms,

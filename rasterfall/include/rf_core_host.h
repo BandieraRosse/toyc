@@ -115,6 +115,7 @@ struct rf_core_config {
     const struct rf_gpu_backend *gpu_backend;
     void *gpu_backend_context;
     int native_present;
+    int gpu_post_fog;
 };
 
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,

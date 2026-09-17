@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：`--gpu-post-fog` 仅可与 `--renderer gpu-compute --gpu-native-present` 共用，显式启用 GPU-9A inverse-depth Fog V0；默认视觉与 CPU/software-present 路径不变。
 > 源码核对基线补充：GPU-8B1 将 native present 延后到 Core end-frame：world batch 在 barrier 冻结，直接 screen-space producer 改画独立 overlay，帧尾 full upload、compute composite、copy/present。CPU renderer 与 GPU-8B2 renderer command 边界不变。
 > 源码核对基线补充：GPU-8A Windows native-present world-only diagnostic 已接入 `--renderer gpu-compute --gpu-native-present`；它在 world barrier 直接执行 buffer→swapchain present，明确跳过最终 software present，HUD/GUI 等 CPU-only 层不进入可见帧。Intel Iris Xe 10/10 与 resize 300/300 实机帧均零 fallback、零 color readback/CPU copy。
 > 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Windows Intel normal same-frame oracle 在 Outpost、Campaign near/0、near/30 均 3/3 GPU frames 且逐 color/depth 0 mismatch；`--gpu-normal-scene <near|mid> <0|30>` 固定 seed、Campaign、camera/enemy fixture，但仍执行正常 window/Core/present 主循环。mid/30 的透明命令按契约整批 CPU fallback。

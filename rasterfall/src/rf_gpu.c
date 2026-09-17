@@ -103,6 +103,7 @@ void rf_gpu_evaluate_capabilities(const struct rf_gpu_capabilities *caps,
         caps->max_storage_buffer_range && x && y;
     renderer->native_presentation_v1 = renderer->raster_v1 &&
         caps->native_presentation_v1;
+    renderer->post_raster_v1 = renderer->raster_v1;
 }
 
 int rf_gpu_set_native_window(const struct rf_gpu_backend *backend,
@@ -302,6 +303,15 @@ int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
                                                        raster->implementation,
                                                        enabled);
     return 0;
+}
+
+int rf_gpu_raster_set_post(struct rf_gpu_raster *raster,
+                           const struct rf_gpu_post_params_v1 *params)
+{
+    if (!raster || !raster->implementation || !params || !raster->backend ||
+        !raster->backend->raster_set_post) return -1;
+    return raster->backend->raster_set_post(raster->backend_context,
+                                             raster->implementation, params);
 }
 
 void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster)
