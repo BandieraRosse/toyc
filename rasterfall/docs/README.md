@@ -1,7 +1,8 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-16
-> 源码核对基线补充：GPU-7D Texture V1 已进入 Core-owned normal frame 路径；Windows RTX Outpost 修正 readback stride 单位错配后 3/3 GPU frames。GPU-7C/7D 仍未冻结，默认 renderer 仍为 CPU。
+> 文档更新：2026-09-17
+> 源码核对基线补充：GPU-7C/7D 已完成并冻结；Intel Iris Xe normal Outpost、Campaign near/0、near/30 的同帧 CPU oracle 均 3/3 GPU frames 且 color/depth 0 mismatch，mid/30 的 transparent command 继续按契约 whole-batch CPU fallback。下一阶段选择 GPU-8 native presentation。
+> 源码核对基线补充：GPU-7D Texture V1 已进入 Core-owned normal frame 路径；Windows RTX Outpost 修正 readback stride 单位错配后 3/3 GPU frames。默认 renderer 仍为 CPU，冻结状态以上方最新基线为准。
 > 源码核对基线补充：GPU-7A 与 GPU-7B 已完成并冻结；vertex-lit planar V1 command-kind extension 在 WSL/RTX fixtures、stress、combined-world 均 0 mismatch，coverage 99.85--99.91%。正常 renderer 仍为 CPU。
 > 源码核对基线补充：GPU-7A 已接入正常 world frontend 的 flush 前只读 command observer；固定 near/mid、0/30 enemy 诊断经 GPU-4 packer 导出 selected Raster V1 stream，再由 GPU-6/6.5 hosted differential 执行。正常游戏仍为 CPU renderer。
 > 源码核对基线补充：GPU-6.5 CPU tile command binning 已完成并冻结；WSL llvmpipe / Windows Intel Iris Xe 的 CPU/full-scan/binned differential 均为 0 mismatch，正常 world 仍为 CPU，GPU-7 尚未开始。

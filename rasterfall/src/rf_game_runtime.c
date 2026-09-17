@@ -2593,6 +2593,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
 
     if (perf_window) perf_start = rf_core_clock_now_us();
     int local_scene_light = rasterfall_render_begin_dynamic_lighting();
+    rf_core_gpu_world_begin(runtime->core);
 
     /* World and actor submission order is intentionally unchanged. */
     pixels += rasterfall_render_scene(renderer, render_camera);
@@ -3168,13 +3169,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     settings.keyboard_level = 5;
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
-    if (options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir) seed = 1;
+    if (options.render_performance || options.gpu_world_raster_view ||
+        options.gpu_normal_view || options.environment_capture_dir ||
+        options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
-    if ((options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir) &&
+    if ((options.render_performance || options.gpu_world_raster_view ||
+         options.gpu_normal_view || options.environment_capture_dir ||
+         options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -3198,6 +3203,29 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_game_shutdown(&game_runtime);
         rf_core_shutdown(&core);
         return capture_result;
+    }
+    if (options.gpu_normal_view) {
+        int enemy;
+        memset(game.enemies, 0, sizeof(game.enemies));
+        memset(&camera, 0, sizeof(camera));
+        camera.z = !strcmp(options.gpu_normal_view, "mid") ? -8400 : -3400;
+        camera.y = -350;
+        camera.cy = camera.pitch_cy = 1024;
+        for (enemy = 0; enemy < options.gpu_normal_enemies; ++enemy) {
+            struct toy_game_enemy *fixture = &game.enemies[enemy];
+            fixture->active = 1;
+            fixture->hp = 100;
+            fixture->type = enemy % 10 == 8 ? TOY_GAME_ENEMY_PURSUIT_FAST :
+                enemy % 10 == 9 ? TOY_GAME_ENEMY_PURSUIT_HEAVY :
+                                   TOY_GAME_ENEMY_PURSUIT_COMMON;
+            fixture->x = (enemy % 10 - 5) * 600 + 300;
+            fixture->z = -1800 + (enemy / 10) * 800;
+            fixture->ground_y = 0;
+            fixture->dir_z = -1024;
+        }
+        game.state = TOY_GAME_PLAYING;
+        __printf("GPU-NORMAL scene=%s enemies=%d seed=1\n",
+                 options.gpu_normal_view, options.gpu_normal_enemies);
     }
     rf_windows_log("startup: window opened");
 startup_again:

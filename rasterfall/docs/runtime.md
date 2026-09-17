@@ -1,7 +1,8 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-16
-> 源码核对基线补充：GPU-7D Texture V1 已接入显式 `--renderer gpu-compute` normal world batch。Windows RTX Outpost 修正 GPU readback stride 字节/元素单位错配后 3/3 frames；默认仍为 CPU，7C/7D 未冻结。
+> 文档更新：2026-09-17
+> 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Windows Intel normal same-frame oracle 在 Outpost、Campaign near/0、near/30 均 3/3 GPU frames 且逐 color/depth 0 mismatch；`--gpu-normal-scene <near|mid> <0|30>` 固定 seed、Campaign、camera/enemy fixture，但仍执行正常 window/Core/present 主循环。mid/30 的透明命令按契约整批 CPU fallback。
+> 源码核对基线补充：GPU-7D Texture V1 已接入显式 `--renderer gpu-compute` normal world batch。Windows RTX Outpost 修正 GPU readback stride 字节/元素单位错配后 3/3 frames；默认仍为 CPU，冻结状态以上方最新基线为准。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。
@@ -114,6 +115,15 @@ CPU；再加 `--gpu-required` 对应 `GPU_REQUIRED`，不可用则启动失败�
 Raster V1 stream、backend tile lists、GPU color/depth、readback 和 timing；Game/session 不持有 Vulkan
 handle。world flush 只有完整 batch 全部支持时才在 GPU 同时生成 color 与 signed inverse-depth；否则
 整批 CPU fallback，不存在 GPU 支持部分后由 CPU 补画 unsupported world command 的路径。
+
+Windows normal GPU batch 同时用同一 packed stream 与 Texture V1 table 执行正式软件 raster oracle。
+oracle 在 GPU dispatch 前生成；若逐 RGB/depth 比较失败，Core 自动保存
+`gpu-oracle-mismatch/commands.bin`、`.textures`、CPU/GPU/diff BMP、双方 depth 与报告，再逐行复制
+完整 CPU oracle color/depth 回正式 surface 并消费该批。stream 可直接交给 hosted differential replay。
+`--gpu-normal-scene <near|mid> <0|30>` 只固定 seed、Campaign、camera/enemy fixture，仍执行正常
+window/Core/world/present 主循环。shutdown timing 覆盖 frontend、classification、texture measure、
+ABI pack + texture table、binning/upload/submit/execution-wait/readback、CPU oracle、present 与 frame total；
+presentation copy 在 V1 中标为与 readback 合并。
 
 `struct rf_core` 是当前唯一的 Core context 和所有 Core service owner；`rf_core_context` 仅是兼容命名别名，
 不创建第二份 service container。`rf_game_runtime` 只保存一个非 owning 的 Core 指针，并通过 Core 提供的服务

@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-16
+> 文档更新：2026-09-17
+> 源码核对基线补充：GPU-7C/7D 已完成并冻结。Windows package 在 Intel Iris Xe 上完成 optional/required Outpost 及 required Campaign normal oracle；Outpost、near/0、near/30 均 3/3 GPU frames、零 fallback、color/depth 0 mismatch，mid/30 因透明命令按契约整批 CPU fallback。readback 58.529--64.471 ms，明显高于 9.027--27.813 ms execution-wait，下一阶段选择 GPU-8。
 > 源码核对基线补充：GPU-7C 的 Windows normal binary 已链接共用 Vulkan backend、Raster V1 packer/binner；显式 `--renderer gpu-compute` 使用 Core-owned whole-world-batch GPU execution/readback，默认 CPU 不变。freestanding Linux normal binary 保留 optional-unavailable CPU fallback，WSL correctness 继续由 hosted differential 验证。
 > 源码核对基线补充：RTX 3050 normal required short run 已确认 Texture V1 Outpost 3/3 GPU frames；首帧 access violation 根因为 readback stride 字节/元素单位错配，修正后 attempted=3、rendered=3、fallback=0。
 > 源码核对基线补充：GPU-7A 增加正常 world selected-stream capture；Linux/Windows 游戏编译 GPU-4 packer，但 Vulkan backend 仍只在 hosted test 中。real-world replay 默认 tile-binned，跳过大 stream 的 full-scan。
@@ -44,6 +45,8 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 `windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；
 不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
 Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库、BDF 源文件和许可。
+normal GPU 实机必须从 package 目录启动，确保 exe-relative 的 `rasterfall/assets` 可见；直接运行
+`build/rasterfall.exe` 会按其所在目录寻找 `build/rasterfall/assets`，不代表 GPU 初始化失败。
 
 ## GPU 探针
 

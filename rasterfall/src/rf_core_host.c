@@ -2,6 +2,9 @@
 #include "tlibc_everything.h"
 #include "rf_core_host.h"
 #include "rf_gpu_raster_pack.h"
+#ifdef TOYC_WINDOWS
+#include "rf_gpu_raster_cpu_ref.h"
+#endif
 
 const char *rf_core_renderer_name(int renderer)
 {
@@ -17,6 +20,108 @@ static void gpu_world_log(const char *message)
 #endif
 }
 
+#ifdef TOYC_WINDOWS
+static int gpu_oracle_write_file(const char *path, const void *data, size_t size)
+{
+    FILE *file = fopen(path, "wb");
+    int ok;
+    if (!file) return -1;
+    ok = fwrite(data, 1, size, file) == size;
+    if (fclose(file) != 0) ok = 0;
+    return ok ? 0 : -1;
+}
+
+static int gpu_oracle_write_bmp(const char *path, const unsigned int *pixels,
+                                unsigned int width, unsigned int height)
+{
+    unsigned char header[54] = { 'B', 'M' };
+    uint32_t file_size = 54U + width * height * 4U;
+    uint32_t offset = 54, dib = 40, planes_bpp = 0x00200001U;
+    int32_t signed_width = (int32_t)width;
+    int32_t signed_height = -(int32_t)height;
+    FILE *file;
+    memcpy(header + 2, &file_size, 4);
+    memcpy(header + 10, &offset, 4);
+    memcpy(header + 14, &dib, 4);
+    memcpy(header + 18, &signed_width, 4);
+    memcpy(header + 22, &signed_height, 4);
+    memcpy(header + 26, &planes_bpp, 4);
+    file = fopen(path, "wb");
+    if (!file) return -1;
+    if (fwrite(header, 1, sizeof(header), file) != sizeof(header) ||
+        fwrite(pixels, 4, (size_t)width * height, file) !=
+            (size_t)width * height) {
+        fclose(file);
+        return -1;
+    }
+    return fclose(file);
+}
+
+static void gpu_oracle_save_artifacts(
+    const unsigned char *stream, size_t stream_size,
+    const struct rf_gpu_texture_resources_v1 *textures,
+    const unsigned int *cpu_color, const int *cpu_depth,
+    const unsigned int *gpu_color, const int *gpu_depth,
+    unsigned int width, unsigned int height, unsigned int gpu_color_stride,
+    const char *report)
+{
+    const char *dir = "gpu-oracle-mismatch";
+    unsigned long pixels = (unsigned long)width * height;
+    unsigned int *packed_gpu = NULL, *diff = NULL;
+    int *packed_depth = NULL;
+    uint32_t texture_header[4];
+    char path[256];
+    FILE *file;
+    unsigned int x, y;
+    if (tlibc_recursive_mkdir(dir) < 0) return;
+    packed_gpu = tlibc_malloc(pixels * sizeof(*packed_gpu));
+    packed_depth = tlibc_malloc(pixels * sizeof(*packed_depth));
+    diff = tlibc_malloc(pixels * sizeof(*diff));
+    if (!packed_gpu || !packed_depth || !diff) goto done;
+    for (y = 0; y < height; ++y)
+    for (x = 0; x < width; ++x) {
+        unsigned long packed = (unsigned long)y * width + x;
+        unsigned long color_at = (unsigned long)y * gpu_color_stride + x;
+        packed_gpu[packed] = gpu_color[color_at];
+        packed_depth[packed] = gpu_depth[packed];
+        diff[packed] = ((cpu_color[packed] ^ packed_gpu[packed]) & 0xffffffU) ||
+                       cpu_depth[packed] != packed_depth[packed] ?
+                       0xffff00ffU : 0xff000000U;
+    }
+    snprintf(path, sizeof(path), "%s/commands.bin", dir);
+    gpu_oracle_write_file(path, stream, stream_size);
+    snprintf(path, sizeof(path), "%s/commands.bin.textures", dir);
+    file = fopen(path, "wb");
+    if (file) {
+        texture_header[0] = 0x31544652U;
+        texture_header[1] = textures->desc_count;
+        texture_header[2] = sizeof(struct rf_gpu_texture_desc_v1);
+        texture_header[3] = (uint32_t)textures->texel_size;
+        fwrite(texture_header, 1, sizeof(texture_header), file);
+        fwrite(textures->descs, sizeof(*textures->descs), textures->desc_count,
+               file);
+        fwrite(textures->texels, 1, textures->texel_size, file);
+        fclose(file);
+    }
+    snprintf(path, sizeof(path), "%s/cpu-color.bmp", dir);
+    gpu_oracle_write_bmp(path, cpu_color, width, height);
+    snprintf(path, sizeof(path), "%s/gpu-color.bmp", dir);
+    gpu_oracle_write_bmp(path, packed_gpu, width, height);
+    snprintf(path, sizeof(path), "%s/diff-color.bmp", dir);
+    gpu_oracle_write_bmp(path, diff, width, height);
+    snprintf(path, sizeof(path), "%s/cpu-depth.bin", dir);
+    gpu_oracle_write_file(path, cpu_depth, pixels * sizeof(*cpu_depth));
+    snprintf(path, sizeof(path), "%s/gpu-depth.bin", dir);
+    gpu_oracle_write_file(path, packed_depth, pixels * sizeof(*packed_depth));
+    snprintf(path, sizeof(path), "%s/report.txt", dir);
+    gpu_oracle_write_file(path, report, strlen(report));
+done:
+    tlibc_free(packed_gpu);
+    tlibc_free(packed_depth);
+    tlibc_free(diff);
+}
+#endif
+
 static int gpu_world_consume(struct toy_renderer *renderer,
                              const struct toy_raster_cmd *commands, int count,
                              void *opaque)
@@ -30,10 +135,15 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     unsigned long texture = 0, transparent = 0, overlay = 0, edge = 0, other = 0;
     unsigned int color_stride;
     char diagnostic[192];
+    int64_t stage_start, consumer_start = rf_core_clock_now_us();
     int i;
     if (!frame->armed) return -1;
     frame->armed = 0;
     frame->stats.frames_attempted++;
+    if (frame->frontend_begin_us)
+        frame->stats.frontend_ms =
+            (double)(consumer_start - frame->frontend_begin_us) / 1000.0;
+    stage_start = consumer_start;
     gpu_world_log("gpu-world: classification begin");
     for (i = 0; i < count; i++) {
         const struct toy_raster_cmd *cmd = &commands[i];
@@ -51,6 +161,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
              "gpu-world: classification end commands=%d texture=%lu transparent=%lu overlay=%lu edge=%lu other=%lu",
              count, texture, transparent, overlay, edge, other);
     gpu_world_log(diagnostic);
+    frame->stats.classification_ms =
+        (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (transparent || overlay || edge || other) {
         frame->stats.cpu_fallback_frames++;
         return -1;
@@ -68,6 +180,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     packed.cmds = (struct toy_raster_cmd *)commands;
     packed.cmd_count = count;
     gpu_world_log("gpu-world: texture measure begin");
+    stage_start = rf_core_clock_now_us();
     if (rf_gpu_raster_measure_textures_toy_v1(&packed, &unique_textures,
             &texture_bytes) != RF_GPU_RASTER_PACK_OK) {
         frame->stats.unsupported_texture += texture;
@@ -78,6 +191,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
              "gpu-world: texture measure end unique=%u bytes=%llu",
              unique_textures, (unsigned long long)texture_bytes);
     gpu_world_log(diagnostic);
+    frame->stats.texture_measure_ms =
+        (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (unique_textures > frame->texture_desc_capacity) {
         struct rf_gpu_texture_desc_v1 *grown = tlibc_malloc(
             (size_t)unique_textures * sizeof(*grown));
@@ -99,6 +214,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         resources.texels = frame->texture_texels;
         resources.texel_capacity = frame->texture_texel_capacity;
         gpu_world_log("gpu-world: pack begin");
+        stage_start = rf_core_clock_now_us();
         if (rf_gpu_raster_pack_toy_textured_v1(&packed,
                 renderer->job_clear_color, 0, frame->stream,
                 frame->stream_capacity, &written, &resources) !=
@@ -112,6 +228,13 @@ static int gpu_world_consume(struct toy_renderer *renderer,
                  (unsigned long long)written, resources.desc_count,
                  (unsigned long long)resources.texel_size);
         gpu_world_log(diagnostic);
+        frame->stats.raster_abi_pack_ms =
+            (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
+        /* Texture table construction is performed by the packer while it
+         * assigns handles and copies texels, so V1 reports it combined with
+         * Raster ABI pack rather than inventing a separate precision. */
+        frame->stats.texture_table_build_ms =
+            frame->stats.raster_abi_pack_ms;
         if (renderer->surface.stride < 0 ||
             renderer->surface.stride % (int)sizeof(*renderer->surface.pixels)) {
             gpu_world_log("gpu-world: invalid surface byte stride");
@@ -128,6 +251,39 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             frame->stats.cpu_fallback_frames++;
             return -1;
         }
+#ifdef TOYC_WINDOWS
+        {
+            unsigned long pixels = (unsigned long)renderer->surface.width *
+                                   (unsigned long)renderer->surface.height;
+            struct rf_gpu_cpu_reference_timing cpu_timing;
+            if (pixels > frame->oracle_pixel_capacity) {
+                unsigned int *new_color = tlibc_malloc(
+                    pixels * sizeof(*new_color));
+                int *new_depth = tlibc_malloc(pixels * sizeof(*new_depth));
+                if (!new_color || !new_depth) {
+                    tlibc_free(new_color);
+                    tlibc_free(new_depth);
+                    frame->stats.cpu_fallback_frames++;
+                    return -1;
+                }
+                tlibc_free(frame->oracle_color);
+                tlibc_free(frame->oracle_depth);
+                frame->oracle_color = new_color;
+                frame->oracle_depth = new_depth;
+                frame->oracle_pixel_capacity = pixels;
+            }
+            if (rf_gpu_raster_cpu_reference_textured_v1(frame->stream, written,
+                    resources.descs, resources.desc_count, resources.texels,
+                    resources.texel_size, frame->oracle_color,
+                    frame->oracle_depth, renderer->surface.width,
+                    renderer->surface.width, &cpu_timing) < 0) {
+                frame->stats.cpu_fallback_frames++;
+                return -1;
+            }
+            frame->stats.cpu_oracle_ms = cpu_timing.raster_ms;
+            frame->stats.oracle_frames++;
+        }
+#endif
         gpu_world_log("gpu-world: raster call begin");
         if (rf_gpu_raster_render_textured_timed(&core->gpu, &frame->raster,
             frame->stream, written, resources.descs, resources.desc_count,
@@ -141,6 +297,77 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             return -1;
         }
         gpu_world_log("gpu-world: raster call end");
+#ifdef TOYC_WINDOWS
+        {
+            unsigned long color_mismatches = 0, depth_mismatches = 0;
+            unsigned int x, y;
+            unsigned int max_color_delta = 0;
+            unsigned long long max_depth_delta = 0;
+            for (y = 0; y < (unsigned int)renderer->surface.height; ++y)
+            for (x = 0; x < (unsigned int)renderer->surface.width; ++x) {
+                unsigned long p = (unsigned long)y *
+                                  (unsigned long)renderer->surface.width + x;
+                unsigned long gpu_color_at = (unsigned long)y * color_stride + x;
+                unsigned int cpu = frame->oracle_color[p];
+                unsigned int gpu = renderer->surface.pixels[gpu_color_at];
+                int dr = (int)((cpu >> 16) & 255) -
+                         (int)((gpu >> 16) & 255);
+                int dg = (int)((cpu >> 8) & 255) -
+                         (int)((gpu >> 8) & 255);
+                int db = (int)(cpu & 255) - (int)(gpu & 255);
+                unsigned int delta;
+                long long dd;
+                if (dr < 0) dr = -dr;
+                if (dg < 0) dg = -dg;
+                if (db < 0) db = -db;
+                delta = (unsigned int)(dr > dg ? (dr > db ? dr : db) :
+                                                       (dg > db ? dg : db));
+                if (delta) color_mismatches++;
+                if (delta > max_color_delta) max_color_delta = delta;
+                dd = (long long)frame->oracle_depth[p] - renderer->depth[p];
+                if (dd < 0) dd = -dd;
+                if (dd) depth_mismatches++;
+                if ((unsigned long long)dd > max_depth_delta)
+                    max_depth_delta = (unsigned long long)dd;
+            }
+            frame->stats.oracle_color_mismatches += color_mismatches;
+            frame->stats.oracle_depth_mismatches += depth_mismatches;
+            if (max_color_delta > frame->stats.oracle_max_color_delta)
+                frame->stats.oracle_max_color_delta = max_color_delta;
+            if (max_depth_delta > frame->stats.oracle_max_depth_delta)
+                frame->stats.oracle_max_depth_delta = max_depth_delta;
+            if (color_mismatches || depth_mismatches) {
+                frame->stats.oracle_failures++;
+                snprintf(diagnostic, sizeof(diagnostic),
+                    "gpu-world: oracle FAIL color=%lu depth=%lu max-color=%u max-depth=%llu",
+                    color_mismatches, depth_mismatches, max_color_delta,
+                    max_depth_delta);
+                gpu_world_log(diagnostic);
+                gpu_oracle_save_artifacts(frame->stream, written, &resources,
+                    frame->oracle_color, frame->oracle_depth,
+                    renderer->surface.pixels, renderer->depth,
+                    (unsigned int)renderer->surface.width,
+                    (unsigned int)renderer->surface.height, color_stride,
+                    diagnostic);
+                for (y = 0; y < (unsigned int)renderer->surface.height; ++y) {
+                    unsigned int *destination = renderer->surface.pixels +
+                        (unsigned long)y * color_stride;
+                    const unsigned int *source = frame->oracle_color +
+                        (unsigned long)y * renderer->surface.width;
+                    memcpy(destination, source,
+                           (size_t)renderer->surface.width * sizeof(*source));
+                    memcpy(renderer->depth +
+                               (unsigned long)y * renderer->surface.width,
+                           frame->oracle_depth +
+                               (unsigned long)y * renderer->surface.width,
+                           (size_t)renderer->surface.width *
+                               sizeof(*frame->oracle_depth));
+                }
+                frame->stats.cpu_fallback_frames++;
+                return 0;
+            }
+        }
+#endif
         frame->stats.unique_textures = resources.desc_count;
         frame->stats.texture_upload_bytes = resources.texel_size;
     }
@@ -250,14 +477,31 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     if (ready <= 0) return ready;
     if (toy_renderer_begin(core->renderer, &core->surface, clear_color) < 0)
         return -1;
+    core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
     return ready;
 }
 
 int rf_core_end_frame(struct rf_core *core)
 {
+    int64_t present_start;
+    int result;
     if (!core || !core->window) return -1;
     if (toy_renderer_flush(core->renderer) < 0) return -1;
-    return toy_window_present(core->window);
+    present_start = rf_core_clock_now_us();
+    result = toy_window_present(core->window);
+    core->gpu_frame.stats.present_ms =
+        (double)(rf_core_clock_now_us() - present_start) / 1000.0;
+    if (core->gpu_frame.frame_begin_us)
+        core->gpu_frame.stats.frame_total_ms =
+            (double)(rf_core_clock_now_us() -
+                     core->gpu_frame.frame_begin_us) / 1000.0;
+    return result;
+}
+
+void rf_core_gpu_world_begin(struct rf_core *core)
+{
+    if (core && core->gpu_frame.initialized)
+        core->gpu_frame.frontend_begin_us = rf_core_clock_now_us();
 }
 
 void rf_core_gpu_world_flush(struct rf_core *core)
@@ -302,6 +546,18 @@ void rf_core_shutdown(struct rf_core *core)
         __printf("GPU-FRAME textures commands=%llu unique=%u bytes=%llu\n",
                  s->texture_commands, s->unique_textures,
                  s->texture_upload_bytes);
+        __printf("GPU-FRAME oracle frames=%llu failures=%llu color-mismatch=%llu "
+                 "depth-mismatch=%llu max-color-delta=%u max-depth-delta=%llu\n",
+                 s->oracle_frames, s->oracle_failures,
+                 s->oracle_color_mismatches, s->oracle_depth_mismatches,
+                 s->oracle_max_color_delta, s->oracle_max_depth_delta);
+        __printf("GPU-FRAME stages-ms frontend=%.3f classification=%.3f "
+                 "texture-measure=%.3f raster-abi-pack+texture-table=%.3f "
+                 "cpu-oracle=%.3f presentation-copy=combined-with-readback "
+                 "present=%.3f frame-total=%.3f\n",
+                 s->frontend_ms, s->classification_ms,
+                 s->texture_measure_ms, s->raster_abi_pack_ms,
+                 s->cpu_oracle_ms, s->present_ms, s->frame_total_ms);
     }
     if (core->renderer)
         toy_renderer_set_command_consumer(core->renderer, NULL, NULL);
@@ -309,6 +565,8 @@ void rf_core_shutdown(struct rf_core *core)
     tlibc_free(core->gpu_frame.stream);
     tlibc_free(core->gpu_frame.texture_descs);
     tlibc_free(core->gpu_frame.texture_texels);
+    tlibc_free(core->gpu_frame.oracle_color);
+    tlibc_free(core->gpu_frame.oracle_depth);
     rf_gpu_shutdown(&core->gpu);
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);

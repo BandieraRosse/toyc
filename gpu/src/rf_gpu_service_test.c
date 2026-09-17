@@ -78,6 +78,10 @@ static void fake_raster_destroy(void *context, void *raster)
 
 static int fake_raster_render(void *context, void *raster,
                               const void *stream, unsigned long stream_size,
+                              const void *texture_descs,
+                              unsigned int texture_count,
+                              const void *texture_texels,
+                              unsigned long texture_bytes,
                               unsigned int *color, int *depth,
                               unsigned int width, unsigned int height,
                               unsigned int color_stride,
@@ -86,6 +90,8 @@ static int fake_raster_render(void *context, void *raster,
                               char *message, unsigned long message_capacity)
 {
     (void)context; (void)raster; (void)stream; (void)stream_size;
+    (void)texture_descs; (void)texture_count;
+    (void)texture_texels; (void)texture_bytes;
     (void)color; (void)depth; (void)width; (void)height;
     (void)color_stride; (void)depth_stride; (void)timing; (void)message;
     (void)message_capacity;

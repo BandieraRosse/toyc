@@ -1,7 +1,7 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-7B 已冻结；GPU-7C 已实现但未冻结；GPU-7D Texture V1 已实现并通过 hosted differential，normal RTX 已解除首帧崩溃，其余门禁待完成）
-> 进展同步：2026-09-16
+> 状态：执行中（GPU-0 至 GPU-7D 已冻结；下一阶段选择 GPU-8 Native Presentation）
+> 进展同步：2026-09-17
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
 > 源码核对基线补充：GPU-5 已完成 GPU-4 word-stream 显式解码、逐像素 64-bit integer triangle/depth/light/fog 与 deterministic color/depth readback；WSL llvmpipe / Windows Intel Iris Xe fixed fixtures 的 color/depth hash 一致并通过。
@@ -25,8 +25,8 @@
 | GPU-6.5 Tile Command Binning | 已完成 / FROZEN | CPU bbox 两遍保序 binning，workgroup=tile，full-scan A/B；WSL/Intel Iris Xe 全部 differential 0 mismatch，stress execution-wait 明显下降 |
 | GPU-7A Normal World Flat-Opaque Slice | 已完成 / FROZEN | WSL llvmpipe、Windows Iris Xe、Windows RTX 3050 三平台 replay 均 0 mismatch；RTX execution-wait 3.851--4.519 ms，GPU total 含约 49--51 ms readback |
 | GPU-7B Vertex-Lit Planar Extension | 已完成 / FROZEN | V1 96-byte 新 command kind；CPU/GPU 共享 raster truth，WSL/RTX fixed、stress、combined-world 全部 0 mismatch，world coverage 99.85--99.91% |
-| GPU-7C Normal GPU Frame Integration | 已实现 / 未冻结 | Core-owned normal world frame resource；RTX normal Outpost 3/3 GPU frames；同帧 CPU oracle 与完整 timing 门禁待完成；默认 CPU |
-| GPU-7D Texture V1 | 已实现 / 未冻结 | buffer-backed nearest RGB8/RGBA8 texture table；WSL/RTX hosted differential 0 mismatch；RTX normal Outpost 3/3 GPU frames，CPU oracle/full-scan textured/完整 timing 仍待补齐 |
+| GPU-7C Normal GPU Frame Integration | 已完成 / FROZEN | Core-owned normal frame、same-frame CPU oracle、mismatch artifact/replay 与完整恢复；Intel Outpost/near supported batches 逐 color/depth 0 mismatch；默认 CPU |
+| GPU-7D Texture V1 | 已完成 / FROZEN | buffer-backed nearest RGB8/RGBA8；hosted CPU/full-scan/binned 与 Intel normal textured frames 均 0 mismatch；transparent 保持 whole-batch fallback |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1181,8 +1181,16 @@ RTX 3050 hosted suite 均为 color/depth 0 mismatch。RTX normal Outpost 首帧�
 拷贝越界。修正单位换算并在 surface 尺寸变化时 resize raster resource 后，`--frames 3`
 实测 attempted=3、rendered=3、fallback=0；每帧 1093 commands、2 textured commands、1 unique
 texture、4096 texel bytes。当次 execution-wait 1.760 ms、readback 47.889 ms、GPU total 49.848 ms，
-仅作 normal readback 路径观测。normal 同帧 CPU oracle、更完整的 timing 拆分与 full-scan textured
-diagnostic 仍未完成，因此 GPU-7C/GPU-7D 均不标记 DONE/FROZEN。
+仅作 normal readback 路径观测。随后 normal 同帧 CPU oracle 直接消费唯一 packed stream 与相同
+Texture V1 table；失败时自动保存 hosted replay 可读取的 stream/texture bundle、CPU/GPU/diff color、
+双方 depth 与报告，并以完整 CPU oracle color/depth 恢复正式 surface。Intel Iris Xe package-layout
+实测：Outpost optional/required、Campaign near/0 与 near/30 均为 attempted=3、rendered=3、fallback=0，
+oracle color/depth mismatch 与 max delta 全部为 0；near 两组各含 90 textured commands、10 unique
+textures、40960 texel bytes。mid/30 每帧出现 24 条 transparent command，因此按既定 complete-batch
+contract 0/3 GPU、3/3 CPU fallback，不伪装成 Texture V1 成功。Intel 最后帧 execution-wait 为
+Outpost 9.027 ms、near/0 27.813 ms、near/30 24.569 ms；readback 分别 58.529、64.471、61.934 ms。
+readback 明显主导，GPU-7C/7D DONE / FROZEN，默认 renderer 仍为 CPU；下一阶段选择 GPU-8 Native
+Presentation。
 
 ## WIN-1 — Native Windows Platform
 

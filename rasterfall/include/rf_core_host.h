@@ -20,7 +20,14 @@ struct rf_core_gpu_frame_stats {
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;
     unsigned long long texture_commands, texture_upload_bytes;
+    unsigned long long oracle_frames, oracle_failures;
+    unsigned long long oracle_color_mismatches, oracle_depth_mismatches;
+    unsigned int oracle_max_color_delta;
+    unsigned long long oracle_max_depth_delta;
     unsigned int unique_textures;
+    double frontend_ms, classification_ms, texture_measure_ms;
+    double raster_abi_pack_ms, texture_table_build_ms;
+    double cpu_oracle_ms, presentation_copy_ms, present_ms, frame_total_ms;
     struct rf_gpu_raster_timing last_timing;
 };
 
@@ -32,7 +39,11 @@ struct rf_core_gpu_frame {
     unsigned int texture_desc_capacity;
     unsigned char *texture_texels;
     unsigned long texture_texel_capacity;
+    unsigned int *oracle_color;
+    int *oracle_depth;
+    unsigned long oracle_pixel_capacity;
     struct rf_core_gpu_frame_stats stats;
+    int64_t frontend_begin_us, frame_begin_us;
     int renderer, armed, initialized;
 };
 
@@ -106,6 +117,7 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
+void rf_core_gpu_world_begin(struct rf_core *core);
 void rf_core_gpu_world_flush(struct rf_core *core);
 int rf_core_get_gpu_frame_stats(const struct rf_core *core,
                                 struct rf_core_gpu_frame_stats *stats);

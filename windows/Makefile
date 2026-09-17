@@ -55,7 +55,7 @@ GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c
                  rasterfall/lib/rasterfall_map_parser.c \
                  rasterfall/lib/rasterfall_map_runtime.c \
                  rasterfall/lib/rasterfall_map_components.c
-PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c rasterfall/src/rf_core_host.c rasterfall/src/rf_game_lifecycle.c windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
+PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c rasterfall/src/rf_core_host.c gpu/src/rf_gpu_raster_cpu_ref.c rasterfall/src/rf_game_lifecycle.c windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
                  windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
                  windows/src/env.c windows/src/string.c windows/src/platform.c
 LIB_SRCS := lib/assets.c lib/graphics/fb_draw.c lib/graphics/fb_font.c \

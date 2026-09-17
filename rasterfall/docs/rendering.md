@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-16
+> 文档更新：2026-09-17
+> 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Intel normal same-frame CPU/GPU oracle 覆盖 Outpost 与 Campaign near/0、near/30，均逐 color/depth 0 mismatch；mid/30 的透明命令保持 whole-batch CPU fallback。normal mismatch 以 CPU oracle 完整恢复并保存可 replay artifact。
 > 源码核对基线补充：GPU-7D 在同一 complete-batch consumer/raster kernel 加入 buffer-backed nearest Texture V1。Windows RTX Outpost 修正 readback stride 单位错配后 3/3 normal GPU frames；transparent 仍为 whole-batch fallback，默认 renderer 仍为 CPU。
 > 源码核对基线补充：GPU-7A 复用正常 Campaign world frontend，在 `toy_renderer_flush()` 分类/排序前观察并跨 flush 保序累计 flat opaque command；unsupported 不降级，输出 partial-world Raster V1 stream，正常 renderer selection 不变。
 > 源码核对基线补充：GPU-7B 将同一 observer 的无纹理 vertex-lit planar 加入 selected stream；CPU 的屏幕空间 signed-64 edge-weight light interpolation、toward-zero 除法、0--384 light clamp、base modulation、fog 顺序由共享 differential oracle 约束，不建立第二套 raster kernel 或 binning。
@@ -108,6 +109,11 @@ pointer-identity dedupe、1-based handle、descriptor table 与 packed texels，
 eligible batch 经既有 pack、CPU tile binning 与共享 raster backend；readback 同时覆盖 color surface 与
 renderer depth。normal 路径传入 GPU API 的 stride 单位为 32-bit 元素，`toy_surface.stride` 在 Core
 边界从字节显式换算；surface 尺寸改变时先 resize raster resource。
+
+`--gpu-normal-scene <near|mid> <0|30>` 复用 GPU-7A 固定 camera/enemy fixture，但不走 headless
+capture：它仍执行正常 Core begin/render/world flush/oracle/overlay/present 主循环。当前 transparent
+不属于 Texture V1，出现时整批 fallback 是显式覆盖边界，不计作 GPU 成功帧。oracle mismatch 会在
+保存 replay artifact 后以完整 CPU color/depth 恢复 surface，避免在 GPU depth 上二次软件绘制。
 
 Temporary Campus Kit的`--visual-capture campus-corner`支持`-near`、`-mid`、`-far`；
 `campus-asset-<name>`观察单件。全部位于process-only dev-tests fixture，复用已有
