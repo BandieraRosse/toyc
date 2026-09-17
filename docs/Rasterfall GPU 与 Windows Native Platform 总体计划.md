@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-17
 > 源码核对基线：`fc045ad`
-> 当前状态：A-AUDIT、B1-CONTRACT 与 B2-SKY 已实现并通过本地 differential/build 门禁；等待 Windows Intel normal-frame、路径切换与 resize 实机验收。GPU-8B1/GPU-9A 尚未冻结。
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY 与 B3-WORLD 分层契约已实现；B2 已通过本地 differential/build 门禁，B3 保留 transparent 整批 CPU fallback。等待 Windows Intel normal-frame、路径切换与 resize 实机验收。GPU-8B1/GPU-9A 尚未冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -44,6 +44,7 @@ normal world frontend
 | GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
 | GPU-8B1 | IMPLEMENTED / NOT FROZEN | CPU screen-space truth 上传 XRGB8888 color + 8-bit coverage，GPU source-over composite；还需 normal-frame 实机视觉与 timing 验收 |
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
+| RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；不改变排序或 fallback，透明 GPU blend 仍属 GPU-8B2 |
 | GPU-8B2 remainder | NOT STARTED | transparent、viewmodel、interactables 和 world effects 等层尚未进入 native GPU frame |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |

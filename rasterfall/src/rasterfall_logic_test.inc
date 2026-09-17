@@ -401,6 +401,21 @@ static int run_logic_test(void)
     uint32_t *pixels;
     int count;
     long long direction_length;
+    {
+        struct rf_core frame_core;
+        struct toy_raster_cmd frame_commands[4];
+        memset(&frame_core, 0, sizeof(frame_core));
+        memset(frame_commands, 0, sizeof(frame_commands));
+        frame_commands[0].material_alpha = 255;
+        frame_commands[1].material_alpha = 255;
+        frame_commands[1].transparent = 1;
+        frame_commands[2].material_alpha = 128;
+        frame_commands[3].material_alpha = 255;
+        rf_core_render_frame_record_world_v1(&frame_core, frame_commands, 4);
+        if (frame_core.render_frame.command_count[RF_RENDER_LAYER_WORLD] != 2 ||
+            frame_core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 2)
+            return 244;
+    }
     { int primitive_result=primitive_gameplay_logic_test();
       if(primitive_result){__printf("primitive gameplay failure: %d\n",primitive_result);return 211;} }
     __printf("rasterfall: primitive gameplay test passed\n");

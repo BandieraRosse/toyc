@@ -596,6 +596,21 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
     core->render_frame.pixel_count[layer] += pixels;
 }
 
+void rf_core_render_frame_record_world_v1(
+    struct rf_core *core, const struct toy_raster_cmd *commands, int count)
+{
+    unsigned long transparent = 0;
+    int i;
+    if (!core || !commands || count <= 0) return;
+    for (i = 0; i < count; ++i)
+        if (commands[i].transparent || commands[i].material_alpha != 255)
+            transparent++;
+    core->render_frame.command_count[RF_RENDER_LAYER_WORLD] +=
+        (unsigned long)count - transparent;
+    core->render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] +=
+        transparent;
+}
+
 int rf_core_get_render_frame_v1(const struct rf_core *core,
                                 struct rf_render_frame_v1 *frame)
 {

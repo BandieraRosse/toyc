@@ -2626,8 +2626,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     }
     /* Existing world-to-overlay ordering barrier. */
     raster_commands = (unsigned long)renderer->cmd_count;
-    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_WORLD,
-                                   raster_commands, 0);
+    rf_core_render_frame_record_world_v1(runtime->core, renderer->cmds,
+                                         renderer->cmd_count);
     rf_core_gpu_world_flush(runtime->core);
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
@@ -2655,8 +2655,9 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         !runtime->lifecycle_paused && !game_session->shop_open) {
         raster_commands = (unsigned long)renderer->cmd_count;
         pixels += rasterfall_render_interactables(renderer, render_camera);
-        rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_WORLD,
-            (unsigned long)renderer->cmd_count - raster_commands, 0);
+        rf_core_render_frame_record_world_v1(runtime->core,
+            renderer->cmds + raster_commands,
+            renderer->cmd_count - (int)raster_commands);
         flushed = rf_core_flush(runtime->core);
         if (flushed < 0) return -1;
         pixels += flushed;
@@ -4106,7 +4107,7 @@ startup_again:
                     "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu viewmodel=%lu overlay_pixels=%lu classification texture=%lu overlay=%lu edge=%lu other=%lu",
                     frame_audit.command_count[RF_RENDER_LAYER_SKY],
                     frame_audit.command_count[RF_RENDER_LAYER_WORLD],
-                    gpu_audit.last_transparent_commands,
+                    frame_audit.command_count[RF_RENDER_LAYER_TRANSPARENT],
                     frame_audit.command_count[RF_RENDER_LAYER_EFFECTS],
                     frame_audit.command_count[RF_RENDER_LAYER_VIEWMODEL],
                     frame_audit.pixel_count[RF_RENDER_LAYER_OVERLAY],

@@ -172,6 +172,10 @@ void rf_core_render_frame_record_v1(struct rf_core *core,
                                     enum rf_render_layer_v1 layer,
                                     unsigned long commands,
                                     unsigned long pixels);
+/* Classify one pending world batch into the opaque world and transparent
+ * RenderFrame layers without changing renderer command order. */
+void rf_core_render_frame_record_world_v1(
+    struct rf_core *core, const struct toy_raster_cmd *commands, int count);
 int rf_core_get_render_frame_v1(const struct rf_core *core,
                                 struct rf_render_frame_v1 *frame);
 /* Core-owned submission point for layered rendering within one frame. */

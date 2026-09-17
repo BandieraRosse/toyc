@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot 与 sky/world/transparent/effects/viewmodel/overlay 固定层枚举；sky 已作为 Raster V1 参数背景命令进入 CPU reference、tile binning 与 GPU shader。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot 与 sky/world/transparent/effects/viewmodel/overlay 固定层枚举；sky 已作为 Raster V1 参数背景命令进入 CPU reference、tile binning 与 GPU shader；B3 将每个正常 world batch 的 opaque 与 transparent command 计数写入各自层。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -94,9 +94,13 @@ sky → world → transparent → effects → viewmodel → overlay。当前 ver
 背景；不上传 CPU 天空，也不把 sky 伪装成 screen overlay。CPU reference、full-scan 与 tile-binned
 shader 消费同一命令，sky 不写 depth。
 
-transparent 仍按既有契约使完整 world batch 回退 CPU；effects/viewmodel 当前只进入 RenderFrame 审计，
-尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt 因而仍是下一
-checkpoint，不能把已建立层描述误称为 GPU-8B2 全部完成。
+B3 通过 `rf_core_render_frame_record_world_v1()` 在不改变 command pool 与提交顺序的前提下，对每个正常
+world batch 按 `transparent || material_alpha != 255` 分类：`world` 只记录 opaque command，
+`transparent` 记录透明 command，CPU 与 GPU fallback 的 frame audit 因而使用同一层真值。这个 checkpoint
+只冻结层边界，不把透明命令误当 opaque：transparent 仍按既有契约使完整 world batch 回退 CPU，因为
+Raster V1 尚未表达禁止 depth write、材质 alpha 与 texture alpha blend。effects/viewmodel 当前也只进入
+RenderFrame 审计，尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
+因而仍是 GPU-8B2 后续工作，不能把已建立层描述误称为 native GPU 覆盖。
 
 ### GPU-9A Post-Raster Compute Pass V1
 
