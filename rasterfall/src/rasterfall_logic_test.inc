@@ -2055,7 +2055,17 @@ static int run_logic_test(void)
         rasterfall_effects_update(&effects, 16);
         rasterfall_render_effects(&renderer, &camera, NULL);
         /* 第一人称武器模型冒烟：SMG 几何进入光栅器 */
-        rasterfall_viewmodel_render(&renderer, &game, &effects, 256);
+        toy_renderer_flush(&renderer);
+        {
+            int vm_command_begin = renderer.cmd_count;
+            int vm_direct_pixels = rasterfall_viewmodel_render(
+                &renderer, &game, &effects, 256);
+            if (vm_direct_pixels != 0 || renderer.cmd_count <= vm_command_begin)
+                return 249;
+            /* The producer audit is intentionally before this flush: all
+             * normal viewmodel output must be retained triangle commands. */
+            toy_renderer_flush(&renderer);
+        }
         rasterfall_effects_reset_fire(&effects);
     }
     toy_renderer_destroy(&renderer);

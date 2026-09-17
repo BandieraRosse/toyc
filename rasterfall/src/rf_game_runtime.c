@@ -2678,17 +2678,21 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             runtime->core, RF_RENDER_LAYER_VIEWMODEL) < 0) return -1;
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED) {
+        int viewmodel_direct_pixels;
         raster_commands = (unsigned long)renderer->cmd_count;
-        flushed = rasterfall_viewmodel_render(
+        viewmodel_direct_pixels = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
-        if (flushed < 0) return -1;
-        pixels += flushed;
+        if (viewmodel_direct_pixels < 0) return -1;
+        /* V1 normal producers only submit triangle commands.  Keep this
+         * statistic separate from the subsequent command flush so direct
+         * framebuffer writes cannot be mistaken for rasterized pixels. */
+        pixels += viewmodel_direct_pixels;
         rf_core_render_frame_record_v1(runtime->core,
             RF_RENDER_LAYER_VIEWMODEL,
             (unsigned long)renderer->cmd_count - raster_commands,
-            (unsigned long)flushed);
+            (unsigned long)viewmodel_direct_pixels);
         rf_core_render_frame_record_direct_pixels_v1(runtime->core,
-            RF_RENDER_LAYER_VIEWMODEL, (unsigned long)flushed);
+            RF_RENDER_LAYER_VIEWMODEL, (unsigned long)viewmodel_direct_pixels);
     }
 
     /* Viewmodel is the last post-world scene layer and therefore the final

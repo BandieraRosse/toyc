@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；Viewmodel Render Contract V1 已冻结 near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth 与 coverage mask，CPU/reference consumer 已按 VIEWMODEL span 切换域；weapon/hands/pill producer 和 GPU consumer 仍是后续 debt，transparent 仍未迁移。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 文档更新：2026-09-18
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard、普通 particle 与屏幕线 ray 已迁入带逆深度的 opaque commands，`effects_direct_pixels=0` 门禁已建立；Viewmodel Render Contract V1 已冻结 near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth 与 coverage mask，CPU/reference consumer 已按 VIEWMODEL span 切换域；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，`viewmodel_direct_pixels=0` 与 command fixture 已建立；GPU consumer、local muzzle 与 transparent 仍未迁移。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -139,8 +139,9 @@ GPU-8B2b 已把 billboard、普通 hit/fire/explosion particle 和屏幕线 ray 
 特殊死亡 fragment/dust 继续沿既有 triangle/alpha command 路径，不属于本次 direct producer 迁移。
 
 GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
-producer 分成 pre-post raster input 或真正的 post-overlay，然后迁移 opaque viewmodel 与 hands/pill，
-最后扩展 transparent Raster V1。transparent V1 必须显式冻结 source-over、material/texture alpha、
+producer 分成 pre-post raster input 或真正的 post-overlay，然后由 Phase 3 的 viewmodel frontend
+共享 opaque flat/lit/textured triangle command；下一 checkpoint 接入 VIEWMODEL GPU consumer，再
+扩展 local muzzle，最后扩展 transparent Raster V1。transparent V1 必须显式冻结 source-over、material/texture alpha、
 depth test/write 与原始顺序，不以 OIT 或重排作为首版前提。
 
 ### GPU-9A Post-Raster Compute Pass V1

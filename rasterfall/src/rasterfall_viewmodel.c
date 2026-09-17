@@ -2,6 +2,7 @@
 #include "core.h"
 #include "tlibc_everything.h"
 #include "rasterfall_model.h"
+#include "rf_viewmodel_contract.h"
 #include "math.h"
 
 struct view_vec3 { int x, y, z; };
@@ -89,28 +90,6 @@ static void rotate_view_xz(int x, int z, int degrees, int *out_x, int *out_z)
 }
 
 static int viewmodel_scene_light_q8 = 256;
-
-static uint32_t viewmodel_lit_color(uint32_t color)
-{
-    return (color & 0xff000000U) |
-        (((color >> 16 & 255U) * viewmodel_scene_light_q8 / 256) << 16) |
-        (((color >> 8 & 255U) * viewmodel_scene_light_q8 / 256) << 8) |
-        ((color & 255U) * viewmodel_scene_light_q8 / 256);
-}
-
-static void viewmodel_fill_rect(struct toy_surface *surface, int x, int y,
-                                int width, int height, uint32_t color)
-{
-    color = viewmodel_lit_color(color);
-    int yy, xx;
-    for (yy = y; yy < y + height; yy++) {
-        if (yy < 0 || yy >= surface->height) continue;
-        for (xx = x; xx < x + width; xx++)
-            if (xx >= 0 && xx < surface->width)
-                ((uint32_t *)((unsigned char *)surface->pixels +
-                              yy * surface->stride))[xx] = color;
-    }
-}
 
 static void viewmodel_load_models(void)
 {
@@ -229,50 +208,72 @@ void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
     *out_z = z + cy * distance / 1024;
 }
 
-static int fill_triangle_2d(struct toy_surface *surface,
-                            int x0, int y0, int x1, int y1, int x2, int y2,
-                            uint32_t color)
+/* Triangle commands are winding-normalized here.  The common raster
+ * consumer accepts only one screen-space orientation, while imported meshes
+ * and procedural hands do not share authored winding. */
+static int viewmodel_submit_flat(struct toy_renderer *renderer,
+                                 struct toy_screen_vertex *a,
+                                 struct toy_screen_vertex *b,
+                                 struct toy_screen_vertex *c,
+                                 uint32_t color)
 {
-    color = viewmodel_lit_color(color);
-    int y, tmp, xa, xb, ymin, ymax, drawn = 0;
-    long dx01 = 0, dx02, dx12 = 0, xl, xr, lt;
-    if (y0 > y1) { tmp=x0; x0=x1; x1=tmp; tmp=y0; y0=y1; y1=tmp; }
-    if (y1 > y2) { tmp=x1; x1=x2; x2=tmp; tmp=y1; y1=y2; y2=tmp; }
-    if (y0 > y1) { tmp=x0; x0=x1; x1=tmp; tmp=y0; y0=y1; y1=tmp; }
-    if (y0 == y2 || y2 < 0 || y0 >= surface->height) return 0;
-    if (y1 > y0) dx01 = (long)(x1-x0) * 65536 / (y1-y0);
-    dx02 = (long)(x2-x0) * 65536 / (y2-y0);
-    if (y2 > y1) dx12 = (long)(x2-x1) * 65536 / (y2-y1);
-    ymin = y0 < 0 ? 0 : y0;
-    ymax = y2 >= surface->height ? surface->height - 1 : y2;
-    for (y = ymin; y <= ymax; y++) {
-        if (y <= y1) {
-            xl = (long)x0 * 65536 + dx01 * (y-y0);
-            xr = (long)x0 * 65536 + dx02 * (y-y0);
-        } else {
-            xl = (long)x1 * 65536 + dx12 * (y-y1);
-            xr = (long)x0 * 65536 + dx02 * (y-y0);
-        }
-        if (xl > xr) { lt=xl; xl=xr; xr=lt; }
-        xa = (int)(xl >> 16); xb = (int)(xr >> 16);
-        if (xa < 0) xa = 0;
-        if (xb >= surface->width) xb = surface->width - 1;
-        if (xa <= xb) {
-            uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                         y * surface->stride);
-            int x;
-            for (x = xa; x <= xb; x++) row[x] = color;
-            drawn += xb - xa + 1;
-        }
-    }
-    return drawn;
+    long long area;
+    struct toy_screen_vertex va, vb, vc, tmp;
+    if (!renderer || !a || !b || !c) return 0;
+    va = *a; vb = *b; vc = *c;
+    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
+           (long long)(vb.y - va.y) * (vc.x - va.x);
+    if (!area) return 0;
+    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
+    return toy_renderer_triangle_lit(renderer, &va, &vb, &vc, color,
+                                     viewmodel_scene_light_q8, 0);
+}
+
+static int viewmodel_submit_textured(
+    struct toy_renderer *renderer, struct toy_screen_vertex *a,
+    struct toy_screen_vertex *b, struct toy_screen_vertex *c,
+    const struct toy_texture_view *texture, uint32_t fallback)
+{
+    long long area;
+    struct toy_screen_vertex va, vb, vc, tmp;
+    if (!renderer || !a || !b || !c || !texture) return 0;
+    va = *a; vb = *b; vc = *c;
+    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
+           (long long)(vb.y - va.y) * (vc.x - va.x);
+    if (!area) return 0;
+    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
+    return toy_renderer_triangle_textured_lit(
+        renderer, &va, &vb, &vc, texture, 1, fallback,
+        viewmodel_scene_light_q8, 0);
+}
+
+/* Pill is screen-projected by contract, but still participates in VM-local
+ * depth.  A constant inverse-Z makes its occlusion policy explicit without
+ * pretending it has world-space scale. */
+static int viewmodel_submit_screen_quad(struct toy_renderer *renderer,
+                                        int x, int y, int width, int height,
+                                        uint32_t color, long inv_z)
+{
+    struct toy_screen_vertex a, b, c, d;
+    memset(&a, 0, sizeof(a));
+    b = a; c = a; d = a;
+    a.x = x; a.y = y;
+    b.x = x + width; b.y = y;
+    c.x = x + width; c.y = y + height;
+    d.x = x; d.y = y + height;
+    a.z = b.z = c.z = d.z = RF_VIEWMODEL_NEAR_Z_V1;
+    a.inv_z = b.inv_z = c.inv_z = d.inv_z = inv_z;
+    a.light = b.light = c.light = d.light = viewmodel_scene_light_q8;
+    viewmodel_submit_flat(renderer, &a, &b, &c, color);
+    viewmodel_submit_flat(renderer, &a, &c, &d, color);
+    return 0;
 }
 
 /* First-person arms are deliberately procedural for now.  Keeping the two
  * limbs as small rigid pieces gives us useful hand/weapon motion without
  * committing RFM2 to bones or skinning.  Coordinates are view-space: X is
  * right, Y is up and Z points away from the camera. */
-static int draw_view_limb(struct toy_surface *surface,
+static int draw_view_limb(struct toy_renderer *renderer,
                           int x0, int y0, int z0,
                           int x1, int y1, int z1,
                           int radius, uint32_t color)
@@ -285,7 +286,7 @@ static int draw_view_limb(struct toy_surface *surface,
     struct view_vec3 v[8];
     int dy = y1 - y0, dz = z1 - z0;
     int length = (int)isqrt((long long)dy * dy + (long long)dz * dz);
-    int py, pz, i, drawn = 0;
+    int py, pz, i;
     if (length <= 0) return 0;
     /* A perpendicular in the Y/Z plane makes a rounded-looking rectangular
      * forearm while preserving the cheap triangle-only renderer. */
@@ -304,29 +305,39 @@ static int draw_view_limb(struct toy_surface *surface,
     v[6].y = y1 - py; v[6].z = z1 - pz;
     v[7].y = y1 - py; v[7].z = z1 - pz;
     for (i = 0; i < 36; i += 3) {
-        int n, sx[3], sy[3];
+        int n, clipped_count, j;
+        struct rf_viewmodel_vertex_v1 input[3], clipped[4];
+        struct toy_screen_vertex projected[4];
         const struct view_vec3 *a = &v[faces[i]];
         const struct view_vec3 *b = &v[faces[i + 1]];
         const struct view_vec3 *c = &v[faces[i + 2]];
         const struct view_vec3 *points[3] = { a, b, c };
         for (n = 0; n < 3; n++) {
-            if (points[n]->z < 192) break;
-            sx[n] = surface->width / 2 + points[n]->x *
-                    (surface->width * 3 / 4) / points[n]->z;
-            sy[n] = surface->height / 2 - points[n]->y *
-                    (surface->width * 3 / 4) / points[n]->z;
+            input[n].x = points[n]->x;
+            input[n].y = points[n]->y;
+            input[n].z = points[n]->z;
+            input[n].u = input[n].v = 0;
+            input[n].light = viewmodel_scene_light_q8;
+            input[n].fog = 0;
         }
-        if (n == 3) {
+        clipped_count = rf_viewmodel_clip_triangle_v1(input, clipped);
+        for (j = 0; j < clipped_count; ++j)
+            rf_viewmodel_project_vertex_v1(&clipped[j],
+                                           renderer->surface.width,
+                                           renderer->surface.height,
+                                           &projected[j]);
+        if (clipped_count >= 3) {
             int face = i / 6;
             uint32_t shade = color + (face & 3) * 0x040404;
-            drawn += fill_triangle_2d(surface, sx[0], sy[0], sx[1], sy[1],
-                                      sx[2], sy[2], shade);
+            for (j = 1; j + 1 < clipped_count; ++j)
+                viewmodel_submit_flat(renderer, &projected[0],
+                                      &projected[j], &projected[j + 1], shade);
         }
     }
-    return drawn;
+    return 0;
 }
 
-static int render_viewmodel_hands(struct toy_surface *surface,
+static int render_viewmodel_hands(struct toy_renderer *renderer,
                                   const struct toy_game *game,
                                   int kick)
 {
@@ -342,7 +353,7 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     int hand_kick_right, hand_kick_left;
     int fire_pulse = 0, reload_slap = 0;
     int drawn = 0;
-    if (!surface || !player) return 0;
+    if (!renderer || !player) return 0;
     (void)kick;
     weapon = rasterfall_viewmodel_weapon(game);
     profile = viewmodel_hand_pose(weapon);
@@ -442,9 +453,9 @@ static int render_viewmodel_hands(struct toy_surface *surface,
     r_wrist_z += hand_kick_right;
     l_wrist_z += hand_kick_left;
     /* Forearms. */
-    drawn += draw_view_limb(surface, r_elbow_x, r_elbow_y, r_elbow_z,
+    drawn += draw_view_limb(renderer, r_elbow_x, r_elbow_y, r_elbow_z,
                             r_wrist_x, r_wrist_y, r_wrist_z, 31, 0xC58B6C);
-    drawn += draw_view_limb(surface, l_elbow_x, l_elbow_y, l_elbow_z,
+    drawn += draw_view_limb(renderer, l_elbow_x, l_elbow_y, l_elbow_z,
                             l_wrist_x, l_wrist_y, l_wrist_z, 31, 0xC58B6C);
 #if RASTERFALL_VIEWMODEL_HAND_DEBUG
     {
@@ -478,8 +489,6 @@ static int render_model_weapon(struct toy_renderer *renderer,
     int reload_pitch = 0;
     int axe_rotation = 0;
     int axe_swing_x = 0, axe_swing_z = 0;
-    struct toy_surface *surface = &renderer->surface;
-    int focal = surface->width * 3 / 4;
     if (!model || !model->data) return 0;
     width = model->max_x - model->min_x;
     height = model->max_y - model->min_y;
@@ -597,52 +606,37 @@ static int render_model_weapon(struct toy_renderer *renderer,
                 }
             }
             if (k == 3) {
-                int sx[3], sy[3], n;
-                struct toy_screen_vertex sv[3];
+                struct rf_viewmodel_vertex_v1 input[3], clipped[4];
+                struct toy_screen_vertex sv[4];
+                int clipped_count, n, j;
                 for (n = 0; n < 3; n++) {
-                    if (v[n].z < 192) break;
-                    sx[n] = surface->width / 2 + v[n].x * focal / v[n].z;
-                    sy[n] = surface->height / 2 - v[n].y * focal / v[n].z;
-                    sv[n].x = sx[n]; sv[n].y = sy[n]; sv[n].z = v[n].z;
-                    sv[n].u = *(const unsigned short *)(model->vertices +
-                                      ids[n] * model->vertex_bytes + 18);
-                    sv[n].v = *(const unsigned short *)(model->vertices +
-                                      ids[n] * model->vertex_bytes + 20);
-                    sv[n].inv_z = (long)1048576 / v[n].z;
-                    sv[n].u_over_z = (long)sv[n].u * 1048576L / v[n].z;
-                    sv[n].v_over_z = (long)sv[n].v * 1048576L / v[n].z;
-                    sv[n].light = viewmodel_scene_light_q8; sv[n].fog = 0;
+                    const unsigned char *p = model->vertices +
+                        ids[n] * model->vertex_bytes;
+                    input[n].x = v[n].x;
+                    input[n].y = v[n].y;
+                    input[n].z = v[n].z;
+                    input[n].u = *(const unsigned short *)(p + 18);
+                    input[n].v = *(const unsigned short *)(p + 20);
+                    input[n].light = viewmodel_scene_light_q8;
+                    input[n].fog = 0;
                 }
-                if (n == 3) {
-                    /* Axe, bomb, and molotov use the shared extracted model
-                     * palette (model_diffuse.ttex). The model loader has no
-                     * separate public *.textures directory for these assets,
-                     * so this is the same texture source used by the world
-                     * model path. Fall back to the material color when the
-                     * texture is unavailable. */
+                clipped_count = rf_viewmodel_clip_triangle_v1(input, clipped);
+                for (j = 0; j < clipped_count; ++j)
+                    rf_viewmodel_project_vertex_v1(
+                        &clipped[j], renderer->surface.width,
+                        renderer->surface.height, &sv[j]);
+                /* Axe, bomb, and molotov use the shared extracted model
+                 * palette (model_diffuse.ttex). Material presence no longer
+                 * changes depth policy: both paths are opaque VM commands. */
+                for (j = 1; j + 1 < clipped_count; ++j) {
                     if (weapon >= TOY_GAME_WEAPON_AXE && viewmodel_texture &&
-                        viewmodel_texture->data) {
-                        long long area = (long long)(sv[1].x - sv[0].x) *
-                                             (sv[2].y - sv[0].y) -
-                                         (long long)(sv[1].y - sv[0].y) *
-                                             (sv[2].x - sv[0].x);
-                        /* The renderer accepts edge() < 0.  The cross
-                         * product above is the opposite sign of edge(), so
-                         * reverse non-negative-edge triangles. This also
-                         * keeps the throwable meshes visible when their
-                         * authored winding differs from the axe. */
-                        if (area <= 0)
-                            drawn += toy_renderer_triangle_textured_lit(
-                                renderer, &sv[0], &sv[2], &sv[1],
-                                viewmodel_texture, 1, color, viewmodel_scene_light_q8, 0);
-                        else
-                            drawn += toy_renderer_triangle_textured_lit(
-                                renderer, &sv[0], &sv[1], &sv[2],
-                                viewmodel_texture, 1, color, viewmodel_scene_light_q8, 0);
-                    } else
-                        drawn += fill_triangle_2d(surface, sx[0], sy[0],
-                                                  sx[1], sy[1], sx[2], sy[2],
-                                                  color);
+                        viewmodel_texture->data)
+                        drawn += viewmodel_submit_textured(
+                            renderer, &sv[0], &sv[j], &sv[j + 1],
+                            viewmodel_texture, color);
+                    else
+                        drawn += viewmodel_submit_flat(
+                            renderer, &sv[0], &sv[j], &sv[j + 1], color);
                 }
             }
         }
@@ -653,31 +647,38 @@ static int render_model_weapon(struct toy_renderer *renderer,
 /* The pill is intentionally procedural: it remains readable even without an
  * extra raster asset, with a white cylinder silhouette and a green medical
  * cross facing the player. */
-static int render_pill_viewmodel(struct toy_surface *surface, int bob_x,
+static int render_pill_viewmodel(struct toy_renderer *renderer, int bob_x,
                                  int bob_y, int kick)
 {
     /* The procedural pill is screen-space art, unlike the imported weapon
      * meshes. Scale it with the 450px reference height so it remains the same
      * apparent size at the new 720p default without changing world/FOV math. */
-    int ui_scale = surface->height >= 675 ? 2 : 1;
-    int x = surface->width - 190 * ui_scale + bob_x * ui_scale +
+    int ui_scale = renderer->surface.height >= 675 ? 2 : 1;
+    int x = renderer->surface.width - 190 * ui_scale + bob_x * ui_scale +
             kick * ui_scale / 3;
-    int y = surface->height - 185 * ui_scale + bob_y * ui_scale -
+    int y = renderer->surface.height - 185 * ui_scale + bob_y * ui_scale -
             kick * ui_scale / 2;
-    int w = 105 * ui_scale, h = 72 * ui_scale, i, drawn = 0;
-    for (i = 0; i < h; i++) {
-        int inset = i < 8 * ui_scale ? 8 * ui_scale - i :
-                    i >= h - 8 * ui_scale ? i - (h - 9 * ui_scale) : 0;
-        viewmodel_fill_rect(surface, x + inset, y + i, w - inset * 2, 1,
-                            i < 10 * ui_scale ||
-                            i >= h - 10 * ui_scale ? 0xA8B8A8 : 0xE9F1E9);
-        drawn += w - inset * 2;
-    }
-    viewmodel_fill_rect(surface, x + 47 * ui_scale, y + 14 * ui_scale,
-                        12 * ui_scale, 44 * ui_scale, 0x20B84B);
-    viewmodel_fill_rect(surface, x + 31 * ui_scale, y + 30 * ui_scale,
-                        44 * ui_scale, 12 * ui_scale, 0x20B84B);
-    return drawn + 56 * ui_scale * ui_scale;
+    int w = 105 * ui_scale, h = 72 * ui_scale;
+    /* 4096 is 1/256 in the renderer's Q20 inverse-Z domain.  It is a
+     * viewmodel-local ordering value, not a write to world depth. */
+    const long pill_inv_z = 4096;
+    viewmodel_submit_screen_quad(renderer, x + 8 * ui_scale, y,
+                                 w - 16 * ui_scale, 10 * ui_scale,
+                                 0xA8B8A8, pill_inv_z);
+    viewmodel_submit_screen_quad(renderer, x, y + 8 * ui_scale,
+                                 w, h - 16 * ui_scale, 0xE9F1E9,
+                                 pill_inv_z);
+    viewmodel_submit_screen_quad(renderer, x + 8 * ui_scale,
+                                 y + h - 10 * ui_scale,
+                                 w - 16 * ui_scale, 10 * ui_scale,
+                                 0xA8B8A8, pill_inv_z);
+    viewmodel_submit_screen_quad(renderer, x + 47 * ui_scale,
+                                 y + 14 * ui_scale, 12 * ui_scale,
+                                 44 * ui_scale, 0x20B84B, pill_inv_z);
+    viewmodel_submit_screen_quad(renderer, x + 31 * ui_scale,
+                                 y + 30 * ui_scale, 44 * ui_scale,
+                                 12 * ui_scale, 0x20B84B, pill_inv_z);
+    return 0;
 }
 
 int rasterfall_viewmodel_render(struct toy_renderer *renderer,
@@ -699,9 +700,9 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
         switch_pitch = player->weapon_switch_timer_ms *
                        RASTERFALL_RELOAD_VIEWMODEL_PITCH /
                        TOY_CONFIG_WEAPON_SWITCH_MS;
-    drawn += render_viewmodel_hands(&renderer->surface, game, kick);
+    drawn += render_viewmodel_hands(renderer, game, kick);
     if (weapon == TOY_GAME_WEAPON_PILL)
-        drawn += render_pill_viewmodel(&renderer->surface, bob_x, bob_y, kick);
+        drawn += render_pill_viewmodel(renderer, bob_x, bob_y, kick);
     if (weapon >= TOY_GAME_WEAPON_PISTOL &&
         weapon < TOY_GAME_WEAPON_COUNT &&
         weapon != TOY_GAME_WEAPON_PILL &&
