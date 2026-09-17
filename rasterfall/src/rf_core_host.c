@@ -417,6 +417,107 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     return 0;
 }
 
+static int gpu_pre_post_retain_consume(struct toy_renderer *renderer,
+                                       const struct toy_raster_cmd *commands,
+                                       int count, void *opaque)
+{
+    struct rf_core *core = opaque;
+    struct rf_core_gpu_frame *frame;
+    unsigned long needed;
+    unsigned int layer;
+    if (!core || !renderer || !commands || count <= 0) return -1;
+    frame = &core->gpu_frame;
+    if (!frame->retaining_pre_post) return -1;
+    layer = core->render_frame.current_layer;
+    if (layer < RF_RENDER_LAYER_WORLD || layer > RF_RENDER_LAYER_VIEWMODEL)
+        return -1;
+    needed = frame->retained_command_count + (unsigned long)count;
+    if (needed > frame->retained_command_capacity) {
+        unsigned long capacity = frame->retained_command_capacity ?
+            frame->retained_command_capacity : 1024;
+        struct toy_raster_cmd *grown;
+        while (capacity < needed) capacity *= 2;
+        grown = tlibc_malloc(capacity * sizeof(*grown));
+        if (!grown) return -1;
+        if (frame->retained_command_count)
+            memcpy(grown, frame->retained_commands,
+                   frame->retained_command_count * sizeof(*grown));
+        tlibc_free(frame->retained_commands);
+        frame->retained_commands = grown;
+        frame->retained_command_capacity = capacity;
+    }
+    memcpy(frame->retained_commands + frame->retained_command_count, commands,
+           (unsigned long)count * sizeof(*commands));
+    frame->retained_command_count = needed;
+    frame->retained_batch_count[layer] += (unsigned long)count;
+    core->render_frame.retained_pre_post_commands = needed;
+    return 0;
+}
+
+static int gpu_pre_post_replay_cpu(struct rf_core *core)
+{
+    struct rf_core_gpu_frame *frame = &core->gpu_frame;
+    struct toy_renderer *renderer = core->renderer;
+    unsigned long offset = 0;
+    unsigned int layer;
+    int total = 0;
+    toy_renderer_set_command_consumer(renderer, NULL, NULL);
+    for (layer = RF_RENDER_LAYER_WORLD;
+         layer <= RF_RENDER_LAYER_VIEWMODEL; ++layer) {
+        unsigned long count = frame->retained_batch_count[layer];
+        int flushed;
+        if (!count) continue;
+        if (count > (unsigned long)renderer->cmd_cap) {
+            toy_renderer_set_command_consumer(renderer,
+                gpu_pre_post_retain_consume, core);
+            return -1;
+        }
+        memcpy(renderer->cmds, frame->retained_commands + offset,
+               count * sizeof(*renderer->cmds));
+        renderer->cmd_count = (int)count;
+        flushed = toy_renderer_flush(renderer);
+        if (flushed < 0) {
+            toy_renderer_set_command_consumer(renderer,
+                gpu_pre_post_retain_consume, core);
+            return -1;
+        }
+        total += flushed;
+        offset += count;
+    }
+    toy_renderer_set_command_consumer(renderer, gpu_pre_post_retain_consume,
+                                      core);
+    return total;
+}
+
+static int gpu_pre_post_finalize(struct rf_core *core)
+{
+    struct rf_core_gpu_frame *frame = &core->gpu_frame;
+    int unsupported_post_world;
+    int consumed = -1;
+    frame->retaining_pre_post = 0;
+    unsupported_post_world =
+        core->render_frame.command_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
+        core->render_frame.pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
+        core->render_frame.command_count[RF_RENDER_LAYER_VIEWMODEL] != 0 ||
+        core->render_frame.pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0;
+    if (!unsupported_post_world && frame->retained_command_count) {
+        frame->armed = 1;
+        consumed = gpu_world_consume(core->renderer,
+            frame->retained_commands, (int)frame->retained_command_count, core);
+    } else if (unsupported_post_world) {
+        frame->stats.frames_attempted++;
+        frame->stats.cpu_fallback_frames++;
+        frame->stats.last_path = 2;
+        core->render_frame.pre_post_cpu_fallback = 1;
+    }
+    if (consumed < 0) {
+        frame->native_prepared = 0;
+        core->render_frame.pre_post_cpu_fallback = 1;
+        return gpu_pre_post_replay_cpu(core) < 0 ? -1 : 0;
+    }
+    return 0;
+}
+
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,
                  struct toy_input *input, struct toy_renderer *renderer)
 {
@@ -505,7 +606,8 @@ int rf_core_init_config(struct rf_core *core,
                     __printf("GPU Post-Raster V1 unavailable; bypassing post pass\n");
             }
             toy_renderer_set_command_consumer(core->renderer,
-                                               gpu_world_consume, core);
+                                               gpu_pre_post_retain_consume,
+                                               core);
         }
     }
     return 0;
@@ -561,6 +663,10 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
     core->gpu_frame.native_prepared = 0;
     core->gpu_frame.overlay_active = 0;
+    core->gpu_frame.retaining_pre_post = 0;
+    core->gpu_frame.retained_command_count = 0;
+    memset(core->gpu_frame.retained_batch_count, 0,
+           sizeof(core->gpu_frame.retained_batch_count));
     core->gpu_frame.stats.last_path = 0;
     return ready;
 }
@@ -646,7 +752,11 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
 {
     struct rf_core_gpu_frame *frame;
     unsigned long pixels;
-    if (!core || rf_core_render_frame_enter_layer_v1(
+    if (!core || core->render_frame.current_layer != RF_RENDER_LAYER_VIEWMODEL)
+        return NULL;
+    if (core->gpu_frame.retaining_pre_post &&
+        gpu_pre_post_finalize(core) < 0) return NULL;
+    if (rf_core_render_frame_enter_layer_v1(
             core, RF_RENDER_LAYER_OVERLAY) < 0) return NULL;
     if (!core->gpu_frame.native_present ||
         !core->gpu_frame.native_prepared) {
@@ -757,8 +867,13 @@ int rf_core_end_frame(struct rf_core *core)
 
 void rf_core_gpu_world_begin(struct rf_core *core)
 {
-    if (core && core->gpu_frame.initialized)
+    if (core && core->gpu_frame.initialized) {
         core->gpu_frame.frontend_begin_us = rf_core_clock_now_us();
+        core->gpu_frame.retaining_pre_post = 1;
+        core->gpu_frame.retained_command_count = 0;
+        memset(core->gpu_frame.retained_batch_count, 0,
+               sizeof(core->gpu_frame.retained_batch_count));
+    }
 }
 
 void rf_core_gpu_world_flush(struct rf_core *core)
@@ -849,6 +964,7 @@ void rf_core_shutdown(struct rf_core *core)
     tlibc_free(core->gpu_frame.oracle_depth);
     tlibc_free(core->gpu_frame.overlay_surface.pixels);
     tlibc_free(core->gpu_frame.overlay_coverage);
+    tlibc_free(core->gpu_frame.retained_commands);
     rf_gpu_shutdown(&core->gpu);
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);

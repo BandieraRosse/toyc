@@ -405,6 +405,8 @@ static int run_logic_test(void)
         struct rf_core frame_core;
         struct toy_raster_cmd frame_commands[4];
         memset(&frame_core, 0, sizeof(frame_core));
+        memset(&renderer, 0, sizeof(renderer));
+        frame_core.renderer = &renderer;
         memset(frame_commands, 0, sizeof(frame_commands));
         frame_commands[0].material_alpha = 255;
         frame_commands[1].material_alpha = 255;
@@ -424,8 +426,8 @@ static int run_logic_test(void)
                 &frame_core, RF_RENDER_LAYER_EFFECTS) < 0 ||
             rf_core_render_frame_enter_layer_v1(
                 &frame_core, RF_RENDER_LAYER_VIEWMODEL) < 0 ||
-            rf_core_render_frame_enter_layer_v1(
-                &frame_core, RF_RENDER_LAYER_OVERLAY) < 0 ||
+            rf_core_begin_screen_overlay(&frame_core) != &frame_core.surface ||
+            frame_core.render_frame.current_layer != RF_RENDER_LAYER_OVERLAY ||
             rf_core_render_frame_enter_layer_v1(
                 &frame_core, RF_RENDER_LAYER_WORLD) == 0 ||
             frame_core.render_frame.invalid_layer_transitions != 1)

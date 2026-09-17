@@ -4110,7 +4110,7 @@ startup_again:
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu viewmodel=%lu/%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u classification texture=%lu overlay=%lu edge=%lu other=%lu",
+                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu viewmodel=%lu/%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u retained_pre_post=%lu pre_post_cpu_fallback=%u classification texture=%lu overlay=%lu edge=%lu other=%lu",
                     frame_audit.command_count[RF_RENDER_LAYER_SKY],
                     frame_audit.command_count[RF_RENDER_LAYER_WORLD],
                     frame_audit.command_count[RF_RENDER_LAYER_TRANSPARENT],
@@ -4121,6 +4121,8 @@ startup_again:
                     frame_audit.pixel_count[RF_RENDER_LAYER_OVERLAY],
                     frame_audit.current_layer,
                     frame_audit.invalid_layer_transitions,
+                    frame_audit.retained_pre_post_commands,
+                    frame_audit.pre_post_cpu_fallback,
                     gpu_audit.last_texture_commands,
                     gpu_audit.last_overlay_commands,
                     gpu_audit.last_edge_commands,

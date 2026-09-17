@@ -117,6 +117,15 @@ Desktop、名字/提示和 effect overlay 共享同一 Core-owned color+coverage
 的直接 framebuffer 部分归入 screen overlay 来规避 GPU consumer 缺口；native GPU 仍将这两层标为
 unsupported，直到它们的 renderer-command 与 direct producer 都迁入明确的 pre-post consumer。
 
+GPU-8B2 retained pre-post consumer 使 Core 在 world、effects 和 viewmodel 的各次 flush 中按层
+保留原始 `toy_raster_cmd`，到 viewmodel barrier 后再做唯一整帧决策。当 effects/viewmodel
+仍有 command 或 direct-pixel debt 时，Core 会禁止 native GPU present，并按原层批次顺序
+重放全部保留命令到 CPU surface；不允许出现 world 已由 GPU 消费、post-world 层却只写入
+不会 present 的 CPU surface 这种半帧状态。只有全部 pre-post 输入可无损表达时才进入
+Raster V1/Post/native present。frame audit 的 `retained_pre_post` 和 `pre_post_cpu_fallback`
+分别记录本帧保留命令数和整帧回退决策。这是消费与 fallback 契约，不代表
+effects/viewmodel 已获得 GPU backend。
+
 ### GPU-9A Post-Raster Compute Pass V1
 
 normal native frame 的当前所有权和顺序为：

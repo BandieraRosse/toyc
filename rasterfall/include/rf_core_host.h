@@ -44,6 +44,8 @@ struct rf_render_frame_v1 {
     unsigned int layer_backend[RF_RENDER_LAYER_COUNT];
     unsigned int current_layer;
     unsigned int invalid_layer_transitions;
+    unsigned long retained_pre_post_commands;
+    unsigned int pre_post_cpu_fallback;
     int sky_enabled;
 };
 
@@ -84,6 +86,10 @@ struct rf_core_gpu_frame {
     struct toy_surface overlay_surface;
     unsigned char *overlay_coverage;
     unsigned long overlay_pixel_capacity;
+    struct toy_raster_cmd *retained_commands;
+    unsigned long retained_command_capacity;
+    unsigned long retained_command_count;
+    unsigned long retained_batch_count[RF_RENDER_LAYER_COUNT];
     int64_t overlay_draw_begin_us;
     unsigned long native_stream_size, native_texture_bytes;
     unsigned int native_texture_count;
@@ -91,6 +97,7 @@ struct rf_core_gpu_frame {
     int64_t frontend_begin_us, frame_begin_us;
     int renderer, armed, initialized, native_present, native_presented;
     int native_prepared, overlay_active;
+    int retaining_pre_post;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the
