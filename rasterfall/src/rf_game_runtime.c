@@ -206,9 +206,8 @@ static struct rasterfall_effects *active_effects;
  * rasterfall_render.c。 */
 static void put_pixel(struct toy_surface *surface, int x, int y, uint32_t color)
 {
-    uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                 y * surface->stride);
-    row[x] = color;
+    fb_put_pixel((unsigned char *)surface->pixels, x, y, color,
+                 surface->stride);
 }
 
 static void view_to_world(const struct camera *camera, const struct vec3 *view,
@@ -2635,6 +2634,11 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         perf_tris=renderer->submitted_triangles;
     }
 
+    /* Direct screen-space producers below use this surface.  Renderer command
+     * producers continue targeting renderer->surface and remain GPU-8B2. */
+    surface = rf_core_begin_screen_overlay(runtime->core);
+    if (!surface) return -1;
+
     if (runtime->coordinate_axes)
         rasterfall_render_coordinate_labels(surface, render_camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
@@ -2653,6 +2657,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     flushed = rasterfall_render_effects(renderer, render_camera);
     pixels += flushed;
     overlay_pixels += (unsigned long)flushed;
+
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED) {
         flushed = rasterfall_viewmodel_render(
@@ -4107,13 +4112,17 @@ startup_again:
             rf_windows_log(gpu_log);
             if (core.gpu_frame.native_present) {
                 snprintf(gpu_log, sizeof(gpu_log),
-                    "gpu-native world-only=1 acquire=%.3fms raster-wait=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
+                    "gpu-native overlay-composite=ready acquire=%.3fms raster-wait=%.3fms overlay-draw=%.3fms overlay-upload=%.3fms overlay-composite=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms overlay-bytes=%u readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
                     gpu_stats.native_present_timing.acquire_ms,
                     gpu_stats.native_present_timing.gpu_raster_ms,
+                    gpu_stats.overlay_cpu_draw_ms,
+                    gpu_stats.native_present_timing.overlay_upload_ms,
+                    gpu_stats.native_present_timing.overlay_composite_ms,
                     gpu_stats.native_present_timing.buffer_to_swapchain_ms,
                     gpu_stats.native_present_timing.submit_ms,
                     gpu_stats.native_present_timing.present_ms,
                     gpu_stats.native_present_timing.total_ms,
+                    gpu_stats.native_present_timing.overlay_upload_bytes,
                     gpu_stats.native_present_timing.color_readback_bytes,
                     gpu_stats.native_present_timing.cpu_framebuffer_copy_bytes,
                     gpu_stats.native_present_timing.format,

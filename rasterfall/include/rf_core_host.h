@@ -20,6 +20,7 @@ struct rf_core_gpu_frame_stats {
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;
     unsigned long long texture_commands, texture_upload_bytes;
+    unsigned long long overlay_upload_bytes, overlay_composite_frames;
     unsigned long long oracle_frames, oracle_failures;
     unsigned long long oracle_color_mismatches, oracle_depth_mismatches;
     unsigned int oracle_max_color_delta;
@@ -28,6 +29,7 @@ struct rf_core_gpu_frame_stats {
     double frontend_ms, classification_ms, texture_measure_ms;
     double raster_abi_pack_ms, texture_table_build_ms;
     double cpu_oracle_ms, presentation_copy_ms, present_ms, frame_total_ms;
+    double overlay_cpu_draw_ms;
     struct rf_gpu_raster_timing last_timing;
     struct rf_gpu_native_present_timing native_present_timing;
 };
@@ -43,9 +45,16 @@ struct rf_core_gpu_frame {
     unsigned int *oracle_color;
     int *oracle_depth;
     unsigned long oracle_pixel_capacity;
+    struct toy_surface overlay_surface;
+    unsigned char *overlay_coverage;
+    unsigned long overlay_pixel_capacity;
+    int64_t overlay_draw_begin_us;
+    unsigned long native_stream_size, native_texture_bytes;
+    unsigned int native_texture_count;
     struct rf_core_gpu_frame_stats stats;
     int64_t frontend_begin_us, frame_begin_us;
     int renderer, armed, initialized, native_present, native_presented;
+    int native_prepared, overlay_active;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the
@@ -86,6 +95,9 @@ struct rf_core_status {
     unsigned long long gpu_frames_attempted;
     unsigned long long gpu_frames_rendered;
     unsigned long long gpu_frames_fallback;
+    int native_present_ready, screen_overlay_composite_ready;
+    unsigned int overlay_upload_bytes_per_frame;
+    unsigned long long overlay_composite_frames;
 };
 
 /* Compatibility name for the future public context spelling.  This is an
@@ -119,6 +131,9 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
+/* Returns the normal software surface on the CPU backend, and a cleared
+ * Core-owned color+coverage overlay surface on native GPU presentation. */
+struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core);
 void rf_core_gpu_world_begin(struct rf_core *core);
 void rf_core_gpu_world_flush(struct rf_core *core);
 int rf_core_get_gpu_frame_stats(const struct rf_core *core,

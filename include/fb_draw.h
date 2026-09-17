@@ -23,6 +23,14 @@
 void fb_put_pixel(unsigned char *fbp, int x, int y,
                   uint32_t color, int line_length);
 
+/* Optional serial framebuffer-write observer used by Rasterfall's CPU
+ * screen-overlay surface.  Writes to any other framebuffer are unaffected. */
+void fb_coverage_bind(unsigned char *fbp, unsigned char *coverage,
+                      int width, int height, int coverage_stride);
+void fb_coverage_unbind(void);
+void fb_put_pixel_alpha(unsigned char *fbp, int x, int y, uint32_t color,
+                        unsigned int alpha, int line_length);
+
 /* ── 直线（Bresenham） ── */
 
 void fb_draw_line(unsigned char *fbp,

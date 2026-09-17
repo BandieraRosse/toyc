@@ -9,13 +9,13 @@ static void hud_fill_rect(struct toy_surface *surface, int x, int y,
                           int width, int height, uint32_t color)
 {
     int yy, xx;
-    uint32_t *row;
     if (!surface || !surface->pixels || width <= 0 || height <= 0) return;
     for (yy = y; yy < y + height; yy++) {
         if (yy < 0 || yy >= surface->height) continue;
-        row = (uint32_t *)((unsigned char *)surface->pixels + yy * surface->stride);
         for (xx = x; xx < x + width; xx++)
-            if (xx >= 0 && xx < surface->width) row[xx] = color;
+            if (xx >= 0 && xx < surface->width)
+                fb_put_pixel((unsigned char *)surface->pixels, xx, yy, color,
+                             surface->stride);
     }
 }
 

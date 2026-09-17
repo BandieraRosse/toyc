@@ -20,6 +20,31 @@
 #include "core.h"
 #include "string.h"
 
+static unsigned char *coverage_color;
+static unsigned char *coverage_pixels;
+static int coverage_width, coverage_height, coverage_stride;
+
+void fb_coverage_bind(unsigned char *fbp, unsigned char *coverage,
+                      int width, int height, int stride)
+{
+    coverage_color = fbp; coverage_pixels = coverage;
+    coverage_width = width; coverage_height = height; coverage_stride = stride;
+}
+
+void fb_coverage_unbind(void)
+{
+    coverage_color = coverage_pixels = NULL;
+    coverage_width = coverage_height = coverage_stride = 0;
+}
+
+static void mark_coverage(unsigned char *fbp, int x, int y,
+                          unsigned int alpha)
+{
+    if (fbp == coverage_color && coverage_pixels && x >= 0 && y >= 0 &&
+        x < coverage_width && y < coverage_height)
+        coverage_pixels[y * coverage_stride + x] = (unsigned char)alpha;
+}
+
 /* ── 像素操作 ── */
 
 void fb_put_pixel(unsigned char *fbp, int x, int y,
@@ -27,6 +52,36 @@ void fb_put_pixel(unsigned char *fbp, int x, int y,
 {
     uint32_t *ptr = (uint32_t *)(fbp + y * line_length + x * 4);
     *ptr = color;
+    mark_coverage(fbp, x, y, 255);
+}
+
+void fb_put_pixel_alpha(unsigned char *fbp, int x, int y, uint32_t color,
+                        unsigned int alpha, int line_length)
+{
+    uint32_t *ptr = (uint32_t *)(fbp + y * line_length + x * 4);
+    if (alpha > 255) alpha = 255;
+    if (fbp == coverage_color && coverage_pixels && x >= 0 && y >= 0 &&
+        x < coverage_width && y < coverage_height) {
+        unsigned int old_a = coverage_pixels[y * coverage_stride + x];
+        unsigned int out_a = alpha + (old_a * (255 - alpha) + 127) / 255;
+        if (out_a) {
+            unsigned int old = *ptr, inv = 255 - alpha;
+            unsigned int old_weight = (old_a * inv + 127) / 255;
+            unsigned int r = ((((color >> 16) & 255) * alpha) +
+                (((old >> 16) & 255) * old_weight) + out_a / 2) / out_a;
+            unsigned int g = ((((color >> 8) & 255) * alpha) +
+                (((old >> 8) & 255) * old_weight) + out_a / 2) / out_a;
+            unsigned int b = (((color & 255) * alpha) +
+                ((old & 255) * old_weight) + out_a / 2) / out_a;
+            *ptr = 0xff000000U | (r << 16) | (g << 8) | b;
+        }
+        mark_coverage(fbp, x, y, out_a);
+    } else {
+        unsigned int old = *ptr, inv = 255 - alpha;
+        *ptr = (((((old >> 16) & 255) * inv + ((color >> 16) & 255) * alpha) / 255) << 16) |
+               (((((old >> 8) & 255) * inv + ((color >> 8) & 255) * alpha) / 255) << 8) |
+               (((old & 255) * inv + (color & 255) * alpha) / 255);
+    }
 }
 
 /* ── 辅助：画圆的 8 个对称点 ── */
@@ -92,8 +147,10 @@ void fb_fill_rect(unsigned char *fbp,
 {
     for (int row = 0; row < h; row++) {
         uint32_t *start = (uint32_t *)(fbp + (y + row) * line_length + x * 4);
-        for (int col = 0; col < w; col++)
+        for (int col = 0; col < w; col++) {
             start[col] = color;
+            mark_coverage(fbp, x + col, y + row, 255);
+        }
     }
 }
 
@@ -194,8 +251,10 @@ void fb_fill_triangle(unsigned char *fbp,
 		if (x_left > x_right) { t = x_left; x_left = x_right; x_right = t; }
 
 		uint32_t *row = (uint32_t *)(fbp + y * line_length);
-		for (int x = x_left; x <= x_right; x++)
+		for (int x = x_left; x <= x_right; x++) {
 			row[x] = color;
+            mark_coverage(fbp, x, y, 255);
+        }
 	}
 }
 

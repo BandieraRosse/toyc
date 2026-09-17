@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-8B1 在既有 BGRA8 transfer-dst swapchain 前增加 host-visible overlay color/packed coverage upload 与 compute composite；swapchain 不要求 STORAGE，single-frame sync 与 replacement-first resize 不变。Windows SDL key contract 同步映射 F12/Grave，供 Desktop 与 Console 实机验收；overlay diagnostic 的 MinGW executable 已在 Intel Iris Xe 得到 0 mismatch。
 > 源码核对基线补充：GPU-8A 建立 `toy_window_get_native_handle()` 的 Win32 HWND/HINSTANCE 无 SDL 类型契约，并以 `--gpu-native-present` 启用独立 Native Presentation V1。Intel Iris Xe 实机 10/10 帧 PASS，resize 后 300/300 PASS；BGRA8/FIFO/3 images，最终 984×661，color readback 与 CPU framebuffer copy 均为零。
 > 源码核对基线补充：GPU-7C/7D 已完成并冻结。Windows package 在 Intel Iris Xe 上完成 optional/required Outpost 及 required Campaign normal oracle；Outpost、near/0、near/30 均 3/3 GPU frames、零 fallback、color/depth 0 mismatch，mid/30 因透明命令按契约整批 CPU fallback。readback 58.529--64.471 ms，明显高于 9.027--27.813 ms execution-wait，下一阶段选择 GPU-8。
 > 源码核对基线补充：GPU-7C 的 Windows normal binary 已链接共用 Vulkan backend、Raster V1 packer/binner；显式 `--renderer gpu-compute` 使用 Core-owned whole-world-batch GPU execution/readback，默认 CPU 不变。freestanding Linux normal binary 保留 optional-unavailable CPU fallback，WSL correctness 继续由 hosted differential 验证。

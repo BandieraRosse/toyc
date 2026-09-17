@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-8A 已完成并冻结；GPU-8B composition decision 待继续）
+> 状态：执行中（GPU-0 至 GPU-8A 已完成并冻结；GPU-8B1 已实现，等待 Intel 实机视觉/时序冻结门禁）
 > 进展同步：2026-09-17
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -28,6 +28,7 @@
 | GPU-7C Normal GPU Frame Integration | 已完成 / FROZEN | Core-owned normal frame、same-frame CPU oracle、mismatch artifact/replay 与完整恢复；Intel Outpost/near supported batches 逐 color/depth 0 mismatch；默认 CPU |
 | GPU-7D Texture V1 | 已完成 / FROZEN | buffer-backed nearest RGB8/RGBA8；hosted CPU/full-scan/binned 与 Intel normal textured frames 均 0 mismatch；transparent 保持 whole-batch fallback |
 | GPU-8A Native Presentation | 已完成 / FROZEN | Win32 handle contract、surface/swapchain query、BGRA8 transfer copy、single-frame sync 与 world-only diagnostic；Intel 10/10、resize 300/300、零 fallback/readback/copy |
+| GPU-8B1 CPU Overlay / GPU Composite | 已实现 / 待实机冻结 | Core-owned XRGB8888 + 8-bit coverage；现有 CPU UI truth；full upload；device-local world color compute composite；8B2 renderer layers 不混入 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：
@@ -1230,6 +1231,24 @@ Linux/WSL ABI 与 Raster V1 回归、MinGW 完整构建。Intel Iris Xe near/0 �
 29.009 ms、raster wait 23.989 ms、present 1.990 ms、readback 0；software-present total 102.399 ms、
 execution 36.672 ms、readback 63.316 ms。resize 后 300/300 native frames、零 fallback，最终 extent
 984×661。GPU-8A DONE / FROZEN；完整 HUD/GUI composition 留给 GPU-8B。
+
+### GPU-8B1 — CPU Screen Overlay Upload / GPU Composite
+
+实现边界为 `screen-space producer → fb_draw/fb_font（少量旧手写 fill 已归一）→ Core-owned overlay`。
+color 为 `0xffRRGGBB`，coverage 为独立 8-bit 0..255，不使用 color-key。绝大多数 UI 是 opaque
+overwrite（coverage=255）；Developer Console 全屏背景原本依赖 alpha=190，因此保留该 partial-alpha
+语义。GPU pass 每 invocation 对应一个 pixel，在 Raster V1 device-local world color buffer 上执行
+整数 source-over，再复用 GPU-8A transfer-dst swapchain copy/present。
+
+world barrier 只冻结 packed stream 与 Texture V1 table；CPU 随后继续产生 HUD、crosshair、pause、
+scoreboard、input debug、Console、GUI/Desktop。Core end-frame 以 single-frame-in-flight 顺序执行
+overlay full upload（color 4 bytes/pixel + coverage 1 byte/pixel）、non-coherent flush、raster、compute
+barrier、overlay composite、buffer→swapchain copy、present。resize 继续 replacement-first；CPU overlay
+按当帧 extent 重置，零尺寸窗口不 begin frame。
+
+interactables、effects、viewmodel 仍在 world barrier 后提交 renderer command，未进入 overlay，归
+GPU-8B2。默认 renderer 仍为 CPU。共享/MinGW 构建及 overlay contract fixture 已通过；Intel native
+测试专用 GPU composite readback oracle 已覆盖 odd size、non-tight color/coverage/output stride、coverage 0/128/255，Linux Vulkan 与 Windows Intel Iris Xe 均为 0 mismatch；该入口与 normal native-present 分离，后者仍为零 readback。视觉、resize 与 timing 门禁完成前，本阶段不标记 FROZEN。
 
 ## GPU-9 — Native Visual Renderer
 

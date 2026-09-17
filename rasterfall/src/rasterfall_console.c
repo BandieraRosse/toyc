@@ -148,6 +148,15 @@ static int command_status(const struct rf_command_context *context,
            game_status.local_player_active ? "yes" : "no",
            game_status.local_player_state, game_status.local_player_hp);
   out(output, line);
+  snprintf(line, sizeof(line),
+           "  native-present=%s screen-overlay-composite=%s",
+           core_status.native_present_ready ? "ready" : "not-ready",
+           core_status.screen_overlay_composite_ready ? "ready" : "not-ready");
+  out(output, line);
+  snprintf(line, sizeof(line), "  overlay-upload=%u bytes/frame composite-frames=%llu",
+           core_status.overlay_upload_bytes_per_frame,
+           core_status.overlay_composite_frames);
+  out(output, line);
   return 0;
 }
 static int command_runtime(const struct rf_command_context *context,
@@ -314,13 +323,9 @@ static void rect_alpha(struct toy_surface *s,int x,int y,int w,int h,
     if (alpha > 255) alpha=255;
     for (yy=y; yy<y+h; yy++) if (yy>=0 && yy<s->height)
         for (xx=x; xx<x+w; xx++) if (xx>=0 && xx<s->width) {
-            unsigned int *p=(unsigned int *)((unsigned char *)s->pixels+
-                                              yy*s->stride)+xx;
-            unsigned int old=*p;
-            unsigned int or=(old>>16)&255, og=(old>>8)&255, ob=old&255;
-            *p=((or*(255-alpha)+cr*alpha)/255<<16)|
-               ((og*(255-alpha)+cg*alpha)/255<<8)|
-               ((ob*(255-alpha)+cb*alpha)/255);
+            (void)cr; (void)cg; (void)cb;
+            fb_put_pixel_alpha((unsigned char *)s->pixels,xx,yy,color,
+                               (unsigned int)alpha,s->stride);
         }
 }
 /* fb_draw_string is deliberately a low-level primitive and assumes the caller

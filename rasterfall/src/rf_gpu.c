@@ -27,6 +27,34 @@ static void copy_message(char *destination, unsigned long capacity,
     destination[i] = 0;
 }
 
+int rf_gpu_overlay_composite_reference(unsigned int *world,
+                         unsigned int world_stride,
+                         const unsigned int *overlay_color,
+                         unsigned int overlay_stride,
+                         const unsigned char *coverage,
+                         unsigned int coverage_stride,
+                         unsigned int width, unsigned int height)
+{
+    unsigned int x, y;
+    if (!world || !overlay_color || !coverage || !width || !height ||
+        world_stride < width || overlay_stride < width || coverage_stride < width)
+        return -1;
+    for (y=0;y<height;y++) for (x=0;x<width;x++) {
+        unsigned long p=(unsigned long)y*world_stride+x;
+        unsigned int a=coverage[(unsigned long)y*coverage_stride+x];
+        unsigned int src,dst,inv,r,g,b;
+        if(!a)continue;
+        src=overlay_color[(unsigned long)y*overlay_stride+x];
+        if(a==255){world[p]=src|0xff000000U;continue;}
+        dst=world[p];inv=255-a;
+        r=(((src>>16)&255)*a+((dst>>16)&255)*inv)/255;
+        g=(((src>>8)&255)*a+((dst>>8)&255)*inv)/255;
+        b=((src&255)*a+(dst&255)*inv)/255;
+        world[p]=0xff000000U|(r<<16)|(g<<8)|b;
+    }
+    return 0;
+}
+
 const char *rf_gpu_policy_name(int policy)
 {
     switch (policy) {
@@ -291,6 +319,10 @@ int rf_gpu_raster_present_textured_timed(
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
                          const void *texture_texels, unsigned long texture_bytes,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
                          unsigned int width, unsigned int height,
                          struct rf_gpu_raster_timing *raster_timing,
                          struct rf_gpu_native_present_timing *present_timing)
@@ -300,8 +332,32 @@ int rf_gpu_raster_present_textured_timed(
         return -1;
     return gpu->backend->raster_present(gpu->backend_context,
         raster->implementation, stream, stream_size, texture_descs,
-        texture_count, texture_texels, texture_bytes, width, height,
+        texture_count, texture_texels, texture_bytes, overlay_color,
+        overlay_coverage, overlay_stride, coverage_stride, width, height,
         raster_timing, present_timing, gpu->message, sizeof(gpu->message));
+}
+
+int rf_gpu_raster_composite_diagnostic(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride)
+{
+    if (!gpu || gpu->state != RF_GPU_STATE_READY || !raster ||
+        raster->backend != gpu->backend ||
+        !gpu->backend->raster_composite_diagnostic)
+        return -1;
+    return gpu->backend->raster_composite_diagnostic(gpu->backend_context,
+        raster->implementation, stream, stream_size, overlay_color,
+        overlay_coverage, overlay_stride, coverage_stride, color, depth,
+        width, height, color_stride, depth_stride, gpu->message,
+        sizeof(gpu->message));
 }
 
 int rf_gpu_init(struct rf_gpu *gpu, enum rf_gpu_policy policy,

@@ -9,15 +9,12 @@
 static void fill(struct toy_surface *s, int x, int y, int w, int h,
                  unsigned int color)
 {
-    int xx, yy;
     if (x < 0) { w += x; x = 0; }
     if (y < 0) { h += y; y = 0; }
     if (x + w > s->width) w = s->width - x;
     if (y + h > s->height) h = s->height - y;
     if (w <= 0 || h <= 0) return;
-    for (yy = y; yy < y + h; yy++)
-        for (xx = x; xx < x + w; xx++)
-            s->pixels[yy * (s->stride / 4) + xx] = color;
+    fb_fill_rect((unsigned char *)s->pixels, x, y, w, h, color, s->stride);
 }
 
 static int inside(int x, int y, int w, int h, int px, int py)

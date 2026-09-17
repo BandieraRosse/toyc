@@ -911,6 +911,7 @@ cleanup:
 
 #include "rf_gpu_raster_v1_spirv.inc"
 #include "rf_gpu_raster_v1_full_spirv.inc"
+#include "rf_gpu_overlay_spirv.inc"
 
 struct rf_gpu_vulkan_raster_buffer {
     rf_vk_buffer buffer;
@@ -929,6 +930,8 @@ struct rf_gpu_vulkan_raster {
     struct rf_gpu_vulkan_raster_buffer tile_indices;
     struct rf_gpu_vulkan_raster_buffer texture_descs;
     struct rf_gpu_vulkan_raster_buffer texture_texels;
+    struct rf_gpu_vulkan_raster_buffer overlay_color;
+    struct rf_gpu_vulkan_raster_buffer overlay_coverage;
     struct rf_gpu_vulkan_raster_buffer color_readback;
     struct rf_gpu_vulkan_raster_buffer depth_readback;
     rf_vk_descriptor_set_layout set_layout;
@@ -936,9 +939,11 @@ struct rf_gpu_vulkan_raster {
     rf_vk_descriptor_set descriptor_set;
     rf_vk_shader_module shader;
     rf_vk_shader_module full_scan_shader;
+    rf_vk_shader_module overlay_shader;
     rf_vk_pipeline_layout pipeline_layout;
     rf_vk_pipeline pipeline;
     rf_vk_pipeline full_scan_pipeline;
+    rf_vk_pipeline overlay_pipeline;
     rf_vk_command_pool command_pool;
     rf_vk_command_buffer command_buffer;
     uint32_t width, height;
@@ -951,6 +956,9 @@ struct rf_gpu_vulkan_raster {
     uint32_t swapchain_format, present_mode;
     rf_vk_semaphore acquire_semaphore, complete_semaphore;
     struct rf_gpu_native_present_timing *pending_present_timing;
+    const uint32_t *pending_overlay_color;
+    const unsigned char *pending_overlay_coverage;
+    uint32_t pending_overlay_stride, pending_coverage_stride;
 };
 
 static int raster_buffer_create(struct rf_gpu_vulkan_impl *impl,
@@ -1145,12 +1153,15 @@ static void raster_destroy(void *context, void *raster)
         impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
     if (r->pipeline) impl->api.destroy_pipeline(impl->device, r->pipeline, NULL);
     if (r->full_scan_pipeline) impl->api.destroy_pipeline(impl->device, r->full_scan_pipeline, NULL);
+    if (r->overlay_pipeline) impl->api.destroy_pipeline(impl->device, r->overlay_pipeline, NULL);
     if (r->pipeline_layout)
         impl->api.destroy_pipeline_layout(impl->device, r->pipeline_layout, NULL);
     if (r->shader)
         impl->api.destroy_shader_module(impl->device, r->shader, NULL);
     if (r->full_scan_shader)
         impl->api.destroy_shader_module(impl->device, r->full_scan_shader, NULL);
+    if (r->overlay_shader)
+        impl->api.destroy_shader_module(impl->device, r->overlay_shader, NULL);
     if (r->descriptor_pool)
         impl->api.destroy_descriptor_pool(impl->device, r->descriptor_pool, NULL);
     if (r->set_layout)
@@ -1160,6 +1171,8 @@ static void raster_destroy(void *context, void *raster)
     raster_buffer_destroy(impl, &r->tile_offsets);
     raster_buffer_destroy(impl, &r->texture_descs);
     raster_buffer_destroy(impl, &r->texture_texels);
+    raster_buffer_destroy(impl, &r->overlay_color);
+    raster_buffer_destroy(impl, &r->overlay_coverage);
     raster_buffer_destroy(impl, &r->depth_readback);
     raster_buffer_destroy(impl, &r->color_readback);
     raster_buffer_destroy(impl, &r->depth);
@@ -1206,10 +1219,10 @@ static int raster_create(void *context, unsigned int width,
             RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &r->depth_readback) < 0) goto failed;
     {
-        struct rf_vk_descriptor_set_layout_binding bindings[7];
+        struct rf_vk_descriptor_set_layout_binding bindings[9];
         struct rf_vk_descriptor_set_layout_create_info info;
         memset(bindings, 0, sizeof(bindings));
-        for (i = 0; i < 7; ++i) {
+        for (i = 0; i < 9; ++i) {
             bindings[i].binding = i;
             bindings[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             bindings[i].descriptor_count = 1;
@@ -1217,7 +1230,7 @@ static int raster_create(void *context, unsigned int width,
         }
         memset(&info, 0, sizeof(info));
         info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.binding_count = 7; info.bindings = bindings;
+        info.binding_count = 9; info.bindings = bindings;
         if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
                                                    &r->set_layout) != RF_VK_SUCCESS)
             goto failed;
@@ -1227,7 +1240,7 @@ static int raster_create(void *context, unsigned int width,
         struct rf_vk_descriptor_pool_create_info pool_info;
         struct rf_vk_descriptor_set_allocate_info allocation;
         size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        size.descriptor_count = 7;
+        size.descriptor_count = 9;
         memset(&pool_info, 0, sizeof(pool_info));
         pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.max_sets = 1; pool_info.pool_size_count = 1;
@@ -1280,6 +1293,13 @@ static int raster_create(void *context, unsigned int width,
         if (impl->api.create_shader_module(impl->device,&shader_info,NULL,&r->full_scan_shader)!=RF_VK_SUCCESS)goto failed;
         pipeline_info.stage.module=r->full_scan_shader;
         if(impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline_info,NULL,&r->full_scan_pipeline)!=RF_VK_SUCCESS)goto failed;
+        shader_info.code_size = work_group_x == 16 ? rf_gpu_overlay_16_spirv_len : rf_gpu_overlay_8_spirv_len;
+        shader_info.code = (const uint32_t *)(const void *)(work_group_x == 16 ? rf_gpu_overlay_16_spirv : rf_gpu_overlay_8_spirv);
+        if (impl->api.create_shader_module(impl->device,&shader_info,NULL,
+                &r->overlay_shader)!=RF_VK_SUCCESS) goto failed;
+        pipeline_info.stage.module=r->overlay_shader;
+        if (impl->api.create_compute_pipelines(impl->device,NULL,1,
+                &pipeline_info,NULL,&r->overlay_pipeline)!=RF_VK_SUCCESS) goto failed;
     }
     {
         struct rf_vk_command_pool_create_info pool_info;
@@ -1387,6 +1407,8 @@ static int raster_render(void *context, void *raster,
     unsigned int y;
     rf_vk_result result;
     int native_present = color == NULL && depth == NULL;
+    int composite = native_present ||
+        (r->pending_overlay_color && r->pending_overlay_coverage);
     uint32_t swapchain_image = 0;
     struct rf_gpu_native_present_timing *native_timing = NULL;
     double total_start = now_ms(), segment_start;
@@ -1492,9 +1514,25 @@ static int raster_render(void *context, void *raster,
         timing->texture_bytes=texture_bytes;
         timing->upload_ms+=timing->texture_upload_ms;
     }
+    if (composite) {
+        uint64_t color_bytes = byte_size;
+        uint64_t coverage_bytes = ((uint64_t)width * height + 3U) & ~3ULL;
+        double overlay_start = now_ms();
+        if (!r->pending_overlay_color || !r->pending_overlay_coverage ||
+            raster_upload(impl, &r->overlay_color,
+                          r->pending_overlay_color, color_bytes) < 0 ||
+            raster_upload(impl, &r->overlay_coverage,
+                          r->pending_overlay_coverage, coverage_bytes) < 0)
+            goto failed;
+        if (native_timing) {
+            native_timing->overlay_upload_ms = now_ms() - overlay_start;
+            native_timing->overlay_upload_bytes =
+                (uint32_t)(color_bytes + (uint64_t)width * height);
+        }
+    }
     {
-        struct rf_vk_descriptor_buffer_info infos[7];
-        struct rf_vk_write_descriptor_set writes[7];
+        struct rf_vk_descriptor_buffer_info infos[9];
+        struct rf_vk_write_descriptor_set writes[9];
         memset(infos, 0, sizeof(infos)); memset(writes, 0, sizeof(writes));
         infos[0].buffer = r->command.buffer; infos[0].range = stream_size;
         infos[1].buffer = r->color.buffer; infos[1].range = byte_size;
@@ -1508,14 +1546,22 @@ static int raster_render(void *context, void *raster,
             (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture);
         infos[6].buffer = r->texture_texels.buffer;
         infos[6].range = texture_count ? texture_bytes : sizeof(empty_texel);
-        for (y = 0; y < 7; ++y) {
+        if (composite) {
+            infos[7].buffer = r->overlay_color.buffer;
+            infos[7].range = byte_size;
+            infos[8].buffer = r->overlay_coverage.buffer;
+            infos[8].range = ((uint64_t)width * height + 3U) & ~3ULL;
+        } else {
+            infos[7] = infos[1]; infos[8] = infos[1];
+        }
+        for (y = 0; y < 9; ++y) {
             writes[y].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             writes[y].dst_set = r->descriptor_set; writes[y].dst_binding = y;
             writes[y].descriptor_count = 1;
             writes[y].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[y].buffer_info = &infos[y];
         }
-        impl->api.update_descriptor_sets(impl->device, r->full_scan_diagnostic?7:7, writes, 0, NULL);
+        impl->api.update_descriptor_sets(impl->device, 9, writes, 0, NULL);
     }
     if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
         RF_VK_SUCCESS) goto failed;
@@ -1543,6 +1589,25 @@ static int raster_render(void *context, void *raster,
         impl->api.cmd_dispatch(r->command_buffer,
             (width + r->work_group_x - 1) / r->work_group_x,
             (height + r->work_group_y - 1) / r->work_group_y, 1);
+        if (composite) {
+            double composite_start = now_ms();
+            memset(&barrier, 0, sizeof(barrier));
+            barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dst_access_mask = RF_VK_ACCESS_SHADER_READ_BIT |
+                                      RF_VK_ACCESS_SHADER_WRITE_BIT;
+            impl->api.cmd_pipeline_barrier(r->command_buffer,
+                RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                0, 1, &barrier, 0, NULL, 0, NULL);
+            impl->api.cmd_bind_pipeline(r->command_buffer,
+                RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->overlay_pipeline);
+            impl->api.cmd_dispatch(r->command_buffer,
+                (width + r->work_group_x - 1) / r->work_group_x,
+                (height + r->work_group_y - 1) / r->work_group_y, 1);
+            if (native_timing)
+                native_timing->overlay_composite_ms = now_ms() - composite_start;
+        }
         memset(&barrier, 0, sizeof(barrier));
         barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
@@ -1709,20 +1774,91 @@ static int raster_present(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
                          const void *texture_texels, unsigned long texture_bytes,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
                          unsigned int width, unsigned int height,
                          struct rf_gpu_raster_timing *raster_timing,
                          struct rf_gpu_native_present_timing *present_timing,
                          char *message, unsigned long message_capacity)
 {
     struct rf_gpu_vulkan_raster *r = raster;
+    uint32_t *packed_color = NULL;
+    unsigned char *packed_coverage = NULL;
+    uint64_t pixels = (uint64_t)width * height;
+    unsigned int y;
     int result;
-    if (!r || !present_timing) return -1;
+    if (!r || !present_timing || !overlay_color || !overlay_coverage ||
+        overlay_stride < width || coverage_stride < width) return -1;
+    packed_color = malloc((size_t)pixels * 4);
+    packed_coverage = calloc(1, (size_t)((pixels + 3U) & ~3ULL));
+    if (!packed_color || !packed_coverage) {
+        free(packed_color); free(packed_coverage); return -1;
+    }
+    for (y = 0; y < height; ++y) {
+        memcpy(packed_color + (uint64_t)y * width,
+               overlay_color + (uint64_t)y * overlay_stride,
+               (size_t)width * 4);
+        memcpy(packed_coverage + (uint64_t)y * width,
+               overlay_coverage + (uint64_t)y * coverage_stride, width);
+    }
     memset(present_timing, 0, sizeof(*present_timing));
     r->pending_present_timing = present_timing;
+    r->pending_overlay_color = packed_color;
+    r->pending_overlay_coverage = packed_coverage;
+    r->pending_overlay_stride = width;
+    r->pending_coverage_stride = width;
     result = raster_render(context, raster, stream, stream_size, texture_descs,
         texture_count, texture_texels, texture_bytes, NULL, NULL, width, height,
         0, 0, raster_timing, message, message_capacity);
     r->pending_present_timing = NULL;
+    r->pending_overlay_color = NULL;
+    r->pending_overlay_coverage = NULL;
+    free(packed_color); free(packed_coverage);
+    return result;
+}
+
+static int raster_composite_diagnostic(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride,
+                         char *message, unsigned long message_capacity)
+{
+    struct rf_gpu_vulkan_raster *r = raster;
+    uint32_t *packed_color = NULL;
+    unsigned char *packed_coverage = NULL;
+    uint64_t pixels = (uint64_t)width * height;
+    unsigned int y;
+    int result;
+    if (!r || !overlay_color || !overlay_coverage || !color || !depth ||
+        overlay_stride < width || coverage_stride < width) return -1;
+    packed_color = malloc((size_t)pixels * 4);
+    packed_coverage = calloc(1, (size_t)((pixels + 3U) & ~3ULL));
+    if (!packed_color || !packed_coverage) {
+        free(packed_color); free(packed_coverage); return -1;
+    }
+    for (y = 0; y < height; ++y) {
+        memcpy(packed_color + (uint64_t)y * width,
+               overlay_color + (uint64_t)y * overlay_stride,
+               (size_t)width * 4);
+        memcpy(packed_coverage + (uint64_t)y * width,
+               overlay_coverage + (uint64_t)y * coverage_stride, width);
+    }
+    r->pending_overlay_color = packed_color;
+    r->pending_overlay_coverage = packed_coverage;
+    result = raster_render(context, raster, stream, stream_size, NULL, 0,
+        NULL, 0, color, depth, width, height, color_stride, depth_stride,
+        NULL, message, message_capacity);
+    r->pending_overlay_color = NULL;
+    r->pending_overlay_coverage = NULL;
+    free(packed_color); free(packed_coverage);
     return result;
 }
 
@@ -2111,5 +2247,6 @@ const struct rf_gpu_backend rf_gpu_vulkan_backend = {
     raster_render,
     raster_set_full_scan_diagnostic,
     backend_set_native_window,
-    raster_present
+    raster_present,
+    raster_composite_diagnostic
 };

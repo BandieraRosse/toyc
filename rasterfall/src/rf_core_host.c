@@ -2,6 +2,7 @@
 #include "tlibc_everything.h"
 #include "rf_core_host.h"
 #include "rf_gpu_raster_pack.h"
+#include "fb_draw.h"
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_raster_cpu_ref.h"
 #endif
@@ -252,18 +253,12 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             return -1;
         }
         if (frame->native_present) {
-            gpu_world_log("gpu-world: native present begin (world-only)");
-            if (rf_gpu_raster_present_textured_timed(&core->gpu, &frame->raster,
-                    frame->stream, written, resources.descs,
-                    resources.desc_count, resources.texels,
-                    resources.texel_size, renderer->surface.width,
-                    renderer->surface.height, &frame->stats.last_timing,
-                    &frame->stats.native_present_timing) < 0) {
-                gpu_world_log("gpu-world: native present failed; software fallback");
-                frame->stats.cpu_fallback_frames++;
-                return -1;
-            }
-            frame->native_presented = 1;
+            /* Preserve the packed world batch until Core end-frame.  Game can
+             * now draw its existing screen UI into the independent overlay. */
+            frame->native_stream_size = written;
+            frame->native_texture_count = resources.desc_count;
+            frame->native_texture_bytes = resources.texel_size;
+            frame->native_prepared = 1;
             frame->stats.unique_textures = resources.desc_count;
             frame->stats.texture_upload_bytes = resources.texel_size;
             frame->stats.texture_commands += texture;
@@ -524,7 +519,43 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     if (toy_renderer_begin(core->renderer, &core->surface, clear_color) < 0)
         return -1;
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
+    core->gpu_frame.native_prepared = 0;
+    core->gpu_frame.overlay_active = 0;
     return ready;
+}
+
+struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
+{
+    struct rf_core_gpu_frame *frame;
+    unsigned long pixels;
+    if (!core || !core->gpu_frame.native_present ||
+        !core->gpu_frame.native_prepared) return core ? &core->surface : NULL;
+    frame = &core->gpu_frame;
+    pixels = (unsigned long)core->surface.width * core->surface.height;
+    if (!pixels) return NULL;
+    if (pixels > frame->overlay_pixel_capacity) {
+        unsigned int *color = tlibc_malloc(pixels * sizeof(*color));
+        unsigned char *coverage = tlibc_malloc(pixels);
+        if (!color || !coverage) {
+            tlibc_free(color); tlibc_free(coverage); return NULL;
+        }
+        tlibc_free(frame->overlay_surface.pixels);
+        tlibc_free(frame->overlay_coverage);
+        frame->overlay_surface.pixels = color;
+        frame->overlay_coverage = coverage;
+        frame->overlay_pixel_capacity = pixels;
+    }
+    frame->overlay_surface.width = core->surface.width;
+    frame->overlay_surface.height = core->surface.height;
+    frame->overlay_surface.stride = core->surface.width * (int)sizeof(uint32_t);
+    memset(frame->overlay_surface.pixels, 0, pixels * sizeof(uint32_t));
+    memset(frame->overlay_coverage, 0, pixels);
+    fb_coverage_bind((unsigned char *)frame->overlay_surface.pixels,
+                     frame->overlay_coverage, core->surface.width,
+                     core->surface.height, core->surface.width);
+    frame->overlay_active = 1;
+    frame->overlay_draw_begin_us = rf_core_clock_now_us();
+    return &frame->overlay_surface;
 }
 
 int rf_core_end_frame(struct rf_core *core)
@@ -533,6 +564,32 @@ int rf_core_end_frame(struct rf_core *core)
     int result;
     if (!core || !core->window) return -1;
     if (toy_renderer_flush(core->renderer) < 0) return -1;
+    if (core->gpu_frame.overlay_active) {
+        fb_coverage_unbind();
+        core->gpu_frame.overlay_active = 0;
+        core->gpu_frame.stats.overlay_cpu_draw_ms =
+            (double)(rf_core_clock_now_us() -
+                     core->gpu_frame.overlay_draw_begin_us) / 1000.0;
+    }
+    if (core->gpu_frame.native_prepared) {
+        struct rf_core_gpu_frame *frame = &core->gpu_frame;
+        if (rf_gpu_raster_present_textured_timed(&core->gpu, &frame->raster,
+                frame->stream, frame->native_stream_size,
+                frame->texture_descs, frame->native_texture_count,
+                frame->texture_texels, frame->native_texture_bytes,
+                frame->overlay_surface.pixels, frame->overlay_coverage,
+                (unsigned int)frame->overlay_surface.width,
+                (unsigned int)frame->overlay_surface.width,
+                (unsigned int)core->surface.width,
+                (unsigned int)core->surface.height, &frame->stats.last_timing,
+                &frame->stats.native_present_timing) < 0)
+            return -1;
+        frame->native_prepared = 0;
+        frame->native_presented = 1;
+        frame->stats.overlay_upload_bytes +=
+            frame->stats.native_present_timing.overlay_upload_bytes;
+        frame->stats.overlay_composite_frames++;
+    }
     if (core->gpu_frame.native_presented) {
         core->gpu_frame.native_presented = 0;
         return 0;
@@ -609,16 +666,21 @@ void rf_core_shutdown(struct rf_core *core)
                  s->texture_measure_ms, s->raster_abi_pack_ms,
                  s->cpu_oracle_ms, s->present_ms, s->frame_total_ms);
         if (core->gpu_frame.native_present)
-            __printf("GPU-NATIVE world-only=1 acquire=%.3f raster=%.3f "
+            __printf("GPU-NATIVE overlay-composite=ready acquire=%.3f raster=%.3f "
+                     "overlay-draw=%.3f overlay-upload=%.3f overlay-composite=%.3f "
                      "buffer-copy=%.3f submit=%.3f present=%.3f total=%.3f "
-                     "color-readback=%u cpu-framebuffer-copy=%u "
+                     "overlay-bytes=%u color-readback=%u cpu-framebuffer-copy=%u "
                      "format=%u mode=%u images=%u extent=%ux%u\n",
                      s->native_present_timing.acquire_ms,
                      s->native_present_timing.gpu_raster_ms,
+                     s->overlay_cpu_draw_ms,
+                     s->native_present_timing.overlay_upload_ms,
+                     s->native_present_timing.overlay_composite_ms,
                      s->native_present_timing.buffer_to_swapchain_ms,
                      s->native_present_timing.submit_ms,
                      s->native_present_timing.present_ms,
                      s->native_present_timing.total_ms,
+                     s->native_present_timing.overlay_upload_bytes,
                      s->native_present_timing.color_readback_bytes,
                      s->native_present_timing.cpu_framebuffer_copy_bytes,
                      s->native_present_timing.format,
@@ -635,6 +697,8 @@ void rf_core_shutdown(struct rf_core *core)
     tlibc_free(core->gpu_frame.texture_texels);
     tlibc_free(core->gpu_frame.oracle_color);
     tlibc_free(core->gpu_frame.oracle_depth);
+    tlibc_free(core->gpu_frame.overlay_surface.pixels);
+    tlibc_free(core->gpu_frame.overlay_coverage);
     rf_gpu_shutdown(&core->gpu);
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);
@@ -715,6 +779,12 @@ int rf_core_get_status(const struct rf_core *core,
     status->gpu_frames_attempted = core->gpu_frame.stats.frames_attempted;
     status->gpu_frames_rendered = core->gpu_frame.stats.gpu_frames;
     status->gpu_frames_fallback = core->gpu_frame.stats.cpu_fallback_frames;
+    status->native_present_ready = core->gpu_frame.native_present;
+    status->screen_overlay_composite_ready = core->gpu_frame.native_present;
+    status->overlay_upload_bytes_per_frame =
+        core->gpu_frame.stats.native_present_timing.overlay_upload_bytes;
+    status->overlay_composite_frames =
+        core->gpu_frame.stats.overlay_composite_frames;
     return 0;
 }
 

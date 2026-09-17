@@ -28,9 +28,9 @@ enum {
     KEY_BACKSPACE = 14, KEY_TAB = 15,
     KEY_Q = 16, KEY_W = 17, KEY_E = 18, KEY_R = 19, KEY_F = 33,
     KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_ENTER = 28,
-    KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
+    KEY_GRAVE = 41, KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
     KEY_SLASH = 53, KEY_SPACE = 57,
-    KEY_UP = 103, KEY_LEFT = 105, KEY_RIGHT = 106, KEY_DOWN = 108
+    KEY_F12 = 88, KEY_UP = 103, KEY_LEFT = 105, KEY_RIGHT = 106, KEY_DOWN = 108
 };
 
 void toy_window_close(struct toy_window *window);
@@ -112,6 +112,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDLK_f: return KEY_F;
     case SDLK_TAB: return KEY_TAB;
     case SDLK_BACKSPACE: return KEY_BACKSPACE;
+    case SDLK_BACKQUOTE: return KEY_GRAVE;
+    case SDLK_F12: return KEY_F12;
     case SDLK_1: return KEY_1;
     case SDLK_2: return KEY_2;
     case SDLK_3: return KEY_3;
@@ -159,6 +161,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_F: return KEY_F;
     case SDL_SCANCODE_TAB: return KEY_TAB;
     case SDL_SCANCODE_BACKSPACE: return KEY_BACKSPACE;
+    case SDL_SCANCODE_GRAVE: return KEY_GRAVE;
+    case SDL_SCANCODE_F12: return KEY_F12;
     case SDL_SCANCODE_1: return KEY_1;
     case SDL_SCANCODE_2: return KEY_2;
     case SDL_SCANCODE_3: return KEY_3;

@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-8B1 保留 fb_draw/fb_font、HUD、Console、GUI 与 runtime panels 为唯一 screen-space truth。native path 使用 XRGB8888 + 8-bit coverage；普通写入为 255，空白为 0，Console 背景保留 190；compute 在 Raster V1 device-local color buffer 原位 source-over。独立 diagnostic API 允许测试模式读回 composite 结果，7×5 odd-size/non-tight-stride 的 Intel 与 Linux Vulkan differential 均为 0 mismatch；normal native path 不调用该 API。
 > 源码核对基线补充：GPU-8A 增加 Windows native-present world-only proof。正常 GPU software-present 与 CPU oracle 保留；native diagnostic 不 readback color/depth，也不声称包含 world barrier 后的 viewmodel、effects、HUD、scoreboard、console 或 GUI。
 > 源码核对基线补充：GPU-7C/7D DONE / FROZEN。Intel normal same-frame CPU/GPU oracle 覆盖 Outpost 与 Campaign near/0、near/30，均逐 color/depth 0 mismatch；mid/30 的透明命令保持 whole-batch CPU fallback。normal mismatch 以 CPU oracle 完整恢复并保存可 replay artifact。
 > 源码核对基线补充：GPU-7D 在同一 complete-batch consumer/raster kernel 加入 buffer-backed nearest Texture V1。Windows RTX Outpost 修正 readback stride 单位错配后 3/3 normal GPU frames；transparent 仍为 whole-batch fallback，默认 renderer 仍为 CPU。
@@ -298,7 +299,7 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 
 ## 一帧的数据流
 
-GPU-8A 审计后的正常帧 layering 为：
+GPU-8B1 后的正常帧 layering 为：
 
 ```text
 Core begin: software toy_surface + renderer clear
@@ -307,19 +308,21 @@ world command stream（scene / flags / enemies / actors / world labels）
   ↓ world ordering barrier
 GPU Raster V1 eligible batch
   ├─ software-present：GPU color+depth readback → toy_surface/depth
-  └─ native diagnostic：device-local color VkBuffer → swapchain（此处可见帧结束）
+  └─ native path：world stream/resource 冻结，暂不 present
   ↓
 后续 renderer flush：interactables / world effects / viewmodel / prompt / name/status overlays
   ↓
-CPU toy_surface direct writes：crosshair / HUD / pause / game-over / scoreboard /
-                               input debug / console / GUI desktop
+CPU direct writes：crosshair / HUD / pause / game-over / scoreboard /
+                  input debug / console / GUI desktop
+  ├─ CPU renderer：原 toy_surface
+  └─ native GPU：独立 XRGB8888 color + 8-bit coverage overlay
+       ↓ full upload + compute source-over 到 device-local world color
   ↓
-Core end：final renderer flush → software window present
+Core end：final renderer flush → software present，或 buffer→swapchain native present
 ```
 
-因此 native diagnostic 的 swapchain 图像只有 world barrier 之前已经进入 Raster V1 的 opaque
-world slice。后续 renderer flush 与直接 framebuffer 层仍在 CPU surface 上执行，但 Core 跳过该帧
-software present；这些层留给 GPU-8B composition 决策。
+GPU-8B1 只恢复直接 framebuffer screen-space 层。后续 renderer flush 的 interactables、world effects、
+viewmodel 及其 depth/order 语义仍不可见，明确留给 GPU-8B2；它们没有被伪装成 CPU overlay。
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
 读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的

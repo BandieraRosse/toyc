@@ -95,8 +95,10 @@ struct rf_gpu_native_window {
 
 struct rf_gpu_native_present_timing {
     double acquire_ms, gpu_raster_ms, buffer_to_swapchain_ms;
+    double overlay_upload_ms, overlay_composite_ms;
     double submit_ms, present_ms, total_ms;
     unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
+    unsigned int overlay_upload_bytes;
     unsigned int format, present_mode, image_count, width, height;
 };
 
@@ -171,9 +173,24 @@ struct rf_gpu_backend {
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
                          const void *texture_texels, unsigned long texture_bytes,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
                          unsigned int width, unsigned int height,
                          struct rf_gpu_raster_timing *raster_timing,
                          struct rf_gpu_native_present_timing *present_timing,
+                         char *message, unsigned long message_capacity);
+    int (*raster_composite_diagnostic)(void *context, void *raster,
+                         const void *stream, unsigned long stream_size,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride,
                          char *message, unsigned long message_capacity);
 };
 
@@ -272,8 +289,31 @@ int rf_gpu_raster_present_textured_timed(
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
                          const void *texture_texels, unsigned long texture_bytes,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
                          unsigned int width, unsigned int height,
                          struct rf_gpu_raster_timing *raster_timing,
                          struct rf_gpu_native_present_timing *present_timing);
+/* Explicit test-only readback oracle.  Native presentation never calls this. */
+int rf_gpu_raster_composite_diagnostic(
+                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
+                         const void *stream, unsigned long stream_size,
+                         const unsigned int *overlay_color,
+                         const unsigned char *overlay_coverage,
+                         unsigned int overlay_stride,
+                         unsigned int coverage_stride,
+                         unsigned int *color, int *depth,
+                         unsigned int width, unsigned int height,
+                         unsigned int color_stride,
+                         unsigned int depth_stride);
+int rf_gpu_overlay_composite_reference(unsigned int *world,
+                         unsigned int world_stride,
+                         const unsigned int *overlay_color,
+                         unsigned int overlay_stride,
+                         const unsigned char *coverage,
+                         unsigned int coverage_stride,
+                         unsigned int width, unsigned int height);
 
 #endif
