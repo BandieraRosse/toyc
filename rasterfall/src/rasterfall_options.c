@@ -17,6 +17,21 @@ static int positive_int(const char *text, int fallback)
     return *text || value <= 0 ? fallback : value;
 }
 
+static int signed_int(const char *text, int *value)
+{
+    int sign = 1, result = 0;
+    if (!text || !*text || !value) return -1;
+    if (*text == '-') { sign = -1; text++; }
+    if (*text < '0' || *text > '9') return -1;
+    while (*text >= '0' && *text <= '9') {
+        if (result > 100000000) return -1;
+        result = result * 10 + (*text++ - '0');
+    }
+    if (*text) return -1;
+    *value = result * sign;
+    return 0;
+}
+
 int rasterfall_options_default_textures_enabled(void)
 {
 #ifdef TOYC_WINDOWS
@@ -75,7 +90,7 @@ void rasterfall_options_usage(int fd)
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
-        "  --logic-test  --input-test  --action-runtime-debug  --auto\n"
+        "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
@@ -92,6 +107,7 @@ void rasterfall_options_usage(int fd)
         "  --rigid-attachment-acceptance <model-dir> <output-dir>\n"
         "  --character-world-capture <output-dir> [--character-world-model <model.rmesh>]\n"
         "  --environment-capture <output-dir> (Campaign views; WHU views with --map)\n"
+        "  --normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>\n"
         "  --model-views <model> <dir> [--model-views-supersample <1|2>]\n"
         "  --model-static-views <model> <dir>\n"
         "  --model-pose-views <model> <dir> <bind|right-arm|arms|body|rfchar-test>\n"
@@ -137,6 +153,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->map_path = argv[++arg];
         }
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
+        else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;
         else if (!strcmp(option, "--host"))
@@ -242,6 +259,31 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--environment-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->environment_capture_dir=argv[++arg];
+        } else if (!strcmp(option,"--normal-frame-audit")) {
+            if (arg + 9 >= argc ||
+                signed_int(argv[arg + 1], &o->normal_frame_audit_x) < 0 ||
+                signed_int(argv[arg + 2], &o->normal_frame_audit_z) < 0 ||
+                signed_int(argv[arg + 3], &o->normal_frame_audit_sy) < 0 ||
+                signed_int(argv[arg + 4], &o->normal_frame_audit_cy) < 0 ||
+                signed_int(argv[arg + 5], &o->normal_frame_audit_pitch_sy) < 0 ||
+                signed_int(argv[arg + 6], &o->normal_frame_audit_pitch_cy) < 0 ||
+                signed_int(argv[arg + 7], &o->normal_frame_audit_width) < 0 ||
+                signed_int(argv[arg + 8], &o->normal_frame_audit_height) < 0) {
+                __fprintf(2,"rasterfall: --normal-frame-audit expects pose, pitch, extent and output.bmp\n");
+                return -1;
+            }
+            arg += 8;
+            o->normal_frame_audit_output=argv[++arg];
+            if ((!o->normal_frame_audit_sy && !o->normal_frame_audit_cy) ||
+                o->normal_frame_audit_sy < -1024 || o->normal_frame_audit_sy > 1024 ||
+                o->normal_frame_audit_cy < -1024 || o->normal_frame_audit_cy > 1024 ||
+                o->normal_frame_audit_pitch_sy < -1024 || o->normal_frame_audit_pitch_sy > 1024 ||
+                o->normal_frame_audit_pitch_cy < -1024 || o->normal_frame_audit_pitch_cy > 1024 ||
+                o->normal_frame_audit_width <= 0 || o->normal_frame_audit_width > 7680 ||
+                o->normal_frame_audit_height <= 0 || o->normal_frame_audit_height > 4320) {
+                __fprintf(2,"rasterfall: invalid audit direction, pitch, or extent\n");
+                return -1;
+            }
         } else if (!strcmp(option,"--character-world-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->character_world_capture_dir=argv[++arg];

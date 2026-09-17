@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：normal-frame acceptance 使用两级入口：Windows 正常运行加 `--frame-audit`，稳定时每 60 个 rendered frame 取一次 heartbeat，frame interval 达 50ms 时连续记录 world、camera x/z、sy/cy、pitch、extent、fixed-step ticks/accumulator、update/render/present/whole-loop 以及 GPU submit/fence/native-present；取得真实坏现场后，以 `--normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>` 在同一地图复测 normal frontend。固定方位 capture 不充当坏现场证据。
 > 源码核对基线补充：`--gpu-post-fog` 仅可与 `--renderer gpu-compute --gpu-native-present` 共用，显式启用 GPU-9A inverse-depth Fog V0；默认视觉与 CPU/software-present 路径不变。
 > 源码核对基线补充：GPU-8B1 将 native present 延后到 Core end-frame：world batch 在 barrier 冻结，直接 screen-space producer 改画独立 overlay，帧尾 full upload、compute composite、copy/present。CPU renderer 与 GPU-8B2 renderer command 边界不变。
 > 源码核对基线补充：GPU-8A Windows native-present world-only diagnostic 已接入 `--renderer gpu-compute --gpu-native-present`；它在 world barrier 直接执行 buffer→swapchain present，明确跳过最终 software present，HUD/GUI 等 CPU-only 层不进入可见帧。Intel Iris Xe 10/10 与 resize 300/300 实机帧均零 fallback、零 color readback/CPU copy。

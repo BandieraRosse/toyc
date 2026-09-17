@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
+> 源码核对基线补充：GPU-9A IMPLEMENTATION COMPLETE / LOCAL CORRECTNESS PASS / NORMAL-FRAME ACCEPTANCE BLOCKED；当前 renderer normal-frame regression audit 优先于后续 GPU 功能。`--frame-audit` 负责捕获真实 Windows 坏姿态与整帧阶段耗时；`--normal-frame-audit` 消费 exact pose/extent，输出 command coverage/fog/source、sky draw 后到 world flush 后的上半屏 unchanged 统计和 BMP。现有 Raster differential 只证明同一 packed command/data 的 CPU/GPU 执行一致，不覆盖 Game normal renderer → frontend semantic resolution → command packing 的上游错误，也不证明 native present 前 sky ownership。
 > 源码核对基线补充：GPU-9A 使用独立 device-local `post_color`，Post V1 只读 Raster V1 color 与 signed Q20 inverse-Z depth、只写 presentation color。默认 bypass；`--gpu-post-fog` 显式启用 Fog V0。overlay composite 随后写 presentation color，HUD/Console/Desktop 不进入 post。
 > 源码核对基线补充：GPU-8B1 保留 fb_draw/fb_font、HUD、Console、GUI 与 runtime panels 为唯一 screen-space truth。native path 使用 XRGB8888 + 8-bit coverage；普通写入为 255，空白为 0，Console 背景保留 190；compute 在 Raster V1 device-local color buffer 原位 source-over。独立 diagnostic API 允许测试模式读回 composite 结果，7×5 odd-size/non-tight-stride 的 Intel 与 Linux Vulkan differential 均为 0 mismatch；normal native path 不调用该 API。
 > 源码核对基线补充：GPU-8A 增加 Windows native-present world-only proof。正常 GPU software-present 与 CPU oracle 保留；native diagnostic 不 readback color/depth，也不声称包含 world barrier 后的 viewmodel、effects、HUD、scoreboard、console 或 GUI。

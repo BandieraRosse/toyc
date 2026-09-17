@@ -292,6 +292,11 @@ def create_materials():
     def material(name, color):
         result = bpy.data.materials.new(name)
         result.diffuse_color = (*color, 1.0)
+        result.use_nodes = True
+        principled = result.node_tree.nodes.get('Principled BSDF')
+        if principled is None:
+            raise RuntimeError('material is missing Principled BSDF: ' + name)
+        principled.inputs['Base Color'].default_value = (*color, 1.0)
         return result
 
     return {

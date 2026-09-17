@@ -10,6 +10,13 @@ ROLES = ["RF_ROOT","RF_HIPS","RF_SPINE","RF_CHEST","RF_UPPER_CHEST","RF_NECK","R
          "RF_L_UPPER_LEG","RF_L_LOWER_LEG","RF_L_FOOT",
          "RF_R_UPPER_LEG","RF_R_LOWER_LEG","RF_R_FOOT"]
 ATTACH = ["WEAPON_R","WEAPON_L","FOREGRIP","BACK","CHEST","HEAD","HIP_L","HIP_R"]
+MATERIAL_ROLES = {
+    "RF_Skin": 4,
+    "RF_Hair": 3,
+    "RF_Shirt": 5,
+    "RF_Pants": 5,
+    "RF_Boots": 6,
+}
 
 def glb(path):
     raw=path.read_bytes()
@@ -97,7 +104,7 @@ def convert(source,output,validator):
     for first,count,mat in primitives: out+=struct.pack("<IIII",first,count,mat,0)
     for m in materials:
         p=m.get("pbrMetallicRoughness",{});c=p.get("baseColorFactor",[1,1,1,1]);color=(srgb(c[0])<<16)|(srgb(c[1])<<8)|srgb(c[2]);tex=p.get("baseColorTexture",{}).get("index",0xffffffff)
-        rec=bytearray(40);struct.pack_into("<I",rec,0,color);struct.pack_into("<H",rec,4,q16(c[3]));struct.pack_into("<I",rec,8,tex);out+=rec
+        rec=bytearray(40);struct.pack_into("<I",rec,0,color);struct.pack_into("<H",rec,4,q16(c[3]));struct.pack_into("<I",rec,8,tex);rec[36]=MATERIAL_ROLES.get(m.get("name",""),0);out+=rec
     for v in vertices: out+=struct.pack("<iii3hHH",*v)+bytes(14)
     out+=struct.pack("<"+"I"*len(indices),*indices)
     struct.pack_into("<I",out,60,len(out)); names_blob=bytearray();offsets=[]

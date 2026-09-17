@@ -770,6 +770,156 @@ static void character_world_capture_camera(struct camera *camera, int distance)
     camera->view.pitch_cy = 1024;
 }
 
+struct normal_frame_offender {
+    int index;
+    unsigned long pixels;
+};
+
+static const char *normal_frame_source(const struct rasterfall_scene_stats *stats,
+                                       int index)
+{
+    if ((unsigned long)index < stats->floor_command_end) return "floor";
+    if ((unsigned long)index < stats->map_command_end) return "map";
+    if ((unsigned long)index < stats->static_command_end) return "static-props";
+    if ((unsigned long)index < stats->gallery_command_end) return "gallery";
+    if ((unsigned long)index < stats->character_command_end) return "character-strip";
+    if ((unsigned long)index < stats->private_command_end) return "private-character";
+    if ((unsigned long)index < stats->projectile_command_end) return "projectiles";
+    return "actors/effects";
+}
+
+static void normal_frame_coverage_trace(const char *view,
+                                        const struct toy_renderer *renderer,
+                                        const struct rasterfall_scene_stats *stats)
+{
+    struct normal_frame_offender top[10];
+    unsigned long long total_tiles = 0;
+    unsigned long full = 0, half = 0, fogged = 0, vertex_fogged = 0;
+    int i, j;
+    memset(top, 0, sizeof(top));
+    for (i = 0; i < renderer->cmd_count; i++) {
+        const struct toy_raster_cmd *cmd = renderer->cmds + i;
+        unsigned long width = (unsigned long)(cmd->bbox_maxx - cmd->bbox_minx + 1);
+        unsigned long height = (unsigned long)(cmd->bbox_maxy - cmd->bbox_miny + 1);
+        unsigned long pixels = width * height;
+        unsigned long tiles = ((width + 15) / 16) * ((height + 15) / 16);
+        total_tiles += tiles;
+        if (pixels >= (unsigned long)renderer->surface.width * renderer->surface.height) full++;
+        if (pixels * 2 >= (unsigned long)renderer->surface.width * renderer->surface.height) half++;
+        if (cmd->fog > 0) fogged++;
+        if (cmd->fog < 0 && (cmd->a.fog > 0 || cmd->b.fog > 0 || cmd->c.fog > 0)) vertex_fogged++;
+        for (j = 0; j < 10; j++) if (pixels > top[j].pixels) {
+            int k;
+            for (k = 9; k > j; k--) top[k] = top[k - 1];
+            top[j].index = i; top[j].pixels = pixels;
+            break;
+        }
+    }
+    __printf("NORMAL-FRAME view=%s commands=%d total_tile_refs=%llu over_half=%lu full_screen=%lu fogged=%lu vertex_fogged=%lu\n",
+             view, renderer->cmd_count, total_tiles, half, full, fogged, vertex_fogged);
+    for (i = 0; i < 10 && top[i].pixels; i++) {
+        const struct toy_raster_cmd *cmd = renderer->cmds + top[i].index;
+        int raw_min_x = cmd->a.x < cmd->b.x ? (cmd->a.x < cmd->c.x ? cmd->a.x : cmd->c.x) : (cmd->b.x < cmd->c.x ? cmd->b.x : cmd->c.x);
+        int raw_max_x = cmd->a.x > cmd->b.x ? (cmd->a.x > cmd->c.x ? cmd->a.x : cmd->c.x) : (cmd->b.x > cmd->c.x ? cmd->b.x : cmd->c.x);
+        int raw_min_y = cmd->a.y < cmd->b.y ? (cmd->a.y < cmd->c.y ? cmd->a.y : cmd->c.y) : (cmd->b.y < cmd->c.y ? cmd->b.y : cmd->c.y);
+        int raw_max_y = cmd->a.y > cmd->b.y ? (cmd->a.y > cmd->c.y ? cmd->a.y : cmd->c.y) : (cmd->b.y > cmd->c.y ? cmd->b.y : cmd->c.y);
+        int min_z = cmd->a.z < cmd->b.z ? (cmd->a.z < cmd->c.z ? cmd->a.z : cmd->c.z) : (cmd->b.z < cmd->c.z ? cmd->b.z : cmd->c.z);
+        int max_z = cmd->a.z > cmd->b.z ? (cmd->a.z > cmd->c.z ? cmd->a.z : cmd->c.z) : (cmd->b.z > cmd->c.z ? cmd->b.z : cmd->c.z);
+        unsigned long width = (unsigned long)(cmd->bbox_maxx - cmd->bbox_minx + 1);
+        unsigned long height = (unsigned long)(cmd->bbox_maxy - cmd->bbox_miny + 1);
+        __printf("  TOP #%d cmd=%d source=%s type=%s raw=(%d..%d,%d..%d) clamped=(%d..%d,%d..%d) pixels=%lu tiles=%lu near_clip=%s view_z=%d..%d fog=%d\n",
+                 i + 1, top[i].index, normal_frame_source(stats, top[i].index),
+                 cmd->textured ? "textured" : cmd->planar_vertex_lit ? "planar" : "flat",
+                 raw_min_x, raw_max_x, raw_min_y, raw_max_y,
+                 cmd->bbox_minx, cmd->bbox_maxx, cmd->bbox_miny, cmd->bbox_maxy,
+                 top[i].pixels, ((width + 15) / 16) * ((height + 15) / 16),
+                 min_z == RASTERFALL_NEAR_Z ? "yes" : "no", min_z, max_z, cmd->fog);
+        for (j = 0; j < stats->map_command_range_count; j++) {
+            if ((unsigned long)top[i].index >= stats->map_command_begin[j] &&
+                (unsigned long)top[i].index < stats->map_command_limit[j]) {
+                const struct toy_map_draw *draw = &level_map.draw[j];
+                __printf("    map_record=%d map_type=%d bounds=(%d..%d,%d..%d) height=%d..%d text=%s\n",
+                         j, draw->type, draw->a, draw->b, draw->c, draw->d,
+                         draw->e, draw->f, draw->text);
+                break;
+            }
+        }
+    }
+}
+
+int rasterfall_render_normal_frame_audit(int x, int z, int sy, int cy,
+                                         int pitch_sy, int pitch_cy,
+                                         int width, int height,
+                                         const char *output_path)
+{
+    struct camera camera;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    struct rasterfall_scene_stats audit_stats;
+    uint32_t *pixels = NULL, *sky_top = NULL;
+    size_t top_count;
+    unsigned long unchanged = 0;
+    long frame_start, raster_start, raster_us;
+    int stage_result, local_scene, result = 1;
+
+    if (!active_session || !output_path || !*output_path) return 1;
+    memset(&camera, 0, sizeof(camera));
+    camera.x = x; camera.z = z; camera.y = RASTERFALL_STANDING_CAMERA_Y;
+    camera.sy = sy; camera.cy = cy;
+    camera.pitch_sy = pitch_sy; camera.pitch_cy = pitch_cy;
+    memset(&surface, 0, sizeof(surface));
+    surface.width = width; surface.height = height; surface.stride = width * 4;
+    top_count = (size_t)surface.width * (surface.height / 2);
+    pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+    sky_top = tlibc_malloc(top_count * sizeof(*sky_top));
+    if (!pixels || !sky_top) goto done;
+    surface.pixels = pixels;
+    toy_renderer_init(&renderer);
+    toy_renderer_set_frame_budget(&renderer, 0);
+    if (toy_renderer_begin(&renderer, &surface, 0x151922) < 0) {
+        toy_renderer_destroy(&renderer); goto done;
+    }
+    frame_start = render_monotonic_us();
+    local_scene = rasterfall_render_begin_dynamic_lighting();
+    rasterfall_render_scene(&renderer, &camera);
+    rasterfall_render_scene_stats(&audit_stats);
+    rasterfall_render_flags(&renderer, &camera);
+    rasterfall_render_enemies(&renderer, &camera);
+    rasterfall_render_ai_teammate(&renderer, &camera);
+    rasterfall_render_end_dynamic_lighting();
+    rasterfall_render_sign_text(&renderer, &camera);
+    rasterfall_render_flag_text(&renderer, &camera);
+    normal_frame_coverage_trace(output_path, &renderer, &audit_stats);
+    memcpy(sky_top, pixels, top_count * sizeof(*sky_top));
+    raster_start = render_monotonic_us();
+    stage_result = toy_renderer_flush(&renderer);
+    raster_us = render_monotonic_us() - raster_start;
+    if (stage_result < 0 || renderer.cmd_overflow) {
+        toy_renderer_destroy(&renderer); goto done;
+    }
+    for (size_t i = 0; i < top_count; i++)
+        if (sky_top[i] == pixels[i]) unchanged++;
+    __printf("NORMAL-FRAME world=%d camera=(%d,%d) direction=(%d,%d) pitch=(%d,%d) extent=%dx%d local_light=%d output=%s\n",
+             active_session->world_id, x, z, sy, cy, pitch_sy, pitch_cy,
+             width, height, local_scene, output_path);
+    __printf("NORMAL-FRAME top_half unchanged=%lu changed=%lu total=%lu unchanged_percent_x100=%lu\n",
+             unchanged, (unsigned long)top_count - unchanged,
+             (unsigned long)top_count,
+             top_count ? unchanged * 10000UL / (unsigned long)top_count : 0);
+    __printf("NORMAL-FRAME frame_us=%ld raster_us=%ld raster_pixels=%d triangles=%lu\n",
+             render_monotonic_us() - frame_start, raster_us, stage_result,
+             renderer.submitted_triangles);
+    if (rasterfall_hud_dump_bmp(output_path, &surface) < 0) {
+        toy_renderer_destroy(&renderer); goto done;
+    }
+    toy_renderer_destroy(&renderer);
+    result = 0;
+done:
+    if (sky_top) tlibc_free(sky_top);
+    if (pixels) tlibc_free(pixels);
+    return result;
+}
+
 static int capture_map_world(const char *output_dir,
                              const char *model_path, int environment)
 {
@@ -948,6 +1098,11 @@ static int capture_map_world(const char *output_dir,
         frame_start = render_monotonic_us();
         int local_scene = environment ? rasterfall_render_begin_dynamic_lighting() : 256;
         rasterfall_render_scene(&renderer, &camera);
+        if (environment && !whu && !c2_fixture) {
+            struct rasterfall_scene_stats audit_stats;
+            rasterfall_render_scene_stats(&audit_stats);
+            normal_frame_coverage_trace(path, &renderer, &audit_stats);
+        }
         rasterfall_render_flags(&renderer, &camera);
         rasterfall_render_enemies(&renderer, &camera);
         rasterfall_render_ai_teammate(&renderer, &camera);

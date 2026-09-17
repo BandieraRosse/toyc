@@ -76,6 +76,17 @@ struct rasterfall_scene_stats {
     long gallery_us;
     long private_model_us;
     long projectiles_us;
+    /* Diagnostic command boundaries in the single normal scene batch. */
+    unsigned long floor_command_end;
+    unsigned long map_command_end;
+    unsigned long static_command_end;
+    unsigned long gallery_command_end;
+    unsigned long character_command_end;
+    unsigned long private_command_end;
+    unsigned long projectile_command_end;
+    unsigned long map_command_begin[TOY_MAP_MAX_DRAW];
+    unsigned long map_command_limit[TOY_MAP_MAX_DRAW];
+    int map_command_range_count;
     unsigned long models_tested;
     unsigned long models_culled;
     unsigned long model_triangles_culled;
@@ -158,6 +169,10 @@ int rasterfall_render_character_performance(const char *model_path,
                                             int frames, int repeats,
                                             int workers);
 int rasterfall_render_environment_capture(const char *output_dir);
+int rasterfall_render_normal_frame_audit(int x, int z, int sy, int cy,
+                                        int pitch_sy, int pitch_cy,
+                                        int width, int height,
+                                        const char *output_path);
 int rasterfall_render_character_world_capture(const char *output_dir,
                                               const char *model_path);
 int rasterfall_render_world_benchmark(int iterations);

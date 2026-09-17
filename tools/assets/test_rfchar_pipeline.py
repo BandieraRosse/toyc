@@ -22,6 +22,17 @@ def check_attachment_bind(glb, mesh):
         assert max(abs(actual[r+4*c]-expected[r+4*c]) for r in range(3) for c in range(3))<1e-5
         assert max(abs(v+base[12+k]*512-expected[12+k]*512) for k,v in enumerate((x,y,z)))<=0.501
 
+def check_material_contract(glb, mesh):
+    document, _ = rfchar_import.glb(glb)
+    raw = mesh.read_bytes()
+    count = struct.unpack_from('<I', raw, 48)[0]
+    offset = struct.unpack_from('<I', raw, 56)[0]
+    assert count == len(document.get('materials', []))
+    for index, material in enumerate(document.get('materials', [])):
+        record = offset + index * 40
+        expected = rfchar_import.MATERIAL_ROLES.get(material.get('name', ''), 0)
+        assert raw[record + 36] == expected
+
 BASELINE = {
     # Current Lighting V1 output; independently reproduced from the unchanged
     # pre-V2.1 HEAD as well as the convergence working tree (Blender 4.3.2).
@@ -43,6 +54,7 @@ def main():
         command += ['--python',repo/'tools/blender/generate_rfchar_fixture.py','--','--output',glb]
         run(command,repo);run([repo/'build/glb-inspect',glb,'contract'],repo)
         run(['python3',repo/'tools/assets/rfchar_import.py',glb,mesh],repo)
+        check_material_contract(glb,mesh)
         check_attachment_bind(glb,mesh)
         run([repo/'build/rfchar_runtime_test',mesh],repo)
         run([repo/'build/rasterfall','--model-pose-views',mesh,bind,'bind'],repo)

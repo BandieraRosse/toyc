@@ -3054,7 +3054,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             core_config.gpu_backend_context = &gpu_vulkan_context;
         }
 #endif
-        if ((logic_test || options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.character_world_capture_dir ?
+        if ((logic_test || options.render_performance || options.gpu_world_raster_view || options.environment_capture_dir || options.normal_frame_audit_output || options.character_world_capture_dir ?
              rf_core_init_headless(&core, &platform_input, &renderer) :
              rf_core_init_config(&core, &core_config)) < 0) {
             __fprintf(2, "rasterfall: cannot initialize RF Core host\n");
@@ -3178,6 +3178,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     pause_menu.selected = PAUSE_ITEM_RESUME;
     if (options.render_performance || options.gpu_world_raster_view ||
         options.gpu_normal_view || options.environment_capture_dir ||
+        options.normal_frame_audit_output ||
         options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
@@ -3186,6 +3187,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rf_windows_log("startup: session reset");
     if ((options.render_performance || options.gpu_world_raster_view ||
          options.gpu_normal_view || options.environment_capture_dir ||
+         options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
@@ -3194,13 +3196,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_core_shutdown(&core);
         return 1;
     }
-    if (options.render_performance || options.gpu_world_raster_view || options.character_world_capture_dir || options.environment_capture_dir) {
+    if (options.render_performance || options.gpu_world_raster_view || options.character_world_capture_dir || options.environment_capture_dir || options.normal_frame_audit_output) {
         int capture_result = options.render_performance ?
             rasterfall_render_world_benchmark(performance_iterations) :
             options.gpu_world_raster_view ?
             rasterfall_render_gpu_world_capture(options.gpu_world_raster_view,
                 options.gpu_world_raster_enemies,
                 options.gpu_world_raster_output) :
+            options.normal_frame_audit_output ?
+            rasterfall_render_normal_frame_audit(options.normal_frame_audit_x,
+                options.normal_frame_audit_z, options.normal_frame_audit_sy,
+                options.normal_frame_audit_cy,
+                options.normal_frame_audit_pitch_sy,
+                options.normal_frame_audit_pitch_cy,
+                options.normal_frame_audit_width,
+                options.normal_frame_audit_height,
+                options.normal_frame_audit_output) :
             options.environment_capture_dir ?
             rasterfall_render_environment_capture(options.environment_capture_dir) :
             rasterfall_render_character_world_capture(
@@ -3378,6 +3389,9 @@ startup_again:
     rasterfall_perf_init(&stats_total);
     while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
+        int64_t audit_loop_start = rf_core_time_us(&core);
+        int64_t audit_update_us = 0, audit_render_us = 0;
+        int64_t audit_present_us = 0, audit_interval_us = 0;
         int logic_steps = 0;
         int resumed = 0;
         int ready;
@@ -3928,6 +3942,7 @@ startup_again:
         if (logic_steps > 0)
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
         rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_LOGIC, &t_stage, 0, 0);
+        audit_update_us = rf_core_time_us(&core) - now;
         /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall。
          * 帧间隔：本次 begin_frame 距上次的墙钟时间 wall，与上次渲染
          * 帧的活跃时间相减得到 wait（轮询/逻辑/调度/组合器等待），
@@ -3938,8 +3953,10 @@ startup_again:
          * 到下一次 begin 的间隔）在 dump 中用 wall − 活跃帧时间推导，
          * 与各阶段统计严格对消。 */
         t_frame = rf_core_time_us(&core);
-        if (prev_begin > 0)
-            rasterfall_perf_add_interval(&stats, &stats_total, t_frame - prev_begin);
+        if (prev_begin > 0) {
+            audit_interval_us = t_frame - prev_begin;
+            rasterfall_perf_add_interval(&stats, &stats_total, audit_interval_us);
+        }
         prev_begin = t_frame;
         t_stage = t_frame;
         ready = rf_core_begin_frame(&core, 0x151922);
@@ -4016,15 +4033,20 @@ startup_again:
             game_runtime.have_last_key = have_last_key;
             game_runtime.input_event_count = input_event_count;
             game_runtime.console = developer_console;
-            if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
+            {
+                int64_t audit_render_start = rf_core_time_us(&core);
+                if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
-                __fprintf(2,
-                    "rasterfall: skipped frame after renderer watchdog timeout\n");
-                continue;
+                    __fprintf(2,
+                        "rasterfall: skipped frame after renderer watchdog timeout\n");
+                    continue;
+                }
+                audit_render_us = rf_core_time_us(&core) - audit_render_start;
             }
             scene_pixels = game_runtime.scene_pixels;
             t_stage = rf_core_time_us(&core);
             present_result = rf_core_end_frame(&core);
+            audit_present_us = rf_core_time_us(&core) - t_stage;
             if (present_result < 0) break;
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
@@ -4033,6 +4055,29 @@ startup_again:
             now = rf_core_time_us(&core);
             last_active = now - t_frame;
             rasterfall_perf_record_frame(&stats, &stats_total, last_active);
+            if (options.frame_audit &&
+                (audit_interval_us >= 50000 || (rendered_frames % 60) == 1)) {
+                struct rf_core_gpu_frame_stats gpu_audit;
+                memset(&gpu_audit, 0, sizeof(gpu_audit));
+                rf_core_get_gpu_frame_stats(&core, &gpu_audit);
+                __printf("FRAME-AUDIT world=%d camera=(%d,%d) direction=(%d,%d) pitch=(%d,%d) extent=%dx%d ticks=%d accumulator_us=%lld update_ms=%.3f render_ms=%.3f present_wall_ms=%.3f whole_loop_ms=%.3f frame_interval_ms=%.3f\n",
+                    session.world_id, camera.x, camera.z, camera.sy, camera.cy,
+                    camera.pitch_sy, camera.pitch_cy, surface.width, surface.height,
+                    logic_steps, (long long)accumulator,
+                    (double)audit_update_us / 1000.0,
+                    (double)audit_render_us / 1000.0,
+                    (double)audit_present_us / 1000.0,
+                    (double)(now - audit_loop_start) / 1000.0,
+                    (double)audit_interval_us / 1000.0);
+                __printf("FRAME-AUDIT gpu frontend_ms=%.3f pack_ms=%.3f submit_ms=%.3f fence_wait_ms=%.3f native_acquire_ms=%.3f native_submit_ms=%.3f native_present_ms=%.3f native_total_ms=%.3f\n",
+                    gpu_audit.frontend_ms, gpu_audit.raster_abi_pack_ms,
+                    gpu_audit.last_timing.submit_ms,
+                    gpu_audit.last_timing.execution_wait_ms,
+                    gpu_audit.native_present_timing.acquire_ms,
+                    gpu_audit.native_present_timing.submit_ms,
+                    gpu_audit.native_present_timing.present_ms,
+                    gpu_audit.native_present_timing.total_ms);
+            }
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {
                 display_fps = (int)((long long)fps_window_frames * 1000000 /

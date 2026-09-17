@@ -21,6 +21,12 @@ struct rasterfall_options {
     const char *rigid_attachment_models, *rigid_attachment_dir;
     const char *character_world_capture_dir, *character_world_capture_model;
     const char *environment_capture_dir;
+    const char *normal_frame_audit_output;
+    int normal_frame_audit_x, normal_frame_audit_z;
+    int normal_frame_audit_sy, normal_frame_audit_cy;
+    int normal_frame_audit_pitch_sy, normal_frame_audit_pitch_cy;
+    int normal_frame_audit_width, normal_frame_audit_height;
+    int frame_audit;
     const char *view_model_path, *view_output_dir;
     int model_views_supersample, model_skinning, model_pose;
     int material_regression;

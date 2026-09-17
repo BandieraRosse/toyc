@@ -1,6 +1,6 @@
 # Rasterfall GPU 与 Windows Native Platform 总体计划
 
-> 状态：执行中（GPU-0 至 GPU-8B1 已完成并冻结；GPU-9A 已实现 Linux correctness，等待 Intel 实机视觉/resize/时序冻结门禁）
+> 状态：执行中（GPU-9A IMPLEMENTATION COMPLETE / LOCAL CORRECTNESS PASS / NORMAL-FRAME ACCEPTANCE BLOCKED；暂停 freeze 与新 GPU 功能，先完成真实坏姿态 normal-frame regression audit）
 > 进展同步：2026-09-17
 > 源码核对基线：GPU-4 Raster Command ABI V1 / deterministic pack-validation
 > 源码核对基线：GPU-5 前 portability gate 已建立无 Vulkan handle capability snapshot、独立 Raster V1 gate 与 limit-driven 16x16/8x8 workgroup policy；WSL llvmpipe / Windows Intel Iris Xe 实测通过。
@@ -29,7 +29,7 @@
 | GPU-7D Texture V1 | 已完成 / FROZEN | buffer-backed nearest RGB8/RGBA8；hosted CPU/full-scan/binned 与 Intel normal textured frames 均 0 mismatch；transparent 保持 whole-batch fallback |
 | GPU-8A Native Presentation | 已完成 / FROZEN | Win32 handle contract、surface/swapchain query、BGRA8 transfer copy、single-frame sync 与 world-only diagnostic；Intel 10/10、resize 300/300、零 fallback/readback/copy |
 | GPU-8B1 CPU Overlay / GPU Composite | 已实现 / 待实机冻结 | Core-owned XRGB8888 + 8-bit coverage；现有 CPU UI truth；full upload；device-local world color compute composite；8B2 renderer layers 不混入 |
-| GPU-9A Post-Raster Compute V1 | 已实现 / 待 Intel 冻结 | 独立 device-local post color；identity 与 Q20 inverse-depth Fog V0；overlay 位于 post 后；Linux Vulkan differential 0 mismatch，normal native path 保持零 readback/copy |
+| GPU-9A Post-Raster Compute V1 | IMPLEMENTATION COMPLETE / LOCAL CORRECTNESS PASS / NORMAL-FRAME ACCEPTANCE BLOCKED | 局部 differential 保持通过；Windows Intel normal gameplay 的 exact bad pose 尚待记录，冻结前先拆分约 200ms frame wall time，并区分 sky 未提交、world 覆盖或 present ownership 问题；Humanoid 根因已定位到资产生成/导入链 |
 | Windows Native Platform | 未开始 | 正常 Windows Rasterfall 仍使用 MinGW + SDL2，本阶段未改窗口、输入、音频或 presentation |
 
 当前边界：

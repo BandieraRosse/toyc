@@ -4752,10 +4752,12 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     floor_submission = 0;
     if (active_coordinate_axes)
         pixels += render_coordinate_ruler(renderer, camera);
+    scene_stats.floor_command_end = renderer->cmd_count;
     scene_stats.sky_floor_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
+        scene_stats.map_command_begin[i] = renderer->cmd_count;
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
              x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||
@@ -4832,17 +4834,23 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
             pixels += render_world_sign(renderer, camera, x);
         }
+        scene_stats.map_command_limit[i] = renderer->cmd_count;
+        scene_stats.map_command_range_count = i + 1;
     }
     active_world_light_v2 = 0;
+    scene_stats.map_command_end = renderer->cmd_count;
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_static_props(renderer, camera);
+    scene_stats.static_command_end = renderer->cmd_count;
     if (active_session->content.model_gallery_enabled)
         pixels += render_model_gallery(renderer, camera);
+    scene_stats.gallery_command_end = renderer->cmd_count;
     scene_stats.gallery_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     if (active_session->content.character_test_strip_enabled)
         pixels += render_character_test_strip(renderer, camera);
+    scene_stats.character_command_end = renderer->cmd_count;
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     /* Eula and the developer character strip are Campaign Content fixtures.
@@ -4855,9 +4863,11 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         pixels += render_private_character(renderer, camera);
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
+    scene_stats.private_command_end = renderer->cmd_count;
     scene_stats.private_model_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
+    scene_stats.projectile_command_end = renderer->cmd_count;
     scene_stats.projectiles_us = render_monotonic_us() - phase_start;
     return pixels;
 }
