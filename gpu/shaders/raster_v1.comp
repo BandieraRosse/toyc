@@ -40,6 +40,7 @@ const uint CMD_CLEAR_DEPTH = 2u;
 const uint CMD_FLAT_TRIANGLE = 3u;
 const uint CMD_VERTEX_LIT_TRIANGLE = 4u;
 const uint CMD_TEXTURED_TRIANGLE = 5u;
+const uint CMD_SKY = 6u;
 const uint FLAG_TEXTURE_REPEAT = 16u;
 
 uint texture_byte(uint offset)
@@ -95,6 +96,44 @@ uint shade(uint packed, int light, int fog)
     return 0xff000000u | (uint(r) << 16) | (uint(g) << 8) | uint(b);
 }
 
+uint mix_color(uint from, uint to, int num, int den)
+{
+    uint r=(((from>>16)&255u)*uint(num)+((to>>16)&255u)*uint(den-num))/uint(den);
+    uint g=(((from>>8)&255u)*uint(num)+((to>>8)&255u)*uint(den-num))/uint(den);
+    uint b=((from&255u)*uint(num)+(to&255u)*uint(den-num))/uint(den);
+    return 0xff000000u|(r<<16)|(g<<8)|b;
+}
+
+uint sky_color(uint base, uint x, uint y, uint width, uint height)
+{
+    int pitch_sy=int(stream.words[base+6u]),pitch_cy=abs(int(stream.words[base+7u]));
+    int focal=int(width)*3/4,horizon=int(height)/2;
+    if(pitch_cy>=64)horizon+=clamp(focal*pitch_sy/pitch_cy,-2*int(height),2*int(height));
+    else horizon=pitch_sy>0?-int(height):2*int(height);
+    uint zenith=stream.words[base+8u],horizon_color=stream.words[base+9u];
+    if(int(y)>=max(horizon,0))return stream.words[base+10u]|0xff000000u;
+    int sky_bottom=min(horizon,int(height)),band_h=sky_bottom/8+1;
+    int band=clamp(int(y)/band_h,0,7);
+    uint color=mix_color(zenith,horizon_color,7-band,8);
+    const int dx[3]=int[3](340,-872,-488),dy[3]=int[3](248,172,380),dz[3]=int[3](-934,-512,-816);
+    const int scales[3]=int[3](16,12,10);
+    int direction_sy=int(stream.words[base+4u]),direction_cy=int(stream.words[base+5u]);
+    for(int i=0;i<3;i++){
+        int vx=(dx[i]*direction_cy-dz[i]*direction_sy)/1024;
+        int vz0=(dx[i]*direction_sy+dz[i]*direction_cy)/1024;
+        int vy2=(dy[i]*int(stream.words[base+7u])-vz0*pitch_sy)/1024;
+        int vz2=(dy[i]*pitch_sy+vz0*int(stream.words[base+7u]))/1024;
+        if(vz2<=64)continue;
+        int cx=int(width)/2+vx*focal/vz2,cy=int(height)/2-vy2*focal/vz2;
+        int unit=max(scales[i]/4,2),px=int(x),py=int(y);
+        if(px>=cx-unit*7&&px<cx+unit*7&&py>=cy+unit*2&&py<cy+unit*3)color=0xffb9d9ecu;
+        if(px>=cx-unit*6&&px<cx+unit*6&&py>=cy&&py<cy+unit*3)color=0xffeaf7ffu;
+        if(px>=cx-unit*3&&px<cx+unit*3&&py>=cy-unit*2&&py<cy)color=0xffffffffu;
+        if(((px>=cx-unit*5&&px<cx-unit*3)||(px>=cx+unit*3&&px<cx+unit*5))&&py>=cy-unit&&py<cy)color=0xffffffffu;
+    }
+    return color;
+}
+
 void main()
 {
     uint x = gl_GlobalInvocationID.x;
@@ -114,7 +153,9 @@ void main()
         uint command_index = tile_commands.indices[list_index];
         uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
         uint kind = stream.words[base];
-        if (kind == CMD_CLEAR_COLOR) {
+        if (kind == CMD_SKY) {
+            color = sky_color(base,x,y,width,height);
+        } else if (kind == CMD_CLEAR_COLOR) {
             color = stream.words[base + 4u] | 0xff000000u;
         } else if (kind == CMD_CLEAR_DEPTH) {
             depth = int(stream.words[base + 4u]);

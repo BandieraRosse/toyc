@@ -31,6 +31,11 @@ embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源�
 
 ## Windows
 
+`--frame-audit` 的三行记录同时写标准输出与 exe 同目录 `rasterfall.log`：第一行包含递增 frame ID、
+`gpu-native`/`cpu-fallback`/`cpu` 最终路径、camera/pitch/extent 和主循环 timing；第二行包含 RenderFrame
+层计数与 unsupported 分类；第三行包含 GPU/native timing、overlay upload、readback 与 CPU framebuffer
+copy 字节数。因而 Windows 验收不再依赖控制台留存。
+
 `windows/Makefile` 用 MinGW-w64 + SDL2 构建相同玩法/渲染源，并加入 `windows/src/` 的 runtime、
 WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `windows/include/`。资源定位和包结构见
 `windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；

@@ -2589,6 +2589,10 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         set_managed_spectator_camera(render_camera, body_camera,
                                      runtime->managed_third_person);
     rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
+    rf_core_render_frame_begin_v1(runtime->core, render_camera->x,
+        render_camera->z, render_camera->sy, render_camera->cy,
+        render_camera->pitch_sy, render_camera->pitch_cy);
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_SKY, 1, 0);
 
     if (perf_window) perf_start = rf_core_clock_now_us();
     int local_scene_light = rasterfall_render_begin_dynamic_lighting();
@@ -2622,6 +2626,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     }
     /* Existing world-to-overlay ordering barrier. */
     raster_commands = (unsigned long)renderer->cmd_count;
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_WORLD,
+                                   raster_commands, 0);
     rf_core_gpu_world_flush(runtime->core);
     flushed = rf_core_flush(runtime->core);
     if (flushed < 0) return -1;
@@ -2647,23 +2653,35 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
 
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->shop_open) {
+        raster_commands = (unsigned long)renderer->cmd_count;
         pixels += rasterfall_render_interactables(renderer, render_camera);
+        rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_WORLD,
+            (unsigned long)renderer->cmd_count - raster_commands, 0);
         flushed = rf_core_flush(runtime->core);
         if (flushed < 0) return -1;
         pixels += flushed;
         overlay_pixels += (unsigned long)flushed;
     }
     rasterfall_render_end_dynamic_lighting();
+    raster_commands = (unsigned long)renderer->cmd_count;
     flushed = rasterfall_render_effects(renderer, render_camera);
     pixels += flushed;
     overlay_pixels += (unsigned long)flushed;
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
+        (unsigned long)renderer->cmd_count - raster_commands,
+        (unsigned long)flushed);
 
     if (toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED) {
+        raster_commands = (unsigned long)renderer->cmd_count;
         flushed = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
         pixels += flushed;
         overlay_pixels += (unsigned long)flushed;
+        rf_core_render_frame_record_v1(runtime->core,
+            RF_RENDER_LAYER_VIEWMODEL,
+            (unsigned long)renderer->cmd_count - raster_commands,
+            (unsigned long)flushed);
     }
 
     /* Existing viewmodel-to-framebuffer ordering barrier. */
@@ -2671,6 +2689,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     if (flushed < 0) return -1;
     pixels += flushed;
     overlay_pixels += (unsigned long)flushed;
+    rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_OVERLAY,
+                                   0, overlay_pixels);
 
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
@@ -4058,25 +4078,58 @@ startup_again:
             if (options.frame_audit &&
                 (audit_interval_us >= 50000 || (rendered_frames % 60) == 1)) {
                 struct rf_core_gpu_frame_stats gpu_audit;
+                struct rf_render_frame_v1 frame_audit;
+                char audit_line[768];
                 memset(&gpu_audit, 0, sizeof(gpu_audit));
+                memset(&frame_audit, 0, sizeof(frame_audit));
                 rf_core_get_gpu_frame_stats(&core, &gpu_audit);
-                __printf("FRAME-AUDIT world=%d camera=(%d,%d) direction=(%d,%d) pitch=(%d,%d) extent=%dx%d ticks=%d accumulator_us=%lld update_ms=%.3f render_ms=%.3f present_wall_ms=%.3f whole_loop_ms=%.3f frame_interval_ms=%.3f\n",
-                    session.world_id, camera.x, camera.z, camera.sy, camera.cy,
-                    camera.pitch_sy, camera.pitch_cy, surface.width, surface.height,
+                rf_core_get_render_frame_v1(&core, &frame_audit);
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT frame=%llu path=%s world=%d camera=(%d,%d) direction=(%d,%d) pitch=(%d,%d) extent=%dx%d ticks=%d accumulator_us=%lld update_ms=%.3f render_ms=%.3f present_wall_ms=%.3f whole_loop_ms=%.3f frame_interval_ms=%.3f",
+                    frame_audit.frame_id,
+                    gpu_audit.last_path == 1 ? "gpu-native" :
+                    gpu_audit.last_path == 2 ? "cpu-fallback" :
+                    gpu_audit.last_path == 3 ? "gpu-readback" : "cpu",
+                    session.world_id, frame_audit.camera_x,
+                    frame_audit.camera_z, frame_audit.direction_sy,
+                    frame_audit.direction_cy, frame_audit.pitch_sy,
+                    frame_audit.pitch_cy, frame_audit.width, frame_audit.height,
                     logic_steps, (long long)accumulator,
                     (double)audit_update_us / 1000.0,
                     (double)audit_render_us / 1000.0,
                     (double)audit_present_us / 1000.0,
                     (double)(now - audit_loop_start) / 1000.0,
                     (double)audit_interval_us / 1000.0);
-                __printf("FRAME-AUDIT gpu frontend_ms=%.3f pack_ms=%.3f submit_ms=%.3f fence_wait_ms=%.3f native_acquire_ms=%.3f native_submit_ms=%.3f native_present_ms=%.3f native_total_ms=%.3f\n",
+                __printf("%s\n", audit_line);
+                rf_windows_log(audit_line);
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu viewmodel=%lu overlay_pixels=%lu classification texture=%lu overlay=%lu edge=%lu other=%lu",
+                    frame_audit.command_count[RF_RENDER_LAYER_SKY],
+                    frame_audit.command_count[RF_RENDER_LAYER_WORLD],
+                    gpu_audit.last_transparent_commands,
+                    frame_audit.command_count[RF_RENDER_LAYER_EFFECTS],
+                    frame_audit.command_count[RF_RENDER_LAYER_VIEWMODEL],
+                    frame_audit.pixel_count[RF_RENDER_LAYER_OVERLAY],
+                    gpu_audit.last_texture_commands,
+                    gpu_audit.last_overlay_commands,
+                    gpu_audit.last_edge_commands,
+                    gpu_audit.last_other_commands);
+                __printf("%s\n", audit_line);
+                rf_windows_log(audit_line);
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT gpu frontend_ms=%.3f pack_ms=%.3f submit_ms=%.3f fence_wait_ms=%.3f native_acquire_ms=%.3f native_submit_ms=%.3f native_present_ms=%.3f native_total_ms=%.3f overlay_upload_bytes=%u readback_bytes=%u cpu_framebuffer_copy_bytes=%u",
                     gpu_audit.frontend_ms, gpu_audit.raster_abi_pack_ms,
                     gpu_audit.last_timing.submit_ms,
                     gpu_audit.last_timing.execution_wait_ms,
                     gpu_audit.native_present_timing.acquire_ms,
                     gpu_audit.native_present_timing.submit_ms,
                     gpu_audit.native_present_timing.present_ms,
-                    gpu_audit.native_present_timing.total_ms);
+                    gpu_audit.native_present_timing.total_ms,
+                    gpu_audit.native_present_timing.overlay_upload_bytes,
+                    gpu_audit.native_present_timing.color_readback_bytes,
+                    gpu_audit.native_present_timing.cpu_framebuffer_copy_bytes);
+                __printf("%s\n", audit_line);
+                rf_windows_log(audit_line);
             }
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {

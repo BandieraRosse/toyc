@@ -23,6 +23,7 @@ static int command_tiles(const struct rf_gpu_raster_cmd_v1 *cmd,
                          uint32_t *y0, uint32_t *y1)
 {
     if (cmd->kind == RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 ||
+        cmd->kind == RF_GPU_RASTER_CMD_SKY_V1 ||
         cmd->kind == RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1) {
         *x0 = *y0 = 0; *x1 = (width - 1) / tw; *y1 = (height - 1) / th;
         return 1;

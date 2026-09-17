@@ -15,6 +15,36 @@ enum rf_core_renderer {
     RF_CORE_RENDERER_GPU_COMPUTE = 1
 };
 
+enum rf_render_layer_v1 {
+    RF_RENDER_LAYER_SKY = 0,
+    RF_RENDER_LAYER_WORLD,
+    RF_RENDER_LAYER_TRANSPARENT,
+    RF_RENDER_LAYER_EFFECTS,
+    RF_RENDER_LAYER_VIEWMODEL,
+    RF_RENDER_LAYER_OVERLAY,
+    RF_RENDER_LAYER_COUNT
+};
+
+enum rf_render_layer_backend_v1 {
+    RF_RENDER_BACKEND_UNSET = 0,
+    RF_RENDER_BACKEND_GPU,
+    RF_RENDER_BACKEND_CPU,
+    RF_RENDER_BACKEND_COMPOSITE,
+    RF_RENDER_BACKEND_UNSUPPORTED
+};
+
+struct rf_render_frame_v1 {
+    unsigned long long frame_id;
+    int camera_x, camera_z;
+    int direction_sy, direction_cy;
+    int pitch_sy, pitch_cy;
+    int width, height;
+    unsigned long command_count[RF_RENDER_LAYER_COUNT];
+    unsigned long pixel_count[RF_RENDER_LAYER_COUNT];
+    unsigned int layer_backend[RF_RENDER_LAYER_COUNT];
+    int sky_enabled;
+};
+
 struct rf_core_gpu_frame_stats {
     unsigned long long frames_attempted, gpu_frames, cpu_fallback_frames;
     unsigned long long unsupported_texture, unsupported_transparent;
@@ -30,6 +60,10 @@ struct rf_core_gpu_frame_stats {
     double raster_abi_pack_ms, texture_table_build_ms;
     double cpu_oracle_ms, presentation_copy_ms, present_ms, frame_total_ms;
     double overlay_cpu_draw_ms;
+    unsigned long last_commands, last_texture_commands;
+    unsigned long last_transparent_commands, last_overlay_commands;
+    unsigned long last_edge_commands, last_other_commands;
+    int last_path;
     struct rf_gpu_raster_timing last_timing;
     struct rf_gpu_native_present_timing native_present_timing;
 };
@@ -68,6 +102,7 @@ struct rf_core {
     struct rf_core_filesystem filesystem;
     struct rf_gpu gpu;
     struct rf_core_gpu_frame gpu_frame;
+    struct rf_render_frame_v1 render_frame;
     struct toy_audio audio;
     int audio_ready;
     int exit_requested;
@@ -129,6 +164,16 @@ int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int64_t rf_core_begin_tick(struct rf_core *core);
 int rf_core_should_exit(const struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
+void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
+                                  int camera_z, int direction_sy,
+                                  int direction_cy, int pitch_sy,
+                                  int pitch_cy);
+void rf_core_render_frame_record_v1(struct rf_core *core,
+                                    enum rf_render_layer_v1 layer,
+                                    unsigned long commands,
+                                    unsigned long pixels);
+int rf_core_get_render_frame_v1(const struct rf_core *core,
+                                struct rf_render_frame_v1 *frame);
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);

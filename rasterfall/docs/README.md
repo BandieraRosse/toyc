@@ -1,8 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-17
-> 源码核对基线：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B1 已实现未冻结，GPU-8B2 未开始，GPU-9A 实现与局部正确性通过但 normal-frame 验收阻塞。
-> 当前 GPU 优先级：暂停新功能；Windows 实机先用 `--frame-audit` 捕获坏姿态，再用 `--normal-frame-audit` 精确重放。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
+> 源码核对基线：GPU-0 ～ GPU-8A 已完成；RenderFrame V1 的 camera/有序层描述与 A-AUDIT 已建立，sky 已迁入 GPU Raster 参数背景层；GPU-8B1、GPU-9A 仍待 Windows normal-frame 冻结，其他 post-world 层尚未迁移。
+> 当前 GPU 优先级：在 Windows 实机验收 sky 的 CPU/GPU 路径切换一致性，并继续迁移 transparent、effects、viewmodel；`--frame-audit` 已同时写入 `rasterfall.log`。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
@@ -73,7 +73,7 @@
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | Return-to-WHU runtime compatibility、地面可读性、出生朝向与眼高验收 | [map-format.md](map-format.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `world attr.identity` → `rasterfall_session.c`；`rasterfall_world_content.c` 的单布尔 ground policy → `draw_partitioned_floor()`；`player_start` → Runtime region sy/cy → projection → session；`--map ... --environment-capture ...` |
 | 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md)、[资料补充 V1](reference/return-to-whu-core/evidence-addendum-v1.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
-| 场景、角色、HUD、特效、第一人称武器、性能 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、`src/dev-tests/rasterfall_visual_capture.inc` |
+| RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
 | 世界位置光照查询、静态太阳遮挡、ground/architecture/static RMESH/dynamic entities 接入 | [rendering.md](rendering.md)、[Phase B 说明](static-world-lighting-phase-b.md)、[Phase A 开发记录](static-world-lighting-phase-a.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有缓存；正常 static RMESH 在 `render_static_props()` 按实例采样，详见 [Phase C1](static-world-lighting-phase-c1.md)；normal actor/enemy 与 owner weapons 的 frame scope、local viewmodel sample 见 [Phase C2](static-world-lighting-phase-c2.md)；form/material/fog 仍归原层 |

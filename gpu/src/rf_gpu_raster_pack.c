@@ -280,14 +280,22 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
     if (!required || required != stream_size) return RF_GPU_RASTER_PACK_INVALID;
     if (header->command_count < 2) return RF_GPU_RASTER_PACK_INVALID;
     commands = (const struct rf_gpu_raster_cmd_v1 *)(header + 1);
-    if (commands[0].kind != RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 ||
+    if ((commands[0].kind != RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 &&
+         commands[0].kind != RF_GPU_RASTER_CMD_SKY_V1) ||
         commands[1].kind != RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1)
         return RF_GPU_RASTER_PACK_INVALID;
     for (i = 0; i < header->command_count; ++i) {
         const struct rf_gpu_raster_cmd_v1 *cmd = &commands[i];
         if (cmd->byte_size != sizeof(*cmd))
             return RF_GPU_RASTER_PACK_INVALID;
-        if (cmd->kind == RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 ||
+        if (cmd->kind == RF_GPU_RASTER_CMD_SKY_V1) {
+            if (i != 0 || cmd->flags || cmd->resource_handle ||
+                !cmd->payload.sky.direction_cy ||
+                !cmd->payload.sky.pitch_cy || cmd->payload.sky.flags ||
+                !bytes_are_zero(cmd->payload.sky.reserved,
+                                sizeof(cmd->payload.sky.reserved)))
+                return RF_GPU_RASTER_PACK_INVALID;
+        } else if (cmd->kind == RF_GPU_RASTER_CMD_CLEAR_COLOR_V1 ||
             cmd->kind == RF_GPU_RASTER_CMD_CLEAR_DEPTH_V1) {
             if (i > 1 || cmd->flags || cmd->resource_handle ||
                 !bytes_are_zero(cmd->payload.clear.reserved,

@@ -1,8 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：GPU-7C/7D 与 GPU-8A 已冻结；GPU-8B1 已实现未冻结，GPU-8B2 未开始。GPU-9A 的独立 `post_color`、identity 与 inverse-depth Fog V0 已通过局部 oracle，但 normal-frame 实机验收仍阻塞。
-> 当前调试原则：Raster differential 只证明同一 packed input 的 CPU/GPU 执行一致；上游 frontend/packing、sky/world submission 和 present ownership 必须用 `--frame-audit` 取证后再以 `--normal-frame-audit` 重放。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot 与 sky/world/transparent/effects/viewmodel/overlay 固定层枚举；sky 已作为 Raster V1 参数背景命令进入 CPU reference、tile binning 与 GPU shader。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理平面建立专用不透明 solid/interpolated-light/fog/depth 路径，不再用 NULL texture/material fallback；旧路径仅作 `--render-performance` 的 `generic-planar` 逐像素 A/B。
@@ -83,6 +83,20 @@ HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模�
 地面锚点属于 renderer；不会创建 enemy、碰撞体、AI 或网络状态。
 
 ## 渲染边界
+
+### RenderFrame V1 与 Sky B2
+
+`rf_render_frame_v1` 是 Core 持有的一帧有序提交描述，只保存 camera/extent 快照、固定层计数和
+backend 审计信息，不拥有玩法状态、renderer command pool 或 Vulkan object。层顺序固定为
+sky → world → transparent → effects → viewmodel → overlay。当前 vertical slice 已完成 sky：CPU backend
+继续使用 `rasterfall_sky_draw()`，GPU backend 将同一方向、pitch 与固定颜色参数写入
+`RF_GPU_RASTER_CMD_SKY_V1`，由 Raster dispatch 在任何 depth-tested world command 前生成 device-local
+背景；不上传 CPU 天空，也不把 sky 伪装成 screen overlay。CPU reference、full-scan 与 tile-binned
+shader 消费同一命令，sky 不写 depth。
+
+transparent 仍按既有契约使完整 world batch 回退 CPU；effects/viewmodel 当前只进入 RenderFrame 审计，
+尚未迁入 native GPU frame。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt 因而仍是下一
+checkpoint，不能把已建立层描述误称为 GPU-8B2 全部完成。
 
 ### GPU-9A Post-Raster Compute Pass V1
 

@@ -105,7 +105,7 @@ static int make_fixture(const char *name, uint32_t width, uint32_t height,
     surface.height = (int)height; surface.stride = (int)(width * 4);
     toy_renderer_init(&r);
     if (toy_renderer_begin(&r, &surface, clear) < 0) goto done;
-    if (!strcmp(name, "clear")) {
+    if (!strcmp(name, "clear") || !strcmp(name, "sky")) {
         /* no geometry */
     } else if (!strcmp(name, "geometry-depth-order")) {
         add_triangle(&r, 2,2,100, 16,2,200, 2,10,300, 0x4080c0,256,0);
@@ -173,6 +173,20 @@ static int make_fixture(const char *name, uint32_t width, uint32_t height,
         }
     }
     result = stream_from_renderer(&r, clear, out);
+    if (result == 0 && !strcmp(name, "sky")) {
+        struct rf_gpu_raster_stream_header_v1 *header = (void *)out->data;
+        struct rf_gpu_raster_cmd_v1 *commands = (void *)(header + 1);
+        memset(&commands[0], 0, sizeof(commands[0]));
+        commands[0].kind = RF_GPU_RASTER_CMD_SKY_V1;
+        commands[0].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+        commands[0].payload.sky.direction_sy = 724;
+        commands[0].payload.sky.direction_cy = 724;
+        commands[0].payload.sky.pitch_sy = -128;
+        commands[0].payload.sky.pitch_cy = 1016;
+        commands[0].payload.sky.zenith_color = 0x3b82c4;
+        commands[0].payload.sky.horizon_color = 0xb9e3ff;
+        commands[0].payload.sky.ground_color = 0x0f1218;
+    }
 done:
     toy_renderer_destroy(&r); free(pixels); return result;
 }
@@ -381,7 +395,7 @@ int main(int argc,char **argv)
     struct rf_gpu gpu;struct rf_gpu_vulkan_context context;struct rf_gpu_raster raster;
     struct rf_gpu_status status;struct stream s={0};const char *replay=NULL,*artifacts="build/gpu-raster-diff-mismatch";
     const struct {const char *name;uint32_t w,h,n,seed;} cases[]={
-      {"clear",19,13,0,0},{"geometry-depth-order",19,13,0,0},{"shared-edge",19,13,0,0},
+      {"clear",19,13,0,0},{"sky",97,61,0,0},{"geometry-depth-order",19,13,0,0},{"shared-edge",19,13,0,0},
       {"light-fog-thin",19,13,0,0},{"grid",53,29,0,0},{"edges-mixed",37,23,0,0},
       {"equal-near-far",73,41,96,0},{"stress-seed-1",320,180,64,1},
       {"vertex-lit-fixed",37,29,0,0},

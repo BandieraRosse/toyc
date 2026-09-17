@@ -158,6 +158,12 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.unsupported_overlay += overlay;
     frame->stats.unsupported_edge += edge;
     frame->stats.unsupported_other += other;
+    frame->stats.last_commands = (unsigned long)count;
+    frame->stats.last_texture_commands = texture;
+    frame->stats.last_transparent_commands = transparent;
+    frame->stats.last_overlay_commands = overlay;
+    frame->stats.last_edge_commands = edge;
+    frame->stats.last_other_commands = other;
     snprintf(diagnostic, sizeof(diagnostic),
              "gpu-world: classification end commands=%d texture=%lu transparent=%lu overlay=%lu edge=%lu other=%lu",
              count, texture, transparent, overlay, edge, other);
@@ -165,6 +171,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.classification_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (transparent || overlay || edge || other) {
+        frame->stats.last_path = 2;
         frame->stats.cpu_fallback_frames++;
         return -1;
     }
@@ -224,6 +231,24 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             frame->stats.cpu_fallback_frames++;
             return -1;
         }
+        if (core->render_frame.sky_enabled) {
+            struct rf_gpu_raster_stream_header_v1 *header =
+                (struct rf_gpu_raster_stream_header_v1 *)(void *)frame->stream;
+            struct rf_gpu_raster_cmd_v1 *commands =
+                (struct rf_gpu_raster_cmd_v1 *)(void *)(header + 1);
+            memset(&commands[0], 0, sizeof(commands[0]));
+            commands[0].kind = RF_GPU_RASTER_CMD_SKY_V1;
+            commands[0].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+            commands[0].payload.sky.direction_sy =
+                core->render_frame.direction_sy;
+            commands[0].payload.sky.direction_cy =
+                core->render_frame.direction_cy;
+            commands[0].payload.sky.pitch_sy = core->render_frame.pitch_sy;
+            commands[0].payload.sky.pitch_cy = core->render_frame.pitch_cy;
+            commands[0].payload.sky.zenith_color = 0x3B82C4U;
+            commands[0].payload.sky.horizon_color = 0xB9E3FFU;
+            commands[0].payload.sky.ground_color = 0x0F1218U;
+        }
         snprintf(diagnostic, sizeof(diagnostic),
                  "gpu-world: pack end stream=%llu textures=%u bytes=%llu",
                  (unsigned long long)written, resources.desc_count,
@@ -263,6 +288,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             frame->stats.texture_upload_bytes = resources.texel_size;
             frame->stats.texture_commands += texture;
             frame->stats.gpu_frames++;
+            frame->stats.last_path = 1;
             return 0;
         }
 #ifdef TOYC_WINDOWS
@@ -298,6 +324,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             frame->stats.oracle_frames++;
         }
 #endif
+        frame->stats.last_path = 3;
         gpu_world_log("gpu-world: raster call begin");
         if (rf_gpu_raster_render_textured_timed(&core->gpu, &frame->raster,
             frame->stream, written, resources.descs, resources.desc_count,
@@ -534,7 +561,47 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
     core->gpu_frame.native_prepared = 0;
     core->gpu_frame.overlay_active = 0;
+    core->gpu_frame.stats.last_path = 0;
     return ready;
+}
+
+void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
+                                  int camera_z, int direction_sy,
+                                  int direction_cy, int pitch_sy,
+                                  int pitch_cy)
+{
+    unsigned long long next;
+    if (!core) return;
+    next = core->render_frame.frame_id + 1;
+    memset(&core->render_frame, 0, sizeof(core->render_frame));
+    core->render_frame.frame_id = next;
+    core->render_frame.camera_x = camera_x;
+    core->render_frame.camera_z = camera_z;
+    core->render_frame.direction_sy = direction_sy;
+    core->render_frame.direction_cy = direction_cy;
+    core->render_frame.pitch_sy = pitch_sy;
+    core->render_frame.pitch_cy = pitch_cy;
+    core->render_frame.width = core->surface.width;
+    core->render_frame.height = core->surface.height;
+    core->render_frame.sky_enabled = 1;
+}
+
+void rf_core_render_frame_record_v1(struct rf_core *core,
+                                    enum rf_render_layer_v1 layer,
+                                    unsigned long commands,
+                                    unsigned long pixels)
+{
+    if (!core || layer < 0 || layer >= RF_RENDER_LAYER_COUNT) return;
+    core->render_frame.command_count[layer] += commands;
+    core->render_frame.pixel_count[layer] += pixels;
+}
+
+int rf_core_get_render_frame_v1(const struct rf_core *core,
+                                struct rf_render_frame_v1 *frame)
+{
+    if (!core || !frame) return -1;
+    *frame = core->render_frame;
+    return 0;
 }
 
 struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
@@ -599,6 +666,18 @@ int rf_core_end_frame(struct rf_core *core)
             return -1;
         frame->native_prepared = 0;
         frame->native_presented = 1;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_SKY] =
+            RF_RENDER_BACKEND_GPU;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_WORLD] =
+            RF_RENDER_BACKEND_GPU;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_TRANSPARENT] =
+            RF_RENDER_BACKEND_UNSUPPORTED;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_EFFECTS] =
+            RF_RENDER_BACKEND_UNSUPPORTED;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_VIEWMODEL] =
+            RF_RENDER_BACKEND_UNSUPPORTED;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_OVERLAY] =
+            RF_RENDER_BACKEND_COMPOSITE;
         frame->stats.overlay_upload_bytes +=
             frame->stats.native_present_timing.overlay_upload_bytes;
         frame->stats.overlay_composite_frames++;
@@ -607,6 +686,18 @@ int rf_core_end_frame(struct rf_core *core)
         core->gpu_frame.native_presented = 0;
         return 0;
     }
+    core->render_frame.layer_backend[RF_RENDER_LAYER_SKY] =
+        RF_RENDER_BACKEND_CPU;
+    core->render_frame.layer_backend[RF_RENDER_LAYER_WORLD] =
+        RF_RENDER_BACKEND_CPU;
+    core->render_frame.layer_backend[RF_RENDER_LAYER_TRANSPARENT] =
+        RF_RENDER_BACKEND_CPU;
+    core->render_frame.layer_backend[RF_RENDER_LAYER_EFFECTS] =
+        RF_RENDER_BACKEND_CPU;
+    core->render_frame.layer_backend[RF_RENDER_LAYER_VIEWMODEL] =
+        RF_RENDER_BACKEND_CPU;
+    core->render_frame.layer_backend[RF_RENDER_LAYER_OVERLAY] =
+        RF_RENDER_BACKEND_CPU;
     present_start = rf_core_clock_now_us();
     result = toy_window_present(core->window);
     core->gpu_frame.stats.present_ms =

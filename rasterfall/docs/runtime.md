@@ -1,8 +1,8 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-17
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径，`--gpu-post-fog` 再启用 Post-Raster Fog V0。
-> 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Windows 正常运行用 `--frame-audit` 取得真实坏帧，再用 `--normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>` 重放；固定 fixture 不替代该证据。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 已显式描述 camera 与六个有序层，sky 已进入 native GPU frame。
+> 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Windows `--frame-audit` 已同步写 `rasterfall.log`，可用 frame ID、path、pose、extent、层计数和 timing 独立重建现场；`--normal-frame-audit` 仍用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。

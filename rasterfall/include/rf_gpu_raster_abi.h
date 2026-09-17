@@ -16,7 +16,8 @@ enum rf_gpu_raster_cmd_kind_v1 {
     /* V1-compatible extension: same frozen 96-byte record and triangle
      * offsets, with the final three Q8 words interpreted as vertex lights. */
     RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 = 4,
-    RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 = 5
+    RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 = 5,
+    RF_GPU_RASTER_CMD_SKY_V1 = 6
 };
 
 enum rf_gpu_raster_cmd_flags_v1 {
@@ -121,8 +122,24 @@ struct rf_gpu_raster_clear_v1 {
     uint32_t reserved[19];
 };
 
+/* Parameter-only background layer.  It is evaluated before depth-tested
+ * world commands and does not write depth.  Direction values use the same
+ * Q10 convention as struct camera. */
+struct rf_gpu_raster_sky_v1 {
+    int32_t direction_sy;
+    int32_t direction_cy;
+    int32_t pitch_sy;
+    int32_t pitch_cy;
+    uint32_t zenith_color;
+    uint32_t horizon_color;
+    uint32_t ground_color;
+    uint32_t flags;
+    uint32_t reserved[12];
+};
+
 union rf_gpu_raster_payload_v1 {
     struct rf_gpu_raster_clear_v1 clear;
+    struct rf_gpu_raster_sky_v1 sky;
     struct rf_gpu_raster_flat_triangle_v1 flat_triangle;
     struct rf_gpu_raster_vertex_lit_triangle_v1 vertex_lit_triangle;
     struct rf_gpu_raster_textured_triangle_v1 textured_triangle;
@@ -150,6 +167,8 @@ _Static_assert(sizeof(struct rf_gpu_raster_vertex_lit_triangle_v1) == 80,
                "GPU vertex-lit triangle V1 layout");
 _Static_assert(sizeof(struct rf_gpu_raster_textured_triangle_v1) == 80,
                "GPU textured triangle V1 layout");
+_Static_assert(sizeof(struct rf_gpu_raster_sky_v1) == 80,
+               "GPU sky V1 layout");
 _Static_assert(sizeof(struct rf_gpu_texture_desc_v1) == 24,
                "GPU texture descriptor V1 layout");
 _Static_assert(sizeof(union rf_gpu_raster_payload_v1) == 80,

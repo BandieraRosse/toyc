@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-17
 > 源码核对基线：`fc045ad`
-> 当前状态：GPU-9A 已完成实现和本地正确性验证，但 normal-frame 实机验收阻塞；暂停冻结与新 GPU 功能。
+> 当前状态：A-AUDIT、B1-CONTRACT 与 B2-SKY 已实现并通过本地 differential/build 门禁；等待 Windows Intel normal-frame、路径切换与 resize 实机验收。GPU-8B1/GPU-9A 尚未冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -43,7 +43,8 @@ normal world frontend
 | GPU-7C / 7D | DONE / FROZEN | Core-owned normal GPU frame 与 Texture V1 已接入；unsupported batch 仍整批 CPU fallback |
 | GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
 | GPU-8B1 | IMPLEMENTED / NOT FROZEN | CPU screen-space truth 上传 XRGB8888 color + 8-bit coverage，GPU source-over composite；还需 normal-frame 实机视觉与 timing 验收 |
-| GPU-8B2 | NOT STARTED | viewmodel、interactables 和 world effects 等 post-world renderer layers 尚未进入 native GPU frame |
+| RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
+| GPU-8B2 remainder | NOT STARTED | transparent、viewmodel、interactables 和 world effects 等层尚未进入 native GPU frame |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
@@ -82,9 +83,10 @@ raster color + signed Q20 inverse-Z depth
 - Fog V0 使用 `inv_z = 1048576 / camera_z` 的反深度阈值，不把 depth 当线性米制距离。
 - HUD、Console 和 Desktop 在 post 之后 composite，不进入 post effect。
 
-## 当前唯一优先任务：normal-frame regression audit
+## 当前优先任务：Windows Sky/RenderFrame 验收
 
-GPU-9A 暂不冻结，GPU-8B2 和其他新功能暂不开始。先在 Windows 真实异常现场完成以下闭环：
+GPU-9A 暂不冻结。A-AUDIT 已使日志独立包含 frame/path/pose/layers/timing，B1/B2 已把 sky 从隐式
+CPU framebuffer 写入迁为显式参数层。下一步在 Windows 真实异常现场完成以下闭环：
 
 1. 正常运行加 `--frame-audit`，记录 world、camera x/z、sy/cy、pitch、extent、fixed-step ticks/
    accumulator、update/render/present/whole-loop 以及 GPU submit/fence/native-present timing。
@@ -94,7 +96,7 @@ GPU-9A 暂不冻结，GPU-8B2 和其他新功能暂不开始。先在 Windows �
    --normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>
    ```
 
-3. 核对 sky draw 后到 world flush 后的上半屏变化、command coverage、fog/source 和保存的 BMP。
+3. 核对 GPU-native 与 transparent CPU-fallback 切换时天空无闪变，并核对 command coverage、fog/source 和保存的 BMP。
 4. 将约 200 ms frame wall time 拆分到 update、frontend、pack/binning、GPU raster、post、overlay upload/
    composite、copy/present 和 fence wait。
 5. 根据证据将问题归入 frontend semantic resolution、sky/world submission、command packing、post/composite 或

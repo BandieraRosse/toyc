@@ -23,6 +23,48 @@ static double cpu_now_ms(void)
 #endif
 }
 
+static uint32_t sky_mix(uint32_t from, uint32_t to, int num, int den)
+{
+    uint32_t r=(((from>>16)&255U)*num+((to>>16)&255U)*(den-num))/den;
+    uint32_t g=(((from>>8)&255U)*num+((to>>8)&255U)*(den-num))/den;
+    uint32_t b=((from&255U)*num+(to&255U)*(den-num))/den;
+    return 0xff000000U|(r<<16)|(g<<8)|b;
+}
+
+static void cpu_sky(uint32_t *color, uint32_t stride, uint32_t width,
+                    uint32_t height, const struct rf_gpu_raster_sky_v1 *sky)
+{
+    static const int dir[3][3]={{340,248,-934},{-872,172,-512},{-488,380,-816}};
+    static const int scale[3]={16,12,10};
+    int focal=(int)width*3/4,horizon=(int)height/2;
+    int pitch_cy=sky->pitch_cy<0?-sky->pitch_cy:sky->pitch_cy;
+    uint32_t x,y;
+    if(pitch_cy>=64){long long o=(long long)focal*sky->pitch_sy/sky->pitch_cy;
+        if(o>2LL*height)o=2LL*height;
+        if(o<-2LL*height)o=-2LL*height;
+        horizon+=(int)o;}
+    else horizon=sky->pitch_sy>0?-(int)height:(int)height*2;
+    for(y=0;y<height;y++)for(x=0;x<width;x++){
+        uint32_t c;
+        if((int)y>=horizon && horizon>0)c=sky->ground_color|0xff000000U;
+        else if(horizon<=0)c=sky->ground_color|0xff000000U;
+        else {int bottom=horizon<(int)height?horizon:(int)height;
+            int band_h=bottom/8+1,band=(int)y/band_h;if(band>7)band=7;
+            c=sky_mix(sky->zenith_color,sky->horizon_color,7-band,8);
+            for(int i=0;i<3;i++){int vx=(dir[i][0]*sky->direction_cy-dir[i][2]*sky->direction_sy)/1024;
+                int vz0=(dir[i][0]*sky->direction_sy+dir[i][2]*sky->direction_cy)/1024;
+                int vy2=(dir[i][1]*sky->pitch_cy-vz0*sky->pitch_sy)/1024;
+                int vz2=(dir[i][1]*sky->pitch_sy+vz0*sky->pitch_cy)/1024;
+                if(vz2>64){int cx=(int)width/2+vx*focal/vz2,cy=(int)height/2-vy2*focal/vz2,u=scale[i]/4;if(u<2)u=2;
+                    if((int)x>=cx-u*7&&(int)x<cx+u*7&&(int)y>=cy+u*2&&(int)y<cy+u*3)c=0xffb9d9ecU;
+                    if((int)x>=cx-u*6&&(int)x<cx+u*6&&(int)y>=cy&&(int)y<cy+u*3)c=0xffeaf7ffU;
+                    if((int)x>=cx-u*3&&(int)x<cx+u*3&&(int)y>=cy-u*2&&(int)y<cy)c=0xffffffffU;
+                    if((((int)x>=cx-u*5&&(int)x<cx-u*3)||((int)x>=cx+u*3&&(int)x<cx+u*5))&&(int)y>=cy-u&&(int)y<cy)c=0xffffffffU;
+                }}
+        }color[(size_t)y*stride+x]=c;
+    }
+}
+
 int rf_gpu_raster_cpu_reference_textured_v1(
                                    const void *stream, size_t stream_size,
                                    const struct rf_gpu_texture_desc_v1 *descs,
@@ -62,6 +104,9 @@ int rf_gpu_raster_cpu_reference_textured_v1(
     commands = (const void *)(header + 1);
     if (toy_renderer_begin(&renderer, &surface,
                            commands[0].payload.clear.value) < 0) goto done;
+    if (commands[0].kind == RF_GPU_RASTER_CMD_SKY_V1)
+        cpu_sky(color,color_stride,header->framebuffer_width,
+                header->framebuffer_height,&commands[0].payload.sky);
     for (i = 2; i < header->command_count; ++i) {
         const struct rf_gpu_raster_flat_triangle_v1 *t =
             &commands[i].payload.flat_triangle;
