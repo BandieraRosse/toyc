@@ -117,7 +117,7 @@ Linux embedded递归依赖和Windows package递归assets复制覆盖公开目录
 无新增编译单元。Windows构建与交互式窗口不属于本轮验证结果。
 
 ```sh
-make app-rasterfall
+make rasterfall
 python3 tools/campus_kit_round.py --generate --capture --deterministic --audit
 make test-asset-pipeline
 build/rasterfall --logic-test

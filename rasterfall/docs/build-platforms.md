@@ -15,8 +15,8 @@
 根 `Makefile` 的 Rasterfall 区域定义全部独立编译单元、依赖和链接对象。Rasterfall 与其共享的
 Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会重新编译对象，以避免头文件依赖
 文件缺失、不完整或切换工作区状态时复用不一致的旧对象。推荐使用 `make rasterfall` 构建；该目标内部自动按 `nproc` 并行，不需要额外传递 `-j` 参数。
-底层 `app-rasterfall` 目标仍可直接使用；如需手动控制并行度，可调用
-`make -j12 app-rasterfall`。
+兼容入口 `app-rasterfall` 也会在目标内部按 `nproc` 自动并行；新脚本和文档应优先使用正式名称
+`make rasterfall`。
 构建 freestanding Linux 程序，窗口/输入/渲染/音频来自仓库 Tinylibc 与公共库。默认运行时读取
 `rasterfall/assets`；`rasterfall-embedded` 才嵌入公开资源。
 GB2312 字库位于 `rasterfall/assets/fonts/`，普通运行缺少 `gb2312-16.rfh` 时会明确报错并停止；
@@ -39,7 +39,9 @@ copy 字节数。因而 Windows 验收不再依赖控制台留存。
 `windows/Makefile` 用 MinGW-w64 + SDL2 构建相同玩法/渲染源，并加入 `windows/src/` 的 runtime、
 WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `windows/include/`。资源定位和包结构见
 `windows/README.md`；对象同样依赖无条件重建目标，确保共享头文件变化不会留下旧的 Windows 对象；
-不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。
+不要把 Windows 修复硬编码进共享玩法，优先修平台适配层。根目标 `make win-rasterfall` 在内部按
+本机 `nproc` 并行调用 Windows Makefile；打包目标 `make win-rasterfall-package` 也沿用该并行入口，
+调用方不需要额外传递 `-j` 参数。
 Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库、BDF 源文件和许可。
 normal GPU 实机必须从 package 目录启动，确保 exe-relative 的 `rasterfall/assets` 可见；直接运行
 `build/rasterfall.exe` 会按其所在目录寻找 `build/rasterfall/assets`，不代表 GPU 初始化失败。

@@ -78,7 +78,9 @@ make win-deps
 make win-rasterfall
 ```
 
-如果依赖已经准备好，后续可直接使用增量构建：
+`make win-rasterfall` 会在目标内部按本机 `nproc` 自动并行构建，不需要额外传递 `-j` 参数。
+
+如果依赖已经准备好，后续可直接重新构建：
 
 ```sh
 make win-rasterfall

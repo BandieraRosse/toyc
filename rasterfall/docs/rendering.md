@@ -460,7 +460,7 @@ Architectural V1 使用 `--visual-capture arch-family|arch-alley|arch-hall --vis
 从仓库根目录运行：
 
 ```sh
-make app-rasterfall
+make rasterfall
 build/rasterfall --visual-capture procedural-humanoid --visual-output /tmp/rf-humanoid.bmp
 build/rasterfall --visual-capture lighting-props --visual-output /tmp/rf-lighting-props.bmp
 build/rasterfall --character-acceptance rasterfall/private-assets/models/rf_humanoid_acceptance.rmesh /tmp/rf-humanoid-v11

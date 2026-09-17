@@ -183,7 +183,7 @@ GLB 中间源在本地 `private-assets/source/enemies/`，公开交付物为
 ## 使用与验收
 
 ```sh
-make app-rasterfall app-glb-inspect build/rfchar_runtime_test
+make rasterfall app-glb-inspect build/rfchar_runtime_test
 build/rasterfall --enemy-visual-family block-infected
 build/rasterfall --enemy-visual-family humanoid-infected
 build/rasterfall --enemy-visual-family legacy

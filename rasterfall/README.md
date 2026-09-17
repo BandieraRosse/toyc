@@ -16,7 +16,7 @@ Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击实验，�
 
 ```sh
 make generate-assets
-make app-rasterfall
+make rasterfall
 build/rasterfall
 ```
 
@@ -34,6 +34,9 @@ make win-deps
 make win-rasterfall
 make win-rasterfall-package
 ```
+
+`make rasterfall` 和 `make win-rasterfall` 都会在目标内部按本机 `nproc` 自动并行构建，
+不需要额外传递 `-j` 参数。
 
 生成物分别为 `build/rasterfall.exe` 和 `build/rasterfall-windows.zip`。Windows 程序以 EXE
 所在目录为资源根目录，构建及打包细节见 [`../windows/README.md`](../windows/README.md)。

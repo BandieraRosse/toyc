@@ -76,7 +76,7 @@ collision 可以投射 V2 光场，但网格本身尚未消费。角色/感染�
 
 ## 验证入口
 
-使用 `make app-rasterfall`、`build/rasterfall --logic-test`、`make test-map-parser test-map-runtime
+使用 `make rasterfall`、`build/rasterfall --logic-test`、`make test-map-parser test-map-runtime
 test-map-components` 和 `make win-rasterfall`。world-light logic 覆盖四角、中点、三个分量独立
 插值、边缘/越界、ambient floor、三维梁相交/错开/升高 origin，以及正式 Runtime surface 高度。
 

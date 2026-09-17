@@ -170,7 +170,7 @@ RF Humanoid modular actor 同样遵守该规则：其 RFANIM WALK 使用逐 acto
 build/rfchar_runtime_test <rfchar.rmesh> # 含一 resource / 两 instance isolation
 build/rasterfall --character-acceptance <rfchar.rmesh> <output>
 build/rasterfall --action-composition-capture <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <output.bmp>
-make app-vmd-inspect app-glb-inspect app-rasterfall
+make app-vmd-inspect app-glb-inspect rasterfall
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
 build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
 ```

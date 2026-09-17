@@ -122,7 +122,7 @@ Game Runtime 可以编排 session，但不复制地图真值；GUI、Application
 
 ## 验证入口
 
-- `make app-rasterfall`
+- `make rasterfall`
 - `build/rasterfall --logic-test`
 - 适用的 `--visual-capture` / model acceptance CLI
 - `git diff --check`

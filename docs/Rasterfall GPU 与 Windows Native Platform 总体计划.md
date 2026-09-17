@@ -174,7 +174,7 @@ color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differ
 make gpu-overlay-test
 build/rf-gpu-overlay-test
 
-make app-rasterfall
+make rasterfall
 build/rasterfall --logic-test
 
 # Windows package 目录

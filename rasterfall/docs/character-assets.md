@@ -374,7 +374,7 @@ carrier，装备采用单骨骼权重，HEAD 属于 RF_HEAD，CHEST/BACK 属于 
 也不进入 actor、网络或碰撞数据。没有新增 rigid attachment runtime 或模型实例架构。
 
 ```sh
-make app-rasterfall app-glb-inspect build/rfchar_runtime_test
+make rasterfall app-glb-inspect build/rfchar_runtime_test
 python3 tools/rf_profession_round.py --generate --capture --world --deterministic
 ```
 

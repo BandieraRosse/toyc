@@ -78,10 +78,10 @@ win-deps:
 	@bash scripts/setup-windows-build.sh
 
 win-rasterfall:
-	@$(MAKE) -f windows/Makefile all WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+	+$(MAKE) -j$$(nproc) -f windows/Makefile all WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 win-rasterfall-package:
-	@$(MAKE) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+	+$(MAKE) -j$$(nproc) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 $(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
@@ -1337,7 +1337,11 @@ lod-g11:
 		rasterfall/private-assets/models/g11_lod1.rmesh --ratio 0.4
 
 # 单个 app：make app-echo
-$(foreach name,$(APP_NAMES),$(eval app-$(name): $(BUILD)/$(name)))
+$(foreach name,$(filter-out rasterfall,$(APP_NAMES)),$(eval app-$(name): $(BUILD)/$(name)))
+
+# Rasterfall 旧入口保留兼容性，但与正式入口一样自动并行构建。
+app-rasterfall:
+	+$(MAKE) -j$$(nproc) $(BUILD)/rasterfall
 
 # Friendly spelling for the offline GLB skeleton/animation inspector.
 .PHONY: app-glb-inspect

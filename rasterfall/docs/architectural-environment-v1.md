@@ -151,7 +151,7 @@ AI/波次或 Campaign 改写。它验证视觉空间，不证明导航、碰撞�
 ## 重现、成本与交接
 
 ```sh
-make app-rasterfall
+make rasterfall
 python3 tools/architecture_round.py --generate --capture --deterministic
 make test-asset-pipeline
 build/rasterfall --logic-test
