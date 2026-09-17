@@ -7624,6 +7624,32 @@ static int render_effect_rays(struct toy_renderer *renderer,
     return pixels;
 }
 
+static int submit_effect_screen_rect(struct toy_renderer *renderer,
+                                     int left, int top, int right, int bottom,
+                                     long z, long inv_z, uint32_t color)
+{
+    struct toy_screen_vertex quad[4];
+    int i;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+    if (right > renderer->surface.width) right = renderer->surface.width;
+    if (bottom > renderer->surface.height) bottom = renderer->surface.height;
+    if (right <= left || bottom <= top) return 0;
+    memset(quad, 0, sizeof(quad));
+    for (i = 0; i < 4; i++) {
+        quad[i].z = z;
+        quad[i].inv_z = inv_z;
+        quad[i].light = 256;
+    }
+    quad[0].x = left;  quad[0].y = top;
+    quad[1].x = right; quad[1].y = top;
+    quad[2].x = right; quad[2].y = bottom;
+    quad[3].x = left;  quad[3].y = bottom;
+    toy_renderer_triangle(renderer, &quad[0], &quad[1], &quad[2], color);
+    toy_renderer_triangle(renderer, &quad[0], &quad[2], &quad[3], color);
+    return (right - left) * (bottom - top);
+}
+
 static int render_fire_point(struct toy_renderer *renderer,
                              const struct camera *camera,
                              int x, int y, int z, int size, uint32_t color)
@@ -7641,12 +7667,8 @@ static int render_fire_point(struct toy_renderer *renderer,
     top = screen.y - size;
     right = left + size;
     bottom = top + size * 2;
-    fill_rect(&renderer->surface, left, top, size, size * 2, color);
-    if (left < 0) left = 0;
-    if (top < 0) top = 0;
-    if (right > renderer->surface.width) right = renderer->surface.width;
-    if (bottom > renderer->surface.height) bottom = renderer->surface.height;
-    return right > left && bottom > top ? (right - left) * (bottom - top) : 0;
+    return submit_effect_screen_rect(renderer, left, top, right, bottom,
+                                     screen.z, screen.inv_z, color);
 }
 
 /* A billboard primitive currently uses the same small camera-facing screen
@@ -7865,9 +7887,9 @@ static int render_effect_particle(struct toy_renderer *renderer,
     if (height < 1) height = 1;
     if (screen.x < 0 || screen.x + width >= renderer->surface.width ||
         screen.y < 0 || screen.y + height >= renderer->surface.height) return 0;
-    fill_rect(&renderer->surface, screen.x, screen.y, width, height,
-              p->color ? p->color : mix_color(0xFFC860, 0x4A2008, k, 256));
-    return width * height;
+    return submit_effect_screen_rect(renderer, screen.x, screen.y,
+        screen.x + width, screen.y + height, screen.z, screen.inv_z,
+        p->color ? p->color : mix_color(0xFFC860, 0x4A2008, k, 256));
 }
 
 static int render_effect_particles(struct toy_renderer *renderer,

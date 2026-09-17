@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-17
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，direct producer、viewmodel 和 transparent 仍是当前 debt。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。frame audit 独立记录 effects/viewmodel direct pixels 和 fallback reason；纯 Raster V1 effects command 可随 retained stream 消费，billboard 与普通 particle 已迁入带逆深度的 opaque commands；本地 tracer 等屏幕线 ray direct producer、viewmodel 和 transparent 仍是当前 debt。GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -131,6 +131,12 @@ commands/direct pixels、generic unsupported 或 consumer failure。已能无损
 不再因层名被禁止，且 effects facade 通过独立 stats 回传实际 direct producer
 结果，不再把同次调用中的 triangle command 结果数整体记为 direct debt。任一真实
 direct producer 或 unsupported command 仍使整帧回放。
+
+GPU-8B2b 当前已把 billboard 与普通 hit/fire/explosion particle 的屏幕矩形改为两条全亮、
+无雾且携带投影 `inv_z` 的 opaque triangle commands。逻辑 fixture 分别断言 command 数为 2、
+direct pixels 为 0；本地 tracer 屏幕线仍保留独立非零 direct-debt fixture，防止阶段性迁移把
+剩余 fallback 隐藏掉。特殊死亡 fragment/dust 继续沿既有 triangle/alpha command 路径，不属于
+本次 direct producer 迁移。
 
 GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
 producer 分成 pre-post raster input 或真正的 post-overlay，然后迁移 opaque viewmodel 与 hands/pill，

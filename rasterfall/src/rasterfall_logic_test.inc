@@ -1607,12 +1607,49 @@ static int run_logic_test(void)
         tlibc_free(pixels);
         return 15;
     }
-    /* 弹道/粒子渲染冒烟：轴向弹道 + 终点越出右屏的弹道（屏幕裁剪与
-     * 偏移线边界） + 远处粒子 */
+    /* Effects producer gate: billboard and ordinary particles must record
+     * opaque raster commands without direct framebuffer writes.  The local
+     * tracer remains the deliberately isolated direct producer for the next
+     * B2b slice. */
     {
         struct rasterfall_effect_event ray_event;
         struct rasterfall_effect_instance seed;
         struct rasterfall_effect_render_stats effect_stats;
+        int command_begin;
+        rasterfall_effects_init(&effects);
+        memset(&seed, 0, sizeof(seed));
+        seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
+        seed.x = camera.x + 200;
+        seed.y = -350;
+        seed.z = camera.z - 2000;
+        seed.lifetime_ms = 100;
+        seed.size = 1000;
+        seed.alpha = 256;
+        if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 64;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        command_begin = renderer.cmd_count;
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (effect_stats.direct_pixels || renderer.cmd_count - command_begin != 2)
+            return 248;
+        rasterfall_effects_init(&effects);
+        memset(&seed, 0, sizeof(seed));
+        seed.type = RASTERFALL_EFFECT_INSTANCE_BILLBOARD;
+        seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH;
+        seed.x = camera.x;
+        seed.y = -350;
+        seed.z = camera.z - 2000;
+        seed.lifetime_ms = 100;
+        seed.alpha = 256;
+        if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 249;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        command_begin = renderer.cmd_count;
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (effect_stats.direct_pixels || renderer.cmd_count - command_begin != 2)
+            return 250;
+        /* Local tracer screen lines still exercise direct-debt accounting,
+         * including an endpoint outside the right edge. */
+        rasterfall_effects_init(&effects);
         memset(&ray_event, 0, sizeof(ray_event));
         ray_event.type = RASTERFALL_EFFECT_EVENT_TRACER;
         ray_event.flags = RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
@@ -1626,20 +1663,10 @@ static int run_logic_test(void)
         rasterfall_effects_consume(&effects, &ray_event);
         ray_event.ex = camera.x + 4000;
         rasterfall_effects_consume(&effects, &ray_event);
-        memset(&seed, 0, sizeof(seed));
-        seed.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
-        seed.kind = RASTERFALL_EFFECT_INSTANCE_KIND_HIT_PARTICLE;
-        seed.x = camera.x + 200;
-        seed.y = -350;
-        seed.z = camera.z - 2000;
-        seed.lifetime_ms = 100;
-        seed.size = 1000;
-        seed.alpha = 256;
-        if (!rasterfall_effects_spawn_instance(&effects, &seed)) return 64;
         memset(&effect_stats, 0, sizeof(effect_stats));
         rasterfall_render_effects(&renderer, &camera, &effect_stats);
-        if (!effect_stats.direct_pixels) return 248;
-        rasterfall_effects_reset_fire(&effects);
+        if (!effect_stats.direct_pixels) return 251;
+        rasterfall_effects_init(&effects);
     }
     /* Molotov flames are represented by the same runtime particle pool as
      * hit sparks; the gameplay burn zone remains the source of truth. */
