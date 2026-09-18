@@ -1,8 +1,8 @@
 # Rasterfall GPU 目录
 
 > 文档更新：2026-09-18
-> 源码核对基线：GPU-8B2d B2d-4d checkpoint（2026-09-18）
-> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4/5 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip、CPU/GPU differential 与 local muzzle 接入；GPU-8B2d B2d-4a/4b/4c 已把普通 RFM2 material alpha、RGBA texel alpha 与组合 alpha 接入真实 producer，B2d-4d 已固定 authored transparent platform 与 enabled air-gate box 的 WORLD producer，透明死亡 effects producer 与 GPU-9A normal-frame 验收仍待完成。
+> 源码核对基线：GPU-8B2d B2d-4e checkpoint（2026-09-18）
+> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4/5 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip、CPU/GPU differential 与 local muzzle 接入；GPU-8B2d B2d-4a/4b/4c 已把普通 RFM2 material alpha、RGBA texel alpha 与组合 alpha 接入真实 producer，B2d-4d 已固定 authored transparent platform 与 enabled air-gate box 的 WORLD producer，B2d-4e 已固定 enemy death fragment/dust 的透明 EFFECTS producer；B2d-5 与 GPU-9A normal-frame 验收仍待完成。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
 参考性外部代码。GPU 路线的 checkpoint、最终目标和剩余问题统一见

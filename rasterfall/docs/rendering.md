@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行与显式 fallback reason 分类已完成；B2d-4a/4b/4c 已将普通 RFM2 material alpha、RGBA texel alpha 与 `texel × material / 255` 组合 alpha 经真实 producer 接入，B2d-4d 已接入 authored transparent platform 与 enabled air-gate box；muzzle outer/lobe 与 enemy dissolve death fade 已迁移，死亡 fragment/dust 等剩余透明 effects producer 与 B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行与显式 fallback reason 分类已完成；B2d-4a/4b/4c 已将普通 RFM2 material alpha、RGBA texel alpha 与 `texel × material / 255` 组合 alpha 经真实 producer 接入，B2d-4d 已接入 authored transparent platform 与 enabled air-gate box；B2d-4e 已固定 enemy death fragment/dust 的透明 EFFECTS producer，muzzle outer/lobe 与 enemy dissolve death fade 也已迁移；B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -143,13 +143,13 @@ GPU-8B2b 已把 billboard、普通 hit/fire/explosion particle 和屏幕线 ray 
 投影 `inv_z` 的 opaque triangle commands。ray 保留近平面与 Liang-Barsky 屏幕裁剪，并把线宽沿
 屏幕法线展开成 quad；轴向退化段使用同深度小矩形。逻辑 fixture 分别覆盖 particle、billboard、
 本地 tracer 轴向段和越过右边界的通用 ray，断言预期 command 数且 `effects_direct_pixels=0`。
-特殊死亡 fragment/dust 继续沿既有 triangle/alpha command 路径，不属于本次 direct producer 迁移。
+特殊死亡 fragment/dust 继续沿既有 triangle/alpha command 路径；B2d-4e 已将二者整个生命周期固定为有序透明 EFFECTS producer，即使 fragment 首帧有效 alpha=255 也显式 source-over/no-depth-write，且不产生 direct-pixel debt。
 
 GPU-8B2d B2d-0..2 已完成 ordered CPU reference、flat source-over GPU consumer 与 RGBA/material
 alpha consumer；固定 fixture 覆盖透明提交顺序、alpha 边界、透明不写 depth、fog 后 blend、RGBA
 alpha0 与跨 tile。B2d-3 已完成 retained span/Core 基础放行、显式透明 marker、跨多 WORLD flush 的稳定布局与
 RGBA 分类；B2d-4a/4b/4c 已按真实 RFM2 material alpha、RGBA texel alpha 与二者组合
-迁移普通 flat/textured world producer，并保留 RGB + material alpha=255 的 opaque 快路径；组合有效 alpha 固定为 `texel_alpha * material_alpha / 255` 向下取整。RGBA command 在 CPU replay 与 GPU pack 前即具有 no-depth-write，真实 fixture 覆盖 alpha 0/64/128/255、RGB 对照、组合零边界、texture table、retained span 和 hand-off。B2d-4d 进一步由正常 `render_platform()` 与 air-gate `draw_box_alpha()` helper 固定 alpha 96/48、platform-before-gate 原始提交顺序、稳定几何以及 Raster V1 pack；muzzle outer/lobe 与 enemy dissolve death fade 已迁移，死亡 fragment/dust 等透明 effects producer 留给后续切片。VIEWMODEL transparent 使用同一
+迁移普通 flat/textured world producer，并保留 RGB + material alpha=255 的 opaque 快路径；组合有效 alpha 固定为 `texel_alpha * material_alpha / 255` 向下取整。RGBA command 在 CPU replay 与 GPU pack 前即具有 no-depth-write，真实 fixture 覆盖 alpha 0/64/128/255、RGB 对照、组合零边界、texture table、retained span 和 hand-off。B2d-4d 进一步由正常 `render_platform()` 与 air-gate `draw_box_alpha()` helper 固定 alpha 96/48、platform-before-gate 原始提交顺序、稳定几何以及 Raster V1 pack；B2d-4e 固定 enemy death fragment 的四面体 4-command、dust 的 camera-facing quad 2-command、fragment-before-dust 原序及满/衰减 alpha，并保证二者始终 source-over/no-depth-write、`effects_direct_pixels=0`；muzzle outer/lobe 与 enemy dissolve death fade 也已迁移。VIEWMODEL transparent 使用同一
 source-over state、独立 depth domain，并在 alpha>0 时写 coverage 供 Post fog skip；alpha0 不写任何输出。
 GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
 producer 分成 pre-post raster input 或真正的 post-overlay，然后由 Phase 3 的 viewmodel frontend

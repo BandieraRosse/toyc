@@ -7898,7 +7898,7 @@ static int render_effect_particle(struct toy_renderer *renderer,
 {
     struct vec3 world, view;
     struct toy_screen_vertex screen;
-    int width, height, k;
+    int width, height, k, command_begin;
     if (!p->active) return 0;
     k = p->alpha;
     if (k < 0) k = 0;
@@ -7910,6 +7910,7 @@ static int render_effect_particle(struct toy_renderer *renderer,
         int phase = (p->age_ms / 48 + p->source_id * 3) & 7;
         int radius = p->size / 24;
         int rx = spin_x[phase], rz = spin_z[phase];
+        int drawn;
         if (radius < 28) radius = 28;
         v[0].x = p->x + rx * radius / 1024;
         v[0].y = p->y + radius * 3 / 2;
@@ -7923,18 +7924,29 @@ static int render_effect_particle(struct toy_renderer *renderer,
         v[3].x = p->x + rz * radius * 3 / 4096;
         v[3].y = p->y + radius / 4;
         v[3].z = p->z - rx * radius * 3 / 4096;
-        return draw_world_triangle_alpha(renderer, camera, &v[0], &v[1], &v[2],
-                                         p->color, k * 255 / 256) +
-               draw_world_triangle_alpha(renderer, camera, &v[0], &v[3], &v[1],
-                                         p->color + 0x101008, k * 255 / 256) +
-               draw_world_triangle_alpha(renderer, camera, &v[0], &v[2], &v[3],
-                                         p->color + 0x201810, k * 255 / 256) +
-               draw_world_triangle_alpha(renderer, camera, &v[1], &v[3], &v[2],
-                                         p->color - 0x101008, k * 255 / 256);
+        command_begin = renderer->cmd_count;
+        drawn = draw_world_triangle_alpha(renderer, camera, &v[0], &v[1], &v[2],
+                                          p->color, k * 255 / 256) +
+                draw_world_triangle_alpha(renderer, camera, &v[0], &v[3], &v[1],
+                                          p->color + 0x101008, k * 255 / 256) +
+                draw_world_triangle_alpha(renderer, camera, &v[0], &v[2], &v[3],
+                                          p->color + 0x201810, k * 255 / 256) +
+                draw_world_triangle_alpha(renderer, camera, &v[1], &v[3], &v[2],
+                                          p->color - 0x101008, k * 255 / 256);
+        /* Death fragments belong to the ordered transparent EFFECTS family
+         * for their whole lifetime.  Their first sample has effective alpha
+         * 255, but must not enter the opaque span and write depth before the
+         * following dust/fragment samples. */
+        for (int i = command_begin; i < renderer->cmd_count; ++i) {
+            renderer->cmds[i].transparent = 1;
+            renderer->cmds[i].transparent_no_depth_write = 1;
+        }
+        return drawn;
     }
     if (p->kind == RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST) {
         struct vec3 a, b, c, d;
         int radius = p->size / 32;
+        int drawn;
         if (radius < 14) radius = 14;
         a.x = p->x - camera->cy * radius / 1024; a.y = p->y - radius;
         a.z = p->z + camera->sy * radius / 1024;
@@ -7942,8 +7954,16 @@ static int render_effect_particle(struct toy_renderer *renderer,
         b.z = p->z - camera->sy * radius / 1024;
         c.x = b.x; c.y = p->y + radius; c.z = b.z;
         d.x = a.x; d.y = p->y + radius; d.z = a.z;
-        return draw_quad_alpha(renderer, camera, &a, &b, &c, &d, p->color,
-                               k * 180 / 256);
+        command_begin = renderer->cmd_count;
+        drawn = draw_quad_alpha(renderer, camera, &a, &b, &c, &d, p->color,
+                                k * 180 / 256);
+        /* Keep the family contract explicit even if its authored alpha is
+         * changed later: death dust is always source-over/no-depth-write. */
+        for (int i = command_begin; i < renderer->cmd_count; ++i) {
+            renderer->cmds[i].transparent = 1;
+            renderer->cmds[i].transparent_no_depth_write = 1;
+        }
+        return drawn;
     }
     world.x = p->x; world.y = p->y; world.z = p->z;
     world_to_view(camera, &world, &view);

@@ -2255,6 +2255,88 @@ death_fixture_done:
             return 252;
         rasterfall_effects_init(&effects);
     }
+    /* B2d-4e producer gate: enemy death fragments and dust are an ordered
+     * transparent EFFECTS family for their entire lifetime.  In particular,
+     * a newly spawned fragment has effective alpha 255 but must still avoid
+     * the opaque/depth-writing path. */
+    {
+        struct rasterfall_effect_instance fragment, dust;
+        struct rasterfall_effect_render_stats effect_stats;
+        struct toy_raster_cmd reference[6];
+        int command_begin, i;
+        rasterfall_effects_init(&effects);
+        memset(&fragment, 0, sizeof(fragment));
+        fragment.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+        fragment.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT;
+        fragment.source_id = 3;
+        fragment.x = camera.x - 120;
+        fragment.y = -350;
+        fragment.z = camera.z + 2200;
+        fragment.lifetime_ms = RASTERFALL_ENEMY_DEATH_FRAGMENT_LIFE_MS;
+        fragment.size = 1750;
+        fragment.alpha = 256;
+        fragment.color = 0xC43A3A;
+        dust = fragment;
+        dust.kind = RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST;
+        dust.source_id = 4;
+        dust.x = camera.x + 120;
+        dust.lifetime_ms = RASTERFALL_ENEMY_DEATH_DUST_LIFE_MS;
+        dust.size = 1166;
+        dust.color = 0xDC4A4A;
+        if (!rasterfall_effects_spawn_instance(&effects, &fragment) ||
+            !rasterfall_effects_spawn_instance(&effects, &dust))
+            return 259;
+        renderer.cmd_count = 0;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        command_begin = renderer.cmd_count;
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (effect_stats.direct_pixels ||
+            renderer.cmd_count - command_begin != 6)
+            return 260;
+        for (i = 0; i < 6; ++i) {
+            const struct toy_raster_cmd *cmd = &renderer.cmds[command_begin + i];
+            if (!cmd->transparent || !cmd->transparent_no_depth_write ||
+                cmd->material_alpha != (i < 4 ? 255 : 180))
+                return 261;
+            reference[i] = *cmd;
+        }
+        if (rf_core_transparent_command_logic_test_v1(
+                renderer.cmds + command_begin, 6) < 0)
+            return 262;
+
+        /* Identical presentation state must preserve fragment-before-dust
+         * geometry, color and triangle order. */
+        renderer.cmd_count = 0;
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (renderer.cmd_count != 6) return 263;
+        for (i = 0; i < 6; ++i)
+            if (!death_command_geometry_equal(&reference[i],
+                                               &renderer.cmds[i]) ||
+                reference[i].material_alpha !=
+                    renderer.cmds[i].material_alpha ||
+                !renderer.cmds[i].transparent ||
+                !renderer.cmds[i].transparent_no_depth_write)
+                return 264;
+
+        /* A later fade sample changes only the expected family alpha/state,
+         * not the fixed 4+2 command shape. */
+        effects.instances[0].alpha = 128;
+        effects.instances[1].alpha = 128;
+        renderer.cmd_count = 0;
+        memset(&effect_stats, 0, sizeof(effect_stats));
+        rasterfall_render_effects(&renderer, &camera, &effect_stats);
+        if (effect_stats.direct_pixels || renderer.cmd_count != 6)
+            return 265;
+        for (i = 0; i < 6; ++i)
+            if (!renderer.cmds[i].transparent ||
+                !renderer.cmds[i].transparent_no_depth_write ||
+                renderer.cmds[i].material_alpha != (i < 4 ? 127 : 90))
+                return 266;
+        if (rf_core_transparent_command_logic_test_v1(renderer.cmds, 6) < 0)
+            return 267;
+        toy_renderer_flush(&renderer);
+        rasterfall_effects_init(&effects);
+    }
     /* LOCAL_VIEW muzzle split: core/outer/lobe share the VM projection and
      * independent depth domain; a remote fire event keeps all three
      * billboards in world EFFECTS. */
