@@ -103,7 +103,8 @@ static int grep_file(const char *path, int show_path)
                 if (line_matches(grep_buffer + start)) {
                     matches++;
                     found_match = 1;
-                    print_line(path, line_number, grep_buffer + start, show_path);
+                    if (!opt_count)
+                        print_line(path, line_number, grep_buffer + start, show_path);
                 }
                 grep_buffer[i] = '\n';
                 start = i + 1;
@@ -118,7 +119,8 @@ static int grep_file(const char *path, int show_path)
         if (line_matches(grep_buffer)) {
             matches++;
             found_match = 1;
-            print_line(path, line_number, grep_buffer, show_path);
+            if (!opt_count)
+                print_line(path, line_number, grep_buffer, show_path);
         }
     }
     if (!use_stdin) __close(fd);

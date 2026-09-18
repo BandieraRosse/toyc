@@ -69,7 +69,8 @@ HEADERS  := $(TOYC_NEED) $(ELF_H) $(ELF_W_H)
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
         test-toyar win-deps win-rasterfall win-rasterfall-package win-app \
         platform-sources test-platform-contract test-windows-core-logic \
-        test-portable-coreutils test-portable-io-logic test-portable-filesystem
+        test-portable-coreutils test-portable-io-logic test-portable-filesystem \
+        test-portable-snprintf
 
 all: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
@@ -1277,6 +1278,12 @@ test-portable-io-logic: tests/platform/portable_io_logic.c
 	$(GCC) -std=c11 -Wall -Wextra -Werror $< -o /tmp/toyc-portable-io-logic
 	/tmp/toyc-portable-io-logic
 
+test-portable-snprintf: tests/platform/portable_snprintf.c lib/portable/snprintf.c
+	$(GCC) -std=c11 -Wall -Wextra -Werror -fno-builtin-snprintf \
+		-fno-stack-protector -I include -I include/posix -I include/tlibc \
+		$^ -o /tmp/toyc-portable-snprintf
+	/tmp/toyc-portable-snprintf
+
 test-portable-filesystem: $(BUILD)/pwd $(BUILD)/mkdir $(BUILD)/mv \
                           $(BUILD)/rm $(BUILD)/rmdir $(BUILD)/grep \
                           $(BUILD)/ls $(BUILD)/fcount
@@ -1288,6 +1295,12 @@ test-portable-filesystem: $(BUILD)/pwd $(BUILD)/mkdir $(BUILD)/mv \
 	printf 'replacement\n' > "$$tmpdir/中文/new.txt"; \
 	$(BUILD)/grep -r -n needle "$$tmpdir" > "$$tmpdir/grep.out"; \
 	grep -q 'old.txt:1:needle one' "$$tmpdir/grep.out"; \
+	printf 'needle one\nother\nneedle two\n' > "$$tmpdir/count-newline.txt"; \
+	$(BUILD)/grep -c needle "$$tmpdir/count-newline.txt" > "$$tmpdir/count-newline.out"; \
+	test "$$(cat "$$tmpdir/count-newline.out")" = 2; \
+	printf 'needle partial' > "$$tmpdir/count-partial.txt"; \
+	$(BUILD)/grep -c needle "$$tmpdir/count-partial.txt" > "$$tmpdir/count-partial.out"; \
+	test "$$(cat "$$tmpdir/count-partial.out")" = 1; \
 	$(BUILD)/ls -l "$$tmpdir/中文" > "$$tmpdir/ls.out"; \
 	grep -q 'DIR .* nested' "$$tmpdir/ls.out"; \
 	count=$$($(BUILD)/fcount "$$tmpdir/中文"); test "$$count" = 2; \
