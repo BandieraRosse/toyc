@@ -179,7 +179,7 @@ compiler regressions.
 compiler/        compiler, assembler, linker, archiver, and runtime
 compiler-tests/  compiler, linker, and Tinylibc tests
 include/         Toyc/Tinylibc headers
-lib/             Tinylibc sources
+lib/             Tinylibc sources (current implementation in lib/linux/; lib/portable/ and lib/windows/ reserved)
 app/             examples and self-hosted applications
 llm/             GPT-2/Qwen2 inference and shared numerical infrastructure
 bootstrap/       versioned bootstrap seeds

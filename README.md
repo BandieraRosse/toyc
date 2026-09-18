@@ -172,7 +172,7 @@ byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 compiler/        编译器、汇编器、链接器、归档器与运行时
 compiler-tests/  编译器、链接器和 Tinylibc 测试
 include/         Toyc/Tinylibc 头文件
-lib/             Tinylibc 源码
+lib/             Tinylibc 源码（当前实现位于 lib/linux/；lib/portable/ 与 lib/windows/ 为预留目录）
 app/             示例与自托管应用
 llm/             GPT-2、Qwen2 推理实现与共享数值基础设施
 bootstrap/       版本控制内的自举种子

@@ -65,7 +65,7 @@ GAME_SRCS += gpu/src/rf_gpu_raster_pack.c
 GAME_SRCS += rasterfall/src/rf_viewmodel_contract.c
 GAME_SRCS += gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_vulkan_backend.c \
              gpu/src/rf_gpu_mixed_executor.c gpu/src/rf_gpu_resource_cache.c
-ANIMATION_SRCS := app/glb_inspect.c rasterfall/src/rasterfall_vmd.c
+ANIMATION_SRCS := app/linux/glb_inspect.c rasterfall/src/rasterfall_vmd.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
                  rasterfall/lib/rasterfall_map_parser.c \
                  rasterfall/lib/rasterfall_map_runtime.c \

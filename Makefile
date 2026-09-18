@@ -34,7 +34,7 @@
 #     make test-all               全部测试套件
 #
 # 策略：gcc 编译 toyc 工具链，保证功能正确。
-#       self-* 目标用 toyc 编译 app/ 来验证代码生成。
+#       self-* 目标用 toyc 编译 app/linux/ 来验证 Linux 代码生成。
 #       自举收敛验证见 bootstrap-selfhost.sh / bootstrap-to-10.sh（可选）。
 #
 
@@ -357,7 +357,7 @@ test-lib-compile: $(BUILD)/toyc $(BUILD)/toyas
 	$(foreach lib,$(LIBS), \
 	  $(foreach src,$(_SRCS_$(lib)), \
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
-	    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
+		    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/linux/$(src) \
 	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
@@ -367,7 +367,7 @@ test-lib-compile: $(BUILD)/toyc $(BUILD)/toyas
 	$(foreach lib,$(LIBS), \
 	  $(foreach src,$(_ASM_$(lib)), \
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
-	    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
+		    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/linux/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
 	      2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
@@ -388,7 +388,7 @@ test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start
 	$(foreach lib,$(LIBS), \
 	  $(foreach src,$(_SRCS_$(lib)), \
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
-	    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/$(src) \
+	    $(BUILD)/toyc $(TINYLIBC_CFLAGS) -c $(TINYLIBC_DIR)/lib/linux/$(src) \
 	      -o $(call _lib_obj,$(src)) 2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
@@ -398,7 +398,7 @@ test-lib: $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUILD)/toyc_rt_start
 	$(foreach lib,$(LIBS), \
 	  $(foreach src,$(_ASM_$(lib)), \
 	    printf "  $(BLUE)%-25s$(RESET) " "$(src)"; \
-	    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
+	    $(BUILD)/toyas $(TINYLIBC_DIR)/lib/linux/$(src) -o $(LIBT_OBJDIR)/$(subst /,_,$(src:.S=.o)) \
 	      2>/tmp/libt_$(lib).log \
 	    && { printf "$(GREEN)✓$(RESET)\n"; ok=$$((ok+1)); } \
 	    || { printf "$(RED)✗$(RESET)\n"; cat /tmp/libt_$(lib).log; fail=$$((fail+1)); }; \
@@ -725,19 +725,19 @@ test-toyar: $(BUILD)/toyar $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUI
 # Tinylibc 库（toyc.a）+ App 构建（gcc 套件）
 # ════════════════════════════════════════════════════════════════
 # 用法：
-#   make lib             编译 lib/ → build/toyc.a
-#   make app             编译所有 app/ 可执行文件到 build/
+#   make lib             编译 lib/linux/ → build/toyc.a
+#   make app             编译 app/linux/ 下的 Linux 应用到 build/
 #   make app-<name>      编译单个 app（如 make app-echo）
 #   make clean-app       清理 app + lib 产物
 #
-# 注意：tlibc 程序入口为 __tlibc_start（lib/init/start.S），
+# 注意：tlibc 程序入口为 __tlibc_start（lib/linux/init/start.S），
 #       链接时通过 -Wl,-e,__tlibc_start 指定。
 # ════════════════════════════════════════════════════════════════
 
 GCC       := gcc
 AR        := ar
-LIBC_DIR  := lib
-APP_DIR   := app
+LIBC_DIR  := lib/linux
+APP_DIR   := app/linux
 RASTERFALL_DIR := rasterfall
 RASTERFALL_SRC := $(RASTERFALL_DIR)/src
 RASTERFALL_INC := $(RASTERFALL_DIR)/include
@@ -764,7 +764,7 @@ LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
 LIBC_C_SRCS   := $(shell find $(LIBC_DIR) -name '*.c' | LANG=C sort)
 LIBC_ASM_SRCS := $(shell find $(LIBC_DIR) -name '*.S' | LANG=C sort)
 
-# 路径压平：lib/core/io.c → build/libc_core_io.o
+# 路径压平：lib/linux/core/io.c → build/libc_core_io.o
 LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
                    $(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
 LIBC_ASM_OBJS := $(foreach src,$(LIBC_ASM_SRCS),\
@@ -1260,7 +1260,7 @@ $(BUILD)/rf-gpu-graphics-test.exe: gpu/src/rf_gpu_graphics_test.c $(GPU_RASTER_T
 
 GPU_RASTER_DIFF_SRCS := gpu/src/rf_gpu_raster_diff_test.c \
 	gpu/src/rf_gpu_raster_cpu_ref.c gpu/src/rf_gpu_renderer_hosted_shim.c \
-	lib/graphics/renderer.c $(GPU_RASTER_TEST_SRCS)
+	lib/linux/graphics/renderer.c $(GPU_RASTER_TEST_SRCS)
 GPU_RASTER_DIFF_DEPS := $(GPU_RASTER_TEST_DEPS) \
 	rasterfall/include/rf_gpu_raster_cpu_ref.h include/toy_renderer.h
 
@@ -1482,8 +1482,8 @@ clean-app:
 # Tinylibc 库 + App 构建（toyc 编译 + 系统 ld/ar）
 # ════════════════════════════════════════════════════════════════
 # 用法：
-#   make self-lib          编译 lib/ → build/toyc_self.a（toyc + ar）
-#   make self-app          编译所有 app/ → build/<name>_self（toyc + ld）
+#   make self-lib          编译 lib/linux/ → build/toyc_self.a（toyc + ar）
+#   make self-app          编译 app/linux/ → build/<name>_self（toyc + ld）
 #   make self-app-<name>   编译单个 app（如 make self-app-echo）
 #   make clean-self        清理自托管产物
 #
@@ -1501,10 +1501,10 @@ SELF_CFLAGS   := -DX86_64_TLIBC=1 \
 SELF_HEADERS  := $(wildcard include/*.h include/posix/*.h include/tlibc/*.h \
                            arch/*.h arch/x86_64/*.h)
 
-# 路径压平：lib/core/io.c → build/self_core_io.o
+# 路径压平：lib/linux/core/io.c → build/self_core_io.o
 SELF_LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
                         $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
-# 启动文件（lib/init/start.S）单独管理，不入归档，避免 ld --whole-archive 重复
+# 启动文件（lib/linux/init/start.S）单独管理，不入归档，避免 ld --whole-archive 重复
 SELF_CRT_OBJS      := $(BUILD)/self_init_start.o
 SELF_LIBC_ASM_OBJS := $(foreach src,$(filter-out $(LIBC_DIR)/init/start.S,$(LIBC_ASM_SRCS)),\
                         $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(src))).o)

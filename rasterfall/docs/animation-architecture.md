@@ -2,6 +2,7 @@
 
 > 文档更新：2026-09-21
 > 源码核对基线：2026-09-21 GPU skinning executor 只把 finalized palette 与 bind influence 交给 GPU compute 求 body position/normal；composition、grant、IK、socket、attachment 与 weapon placement truth 仍由 CPU presentation 链路拥有。
+> 源码核对补充：GLB 动画 library carrier 位于 `app/linux/glb_inspect.c`，不改变运行时接口或复用关系。
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。

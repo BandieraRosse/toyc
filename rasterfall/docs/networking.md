@@ -1,6 +1,7 @@
 # 网络代码导航
 
 > 文档更新：2026-09-12
+> 源码核对补充：公共房间协调服务端 app 位于 `app/linux/net/`；Windows/portable app 目录目前只作为后续迁移入口。
 > 源码核对基线补充：协议 43；enemy 条目 55 字节，末尾显式编码既有 `charge_hit_actor_mask` 的低/高 32 位，decode/apply 保留真值，供 Enemy Procedural Rig / hit VFX 消费。
 > 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只编码 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；不编码 inventory/reload/cooldown/muzzle gameplay 镜像；输入协议版本 42；旧玩家快照已删除；actor snapshot 是玩家/AI/远端玩家 gameplay truth，world snapshot 只承载世界级状态；本地 actor 的 pending airborne/knockback 由输入重演保留，不被旧快照清零；远端插值缓存只保存 derived render state；投射物/燃烧区显式携带 owner；本地预测位置驱动 camera）
 
@@ -11,7 +12,7 @@
 - `rasterfall_net_transport.c` / `.h`：可替换的发送入口和传输层钩子；丢包模拟在上层 net 状态配置。
 - `rasterfall_net_discovery.c`：局域网房间广播与浏览。
 - `include/rasterfall_public_protocol.h`：公共打洞/房间服务共享协议。
-- `app/net/rasterfall_punch_server.c`：公共房间协调服务端。
+- `app/linux/net/rasterfall_punch_server.c`：公共房间协调服务端。
 - `rasterfall_session.c`：权威 step、客户端 step/replay，以及网络命令最终落到玩法的边界。
 
 联机状态分类、房间生命周期和人工验收清单见

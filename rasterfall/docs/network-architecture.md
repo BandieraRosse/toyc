@@ -1,6 +1,7 @@
 # Rasterfall 联机架构与扩展边界
 
 > 文档更新：2026-09-12
+> 源码核对补充：公共房间协调服务端当前位于 `app/linux/net/rasterfall_punch_server.c`，尚未建立 Windows/portable 版本。
 > 源码核对基线补充：协议 43 为 Enemy Visual V1 补传既有权威命中 mask；pose、rig profile 和 VFX 不进入协议。
 > 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；本地主体仍有未确认输入时，reconcile 不覆盖其 airborne/knockback motion；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
 
@@ -12,7 +13,7 @@
   角色和错误码。房间号是打洞或 relay 模式的唯一事实来源。
 - `src/rasterfall_net_transport.c`：Linux/Windows UDP socket 的打开、关闭、收发和单调时钟；
   不解释公网协议或 gameplay 数据。
-- `app/net/rasterfall_punch_server.c`：一个房间号对应一个房间、一个 host 和三个等价 guest
+- `app/linux/net/rasterfall_punch_server.c`：一个房间号对应一个房间、一个 host 和三个等价 guest
   槽位；负责注册、匹配、租约和 relay 转发。
 - `src/rasterfall_net.c`：公网连接阶段和 gameplay replication。后续拆分 codec 时不得把 socket
   平台分支重新放回该文件。

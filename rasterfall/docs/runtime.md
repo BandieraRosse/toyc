@@ -2,6 +2,7 @@
 
 > 文档更新：2026-09-22
 > 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略工作区
+> 源码核对补充：公共 Tinylibc 平台实现位于 `lib/linux/`；Windows/portable 库目录是跨平台迁移入口，Windows 专用实现仍由 `windows/src/` 提供。
 
 ## 当前 GPU 验收阻塞
 
