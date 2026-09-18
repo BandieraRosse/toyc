@@ -1,8 +1,8 @@
 # Rasterfall GPU 与 Windows Native Platform 阶段计划
 
 > 文档更新：2026-09-18
-> 源码核对基线：GPU-8B2d B2d-5 checkpoint（2026-09-18）
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 typed unsupported command。GPU-8B2d B2d-0..4e 已完成 transparent 语义、retained span、真实 producer 和显式 fallback reason；B2d-5 用完整 normal-frame pre-post fixture 固定 WORLD opaque/transparent、EFFECTS opaque/transparent、VIEWMODEL opaque/transparent、两个 ABI barrier、零 direct debt 与 native hand-off，GPU-8B2 达到 local pass。未支持输入仍继续整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
+> 源码核对基线：Windows Intel normal-frame acceptance audit（2026-09-18）
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2d B2d-5 已达到 local pass。Windows Intel Iris Xe 实机已确认 identity/fog 支持场景保持 native present、零 readback/CPU framebuffer copy；验收同时发现正常 Campaign 角色 toon/material feature 仍触发 `0x40` 整帧 CPU replay，因而 GPU-8B1/GPU-9A 继续保持 NOT FROZEN。vertex-lit source-over 已补齐固定 alpha carrier 和 CPU/GPU differential；首次整帧 replay 后先释放 native GPU ownership，再锁存 compatibility renderer，避免同一 HWND 上 SDL/Vulkan present 来回切换。剩余 P0 是 normal toon material semantic resolution 及其后续完整交互/resize 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -42,13 +42,13 @@ normal world frontend
 | GPU-7A / 7B | DONE / FROZEN | normal frontend capture，flat opaque 与 vertex-lit planar 命令已纳入 Raster V1 |
 | GPU-7C / 7D | DONE / FROZEN | Core-owned normal GPU frame 与 Texture V1 已接入；unsupported batch 仍整批 CPU fallback |
 | GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
-| GPU-8B1 | IMPLEMENTED / NOT FROZEN | CPU screen-space truth 上传 XRGB8888 color + 8-bit coverage，GPU source-over composite；还需 normal-frame 实机视觉与 timing 验收 |
+| GPU-8B1 | IMPLEMENTED / NOT FROZEN | Intel 实机支持场景已确认 native composite 与零 readback/copy；正常角色 toon/material feature 仍会整帧 replay，完整视觉、Console/Desktop 与 resize 尚未冻结 |
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
 | RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；多 WORLD flush 在 retained stream 中一次稳定分成连续 span；不改变排序或 fallback |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
 | GPU-8B2 | IMPLEMENTED / LOCAL PASS | retained consumer 和整帧 replay 已建立；effects/viewmodel direct-pixel 零门禁、Transparent V1 consumer 与普通 RFM2、platform/air-gate、muzzle/dissolve、death fragment/dust producer 均已接入；B2d-5 normal-frame fixture 覆盖 WORLD/EFFECTS/VIEWMODEL 的 opaque+transparent 组合、`BEGIN_TRANSPARENT`/`BEGIN_VIEWMODEL` barrier、零 fallback reason/direct debt 和 native hand-off，unsupported fixture 仍验证整帧 CPU replay |
 | GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW muzzle core 与 outer/lobe 复用 VIEWMODEL Contract V1 projection/depth/coverage；remote/AI muzzle 保留 world EFFECTS，outer/lobe 使用真实 material alpha；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
-| GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
+| GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity/inverse-depth Fog V0 通过 oracle，Intel 支持场景 fog native frame 通过；仍受 normal toon fallback 与完整实机矩阵阻塞 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
 ## 已冻结的核心契约
@@ -139,7 +139,11 @@ color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differ
 
 ### P0：阻塞当前冻结
 
-- Windows Intel normal gameplay 的真实坏姿态尚未留下完整 audit 记录。
+- Windows Intel normal gameplay 已捕获稳定阻塞：Campaign 角色的 toon/material feature 以
+  `fallback_reason=0x40` 进入整帧 CPU replay；必须先建立该材质的 GPU 语义或明确的 normal
+  producer resolution，不能以关闭私有角色资源或缩短到切换前帧数代替冻结。
+- 已记录的坏姿态仍需通过 `--normal-frame-audit` 精确重放，并在 toon/material resolution 后
+  对照修复前后的 command coverage 与保存 BMP。
 - 局部 Raster/Post differential 通过，但 normal frontend → semantic resolution → packing 的上游正确性未被该门禁覆盖。
 - sky 未提交、world coverage 不完整与 present ownership 异常尚未用同一坏帧证据排除。
 - 约 200 ms 的 frame wall time 尚未归属到具体阶段，不能据此宣称 native GPU frame 达到性能目标。

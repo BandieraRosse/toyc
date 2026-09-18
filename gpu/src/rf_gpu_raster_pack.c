@@ -154,10 +154,12 @@ static int pack_triangle(struct rf_gpu_raster_cmd_v1 *out,
     triangle->light_q8 = in->light;
     triangle->fog_q8 = in->fog;
     if (out->flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) {
-        if (in->planar_vertex_lit)
-            return RF_GPU_RASTER_PACK_UNSUPPORTED;
-        triangle->reserved[0] = (uint32_t)(in->material_alpha < 0 ? 0 :
+        uint32_t alpha = (uint32_t)(in->material_alpha < 0 ? 0 :
             in->material_alpha > 255 ? 255 : in->material_alpha);
+        if (in->planar_vertex_lit)
+            out->resource_handle = alpha;
+        else
+            triangle->reserved[0] = alpha;
     }
     if (in->planar_vertex_lit) {
         struct rf_gpu_raster_vertex_lit_triangle_v1 *vertex_lit =
@@ -437,13 +439,15 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
                  (!cmd->resource_handle ||
                   (!source_over && cmd->payload.textured_triangle.reserved != 0) ||
                   (source_over && cmd->payload.textured_triangle.reserved > 255))) ||
-                (cmd->kind != RF_GPU_RASTER_CMD_TEXTURED_TRIANGLE_V1 &&
+                (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 &&
                  cmd->resource_handle != 0) ||
+                (cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 &&
+                 ((!source_over && cmd->resource_handle != 0) ||
+                  (source_over && cmd->resource_handle > 255))) ||
                 (cmd->kind == RF_GPU_RASTER_CMD_FLAT_TRIANGLE_V1 &&
                  ((source_over && (t->reserved[0] > 255 ||
                                    t->reserved[1] != 0)) ||
-                  (!source_over && !bytes_are_zero(t->reserved, sizeof(t->reserved))))) ||
-                (cmd->kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 && source_over))
+                  (!source_over && !bytes_are_zero(t->reserved, sizeof(t->reserved))))))
                 return RF_GPU_RASTER_PACK_INVALID;
         } else return RF_GPU_RASTER_PACK_INVALID;
     }

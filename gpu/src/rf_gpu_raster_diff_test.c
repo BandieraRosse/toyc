@@ -467,6 +467,8 @@ static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
     add_textured_triangle(&r,2,27,1200,0,0, 35,27,1200,65535,0, 2,28,1200,0,65535,&ta,0,256,0);
     add_triangle(&r,5,5,40,12,5,40,5,11,40,0xabcdef,256,0);
     add_vertex_lit_triangle(&r,24,3,500,0,35,3,500,384,24,12,500,256,0xffffff,64);
+    r.cmds[r.cmd_count-1].material_alpha=128;
+    r.cmds[r.cmd_count-1].transparent=1;
     CHECK(rf_gpu_raster_measure_textures_toy_v1(&r,&unique,&bytes)==0&&unique==2&&bytes==80);
     resources.descs=calloc(unique,sizeof(*resources.descs));resources.desc_capacity=unique;
     resources.texels=malloc(bytes);resources.texel_capacity=bytes;

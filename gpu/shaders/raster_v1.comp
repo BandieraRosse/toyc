@@ -227,7 +227,9 @@ void main()
                     bool source_over = (stream.words[base + 2u] & FLAG_SOURCE_OVER) != 0u;
                     uint material_alpha = source_over ?
                         (kind == CMD_TEXTURED_TRIANGLE ?
-                         stream.words[base + 23u] : stream.words[base + 22u]) : 255u;
+                         stream.words[base + 23u] :
+                         kind == CMD_VERTEX_LIT_TRIANGLE ?
+                         stream.words[base + 3u] : stream.words[base + 22u]) : 255u;
                     uint source_alpha = material_alpha;
                     uint sampled = 0xff000000u;
                     uint destination = color;

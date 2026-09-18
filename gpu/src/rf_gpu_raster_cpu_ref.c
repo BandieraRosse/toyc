@@ -194,6 +194,13 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
             c.light = v->light_c_q8;
             toy_renderer_triangle_planar_vertex_lit(
                 &renderer, &a, &b, &c, v->color, v->fog_q8);
+            renderer.cmds[renderer.cmd_count - 1].material_alpha =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) ?
+                (int)commands[i].resource_handle : 255;
+            renderer.cmds[renderer.cmd_count - 1].transparent =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) != 0;
+            renderer.cmds[renderer.cmd_count - 1].transparent_no_depth_write =
+                renderer.cmds[renderer.cmd_count - 1].transparent;
         } else {
             toy_renderer_triangle_lit(&renderer, &a, &b, &c, t->color,
                                       t->light_q8, t->fog_q8);

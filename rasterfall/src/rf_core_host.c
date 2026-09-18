@@ -58,10 +58,6 @@ static unsigned int rf_core_cmd_fallback_reason_v1(
             cmd->c.v_over_z < INT_MIN || cmd->c.v_over_z > INT_MAX)
             return RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL;
     }
-    if ((cmd->transparent || cmd->material_alpha != 255 ||
-         (cmd->textured && cmd->texture->has_transparency)) &&
-        cmd->planar_vertex_lit)
-        return RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL;
     return RF_PRE_POST_FALLBACK_NONE;
 }
 
@@ -240,6 +236,19 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.classification_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (fallback_reason) {
+        for (i = 0; i < count; ++i) {
+            const struct toy_raster_cmd *cmd = &commands[i];
+            unsigned int command_reason = rf_core_cmd_fallback_reason_v1(cmd);
+            if (!command_reason) continue;
+            snprintf(diagnostic, sizeof(diagnostic),
+                "gpu-world: first unsupported index=%d reason=0x%x textured=%d transparent=%d planar=%d alpha=%d bilinear=%d features=0x%x toon=%d tint=0x%x light=%d fog=%d",
+                i, command_reason, cmd->textured, cmd->transparent,
+                cmd->planar_vertex_lit, cmd->material_alpha,
+                cmd->base_texture_bilinear, cmd->material_features,
+                cmd->has_toon, cmd->material_tint, cmd->light, cmd->fog);
+            gpu_world_log(diagnostic);
+            break;
+        }
         frame->stats.last_path = 2;
         frame->stats.cpu_fallback_frames++;
         return -1;
@@ -834,10 +843,10 @@ int rf_core_retained_span_logic_test_v1(void)
         frame->native_texture_bytes = 0;
         frame->armed = 1;
         core.render_frame.pre_post_fallback_reason = 0;
-        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
-            frame->native_prepared || frame->native_stream_size ||
+        if (gpu_world_consume(&renderer, &probe, 1, &core) < 0 ||
+            !frame->native_prepared || !frame->native_stream_size ||
             rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
-                RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL) {
+                RF_PRE_POST_FALLBACK_NONE) {
             goto fail;
         }
 
@@ -1125,12 +1134,28 @@ static int gpu_pre_post_finalize(struct rf_core *core)
         core->render_frame.pre_post_cpu_fallback = 1;
     }
     if (consumed < 0) {
+        int replay_result;
         frame->native_prepared = 0;
         core->render_frame.pre_post_cpu_fallback = 1;
         if (!core->render_frame.pre_post_fallback_reason)
             core->render_frame.pre_post_fallback_reason |=
                 RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
-        return gpu_pre_post_replay_cpu(core) < 0 ? -1 : 0;
+        replay_result = gpu_pre_post_replay_cpu(core);
+        /* Never alternate SDL software presentation and the Win32 Vulkan
+         * swapchain on one window after an unsupported normal frame.  Tear
+         * down native GPU ownership before the replayed frame is presented,
+         * then keep this run on the compatibility renderer. */
+        if (frame->native_present) {
+            toy_renderer_set_command_consumer(core->renderer, NULL, NULL);
+            rf_gpu_raster_shutdown(&frame->raster);
+            rf_gpu_shutdown(&core->gpu);
+            frame->native_present = 0;
+            frame->initialized = 0;
+            frame->renderer = RF_CORE_RENDERER_CPU;
+            gpu_world_log(
+                "gpu-world: native GPU disabled after whole-frame CPU fallback");
+        }
+        return replay_result < 0 ? -1 : 0;
     }
     return 0;
 }

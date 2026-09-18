@@ -87,6 +87,20 @@ int main(void)
           commands[2].payload.vertex_lit_triangle.light_b_q8 == 256 &&
           commands[2].payload.vertex_lit_triangle.light_c_q8 == 384 &&
           commands[2].payload.vertex_lit_triangle.fog_q8 == 48);
+    source.transparent = 1;
+    source.material_alpha = 128;
+    CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first, sizeof(first),
+                                    &written) == RF_GPU_RASTER_PACK_OK);
+    header = (struct rf_gpu_raster_stream_header_v1 *)first;
+    commands = (struct rf_gpu_raster_cmd_v1 *)(header + 1);
+    CHECK(commands[2].kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1 &&
+          commands[2].flags == (RF_GPU_RASTER_FLAG_DEPTH_TEST_V1 |
+                                RF_GPU_RASTER_FLAG_SOURCE_OVER_V1 |
+                                RF_GPU_RASTER_FLAG_FOG_V1) &&
+          commands[2].resource_handle == 128 &&
+          rf_gpu_raster_validate_v1(first, written) == RF_GPU_RASTER_PACK_OK);
+    source.transparent = 0;
+    source.material_alpha = 255;
     source.planar_vertex_lit = 0;
 
     source.transparent = 1;

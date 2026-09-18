@@ -107,6 +107,9 @@ struct rf_gpu_raster_vertex_lit_triangle_v1 {
     int32_t light_c_q8;
 };
 
+/* Vertex-lit triangles use command.resource_handle as material alpha only
+ * when SOURCE_OVER is set.  Opaque vertex-lit commands keep it zero. */
+
 /* Texture V1 keeps the frozen 96-byte command record.  Textured commands do
  * not store a bbox: CPU binning derives it from the three screen vertices.
  * The released words carry the six signed Q16 perspective terms plus the
