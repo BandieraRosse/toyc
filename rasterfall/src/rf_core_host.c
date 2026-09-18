@@ -620,7 +620,7 @@ int rf_core_retained_span_logic_test_v1(void)
 {
     struct rf_core core;
     struct toy_renderer renderer;
-    struct toy_raster_cmd first[2], second[2], effects[1];
+    struct toy_raster_cmd first[2], second[2], effects[2], viewmodel[2];
     struct toy_texture_view rgba;
     unsigned char rgba_texel[4] = { 255, 160, 32, 128 };
     unsigned int pixels[64 * 64];
@@ -633,6 +633,7 @@ int rf_core_retained_span_logic_test_v1(void)
     memset(first, 0, sizeof(first));
     memset(second, 0, sizeof(second));
     memset(effects, 0, sizeof(effects));
+    memset(viewmodel, 0, sizeof(viewmodel));
     memset(&rgba, 0, sizeof(rgba));
     memset(pixels, 0, sizeof(pixels));
     rgba.channels = 4;
@@ -644,32 +645,51 @@ int rf_core_retained_span_logic_test_v1(void)
      * the normal retained consumer.  The packed validator deliberately sees
      * real triangle geometry rather than zeroed synthetic records. */
     first[0].area = first[1].area = second[0].area = second[1].area =
-        effects[0].area = -64;
+        effects[0].area = effects[1].area = viewmodel[0].area =
+        viewmodel[1].area = -64;
     first[0].bbox_minx = first[1].bbox_minx = second[0].bbox_minx =
-        second[1].bbox_minx = effects[0].bbox_minx = 0;
+        second[1].bbox_minx = effects[0].bbox_minx =
+        effects[1].bbox_minx = viewmodel[0].bbox_minx =
+        viewmodel[1].bbox_minx = 0;
     first[0].bbox_maxx = first[1].bbox_maxx = second[0].bbox_maxx =
-        second[1].bbox_maxx = effects[0].bbox_maxx = 8;
+        second[1].bbox_maxx = effects[0].bbox_maxx =
+        effects[1].bbox_maxx = viewmodel[0].bbox_maxx =
+        viewmodel[1].bbox_maxx = 8;
     first[0].bbox_miny = first[1].bbox_miny = second[0].bbox_miny =
-        second[1].bbox_miny = effects[0].bbox_miny = 0;
+        second[1].bbox_miny = effects[0].bbox_miny =
+        effects[1].bbox_miny = viewmodel[0].bbox_miny =
+        viewmodel[1].bbox_miny = 0;
     first[0].bbox_maxy = first[1].bbox_maxy = second[0].bbox_maxy =
-        second[1].bbox_maxy = effects[0].bbox_maxy = 8;
+        second[1].bbox_maxy = effects[0].bbox_maxy =
+        effects[1].bbox_maxy = viewmodel[0].bbox_maxy =
+        viewmodel[1].bbox_maxy = 8;
     first[0].a.x = first[1].a.x = second[0].a.x = second[1].a.x =
-        effects[0].a.x = 0;
+        effects[0].a.x = effects[1].a.x = viewmodel[0].a.x =
+        viewmodel[1].a.x = 0;
     first[0].a.y = first[1].a.y = second[0].a.y = second[1].a.y =
-        effects[0].a.y = 0;
+        effects[0].a.y = effects[1].a.y = viewmodel[0].a.y =
+        viewmodel[1].a.y = 0;
     first[0].b.x = first[1].b.x = second[0].b.x = second[1].b.x =
-        effects[0].b.x = 8;
+        effects[0].b.x = effects[1].b.x = viewmodel[0].b.x =
+        viewmodel[1].b.x = 8;
     first[0].b.y = first[1].b.y = second[0].b.y = second[1].b.y =
-        effects[0].b.y = 0;
+        effects[0].b.y = effects[1].b.y = viewmodel[0].b.y =
+        viewmodel[1].b.y = 0;
     first[0].c.x = first[1].c.x = second[0].c.x = second[1].c.x =
-        effects[0].c.x = 0;
+        effects[0].c.x = effects[1].c.x = viewmodel[0].c.x =
+        viewmodel[1].c.x = 0;
     first[0].c.y = first[1].c.y = second[0].c.y = second[1].c.y =
-        effects[0].c.y = 8;
+        effects[0].c.y = effects[1].c.y = viewmodel[0].c.y =
+        viewmodel[1].c.y = 8;
     first[0].a.inv_z = first[0].b.inv_z = first[0].c.inv_z =
         first[1].a.inv_z = first[1].b.inv_z = first[1].c.inv_z =
         second[0].a.inv_z = second[0].b.inv_z = second[0].c.inv_z =
         second[1].a.inv_z = second[1].b.inv_z = second[1].c.inv_z =
-        effects[0].a.inv_z = effects[0].b.inv_z = effects[0].c.inv_z = 1024;
+        effects[0].a.inv_z = effects[0].b.inv_z = effects[0].c.inv_z =
+        effects[1].a.inv_z = effects[1].b.inv_z = effects[1].c.inv_z =
+        viewmodel[0].a.inv_z = viewmodel[0].b.inv_z =
+        viewmodel[0].c.inv_z = viewmodel[1].a.inv_z =
+        viewmodel[1].b.inv_z = viewmodel[1].c.inv_z = 1024;
     second[1].base_texture_valid = 1;
     first[0].material_alpha = 255;
     first[1].material_alpha = 255;
@@ -681,6 +701,13 @@ int rf_core_retained_span_logic_test_v1(void)
     second[1].base_texture_valid = 1;
     second[1].material_tint = 0x00ffffffU;
     effects[0].material_alpha = 255;
+    effects[1].material_alpha = 128;
+    effects[1].transparent = 1;
+    effects[1].transparent_no_depth_write = 1;
+    viewmodel[0].material_alpha = 255;
+    viewmodel[1].material_alpha = 96;
+    viewmodel[1].transparent = 1;
+    viewmodel[1].transparent_no_depth_write = 1;
     core.renderer = &renderer;
     core.render_frame.current_layer = RF_RENDER_LAYER_WORLD;
     frame = &core.gpu_frame;
@@ -689,23 +716,33 @@ int rf_core_retained_span_logic_test_v1(void)
         gpu_pre_post_retain_consume(&renderer, second, 2, &core) < 0)
         return -1;
     core.render_frame.current_layer = RF_RENDER_LAYER_EFFECTS;
-    if (gpu_pre_post_retain_consume(&renderer, effects, 1, &core) < 0 ||
+    if (gpu_pre_post_retain_consume(&renderer, effects, 2, &core) < 0)
+        goto fail;
+    core.render_frame.current_layer = RF_RENDER_LAYER_VIEWMODEL;
+    if (gpu_pre_post_retain_consume(&renderer, viewmodel, 2, &core) < 0 ||
         frame->retained_world_raw_count != 4 ||
-        frame->retained_command_count != 5)
+        frame->retained_command_count != 8)
         goto fail;
     if (gpu_pre_post_partition_world(frame) < 0 ||
         frame->retained_batch_count[RF_RENDER_LAYER_WORLD] != 2 ||
         frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] != 2 ||
-        frame->retained_batch_count[RF_RENDER_LAYER_EFFECTS] != 1 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_EFFECTS] != 2 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_VIEWMODEL] != 2 ||
         frame->retained_world_raw_count != 0)
         goto fail;
-    /* O(first), O(second), T(first), T(second), EFFECTS.  These exact
-     * offsets are passed to the ABI marker packer by the normal finalize path. */
+    /* B2d-5 normal-frame closure: O(world), T(world), EFFECTS (opaque then
+     * transparent), VIEWMODEL (opaque then transparent).  These exact spans
+     * are passed to the two ABI marker barriers by the normal finalize path. */
     if (frame->retained_commands[0].transparent ||
         frame->retained_commands[1].textured ||
         !frame->retained_commands[2].transparent ||
         frame->retained_commands[3].texture != &rgba ||
-        frame->retained_commands[4].material_alpha != 255)
+        frame->retained_commands[4].material_alpha != 255 ||
+        !frame->retained_commands[5].transparent ||
+        frame->retained_commands[6].material_alpha != 255 ||
+        !frame->retained_commands[7].transparent ||
+        rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+            RF_PRE_POST_FALLBACK_NONE)
         goto fail;
 
     /* Exercise the actual normal retained consumer up to its native backend
@@ -731,8 +768,13 @@ int rf_core_retained_span_logic_test_v1(void)
     packed_size = frame->native_stream_size;
     header = (struct rf_gpu_raster_stream_header_v1 *)(void *)frame->stream;
     packed = (struct rf_gpu_raster_cmd_v1 *)(void *)(header + 1);
-    if (header->command_count != 8 ||
+    if (header->command_count != 12 ||
         packed[4].kind != RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1 ||
+        packed[9].kind != RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1 ||
+        !frame->native_prepared || frame->stats.last_path != 1 ||
+        core.render_frame.pre_post_cpu_fallback ||
+        rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+            RF_PRE_POST_FALLBACK_NONE ||
         rf_gpu_raster_validate_v1(frame->stream, packed_size) !=
             RF_GPU_RASTER_PACK_OK)
         goto fail;

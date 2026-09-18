@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行与显式 fallback reason 分类已完成；B2d-4a/4b/4c 已将普通 RFM2 material alpha、RGBA texel alpha 与 `texel × material / 255` 组合 alpha 经真实 producer 接入，B2d-4d 已接入 authored transparent platform 与 enabled air-gate box；B2d-4e 已固定 enemy death fragment/dust 的透明 EFFECTS producer，muzzle outer/lobe 与 enemy dissolve death fade 也已迁移；B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..4e 已完成 source-over/material+texture alpha/no-depth-write/packed-order 语义、retained span、显式 fallback reason 和真实 transparent producer；B2d-5 normal-frame fixture 现在覆盖 WORLD/EFFECTS/VIEWMODEL 的 opaque+transparent span、`BEGIN_TRANSPARENT_V1`/`BEGIN_VIEWMODEL_V1`、零 direct debt/fallback reason 与 native hand-off，GPU-8B2 达到 local pass。VIEWMODEL 使用独立 inverse-Z depth/coverage，Post fog 在 alpha>0 的 VIEWMODEL 像素跳过；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -100,7 +100,7 @@ source-over 命令 depth-test 但始终不写 depth，material/texture alpha 在
 CPU reference、full-scan 和 tile-binned consumer 均按 packed command order 执行，不自动深度排序。
 GPU retained collector 将多次 WORLD flush 先收集为一个前缀，再一次稳定分成连续 opaque→transparent span；
 `BEGIN_TRANSPARENT_V1` 是 ordering/audit barrier，层决定跨域顺序，state 决定像素语义。
-B2d-3 的 retained span、marker、RGBA 分类与基础 Core 放行已完成；producer 分流和 normal-frame 收口尚未完成，
+B2d-3 的 retained span、marker、RGBA 分类与基础 Core 放行已完成；B2d-4a..4e 完成 producer 分流，B2d-5 已用完整 pre-post span fixture 收口 normal-frame local gate。
 未支持的 material/texture/edge/overlay 仍整帧 CPU replay。
 effects 的 direct-pixel 与 unsupported debt 仍会使整帧回退；opaque viewmodel command 已迁入 native GPU frame，并由 span marker
 切换独立 depth/coverage 域。`rf_core_begin_screen_overlay()` 之后的 renderer-command debt
@@ -151,11 +151,15 @@ alpha0 与跨 tile。B2d-3 已完成 retained span/Core 基础放行、显式透
 RGBA 分类；B2d-4a/4b/4c 已按真实 RFM2 material alpha、RGBA texel alpha 与二者组合
 迁移普通 flat/textured world producer，并保留 RGB + material alpha=255 的 opaque 快路径；组合有效 alpha 固定为 `texel_alpha * material_alpha / 255` 向下取整。RGBA command 在 CPU replay 与 GPU pack 前即具有 no-depth-write，真实 fixture 覆盖 alpha 0/64/128/255、RGB 对照、组合零边界、texture table、retained span 和 hand-off。B2d-4d 进一步由正常 `render_platform()` 与 air-gate `draw_box_alpha()` helper 固定 alpha 96/48、platform-before-gate 原始提交顺序、稳定几何以及 Raster V1 pack；B2d-4e 固定 enemy death fragment 的四面体 4-command、dust 的 camera-facing quad 2-command、fragment-before-dust 原序及满/衰减 alpha，并保证二者始终 source-over/no-depth-write、`effects_direct_pixels=0`；muzzle outer/lobe 与 enemy dissolve death fade 也已迁移。VIEWMODEL transparent 使用同一
 source-over state、独立 depth domain，并在 alpha>0 时写 coverage 供 Post fog skip；alpha0 不写任何输出。
-GPU-8B2 的后续顺序固定为：先收敛 opaque world effects，再将 effects 的 direct framebuffer
-producer 分成 pre-post raster input 或真正的 post-overlay，然后由 Phase 3 的 viewmodel frontend
-共享 opaque flat/lit/textured triangle command；B2c 已接入 VIEWMODEL GPU consumer，下一 checkpoint
-扩展 local muzzle，最后扩展 transparent Raster V1。transparent V1 必须显式冻结 source-over、material/texture alpha、
-depth test/write 与原始顺序，不以 OIT 或重排作为首版前提。
+B2d-5 在 Core retained-span 门禁中同时放入 opaque/transparent WORLD、EFFECTS 和
+VIEWMODEL，断言稳定 WORLD 分区、EFFECTS 原序、VIEWMODEL 独立 barrier、零 direct-pixel/
+fallback reason、native-prepared 路径与完整 Raster V1 stream；既有 unsupported fixture 继续断言
+任一不支持命令在提交前拒绝整帧，不允许部分 GPU 成功。这是 GPU-8B2 的 local-pass
+收口，不代替 Windows Intel 上 GPU-8B1/GPU-9A 的 native present、resize 和 timing 验收。
+GPU-8B2 已按 opaque effects、direct producer、VIEWMODEL consumer/local muzzle、Transparent V1 的
+顺序收口。Transparent V1 固定 source-over、material/texture alpha、depth test/no-depth-write
+和原始顺序，不以 OIT 或重排作为首版前提。后续工作转入 Windows Intel normal-frame
+冻结，不在 GPU-8B2 内扩张新材质或高级透明能力。
 
 ### GPU-9A Post-Raster Compute Pass V1
 
