@@ -916,6 +916,7 @@ int rf_core_transparent_command_logic_test_v1(
     unsigned int *pixels;
     unsigned long pixel_count = 320UL * 180UL;
     unsigned long opaque_count = 0, transparent_count = 0;
+    unsigned long unique_textures = 0;
     unsigned long opaque_at, transparent_at, i;
     int result = -1, consumed;
 
@@ -950,6 +951,15 @@ int rf_core_transparent_command_logic_test_v1(
             ++transparent_count;
         else
             ++opaque_count;
+    for (i = 0; i < (unsigned long)count; ++i) {
+        unsigned long j;
+        if (!commands[i].textured) continue;
+        for (j = 0; j < i; ++j)
+            if (commands[j].textured &&
+                commands[j].texture == commands[i].texture)
+                break;
+        if (j == i) ++unique_textures;
+    }
     if (gpu_pre_post_partition_world(frame) < 0 ||
         frame->retained_world_raw_count != 0 ||
         frame->retained_batch_count[RF_RENDER_LAYER_WORLD] != opaque_count ||
@@ -979,6 +989,7 @@ int rf_core_transparent_command_logic_test_v1(
                                  &core);
     if (consumed < 0 ||
         !frame->native_prepared || !frame->native_stream_size ||
+        frame->native_texture_count != unique_textures ||
         frame->stats.last_path != 1 ||
         rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
             RF_PRE_POST_FALLBACK_NONE)

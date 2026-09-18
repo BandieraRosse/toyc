@@ -968,7 +968,8 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
         renderer->recording_base_texture_bilinear;
     cmd->sphere_texture_valid = 0;
     cmd->material_alpha = 255;
-    cmd->transparent_no_depth_write = 0;
+    cmd->transparent_no_depth_write =
+        textured && texture && texture->has_transparency;
     cmd->material_ambient = 0;
     cmd->material_specular = 0;
     cmd->material_specular_level = 0;
@@ -1143,8 +1144,9 @@ int toy_renderer_triangle_textured_lit_alpha(
                     fallback_color, light, fog, 0)) return 0;
     cmd = &renderer->cmds[renderer->cmd_count - 1];
     cmd->material_alpha = alpha;
-    cmd->transparent = alpha < 255;
-    cmd->transparent_no_depth_write = alpha < 255;
+    cmd->transparent = alpha < 255 ||
+                       (texture && texture->has_transparency);
+    cmd->transparent_no_depth_write = cmd->transparent;
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;
@@ -1255,7 +1257,7 @@ int toy_renderer_triangle_textured_material_lit(
     }
     cmd->transparent = material_alpha < 255 ||
                        (texture && texture->has_transparency);
-    cmd->transparent_no_depth_write = material_alpha < 255;
+    cmd->transparent_no_depth_write = cmd->transparent;
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;

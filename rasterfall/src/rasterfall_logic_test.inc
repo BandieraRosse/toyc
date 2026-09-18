@@ -226,6 +226,208 @@ done:
     return result;
 }
 
+/* B2d-4b producer gate.  All four materials keep authored alpha at 255;
+ * only the first three 1x1 RGBA textures carry alpha (0, 255 and 128).
+ * The RGB control proves that channel count is not over-classified. */
+static int rfm2_texel_alpha_producer_logic_test(void)
+{
+    enum { HEADER = 64, PRIMITIVES = 4 * 16, MATERIALS = 4 * 40,
+           VERTICES = 12 * 24, INDICES = 12 * 4, BLOB = HEADER + PRIMITIVES +
+           MATERIALS + VERTICES + INDICES, WIDTH = 320, HEIGHT = 180 };
+    static unsigned char blob[BLOB];
+    static unsigned char texels[4][4] = {
+        {0xd0, 0x60, 0x30, 0}, {0xd0, 0x60, 0x30, 255},
+        {0xd0, 0x60, 0x30, 128}, {0xd0, 0x60, 0x30, 255}
+    };
+    static struct toy_texture_asset texture_assets[4];
+    static struct toy_texture_view texture_views[4];
+    static uint32_t pixels[WIDTH * HEIGHT], reference_pixels[WIDTH * HEIGHT];
+    static unsigned char coverage[WIDTH * HEIGHT];
+    struct rasterfall_model_resource resource;
+    struct rasterfall_rigid_transform transform;
+    struct rasterfall_model_asset *model = &resource.definition;
+    struct toy_renderer renderer, reference_renderer;
+    struct toy_surface surface, reference_surface;
+    struct camera camera;
+    struct toy_raster_cmd commands[4];
+    unsigned char *primitive, *material, *vertex;
+    int positions[12][3] = {
+        {-750, 0, 5000}, {-350, 0, 5000}, {-550, 600, 5000},
+        {-350, 0, 5000}, {50, 0, 5000}, {-150, 600, 5000},
+        {50, 0, 5000}, {450, 0, 5000}, {250, 600, 5000},
+        {450, 0, 5000}, {850, 0, 5000}, {650, 600, 5000}
+    };
+    int sample_x[4], sample_y[4], depth_before[4];
+    int i, result = -1;
+
+    memset(blob, 0, sizeof(blob));
+    rfm2_alpha_fixture_u32(blob + 0, RASTERFALL_MODEL_MAGIC);
+    rfm2_alpha_fixture_u32(blob + 4, 12);
+    rfm2_alpha_fixture_u32(blob + 8, 12);
+    rfm2_alpha_fixture_u32(blob + 12, 12);
+    rfm2_alpha_fixture_u32(blob + 16, 1000);
+    rfm2_alpha_fixture_u32(blob + 20, (unsigned int)-750);
+    rfm2_alpha_fixture_u32(blob + 24, 0);
+    rfm2_alpha_fixture_u32(blob + 28, 5000);
+    rfm2_alpha_fixture_u32(blob + 32, 850);
+    rfm2_alpha_fixture_u32(blob + 36, 600);
+    rfm2_alpha_fixture_u32(blob + 40, 5000);
+    rfm2_alpha_fixture_u32(blob + 44, 4);
+    rfm2_alpha_fixture_u32(blob + 48, 4);
+    rfm2_alpha_fixture_u32(blob + 52, HEADER);
+    rfm2_alpha_fixture_u32(blob + 56, HEADER + PRIMITIVES);
+    primitive = blob + HEADER;
+    material = primitive + PRIMITIVES;
+    vertex = material + MATERIALS;
+    for (i = 0; i < 4; ++i) {
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 0, (unsigned int)i * 3);
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 4, 3);
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 8, (unsigned int)i);
+        rfm2_alpha_fixture_u32(material + i * 40 + 0, 0x00ffffffU);
+        material[i * 40 + 4] = 255;
+        rfm2_alpha_fixture_u32(material + i * 40 + 8, (unsigned int)i);
+    }
+    for (i = 0; i < 12; ++i) {
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 0,
+                               (unsigned int)positions[i][0]);
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 4,
+                               (unsigned int)positions[i][1]);
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 8,
+                               (unsigned int)positions[i][2]);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 12, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 14, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 16, 32767);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 18, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 20, 0);
+    }
+    for (i = 0; i < 4; ++i) {
+        unsigned char *index = blob + HEADER + PRIMITIVES + MATERIALS +
+                               VERTICES + i * 12;
+        rfm2_alpha_fixture_u32(index + 0, (unsigned int)i * 3);
+        rfm2_alpha_fixture_u32(index + 4, (unsigned int)i * 3 + 2);
+        rfm2_alpha_fixture_u32(index + 8, (unsigned int)i * 3 + 1);
+        memset(&texture_assets[i], 0, sizeof(texture_assets[i]));
+        memset(&texture_views[i], 0, sizeof(texture_views[i]));
+        texture_assets[i].data = texels[i];
+        texture_assets[i].width = texture_assets[i].height = 1;
+        texture_assets[i].channels = i == 3 ? 3 : 4;
+        texture_assets[i].data_size = texture_assets[i].channels;
+        texture_assets[i].has_transparency = i == 3 ? 0 : 1;
+        texture_views[i].data = texels[i];
+        texture_views[i].width = texture_views[i].height = 1;
+        texture_views[i].channels = texture_assets[i].channels;
+        texture_views[i].data_size = texture_assets[i].data_size;
+        texture_views[i].has_transparency = texture_assets[i].has_transparency;
+    }
+    memset(&resource, 0, sizeof(resource));
+    model->data = blob; model->data_size = sizeof(blob); model->format_version = 9;
+    model->vertex_count = 12; model->index_count = 12;
+    model->primitive_count = 4; model->material_count = 4;
+    model->material_bytes = 40; model->vertex_bytes = 24;
+    model->position_scale = 1000; model->primitives = primitive;
+    model->materials = material; model->vertices = vertex;
+    model->indices = blob + HEADER + PRIMITIVES + MATERIALS + VERTICES;
+    model->min_x = -750; model->max_x = 850; model->min_y = 0;
+    model->max_y = 600; model->min_z = model->max_z = 5000;
+    model->textures.assets = texture_assets;
+    model->textures.views = texture_views;
+    model->textures.count = 4;
+    memset(&surface, 0, sizeof(surface));
+    surface.width = WIDTH; surface.height = HEIGHT; surface.stride = WIDTH * 4;
+    surface.pixels = pixels;
+    reference_surface = surface; reference_surface.pixels = reference_pixels;
+    memset(&camera, 0, sizeof(camera));
+    camera.z = -4200; camera.cy = 1024; camera.pitch_cy = 1024;
+    memset(&transform, 0, sizeof(transform));
+    transform.rotation[0] = transform.rotation[4] = transform.rotation[8] = 1.0;
+    transform.scale_milli = 1000;
+    memset(&renderer, 0, sizeof(renderer));
+    memset(&reference_renderer, 0, sizeof(reference_renderer));
+    toy_renderer_init(&renderer); toy_renderer_init(&reference_renderer);
+    toy_renderer_set_worker_count(&renderer, -1);
+    toy_renderer_set_worker_count(&reference_renderer, -1);
+    if (toy_renderer_begin(&renderer, &surface, 0x102030) < 0) goto done;
+    memset(coverage, 0, sizeof(coverage));
+    toy_renderer_bind_coverage(&renderer, coverage, WIDTH);
+    if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
+                                         &transform) < 0 ||
+        renderer.cmd_count != 4)
+        goto done;
+    for (i = 0; i < 4; ++i) {
+        struct toy_raster_cmd *cmd = &renderer.cmds[i];
+        if (!cmd->textured || cmd->material_alpha != 255 ||
+            cmd->texture != &texture_views[i])
+            goto done;
+        if (i < 3) {
+            if (!cmd->texture->has_transparency || !cmd->transparent ||
+                !cmd->transparent_no_depth_write)
+                goto done;
+        } else if (cmd->texture->has_transparency || cmd->transparent ||
+                   cmd->transparent_no_depth_write)
+            goto done;
+        commands[i] = *cmd;
+        sample_x[i] = (cmd->a.x + cmd->b.x + cmd->c.x) / 3;
+        sample_y[i] = (cmd->a.y + cmd->b.y + cmd->c.y) / 3;
+        if (sample_x[i] < 0 || sample_x[i] >= WIDTH || sample_y[i] < 0 ||
+            sample_y[i] >= HEIGHT)
+            goto done;
+        depth_before[i] = renderer.depth[sample_y[i] * WIDTH + sample_x[i]];
+    }
+    if (rf_core_transparent_command_logic_test_v1(commands, 4) < 0) goto done;
+
+    /* Render an all-opaque texel reference through the same RFM2 frontend.
+     * This supplies the exact shaded source color without duplicating the
+     * renderer's light/fog rounding in the fixture. */
+    texels[0][3] = texels[2][3] = 255;
+    if (toy_renderer_begin(&reference_renderer, &reference_surface, 0x102030) < 0 ||
+        rasterfall_render_rigid_resource(&reference_renderer, &camera, &resource,
+                                         &transform) < 0 ||
+        reference_renderer.cmd_count != 4) {
+        texels[0][3] = 0; texels[2][3] = 128;
+        goto done;
+    }
+    for (i = 0; i < 4; ++i)
+        if (!death_command_geometry_equal(&commands[i],
+                                           &reference_renderer.cmds[i]) ||
+            reference_renderer.cmds[i].texture != &texture_views[i]) {
+            texels[0][3] = 0; texels[2][3] = 128;
+            goto done;
+        }
+    if (toy_renderer_flush(&reference_renderer) < 0) {
+        texels[0][3] = 0; texels[2][3] = 128;
+        goto done;
+    }
+    texels[0][3] = 0; texels[2][3] = 128;
+    if (toy_renderer_flush(&renderer) < 0) goto done;
+    for (i = 0; i < 3; ++i) {
+        int at = sample_y[i] * WIDTH + sample_x[i];
+        if (renderer.depth[at] != depth_before[i]) goto done;
+    }
+    {
+        int at0 = sample_y[0] * WIDTH + sample_x[0];
+        int at1 = sample_y[1] * WIDTH + sample_x[1];
+        int at2 = sample_y[2] * WIDTH + sample_x[2];
+        int at3 = sample_y[3] * WIDTH + sample_x[3];
+        uint32_t src = reference_pixels[at2], under = 0x102030U;
+        uint32_t expected =
+            (((((src >> 16) & 255U) * 128U + ((under >> 16) & 255U) * 127U) / 255U) << 16) |
+            (((((src >> 8) & 255U) * 128U + ((under >> 8) & 255U) * 127U) / 255U) << 8) |
+            (((src & 255U) * 128U + (under & 255U) * 127U) / 255U);
+        if (pixels[at0] != under || coverage[at0] != 0 ||
+            pixels[at1] != reference_pixels[at1] || coverage[at1] != 255 ||
+            pixels[at2] != expected || coverage[at2] != 255 ||
+            pixels[at3] != reference_pixels[at3] || coverage[at3] != 255 ||
+            renderer.depth[at3] == depth_before[3])
+            goto done;
+    }
+    result = 0;
+done:
+    texels[0][3] = 0; texels[1][3] = 255; texels[2][3] = 128;
+    toy_renderer_destroy(&reference_renderer);
+    toy_renderer_destroy(&renderer);
+    return result;
+}
+
 static int world_light_logic_test(void)
 {
     static struct toy_map map;
@@ -705,6 +907,7 @@ static int run_logic_test(void)
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
     if (rfm2_material_alpha_producer_logic_test() != 0) return 244;
+    if (rfm2_texel_alpha_producer_logic_test() != 0) return 245;
     if (world_light_logic_test() != 0) return 241;
     if (rasterfall_render_world_light_source_logic_test() != 0) return 243;
     __printf("rasterfall: world light sampling test passed\n");
