@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-18
 > 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序，Core 按层保留 pre-post command 并在 viewmodel barrier 统一决策 GPU 提交或整帧 CPU replay。GPU-8B2d B2d-5 已用 WORLD/EFFECTS/VIEWMODEL 全层 opaque+transparent fixture 固定零 direct debt/fallback reason 的 native hand-off；任一 unsupported input 仍在该 barrier 整帧 CPU replay。
-> 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Intel 实机 audit 已定位正常 Campaign 角色 toon/material feature 的 `0x40` CPU replay；首次 replay 后先释放 native GPU ownership，本次运行锁存 compatibility renderer，不再交替 SDL/Vulkan present。identity/fog 支持场景虽保持 native present 与零 readback/copy，仍不能替代完整 normal、Console/Desktop、resize 冻结。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
+> 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Legacy anime normal rendering 已冻结并回退 humanoid，原 toon/material `0x40` 不再是 normal frame 输入；Console/Desktop normal runtime 也已隔离，F12、反引号和 station 交互只产生 HUD 暂时不可用提示。仍需 Windows Intel 对 humanoid fallback、resize、timing、native present 与零 readback/copy 做最终验收。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
 > 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。
@@ -12,7 +12,7 @@
 > 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
 
 > 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
-> 源码核对补充：Outpost V0 默认 landing、world switch、station terminal request 与 Return-to-WHU Planar Massing V0 入口已接入。
+> 源码核对补充：Outpost V0 默认 landing、world switch 与 Return-to-WHU Planar Massing V0 入口已接入；station desktop request 已冻结为暂时不可用提示。
 
 ## 状态所有者
 
@@ -28,6 +28,8 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 拥有 GUI context 和窗口生命周期，Application Runtime 由 runtime 持有 app manager，Projection Layer
 只生成独立 snapshot。Map/level 的加载、绑定、reset 和 unload 仍由 `rasterfall_session` 持有；这些层
 只能借用或读取对应接口，不复制 gameplay、session、Core service 或地图真值。
+
+当前 normal runtime 的 Desktop/Console feature gate 为关闭：Game 初始化不创建 GUI/app manager，主循环不打开、更新或渲染它们。保留的 console/gui/app/projection 源码与逻辑测试仅用于隔离诊断，不属于 normal GPU frame 的语义集合；F12、反引号和 station terminal 交互统一通过现有 HUD banner 报告暂时不可用。
 
 完整的 V1 运行时边界、排除项和验证入口见 [runtime-environment-v1.md](runtime-environment-v1.md)。
 

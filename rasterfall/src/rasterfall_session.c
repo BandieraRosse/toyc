@@ -2,6 +2,7 @@
 #include "math.h"
 #include "rasterfall_ai_names.h"
 #include "rasterfall_session.h"
+#include "rasterfall_feature_freeze.h"
 #include "rasterfall_units.h"
 #include "rasterfall_model.h"
 #include "rasterfall_character.h"
@@ -1116,8 +1117,14 @@ static void session_client_interact_banner(struct rasterfall_session *session)
         session->banner_text = "WEAPON PICKED UP";
     else if (it->kind == TOY_MAP_PICKUP_PILL)
         session->banner_text = "PILL PICKED UP";
-    else if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL)
+    else if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL) {
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
         session->banner_text = "STATION TERMINAL OPENING";
+#else
+        session->banner_success = 0;
+        session->banner_text = RASTERFALL_DESKTOP_UNAVAILABLE_MESSAGE;
+#endif
+    }
     else if (it->kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL)
         session->banner_text = "OPERATIONS: CAMPAIGN 01 READY";
     else if (it->kind == TOY_MAP_PICKUP_SUPER_TERMINAL)
@@ -1151,9 +1158,16 @@ static void session_interact(struct rasterfall_session *session,
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL) {
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
         session->station_gui_request = 1;
         session->banner_ms = 0;
         session->banner_text = NULL;
+#else
+        session->station_gui_request = 0;
+        session->banner_ms = 2200;
+        session->banner_success = 0;
+        session->banner_text = RASTERFALL_DESKTOP_UNAVAILABLE_MESSAGE;
+#endif
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL) {

@@ -1,7 +1,9 @@
 # RF Desktop V1
 
-> 文档更新：2026-09-12
-> 源码核对基线：`rasterfall_gui` / `rasterfall_app` Desktop V1 window manager；F12/前哨站统一入口与可拖动窗口
+> 文档更新：2026-09-18
+> 源码核对基线：Desktop V1 normal runtime 已冻结；实现、逻辑测试和 `desktop-v1` 视觉 fixture 保留隔离，正常启动不初始化 GUI/app manager。
+
+> 冻结边界：F12、反引号和前哨站 station terminal 不再打开 Desktop/Console，只显示 `TEMPORARILY UNAVAILABLE` HUD 提示。以下内容记录冻结前的 V1 设计，不属于当前 normal GPU frame 语义。
 
 Desktop 是 Rasterfall Game presentation 层的屏幕空间工作站桌面。`rf_gui_context` 是
 Desktop/window-manager 状态所有者：它维护 application window 的 running、minimized、

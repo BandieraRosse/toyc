@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；vertex-lit source-over 使用 command resource word 携带固定 material alpha，CPU reference、full-scan 与 tile-binned GPU 已覆盖。Windows Intel normal-frame audit 发现正常 Campaign 角色 toon/material feature 仍是 typed unsupported material（`0x40`），会整帧 CPU replay；首次 replay 后先释放 native GPU ownership，再锁存 compatibility renderer，避免同一窗口交替 SDL/Vulkan present。GPU-8B1/GPU-9A 因而尚未冻结。
+> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；vertex-lit source-over 使用 command resource word 携带固定 material alpha，CPU reference、full-scan 与 tile-binned GPU 已覆盖。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。GPU-8B1/GPU-9A 仍等待 Windows Intel 对新边界的复验。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。

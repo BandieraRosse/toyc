@@ -1,5 +1,6 @@
 #include "tlibc_everything.h"
 #include "rf_game_lifecycle.h"
+#include "rasterfall_feature_freeze.h"
 
 static const char *world_path(enum rasterfall_world_id world)
 {
@@ -42,6 +43,8 @@ int rf_game_init(struct rf_game_runtime *runtime,
         return -1;
     }
     rasterfall_effects_init(&runtime->effects);
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
+    rf_application_query_init(&runtime->application_query, core, runtime);
     rf_gui_init(&runtime->gui);
     rf_app_manager_init(&runtime->app_manager, &runtime->gui);
     rf_gui_set_app_manager(&runtime->gui, &runtime->app_manager);
@@ -51,9 +54,9 @@ int rf_game_init(struct rf_game_runtime *runtime,
         runtime->session = NULL;
         return -1;
     }
-    rf_application_query_init(&runtime->application_query, core, runtime);
     rf_app_manager_set_query_context(&runtime->app_manager,
                                      &runtime->application_query);
+#endif
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
     runtime->lifecycle_paused = 1;

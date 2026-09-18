@@ -1,4 +1,5 @@
 #include "rasterfall_enemy_visual.h"
+#include "rasterfall_feature_freeze.h"
 #include "core.h"
 #include "string.h"
 #include "tlibc_everything.h"
@@ -76,6 +77,7 @@ static struct rasterfall_actor_action_layers
 static int active_character_palette_override;
 static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
+#if RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED
 struct rasterfall_authored_locomotion_clock {
     int valid;
     int animation_id;
@@ -84,6 +86,7 @@ struct rasterfall_authored_locomotion_clock {
 };
 static struct rasterfall_authored_locomotion_clock
     authored_locomotion_clocks[TOY_GAME_MAX_ACTORS];
+#endif
 static int action_runtime_debug;
 static int action_runtime_debug_last_path[TOY_GAME_MAX_ACTORS + 1];
 static int action_runtime_debug_last_lower[TOY_GAME_MAX_ACTORS + 1];
@@ -178,6 +181,7 @@ struct gallery_cached_vertex;
  * the authored skeletal clip on its own presentation clock and accumulate
  * across the gameplay timer's wrap instead of rescaling one MOVE phase into
  * the whole clip (which would play a multi-second walk in 400 ms). */
+#if RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED
 static int authored_locomotion_time(
     int actor_index, const struct toy_game_actor *actor,
     const struct rasterfall_animation_clip *clip)
@@ -207,6 +211,7 @@ static int authored_locomotion_time(
     clock->last_time_ms = actor->animation.time_ms;
     return clock->clip_time_ms;
 }
+#endif
 
 static long render_monotonic_us(void)
 {
@@ -817,8 +822,10 @@ enum rasterfall_character_distance_quality {
 };
 
 static unsigned long rasterfall_render_frame;
+#if RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED
 static struct rasterfall_frontend_state ai_character_frontends[TOY_GAME_MAX_ACTORS];
 static unsigned char ai_character_frontends_initialized[TOY_GAME_MAX_ACTORS];
+#endif
 
 /* Distance policy for high-detail characters.  Keep the decision in one
  * place: distance is horizontal Euclidean distance squared, while all
@@ -4960,7 +4967,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     /* Eula and the developer character strip are Campaign Content fixtures.
      * Diagnostic capture entry points still use a campaign fixture policy,
      * while normal Outpost rendering never enters this path. */
-    if (active_session->content.campaign_fixture_enabled) {
+    if (RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED &&
+        active_session->content.campaign_fixture_enabled) {
         int saved_diagnostic = active_diagnostic_world_light_v1;
         prepare_diagnostic_world_light_v1();
         active_diagnostic_world_light_v1 = 1;
@@ -6707,8 +6715,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);
-        if (view.z < NEAR_Z ||
-            (view.z > ENEMY_RENDER_DISTANCE && !actor->anime_character_id))
+        if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE)
             continue;
         if (active_dynamic_world_lighting)
             active_scene_light_override_q8 = dynamic_scene_light(
@@ -6716,6 +6723,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_AI_HEAVY :
                 actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_AI_RIFLE :
                 RF_COLOR_AI_BASIC;
+#if RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED
         if (actor->anime_character_id && private_character_model.data &&
             !rasterfall_character_visual_recipe_for_character(
                 actor->character_id)) {
@@ -6887,6 +6895,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             frontend_set_override(renderer, 0);
             active_actor_lift=0;continue;
         }
+#endif
         if (rasterfall_character_visual_recipe_for_character(
                 actor->character_id)) {
             int modular_pixels = render_modular_ai_teammate(renderer, camera,

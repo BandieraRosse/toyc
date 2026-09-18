@@ -77,6 +77,7 @@
 #include "rf_core_host.h"
 #include "rf_game_lifecycle.h"
 #include "rf_application_projection.h"
+#include "rasterfall_feature_freeze.h"
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_vulkan_backend.h"
 #endif
@@ -2491,6 +2492,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
     }
     if (game_session->station_gui_request) {
         game_session->station_gui_request = 0;
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
         rf_gui_set_active(&runtime->gui, 1);
         rf_gui_set_icon_count(&runtime->gui, RF_GUI_ICON_COUNT);
         rf_core_set_pointer_lock(runtime->core, 0);
@@ -2501,6 +2503,11 @@ int rf_game_update(struct rf_game_runtime *runtime,
          * beside it and reads the live actor projection. */
         rf_app_manager_open_icon(&runtime->app_manager, 1, 1024, 720);
         runtime->lifecycle_paused = 1;
+#else
+        game_session->banner_ms = 2200;
+        game_session->banner_success = 0;
+        game_session->banner_text = RASTERFALL_DESKTOP_UNAVAILABLE_MESSAGE;
+#endif
     }
 
     rasterfall_effects_sync_fire_zones(game_effects,
@@ -3201,9 +3208,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
      * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
     rasterfall_console_init(&developer_console);
     rf_gui_init(&game_runtime.gui);
     rf_gui_set_active(&game_runtime.gui, input_debug);
+#else
+    memset(&developer_console, 0, sizeof(developer_console));
+#endif
     command_context.core = &core;
     command_context.game_runtime = &game_runtime;
     command_context.command_state = &developer_console;
@@ -3531,12 +3542,18 @@ startup_again:
         }
         if (!developer_console.open && pending_key_edges[KEY_F12]) {
             pending_key_edges[KEY_F12] = 0;
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
             if (!game_runtime.gui.active) {
                 paused = 1;
                 rf_gui_set_active(&game_runtime.gui, 1);
                 rf_core_set_pointer_lock(&core, 0);
                 pointer_lock_requested = 0;
             }
+#else
+            session.banner_ms = 2200;
+            session.banner_success = 0;
+            session.banner_text = RASTERFALL_DESKTOP_UNAVAILABLE_MESSAGE;
+#endif
         }
         if (!developer_console.open && game_runtime.gui.active &&
             pending_key_edges[KEY_ESC]) {
@@ -3558,6 +3575,7 @@ startup_again:
             rf_app_manager_update(&game_runtime.app_manager, &input, 16);
         if (!developer_console.open && pending_key_edges[KEY_GRAVE]) {
             pending_key_edges[KEY_GRAVE] = 0;
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
             developer_console.open = 1;
             developer_console.was_paused = paused;
             developer_console.terminal.input[0] = 0;
@@ -3566,6 +3584,11 @@ startup_again:
                                    "developer console opened");
             rf_core_set_pointer_lock(&core, 0);
             pointer_lock_requested = 0;
+#else
+            session.banner_ms = 2200;
+            session.banner_success = 0;
+            session.banner_text = RASTERFALL_CONSOLE_UNAVAILABLE_MESSAGE;
+#endif
         }
         {
             int console_was_open = developer_console.open;
