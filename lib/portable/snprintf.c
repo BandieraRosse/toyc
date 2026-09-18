@@ -16,6 +16,15 @@ typedef __builtin_va_list my_va_list;
 #define FMT_FLAG_MINUS  1
 #define FMT_FLAG_ZERO   2
 
+/*
+ * V1 %f contract: cap the requested fractional precision at 18 digits.
+ * 10^18 is the largest exact positive power of ten that fits in signed
+ * long long, and 18 digits also fit in the bounded fractional conversion
+ * buffer below.  Precision above this limit is rendered at the limit.
+ */
+#define SNPRINTF_FLOAT_PRECISION_MAX 18
+#define FMT_INT_MAX 2147483647
+
 struct fmt_spec {
     int flags;
     int width;
@@ -45,7 +54,11 @@ parse_fmt(const char *p, struct fmt_spec *spec)
         } else {
             spec->precision = 0;
             while (*p >= '0' && *p <= '9') {
-                spec->precision = spec->precision * 10 + (*p - '0');
+                int digit = *p - '0';
+                if (spec->precision > (FMT_INT_MAX - digit) / 10)
+                    spec->precision = FMT_INT_MAX;
+                else if (spec->precision != FMT_INT_MAX)
+                    spec->precision = spec->precision * 10 + digit;
                 p++;
             }
         }
@@ -160,6 +173,9 @@ void strbuf_write_int(strbuf_t *sb, int num) {
 
 // 计算10的n次方
 static long long power_of_10(int n) {
+    if (n < 0) n = 0;
+    if (n > SNPRINTF_FLOAT_PRECISION_MAX)
+        n = SNPRINTF_FLOAT_PRECISION_MAX;
     long long r = 1;
     for (int i = 0; i < n; i++) r *= 10;
     return r;
@@ -184,6 +200,10 @@ static int ulong_to_str(unsigned long long n, char *buf) {
 static void strbuf_write_double(strbuf_t *sb, double d, int dec) {
     char buf[128];
     int len = 0;
+
+    if (dec < 0) dec = 0;
+    if (dec > SNPRINTF_FLOAT_PRECISION_MAX)
+        dec = SNPRINTF_FLOAT_PRECISION_MAX;
 
     // 处理负数
     if (d < 0) {
@@ -211,7 +231,7 @@ static void strbuf_write_double(strbuf_t *sb, double d, int dec) {
         buf[len++] = '.';
 
         // 输出小数部分，补零到 dec 位
-        char frac_buf[16];
+        char frac_buf[SNPRINTF_FLOAT_PRECISION_MAX + 1];
         int frac_len = ulong_to_str(frac_part, frac_buf);
         for (int i = 0; i < dec - frac_len; i++) {
             buf[len++] = '0';
@@ -435,6 +455,8 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
             case 'f': {
                 double d = my_va_arg(args, double);
                 int dec = spec.precision >= 0 ? spec.precision : 6;
+                if (dec > SNPRINTF_FLOAT_PRECISION_MAX)
+                    dec = SNPRINTF_FLOAT_PRECISION_MAX;
                 /* 先用 null 缓冲区预计算长度 */
                 strbuf_t tmp = {NULL, 0, 0, 0};
                 strbuf_write_double(&tmp, d, dec);
