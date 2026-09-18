@@ -889,6 +889,24 @@ fail:
     return -1;
 }
 
+static int rf_core_transparent_command_equal_v1(
+    const struct toy_raster_cmd *a, const struct toy_raster_cmd *b)
+{
+    if (!a || !b || a->textured != b->textured ||
+        a->material_alpha != b->material_alpha ||
+        a->transparent != b->transparent ||
+        a->transparent_no_depth_write != b->transparent_no_depth_write ||
+        a->color != b->color || a->area != b->area ||
+        a->texture != b->texture)
+        return 0;
+    return a->a.x == b->a.x && a->a.y == b->a.y && a->a.z == b->a.z &&
+           a->a.inv_z == b->a.inv_z && a->b.x == b->b.x &&
+           a->b.y == b->b.y && a->b.z == b->b.z &&
+           a->b.inv_z == b->b.inv_z && a->c.x == b->c.x &&
+           a->c.y == b->c.y && a->c.z == b->c.z &&
+           a->c.inv_z == b->c.inv_z;
+}
+
 int rf_core_transparent_command_logic_test_v1(
     const struct toy_raster_cmd *commands, int count)
 {
@@ -897,7 +915,9 @@ int rf_core_transparent_command_logic_test_v1(
     struct rf_core_gpu_frame *frame;
     unsigned int *pixels;
     unsigned long pixel_count = 320UL * 180UL;
-    int result = -1;
+    unsigned long opaque_count = 0, transparent_count = 0;
+    unsigned long opaque_at, transparent_at, i;
+    int result = -1, consumed;
 
     if (!commands || count <= 0 || count > 4096)
         return -1;
@@ -912,15 +932,52 @@ int rf_core_transparent_command_logic_test_v1(
     renderer.surface.pixels = pixels;
     renderer.cmds = (struct toy_raster_cmd *)commands;
     renderer.cmd_count = count;
+    renderer.cmd_cap = count;
     renderer.job_clear_color = 0x112233;
     core.renderer = &renderer;
     frame = &core.gpu_frame;
+    if (rf_core_render_frame_enter_layer_v1(&core, RF_RENDER_LAYER_WORLD) < 0)
+        goto done;
+    frame->retaining_pre_post = 1;
+    toy_renderer_set_command_consumer(&renderer,
+                                      gpu_pre_post_retain_consume, &core);
+    if (toy_renderer_flush(&renderer) < 0 || renderer.cmd_count != 0 ||
+        frame->retained_command_count != (unsigned long)count ||
+        frame->retained_world_raw_count != (unsigned long)count)
+        goto done;
+    for (i = 0; i < (unsigned long)count; ++i)
+        if (rf_core_cmd_is_transparent_v1(&commands[i]))
+            ++transparent_count;
+        else
+            ++opaque_count;
+    if (gpu_pre_post_partition_world(frame) < 0 ||
+        frame->retained_world_raw_count != 0 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_WORLD] != opaque_count ||
+        frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] !=
+            transparent_count || frame->retained_command_count !=
+            (unsigned long)count)
+        goto done;
+    opaque_at = transparent_at = 0;
+    for (i = 0; i < (unsigned long)count; ++i) {
+        const struct toy_raster_cmd *source = &commands[i];
+        const struct toy_raster_cmd *retained;
+        if (rf_core_cmd_is_transparent_v1(source)) {
+            retained = &frame->retained_commands[opaque_count + transparent_at++];
+        } else {
+            retained = &frame->retained_commands[opaque_at++];
+        }
+        if (!rf_core_transparent_command_equal_v1(source, retained))
+            goto done;
+    }
+    frame->retaining_pre_post = 0;
     frame->raster.implementation = (void *)1;
     frame->raster.width = 320;
     frame->raster.height = 180;
     frame->native_present = 1;
     frame->armed = 1;
-    if (gpu_world_consume(&renderer, commands, count, &core) < 0 ||
+    consumed = gpu_world_consume(&renderer, frame->retained_commands, count,
+                                 &core);
+    if (consumed < 0 ||
         !frame->native_prepared || !frame->native_stream_size ||
         frame->stats.last_path != 1 ||
         rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
@@ -928,6 +985,8 @@ int rf_core_transparent_command_logic_test_v1(
         goto done;
     result = 0;
 done:
+    toy_renderer_set_command_consumer(&renderer, NULL, NULL);
+    tlibc_free(frame->retained_commands);
     tlibc_free(frame->stream);
     tlibc_free(frame->texture_descs);
     tlibc_free(frame->texture_texels);

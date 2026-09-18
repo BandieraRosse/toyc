@@ -40,8 +40,8 @@ static void rfm2_alpha_fixture_u32(unsigned char *p, unsigned int value)
  * test observes the model frontend rather than patching commands. */
 static int rfm2_material_alpha_producer_logic_test(void)
 {
-    enum { HEADER = 64, PRIMITIVES = 3 * 16, MATERIALS = 3 * 40,
-           VERTICES = 9 * 24, INDICES = 9 * 4, BLOB = HEADER + PRIMITIVES +
+    enum { HEADER = 64, PRIMITIVES = 4 * 16, MATERIALS = 4 * 40,
+           VERTICES = 12 * 24, INDICES = 12 * 4, BLOB = HEADER + PRIMITIVES +
            MATERIALS + VERTICES + INDICES };
     static unsigned char blob[BLOB];
     static unsigned char rgb[3] = { 0x34, 0x78, 0xbc };
@@ -56,20 +56,21 @@ static int rfm2_material_alpha_producer_logic_test(void)
     struct camera camera;
     struct rf_core core;
     struct rf_render_frame_v1 frame;
-    struct toy_raster_cmd reference[3];
+    struct toy_raster_cmd reference[4];
     unsigned char *primitive, *material, *vertex;
-    int positions[9][3] = {
+    int positions[12][3] = {
         {-500, 0, 5000}, {0, 0, 5000}, {-250, 600, 5000},
         {0, 0, 5000}, {500, 0, 5000}, {250, 600, 5000},
-        {-250, 100, 5000}, {250, 100, 5000}, {0, 700, 5000}
+        {-250, 100, 5000}, {250, 100, 5000}, {0, 700, 5000},
+        {-450, 150, 5000}, {-50, 150, 5000}, {-250, 500, 5000}
     };
     int i, result = -1;
 
     memset(blob, 0, sizeof(blob));
     rfm2_alpha_fixture_u32(blob + 0, RASTERFALL_MODEL_MAGIC);
-    rfm2_alpha_fixture_u32(blob + 4, 9);
-    rfm2_alpha_fixture_u32(blob + 8, 9);
-    rfm2_alpha_fixture_u32(blob + 12, 9);
+    rfm2_alpha_fixture_u32(blob + 4, 12);
+    rfm2_alpha_fixture_u32(blob + 8, 12);
+    rfm2_alpha_fixture_u32(blob + 12, 12);
     rfm2_alpha_fixture_u32(blob + 16, 1000);
     rfm2_alpha_fixture_u32(blob + 20, (unsigned int)-500);
     rfm2_alpha_fixture_u32(blob + 24, 0);
@@ -77,26 +78,27 @@ static int rfm2_material_alpha_producer_logic_test(void)
     rfm2_alpha_fixture_u32(blob + 32, 500);
     rfm2_alpha_fixture_u32(blob + 36, 700);
     rfm2_alpha_fixture_u32(blob + 40, 5000);
-    rfm2_alpha_fixture_u32(blob + 44, 3);
-    rfm2_alpha_fixture_u32(blob + 48, 3);
+    rfm2_alpha_fixture_u32(blob + 44, 4);
+    rfm2_alpha_fixture_u32(blob + 48, 4);
     rfm2_alpha_fixture_u32(blob + 52, HEADER);
     rfm2_alpha_fixture_u32(blob + 56, HEADER + PRIMITIVES);
     primitive = blob + HEADER;
     material = primitive + PRIMITIVES;
     vertex = material + MATERIALS;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 4; ++i) {
         rfm2_alpha_fixture_u32(primitive + i * 16 + 0, (unsigned int)i * 3);
         rfm2_alpha_fixture_u32(primitive + i * 16 + 4, 3);
         rfm2_alpha_fixture_u32(primitive + i * 16 + 8, (unsigned int)i);
         rfm2_alpha_fixture_u32(material + i * 40 + 0,
                                i == 0 ? 0x00d04040U :
-                               i == 1 ? 0x0040d060U : 0x004060d0U);
-        material[i * 40 + 4] = (unsigned char)(i == 0 ? 255 :
+                               i == 1 ? 0x0040d060U :
+                               i == 2 ? 0x004060d0U : 0x00d0a040U);
+        material[i * 40 + 4] = (unsigned char)(i == 0 || i == 3 ? 255 :
                                                i == 1 ? 127 : 63);
         rfm2_alpha_fixture_u32(material + i * 40 + 8,
-                               i == 2 ? 0U : 0xffffffffU);
+                               i >= 2 ? 0U : 0xffffffffU);
     }
-    for (i = 0; i < 9; ++i) {
+    for (i = 0; i < 12; ++i) {
         rfm2_alpha_fixture_u32(vertex + i * 24 + 0,
                                (unsigned int)positions[i][0]);
         rfm2_alpha_fixture_u32(vertex + i * 24 + 4,
@@ -109,7 +111,7 @@ static int rfm2_material_alpha_producer_logic_test(void)
         rfm2_alpha_fixture_u16(vertex + i * 24 + 18, 0);
         rfm2_alpha_fixture_u16(vertex + i * 24 + 20, 0);
     }
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < 4; ++i) {
         rfm2_alpha_fixture_u32(blob + HEADER + PRIMITIVES + MATERIALS +
                                VERTICES + i * 12 + 0, (unsigned int)i * 3);
         rfm2_alpha_fixture_u32(blob + HEADER + PRIMITIVES + MATERIALS +
@@ -131,10 +133,10 @@ static int rfm2_material_alpha_producer_logic_test(void)
     model->data = blob;
     model->data_size = sizeof(blob);
     model->format_version = 9;
-    model->vertex_count = 9;
-    model->index_count = 9;
-    model->primitive_count = 3;
-    model->material_count = 3;
+    model->vertex_count = 12;
+    model->index_count = 12;
+    model->primitive_count = 4;
+    model->material_count = 4;
     model->material_bytes = 40;
     model->vertex_bytes = 24;
     model->position_scale = 1000;
@@ -162,7 +164,7 @@ static int rfm2_material_alpha_producer_logic_test(void)
     if (toy_renderer_begin(&renderer, &surface, 0x101820) < 0) goto done;
     if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
                                          &transform) < 0 ||
-        renderer.cmd_count != 3)
+        renderer.cmd_count != 4)
     {
         goto done;
     }
@@ -171,7 +173,9 @@ static int rfm2_material_alpha_producer_logic_test(void)
         renderer.cmds[1].textured || renderer.cmds[1].material_alpha != 127 ||
         !renderer.cmds[1].transparent || !renderer.cmds[1].transparent_no_depth_write ||
         !renderer.cmds[2].textured || renderer.cmds[2].material_alpha != 63 ||
-        !renderer.cmds[2].transparent || !renderer.cmds[2].transparent_no_depth_write)
+        !renderer.cmds[2].transparent || !renderer.cmds[2].transparent_no_depth_write ||
+        !renderer.cmds[3].textured || renderer.cmds[3].material_alpha != 255 ||
+        renderer.cmds[3].transparent || renderer.cmds[3].transparent_no_depth_write)
     {
         goto done;
     }
@@ -184,7 +188,7 @@ static int rfm2_material_alpha_producer_logic_test(void)
     }
     rf_core_render_frame_record_world_v1(&core, renderer.cmds,
                                          renderer.cmd_count);
-    if (core.render_frame.command_count[RF_RENDER_LAYER_WORLD] != 1 ||
+    if (core.render_frame.command_count[RF_RENDER_LAYER_WORLD] != 2 ||
         core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 2 ||
         rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
             RF_PRE_POST_FALLBACK_NONE)
@@ -199,9 +203,9 @@ static int rfm2_material_alpha_producer_logic_test(void)
     renderer.cmd_count = 0;
     if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
                                          &transform) < 0 ||
-        renderer.cmd_count != 3)
+        renderer.cmd_count != 4)
         goto done;
-    for (i = 0; i < 3; ++i)
+    for (i = 0; i < 4; ++i)
         if (!death_command_geometry_equal(&reference[i], &renderer.cmds[i]) ||
             reference[i].textured != renderer.cmds[i].textured ||
             reference[i].material_alpha != renderer.cmds[i].material_alpha ||
