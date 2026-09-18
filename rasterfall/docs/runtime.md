@@ -1,7 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-18
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序，Core 按层保留 pre-post command 并在 viewmodel barrier 统一决策 GPU 提交或整帧 CPU replay。GPU-8B2d B2d-5 已用 WORLD/EFFECTS/VIEWMODEL 全层 opaque+transparent fixture 固定零 direct debt/fallback reason 的 native hand-off；任一 unsupported input 仍在该 barrier 整帧 CPU replay。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。完整冻结矩阵见 [GPU V1 最终收尾与冻结验收](gpu-v1-final-acceptance.md)。
 > 当前验收边界：GPU-8B1 与 GPU-9A 尚未冻结。Legacy anime normal rendering 已冻结并回退 humanoid，原 toon/material `0x40` 不再是 normal frame 输入；Console/Desktop normal runtime 也已隔离，F12、反引号和 station 交互只产生 HUD 暂时不可用提示。仍需 Windows Intel 对 humanoid fallback、resize、timing、native present 与零 readback/copy 做最终验收。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
@@ -115,7 +115,7 @@ Desktop 只能在该边界之后提交。最后
 
 GPU-7C renderer policy 为：`renderer=cpu` 对应 `GPU_DISABLED`；显式
 `--renderer gpu-compute` 默认对应 `GPU_OPTIONAL`，初始化或 Raster V1 capability 不可用时启动为
-CPU；再加 `--gpu-required` 对应 `GPU_REQUIRED`，不可用则启动失败。选择只在启动时发生。`services`
+CPU；再加 `--gpu-required` 对应 `GPU_REQUIRED`，且必须同时启用 `--gpu-native-present`。required 是完整 runtime contract：初始化、逐帧 retained submission、Post、native present 或零 readback/copy 任一门禁失败即非零退出，禁止 CPU replay/software present。`services`
 输出当前 renderer 及 world attempted/rendered/fallback 累计值。GPU frame resource 全归 Core，包含
 Raster V1 stream、backend tile lists、GPU color/depth、readback 和 timing；Game/session 不持有 Vulkan
 handle。world flush 只有完整 batch 全部支持时才在 GPU 同时生成 color 与 signed inverse-depth；否则

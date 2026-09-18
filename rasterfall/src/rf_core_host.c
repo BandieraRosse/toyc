@@ -1115,12 +1115,20 @@ static int gpu_pre_post_finalize(struct rf_core *core)
         core->render_frame.pre_post_cpu_fallback = 1;
         core->render_frame.pre_post_fallback_reason |=
             RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
+        if (frame->strict_gpu_only) {
+            frame->runtime_failed = 1;
+            gpu_world_log("gpu-required: retained WORLD partition failed");
+            return -1;
+        }
         return gpu_pre_post_replay_cpu(core) < 0 ? -1 : 0;
     }
     frame->retaining_pre_post = 0;
     core->render_frame.pre_post_fallback_reason |=
         rf_core_render_frame_fallback_reason_v1(&core->render_frame);
     unsupported_post_world =
+        core->render_frame.invalid_layer_transitions != 0 ||
+        core->render_frame.direct_pixel_count[RF_RENDER_LAYER_WORLD] != 0 ||
+        core->render_frame.direct_pixel_count[RF_RENDER_LAYER_TRANSPARENT] != 0 ||
         core->render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
         core->render_frame.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0;
     if (!unsupported_post_world && frame->retained_command_count) {
@@ -1140,6 +1148,11 @@ static int gpu_pre_post_finalize(struct rf_core *core)
         if (!core->render_frame.pre_post_fallback_reason)
             core->render_frame.pre_post_fallback_reason |=
                 RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
+        if (frame->strict_gpu_only) {
+            frame->runtime_failed = 1;
+            gpu_world_log("gpu-required: unsupported command/direct pixel/consumer failure");
+            return -1;
+        }
         replay_result = gpu_pre_post_replay_cpu(core);
         /* Never alternate SDL software presentation and the Win32 Vulkan
          * swapchain on one window after an unsupported normal frame.  Tear
@@ -1215,11 +1228,18 @@ int rf_core_init_config(struct rf_core *core,
         return -1;
     }
     core->gpu_frame.renderer = config->renderer_mode;
+    core->gpu_frame.strict_gpu_only =
+        config->gpu_policy == RF_GPU_POLICY_REQUIRED;
     core->gpu_frame.native_present = config->native_present != 0;
     if (core->gpu_frame.native_present) {
         struct rf_gpu_status gpu_status;
         if (rf_gpu_get_status(&core->gpu, &gpu_status) < 0 ||
             !gpu_status.renderer.native_presentation_v1) {
+            if (core->gpu_frame.strict_gpu_only) {
+                __fprintf(2, "gpu-required: native presentation V1 unsupported\n");
+                rf_core_shutdown(core);
+                return -1;
+            }
             __printf("GPU native presentation V1 unsupported; using software-present fallback\n");
             core->gpu_frame.native_present = 0;
         }
@@ -1244,8 +1264,14 @@ int rf_core_init_config(struct rf_core *core,
                 post.fog_far_inv_z=1048576/4096;
                 post.fog_color=0xff7890a0U;
                 post.max_density_q8=192;
-                if (rf_gpu_raster_set_post(&core->gpu_frame.raster,&post)<0)
+                if (rf_gpu_raster_set_post(&core->gpu_frame.raster,&post)<0) {
+                    if (core->gpu_frame.strict_gpu_only) {
+                        __fprintf(2, "gpu-required: requested GPU Post-Raster V1 unavailable\n");
+                        rf_core_shutdown(core);
+                        return -1;
+                    }
                     __printf("GPU Post-Raster V1 unavailable; bypassing post pass\n");
+                }
             }
             toy_renderer_set_command_consumer(core->renderer,
                                                gpu_pre_post_retain_consume,
@@ -1291,7 +1317,13 @@ int64_t rf_core_begin_tick(struct rf_core *core)
 
 int rf_core_should_exit(const struct rf_core *core)
 {
-    return !core || !core->initialized || core->exit_requested;
+    return !core || !core->initialized || core->exit_requested ||
+           core->gpu_frame.runtime_failed;
+}
+
+int rf_core_runtime_failed(const struct rf_core *core)
+{
+    return !core || core->gpu_frame.runtime_failed;
 }
 
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
@@ -1563,8 +1595,17 @@ int rf_core_end_frame(struct rf_core *core)
                 (unsigned int)frame->overlay_surface.width,
                 (unsigned int)core->surface.width,
                 (unsigned int)core->surface.height, &frame->stats.last_timing,
-                &frame->stats.native_present_timing) < 0)
+                &frame->stats.native_present_timing) < 0) {
+            if (frame->strict_gpu_only) frame->runtime_failed = 1;
             return -1;
+        }
+        if (frame->strict_gpu_only &&
+            (frame->stats.native_present_timing.color_readback_bytes ||
+             frame->stats.native_present_timing.cpu_framebuffer_copy_bytes)) {
+            frame->runtime_failed = 1;
+            gpu_world_log("gpu-required: native frame performed forbidden readback/copy");
+            return -1;
+        }
         frame->native_prepared = 0;
         frame->native_presented = 1;
         core->render_frame.layer_backend[RF_RENDER_LAYER_SKY] =
@@ -1587,6 +1628,11 @@ int rf_core_end_frame(struct rf_core *core)
     if (core->gpu_frame.native_presented) {
         core->gpu_frame.native_presented = 0;
         return 0;
+    }
+    if (core->gpu_frame.strict_gpu_only) {
+        core->gpu_frame.runtime_failed = 1;
+        gpu_world_log("gpu-required: frame reached CPU presentation");
+        return -1;
     }
     core->render_frame.layer_backend[RF_RENDER_LAYER_SKY] =
         RF_RENDER_BACKEND_CPU;

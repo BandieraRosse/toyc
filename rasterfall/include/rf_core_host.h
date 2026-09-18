@@ -125,6 +125,9 @@ struct rf_core_gpu_frame {
     struct rf_core_gpu_frame_stats stats;
     int64_t frontend_begin_us, frame_begin_us;
     int renderer, armed, initialized, native_present, native_presented;
+    /* RF_GPU_POLICY_REQUIRED is a frame-lifetime contract, not merely an
+     * initialization preference.  Once set, no CPU replay/present is legal. */
+    int strict_gpu_only, runtime_failed;
     int native_prepared, overlay_active;
     int retaining_pre_post;
 };
@@ -207,6 +210,7 @@ int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int64_t rf_core_begin_tick(struct rf_core *core);
 int rf_core_should_exit(const struct rf_core *core);
+int rf_core_runtime_failed(const struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
                                   int camera_z, int direction_sy,

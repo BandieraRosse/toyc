@@ -4102,6 +4102,11 @@ startup_again:
                 int64_t audit_render_start = rf_core_time_us(&core);
                 if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
+                    if (rf_core_runtime_failed(&core)) {
+                        __fprintf(2,
+                            "rasterfall: GPU-required render contract failed\n");
+                        break;
+                    }
                     __fprintf(2,
                         "rasterfall: skipped frame after renderer watchdog timeout\n");
                     continue;
@@ -4112,7 +4117,12 @@ startup_again:
             t_stage = rf_core_time_us(&core);
             present_result = rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
-            if (present_result < 0) break;
+            if (present_result < 0) {
+                __fprintf(2, "rasterfall: frame presentation failed%s\n",
+                    rf_core_runtime_failed(&core) ?
+                    " (GPU-required contract violation)" : "");
+                break;
+            }
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
             rendered_frames++;
@@ -4288,6 +4298,10 @@ startup_again:
             }
         }
     }
-    rf_core_shutdown(&core);
+    {
+        int core_runtime_failed = rf_core_runtime_failed(&core);
+        rf_core_shutdown(&core);
+        if (core_runtime_failed) return 3;
+    }
     return rendered_frames > 0 && scene_pixels == 0 ? 2 : 0;
 }

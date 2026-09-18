@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-18
 > 源码核对基线：Windows Intel normal-frame acceptance audit（2026-09-18）
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2d B2d-5 已达到 local pass。Legacy anime normal rendering 已冻结并统一回退 humanoid，因此 toon/material `0x40` 已从 normal frame 语义移除；Console/Desktop normal runtime 也已冻结隔离，入口只提交 HUD 暂时不可用提示。GPU-8B1/GPU-9A 仍保持 NOT FROZEN，剩余 P0 是 Windows Intel 对新 normal 语义集合的视觉、resize、timing、native present 与零 readback/copy 复验。
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2d B2d-5 已达到 local pass。2026-09-18 新增 GPU Required Runtime Contract：`--gpu-required` 现在要求 native present，unsupported/direct pixel/consumer/Post/present/readback/copy 均 fatal，禁止 runtime CPU replay。Frozen Normal Gameplay 矩阵和 C0--C5 冻结门禁见 [`rasterfall/docs/gpu-v1-final-acceptance.md`](../rasterfall/docs/gpu-v1-final-acceptance.md)。GPU-8B1/GPU-8B2/GPU-9A 在 Windows Intel 矩阵完成前仍不得标为 FROZEN。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实

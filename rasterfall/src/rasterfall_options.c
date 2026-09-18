@@ -431,6 +431,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         __fprintf(2,"rasterfall: --gpu-native-present requires --renderer gpu-compute\n");
         return -1;
     }
+    if (o->gpu_required && !o->gpu_native_present) {
+        __fprintf(2,"rasterfall: --gpu-required requires --renderer gpu-compute --gpu-native-present\n");
+        return -1;
+    }
     if (o->gpu_post_fog && (!o->renderer_mode || !o->gpu_native_present)) {
         __fprintf(2,"rasterfall: --gpu-post-fog requires --renderer gpu-compute --gpu-native-present\n");
         return -1;
