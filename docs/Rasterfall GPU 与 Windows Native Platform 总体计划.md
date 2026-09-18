@@ -2,7 +2,7 @@
 
 > 文档更新：2026-09-18
 > 源码核对基线：GPU-8B2d B2d-3 工作区（2026-09-18）
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。GPU-8B2d B2d-0..2 已完成并通过 CPU/full-scan/tile-binned differential；B2d-3 已完成 ABI BEGIN_TRANSPARENT marker、ordered CPU reference、RGBA 分类、跨多 WORLD flush 的连续 opaque→transparent retained span 与基础 Core 放行；B2d-4 已迁移 muzzle outer/lobe（local 使用 VIEWMODEL，remote/AI 使用 EFFECTS），其余 producer 与 B2d-5 normal-frame 收口仍待完成，未支持输入继续整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 typed unsupported command。GPU-8B2d B2d-0..2 已完成并通过 CPU/full-scan/tile-binned differential；B2d-3 已完成 ABI BEGIN_TRANSPARENT marker、ordered CPU reference、RGBA 分类、跨多 WORLD flush 的连续 opaque→transparent retained span、基础 Core 放行与显式 material/texture/edge/overlay/generic reason bits；B2d-4 已迁移 muzzle outer/lobe（local 使用 VIEWMODEL，remote/AI 使用 EFFECTS），其余 producer 与 B2d-5 normal-frame 收口仍待完成，未支持输入继续整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -92,8 +92,9 @@ GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewm
 唯一整帧决策权，也不允许 GPU 先消费后由 CPU 补画未迁移层。
 
 1. **B2a — producer debt 审计与 opaque effects：** frame audit 分别记录 effects/viewmodel
-   command 与 direct pixels，并输出 transparent、direct producer、viewmodel 和 generic unsupported
-   的 reason mask。已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream；
+   command 与 direct pixels，并输出 transparent、direct producer、viewmodel 以及
+   material/texture/edge/overlay/generic unsupported 的 reason mask。支持的 transparent command
+   不产生 fallback reason；已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream；
    effects facade 现在独立返回 direct producer 统计，triangle command 的逻辑结果数不再
    被误计为 direct pixels。
 2. **B2b — effects producer 收敛：** world-space ray、ribbon、billboard、particle 按实际 depth/

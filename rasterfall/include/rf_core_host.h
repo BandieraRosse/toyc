@@ -36,12 +36,23 @@ enum rf_render_layer_backend_v1 {
 
 enum rf_pre_post_fallback_reason_v1 {
     RF_PRE_POST_FALLBACK_NONE = 0,
+    /* Kept for source compatibility with the first Transparent V1 draft.
+     * A supported transparent command never sets this bit; unsupported
+     * material/texture is reported by the explicit bits below. */
     RF_PRE_POST_FALLBACK_TRANSPARENT = 1U << 0,
     RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS = 1U << 1,
     RF_PRE_POST_FALLBACK_VIEWMODEL_COMMANDS = 1U << 2,
     RF_PRE_POST_FALLBACK_VIEWMODEL_DIRECT_PIXELS = 1U << 3,
-    RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND = 1U << 4,
-    RF_PRE_POST_FALLBACK_CONSUMER_FAILURE = 1U << 5
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND = 1U << 4,
+    RF_PRE_POST_FALLBACK_CONSUMER_FAILURE = 1U << 5,
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL = 1U << 6,
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE = 1U << 7,
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_EDGE = 1U << 8,
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_OVERLAY = 1U << 9,
+    /* Compatibility spelling; new diagnostics should use the explicit
+     * generic-command name above. */
+    RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND =
+        RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND
 };
 
 struct rf_render_frame_v1 {

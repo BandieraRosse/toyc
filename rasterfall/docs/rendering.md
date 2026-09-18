@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行已完成；B2d-4 已迁移 muzzle outer/lobe，剩余 producer 与 B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行与显式 fallback reason 分类已完成；B2d-4 已迁移 muzzle outer/lobe，剩余 producer 与 B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -131,8 +131,10 @@ effects/viewmodel 已获得 GPU backend。B2c 的 VIEWMODEL span 在 pack 时插
 `BEGIN_VIEWMODEL_V1` marker，GPU/CPU consumer 以 retained layer range 切换独立 inverse-Z depth，
 不读取或改写 world depth，并写独立 coverage；Post fog 在 coverage 像素跳过。后续 B2a 将审计拆为每层 command 和 direct pixels：
 `pixel_count` 继续表示层的总绘制结果，`direct_pixel_count` 只表示绕过 command consumer 的
-surface 写入，`pre_post_fallback_reason` 记录 effects direct pixels、viewmodel
-direct pixels、generic unsupported 或 consumer failure。已能无损表达的 effects/viewmodel/transparent command
+surface 写入。`pre_post_fallback_reason` 现在以显式 bit 区分
+`UNSUPPORTED_MATERIAL`、`UNSUPPORTED_TEXTURE`、`UNSUPPORTED_EDGE`、
+`UNSUPPORTED_OVERLAY`、`UNSUPPORTED_GENERIC_COMMAND`、effects/viewmodel direct pixels
+以及 `CONSUMER_FAILURE`；支持的 transparent command 不设置 reason。已能无损表达的 effects/viewmodel/transparent command
 不再因层名被禁止，且 effects facade 通过独立 stats 回传实际 direct producer
 结果，不再把同次调用中的 triangle command 结果数整体记为 direct debt。任一真实
 direct producer 或 unsupported command 仍使整帧回放。

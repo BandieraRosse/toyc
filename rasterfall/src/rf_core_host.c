@@ -14,6 +14,59 @@ static int rf_core_cmd_is_transparent_v1(const struct toy_raster_cmd *cmd)
         (cmd->textured && cmd->texture && cmd->texture->has_transparency));
 }
 
+static int rf_core_texture_view_valid_v1(const struct toy_texture_view *texture)
+{
+    unsigned long pixels, channels;
+    if (!texture || !texture->data || !texture->width || !texture->height)
+        return 0;
+    if (texture->width > 8192 || texture->height > 8192) return 0;
+    channels = texture->channels;
+    if (channels != 3 && channels != 4) return 0;
+    pixels = (unsigned long)texture->width * texture->height;
+    return pixels <= 0xffffffffUL / channels &&
+           texture->data_size == pixels * channels;
+}
+
+/* Keep this classifier adjacent to the Core consumer.  It mirrors the
+ * packer's deliberately small supported subset, but only reports one reason
+ * per command so a diagnostic cannot claim both material and texture debt for
+ * the same input. */
+static unsigned int rf_core_cmd_fallback_reason_v1(
+    const struct toy_raster_cmd *cmd)
+{
+    if (!cmd) return RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND;
+    if (cmd->edge) return RF_PRE_POST_FALLBACK_UNSUPPORTED_EDGE;
+    if (cmd->overlay) return RF_PRE_POST_FALLBACK_UNSUPPORTED_OVERLAY;
+    if (cmd->area >= 0 || cmd->a.inv_z < INT_MIN ||
+        cmd->a.inv_z > INT_MAX || cmd->b.inv_z < INT_MIN ||
+        cmd->b.inv_z > INT_MAX || cmd->c.inv_z < INT_MIN ||
+        cmd->c.inv_z > INT_MAX)
+        return RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND;
+    if (cmd->textured) {
+        if (!cmd->base_texture_valid || !rf_core_texture_view_valid_v1(
+                cmd->texture))
+            return RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE;
+        if (cmd->base_texture_bilinear || cmd->material_features ||
+            cmd->has_toon || cmd->texture2 || cmd->texture3 ||
+            cmd->material_add || cmd->material_tint != 0x00ffffffU ||
+            cmd->light < 0 || cmd->fog < 0 ||
+            cmd->a.u_over_z < INT_MIN || cmd->a.u_over_z > INT_MAX ||
+            cmd->a.v_over_z < INT_MIN || cmd->a.v_over_z > INT_MAX ||
+            cmd->b.u_over_z < INT_MIN || cmd->b.u_over_z > INT_MAX ||
+            cmd->b.v_over_z < INT_MIN || cmd->b.v_over_z > INT_MAX ||
+            cmd->c.u_over_z < INT_MIN || cmd->c.u_over_z > INT_MAX ||
+            cmd->c.v_over_z < INT_MIN || cmd->c.v_over_z > INT_MAX)
+            return RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL;
+    }
+    if ((cmd->transparent || cmd->material_alpha != 255 ||
+         (cmd->textured && cmd->texture->has_transparency)) &&
+        cmd->planar_vertex_lit)
+        return RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL;
+    return RF_PRE_POST_FALLBACK_NONE;
+}
+
+static int gpu_pre_post_finalize(struct rf_core *core);
+
 const char *rf_core_renderer_name(int renderer)
 {
     return renderer == RF_CORE_RENDERER_GPU_COMPUTE ? "gpu-compute" : "cpu";
@@ -141,6 +194,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     size_t texture_bytes = 0;
     uint32_t unique_textures = 0;
     unsigned long texture = 0, transparent = 0, overlay = 0, edge = 0, other = 0;
+    unsigned long unsupported_texture = 0;
+    unsigned int fallback_reason = RF_PRE_POST_FALLBACK_NONE;
     uint32_t transparent_offset = UINT_MAX, viewmodel_offset = UINT_MAX;
     int has_transparent = 0, has_viewmodel = 0;
     unsigned int color_stride;
@@ -157,6 +212,10 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     gpu_world_log("gpu-world: classification begin");
     for (i = 0; i < count; i++) {
         const struct toy_raster_cmd *cmd = &commands[i];
+        unsigned int command_reason = rf_core_cmd_fallback_reason_v1(cmd);
+        fallback_reason |= command_reason;
+        if (command_reason == RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE)
+            unsupported_texture++;
         if (cmd->edge) edge++;
         else if (cmd->overlay) overlay++;
         else if (rf_core_cmd_is_transparent_v1(cmd)) transparent++;
@@ -172,16 +231,15 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.last_overlay_commands = overlay;
     frame->stats.last_edge_commands = edge;
     frame->stats.last_other_commands = other;
-    if (overlay || edge || other)
-        core->render_frame.pre_post_fallback_reason |=
-            RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND;
+    frame->stats.unsupported_texture += unsupported_texture;
+    core->render_frame.pre_post_fallback_reason |= fallback_reason;
     snprintf(diagnostic, sizeof(diagnostic),
              "gpu-world: classification end commands=%d texture=%lu transparent=%lu overlay=%lu edge=%lu other=%lu",
              count, texture, transparent, overlay, edge, other);
     gpu_world_log(diagnostic);
     frame->stats.classification_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
-    if (overlay || edge || other) {
+    if (fallback_reason) {
         frame->stats.last_path = 2;
         frame->stats.cpu_fallback_frames++;
         return -1;
@@ -219,11 +277,20 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     packed.cmd_count = count;
     gpu_world_log("gpu-world: texture measure begin");
     stage_start = rf_core_clock_now_us();
-    if (rf_gpu_raster_measure_textures_toy_v1(&packed, &unique_textures,
-            &texture_bytes) != RF_GPU_RASTER_PACK_OK) {
-        frame->stats.unsupported_texture += texture;
-        frame->stats.cpu_fallback_frames++;
-        return -1;
+    {
+        int measure_result = rf_gpu_raster_measure_textures_toy_v1(
+            &packed, &unique_textures, &texture_bytes);
+        if (measure_result != RF_GPU_RASTER_PACK_OK) {
+            /* Semantic texture rejection remains a producer diagnosis.
+             * Invalid/capacity failures after preflight belong to the
+             * consumer/resource path instead. */
+            core->render_frame.pre_post_fallback_reason |=
+                measure_result == RF_GPU_RASTER_PACK_UNSUPPORTED ?
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE :
+                RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
+            frame->stats.cpu_fallback_frames++;
+            return -1;
+        }
     }
     snprintf(diagnostic, sizeof(diagnostic),
              "gpu-world: texture measure end unique=%u bytes=%llu",
@@ -253,14 +320,21 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         resources.texel_capacity = frame->texture_texel_capacity;
         gpu_world_log("gpu-world: pack begin");
         stage_start = rf_core_clock_now_us();
-        if (rf_gpu_raster_pack_toy_textured_spans_v2(&packed,
+        {
+            int pack_result = rf_gpu_raster_pack_toy_textured_spans_v2(&packed,
                 renderer->job_clear_color, 0, frame->stream,
                 frame->stream_capacity, &written, &resources,
-                transparent_offset, viewmodel_offset) !=
-            RF_GPU_RASTER_PACK_OK) {
-            gpu_world_log("gpu-world: pack failed");
-            frame->stats.cpu_fallback_frames++;
-            return -1;
+                transparent_offset, viewmodel_offset);
+            if (pack_result != RF_GPU_RASTER_PACK_OK) {
+                /* All semantic command classes were rejected by preflight.
+                 * A later pack failure is therefore a consumer/resource
+                 * failure, including texture-table capacity exhaustion. */
+                core->render_frame.pre_post_fallback_reason |=
+                    RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
+                gpu_world_log("gpu-world: pack failed");
+                frame->stats.cpu_fallback_frames++;
+                return -1;
+            }
         }
         if (core->render_frame.sky_enabled) {
             struct rf_gpu_raster_stream_header_v1 *header =
@@ -675,6 +749,131 @@ int rf_core_retained_span_logic_test_v1(void)
         if (gpu_world_consume(&renderer, &unsupported, 1, &core) >= 0 ||
             frame->stats.last_path != 2 ||
             !core.render_frame.pre_post_fallback_reason)
+            goto fail;
+    }
+
+    /* B2d-3 reason contract: supported source-over remains reason-free, and
+     * every unsupported class rejects before any native stream/resource is
+     * marked ready.  The commands below deliberately use one command each so
+     * the reason bits are mutually exclusive and easy to audit. */
+    {
+        struct toy_raster_cmd probe;
+        struct toy_texture_view invalid_texture;
+        unsigned int reason;
+
+        memset(&invalid_texture, 0, sizeof(invalid_texture));
+        memset(frame->retained_batch_count, 0,
+               sizeof(frame->retained_batch_count));
+        frame->native_present = 1;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->native_texture_count = 0;
+        frame->native_texture_bytes = 0;
+
+        probe = first[0];
+        probe.transparent = 1;
+        probe.material_alpha = 128;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) < 0 ||
+            !frame->native_prepared ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_NONE) {
+            goto fail;
+        }
+
+        probe = first[0];
+        probe.transparent = 1;
+        probe.material_alpha = 128;
+        probe.planar_vertex_lit = 1;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->native_texture_count = 0;
+        frame->native_texture_bytes = 0;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
+            frame->native_prepared || frame->native_stream_size ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL) {
+            goto fail;
+        }
+
+        probe = first[0];
+        probe.textured = 1;
+        probe.texture = &invalid_texture;
+        probe.base_texture_valid = 0;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->native_texture_count = 0;
+        frame->native_texture_bytes = 0;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
+            frame->native_prepared || frame->native_stream_size ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE) {
+            goto fail;
+        }
+
+        probe = first[0];
+        probe.edge = 1;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_EDGE)
+            goto fail;
+
+        probe = first[0];
+        probe.overlay = 1;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_OVERLAY)
+            goto fail;
+
+        probe = first[0];
+        probe.area = 0;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->armed = 1;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_world_consume(&renderer, &probe, 1, &core) >= 0 ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND)
+            goto fail;
+
+        /* A failure after classification/packing is a consumer failure, not
+         * a material or texture diagnosis.  An unavailable raster backend
+         * makes resize fail, while the retained replay also stays all-or-
+         * nothing because this metadata fixture has no command capacity. */
+        frame->retained_commands[0] = first[0];
+        frame->retained_command_count = 1;
+        frame->retained_batch_count[RF_RENDER_LAYER_WORLD] = 1;
+        frame->retained_world_raw_count = 0;
+        frame->retaining_pre_post = 0;
+        frame->native_prepared = 0;
+        frame->native_stream_size = 0;
+        frame->raster.width = 63;
+        frame->raster.height = 64;
+        core.render_frame.pre_post_cpu_fallback = 0;
+        core.render_frame.pre_post_fallback_reason = 0;
+        if (gpu_pre_post_finalize(&core) >= 0 || frame->native_prepared ||
+            rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+                RF_PRE_POST_FALLBACK_CONSUMER_FAILURE)
+            goto fail;
+        reason = rf_core_render_frame_fallback_reason_v1(&core.render_frame);
+        if (reason & (RF_PRE_POST_FALLBACK_UNSUPPORTED_MATERIAL |
+                      RF_PRE_POST_FALLBACK_UNSUPPORTED_TEXTURE |
+                      RF_PRE_POST_FALLBACK_UNSUPPORTED_EDGE |
+                      RF_PRE_POST_FALLBACK_UNSUPPORTED_OVERLAY |
+                      RF_PRE_POST_FALLBACK_UNSUPPORTED_GENERIC_COMMAND))
             goto fail;
     }
     tlibc_free(frame->retained_commands);
@@ -1104,6 +1303,7 @@ unsigned int rf_core_render_frame_fallback_reason_v1(
 {
     unsigned int reason = RF_PRE_POST_FALLBACK_NONE;
     if (!frame) return reason;
+    reason = frame->pre_post_fallback_reason;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_EFFECTS])
         reason |= RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL])
