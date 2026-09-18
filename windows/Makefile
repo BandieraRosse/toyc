@@ -1,6 +1,15 @@
 WIN_CC ?= x86_64-w64-mingw32-gcc
 AR ?= x86_64-w64-mingw32-ar
-BUILD ?= build
+# Windows GNU Make otherwise defaults recipes to cmd.exe.  The rules below
+# intentionally use POSIX commands, so run them through the fixed MSYS2 shell.
+MSYS2_ROOT ?= C:/msys64
+SHELL := $(MSYS2_ROOT)/usr/bin/sh.exe
+# A shell launched by native Windows GNU Make does not inherit MSYS2's
+# converted PATH reliably; export the two required MSYS2 namespaces explicitly.
+export PATH := /mingw64/bin:/usr/bin
+# Keep Windows objects, executable and package completely separate from the
+# Linux/self-hosting build.  Override explicitly only for a disposable build.
+BUILD ?= build-windows
 WINDOWS_DEPS ?= $(CURDIR)/.windows-deps
 SDL_PREFIX ?= $(WINDOWS_DEPS)/x86_64-w64-mingw32
 
@@ -86,7 +95,7 @@ package: $(TARGET)
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
-	@cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"
+	@if [ -d rasterfall/private-assets ]; then cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"; fi
 	@rm -f "$(PACKAGE)"
 	@cd "$(PACKAGE_DIR)" && python3 -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"

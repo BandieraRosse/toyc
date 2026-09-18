@@ -78,10 +78,10 @@ win-deps:
 	@bash scripts/setup-windows-build.sh
 
 win-rasterfall:
-	+$(MAKE) -j$$(nproc) -f windows/Makefile all WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+	+$(MAKE) -f windows/Makefile all WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 win-rasterfall-package:
-	+$(MAKE) -j$$(nproc) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+	+$(MAKE) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
 
 $(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"

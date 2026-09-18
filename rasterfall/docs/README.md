@@ -56,6 +56,7 @@
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
+| Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
 | Console command registry/context/status | [runtime.md](runtime.md)、[core-runtime-v0.2.md](core-runtime-v0.2.md) | `include/rasterfall_console.h`、`src/rasterfall_console.c`、`src/rf_game_runtime.c` |
 | GUI desktop、icon/window presentation | [desktop-v1.md](desktop-v1.md)、[gui-runtime-v0.md](gui-runtime-v0.md)、[runtime.md](runtime.md) | `include/rasterfall_gui.h`、`src/rasterfall_gui.c`、`src/rf_game_runtime.c` |

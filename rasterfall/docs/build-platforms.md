@@ -31,6 +31,13 @@ embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源�
 
 ## Windows
 
+Windows Native Codex 的统一入口是 `windows/NativeCodex.ps1`。它固定将 MSYS2
+`mingw64` 与 `usr/bin` 放在该 lane 的 PATH 前端，继续使用现有
+`windows/Makefile` 和静态 SDL2，不引入新的构建系统。Windows 对象、exe 和
+package 默认位于 `build-windows/`，Linux `build/` 保持独立；`package` 后的真实
+运行 root 是 `build-windows/rasterfall-windows`，日常闭环与 WIN-DEV-1 标准见
+[Windows Native Codex](windows-native-codex.md)。
+
 `--frame-audit` 的三行记录同时写标准输出与 exe 同目录 `rasterfall.log`：第一行包含递增 frame ID、
 `gpu-native`/`cpu-fallback`/`cpu` 最终路径、camera/pitch/extent 和主循环 timing；第二行包含 RenderFrame
 层计数、最终 layer cursor、非法逆序次数、retained pre-post command 数、整帧 CPU replay 决策与 unsupported 分类；第三行包含 GPU/native timing、overlay upload、readback 与 CPU framebuffer
