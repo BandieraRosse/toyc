@@ -9,6 +9,8 @@
   整理时间线、技术演化、开发方式和可复核证据。
 - [编译器时期协作说明](AGENTS-toyc-history.md)：仓库开发重心转向 Rasterfall 前的构建、
   自举和测试约定，仅作为历史参考。
+- [Toyc Windows Platform V1 计划与进度](windows-platform-plan.md)：跨平台 userland
+  contract、source set 和 Checkpoint 验收记录。
 - [Rasterfall 维护者导航](../rasterfall/docs/README.md)：Rasterfall 当前架构、模块边界和验证入口。
 
 ## 维护原则

@@ -8,9 +8,9 @@ char *strcpy(char *dest, const char *src)
     return save;
 }
 
-char *strncpy(char *dest, const char *src, unsigned long n)
+char *strncpy(char *dest, const char *src, size_t n)
 {
-    unsigned long i;
+    size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++) {
         dest[i] = src[i];
     }
@@ -20,9 +20,9 @@ char *strncpy(char *dest, const char *src, unsigned long n)
     return dest;
 }
 
-int strlen(const char *s)
+size_t strlen(const char *s)
 {
-    int len = 0;
+    size_t len = 0;
     while(*s++)
         len++;
     return len;
@@ -34,10 +34,10 @@ char *strcat(char *restrict dst, const char *restrict src)
     return dst;
 }
 
-char *strncat(char *restrict dst, const char *restrict src, unsigned long n)
+char *strncat(char *restrict dst, const char *restrict src, size_t n)
 {
-    unsigned long dst_len = strlen(dst);
-    unsigned long i;
+    size_t dst_len = strlen(dst);
+    size_t i;
     for (i = 0; i < n && src[i] != '\0'; i++) {
         dst[dst_len + i] = src[i];
     }
@@ -55,9 +55,9 @@ int strcmp(const char *s1, const char *s2)
     return *(const unsigned char *)s1 - *(const unsigned char *)s2;
 }
 
-int strncmp(const char *s1, const char *s2, unsigned long n)
+int strncmp(const char *s1, const char *s2, size_t n)
 {
-    for (unsigned long i = 0; i < n; i++) {
+    for (size_t i = 0; i < n; i++) {
         if (s1[i] != s2[i]) {
             return (unsigned char)s1[i] - (unsigned char)s2[i];
         }
@@ -387,18 +387,18 @@ unsigned long tlibc_strtoul(char *str)
     return ret;
 }
 
-void* memcpy(void* dest, const void* src, unsigned long n)
+void* memcpy(void* dest, const void* src, size_t n)
 {
     unsigned long *d = (unsigned long *)dest;
     const unsigned long *s = (const unsigned long *)src;
-    unsigned long words = n / sizeof(unsigned long);
+    size_t words = n / sizeof(unsigned long);
 
-    for (unsigned long i = 0; i < words; i++)
+    for (size_t i = 0; i < words; i++)
         d[i] = s[i];
 
     unsigned char *db = (unsigned char *)dest;
     const unsigned char *sb = (const unsigned char *)src;
-    for (unsigned long i = words * sizeof(unsigned long); i < n; i++)
+    for (size_t i = words * sizeof(unsigned long); i < n; i++)
         db[i] = sb[i];
 
     return dest;
@@ -506,7 +506,7 @@ char *strerror(int errnum) {
     } else {
         // 返回未知错误，静态缓冲区可以存储更长的信息
         static char unknown_error[64];
-int snprintf(char *str, unsigned long size, const char *format, ...);
+int snprintf(char *str, size_t size, const char *format, ...);
         snprintf(unknown_error, sizeof(unknown_error), "Unknown error %d", errnum);
         return unknown_error;
     }

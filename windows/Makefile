@@ -76,7 +76,7 @@ PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c ras
                  windows/src/env.c windows/src/string.c windows/src/platform.c
 LIB_SRCS := lib/linux/assets.c lib/linux/graphics/fb_draw.c lib/linux/graphics/fb_font.c \
             lib/linux/graphics/renderer.c lib/linux/input/input.c lib/linux/net/dns.c \
-            lib/linux/math/math.c
+            lib/portable/math.c
 SRCS := $(GAME_SRCS) $(ANIMATION_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_SRCS)
 OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
@@ -84,13 +84,88 @@ TARGET := $(BUILD)/rasterfall.exe
 PACKAGE_DIR := $(BUILD)/rasterfall-windows
 PACKAGE := $(BUILD)/rasterfall-windows.zip
 
-.PHONY: all package clean rasterfall-rebuild
+# Userland source sets are explicit.  The portable set is shared with Linux;
+# the platform set is the only place for Windows replacements.  Rasterfall's
+# separate PLATFORM_SRCS above is intentionally not part of this contract.
+PORTABLE_APP_SRCS := $(shell find app/portable -name '*.c' | LANG=C sort)
+WINDOWS_NATIVE_APP_SRCS := $(shell find app/windows -name '*.c' | LANG=C sort)
+WINDOWS_APP_SRCS := $(PORTABLE_APP_SRCS) $(WINDOWS_NATIVE_APP_SRCS)
+PORTABLE_APP_NAMES := $(sort $(basename $(notdir $(WINDOWS_APP_SRCS))))
+ifneq ($(words $(WINDOWS_APP_SRCS)),$(words $(PORTABLE_APP_NAMES)))
+$(error duplicate Windows app basename detected; keep app source names unique)
+endif
+WINDOWS_PORTABLE_LIB_SRCS := $(shell find lib/portable -name '*.c' | LANG=C sort)
+WINDOWS_NATIVE_LIB_SRCS := $(shell find lib/windows -name '*.c' | LANG=C sort)
+WINDOWS_REPLACEMENT_LIB_SRCS := $(WINDOWS_NATIVE_LIB_SRCS)
+WINDOWS_LIB_SRCS := $(WINDOWS_PORTABLE_LIB_SRCS) $(WINDOWS_REPLACEMENT_LIB_SRCS)
+WINDOWS_LIB_OBJS := $(addprefix $(BUILD)/windows/,$(WINDOWS_LIB_SRCS:.c=.o))
+WINDOWS_LIB := $(BUILD)/windows/toyc-windows.a
+WINDOWS_APP_OBJS := $(addprefix $(BUILD)/windows/,$(WINDOWS_APP_SRCS:.c=.o))
+WINDOWS_APP_TARGETS := $(addprefix $(BUILD)/windows/,$(addsuffix .exe,$(PORTABLE_APP_NAMES)))
+APP_CPPFLAGS := -DTOYC_WINDOWS -I$(CURDIR)/windows/include -Iinclude \
+                -idirafter include/posix -idirafter include/tlibc
+APP_CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror -MMD -MP
+APP_LDFLAGS := -static -static-libgcc -mconsole -municode -Wl,--gc-sections
+WINDOWS_APP_SHIM_SRC := windows/src/userland_winmain.c
+WINDOWS_APP_SHIM_OBJ := $(BUILD)/windows/userland_winmain.o
+
+.PHONY: all app package clean platform-sources pe-audit $(addprefix win-app-,$(PORTABLE_APP_NAMES))
 
 # Windows 构建与 Linux 构建共用头文件和玩法/渲染源码；无条件重建对象，
 # 防止依赖文件缺失或切换工作区状态时复用与头文件不一致的旧对象。
 rasterfall-rebuild:
 
 all: $(TARGET)
+
+app: $(WINDOWS_APP_TARGETS)
+
+$(foreach name,$(PORTABLE_APP_NAMES),$(eval win-app-$(name): $(BUILD)/windows/$(name).exe))
+
+# Print the selected provider set for review and CI logs.  The common I/O
+# provider is intentionally one replacement source on Windows; CP2 will
+# change its implementation without changing this source-selection contract.
+platform-sources:
+	@printf '%s\n' 'Windows userland source selection:'
+	@printf '  portable: %s\n' '$(WINDOWS_PORTABLE_LIB_SRCS)'
+	@printf '  replacement/platform: %s\n' '$(WINDOWS_REPLACEMENT_LIB_SRCS)'
+	@printf '  portable apps: %s\n' '$(PORTABLE_APP_SRCS)'
+	@printf '  Windows-native apps: %s\n' '$(WINDOWS_NATIVE_APP_SRCS)'
+	@printf '%s\n' '  provider common file/path/dir contract: lib/windows/core/io.c (single Windows provider)'
+	@test "$(words $(WINDOWS_LIB_SRCS))" -eq "$(words $(sort $(WINDOWS_LIB_SRCS)))"
+	@test "$(words $(WINDOWS_APP_SRCS))" -eq "$(words $(sort $(WINDOWS_APP_SRCS)))"
+
+pe-audit: $(WINDOWS_APP_TARGETS)
+	@command -v x86_64-w64-mingw32-objdump >/dev/null
+	@x86_64-w64-mingw32-objdump -p $(BUILD)/windows/cat.exe | grep -E 'CreateFileW|ReadFile|WriteFile|CloseHandle|MultiByteToWideChar|WideCharToMultiByte'
+	@x86_64-w64-mingw32-objdump -p $(BUILD)/windows/grep.exe | grep -E 'FindFirstFileW|FindNextFileW|FindClose|GetFileInformationByHandle|CreateDirectoryW|DeleteFileW|RemoveDirectoryW|MoveFileExW|GetCurrentDirectoryW|SetCurrentDirectoryW|SetFilePointerEx'
+
+$(WINDOWS_LIB): $(WINDOWS_LIB_OBJS) | $(BUILD)
+	@mkdir -p "$(dir $@)"
+	@printf '  WIN-AR  %s\n' "$@"
+	$(WIN_AR) rcs $@ $^
+
+define WINDOWS_APP_rule
+
+$(BUILD)/windows/$(1:.c=.o): $(1) windows/Makefile | $(BUILD)
+	@mkdir -p "$$(dir $$@)"
+	@printf '  WIN-CC  %s\n' "$$<"
+	$$(WIN_CC) $$(APP_CPPFLAGS) $$(APP_CFLAGS) -c $$< -o $$@
+
+$(BUILD)/windows/$(notdir $(basename $(1))).exe: $(BUILD)/windows/$(1:.c=.o) $(WINDOWS_LIB) $(WINDOWS_APP_SHIM_OBJ)
+	@printf '  WIN-LD  %s\n' "$$@"
+	$$(WIN_CC) $$(APP_LDFLAGS) -o $$@ $$< $(WINDOWS_APP_SHIM_OBJ) $(WINDOWS_LIB)
+endef
+$(foreach src,$(WINDOWS_APP_SRCS),$(eval $(call WINDOWS_APP_rule,$(src))))
+
+$(BUILD)/windows/%.o: %.c windows/Makefile | $(BUILD)
+	@mkdir -p "$(dir $@)"
+	@printf '  WIN-CC  %s\n' "$<"
+	$(WIN_CC) $(APP_CPPFLAGS) $(APP_CFLAGS) -c $< -o $@
+
+$(WINDOWS_APP_SHIM_OBJ): $(WINDOWS_APP_SHIM_SRC) windows/Makefile | $(BUILD)
+	@mkdir -p "$(dir $@)"
+	@printf '  WIN-CC  %s\n' "$<"
+	$(WIN_CC) $(APP_CPPFLAGS) $(APP_CFLAGS) -c $< -o $@
 
 $(TARGET): $(OBJS) | $(BUILD)
 	@printf '  WIN-LD  %s\n' "$@"

@@ -1,7 +1,8 @@
-#include "syscall.h"
-#include "syscall_num.h"
-#include "core.h"
-#include "tlibc_everything.h"
+#include "tlibc_types.h"
+#include "string.h"
+
+/* Internal spelling used by the freestanding string provider. */
+void *__memset(void *dst, int value, size_t n);
 
 typedef __builtin_va_list my_va_list;
 #define my_va_start(v, l)   __builtin_va_start(v, l)
@@ -114,27 +115,31 @@ strbuf_pad(strbuf_t *sb, int count, char c)
 }
 
 // 将数字转换为字符串并写入缓冲区（有符号）
-static void strbuf_write_long(strbuf_t *sb, long num) {
+static void strbuf_write_long(strbuf_t *sb, long long num) {
     char buf[32];
     char c;
     int count = 0;
     __memset(buf, 0, 32);
 
     // 处理负数
+    unsigned long long magnitude;
     if (num < 0) {
         strbuf_write_char(sb, '-');
-        num = -num;
+        /* Avoid overflowing when num is the most negative value. */
+        magnitude = (unsigned long long)(-(num + 1)) + 1;
+    } else {
+        magnitude = (unsigned long long)num;
     }
 
-    if (num == 0) {
+    if (magnitude == 0) {
         strbuf_write_char(sb, '0');
         return;
     }
 
-    while (num != 0) {
-        c = num % 10;
+    while (magnitude != 0) {
+        c = (char)(magnitude % 10);
         buf[count++] = c + '0';
-        num /= 10;
+        magnitude /= 10;
     }
 
     // 反转字符串
@@ -150,7 +155,7 @@ static void strbuf_write_long(strbuf_t *sb, long num) {
 
 // 向字符串缓冲区写入整数
 void strbuf_write_int(strbuf_t *sb, int num) {
-    strbuf_write_long(sb, (long)num);
+    strbuf_write_long(sb, (long long)num);
 }
 
 // 计算10的n次方
@@ -161,7 +166,7 @@ static long long power_of_10(int n) {
 }
 
 // 无符号整数转字符串
-static int ulong_to_str(unsigned long n, char *buf) {
+static int ulong_to_str(unsigned long long n, char *buf) {
     int i = 0;
     char tmp[32];
     do {
@@ -187,7 +192,7 @@ static void strbuf_write_double(strbuf_t *sb, double d, int dec) {
     }
 
     // 取整数部分和小数部分
-    unsigned long integer = (unsigned long)d;
+    unsigned long long integer = (unsigned long long)d;
     double frac = d - integer;
 
     // 四舍五入
@@ -223,24 +228,27 @@ static void strbuf_write_double(strbuf_t *sb, double d, int dec) {
 /*  带宽度/对齐的 strbuf 输出函数                                     */
 /* ================================================================== */
 
-/* 将 long 转换为字符串缓冲区，返回长度（buf[0] = '-' 表示负数） */
+/* 将 long long 转换为字符串缓冲区，返回长度（buf[0] = '-' 表示负数） */
 static int
-long_to_buf(long num, char *buf)
+long_to_buf(long long num, char *buf)
 {
     if (num == 0) {
         buf[0] = '0';
         return 1;
     }
     int neg = 0;
+    unsigned long long magnitude;
     if (num < 0) {
         neg = 1;
-        num = -num;
+        magnitude = (unsigned long long)(-(num + 1)) + 1;
+    } else {
+        magnitude = (unsigned long long)num;
     }
     char tmp[32];
     int i = 0;
-    while (num > 0) {
-        tmp[i++] = '0' + (num % 10);
-        num /= 10;
+    while (magnitude > 0) {
+        tmp[i++] = (char)('0' + (magnitude % 10));
+        magnitude /= 10;
     }
     if (neg) {
         buf[0] = '-';
@@ -271,7 +279,7 @@ strbuf_write_string_padded(strbuf_t *sb, const char *s, const struct fmt_spec *s
 }
 
 static void
-strbuf_write_int_padded(strbuf_t *sb, long num, const struct fmt_spec *spec)
+strbuf_write_int_padded(strbuf_t *sb, long long num, const struct fmt_spec *spec)
 {
     char buf[32];
     int len = long_to_buf(num, buf);
@@ -308,7 +316,7 @@ strbuf_write_int_padded(strbuf_t *sb, long num, const struct fmt_spec *spec)
 }
 
 static void
-strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
+strbuf_write_hex_padded(strbuf_t *sb, unsigned long long val, int prefix,
                         const struct fmt_spec *spec, int upper)
 {
     const char *hex = upper ? "0123456789ABCDEF" : "0123456789abcdef";
@@ -324,7 +332,7 @@ strbuf_write_hex_padded(strbuf_t *sb, unsigned long val, int prefix,
         buf[pos++] = '0';
     } else {
         int started = 0;
-        for (int i = (sizeof(unsigned long) * 2) - 1; i >= 0; i--) {
+        for (int i = (sizeof(unsigned long long) * 2) - 1; i >= 0; i--) {
             unsigned char nibble = (val >> (i * 4)) & 0xf;
             if (nibble || started) {
                 buf[pos++] = hex[nibble];
@@ -399,10 +407,10 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
             case 'i': {
                 if (l_cnt >= 2) {
                     long long n = my_va_arg(args, long long);
-                    strbuf_write_int_padded(sb, (long)n, &spec);
+                    strbuf_write_int_padded(sb, n, &spec);
                 } else if (l_cnt == 1) {
                     long n = my_va_arg(args, long);
-                    strbuf_write_int_padded(sb, n, &spec);
+                    strbuf_write_int_padded(sb, (long long)n, &spec);
                 } else {
                     int n = my_va_arg(args, int);
                     long ln = (long)n;
@@ -441,29 +449,32 @@ static void vsnprintf_core(strbuf_t *sb, const char *fmt, my_va_list args) {
             }
             case 'x':
             case 'X': {
-                unsigned long n;
+                unsigned long long n;
                 if (l_cnt >= 2) {
-                    unsigned long long nn = my_va_arg(args, unsigned long long);
-                    n = (unsigned long)nn;
+                    n = my_va_arg(args, unsigned long long);
+                } else if (l_cnt == 1) {
+                    n = (unsigned long long)my_va_arg(args, unsigned long);
                 } else {
-                    n = my_va_arg(args, unsigned long);
+                    n = (unsigned long long)my_va_arg(args, unsigned int);
                 }
                 strbuf_write_hex_padded(sb, n, 0, &spec, *p == 'X');
                 break;
             }
             case 'p': {
                 void *ptr = my_va_arg(args, void *);
-                strbuf_write_hex_padded(sb, (unsigned long)ptr, 1, &spec, 0);
+                strbuf_write_hex_padded(sb, (unsigned long long)(size_t)ptr,
+                                        1, &spec, 0);
                 break;
             }
             case 'u': {
-                unsigned long n;
+                unsigned long long n;
                 if (l_cnt >= 2) {
-                    unsigned long long nn = my_va_arg(args, unsigned long long);
-                    n = (unsigned long)nn;
+                    n = my_va_arg(args, unsigned long long);
+                } else if (l_cnt == 1) {
+                    n = (unsigned long long)my_va_arg(args, unsigned long);
                 } else {
                     unsigned int un = my_va_arg(args, unsigned int);
-                    n = (unsigned long)un;
+                    n = (unsigned long long)un;
                 }
                 char buf[32];
                 int len = ulong_to_str(n, buf);

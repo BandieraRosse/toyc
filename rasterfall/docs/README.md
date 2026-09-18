@@ -6,6 +6,8 @@
 > `lib/linux/`；`app/portable/`、`app/windows/`、`lib/portable/` 与 `lib/windows/` 是跨平台迁移入口。
 > 源码核对补充：通用应用由 Linux `app-*` 与 Windows `win-app-*` 共用
 > `app/portable/` 源码，并分别链接对应平台库与 `lib/portable/`。
+> 源码核对补充：Windows userland 使用显式 portable/platform source set、独立
+> `lib/windows/core/io.c` provider 与 Unicode console shim，不依赖 Rasterfall SDL/WinMain。
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以

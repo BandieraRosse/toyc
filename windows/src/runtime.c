@@ -43,17 +43,17 @@ void toy_windows_log(const char *message)
     fclose(file);
 }
 
-long __write(int fd, const void *buf, size_t len)
+ssize_t __write(int fd, const void *buf, size_t len)
 {
-    return _write(fd, buf, (unsigned int)len);
+    return (ssize_t)_write(fd, buf, (unsigned int)len);
 }
 
-long __read(int fd, void *buf, size_t len)
+ssize_t __read(int fd, void *buf, size_t len)
 {
-    return _read(fd, buf, (unsigned int)len);
+    return (ssize_t)_read(fd, buf, (unsigned int)len);
 }
 
-int __openat(int dirfd, const char *path, int flags, int mode)
+int __openat(int dirfd, const char *path, int flags, unsigned int mode)
 {
     char absolute[MAX_PATH];
     wchar_t wide[MAX_PATH];

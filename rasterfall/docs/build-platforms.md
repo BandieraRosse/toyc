@@ -53,6 +53,8 @@ package 默认位于 `build-windows/`，Linux `build/` 保持独立；`package` 
 与 `app/portable` 中的应用链接 `lib/windows` 与 `lib/portable`；根目标
 `make win-app-<name>` 构建单个程序，`make win-app` 构建全部。该链路不依赖
 Rasterfall 的 SDL2、WinMain 或 GUI subsystem。
+源集选择可由 `make -f windows/Makefile platform-sources` 审计；Windows userland 的通用
+文件、路径与目录契约由 `lib/windows/core/io.c` 单一 provider 实现。
 
 `--frame-audit` 的三行记录同时写标准输出与 exe 同目录 `rasterfall.log`：第一行包含递增 frame ID、
 `gpu-native`/`cpu-fallback`/`cpu` 最终路径、camera/pitch/extent 和主循环 timing；第二行包含 RenderFrame

@@ -67,7 +67,9 @@ HEADERS  := $(TOYC_NEED) $(ELF_H) $(ELF_W_H)
 # ─── 默认目标 ──────────────────────────────────────────────────
 
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
-        test-toyar win-deps win-rasterfall win-rasterfall-package win-app
+        test-toyar win-deps win-rasterfall win-rasterfall-package win-app \
+        platform-sources test-platform-contract test-windows-core-logic \
+        test-portable-coreutils test-portable-io-logic test-portable-filesystem
 
 all: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
@@ -739,6 +741,7 @@ test-toyar: $(BUILD)/toyar $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUI
 
 GCC       := gcc
 AR        := ar
+WIN_CC    ?= x86_64-w64-mingw32-gcc
 LIBC_DIR  := lib/linux
 PORTABLE_LIB_DIR := lib/portable
 APP_DIR   := app/linux
@@ -764,24 +767,42 @@ LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
                -DX86_64_TLIBC=1 \
                -fno-stack-protector -fno-common -MD
 
-# ─── 库源文件列表 ──────────────────────────────────────────────
+# ─── 库源文件列表（common / platform / replacement） ──────────
 
-LIBC_C_SRCS   := $(shell find $(LIBC_DIR) $(PORTABLE_LIB_DIR) -name '*.c' | LANG=C sort)
-LIBC_ASM_SRCS := $(shell find $(LIBC_DIR) $(PORTABLE_LIB_DIR) -name '*.S' | LANG=C sort)
+# Keep the roles explicit even while lib/portable is still small.  A source
+# is selected once per Linux build; a future replacement must be added to the
+# platform set and removed from the previous provider set in the same change.
+LIBC_PORTABLE_C_SRCS := $(shell find $(PORTABLE_LIB_DIR) -name '*.c' | LANG=C sort)
+LIBC_LINUX_C_SRCS    := $(shell find $(LIBC_DIR) -name '*.c' | LANG=C sort)
+LIBC_REPLACEMENT_C_SRCS :=
+LIBC_PORTABLE_ASM_SRCS := $(shell find $(PORTABLE_LIB_DIR) -name '*.S' | LANG=C sort)
+LIBC_LINUX_ASM_SRCS    := $(shell find $(LIBC_DIR) -name '*.S' | LANG=C sort)
+LIBC_REPLACEMENT_ASM_SRCS :=
+LIBC_C_SRCS   := $(LIBC_PORTABLE_C_SRCS) $(LIBC_LINUX_C_SRCS) $(LIBC_REPLACEMENT_C_SRCS)
+LIBC_ASM_SRCS := $(LIBC_PORTABLE_ASM_SRCS) $(LIBC_LINUX_ASM_SRCS) $(LIBC_REPLACEMENT_ASM_SRCS)
 
-# 路径压平：lib/linux/core/io.c → build/libc_core_io.o
-LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
-                   $(BUILD)/libc_$(subst /,_,$(patsubst %.c,%,$(src))).o)
-LIBC_ASM_OBJS := $(foreach src,$(LIBC_ASM_SRCS),\
-                   $(BUILD)/libc_$(subst /,_,$(patsubst %.S,%,$(src))).o)
+# Preserve source paths in object names.  For example,
+#   lib/linux/core/io.c -> build/lib/linux/core/io.o
+#   lib/portable/core/io.c -> build/lib/portable/core/io.o
+# This prevents a basename collision from silently replacing an object.
+LIBC_C_OBJS   := $(addprefix $(BUILD)/,$(LIBC_C_SRCS:.c=.o))
+LIBC_ASM_OBJS := $(addprefix $(BUILD)/,$(LIBC_ASM_SRCS:.S=.o))
 LIBC_OBJS     := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 
-# ─── App 源文件列表 ─────────────────────────────────────────────
+# ─── App 源文件列表（portable / Linux-native） ─────────────────
 
-APP_SRCS    := $(shell find $(APP_DIR) $(PORTABLE_APP_DIR) -name '*.c' | LANG=C sort) \
-               $(RASTERFALL_SRC)/rasterfall.c
-APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
-APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
+APP_PORTABLE_SRCS := $(shell find $(PORTABLE_APP_DIR) -name '*.c' | LANG=C sort)
+APP_LINUX_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort)
+APP_SOURCE_SRCS   := $(APP_PORTABLE_SRCS) $(APP_LINUX_SRCS)
+APP_SRCS          := $(APP_SOURCE_SRCS) $(RASTERFALL_SRC)/rasterfall.c
+APP_NAMES         := $(sort $(basename $(notdir $(APP_SOURCE_SRCS))) rasterfall)
+APP_OBJS          := $(addprefix $(BUILD)/,$(APP_SOURCE_SRCS:.c=.o)) $(BUILD)/rasterfall.o
+
+# Executable names remain basename-based for the public make app-<name>
+# interface, but duplicate names are now an explicit configuration error.
+ifneq ($(words $(APP_SOURCE_SRCS)),$(words $(sort $(basename $(notdir $(APP_SOURCE_SRCS))))))
+$(error duplicate app basename detected; keep app source paths unique)
+endif
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
 WIN_APP_NAMES := $(sort $(basename $(notdir $(shell find app/portable app/windows -name '*.c' | LANG=C sort))))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
@@ -806,6 +827,42 @@ APP_EXTRA_OBJS_rf_anim_info := $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_
 	$(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_map_inspect := $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o
 APP_EXTRA_OBJS_map_runtime_test := $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o
+
+# ─── CP1 contract/source-set checks ────────────────────────────
+
+PLATFORM_CONTRACT_TEST_SRC := tests/platform/toyc_platform_header.c
+
+platform-sources:
+	@printf '%s\n' 'Linux userland source selection:'
+	@printf '  portable: %s\n' '$(LIBC_PORTABLE_C_SRCS)'
+	@printf '  Linux-native: %s\n' '$(LIBC_LINUX_C_SRCS)'
+	@printf '  replacement: %s\n' '$(LIBC_REPLACEMENT_C_SRCS)'
+	@printf '  portable apps: %s\n' '$(APP_PORTABLE_SRCS)'
+	@printf '  Linux-native apps: %s\n' '$(APP_LINUX_SRCS)'
+	@printf '%s\n' '  provider common file/path/dir contract: lib/linux/core/io.c (single Linux provider)'
+	@test "$(words $(LIBC_C_SRCS))" -eq "$(words $(sort $(LIBC_C_SRCS)))"
+	@test "$(words $(LIBC_ASM_SRCS))" -eq "$(words $(sort $(LIBC_ASM_SRCS)))"
+	@test "$(words $(APP_SOURCE_SRCS))" -eq "$(words $(sort $(APP_SOURCE_SRCS)))"
+	@$(MAKE) --no-print-directory -f windows/Makefile platform-sources
+
+test-platform-contract: $(PLATFORM_CONTRACT_TEST_SRC)
+	@printf '  CONTRACT Linux  %s\n' '$<'
+	$(GCC) -std=c11 -Wall -Wextra -Werror -fsyntax-only \
+		-I include -I include/posix -I include/tlibc $<
+	@if command -v $(WIN_CC) >/dev/null 2>&1; then \
+		printf '  CONTRACT Windows %s\n' '$<'; \
+		$(WIN_CC) -std=c11 -Wall -Wextra -Werror -fsyntax-only \
+			-DTOYC_WINDOWS -I windows/include -I include \
+			-idirafter include/posix -idirafter include/tlibc \
+			-include windows/include/windows_stdlib.h $<; \
+	else \
+		printf '  CONTRACT Windows SKIP (compiler %s not found)\n' '$(WIN_CC)'; \
+	fi
+
+test-windows-core-logic: tests/platform/windows_error_mapping.c
+	$(GCC) -std=c11 -Wall -Wextra -Werror -I windows/include -I include \
+		$< -o /tmp/toyc-windows-error-mapping
+	/tmp/toyc-windows-error-mapping
 
 .PHONY: test-rfchar-pipeline
 test-rfchar-pipeline:
@@ -1116,18 +1173,20 @@ $(BUILD)/rasterfall_vmd.o: $(RASTERFALL_SRC)/rasterfall_vmd.c \
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-# 每个 .c 文件 → .o
+# 每个 .c 文件 → .o（目标路径保留源路径）
 define LIBC_C_rule
-$$(BUILD)/libc_$(subst /,_,$(patsubst %.c,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/$(1:.c=.o): $(1) | $$(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(GCC) $$(LIBC_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
 $(foreach src,$(LIBC_C_SRCS),$(eval $(call LIBC_C_rule,$(src))))
 
 # 每个 .S 文件 → .o
 define LIBC_ASM_rule
-$$(BUILD)/libc_$(subst /,_,$(patsubst %.S,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/$(1:.S=.o): $(1) | $$(BUILD)
 	@printf "  $(BLUE)  AS$(RESET)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(GCC) $$(LIBC_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
 $(foreach src,$(LIBC_ASM_SRCS),$(eval $(call LIBC_ASM_rule,$(src))))
@@ -1143,20 +1202,22 @@ $(LIBC_A): $(LIBC_OBJS)
 define APP_rule
 
 # 编译 app 源文件 → .o
-$$(BUILD)/$(notdir $(basename $(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/$(1:.c=.o): $(1) | $$(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(GCC) $$(LIBC_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 
 # 链接 app.o + toyc.a → 可执行文件
 # -Wl,--whole-archive 强制提取所有 .o，避免归档单遍扫描的符号遗漏
-$$(BUILD)/$(notdir $(basename $(1))): $$(BUILD)/$(notdir $(basename $(1))).o $$(LIBC_A) $(APP_EXTRA_OBJS_$(notdir $(basename $(1))))
+$$(BUILD)/$(notdir $(basename $(1))): $$(BUILD)/$(1:.c=.o) $$(LIBC_A) $(APP_EXTRA_OBJS_$(notdir $(basename $(1))))
 	@printf "$(BLUE)  LD$(RESET)  %s\n" "$(notdir $(basename $(1)))"
 	$$(GCC) $$(LIBC_CFLAGS) $$< $(APP_EXTRA_OBJS_$(notdir $(basename $(1)))) -Wl,--whole-archive $$(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $$@
 endef
-$(foreach src,$(APP_SRCS),$(eval $(call APP_rule,$(src))))
+$(foreach src,$(APP_SOURCE_SRCS),$(eval $(call APP_rule,$(src))))
 
 # Rasterfall 的内部实现片段属于主编译单元，显式列为依赖以支持增量构建。
-$(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
+$(BUILD)/rasterfall.o: $(RASTERFALL_SRC)/rasterfall.c \
+                       $(RASTERFALL_INC)/rasterfall_hud.h \
                        $(RASTERFALL_INC)/rasterfall_render.h \
                        $(RASTERFALL_INC)/rasterfall_options.h \
                        $(RASTERFALL_INC)/toy_game.h \
@@ -1169,7 +1230,16 @@ $(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
                        $(RASTERFALL_INC)/rasterfall_effects.h \
                        $(RASTERFALL_INC)/rasterfall_perf.h \
                        $(RASTERFALL_INC)/rasterfall_sky.h \
-                       $(RASTERFALL_INC)/rasterfall_viewmodel.h
+                       $(RASTERFALL_INC)/rasterfall_viewmodel.h | $(BUILD)
+	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(RASTERFALL_SRC)/rasterfall.c"
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $(RASTERFALL_SRC)/rasterfall.c -o $@
+
+# Rasterfall is a separate Linux-native executable, not a portable app.  Keep
+# its main object outside APP_SOURCE_SRCS while retaining the source-path
+# object layout used by the rest of the build.
+$(BUILD)/rasterfall: $(BUILD)/rasterfall.o $(LIBC_A) $(APP_EXTRA_OBJS_rasterfall)
+	@printf "$(BLUE)  LD$(RESET)  rasterfall\n"
+	$(GCC) $(LIBC_CFLAGS) $< $(APP_EXTRA_OBJS_rasterfall) -Wl,--whole-archive $(LIBC_A) -Wl,--no-whole-archive -Wl,-e,__tlibc_start -o $@
 
 # ─── 目标 ───────────────────────────────────────────────────────
 
@@ -1178,6 +1248,56 @@ $(BUILD)/rasterfall.o: $(RASTERFALL_INC)/rasterfall_hud.h \
 lib: $(LIBC_A)
 
 app: $(APP_TARGETS)
+
+# CP3 hosted behavior smoke test.  The test deliberately exercises the
+# portable apps through the freestanding Linux provider, including data that
+# spans several I/O buffers.  Partial writes are handled by the app's
+# write_all loop; the Windows provider has an equivalent clean-build test.
+test-portable-coreutils: $(BUILD)/cat $(BUILD)/hexdump $(BUILD)/touch \
+                         $(BUILD)/echo $(BUILD)/cp
+	@tmpdir=$$(mktemp -d /tmp/toyc-cp3.XXXXXX); \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	printf 'portable\n\000\377\001\002\n' > "$$tmpdir/input.bin"; \
+	dd if=/dev/zero of="$$tmpdir/large.bin" bs=4096 count=3 status=none; \
+	: > "$$tmpdir/empty.bin"; \
+	$(BUILD)/cp "$$tmpdir/input.bin" "$$tmpdir/input.copy"; \
+	cmp "$$tmpdir/input.bin" "$$tmpdir/input.copy"; \
+	$(BUILD)/cp "$$tmpdir/large.bin" "$$tmpdir/large.copy"; \
+	cmp "$$tmpdir/large.bin" "$$tmpdir/large.copy"; \
+	$(BUILD)/cp "$$tmpdir/empty.bin" "$$tmpdir/empty.copy"; \
+	test ! -s "$$tmpdir/empty.copy"; \
+	printf 'old content\n' > "$$tmpdir/touched"; \
+	$(BUILD)/touch "$$tmpdir/touched"; test ! -s "$$tmpdir/touched"; \
+	test "$$($(BUILD)/echo alpha beta)" = 'alpha beta'; \
+	$(BUILD)/hexdump "$$tmpdir/input.bin" > "$$tmpdir/dump.txt"; \
+	test -s "$$tmpdir/dump.txt"; \
+	printf 'portable coreutils: PASS\n'
+
+test-portable-io-logic: tests/platform/portable_io_logic.c
+	$(GCC) -std=c11 -Wall -Wextra -Werror $< -o /tmp/toyc-portable-io-logic
+	/tmp/toyc-portable-io-logic
+
+test-portable-filesystem: $(BUILD)/pwd $(BUILD)/mkdir $(BUILD)/mv \
+                          $(BUILD)/rm $(BUILD)/rmdir $(BUILD)/grep \
+                          $(BUILD)/ls $(BUILD)/fcount
+	@set -e; tmpdir=$$(mktemp -d /tmp/toyc-cp4.XXXXXX); \
+	trap 'rm -rf "$$tmpdir"' EXIT; \
+	$(BUILD)/mkdir "$$tmpdir/中文"; \
+	$(BUILD)/mkdir "$$tmpdir/中文/nested"; \
+	printf 'needle one\nother\n' > "$$tmpdir/中文/old.txt"; \
+	printf 'replacement\n' > "$$tmpdir/中文/new.txt"; \
+	$(BUILD)/grep -r -n needle "$$tmpdir" > "$$tmpdir/grep.out"; \
+	grep -q 'old.txt:1:needle one' "$$tmpdir/grep.out"; \
+	$(BUILD)/ls -l "$$tmpdir/中文" > "$$tmpdir/ls.out"; \
+	grep -q 'DIR .* nested' "$$tmpdir/ls.out"; \
+	count=$$($(BUILD)/fcount "$$tmpdir/中文"); test "$$count" = 2; \
+	! $(BUILD)/rmdir "$$tmpdir/中文"; \
+	$(BUILD)/mv "$$tmpdir/中文/old.txt" "$$tmpdir/中文/new.txt"; \
+	test ! -e "$$tmpdir/中文/old.txt"; \
+	$(BUILD)/rm "$$tmpdir/中文/new.txt"; \
+	$(BUILD)/rmdir "$$tmpdir/中文/nested"; \
+	$(BUILD)/rmdir "$$tmpdir/中文"; \
+	printf 'portable filesystem: PASS\n'
 
 # Linux 默认从 rasterfall/assets 读取资源；内嵌打包保留为显式目标。
 $(BUILD)/rasterfall-embedded: $(BUILD)/rasterfall.o $(LIBC_A) $(APP_EXTRA_OBJS_rasterfall) $(RASTERFALL_ASSET_OBJ)
@@ -1516,25 +1636,30 @@ SELF_CFLAGS   := -DX86_64_TLIBC=1 \
 SELF_HEADERS  := $(wildcard include/*.h include/posix/*.h include/tlibc/*.h \
                            arch/*.h arch/x86_64/*.h)
 
-# 路径压平：lib/linux/core/io.c → build/self_core_io.o
-SELF_LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
-                        $(BUILD)/self_$(subst /,_,$(patsubst %.c,%,$(src))).o)
+# Self-host objects also preserve their source paths.  This is important now
+# that portable apps are part of the self-app verification set.
+SELF_LIBC_C_OBJS   := $(addprefix $(BUILD)/self/,$(LIBC_C_SRCS:.c=.o))
 # 启动文件（lib/linux/init/start.S）单独管理，不入归档，避免 ld --whole-archive 重复
-SELF_CRT_OBJS      := $(BUILD)/self_init_start.o
-SELF_LIBC_ASM_OBJS := $(foreach src,$(filter-out $(LIBC_DIR)/init/start.S,$(LIBC_ASM_SRCS)),\
-                        $(BUILD)/self_$(subst /,_,$(patsubst %.S,%,$(src))).o)
+SELF_CRT_OBJS      := $(BUILD)/self/lib/linux/init/start.o
+SELF_LIBC_ASM_SRCS := $(filter-out $(LIBC_DIR)/init/start.S,$(LIBC_ASM_SRCS))
+SELF_LIBC_ASM_OBJS := $(addprefix $(BUILD)/self/,$(SELF_LIBC_ASM_SRCS:.S=.o))
 SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 
-# ─── App 源文件（自托管范围保持为 app/linux） ────────────────
+# ─── App 源文件（自托管包含 portable + Linux-native） ────────
 
-SELF_APP_SRCS    := $(filter $(APP_DIR)/%,$(APP_SRCS))
-SELF_APP_NAMES   := $(filter-out rasterfall,$(sort $(basename $(notdir $(SELF_APP_SRCS)))))
-SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
+SELF_APP_SRCS    := $(APP_SOURCE_SRCS)
+SELF_APP_NAMES   := $(sort $(basename $(notdir $(SELF_APP_SRCS))))
+SELF_APP_OBJS    := $(foreach src,$(SELF_APP_SRCS),$(BUILD)/self/$(src:.c=_self.o))
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
 SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_components_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_render_resources_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o $(BUILD)/rasterfall_world_light_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
+
+$(SELF_CRT_OBJS): $(LIBC_DIR)/init/start.S | $(BUILD)
+	@mkdir -p "$(dir $@)"
+	@printf "  $(BLUE)  AS(s)  %s\n" "$<"
+	$(SELF_AS) $< -o $@
 
 # 自托管 Rasterfall 也必须遵守同一条规则，避免使用与头文件不一致的旧对象。
 $(SELF_LIBC_OBJS) $(SELF_APP_OBJS) $(SELF_APP_EXTRA_OBJS_rasterfall) \
@@ -1544,19 +1669,21 @@ $(SELF_APP_EXTRA_OBJS_vmd_inspect) $(SELF_APP_EXTRA_OBJS_glb_inspect): rasterfal
 
 # .c → .o（toyc）
 define SELF_LIBC_C_rule
-$$(BUILD)/self_$(subst /,_,$(patsubst %.c,%,$(1))).o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
+$$(BUILD)/self/$(1:.c=.o): $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(SELF_CC) $$(SELF_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
 $(foreach src,$(LIBC_C_SRCS),$(eval $(call SELF_LIBC_C_rule,$(src))))
 
 # .S → .o（系统 as）
 define SELF_LIBC_ASM_rule
-$$(BUILD)/self_$(subst /,_,$(patsubst %.S,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/self/$(1:.S=.o): $(1) | $$(BUILD)
 	@printf "  $(BLUE)  AS(s)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(SELF_AS) $(1) -o $$@
 endef
-$(foreach src,$(LIBC_ASM_SRCS),$(eval $(call SELF_LIBC_ASM_rule,$(src))))
+$(foreach src,$(SELF_LIBC_ASM_SRCS),$(eval $(call SELF_LIBC_ASM_rule,$(src))))
 
 # 归档（系统 ar）
 $(SELF_LIB_A): $(SELF_LIBC_OBJS)
@@ -1738,14 +1865,16 @@ $(BUILD)/rasterfall_humanoid_retarget_self.o: $(RASTERFALL_SRC)/rasterfall_human
 define SELF_APP_rule
 
 # 编译 app 源文件 → .o（toyc）
-$$(BUILD)/$(notdir $(basename $(1)))_self.o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
+$$(BUILD)/self/$(1:.c=_self.o): $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
+	@mkdir -p "$$(dir $$@)"
 	$$(SELF_CC) $$(SELF_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 
-# 链接（系统 ld）：crt 在归档之前（__tlibc_start 定义），--whole-archive 确保所有符号可解析
-$$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_self.o $$(SELF_LIB_A) $$(SELF_CRT_OBJS) $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1))))
+# 链接（系统 ld）：crt 在归档之前（__tlibc_start 定义）。按需扫描归档，
+# 避免一个只做文件 I/O 的 portable app 被无关 Rasterfall 对象拖入。
+$$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/self/$(1:.c=_self.o) $$(SELF_LIB_A) $$(SELF_CRT_OBJS) $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1))))
 	@printf "$(BLUE)  LD(s)  %s\n" "$(notdir $(basename $(1)))"
-	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1)))) --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
+	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1)))) $$(SELF_LIB_A) -o $$@
 endef
 $(foreach src,$(SELF_APP_SRCS),$(eval $(call SELF_APP_rule,$(src))))
 

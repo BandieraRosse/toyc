@@ -7,14 +7,23 @@ typedef unsigned int mode_t;
 typedef unsigned long nlink_t;
 typedef unsigned int uid_t;
 typedef unsigned int gid_t;
+/* Windows is LLP64: long remains 32-bit while pointers and size_t are 64-bit.
+ * Keep the freestanding Linux ABI unchanged, but make the hosted MinGW
+ * contract agree with the target compiler's native size width. */
+#ifdef TOYC_WINDOWS
+typedef long long ssize_t;
+typedef unsigned long long size_t;
+typedef long long off_t;
+typedef long long blksize_t;
+typedef long long blkcnt_t;
+#else
+typedef long ssize_t;
+typedef unsigned long size_t;
 typedef long off_t;
 typedef long blksize_t;
 typedef long blkcnt_t;
-
-//riscv64的类型定义
-typedef long ssize_t;           // 64位有符号，用于可能出错的大小
+#endif
 typedef int pid_t;
-typedef unsigned long   size_t; // 64位无符号，用于大小和计数
 
 typedef long time_t;
 typedef int clockid_t;
@@ -31,8 +40,12 @@ typedef unsigned int uint32_t;
 typedef signed long long int int64_t;
 typedef unsigned long long int uint64_t;
 
+/* Toyc does not yet parse sizeof expressions in array bounds.  Hosted GCC
+ * builds on both platforms still enforce the fixed-width contract. */
+#ifdef __GNUC__
 typedef char tlibc_int64_must_be_8_bytes[(sizeof(int64_t) == 8) ? 1 : -1];
 typedef char tlibc_uint64_must_be_8_bytes[(sizeof(uint64_t) == 8) ? 1 : -1];
+#endif
 
 #ifndef NULL
 #define NULL ((void *)0)

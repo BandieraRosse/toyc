@@ -156,6 +156,19 @@ test_hex_and_ptr(void)
 }
 
 static void
+test_wide_integer_formats(void)
+{
+    printf("\n" COLOR_CYAN "=== LLP64/64-bit 长整数 ===" COLOR_RESET "\n");
+
+    CHECK_SNPRINTF("%%lld (超过 32 位)",  "4294967297",  "%lld", 4294967297LL);
+    CHECK_SNPRINTF("%%lld (负数)",       "-4294967297", "%lld", -4294967297LL);
+    CHECK_SNPRINTF("%%llu (超过 32 位)", "4294967297",  "%llu", 4294967297ULL);
+    CHECK_SNPRINTF("%%llx (超过 32 位)", "100000001",   "%llx", 0x100000001ULL);
+    CHECK_SNPRINTF("%%p (超过 32 位)",   "0x100000001",  "%p",
+                   (void *)(size_t)0x100000001ULL);
+}
+
+static void
 test_unsigned(void)
 {
     printf("\n" COLOR_CYAN "=== 无符号整数 ===" COLOR_RESET "\n");
@@ -318,6 +331,7 @@ int main(int argc, char *argv[])
     test_width_align();
     test_zero_pad();
     test_hex_and_ptr();
+    test_wide_integer_formats();
     test_unsigned();
     test_float();
     test_combined();

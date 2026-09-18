@@ -1,0 +1,74 @@
+#ifndef TOYC_WINDOWS_ERRORS_H
+#define TOYC_WINDOWS_ERRORS_H
+
+#include "errno.h"
+
+/* Win32 error values used by the V1 provider.  Keep this mapper independent
+ * of windows.h so it can be checked by a Linux-hosted pure-logic test. */
+#define TOYC_WIN_ERROR_FILE_NOT_FOUND 2UL
+#define TOYC_WIN_ERROR_PATH_NOT_FOUND 3UL
+#define TOYC_WIN_ERROR_ACCESS_DENIED 5UL
+#define TOYC_WIN_ERROR_INVALID_HANDLE 6UL
+#define TOYC_WIN_ERROR_NOT_ENOUGH_MEMORY 8UL
+#define TOYC_WIN_ERROR_INVALID_DRIVE 15UL
+#define TOYC_WIN_ERROR_NOT_SAME_DEVICE 17UL
+#define TOYC_WIN_ERROR_NO_MORE_FILES 18UL
+#define TOYC_WIN_ERROR_WRITE_PROTECT 19UL
+#define TOYC_WIN_ERROR_BAD_UNIT 20UL
+#define TOYC_WIN_ERROR_SHARING_VIOLATION 32UL
+#define TOYC_WIN_ERROR_LOCK_VIOLATION 33UL
+#define TOYC_WIN_ERROR_HANDLE_EOF 38UL
+#define TOYC_WIN_ERROR_HANDLE_DISK_FULL 39UL
+#define TOYC_WIN_ERROR_FILE_EXISTS 80UL
+#define TOYC_WIN_ERROR_INVALID_PARAMETER 87UL
+#define TOYC_WIN_ERROR_DISK_FULL 112UL
+#define TOYC_WIN_ERROR_DIR_NOT_EMPTY 145UL
+#define TOYC_WIN_ERROR_ALREADY_EXISTS 183UL
+#define TOYC_WIN_ERROR_FILENAME_EXCED_RANGE 206UL
+#define TOYC_WIN_ERROR_BROKEN_PIPE 109UL
+#define TOYC_WIN_ERROR_DIRECTORY 267UL
+#define TOYC_WIN_ERROR_NO_UNICODE_TRANSLATION 1113UL
+
+static int toy_windows_errno_from_error(unsigned long error)
+{
+    switch (error) {
+    case TOYC_WIN_ERROR_FILE_NOT_FOUND:
+    case TOYC_WIN_ERROR_PATH_NOT_FOUND:
+        return ENOENT;
+    case TOYC_WIN_ERROR_DIRECTORY:
+        return ENOTDIR;
+    case TOYC_WIN_ERROR_ACCESS_DENIED:
+    case TOYC_WIN_ERROR_SHARING_VIOLATION:
+    case TOYC_WIN_ERROR_LOCK_VIOLATION:
+    case TOYC_WIN_ERROR_WRITE_PROTECT:
+        return EACCES;
+    case TOYC_WIN_ERROR_INVALID_HANDLE:
+        return EBADF;
+    case TOYC_WIN_ERROR_BROKEN_PIPE:
+        return EPIPE;
+    case TOYC_WIN_ERROR_NOT_ENOUGH_MEMORY:
+        return ENOMEM;
+    case TOYC_WIN_ERROR_FILE_EXISTS:
+    case TOYC_WIN_ERROR_ALREADY_EXISTS:
+        return EEXIST;
+    case TOYC_WIN_ERROR_HANDLE_DISK_FULL:
+    case TOYC_WIN_ERROR_DISK_FULL:
+        return ENOSPC;
+    case TOYC_WIN_ERROR_DIR_NOT_EMPTY:
+        return EBUSY;
+    case TOYC_WIN_ERROR_INVALID_PARAMETER:
+    case TOYC_WIN_ERROR_INVALID_DRIVE:
+    case TOYC_WIN_ERROR_FILENAME_EXCED_RANGE:
+    case TOYC_WIN_ERROR_NO_UNICODE_TRANSLATION:
+        return EINVAL;
+    default:
+        return EIO;
+    }
+}
+
+static int toy_windows_negative_error(unsigned long error)
+{
+    return -toy_windows_errno_from_error(error);
+}
+
+#endif

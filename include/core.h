@@ -1,6 +1,7 @@
 #ifndef __CORE_H
 #define __CORE_H
 
+#include "toyc_platform_contract.h"
 #include "tlibc_types.h"    /* size_t, pid_t, mode_t, off_t, clockid_t */
 #include "errno.h"
 #include "fcntl.h"          /* O_* flags */
@@ -11,11 +12,8 @@
 #include "mman.h"           /* PROT_*, MAP_*, MAP_FAILED */
 #include "stat.h"           /* struct stat — arch 依赖，-I 解析 */
 
-ssize_t __write(int fd, const void *buf, int len);
-ssize_t __read(int fd, const void *buf, int len);
-int __openat(int fd, const char *pathname, int flags, unsigned short mode);
+/* Common contract above; the declarations below are Linux-native extensions. */
 int __creat(const char *pathname, unsigned short mode);
-int __close(int fd);
 
 long __getdents64(unsigned int fd, struct linux_dirent64 *dirp, unsigned int count);
 int __fstat(int fd, struct stat *statbuf);
