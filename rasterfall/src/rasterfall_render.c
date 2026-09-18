@@ -3120,6 +3120,10 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
         } else if (floor_submission)
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);
+        else if (active_material_alpha < 255)
+            drawn += toy_renderer_triangle_lit_alpha(
+                renderer, &sa, &sb, &sc, color, light, fog,
+                active_material_alpha);
         else
             drawn += toy_renderer_triangle_lit(renderer, &sa, &sb, &sc,
                                                color, light, fog);
@@ -3341,6 +3345,12 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                 1, 0xFF202020U,
                 active_material_lighting_min_q8 > 0 ? -1 : light,
                 active_face_material ? -1 : fog);
+        else if (active_material_alpha < 255)
+            drawn += toy_renderer_triangle_textured_lit_alpha(
+                renderer, &sa, &sb, &sc, active_texture_view, 1,
+                0xFF202020U,
+                active_material_lighting_min_q8 > 0 ? -1 : light,
+                active_face_material ? -1 : fog, active_material_alpha);
         else
             drawn += toy_renderer_triangle_textured_lit(renderer, &sa, &sb, &sc,
                                                          active_texture_view, 1,

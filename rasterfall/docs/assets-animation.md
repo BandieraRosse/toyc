@@ -1,6 +1,7 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-15
+> 文档更新：2026-09-18
+> 源码核对基线补充：普通 RFM2 material alpha 由 world model frontend 按 flat/textured primitive 保持真实材质类型提交；alpha=255 保留 opaque 快路径，高级 sphere/toon/specular 仍由 GPU typed fallback 接管。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid，FAR（4096 RFU 起）才切 compact LOD2；骨架与 pose 同步路径不变。
 > 源码核对基线补充：Eula Animation Acceptance V1 直接把同一 legacy walk VMD 映射到四个 Eula LOD instance；head/neck 固定姿态只作为 deformation acceptance，weapon 复用既有 legacy rifle presentation。
 > 源码核对基线补充：Eula Gameplay Hybrid LOD 只改变离线 vertex/index 选择与对应 SKN1 vertex records；bone hierarchy、IK 和运行时 pose/skinning 求值保持不变。

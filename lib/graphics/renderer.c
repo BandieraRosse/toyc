@@ -1066,6 +1066,7 @@ int toy_renderer_triangle_lit_alpha(struct toy_renderer *renderer,
     cmd = &renderer->cmds[renderer->cmd_count - 1];
     cmd->material_alpha = alpha;
     cmd->transparent = alpha < 255;
+    cmd->transparent_no_depth_write = alpha < 255;
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;
@@ -1118,6 +1119,34 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
         renderer->submitted_triangles++;
         renderer->submitted_vertices += 3;
     }
+    return 0;
+}
+
+int toy_renderer_triangle_textured_lit_alpha(
+                                       struct toy_renderer *renderer,
+                                       const struct toy_screen_vertex *a,
+                                       const struct toy_screen_vertex *b,
+                                       const struct toy_screen_vertex *c,
+                                       const struct toy_texture_view *texture,
+                                       int repeat, uint32_t fallback_color,
+                                       int light, int fog, int alpha)
+{
+    long long area;
+    struct toy_raster_cmd *cmd;
+    if (!renderer || !renderer->depth || !a || !b || !c) return 0;
+    area = edge(a, b, c->x, c->y);
+    if (area >= 0) return 0;
+    if (alpha < 0) alpha = 0;
+    if (alpha > 255) alpha = 255;
+    renderer->textured_triangles++;
+    if (!record_cmd(renderer, 1, a, b, c, area, 0, texture, repeat,
+                    fallback_color, light, fog, 0)) return 0;
+    cmd = &renderer->cmds[renderer->cmd_count - 1];
+    cmd->material_alpha = alpha;
+    cmd->transparent = alpha < 255;
+    cmd->transparent_no_depth_write = alpha < 255;
+    renderer->submitted_triangles++;
+    renderer->submitted_vertices += 3;
     return 0;
 }
 
@@ -1226,6 +1255,7 @@ int toy_renderer_triangle_textured_material_lit(
     }
     cmd->transparent = material_alpha < 255 ||
                        (texture && texture->has_transparency);
+    cmd->transparent_no_depth_write = material_alpha < 255;
     renderer->submitted_triangles++;
     renderer->submitted_vertices += 3;
     return 0;

@@ -287,6 +287,18 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
                                        const struct toy_texture_view *texture,
                                        int repeat, uint32_t fallback_color,
                                        int light, int fog);
+/* Textured source-over triangle with an explicit material alpha.  This is
+ * the minimal alpha-capable base-material path: it does not opt into sphere,
+ * toon or specular features; alpha<255 is source-over and keeps those pixels
+ * out of the depth write path, while alpha=255 remains opaque. */
+int toy_renderer_triangle_textured_lit_alpha(
+                                       struct toy_renderer *renderer,
+                                       const struct toy_screen_vertex *a,
+                                       const struct toy_screen_vertex *b,
+                                       const struct toy_screen_vertex *c,
+                                       const struct toy_texture_view *texture,
+                                       int repeat, uint32_t fallback_color,
+                                       int light, int fog, int alpha);
 int toy_renderer_triangle_textured_dual_lit(struct toy_renderer *renderer,
                                             const struct toy_screen_vertex *a,
                                             const struct toy_screen_vertex *b,

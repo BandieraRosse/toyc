@@ -21,6 +21,207 @@ static int death_command_geometry_equal(const struct toy_raster_cmd *a,
     return 1;
 }
 
+static void rfm2_alpha_fixture_u16(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value;
+    p[1] = (unsigned char)(value >> 8);
+}
+
+static void rfm2_alpha_fixture_u32(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value;
+    p[1] = (unsigned char)(value >> 8);
+    p[2] = (unsigned char)(value >> 16);
+    p[3] = (unsigned char)(value >> 24);
+}
+
+/* B2d-4a producer gate. The fixture uses encoded RFM2 primitive/material
+ * tables and is submitted through rasterfall_render_rigid_resource(), so the
+ * test observes the model frontend rather than patching commands. */
+static int rfm2_material_alpha_producer_logic_test(void)
+{
+    enum { HEADER = 64, PRIMITIVES = 3 * 16, MATERIALS = 3 * 40,
+           VERTICES = 9 * 24, INDICES = 9 * 4, BLOB = HEADER + PRIMITIVES +
+           MATERIALS + VERTICES + INDICES };
+    static unsigned char blob[BLOB];
+    static unsigned char rgb[3] = { 0x34, 0x78, 0xbc };
+    static struct toy_texture_asset texture_asset;
+    static struct toy_texture_view texture_view;
+    static uint32_t pixels[320 * 180];
+    struct rasterfall_model_resource resource;
+    struct rasterfall_rigid_transform transform;
+    struct rasterfall_model_asset *model = &resource.definition;
+    struct toy_renderer renderer;
+    struct toy_surface surface;
+    struct camera camera;
+    struct rf_core core;
+    struct rf_render_frame_v1 frame;
+    struct toy_raster_cmd reference[3];
+    unsigned char *primitive, *material, *vertex;
+    int positions[9][3] = {
+        {-500, 0, 5000}, {0, 0, 5000}, {-250, 600, 5000},
+        {0, 0, 5000}, {500, 0, 5000}, {250, 600, 5000},
+        {-250, 100, 5000}, {250, 100, 5000}, {0, 700, 5000}
+    };
+    int i, result = -1;
+
+    memset(blob, 0, sizeof(blob));
+    rfm2_alpha_fixture_u32(blob + 0, RASTERFALL_MODEL_MAGIC);
+    rfm2_alpha_fixture_u32(blob + 4, 9);
+    rfm2_alpha_fixture_u32(blob + 8, 9);
+    rfm2_alpha_fixture_u32(blob + 12, 9);
+    rfm2_alpha_fixture_u32(blob + 16, 1000);
+    rfm2_alpha_fixture_u32(blob + 20, (unsigned int)-500);
+    rfm2_alpha_fixture_u32(blob + 24, 0);
+    rfm2_alpha_fixture_u32(blob + 28, 5000);
+    rfm2_alpha_fixture_u32(blob + 32, 500);
+    rfm2_alpha_fixture_u32(blob + 36, 700);
+    rfm2_alpha_fixture_u32(blob + 40, 5000);
+    rfm2_alpha_fixture_u32(blob + 44, 3);
+    rfm2_alpha_fixture_u32(blob + 48, 3);
+    rfm2_alpha_fixture_u32(blob + 52, HEADER);
+    rfm2_alpha_fixture_u32(blob + 56, HEADER + PRIMITIVES);
+    primitive = blob + HEADER;
+    material = primitive + PRIMITIVES;
+    vertex = material + MATERIALS;
+    for (i = 0; i < 3; ++i) {
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 0, (unsigned int)i * 3);
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 4, 3);
+        rfm2_alpha_fixture_u32(primitive + i * 16 + 8, (unsigned int)i);
+        rfm2_alpha_fixture_u32(material + i * 40 + 0,
+                               i == 0 ? 0x00d04040U :
+                               i == 1 ? 0x0040d060U : 0x004060d0U);
+        material[i * 40 + 4] = (unsigned char)(i == 0 ? 255 :
+                                               i == 1 ? 127 : 63);
+        rfm2_alpha_fixture_u32(material + i * 40 + 8,
+                               i == 2 ? 0U : 0xffffffffU);
+    }
+    for (i = 0; i < 9; ++i) {
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 0,
+                               (unsigned int)positions[i][0]);
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 4,
+                               (unsigned int)positions[i][1]);
+        rfm2_alpha_fixture_u32(vertex + i * 24 + 8,
+                               (unsigned int)positions[i][2]);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 12, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 14, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 16, 32767);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 18, 0);
+        rfm2_alpha_fixture_u16(vertex + i * 24 + 20, 0);
+    }
+    for (i = 0; i < 3; ++i) {
+        rfm2_alpha_fixture_u32(blob + HEADER + PRIMITIVES + MATERIALS +
+                               VERTICES + i * 12 + 0, (unsigned int)i * 3);
+        rfm2_alpha_fixture_u32(blob + HEADER + PRIMITIVES + MATERIALS +
+                               VERTICES + i * 12 + 4, (unsigned int)i * 3 + 2);
+        rfm2_alpha_fixture_u32(blob + HEADER + PRIMITIVES + MATERIALS +
+                               VERTICES + i * 12 + 8, (unsigned int)i * 3 + 1);
+    }
+    memset(&texture_asset, 0, sizeof(texture_asset));
+    texture_asset.data = rgb;
+    texture_asset.width = texture_asset.height = 1;
+    texture_asset.data_size = 3;
+    texture_asset.channels = 3;
+    memset(&texture_view, 0, sizeof(texture_view));
+    texture_view.data = rgb;
+    texture_view.width = texture_view.height = 1;
+    texture_view.data_size = 3;
+    texture_view.channels = 3;
+    memset(model, 0, sizeof(*model));
+    model->data = blob;
+    model->data_size = sizeof(blob);
+    model->format_version = 9;
+    model->vertex_count = 9;
+    model->index_count = 9;
+    model->primitive_count = 3;
+    model->material_count = 3;
+    model->material_bytes = 40;
+    model->vertex_bytes = 24;
+    model->position_scale = 1000;
+    model->primitives = primitive;
+    model->materials = material;
+    model->vertices = vertex;
+    model->indices = blob + HEADER + PRIMITIVES + MATERIALS + VERTICES;
+    model->min_x = -500; model->max_x = 500;
+    model->min_y = 0; model->max_y = 700;
+    model->min_z = 5000; model->max_z = 5000;
+    model->textures.assets = &texture_asset;
+    model->textures.views = &texture_view;
+    model->textures.count = 1;
+    memset(&surface, 0, sizeof(surface));
+    surface.width = 320; surface.height = 180; surface.stride = 320 * 4;
+    surface.pixels = pixels;
+    memset(&camera, 0, sizeof(camera));
+    camera.z = -4200; camera.cy = 1024; camera.pitch_cy = 1024;
+    memset(&transform, 0, sizeof(transform));
+    transform.rotation[0] = transform.rotation[4] = transform.rotation[8] = 1.0;
+    transform.scale_milli = 1000;
+    memset(&renderer, 0, sizeof(renderer));
+    toy_renderer_init(&renderer);
+    toy_renderer_set_worker_count(&renderer, -1);
+    if (toy_renderer_begin(&renderer, &surface, 0x101820) < 0) goto done;
+    if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
+                                         &transform) < 0 ||
+        renderer.cmd_count != 3)
+    {
+        goto done;
+    }
+    if (renderer.cmds[0].textured || renderer.cmds[0].material_alpha != 255 ||
+        renderer.cmds[0].transparent || renderer.cmds[0].transparent_no_depth_write ||
+        renderer.cmds[1].textured || renderer.cmds[1].material_alpha != 127 ||
+        !renderer.cmds[1].transparent || !renderer.cmds[1].transparent_no_depth_write ||
+        !renderer.cmds[2].textured || renderer.cmds[2].material_alpha != 63 ||
+        !renderer.cmds[2].transparent || !renderer.cmds[2].transparent_no_depth_write)
+    {
+        goto done;
+    }
+    memcpy(reference, renderer.cmds, sizeof(reference));
+    memset(&core, 0, sizeof(core));
+    core.renderer = &renderer;
+    if (rf_core_render_frame_enter_layer_v1(&core, RF_RENDER_LAYER_WORLD) < 0)
+    {
+        goto done;
+    }
+    rf_core_render_frame_record_world_v1(&core, renderer.cmds,
+                                         renderer.cmd_count);
+    if (core.render_frame.command_count[RF_RENDER_LAYER_WORLD] != 1 ||
+        core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 2 ||
+        rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+            RF_PRE_POST_FALLBACK_NONE)
+    {
+        goto done;
+    }
+    if (rf_core_transparent_command_logic_test_v1(renderer.cmds,
+                                                   renderer.cmd_count) < 0)
+    {
+        goto done;
+    }
+    renderer.cmd_count = 0;
+    if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
+                                         &transform) < 0 ||
+        renderer.cmd_count != 3)
+        goto done;
+    for (i = 0; i < 3; ++i)
+        if (!death_command_geometry_equal(&reference[i], &renderer.cmds[i]) ||
+            reference[i].textured != renderer.cmds[i].textured ||
+            reference[i].material_alpha != renderer.cmds[i].material_alpha ||
+            reference[i].transparent != renderer.cmds[i].transparent ||
+            reference[i].transparent_no_depth_write !=
+                renderer.cmds[i].transparent_no_depth_write)
+            goto done;
+    if (toy_renderer_flush(&renderer) < 0) goto done;
+    memset(&frame, 0, sizeof(frame));
+    if (rf_core_get_render_frame_v1(&core, &frame) < 0 ||
+        frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 2)
+    {
+        goto done;
+    }
+    result = 0;
+done:
+    toy_renderer_destroy(&renderer);
+    return result;
+}
+
 static int world_light_logic_test(void)
 {
     static struct toy_map map;
@@ -499,6 +700,7 @@ static int run_logic_test(void)
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
+    if (rfm2_material_alpha_producer_logic_test() != 0) return 244;
     if (world_light_logic_test() != 0) return 241;
     if (rasterfall_render_world_light_source_logic_test() != 0) return 243;
     __printf("rasterfall: world light sampling test passed\n");
