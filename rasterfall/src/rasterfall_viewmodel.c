@@ -229,6 +229,34 @@ static int viewmodel_submit_flat(struct toy_renderer *renderer,
                                      viewmodel_scene_light_q8, 0);
 }
 
+static int viewmodel_submit_flat_alpha(struct toy_renderer *renderer,
+                                       struct toy_screen_vertex *a,
+                                       struct toy_screen_vertex *b,
+                                       struct toy_screen_vertex *c,
+                                       uint32_t color, int alpha)
+{
+    long long area;
+    struct toy_screen_vertex va, vb, vc, tmp;
+    int begin, i;
+    if (!renderer || !a || !b || !c) return 0;
+    va = *a; vb = *b; vc = *c;
+    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
+           (long long)(vb.y - va.y) * (vc.x - va.x);
+    if (!area) return 0;
+    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
+    begin = renderer->cmd_count;
+    toy_renderer_triangle_lit_alpha(renderer, &va, &vb, &vc, color,
+                                    viewmodel_scene_light_q8, 0, alpha);
+    /* A muzzle child is a transparent span even at the final alpha=255:
+     * preserve its no-depth-write contract instead of silently turning the
+     * fade endpoint into an opaque viewmodel command. */
+    for (i = begin; i < renderer->cmd_count; ++i) {
+        renderer->cmds[i].transparent = 1;
+        renderer->cmds[i].transparent_no_depth_write = 1;
+    }
+    return 0;
+}
+
 static int viewmodel_submit_textured(
     struct toy_renderer *renderer, struct toy_screen_vertex *a,
     struct toy_screen_vertex *b, struct toy_screen_vertex *c,
@@ -269,11 +297,30 @@ static int viewmodel_submit_screen_quad(struct toy_renderer *renderer,
     return 0;
 }
 
+static int viewmodel_submit_screen_quad_alpha(
+    struct toy_renderer *renderer, int x, int y, int width, int height,
+    uint32_t color, long inv_z, int alpha)
+{
+    struct toy_screen_vertex a, b, c, d;
+    memset(&a, 0, sizeof(a));
+    b = a; c = a; d = a;
+    a.x = x; a.y = y;
+    b.x = x + width; b.y = y;
+    c.x = x + width; c.y = y + height;
+    d.x = x; d.y = y + height;
+    a.z = b.z = c.z = d.z = RF_VIEWMODEL_NEAR_Z_V1;
+    a.inv_z = b.inv_z = c.inv_z = d.inv_z = inv_z;
+    a.light = b.light = c.light = d.light = viewmodel_scene_light_q8;
+    viewmodel_submit_flat_alpha(renderer, &a, &b, &c, color, alpha);
+    viewmodel_submit_flat_alpha(renderer, &a, &c, &d, color, alpha);
+    return 0;
+}
+
 /* The local muzzle core is an opaque viewmodel child.  Its existing fade is
  * a color ramp (the old world billboard never blended its framebuffer
  * writes), so keeping that ramp here does not introduce Transparent V1
- * semantics.  The alpha-bearing outer/lobe children deliberately stay in
- * the world EFFECTS producer until that contract is available. */
+ * semantics.  The alpha-bearing outer/lobe children use the same muzzle
+ * projection in VIEWMODEL and enter the explicit transparent span. */
 static uint32_t viewmodel_mix_color(uint32_t from, uint32_t to,
                                     int numerator, int denominator)
 {
@@ -323,6 +370,56 @@ static int render_local_muzzle_core(struct toy_renderer *renderer,
             viewmodel_mix_color(0xFFFFFF, 0xFFF0A0, f->alpha, 256),
             screen.inv_z);
         return 0;
+    }
+    return 0;
+}
+
+static int render_local_muzzle_transparent_children(
+    struct toy_renderer *renderer, const struct rasterfall_effects *effects)
+{
+    int i;
+    if (!renderer || !effects) return 0;
+    for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; ++i) {
+        const struct rasterfall_effect_instance *f = &effects->instances[i];
+        struct rf_viewmodel_vertex_v1 view;
+        struct toy_screen_vertex screen;
+        int intensity, alpha, size, forward, remaining;
+        if (!f->active || f->type != RASTERFALL_EFFECT_INSTANCE_BILLBOARD ||
+            !(f->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW) ||
+            (f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_OUTER &&
+             f->kind != RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE))
+            continue;
+        intensity = f->alpha;
+        if (intensity < 0) intensity = 0;
+        if (intensity > 256) intensity = 256;
+        alpha = intensity >= 256 ? 255 : intensity * 255 / 256;
+        size = f->size > 0 ? f->size :
+               (f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 16 : 12);
+        rasterfall_viewmodel_muzzle_offset(f->weapon, effects->weapon_kick,
+                                           &view.x, &view.y, &view.z);
+        if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE) {
+            remaining = f->lifetime_ms - f->age_ms;
+            if (remaining < 0) remaining = 0;
+            forward = (f->lifetime_ms - remaining) / 2;
+            view.y += 18;
+            view.z += forward;
+        }
+        view.u = view.v = 0;
+        view.light = viewmodel_scene_light_q8;
+        view.fog = 0;
+        if (rf_viewmodel_project_vertex_v1(
+                &view, renderer->surface.width, renderer->surface.height,
+                &screen) < 0)
+            continue;
+        if (screen.x < -size || screen.x >= renderer->surface.width + size ||
+            screen.y < -size || screen.y >= renderer->surface.height + size)
+            continue;
+        viewmodel_submit_screen_quad_alpha(
+            renderer, screen.x - size / 2, screen.y - size, size, size * 2,
+            f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE ?
+                viewmodel_mix_color(0xFFD050, 0x7A1D08, intensity, 256) :
+                viewmodel_mix_color(0xFFF4A0, 0xB63A08, intensity, 256),
+            screen.inv_z, alpha);
     }
     return 0;
 }
@@ -772,5 +869,6 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
                                      switch_pitch);
     }
     drawn += render_local_muzzle_core(renderer, effects);
+    drawn += render_local_muzzle_transparent_children(renderer, effects);
     return drawn;
 }

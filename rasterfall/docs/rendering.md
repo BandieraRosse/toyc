@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 放行与 B2d-4 producer 迁移仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
+> 源码核对基线：RenderFrame V1 已拥有 camera snapshot、固定层枚举与单调 submission cursor；Core 在 viewmodel barrier 统一决策 GPU 或整帧 CPU replay。GPU-8B2d B2d-0..2 已冻结 Raster Transparent V1：source-over、material/texture alpha、透明命令 depth-test/no-depth-write、packed order 保序，CPU reference 不再自动透明排序；full-scan、tile-binned 与 RGBA alpha differential fixture 已通过。VIEWMODEL 仍使用独立 inverse-Z depth 与 coverage mask，Post fog 在任意 alpha>0 的 VIEWMODEL 像素跳过。B2d-3 retained span/Core normal 基础放行已完成；B2d-4 已迁移 muzzle outer/lobe，剩余 producer 与 B2d-5 normal-frame 收口仍待完成；GPU-8B1/GPU-9A 仍待 Windows normal-frame 冻结。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -380,8 +380,9 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
   `RAY`/`PARTICLE`/`BILLBOARD` 组件；`ENTITY_HIT` 生成命中粒子但不再额外生成整条 hit ray，炸弹 fuse flash 使用 billboard；玩家伤害闪屏使用 `OVERLAY`，敌人受击颜色使用 `MATERIAL` feedback，交互高亮已登记为短生命周期 `INTERACTION_HIGHLIGHT` billboard 并驱动现有高亮绘制，屏幕空间效果通过 `render_effect_overlay()` 和
   `rasterfall_render_overlays()` 提供统一入口，因此本阶段不改变已有效果画面。LOCAL_VIEW 的
   muzzle core 由 `rasterfall_viewmodel_render()` 以 viewmodel projection/depth 作为 opaque child
-  提交；remote/AI core 仍由 world EFFECTS 消费。outer/lobe 继续保留在 EFFECTS，并以通用
-  `transparent` command 标记阻止 GPU-8B2c 无意解释 alpha/blend，等待 GPU-8B2d。Charger/Tank 命中
+  提交；remote/AI core 仍由 world EFFECTS 消费。local outer/lobe 复用 VIEWMODEL projection、
+  独立 depth 与 coverage，remote/AI outer/lobe 保留在 EFFECTS，并以真实 material alpha 的
+  `transparent` command 进入 Transparent V1。Charger/Tank 命中
   actor 后，effects 为每个目标保留一条最多 16 点、覆盖最近约 `RASTERFALL_KNOCKBACK_TRAJECTORY_HISTORY_MS` 的真实 world-space airborne 位置历史；renderer 将相邻点组成白色、camera-facing、深度测试 ribbon，落地后按 `RASTERFALL_KNOCKBACK_TRAIL_FADE_MS` 快速消失。
   轨迹是 presentation-only，不替代 actor 的实时位置，也不重建完整抛物线。`CAMERA_SHAKE`
   组件不修改权威摄像机，只在渲染阶段复制出的 `render_camera` 上叠加视空间平移、偏航和俯仰扰动；当前仅本地 `WEAPON_FIRE` 事件生成该组件，AI/远端开火事件通过 `LOCAL_VIEW` 标志隔离。多个组件先按轴叠加，再按每轴最大值限幅，并用短时插值追踪目标值。`EXPLOSION`
@@ -421,9 +422,9 @@ Core end：overlay final flush → software present，或 overlay composite → 
 ```
 
 GPU-8B1 只恢复 post 之后的 screen-space 层。interactables、world effects、viewmodel 均明确位于 post
-之前；opaque viewmodel command 由 GPU-8B2c consumer 消费，LOCAL_VIEW muzzle core 复用该层的
-projection/depth，remote/AI muzzle 仍为 world EFFECTS；alpha-bearing outer/lobe 仍保持
-transparent unsupported，不能因其中存在直接 framebuffer producer 就把它们上传为 overlay。B4 冻结的是
+之前；opaque viewmodel command 由 GPU-8B2c consumer 消费，LOCAL_VIEW muzzle core 与 outer/lobe
+复用该层的 projection/depth/coverage，remote/AI muzzle 仍为 world EFFECTS；outer/lobe 已通过
+Transparent V1 的真实 material alpha 和 no-depth-write policy 表达，不能上传为 overlay。B4 冻结的是
 submission/target/order 契约，不宣称 GPU-8B2 完成。
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor

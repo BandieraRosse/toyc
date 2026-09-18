@@ -548,15 +548,55 @@ int rf_core_retained_span_logic_test_v1(void)
     struct toy_renderer renderer;
     struct toy_raster_cmd first[2], second[2], effects[1];
     struct toy_texture_view rgba;
+    unsigned char rgba_texel[4] = { 255, 160, 32, 128 };
+    unsigned int pixels[64 * 64];
     struct rf_core_gpu_frame *frame;
+    struct rf_gpu_raster_stream_header_v1 *header;
+    struct rf_gpu_raster_cmd_v1 *packed;
+    size_t packed_size;
     memset(&core, 0, sizeof(core));
     memset(&renderer, 0, sizeof(renderer));
     memset(first, 0, sizeof(first));
     memset(second, 0, sizeof(second));
     memset(effects, 0, sizeof(effects));
     memset(&rgba, 0, sizeof(rgba));
+    memset(pixels, 0, sizeof(pixels));
     rgba.channels = 4;
     rgba.has_transparency = 1;
+    rgba.data = rgba_texel;
+    rgba.width = rgba.height = 1;
+    rgba.data_size = sizeof(rgba_texel);
+    /* Keep the fixture in the same supported flat/texture command subset as
+     * the normal retained consumer.  The packed validator deliberately sees
+     * real triangle geometry rather than zeroed synthetic records. */
+    first[0].area = first[1].area = second[0].area = second[1].area =
+        effects[0].area = -64;
+    first[0].bbox_minx = first[1].bbox_minx = second[0].bbox_minx =
+        second[1].bbox_minx = effects[0].bbox_minx = 0;
+    first[0].bbox_maxx = first[1].bbox_maxx = second[0].bbox_maxx =
+        second[1].bbox_maxx = effects[0].bbox_maxx = 8;
+    first[0].bbox_miny = first[1].bbox_miny = second[0].bbox_miny =
+        second[1].bbox_miny = effects[0].bbox_miny = 0;
+    first[0].bbox_maxy = first[1].bbox_maxy = second[0].bbox_maxy =
+        second[1].bbox_maxy = effects[0].bbox_maxy = 8;
+    first[0].a.x = first[1].a.x = second[0].a.x = second[1].a.x =
+        effects[0].a.x = 0;
+    first[0].a.y = first[1].a.y = second[0].a.y = second[1].a.y =
+        effects[0].a.y = 0;
+    first[0].b.x = first[1].b.x = second[0].b.x = second[1].b.x =
+        effects[0].b.x = 8;
+    first[0].b.y = first[1].b.y = second[0].b.y = second[1].b.y =
+        effects[0].b.y = 0;
+    first[0].c.x = first[1].c.x = second[0].c.x = second[1].c.x =
+        effects[0].c.x = 0;
+    first[0].c.y = first[1].c.y = second[0].c.y = second[1].c.y =
+        effects[0].c.y = 8;
+    first[0].a.inv_z = first[0].b.inv_z = first[0].c.inv_z =
+        first[1].a.inv_z = first[1].b.inv_z = first[1].c.inv_z =
+        second[0].a.inv_z = second[0].b.inv_z = second[0].c.inv_z =
+        second[1].a.inv_z = second[1].b.inv_z = second[1].c.inv_z =
+        effects[0].a.inv_z = effects[0].b.inv_z = effects[0].c.inv_z = 1024;
+    second[1].base_texture_valid = 1;
     first[0].material_alpha = 255;
     first[1].material_alpha = 255;
     first[1].transparent = 1;
@@ -564,6 +604,8 @@ int rf_core_retained_span_logic_test_v1(void)
     second[1].material_alpha = 255;
     second[1].textured = 1;
     second[1].texture = &rgba;
+    second[1].base_texture_valid = 1;
+    second[1].material_tint = 0x00ffffffU;
     effects[0].material_alpha = 255;
     core.renderer = &renderer;
     core.render_frame.current_layer = RF_RENDER_LAYER_WORLD;
@@ -591,10 +633,60 @@ int rf_core_retained_span_logic_test_v1(void)
         frame->retained_commands[3].texture != &rgba ||
         frame->retained_commands[4].material_alpha != 255)
         goto fail;
+
+    /* Exercise the actual normal retained consumer up to its native backend
+     * hand-off.  A non-null same-sized raster implementation is sufficient
+     * here: the fixture must not create a window or depend on Vulkan, while
+     * gpu_world_consume still performs classification, texture measurement,
+     * ABI packing and stream validation exactly as the normal path does. */
+    renderer.surface.width = 64;
+    renderer.surface.height = 64;
+    renderer.surface.stride = 64 * (int)sizeof(*renderer.surface.pixels);
+    renderer.surface.pixels = pixels;
+    renderer.job_clear_color = 0x112233;
+    frame->raster.implementation = (void *)1;
+    frame->raster.width = 64;
+    frame->raster.height = 64;
+    frame->native_present = 1;
+    frame->armed = 1;
+    if (gpu_world_consume(&renderer, frame->retained_commands,
+                          (int)frame->retained_command_count, &core) < 0 ||
+        !frame->native_prepared || frame->stats.last_path != 1 ||
+        frame->native_stream_size == 0)
+        goto fail;
+    packed_size = frame->native_stream_size;
+    header = (struct rf_gpu_raster_stream_header_v1 *)(void *)frame->stream;
+    packed = (struct rf_gpu_raster_cmd_v1 *)(void *)(header + 1);
+    if (header->command_count != 8 ||
+        packed[4].kind != RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1 ||
+        rf_gpu_raster_validate_v1(frame->stream, packed_size) !=
+            RF_GPU_RASTER_PACK_OK)
+        goto fail;
+
+    /* An unsupported command must reject the whole retained batch; it must
+     * never be partially uploaded after the supported path above. */
+    {
+        struct toy_raster_cmd unsupported;
+        memset(&unsupported, 0, sizeof(unsupported));
+        unsupported.area = -64;
+        unsupported.edge = 1;
+        frame->native_prepared = 0;
+        frame->armed = 1;
+        if (gpu_world_consume(&renderer, &unsupported, 1, &core) >= 0 ||
+            frame->stats.last_path != 2 ||
+            !core.render_frame.pre_post_fallback_reason)
+            goto fail;
+    }
     tlibc_free(frame->retained_commands);
+    tlibc_free(frame->stream);
+    tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_texels);
     return 0;
 fail:
     tlibc_free(frame->retained_commands);
+    tlibc_free(frame->stream);
+    tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_texels);
     return -1;
 }
 

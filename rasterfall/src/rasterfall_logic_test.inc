@@ -1691,16 +1691,16 @@ static int run_logic_test(void)
             return 252;
         rasterfall_effects_init(&effects);
     }
-    /* LOCAL_VIEW muzzle split: the opaque core is a VM child, while the
-     * alpha-bearing outer/lobe stay in world EFFECTS and deliberately trip
-     * the existing Transparent V1 fallback.  A remote fire event keeps all
-     * three billboards in EFFECTS. */
+    /* LOCAL_VIEW muzzle split: core/outer/lobe share the VM projection and
+     * independent depth domain; a remote fire event keeps all three
+     * billboards in world EFFECTS. */
     {
         struct rasterfall_effect_event local_fire, remote_fire;
         struct rasterfall_effect_render_stats effect_stats;
         struct rf_core audit_core;
         int effect_begin, effect_count, vm_begin, vm_count;
-        int transparent_count = 0, i, vm_direct_pixels;
+        int transparent_count = 0, vm_transparent_count = 0;
+        int i, vm_direct_pixels;
         rasterfall_effects_init(&effects);
         memset(&local_fire, 0, sizeof(local_fire));
         local_fire.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
@@ -1720,14 +1720,19 @@ static int run_logic_test(void)
         effect_count = renderer.cmd_count - effect_begin;
         for (i = effect_begin; i < renderer.cmd_count; ++i)
             if (renderer.cmds[i].transparent) transparent_count++;
-        if (effect_count != 10 || transparent_count != 8 ||
+        if (effect_count != 6 || transparent_count != 4 ||
             effect_stats.direct_pixels != 0)
             return 255;
         vm_begin = renderer.cmd_count;
         vm_direct_pixels = rasterfall_viewmodel_render(
             &renderer, &game, &effects, 256);
         vm_count = renderer.cmd_count - vm_begin;
-        if (vm_direct_pixels != 0 || vm_count < 2)
+        for (i = vm_begin; i < renderer.cmd_count; ++i)
+            if (renderer.cmds[i].transparent &&
+                renderer.cmds[i].transparent_no_depth_write)
+                vm_transparent_count++;
+        if (vm_direct_pixels != 0 || vm_count < 2 ||
+            vm_transparent_count != 4)
             return 256;
         memset(&audit_core, 0, sizeof(audit_core));
         audit_core.renderer = &renderer;
@@ -1753,7 +1758,7 @@ static int run_logic_test(void)
         /* Transparent is a supported raster state; no direct pixels are
          * injected by either producer, so this audit has no fallback reason. */
         if (audit_core.render_frame.command_count[RF_RENDER_LAYER_EFFECTS] != 2 ||
-            audit_core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 8 ||
+            audit_core.render_frame.command_count[RF_RENDER_LAYER_TRANSPARENT] != 4 ||
             audit_core.render_frame.command_count[RF_RENDER_LAYER_VIEWMODEL] < 2 ||
             audit_core.render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] != 0 ||
             audit_core.render_frame.direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL] != 0 ||

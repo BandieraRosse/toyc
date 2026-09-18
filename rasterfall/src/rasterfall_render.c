@@ -7544,12 +7544,14 @@ static int render_effect_rays(struct toy_renderer *renderer,
     return pixels;
 }
 
-static int submit_effect_screen_rect(struct toy_renderer *renderer,
-                                     int left, int top, int right, int bottom,
-                                     long z, long inv_z, uint32_t color)
+static int submit_effect_screen_rect_alpha(struct toy_renderer *renderer,
+                                           int left, int top, int right,
+                                           int bottom, long z, long inv_z,
+                                           uint32_t color, int alpha,
+                                           int force_transparent)
 {
     struct toy_screen_vertex quad[4];
-    int i;
+    int i, begin;
     if (left < 0) left = 0;
     if (top < 0) top = 0;
     if (right > renderer->surface.width) right = renderer->surface.width;
@@ -7565,28 +7567,28 @@ static int submit_effect_screen_rect(struct toy_renderer *renderer,
     quad[1].x = right; quad[1].y = top;
     quad[2].x = right; quad[2].y = bottom;
     quad[3].x = left;  quad[3].y = bottom;
-    toy_renderer_triangle(renderer, &quad[0], &quad[1], &quad[2], color);
-    toy_renderer_triangle(renderer, &quad[0], &quad[2], &quad[3], color);
+    if (alpha < 0) alpha = 0;
+    if (alpha > 255) alpha = 255;
+    begin = renderer->cmd_count;
+    toy_renderer_triangle_lit_alpha(renderer, &quad[0], &quad[1], &quad[2],
+                                    color, 256, 0, alpha);
+    toy_renderer_triangle_lit_alpha(renderer, &quad[0], &quad[2], &quad[3],
+                                    color, 256, 0, alpha);
+    if (force_transparent) {
+        for (i = begin; i < renderer->cmd_count; ++i) {
+            renderer->cmds[i].transparent = 1;
+            renderer->cmds[i].transparent_no_depth_write = 1;
+        }
+    }
     return (right - left) * (bottom - top);
 }
 
-/* Preserve the existing CPU color-ramp result while advertising the
- * alpha-bearing muzzle child as unsupported to the B2c GPU consumer.  The
- * generic command flag keeps this policy out of the effect business API; the
- * command remains opaque on the reference raster path until Transparent V1
- * defines its blend semantics. */
-static int submit_effect_screen_rect_transparent_debt(
-    struct toy_renderer *renderer, int left, int top, int right, int bottom,
+static int submit_effect_screen_rect(struct toy_renderer *renderer,
+    int left, int top, int right, int bottom,
     long z, long inv_z, uint32_t color)
 {
-    int begin, i, pixels;
-    if (!renderer) return 0;
-    begin = renderer->cmd_count;
-    pixels = submit_effect_screen_rect(renderer, left, top, right, bottom,
-                                       z, inv_z, color);
-    for (i = begin; i < renderer->cmd_count; ++i)
-        renderer->cmds[i].transparent = 1;
-    return pixels;
+    return submit_effect_screen_rect_alpha(renderer, left, top, right, bottom,
+                                            z, inv_z, color, 255, 0);
 }
 
 /* A billboard primitive currently uses the same small camera-facing screen
@@ -7595,7 +7597,8 @@ static int submit_effect_screen_rect_transparent_debt(
 static int render_effect_billboard(struct toy_renderer *renderer,
                                    const struct camera *camera,
                                    int x, int y, int z, int size,
-                                   uint32_t color, int transparent_debt)
+                                   uint32_t color, int material_alpha,
+                                   int force_transparent)
 {
     struct vec3 world, view;
     struct toy_screen_vertex screen;
@@ -7611,11 +7614,16 @@ static int render_effect_billboard(struct toy_renderer *renderer,
     top = screen.y - size;
     right = left + size;
     bottom = top + size * 2;
-    if (transparent_debt)
-        return submit_effect_screen_rect_transparent_debt(
-            renderer, left, top, right, bottom, screen.z, screen.inv_z, color);
-    return submit_effect_screen_rect(renderer, left, top, right, bottom,
-                                     screen.z, screen.inv_z, color);
+    return submit_effect_screen_rect_alpha(
+        renderer, left, top, right, bottom, screen.z, screen.inv_z, color,
+        material_alpha, force_transparent);
+}
+
+static int effect_material_alpha(int intensity)
+{
+    if (intensity <= 0) return 0;
+    if (intensity >= 256) return 255;
+    return intensity * 255 / 256;
 }
 
 static int render_effect_billboards(struct toy_renderer *renderer,
@@ -7646,8 +7654,11 @@ static int render_effect_billboards(struct toy_renderer *renderer,
                 pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                                   f->z, size,
                                                   mix_color(0xFFFFFF, 0xFFF0A0,
-                                                            intensity, 256), 0);
+                                                            intensity, 256),
+                                                  255, 0);
             } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_MUZZLE_FLASH_LOBE) {
+                if ((f->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW) != 0)
+                    continue;
                 forward = (f->lifetime_ms - remaining) / 2;
                 pixels += render_effect_billboard(renderer, camera,
                                                   f->x + f->dir_x * forward / 1024,
@@ -7655,24 +7666,30 @@ static int render_effect_billboards(struct toy_renderer *renderer,
                                                   f->z + f->dir_z * forward / 1024,
                                                   size,
                                                   mix_color(0xFFD050, 0x7A1D08,
-                                                            intensity, 256), 1);
+                                                            intensity, 256),
+                                                  effect_material_alpha(intensity),
+                                                  1);
             } else {
+                if ((f->flags & RASTERFALL_EFFECT_EVENT_LOCAL_VIEW) != 0)
+                    continue;
                 pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                                   f->z, size,
                                                   mix_color(0xFFF4A0, 0xB63A08,
-                                                            intensity, 256), 1);
+                                                            intensity, 256),
+                                                  effect_material_alpha(intensity),
+                                                  1);
             }
         } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_EXPLOSION_FLASH) {
             size = 11 + (f->age_ms < 24 ? f->age_ms / 4 : 0);
             pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                               f->z, size,
                                               mix_color(0xFFF4A0, 0xB63A08,
-                                                        intensity, 256), 0);
+                                                        intensity, 256), 255, 0);
         } else if (f->kind == RASTERFALL_EFFECT_INSTANCE_KIND_PROJECTILE_FLASH) {
             pixels += render_effect_billboard(renderer, camera, f->x, f->y,
                                               f->z, 7,
                                               mix_color(0xFF6060, 0x641010,
-                                                        intensity, 256), 0);
+                                                        intensity, 256), 255, 0);
         }
     }
     return pixels;
