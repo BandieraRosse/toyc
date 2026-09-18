@@ -913,8 +913,7 @@ int rf_core_transparent_command_logic_test_v1(
     struct rf_core core;
     struct toy_renderer renderer;
     struct rf_core_gpu_frame *frame;
-    unsigned int *pixels;
-    unsigned long pixel_count = 320UL * 180UL;
+    unsigned int pixel = 0;
     unsigned long opaque_count = 0, transparent_count = 0;
     unsigned long unique_textures = 0;
     unsigned long opaque_at, transparent_at, i;
@@ -922,15 +921,15 @@ int rf_core_transparent_command_logic_test_v1(
 
     if (!commands || count <= 0 || count > 4096)
         return -1;
-    pixels = tlibc_malloc(pixel_count * sizeof(*pixels));
-    if (!pixels) return -1;
     memset(&core, 0, sizeof(core));
     memset(&renderer, 0, sizeof(renderer));
-    memset(pixels, 0, pixel_count * sizeof(*pixels));
     renderer.surface.width = 320;
     renderer.surface.height = 180;
     renderer.surface.stride = 320 * (int)sizeof(*renderer.surface.pixels);
-    renderer.surface.pixels = pixels;
+    /* This helper only partitions and packs commands; it never rasterizes.
+     * A single placeholder pixel avoids making producer gates depend on the
+     * freestanding test heap while retaining the real surface extent. */
+    renderer.surface.pixels = &pixel;
     renderer.cmds = (struct toy_raster_cmd *)commands;
     renderer.cmd_count = count;
     renderer.cmd_cap = count;
@@ -1001,7 +1000,6 @@ done:
     tlibc_free(frame->stream);
     tlibc_free(frame->texture_descs);
     tlibc_free(frame->texture_texels);
-    tlibc_free(pixels);
     return result;
 }
 

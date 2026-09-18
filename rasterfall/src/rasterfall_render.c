@@ -4747,6 +4747,99 @@ static int render_platform(struct toy_renderer *renderer,
                         platform->color, 96);
 }
 
+/* B2d-4d producer gate for the two authored map transparency paths.  Keep
+ * this beside render_platform(): the fixture deliberately exercises the
+ * same platform and air-gate box helpers used by normal scene traversal. */
+int rasterfall_render_map_transparency_logic_test(void)
+{
+    static uint32_t pixels[320 * 180];
+    struct toy_surface surface;
+    struct toy_renderer renderer;
+    struct camera camera;
+    struct toy_map_draw platform;
+    struct box gate;
+    struct toy_raster_cmd *reference = NULL;
+    unsigned char *stream = NULL;
+    size_t stream_size = 0, capacity;
+    int saved_world_light = active_world_light_v2;
+    int platform_count, total_count, i, result = 1;
+
+    memset(&surface, 0, sizeof(surface));
+    surface.pixels = pixels;
+    surface.width = 320; surface.height = 180; surface.stride = 320 * 4;
+    memset(&camera, 0, sizeof(camera));
+    camera.cy = camera.pitch_cy = 1024;
+    memset(&platform, 0, sizeof(platform));
+    platform.type = TOY_MAP_DRAW_PLATFORM;
+    platform.a = -900; platform.b = -100;
+    platform.c = 5000; platform.d = 5600;
+    platform.e = 0; platform.style = 1; platform.color = 0x3b5550;
+    gate.minx = 100; gate.maxx = 900;
+    gate.minz = 5000; gate.maxz = 5600;
+    gate.height = 0; gate.color = 0x48c8e0;
+    memset(&renderer, 0, sizeof(renderer));
+    toy_renderer_init(&renderer);
+    toy_renderer_set_worker_count(&renderer, -1);
+    active_world_light_v2 = 0;
+    if (toy_renderer_begin(&renderer, &surface, 0x101820) < 0)
+        goto done;
+    render_platform(&renderer, &camera, &platform);
+    platform_count = renderer.cmd_count;
+    if (platform_count <= 0) goto done;
+    draw_box_alpha(&renderer, &camera, &gate, 48);
+    total_count = renderer.cmd_count;
+    if (total_count <= platform_count || total_count > 64) goto done;
+    for (i = 0; i < total_count; ++i) {
+        const struct toy_raster_cmd *cmd = &renderer.cmds[i];
+        int expected_alpha = i < platform_count ? 96 : 48;
+        if (cmd->textured || cmd->material_alpha != expected_alpha ||
+            !cmd->transparent || !cmd->transparent_no_depth_write ||
+            cmd->edge || cmd->overlay || cmd->area >= 0)
+            goto done;
+    }
+    reference = tlibc_malloc((size_t)total_count * sizeof(*reference));
+    if (!reference) goto done;
+    memcpy(reference, renderer.cmds,
+           (size_t)total_count * sizeof(*reference));
+    capacity = rf_gpu_raster_stream_size_v1((uint32_t)total_count + 2U);
+    stream = tlibc_malloc(capacity);
+    if (!stream || rf_gpu_raster_pack_toy_v1(
+            &renderer, 0x101820, 0, stream, capacity, &stream_size) !=
+            RF_GPU_RASTER_PACK_OK || !stream_size ||
+        rf_gpu_raster_validate_v1(stream, stream_size) !=
+            RF_GPU_RASTER_PACK_OK)
+        goto done;
+
+    /* Repeating the same authored records must preserve command geometry,
+     * colors and platform-before-gate ordering. */
+    renderer.cmd_count = 0;
+    render_platform(&renderer, &camera, &platform);
+    draw_box_alpha(&renderer, &camera, &gate, 48);
+    if (renderer.cmd_count != total_count) goto done;
+    for (i = 0; i < total_count; ++i) {
+        const struct toy_raster_cmd *a = &reference[i];
+        const struct toy_raster_cmd *b = &renderer.cmds[i];
+        if (a->area != b->area || a->color != b->color ||
+            a->material_alpha != b->material_alpha ||
+            a->transparent != b->transparent ||
+            a->transparent_no_depth_write != b->transparent_no_depth_write ||
+            a->a.x != b->a.x || a->a.y != b->a.y ||
+            a->a.inv_z != b->a.inv_z ||
+            a->b.x != b->b.x || a->b.y != b->b.y ||
+            a->b.inv_z != b->b.inv_z ||
+            a->c.x != b->c.x || a->c.y != b->c.y ||
+            a->c.inv_z != b->c.inv_z)
+            goto done;
+    }
+    result = 0;
+done:
+    active_world_light_v2 = saved_world_light;
+    tlibc_free(stream);
+    tlibc_free(reference);
+    toy_renderer_destroy(&renderer);
+    return result;
+}
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;

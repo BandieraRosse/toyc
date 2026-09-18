@@ -263,7 +263,7 @@ static int rfm2_texel_alpha_producer_logic_test(void)
         {600, 0, 5000}, {900, 0, 5000}, {750, 600, 5000}
     };
     int sample_x[COMMANDS], sample_y[COMMANDS], depth_before[COMMANDS];
-    int i, result = -1;
+    int i, result = -1, renderers_destroyed = 0;
 
     memset(blob, 0, sizeof(blob));
     rfm2_alpha_fixture_u32(blob + 0, RASTERFALL_MODEL_MAGIC);
@@ -337,7 +337,7 @@ static int rfm2_texel_alpha_producer_logic_test(void)
     model->max_y = 600; model->min_z = model->max_z = 5000;
     model->textures.assets = texture_assets;
     model->textures.views = texture_views;
-    model->textures.count = 4;
+    model->textures.count = COMMANDS;
     memset(&surface, 0, sizeof(surface));
     surface.width = WIDTH; surface.height = HEIGHT; surface.stride = WIDTH * 4;
     surface.pixels = pixels;
@@ -380,9 +380,6 @@ static int rfm2_texel_alpha_producer_logic_test(void)
             goto done;
         depth_before[i] = renderer.depth[sample_y[i] * WIDTH + sample_x[i]];
     }
-    if (rf_core_transparent_command_logic_test_v1(commands, COMMANDS) < 0)
-        goto done;
-
     /* Render an all-opaque texel reference through the same RFM2 frontend.
      * This supplies the exact shaded source color without duplicating the
      * renderer's light/fog rounding in the fixture. */
@@ -409,7 +406,7 @@ static int rfm2_texel_alpha_producer_logic_test(void)
         material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
         goto done;
     }
-    texels[0][3] = 0; texels[2][3] = 128;
+    texels[0][3] = 0; texels[2][3] = texels[4][3] = 128;
     material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
     if (toy_renderer_flush(&renderer) < 0) goto done;
     for (i = 0; i < COMMANDS; ++i) {
@@ -442,13 +439,24 @@ static int rfm2_texel_alpha_producer_logic_test(void)
             pixels[at5] != under || coverage[at5] != 0)
             goto done;
     }
+    /* The Core helper owns retained/packed scratch.  Release both rasterizer
+     * depth buffers first so this producer gate does not depend on the small
+     * freestanding test heap's allocation order.  The copied commands and
+     * their static texture views remain valid. */
+    toy_renderer_destroy(&reference_renderer);
+    toy_renderer_destroy(&renderer);
+    renderers_destroyed = 1;
+    if (rf_core_transparent_command_logic_test_v1(commands, COMMANDS) < 0)
+        goto done;
     result = 0;
 done:
     texels[0][3] = 0; texels[1][3] = 255; texels[2][3] = 128;
     texels[4][3] = 128; texels[5][3] = 255;
     material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
-    toy_renderer_destroy(&reference_renderer);
-    toy_renderer_destroy(&renderer);
+    if (!renderers_destroyed) {
+        toy_renderer_destroy(&reference_renderer);
+        toy_renderer_destroy(&renderer);
+    }
     return result;
 }
 
@@ -932,6 +940,7 @@ static int run_logic_test(void)
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
     if (rfm2_material_alpha_producer_logic_test() != 0) return 244;
     if (rfm2_texel_alpha_producer_logic_test() != 0) return 245;
+    if (rasterfall_render_map_transparency_logic_test() != 0) return 250;
     if (world_light_logic_test() != 0) return 241;
     if (rasterfall_render_world_light_source_logic_test() != 0) return 243;
     __printf("rasterfall: world light sampling test passed\n");
