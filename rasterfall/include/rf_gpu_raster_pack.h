@@ -45,6 +45,18 @@ int rf_gpu_raster_pack_toy_textured_spans_v1(
                               size_t *written_size,
                               struct rf_gpu_texture_resources_v1 *resources,
                               uint32_t viewmodel_offset);
+/* Pack retained spans with optional generic TRANSPARENT and VIEWMODEL
+ * barriers. Offsets are source triangle-command offsets. UINT32_MAX disables
+ * a marker; transparent_offset must precede viewmodel_offset when both exist.
+ */
+int rf_gpu_raster_pack_toy_textured_spans_v2(
+                              const struct toy_renderer *renderer,
+                              uint32_t clear_color, int32_t clear_depth,
+                              void *destination, size_t destination_size,
+                              size_t *written_size,
+                              struct rf_gpu_texture_resources_v1 *resources,
+                              uint32_t transparent_offset,
+                              uint32_t viewmodel_offset);
 int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size);
 
 #endif

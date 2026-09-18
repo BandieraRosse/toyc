@@ -45,7 +45,12 @@ const uint CMD_VERTEX_LIT_TRIANGLE = 4u;
 const uint CMD_TEXTURED_TRIANGLE = 5u;
 const uint CMD_SKY = 6u;
 const uint CMD_BEGIN_VIEWMODEL = 7u;
+const uint CMD_BEGIN_TRANSPARENT = 8u;
 const uint FLAG_TEXTURE_REPEAT = 16u;
+const uint FLAG_DEPTH_TEST = 1u;
+const uint FLAG_DEPTH_WRITE = 2u;
+const uint FLAG_OPAQUE = 4u;
+const uint FLAG_SOURCE_OVER = 32u;
 
 uint texture_byte(uint offset)
 {
@@ -68,7 +73,8 @@ uint sample_texture(uint handle, int64_t u, int64_t v, bool repeat)
     uint ty = uint((v * int64_t(height)) / int64_t(65536));
     uint channels = format == 2u ? 4u : 3u;
     uint at = offset + ty * stride + tx * channels;
-    return 0xff000000u | (texture_byte(at) << 16) |
+    uint alpha = format == 2u ? texture_byte(at + 3u) : 255u;
+    return (alpha << 24) | (texture_byte(at) << 16) |
            (texture_byte(at + 1u) << 8) | texture_byte(at + 2u);
 }
 
@@ -152,10 +158,15 @@ void main()
     int viewmodel_depth = 0;
     bool viewmodel_active = false;
     uint covered = 0u;
+#ifdef RF_RASTER_FULL_SCAN
+    uint list_begin = 0u;
+    uint list_end = stream.words[4];
+#else
     uint tiles_x = (width + RF_RASTER_LOCAL_SIZE - 1u) / RF_RASTER_LOCAL_SIZE;
     uint tile_id = gl_WorkGroupID.y * tiles_x + gl_WorkGroupID.x;
     uint list_begin = tile_offsets.offsets[tile_id];
     uint list_end = tile_offsets.offsets[tile_id + 1u];
+#endif
     for (uint list_index = list_begin; list_index < list_end; ++list_index) {
         uint command_index = tile_commands.indices[list_index];
         uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
@@ -166,6 +177,8 @@ void main()
             color = stream.words[base + 4u] | 0xff000000u;
         } else if (kind == CMD_CLEAR_DEPTH) {
             depth = int(stream.words[base + 4u]);
+        } else if (kind == CMD_BEGIN_TRANSPARENT) {
+            /* Ordering/audit barrier only. Transparent is command state. */
         } else if (kind == CMD_BEGIN_VIEWMODEL) {
             /* Generic retained-span barrier: all following opaque triangles
              * use a fresh inverse-Z domain and mark independent coverage. */
@@ -211,12 +224,13 @@ void main()
                             e2 * int64_t(int(stream.words[base + 23u]));
                         light = int(light_weighted / area);
                     }
-                    if (viewmodel_active) {
-                        viewmodel_depth = candidate;
-                        covered = 255u;
-                    } else {
-                        depth = candidate;
-                    }
+                    bool source_over = (stream.words[base + 2u] & FLAG_SOURCE_OVER) != 0u;
+                    uint material_alpha = source_over ?
+                        (kind == CMD_TEXTURED_TRIANGLE ?
+                         stream.words[base + 23u] : stream.words[base + 22u]) : 255u;
+                    uint source_alpha = material_alpha;
+                    uint sampled = 0xff000000u;
+                    uint destination = color;
                     if (kind == CMD_TEXTURED_TRIANGLE) {
                         int64_t uoz = e0 * int64_t(int(stream.words[base + 15u])) +
                             e1 * int64_t(int(stream.words[base + 17u])) +
@@ -224,15 +238,38 @@ void main()
                         int64_t voz = e0 * int64_t(int(stream.words[base + 16u])) +
                             e1 * int64_t(int(stream.words[base + 18u])) +
                             e2 * int64_t(int(stream.words[base + 20u]));
-                        uint sampled = sample_texture(stream.words[base + 3u],
+                        sampled = sample_texture(stream.words[base + 3u],
                             weighted != int64_t(0) ? uoz / weighted : int64_t(0),
                             weighted != int64_t(0) ? voz / weighted : int64_t(0),
                             (stream.words[base + 2u] & FLAG_TEXTURE_REPEAT) != 0u);
                         color = shade(sampled, int(stream.words[base + 21u]),
                                       int(stream.words[base + 22u]));
+                        source_alpha = ((sampled >> 24u) * material_alpha) / 255u;
                     } else {
                         color = shade(stream.words[base + 19u], light,
                                       int(stream.words[base + 21u]));
+                    }
+                    if (source_alpha != 0u) {
+                        if (!source_over) {
+                            if (viewmodel_active) viewmodel_depth = candidate;
+                            else depth = candidate;
+                        }
+                        if (source_over && source_alpha != 255u) {
+                            uint under = destination;
+                            uint sr = (color >> 16u) & 255u;
+                            uint sg = (color >> 8u) & 255u;
+                            uint sb = color & 255u;
+                            uint dr = (under >> 16u) & 255u;
+                            uint dg = (under >> 8u) & 255u;
+                            uint db = under & 255u;
+                            color = 0xff000000u |
+                                (((sr * source_alpha + dr * (255u - source_alpha)) / 255u) << 16u) |
+                                (((sg * source_alpha + dg * (255u - source_alpha)) / 255u) << 8u) |
+                                ((sb * source_alpha + db * (255u - source_alpha)) / 255u);
+                        }
+                        if (viewmodel_active) covered = 255u;
+                    } else {
+                        color = destination;
                     }
                 }
             }

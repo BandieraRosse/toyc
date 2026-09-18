@@ -104,6 +104,9 @@ struct rf_core_gpu_frame {
     struct toy_raster_cmd *retained_commands;
     unsigned long retained_command_capacity;
     unsigned long retained_command_count;
+    /* WORLD flushes are first retained as one raw contiguous prefix.  The
+     * prefix is partitioned once at finalize, never per flush. */
+    unsigned long retained_world_raw_count;
     unsigned long retained_batch_count[RF_RENDER_LAYER_COUNT];
     int64_t overlay_draw_begin_us;
     unsigned long native_stream_size, native_texture_bytes;
@@ -231,6 +234,8 @@ int rf_core_end_frame(struct rf_core *core);
 struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core);
 void rf_core_gpu_world_begin(struct rf_core *core);
 void rf_core_gpu_world_flush(struct rf_core *core);
+/* Deterministic retained-span contract fixture used by --logic-test. */
+int rf_core_retained_span_logic_test_v1(void);
 int rf_core_get_gpu_frame_stats(const struct rf_core *core,
                                 struct rf_core_gpu_frame_stats *stats);
 const char *rf_core_renderer_name(int renderer);

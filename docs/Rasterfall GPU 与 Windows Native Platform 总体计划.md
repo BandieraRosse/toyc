@@ -1,8 +1,8 @@
 # Rasterfall GPU 与 Windows Native Platform 阶段计划
 
 > 文档更新：2026-09-18
-> 源码核对基线：GPU-8B2c Phase 5 工作区（2026-09-18）
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。纯 Raster V1 effects command 不再因所属层被拒绝；billboard、普通 particle 与屏幕线 ray 已提交带逆深度的 opaque raster commands，`effects_direct_pixels=0` 门禁已建立；GPU-8B2c 已完成 Contract V1、weapon/hands/pill producer、VIEWMODEL GPU span 及 LOCAL_VIEW opaque muzzle core 分流，outer/lobe alpha/blend 仍属 GPU-8B2d debt。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
+> 源码核对基线：GPU-8B2d B2d-3 工作区（2026-09-18）
+> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2 retained consumer 已消除半帧提交，producer debt 已分解为 transparent、effects direct pixels、viewmodel commands/direct pixels 与 generic unsupported command。GPU-8B2d B2d-0..2 已完成并通过 CPU/full-scan/tile-binned differential；B2d-3 已完成 ABI BEGIN_TRANSPARENT marker、ordered CPU reference、RGBA 分类、跨多 WORLD flush 的连续 opaque→transparent retained span 与基础 Core 放行。B2d-4 producer 语义恢复与 B2d-5 normal-frame 收口仍待完成，未支持输入继续整帧 CPU replay。GPU-8B1/GPU-9A 等待 Windows Intel normal-frame 冻结。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -44,10 +44,10 @@ normal world frontend
 | GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
 | GPU-8B1 | IMPLEMENTED / NOT FROZEN | CPU screen-space truth 上传 XRGB8888 color + 8-bit coverage，GPU source-over composite；还需 normal-frame 实机视觉与 timing 验收 |
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
-| RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；不改变排序或 fallback，透明 GPU blend 仍属 GPU-8B2 |
+| RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；多 WORLD flush 在 retained stream 中一次稳定分成连续 span；不改变排序或 fallback |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
-| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；effects opaque producer 已完成 command 化并建立 direct-pixel 零门禁，transparent 仍待 GPU-8B2d |
-| GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW opaque muzzle core 复用 VIEWMODEL Contract V1 projection/depth；remote/AI muzzle 保留 world EFFECTS；outer/lobe 以 generic transparent marker 保留 CPU fallback，透明语义留给 GPU-8B2d；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
+| GPU-8B2 | IN PROGRESS / LOCAL PASS | retained consumer 和整帧 replay 已建立；frame audit 区分各层 command/direct-pixel debt 并记录 fallback reason；effects opaque producer 已完成 command 化并建立 direct-pixel 零门禁；Transparent V1 B2d-0..3 已通过 ABI/CPU/full-scan/tile-binned/logic 门禁，B2d-4..5 待完成 |
+| GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW opaque muzzle core 复用 VIEWMODEL Contract V1 projection/depth；remote/AI muzzle 保留 world EFFECTS；outer/lobe 继续等待 B2d-4 producer 迁移；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
 | GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity 和 inverse-depth Fog V0 通过 oracle；尚未冻结 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
@@ -58,8 +58,8 @@ normal world frontend
 - Raster ABI V1 是 fixed-width、pointer-free、versioned word stream；GPU shader 不解码 C struct。
 - CPU 和 GPU 消费同一 packed stream 与 Texture V1 table，color 与 signed inverse-depth 逐元素比较。
 - CPU bbox binning 按原始 command order 建立 tile lists，不改变 raster semantics。
-- normal world flush 在消费前完整分类。存在 transparent、edge、overlay 或 other 命令时，整批回退 CPU，
-  不在 GPU depth 上补画遗漏命令。
+- normal world flush 在消费前完整分类。基础 Transparent V1 command 可与 opaque 一起 pack；edge、overlay、
+  other 或未支持的 material/texture 仍使整批回退 CPU，不在 GPU depth 上补画遗漏命令。
 - differential 只证明“相同 packed input 的 CPU/GPU 执行一致”，不证明 normal frontend 生成的输入本身正确。
 
 ### Native presentation 与 overlay

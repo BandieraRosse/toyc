@@ -10,12 +10,145 @@ layout(set=0,binding=2,std430) writeonly buffer DepthBuffer{int values[];}depth_
 layout(set=0,binding=5,std430) readonly buffer TextureDescriptors{uint words[];}texture_descs;
 layout(set=0,binding=6,std430) readonly buffer TextureTexels{uint words[];}texture_texels;
 layout(set=0,binding=11,std430) writeonly buffer ViewmodelCoverage{uint values[];}viewmodel_coverage;
-const uint HEADER_WORDS=8u,COMMAND_WORDS=24u,CMD_CLEAR_COLOR=1u,CMD_CLEAR_DEPTH=2u,CMD_FLAT_TRIANGLE=3u,CMD_VERTEX_LIT_TRIANGLE=4u,CMD_TEXTURED_TRIANGLE=5u,CMD_SKY=6u,CMD_BEGIN_VIEWMODEL=7u,FLAG_TEXTURE_REPEAT=16u;
+const uint HEADER_WORDS=8u,COMMAND_WORDS=24u,CMD_CLEAR_COLOR=1u,CMD_CLEAR_DEPTH=2u,CMD_FLAT_TRIANGLE=3u,CMD_VERTEX_LIT_TRIANGLE=4u,CMD_TEXTURED_TRIANGLE=5u,CMD_SKY=6u,CMD_BEGIN_VIEWMODEL=7u,CMD_BEGIN_TRANSPARENT=8u,FLAG_TEXTURE_REPEAT=16u,FLAG_DEPTH_TEST=1u,FLAG_DEPTH_WRITE=2u,FLAG_OPAQUE=4u,FLAG_SOURCE_OVER=32u;
 uint texture_byte(uint offset){return(texture_texels.words[offset>>2u]>>((offset&3u)*8u))&255u;}
-uint sample_texture(uint handle,int64_t u,int64_t v,bool repeat){uint d=(handle-1u)*6u,offset=texture_descs.words[d],width=texture_descs.words[d+1u],height=texture_descs.words[d+2u],stride=texture_descs.words[d+3u],format=texture_descs.words[d+4u];if(repeat){u&=int64_t(65535);v&=int64_t(65535);}else{u=clamp(u,int64_t(0),int64_t(65535));v=clamp(v,int64_t(0),int64_t(65535));}uint tx=uint((u*int64_t(width))/int64_t(65536)),ty=uint((v*int64_t(height))/int64_t(65536)),channels=format==2u?4u:3u,at=offset+ty*stride+tx*channels;return 0xff000000u|(texture_byte(at)<<16)|(texture_byte(at+1u)<<8)|texture_byte(at+2u);}
+uint sample_texture(uint handle,int64_t u,int64_t v,bool repeat){uint d=(handle-1u)*6u,offset=texture_descs.words[d],width=texture_descs.words[d+1u],height=texture_descs.words[d+2u],stride=texture_descs.words[d+3u],format=texture_descs.words[d+4u];if(repeat){u&=int64_t(65535);v&=int64_t(65535);}else{u=clamp(u,int64_t(0),int64_t(65535));v=clamp(v,int64_t(0),int64_t(65535));}uint tx=uint((u*int64_t(width))/int64_t(65536)),ty=uint((v*int64_t(height))/int64_t(65536)),channels=format==2u?4u:3u,at=offset+ty*stride+tx*channels,alpha=format==2u?texture_byte(at+3u):255u;return(alpha<<24u)|(texture_byte(at)<<16u)|(texture_byte(at+1u)<<8u)|texture_byte(at+2u);}
 int64_t s64(uint low,uint high){return int64_t(uint64_t(low)|(uint64_t(high)<<32));}
 int64_t edge(int ax,int ay,int bx,int by,int px,int py){return(int64_t(px)-ax)*(int64_t(by)-ay)-(int64_t(py)-ay)*(int64_t(bx)-ax);}
 uint shade(uint packed,int light,int fog){int r=int((packed>>16)&255u),g=int((packed>>8)&255u),b=int(packed&255u);light=clamp(light,0,384);r=min(r*light/256,255);g=min(g*light/256,255);b=min(b*light/256,255);fog=clamp(fog,0,256);r=(r*(256-fog)+28*fog)/256;g=(g*(256-fog)+33*fog)/256;b=(b*(256-fog)+40*fog)/256;return 0xff000000u|(uint(r)<<16)|(uint(g)<<8)|uint(b);}
 uint mix_color(uint f,uint t,int n,int d){uint r=(((f>>16)&255u)*uint(n)+((t>>16)&255u)*uint(d-n))/uint(d),g=(((f>>8)&255u)*uint(n)+((t>>8)&255u)*uint(d-n))/uint(d),b=((f&255u)*uint(n)+(t&255u)*uint(d-n))/uint(d);return 0xff000000u|(r<<16)|(g<<8)|b;}
 uint sky_color(uint q,uint x,uint y,uint w,uint h){int ps=int(stream.words[q+6u]),pc=abs(int(stream.words[q+7u])),f=int(w)*3/4,hor=int(h)/2;if(pc>=64)hor+=clamp(f*ps/pc,-2*int(h),2*int(h));else hor=ps>0?-int(h):2*int(h);if(int(y)>=max(hor,0))return stream.words[q+10u]|0xff000000u;int bot=min(hor,int(h)),bh=bot/8+1,band=clamp(int(y)/bh,0,7);uint c=mix_color(stream.words[q+8u],stream.words[q+9u],7-band,8);const int dx[3]=int[3](340,-872,-488),dy[3]=int[3](248,172,380),dz[3]=int[3](-934,-512,-816),sc[3]=int[3](16,12,10);int ds=int(stream.words[q+4u]),dc=int(stream.words[q+5u]);for(int i=0;i<3;i++){int vx=(dx[i]*dc-dz[i]*ds)/1024,vz0=(dx[i]*ds+dz[i]*dc)/1024,vy2=(dy[i]*int(stream.words[q+7u])-vz0*ps)/1024,vz2=(dy[i]*ps+vz0*int(stream.words[q+7u]))/1024;if(vz2<=64)continue;int cx=int(w)/2+vx*f/vz2,cy=int(h)/2-vy2*f/vz2,u=max(sc[i]/4,2),px=int(x),py=int(y);if(px>=cx-u*7&&px<cx+u*7&&py>=cy+u*2&&py<cy+u*3)c=0xffb9d9ecu;if(px>=cx-u*6&&px<cx+u*6&&py>=cy&&py<cy+u*3)c=0xffeaf7ffu;if(px>=cx-u*3&&px<cx+u*3&&py>=cy-u*2&&py<cy)c=0xffffffffu;if(((px>=cx-u*5&&px<cx-u*3)||(px>=cx+u*3&&px<cx+u*5))&&py>=cy-u&&py<cy)c=0xffffffffu;}return c;}
-void main(){uint x=gl_GlobalInvocationID.x,y=gl_GlobalInvocationID.y,width=stream.words[5],height=stream.words[6];if(x>=width||y>=height)return;uint color=0xff000000u;int depth=0,viewmodel_depth=0;bool viewmodel_active=false;uint covered=0u;uint count=stream.words[4];for(uint ci=0u;ci<count;ci++){uint base=HEADER_WORDS+ci*COMMAND_WORDS,kind=stream.words[base];if(kind==CMD_SKY)color=sky_color(base,x,y,width,height);else if(kind==CMD_CLEAR_COLOR)color=stream.words[base+4u]|0xff000000u;else if(kind==CMD_CLEAR_DEPTH)depth=int(stream.words[base+4u]);else if(kind==CMD_BEGIN_VIEWMODEL){viewmodel_active=true;viewmodel_depth=0;covered=0u;}else if(kind==CMD_FLAT_TRIANGLE||kind==CMD_VERTEX_LIT_TRIANGLE||kind==CMD_TEXTURED_TRIANGLE){int ax=int(stream.words[base+6u]),ay=int(stream.words[base+7u]),bx=int(stream.words[base+9u]),by=int(stream.words[base+10u]),cx=int(stream.words[base+12u]),cy=int(stream.words[base+13u]);int minx=kind==CMD_TEXTURED_TRIANGLE?min(ax,min(bx,cx)):int(stream.words[base+15u]),maxx=kind==CMD_TEXTURED_TRIANGLE?max(ax,max(bx,cx))+1:int(stream.words[base+16u]),miny=kind==CMD_TEXTURED_TRIANGLE?min(ay,min(by,cy)):int(stream.words[base+17u]),maxy=kind==CMD_TEXTURED_TRIANGLE?max(ay,max(by,cy))+1:int(stream.words[base+18u]);if(int(x)<minx||int(x)>maxx||int(y)<miny||int(y)>maxy)continue;int64_t area=s64(stream.words[base+4u],stream.words[base+5u]);if(area>=int64_t(0))continue;int64_t e0=edge(bx,by,cx,cy,int(x),int(y)),e1=edge(cx,cy,ax,ay,int(x),int(y)),e2=edge(ax,ay,bx,by,int(x),int(y));if(e0<=int64_t(0)&&e1<=int64_t(0)&&e2<=int64_t(0)){int64_t weighted=e0*int64_t(int(stream.words[base+8u]))+e1*int64_t(int(stream.words[base+11u]))+e2*int64_t(int(stream.words[base+14u]));int candidate=int(weighted/area);if(candidate>=(viewmodel_active?viewmodel_depth:depth)){int light=int(stream.words[base+20u]);if(kind==CMD_VERTEX_LIT_TRIANGLE){int64_t light_weighted=e0*int64_t(int(stream.words[base+20u]))+e1*int64_t(int(stream.words[base+22u]))+e2*int64_t(int(stream.words[base+23u]));light=int(light_weighted/area);}if(viewmodel_active){viewmodel_depth=candidate;covered=255u;}else depth=candidate;if(kind==CMD_TEXTURED_TRIANGLE){int64_t uoz=e0*int64_t(int(stream.words[base+15u]))+e1*int64_t(int(stream.words[base+17u]))+e2*int64_t(int(stream.words[base+19u])),voz=e0*int64_t(int(stream.words[base+16u]))+e1*int64_t(int(stream.words[base+18u]))+e2*int64_t(int(stream.words[base+20u]));uint sampled=sample_texture(stream.words[base+3u],weighted!=int64_t(0)?uoz/weighted:int64_t(0),weighted!=int64_t(0)?voz/weighted:int64_t(0),(stream.words[base+2u]&FLAG_TEXTURE_REPEAT)!=0u);color=shade(sampled,int(stream.words[base+21u]),int(stream.words[base+22u]));}else color=shade(stream.words[base+19u],light,int(stream.words[base+21u]));}}}}uint index=y*width+x;color_out.pixels[index]=color;depth_out.values[index]=depth;viewmodel_coverage.values[index]=covered;}
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+    uint width = stream.words[5];
+    uint height = stream.words[6];
+    if (x >= width || y >= height)
+        return;
+
+    uint color = 0xff000000u;
+    int depth = 0;
+    int viewmodel_depth = 0;
+    bool viewmodel_active = false;
+    uint covered = 0u;
+#ifdef RF_RASTER_FULL_SCAN
+    uint list_begin = 0u;
+    uint list_end = stream.words[4];
+#else
+    uint list_begin = 0u;
+    uint list_end = stream.words[4];
+#endif
+    for (uint list_index = list_begin; list_index < list_end; ++list_index) {
+        uint command_index = list_index;
+        uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
+        uint kind = stream.words[base];
+        if (kind == CMD_SKY) {
+            color = sky_color(base,x,y,width,height);
+        } else if (kind == CMD_CLEAR_COLOR) {
+            color = stream.words[base + 4u] | 0xff000000u;
+        } else if (kind == CMD_CLEAR_DEPTH) {
+            depth = int(stream.words[base + 4u]);
+        } else if (kind == CMD_BEGIN_TRANSPARENT) {
+            /* Ordering/audit barrier only. Transparent is command state. */
+        } else if (kind == CMD_BEGIN_VIEWMODEL) {
+            /* Generic retained-span barrier: all following opaque triangles
+             * use a fresh inverse-Z domain and mark independent coverage. */
+            viewmodel_active = true;
+            viewmodel_depth = 0;
+            covered = 0u;
+        } else if (kind == CMD_FLAT_TRIANGLE ||
+                   kind == CMD_VERTEX_LIT_TRIANGLE ||
+                   kind == CMD_TEXTURED_TRIANGLE) {
+            int ax = int(stream.words[base + 6u]);
+            int ay = int(stream.words[base + 7u]);
+            int bx = int(stream.words[base + 9u]);
+            int by = int(stream.words[base + 10u]);
+            int cx = int(stream.words[base + 12u]);
+            int cy = int(stream.words[base + 13u]);
+            int minx = kind == CMD_TEXTURED_TRIANGLE ? min(ax, min(bx, cx)) : int(stream.words[base + 15u]);
+            int maxx = kind == CMD_TEXTURED_TRIANGLE ? max(ax, max(bx, cx)) + 1 : int(stream.words[base + 16u]);
+            int miny = kind == CMD_TEXTURED_TRIANGLE ? min(ay, min(by, cy)) : int(stream.words[base + 17u]);
+            int maxy = kind == CMD_TEXTURED_TRIANGLE ? max(ay, max(by, cy)) + 1 : int(stream.words[base + 18u]);
+            if (int(x) < minx || int(x) > maxx ||
+                int(y) < miny || int(y) > maxy)
+                continue;
+            int64_t area = s64(stream.words[base + 4u],
+                               stream.words[base + 5u]);
+            /* Valid GPU-4 streams reject zero/positive area.  Keep the guard
+             * here as a final defense against division by zero. */
+            if (area >= int64_t(0))
+                continue;
+            int64_t e0 = edge(bx, by, cx, cy, int(x), int(y));
+            int64_t e1 = edge(cx, cy, ax, ay, int(x), int(y));
+            int64_t e2 = edge(ax, ay, bx, by, int(x), int(y));
+            if (e0 <= int64_t(0) && e1 <= int64_t(0) && e2 <= int64_t(0)) {
+                int64_t weighted = e0 * int64_t(int(stream.words[base + 8u])) +
+                    e1 * int64_t(int(stream.words[base + 11u])) +
+                    e2 * int64_t(int(stream.words[base + 14u]));
+                int candidate = int(weighted / area);
+                if (candidate >= (viewmodel_active ? viewmodel_depth : depth)) {
+                    int light = int(stream.words[base + 20u]);
+                    if (kind == CMD_VERTEX_LIT_TRIANGLE) {
+                        int64_t light_weighted =
+                            e0 * int64_t(int(stream.words[base + 20u])) +
+                            e1 * int64_t(int(stream.words[base + 22u])) +
+                            e2 * int64_t(int(stream.words[base + 23u]));
+                        light = int(light_weighted / area);
+                    }
+                    bool source_over = (stream.words[base + 2u] & FLAG_SOURCE_OVER) != 0u;
+                    uint material_alpha = source_over ?
+                        (kind == CMD_TEXTURED_TRIANGLE ?
+                         stream.words[base + 23u] : stream.words[base + 22u]) : 255u;
+                    uint source_alpha = material_alpha;
+                    uint sampled = 0xff000000u;
+                    uint destination = color;
+                    if (kind == CMD_TEXTURED_TRIANGLE) {
+                        int64_t uoz = e0 * int64_t(int(stream.words[base + 15u])) +
+                            e1 * int64_t(int(stream.words[base + 17u])) +
+                            e2 * int64_t(int(stream.words[base + 19u]));
+                        int64_t voz = e0 * int64_t(int(stream.words[base + 16u])) +
+                            e1 * int64_t(int(stream.words[base + 18u])) +
+                            e2 * int64_t(int(stream.words[base + 20u]));
+                        sampled = sample_texture(stream.words[base + 3u],
+                            weighted != int64_t(0) ? uoz / weighted : int64_t(0),
+                            weighted != int64_t(0) ? voz / weighted : int64_t(0),
+                            (stream.words[base + 2u] & FLAG_TEXTURE_REPEAT) != 0u);
+                        color = shade(sampled, int(stream.words[base + 21u]),
+                                      int(stream.words[base + 22u]));
+                        source_alpha = ((sampled >> 24u) * material_alpha) / 255u;
+                    } else {
+                        color = shade(stream.words[base + 19u], light,
+                                      int(stream.words[base + 21u]));
+                    }
+                    if (source_alpha != 0u) {
+                        if (!source_over) {
+                            if (viewmodel_active) viewmodel_depth = candidate;
+                            else depth = candidate;
+                        }
+                        if (source_over && source_alpha != 255u) {
+                            uint under = destination;
+                            uint sr = (color >> 16u) & 255u;
+                            uint sg = (color >> 8u) & 255u;
+                            uint sb = color & 255u;
+                            uint dr = (under >> 16u) & 255u;
+                            uint dg = (under >> 8u) & 255u;
+                            uint db = under & 255u;
+                            color = 0xff000000u |
+                                (((sr * source_alpha + dr * (255u - source_alpha)) / 255u) << 16u) |
+                                (((sg * source_alpha + dg * (255u - source_alpha)) / 255u) << 8u) |
+                                ((sb * source_alpha + db * (255u - source_alpha)) / 255u);
+                        }
+                        if (viewmodel_active) covered = 255u;
+                    } else {
+                        color = destination;
+                    }
+                }
+            }
+        }
+    }
+    uint index = y * width + x;
+    color_out.pixels[index] = color;
+    depth_out.values[index] = depth;
+    viewmodel_coverage.values[index] = covered;
+}

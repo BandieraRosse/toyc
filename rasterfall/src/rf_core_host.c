@@ -8,6 +8,12 @@
 #include "rf_gpu_raster_cpu_ref.h"
 #endif
 
+static int rf_core_cmd_is_transparent_v1(const struct toy_raster_cmd *cmd)
+{
+    return cmd && (cmd->transparent || cmd->material_alpha != 255 ||
+        (cmd->textured && cmd->texture && cmd->texture->has_transparency));
+}
+
 const char *rf_core_renderer_name(int renderer)
 {
     return renderer == RF_CORE_RENDERER_GPU_COMPUTE ? "gpu-compute" : "cpu";
@@ -135,8 +141,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     size_t texture_bytes = 0;
     uint32_t unique_textures = 0;
     unsigned long texture = 0, transparent = 0, overlay = 0, edge = 0, other = 0;
-    uint32_t viewmodel_offset = UINT_MAX;
-    int has_viewmodel = 0;
+    uint32_t transparent_offset = UINT_MAX, viewmodel_offset = UINT_MAX;
+    int has_transparent = 0, has_viewmodel = 0;
     unsigned int color_stride;
     char diagnostic[192];
     int64_t stage_start, consumer_start = rf_core_clock_now_us();
@@ -153,11 +159,10 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         const struct toy_raster_cmd *cmd = &commands[i];
         if (cmd->edge) edge++;
         else if (cmd->overlay) overlay++;
-        else if (cmd->transparent || cmd->material_alpha != 255) transparent++;
+        else if (rf_core_cmd_is_transparent_v1(cmd)) transparent++;
         else if (cmd->textured) texture++;
         else if (cmd->area >= 0) other++;
     }
-    frame->stats.unsupported_transparent += transparent;
     frame->stats.unsupported_overlay += overlay;
     frame->stats.unsupported_edge += edge;
     frame->stats.unsupported_other += other;
@@ -167,9 +172,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.last_overlay_commands = overlay;
     frame->stats.last_edge_commands = edge;
     frame->stats.last_other_commands = other;
-    if (transparent)
-        core->render_frame.pre_post_fallback_reason |=
-            RF_PRE_POST_FALLBACK_TRANSPARENT;
     if (overlay || edge || other)
         core->render_frame.pre_post_fallback_reason |=
             RF_PRE_POST_FALLBACK_UNSUPPORTED_COMMAND;
@@ -179,10 +181,15 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     gpu_world_log(diagnostic);
     frame->stats.classification_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
-    if (transparent || overlay || edge || other) {
+    if (overlay || edge || other) {
         frame->stats.last_path = 2;
         frame->stats.cpu_fallback_frames++;
         return -1;
+    }
+    if (frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT]) {
+        transparent_offset = (uint32_t)frame->retained_batch_count[
+            RF_RENDER_LAYER_WORLD];
+        has_transparent = 1;
     }
     if (core->gpu_frame.retained_batch_count[RF_RENDER_LAYER_VIEWMODEL]) {
         unsigned long offset =
@@ -197,6 +204,7 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         has_viewmodel = 1;
     }
     needed = rf_gpu_raster_stream_size_v1((uint32_t)count + 2U +
+                                           (has_transparent ? 1U : 0U) +
                                            (has_viewmodel ? 1U : 0U));
     if (needed > frame->stream_capacity) {
         unsigned char *grown = tlibc_malloc(needed);
@@ -245,10 +253,10 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         resources.texel_capacity = frame->texture_texel_capacity;
         gpu_world_log("gpu-world: pack begin");
         stage_start = rf_core_clock_now_us();
-        if (rf_gpu_raster_pack_toy_textured_spans_v1(&packed,
+        if (rf_gpu_raster_pack_toy_textured_spans_v2(&packed,
                 renderer->job_clear_color, 0, frame->stream,
                 frame->stream_capacity, &written, &resources,
-                viewmodel_offset) !=
+                transparent_offset, viewmodel_offset) !=
             RF_GPU_RASTER_PACK_OK) {
             gpu_world_log("gpu-world: pack failed");
             frame->stats.cpu_fallback_frames++;
@@ -469,12 +477,125 @@ static int gpu_pre_post_retain_consume(struct toy_renderer *renderer,
         frame->retained_commands = grown;
         frame->retained_command_capacity = capacity;
     }
-    memcpy(frame->retained_commands + frame->retained_command_count, commands,
-           (unsigned long)count * sizeof(*commands));
-    frame->retained_command_count = needed;
-    frame->retained_batch_count[layer] += (unsigned long)count;
+    /* WORLD is collected as one physical prefix.  Do not partition here:
+     * multiple WORLD flushes must not produce O,T,O,T in the retained stream.
+     * Finalization performs one stable partition over the complete prefix. */
+    if (layer == RF_RENDER_LAYER_WORLD) {
+        if (frame->retained_batch_count[RF_RENDER_LAYER_EFFECTS] ||
+            frame->retained_batch_count[RF_RENDER_LAYER_VIEWMODEL])
+            return -1;
+        memcpy(frame->retained_commands + frame->retained_command_count,
+               commands, (unsigned long)count * sizeof(*commands));
+        frame->retained_command_count = needed;
+        frame->retained_world_raw_count += (unsigned long)count;
+    } else {
+        memcpy(frame->retained_commands + frame->retained_command_count, commands,
+               (unsigned long)count * sizeof(*commands));
+        frame->retained_command_count = needed;
+        frame->retained_batch_count[layer] += (unsigned long)count;
+    }
     core->render_frame.retained_pre_post_commands = needed;
     return 0;
+}
+
+static int gpu_pre_post_partition_world(struct rf_core_gpu_frame *frame)
+{
+    unsigned long world_count = frame->retained_world_raw_count;
+    unsigned long opaque_count = 0, transparent_count = 0, i;
+    struct toy_raster_cmd *partitioned;
+    if (!world_count) return 0;
+    for (i = 0; i < world_count; ++i) {
+        if (rf_core_cmd_is_transparent_v1(&frame->retained_commands[i]))
+            ++transparent_count;
+        else
+            ++opaque_count;
+    }
+    partitioned = tlibc_malloc(frame->retained_command_count *
+                               sizeof(*partitioned));
+    if (!partitioned) {
+        /* A contiguous raw WORLD prefix is still a valid compatibility span;
+         * leave it unsplit so legacy CPU replay can process it atomically. */
+        frame->retained_batch_count[RF_RENDER_LAYER_WORLD] = world_count;
+        frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] = 0;
+        frame->retained_world_raw_count = 0;
+        return -1;
+    }
+    {
+        unsigned long opaque_at = 0, transparent_at = opaque_count;
+        for (i = 0; i < world_count; ++i) {
+            if (rf_core_cmd_is_transparent_v1(&frame->retained_commands[i]))
+                partitioned[transparent_at++] = frame->retained_commands[i];
+            else
+                partitioned[opaque_at++] = frame->retained_commands[i];
+        }
+        memcpy(partitioned + opaque_count + transparent_count,
+               frame->retained_commands + world_count,
+               (frame->retained_command_count - world_count) *
+                   sizeof(*partitioned));
+    }
+    tlibc_free(frame->retained_commands);
+    frame->retained_commands = partitioned;
+    frame->retained_batch_count[RF_RENDER_LAYER_WORLD] = opaque_count;
+    frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] =
+        transparent_count;
+    frame->retained_world_raw_count = 0;
+    return 0;
+}
+
+int rf_core_retained_span_logic_test_v1(void)
+{
+    struct rf_core core;
+    struct toy_renderer renderer;
+    struct toy_raster_cmd first[2], second[2], effects[1];
+    struct toy_texture_view rgba;
+    struct rf_core_gpu_frame *frame;
+    memset(&core, 0, sizeof(core));
+    memset(&renderer, 0, sizeof(renderer));
+    memset(first, 0, sizeof(first));
+    memset(second, 0, sizeof(second));
+    memset(effects, 0, sizeof(effects));
+    memset(&rgba, 0, sizeof(rgba));
+    rgba.channels = 4;
+    rgba.has_transparency = 1;
+    first[0].material_alpha = 255;
+    first[1].material_alpha = 255;
+    first[1].transparent = 1;
+    second[0].material_alpha = 255;
+    second[1].material_alpha = 255;
+    second[1].textured = 1;
+    second[1].texture = &rgba;
+    effects[0].material_alpha = 255;
+    core.renderer = &renderer;
+    core.render_frame.current_layer = RF_RENDER_LAYER_WORLD;
+    frame = &core.gpu_frame;
+    frame->retaining_pre_post = 1;
+    if (gpu_pre_post_retain_consume(&renderer, first, 2, &core) < 0 ||
+        gpu_pre_post_retain_consume(&renderer, second, 2, &core) < 0)
+        return -1;
+    core.render_frame.current_layer = RF_RENDER_LAYER_EFFECTS;
+    if (gpu_pre_post_retain_consume(&renderer, effects, 1, &core) < 0 ||
+        frame->retained_world_raw_count != 4 ||
+        frame->retained_command_count != 5)
+        goto fail;
+    if (gpu_pre_post_partition_world(frame) < 0 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_WORLD] != 2 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] != 2 ||
+        frame->retained_batch_count[RF_RENDER_LAYER_EFFECTS] != 1 ||
+        frame->retained_world_raw_count != 0)
+        goto fail;
+    /* O(first), O(second), T(first), T(second), EFFECTS.  These exact
+     * offsets are passed to the ABI marker packer by the normal finalize path. */
+    if (frame->retained_commands[0].transparent ||
+        frame->retained_commands[1].textured ||
+        !frame->retained_commands[2].transparent ||
+        frame->retained_commands[3].texture != &rgba ||
+        frame->retained_commands[4].material_alpha != 255)
+        goto fail;
+    tlibc_free(frame->retained_commands);
+    return 0;
+fail:
+    tlibc_free(frame->retained_commands);
+    return -1;
 }
 
 static int gpu_pre_post_replay_cpu(struct rf_core *core)
@@ -525,6 +646,21 @@ static int gpu_pre_post_finalize(struct rf_core *core)
     struct rf_core_gpu_frame *frame = &core->gpu_frame;
     int unsupported_post_world;
     int consumed = -1;
+
+    /* Freeze the physical layer contract once all WORLD flushes have arrived:
+     * WORLD opaque, WORLD transparent, EFFECTS, VIEWMODEL.  Relative order is
+     * preserved inside both WORLD spans and no depth/material sort occurs. */
+    if (gpu_pre_post_partition_world(frame) < 0) {
+        frame->retaining_pre_post = 0;
+        frame->native_prepared = 0;
+        frame->stats.frames_attempted++;
+        frame->stats.cpu_fallback_frames++;
+        frame->stats.last_path = 2;
+        core->render_frame.pre_post_cpu_fallback = 1;
+        core->render_frame.pre_post_fallback_reason |=
+            RF_PRE_POST_FALLBACK_CONSUMER_FAILURE;
+        return gpu_pre_post_replay_cpu(core) < 0 ? -1 : 0;
+    }
     frame->retaining_pre_post = 0;
     core->render_frame.pre_post_fallback_reason |=
         rf_core_render_frame_fallback_reason_v1(&core->render_frame);
@@ -702,6 +838,7 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     core->gpu_frame.overlay_active = 0;
     core->gpu_frame.retaining_pre_post = 0;
     core->gpu_frame.retained_command_count = 0;
+    core->gpu_frame.retained_world_raw_count = 0;
     memset(core->gpu_frame.retained_batch_count, 0,
            sizeof(core->gpu_frame.retained_batch_count));
     core->gpu_frame.stats.last_path = 0;
@@ -835,7 +972,7 @@ void rf_core_render_frame_record_world_v1(
         return;
     }
     for (i = 0; i < count; ++i)
-        if (commands[i].transparent || commands[i].material_alpha != 255)
+        if (rf_core_cmd_is_transparent_v1(&commands[i]))
             transparent++;
     core->render_frame.command_count[RF_RENDER_LAYER_WORLD] +=
         (unsigned long)count - transparent;
@@ -875,8 +1012,6 @@ unsigned int rf_core_render_frame_fallback_reason_v1(
 {
     unsigned int reason = RF_PRE_POST_FALLBACK_NONE;
     if (!frame) return reason;
-    if (frame->command_count[RF_RENDER_LAYER_TRANSPARENT])
-        reason |= RF_PRE_POST_FALLBACK_TRANSPARENT;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_EFFECTS])
         reason |= RF_PRE_POST_FALLBACK_EFFECTS_DIRECT_PIXELS;
     if (frame->direct_pixel_count[RF_RENDER_LAYER_VIEWMODEL])
@@ -964,9 +1099,10 @@ int rf_core_end_frame(struct rf_core *core)
         core->render_frame.layer_backend[RF_RENDER_LAYER_WORLD] =
             RF_RENDER_BACKEND_GPU;
         core->render_frame.layer_backend[RF_RENDER_LAYER_TRANSPARENT] =
-            RF_RENDER_BACKEND_UNSUPPORTED;
+            RF_RENDER_BACKEND_GPU;
         core->render_frame.layer_backend[RF_RENDER_LAYER_EFFECTS] =
-            RF_RENDER_BACKEND_UNSUPPORTED;
+            core->render_frame.direct_pixel_count[RF_RENDER_LAYER_EFFECTS] ?
+            RF_RENDER_BACKEND_UNSUPPORTED : RF_RENDER_BACKEND_GPU;
         core->render_frame.layer_backend[RF_RENDER_LAYER_VIEWMODEL] =
             RF_RENDER_BACKEND_GPU;
         core->render_frame.layer_backend[RF_RENDER_LAYER_OVERLAY] =
@@ -1008,6 +1144,7 @@ void rf_core_gpu_world_begin(struct rf_core *core)
         core->gpu_frame.frontend_begin_us = rf_core_clock_now_us();
         core->gpu_frame.retaining_pre_post = 1;
         core->gpu_frame.retained_command_count = 0;
+        core->gpu_frame.retained_world_raw_count = 0;
         memset(core->gpu_frame.retained_batch_count, 0,
                sizeof(core->gpu_frame.retained_batch_count));
     }

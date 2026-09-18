@@ -97,6 +97,9 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
     surface.height = (int)header->framebuffer_height;
     surface.stride = (int)(color_stride * sizeof(*color));
     toy_renderer_init(&renderer);
+    /* Raster ABI is the ordered oracle: legacy compatibility sorting must
+     * not alter packed stream source-over order. */
+    toy_renderer_set_preserve_command_order(&renderer, 1);
     if (desc_count) {
         texture_views = calloc(desc_count, sizeof(*texture_views));
         if (!texture_views) goto done;
@@ -118,6 +121,8 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
         const struct rf_gpu_raster_flat_triangle_v1 *t =
             &commands[i].payload.flat_triangle;
         struct toy_screen_vertex a, b, c;
+        if (commands[i].kind == RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1)
+            continue;
         if (commands[i].kind == RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1) {
             uint32_t row;
             unsigned long pixels = (unsigned long)header->framebuffer_width *
@@ -166,6 +171,7 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
             texture->data = texels + d->texel_offset;
             texture->width = d->width; texture->height = d->height;
             texture->channels = channels; texture->data_size = (uint32_t)bytes;
+            texture->has_transparency = channels == 4;
             a.u_over_z = v->a_u_over_z; a.v_over_z = v->a_v_over_z;
             b.u_over_z = v->b_u_over_z; b.v_over_z = v->b_v_over_z;
             c.u_over_z = v->c_u_over_z; c.v_over_z = v->c_v_over_z;
@@ -173,6 +179,13 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
                 texture,
                 (commands[i].flags & RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1) != 0,
                 0, v->light_q8, v->fog_q8);
+            renderer.cmds[renderer.cmd_count - 1].material_alpha =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) ?
+                (int)v->reserved : 255;
+            renderer.cmds[renderer.cmd_count - 1].transparent =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) != 0;
+            renderer.cmds[renderer.cmd_count - 1].transparent_no_depth_write =
+                renderer.cmds[renderer.cmd_count - 1].transparent;
         } else if (commands[i].kind == RF_GPU_RASTER_CMD_VERTEX_LIT_TRIANGLE_V1) {
             const struct rf_gpu_raster_vertex_lit_triangle_v1 *v =
                 &commands[i].payload.vertex_lit_triangle;
@@ -184,6 +197,13 @@ int rf_gpu_raster_cpu_reference_textured_domains_v1(
         } else {
             toy_renderer_triangle_lit(&renderer, &a, &b, &c, t->color,
                                       t->light_q8, t->fog_q8);
+            renderer.cmds[renderer.cmd_count - 1].material_alpha =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) ?
+                (int)t->reserved[0] : 255;
+            renderer.cmds[renderer.cmd_count - 1].transparent =
+                (commands[i].flags & RF_GPU_RASTER_FLAG_SOURCE_OVER_V1) != 0;
+            renderer.cmds[renderer.cmd_count - 1].transparent_no_depth_write =
+                renderer.cmds[renderer.cmd_count - 1].transparent;
         }
     }
     if (toy_renderer_flush(&renderer) < 0) goto done;

@@ -49,6 +49,19 @@ static void add_triangle(struct toy_renderer *r, int ax, int ay, int az,
     toy_renderer_triangle_lit(r, &a, &b, &c, color, light, fog);
 }
 
+static void add_alpha_triangle(struct toy_renderer *r,
+                         int ax, int ay, int az, int bx, int by, int bz,
+                         int cx, int cy, int cz, uint32_t color,
+                         int light, int fog, int alpha)
+{
+    struct toy_screen_vertex a, b, c;
+    memset(&a, 0, sizeof(a)); memset(&b, 0, sizeof(b)); memset(&c, 0, sizeof(c));
+    a.x = ax; a.y = ay; a.inv_z = az;
+    b.x = bx; b.y = by; b.inv_z = bz;
+    c.x = cx; c.y = cy; c.inv_z = cz;
+    toy_renderer_triangle_lit_alpha(r, &a, &b, &c, color, light, fog, alpha);
+}
+
 static void add_vertex_lit_triangle(struct toy_renderer *r,
                          int ax, int ay, int az, int al,
                          int bx, int by, int bz, int bl,
@@ -112,6 +125,17 @@ static int make_fixture(const char *name, uint32_t width, uint32_t height,
         add_triangle(&r, 4,3,50, 14,3,50, 4,9,50, 0xff0000,256,0);
         add_triangle(&r, 4,3,400, 14,3,400, 4,9,400, 0x00ff00,256,0);
         add_triangle(&r, 4,3,400, 14,3,400, 4,9,400, 0x0000ff,256,0);
+    } else if (!strcmp(name, "transparent-order")) {
+        /* Packed order is the blend order: the two same-depth faces are
+         * deliberately submitted in the opposite order from their colors. */
+        add_triangle(&r, 2,2,900, 30,2,900, 2,22,900, 0x204060,256,0);
+        add_alpha_triangle(&r, 4,4,100, 28,4,100, 4,20,100, 0xff0000,256,0,128);
+        add_alpha_triangle(&r, 4,4,100, 28,4,100, 4,20,100, 0x00ff00,256,0,64);
+        add_alpha_triangle(&r, 6,5,110, 26,5,110, 6,18,110, 0x80c040,256,32,127);
+        add_alpha_triangle(&r, 8,6,120, 20,6,120, 8,16,120, 0x0000ff,256,64,0);
+        add_alpha_triangle(&r, 22,6,120, 31,6,120, 22,16,120, 0xffffff,256,0,1);
+        add_alpha_triangle(&r, 2,23,120, 12,23,120, 2,28,120, 0xff00ff,256,0,254);
+        add_alpha_triangle(&r, 14,23,120, 24,23,120, 14,28,120, 0xffff00,256,0,255);
     } else if (!strcmp(name, "shared-edge")) {
         add_triangle(&r, 2,2,77, 12,2,77, 2,10,77, 0xff0000,256,0);
         add_triangle(&r, 12,2,77, 12,10,77, 2,10,77, 0x00ff00,256,0);
@@ -413,13 +437,13 @@ done:
 static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
 {
     static const unsigned char texels_a[16]={
-        255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255};
+        255,0,0,0, 0,255,0,128, 0,0,255,254, 255,255,255,255};
     static const unsigned char texels_b[64]={
         8,16,24,255, 32,40,48,255, 56,64,72,255, 80,88,96,255,
         104,112,120,255, 128,136,144,255, 152,160,168,255, 176,184,192,255,
         200,208,216,255, 224,232,240,255, 248,128,64,255, 64,128,248,255,
         255,255,0,255, 0,255,255,255, 255,0,255,255, 20,30,40,255};
-    struct toy_texture_view ta={texels_a,2,2,sizeof(texels_a),4,0};
+    struct toy_texture_view ta={texels_a,2,2,sizeof(texels_a),4,1};
     struct toy_texture_view tb={texels_b,4,4,sizeof(texels_b),4,0};
     struct toy_renderer r;struct toy_surface surface;struct stream s={0};
     struct rf_gpu_texture_resources_v1 resources;uint32_t *pixels=NULL,*cc=NULL,*gc=NULL;
@@ -432,6 +456,9 @@ static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
     /* exact texels, wrap/clamp edges, perspective, light/fog, overlap/equal
      * depth, shared edge, offscreen and thin, repeated and second handles. */
     add_textured_triangle(&r,1,1,128,0,0, 14,1,128,65535,0, 1,12,128,0,65535,&ta,0,256,0);
+    /* Exercise texel alpha * material alpha / 255 (not just texture alpha). */
+    r.cmds[r.cmd_count-1].material_alpha=128;
+    r.cmds[r.cmd_count-1].transparent=1;
     add_textured_triangle(&r,16,1,64,-65536,-1, 34,1,256,131072,0, 16,13,128,0,131072,&ta,1,256,0);
     add_textured_triangle(&r,1,14,100,0,0, 18,14,300,65535,0, 1,27,500,0,65535,&tb,0,192,96);
     add_textured_triangle(&r,20,15,300,0,0, 35,15,300,65535,0, 20,27,300,0,65535,&ta,0,256,0);
@@ -493,6 +520,7 @@ int main(int argc,char **argv)
     struct rf_gpu_status status;struct stream s={0};const char *replay=NULL,*artifacts="build/gpu-raster-diff-mismatch";
     const struct {const char *name;uint32_t w,h,n,seed;} cases[]={
       {"clear",19,13,0,0},{"sky",97,61,0,0},{"geometry-depth-order",19,13,0,0},{"shared-edge",19,13,0,0},
+      {"transparent-order",37,29,0,0},
       {"light-fog-thin",19,13,0,0},{"grid",53,29,0,0},{"edges-mixed",37,23,0,0},
       {"equal-near-far",73,41,96,0},{"stress-seed-1",320,180,64,1},
       {"vertex-lit-fixed",37,29,0,0},

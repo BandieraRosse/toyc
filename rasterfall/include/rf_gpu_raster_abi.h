@@ -20,7 +20,10 @@ enum rf_gpu_raster_cmd_kind_v1 {
     RF_GPU_RASTER_CMD_SKY_V1 = 6,
     /* Retained VIEWMODEL span barrier.  This is a generic depth-domain
      * control command; triangle records remain business-agnostic. */
-    RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1 = 7
+    RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1 = 7,
+    /* Generic retained transparent span barrier.  It carries no raster
+     * state; it is an ordering/audit marker only. */
+    RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1 = 8
 };
 
 enum rf_gpu_raster_cmd_flags_v1 {
@@ -28,7 +31,10 @@ enum rf_gpu_raster_cmd_flags_v1 {
     RF_GPU_RASTER_FLAG_DEPTH_WRITE_V1 = 1U << 1,
     RF_GPU_RASTER_FLAG_OPAQUE_V1 = 1U << 2,
     RF_GPU_RASTER_FLAG_FOG_V1 = 1U << 3,
-    RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1 = 1U << 4
+    RF_GPU_RASTER_FLAG_TEXTURE_REPEAT_V1 = 1U << 4,
+    /* Straight-alpha source-over.  This is a per-command raster state;
+     * transparent layer placement is owned by RenderFrame, not the ABI. */
+    RF_GPU_RASTER_FLAG_SOURCE_OVER_V1 = 1U << 5
 };
 
 enum rf_gpu_texture_format_v1 {
@@ -81,6 +87,7 @@ struct rf_gpu_raster_flat_triangle_v1 {
     uint32_t color;
     int32_t light_q8;
     int32_t fog_q8;
+    /* reserved[0] is material alpha for SOURCE_OVER, reserved[1] is zero. */
     uint32_t reserved[2];
 };
 
@@ -117,6 +124,7 @@ struct rf_gpu_raster_textured_triangle_v1 {
     int32_t c_v_over_z;
     int32_t light_q8;
     int32_t fog_q8;
+    /* material alpha for SOURCE_OVER, zero for opaque commands. */
     uint32_t reserved;
 };
 

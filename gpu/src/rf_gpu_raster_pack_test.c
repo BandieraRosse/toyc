@@ -42,6 +42,10 @@ int main(void)
     unsigned char first[RF_GPU_RASTER_STREAM_HEADER_V1_SIZE +
                         3 * RF_GPU_RASTER_CMD_V1_SIZE];
     unsigned char second[sizeof(first)];
+    unsigned char span[RF_GPU_RASTER_STREAM_HEADER_V1_SIZE +
+                       7 * RF_GPU_RASTER_CMD_V1_SIZE];
+    struct toy_raster_cmd span_commands[4];
+    struct rf_gpu_texture_resources_v1 resources;
     struct rf_gpu_raster_stream_header_v1 *header;
     struct rf_gpu_raster_cmd_v1 *commands;
     size_t written = 0, written_again = 0;
@@ -84,6 +88,43 @@ int main(void)
           commands[2].payload.vertex_lit_triangle.light_c_q8 == 384 &&
           commands[2].payload.vertex_lit_triangle.fog_q8 == 48);
     source.planar_vertex_lit = 0;
+
+    source.transparent = 1;
+    source.material_alpha = 128;
+    CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first, sizeof(first),
+                                    &written) == RF_GPU_RASTER_PACK_OK);
+    header = (struct rf_gpu_raster_stream_header_v1 *)first;
+    commands = (struct rf_gpu_raster_cmd_v1 *)(header + 1);
+    CHECK(commands[2].flags == (RF_GPU_RASTER_FLAG_DEPTH_TEST_V1 |
+                                RF_GPU_RASTER_FLAG_SOURCE_OVER_V1 | RF_GPU_RASTER_FLAG_FOG_V1) &&
+          commands[2].payload.flat_triangle.reserved[0] == 128 &&
+          rf_gpu_raster_validate_v1(first, written) == RF_GPU_RASTER_PACK_OK);
+    commands[2].payload.flat_triangle.reserved[1] = 1;
+    CHECK(rf_gpu_raster_validate_v1(first, written) == RF_GPU_RASTER_PACK_INVALID);
+    commands[2].payload.flat_triangle.reserved[1] = 0;
+    source.transparent = 0;
+    source.material_alpha = 255;
+
+    memset(span_commands, 0, sizeof(span_commands));
+    for (int i = 0; i < 4; ++i) {
+        span_commands[i] = source;
+        span_commands[i].transparent = i >= 2;
+        span_commands[i].material_alpha = i >= 2 ? 128 : 255;
+    }
+    renderer.cmds = span_commands;
+    renderer.cmd_count = 4;
+    memset(&resources, 0, sizeof(resources));
+    CHECK(rf_gpu_raster_pack_toy_textured_spans_v2(
+              &renderer, 0, 0, span, sizeof(span), &written, &resources,
+              2, 0xffffffffU) == RF_GPU_RASTER_PACK_OK);
+    header = (struct rf_gpu_raster_stream_header_v1 *)span;
+    commands = (struct rf_gpu_raster_cmd_v1 *)(header + 1);
+    CHECK(header->command_count == 7 &&
+          commands[4].kind == RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1 &&
+          rf_gpu_raster_validate_v1(span, written) == RF_GPU_RASTER_PACK_OK);
+
+    renderer.cmds = &source;
+    renderer.cmd_count = 1;
 
     CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first,
                                     sizeof(first) - 1, &written) ==

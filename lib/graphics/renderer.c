@@ -185,7 +185,7 @@ static long raster_flat(struct toy_renderer *renderer,
                         const struct toy_screen_vertex *c,
                         long long area, int minx, int maxx,
                         int y0, int y1, uint32_t color, int overlay,
-                        int cmd_alpha)
+                        int cmd_alpha, int force_no_depth_write)
 {
     struct toy_surface *surface = &renderer->surface;
     int *depth = renderer->depth;
@@ -231,7 +231,8 @@ static long raster_flat(struct toy_renderer *renderer,
                 if (overlay || inv >= depth[at]) {
                     worker->depth_pass_px++;
                     worker->shaded_px++;
-                    if (!overlay && cmd_alpha == 255) depth[at] = (int)inv;
+                    if (!overlay && cmd_alpha == 255 && !force_no_depth_write)
+                        depth[at] = (int)inv;
                     if (cmd_alpha == 255) {
                         row[x] = color;
                         if (renderer->coverage && renderer->coverage_stride > 0)
@@ -247,6 +248,8 @@ static long raster_flat(struct toy_renderer *renderer,
                         row[x] = (uint32_t)((sr * cmd_alpha + ur * (255 - cmd_alpha)) / 255) << 16 |
                                  (uint32_t)((sg * cmd_alpha + ug * (255 - cmd_alpha)) / 255) << 8 |
                                  (uint32_t)((sb * cmd_alpha + ub * (255 - cmd_alpha)) / 255);
+                        if (renderer->coverage && renderer->coverage_stride > 0)
+                            renderer->coverage[y * renderer->coverage_stride + x] = 255;
                         worker->alpha_blended_pixels++;
                         worker->blend_divisions += 3;
                     } else {
@@ -496,6 +499,7 @@ static long raster_tex(struct toy_renderer *renderer,
                        uint32_t material_tint,
                        int repeat, uint32_t fallback_color,
                        int light_factor, int fog_factor,
+                       int force_no_depth_write,
                        unsigned long *tex_pixels,
                        unsigned long *fallback_pixels)
 {
@@ -661,7 +665,7 @@ static long raster_tex(struct toy_renderer *renderer,
                                 (uint32_t)clampi(g, 0, 255) << 8 |
                                 (uint32_t)clampi(b, 0, 255);
                         color = shade_color(color, (int)light, (int)fog);
-                        depth[at] = (int)inv_norm;
+                        if (!force_no_depth_write) depth[at] = (int)inv_norm;
                         row[x] = color;
                         if (renderer->coverage && renderer->coverage_stride > 0)
                             renderer->coverage[y * renderer->coverage_stride + x] = 255;
@@ -767,7 +771,7 @@ static long raster_tex(struct toy_renderer *renderer,
                         }
                         color = shade_color(color, (int)light, (int)fog);
                         if (alpha == 255) {
-                            depth[at] = (int)inv_norm;
+                            if (!force_no_depth_write) depth[at] = (int)inv_norm;
                             row[x] = color;
                             if (renderer->coverage && renderer->coverage_stride > 0)
                                 renderer->coverage[y * renderer->coverage_stride + x] = 255;
@@ -785,6 +789,8 @@ static long raster_tex(struct toy_renderer *renderer,
                             row[x] = (uint32_t)((sr * alpha + ur * (255 - alpha)) / 255) << 16 |
                                      (uint32_t)((sg * alpha + ug * (255 - alpha)) / 255) << 8 |
                                      (uint32_t)((sb * alpha + ub * (255 - alpha)) / 255);
+                            if (renderer->coverage && renderer->coverage_stride > 0)
+                                renderer->coverage[y * renderer->coverage_stride + x] = 255;
                         }
                         (*tex_pixels)++;
                         worker->written_px++;
@@ -868,6 +874,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                      cmd->material_tint,
                                      cmd->repeat,
                                      cmd->fallback, cmd->light, cmd->fog,
+                                     cmd->transparent_no_depth_write,
                                      &worker->textured_pixels,
                                      &worker->texture_fallback_pixels);
     else if (cmd->planar_vertex_lit)
@@ -878,7 +885,7 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                  cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                  y0, y1,
                                  shade_color(cmd->color, cmd->a.light, cmd->fog),
-                                 0, 255);
+                                 0, 255, 0);
             worker->flat_pixels -= (unsigned long)pixels;
             worker->planar_pixels += (unsigned long)pixels;
         } else
@@ -893,7 +900,8 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                       cmd->area, cmd->bbox_minx,
                                       cmd->bbox_maxx, y0, y1,
                                       shade_color(cmd->color, cmd->light, cmd->fog),
-                                      cmd->overlay, cmd->material_alpha);
+                                      cmd->overlay, cmd->material_alpha,
+                                      cmd->transparent_no_depth_write);
 }
 
 static int grow_cmds(struct toy_renderer *renderer)
@@ -960,6 +968,7 @@ static int record_cmd(struct toy_renderer *renderer, int textured,
         renderer->recording_base_texture_bilinear;
     cmd->sphere_texture_valid = 0;
     cmd->material_alpha = 255;
+    cmd->transparent_no_depth_write = 0;
     cmd->material_ambient = 0;
     cmd->material_specular = 0;
     cmd->material_specular_level = 0;
@@ -1231,6 +1240,12 @@ void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
                                             int enabled)
 {
     if (renderer) renderer->recording_base_texture_bilinear = enabled != 0;
+}
+
+void toy_renderer_set_preserve_command_order(struct toy_renderer *renderer,
+                                             int enabled)
+{
+    if (renderer) renderer->preserve_command_order = enabled != 0;
 }
 
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count)
@@ -1912,7 +1927,8 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     renderer->last_classify_us = renderer_monotonic_us() - phase_start;
     /* 常见的全不透明场景直接保持记录顺序，避免为了空透明列表复制整个
      * 大型命令池。确有透明命令时才沿用稳定的 opaque + transparent 布局。 */
-    if (renderer->last_transparent_cmds > 0 && renderer->cmd_count > 1 &&
+    if (!renderer->preserve_command_order &&
+        renderer->last_transparent_cmds > 0 && renderer->cmd_count > 1 &&
         renderer->sort_cmds) {
         int opaque = 0, transparent = 0, i;
         phase_start = renderer_monotonic_us();

@@ -64,6 +64,9 @@ struct toy_raster_cmd {
     int base_texture_bilinear;
     int sphere_texture_valid;
     int material_alpha;
+    /* Reference-only override for Raster ABI transparent commands.  Legacy
+     * compatibility commands retain their historical per-texel depth rule. */
+    int transparent_no_depth_write;
     uint32_t material_ambient;
     uint32_t material_specular;
     int material_specular_level;
@@ -186,6 +189,9 @@ struct toy_renderer {
     int cmd_overflow;
     int recording_edge;
     int recording_base_texture_bilinear;
+    /* ABI/reference consumers preserve packed command order.  Legacy
+     * compatibility flushes keep the historical stable depth sort. */
+    int preserve_command_order;
     /* Optional caller-owned state used while recording commands.  The core
      * renderer never dereferences it. */
     void *recording_context;
@@ -308,6 +314,8 @@ void toy_renderer_set_recording_edge(struct toy_renderer *renderer, int edge);
 /* 随后记录的命令仅对 base texture 使用双线性采样；sphere/toon 保持原路径。 */
 void toy_renderer_set_base_texture_bilinear(struct toy_renderer *renderer,
                                             int enabled);
+void toy_renderer_set_preserve_command_order(struct toy_renderer *renderer,
+                                             int enabled);
 /* 仅在 worker 池创建前生效；0 使用自动 CPU 数，诊断可固定为 1..8；
  * -1 强制 inline 单线程，供 hosted reference test 使用。 */
 void toy_renderer_set_worker_count(struct toy_renderer *renderer, int count);
