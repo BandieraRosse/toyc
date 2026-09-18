@@ -4,6 +4,23 @@
 #define special_pull_timer_ms ability.special_pull_timer_ms
 #define charge_active ability.charge_active
 
+static int death_command_geometry_equal(const struct toy_raster_cmd *a,
+                                        const struct toy_raster_cmd *b)
+{
+    if (!a || !b || a->area != b->area || a->color != b->color ||
+        a->bbox_minx != b->bbox_minx || a->bbox_maxx != b->bbox_maxx ||
+        a->bbox_miny != b->bbox_miny || a->bbox_maxy != b->bbox_maxy)
+        return 0;
+    if (a->a.x != b->a.x || a->a.y != b->a.y || a->a.z != b->a.z ||
+        a->a.inv_z != b->a.inv_z || a->b.x != b->b.x ||
+        a->b.y != b->b.y || a->b.z != b->b.z ||
+        a->b.inv_z != b->b.inv_z || a->c.x != b->c.x ||
+        a->c.y != b->c.y || a->c.z != b->c.z ||
+        a->c.inv_z != b->c.inv_z)
+        return 0;
+    return 1;
+}
+
 static int world_light_logic_test(void)
 {
     static struct toy_map map;
@@ -1608,6 +1625,111 @@ static int run_logic_test(void)
         toy_renderer_destroy(&renderer);
         tlibc_free(pixels);
         return 15;
+    }
+    /* Enemy dissolve producer contract: only the final 380ms of the
+     * non-legacy death style becomes source-over.  Reuse render_enemies so
+     * body-part order, transform and near clipping are exercised together. */
+    {
+        struct toy_game_enemy *saved_enemies;
+        struct toy_raster_cmd *fade_reference;
+        unsigned int saved_style = effects.enemy_death_style[0];
+        int opaque_count, fade_count, i;
+        fade_reference = NULL;
+        saved_enemies = tlibc_malloc(sizeof(game.enemies));
+        if (!saved_enemies) {
+            toy_renderer_destroy(&renderer);
+            tlibc_free(pixels);
+            return 249;
+        }
+        memcpy(saved_enemies, game.enemies, sizeof(game.enemies));
+        memset(game.enemies, 0, sizeof(game.enemies));
+        game.enemies[0].active = 2;
+        game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
+        game.enemies[0].x = camera.x;
+        game.enemies[0].z = camera.z + 100;
+        game.enemies[0].dir_z = 1024;
+        effects.enemy_death_style[0] = RASTERFALL_ENEMY_DEATH_STYLE_DISSOLVE;
+
+        renderer.cmd_count = 0;
+        game.enemies[0].dying_ms = RASTERFALL_ENEMY_DEATH_FADE_MS;
+        rasterfall_render_enemies(&renderer, &camera);
+        opaque_count = renderer.cmd_count;
+        if (opaque_count <= 0) goto death_fixture_fail;
+        for (i = 0; i < opaque_count; ++i) {
+            if (renderer.cmds[i].material_alpha != 255 ||
+                renderer.cmds[i].transparent ||
+                renderer.cmds[i].transparent_no_depth_write)
+                goto death_fixture_fail;
+        }
+
+        renderer.cmd_count = 0;
+        game.enemies[0].dying_ms = RASTERFALL_ENEMY_DEATH_FADE_MS / 2;
+        rasterfall_render_enemies(&renderer, &camera);
+        fade_count = renderer.cmd_count;
+        if (fade_count <= 0 || fade_count > 4096) goto death_fixture_fail;
+        for (i = 0; i < fade_count; ++i) {
+            if (renderer.cmds[i].material_alpha != 127 ||
+                !renderer.cmds[i].transparent ||
+                !renderer.cmds[i].transparent_no_depth_write)
+                goto death_fixture_fail;
+        }
+        fade_reference = tlibc_malloc((size_t)fade_count *
+                                      sizeof(*fade_reference));
+        if (!fade_reference) goto death_fixture_fail;
+        memcpy(fade_reference, renderer.cmds,
+               (size_t)fade_count * sizeof(*fade_reference));
+        if (rf_core_transparent_command_logic_test_v1(renderer.cmds,
+                                                       fade_count) < 0)
+            goto death_fixture_fail;
+
+        /* A second render at the same fade instant must keep the original
+         * body-part submission order and geometry/color identifiers. */
+        renderer.cmd_count = 0;
+        rasterfall_render_enemies(&renderer, &camera);
+        if (renderer.cmd_count != fade_count)
+            goto death_fixture_fail;
+        for (i = 0; i < fade_count; ++i)
+            if (!death_command_geometry_equal(&fade_reference[i],
+                                              &renderer.cmds[i]))
+                goto death_fixture_fail;
+
+        renderer.cmd_count = 0;
+        game.enemies[0].dying_ms = RASTERFALL_ENEMY_DEATH_FADE_MS - 1;
+        rasterfall_render_enemies(&renderer, &camera);
+        if (renderer.cmd_count <= 0 || renderer.cmd_count > 4096)
+            goto death_fixture_fail;
+        for (i = 0; i < renderer.cmd_count; ++i)
+            if (renderer.cmds[i].material_alpha != 254 ||
+                !renderer.cmds[i].transparent ||
+                !renderer.cmds[i].transparent_no_depth_write)
+                goto death_fixture_fail;
+
+        renderer.cmd_count = 0;
+        game.enemies[0].active = 1;
+        rasterfall_render_enemies(&renderer, &camera);
+        if (renderer.cmd_count <= 0 || renderer.cmd_count > 4096)
+            goto death_fixture_fail;
+        for (i = 0; i < renderer.cmd_count; ++i)
+            if (renderer.cmds[i].material_alpha != 255 ||
+                renderer.cmds[i].transparent ||
+                renderer.cmds[i].transparent_no_depth_write)
+                goto death_fixture_fail;
+
+        memcpy(game.enemies, saved_enemies, sizeof(game.enemies));
+        tlibc_free(fade_reference);
+        tlibc_free(saved_enemies);
+        effects.enemy_death_style[0] = saved_style;
+        goto death_fixture_done;
+death_fixture_fail:
+        memcpy(game.enemies, saved_enemies, sizeof(game.enemies));
+        tlibc_free(fade_reference);
+        tlibc_free(saved_enemies);
+        effects.enemy_death_style[0] = saved_style;
+        toy_renderer_destroy(&renderer);
+        tlibc_free(pixels);
+        return 249;
+death_fixture_done:
+        ;
     }
     /* Effects producer gate: billboard and ordinary particles must record
      * opaque raster commands without direct framebuffer writes.  The local

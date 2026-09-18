@@ -889,6 +889,52 @@ fail:
     return -1;
 }
 
+int rf_core_transparent_command_logic_test_v1(
+    const struct toy_raster_cmd *commands, int count)
+{
+    struct rf_core core;
+    struct toy_renderer renderer;
+    struct rf_core_gpu_frame *frame;
+    unsigned int *pixels;
+    unsigned long pixel_count = 320UL * 180UL;
+    int result = -1;
+
+    if (!commands || count <= 0 || count > 4096)
+        return -1;
+    pixels = tlibc_malloc(pixel_count * sizeof(*pixels));
+    if (!pixels) return -1;
+    memset(&core, 0, sizeof(core));
+    memset(&renderer, 0, sizeof(renderer));
+    memset(pixels, 0, pixel_count * sizeof(*pixels));
+    renderer.surface.width = 320;
+    renderer.surface.height = 180;
+    renderer.surface.stride = 320 * (int)sizeof(*renderer.surface.pixels);
+    renderer.surface.pixels = pixels;
+    renderer.cmds = (struct toy_raster_cmd *)commands;
+    renderer.cmd_count = count;
+    renderer.job_clear_color = 0x112233;
+    core.renderer = &renderer;
+    frame = &core.gpu_frame;
+    frame->raster.implementation = (void *)1;
+    frame->raster.width = 320;
+    frame->raster.height = 180;
+    frame->native_present = 1;
+    frame->armed = 1;
+    if (gpu_world_consume(&renderer, commands, count, &core) < 0 ||
+        !frame->native_prepared || !frame->native_stream_size ||
+        frame->stats.last_path != 1 ||
+        rf_core_render_frame_fallback_reason_v1(&core.render_frame) !=
+            RF_PRE_POST_FALLBACK_NONE)
+        goto done;
+    result = 0;
+done:
+    tlibc_free(frame->stream);
+    tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_texels);
+    tlibc_free(pixels);
+    return result;
+}
+
 static int gpu_pre_post_replay_cpu(struct rf_core *core)
 {
     struct rf_core_gpu_frame *frame = &core->gpu_frame;

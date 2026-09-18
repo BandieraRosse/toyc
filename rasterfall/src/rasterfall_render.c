@@ -3163,7 +3163,7 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
 {
     struct vec3 input[3], clipped[4];
     struct toy_screen_vertex screen[3];
-    int count, i, drawn = 0;
+    int count, i, drawn = 0, begin;
     long long area;
     world_to_view(camera, a, &input[0]);
     world_to_view(camera, b, &input[1]);
@@ -3173,6 +3173,7 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
         count = 3;
     } else count = clip_near(input, 3, clipped);
     if (count < 3) return 0;
+    begin = renderer->cmd_count;
     project_vertex(&renderer->surface, &clipped[0], &screen[0]);
     for (i = 1; i + 1 < count; i++) {
         project_vertex(&renderer->surface, &clipped[i], &screen[1]);
@@ -3199,6 +3200,14 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
                 camera, (a->x + b->x + c->x) / 3,
                 (a->z + b->z + c->z) / 3)), alpha);
     }
+    /* Alpha in this path is source-over presentation, not a translucent
+     * depth layer. Keep the command contract explicit for the GPU packer and
+     * for any CPU consumer that observes the retained command. */
+    if (alpha < 255)
+        for (i = begin; i < renderer->cmd_count; ++i) {
+            renderer->cmds[i].transparent = 1;
+            renderer->cmds[i].transparent_no_depth_write = 1;
+        }
     return drawn;
 }
 
