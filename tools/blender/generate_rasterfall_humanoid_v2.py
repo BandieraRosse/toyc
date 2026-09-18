@@ -288,15 +288,21 @@ def make_armature(scene):
     return armature
 
 
+def set_material_color(material, color):
+    """Keep Blender's viewport and glTF-exported material colors identical."""
+    rgba = (*color, 1.0)
+    material.diffuse_color = rgba
+    material.use_nodes = True
+    principled = material.node_tree.nodes.get('Principled BSDF')
+    if principled is None:
+        raise RuntimeError('material is missing Principled BSDF: ' + material.name)
+    principled.inputs['Base Color'].default_value = rgba
+
+
 def create_materials():
     def material(name, color):
         result = bpy.data.materials.new(name)
-        result.diffuse_color = (*color, 1.0)
-        result.use_nodes = True
-        principled = result.node_tree.nodes.get('Principled BSDF')
-        if principled is None:
-            raise RuntimeError('material is missing Principled BSDF: ' + name)
-        principled.inputs['Base Color'].default_value = (*color, 1.0)
+        set_material_color(result, color)
         return result
 
     return {
@@ -661,7 +667,7 @@ def create_profession(armature, scene, materials, profession):
     shirt, pants, gear, accent = palettes[profession]
     for key, color in (('shirt', shirt), ('pants', pants),
                        ('headgear', gear), ('headgear_light', accent)):
-        materials[key].diffuse_color = (*color, 1.0)
+        set_material_color(materials[key], color)
     g, a = materials['headgear'], materials['headgear_light']
 
     def tagged(obj, slot):

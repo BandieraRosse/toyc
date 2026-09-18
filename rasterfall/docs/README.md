@@ -9,6 +9,7 @@
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
 > 源码核对基线补充：True Vertex-Reduced Character LOD 在离线索引简化后 compact 实际引用 vertex 与对应 SKN1 BDEF；不改变 skeleton、CHR1 attachment、动画或 renderer skinning 算法。
 > 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理细分平面增加专用 solid + interpolated vertex light + fog + depth command/worker 路径；`--render-performance` 保留 `generic-planar` A/B，输出 framebuffer/depth 差异、专用/回退 command 及路径耗时。
+> 源码核对基线补充：RF Humanoid V2.1 职业 palette 统一同步 Blender viewport diffuse 与 glTF Principled Base Color；`tools/rf_profession_round.py --generate` 同时核对 GLB 和 RFM2 中的 HEAD/CHEST/BACK/HIP gear 色，防止 CPU renderer 消费灰白的陈旧导出材质。
 > 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 已改为 near/mid Hybrid、FAR compact LOD2。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 — FROZEN；最终64×48世界尺度、参数、consumer、验收与平台覆盖边界见 [Phase D](static-world-lighting-phase-d.md)。

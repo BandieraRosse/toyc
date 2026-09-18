@@ -7,6 +7,7 @@ Capture uses the real Rasterfall CLI, never a second character renderer.
 import argparse
 import hashlib
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -19,6 +20,64 @@ from rf_humanoid_headgear_sheet import assemble_grid
 PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy')
 HEADS = ('headset', 'patrol-cap', 'goggles', 'respirator',
          'tactical-helmet', 'engineering-helmet')
+PROFESSION_GEAR_COLORS = {
+    'rifleman': ((.12, .16, .08), (.34, .36, .20)),
+    'breacher': ((.07, .09, .12), (.24, .30, .36)),
+    'recon': ((.12, .16, .10), (.35, .38, .24)),
+    'medic': ((.65, .72, .64), (.72, .14, .055)),
+    'engineer': ((.18, .16, .105), (.68, .43, .075)),
+    'heavy': ((.13, .115, .08), (.43, .32, .13)),
+}
+
+
+def srgb(value):
+    return max(0, min(255, int(math.sqrt(max(0, min(1, value)) * 65025))))
+
+
+def check_profession_materials(glb, profession):
+    raw = glb.read_bytes()
+    json_length = int.from_bytes(raw[12:16], 'little')
+    document = json.loads(raw[20:20 + json_length].rstrip(b' \0'))
+    actual = {
+        material['name']: tuple(material['pbrMetallicRoughness']['baseColorFactor'][:3])
+        for material in document['materials']
+    }
+    expected = dict(zip(('RF_Headgear', 'RF_HeadgearLight'),
+                        PROFESSION_GEAR_COLORS[profession]))
+    checked = 0
+    for name, color in expected.items():
+        if name not in actual:
+            continue
+        checked += 1
+        if any(abs(a - b) > 1e-6 for a, b in zip(actual[name], color)):
+            raise SystemExit(f'{profession}: exported {name} color {actual.get(name)} != {color}')
+    if not checked:
+        raise SystemExit(f'{profession}: export has no profession gear material')
+    return {sum(srgb(channel) << shift
+                for channel, shift in zip(actual[name], (16, 8, 0)))
+            for name in expected if name in actual}
+
+
+def check_rmesh_materials(mesh, profession, expected=None):
+    raw = mesh.read_bytes()
+    version = int.from_bytes(raw[4:8], 'little')
+    primitive_count = int.from_bytes(raw[44:48], 'little')
+    material_count = int.from_bytes(raw[48:52], 'little')
+    material_bytes = 40 if version >= 9 else 24 if version >= 8 else 16
+    offset = 64 + primitive_count * 16
+    colors = {int.from_bytes(raw[offset + i * material_bytes:
+                                 offset + i * material_bytes + 4], 'little')
+              for i in range(material_count)}
+    if expected is None:
+        expected = {sum(srgb(channel) << shift
+                        for channel, shift in zip(color, (16, 8, 0)))
+                    for color in PROFESSION_GEAR_COLORS[profession]}
+    def close_color(want, got):
+        return all(abs(((want >> shift) & 255) - ((got >> shift) & 255)) <= 2
+                   for shift in (16, 8, 0))
+    if any(not any(close_color(want, got) for got in colors)
+           for want in expected):
+        raise SystemExit(f'{profession}: RFM2 gear colors {sorted(colors)} missing {sorted(expected)}')
 
 
 def main():
@@ -60,11 +119,19 @@ def main():
         for asset, flags in entries:
             manifest = manifests / (asset + '.asset.json')
             glb = (manifest.parent / json.loads(manifest.read_text())['source']).resolve()
+            expected_colors = None
             run(['blender', '--background', '--factory-startup', '--python-exit-code', '1', '--python',
                  'tools/blender/generate_rasterfall_humanoid_v2.py', '--', '--output', glb, *flags], asset + '-generate')
+            if asset.startswith('rf_profession_'):
+                expected_colors = check_profession_materials(
+                    glb, asset.removeprefix('rf_profession_'))
             run(['build/glb-inspect', glb, 'contract'], asset + '-contract')
             run(['python3', 'tools/assets/import_asset.py', '--no-build', '--force', manifest], asset + '-import')
             run(['build/rfchar_runtime_test', models / (asset + '.rmesh')], asset + '-runtime')
+            if asset.startswith('rf_profession_'):
+                check_rmesh_materials(models / (asset + '.rmesh'),
+                                      asset.removeprefix('rf_profession_'),
+                                      expected_colors)
         attachment_source = Path('rasterfall/private-assets/source/attachments')
         attachment_source.mkdir(parents=True, exist_ok=True)
         for asset, flags in rigid_entries:
@@ -72,6 +139,8 @@ def main():
             run(['blender', '--background', '--factory-startup', '--python-exit-code', '1', '--python',
                  'tools/blender/generate_rasterfall_humanoid_v2.py', '--', '--output', glb, *flags],
                 asset + '-generate')
+            profession = asset.removeprefix('rf_gear_').split('_', 1)[0]
+            expected_colors = check_profession_materials(glb, profession)
             manifest = root / (asset + '.asset.json')
             manifest.write_text(json.dumps({
                 'schema': 1, 'id': asset, 'type': 'rigid_attachment',
@@ -80,6 +149,8 @@ def main():
                     'units': 'meters'}, 'lods': []}, indent=2) + '\n')
             run(['python3', 'tools/assets/import_asset.py', '--no-build', '--force', manifest],
                 asset + '-import')
+            check_rmesh_materials(models / (asset + '.rmesh'), profession,
+                                  expected_colors)
 
     if args.capture:
         for asset, _ in entries:

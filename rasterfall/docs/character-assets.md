@@ -190,6 +190,10 @@ HIP_L/HIP_R，共 21 个 gear resource。Breacher 的前侧 lower armor 与 CHES
 legacy carrier（左）/modular（右）A/B。该入口同时执行 CHEST/HIP_L/HIP_R bind、rifle idle、
 rifle aim、turned 数值回归并报告 body 实际加载份数。`tools/rf_profession_round.py --generate`
 生成并经统一 rigid importer 验证全部 gear；`--deterministic` 比较七张 lineup 的逐字节结果。
+生成器中的 palette 赋值必须同时更新 Blender `diffuse_color` 与 Principled BSDF `Base Color`：前者只供
+viewport，后者才是 glTF 导出的事实来源。`--generate` 会在导入前核对 GLB 中每个职业的
+`RF_Headgear` / `RF_HeadgearLight`，并在导入后核对 carrier 与 21 个 rigid gear 的 RFM2 材质色；
+这些门禁用于区分资产导出丢色与 raster command 消费问题。
 
 ## 当前缺口与下一阶段边界
 
