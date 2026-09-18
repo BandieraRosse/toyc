@@ -2,6 +2,7 @@
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
+> 源码核对基线补充：2026-09-19 Texture V1 measure 从最近命令检查重复纹理，packer 通过本帧唯一纹理视图表复用 handle；老地图右转进入约四万条 retained command 的高负载视野时，不再二次回扫此前全部命令并触发 200ms watchdog。
 > 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。Windows Intel strict native smoke 与 Fog/Post smoke 已各通过 120 帧，适配器为 Intel Iris Xe，zero-fallback audit 和 acceptance 产物已完成。retained command 堆越界已修复，完整生命周期矩阵仍待签收，GPU-8B1/GPU-9A 仍未冻结。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
@@ -92,6 +93,12 @@ Core retained command 缓存跨帧复用。`gpu_pre_post_partition_world()` 用�
 保留旧扩容容量会使后续增长帧绕过扩容并在 `memcpy` 时写出堆边界；该问题与暂停菜单
 无关，静止场景命令数不增长时可能不触发。`rf_core_retained_span_logic_test_v1()`
 覆盖分区后的缩小、增长、再次缩小及 stable partition 内容，属于 `--logic-test` 门禁。
+
+Texture V1 的资源表在每帧 pack 时同时维护 descriptor、texel 和仅供 host 查找的 texture-view
+数组。每个 textured command 只在该唯一纹理数组中查找 handle；首次出现时追加 descriptor 并复制
+texel。该 host 指针数组不写入 Raster ABI，也不改变 GPU 资源格式。禁止为每条纹理命令从头回扫
+此前全部 command：老地图面向高密度角色区时 retained stream 可超过四万条，这种回扫会把 pack
+推过交互式 200ms watchdog，并以 frame presentation failure 结束运行。
 
 `rf_render_frame_v1` 是 Core 持有的一帧有序提交描述，只保存 camera/extent 快照、固定层计数和
 backend 审计信息，不拥有玩法状态、renderer command pool 或 Vulkan object。层顺序固定为

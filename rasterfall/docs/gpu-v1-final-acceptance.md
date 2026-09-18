@@ -2,6 +2,7 @@
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
+> 源码核对基线补充：2026-09-19 老地图右转故障定位为 Texture V1 pack 重复回扫历史 command 导致 200ms watchdog；本帧唯一纹理视图表修复后，strict GPU 全向扫视可越过同一高负载姿态。
 > 源码核对基线：GPU Required Runtime Contract、Windows Intel strict native smoke、Fog/Post smoke 与 acceptance 产物已通过；retained command 堆越界已修复，但完整矩阵仍待签收，GPU-8B1 / GPU-8B2 / GPU-9A 尚未冻结。
 
 ## 本轮验收状态

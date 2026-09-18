@@ -103,6 +103,7 @@ struct rf_core_gpu_frame {
     unsigned char *stream;
     unsigned long stream_capacity;
     struct rf_gpu_texture_desc_v1 *texture_descs;
+    const struct toy_texture_view **texture_views;
     unsigned int texture_desc_capacity;
     unsigned char *texture_texels;
     unsigned long texture_texel_capacity;

@@ -397,11 +397,13 @@ int rasterfall_render_gpu_world_capture(const char *view, int enemy_count,
     }
     if (texture_count) {
         resources.descs = tlibc_malloc((size_t)texture_count * sizeof(*resources.descs));
+        resources.views = tlibc_malloc((size_t)texture_count * sizeof(*resources.views));
         resources.texels = tlibc_malloc(texture_bytes);
-        if (!resources.descs || !resources.texels) {
+        if (!resources.descs || !resources.views || !resources.texels) {
             failure = "allocate Texture V1 resources"; goto cleanup;
         }
         resources.desc_capacity = texture_count;
+        resources.view_capacity = texture_count;
         resources.texel_capacity = texture_bytes;
     }
     if (rf_gpu_raster_pack_toy_textured_v1(&packed_renderer, 0x151922, 0,
@@ -468,6 +470,7 @@ cleanup:
     tlibc_free(stream);
     tlibc_free(capture.selected);
     tlibc_free(resources.descs);
+    tlibc_free(resources.views);
     tlibc_free(resources.texels);
     return result;
 }

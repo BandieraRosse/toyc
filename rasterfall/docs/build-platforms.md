@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 Windows strict GPU 老地图全向扫视覆盖 Texture V1 高命令量 pack；纹理 handle 改为本帧唯一视图表查找，避免方向相关的 watchdog 退出。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
 > 当前平台边界：GPU-8A 已冻结；Intel Iris Xe 已通过 identity/fog 支持场景的 native present 与零 readback/copy，strict smoke、Fog/Post smoke 和 acceptance 产物已完成。Legacy anime toon 与 Console/Desktop 已从 normal runtime 冻结隔离；retained command 堆越界已修复，GPU-8B1/GPU-9A 待完整矩阵签收，尚未冻结。Windows window/input/audio 仍由 SDL2 提供，尚未进入 SDL-free Native Platform 阶段。

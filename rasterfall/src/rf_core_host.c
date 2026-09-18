@@ -310,8 +310,16 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     if (unique_textures > frame->texture_desc_capacity) {
         struct rf_gpu_texture_desc_v1 *grown = tlibc_malloc(
             (size_t)unique_textures * sizeof(*grown));
-        if (!grown) { frame->stats.cpu_fallback_frames++; return -1; }
+        const struct toy_texture_view **grown_views = tlibc_malloc(
+            (size_t)unique_textures * sizeof(*grown_views));
+        if (!grown || !grown_views) {
+            tlibc_free(grown);
+            tlibc_free(grown_views);
+            frame->stats.cpu_fallback_frames++;
+            return -1;
+        }
         tlibc_free(frame->texture_descs); frame->texture_descs = grown;
+        tlibc_free(frame->texture_views); frame->texture_views = grown_views;
         frame->texture_desc_capacity = unique_textures;
     }
     if (texture_bytes > frame->texture_texel_capacity) {
@@ -325,6 +333,8 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         memset(&resources, 0, sizeof(resources));
         resources.descs = frame->texture_descs;
         resources.desc_capacity = frame->texture_desc_capacity;
+        resources.views = frame->texture_views;
+        resources.view_capacity = frame->texture_desc_capacity;
         resources.texels = frame->texture_texels;
         resources.texel_capacity = frame->texture_texel_capacity;
         gpu_world_log("gpu-world: pack begin");
@@ -969,12 +979,14 @@ int rf_core_retained_span_logic_test_v1(void)
     tlibc_free(frame->retained_commands);
     tlibc_free(frame->stream);
     tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_views);
     tlibc_free(frame->texture_texels);
     return 0;
 fail:
     tlibc_free(frame->retained_commands);
     tlibc_free(frame->stream);
     tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_views);
     tlibc_free(frame->texture_texels);
     return -1;
 }
@@ -1089,6 +1101,7 @@ done:
     tlibc_free(frame->retained_commands);
     tlibc_free(frame->stream);
     tlibc_free(frame->texture_descs);
+    tlibc_free(frame->texture_views);
     tlibc_free(frame->texture_texels);
     return result;
 }
@@ -1801,6 +1814,7 @@ void rf_core_shutdown(struct rf_core *core)
     rf_gpu_raster_shutdown(&core->gpu_frame.raster);
     tlibc_free(core->gpu_frame.stream);
     tlibc_free(core->gpu_frame.texture_descs);
+    tlibc_free(core->gpu_frame.texture_views);
     tlibc_free(core->gpu_frame.texture_texels);
     tlibc_free(core->gpu_frame.oracle_color);
     tlibc_free(core->gpu_frame.oracle_depth);

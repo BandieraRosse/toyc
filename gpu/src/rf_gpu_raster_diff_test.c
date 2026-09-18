@@ -471,9 +471,10 @@ static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
     r.cmds[r.cmd_count-1].transparent=1;
     CHECK(rf_gpu_raster_measure_textures_toy_v1(&r,&unique,&bytes)==0&&unique==2&&bytes==80);
     resources.descs=calloc(unique,sizeof(*resources.descs));resources.desc_capacity=unique;
+    resources.views=calloc(unique,sizeof(*resources.views));resources.view_capacity=unique;
     resources.texels=malloc(bytes);resources.texel_capacity=bytes;
     cap=rf_gpu_raster_stream_size_v1((uint32_t)r.cmd_count+2);s.data=malloc(cap);
-    CHECK(resources.descs&&resources.texels&&s.data);
+    CHECK(resources.descs&&resources.views&&resources.texels&&s.data);
     CHECK(rf_gpu_raster_pack_toy_textured_v1(&r,0x101820,0,s.data,cap,&s.size,&resources)==0);
     CHECK(resources.desc_count==2&&resources.texel_size==80);
     CHECK(rf_gpu_raster_cpu_reference_textured_v1(s.data,s.size,resources.descs,
@@ -513,7 +514,7 @@ static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
     result=0;
 done:
     toy_renderer_destroy(&r);free(pixels);free(cc);free(gc);free(cd);free(gd);
-    free(s.data);free(resources.descs);free(resources.texels);return result;
+    free(s.data);free(resources.descs);free(resources.views);free(resources.texels);return result;
 }
 
 int main(int argc,char **argv)

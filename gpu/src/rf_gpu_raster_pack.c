@@ -61,10 +61,10 @@ int rf_gpu_raster_measure_textures_toy_v1(const struct toy_renderer *renderer,
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
         if (!cmd->textured) continue;
         if (!texture_command_supported(cmd)) return RF_GPU_RASTER_PACK_UNSUPPORTED;
-        for (j = 0; j < i; ++j)
+        for (j = i - 1; j >= 0; --j)
             if (renderer->cmds[j].textured &&
                 renderer->cmds[j].texture == cmd->texture) break;
-        if (j == i) {
+        if (j < 0) {
             if (unique == UINT_MAX || bytes > (size_t)-1 - cmd->texture->data_size)
                 return RF_GPU_RASTER_PACK_CAPACITY;
             unique++;
@@ -81,17 +81,14 @@ static int texture_handle(const struct toy_renderer *renderer, int command_index
                           uint32_t *handle)
 {
     const struct toy_texture_view *texture = renderer->cmds[command_index].texture;
-    uint32_t index = 0;
-    int i, j;
-    for (i = 0; i < command_index; ++i) {
-        if (!renderer->cmds[i].textured) continue;
-        if (renderer->cmds[i].texture == texture) { *handle = index + 1; return 0; }
-        for (j = 0; j < i; ++j)
-            if (renderer->cmds[j].textured &&
-                renderer->cmds[j].texture == renderer->cmds[i].texture) break;
-        if (j == i) index++;
-    }
-    if (!resources || index >= resources->desc_capacity ||
+    uint32_t index;
+    for (index = 0; resources && index < resources->view_count; ++index)
+        if (resources->views[index] == texture) {
+            *handle = index + 1;
+            return 0;
+        }
+    if (!resources || !resources->views ||
+        index >= resources->desc_capacity || index >= resources->view_capacity ||
         resources->texel_size > resources->texel_capacity - texture->data_size ||
         resources->texel_size > UINT_MAX ||
         texture->width > UINT_MAX / texture->channels)
@@ -103,10 +100,12 @@ static int texture_handle(const struct toy_renderer *renderer, int command_index
     resources->descs[index].format = texture->channels == 4 ?
         RF_GPU_TEXTURE_FORMAT_RGBA8_V1 : RF_GPU_TEXTURE_FORMAT_RGB8_V1;
     resources->descs[index].sampling = RF_GPU_TEXTURE_SAMPLING_NEAREST_V1;
+    resources->views[index] = texture;
     memcpy(resources->texels + resources->texel_size, texture->data,
            texture->data_size);
     resources->texel_size += texture->data_size;
     resources->desc_count = index + 1;
+    resources->view_count = index + 1;
     *handle = index + 1;
     return 0;
 }
@@ -292,9 +291,10 @@ int rf_gpu_raster_pack_toy_textured_v1(
                               struct rf_gpu_texture_resources_v1 *resources)
 {
     if (!resources || (resources->desc_capacity && !resources->descs) ||
+        (resources->view_capacity && !resources->views) ||
         (resources->texel_capacity && !resources->texels))
         return RF_GPU_RASTER_PACK_INVALID;
-    resources->desc_count = 0; resources->texel_size = 0;
+    resources->desc_count = 0; resources->view_count = 0; resources->texel_size = 0;
     return pack_toy(renderer, clear_color, clear_depth, destination,
                     destination_size, written_size, resources, UINT_MAX, UINT_MAX);
 }
@@ -308,9 +308,10 @@ int rf_gpu_raster_pack_toy_textured_spans_v1(
                               uint32_t viewmodel_offset)
 {
     if (!resources || (resources->desc_capacity && !resources->descs) ||
+        (resources->view_capacity && !resources->views) ||
         (resources->texel_capacity && !resources->texels))
         return RF_GPU_RASTER_PACK_INVALID;
-    resources->desc_count = 0; resources->texel_size = 0;
+    resources->desc_count = 0; resources->view_count = 0; resources->texel_size = 0;
     return pack_toy(renderer, clear_color, clear_depth, destination,
                     destination_size, written_size, resources,
                     UINT_MAX, viewmodel_offset);
@@ -326,9 +327,10 @@ int rf_gpu_raster_pack_toy_textured_spans_v2(
                               uint32_t viewmodel_offset)
 {
     if (!resources || (resources->desc_capacity && !resources->descs) ||
+        (resources->view_capacity && !resources->views) ||
         (resources->texel_capacity && !resources->texels))
         return RF_GPU_RASTER_PACK_INVALID;
-    resources->desc_count = 0; resources->texel_size = 0;
+    resources->desc_count = 0; resources->view_count = 0; resources->texel_size = 0;
     return pack_toy(renderer, clear_color, clear_depth, destination,
                     destination_size, written_size, resources,
                     transparent_offset, viewmodel_offset);

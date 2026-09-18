@@ -1,6 +1,7 @@
 # Rasterfall GPU 与 Windows Native Platform 阶段计划
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 老地图方向相关退出定位为 Texture V1 pack 对历史 command 的重复回扫；本帧唯一纹理视图表消除平方级 handle 查找，strict GPU 全向扫视已越过原 watchdog 姿态。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows Intel normal-frame acceptance audit（2026-09-18）
 > 当前状态：GPU-0～GPU-8A、A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD、B4-POST-WORLD、GPU-8B2d local gate、Windows MinGW package、logic-test、strict native GPU smoke 与 Fog/Post smoke 已完成。实机识别为 Intel(R) Iris(R) Xe Graphics；120 帧无 Fog 与 120 帧 Fog 均为 `gpu-native`，fallback/readback/CPU copy 为 0。当前修复：retained command 跨帧堆越界已修复，不依赖暂停菜单；完整生命周期仍待签收；GPU-8B1/GPU-8B2/GPU-9A 和 C5 仍不得标为 FROZEN。

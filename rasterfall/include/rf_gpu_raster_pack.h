@@ -4,11 +4,15 @@
 #include "rf_gpu_raster_abi.h"
 
 struct toy_renderer;
+struct toy_texture_view;
 
 struct rf_gpu_texture_resources_v1 {
     struct rf_gpu_texture_desc_v1 *descs;
     uint32_t desc_count;
     uint32_t desc_capacity;
+    const struct toy_texture_view **views;
+    uint32_t view_count;
+    uint32_t view_capacity;
     unsigned char *texels;
     size_t texel_size;
     size_t texel_capacity;
