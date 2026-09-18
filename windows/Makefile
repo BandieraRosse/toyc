@@ -1,5 +1,6 @@
 WIN_CC ?= x86_64-w64-mingw32-gcc
 AR ?= x86_64-w64-mingw32-ar
+WIN_AR ?= x86_64-w64-mingw32-ar
 # Windows GNU Make otherwise defaults recipes to cmd.exe.  The rules below
 # intentionally use POSIX commands, so run them through the fixed MSYS2 shell.
 MSYS2_ROOT ?= C:/msys64
@@ -73,9 +74,9 @@ GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c
 PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c rasterfall/src/rf_core_host.c gpu/src/rf_gpu_raster_cpu_ref.c rasterfall/src/rf_game_lifecycle.c windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
                  windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
                  windows/src/env.c windows/src/string.c windows/src/platform.c
-LIB_SRCS := lib/assets.c lib/graphics/fb_draw.c lib/graphics/fb_font.c \
-            lib/graphics/renderer.c lib/input/input.c lib/net/dns.c \
-            lib/math/math.c
+LIB_SRCS := lib/linux/assets.c lib/linux/graphics/fb_draw.c lib/linux/graphics/fb_font.c \
+            lib/linux/graphics/renderer.c lib/linux/input/input.c lib/linux/net/dns.c \
+            lib/linux/math/math.c
 SRCS := $(GAME_SRCS) $(ANIMATION_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_SRCS)
 OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)

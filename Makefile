@@ -67,7 +67,7 @@ HEADERS  := $(TOYC_NEED) $(ELF_H) $(ELF_W_H)
 # ─── 默认目标 ──────────────────────────────────────────────────
 
 .PHONY: all clean update-bootstrap test test-selfhost test-source test-all \
-        test-toyar win-deps win-rasterfall win-rasterfall-package
+        test-toyar win-deps win-rasterfall win-rasterfall-package win-app
 
 all: $(BUILD)/toyc $(BUILD)/toyas $(BUILD)/toyld $(BUILD)/toyar
 	@printf "$(GREEN)✓ 构建完成$(RESET)\n"
@@ -82,6 +82,9 @@ win-rasterfall:
 
 win-rasterfall-package:
 	+$(MAKE) -j$$(nproc) -f windows/Makefile package WINDOWS_DEPS="$(if $(WINDOWS_DEPS),$(WINDOWS_DEPS),$(CURDIR)/.windows-deps)"
+
+win-app:
+	+$(MAKE) -f windows/Makefile app
 
 $(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
@@ -737,7 +740,9 @@ test-toyar: $(BUILD)/toyar $(BUILD)/toyc $(BUILD)/toyld $(BUILD)/toyc_rt.o $(BUI
 GCC       := gcc
 AR        := ar
 LIBC_DIR  := lib/linux
+PORTABLE_LIB_DIR := lib/portable
 APP_DIR   := app/linux
+PORTABLE_APP_DIR := app/portable
 RASTERFALL_DIR := rasterfall
 RASTERFALL_SRC := $(RASTERFALL_DIR)/src
 RASTERFALL_INC := $(RASTERFALL_DIR)/include
@@ -761,23 +766,24 @@ LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
 
 # ─── 库源文件列表 ──────────────────────────────────────────────
 
-LIBC_C_SRCS   := $(shell find $(LIBC_DIR) -name '*.c' | LANG=C sort)
-LIBC_ASM_SRCS := $(shell find $(LIBC_DIR) -name '*.S' | LANG=C sort)
+LIBC_C_SRCS   := $(shell find $(LIBC_DIR) $(PORTABLE_LIB_DIR) -name '*.c' | LANG=C sort)
+LIBC_ASM_SRCS := $(shell find $(LIBC_DIR) $(PORTABLE_LIB_DIR) -name '*.S' | LANG=C sort)
 
 # 路径压平：lib/linux/core/io.c → build/libc_core_io.o
 LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
-                   $(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
+                   $(BUILD)/libc_$(subst /,_,$(patsubst %.c,%,$(src))).o)
 LIBC_ASM_OBJS := $(foreach src,$(LIBC_ASM_SRCS),\
-                   $(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(src))).o)
+                   $(BUILD)/libc_$(subst /,_,$(patsubst %.S,%,$(src))).o)
 LIBC_OBJS     := $(LIBC_C_OBJS) $(LIBC_ASM_OBJS)
 
 # ─── App 源文件列表 ─────────────────────────────────────────────
 
-APP_SRCS    := $(shell find $(APP_DIR) -name '*.c' | LANG=C sort) \
+APP_SRCS    := $(shell find $(APP_DIR) $(PORTABLE_APP_DIR) -name '*.c' | LANG=C sort) \
                $(RASTERFALL_SRC)/rasterfall.c
 APP_NAMES   := $(sort $(basename $(notdir $(APP_SRCS))))
 APP_OBJS    := $(foreach src,$(APP_SRCS),$(BUILD)/$(notdir $(basename $(src))).o)
 APP_TARGETS := $(foreach name,$(APP_NAMES),$(BUILD)/$(name))
+WIN_APP_NAMES := $(sort $(basename $(notdir $(shell find app/portable app/windows -name '*.c' | LANG=C sort))))
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
@@ -1112,7 +1118,7 @@ $(BUILD)/rasterfall_vmd.o: $(RASTERFALL_SRC)/rasterfall_vmd.c \
 
 # 每个 .c 文件 → .o
 define LIBC_C_rule
-$$(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/libc_$(subst /,_,$(patsubst %.c,%,$(1))).o: $(1) | $$(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$(1)"
 	$$(GCC) $$(LIBC_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
@@ -1120,7 +1126,7 @@ $(foreach src,$(LIBC_C_SRCS),$(eval $(call LIBC_C_rule,$(src))))
 
 # 每个 .S 文件 → .o
 define LIBC_ASM_rule
-$$(BUILD)/libc_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/libc_$(subst /,_,$(patsubst %.S,%,$(1))).o: $(1) | $$(BUILD)
 	@printf "  $(BLUE)  AS$(RESET)  %s\n" "$(1)"
 	$$(GCC) $$(LIBC_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
@@ -1381,6 +1387,15 @@ lod-g11:
 # 单个 app：make app-echo
 $(foreach name,$(filter-out rasterfall,$(APP_NAMES)),$(eval app-$(name): $(BUILD)/$(name)))
 
+# Windows portable app 入口由 windows/Makefile 拥有；根 Makefile 只提供与
+# app-<name> 对称的便捷目标。
+.PHONY: $(addprefix win-app-,$(WIN_APP_NAMES))
+define WIN_APP_forward_rule
+win-app-$(1):
+	+$$(MAKE) -f windows/Makefile win-app-$(1)
+endef
+$(foreach name,$(WIN_APP_NAMES),$(eval $(call WIN_APP_forward_rule,$(name))))
+
 # Rasterfall 旧入口保留兼容性，但与正式入口一样自动并行构建。
 app-rasterfall:
 	+$(MAKE) -j$$(nproc) $(BUILD)/rasterfall
@@ -1503,16 +1518,17 @@ SELF_HEADERS  := $(wildcard include/*.h include/posix/*.h include/tlibc/*.h \
 
 # 路径压平：lib/linux/core/io.c → build/self_core_io.o
 SELF_LIBC_C_OBJS   := $(foreach src,$(LIBC_C_SRCS),\
-                        $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(src))).o)
+                        $(BUILD)/self_$(subst /,_,$(patsubst %.c,%,$(src))).o)
 # 启动文件（lib/linux/init/start.S）单独管理，不入归档，避免 ld --whole-archive 重复
 SELF_CRT_OBJS      := $(BUILD)/self_init_start.o
 SELF_LIBC_ASM_OBJS := $(foreach src,$(filter-out $(LIBC_DIR)/init/start.S,$(LIBC_ASM_SRCS)),\
-                        $(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(src))).o)
+                        $(BUILD)/self_$(subst /,_,$(patsubst %.S,%,$(src))).o)
 SELF_LIBC_OBJS     := $(SELF_LIBC_C_OBJS) $(SELF_LIBC_ASM_OBJS)
 
-# ─── App 源文件（复用 APP_SRCS 定义） ─────────────────────────
+# ─── App 源文件（自托管范围保持为 app/linux） ────────────────
 
-SELF_APP_NAMES   := $(filter-out rasterfall,$(APP_NAMES))
+SELF_APP_SRCS    := $(filter $(APP_DIR)/%,$(APP_SRCS))
+SELF_APP_NAMES   := $(filter-out rasterfall,$(sort $(basename $(notdir $(SELF_APP_SRCS)))))
 SELF_APP_OBJS    := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self.o)
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
 SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_components_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_render_resources_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o $(BUILD)/rasterfall_world_light_self.o
@@ -1528,7 +1544,7 @@ $(SELF_APP_EXTRA_OBJS_vmd_inspect) $(SELF_APP_EXTRA_OBJS_glb_inspect): rasterfal
 
 # .c → .o（toyc）
 define SELF_LIBC_C_rule
-$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.c,%,$(1))).o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
+$$(BUILD)/self_$(subst /,_,$(patsubst %.c,%,$(1))).o: $(1) $$(SELF_CC) $$(SELF_HEADERS) | $$(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$(1)"
 	$$(SELF_CC) $$(SELF_CFLAGS) -I $$(RASTERFALL_INC) -c $(1) -o $$@
 endef
@@ -1536,7 +1552,7 @@ $(foreach src,$(LIBC_C_SRCS),$(eval $(call SELF_LIBC_C_rule,$(src))))
 
 # .S → .o（系统 as）
 define SELF_LIBC_ASM_rule
-$$(BUILD)/self_$(subst /,_,$(patsubst $(LIBC_DIR)/%.S,%,$(1))).o: $(1) | $$(BUILD)
+$$(BUILD)/self_$(subst /,_,$(patsubst %.S,%,$(1))).o: $(1) | $$(BUILD)
 	@printf "  $(BLUE)  AS(s)  %s\n" "$(1)"
 	$$(SELF_AS) $(1) -o $$@
 endef
@@ -1731,7 +1747,7 @@ $$(BUILD)/$(notdir $(basename $(1)))_self: $$(BUILD)/$(notdir $(basename $(1)))_
 	@printf "$(BLUE)  LD(s)  %s\n" "$(notdir $(basename $(1)))"
 	$$(SELF_LD) -e __tlibc_start $$(SELF_CRT_OBJS) $$< $(SELF_APP_EXTRA_OBJS_$(notdir $(basename $(1)))) --whole-archive $$(SELF_LIB_A) --no-whole-archive -o $$@
 endef
-$(foreach src,$(filter $(APP_DIR)/%,$(APP_SRCS)),$(eval $(call SELF_APP_rule,$(src))))
+$(foreach src,$(SELF_APP_SRCS),$(eval $(call SELF_APP_rule,$(src))))
 
 # ─── 目标 ───────────────────────────────────────────────────────
 
