@@ -163,7 +163,7 @@ static void rf_windows_log(const char *message) { (void)message; }
 #define PAUSE_ITEM_MOUSE    1
 #define PAUSE_ITEM_COORDS   2
 #define PAUSE_ITEM_KEYBOARD 3
-#define PAUSE_ITEM_MENU     4
+#define PAUSE_ITEM_EXIT    4
 #define PAUSE_ITEM_COUNT    5
 
 enum rasterfall_startup_screen {
@@ -861,7 +861,7 @@ static void draw_pause_overlay(struct toy_surface *surface,
                      item == menu->selected ? '>' : ' ',
                      sensitivity_percent(settings->keyboard_level));
         else
-            snprintf(line, sizeof(line), "%c RETURN TO MENU",
+            snprintf(line, sizeof(line), "%c EXIT GAME",
                      item == menu->selected ? '>' : ' ');
         fb_draw_string((unsigned char *)surface->pixels, x + 42, row_y,
                        line, color, surface->stride);
@@ -2805,7 +2805,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rf_command_context command_context;
     int64_t last_time, fps_window_start, fps_elapsed;
     int64_t last_active = 0;   /* 帧间隔统计 */
-    int return_to_menu = 0;
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
     int running = 1, pointer_lock_requested = 0, paused = 1;
@@ -3726,8 +3725,10 @@ startup_again:
                     coordinate_axes = !coordinate_axes;
                     rasterfall_render_set_coordinate_axes(coordinate_axes);
                 }
-                else if (pause_menu.selected == PAUSE_ITEM_MENU) {
-                    return_to_menu = 1;
+                else if (pause_menu.selected == PAUSE_ITEM_EXIT) {
+                    /* UI requests termination through Core so the host keeps
+                     * ownership of the actual shutdown sequence. */
+                    rf_core_request_exit(&core);
                     running = 0;
                 }
             }
@@ -4209,39 +4210,6 @@ startup_again:
             }
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
-    }
-    if (return_to_menu) {
-        rasterfall_session_set_managed_ai(&session, 0);
-        managed_spectator = 0;
-        managed_third_person = 0;
-        memset(&managed_terminal, 0, sizeof(managed_terminal));
-        rasterfall_audio_stop(&audio);
-        rasterfall_audio_unload_assets(&audio);
-        rasterfall_net_discovery_close(&discovery);
-        rasterfall_net_close(&net);
-        rasterfall_session_reset(&session, &camera, seed);
-        rasterfall_effects_init(&effects);
-        requested_net_mode = RASTERFALL_NET_OFF;
-        net_address = NULL;
-        startup_error = NULL;
-        running = 1;
-        paused = 1;
-        accumulator = 0;
-        rendered_frames = 0;
-        scene_pixels = 0;
-        display_fps = 0;
-        fps_window_frames = 0;
-        return_to_menu = 0;
-        /* Do not carry the previous pause-menu selection or its pending
-         * Enter edge into the next round.  Otherwise choosing MENU leaves
-         * the next game paused on MENU and Enter immediately returns again. */
-        pause_menu.selected = PAUSE_ITEM_RESUME;
-        memset(pending_key_edges, 0, sizeof(pending_key_edges));
-        memset(&input, 0, sizeof(input));
-        rf_core_reset_input(&core);
-        rf_core_set_pointer_lock(&core, 0);
-        pointer_lock_requested = 0;
-        goto startup_again;
     }
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");

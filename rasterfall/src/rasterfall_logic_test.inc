@@ -859,6 +859,15 @@ static int run_logic_test(void)
     long long direction_length;
     if (rf_core_retained_span_logic_test_v1() < 0) return 249;
     {
+        struct rf_core exit_core;
+        memset(&exit_core, 0, sizeof(exit_core));
+        exit_core.initialized = 1;
+        if (rf_core_should_exit(&exit_core) ||
+            rf_core_request_exit(&exit_core) < 0 ||
+            !rf_core_should_exit(&exit_core))
+            return 250;
+    }
+    {
         struct rf_core frame_core;
         struct toy_raster_cmd frame_commands[4];
         memset(&frame_core, 0, sizeof(frame_core));

@@ -2182,7 +2182,6 @@ struct character_frontend_dispatch {
     int *depth;
     unsigned char visible[2];
     int drawn[2];
-    long wall_us[2];
 };
 
 static void prepare_character_command_renderer(
@@ -2237,9 +2236,7 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     struct rasterfall_frontend_state *state;
     const struct rasterfall_model_asset *model;
     int x, y, z, scale;
-    long start = render_monotonic_us();
     dispatch->drawn[task] = 0;
-    dispatch->wall_us[task] = 0;
     if (!dispatch->visible[task]) return;
     if (task == 0) {
         commands = &private_character_commands;
@@ -2280,7 +2277,6 @@ static void character_frontend_job(int worker_id, int task, void *opaque)
     dispatch->drawn[task] = render_gallery_model_range(
         commands, dispatch->camera, model, x, y, z, scale, 0,
         (int)model->primitive_count, 0, -1, 1);
-    dispatch->wall_us[task] = render_monotonic_us() - start;
 cleanup:
     frontend_unbind_worker(commands);
 }
@@ -2292,7 +2288,6 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     enum rasterfall_character_distance_quality eula_quality;
     const struct toy_renderer *command_sources[5];
     int i, source_count = 0, drawn = 0;
-    long pipeline_start, merge_start;
     dispatch.camera = camera;
     dispatch.surface = &renderer->surface;
     dispatch.depth = renderer->depth;
@@ -2335,35 +2330,17 @@ static int render_characters_parallel(struct toy_renderer *renderer,
     {
         private_character_frontend.disable_edge |= edge_pass_enabled == 0;
     }
-    pipeline_start = render_monotonic_us();
     if (toy_renderer_parallel_for(renderer, 2, 2,
                                   character_frontend_job, &dispatch) < 0)
         return -1;
-    scene_stats.character_prepare_wall_us =
-        render_monotonic_us() - pipeline_start;
     for (i = 0; i < 2; i++) if (dispatch.visible[i])
         command_sources[source_count++] = i == 0 ?
             &private_character_commands : &developer_characters[i - 1].commands;
-    merge_start = render_monotonic_us();
     if (source_count > 0 && toy_renderer_merge_command_batch(renderer,
             command_sources, source_count, 2) < 0)
         return -1;
-    scene_stats.character_merge_us = render_monotonic_us() - merge_start;
     for (i = 0; i < 2; i++) {
-        struct rasterfall_frontend_state *state = i == 0 ?
-            &private_character_frontend : &developer_characters[i - 1].frontend;
         drawn += dispatch.drawn[i];
-        scene_stats.character_visible[i] = dispatch.visible[i];
-        scene_stats.character_edge_disabled[i] = state->disable_edge;
-        scene_stats.character_wall_us[i] = dispatch.wall_us[i];
-        scene_stats.character_animation_us[i] = state->timing.animation_sample_us;
-        scene_stats.character_skin_us[i] = state->timing.skinning_us;
-        scene_stats.character_vertex_us[i] = state->timing.vertex_cache_us;
-        scene_stats.character_triangle_us[i] = state->timing.material_us +
-            state->timing.body_triangles_us + state->timing.edge_triangles_us;
-        scene_stats.character_triangles[i] = i == 0 ?
-            private_character_commands.submitted_triangles :
-            developer_characters[i - 1].commands.submitted_triangles;
     }
     return drawn;
 }
@@ -2626,8 +2603,6 @@ static int render_private_character(struct toy_renderer *renderer,
             rasterfall_animation_compose(&private_character_model, &composition);
         }
         private_character_animation_us = render_monotonic_us() - sample_start;
-        scene_stats.character_animation_outside_us =
-            private_character_animation_us;
     }
     sync_private_character_lod_pose();
     sync_private_character_lod2_pose();
@@ -2705,11 +2680,10 @@ static int render_private_character(struct toy_renderer *renderer,
         }
         active_pose_preview = 0;
         {int clip_id=active_session?active_session->skeletal_demo_player.clip_id:-1;
-         long preview_start=render_monotonic_us();
          pixels+=render_quaternius_preview(renderer,camera,
                 clip_id>=6&&clip_id<=8?clip_id-6:-1,
                 active_session?active_session->skeletal_demo_player.time_ms:0);
-         scene_stats.character_preview_us=render_monotonic_us()-preview_start;}
+        }
         return pixels;
     }
 }

@@ -46,18 +46,6 @@ struct rasterfall_perf_stats {
     unsigned long scene_models_tested;
     unsigned long scene_models_culled;
     unsigned long scene_model_triangles_culled;
-    long character_wall_us[5];
-    long character_animation_us[5];
-    long character_skin_us[5];
-    long character_vertex_us[5];
-    long character_triangle_us[5];
-    unsigned long character_triangles[5];
-    unsigned long character_visible_frames[5];
-    unsigned long character_edge_disabled_frames[5];
-    long character_prepare_wall_us;
-    long character_merge_us;
-    long character_preview_us;
-    long character_animation_outside_us;
 };
 
 struct rasterfall_scene_stats;

@@ -108,6 +108,8 @@ int rasterfall_character_logic_test(void)
     if (rasterfall_character_profile(RASTERFALL_CHARACTER_RF_RIFLEMAN)
             ->visual_recipe_id != RASTERFALL_MODULAR_RIFLEMAN)
         return 1;
+    if (rasterfall_profession_visual_profile(RASTERFALL_PROFESSION_MAID) != NULL)
+        return 1;
     for (i = RASTERFALL_CHARACTER_RF_RIFLEMAN;
          i < RASTERFALL_CHARACTER_COUNT; i++)
         if (rasterfall_character_profile(i)->visual_recipe_id < 0 ||
@@ -147,7 +149,9 @@ const struct rasterfall_profession_visual_profile *
 rasterfall_profession_visual_profile(int profession_id)
 {
     if (profession_id <= RASTERFALL_PROFESSION_NONE ||
-        profession_id >= RASTERFALL_PROFESSION_COUNT) return NULL;
+        profession_id >= RASTERFALL_PROFESSION_COUNT ||
+        profession_id == RASTERFALL_PROFESSION_MAID)
+        return NULL;
     return &professions[profession_id];
 }
 

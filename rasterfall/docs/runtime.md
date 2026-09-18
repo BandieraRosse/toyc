@@ -88,7 +88,9 @@ humanoid role 的 finalized transform 及人体/AK socket。独立的 `build/rf_
 `--pose-debug` 的六参数形式同时接收 lower/upper action 与各自时间，输出 composed result、weapon
 transform 和左右 hand target；旧单 action 四参数形式继续可用。
 
-主循环由 `rf_core_poll_events()` 捕获平台关闭请求，以 `rf_core_should_exit()` 形成退出边界，
+主循环由 `rf_core_poll_events()` 捕获平台关闭请求；暂停菜单的 `EXIT GAME` 也通过
+`rf_core_request_exit()` 写入同一个 Core-owned exit request，最终统一以
+`rf_core_should_exit()` 形成退出边界，
 并在每轮通过 `rf_core_begin_tick()` 读取 Core 单调时钟；随后轮询网络并保留按键边沿。固定 16 ms 逻辑步中构造
 `rasterfall_command`，交给 `rf_game_update()`；该 facade 按原顺序推进 session/client prediction、
 host remote apply/rescue、gameplay timers、effects sync 和 authoritative snapshot/command bookkeeping，

@@ -209,6 +209,8 @@ int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
 int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int64_t rf_core_begin_tick(struct rf_core *core);
+/* Game/UI may request process termination; Core remains the lifecycle owner. */
+int rf_core_request_exit(struct rf_core *core);
 int rf_core_should_exit(const struct rf_core *core);
 int rf_core_runtime_failed(const struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
