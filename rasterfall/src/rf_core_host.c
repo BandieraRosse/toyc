@@ -618,6 +618,9 @@ static int gpu_pre_post_partition_world(struct rf_core_gpu_frame *frame)
     }
     tlibc_free(frame->retained_commands);
     frame->retained_commands = partitioned;
+    /* The replacement is exact-sized; the previous allocation's spare
+     * capacity no longer exists when the next frame reuses this buffer. */
+    frame->retained_command_capacity = frame->retained_command_count;
     frame->retained_batch_count[RF_RENDER_LAYER_WORLD] = opaque_count;
     frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] =
         transparent_count;
@@ -787,6 +790,42 @@ int rf_core_retained_span_logic_test_v1(void)
         rf_gpu_raster_validate_v1(frame->stream, packed_size) !=
             RF_GPU_RASTER_PACK_OK)
         goto fail;
+
+    /* Partition replaces the allocation with exactly the live command count.
+     * Reuse it across a shrinking frame and then a growing frame: stale spare
+     * capacity would let the next retain memcpy write beyond the allocation.
+     * Check the allocation contract before writing so the broken code fails
+     * deterministically without corrupting the test process heap. */
+    if (frame->retained_command_capacity != frame->retained_command_count)
+        goto fail;
+    {
+        unsigned int pass;
+        for (pass = 0; pass < 3; ++pass) {
+            unsigned int batch, batches = pass == 0 ? 2 : (pass == 1 ? 5 : 3);
+            frame->retained_command_count = 0;
+            frame->retained_world_raw_count = 0;
+            memset(frame->retained_batch_count, 0,
+                   sizeof(frame->retained_batch_count));
+            core.render_frame.current_layer = RF_RENDER_LAYER_WORLD;
+            for (batch = 0; batch < batches; ++batch) {
+                if (gpu_pre_post_retain_consume(&renderer, first, 2, &core) < 0)
+                    goto fail;
+            }
+            if (gpu_pre_post_partition_world(frame) < 0 ||
+                frame->retained_command_count != batches * 2 ||
+                frame->retained_command_capacity != batches * 2 ||
+                frame->retained_batch_count[RF_RENDER_LAYER_WORLD] != batches ||
+                frame->retained_batch_count[RF_RENDER_LAYER_TRANSPARENT] != batches)
+                goto fail;
+            for (batch = 0; batch < batches; ++batch) {
+                if (memcmp(&frame->retained_commands[batch], &first[0],
+                           sizeof(first[0])) ||
+                    memcmp(&frame->retained_commands[batches + batch], &first[1],
+                           sizeof(first[1])))
+                    goto fail;
+            }
+        }
+    }
 
     /* An unsupported command must reject the whole retained batch; it must
      * never be partially uploaded after the supported path above. */

@@ -59,7 +59,7 @@ int rf_game_init(struct rf_game_runtime *runtime,
 #endif
     rasterfall_net_init(&runtime->net);
     rasterfall_net_discovery_init(&runtime->discovery);
-    runtime->lifecycle_paused = 1;
+    runtime->lifecycle_paused = 0;
     runtime->lifecycle_running = 1;
     runtime->initialized = 1;
     runtime->render_context.session = session;

@@ -1,8 +1,9 @@
 # Rasterfall GPU 与 Windows Native Platform 阶段计划
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows Intel normal-frame acceptance audit（2026-09-18）
-> 当前状态：A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD 与 B4-POST-WORLD submission contract 已实现；GPU-8B2d B2d-5 已达到 local pass。2026-09-18 新增 GPU Required Runtime Contract：`--gpu-required` 现在要求 native present，unsupported/direct pixel/consumer/Post/present/readback/copy 均 fatal，禁止 runtime CPU replay。Frozen Normal Gameplay 矩阵和 C0--C5 冻结门禁见 [`rasterfall/docs/gpu-v1-final-acceptance.md`](../rasterfall/docs/gpu-v1-final-acceptance.md)。GPU-8B1/GPU-8B2/GPU-9A 在 Windows Intel 矩阵完成前仍不得标为 FROZEN。
+> 当前状态：GPU-0～GPU-8A、A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD、B4-POST-WORLD、GPU-8B2d local gate、Windows MinGW package、logic-test、strict native GPU smoke 与 Fog/Post smoke 已完成。实机识别为 Intel(R) Iris(R) Xe Graphics；120 帧无 Fog 与 120 帧 Fog 均为 `gpu-native`，fallback/readback/CPU copy 为 0。当前修复：retained command 跨帧堆越界已修复，不依赖暂停菜单；完整生命周期仍待签收；GPU-8B1/GPU-8B2/GPU-9A 和 C5 仍不得标为 FROZEN。
 
 本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
 当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
@@ -42,13 +43,13 @@ normal world frontend
 | GPU-7A / 7B | DONE / FROZEN | normal frontend capture，flat opaque 与 vertex-lit planar 命令已纳入 Raster V1 |
 | GPU-7C / 7D | DONE / FROZEN | Core-owned normal GPU frame 与 Texture V1 已接入；unsupported batch 仍整批 CPU fallback |
 | GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
-| GPU-8B1 | IMPLEMENTED / NOT FROZEN | anime toon 与 Console/Desktop 已从 normal 语义集合冻结隔离；待 Intel 实机复验 humanoid fallback、完整视觉与 resize 的 native composite/零 readback |
+| GPU-8B1 | IMPLEMENTED / WINDOWS PARTIAL / BLOCKED | Intel normal native frame、humanoid fallback、120 帧 smoke 与 acceptance 产物已通过；堆越界已修复，待完整生命周期与 resize 矩阵签收 |
 | RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
 | RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；多 WORLD flush 在 retained stream 中一次稳定分成连续 span；不改变排序或 fallback |
 | RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
 | GPU-8B2 | IMPLEMENTED / LOCAL PASS | retained consumer 和整帧 replay 已建立；effects/viewmodel direct-pixel 零门禁、Transparent V1 consumer 与普通 RFM2、platform/air-gate、muzzle/dissolve、death fragment/dust producer 均已接入；B2d-5 normal-frame fixture 覆盖 WORLD/EFFECTS/VIEWMODEL 的 opaque+transparent 组合、`BEGIN_TRANSPARENT`/`BEGIN_VIEWMODEL` barrier、零 fallback reason/direct debt 和 native hand-off，unsupported fixture 仍验证整帧 CPU replay |
 | GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW muzzle core 与 outer/lobe 复用 VIEWMODEL Contract V1 projection/depth/coverage；remote/AI muzzle 保留 world EFFECTS，outer/lobe 使用真实 material alpha；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
-| GPU-9A | IMPLEMENTATION COMPLETE / LOCAL PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；identity/inverse-depth Fog V0 通过 oracle，Intel 支持场景 fog native frame 通过；toon fallback 已由冻结边界移除，仍受新 normal 语义完整实机矩阵阻塞 |
+| GPU-9A | IMPLEMENTATION COMPLETE / WINDOWS FOG PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；Intel strict Fog native frame 120 帧通过且无 fallback/readback/copy；堆越界已修复，仍待完整生命周期矩阵签收 |
 | WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
 
 ## 已冻结的核心契约
@@ -110,13 +111,15 @@ GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewm
    B2d 后续迁移。
 4. **B2d — transparent consumer：** Raster V1 显式表达 material/texture alpha、source-over、
    depth test 与 depth-write policy；透明 pass 保持 frontend 原始顺序，不在首版引入 OIT 或自动重排。
-5. **normal-frame 冻结：** 在 Windows Intel 实机完成 GPU-8B1/GPU-9A 的 humanoid fallback 视觉、
-   resize、timing 和零 readback 验收；Console/Desktop 已冻结，不进入该矩阵。之后才开始 SDL-free Windows Native Platform。
+5. **normal-frame 冻结：** 已完成 Windows Intel strict native smoke、Fog/Post smoke、zero-fallback audit、
+   adapter 识别和 acceptance BMP；堆越界已修复，继续复验 pause/resume、
+   resize、timing 和正常退出。Console/Desktop 已冻结，不进入该矩阵。之后才开始 SDL-free Windows Native Platform。
 
 ### Windows 证据闭环
 
 GPU-9A 暂不冻结。A-AUDIT 已使日志独立包含 frame/path/pose/layers/timing，B1/B2 已把 sky 从隐式
-CPU framebuffer 写入迁为显式参数层。下一步在 Windows 真实异常现场完成以下闭环：
+CPU framebuffer 写入迁为显式参数层。原闪退已定位到 Core retained command 缓存：WORLD 分区按实际数量重分配，却遗留旧 capacity，后续增长帧越界；现已同步 capacity。取消启动暂停也能触发，不能归因于 Enter 输入。
+修复后继续按完整窗口生命周期和真实场景完成以下闭环：
 
 1. 正常运行加 `--frame-audit`，记录 world、camera x/z、sy/cy、pitch、extent、fixed-step ticks/
    accumulator、update/render/present/whole-loop 以及 GPU submit/fence/native-present timing。
@@ -129,8 +132,8 @@ CPU framebuffer 写入迁为显式参数层。下一步在 Windows 真实异常�
 3. 核对 GPU-native 与 transparent CPU-fallback 切换时天空无闪变，并核对 command coverage、fog/source 和保存的 BMP。
 4. 将约 200 ms frame wall time 拆分到 update、frontend、pack/binning、GPU raster、post、overlay upload/
    composite、copy/present 和 fence wait。
-5. 根据证据将问题归入 frontend semantic resolution、sky/world submission、command packing、post/composite 或
-   present ownership，不用固定方位 capture 替代坏现场。
+5. 根据证据将问题归入 pause input/state transition、frontend semantic resolution、command packing、
+   post/composite 或 present ownership，不用固定方位 capture 替代坏现场。
 
 验收完成条件：坏姿态可精确重放，根因已定位并修复，normal native frame 视觉正确，帧分层无遗失，
 color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differential、resize 和 normal-frame 门禁。
@@ -147,6 +150,7 @@ color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differ
 - 局部 Raster/Post differential 通过，但 normal frontend → semantic resolution → packing 的上游正确性未被该门禁覆盖。
 - sky 未提交、world coverage 不完整与 present ownership 异常尚未用同一坏帧证据排除。
 - 约 200 ms 的 frame wall time 尚未归属到具体阶段，不能据此宣称 native GPU frame 达到性能目标。
+- retained command 跨帧堆越界已修复；pause/resume 与正常 shutdown 按完整生命周期矩阵复验。
 
 ### GPU-8B2 完成门禁
 

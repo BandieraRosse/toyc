@@ -1,7 +1,12 @@
 # GPU V1 最终收尾与冻结验收
 
-> 文档更新：2026-09-18
-> 源码核对基线：GPU Required Runtime Contract 已实现；GPU-8B2 local gate 待本轮回归，GPU-8B1 / GPU-9A 仍须 Windows Intel 实机签收，尚未冻结。
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
+> 源码核对基线：GPU Required Runtime Contract、Windows Intel strict native smoke、Fog/Post smoke 与 acceptance 产物已通过；retained command 堆越界已修复，但完整矩阵仍待签收，GPU-8B1 / GPU-8B2 / GPU-9A 尚未冻结。
+
+## 本轮验收状态
+
+Windows Intel strict native smoke、Fog/Post smoke 与 acceptance 产物已通过；retained command 堆越界已修复，但完整矩阵仍待签收，GPU-8B1 / GPU-8B2 / GPU-9A 尚未冻结。本轮不纳入 host/client 联机测试；C3/C4 只要求本地 Outpost/Campaign、窗口生命周期、Fog/Post 与短时稳定性。
 
 ## Frozen Normal Gameplay 边界
 
@@ -41,16 +46,19 @@ GPU Post 请求失败、native present 失败，以及 native timing 报告非�
 | Campaign idle/motion | actors、network actors、普通/特殊 enemies、world weapons | resize、多次 pause/resume、死亡/重生 |
 | Campaign combat | viewmodel weapon/hands、muzzle、tracer、impact、death fragment/dust/dissolve | reload、换枪、连续波次 |
 | Campaign Fog | 上述完整集合及 viewmodel coverage mask | Fog 开/关各一轮、resize 后保持 |
-| Host/client | local viewmodel、remote actors/weapons/effects、HUD | join、长期移动/战斗、disconnect/rejoin |
+| Host/client | 本轮不纳入 GPU V1 本地验收；联机协议另按 networking 文档维护 | 不作为本轮 C3/C4 通过条件 |
 | Soak | Campaign 与 Outpost 往返、全部常见 producer | Intel 实机长期运行并正常 shutdown |
 
 ## Checkpoint 与冻结条件
 
+本轮进度：C0、Windows build/package、Windows Intel adapter/native-present smoke、Fog/Post 120 帧 smoke 和 acceptance BMP 已完成；C3 的堆越界已修复，待补齐生命周期矩阵，C4 仅完成 Fog/Post smoke，C5 不得标记完成。
+
 1. **C0 Runtime strict（代码完成）：** required 初始化与逐帧 fatal contract；CLI 拒绝非 native strict 组合。
 2. **C1 Local regression：** Linux build、logic-test、现有 retained/transparent/Post fixture、参数负例通过。
 3. **C2 Windows build：** MinGW 构建通过；不以 WSL software Vulkan 代替 Intel 验收。
-4. **C3 Intel functional：** 上表 Outpost/Campaign/network 与 resize/minimize/restore 全通过。
-5. **C4 Intel soak/transfer：** Fog 与长期 gameplay 通过，所有 frame audit 均零 fallback/readback/copy；
+4. **C3 Intel functional：** 本地 Outpost/Campaign 与基础 native frame smoke 已通过；堆越界已修复，pause/resume、resize/minimize/restore 的完整生命周期仍待签收。
+5. **C4 Intel soak/transfer：** Fog/Post 120 帧 smoke 已通过，所有 frame audit 均零 fallback/readback/copy；
+   短时 gameplay/正常 shutdown 仍待 pause/resume 修复后复验；
    native present failure 注入必须非零退出。
 6. **C5 Freeze：** C0--C4 证据齐全后，同一 checkpoint 将 GPU-8B1、GPU-8B2、GPU-9A 标为 FROZEN。
 

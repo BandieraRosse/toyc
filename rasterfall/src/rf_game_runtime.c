@@ -2807,7 +2807,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_active = 0;   /* 帧间隔统计 */
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
-    int running = 1, pointer_lock_requested = 0, paused = 1;
+    int running = 1, pointer_lock_requested = 0, paused = 0;
     int coordinate_axes = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int rendered_frames = 0, scene_pixels = 0;
@@ -3435,6 +3435,7 @@ startup_again:
     } else {
         rf_windows_log("startup: audio ready");
     }
+    pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
     last_time = rf_core_begin_tick(&core);
     fps_window_start = last_time;
     rasterfall_perf_init(&stats);
@@ -4268,8 +4269,11 @@ startup_again:
     }
     {
         int core_runtime_failed = rf_core_runtime_failed(&core);
+        /* Native GPU frames never write the CPU scene pixel counter. */
+        int no_scene_output = rendered_frames > 0 && scene_pixels == 0 &&
+            core.gpu_frame.stats.gpu_frames == 0;
         rf_core_shutdown(&core);
         if (core_runtime_failed) return 3;
+        return no_scene_output ? 2 : 0;
     }
-    return rendered_frames > 0 && scene_pixels == 0 ? 2 : 0;
 }

@@ -1,8 +1,9 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：GPU-0 ～ GPU-8A 已完成；GPU-8B2d 达到 local pass。GPU Required Runtime Contract 已将 `--gpu-required` 收紧为逐帧 native GPU-only fatal contract；最终矩阵与冻结条件见 [GPU V1 最终收尾与冻结验收](gpu-v1-final-acceptance.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
-> 当前 GPU 优先级：在 Windows Intel 实机重新验收 GPU-8B1/GPU-9A 的 normal native frame，包括 sky/VIEWMODEL、humanoid fallback、resize、timing 与零 readback；`--frame-audit` 已同时写入 `rasterfall.log`。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
+> 当前 GPU 优先级：Windows Intel strict native smoke、Fog/Post smoke 和 acceptance 产物已完成；retained command 堆越界已修复，继续复验 pause/resume、resize、timing、正常退出与零 readback。`--frame-audit` 已同时写入 `rasterfall.log`。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
 > 源码核对基线补充：GPU-8B2c Phase 1+2 已冻结 Viewmodel Render Contract V1（near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth、Post coverage mask），并在 CPU/reference 路径建立 domain switch 与固定 fixture；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，direct framebuffer producer 门禁为 0；Phase 4 已接入 GPU VIEWMODEL span consumer、独立 depth/coverage 与 Post fog skip，并由 CPU/GPU differential fixture 覆盖；Phase 5 已将 LOCAL_VIEW muzzle core 以及 outer/lobe 按同一 projection/depth 接入 VIEWMODEL，remote/AI 三类 muzzle 仍使用 world EFFECTS，其中 outer/lobe 以真实 material alpha 进入 Transparent V1。源码基线：2026-09-18。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
 > 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
@@ -46,6 +47,10 @@
 > 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫已在西侧原位恢复并使用 Maid character/profession；普通 player、Eula 和佣兵为 character NONE；北侧 HURD 旗帜及派生 control status 已接入 session。
 > 源码核对补充：World Content V1 已将 Outpost/Campaign 的 actor、flag、formation 和正常 renderer fixture 策略集中到 Game-owned `rasterfall_world_content`。
 > 源码核对补充：Standard Response Squad 与 Assault Squad 各四人由 `rasterfall_roster` 提供有序 identity；session reset 将其接入普通 AI actor，并分别绑定中部 `RESP` 与东部 `ASLT` 旗帜部署位，renderer 再按 character profile 解析 modular recipe；`--squad-acceptance` 输出八人三视角验收。
+
+## 当前 GPU 验收状态
+
+Windows Intel strict native smoke、Fog/Post smoke 和 acceptance 产物已完成，适配器为 Intel Iris Xe；retained command 跨帧堆越界已修复，继续复验 pause/resume、resize、timing、正常退出与零 readback。
 
 ## 先读哪一篇
 

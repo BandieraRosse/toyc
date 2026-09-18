@@ -15,6 +15,7 @@ $Exe = Join-Path $PackageRoot 'rasterfall.exe'
 $Deps = Join-Path $Root '.windows-deps'
 $MsysRoot = if ($env:RF_WINDOWS_MSYS2_ROOT) { $env:RF_WINDOWS_MSYS2_ROOT } else { 'C:\msys64' }
 $MingwRoot = Join-Path $MsysRoot 'mingw64'
+$Jobs = [Environment]::ProcessorCount
 
 function Say([string] $Text) { Write-Host "[windows-native] $Text" }
 function Fail([string] $Text) { throw "[windows-native] $Text" }
@@ -28,7 +29,7 @@ function Invoke-Make([string[]] $MakeArguments) {
     if (-not $make) { Fail 'make not found. Install MSYS2 make and use the MSYS2 usr/bin lane.' }
     Push-Location $Root
     try {
-        & $make @MakeArguments
+        & $make "-j$Jobs" @MakeArguments
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     } finally { Pop-Location }
 }

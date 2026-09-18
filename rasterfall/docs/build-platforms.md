@@ -1,14 +1,19 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
-> 当前平台边界：GPU-8A 已冻结；Intel Iris Xe 已通过 identity/fog 支持场景的 native present 与零 readback/copy。Legacy anime toon 与 Console/Desktop 已从 normal runtime 冻结隔离，GPU-8B1/GPU-9A 仍需在 Windows Intel 对 humanoid fallback、resize、timing 与零 readback/copy 复验后冻结。Windows window/input/audio 仍由 SDL2 提供，尚未进入 SDL-free Native Platform 阶段。
+> 当前平台边界：GPU-8A 已冻结；Intel Iris Xe 已通过 identity/fog 支持场景的 native present 与零 readback/copy，strict smoke、Fog/Post smoke 和 acceptance 产物已完成。Legacy anime toon 与 Console/Desktop 已从 normal runtime 冻结隔离；retained command 堆越界已修复，GPU-8B1/GPU-9A 待完整矩阵签收，尚未冻结。Windows window/input/audio 仍由 SDL2 提供，尚未进入 SDL-free Native Platform 阶段。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
 > 源码核对基线补充：Static World Lighting Phase A 的 `rasterfall_world_light.c` 已接入 Linux Game 对象、适用 self 规则与 Windows GAME_SRCS；无宿主 libc 或新资源依赖。
 > 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
+
+## 当前 Windows GPU 验收状态
+
+Intel Iris Xe 已通过 strict native present、Fog/Post smoke、zero-fallback audit 和 acceptance 产物；retained command 堆越界已修复，GPU-8B1/GPU-9A 尚未冻结。
 
 ## Linux
 

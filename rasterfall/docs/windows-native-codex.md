@@ -1,6 +1,7 @@
 # Windows Native Codex
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、当前 `rasterfall_options.c`
 
 这是 Rasterfall 的 Windows 原生开发 lane，不替代 Linux/WSL。唯一入口是
@@ -40,6 +41,11 @@ present、readback/copy 或 native GPU 初始化失败都会得到非零退出�
 ```
 
 ## WIN-DEV-1 验收
+
+Windows native 验收以当前构建的 CLI 输出和退出码为准。原 GPU 堆损坏已修复为
+retained command 跨帧容量失配；完整生命周期和 WIN-DEV-1 最终签收仍待完成。
+普通构建的完整 `--logic-test` 另有栈容量限制，须与 GPU 堆越界区分；增大栈的临时
+诊断程序可用于隔离验证，不代表普通构建门禁通过，也不改变正式游戏的栈配置。
 
 在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 无 required failure；
 `package` 成功并包含 exe、`rasterfall/assets`，以及本地 `private-assets`（若存在）；

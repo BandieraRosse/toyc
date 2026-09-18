@@ -1,7 +1,8 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-18
-> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。vertex-lit source-over 使用 command resource word携带固定 material alpha，CPU reference、full-scan 与 tile-binned GPU 已覆盖。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。GPU-8B1/GPU-9A 仍等待 Windows Intel 对[最终矩阵](gpu-v1-final-acceptance.md)复验。
+> 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
+> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。Windows Intel strict native smoke 与 Fog/Post smoke 已各通过 120 帧，适配器为 Intel Iris Xe，zero-fallback audit 和 acceptance 产物已完成。retained command 堆越界已修复，完整生命周期矩阵仍待签收，GPU-8B1/GPU-9A 仍未冻结。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -85,6 +86,12 @@ HUMANOID_INFECTED。V2 两个家族由地图 draw record 触发同一感染模�
 ## 渲染边界
 
 ### RenderFrame V1 与 Sky B2
+
+Core retained command 缓存跨帧复用。`gpu_pre_post_partition_world()` 用当前命令数
+分配替换缓冲区后，必须同时将 `retained_command_capacity` 更新为实际分配数量。
+保留旧扩容容量会使后续增长帧绕过扩容并在 `memcpy` 时写出堆边界；该问题与暂停菜单
+无关，静止场景命令数不增长时可能不触发。`rf_core_retained_span_logic_test_v1()`
+覆盖分区后的缩小、增长、再次缩小及 stable partition 内容，属于 `--logic-test` 门禁。
 
 `rf_render_frame_v1` 是 Core 持有的一帧有序提交描述，只保存 camera/extent 快照、固定层计数和
 backend 审计信息，不拥有玩法状态、renderer command pool 或 Vulkan object。层顺序固定为
@@ -397,6 +404,10 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 - `rasterfall_sky.c`：天空背景。
 - `rasterfall_perf.c`：阶段计时、场景统计和性能输出。
 - `src/dev-tests/*.inc`：角色基准和蒙皮跟踪，直接包含进 render 编译单元。
+
+## Windows Intel GPU 验收状态
+
+strict native smoke 与 Fog/Post smoke 已各通过 120 帧，zero-fallback audit 和 acceptance 产物已完成；retained command 堆越界已修复，完整生命周期矩阵仍待签收，因此 GPU-8B1/GPU-9A 仍未冻结。
 
 ## 一帧的数据流
 
