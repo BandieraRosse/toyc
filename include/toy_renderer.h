@@ -290,8 +290,9 @@ int toy_renderer_triangle_textured_lit(struct toy_renderer *renderer,
 /* Textured source-over triangle with an explicit material alpha.  This is
  * the minimal alpha-capable base-material path: it does not opt into sphere,
  * toon or specular features; material alpha or RGBA texel alpha selects
- * source-over and keeps those pixels out of the depth write path.  An RGB
- * texture with material alpha 255 remains opaque. */
+ * source-over and keeps those pixels out of the depth write path.  When both
+ * are present the effective alpha is texel_alpha * material_alpha / 255 with
+ * integer truncation.  An RGB texture with material alpha 255 remains opaque. */
 int toy_renderer_triangle_textured_lit_alpha(
                                        struct toy_renderer *renderer,
                                        const struct toy_screen_vertex *a,

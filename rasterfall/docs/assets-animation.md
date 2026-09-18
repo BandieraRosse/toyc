@@ -1,7 +1,7 @@
 # 资源、模型与动画
 
 > 文档更新：2026-09-18
-> 源码核对基线补充：普通 RFM2 material alpha 与 RGBA texel alpha 由 world model frontend 按 flat/textured primitive 保持真实类型提交；RGBA texture 在 material alpha=255 时仍于 CPU command 端标记 source-over/no-depth-write，RGB + alpha=255 保留 opaque 快路径，高级 sphere/toon/specular 仍由 GPU typed fallback 接管；material × texel 组合边界留给 B2d-4c。
+> 源码核对基线补充：普通 RFM2 material alpha 与 RGBA texel alpha 由 world model frontend 按 flat/textured primitive 保持真实类型提交；RGBA texture 在 material alpha=255 时仍于 CPU command 端标记 source-over/no-depth-write，RGB + alpha=255 保留 opaque 快路径，material × texel 组合有效 alpha 固定为 `texel × material / 255` 向下取整；高级 sphere/toon/specular 仍由 GPU typed fallback 接管。B2d-4c 已由真实 RFM2 fixture 覆盖组合舍入和零边界。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid，FAR（4096 RFU 起）才切 compact LOD2；骨架与 pose 同步路径不变。
 > 源码核对基线补充：Eula Animation Acceptance V1 直接把同一 legacy walk VMD 映射到四个 Eula LOD instance；head/neck 固定姿态只作为 deformation acceptance，weapon 复用既有 legacy rifle presentation。
 > 源码核对基线补充：Eula Gameplay Hybrid LOD 只改变离线 vertex/index 选择与对应 SKN1 vertex records；bone hierarchy、IK 和运行时 pose/skinning 求值保持不变。

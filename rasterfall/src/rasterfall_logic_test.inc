@@ -226,21 +226,24 @@ done:
     return result;
 }
 
-/* B2d-4b producer gate.  All four materials keep authored alpha at 255;
- * only the first three 1x1 RGBA textures carry alpha (0, 255 and 128).
- * The RGB control proves that channel count is not over-classified. */
+/* B2d-4b/4c producer gate.  The first four materials keep authored alpha at
+ * 255 and cover RGBA texel alpha 0/255/128 plus an RGB opaque control.  The
+ * final two commands freeze material * texel alpha / 255 (including its
+ * integer rounding and zero boundary) through the real RFM2 frontend. */
 static int rfm2_texel_alpha_producer_logic_test(void)
 {
-    enum { HEADER = 64, PRIMITIVES = 4 * 16, MATERIALS = 4 * 40,
-           VERTICES = 12 * 24, INDICES = 12 * 4, BLOB = HEADER + PRIMITIVES +
+    enum { COMMANDS = 6, HEADER = 64, PRIMITIVES = COMMANDS * 16,
+           MATERIALS = COMMANDS * 40, VERTICES = COMMANDS * 3 * 24,
+           INDICES = COMMANDS * 3 * 4, BLOB = HEADER + PRIMITIVES +
            MATERIALS + VERTICES + INDICES, WIDTH = 320, HEIGHT = 180 };
     static unsigned char blob[BLOB];
-    static unsigned char texels[4][4] = {
+    static unsigned char texels[COMMANDS][4] = {
         {0xd0, 0x60, 0x30, 0}, {0xd0, 0x60, 0x30, 255},
+        {0xd0, 0x60, 0x30, 128}, {0xd0, 0x60, 0x30, 255},
         {0xd0, 0x60, 0x30, 128}, {0xd0, 0x60, 0x30, 255}
     };
-    static struct toy_texture_asset texture_assets[4];
-    static struct toy_texture_view texture_views[4];
+    static struct toy_texture_asset texture_assets[COMMANDS];
+    static struct toy_texture_view texture_views[COMMANDS];
     static uint32_t pixels[WIDTH * HEIGHT], reference_pixels[WIDTH * HEIGHT];
     static unsigned char coverage[WIDTH * HEIGHT];
     struct rasterfall_model_resource resource;
@@ -249,45 +252,48 @@ static int rfm2_texel_alpha_producer_logic_test(void)
     struct toy_renderer renderer, reference_renderer;
     struct toy_surface surface, reference_surface;
     struct camera camera;
-    struct toy_raster_cmd commands[4];
+    struct toy_raster_cmd commands[COMMANDS];
     unsigned char *primitive, *material, *vertex;
-    int positions[12][3] = {
-        {-750, 0, 5000}, {-350, 0, 5000}, {-550, 600, 5000},
-        {-350, 0, 5000}, {50, 0, 5000}, {-150, 600, 5000},
-        {50, 0, 5000}, {450, 0, 5000}, {250, 600, 5000},
-        {450, 0, 5000}, {850, 0, 5000}, {650, 600, 5000}
+    int positions[COMMANDS * 3][3] = {
+        {-900, 0, 5000}, {-600, 0, 5000}, {-750, 600, 5000},
+        {-600, 0, 5000}, {-300, 0, 5000}, {-450, 600, 5000},
+        {-300, 0, 5000}, {0, 0, 5000}, {-150, 600, 5000},
+        {0, 0, 5000}, {300, 0, 5000}, {150, 600, 5000},
+        {300, 0, 5000}, {600, 0, 5000}, {450, 600, 5000},
+        {600, 0, 5000}, {900, 0, 5000}, {750, 600, 5000}
     };
-    int sample_x[4], sample_y[4], depth_before[4];
+    int sample_x[COMMANDS], sample_y[COMMANDS], depth_before[COMMANDS];
     int i, result = -1;
 
     memset(blob, 0, sizeof(blob));
     rfm2_alpha_fixture_u32(blob + 0, RASTERFALL_MODEL_MAGIC);
-    rfm2_alpha_fixture_u32(blob + 4, 12);
-    rfm2_alpha_fixture_u32(blob + 8, 12);
-    rfm2_alpha_fixture_u32(blob + 12, 12);
+    rfm2_alpha_fixture_u32(blob + 4, COMMANDS * 3);
+    rfm2_alpha_fixture_u32(blob + 8, COMMANDS * 3);
+    rfm2_alpha_fixture_u32(blob + 12, COMMANDS * 3);
     rfm2_alpha_fixture_u32(blob + 16, 1000);
-    rfm2_alpha_fixture_u32(blob + 20, (unsigned int)-750);
+    rfm2_alpha_fixture_u32(blob + 20, (unsigned int)-900);
     rfm2_alpha_fixture_u32(blob + 24, 0);
     rfm2_alpha_fixture_u32(blob + 28, 5000);
-    rfm2_alpha_fixture_u32(blob + 32, 850);
+    rfm2_alpha_fixture_u32(blob + 32, 900);
     rfm2_alpha_fixture_u32(blob + 36, 600);
     rfm2_alpha_fixture_u32(blob + 40, 5000);
-    rfm2_alpha_fixture_u32(blob + 44, 4);
-    rfm2_alpha_fixture_u32(blob + 48, 4);
+    rfm2_alpha_fixture_u32(blob + 44, COMMANDS);
+    rfm2_alpha_fixture_u32(blob + 48, COMMANDS);
     rfm2_alpha_fixture_u32(blob + 52, HEADER);
     rfm2_alpha_fixture_u32(blob + 56, HEADER + PRIMITIVES);
     primitive = blob + HEADER;
     material = primitive + PRIMITIVES;
     vertex = material + MATERIALS;
-    for (i = 0; i < 4; ++i) {
+    for (i = 0; i < COMMANDS; ++i) {
         rfm2_alpha_fixture_u32(primitive + i * 16 + 0, (unsigned int)i * 3);
         rfm2_alpha_fixture_u32(primitive + i * 16 + 4, 3);
         rfm2_alpha_fixture_u32(primitive + i * 16 + 8, (unsigned int)i);
         rfm2_alpha_fixture_u32(material + i * 40 + 0, 0x00ffffffU);
-        material[i * 40 + 4] = 255;
+        material[i * 40 + 4] = (unsigned char)(i == 4 ? 128 :
+                                               i == 5 ? 0 : 255);
         rfm2_alpha_fixture_u32(material + i * 40 + 8, (unsigned int)i);
     }
-    for (i = 0; i < 12; ++i) {
+    for (i = 0; i < COMMANDS * 3; ++i) {
         rfm2_alpha_fixture_u32(vertex + i * 24 + 0,
                                (unsigned int)positions[i][0]);
         rfm2_alpha_fixture_u32(vertex + i * 24 + 4,
@@ -300,7 +306,7 @@ static int rfm2_texel_alpha_producer_logic_test(void)
         rfm2_alpha_fixture_u16(vertex + i * 24 + 18, 0);
         rfm2_alpha_fixture_u16(vertex + i * 24 + 20, 0);
     }
-    for (i = 0; i < 4; ++i) {
+    for (i = 0; i < COMMANDS; ++i) {
         unsigned char *index = blob + HEADER + PRIMITIVES + MATERIALS +
                                VERTICES + i * 12;
         rfm2_alpha_fixture_u32(index + 0, (unsigned int)i * 3);
@@ -321,13 +327,13 @@ static int rfm2_texel_alpha_producer_logic_test(void)
     }
     memset(&resource, 0, sizeof(resource));
     model->data = blob; model->data_size = sizeof(blob); model->format_version = 9;
-    model->vertex_count = 12; model->index_count = 12;
-    model->primitive_count = 4; model->material_count = 4;
+    model->vertex_count = COMMANDS * 3; model->index_count = COMMANDS * 3;
+    model->primitive_count = COMMANDS; model->material_count = COMMANDS;
     model->material_bytes = 40; model->vertex_bytes = 24;
     model->position_scale = 1000; model->primitives = primitive;
     model->materials = material; model->vertices = vertex;
     model->indices = blob + HEADER + PRIMITIVES + MATERIALS + VERTICES;
-    model->min_x = -750; model->max_x = 850; model->min_y = 0;
+    model->min_x = -900; model->max_x = 900; model->min_y = 0;
     model->max_y = 600; model->min_z = model->max_z = 5000;
     model->textures.assets = texture_assets;
     model->textures.views = texture_views;
@@ -351,14 +357,15 @@ static int rfm2_texel_alpha_producer_logic_test(void)
     toy_renderer_bind_coverage(&renderer, coverage, WIDTH);
     if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
                                          &transform) < 0 ||
-        renderer.cmd_count != 4)
+        renderer.cmd_count != COMMANDS)
         goto done;
-    for (i = 0; i < 4; ++i) {
+    for (i = 0; i < COMMANDS; ++i) {
         struct toy_raster_cmd *cmd = &renderer.cmds[i];
-        if (!cmd->textured || cmd->material_alpha != 255 ||
+        int expected_material_alpha = i == 4 ? 128 : i == 5 ? 0 : 255;
+        if (!cmd->textured || cmd->material_alpha != expected_material_alpha ||
             cmd->texture != &texture_views[i])
             goto done;
-        if (i < 3) {
+        if (i != 3) {
             if (!cmd->texture->has_transparency || !cmd->transparent ||
                 !cmd->transparent_no_depth_write)
                 goto done;
@@ -373,56 +380,73 @@ static int rfm2_texel_alpha_producer_logic_test(void)
             goto done;
         depth_before[i] = renderer.depth[sample_y[i] * WIDTH + sample_x[i]];
     }
-    if (rf_core_transparent_command_logic_test_v1(commands, 4) < 0) goto done;
+    if (rf_core_transparent_command_logic_test_v1(commands, COMMANDS) < 0)
+        goto done;
 
     /* Render an all-opaque texel reference through the same RFM2 frontend.
      * This supplies the exact shaded source color without duplicating the
      * renderer's light/fog rounding in the fixture. */
-    texels[0][3] = texels[2][3] = 255;
+    texels[0][3] = texels[2][3] = texels[4][3] = 255;
+    material[4 * 40 + 4] = material[5 * 40 + 4] = 255;
     if (toy_renderer_begin(&reference_renderer, &reference_surface, 0x102030) < 0 ||
         rasterfall_render_rigid_resource(&reference_renderer, &camera, &resource,
                                          &transform) < 0 ||
-        reference_renderer.cmd_count != 4) {
+        reference_renderer.cmd_count != COMMANDS) {
         texels[0][3] = 0; texels[2][3] = 128;
+        material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
         goto done;
     }
-    for (i = 0; i < 4; ++i)
+    for (i = 0; i < COMMANDS; ++i)
         if (!death_command_geometry_equal(&commands[i],
                                            &reference_renderer.cmds[i]) ||
             reference_renderer.cmds[i].texture != &texture_views[i]) {
             texels[0][3] = 0; texels[2][3] = 128;
+            material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
             goto done;
         }
     if (toy_renderer_flush(&reference_renderer) < 0) {
         texels[0][3] = 0; texels[2][3] = 128;
+        material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
         goto done;
     }
     texels[0][3] = 0; texels[2][3] = 128;
+    material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
     if (toy_renderer_flush(&renderer) < 0) goto done;
-    for (i = 0; i < 3; ++i) {
+    for (i = 0; i < COMMANDS; ++i) {
         int at = sample_y[i] * WIDTH + sample_x[i];
-        if (renderer.depth[at] != depth_before[i]) goto done;
+        if (i != 3 && renderer.depth[at] != depth_before[i]) goto done;
     }
     {
         int at0 = sample_y[0] * WIDTH + sample_x[0];
         int at1 = sample_y[1] * WIDTH + sample_x[1];
         int at2 = sample_y[2] * WIDTH + sample_x[2];
         int at3 = sample_y[3] * WIDTH + sample_x[3];
-        uint32_t src = reference_pixels[at2], under = 0x102030U;
-        uint32_t expected =
+        int at4 = sample_y[4] * WIDTH + sample_x[4];
+        int at5 = sample_y[5] * WIDTH + sample_x[5];
+        uint32_t src = reference_pixels[at2], src4 = reference_pixels[at4];
+        uint32_t under = 0x102030U;
+        uint32_t expected128 =
             (((((src >> 16) & 255U) * 128U + ((under >> 16) & 255U) * 127U) / 255U) << 16) |
             (((((src >> 8) & 255U) * 128U + ((under >> 8) & 255U) * 127U) / 255U) << 8) |
             (((src & 255U) * 128U + (under & 255U) * 127U) / 255U);
+        uint32_t expected64 =
+            (((((src4 >> 16) & 255U) * 64U + ((under >> 16) & 255U) * 191U) / 255U) << 16) |
+            (((((src4 >> 8) & 255U) * 64U + ((under >> 8) & 255U) * 191U) / 255U) << 8) |
+            (((src4 & 255U) * 64U + (under & 255U) * 191U) / 255U);
         if (pixels[at0] != under || coverage[at0] != 0 ||
             pixels[at1] != reference_pixels[at1] || coverage[at1] != 255 ||
-            pixels[at2] != expected || coverage[at2] != 255 ||
+            pixels[at2] != expected128 || coverage[at2] != 255 ||
             pixels[at3] != reference_pixels[at3] || coverage[at3] != 255 ||
-            renderer.depth[at3] == depth_before[3])
+            renderer.depth[at3] == depth_before[3] ||
+            pixels[at4] != expected64 || coverage[at4] != 255 ||
+            pixels[at5] != under || coverage[at5] != 0)
             goto done;
     }
     result = 0;
 done:
     texels[0][3] = 0; texels[1][3] = 255; texels[2][3] = 128;
+    texels[4][3] = 128; texels[5][3] = 255;
+    material[4 * 40 + 4] = 128; material[5 * 40 + 4] = 0;
     toy_renderer_destroy(&reference_renderer);
     toy_renderer_destroy(&renderer);
     return result;

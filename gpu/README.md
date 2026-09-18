@@ -1,8 +1,8 @@
 # Rasterfall GPU 目录
 
 > 文档更新：2026-09-18
-> 源码核对基线：GPU-8B2d B2d-4b checkpoint（2026-09-18）
-> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4/5 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip、CPU/GPU differential 与 local muzzle 接入；GPU-8B2d B2d-4a/4b 已把普通 RFM2 material alpha 与 RGBA texel alpha 接入真实 producer，组合 alpha、其他透明 world producer 与 GPU-9A normal-frame 验收仍待完成。
+> 源码核对基线：GPU-8B2d B2d-4c checkpoint（2026-09-18）
+> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4/5 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip、CPU/GPU differential 与 local muzzle 接入；GPU-8B2d B2d-4a/4b/4c 已把普通 RFM2 material alpha、RGBA texel alpha 与组合 alpha 接入真实 producer，其他透明 world producer 与 GPU-9A normal-frame 验收仍待完成。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
 参考性外部代码。GPU 路线的 checkpoint、最终目标和剩余问题统一见
@@ -51,7 +51,7 @@ Rasterfall normal frontend
 - Raster V1 要求 `shaderInt64`，workgroup 由 capability contract 在 16×16 和 8×8 中选择。
 - CPU binning 按 command order 建立 tile offset/index list，不复制 payload，不改变 raster semantics。
 - Texture V1 是 buffer-backed nearest RGB8/RGBA8；CPU pointer 不进入 ABI。
-- normal world batch 必须整批可表达才使用 GPU；B2d-4a/4b 的普通 RFM2 material alpha 与 RGBA texel alpha 可由 flat/textured source-over command 表达，RGBA producer 在 CPU replay 侧也显式 no-depth-write，支持的 Transparent V1 不触发 fallback；高级 sphere/toon/specular、bilinear、edge、overlay 或其他 unsupported input 仍导致整批 CPU fallback。
+- normal world batch 必须整批可表达才使用 GPU；B2d-4a/4b/4c 的普通 RFM2 material alpha、RGBA texel alpha 与 `texel × material / 255` 组合 alpha 可由 flat/textured source-over command 表达，RGBA producer 在 CPU replay 侧也显式 no-depth-write，支持的 Transparent V1 不触发 fallback；高级 sphere/toon/specular、bilinear、edge、overlay 或其他 unsupported input 仍导致整批 CPU fallback。
 - CPU/GPU differential 比较 canonical XRGB8888 color 和完整 signed inverse-depth；hash 不替代逐元素比较。
 - Post-Raster V1 使用独立 device-local `post_color`，不对 raster color 原位读写。
 - normal native present 使用 BGRA8 transfer-destination swapchain，不读回 color/depth，不复制 CPU framebuffer。
