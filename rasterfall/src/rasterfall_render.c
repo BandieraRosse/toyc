@@ -3505,6 +3505,41 @@ static int draw_quad(struct toy_renderer *renderer, const struct camera *camera,
 
 /* Dimensioned wall component: generate a few closed RFU boxes, cull hidden
  * faces before submission, and retain the shared map collision dimensions. */
+/* Reject whole static world boxes before their faces or floor subdivisions are
+ * built. Near-plane intersections stay with the triangle clipper. */
+static int world_box_visible(const struct toy_surface *surface,
+                             const struct camera *camera,
+                             int minx, int maxx, int miny, int maxy,
+                             int minz, int maxz)
+{
+    int all_left = 1, all_right = 1, all_above = 1, all_below = 1;
+    int any_near = 0, any_front = 0;
+    int focal = surface->width * 3 / 4;
+    int half_width = surface->width / 2 + 32;
+    int half_height = surface->height / 2 + 32;
+    for (int i = 0; i < 8; i++) {
+        struct vec3 world = {(i & 1) ? maxx : minx,
+                             (i & 2) ? maxy : miny,
+                             (i & 4) ? maxz : minz};
+        struct vec3 view;
+        long long x, y, x_limit, y_limit;
+        world_to_view(camera, &world, &view);
+        if (view.z < NEAR_Z) { any_near = 1; continue; }
+        any_front = 1;
+        x = (long long)view.x * focal;
+        y = (long long)view.y * focal;
+        x_limit = (long long)view.z * half_width;
+        y_limit = (long long)view.z * half_height;
+        if (x >= -x_limit) all_left = 0;
+        if (x <= x_limit) all_right = 0;
+        if (y <= y_limit) all_above = 0;
+        if (y >= -y_limit) all_below = 0;
+    }
+    if (!any_front) return 0;
+    if (any_near) return 1;
+    return !(all_left || all_right || all_above || all_below);
+}
+
 static int render_boundary_wall(struct toy_renderer *renderer,
                                  const struct camera *camera,
                                  const struct rasterfall_prop_instance *instance)
@@ -3519,6 +3554,10 @@ static int render_boundary_wall(struct toy_renderer *renderer,
         if (rf_map_component_transform(parts + i, instance->x, 0, instance->z,
                                         instance->yaw_degrees, instance->scale_milli, &b) < 0)
             return -1;
+        if (!world_box_visible(&renderer->surface, camera, b.min_x, b.max_x,
+                               instance->y + b.min_y, instance->y + b.max_y,
+                               b.min_z, b.max_z))
+            continue;
         for (k = 0; k < 8; k++) {
             v[k].x = (k & 1) ? b.max_x : b.min_x;
             v[k].y = instance->y + ((k & 2) ? b.max_y : b.min_y);
@@ -3624,6 +3663,10 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
             int tile_max_x = base_x + slab < level_map.maxx ? base_x + slab : level_map.maxx;
             int tile_max_z = base_z + slab < level_map.maxz ? base_z + slab : level_map.maxz;
             int x_count = 0, z_count = 0;
+            if (!world_box_visible(&renderer->surface, camera,
+                                   base_x, tile_max_x, -900, -900,
+                                   base_z, tile_max_z))
+                continue;
             xs[x_count++] = base_x;
             xs[x_count++] = tile_max_x;
             zs[z_count++] = base_z;
@@ -4823,6 +4866,34 @@ done:
     return result;
 }
 
+static int map_draw_visible(const struct toy_surface *surface,
+                            const struct camera *camera,
+                            const struct toy_map_draw *draw)
+{
+    int miny = -900, maxy = -900;
+    switch (draw->type) {
+    case TOY_MAP_DRAW_WALL:
+    case TOY_MAP_DRAW_TEXTURE:
+    case TOY_MAP_DRAW_BOX:
+        maxy = draw->e;
+        if (draw->type == TOY_MAP_DRAW_BOX) maxy -= 900;
+        break;
+    case TOY_MAP_DRAW_RAMP:
+        miny = -900 + (draw->e < draw->f ? draw->e : draw->f);
+        maxy = -900 + (draw->e > draw->f ? draw->e : draw->f);
+        if (miny > -900) miny = -900; /* side faces extend to ground */
+        break;
+    case TOY_MAP_DRAW_PLATFORM:
+        miny = maxy = -900 + draw->e;
+        break;
+    default:
+        return 1;
+    }
+    if (miny > maxy) { int tmp = miny; miny = maxy; maxy = tmp; }
+    return world_box_visible(surface, camera, draw->a, draw->b,
+                             miny, maxy, draw->c, draw->d);
+}
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
@@ -4845,6 +4916,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
         scene_stats.map_command_begin[i] = renderer->cmd_count;
+        if (!map_draw_visible(&renderer->surface, camera, x))
+            goto map_record_done;
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
              x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||
@@ -4921,6 +4994,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
             pixels += render_world_sign(renderer, camera, x);
         }
+map_record_done:
         scene_stats.map_command_limit[i] = renderer->cmd_count;
         scene_stats.map_command_range_count = i + 1;
     }

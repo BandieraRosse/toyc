@@ -1,6 +1,9 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：`--normal-frame-audit` 输出已有 scene 阶段命令边界的 floor/map/static/gallery/character/private/projectile/later 汇总；later 是该离屏入口在 scene 后提交的 flags、enemies、AI 与文字等命令，不等同于正常 `--frame-audit` 的 world-submission 分类。
+> 源码核对基线补充：正常地图遍历在提交前按 render record 的三维包围盒剔除完全屏外的 wall、texture、box、ramp、platform；保留近面交叉记录及原 map command range 顺序。MODEL、LABEL、SIGN 不套用这些几何 bounds。
+> 源码核对基线补充：ground 2048 RFU 大板在分区/颜色查找前、boundary wall 组件盒在面生成前按保守视锥剔除；普通 static RMESH 保留现有模型级顶点准备前剔除。近面交叉仍交给三角形裁剪。
 > 源码核对基线补充：正常 AI 的提交前侧平面检查按展示路径选横向半径：程序化角色 1600 RFU，模块化角色仍为 2600 RFU；垂直半径仍为 2600 RFU。程序化范围覆盖最大 920 RFU 武器模型、260 RFU 握持偏移、55 RFU 动画前后移以及身体 175/110 缩放与倒地旋转余量；模块化身体、装备和 socket 武器不套用这一较窄界限。近面仍由逐三角形裁剪。
 > 源码核对基线补充：正常 AI 完成身体、装备和武器提交后，按每条命令的三顶点屏幕包围盒原地压紧该 actor 的命令段；完全位于任一视口侧平面外的命令不会进入 CPU/GPU flush，保留命令的相对顺序不变。`ai-triage offscreen_cmd` 仍统计移除前的数量。此阶段不节省姿态或逐三角形提交耗时；继续做提交前剔除需覆盖角色、装备、武器的空间边界。
 > 源码核对基线补充：正常 AI actor 在既有前后距离检查后、动态光照与模型/装备/武器提交前，使用以角色根部上方为中心的保守侧平面检查；各展示路径的水平半径见上条，垂直半径 2600 RFU。穿越近面的角色仍由原逐三角形近裁剪处理。`ai-triage screen_culled` 计数这一早期剔除。该检查共用于 CPU/GPU frontend，不改变玩法状态或开发者展示角色。
@@ -637,6 +640,11 @@ Map component 的闭合分带几何并在提交前剔除不可见面。碰撞仍
 renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁与 collision contract 共用位置。
 地面 `draw_partitioned_floor()` 改为 2048 RFU 大板和低对比接缝，边缘裁到 world bounds，
 继续与区域 paint 在同一平面分区；WHU authored-ground 保留颜色，不添加接缝。
+正常 world frontend 先以地面大板的保守视锥检查过滤完全不可见的大板，再做区域分割和颜色查找；
+`boundary_wall` 的组件盒在生成可见面前使用相同检查。穿过近裁剪面的盒仍交给逐三角形裁剪。
+普通 static RMESH 已在 `render_gallery_model_range()` 的顶点准备前执行模型 AABB 视锥检查。
+地图 wall、texture、box、ramp、platform 在 render record 入口做整块三维包围盒检查，
+避免屏外组件进入逐面提交和 V2 平面细分；诊断 MODEL、文字及标牌保留各自路径。
 未新增纹理或 floor mesh。观察入口仍为 `--environment-capture` / environment_sheet.py。
 
 ## Static RMESH 的 V2 环境光

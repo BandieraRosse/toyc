@@ -817,6 +817,15 @@ static void normal_frame_coverage_trace(const char *view,
     }
     __printf("NORMAL-FRAME view=%s commands=%d total_tile_refs=%llu over_half=%lu full_screen=%lu fogged=%lu vertex_fogged=%lu\n",
              view, renderer->cmd_count, total_tiles, half, full, fogged, vertex_fogged);
+    __printf("NORMAL-FRAME scene floor_cmd=%lu map_cmd=%lu static_cmd=%lu gallery_cmd=%lu character_cmd=%lu private_cmd=%lu projectile_cmd=%lu later_cmd=%lu\n",
+             stats->floor_command_end,
+             stats->map_command_end - stats->floor_command_end,
+             stats->static_command_end - stats->map_command_end,
+             stats->gallery_command_end - stats->static_command_end,
+             stats->character_command_end - stats->gallery_command_end,
+             stats->private_command_end - stats->character_command_end,
+             stats->projectile_command_end - stats->private_command_end,
+             (unsigned long)renderer->cmd_count - stats->projectile_command_end);
     for (i = 0; i < 10 && top[i].pixels; i++) {
         const struct toy_raster_cmd *cmd = renderer->cmds + top[i].index;
         int raw_min_x = cmd->a.x < cmd->b.x ? (cmd->a.x < cmd->c.x ? cmd->a.x : cmd->c.x) : (cmd->b.x < cmd->c.x ? cmd->b.x : cmd->c.x);
