@@ -1,8 +1,9 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接已通过 Intel 固定 fixture；Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A graphics proof](hardware-graphics-hg2a.md)：`gpu/include/rf_gpu_graphics.h` / `gpu/src/rf_gpu_vulkan_graphics.inc` 拥有独立 indexed draw 与离屏 target，`graphics_v0.vert/.frag` 执行整数变换、form light 和 opaque flat/nearest。正常 renderer/Draw lowering 不变；混合遮挡与 CPU 采样一致性属于 HG-2B 门禁。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：`rasterfall_render_resources.h` / `render/rasterfall_render_resources.c` 拥有 static prop CPU 资源；`rf_core_host.c` 负责帧 pin 的完成，`rf_game_lifecycle.c` 负责 world 失效。`draw-resources` 审计报告实际存活、退休、pin 与加载释放计数。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md)：`rasterfall_draw.h` 定义 CPU-backed Draw，`render/rasterfall_draw_reference.inc` 解析 submesh 并同步 lowering；`--frame-audit` 输出实例、Draw、源三角形及拒绝原因。

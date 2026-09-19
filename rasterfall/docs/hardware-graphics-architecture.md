@@ -1,8 +1,9 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接已通过 Intel 固定 fixture；Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已实现普通 opaque static RMESH 同步 CPU-backed Draw；原 CPU/compute 精确回归通过，后续资源生命周期见 HG-1B。
@@ -24,7 +25,7 @@ HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics e
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
 | 层顺序、retained、fallback | `rf_core_host.c` | 持有 DrawSpan/RasterSpan 有序帧记录，整帧 preflight 后执行或 replay |
-| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 已有独立整数兼容路径与 attachment/buffer roundtrip；完整混合帧/presenter 待接入 |
+| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 已连接 Raster ABI 分段与整数兼容 attachment/buffer bridge；Core 混合帧/presenter 待接入 |
 | 基线、验收 | `tools/hardware_graphics_baseline.ps1`、`rf_gpu_raster_diff_test.c` | 保留退出码、原始审计、stream、color/depth、环境标识 |
 
 首个接点在 `rasterfall_render_static_prop()` 得到 model/profile 和实例策略之后、进入模型顶点准备之前。
@@ -87,7 +88,7 @@ fixture 必须覆盖 yaw/scale、缺失纹理、单/双面、近面交叉、scen
 同一 Vulkan device，首版单 graphics+compute+present queue、单帧在途。HG-2A 独立离屏 indexed draw，
 HG-2B 验证 compute 前段 → GPU export → graphics → GPU import → compute 后段 → Post/overlay/present。
 compute shader 已支持独立 CLEAR/LOAD_EXISTING 与执行范围；clear/sky 仅由起始段消费。
-现阶段为 hosted 分段诊断，尚未绑定 graphics bridge 或 Core 有序混合帧。
+现阶段为 hosted 交错诊断，已绑定 graphics bridge，尚未接入 Core 有序混合帧。
 
 Target 合同必须描述 extent、format、color encoding、depth encoding、内容有效性、owner 与访问转换。
 现有 color/depth/post_color 是 storage buffer，不能直接充当 attachment。
@@ -151,7 +152,7 @@ HG-1A 已先修复 HG-0 遗留的 CPU planar vertex-lit 透明度与深度差异
 HG-1A 的普通 opaque static RMESH Draw/reference 与 Windows Intel 精确回归已完成，见
 [验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)。
 HG-2A 已完成独立 graphics proof，数值误差、近面深度待验证边界与复现见 [HG-2A](hardware-graphics-hg2a.md)；下一步是 HG-2B。
-HG-2B 的[整数深度与 target bridge](hardware-graphics-hg2b.md)前置验证通过，完整分段/顺序/native 门禁仍待实现；HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
+HG-2B 的[整数深度与 target bridge](hardware-graphics-hg2b.md)及真实 compute/graphics 交错验证通过，Core 顺序/native 门禁仍待实现；HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
 `--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。
 资源上传、instance upload、bridge bytes/time、unexpected_lowering 仍在对应 owner 实现时加入，
 不以占位零值伪装已实现 hardware 数据。

@@ -1,6 +1,7 @@
 #include "rf_gpu.h"
 #include "rf_gpu_raster_pack.h"
 #include "rf_gpu_vulkan_backend.h"
+#include "rf_gpu_graphics.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -218,7 +219,131 @@ done:
 #undef SEG
 }
 
-int main(void)
+/* Full-viewport graphics quad has no exterior edge inside the target.
+ * Its reference placeholders use one oversized raster triangle, allowing
+ * byte-exact comparisons without masking hardware edge differences. */
+static int mixed_test(struct rf_gpu_vulkan_context *context, unsigned group,
+                      int full_scan, int fog, unsigned width)
+{
+    enum { MAX=48*29 };
+    unsigned height=width==19?13:23, stride=width+5;
+    struct fixture f={0};
+    struct rf_gpu_graphics *g=NULL;
+    struct rf_gpu_graphics_vertex v[4]={0};
+    const uint32_t indices[]={0,1,2,0,2,3}, texel=0xffffff;
+    struct rf_gpu_graphics_draw d={0}, bad[2];
+    struct rf_gpu_graphics_stats before,after;
+    struct rf_gpu_post_params_v1 post={0};
+    uint32_t expected[MAX],actual[MAX];
+    int expected_depth[MAX],actual_depth[MAX];
+    void *r=NULL,*fresh=NULL;
+    char message[256];
+    int result=-1;
+#define MIX(a,b,mode,last) rf_gpu_vulkan_raster_segment(context,r,f.bytes, \
+    (unsigned long)f.size,NULL,0,NULL,0,a,b,mode,last,last?actual:NULL, \
+    last?actual_depth:NULL,width,height,stride,stride,message,sizeof(message))
+    CHECK(!fixture_init(&f,width,height,10,0x102030));
+    /* Two graphics placeholders at 3/5, interleaved compute at 2/4. */
+    for(unsigned i=0;i<10;++i)
+        triangle(&f,i,-64,-64,4096,128,-64,4096,-64,128,4096,0x983721,256,0);
+    triangle(&f,0,1,1,8192,8,1,8192,1,9,8192,0x1256ab,256,0);
+    triangle(&f,2,10,2,8192,17,2,8192,10,10,8192,0x56ab12,256,0);
+    f.commands[5].payload.flat_triangle.color=0x219837;
+    /* Equal depth compute wins after graphics; far compute loses. */
+    triangle(&f,4,3,8,4096,9,8,4096,3,12,4096,0x371298,256,0);
+    triangle(&f,5,1,1,100,17,1,100,1,11,100,0xff00ff,256,0);
+    memset(&f.commands[8],0,sizeof(f.commands[8]));
+    f.commands[8].kind=RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1;
+    f.commands[8].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+    triangle(&f,7,5,4,6000,14,4,6000,5,11,6000,0xabcdef,256,0);
+    f.commands[9].flags=RF_GPU_RASTER_FLAG_DEPTH_TEST_V1|RF_GPU_RASTER_FLAG_SOURCE_OVER_V1;
+    f.commands[9].payload.flat_triangle.reserved[0]=128;
+    memset(&f.commands[10],0,sizeof(f.commands[10]));
+    f.commands[10].kind=RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1;
+    f.commands[10].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+    triangle(&f,9,2,2,1,6,2,1,2,6,1,0xfedcba,256,0);
+    CHECK(!rf_gpu_raster_validate_v1(f.bytes,f.size));
+    CHECK(!rf_gpu_vulkan_backend.raster_create(context,width,height,group,group,&r,message,sizeof(message)));
+    CHECK(!rf_gpu_vulkan_backend.raster_create(context,width,height,group,group,&fresh,message,sizeof(message)));
+    rf_gpu_vulkan_backend.raster_set_full_scan_diagnostic(context,r,full_scan);
+    post.mode=fog?RF_GPU_POST_DEPTH_FOG_V0:RF_GPU_POST_DISABLED;
+    post.fog_near_inv_z=10000;post.fog_far_inv_z=0;
+    post.fog_color=0x90a0b0;post.max_density_q8=192;
+    CHECK(!rf_gpu_vulkan_backend.raster_set_post(context,r,&post));
+    CHECK((g=rf_gpu_graphics_create(context))!=NULL);
+    for(unsigned i=0;i<4;++i) {
+        v[i].position[0]=(i==1 || i==2)?256:-256;
+        v[i].position[1]=i>=2?256:-256;
+    }
+    CHECK(!rf_gpu_graphics_upload(g,v,4,indices,6,&texel,1,1));
+    CHECK(!rf_gpu_graphics_resize(g,width,height));
+    d.translation_scale[2]=256;d.translation_scale[3]=1000;
+    d.rotation[1]=1024;d.view[1]=d.view[3]=1024;
+    d.projection[0]=width;d.projection[1]=height;
+    d.projection[2]=64;d.projection[3]=width*3/4;
+    d.material[0]=0x983721;d.material[1]=256;
+    d.texture[0]=d.texture[1]=1;
+    d.index_count=6;d.double_sided=1;d.integer_depth=1;
+    CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
+    CHECK(rf_gpu_graphics_raster_draw(g,fresh,&d,1)<0);
+    rf_gpu_graphics_get_stats(g,&before);
+    memset(expected,0x35,sizeof(expected));memset(actual,0x35,sizeof(actual));
+    memset(expected_depth,0x47,sizeof(expected_depth));memset(actual_depth,0x47,sizeof(actual_depth));
+    CHECK(!rf_gpu_vulkan_backend.raster_render(context,r,f.bytes,(unsigned long)f.size,
+        NULL,0,NULL,0,expected,expected_depth,width,height,stride,stride,NULL,message,sizeof(message)));
+    CHECK(expected[3*stride+3]==0xfffedcba && expected_depth[3*stride+3]==8192);
+    for(unsigned repeat=0;repeat<2;++repeat) {
+        d.material[0]=0x983721;
+        CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
+        bad[0]=bad[1]=d;bad[1].index_count=7;
+        CHECK(rf_gpu_graphics_raster_draw(g,r,bad,2)<0); /* all draws preflight */
+        bad[1]=d;bad[1].integer_depth=0;
+        CHECK(rf_gpu_graphics_raster_draw(g,r,bad,2)<0);
+        CHECK(!rf_gpu_graphics_resize(g,width+1,height));
+        CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
+        CHECK(!rf_gpu_graphics_resize(g,width,height));
+        CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+        /* Change consumed prefix: replaying it would destroy the result. */
+        f.commands[2].payload.flat_triangle.color=0xff00ff;
+        CHECK(!MIX(4,5,RF_GPU_RASTER_LOAD_EXISTING,0));
+        d.material[0]=0x219837;
+        CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+        /* Back-to-back graphics reuse, farther geometry must not overwrite. */
+        d.translation_scale[2]=512;d.material[0]=0xff00ff;
+        CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+        d.translation_scale[2]=256;
+        CHECK(!MIX(6,12,RF_GPU_RASTER_LOAD_EXISTING,1));
+        CHECK(!memcmp(expected,actual,sizeof(actual)));
+        CHECK(!memcmp(expected_depth,actual_depth,sizeof(actual_depth)));
+        CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
+        f.commands[2].payload.flat_triangle.color=0x1256ab;
+    }
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.mesh_upload_bytes==before.mesh_upload_bytes && after.texture_upload_bytes==before.texture_upload_bytes);
+    CHECK(after.indexed_draws-before.indexed_draws==6);
+    CHECK(after.raster_bridge_transfers-before.raster_bridge_transfers==12);
+    CHECK(after.bridge_transfer_bytes-before.bridge_transfer_bytes==(uint64_t)width*height*16*12);
+    /* Unsafe inverse-depth remains sticky across later valid/empty segments. */
+    f.commands[2].payload.flat_triangle.a.inv_z=16385;
+    CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
+    CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
+    f.commands[2].payload.flat_triangle.a.inv_z=8192;
+    CHECK(!MIX(3,3,RF_GPU_RASTER_LOAD_EXISTING,0));
+    CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
+    CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
+    CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+    printf("mixed-compute-graphics: group=%u full_scan=%d fog=%d extent=%ux%u exact color/depth/stride PASS\n",group,full_scan,fog,width,height);
+    result=0;
+done:
+    rf_gpu_graphics_destroy(g);
+    rf_gpu_vulkan_backend.raster_destroy(context,r);
+    rf_gpu_vulkan_backend.raster_destroy(context,fresh);
+    free(f.bytes);
+    return result;
+#undef MIX
+}
+
+int main(int argc, char **argv)
 {
     struct rf_gpu gpu;
     struct rf_gpu_vulkan_context context;
@@ -232,13 +357,25 @@ int main(void)
     int result = 1;
     memset(&context, 0, sizeof(context)); memset(&raster, 0, sizeof(raster));
     memset(&f, 0, sizeof(f));
+    int mixed=argc==2 && !strcmp(argv[1],"--mixed-gate");
+    if(argc>1 && !mixed){fprintf(stderr,"usage: %s [--mixed-gate]\n",argv[0]);return 2;}
+    context.require_graphics=mixed;
     CHECK(rf_gpu_init(&gpu, RF_GPU_POLICY_REQUIRED, &rf_gpu_vulkan_backend,
                       &context) == 0);
     CHECK(rf_gpu_get_status(&gpu, &status) == 0 && status.renderer.raster_v1);
     CHECK(status.info.capabilities.shader_int64);
+    if(mixed)printf("HG-2B adapter=%s vendor=%x device=%x type=%u queue=%u\n",
+        gpu.info.adapter_name,gpu.info.vendor_id,gpu.info.device_id,
+        gpu.info.adapter_type,gpu.info.queue_family);
     for(unsigned int group=8;group<=16;group+=8)
         for(int full=0;full<2;full++) for(int fog=0;fog<2;fog++)
+        {
             CHECK(!segmented_test(&context,group,full,fog));
+            if(mixed) {
+                CHECK(!mixed_test(&context,group,full,fog,19));
+                CHECK(!mixed_test(&context,group,full,fog,37));
+            }
+        }
     CHECK((status.renderer.raster_work_group_x == 16 &&
            status.renderer.raster_work_group_y == 16) ||
           (status.renderer.raster_work_group_x == 8 &&
@@ -350,6 +487,7 @@ done:
     rf_gpu_raster_shutdown(&raster);
     rf_gpu_shutdown(&gpu);
     if (context.implementation) result = 1;
+    if(mixed)puts(result?"HG-2B mixed bridge: FAIL":"HG-2B mixed bridge: PASS");
     puts(result ? "GPU Raster V1: FAIL" : "shutdown: PASS\nGPU Raster V1: PASS");
     return result;
 }

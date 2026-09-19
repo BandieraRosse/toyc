@@ -959,6 +959,7 @@ struct rf_gpu_vulkan_raster {
     uint32_t work_group_x, work_group_y;
     int full_scan_diagnostic;
     int segment_valid;
+    int segment_graphics_compatible;
     struct rf_gpu_raster_tile_lists tile_lists;
     rf_vk_swapchain swapchain;
     rf_vk_image *swapchain_images;
@@ -1221,11 +1222,11 @@ static int raster_create(void *context, unsigned int width,
     r->work_group_x = work_group_x; r->work_group_y = work_group_y;
     if (raster_buffer_create(impl, byte_size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->color) < 0 ||
         raster_buffer_create(impl, byte_size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, &r->depth) < 0 ||
         raster_buffer_create(impl, byte_size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
@@ -1664,7 +1665,7 @@ static int raster_render_range(void *context, void *raster,
         /* Earlier segments may have been sampled/copied as well as written.
          * This dependency also protects CLEAR after a prior diagnostic read. */
         barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT |
-            RF_VK_ACCESS_SHADER_READ_BIT | RF_VK_ACCESS_TRANSFER_READ_BIT;
+            RF_VK_ACCESS_SHADER_READ_BIT | RF_VK_ACCESS_TRANSFER_READ_BIT | RF_VK_ACCESS_TRANSFER_WRITE_BIT;
         barrier.dst_access_mask = RF_VK_ACCESS_SHADER_READ_BIT |
             RF_VK_ACCESS_SHADER_WRITE_BIT;
         impl->api.cmd_pipeline_barrier(r->command_buffer,
@@ -1799,6 +1800,18 @@ static int raster_render_range(void *context, void *raster,
         }
         if (result != RF_VK_SUCCESS) goto failed;
         if (timing) timing->execution_wait_ms = now_ms() - segment_start;
+    }
+    /* Track accumulated target compatibility; rejected calls preserve it. */
+    if(!final) {
+        if(load==RF_GPU_RASTER_CLEAR)r->segment_graphics_compatible=1;
+        const uint32_t *words=stream;
+        for(uint32_t ci=first;ci<end;++ci) {
+            const uint32_t *c=words+8+ci*24;
+            if(c[0]==2U && c[4]>16384U)r->segment_graphics_compatible=0;
+            if(c[0]>=3U && c[0]<=5U &&
+               (c[8]>16384U || c[11]>16384U || c[14]>16384U))
+                r->segment_graphics_compatible=0;
+        }
     }
     r->segment_valid = !final;
     if (!final) {

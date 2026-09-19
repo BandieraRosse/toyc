@@ -187,7 +187,7 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &t.bridge_transfer) < 0 ||
         raster_buffer_create(g->owner, (uint64_t)width*height*8,
-            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT, RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT, RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, &t.bridge_raster) < 0) goto fail;
     views[0] = t.color.view; views[1] = t.depth.view;
     fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO; fb.renderPass = g->render_pass;
@@ -563,7 +563,8 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
     return 1;
 }
 
-static int gfx_bridge_roundtrip(struct rf_gpu_graphics *g)
+/* mode: 0 diagnostic roundtrip, 1 raster -> attachments, 2 attachments -> raster. */
+static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r, int mode)
 {
     struct rf_gpu_vulkan_impl *impl=g->owner;
     uint64_t bytes=(uint64_t)g->target.width*g->target.height*4;
@@ -586,53 +587,75 @@ static int gfx_bridge_roundtrip(struct rf_gpu_graphics *g)
     /* Prior render pass stores both images in TRANSFER_SRC. Prior bridge
      * buffers may still have shader/transfer readers; order their reuse. */
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.src_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT;
-    barrier.dst_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.src_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_TRANSFER_READ_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;copy.imageSubresource.layerCount=1;
-    copy.imageExtent.width=g->target.width;copy.imageExtent.height=g->target.height;copy.imageExtent.depth=1;
-    g->api.CmdCopyImageToBuffer(g->cmd,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,g->target.bridge_transfer.buffer,1,&copy);
-    copy.bufferOffset=bytes;copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
-    g->api.CmdCopyImageToBuffer(g->cmd,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,g->target.bridge_transfer.buffer,1,&copy);
+    if (mode == 1) {
+        struct rf_vk_buffer_copy region={0};
+        region.size=bytes;
+        impl->api.cmd_copy_buffer(g->cmd,r->color.buffer,g->target.bridge_raster.buffer,1,&region);
+        region.dst_offset=bytes;
+        impl->api.cmd_copy_buffer(g->cmd,r->depth.buffer,g->target.bridge_raster.buffer,1,&region);
+    } else {
+        copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;copy.imageSubresource.layerCount=1;
+        copy.imageExtent.width=g->target.width;copy.imageExtent.height=g->target.height;copy.imageExtent.depth=1;
+        g->api.CmdCopyImageToBuffer(g->cmd,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,g->target.bridge_transfer.buffer,1,&copy);
+        copy.bufferOffset=bytes;copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
+        g->api.CmdCopyImageToBuffer(g->cmd,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,g->target.bridge_transfer.buffer,1,&copy);
+    }
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
     impl->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->bridge_pipeline);
     impl->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->bridge_layout,0,1,&g->bridge_set,0,NULL);
+    params[2]=mode==1?1:0;
     g->api.CmdPushConstants(g->cmd,g->bridge_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,12,params);
     impl->api.cmd_dispatch(g->cmd,(params[0]+15)/16,(params[1]+15)/16,1);
-    barrier.src_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
-    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    params[2]=1;
-    g->api.CmdPushConstants(g->cmd,g->bridge_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,12,params);
-    impl->api.cmd_dispatch(g->cmd,(params[0]+15)/16,(params[1]+15)/16,1);
+    if (mode == 0) {
+        barrier.src_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
+        impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+        params[2]=1;
+        g->api.CmdPushConstants(g->cmd,g->bridge_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,12,params);
+        impl->api.cmd_dispatch(g->cmd,(params[0]+15)/16,(params[1]+15)/16,1);
+    }
     barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_TRANSFER_READ_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    for(unsigned i=0;i<2;++i) {
-        images[i].s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        images[i].old_layout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;images[i].new_layout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        images[i].src_access_mask=VK_ACCESS_TRANSFER_READ_BIT;images[i].dst_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
-        images[i].src_queue_family_index=images[i].dst_queue_family_index=UINT32_MAX;
-        images[i].image=i?g->target.depth.image:g->target.color.image;
-        images[i].subresource_range.aspect_mask=i?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT;
-        images[i].subresource_range.level_count=images[i].subresource_range.layer_count=1;
+    if (mode == 2) {
+        struct rf_vk_buffer_copy region={0};
+        region.size=bytes;
+        impl->api.cmd_copy_buffer(g->cmd,g->target.bridge_raster.buffer,r->color.buffer,1,&region);
+        region.src_offset=bytes;
+        impl->api.cmd_copy_buffer(g->cmd,g->target.bridge_raster.buffer,r->depth.buffer,1,&region);
+    } else {
+        for(unsigned i=0;i<2;++i) {
+            images[i].s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            images[i].old_layout=(mode==1 && !g->target.valid)?VK_IMAGE_LAYOUT_UNDEFINED:VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;images[i].new_layout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            images[i].src_access_mask=VK_ACCESS_TRANSFER_READ_BIT;images[i].dst_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
+            images[i].src_queue_family_index=images[i].dst_queue_family_index=UINT32_MAX;
+            images[i].image=i?g->target.depth.image:g->target.color.image;
+            images[i].subresource_range.aspect_mask=i?VK_IMAGE_ASPECT_DEPTH_BIT:VK_IMAGE_ASPECT_COLOR_BIT;
+            images[i].subresource_range.level_count=images[i].subresource_range.layer_count=1;
+        }
+        impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,2,images);
+        import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_COLOR_BIT;import.image_subresource.layer_count=1;
+        import.image_extent.width=params[0];import.image_extent.height=params[1];import.image_extent.depth=1;
+        impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
+        import.buffer_offset=bytes;import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_DEPTH_BIT;
+        impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
     }
-    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,2,images);
-    import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_COLOR_BIT;import.image_subresource.layer_count=1;
-    import.image_extent.width=params[0];import.image_extent.height=params[1];import.image_extent.depth=1;
-    impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
-    import.buffer_offset=bytes;import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_DEPTH_BIT;
-    impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
     if(gfx_submit(g)<0)return -1;
-    g->stats.bridge_roundtrips++;g->stats.bridge_transfer_bytes+=bytes*4;
+    if(mode==0)g->stats.bridge_roundtrips++;
+    else g->stats.raster_bridge_transfers++;
+    g->stats.bridge_transfer_bytes+=bytes*4;
     g->target.bridge_valid=1;
     return 0;
 }
 
 static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
-    uint32_t *rgba, float *depth, uint32_t pixel_capacity,int load)
+    uint32_t *rgba, float *depth, uint32_t pixel_capacity,int load,
+    struct rf_gpu_vulkan_raster *r)
 {
     struct rf_gpu_vulkan_impl *impl;
     VkClearValue clear[2];
@@ -644,16 +667,21 @@ static int gfx_render(struct rf_gpu_graphics *g,
     uint64_t offset = 0, bytes;
     void *mapped = NULL;
     if (!g || g->poisoned || !g->index_count || !g->target.framebuffer ||
-        !draws || !count || count > 4096 || !rgba || !depth ||
-        (uint64_t)g->target.width*g->target.height > pixel_capacity) return -1;
+        !draws || !count || count > 4096 ||
+        (!r && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     for (uint32_t i = 0; i < count; ++i) if (!gfx_draw_valid(g, &draws[i])) return -1;
-    if(load && !g->target.valid)return -1;
+    if(r) {
+        if(r->owner!=g->owner || !r->segment_valid || !r->segment_graphics_compatible ||
+           r->width!=g->target.width || r->height!=g->target.height)return -1;
+        for(uint32_t i=0;i<count;++i)if(!draws[i].integer_depth)return -1;
+    } else if(load && !g->target.valid)return -1;
     impl = g->owner; bytes = (uint64_t)g->target.width*g->target.height*4;
-    g->target.valid=0;
     g->target.bridge_valid=0;
-    if(load && gfx_bridge_roundtrip(g)<0){g->poisoned=1;return -1;}
+    if(r)r->segment_valid=0;
+    if(load && gfx_bridge(g,r,r?1:0)<0){g->poisoned=1;g->target.valid=0;return -1;}
+    g->target.valid=0;
     memset(clear, 0, sizeof(clear));
-    if (gfx_begin(g) < 0) return -1;
+    if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = load?g->load_pass:g->render_pass; begin.framebuffer = g->target.framebuffer;
@@ -674,25 +702,30 @@ static int gfx_render(struct rf_gpu_graphics *g,
         g->api.CmdDrawIndexed(g->cmd, draws[i].index_count*factor, 1, draws[i].first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
-    copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copy.imageSubresource.layerCount = 1;
-    copy.imageExtent.width = g->target.width; copy.imageExtent.height = g->target.height; copy.imageExtent.depth = 1;
-    g->api.CmdCopyImageToBuffer(g->cmd, g->target.color.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g->target.readback.buffer, 1, &copy);
-    copy.bufferOffset = bytes; copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    g->api.CmdCopyImageToBuffer(g->cmd, g->target.depth.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g->target.readback.buffer, 1, &copy);
-    barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask = VK_ACCESS_HOST_READ_BIT;
-    impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
-        0, 1, &barrier, 0, NULL, 0, NULL);
-    if (gfx_submit(g) < 0) return -1;
-    if (impl->api.map_memory(impl->device, g->target.readback.memory, 0,
-            g->target.readback.allocation_size, 0, &mapped) != RF_VK_SUCCESS) return -1;
-    if (raster_invalidate(impl, &g->target.readback) < 0) {
-        impl->api.unmap_memory(impl->device, g->target.readback.memory); return -1;
+    if(r) {
+        if(gfx_submit(g)<0 || gfx_bridge(g,r,2)<0){g->poisoned=1;return -1;}
+        r->segment_valid=1;
+    } else {
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy.imageSubresource.layerCount = 1;
+        copy.imageExtent.width = g->target.width; copy.imageExtent.height = g->target.height; copy.imageExtent.depth = 1;
+        g->api.CmdCopyImageToBuffer(g->cmd, g->target.color.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g->target.readback.buffer, 1, &copy);
+        copy.bufferOffset = bytes; copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        g->api.CmdCopyImageToBuffer(g->cmd, g->target.depth.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g->target.readback.buffer, 1, &copy);
+        barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask = VK_ACCESS_HOST_READ_BIT;
+        impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+            0, 1, &barrier, 0, NULL, 0, NULL);
+        if (gfx_submit(g) < 0) return -1;
+        if (impl->api.map_memory(impl->device, g->target.readback.memory, 0,
+                g->target.readback.allocation_size, 0, &mapped) != RF_VK_SUCCESS) return -1;
+        if (raster_invalidate(impl, &g->target.readback) < 0) {
+            impl->api.unmap_memory(impl->device, g->target.readback.memory); return -1;
+        }
+        memcpy(rgba, mapped, (size_t)bytes);
+        memcpy(depth, (unsigned char *)mapped+bytes, (size_t)bytes);
+        impl->api.unmap_memory(impl->device, g->target.readback.memory);
     }
-    memcpy(rgba, mapped, (size_t)bytes);
-    memcpy(depth, (unsigned char *)mapped+bytes, (size_t)bytes);
-    impl->api.unmap_memory(impl->device, g->target.readback.memory);
     g->stats.instance_upload_bytes += (uint64_t)count*112;
     g->stats.indexed_draws += count; g->stats.frames++;
     g->target.valid=1;
@@ -702,12 +735,19 @@ static int gfx_render(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0,NULL); }
 
 int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1,NULL); }
+
+int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
+    const struct rf_gpu_graphics_draw *draws, uint32_t count)
+{
+    if(!raster)return -1;
+    return gfx_render(g,draws,count,NULL,NULL,0,1,raster);
+}
 
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
     uint32_t *argb,int32_t *inverse_depth,uint32_t pixel_capacity)

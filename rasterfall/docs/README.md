@@ -1,8 +1,9 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接已通过 Intel 固定 fixture；Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A 离屏 indexed draw](hardware-graphics-hg2a.md) 已实现持久 GPU mesh/texture、graphics color/depth target 与独立数值诊断；normal frame 仍为 CPU/compute，下一门禁为 HG-2B 混合 target。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 接入普通 opaque static RMESH；按实例/submesh 同步提交，CPU/compute 精确回归与原输出一致；资源生命周期后续进度见 HG-1B。
@@ -148,6 +149,8 @@ World Content V1 由 Game-owned parser 单独加载，描述 actor、terminal、
 Normal world 的 actor 与 renderer-only fixture 还必须经过当前 World Content policy；`toy_game_init()`
 不创建 Jesus 或其他命名队友，固定 Eula/developer strip 与 Humanoid debug 也不会在 Outpost
 normal render 中进入。诊断 CLI 保留自己的独立 fixture 路径。
+
+GPU compute/graphics 交错任务：先读 [HG-2B](hardware-graphics-hg2b.md)，再查 `gpu/include/rf_gpu_graphics.h`、`gpu/src/rf_gpu_vulkan_graphics.inc` 的 adapter，`gpu/src/rf_gpu_vulkan_backend.c` 的 Raster target 续画状态，以及 `gpu/src/rf_gpu_raster_test.c` 的 `--mixed-gate`。
 
 ## 架构主线
 

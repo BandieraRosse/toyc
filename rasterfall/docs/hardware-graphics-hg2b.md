@@ -1,11 +1,11 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_vulkan_raster_segment()`、compute CLEAR/LOAD 范围执行和 Intel 分段回归；实现与限制见下文。尚未连接 graphics bridge。
+> 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_graphics_raster_draw()`，连接 Raster ABI 分段与 graphics LOAD；Intel 实际交错回归和同步验证见下文。Core/native 混合编排仍待实现。
 > 源码核对基线：`0d721581` 加本次工作区；`rf_gpu_graphics.h`、`rf_gpu_vulkan_graphics.inc`、`graphics_compat.vert/.frag`、`graphics_bridge.comp` 与独立 oracle；CPU 合同对照 `rasterfall_render.c` near clipping/project 和 `lib/graphics/renderer.c`；Windows Intel 实测。
 
 HG-2B 进行中：整数深度前置阻塞已修复，GPU attachment/buffer 往返转换与 LOAD 续画已通过。
-Raster ABI 已有独立分段执行基础；graphics 互操作、Core Draw/Raster 顺序和 strict native 门禁尚未实现，不能标记
+Raster ABI 分段与 graphics 已通过 GPU buffer adapter 互操作；Core Draw/Raster 顺序和 strict native 门禁尚未实现，不能标记
 HG-2B 完成或推进 normal-frame hardware props。正常游戏仍消费原 CPU/compute 路径。
 
 ## 入口与判定
@@ -53,7 +53,7 @@ manifest、实际适配器、驱动、exe hash、命令和日志 hash；失败�
 | --- | --- | --- |
 | graphics attachments | RGBA8_UNORM / D32_SFLOAT，深度为量化 inverse-Z / 16384 | `rf_graphics_target`，成功 draw 后有效；resize 清除有效性 |
 | transfer buffer | 连续 RGBA8 words，随后 D32 float bits | 同 target，device-local；仅连接 image copies 与 bridge shader |
-| raster buffer | 连续 `0xffRRGGBB` words，随后 signed-compatible nonnegative inverse-Z words | 同 target，device-local；当前只供独立 bridge proof，尚未绑定 normal Raster ABI consumer |
+| raster buffer | 连续 `0xffRRGGBB` words，随后 signed-compatible nonnegative inverse-Z words | 同 target，device-local；通过 GPU copies 适配 Raster ABI owner 的独立 color/depth buffers |
 | readback buffer | 按明确诊断入口解释布局 | host-visible，仅验收输出，不进入续画/import 输入 |
 
 `rf_gpu_graphics_render()` 使用 attachment CLEAR。`rf_gpu_graphics_continue()` 先原子检查
@@ -76,8 +76,10 @@ shader、early/late-depth、color-attachment 访问依赖和 image layout transi
 无效续画、越界 draw、resize 后首次 LOAD 均在提交前拒绝；提交故障使 owner poisoned。
 
 `rf_gpu_graphics_read_bridge()` 仅诊断最近一次 export 的整数编码，不能用于上传 framebuffer。
-`bridge_roundtrips` 记录实际 GPU 往返次数；`bridge_transfer_bytes` 仅统计 image↔buffer copy
-字节，每像素每往返 16 bytes，不包含 conversion shader 的内部读写或诊断 readback。
+`bridge_roundtrips` 记录独立 graphics 往返次数，`raster_bridge_transfers` 记录 Raster ABI
+import/export 单向次数；`bridge_transfer_bytes` 统计实际 bridge copy 字节。独立往返每像素
+16 bytes；Raster ABI 单向也为 16 bytes（image↔buffer 加 buffer↔buffer），一次混合 draw
+调用双向共 32 bytes。不包含 conversion shader 的内部读写或诊断 readback。
 目前未给出 GPU 时间与性能收益；VS 重复三角形准备和 fragment int64 成本需后续单独评估。
 
 ## 证据与覆盖边界
@@ -109,13 +111,12 @@ shader、early/late-depth、color-attachment 访问依赖和 image layout transi
   `tmp/hg2b-normal-regression/manifest.json` 为 PASS：原完整 differential、CLI/logic、
   selected world captures、strict native/Fog 与 Campaign 波次均通过。此 native 验收仍是旧 compute 路径。
 
-以上是独立 oracle 和 attachment↔buffer bridge proof，**尚未验证真实 Raster ABI compute
-前段/后段与 graphics 的交错遮挡**。bridge buffer 的布局也还不是 normal raster 两个 buffer
-的绑定 adapter。Linux、其他 GPU、设备恢复、混合 native present 均未验证。
+以上旧证据是独立 oracle 和 attachment↔buffer bridge proof。新增真实 Raster ABI 交错证据见
+下文；Linux、其他 GPU、设备恢复、混合 native present 均未验证。
 
 ## 后续实施顺序
 
-1. 将已实现的 compute CLEAR / LOAD_EXISTING 分段基础接入当前 graphics 桥接目标，验证真实双向遮挡。
+1. 已实现 compute CLEAR / LOAD_EXISTING 与 graphics 桥接及固定 fixture 双向遮挡；扩大正式混合帧前仍需保留近面、薄墙和资源资格门禁。
 2. Core 冻结 Draw/Raster spans，保持 WORLD partition 后稳定顺序，检查整帧资格后再提交；
    补 transparent 后段、独立 VIEWMODEL depth/coverage、一次 Post/overlay。
 3. 完成 strict hardware-required 的 unexpected lowering/readback/copy 门禁、native present
@@ -157,6 +158,65 @@ Fog 开关、奇数 extent/非紧密 stride、远处遮挡、同深度、透明�
 `tmp/hg2b-segments-native-final.log`，退出码 0，readback/CPU copy 为零。
 这些 native 结果仍属于原 compute 路径。
 
-目前每段仍重新上传、验证和分桶完整 stream，属于正确性基础而非性能交付。没有 graphics
-buffer adapter、Core mixed spans 或混合 native present；这些仍是 HG-2B 下一步，正常
-producer 不进入 hardware 路径。Linux 与其他 GPU 尚未验证本次改动。
+目前每段仍重新上传、验证和分桶完整 stream，属于正确性基础而非性能交付。graphics
+buffer adapter 已在下述增量中实现；Core mixed spans 与混合 native present 仍是 HG-2B
+下一步，正常 producer 不进入 hardware 路径。Linux 与其他 GPU 尚未验证本次改动。
+
+## 真实 Raster ABI / graphics 交错桥接
+
+`gpu/include/rf_gpu_graphics.h` 的 `rf_gpu_graphics_raster_draw()` 接受同一 device、同一
+extent 的未结束 Raster ABI target，以及完整一组 integer-depth draws。所有 draw 和 target
+资格先检查，拒绝时保留原 raster 内容和续画资格；执行失败则使续画无效，graphics owner
+poisoned。新建或已结束的 raster、尺寸不匹配、非整数兼容 draw 均拒绝。
+
+```text
+Raster ABI CLEAR/LOAD 非末段
+  → GPU copy 独立 color/depth 到 bridge_raster
+  → bridge shader 数值 import → image copies → attachment LOAD / indexed draws
+  → image copies → bridge shader 数值 export
+  → GPU copy 回独立 color/depth
+  → Raster ABI LOAD 后段（或再次 graphics）
+  → 仅末段 VIEWMODEL / Post / 诊断 readback
+```
+
+中间链路不传入 host framebuffer，不执行 map/readback/Post/overlay/present。当前仍是
+同步单队列、单帧在途；每次混合 draw 有 import、draw、export 三次 fence 提交，不代表
+性能优化。原 standalone roundtrip 与混合 adapter 共享转换实现，无新 shader 或编译单元。
+根和 Windows Makefile 的既有 graphics 依赖覆盖这些改动，无新增 package 资源。
+
+Raster owner 在成功的非末段记录累计深度兼容性：CLEAR depth 和已执行三角形的顶点
+inverse-Z 必须在 `[0,16384]`。越界保守拒绝，即使图元实际不可见；后续空段或合法 LOAD
+不能洗掉此前的不兼容标记，新的 CLEAR 才重置。graphics 仅使用既有整数兼容 pipeline。
+compute buffer 增加 transfer destination usage，段间 barrier 包含 bridge transfer write。
+
+复现入口（原无参数 raster suite 不要求 graphics queue）：
+
+```powershell
+& C:\msys64\usr\bin\make.exe -f windows/Makefile gpu-raster-test gpu-graphics-test
+powershell -ExecutionPolicy Bypass -File tools/hardware_graphics_proof.ps1 -MixedGate -OutputDirectory tmp/hg2b-mixed-new
+```
+
+`-MixedGate` 调用 `build-windows/rf-gpu-raster-test.exe --mixed-gate`，记录实际 adapter、
+驱动、二进制和日志 hash、退出码；不改变玩家 CLI。`tmp/hg2b-mixed-proof/manifest.json`
+记录 Intel PASS；原 graphics proof 与 depth gate 回归分别见
+`tmp/hg2b-mixed-hg2a-regression/manifest.json` 和 `tmp/hg2b-mixed-depth-regression/manifest.json`。
+
+fixture 使用外边缘在视口之外的 graphics quad，与不同拓扑的 compute fullscreen triangle
+参考比较全图，**不排除任何边缘像素**。覆盖 compute → graphics → compute → graphics、
+连续 graphics、前后双向遮挡、同深度后提交覆盖、透明后段、独立 VIEWMODEL depth/coverage、
+Fog、8/16 工作组、分桶/full-scan、奇数 extent、非紧密 host stride，以及 graphics target
+重建后资源不重传。修改已消费 prefix 验证没有整帧重放；非法第二 draw 验证整批 preflight；
+越界深度验证累计资格。此 fixture 不代替原 near-clipping 独立 oracle，也不覆盖混合正常地图。
+
+`tmp/hg2b-mixed-validation-final.log` 与 `tmp/hg2b-mixed-loader-final.log` 记录同一 mixed
+suite 的同步验证：确认实际插入 Khronos instance/device layer，启用
+`VK_VALIDATION_VALIDATE_SYNC=1`，无 VUID 或同步 hazard。加载 layer 时需将
+`tmp/hg2a-tools/mingw64/bin` 及 MinGW runtime 加入 PATH；仅设置 `VK_INSTANCE_LAYERS`
+而 DLL 未加载不能算验证通过。Windows package 构建记录在 `tmp/hg2b-mixed-package.log`。
+`tmp/hg2b-mixed-normal/manifest.json` 记录正常路径完整回归 PASS：differential、实际
+`--help`/`--logic-test`、固定视角 captures、strict native/Fog 和 Campaign 波次；这些
+native 帧仍消费原 compute 路径，不能作为混合 native 已完成的证据。
+
+Core 尚未冻结并提交 Draw/Raster 混合 spans，也没有 mixed native present、swapchain 重建、
+strict unexpected-lowering/readback/copy 门禁或 registry GPU cache adapter；不得据此标记
+HG-2B 完成或启用 HG-3 normal props。

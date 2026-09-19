@@ -30,7 +30,7 @@ struct rf_gpu_graphics_draw {
 struct rf_gpu_graphics_stats {
     uint64_t mesh_upload_bytes, texture_upload_bytes;
     uint64_t instance_upload_bytes, indexed_draws, frames, target_builds;
-    uint64_t bridge_roundtrips, bridge_transfer_bytes;
+    uint64_t bridge_roundtrips, bridge_transfer_bytes, raster_bridge_transfers;
 };
 struct rf_gpu_graphics;
 
@@ -53,6 +53,13 @@ int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t pixel_capacity);
+/* HG-2B hosted interop: import an unfinished Raster ABI target, LOAD indexed
+ * draws, export back to that target. GPU-only; no Post/present/readback.
+ * Same device/extent, integer_depth draws, and WORLD depths in [0,16384]
+ * required. Preflight rejection preserves raster continuation; execution
+ * failure invalidates it. Caller owns frame ordering and lifetime. */
+int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
+    const struct rf_gpu_graphics_draw *draws, uint32_t count);
 /* Inspect the last bridge's exported compute encoding, never used as input
  * to drawing/import. Diagnostic readback validates the conversion itself. */
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
