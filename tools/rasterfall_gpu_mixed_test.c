@@ -86,7 +86,7 @@ static int native_window_test(void)
     struct native_rect client;
     int initialized=0, failure=0, previous_width=0, previous_height=0;
 #define NATIVE_CHECK(x) do { if (!(x)) { __printf("native FAIL line %d: %s\n",__LINE__,#x); failure=__LINE__; goto native_done; } } while(0)
-    window=toy_window_open("Rasterfall HG-2B mixed native",96,72);
+    window=toy_window_open_native("Rasterfall HG-2B mixed native",96,72);
     NATIVE_CHECK(window && toy_window_get_native_handle(window,&handle)==1);
     context.native_window.type=handle.type;
     context.native_window.window=handle.window;

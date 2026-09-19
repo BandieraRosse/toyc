@@ -187,7 +187,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     }
 }
 
-struct toy_window *toy_window_open(const char *title, int width, int height)
+static struct toy_window *toy_window_open_impl(const char *title, int width,
+                                               int height, int native_present)
 {
     struct toy_window *out;
     size_t pixels;
@@ -206,7 +207,7 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
                                    SDL_WINDOWPOS_CENTERED, width, height,
                                    SDL_WINDOW_RESIZABLE);
     out->renderer = out->window ? SDL_CreateRenderer(out->window, -1,
-                                                      SDL_RENDERER_PRESENTVSYNC) : NULL;
+        native_present ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_PRESENTVSYNC) : NULL;
     out->texture = out->renderer ? SDL_CreateTexture(out->renderer,
                                                      SDL_PIXELFORMAT_ARGB8888,
                                                      SDL_TEXTUREACCESS_STREAMING,
@@ -220,6 +221,16 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
     SDL_SetRelativeMouseMode(SDL_FALSE);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     return out;
+}
+
+struct toy_window *toy_window_open(const char *title, int width, int height)
+{
+    return toy_window_open_impl(title, width, height, 0);
+}
+
+struct toy_window *toy_window_open_native(const char *title, int width, int height)
+{
+    return toy_window_open_impl(title, width, height, 1);
 }
 
 int toy_window_poll(struct toy_window *window, struct toy_window_events *events,

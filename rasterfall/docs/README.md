@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 接入普通 opaque static RMESH；按实例/submesh 同步提交，CPU/compute 精确回归与原输出一致；资源生命周期后续进度见 HG-1B。

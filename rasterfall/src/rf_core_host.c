@@ -1240,8 +1240,9 @@ static int gpu_pre_post_finalize(struct rf_core *core)
     return 0;
 }
 
-int rf_core_init(struct rf_core *core, const char *title, int width, int height,
-                 struct toy_input *input, struct toy_renderer *renderer)
+static int rf_core_init_window(struct rf_core *core, const char *title,
+                              int width, int height, struct toy_input *input,
+                              struct toy_renderer *renderer, int native_present)
 {
     if (!core || !input || !renderer) return -1;
     memset(core, 0, sizeof(*core));
@@ -1250,7 +1251,8 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
     core->renderer = renderer;
     toy_input_init(core->input);
     toy_renderer_init(core->renderer);
-    core->window = toy_window_open(title, width, height);
+    core->window = native_present ? toy_window_open_native(title, width, height) :
+        toy_window_open(title, width, height);
     if (!core->window) {
         toy_renderer_destroy(core->renderer);
         rf_core_filesystem_shutdown(&core->filesystem);
@@ -1263,13 +1265,20 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
     return 0;
 }
 
+int rf_core_init(struct rf_core *core, const char *title, int width, int height,
+                 struct toy_input *input, struct toy_renderer *renderer)
+{
+    return rf_core_init_window(core, title, width, height, input, renderer, 0);
+}
+
 int rf_core_init_config(struct rf_core *core,
                         const struct rf_core_config *config)
 {
     int result;
     if (!config) return -1;
-    result = rf_core_init(core, config->title, config->width, config->height,
-                          config->input, config->renderer);
+    result = rf_core_init_window(core, config->title, config->width, config->height,
+                                 config->input, config->renderer,
+                                 config->native_present != 0);
     if (result < 0) return result;
     if (config->native_present && config->gpu_backend) {
         struct toy_native_window_handle native;

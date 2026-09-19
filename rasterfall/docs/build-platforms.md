@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `toy_window_open_native()` 在 Windows 为 native Vulkan 窗口创建 SDL software renderer；普通 `toy_window_open()` 仍使用原 SDL renderer。Core config 根据 `native_present` 选择入口，Wayland 共用原窗口实现。RTX 3050 strict native 10 帧零回退、零读回、零 CPU framebuffer copy；Fog 10 帧、三 extent native gate 与 Windows `--logic-test` 通过。
 > 源码核对基线补充：2026-09-19 GPU 最终帧诊断沿用 Windows normal player 与现有 Vulkan backend，不新增编译单元或资源。Windows `gpu-mixed-executor-test`、`gpu-raster-test` 和 `hardware_graphics_proof.ps1 -ExecutorGate/-MixedGate/-NativeGate` 覆盖批量 Draw 交错和 native 呈现；`hardware_graphics_resize.ps1 -NoRedirect` 在 PowerShell 重定向停滞时仍用 runtime log 验证 140 帧四 extent。Linux freestanding 路径不调用 hosted mixed executor。
 > 源码核对基线补充：2026-09-19 Windows normal player 已链接 `rf_gpu_mixed_executor.c` 与 `rf_gpu_resource_cache.c`，仅 strict native GPU 模式启用正常 mixed 帧；独立测试目标复用这些对象。`tools/hardware_graphics_resize.ps1` 等待窗口 140 帧上限已放宽为 180 秒，Intel 四种 extent 与 pin 稳态通过。Linux freestanding/self 未增加 hosted GPU 编译单元。
 > 源码核对基线补充：2026-09-19 Windows `gpu-mixed-executor-test` 增加 `--native-window` 模式，复用 SDL/Win32 native handle、Vulkan swapchain 与现有测试目标；`tools/hardware_graphics_proof.ps1 -NativeGate` 是三帧 resize/native 呈现实机 smoke。未增加玩家 CLI、编译单元或 package 资源。
@@ -29,6 +30,8 @@
 ## 当前 Windows GPU 验收状态
 
 Intel Iris Xe 已通过 strict native present、Fog/Post smoke、正式地图 320 帧 zero-fallback audit 和窗口拉伸；最近固定视角的命令、frontend、GPU fence 与 native present 记录见 [GPU 当前状态](gpu-current-state.md)。
+RTX 3050 上曾在 `vkCreateSwapchainKHR` 首次调用时访问冲突；native Vulkan 窗口改用 SDL software renderer 后，strict native mixed 帧已通过 10 帧 smoke。该软件 renderer 只负责窗口侧 SDL 兼容，world 与最终帧仍由 GPU mixed 和 Vulkan present 完成。
+复现过程、排除项、窗口 API 的职责及实机验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)。
 
 ## Linux
 

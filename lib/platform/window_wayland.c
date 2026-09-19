@@ -22,6 +22,11 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
     return window;
 }
 
+struct toy_window *toy_window_open_native(const char *title, int width, int height)
+{
+    return toy_window_open(title, width, height);
+}
+
 int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
                     int timeout_ms)
 {

@@ -58,6 +58,8 @@ struct toy_window_events {
 
 /* Platform-neutral window surface used by software-rendered Toyc apps. */
 struct toy_window *toy_window_open(const char *title, int width, int height);
+/* Native Vulkan presentation must not share a hardware window swapchain. */
+struct toy_window *toy_window_open_native(const char *title, int width, int height);
 int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
                     int timeout_ms);
 int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surface);
