@@ -2,8 +2,8 @@
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：GPU-0 ～ GPU-8A 已完成；GPU-8B2d 达到 local pass。GPU Required Runtime Contract 已将 `--gpu-required` 收紧为逐帧 native GPU-only fatal contract；最终矩阵与冻结条件见 [GPU V1 最终收尾与冻结验收](gpu-v1-final-acceptance.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
-> 当前 GPU 优先级：Windows Intel strict native smoke、Fog/Post smoke 和 acceptance 产物已完成；retained command 堆越界已修复，继续复验 pause/resume、resize、timing、正常退出与零 readback。`--frame-audit` 已同时写入 `rasterfall.log`。详见 [GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
+> 源码核对基线：GPU normal gameplay 功能阶段结束；`--gpu-required` 保持逐帧 native GPU-only fatal contract。旧 GPU V1 冻结矩阵已移入 [历史验收记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
+> 当前 GPU 优先级：Intel strict native/Fog smoke、正式地图 320 帧零回退波次复现、核心游玩与窗口拉伸已确认；当前进入实机帧率优化阶段，先固定分阶段耗时基线，再处理最大瓶颈。`--frame-audit` 同时写入 `rasterfall.log`。详见 [GPU 性能阶段与 Windows Platform 路线](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
 > 源码核对基线补充：2026-09-19 Texture V1 pack 使用本帧唯一纹理视图表分配句柄；老地图高命令量转向不再因重复回扫历史命令触发 200ms renderer watchdog。
 > 源码核对基线补充：GPU-8B2c Phase 1+2 已冻结 Viewmodel Render Contract V1（near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth、Post coverage mask），并在 CPU/reference 路径建立 domain switch 与固定 fixture；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，direct framebuffer producer 门禁为 0；Phase 4 已接入 GPU VIEWMODEL span consumer、独立 depth/coverage 与 Post fog skip，并由 CPU/GPU differential fixture 覆盖；Phase 5 已将 LOCAL_VIEW muzzle core 以及 outer/lobe 按同一 projection/depth 接入 VIEWMODEL，remote/AI 三类 muzzle 仍使用 world EFFECTS，其中 outer/lobe 以真实 material alpha 进入 Transparent V1。源码基线：2026-09-18。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
@@ -51,7 +51,7 @@
 
 ## 当前 GPU 验收状态
 
-Windows Intel strict native smoke、Fog/Post smoke 和 acceptance 产物已完成，适配器为 Intel Iris Xe；retained command 跨帧堆越界已修复，继续复验 pause/resume、resize、timing、正常退出与零 readback。
+Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。功能阶段结束，当前重点是实机性能。重新打包后的同地图 60 帧复测整循环 median 116 ms、p95 144.465 ms，frontend 和 presentation 是下一步细分重点。
 
 ## 先读哪一篇
 
@@ -189,7 +189,7 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 
 专题设计和活动台账：
 
-- [Rasterfall GPU 与 Windows Native Platform 阶段计划](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)：GPU checkpoint、已冻结契约、normal-frame 阻塞、剩余问题与最终目标。
+- [Rasterfall GPU 性能阶段与 Windows Platform 路线](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)：Intel 实机性能基线、测量顺序、优化入口和平台后续边界。
 - [industrial-props.md](industrial-props.md)：十件 V2 Hybrid 规格、flat/decal 分工、米制轴向、碰撞建议与生成/统一导入流程。
 - [environment-art.md](environment-art.md)：十件工业 / 军事组件的 V2 light upgrade 风格、逐件要点、预算、验收与试点顺序。
 

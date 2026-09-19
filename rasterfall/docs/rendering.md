@@ -1,11 +1,11 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
-> 实测状态补充：用户确认旧地图开枪、行动、互动及波次游戏流程正常；`--gpu-wave-repro --legacy-map` 首波 320 帧 strict native GPU 测试也正常退出，零 CPU fallback。该观察不等同于完整 GPU 生命周期矩阵冻结。
+> 实测状态补充：用户确认地图核心游玩及窗口拉伸正常；正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback/readback/CPU copy。功能阶段结束；当前转入 Intel 实机帧率优化，旧冻结矩阵见 [历史记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。
 > 源码核对基线补充：`--gpu-wave-repro --legacy-map` 在 session reset 后将真实波次倒计时设为 1ms，逐次打印 phase、alive 和 queued；与 `--frames`、`--gpu-required --gpu-native-present --frame-audit` 组合可直接检查敌人逐步出现的正常 world GPU 帧，不注入平台按键事件。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线补充：2026-09-19 Texture V1 measure 从最近命令检查重复纹理，packer 通过本帧唯一纹理视图表复用 handle；老地图右转进入约四万条 retained command 的高负载视野时，不再二次回扫此前全部命令并触发 200ms watchdog。
-> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。Windows Intel strict native smoke 与 Fog/Post smoke 已各通过 120 帧，适配器为 Intel Iris Xe，zero-fallback audit 和 acceptance 产物已完成。retained command 堆越界已修复，完整生命周期矩阵仍待签收，GPU-8B1/GPU-9A 仍未冻结。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。
+> 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。Windows Intel strict native smoke 与 Fog/Post smoke 已各通过 120 帧，适配器为 Intel Iris Xe；正式地图 320 帧零回退复现及窗口拉伸已确认。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。
 > 当前调试原则：`--frame-audit` 同时输出到控制台和 Windows `rasterfall.log`，记录 frame ID、最终路径、层计数、fallback 分类、timing 与传输字节；Windows 实机仍是 native present 与 resize 的最终验收环境。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）切换 compact LOD2；Maid 保持原策略。
 > 源码核对基线补充：`--eula-animation-acceptance` 在 UI/Core/window 前早退，复用 legacy VMD evaluator、model instance、CPU skinning、Lighting V1 与标准 AK submission；`--character-performance[-suite]` 统一输出模型 CPU、raster wall 与 total wall 的 mean/median。
@@ -416,7 +416,7 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 
 ## Windows Intel GPU 验收状态
 
-strict native smoke 与 Fog/Post smoke 已各通过 120 帧，zero-fallback audit 和 acceptance 产物已完成；retained command 堆越界已修复，完整生命周期矩阵仍待签收，因此 GPU-8B1/GPU-9A 仍未冻结。
+strict native smoke 与 Fog/Post smoke 已各通过 120 帧，正式地图 320 帧零回退运行和窗口拉伸已确认。性能阶段从 `--frame-audit` 的整循环与 frontend、pack、fence、present 分阶段耗时建立基线；旧冻结矩阵不再作为当前工作队列。
 
 ## 一帧的数据流
 

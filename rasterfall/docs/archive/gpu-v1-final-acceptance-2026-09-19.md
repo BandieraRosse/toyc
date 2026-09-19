@@ -1,13 +1,15 @@
 # GPU V1 最终收尾与冻结验收
 
+> 历史归档：2026-09-19 功能阶段结束后，冻结矩阵不再是当前工作计划；性能阶段以 `docs/Rasterfall GPU 与 Windows Native Platform 总体计划.md` 为准。
+
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线补充：2026-09-19 老地图右转故障定位为 Texture V1 pack 重复回扫历史 command 导致 200ms watchdog；本帧唯一纹理视图表修复后，strict GPU 全向扫视可越过同一高负载姿态。
-> 源码核对基线：GPU Required Runtime Contract、Windows Intel strict native smoke、Fog/Post smoke 与 acceptance 产物已通过；retained command 堆越界已修复，但完整矩阵仍待签收，GPU-8B1 / GPU-8B2 / GPU-9A 尚未冻结。
+> 源码核对基线：2026-09-19 Intel Iris Xe、正式地图 320 帧 strict native `--gpu-wave-repro --frame-audit` 日志；320/320 帧 `gpu-native`，零 fallback、无效层切换、readback 和 CPU framebuffer copy。用户确认正常游玩核心功能与窗口拉伸。成功路径逐帧 pack 日志已移除，失败诊断与 frame audit 保留。
 
 ## 本轮验收状态
 
-Windows Intel strict native smoke、Fog/Post smoke 与 acceptance 产物已通过；retained command 堆越界已修复，但完整矩阵仍待签收，GPU-8B1 / GPU-8B2 / GPU-9A 尚未冻结。本轮不纳入 host/client 联机测试；C3/C4 只要求本地 Outpost/Campaign、窗口生命周期、Fog/Post 与短时稳定性。
+本轮 GPU V1 本地功能收尾已签收：Windows Intel strict native、Fog/Post smoke、正式地图 320 帧波次复现、核心游玩和窗口拉伸均已确认。320 帧日志中的 WORLD、TRANSPARENT、EFFECTS、VIEWMODEL 均有命令，最终路径始终为 `gpu-native`。当前帧率偏低，用户决定不以长期运行作为本轮收尾条件。此结论是本地功能验收，不是性能达标或完整生命周期矩阵通过；长期 soak、反复 pause/resume、minimize/restore、world switch、死亡/重生及 native present 失败注入没有同一份完整实机证据。Host/client 联机不在本轮范围。
 
 ## Frozen Normal Gameplay 边界
 
@@ -52,19 +54,16 @@ GPU Post 请求失败、native present 失败，以及 native timing 报告非�
 
 ## Checkpoint 与冻结条件
 
-本轮进度：C0、Windows build/package、Windows Intel adapter/native-present smoke、Fog/Post 120 帧 smoke 和 acceptance BMP 已完成；C3 的堆越界已修复，待补齐生命周期矩阵，C4 仅完成 Fog/Post smoke，C5 不得标记完成。
+本轮进度：C0--C2 完成；C3 的本地玩法、strict native、窗口拉伸和 320 帧波次复现已签收；C4 的 Fog/Post smoke 已完成。C5 按用户确认的**本地功能范围**收尾，未覆盖项如下保留为后续验证，不推定为已通过。
 
 1. **C0 Runtime strict（代码完成）：** required 初始化与逐帧 fatal contract；CLI 拒绝非 native strict 组合。
 2. **C1 Local regression：** Linux build、logic-test、现有 retained/transparent/Post fixture、参数负例通过。
 3. **C2 Windows build：** MinGW 构建通过；不以 WSL software Vulkan 代替 Intel 验收。
-4. **C3 Intel functional：** 本地 Outpost/Campaign 与基础 native frame smoke 已通过；堆越界已修复，pause/resume、resize/minimize/restore 的完整生命周期仍待签收。
-5. **C4 Intel soak/transfer：** Fog/Post 120 帧 smoke 已通过，所有 frame audit 均零 fallback/readback/copy；
-   短时 gameplay/正常 shutdown 仍待 pause/resume 修复后复验；
-   native present failure 注入必须非零退出。
-6. **C5 Freeze：** C0--C4 证据齐全后，同一 checkpoint 将 GPU-8B1、GPU-8B2、GPU-9A 标为 FROZEN。
+4. **C3 Intel functional（本地范围通过）：** 核心玩法、窗口拉伸、正式地图 320 帧 strict native 波次复现通过；pause/resume、minimize/restore、world switch 和死亡/重生的组合矩阵未签收。
+5. **C4 Intel soak/transfer（部分通过）：** Fog/Post 120 帧 smoke 与零 fallback/readback/copy 已确认；长期 soak 因当前低帧率延期，native present 失败注入未执行。
+6. **C5 本轮收尾（本地功能范围完成）：** GPU V1 的功能边界固定，后续只修复实际发现的问题。GPU-8B1、GPU-8B2、GPU-9A 不标记为完整矩阵 `FROZEN`；性能与上述未覆盖项进入后续验证。
 
-当前不得提前宣称 C5。实机失败只修正常 gameplay 触发的 coverage 或 lifecycle 缺口，不增加 legacy/
-diagnostic feature。
+不要将本轮收尾表述为性能达标或完整矩阵冻结。实机失败只修正常 gameplay 触发的 coverage 或 lifecycle 缺口，不增加 legacy/diagnostic feature。
 
 ## GPU V1 冻结后的演进边界
 

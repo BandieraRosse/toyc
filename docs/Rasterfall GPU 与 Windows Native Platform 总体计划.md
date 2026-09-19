@@ -1,232 +1,34 @@
-# Rasterfall GPU 与 Windows Native Platform 阶段计划
+# Rasterfall GPU 性能阶段与 Windows Platform 路线
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 老地图方向相关退出定位为 Texture V1 pack 对历史 command 的重复回扫；本帧唯一纹理视图表消除平方级 handle 查找，strict GPU 全向扫视已越过原 watchdog 姿态。
-> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：Windows Intel normal-frame acceptance audit（2026-09-18）
-> 当前状态：GPU-0～GPU-8A、A-AUDIT、B1-CONTRACT、B2-SKY、B3-WORLD、B4-POST-WORLD、GPU-8B2d local gate、Windows MinGW package、logic-test、strict native GPU smoke 与 Fog/Post smoke 已完成。实机识别为 Intel(R) Iris(R) Xe Graphics；120 帧无 Fog 与 120 帧 Fog 均为 `gpu-native`，fallback/readback/CPU copy 为 0。当前修复：retained command 跨帧堆越界已修复，不依赖暂停菜单；完整生命周期仍待签收；GPU-8B1/GPU-8B2/GPU-9A 和 C5 仍不得标为 FROZEN。
+> 源码核对基线：Windows Intel Iris Xe 上，正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback、readback、CPU framebuffer copy 和无效层切换；用户确认地图核心游玩与窗口拉伸正常。Windows build、logic-test 和重新打包后的 3 帧 strict smoke 通过。
 
-本文档是 GPU renderer 与 Windows Native Platform 的当前阶段入口。它只保留已冻结的能力边界、
-当前架构、最终目标和待解决问题，不再记录逐次 bring-up 日志和过期性能数字。可复核的运行事实
-以 CLI 输出为准；具体 ownership 和命令见 `rasterfall/docs/rendering.md`、`runtime.md` 与
-`build-platforms.md`。
+## 当前阶段
 
-## 阶段结论
+GPU normal gameplay 的功能阶段已结束。现在的主任务是提高 Windows Intel 实机帧率。旧的 GPU V1 冻结矩阵不再作为当前开发门槛；当时的范围与证据保存在[历史验收记录](../rasterfall/docs/archive/gpu-v1-final-acceptance-2026-09-19.md)。长期 soak、完整窗口生命周期组合和故障注入不是本阶段的前置条件，后续遇到相关故障再据实处理。
 
-Rasterfall 已经拥有一条可运行的 GPU normal-frame 链路，而不再只是 hosted Vulkan 实验：
+现有 normal frame 链路为：world frontend → Raster Command ABI V1 → CPU tile binning → Vulkan compute raster → optional Fog Post → CPU 生成的 HUD/overlay 上传 → GPU composite → Win32 swapchain present。CPU renderer 保留作为兼容路径和正确性参考。Windows 窗口、输入和音频仍由 SDL2 提供；SDL-free Windows Native Platform 是独立后续工作。
 
-```text
-normal world frontend
-  → Raster Command ABI V1
-  → CPU tile binning
-  → Vulkan compute raster
-  → optional Post-Raster V1
-  → CPU color + coverage overlay upload
-  → GPU composite
-  → Win32 Vulkan swapchain present
-```
+## 已知性能基线
 
-已确立的边界：
+原正式地图 320 帧 strict 运行的 `whole_loop_ms` 平均约 136 ms、最高约 270 ms，只有一个 world 且没有窗口交互。重新打包后同一地图的 60 帧 strict 复测为 60/60 帧 `gpu-native`、零 fallback：整循环 median 116 ms、p95 144.465 ms；frontend median 43.163 ms、p95 61.833 ms；pack median 2.069 ms；fence wait median 26.848 ms；native present median 30.786 ms；present wall median 64.691 ms。这是低帧率问题的实机证据，不代表全部玩法场景或独立 GPU shader 成本。首帧与稳定帧应分开统计，不能将 fence wait 或 present wall time 直接等同于 GPU shader 时间。现有数据提示 frontend 与 presentation 都需进一步拆分；pack 不是当前最大已知耗时。
 
-- CPU renderer 仍是默认路径，并长期作为 compatibility renderer 和 differential oracle。
-- GPU 由 RF Core 拥有；Game、session 和 gameplay 不持有 Vulkan object。
-- `--renderer gpu-compute` 显式启用 GPU；`--gpu-required` 把不可用从 fallback 提升为失败。
-- Windows native present 已去除 normal GPU frame 的 color readback 和 CPU framebuffer copy。
-- Windows 窗口、输入和音频仍使用 SDL2；获取 HWND 创建 Vulkan surface 不等于 Windows Native Platform 已完成。
-- GPU-9A 的 pass 本身已通过局部 oracle；当前风险在 normal renderer 上游语义、帧分层和 present ownership。
+## 性能工作顺序
 
-## 当前 checkpoint
+1. **固定可复现基线。** 在同一 package、地图、分辨率和 GPU 上保存 `--frame-audit` 的逐帧日志；至少分别记录静止场景、波次交战、转向高命令量视野及 Fog 开/关。汇总预热后 median、p95、最大值，以及 frontend、classification、texture measure、pack/binning、GPU fence、overlay 和 native present 各阶段。记录命令数、三角形数、纹理上传字节与分辨率。
+2. **先解释 CPU frontend 成本。** 依据 `rasterfall_perf` 和 frame audit 定位地图、敌人、角色、静态物件或裁剪中哪一类在生成约 4 万条命令。优先减少无贡献的提交和重复求值；每次改动对照相同场景的 coverage、命令量和画面。
+3. **分离 GPU 与 presentation 成本。** 核对 CPU tile binning、stream/texture upload、compute dispatch、fence wait、overlay upload/composite、swapchain acquire/present 的单独耗时。以 GPU timestamp 或等效实机证据区分排队等待与 shader 执行；避免仅凭 `fence_wait_ms` 决定 shader 优化方向。
+4. **按最大确定瓶颈优化。** 保持 strict native、零回退/回读/CPU framebuffer copy 和正确层顺序。修改 Raster ABI、纹理或透明语义时运行对应 differential/fixture；修改 frontend 时核对真实 world 画面与 command coverage。
+5. **以同一基线复测。** 首个可用性目标是 1280×720 Intel Iris Xe 的常见正常游玩场景预热后 p95 帧时不高于 33.3 ms（约 30 FPS）；达到后再评估 16.7 ms（约 60 FPS）目标。任何优化结论都同时报告画质、命令量和 strict audit，不用单帧最优值替代整体结果。
 
-| Checkpoint | 状态 | 当前契约 |
-| --- | --- | --- |
-| GPU-0 ～ GPU-5 | DONE | Vulkan service、capability contract、Core-owned framebuffer、Raster ABI V1 与 compute rasterizer 已建立 |
-| GPU-6 / 6.5 | DONE / FROZEN | 正式 CPU oracle、artifact/replay、color/depth differential 与保序 tile binning 已冻结 |
-| GPU-7A / 7B | DONE / FROZEN | normal frontend capture，flat opaque 与 vertex-lit planar 命令已纳入 Raster V1 |
-| GPU-7C / 7D | DONE / FROZEN | Core-owned normal GPU frame 与 Texture V1 已接入；unsupported batch 仍整批 CPU fallback |
-| GPU-8A | DONE / FROZEN | Win32 surface/swapchain、BGRA8 transfer copy、resize 和零 readback native presentation 已验收 |
-| GPU-8B1 | IMPLEMENTED / WINDOWS PARTIAL / BLOCKED | Intel normal native frame、humanoid fallback、120 帧 smoke 与 acceptance 产物已通过；堆越界已修复，待完整生命周期与 resize 矩阵签收 |
-| RenderFrame B1 / B2 | IMPLEMENTED / LOCAL PASS | camera 与六层有序描述已建立；sky 参数背景命令在 CPU reference/full-scan/tile-binned GPU 零差异，待 Windows 实机冻结 |
-| RenderFrame B3 | IMPLEMENTED / LOCAL PASS | normal world batch 的 opaque/transparent command 已显式写入各自层；多 WORLD flush 在 retained stream 中一次稳定分成连续 span；不改变排序或 fallback |
-| RenderFrame B4 | IMPLEMENTED / LOCAL PASS | 逐层 cursor 拒绝跳层/逆序；effects/viewmodel 分别 flush 且位于 post 前；overlay 入口统一 surface/renderer target。GPU consumer 仍明确 unsupported |
-| GPU-8B2 | IMPLEMENTED / LOCAL PASS | retained consumer 和整帧 replay 已建立；effects/viewmodel direct-pixel 零门禁、Transparent V1 consumer 与普通 RFM2、platform/air-gate、muzzle/dissolve、death fragment/dust producer 均已接入；B2d-5 normal-frame fixture 覆盖 WORLD/EFFECTS/VIEWMODEL 的 opaque+transparent 组合、`BEGIN_TRANSPARENT`/`BEGIN_VIEWMODEL` barrier、零 fallback reason/direct debt 和 native hand-off，unsupported fixture 仍验证整帧 CPU replay |
-| GPU-8B2c Phase 5 | IMPLEMENTED / LOCAL PASS | LOCAL_VIEW muzzle core 与 outer/lobe 复用 VIEWMODEL Contract V1 projection/depth/coverage；remote/AI muzzle 保留 world EFFECTS，outer/lobe 使用真实 material alpha；local/world 分流与 layer/direct/fallback fixture 已覆盖 |
-| GPU-9A | IMPLEMENTATION COMPLETE / WINDOWS FOG PASS / ACCEPTANCE BLOCKED | 独立 device-local `post_color`；Intel strict Fog native frame 120 帧通过且无 fallback/readback/copy；堆越界已修复，仍待完整生命周期矩阵签收 |
-| WIN-1 / WIN-2 | NOT STARTED | 仍为 MinGW + SDL2；未建立自有 Win32 window/input/audio/runtime |
+## 入口与边界
 
-## 已冻结的核心契约
+| 工作 | 入口 |
+| --- | --- |
+| 实机复现、帧审计、参数 | `rasterfall/docs/runtime.md`、`rendering.md`；`build-windows/rasterfall-windows/rasterfall.exe --help` |
+| normal frontend 与分阶段统计 | `rasterfall/src/rasterfall_render.c`、`rasterfall/src/rasterfall_perf.c`、`rasterfall/src/render/` |
+| Core command、pack、retained frame | `rasterfall/src/rf_core_host.c`、`gpu/src/rf_gpu_raster_pack.c` |
+| GPU raster、Post 与 native present | `gpu/src/rf_gpu_vulkan_backend.c`、`gpu/shaders/`、`rasterfall/src/rf_gpu.c` |
+| Windows package 与实机验证 | `rasterfall/docs/build-platforms.md`、`windows/NativeCodex.ps1` |
 
-### Raster 与正确性
-
-- Raster ABI V1 是 fixed-width、pointer-free、versioned word stream；GPU shader 不解码 C struct。
-- CPU 和 GPU 消费同一 packed stream 与 Texture V1 table，color 与 signed inverse-depth 逐元素比较。
-- CPU bbox binning 按原始 command order 建立 tile lists，不改变 raster semantics。
-- normal world flush 在消费前完整分类。基础 Transparent V1 command 可与 opaque 一起 pack；edge、overlay、
-  other 或未支持的 material/texture 仍使整批回退 CPU，不在 GPU depth 上补画遗漏命令。
-- differential 只证明“相同 packed input 的 CPU/GPU 执行一致”，不证明 normal frontend 生成的输入本身正确。
-
-### Native presentation 与 overlay
-
-- Core 通过无 SDL 类型的 native handle contract 获取 HWND/HINSTANCE。
-- swapchain 只接受实际 query 支持的 `B8G8R8A8_UNORM + SRGB_NONLINEAR` 和 `TRANSFER_DST`。
-- normal native frame 不回读 color/depth，不复制 CPU framebuffer。
-- screen-space UI 以 HUD 和 `fb_draw`/`fb_font` 为 normal truth；冻结的 Console/GUI 不提交 normal overlay。
-- overlay 使用 XRGB8888 color 和独立 coverage 0..255；暂时不可用提示复用 HUD banner。
-- resize 使用 replacement-first resource 重建；零尺寸窗口不开始 frame。
-
-### Post-Raster V1
-
-```text
-raster color + signed Q20 inverse-Z depth
-  → optional post pass
-  → separate device-local post_color
-  → overlay composite
-  → swapchain copy/present
-```
-
-- bypass 时 presentation color 直接选择 raster color，不 dispatch、不复制。
-- enabled 时 post 只读 raster color/depth，只写 `post_color`，不进行原位读写。
-- Fog V0 使用 `inv_z = 1048576 / camera_z` 的反深度阈值，不把 depth 当线性米制距离。
-- HUD 在 post 之后 composite，不进入 post effect；Console/Desktop 当前不属于 normal frame。
-
-## 当前执行计划
-
-GPU-8B2 以“逐类消除 `pre_post_cpu_fallback`”为主线，不改变 viewmodel barrier 的
-唯一整帧决策权，也不允许 GPU 先消费后由 CPU 补画未迁移层。
-
-1. **B2a — producer debt 审计与 opaque effects：** frame audit 分别记录 effects/viewmodel
-   command 与 direct pixels，并输出 transparent、direct producer、viewmodel 以及
-   material/texture/edge/overlay/generic unsupported 的 reason mask。支持的 transparent command
-   不产生 fallback reason；已能被 Raster V1 表达的 opaque effects command 直接进入 retained stream；
-   effects facade 现在独立返回 direct producer 统计，triangle command 的逻辑结果数不再
-   被误计为 direct pixels。
-2. **B2b — effects producer 收敛：** world-space ray、ribbon、billboard、particle 按实际 depth/
-   blend 语义转成明确 raster input；damage vignette 等 Post 之后效果显式归 overlay。完成标志为
-   `effects_direct_pixels=0`。billboard、普通 hit/fire/explosion particle 与屏幕线 ray 已改为使用
-   投影 `inv_z` 的 opaque raster triangles；固定 fixture 覆盖两条 command 的矩形、四条 command 的
-   本地 tracer 双段以及越过屏幕边界的 ray，并断言 direct debt 为零。该完成标志已达到。
-3. **B2c — viewmodel：** 依次迁移 opaque weapon geometry、hands/pill/attachments 和
-   viewmodel-local effects；保留独立层、投影/depth policy 和既有 animation/frontend 所有权。
-   Contract V1、CPU oracle、GPU VIEWMODEL span 与 LOCAL_VIEW muzzle core/outer/lobe 已完成；remote/AI
-   muzzle 保持 world EFFECTS，outer/lobe 使用 Transparent V1 的真实 material alpha；enemy dissolve
-   death fade 仅在最后 380ms 进入 source-over/no-depth-write；透明 world/RFM2 与其他 producer 仍属于
-   B2d 后续迁移。
-4. **B2d — transparent consumer：** Raster V1 显式表达 material/texture alpha、source-over、
-   depth test 与 depth-write policy；透明 pass 保持 frontend 原始顺序，不在首版引入 OIT 或自动重排。
-5. **normal-frame 冻结：** 已完成 Windows Intel strict native smoke、Fog/Post smoke、zero-fallback audit、
-   adapter 识别和 acceptance BMP；堆越界已修复，继续复验 pause/resume、
-   resize、timing 和正常退出。Console/Desktop 已冻结，不进入该矩阵。之后才开始 SDL-free Windows Native Platform。
-
-### Windows 证据闭环
-
-GPU-9A 暂不冻结。A-AUDIT 已使日志独立包含 frame/path/pose/layers/timing，B1/B2 已把 sky 从隐式
-CPU framebuffer 写入迁为显式参数层。原闪退已定位到 Core retained command 缓存：WORLD 分区按实际数量重分配，却遗留旧 capacity，后续增长帧越界；现已同步 capacity。取消启动暂停也能触发，不能归因于 Enter 输入。
-修复后继续按完整窗口生命周期和真实场景完成以下闭环：
-
-1. 正常运行加 `--frame-audit`，记录 world、camera x/z、sy/cy、pitch、extent、fixed-step ticks/
-   accumulator、update/render/present/whole-loop 以及 GPU submit/fence/native-present timing。
-2. 使用实际坏帧的 exact pose 和 extent 运行：
-
-   ```text
-   --normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>
-   ```
-
-3. 核对 GPU-native 与 transparent CPU-fallback 切换时天空无闪变，并核对 command coverage、fog/source 和保存的 BMP。
-4. 将约 200 ms frame wall time 拆分到 update、frontend、pack/binning、GPU raster、post、overlay upload/
-   composite、copy/present 和 fence wait。
-5. 根据证据将问题归入 pause input/state transition、frontend semantic resolution、command packing、
-   post/composite 或 present ownership，不用固定方位 capture 替代坏现场。
-
-验收完成条件：坏姿态可精确重放，根因已定位并修复，normal native frame 视觉正确，帧分层无遗失，
-color readback 和 CPU framebuffer copy 仍为零，且重新通过相关 differential、resize 和 normal-frame 门禁。
-
-## 验收与后续边界
-
-### P0：阻塞当前冻结
-
-- 原 Windows Intel normal gameplay 的 Campaign anime toon/material `fallback_reason=0x40` 已通过
-  产品边界冻结解决：normal actor 保留 identity/gameplay 状态，但 presentation 统一走 humanoid，
-  legacy anime renderer 仅留隔离诊断。此结论不等于 Windows 硬件验收已经完成。
-- 已记录的坏姿态仍需通过 `--normal-frame-audit` 精确重放，并在 humanoid fallback 后
-  对照冻结前后的 command coverage 与保存 BMP。
-- 局部 Raster/Post differential 通过，但 normal frontend → semantic resolution → packing 的上游正确性未被该门禁覆盖。
-- sky 未提交、world coverage 不完整与 present ownership 异常尚未用同一坏帧证据排除。
-- 约 200 ms 的 frame wall time 尚未归属到具体阶段，不能据此宣称 native GPU frame 达到性能目标。
-- retained command 跨帧堆越界已修复；pause/resume 与正常 shutdown 按完整生命周期矩阵复验。
-
-### GPU-8B2 完成门禁
-
-- 正常第一人称 gameplay 不再因 effects/viewmodel/transparent 的已知路径整帧回放。
-- 每类 producer 都有固定 fixture，断言最终 path、retained count、direct debt、reason mask 和 layer cursor。
-- unsupported fixture 仍按原层顺序完整 CPU replay，不存在部分 GPU 成功。
-- transparent 的 CPU/GPU oracle 覆盖重叠面、texture alpha、tile 边界和 resize。
-
-### P2：Windows Native Platform
-
-- 实现 Core-owned Win32 window lifecycle、event pump、keyboard/mouse/input 和 framebuffer/native-present 协调。
-- 迁移音频并移除 normal Windows runtime 对 SDL2 的依赖。
-- 完成 package、resize/minimize/focus/DPI、shutdown 和输入行为回归。
-- 在 SDL-free runtime 完成前，不将当前 HWND bridge 称为“Windows Native Platform 完成”。
-
-### P3：后续 GPU 能力
-
-只在 P0 闭环、GPU-8B1/GPU-9A 冻结且 GPU-8B2 边界明确后排期：
-
-- GPU vertex transform/skinning；
-- dynamic lighting 与 shadow；
-- GPU light field；
-- large particle systems；
-- screen-space effects 与更高 internal resolution；
-- advanced material model；
-- native Linux Vulkan presentation/release validation。
-
-## 最终目标
-
-### Renderer
-
-- CPU renderer 作为稳定兼容后端、可移植参考和 GPU correctness oracle 长期保留。
-- GPU renderer 成为高性能 normal gameplay 后端，覆盖完整 world、transparent、viewmodel、effects、post 与 UI composition。
-- normal GPU frame 从 raster 到 present 保持 device-local，不依赖每帧 color/depth readback。
-- 每个 GPU 扩展先建立可重放输入、明确 capability/fallback 和可自动判定的正确性门禁。
-
-### Core 与平台
-
-- RF Core 唯一拥有 GPU service、resources、frame synchronization 和 presentation lifecycle。
-- Game/session 只提供确定性状态与 presentation input，不持有平台或 Vulkan 细节。
-- Windows 最终使用 RF 自有 Win32 platform backend，normal runtime 不依赖 SDL2。
-- Linux 保留 freestanding CPU 路径，并在条件成熟时增加 native hardware Vulkan backend，不因 Windows 路线破坏现有可移植性。
-
-### 用户可见结果
-
-- CPU/GPU renderer 选择、optional fallback 和 required failure 行为可预期。
-- GPU normal gameplay 具有完整帧分层，不丢 sky、world、viewmodel、effects 或 HUD；冻结的 Console/Desktop 不在 normal 目标内。
-- resize、minimize、focus 变化和 shutdown 不崩溃、不使用失效 resource，不在帧路径中引入隐藏 readback。
-- Windows 物理 GPU 提供性能事实；WSL llvmpipe 仅用于 correctness，不用于宣称硬件性能。
-
-## 验证入口
-
-完整实时参数清单以 `build/rasterfall --help` 为准。当前阶段的主要入口：
-
-```sh
-make gpu-overlay-test
-build/rf-gpu-overlay-test
-
-make rasterfall
-build/rasterfall --logic-test
-
-# Windows package 目录
-rasterfall.exe --renderer gpu-compute --gpu-native-present --frame-audit
-rasterfall.exe --renderer gpu-compute --gpu-native-present --gpu-post-fog --frame-audit
-rasterfall.exe --renderer gpu-compute --gpu-native-present \
-  --normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>
-```
-
-`gpu-overlay-test` 同时覆盖 overlay composite、Post identity 和 Fog V0 differential。Windows normal-frame 验收
-必须从 package 目录运行，以确保 exe-relative 公开资产可见。缺少 Windows 物理 GPU 环境时，必须明确报告
-未覆盖 normal native-present、resize 和硬件 timing，不用 WSL llvmpipe 结果替代。
-
-## 后续文档维护规则
-
-- 只在 checkpoint 边界、所有权、最终目标或剩余问题变化时更新本文档。
-- 不在本文档累积每次测试数量、临时 timing 或调试日志；它们以当次 CLI 输出和提交记录为准。
-- 阶段冻结时，同步更新 `rasterfall/docs/README.md`、`runtime.md`、`rendering.md` 和
-  `build-platforms.md` 中受影响的 ownership/验证边界。
+不要把性能优化写成新增玩法功能，也不要为旧 diagnostic/legacy 路径扩大 normal Raster ABI。Linux freestanding CPU 路径、Windows 共享玩法源码和 `--gpu-required` 的逐帧失败契约继续保留。后续 Windows Native Platform 自有 Win32 window/input/audio 与 SDL2 移除另立阶段；当前 HWND native present 不代表该阶段完成。

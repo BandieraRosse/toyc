@@ -205,7 +205,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         frame->stats.frontend_ms =
             (double)(consumer_start - frame->frontend_begin_us) / 1000.0;
     stage_start = consumer_start;
-    gpu_world_log("gpu-world: classification begin");
     for (i = 0; i < count; i++) {
         const struct toy_raster_cmd *cmd = &commands[i];
         unsigned int command_reason = rf_core_cmd_fallback_reason_v1(cmd);
@@ -229,10 +228,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     frame->stats.last_other_commands = other;
     frame->stats.unsupported_texture += unsupported_texture;
     core->render_frame.pre_post_fallback_reason |= fallback_reason;
-    snprintf(diagnostic, sizeof(diagnostic),
-             "gpu-world: classification end commands=%d texture=%lu transparent=%lu overlay=%lu edge=%lu other=%lu",
-             count, texture, transparent, overlay, edge, other);
-    gpu_world_log(diagnostic);
     frame->stats.classification_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (fallback_reason) {
@@ -284,7 +279,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
     packed.surface = renderer->surface;
     packed.cmds = (struct toy_raster_cmd *)commands;
     packed.cmd_count = count;
-    gpu_world_log("gpu-world: texture measure begin");
     stage_start = rf_core_clock_now_us();
     {
         int measure_result = rf_gpu_raster_measure_textures_toy_v1(
@@ -301,10 +295,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             return -1;
         }
     }
-    snprintf(diagnostic, sizeof(diagnostic),
-             "gpu-world: texture measure end unique=%u bytes=%llu",
-             unique_textures, (unsigned long long)texture_bytes);
-    gpu_world_log(diagnostic);
     frame->stats.texture_measure_ms =
         (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
     if (unique_textures > frame->texture_desc_capacity) {
@@ -337,7 +327,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
         resources.view_capacity = frame->texture_desc_capacity;
         resources.texels = frame->texture_texels;
         resources.texel_capacity = frame->texture_texel_capacity;
-        gpu_world_log("gpu-world: pack begin");
         stage_start = rf_core_clock_now_us();
         {
             int pack_result = rf_gpu_raster_pack_toy_textured_spans_v2(&packed,
@@ -373,11 +362,6 @@ static int gpu_world_consume(struct toy_renderer *renderer,
             commands[0].payload.sky.horizon_color = 0xB9E3FFU;
             commands[0].payload.sky.ground_color = 0x0F1218U;
         }
-        snprintf(diagnostic, sizeof(diagnostic),
-                 "gpu-world: pack end stream=%llu textures=%u bytes=%llu",
-                 (unsigned long long)written, resources.desc_count,
-                 (unsigned long long)resources.texel_size);
-        gpu_world_log(diagnostic);
         frame->stats.raster_abi_pack_ms =
             (double)(rf_core_clock_now_us() - stage_start) / 1000.0;
         /* Texture table construction is performed by the packer while it
