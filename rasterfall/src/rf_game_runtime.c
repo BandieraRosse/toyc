@@ -1687,6 +1687,7 @@ static void draw_input_debug(struct toy_surface *surface,
 #undef toy_input_down
 #undef toy_input_pressed
 #undef toy_input_released
+#include "rasterfall_render_resources.h"
 #include "rasterfall_logic_test.inc"
 #define toy_input_down rf_input_down
 #define toy_input_pressed rf_input_pressed
@@ -4243,6 +4244,28 @@ startup_again:
                         (double)scene_audit.projectiles_us / 1000.0,
                         scene_audit.models_tested, scene_audit.models_culled,
                         scene_audit.model_triangles_culled);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT draw-reference instances=%lu items=%lu cpu_lowered_triangles=%lu legacy_instances=%lu reject_scope=%lu reject_deformation=%lu reject_material=%lu reject_transparent=%lu reject_range=%lu",
+                        scene_audit.static_draw_instances, scene_audit.static_draw_items,
+                        scene_audit.static_draw_lowered_triangles,
+                        scene_audit.static_draw_legacy_instances,
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_SCOPE],
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_DEFORMATION],
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_MATERIAL],
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_TRANSPARENT],
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_RANGE]);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
+                {
+                    struct rasterfall_resource_stats resources;
+                    rasterfall_resources_stats(rasterfall_render_resources(), &resources);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT draw-resources live=%u retired=%u pinned=%u failed=%u loads=%u releases=%u",
+                        resources.live, resources.retired, resources.pinned,
+                        resources.failed, resources.loads, resources.releases);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                 }

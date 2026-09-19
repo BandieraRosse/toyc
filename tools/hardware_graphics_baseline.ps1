@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string] $OutputDirectory = '',
-    [string] $DifferentialExe = 'build-windows/rf-gpu-raster-diff-test.exe'
+    [string] $DifferentialExe = 'build-windows/rf-gpu-raster-diff-test.exe',
+    [string] $Checkpoint = 'HG-0'
 )
 # Run after NativeCodex.ps1 package. No build/cache mutation or asset copying here.
 $ErrorActionPreference = 'Stop'
@@ -21,7 +22,7 @@ if (-not (Test-Path -LiteralPath $Exe)) { throw 'Run windows/NativeCodex.ps1 pac
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $Runs = [Collections.Generic.List[object]]::new()
 $Manifest = [ordered]@{
-    schema = 1; checkpoint = 'HG-0'; started = (Get-Date).ToString('o')
+    schema = 1; checkpoint = $Checkpoint; started = (Get-Date).ToString('o')
     commit = (& git -C $Root rev-parse HEAD); worktree = @(& git -C $Root status --short)
     executable = (Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash
     differential = (Get-FileHash -Algorithm SHA256 -LiteralPath $Diff).Hash
@@ -38,7 +39,7 @@ $Manifest.assets = @(Get-ChildItem -LiteralPath (Join-Path $Package 'rasterfall'
 })
 function Save-Manifest { $Manifest | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 (Join-Path $OutputDirectory 'manifest.json') }
 function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $Frames = 0, [string] $ExpectedPath = '') {
-    Write-Host "[HG-0] $Name"
+    Write-Host "[$Checkpoint] $Name"
     $stdout = Join-Path $OutputDirectory "$Name.stdout.txt"
     $stderr = Join-Path $OutputDirectory "$Name.stderr.txt"
     $runtimeLog = Join-Path $Package 'rasterfall.log'
@@ -49,7 +50,9 @@ function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $
     # CLI arguments have no embedded quote; quote each argument for Windows paths with spaces.
     foreach ($arg in $ProgramArgs) { if ($arg.Contains('"')) { throw 'Embedded quotes are not supported.' } }
     $quoted = ($ProgramArgs | ForEach-Object { '"' + $_ + '"' }) -join ' '
-    $p = Start-Process -FilePath $Program -ArgumentList $quoted -WorkingDirectory $Package -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    # The standalone suite writes its replay self-check under repository build/.
+    $workingDirectory = if ($Program -eq $Diff) { $Root } else { $Package }
+    $p = Start-Process -FilePath $Program -ArgumentList $quoted -WorkingDirectory $workingDirectory -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $record = [ordered]@{ name = $Name; argv = $ProgramArgs; exit_code = $p.ExitCode }
     $Runs.Add($record)
     if ($Program -eq $Exe -and (Test-Path (Join-Path $Package 'rasterfall.log'))) {
@@ -80,6 +83,7 @@ function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $
     }
 }
 try {
+    Run 'differential-suite' $Diff @('--artifact-dir',(Join-Path $OutputDirectory 'differential-failure'))
     Run 'help' $Exe @('--help')
     Run 'logic' $Exe @('--logic-test')
     Run 'offscreen-near' $Exe @('--normal-frame-audit','-13000','-12000','0','1024','0','1024','1280','720',(Join-Path $OutputDirectory 'offscreen-near.bmp'))
@@ -113,4 +117,4 @@ try {
     $Manifest.finished = (Get-Date).ToString('o')
     Save-Manifest
 }
-Write-Host "[HG-0] PASS: $OutputDirectory"
+Write-Host "[$Checkpoint] PASS: $OutputDirectory"

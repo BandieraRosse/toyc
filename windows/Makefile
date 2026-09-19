@@ -55,6 +55,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_render.c \
              rasterfall/src/rasterfall_world_light.c \
              rasterfall/src/render/rasterfall_render_frontend.c \
+             rasterfall/src/render/rasterfall_render_resources.c \
              rasterfall/src/rasterfall_session.c \
              rasterfall/src/rasterfall_world_content.c \
              rasterfall/src/rasterfall_sky.c \
@@ -91,6 +92,12 @@ all: $(TARGET)
 $(TARGET): $(OBJS) | $(BUILD)
 	@printf '  WIN-LD  %s\n' "$@"
 	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
+
+# Hosted resource lifecycle integration, excluded from the player package.
+RESOURCE_TEST_OBJS := $(filter-out $(BUILD)/win/rasterfall/src/rasterfall.o $(BUILD)/win/windows/src/winmain.o,$(OBJS))
+$(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_test.o $(RESOURCE_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
+-include $(BUILD)/win/tools/rasterfall_resource_test.d
 
 package: $(TARGET)
 	@rm -rf "$(PACKAGE_DIR)"

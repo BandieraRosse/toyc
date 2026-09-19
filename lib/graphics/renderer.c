@@ -100,7 +100,8 @@ static long raster_planar_vertex_lit(struct toy_renderer *renderer,
                         const struct toy_screen_vertex *b,
                         const struct toy_screen_vertex *c,
                         long long area, int minx, int maxx,
-                        int y0, int y1, uint32_t color, int fog_factor)
+                        int y0, int y1, uint32_t color, int fog_factor,
+                        int cmd_alpha, int force_no_depth_write)
 {
     struct toy_surface *surface = &renderer->surface;
     int *depth = renderer->depth;
@@ -139,9 +140,28 @@ static long raster_planar_vertex_lit(struct toy_renderer *renderer,
                                   e2 * c->light) / area;
                     worker->depth_pass_px++;
                     worker->shaded_px++;
-                    depth[at] = (int)inv_norm;
-                    row[x] = shade_color(color, (int)light, fog_factor);
-                    if (renderer->coverage && renderer->coverage_stride > 0)
+                    uint32_t shaded = shade_color(color, (int)light, fog_factor);
+                    if (cmd_alpha == 255 && !force_no_depth_write)
+                        depth[at] = (int)inv_norm;
+                    if (cmd_alpha == 255) {
+                        row[x] = shaded;
+                    } else if (cmd_alpha > 0) {
+                        uint32_t under = row[x];
+                        int sr = (shaded >> 16) & 255;
+                        int sg = (shaded >> 8) & 255;
+                        int sb = shaded & 255;
+                        int ur = (under >> 16) & 255;
+                        int ug = (under >> 8) & 255;
+                        int ub = under & 255;
+                        row[x] = (uint32_t)((sr * cmd_alpha + ur * (255 - cmd_alpha)) / 255) << 16 |
+                                 (uint32_t)((sg * cmd_alpha + ug * (255 - cmd_alpha)) / 255) << 8 |
+                                 (uint32_t)((sb * cmd_alpha + ub * (255 - cmd_alpha)) / 255);
+                        worker->alpha_blended_pixels++;
+                        worker->blend_divisions += 3;
+                    } else {
+                        worker->alpha_zero_pixels++;
+                    }
+                    if (cmd_alpha > 0 && renderer->coverage && renderer->coverage_stride > 0)
                         renderer->coverage[y * renderer->coverage_stride + x] = 255;
                     worker->written_px++;
                     worker->planar_pixels++;
@@ -885,14 +905,17 @@ static void rasterize_cmd(struct toy_renderer *renderer,
                                  cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
                                  y0, y1,
                                  shade_color(cmd->color, cmd->a.light, cmd->fog),
-                                 0, 255, 0);
+                                 0, cmd->material_alpha,
+                                 cmd->transparent_no_depth_write);
             worker->flat_pixels -= (unsigned long)pixels;
             worker->planar_pixels += (unsigned long)pixels;
         } else
             pixels = raster_planar_vertex_lit(
                                       renderer, worker, &cmd->a, &cmd->b, &cmd->c,
                                       cmd->area, cmd->bbox_minx, cmd->bbox_maxx,
-                                      y0, y1, cmd->color, cmd->fog);
+                                      y0, y1, cmd->color, cmd->fog,
+                                      cmd->material_alpha,
+                                      cmd->transparent_no_depth_write);
         worker->pixels += pixels;
     }
     else

@@ -1,6 +1,9 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 新增资源编译单元，根 Makefile 正常/self 与 Windows 列表同步；Windows 独立 `rasterfall-resource-test.exe` 验证真实 world switch、CPU renderer resize 和释放，不进入玩家 package；`tools/hardware_graphics_resize.ps1` 检查 native/Fog resize 与 registry 稳态。
+> 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 的 header/inc 已加入根 Makefile 正常/self 依赖，Windows 自动依赖覆盖；`--logic-test` 增加无外部资产 Draw 对照，Windows package 与 Intel 基线验收通过。
+> 源码核对基线补充：2026-09-19 HG-1A 前置修复沿用共享 renderer 与现有 Windows package/differential 编译列表；基线脚本先运行完整 differential suite，`-Checkpoint` 标注 manifest，详见 [修复记录](hardware-graphics-hg1-preflight.md)。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：Windows `--logic-test` 聚合测试的大型局部 fixture 曾超过默认主线程栈并以 0xC00000FD 退出；`windows/Makefile` 将链接栈 reserve 设为 16 MiB，正式构建现可完整通过逻辑测试。栈按需提交，不改变玩法或 GPU 帧逻辑。
 > 源码核对基线补充：2026-09-19 Windows strict GPU 老地图全向扫视覆盖 Texture V1 高命令量 pack；纹理 handle 改为本帧唯一视图表查找，避免方向相关的 watchdog 退出。

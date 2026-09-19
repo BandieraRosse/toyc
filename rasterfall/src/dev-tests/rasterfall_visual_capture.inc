@@ -28,7 +28,8 @@ static int architecture_prop(struct toy_renderer *r, const struct camera *c,
 {
     struct rasterfall_prop_instance p = {id, (int)(x*512),
         -900+(int)(y*512), (int)(z*512), yaw, 1000, 0};
-    if (!static_prop_model(id)) return -1;
+    struct rasterfall_resource_handle handle;
+    if (!static_prop_model(id, &handle)) return -1;
     return rasterfall_render_static_prop(r,c,&p);
 }
 

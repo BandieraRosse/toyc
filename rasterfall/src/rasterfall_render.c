@@ -17,6 +17,7 @@
 #include "rasterfall_render.h"
 #include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
+#include "rasterfall_draw.h"
 #include "rf_gpu_raster_pack.h"
 
 #define special_target_active ability.special_target_active
@@ -359,8 +360,6 @@ static int render_infected_display_model(struct toy_renderer *, const struct cam
 
 static struct rasterfall_model_asset gallery_models[RASTERFALL_MODEL_MAX_GALLERY];
 static int gallery_loaded;
-static struct rasterfall_model_asset static_prop_models[RASTERFALL_PROP_ASSET_COUNT];
-static unsigned char static_prop_model_attempted[RASTERFALL_PROP_ASSET_COUNT];
 static struct rasterfall_model_asset private_character_model;
 static struct rasterfall_model_asset private_character_lod_model;
 static int private_character_lod_loaded;
@@ -1496,6 +1495,111 @@ character_render_policy(enum rasterfall_character_visual_class visual_class)
     return policy;
 }
 
+/* Shared integer triangle lowering. Draw producers never enter this loop. */
+static int lower_gallery_triangles(struct toy_renderer *renderer,
+    const struct camera *camera, const struct rasterfall_model_asset *model,
+    int center_x, int base_y, int center_z, int scale,
+    const unsigned char *indices, unsigned int index_begin,
+    unsigned int index_end, int character_model, int textured, uint32_t color)
+{
+    unsigned int j;
+    int drawn = 0;
+    for (j = index_begin; j + 2 < index_end; j += 3) {
+        if ((j & 255U) == 0 &&
+            toy_renderer_job_cancelled(renderer)) break;
+        unsigned int ia = model_u32(indices + j * 4);
+        unsigned int ib = model_u32(indices + (j + 1) * 4);
+        unsigned int ic = model_u32(indices + (j + 2) * 4);
+        struct vec3 a, b, c;
+        struct world_uv_vertex ta, tb, tc;
+        int form_light;
+        if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
+        {
+            int nx = gallery_vertex_cache[ia].normal[0] +
+                     gallery_vertex_cache[ib].normal[0] +
+                     gallery_vertex_cache[ic].normal[0];
+            int ny = gallery_vertex_cache[ia].normal[1] +
+                     gallery_vertex_cache[ib].normal[1] +
+                     gallery_vertex_cache[ic].normal[1];
+            int nz = gallery_vertex_cache[ia].normal[2] +
+                     gallery_vertex_cache[ib].normal[2] +
+                     gallery_vertex_cache[ic].normal[2];
+            form_light = model_form_light_q8(nx / 3, ny / 3, nz / 3,
+                character_model);
+            active_material_form_light_q8 = form_light;
+            int dot = (-nx + ny * 2 - nz) / 12;
+            active_toon_level = 160 + dot * 95 / 32767;
+            if (active_toon_level < 0) active_toon_level = 0;
+            if (active_toon_level > 255) active_toon_level = 255;
+            active_material_specular_level = dot > 0 ? dot * 255 / 32767 : 0;
+            if (active_material_specular_power > 512)
+                active_material_specular_level = active_material_specular_level *
+                    active_material_specular_level / 255;
+            if (active_material_specular_power > 1024)
+                active_material_specular_level = active_material_specular_level *
+                    active_material_specular_level / 255;
+            if (active_material_specular_power > 2048)
+                active_material_specular_level = active_material_specular_level *
+                    active_material_specular_level / 255;
+            if (active_material_specular_power > 4096)
+                active_material_specular_level = active_material_specular_level *
+                    active_material_specular_level / 255;
+        }
+        if (active_infected_model) {
+            a = gallery_vertex_cache[ia].uv.p;
+            b = gallery_vertex_cache[ib].uv.p;
+            c = gallery_vertex_cache[ic].uv.p;
+            uint32_t infected_color = active_infected_tint ? active_infected_tint : color;
+            if (!active_material_lighting_min_q8)
+                infected_color = (infected_color & 0xff000000U) |
+                    ((((infected_color >> 16) & 255U) * form_light / 256U) << 16) |
+                    ((((infected_color >> 8) & 255U) * form_light / 256U) << 8) |
+                    ((infected_color & 255U) * form_light / 256U);
+            drawn += draw_world_triangle(renderer, camera, &a, &b, &c, infected_color);
+        } else if (textured) {
+            gallery_uv_vertex(renderer, model, camera, ia, center_x, base_y, center_z, scale,
+                              active_sphere_texture ? active_sphere_mode : 0, &ta);
+            gallery_uv_vertex(renderer, model, camera, ib, center_x, base_y, center_z, scale,
+                              active_sphere_texture ? active_sphere_mode : 0, &tb);
+            gallery_uv_vertex(renderer, model, camera, ic, center_x, base_y, center_z, scale,
+                              active_sphere_texture ? active_sphere_mode : 0, &tc);
+            ta.light = tb.light = tc.light = form_light;
+            drawn += draw_world_triangle_tex_views(renderer, camera,
+                &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
+                &gallery_vertex_cache[ib].view,
+                &gallery_vertex_cache[ic].view);
+        } else if (active_material_lighting_min_q8 > 0) {
+            a = gallery_vertex_cache[ia].uv.p;
+            b = gallery_vertex_cache[ib].uv.p;
+            c = gallery_vertex_cache[ic].uv.p;
+            drawn += draw_world_triangle_views(renderer, camera,
+                &a, &b, &c, &gallery_vertex_cache[ia].view,
+                &gallery_vertex_cache[ib].view,
+                &gallery_vertex_cache[ic].view, color);
+        } else {
+            uint32_t shaded_color;
+            a = gallery_vertex_cache[ia].uv.p;
+            b = gallery_vertex_cache[ib].uv.p;
+            c = gallery_vertex_cache[ic].uv.p;
+            {
+                uint32_t alpha = color & 0xff000000U;
+                unsigned int red = ((color >> 16) & 255U) *
+                                   (unsigned int)form_light / 256U;
+                unsigned int green = ((color >> 8) & 255U) *
+                                     (unsigned int)form_light / 256U;
+                unsigned int blue = (color & 255U) *
+                                    (unsigned int)form_light / 256U;
+                shaded_color = alpha | red << 16 | green << 8 | blue;
+            }
+            drawn += draw_world_triangle_views(renderer, camera,
+                &a, &b, &c, &gallery_vertex_cache[ia].view,
+                &gallery_vertex_cache[ib].view,
+                &gallery_vertex_cache[ic].view, shaded_color);
+        }
+    }
+    return drawn;
+}
+
 static int render_gallery_model_range(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct rasterfall_model_asset *model,
@@ -1728,99 +1832,9 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         phase_start = render_monotonic_us();
-        for (j = index_begin; j + 2 < index_end; j += 3) {
-            if ((j & 255U) == 0 &&
-                toy_renderer_job_cancelled(renderer)) break;
-            unsigned int ia = model_u32(indices + j * 4);
-            unsigned int ib = model_u32(indices + (j + 1) * 4);
-            unsigned int ic = model_u32(indices + (j + 2) * 4);
-            struct vec3 a, b, c;
-            struct world_uv_vertex ta, tb, tc;
-            int form_light;
-            if (ia >= model->vertex_count || ib >= model->vertex_count || ic >= model->vertex_count) continue;
-            {
-                int nx = gallery_vertex_cache[ia].normal[0] +
-                         gallery_vertex_cache[ib].normal[0] +
-                         gallery_vertex_cache[ic].normal[0];
-                int ny = gallery_vertex_cache[ia].normal[1] +
-                         gallery_vertex_cache[ib].normal[1] +
-                         gallery_vertex_cache[ic].normal[1];
-                int nz = gallery_vertex_cache[ia].normal[2] +
-                         gallery_vertex_cache[ib].normal[2] +
-                         gallery_vertex_cache[ic].normal[2];
-                form_light = model_form_light_q8(nx / 3, ny / 3, nz / 3,
-                    character_model);
-                active_material_form_light_q8 = form_light;
-                int dot = (-nx + ny * 2 - nz) / 12;
-                active_toon_level = 160 + dot * 95 / 32767;
-                if (active_toon_level < 0) active_toon_level = 0;
-                if (active_toon_level > 255) active_toon_level = 255;
-                active_material_specular_level = dot > 0 ? dot * 255 / 32767 : 0;
-                if (active_material_specular_power > 512)
-                    active_material_specular_level = active_material_specular_level *
-                        active_material_specular_level / 255;
-                if (active_material_specular_power > 1024)
-                    active_material_specular_level = active_material_specular_level *
-                        active_material_specular_level / 255;
-                if (active_material_specular_power > 2048)
-                    active_material_specular_level = active_material_specular_level *
-                        active_material_specular_level / 255;
-                if (active_material_specular_power > 4096)
-                    active_material_specular_level = active_material_specular_level *
-                        active_material_specular_level / 255;
-            }
-            if (active_infected_model) {
-                a = gallery_vertex_cache[ia].uv.p;
-                b = gallery_vertex_cache[ib].uv.p;
-                c = gallery_vertex_cache[ic].uv.p;
-                uint32_t infected_color = active_infected_tint ? active_infected_tint : color;
-                if (!active_material_lighting_min_q8)
-                    infected_color = (infected_color & 0xff000000U) |
-                        ((((infected_color >> 16) & 255U) * form_light / 256U) << 16) |
-                        ((((infected_color >> 8) & 255U) * form_light / 256U) << 8) |
-                        ((infected_color & 255U) * form_light / 256U);
-                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, infected_color);
-            } else if (texture || shared_texture) {
-                gallery_uv_vertex(renderer, model, camera, ia, center_x, base_y, center_z, scale,
-                                  active_sphere_texture ? active_sphere_mode : 0, &ta);
-                gallery_uv_vertex(renderer, model, camera, ib, center_x, base_y, center_z, scale,
-                                  active_sphere_texture ? active_sphere_mode : 0, &tb);
-                gallery_uv_vertex(renderer, model, camera, ic, center_x, base_y, center_z, scale,
-                                  active_sphere_texture ? active_sphere_mode : 0, &tc);
-                ta.light = tb.light = tc.light = form_light;
-                drawn += draw_world_triangle_tex_views(renderer, camera,
-                    &ta, &tb, &tc, &gallery_vertex_cache[ia].view,
-                    &gallery_vertex_cache[ib].view,
-                    &gallery_vertex_cache[ic].view);
-            } else if (active_material_lighting_min_q8 > 0) {
-                a = gallery_vertex_cache[ia].uv.p;
-                b = gallery_vertex_cache[ib].uv.p;
-                c = gallery_vertex_cache[ic].uv.p;
-                drawn += draw_world_triangle_views(renderer, camera,
-                    &a, &b, &c, &gallery_vertex_cache[ia].view,
-                    &gallery_vertex_cache[ib].view,
-                    &gallery_vertex_cache[ic].view, color);
-            } else {
-                uint32_t shaded_color;
-                a = gallery_vertex_cache[ia].uv.p;
-                b = gallery_vertex_cache[ib].uv.p;
-                c = gallery_vertex_cache[ic].uv.p;
-                {
-                    uint32_t alpha = color & 0xff000000U;
-                    unsigned int red = ((color >> 16) & 255U) *
-                                       (unsigned int)form_light / 256U;
-                    unsigned int green = ((color >> 8) & 255U) *
-                                         (unsigned int)form_light / 256U;
-                    unsigned int blue = (color & 255U) *
-                                        (unsigned int)form_light / 256U;
-                    shaded_color = alpha | red << 16 | green << 8 | blue;
-                }
-                drawn += draw_world_triangle_views(renderer, camera,
-                    &a, &b, &c, &gallery_vertex_cache[ia].view,
-                    &gallery_vertex_cache[ib].view,
-                    &gallery_vertex_cache[ic].view, shaded_color);
-            }
-        }
+        drawn += lower_gallery_triangles(renderer, camera, model,
+            center_x, base_y, center_z, scale, indices, index_begin, index_end,
+            character_model, texture || shared_texture, color);
         body_us = render_monotonic_us() - phase_start;
         model_setup_timing.body_triangles_us += body_us;
         model_setup_timing.material_us += render_monotonic_us() -
@@ -1864,21 +1878,22 @@ static int render_gallery_model(struct toy_renderer *renderer,
         base_y, center_z, scale, 0, (int)model->primitive_count, 0, -1, 1);
 }
 
-static struct rasterfall_model_asset *static_prop_model(int asset_id)
+#include "render/rasterfall_draw_reference.inc"
+
+static const struct rasterfall_model_asset *static_prop_model(int asset_id,
+    struct rasterfall_resource_handle *handle)
 {
     const struct rasterfall_prop_asset_profile *profile;
-    int index;
+    struct rasterfall_resource_registry *registry = rasterfall_render_resources();
     if (asset_id <= 0 || asset_id > RASTERFALL_PROP_ASSET_COUNT) return 0;
-    index = asset_id - 1;
     profile = rasterfall_prop_asset_profile(asset_id);
     if (!profile) return 0;
-    if (!static_prop_model_attempted[index]) {
-        static_prop_model_attempted[index] = 1;
-        if (rasterfall_model_load(&static_prop_models[index],
-                                  profile->model_path) < 0)
-            return 0;
-    }
-    return static_prop_models[index].data ? &static_prop_models[index] : 0;
+    if (rasterfall_resources_load(registry, profile->model_path, handle) < 0)
+        return 0;
+    /* Also pin legacy prop textures: their RasterCmds outlive lowering. */
+    if (registry->frame_active && rasterfall_resources_pin(registry, *handle) < 0)
+        return 0;
+    return rasterfall_resources_resolve(registry, *handle);
 }
 
 static int render_boundary_wall(struct toy_renderer *, const struct camera *,
@@ -1888,7 +1903,8 @@ int rasterfall_render_static_prop(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_prop_instance *instance)
 {
-    struct rasterfall_model_asset *model;
+    const struct rasterfall_model_asset *model;
+    struct rasterfall_resource_handle handle;
     const struct rasterfall_prop_asset_profile *profile;
     int previous_facing, previous_sy, previous_cy, previous_lighting, previous_culling;
     int yaw, scale, pixels;
@@ -1897,7 +1913,7 @@ int rasterfall_render_static_prop(
     if (instance->asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL)
         return render_boundary_wall(renderer, camera, instance);
     profile = rasterfall_prop_asset_profile(instance->asset_id);
-    model = static_prop_model(instance->asset_id);
+    model = static_prop_model(instance->asset_id, &handle);
     if (!profile || !model) return 0;
     scale = rasterfall_prop_render_scale(profile, instance->scale_milli);
     if (scale <= 0) return -1;
@@ -1918,8 +1934,24 @@ int rasterfall_render_static_prop(
     active_gallery_sy = (int)(sin((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
     active_gallery_cy = (int)(cos((double)yaw * 3.141592653589793 / 180.0) * 1024.0);
     active_gallery_lighting = 1;
-    pixels = render_gallery_model(renderer, camera, model, instance->x,
-                                  instance->y, instance->z, scale);
+    {
+        struct rasterfall_draw_view view;
+        struct rasterfall_draw_instance draw_instance;
+        enum rasterfall_draw_reject rejection;
+        static_prop_draw_snapshot(renderer, camera, model, instance, scale,
+                                  &view, &draw_instance);
+        draw_instance.mesh_handle = handle;
+        rejection = static_prop_draw_preflight(renderer, &draw_instance);
+        if (rejection == RASTERFALL_DRAW_ACCEPTED) {
+            scene_stats.static_draw_instances++;
+            pixels = static_prop_draw_reference(renderer, &view, &draw_instance);
+        } else {
+            scene_stats.static_draw_legacy_instances++;
+            scene_stats.static_draw_rejected[rejection]++;
+            pixels = render_gallery_model(renderer, camera, model, instance->x,
+                                          instance->y, instance->z, scale);
+        }
+    }
     active_gallery_facing = previous_facing;
     active_gallery_sy = previous_sy;
     active_gallery_cy = previous_cy;
@@ -8402,3 +8434,5 @@ int rasterfall_render_overlays(struct toy_renderer *renderer)
 #include "dev-tests/rasterfall_enemy_visual_capture.inc"
 
 #include "dev-tests/rasterfall_world_benchmark.inc"
+
+#include "dev-tests/rasterfall_draw_reference_test.inc"

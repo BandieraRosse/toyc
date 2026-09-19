@@ -437,6 +437,78 @@ done:
     return result;
 }
 
+/* Contract assertions precede differential comparison: agreement between two
+ * implementations alone must not bless lost alpha or unexpected depth writes.
+ * At vertex A the interpolated light is exactly 128, hence 0x804020 shades to
+ * 0x402010. Source-over 128 over 0x204060 is exactly 0x302f37. */
+static int vertex_lit_alpha_fixture(struct rf_gpu *gpu,
+                                   struct rf_gpu_raster *raster,
+                                   const char *artifacts)
+{
+    static const int alphas[] = {0, 128, 255, 255};
+    static const uint32_t expected[] = {
+        0x204060, 0x302f37, 0x402010, 0x402010};
+    struct toy_renderer r;
+    struct stream s = {0};
+    int varying, mode, result = -1;
+    toy_renderer_init(&r);
+    for (varying = 0; varying < 2; ++varying) {
+        for (mode = 0; mode < 4; ++mode) {
+            uint32_t pixels[64], reference[64];
+            int32_t depth[64];
+            unsigned char coverage[64];
+            struct toy_surface surface = {0};
+            size_t capacity;
+            char name[80];
+            memset(pixels, 0, sizeof(pixels));
+            memset(coverage, 0, sizeof(coverage));
+            surface.pixels = pixels; surface.width = 8;
+            surface.height = 8; surface.stride = 8 * 4;
+            toy_renderer_init(&r);
+            CHECK(toy_renderer_begin(&r, &surface, 0x204060) == 0);
+            toy_renderer_set_preserve_command_order(&r, 1);
+            toy_renderer_bind_coverage(&r, coverage, 8);
+            add_vertex_lit_triangle(&r,
+                1,1,500,128, 7,1,500,varying ? 256 : 128,
+                1,7,500,varying ? 384 : 128, 0x804020,0);
+            CHECK(r.cmd_count == 1);
+            r.cmds[0].material_alpha = alphas[mode];
+            r.cmds[0].transparent = mode != 3;
+            r.cmds[0].transparent_no_depth_write = mode != 3;
+            capacity = rf_gpu_raster_stream_size_v1(3);
+            s.data = malloc(capacity);
+            CHECK(s.data != NULL);
+            CHECK(rf_gpu_raster_pack_toy_v1(&r, 0x204060, 0,
+                s.data, capacity, &s.size) == 0);
+            CHECK(toy_renderer_flush(&r) >= 0);
+            CHECK((pixels[9] & 0xffffffu) == expected[mode]);
+            CHECK(r.depth[9] == (mode == 3 ? 500 : 0));
+            CHECK(coverage[9] == (mode == 0 ? 0 : 255));
+            CHECK(coverage[0] == 0 && r.depth[0] == 0);
+            CHECK(rf_gpu_raster_cpu_reference_v1(s.data, s.size,
+                reference, depth, 8, 8, NULL) == 0);
+            CHECK((reference[9] & 0xffffffu) == expected[mode]);
+            CHECK(depth[9] == (mode == 3 ? 500 : 0));
+            snprintf(name, sizeof(name), "vertex-lit-%s-alpha-%d-%s",
+                varying ? "varying" : "constant", alphas[mode],
+                mode == 3 ? "opaque" : "source-over");
+            CHECK(compare_case(gpu, raster, name, &s, artifacts, 1, NULL) == 0);
+            toy_renderer_bind_coverage(&r, NULL, 0);
+            toy_renderer_destroy(&r);
+            toy_renderer_init(&r);
+            free(s.data);
+            s.data = NULL;
+        }
+    }
+    puts("vertex-lit alpha: fixed color/depth/coverage contract PASS");
+    result = 0;
+done:
+    toy_renderer_bind_coverage(&r, NULL, 0);
+    toy_renderer_destroy(&r);
+    free(s.data);
+    return result;
+}
+
 static int texture_fixture(struct rf_gpu *gpu,struct rf_gpu_raster *raster)
 {
     static const unsigned char texels_a[16]={
@@ -537,6 +609,11 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     CHECK(rf_gpu_get_status(&gpu,&status)==0&&status.renderer.raster_v1);
     printf("adapter: %s\n",status.info.adapter_name);
+    if (!replay) {
+        CHECK(rf_gpu_raster_init(&gpu, &raster, 8, 8) == 0);
+        CHECK(vertex_lit_alpha_fixture(&gpu, &raster, artifacts) == 0);
+        rf_gpu_raster_shutdown(&raster);
+    }
     if(replay){struct texture_bundle tb={0};char tp[1024];int tr;CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);snprintf(tp,sizeof(tp),"%s.textures",replay);tr=read_texture_bundle(tp,&tb);CHECK(tr>=0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0,tr==0?&tb:NULL)==0);free(tb.descs);free(tb.texels);free(s.data);s.data=NULL;}
     else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);CHECK(viewmodel_span_fixture(&gpu, &raster)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts,1,NULL)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts,1,NULL)==0);free(s.data);s.data=NULL;CHECK(texture_fixture(&gpu,&raster)==0);
       /* Failure authority: no partial output and all malformed classes reject. */

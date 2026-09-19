@@ -1,6 +1,7 @@
 #include "core.h"
 #include "tlibc_everything.h"
 #include "rf_core_host.h"
+#include "rasterfall_render_resources.h"
 #include "rf_gpu_raster_pack.h"
 #include "fb_draw.h"
 #include <limits.h>
@@ -1378,6 +1379,8 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     if (ready <= 0) return ready;
     if (toy_renderer_begin(core->renderer, &core->surface, clear_color) < 0)
         return -1;
+    if (rasterfall_resources_frame_begin(rasterfall_render_resources()) < 0)
+        return -1;
     core->world_depth = core->renderer->depth;
     core->viewmodel_active = 0;
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
@@ -1614,7 +1617,7 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
     return &frame->overlay_surface;
 }
 
-int rf_core_end_frame(struct rf_core *core)
+static int core_end_frame_present(struct rf_core *core)
 {
     int64_t present_start;
     int result;
@@ -1697,6 +1700,16 @@ int rf_core_end_frame(struct rf_core *core)
         core->gpu_frame.stats.frame_total_ms =
             (double)(rf_core_clock_now_us() -
                      core->gpu_frame.frame_begin_us) / 1000.0;
+    return result;
+}
+
+int rf_core_end_frame(struct rf_core *core)
+{
+    int result = core_end_frame_present(core);
+    /* Both CPU flush and the current single-frame GPU present are complete.
+     * Failed submits keep their pins until backend teardown in shutdown. */
+    if (result >= 0)
+        rasterfall_resources_frame_complete(rasterfall_render_resources());
     return result;
 }
 
@@ -1812,6 +1825,8 @@ void rf_core_shutdown(struct rf_core *core)
     if (core->audio_ready) toy_audio_close(&core->audio);
     if (core->window) toy_window_close(core->window);
     if (core->renderer) toy_renderer_destroy(core->renderer);
+    rasterfall_resources_invalidate(rasterfall_render_resources());
+    rasterfall_resources_frame_complete(rasterfall_render_resources());
     rf_core_filesystem_shutdown(&core->filesystem);
     memset(core, 0, sizeof(*core));
 }

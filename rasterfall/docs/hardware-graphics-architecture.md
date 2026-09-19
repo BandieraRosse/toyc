@@ -1,10 +1,13 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
+> 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已实现普通 opaque static RMESH 同步 CPU-backed Draw；原 CPU/compute 精确回归通过，后续资源生命周期见 HG-1B。
 > 源码核对基线：`e036b809` 加 HG-0 工作区；`rasterfall_render.c`、`rasterfall_render_frontend.h`、`rf_core_host.c`、`rf_game_runtime.c`、`rf_gpu_vulkan_backend.c`、`raster_v1.comp` 与 Windows package 实测。
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
-HG-0 只冻结事实、接口草案和诊断基线；下述 Draw、registry、graphics executor 都是待实现设计。
+HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
+HG-1B 已建立 CPU registry 与帧 pin；延迟 Draw 消费、Core DrawSpan 和 graphics executor 仍是待实现设计。
 当前 native 路径仍为 compute raster，不能将其称为 hardware indexed draw。
 
 ## 状态所有者与 producer 边界
@@ -12,9 +15,9 @@ HG-0 只冻结事实、接口草案和诊断基线；下述 Draw、registry、gr
 | 层 | 当前所有者/入口 | 迁移责任 |
 | --- | --- | --- |
 | 权威玩法、world 选择 | `toy_game`、session、World Content | 不持有 GPU handle，不改变碰撞或地图语义 |
-| 实例及资源选择 | `render_static_props()` → `rasterfall_render_static_prop()` | 解析 profile、scale、yaw、world light 后提交每 submesh 一个 Draw |
-| 模型 CPU 定义 | `rasterfall_model_asset`、renderer 内 `static_prop_models[]` | HG-1B 引入 registry；当前懒加载不构成完整 unload 合同 |
-| 顶点与三角形 frontend | `prepare_gallery_vertex_cache()`、`render_gallery_model_range()` | HG-1A 保留整数 reference lowering；hardware 成功帧跳过此工作 |
+| 实例及资源选择 | `render_static_props()` → `rasterfall_render_static_prop()` | 已解析 profile、scale、yaw、world light 后提交每 submesh 一个 Draw；资格失败整实例保留旧 producer |
+| 模型 CPU 定义 | `rasterfall_render_resources.h`、`render/rasterfall_render_resources.c` | HG-1B bundle registry 拥有 CPU mesh/material/texture；Game 使 world 资源退休，Core 完成帧 pin 后释放 |
+| 顶点与三角形 frontend | `render/rasterfall_draw_reference.inc`、`prepare_gallery_vertex_cache()`、`lower_gallery_triangles()` | HG-1A 同步 reference；旧 gallery 与 Draw 共用整数循环，尚无跳过 lowering 的 hardware 路径 |
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
 | 层顺序、retained、fallback | `rf_core_host.c` | 持有 DrawSpan/RasterSpan 有序帧记录，整帧 preflight 后执行或 replay |
@@ -26,7 +29,12 @@ HG-0 只冻结事实、接口草案和诊断基线；下述 Draw、registry、gr
 建筑闭合资产 ARCH_BEAM 至 ARCH_FLOOR_HATCH 强制单面；不能因为旧 RFM2 缺少 sidedness 而丢弃该策略。
 透明及不支持的材质先保留原路径。禁止在 `toy_renderer_triangle_*()` 外包装 Draw，那里已承担逐三角形成本。
 
-## Draw V0 草案（HG-1 实现合同）
+## Draw V0 合同与实现边界
+
+HG-1A 当前数据结构在 `rasterfall_draw.h`，实施与验证见 [Draw/reference](hardware-graphics-hg1a.md)。
+本阶段固定 WORLD/opaque/nearest-repeat/bottom-pivot/no-primitive-fog，以调用顺序和 primitive 顺序
+保持稳定提交；HG-1B 为正常 static prop 提供 bundle handle/generation 与帧 pin，材质/纹理以 bundle 加表索引标识。
+同步 fixture 仍可借用 backing；retained Draw 和可扩展 domain 仍由后续 checkpoint 落实。
 
 | 数据 | 必需字段与边界 |
 | --- | --- |
@@ -39,11 +47,12 @@ HG-0 只冻结事实、接口草案和诊断基线；下述 Draw、registry、gr
 Draw 不包含投影后的三顶点、area、bbox、裁剪扇形或 `u_over_z`。V0 每实例、每 submesh 一次提交；
 不要求 instancing/indirect/bindless。HG-1A 可以暂借原 CPU backing，同步 lowering；引入延迟消费前必须冻结全部引用和状态。
 
-HG-1B registry 拥有 CPU backing 与 generation；backend cache 只拥有对应 GPU 资源。
+HG-1B registry 拥有 CPU backing 与 generation；后续 backend cache 只拥有对应 GPU 资源。
 resource reload/world unload 使新引用采用新 generation；旧 slot 不得在在途帧仍引用时重用。
 冻结帧 pin 住 mesh、material、texture，直到 GPU 完成且 CPU replay 不再需要它们才释放。
 resize 只重建尺寸相关 target；device 重建使 backend cache 失效，不改变 CPU 定义。
-静态资源首次上传后稳态上传量为零；实例/light overrides 写帧数据。两个实例不共享可变状态。
+后续 GPU cache 须满足静态资源首次上传后稳态上传量为零；实例/light overrides 写帧数据。
+当前两个实例不共享可变状态，尚无 GPU mesh 上传。
 
 ## 数值与顺序冻结
 
@@ -91,6 +100,9 @@ unsupported preflight 不能留下半帧；strict 禁止 readback/CPU copy，并
 先 `windows/NativeCodex.ps1 package`，构建根 Makefile 的 `win-gpu-raster-diff-test` 到 `build-windows/`，
 再运行 `powershell -ExecutionPolicy Bypass -File tools/hardware_graphics_baseline.ps1`。
 使用同一 MSYS2 MinGW lane；独立 differential 是 hosted 工具，不加入 normal package 或 freestanding libc。
+脚本现在先执行完整 differential suite，失败即停止，不再只以 selected world replay 判定基线通过。
+`-Checkpoint HG-1A-preflight` 可标注本次 manifest；省略仍标注 HG-0。独立 suite 从仓库根运行，
+以便保留 `build/` 下的 replay self-check；游戏仍从 package 目录加载资产。
 在 Windows PowerShell 中，也可直接执行与该 Makefile 目标相同的编译命令（从仓库根运行；MSYS2 默认安装路径）：
 
 ```powershell
@@ -131,7 +143,10 @@ WMI/CIM 不可读时从 Windows display-class registry 读取 driver；保留查
 ## 进度与后续验收
 
 HG-0 本次证据见 [checkpoint 记录](hardware-graphics-hg0.md)。根计划同步记录各 checkpoint 状态。
-下一步 HG-1A：一个普通 prop 的 Draw/reference vertical slice，再覆盖普通 static RMESH；
-HG-1B 再落实 registry 与 generation 门禁。HG-2A/2B、HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
-资源上传、instance upload、bridge bytes/time、cpu_lowered_triangles、unexpected_lowering 的统计在各 owner 实现时加入，
-HG-0 不以占位零值伪装已实现 hardware 数据。
+HG-1A 已先修复 HG-0 遗留的 CPU planar vertex-lit 透明度与深度差异，见 [前置修复记录](hardware-graphics-hg1-preflight.md)。
+HG-1A 的普通 opaque static RMESH Draw/reference 与 Windows Intel 精确回归已完成，见
+[验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)；下一步是 HG-2A。
+HG-2A/2B、HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
+`--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。
+资源上传、instance upload、bridge bytes/time、unexpected_lowering 仍在对应 owner 实现时加入，
+不以占位零值伪装已实现 hardware 数据。

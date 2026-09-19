@@ -1,14 +1,14 @@
 # Hardware Graphics 开发计划
 
 > 计划更新：2026-09-19
-> 当前进度：HG-0 已完成；HG-1A 尚未开始。
+> 当前进度：HG-0、HG-1A、HG-1B 已实现；static prop 已接入 Draw/reference 与 CPU 资源生命周期，下一项为 HG-2A 单 mesh indexed draw proof。
 > 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
 
 | Checkpoint | 状态 | 交付/下一步 |
 | --- | --- | --- |
 | HG-0 | 完成 | ownership/Draw V0/数值合同、可复现 Windows 测量脚本、CPU/compute captures、native/Fog/正式地图波次基线 |
-| HG-1A | 待开发 | 单 prop → 普通 static RMESH Draw/reference；严格命令/color/depth 等价 |
-| HG-1B | 待开发 | resource registry、generation、帧 pinning 与释放 |
+| HG-1A | 完成 | CPU planar 前置修复；普通 opaque static RMESH 按实例/submesh 提交 Draw，同步 reference；命令/color/depth 精确回归与 Windows Intel 基线通过 |
+| HG-1B | 完成 | CPU bundle registry、generation、Core 帧 pin 与延迟释放；[实现与验证](rasterfall/docs/hardware-graphics-hg1b.md) |
 | HG-2A | 待开发 | 单 mesh indexed draw 离屏 proof |
 | HG-2B | 待开发 | graphics/compute target、深度、顺序、native present 强制门禁 |
 | HG-3A / HG-3B | 待开发 | opaque static props allowlist → 扩围 |
@@ -17,7 +17,9 @@
 
 HG-0 校正：显式 frame audit 现逐帧输出；normal near/mid 标签只控制初始相机，稳定位置以实际审计为准；
 波次必须显式加载 Campaign 并验证活敌。原始 HEAD 的独立 texture full-scan fixture 已复现失败，
-后续 HG-1 精确回归前需定位，不能宣称全部 compute fixtures 已通过。当前无 hardware normal-frame 接入。
+HG-1A 已定位为 CPU planar vertex-lit 忽略 alpha/no-depth-write，并补齐恒定与插值光照路径；
+前置记录见 [HG-1A 前置修复](rasterfall/docs/hardware-graphics-hg1-preflight.md)，Draw 接入及验收见
+[HG-1A Draw/reference](rasterfall/docs/hardware-graphics-hg1a.md)。当前无 hardware normal-frame 接入。
 
 以下保留原计划及其原始调研记录；其中“本轮未修改跟踪文件”等表述仅描述计划形成时的状态。
 

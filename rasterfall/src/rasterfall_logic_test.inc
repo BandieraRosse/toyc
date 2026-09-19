@@ -947,6 +947,8 @@ static int run_logic_test(void)
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
+    if (rasterfall_render_draw_reference_logic_test() != 0) return 252;
+    if (rasterfall_render_resources_logic_test() != 0) return 253;
     if (rfm2_material_alpha_producer_logic_test() != 0) return 244;
     if (rfm2_texel_alpha_producer_logic_test() != 0) return 245;
     if (rasterfall_render_map_transparency_logic_test() != 0) return 250;

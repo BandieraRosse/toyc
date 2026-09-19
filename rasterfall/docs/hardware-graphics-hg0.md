@@ -1,6 +1,7 @@
 # HG-0 checkpoint：事实与架构冻结
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 下述 texture full-scan 失败已由 HG-1A 前置修复定位并处理；原 HG-0 结果保留，后续证据见 [修复记录](hardware-graphics-hg1-preflight.md)。
 > 源码核对基线：`e036b809ed28a17f0151d241e8b34b04794f067e` + HG-0 改动；Windows MinGW package、Intel Iris Xe 实测。
 
 状态：HG-0 完成。接口和数值合同见 [架构文档](hardware-graphics-architecture.md)，后续顺序见
@@ -64,8 +65,9 @@ near/mid 在 normal runtime 首帧后的实际位置都回到 Campaign spawn；�
 额外运行独立 differential **全套 fixture 未通过**：texture full-scan 在 pixel 135 `(24,3)` 得到
 CPU `ff07080a/500`，GPU `ff0b0f14/0`。以 HEAD 原始测试源码重新编译也复现同一失败；
 日志分别为 `tmp/hg0-diff-suite.log`、`tmp/hg0-diff-original.log`。这不是本次成功导出开关引入的差异。
-HG-0 完成的是基线冻结，不宣称所有 compute fixture 通过。HG-1A 的精确回归关闭前必须定位此问题，
-不能把它归为 hardware 边缘容差或简单更新 expected 值。
+HG-0 完成的是基线冻结，不宣称当时所有 compute fixture 通过。后续 HG-1A 已定位到 CPU planar
+vertex-lit 忽略 alpha/no-depth-write，修复恒定和插值光照路径；没有放宽容差或更新 expected 值。
+后续记录不改写本 checkpoint 的历史失败事实。
 
 本机仅覆盖 Windows/Intel；Linux freestanding、其他 GPU、resize/minimize/swapchain 重建没有在本次重新执行。
 HG-2B 的 graphics/compute 混合深度、生命周期和 native present 门禁尚未实现或验收。

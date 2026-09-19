@@ -9,6 +9,7 @@
 #include "rasterfall_prop.h"
 #include "rasterfall_model.h"
 #include "rasterfall_world_light.h"
+#include "rasterfall_draw.h"
 
 #define RASTERFALL_NEAR_Z 64
 
@@ -71,6 +72,10 @@ struct rasterfall_model_setup_timing {
 };
 
 struct rasterfall_scene_stats {
+    unsigned long static_draw_instances, static_draw_items;
+    unsigned long static_draw_lowered_triangles, static_draw_legacy_instances;
+    /* Indexed by rasterfall_draw_reject, including the unused accepted slot. */
+    unsigned long static_draw_rejected[RASTERFALL_DRAW_REJECT_COUNT];
     long sky_floor_us;
     long map_us;
     long gallery_us;
@@ -203,6 +208,7 @@ void rasterfall_render_ai_submission_stats(struct rasterfall_ai_submission_stats
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);
 int rasterfall_render_static_prop_lighting_logic_test(void);
+int rasterfall_render_draw_reference_logic_test(void);
 int rasterfall_render_world_light_source_logic_test(void);
 int rasterfall_render_map_transparency_logic_test(void);
 

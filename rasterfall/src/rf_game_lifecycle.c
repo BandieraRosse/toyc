@@ -1,5 +1,6 @@
 #include "tlibc_everything.h"
 #include "rf_game_lifecycle.h"
+#include "rasterfall_render_resources.h"
 #include "rasterfall_feature_freeze.h"
 
 static const char *world_path(enum rasterfall_world_id world)
@@ -17,6 +18,7 @@ int rf_game_request_world(struct rf_game_runtime *runtime,
         world != RASTERFALL_WORLD_RETURN_TO_WHU_V0) return -1;
     if (rasterfall_session_load(runtime->session, world_path(world)) < 0)
         return -1;
+    rasterfall_resources_invalidate(rasterfall_render_resources());
     runtime->session->world_id = world;
     seed = runtime->session->seed;
     rasterfall_session_reset(runtime->session, &runtime->camera,
@@ -66,6 +68,7 @@ int rf_game_init(struct rf_game_runtime *runtime,
     runtime->render_context.effects = &runtime->effects;
     runtime->render_context.net = &runtime->net;
     rasterfall_render_bind(&runtime->render_context);
+    rasterfall_resources_invalidate(rasterfall_render_resources());
     return 0;
 }
 
@@ -95,6 +98,7 @@ void rf_game_shutdown(struct rf_game_runtime *runtime)
     if (!runtime || !runtime->initialized) return;
     rasterfall_net_discovery_close(&runtime->discovery);
     rasterfall_net_close(&runtime->net);
+    rasterfall_resources_invalidate(rasterfall_render_resources());
     if (runtime->session)
         rasterfall_session_unload(runtime->session);
     memset(runtime, 0, sizeof(*runtime));

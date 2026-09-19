@@ -1,6 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。
+> 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 接入普通 opaque static RMESH；按实例/submesh 同步提交，CPU/compute 精确回归与原输出一致；资源生命周期后续进度见 HG-1B。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：GPU normal gameplay 功能阶段结束；`--gpu-required` 保持逐帧 native GPU-only fatal contract。旧 GPU V1 冻结矩阵已移入 [历史验收记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
@@ -62,7 +64,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md) | static prop producer → frontend/reference → Core spans → GPU target；`tools/hardware_graphics_baseline.ps1` |
+| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[HG-1A](hardware-graphics-hg1a.md)、[HG-1B](hardware-graphics-hg1b.md) | `include/rasterfall_draw.h` → static prop producer → `render/rasterfall_draw_reference.inc`；`dev-tests/rasterfall_draw_reference_test.inc`、`tools/hardware_graphics_baseline.ps1`；`render/rasterfall_render_resources.c` → Core frame pin / Game world invalidate；后续 Core spans/GPU target |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
@@ -84,6 +86,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | Return-to-WHU runtime compatibility、地面可读性、出生朝向与眼高验收 | [map-format.md](map-format.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `world attr.identity` → `rasterfall_session.c`；`rasterfall_world_content.c` 的单布尔 ground policy → `draw_partitioned_floor()`；`player_start` → Runtime region sy/cy → projection → session；`--map ... --environment-capture ...` |
 | 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md)、[资料补充 V1](reference/return-to-whu-core/evidence-addendum-v1.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
+| Hardware Graphics Draw/reference 迁移与 CPU/compute 精确回归 | [架构与计划](hardware-graphics-architecture.md)、[HG-1A 前置修复](hardware-graphics-hg1-preflight.md) | `rasterfall_render_static_prop()` → `render_gallery_model_range()`；`lib/graphics/renderer.c`、`gpu/src/rf_gpu_raster_diff_test.c`、`tools/hardware_graphics_baseline.ps1` |
 | RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |

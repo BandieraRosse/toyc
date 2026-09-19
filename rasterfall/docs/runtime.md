@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md)：Core begin/end 包围 static prop 资源的单帧 pin；失败帧保留到 backend teardown 后释放。Game init、成功 world switch 与 shutdown 使旧资源退休，仍在消费中的帧不提前释放。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。
 > 正常退出判定：native GPU frame 不写 CPU `scene_pixels`；帧上限退出时须同时检查成功 GPU 帧数，不能仅因 CPU 像素计数为零返回 2。GPU contract 失败仍优先返回 3。
