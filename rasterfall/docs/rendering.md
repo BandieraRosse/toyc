@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2A graphics proof](hardware-graphics-hg2a.md)：`gpu/include/rf_gpu_graphics.h` / `gpu/src/rf_gpu_vulkan_graphics.inc` 拥有独立 indexed draw 与离屏 target，`graphics_v0.vert/.frag` 执行整数变换、form light 和 opaque flat/nearest。正常 renderer/Draw lowering 不变；混合遮挡与 CPU 采样一致性属于 HG-2B 门禁。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：`rasterfall_render_resources.h` / `render/rasterfall_render_resources.c` 拥有 static prop CPU 资源；`rf_core_host.c` 负责帧 pin 的完成，`rf_game_lifecycle.c` 负责 world 失效。`draw-resources` 审计报告实际存活、退休、pin 与加载释放计数。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md)：`rasterfall_draw.h` 定义 CPU-backed Draw，`render/rasterfall_draw_reference.inc` 解析 submesh 并同步 lowering；`--frame-audit` 输出实例、Draw、源三角形及拒绝原因。
 > 源码核对基线补充：2026-09-19 [HG-1A 前置修复](hardware-graphics-hg1-preflight.md)：`lib/graphics/renderer.c` 的 planar vertex-lit 插值与恒定光照分支均消费 `material_alpha` 和 `transparent_no_depth_write`；alpha=0 不改 color/depth/coverage，透明不写深度。GPU kernel 与 ABI 未变。

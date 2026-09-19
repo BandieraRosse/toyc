@@ -274,12 +274,12 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
 }
 
 static int choose_queue(const struct rf_vk_queue_family_properties *families,
-                        uint32_t count)
+                        uint32_t count, uint32_t required)
 {
     uint32_t i;
     for (i = 0; i < count; ++i)
         if (families[i].queue_count &&
-            (families[i].queue_flags & RF_VK_QUEUE_COMPUTE_BIT))
+            (families[i].queue_flags & required) == required)
             return (int)i;
     return -1;
 }
@@ -588,6 +588,7 @@ struct rf_gpu_vulkan_impl {
     rf_vk_device device;
     rf_vk_queue queue;
     uint32_t queue_family;
+    uint32_t queue_flags;
     uint32_t shader_int64_enabled;
     uint64_t max_storage_buffer_range;
     rf_vk_surface surface;
@@ -1419,6 +1420,8 @@ static int raster_invalidate(struct rf_gpu_vulkan_impl *impl,
         RF_VK_SUCCESS ? 0 : -1;
 }
 
+#include "rf_gpu_vulkan_graphics.inc"
+
 static int raster_render(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
@@ -2195,7 +2198,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         if (families)
             api->get_physical_device_queue_family_properties(
                 devices[i], &family_count, families);
-        selected_queue = choose_queue(families, family_count);
+        selected_queue = choose_queue(families, family_count,
+            RF_VK_QUEUE_COMPUTE_BIT | (backend_context->require_graphics ? 1U : 0U));
         if (selected_queue >= 0 &&
             (!selected_device ||
              (selected_type != RF_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU &&
@@ -2203,6 +2207,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
                   RF_VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU))) {
             selected_device = devices[i];
             selected_family = (uint32_t)selected_queue;
+            impl->queue_flags = families[selected_queue].queue_flags;
             selected_type = properties->device_type;
             selected_index = i;
             snprintf(selected_name, sizeof(selected_name), "%s",
@@ -2213,7 +2218,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         free(families);
     }
     if (!selected_device) {
-        fprintf(stderr, "rf-gpu-probe: no compute-capable queue family\n");
+        fprintf(stderr, "rf-gpu-probe: no %s queue family\n",
+            backend_context->require_graphics ? "graphics+compute" : "compute-capable");
         backend_result = RF_GPU_BACKEND_UNAVAILABLE;
         goto done;
     }

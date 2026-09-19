@@ -99,6 +99,18 @@ $(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_te
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
 -include $(BUILD)/win/tools/rasterfall_resource_test.d
 
+# HG-2A hosted diagnostic: independent of SDL and player package/assets.
+GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
+    gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c
+GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc) \
+    gpu/src/rf_gpu_vulkan_graphics.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
+    $(wildcard rasterfall/include/rf_gpu*.h) include/toy_renderer.h
+.PHONY: gpu-graphics-test
+gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
+$(BUILD)/rf-gpu-graphics-test.exe: $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
+	    -I include -I include/tlibc -I rasterfall/include $(GPU_GRAPHICS_SRCS) -o $@
+
 package: $(TARGET)
 	@rm -rf "$(PACKAGE_DIR)"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"

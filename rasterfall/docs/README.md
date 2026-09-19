@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2A 离屏 indexed draw](hardware-graphics-hg2a.md) 已实现持久 GPU mesh/texture、graphics color/depth target 与独立数值诊断；normal frame 仍为 CPU/compute，下一门禁为 HG-2B 混合 target。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 接入普通 opaque static RMESH；按实例/submesh 同步提交，CPU/compute 精确回归与原输出一致；资源生命周期后续进度见 HG-1B。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
@@ -64,7 +65,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[HG-1A](hardware-graphics-hg1a.md)、[HG-1B](hardware-graphics-hg1b.md) | `include/rasterfall_draw.h` → static prop producer → `render/rasterfall_draw_reference.inc`；`dev-tests/rasterfall_draw_reference_test.inc`、`tools/hardware_graphics_baseline.ps1`；`render/rasterfall_render_resources.c` → Core frame pin / Game world invalidate；后续 Core spans/GPU target |
+| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[HG-1A](hardware-graphics-hg1a.md)、[HG-1B](hardware-graphics-hg1b.md)、[HG-2A](hardware-graphics-hg2a.md) | `include/rasterfall_draw.h` → static prop producer → `render/rasterfall_draw_reference.inc`；`render/rasterfall_render_resources.c` → Core frame pin / Game world invalidate；独立 graphics：`gpu/include/rf_gpu_graphics.h` → `gpu/src/rf_gpu_vulkan_graphics.inc` → `gpu/shaders/graphics_v0.*`；`tools/hardware_graphics_proof.ps1` 与 `hardware_graphics_baseline.ps1`；后续 Core spans/混合 target |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |

@@ -1,13 +1,14 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已实现普通 opaque static RMESH 同步 CPU-backed Draw；原 CPU/compute 精确回归通过，后续资源生命周期见 HG-1B。
 > 源码核对基线：`e036b809` 加 HG-0 工作区；`rasterfall_render.c`、`rasterfall_render_frontend.h`、`rf_core_host.c`、`rf_game_runtime.c`、`rf_gpu_vulkan_backend.c`、`raster_v1.comp` 与 Windows package 实测。
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
 HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
-HG-1B 已建立 CPU registry 与帧 pin；延迟 Draw 消费、Core DrawSpan 和 graphics executor 仍是待实现设计。
+HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor，延迟 Draw 消费与 Core DrawSpan 仍待实现。
 当前 native 路径仍为 compute raster，不能将其称为 hardware indexed draw。
 
 ## 状态所有者与 producer 边界
@@ -21,7 +22,7 @@ HG-1B 已建立 CPU registry 与帧 pin；延迟 Draw 消费、Core DrawSpan 和
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
 | 层顺序、retained、fallback | `rf_core_host.c` | 持有 DrawSpan/RasterSpan 有序帧记录，整帧 preflight 后执行或 replay |
-| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c` | 当前 compute buffer/Win32 transfer present；HG-2 才拆共享 target/presenter |
+| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 再建立混合 target/presenter |
 | 基线、验收 | `tools/hardware_graphics_baseline.ps1`、`rf_gpu_raster_diff_test.c` | 保留退出码、原始审计、stream、color/depth、环境标识 |
 
 首个接点在 `rasterfall_render_static_prop()` 得到 model/profile 和实例策略之后、进入模型顶点准备之前。
@@ -52,7 +53,7 @@ resource reload/world unload 使新引用采用新 generation；旧 slot 不得�
 冻结帧 pin 住 mesh、material、texture，直到 GPU 完成且 CPU replay 不再需要它们才释放。
 resize 只重建尺寸相关 target；device 重建使 backend cache 失效，不改变 CPU 定义。
 后续 GPU cache 须满足静态资源首次上传后稳态上传量为零；实例/light overrides 写帧数据。
-当前两个实例不共享可变状态，尚无 GPU mesh 上传。
+正常 static prop 两个实例不共享可变状态，尚无 normal GPU mesh 上传。HG-2A 的独立 proof 持有单 mesh/texture，逐 draw 仅写 push constants；尚未适配 registry generation 或接入 Core 帧 pin。
 
 ## 数值与顺序冻结
 
@@ -145,8 +146,9 @@ WMI/CIM 不可读时从 Windows display-class registry 读取 driver；保留查
 HG-0 本次证据见 [checkpoint 记录](hardware-graphics-hg0.md)。根计划同步记录各 checkpoint 状态。
 HG-1A 已先修复 HG-0 遗留的 CPU planar vertex-lit 透明度与深度差异，见 [前置修复记录](hardware-graphics-hg1-preflight.md)。
 HG-1A 的普通 opaque static RMESH Draw/reference 与 Windows Intel 精确回归已完成，见
-[验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)；下一步是 HG-2A。
-HG-2A/2B、HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
+[验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)。
+HG-2A 已完成独立 graphics proof，数值误差、近面深度待验证边界与复现见 [HG-2A](hardware-graphics-hg2a.md)；下一步是 HG-2B。
+HG-2B、HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
 `--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。
 资源上传、instance upload、bridge bytes/time、unexpected_lowering 仍在对应 owner 实现时加入，
 不以占位零值伪装已实现 hardware 数据。

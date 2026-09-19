@@ -1,7 +1,7 @@
 # Hardware Graphics 开发计划
 
 > 计划更新：2026-09-19
-> 当前进度：HG-0、HG-1A、HG-1B 已实现；static prop 已接入 Draw/reference 与 CPU 资源生命周期，下一项为 HG-2A 单 mesh indexed draw proof。
+> 当前进度：HG-0、HG-1A、HG-1B、HG-2A 已实现；独立 graphics proof 已在 Intel GPU 验证，下一项为 HG-2B 混合目标、深度、顺序与 native present 门禁。正常帧仍使用原 CPU/compute 路径。
 > 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
 
 | Checkpoint | 状态 | 交付/下一步 |
@@ -9,7 +9,7 @@
 | HG-0 | 完成 | ownership/Draw V0/数值合同、可复现 Windows 测量脚本、CPU/compute captures、native/Fog/正式地图波次基线 |
 | HG-1A | 完成 | CPU planar 前置修复；普通 opaque static RMESH 按实例/submesh 提交 Draw，同步 reference；命令/color/depth 精确回归与 Windows Intel 基线通过 |
 | HG-1B | 完成 | CPU bundle registry、generation、Core 帧 pin 与延迟释放；[实现与验证](rasterfall/docs/hardware-graphics-hg1b.md) |
-| HG-2A | 待开发 | 单 mesh indexed draw 离屏 proof |
+| HG-2A | 完成 | 持久 device-local VB/IB/texels、flat/nearest、RGBA8/D32 离屏 indexed draw；[数值合同与验收边界](rasterfall/docs/hardware-graphics-hg2a.md) |
 | HG-2B | 待开发 | graphics/compute target、深度、顺序、native present 强制门禁 |
 | HG-3A / HG-3B | 待开发 | opaque static props allowlist → 扩围 |
 | HG-4A / HG-4B | 待开发 | Ground → map/boundary 几何 |

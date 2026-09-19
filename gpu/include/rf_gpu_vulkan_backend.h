@@ -7,6 +7,8 @@
 struct rf_gpu_vulkan_context {
     void *implementation;
     struct rf_gpu_native_window native_window;
+    /* Hosted HG-2 proof requests a joint graphics/compute queue. */
+    unsigned int require_graphics;
 };
 
 extern const struct rf_gpu_backend rf_gpu_vulkan_backend;
