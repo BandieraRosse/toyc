@@ -12,6 +12,7 @@ export PATH := /mingw64/bin:/usr/bin
 BUILD ?= build-windows
 WINDOWS_DEPS ?= $(CURDIR)/.windows-deps
 SDL_PREFIX ?= $(WINDOWS_DEPS)/x86_64-w64-mingw32
+PYTHON ?= python3
 
 CPPFLAGS := -DTOYC_WINDOWS \
             -I$(CURDIR)/windows/include -Iinclude \
@@ -138,7 +139,7 @@ package: $(TARGET)
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
 	@if [ -d rasterfall/private-assets ]; then cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"; fi
 	@rm -f "$(PACKAGE)"
-	@cd "$(PACKAGE_DIR)" && python3 -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
+	@cd "$(PACKAGE_DIR)" && $(PYTHON) -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"
 
 $(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile rasterfall-rebuild | $(BUILD)

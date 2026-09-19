@@ -40,6 +40,19 @@ function Get-SdlPrefix {
     if (Test-Path (Join-Path $native 'lib\libSDL2.a')) { return $native }
     return $null
 }
+function Convert-ToMsysPath([string] $Path) {
+    $cygpath = Join-Path $MsysRoot 'usr\bin\cygpath.exe'
+    if (Test-Path -LiteralPath $cygpath) {
+        return (& $cygpath -u $Path).Trim()
+    }
+    return ($Path -replace '\\', '/')
+}
+function Get-PythonForMake {
+    $python = Find-Tool 'python3'
+    if (-not $python) { $python = Find-Tool 'python' }
+    if (-not $python) { Fail 'python3/python not found.' }
+    return (Convert-ToMsysPath $python)
+}
 function Invoke-Packaged([string[]] $ProgramArguments) {
     if (-not (Test-Path -LiteralPath $Exe)) { Fail "package executable missing: $Exe (run package first)" }
     Push-Location $PackageRoot
@@ -52,7 +65,7 @@ function Invoke-Packaged([string[]] $ProgramArguments) {
 function Ensure-Package {
     $sdl = Get-SdlPrefix
     if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
-    Invoke-Make @('-f', 'windows/Makefile', 'package', "WINDOWS_DEPS=$Deps", "SDL_PREFIX=$sdl", "MSYS2_ROOT=$MsysRootForMake")
+    Invoke-Make @('-f', 'windows/Makefile', 'package', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake", "PYTHON=$(Get-PythonForMake)")
 }
 
 function Doctor {
@@ -115,7 +128,7 @@ switch ($Command) {
     'build' {
         $sdl = Get-SdlPrefix
         if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
-        Invoke-Make @('-f', 'windows/Makefile', 'all', "WINDOWS_DEPS=$Deps", "SDL_PREFIX=$sdl", "MSYS2_ROOT=$MsysRootForMake")
+        Invoke-Make @('-f', 'windows/Makefile', 'all', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
     }
     'package' { Ensure-Package }
     'test' { Ensure-Package; Invoke-Packaged @('--logic-test') }
