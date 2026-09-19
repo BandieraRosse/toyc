@@ -1744,13 +1744,20 @@ static int core_end_frame_present(struct rf_core *core)
         }
         rf_gpu_mixed_get_stats(core->mixed_executor, &before);
         frame->stats.frames_attempted++;
-        if (!frame->native_prepared ||
-            rf_core_mixed_freeze(core->mixed_frame) < 0) {
-            __fprintf(2,"gpu-capture freeze failed prepared=%d\n",frame->native_prepared);
-            tlibc_free(output.capture_color);
-            rf_core_mixed_fail(core);
-            gpu_world_log("gpu-required: mixed normal frame freeze rejected");
-            return -1;
+        {
+            int64_t freeze_start=rf_core_clock_now_us();
+            int freeze_result;
+            freeze_result=frame->native_prepared ?
+                rf_core_mixed_freeze(core->mixed_frame) : -1;
+            frame->stats.mixed_freeze_ms=
+                (double)(rf_core_clock_now_us()-freeze_start)/1000.0;
+            if (freeze_result < 0) {
+                __fprintf(2,"gpu-capture freeze failed prepared=%d\n",frame->native_prepared);
+                tlibc_free(output.capture_color);
+                rf_core_mixed_fail(core);
+                gpu_world_log("gpu-required: mixed normal frame freeze rejected");
+                return -1;
+            }
         }
         if (rf_gpu_mixed_render(core->mixed_executor, core->mixed_frame,
                 &output) < 0) {
@@ -1806,6 +1813,15 @@ static int core_end_frame_present(struct rf_core *core)
             after.graphics.fence_wait_wall_ms-before.graphics.fence_wait_wall_ms;
         frame->stats.mixed_bridge_ms =
             after.graphics.bridge_wall_ms-before.graphics.bridge_wall_ms;
+        frame->stats.mixed_cache_collect_ms = after.cache_collect_ms-before.cache_collect_ms;
+        frame->stats.mixed_preflight_ms = after.preflight_ms-before.preflight_ms;
+        frame->stats.mixed_texture_measure_ms = after.texture_measure_ms-before.texture_measure_ms;
+        frame->stats.mixed_pack_ms = after.pack_ms-before.pack_ms;
+        frame->stats.mixed_draw_encode_ms = after.draw_encode_ms-before.draw_encode_ms;
+        frame->stats.mixed_draw_batch_prepare_ms =
+            after.draw_batch_prepare_ms-before.draw_batch_prepare_ms;
+        frame->stats.mixed_graphics_draw_ms = after.graphics_draw_ms-before.graphics_draw_ms;
+        frame->stats.mixed_raster_segment_ms = after.raster_segment_ms-before.raster_segment_ms;
         if (output.capture_color) {
             const char *capture_path = frame->capture_path;
             int saved = gpu_oracle_write_bmp(capture_path, output.capture_color,

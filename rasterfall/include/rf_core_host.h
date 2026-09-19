@@ -86,6 +86,10 @@ struct rf_core_gpu_frame_stats {
     unsigned long long mixed_graphics_submits, mixed_graphics_waits;
     unsigned long long mixed_gpu_upload_bytes;
     double mixed_graphics_submit_ms, mixed_graphics_wait_ms, mixed_bridge_ms;
+    double mixed_freeze_ms, mixed_cache_collect_ms, mixed_preflight_ms;
+    double mixed_texture_measure_ms, mixed_pack_ms, mixed_draw_encode_ms;
+    double mixed_draw_batch_prepare_ms, mixed_graphics_draw_ms;
+    double mixed_raster_segment_ms;
     unsigned long long capture_readback_bytes;
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;

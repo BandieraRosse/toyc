@@ -1,6 +1,7 @@
 # HG-2B 后续：GPU 帧诊断与 mixed 帧优化记录
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 后续工作已正式进入 [HG-2C](hardware-graphics-hg2c.md)；首步 mixed CPU 分项审计已接入，GPU timestamp 与共享 target 尚待实现。
 > 源码核对基线：2026-09-19；补充 mixed 热路径持久缓冲、连续 overlay 零复制借用及同队列 graphics 中间 fence 消除；核对 Windows CLI、mixed executor、graphics bridge 与 Intel Iris Xe 测量记录。实现与验证结果以当前 CLI 和下文证据为准。
 
 ## 2026-09-19 mixed 热路径优化

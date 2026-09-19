@@ -4255,6 +4255,16 @@ startup_again:
                     gpu_audit.capture_readback_bytes);
                 __printf("%s\n",audit_line);
                 rf_windows_log(audit_line);
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT mixed-cpu freeze_ms=%.3f cache_collect_ms=%.3f preflight_ms=%.3f texture_measure_ms=%.3f pack_ms=%.3f draw_encode_ms=%.3f draw_batch_prepare_ms=%.3f graphics_draw_ms=%.3f raster_segment_ms=%.3f",
+                    gpu_audit.mixed_freeze_ms,gpu_audit.mixed_cache_collect_ms,
+                    gpu_audit.mixed_preflight_ms,gpu_audit.mixed_texture_measure_ms,
+                    gpu_audit.mixed_pack_ms,gpu_audit.mixed_draw_encode_ms,
+                    gpu_audit.mixed_draw_batch_prepare_ms,
+                    gpu_audit.mixed_graphics_draw_ms,
+                    gpu_audit.mixed_raster_segment_ms);
+                __printf("%s\n",audit_line);
+                rf_windows_log(audit_line);
                 {
                     struct rasterfall_scene_stats scene_audit;
                     rasterfall_render_scene_stats(&scene_audit);

@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2C](hardware-graphics-hg2c.md) 已开始；首步为 mixed CPU 分项审计，后续依次处理 GPU timestamp、共享 color/depth target、统一 command recording 与多帧在途。HG-3A 在该架构门槛完成前暂缓。
 > 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量、借用连续 overlay 并取消同队列中间 graphics fence wait；当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
@@ -68,7 +69,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[HG-1A](hardware-graphics-hg1a.md)、[HG-1B](hardware-graphics-hg1b.md)、[HG-2A](hardware-graphics-hg2a.md)、[HG-2B 深度/bridge](hardware-graphics-hg2b.md) | `include/rasterfall_draw.h` → static prop producer → `render/rasterfall_draw_reference.inc`；`render/rasterfall_render_resources.c` → Core frame pin / Game world invalidate；独立 graphics：`gpu/include/rf_gpu_graphics.h` → `gpu/src/rf_gpu_vulkan_graphics.inc` → `gpu/shaders/graphics_v0.*`；`tools/hardware_graphics_proof.ps1` 与 `hardware_graphics_baseline.ps1`；`rf_gpu_vulkan_raster_segment()` / `rf_gpu_raster_test.c` 分段诊断；后续 Core spans/混合 target |
-| GPU mixed 正常帧截图与性能优化交接 | [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
+| GPU mixed 正常帧截图与性能优化交接 | [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)、[HG-2C](hardware-graphics-hg2c.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |

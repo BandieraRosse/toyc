@@ -1,8 +1,16 @@
 #include "rf_gpu_mixed_executor.h"
 #include "rf_gpu_raster_pack.h"
+#include "core.h"
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+
+static double mixed_now_ms(void)
+{
+    struct timespec value;
+    if (__clock_gettime(CLOCK_MONOTONIC, &value) < 0) return 0.0;
+    return (double)value.tv_sec * 1000.0 + (double)value.tv_nsec / 1000000.0;
+}
 
 struct encoded_draw { struct rf_gpu_graphics_draw draw; uint32_t texture; };
 struct rf_gpu_mixed_executor {
@@ -123,6 +131,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     struct toy_renderer renderer;
     uint32_t transparent=UINT32_MAX, viewmodel=UINT32_MAX, count=0, unique=0;
     size_t bytes=0, capacity;
+    double preflight_start=mixed_now_ms(), phase_start;
     int result=-1;
     reset_plan(e);
     e->started=0; e->cursor=0; e->pending_end=2;
@@ -157,7 +166,9 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     memset(&renderer,0,sizeof(renderer));
     renderer.surface.width=f->width; renderer.surface.height=f->height;
     renderer.cmds=e->ordered; renderer.cmd_count=count;
+    phase_start=mixed_now_ms();
     if (rf_gpu_raster_measure_textures_toy_v1(&renderer,&unique,&bytes)<0 || bytes>ULONG_MAX) goto done;
+    e->stats.texture_measure_ms+=mixed_now_ms()-phase_start;
     if (reserve_u32((void **)&e->textures.descs, &e->textures.desc_capacity,
             unique ? unique : 1, sizeof(*e->textures.descs)) < 0 ||
         reserve_u32((void **)&e->textures.views, &e->textures.view_capacity,
@@ -167,8 +178,10 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     capacity=rf_gpu_raster_stream_size_v1(count+4);
     if (!capacity || capacity>ULONG_MAX ||
         reserve(&e->stream, &e->stream_capacity, capacity, 1) < 0) goto done;
+    phase_start=mixed_now_ms();
     if (rf_gpu_raster_pack_toy_textured_spans_v2(&renderer,e->output.clear_color,0,
         e->stream,capacity,&e->stream_size,&e->textures,transparent,viewmodel)<0) goto done;
+    e->stats.pack_ms+=mixed_now_ms()-phase_start;
     e->command_count=((struct rf_gpu_raster_stream_header_v1 *)e->stream)->command_count;
     /* All WORLD inverse depths must survive the integer attachment bridge.
      * VIEWMODEL is independent and never exported to graphics. */
@@ -186,16 +199,21 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     if (rf_gpu_vulkan_raster_preflight(e->context,e->raster.implementation,e->stream,
         (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,
         e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) goto done;
+    phase_start=mixed_now_ms();
     for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) goto done;
+    e->stats.draw_encode_ms+=mixed_now_ms()-phase_start;
     result=0;
 done:
+    e->stats.preflight_ms+=mixed_now_ms()-preflight_start;
     return result;
 }
 static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_frame *f, int final)
 {
     char message[RF_GPU_MESSAGE_CAPACITY];
     uint32_t end=final ? e->command_count : e->pending_end;
+    double start;
     if (e->started && e->cursor==end && !final) return 0;
+    start=mixed_now_ms();
     if (final && e->output.present_timing) {
         if (rf_gpu_vulkan_raster_segment_present(e->context,e->raster.implementation,e->stream,
             (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,e->textures.texels,
@@ -219,12 +237,14 @@ static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_f
         f->width,f->height,e->output.color_stride,e->output.depth_stride,message,sizeof(message))<0) return -1;
     if (!e->started) e->stats.clears++;
     e->started=1; e->cursor=end; e->stats.raster_segments++;
+    e->stats.raster_segment_ms+=mixed_now_ms()-start;
     return 0;
 }
 static int span(void *context, const struct rf_core_mixed_frame *f, const struct rf_core_mixed_span *s)
 {
     struct rf_gpu_mixed_executor *e=context;
     int result;
+    double start;
     if (s->kind==RF_CORE_MIXED_RASTER) {
         /* No graphics follow transparent/effects/viewmodel: leave that entire
          * suffix to finish, including its markers and independent depth. */
@@ -232,6 +252,7 @@ static int span(void *context, const struct rf_core_mixed_frame *f, const struct
         return 0;
     }
     if (!s->count) return 0;
+    start=mixed_now_ms();
     if (s->count > 65536 || reserve((void **)&e->batch, &e->batch_capacity,
             s->count, sizeof(*e->batch)) < 0) return -1;
     for (unsigned long n=s->first;n<s->first+s->count;++n) {
@@ -241,9 +262,14 @@ static int span(void *context, const struct rf_core_mixed_frame *f, const struct
         e->batch[n-s->first].draw=e->draws[n].draw;
         if (!e->batch[n-s->first].resource) return -1;
     }
+    e->stats.draw_batch_prepare_ms+=mixed_now_ms()-start;
     result=segment(e,f,0);
-    if (result==0) result=rf_gpu_graphics_raster_batch(e->graphics,
-        e->raster.implementation,e->batch,(uint32_t)s->count);
+    if (result==0) {
+        start=mixed_now_ms();
+        result=rf_gpu_graphics_raster_batch(e->graphics,
+            e->raster.implementation,e->batch,(uint32_t)s->count);
+        e->stats.graphics_draw_ms+=mixed_now_ms()-start;
+    }
     if (result<0) return -1;
     e->stats.draw_spans++;
     e->stats.draws+=s->count;
@@ -276,9 +302,12 @@ int rf_gpu_mixed_render(struct rf_gpu_mixed_executor *e,
     struct rf_core_mixed_frame *f, const struct rf_gpu_mixed_output *output)
 {
     static const struct rf_core_mixed_executor executor={preflight,span,finish};
+    double start;
     if (!e || !f || !output) return -1;
     e->output=*output;
+    start=mixed_now_ms();
     rf_gpu_resource_cache_collect(e->cache);
+    e->stats.cache_collect_ms+=mixed_now_ms()-start;
     return rf_core_mixed_execute(f,&executor,e);
 }
 void rf_gpu_mixed_get_stats(struct rf_gpu_mixed_executor *e, struct rf_gpu_mixed_stats *stats)

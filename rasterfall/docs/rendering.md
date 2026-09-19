@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-2C1 为正常 mixed 帧增加互斥的 CPU 调用分项：freeze、cache collect、texture measure、pack、Draw encode/cache lookup、batch prepare、graphics Draw/bridge 与 Raster segment；`preflight_ms` 是包含若干子项的总墙钟，不能与子项相加。GPU timestamp 尚未接入，详见 [HG-2C](hardware-graphics-hg2c.md)。
 > 源码核对基线补充：2026-09-19 static RMESH hardware Draw 的整数投影资格已前移到 producer；近面/侧向极端视角不满足 graphics `[-16384,16384]` 保守范围时，同一 strict GPU 帧改走 compute RasterCmd，不再到 mixed executor preflight 才拒绝整帧。`--auto --frames 300` 在 Outpost 与 `--legacy-map` 的 Windows strict native 自动旋转/传送回归均为 300/300 GPU 帧、零 CPU fallback/readback/copy。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：`rasterfall_render_resources.h` / `render/rasterfall_render_resources.c` 拥有 static prop CPU 资源；`rf_core_host.c` 负责帧 pin 的完成，`rf_game_lifecycle.c` 负责 world 失效。`draw-resources` 审计报告实际存活、退休、pin 与加载释放计数。
