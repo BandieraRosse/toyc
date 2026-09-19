@@ -36,6 +36,9 @@ int rf_gpu_resource_cache_prepare(struct rf_gpu_resource_cache *cache,
 int rf_gpu_resource_cache_bind(struct rf_gpu_resource_cache *cache,
     unsigned long long frame_epoch, struct rasterfall_resource_handle handle,
     uint32_t primitive, uint32_t texture);
+struct rf_gpu_graphics_resource *rf_gpu_resource_cache_resource(
+    struct rf_gpu_resource_cache *cache, unsigned long long frame_epoch,
+    struct rasterfall_resource_handle handle, uint32_t primitive, uint32_t texture);
 /* Safe after synchronous consumers return. Retired pinned entries survive;
  * invalid generations are released without dereferencing old CPU pointers. */
 void rf_gpu_resource_cache_collect(struct rf_gpu_resource_cache *cache);

@@ -164,7 +164,14 @@ static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_f
             e->started ? RF_GPU_RASTER_LOAD_EXISTING : RF_GPU_RASTER_CLEAR,
             e->output.overlay_color,e->output.overlay_coverage,
             e->output.overlay_stride,e->output.coverage_stride,f->width,f->height,
-            e->output.present_timing,message,sizeof(message))<0) return -1;
+            e->output.present_timing,e->output.capture_color,message,sizeof(message))<0) return -1;
+        /* The backend reports these after presentation. Treat a violation as
+         * an execution failure so Core cannot retry a partly submitted frame. */
+        if (e->output.strict_native &&
+            (e->output.present_timing->color_readback_bytes ||
+             e->output.present_timing->cpu_framebuffer_copy_bytes ||
+             e->output.present_timing->width != (unsigned)f->width ||
+             e->output.present_timing->height != (unsigned)f->height)) return -1;
     } else if (rf_gpu_vulkan_raster_segment(e->context,e->raster.implementation,e->stream,
         (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,e->textures.texels,
         (unsigned long)e->textures.texel_size,e->cursor,end,
@@ -178,20 +185,32 @@ static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_f
 static int span(void *context, const struct rf_core_mixed_frame *f, const struct rf_core_mixed_span *s)
 {
     struct rf_gpu_mixed_executor *e=context;
+    struct rf_gpu_graphics_batch_item *batch;
+    int result;
     if (s->kind==RF_CORE_MIXED_RASTER) {
         /* No graphics follow transparent/effects/viewmodel: leave that entire
          * suffix to finish, including its markers and independent depth. */
         if (s->layer==RF_RENDER_LAYER_WORLD) e->pending_end+=(uint32_t)s->count;
         return 0;
     }
-    if (segment(e,f,0)<0) return -1;
+    if (!s->count) return 0;
+    if (s->count > 65536 || s->count > SIZE_MAX/sizeof(*batch)) return -1;
+    batch = malloc(s->count*sizeof(*batch));
+    if (!batch) return -1;
     for (unsigned long n=s->first;n<s->first+s->count;++n) {
         const struct rf_core_mixed_draw *d=&f->draws[n];
-        if (rf_gpu_resource_cache_bind(e->cache,f->registry_epoch,d->instance.mesh_handle,
-            d->item.primitive,e->draws[n].texture)<0 ||
-            rf_gpu_graphics_raster_draw(e->graphics,e->raster.implementation,&e->draws[n].draw,1)<0) return -1;
-        e->stats.draws++;
+        batch[n-s->first].resource=rf_gpu_resource_cache_resource(e->cache,
+            f->registry_epoch,d->instance.mesh_handle,d->item.primitive,e->draws[n].texture);
+        batch[n-s->first].draw=e->draws[n].draw;
+        if (!batch[n-s->first].resource) { free(batch); return -1; }
     }
+    result=segment(e,f,0);
+    if (result==0) result=rf_gpu_graphics_raster_batch(e->graphics,
+        e->raster.implementation,batch,(uint32_t)s->count);
+    free(batch);
+    if (result<0) return -1;
+    e->stats.draw_spans++;
+    e->stats.draws+=s->count;
     return 0;
 }
 static int finish(void *context, const struct rf_core_mixed_frame *f)
@@ -200,6 +219,7 @@ static int finish(void *context, const struct rf_core_mixed_frame *f)
     if (segment(e,f,1)<0) return -1;
     e->stats.finishes++;
     if (!e->output.present_timing) e->stats.readback_bytes+=(uint64_t)f->width*f->height*8;
+    if (e->output.capture_color) e->stats.readback_bytes+=(uint64_t)f->width*f->height*4;
     return 0;
 }
 struct rf_gpu_mixed_executor *rf_gpu_mixed_create(struct rf_gpu *gpu,

@@ -7,6 +7,7 @@
 #include <limits.h>
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_raster_cpu_ref.h"
+#include "rf_gpu_mixed_executor.h"
 #endif
 
 static int rf_core_cmd_is_transparent_v1(const struct toy_raster_cmd *cmd)
@@ -64,6 +65,31 @@ static unsigned int rf_core_cmd_fallback_reason_v1(
 
 #include "rf_core_mixed_frame.inc"
 
+struct rf_core_mixed_frame *rf_core_mixed_current(struct rf_core *core)
+{
+    return core && core->mixed_executor ? core->mixed_frame : NULL;
+}
+
+void rf_core_mixed_fail(struct rf_core *core)
+{
+    if (core && core->mixed_executor) core->gpu_frame.runtime_failed = 1;
+}
+
+static int mixed_layer_consume(struct toy_renderer *renderer,
+    const struct toy_raster_cmd *commands, int count, void *context)
+{
+    struct rf_core *core = context;
+    unsigned int layer;
+    if (!core || !renderer || !core->mixed_frame || count <= 0 ||
+        renderer->surface.width != core->mixed_frame->width ||
+        renderer->surface.height != core->mixed_frame->height) return -1;
+    layer = core->render_frame.current_layer;
+    if (layer != RF_RENDER_LAYER_EFFECTS &&
+        layer != RF_RENDER_LAYER_VIEWMODEL) return -1;
+    return rf_core_mixed_raster(core->mixed_frame, layer, commands,
+        (unsigned long)count);
+}
+
 static int gpu_pre_post_finalize(struct rf_core *core);
 
 const char *rf_core_renderer_name(int renderer)
@@ -112,9 +138,11 @@ static int gpu_oracle_write_bmp(const char *path, const unsigned int *pixels,
         fwrite(pixels, 4, (size_t)width * height, file) !=
             (size_t)width * height) {
         fclose(file);
+        remove(path);
         return -1;
     }
-    return fclose(file);
+    if (fclose(file) != 0) { remove(path); return -1; }
+    return 0;
 }
 
 static void gpu_oracle_save_artifacts(
@@ -1303,6 +1331,7 @@ int rf_core_init_config(struct rf_core *core,
                 post.fog_far_inv_z=1048576/4096;
                 post.fog_color=0xff7890a0U;
                 post.max_density_q8=192;
+                core->mixed_post = post;
                 if (rf_gpu_raster_set_post(&core->gpu_frame.raster,&post)<0) {
                     if (core->gpu_frame.strict_gpu_only) {
                         __fprintf(2, "gpu-required: requested GPU Post-Raster V1 unavailable\n");
@@ -1317,6 +1346,23 @@ int rf_core_init_config(struct rf_core *core,
                                                core);
         }
     }
+#ifdef TOYC_WINDOWS
+    if (core->gpu_frame.initialized && core->gpu_frame.native_present &&
+        core->gpu_frame.strict_gpu_only && config->gpu_backend_context) {
+        core->mixed_frame = tlibc_malloc(sizeof(*core->mixed_frame));
+        if (!core->mixed_frame) {
+            rf_core_shutdown(core);
+            return -1;
+        }
+        memset(core->mixed_frame, 0, sizeof(*core->mixed_frame));
+        core->mixed_executor = rf_gpu_mixed_create(&core->gpu,
+            config->gpu_backend_context, rasterfall_render_resources());
+        if (!core->mixed_executor) {
+            rf_core_shutdown(core);
+            return -1;
+        }
+    }
+#endif
     return 0;
 }
 
@@ -1383,6 +1429,16 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
         return -1;
     if (rasterfall_resources_frame_begin(rasterfall_render_resources()) < 0)
         return -1;
+    if (core->mixed_executor) {
+        rf_core_mixed_reset(core->mixed_frame);
+        if (rf_core_mixed_begin(core->mixed_frame,
+                rasterfall_render_resources(), core->surface.width,
+                core->surface.height) < 0) {
+            rf_core_mixed_fail(core);
+            return -1;
+        }
+        core->mixed_clear_color = clear_color;
+    }
     core->world_depth = core->renderer->depth;
     core->viewmodel_active = 0;
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
@@ -1394,6 +1450,8 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     memset(core->gpu_frame.retained_batch_count, 0,
            sizeof(core->gpu_frame.retained_batch_count));
     core->gpu_frame.stats.last_path = 0;
+    core->gpu_frame.stats.mixed_draws = 0;
+    core->gpu_frame.stats.capture_readback_bytes = 0;
     return ready;
 }
 
@@ -1543,6 +1601,9 @@ int rf_core_render_frame_enter_layer_v1(
         return -1;
     }
     core->render_frame.current_layer = (unsigned int)layer;
+    if (core->mixed_executor && layer == RF_RENDER_LAYER_EFFECTS)
+        toy_renderer_set_command_consumer(core->renderer,
+            mixed_layer_consume, core);
     if (layer == RF_RENDER_LAYER_VIEWMODEL &&
         rf_core_viewmodel_begin_v1(core) < 0) {
         core->render_frame.invalid_layer_transitions++;
@@ -1579,10 +1640,21 @@ struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core)
     if (!core || core->render_frame.current_layer != RF_RENDER_LAYER_VIEWMODEL)
         return NULL;
     if (rf_core_viewmodel_end_v1(core) < 0) return NULL;
-    if (core->gpu_frame.retaining_pre_post &&
+    if (core->mixed_executor) {
+        if (core->render_frame.invalid_layer_transitions ||
+            core->render_frame.direct_pixel_count[RF_RENDER_LAYER_WORLD] ||
+            core->render_frame.direct_pixel_count[RF_RENDER_LAYER_TRANSPARENT] ||
+            rf_core_render_frame_fallback_reason_v1(&core->render_frame)) {
+            rf_core_mixed_fail(core);
+            return NULL;
+        }
+        core->gpu_frame.native_prepared = 1;
+    } else if (core->gpu_frame.retaining_pre_post &&
         gpu_pre_post_finalize(core) < 0) return NULL;
     if (rf_core_render_frame_enter_layer_v1(
             core, RF_RENDER_LAYER_OVERLAY) < 0) return NULL;
+    if (core->mixed_executor)
+        toy_renderer_set_command_consumer(core->renderer, NULL, NULL);
     if (!core->gpu_frame.native_present ||
         !core->gpu_frame.native_prepared) {
         core->renderer->surface = core->surface;
@@ -1632,6 +1704,131 @@ static int core_end_frame_present(struct rf_core *core)
             (double)(rf_core_clock_now_us() -
                      core->gpu_frame.overlay_draw_begin_us) / 1000.0;
     }
+#ifdef TOYC_WINDOWS
+    if (core->mixed_executor) {
+        struct rf_gpu_mixed_output output;
+        struct rf_gpu_mixed_stats before, after;
+        struct rf_core_gpu_frame *frame = &core->gpu_frame;
+        unsigned int layer;
+        memset(&output, 0, sizeof(output));
+        output.clear_color = core->mixed_clear_color;
+        output.post = core->mixed_post;
+        output.overlay_color = frame->overlay_surface.pixels;
+        output.overlay_coverage = frame->overlay_coverage;
+        output.overlay_stride = (unsigned int)frame->overlay_surface.width;
+        output.coverage_stride = (unsigned int)frame->overlay_surface.width;
+        output.present_timing = &frame->stats.native_present_timing;
+        output.strict_native = 1;
+        if (frame->capture_path) {
+            __fprintf(2,"gpu-capture requested extent=%dx%d path=%s\n",core->surface.width,core->surface.height,frame->capture_path);
+            uint64_t pixels = (uint64_t)core->surface.width * core->surface.height;
+            if (!pixels || pixels > SIZE_MAX / 4 || pixels > (UINT32_MAX - 54) / 4) {
+                rf_core_mixed_fail(core);
+                return -1;
+            }
+            output.capture_color = tlibc_malloc((size_t)pixels * 4);
+            if (!output.capture_color) {
+                __fprintf(2,"gpu-capture allocation failed\n");
+                rf_core_mixed_fail(core);
+                return -1;
+            }
+        }
+        rf_gpu_mixed_get_stats(core->mixed_executor, &before);
+        frame->stats.frames_attempted++;
+        if (!frame->native_prepared ||
+            rf_core_mixed_freeze(core->mixed_frame) < 0) {
+            __fprintf(2,"gpu-capture freeze failed prepared=%d\n",frame->native_prepared);
+            tlibc_free(output.capture_color);
+            rf_core_mixed_fail(core);
+            gpu_world_log("gpu-required: mixed normal frame freeze rejected");
+            return -1;
+        }
+        if (rf_gpu_mixed_render(core->mixed_executor, core->mixed_frame,
+                &output) < 0) {
+            tlibc_free(output.capture_color);
+            __fprintf(2, "mixed executor failed state=%u raster=%lu draw=%lu span=%lu required=%lu\n",
+                core->mixed_frame->state, core->mixed_frame->raster_count,
+                core->mixed_frame->draw_count, core->mixed_frame->span_count,
+                core->mixed_frame->required_draw_count);
+            rf_core_mixed_fail(core);
+            gpu_world_log("gpu-required: mixed normal frame executor rejected");
+            return -1;
+        }
+        rf_gpu_mixed_get_stats(core->mixed_executor, &after);
+        if (after.draws - before.draws != core->mixed_frame->draw_count ||
+            after.finishes - before.finishes != 1 ||
+            after.readback_bytes - before.readback_bytes !=
+                (output.capture_color ? (uint64_t)core->surface.width * core->surface.height * 4 : 0) ||
+            frame->stats.native_present_timing.color_readback_bytes ||
+            frame->stats.native_present_timing.cpu_framebuffer_copy_bytes) {
+            __fprintf(2,"mixed capture audit draws=%llu/%lu finishes=%llu readback=%llu/%llu native=%u copy=%u\n",
+                (unsigned long long)(after.draws-before.draws),core->mixed_frame->draw_count,
+                (unsigned long long)(after.finishes-before.finishes),
+                (unsigned long long)(after.readback_bytes-before.readback_bytes),
+                (unsigned long long)(output.capture_color ? (uint64_t)core->surface.width*core->surface.height*4 : 0),
+                frame->stats.native_present_timing.color_readback_bytes,
+                frame->stats.native_present_timing.cpu_framebuffer_copy_bytes);
+            rf_core_mixed_fail(core);
+            tlibc_free(output.capture_color);
+            gpu_world_log("gpu-required: mixed normal frame post-submit contract failed");
+            return -1;
+        }
+        frame->native_prepared = 0;
+        frame->stats.mixed_draws = core->mixed_frame->draw_count;
+        frame->stats.mixed_raster_spans = 0;
+        for (unsigned long n=0; n<core->mixed_frame->span_count; ++n)
+            frame->stats.mixed_raster_spans +=
+                core->mixed_frame->spans[n].kind == RF_CORE_MIXED_RASTER;
+        frame->stats.mixed_draw_spans = after.draw_spans-before.draw_spans;
+        frame->stats.mixed_bridge_transfers =
+            after.graphics.raster_bridge_transfers-before.graphics.raster_bridge_transfers;
+        frame->stats.mixed_bridge_bytes =
+            after.graphics.bridge_transfer_bytes-before.graphics.bridge_transfer_bytes;
+        frame->stats.mixed_graphics_submits =
+            after.graphics.queue_submits-before.graphics.queue_submits;
+        frame->stats.mixed_graphics_waits =
+            after.graphics.fence_waits-before.graphics.fence_waits;
+        frame->stats.mixed_gpu_upload_bytes =
+            after.graphics.mesh_upload_bytes-before.graphics.mesh_upload_bytes +
+            after.graphics.texture_upload_bytes-before.graphics.texture_upload_bytes;
+        frame->stats.mixed_graphics_submit_ms =
+            after.graphics.submit_wall_ms-before.graphics.submit_wall_ms;
+        frame->stats.mixed_graphics_wait_ms =
+            after.graphics.fence_wait_wall_ms-before.graphics.fence_wait_wall_ms;
+        frame->stats.mixed_bridge_ms =
+            after.graphics.bridge_wall_ms-before.graphics.bridge_wall_ms;
+        if (output.capture_color) {
+            const char *capture_path = frame->capture_path;
+            int saved = gpu_oracle_write_bmp(capture_path, output.capture_color,
+                (unsigned)core->surface.width, (unsigned)core->surface.height);
+            frame->stats.capture_readback_bytes =
+                (unsigned long long)core->surface.width * core->surface.height * 4;
+            tlibc_free(output.capture_color);
+            frame->capture_path = NULL;
+            if (saved < 0) {
+                __fprintf(2,"gpu-capture bmp write failed\n");
+                rf_core_mixed_fail(core);
+                return -1;
+            }
+            frame->capture_completed = 1;
+            __fprintf(2,"gpu-capture saved path=%s bytes=%llu draws=%lu extent=%dx%d\n",
+                capture_path,
+                frame->stats.capture_readback_bytes,core->mixed_frame->draw_count,
+                core->surface.width,core->surface.height);
+        }
+        frame->stats.gpu_frames++;
+        frame->stats.last_path = 1;
+        frame->stats.overlay_upload_bytes +=
+            frame->stats.native_present_timing.overlay_upload_bytes;
+        frame->stats.overlay_composite_frames++;
+        for (layer = RF_RENDER_LAYER_SKY;
+             layer <= RF_RENDER_LAYER_VIEWMODEL; ++layer)
+            core->render_frame.layer_backend[layer] = RF_RENDER_BACKEND_GPU;
+        core->render_frame.layer_backend[RF_RENDER_LAYER_OVERLAY] =
+            RF_RENDER_BACKEND_COMPOSITE;
+        return 0;
+    }
+#endif
     if (core->gpu_frame.native_prepared) {
         struct rf_core_gpu_frame *frame = &core->gpu_frame;
         if (rf_gpu_raster_present_textured_timed(&core->gpu, &frame->raster,
@@ -1717,6 +1914,11 @@ int rf_core_end_frame(struct rf_core *core)
 
 void rf_core_gpu_world_begin(struct rf_core *core)
 {
+    if (core && core->mixed_executor) {
+        toy_renderer_set_command_consumer(core->renderer,
+            rf_core_mixed_world_consume, core->mixed_frame);
+        return;
+    }
     if (core && core->gpu_frame.initialized) {
         core->gpu_frame.frontend_begin_us = rf_core_clock_now_us();
         core->gpu_frame.retaining_pre_post = 1;
@@ -1729,6 +1931,7 @@ void rf_core_gpu_world_begin(struct rf_core *core)
 
 void rf_core_gpu_world_flush(struct rf_core *core)
 {
+    if (core && core->mixed_executor) return;
     if (core && core->gpu_frame.initialized) core->gpu_frame.armed = 1;
 }
 
@@ -1742,8 +1945,15 @@ int rf_core_get_gpu_frame_stats(const struct rf_core *core,
 
 int rf_core_flush(struct rf_core *core)
 {
+    int result;
     if (!core || !core->window || !core->renderer) return -1;
-    return toy_renderer_flush(core->renderer);
+    result = toy_renderer_flush(core->renderer);
+    if (result < 0 && core->mixed_executor) {
+        rf_core_mixed_fail(core);
+        __fprintf(2, "gpu-required: mixed flush failed at layer %u\n",
+            core->render_frame.current_layer);
+    }
+    return result;
 }
 
 void rf_core_shutdown(struct rf_core *core)
@@ -1811,6 +2021,13 @@ void rf_core_shutdown(struct rf_core *core)
     }
     if (core->renderer)
         toy_renderer_set_command_consumer(core->renderer, NULL, NULL);
+#ifdef TOYC_WINDOWS
+    rf_gpu_mixed_destroy(core->mixed_executor);
+#endif
+    if (core->mixed_frame) {
+        rf_core_mixed_destroy(core->mixed_frame);
+        tlibc_free(core->mixed_frame);
+    }
     rf_gpu_raster_shutdown(&core->gpu_frame.raster);
     tlibc_free(core->gpu_frame.stream);
     tlibc_free(core->gpu_frame.texture_descs);

@@ -18,11 +18,13 @@ struct rf_gpu_mixed_output {
     const unsigned char *overlay_coverage;
     unsigned int overlay_stride, coverage_stride;
     struct rf_gpu_native_present_timing *present_timing;
+    /* Optional explicit diagnostic readback of final Post/overlay color. */
+    unsigned int *capture_color;
     /* Require a native GPU-only finish; reject diagnostic readback. */
     unsigned int strict_native;
 };
 struct rf_gpu_mixed_stats {
-    uint64_t clears, raster_segments, draws, finishes, readback_bytes;
+    uint64_t clears, raster_segments, draw_spans, draws, finishes, readback_bytes;
     struct rf_gpu_graphics_stats graphics;
 };
 struct rf_gpu_mixed_executor *rf_gpu_mixed_create(struct rf_gpu *gpu,

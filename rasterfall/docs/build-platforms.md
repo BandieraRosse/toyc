@@ -1,6 +1,8 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 GPU 最终帧诊断沿用 Windows normal player 与现有 Vulkan backend，不新增编译单元或资源。Windows `gpu-mixed-executor-test`、`gpu-raster-test` 和 `hardware_graphics_proof.ps1 -ExecutorGate/-MixedGate/-NativeGate` 覆盖批量 Draw 交错和 native 呈现；`hardware_graphics_resize.ps1 -NoRedirect` 在 PowerShell 重定向停滞时仍用 runtime log 验证 140 帧四 extent。Linux freestanding 路径不调用 hosted mixed executor。
+> 源码核对基线补充：2026-09-19 Windows normal player 已链接 `rf_gpu_mixed_executor.c` 与 `rf_gpu_resource_cache.c`，仅 strict native GPU 模式启用正常 mixed 帧；独立测试目标复用这些对象。`tools/hardware_graphics_resize.ps1` 等待窗口 140 帧上限已放宽为 180 秒，Intel 四种 extent 与 pin 稳态通过。Linux freestanding/self 未增加 hosted GPU 编译单元。
 > 源码核对基线补充：2026-09-19 Windows `gpu-mixed-executor-test` 增加 `--native-window` 模式，复用 SDL/Win32 native handle、Vulkan swapchain 与现有测试目标；`tools/hardware_graphics_proof.ps1 -NativeGate` 是三帧 resize/native 呈现实机 smoke。未增加玩家 CLI、编译单元或 package 资源。
 > 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 新增 hosted `gpu/src/rf_gpu_resource_cache.c`，仅由 Windows `gpu-resource-cache-test` 链接真实 registry/model runtime；根 `win-gpu-resource-cache-test` 转发此目标。未加入 normal player、Linux freestanding 或 self；无新玩家参数、shader 或资源。graphics 资源拆分仍由既有 backend `.inc` 和依赖规则编译。

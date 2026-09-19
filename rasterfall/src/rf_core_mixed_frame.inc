@@ -26,6 +26,7 @@ void rf_core_mixed_reset(struct rf_core_mixed_frame *f)
 {
     if (!f || f->state == RF_CORE_MIXED_EXECUTING) return;
     f->raster_count = f->draw_count = f->span_count = 0;
+    f->required_draw_count = 0;
     f->registry = NULL;
     f->registry_epoch = 0;
     f->width = f->height = 0;
@@ -103,6 +104,18 @@ int rf_core_mixed_raster(struct rf_core_mixed_frame *f, unsigned int layer,
     return 0;
 }
 
+int rf_core_mixed_world_consume(struct toy_renderer *renderer,
+    const struct toy_raster_cmd *commands, int count, void *context)
+{
+    struct rf_core_mixed_frame *f = context;
+    if (!renderer || !f || count <= 0 ||
+        renderer->surface.width != f->width ||
+        renderer->surface.height != f->height ||
+        rf_core_mixed_raster(f, RF_RENDER_LAYER_WORLD, commands,
+            (unsigned long)count) < 0) return -1;
+    return 0;
+}
+
 static int mixed_draw_valid(const struct rf_core_mixed_frame *f,
     const struct rasterfall_draw_view *view,
     const struct rasterfall_draw_instance *instance,
@@ -153,13 +166,24 @@ int rf_core_mixed_draw(struct rf_core_mixed_frame *f,
     return 0;
 }
 
+int rf_core_mixed_require_draws(struct rf_core_mixed_frame *f,
+    unsigned long count)
+{
+    if (!f || f->state != RF_CORE_MIXED_RECORDING ||
+        !mixed_lifetime_valid(f) || count > ULONG_MAX - f->required_draw_count)
+        return -1;
+    f->required_draw_count += count;
+    return 0;
+}
+
 int rf_core_mixed_freeze(struct rf_core_mixed_frame *f)
 {
     struct rf_core_mixed_span *ordered = NULL;
     unsigned long i, count = 0;
     unsigned int layer;
     if (!f || f->state != RF_CORE_MIXED_RECORDING ||
-        !mixed_lifetime_valid(f)) return -1;
+        !mixed_lifetime_valid(f) ||
+        (f->required_draw_count && f->required_draw_count != f->draw_count)) return -1;
     if (f->span_count) {
         ordered = tlibc_malloc(f->span_count * sizeof(*ordered));
         if (!ordered) return -1;
@@ -197,7 +221,8 @@ int rf_core_mixed_execute(struct rf_core_mixed_frame *f,
     unsigned long i;
     if (!f || f->state != RF_CORE_MIXED_FROZEN || !executor ||
         !executor->preflight || !executor->span || !executor->finish ||
-        !mixed_lifetime_valid(f)) return -1;
+        !mixed_lifetime_valid(f) ||
+        (f->required_draw_count && f->required_draw_count != f->draw_count)) return -1;
     /* Check lifetime again: a plan cannot outlive its registry frame pin. */
     for (i = 0; i < f->draw_count; ++i) {
         const struct rf_core_mixed_draw *d = &f->draws[i];

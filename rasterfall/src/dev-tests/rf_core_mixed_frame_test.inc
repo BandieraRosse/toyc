@@ -56,6 +56,7 @@ int rf_core_mixed_frame_logic_test(void)
     struct rasterfall_draw_instance instance, bad;
     struct rasterfall_draw_item item;
     struct toy_raster_cmd commands[2];
+    struct toy_renderer sink;
     struct mixed_test_executor observed;
     const struct rf_core_mixed_executor executor = {
         mixed_test_preflight, mixed_test_span, mixed_test_finish
@@ -69,6 +70,7 @@ int rf_core_mixed_frame_logic_test(void)
     memset(registry, 0, sizeof(*registry)); memset(mesh, 0, sizeof(*mesh));
     memset(&view, 0, sizeof(view)); memset(&instance, 0, sizeof(instance));
     memset(&item, 0, sizeof(item)); memset(commands, 0, sizeof(commands));
+    memset(&sink, 0, sizeof(sink));
     memset(&observed, 0, sizeof(observed));
     registry->slots[0].model = mesh;
     registry->slots[0].active = 1; registry->slots[0].generation = 1;
@@ -84,6 +86,18 @@ int rf_core_mixed_frame_logic_test(void)
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) < 0);
     MIXED_CHECK(rasterfall_resources_frame_begin(registry) == 0);
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);
+    sink.surface.width = 128; sink.surface.height = 72;
+    MIXED_CHECK(rf_core_mixed_world_consume(&sink, commands, 1, &f) == 0 &&
+        f.raster_count == 1);
+    sink.surface.width++;
+    MIXED_CHECK(rf_core_mixed_world_consume(&sink, commands, 1, &f) < 0 &&
+        f.raster_count == 1);
+    rf_core_mixed_reset(&f);
+    MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);
+    MIXED_CHECK(rf_core_mixed_require_draws(&f, 3) == 0);
+    MIXED_CHECK(rf_core_mixed_freeze(&f) < 0 && f.state == RF_CORE_MIXED_RECORDING);
+    MIXED_CHECK(rf_core_mixed_require_draws(&f, ULONG_MAX) < 0 &&
+        f.required_draw_count == 3);
     MIXED_CHECK(rf_core_mixed_raster(&f, RF_RENDER_LAYER_WORLD, commands, ULONG_MAX) < 0 &&
         !f.raster_count && !f.span_count);
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) < 0);
@@ -114,6 +128,7 @@ int rf_core_mixed_frame_logic_test(void)
     MIXED_CHECK(rf_core_mixed_draw(&f, &view, &instance, &item) == 0);
     item.material.color = 103;
     MIXED_CHECK(rf_core_mixed_draw(&f, &view, &instance, &item) == 0);
+    MIXED_CHECK(f.required_draw_count == 3 && f.draw_count == 3);
     /* Producer stack state is now destroyed; frozen snapshots must survive. */
     item.material.color = 999; instance.x = 999; view.camera.body.x = 999;
     MIXED_CHECK(f.draws[0].instance.x == 0 && f.draws[0].view.camera.body.x == 0);
@@ -132,6 +147,10 @@ int rf_core_mixed_frame_logic_test(void)
     rasterfall_resources_invalidate(registry);
     MIXED_CHECK(registry->slots[0].pinned && registry->slots[0].model == mesh);
     MIXED_CHECK(rf_core_mixed_freeze(&f) == 0);
+    f.required_draw_count++;
+    MIXED_CHECK(rf_core_mixed_execute(&f, &executor, &observed) < 0 &&
+        f.state == RF_CORE_MIXED_FROZEN && !observed.checked);
+    f.required_draw_count--;
     MIXED_CHECK(rf_core_mixed_freeze(&f) < 0);
     MIXED_CHECK(rf_core_mixed_raster(&f, RF_RENDER_LAYER_VIEWMODEL, commands, 1) < 0);
     /* A later Draw rejection must also prevent earlier Raster submissions. */

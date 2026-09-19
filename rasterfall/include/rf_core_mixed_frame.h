@@ -26,6 +26,7 @@ struct rf_core_mixed_frame {
     struct rf_core_mixed_draw *draws;
     struct rf_core_mixed_span *spans;
     unsigned long raster_count, raster_capacity, draw_count, draw_capacity;
+    unsigned long required_draw_count;
     unsigned long span_count, span_capacity;
     struct rasterfall_resource_registry *registry;
     unsigned long long registry_epoch;
@@ -44,10 +45,17 @@ int rf_core_mixed_begin(struct rf_core_mixed_frame *frame,
  * overlay belong to the executor, outside this pre-Post record. */
 int rf_core_mixed_raster(struct rf_core_mixed_frame *frame, unsigned int layer,
     const struct toy_raster_cmd *commands, unsigned long count);
+/* toy_renderer WORLD consumer for normal producer interleaving. */
+int rf_core_mixed_world_consume(struct toy_renderer *renderer,
+    const struct toy_raster_cmd *commands, int count, void *context);
 int rf_core_mixed_draw(struct rf_core_mixed_frame *frame,
     const struct rasterfall_draw_view *view,
     const struct rasterfall_draw_instance *instance,
     const struct rasterfall_draw_item *item);
+/* Strict producers declare each hardware Draw before selecting a consumer.
+ * Freeze rejects a missing Draw, including an unexpected reference lowering. */
+int rf_core_mixed_require_draws(struct rf_core_mixed_frame *frame,
+    unsigned long count);
 /* Stable partition across the COMPLETE WORLD, including Draw positions.
  * Allocation/rejection leaves the record unchanged and available to replay. */
 int rf_core_mixed_freeze(struct rf_core_mixed_frame *frame);

@@ -1,12 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
-> 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 已实现 submesh/texture 预上传和纯绑定，支持 generation/epoch/pin、退休回收及 target resize 复用；Intel 实测见 checkpoint。Core Vulkan mixed executor、normal producer 和 mixed native 仍待接线。
-> 源码核对基线补充：2026-09-19 [HG-2B Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 提供独立冻结/分区/整帧 preflight 接口；逻辑 fixture 消费真实计划。该接口尚未连接 Vulkan executor、registry GPU cache 或 normal producer，不代表 mixed native 已完成。
-> 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接已通过 Intel 固定 fixture；Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 提供独立 graphics indexed draw、持久 VB/IB/texels、RGBA8/D32 离屏 target；Intel 数值与资源复用门禁通过。下文 HG-1A/1B 的“尚无 hardware”仅指对应阶段与正常帧。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已接入 CPU resource registry、generation、帧 pin 与延迟释放；Windows native/Fog resize 验证见该 checkpoint。尚无 GPU mesh cache、retained Draw 或 hardware indexed draw。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已接入普通 opaque static RMESH；CPU/compute 输出保持精确一致，当前仍无 hardware indexed draw 或持久 GPU mesh cache。
@@ -18,10 +13,10 @@
 ## 当前实现
 
 - CPU renderer 仍是默认路径。显式 `--renderer gpu-compute --gpu-native-present --gpu-required` 要求每个 normal frame 使用 native GPU；不支持的命令、回退、readback 或 CPU framebuffer copy 会使 strict 运行失败。
-- normal frame 由 Core 编排：world frontend → Raster Command ABI V1/Texture V1 → CPU tile binning → Vulkan compute raster → 可选 Fog Post → CPU 生成的 overlay 上传与 GPU composite → Win32 swapchain present。窗口、输入、音频仍使用 SDL2；SDL-free Windows Native Platform 尚未实现。
+- Windows strict native normal frame 由 Core 编排：world RasterCmd 与 static prop indexed Draw 按顺序进入 mixed plan → Vulkan compute/graphics target 交错 → 可选 Fog Post → CPU 生成的 overlay 上传与 GPU composite → Win32 swapchain present。其他 GPU 模式仍走原 compute raster 路径。窗口、输入、音频仍使用 SDL2；SDL-free Windows Native Platform 尚未实现。
 - 共享 Vulkan backend、ABI pack/binning 和 shader 位于 `gpu/`；正常帧的命令与提交所有权位于 `rasterfall/src/rf_core_host.c`，渲染生产者位于 `rasterfall/src/rasterfall_render.c`。Gameplay/session 不持有 Vulkan 资源。
-- `rf-gpu-graphics-test` 是独立 HG-2A hosted 诊断：选择 graphics+compute queue、上传 mesh 与 opaque texture、提交 indexed draw 并读回离屏 color/depth。`rf_gpu_vulkan_graphics.inc` 已将持久资源与共享 target/pipeline 分离；HG-2B 已连接 Raster ABI 分段、GPU attachment/buffer 双向 bridge、LOAD indexed draws 及独立 registry generation cache adapter。Core 混合消费者与 normal-frame hardware producer 仍待接线。
-- 普通 opaque static RMESH 先按实例/submesh 生成 CPU-backed Draw，再同步 lowering 为原 RasterCmd；特殊/透明实例整实例保留旧 producer。`draw-reference` 审计显示实际实例、Draw、源三角形及拒绝原因。CPU registry 持有 mesh/material/texture bundle 和 generation，Core 帧 pin 保护 lowering 后的 RasterCmd 纹理引用；尚未建立 retained Draw，CPU 每帧仍执行几何处理。
+- `rf-gpu-graphics-test` 是独立 HG-2A hosted 诊断：选择 graphics+compute queue、上传 mesh 与 opaque texture、提交 indexed draw 并读回离屏 color/depth。`rf_gpu_vulkan_graphics.inc` 已将持久资源与共享 target/pipeline 分离；HG-2B 连接 Raster ABI、GPU attachment/buffer bridge、Core mixed consumer 和 normal-frame static prop hardware producer。
+- 普通 opaque static RMESH 按实例/submesh 生成 Draw；Windows strict native 的 eligible 实例提交 hardware Draw 并跳过同步 CPU lowering，其他模式仍同步 lowering 为 RasterCmd。特殊/透明实例保留原 producer。CPU registry 持有 mesh/material/texture bundle 和 generation，Core 帧 pin 保护混合帧资源引用。
 - `--frame-audit` 在 Windows 同时写入 `rasterfall.log`；`fence_wait_ms`、`native_present_queue_idle_ms` 是 CPU 墙钟等待，不是 GPU timestamp。
 
 ## 已验证范围和性能快照

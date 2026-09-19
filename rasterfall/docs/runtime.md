@@ -1,6 +1,8 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 Windows `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 从 strict native mixed 正常帧的最终 GPU Post/overlay 结果显式读回一帧；默认第 30 帧。须同时提供 `--renderer gpu-compute --gpu-native-present --gpu-required --gpu-normal-scene <near|mid> <0|30>`；诊断字节单列，普通帧零读回合同不变。`--help` 是完整参数入口。固定场景同时设置本地 actor 的位置，防止首个固定步长将 camera 重置。
+> 源码核对基线补充：2026-09-19 Windows strict native 正常帧使用 Core-owned mixed frame/executor；`rf_core_begin_frame()` 建立资源 pin 与计划，WORLD/Effects/VIEWMODEL 依序录制，overlay 完成后同帧 native 呈现并释放 pin。preflight/submit 失败使 required runtime 非零退出，不回退部分 GPU target。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md)：Core begin/end 包围 static prop 资源的单帧 pin；失败帧保留到 backend teardown 后释放。Game init、成功 world switch 与 shutdown 使旧资源退休，仍在消费中的帧不提前释放。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。

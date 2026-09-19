@@ -121,6 +121,7 @@ static int native_window_test(void)
         previous_width=width;previous_height=height;
         NATIVE_CHECK(rasterfall_resources_frame_begin(registry)==0);
         NATIVE_CHECK(rf_core_mixed_begin(&frame,registry,width,height)==0);
+        NATIVE_CHECK(rf_core_mixed_require_draws(&frame,1)==0);
         background=triangle(width,height,512,0x102030);
         NATIVE_CHECK(rf_core_mixed_raster(&frame,RF_RENDER_LAYER_WORLD,&background,1)==0);
         view.width=width;view.height=height;view.near_z=64;view.focal=width*3/4;
@@ -207,6 +208,7 @@ int main(int argc, char **argv)
         int count=0;
         CHECK(rasterfall_resources_frame_begin(r)==0);
         CHECK(rf_core_mixed_begin(&f,r,width,height)==0);
+        CHECK(rf_core_mixed_require_draws(&f,3)==0);
         view.width=width;view.height=height;view.near_z=64;view.focal=width*3/4;
         view.camera.cy=view.camera.pitch_cy=1024;
         instance.mesh=r->slots[0].model;instance.mesh_handle=handle;
@@ -227,6 +229,7 @@ int main(int argc, char **argv)
         item.material.color=0x336699;item.material.texture=NULL;
         CHECK(rf_core_mixed_draw(&f,&view,&instance,&item)==0);
         cmds[count++]=triangle(width,height,1048576/later_z,0x336699);
+        CHECK(rf_core_mixed_freeze(&f)<0 && f.state==RF_CORE_MIXED_RECORDING);
         /* Consecutive draws share a span and still preserve submission order. */
         item.material.color=0x6688aa;
         CHECK(rf_core_mixed_draw(&f,&view,&instance,&item)==0);
@@ -267,7 +270,7 @@ int main(int argc, char **argv)
                 rf_gpu_mixed_get_stats(e,&after);CHECK(after.clears==before.clears && after.draws==before.draws);
                 out.color=color;out.depth=depth;out.present_timing=NULL;
             }
-            f.draws[2].instance.scale_milli=5000;color[0]=0xdeadbeef;
+            f.draws[2].instance.scale_milli=9000;color[0]=0xdeadbeef;
             CHECK(rf_gpu_mixed_render(e,&f,&out)<0 && f.state==RF_CORE_MIXED_FROZEN);
             CHECK(color[0]==0xdeadbeef);
             rf_gpu_mixed_get_stats(e,&after);CHECK(after.clears==before.clears && after.draws==before.draws);
@@ -288,6 +291,9 @@ int main(int argc, char **argv)
         CHECK(rf_gpu_mixed_render(e,&f,&out)==0 && f.state==RF_CORE_MIXED_COMPLETE);
         rf_gpu_mixed_get_stats(e,&after);
         CHECK(after.clears==before.clears+1 && after.finishes==before.finishes+1 && after.draws==before.draws+3);
+        CHECK(after.draw_spans==before.draw_spans+2 &&
+            after.graphics.raster_bridge_transfers==before.graphics.raster_bridge_transfers+4);
+        if(iteration>4) CHECK(after.graphics.queue_submits==before.graphics.queue_submits+2);
         if(iteration>4)CHECK(after.graphics.mesh_upload_bytes==before.graphics.mesh_upload_bytes &&
             after.graphics.texture_upload_bytes==before.graphics.texture_upload_bytes);
         memset(&renderer,0,sizeof(renderer));renderer.surface.width=width;renderer.surface.height=height;

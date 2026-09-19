@@ -961,6 +961,11 @@ struct rf_gpu_vulkan_raster {
     int segment_valid;
     int segment_graphics_compatible;
     struct rf_gpu_raster_tile_lists tile_lists;
+    const void *binned_stream;
+    unsigned long binned_stream_size;
+    const void *uploaded_stream;
+    unsigned long uploaded_stream_size;
+    int preflight_reuse;
     rf_vk_swapchain swapchain;
     rf_vk_image *swapchain_images;
     uint32_t swapchain_image_count, swapchain_width, swapchain_height;
@@ -970,6 +975,7 @@ struct rf_gpu_vulkan_raster {
     const uint32_t *pending_overlay_color;
     const unsigned char *pending_overlay_coverage;
     uint32_t pending_overlay_stride, pending_coverage_stride;
+    uint32_t *pending_capture_color;
     struct rf_gpu_post_params_v1 post;
 };
 
@@ -1487,6 +1493,11 @@ int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
 {
     struct rf_gpu_vulkan_impl *impl = context ? context->implementation : NULL;
     struct rf_gpu_vulkan_raster *r = raster;
+    if (r) {
+        r->binned_stream = NULL; r->binned_stream_size = 0;
+        r->uploaded_stream = NULL; r->uploaded_stream_size = 0;
+        r->preflight_reuse = 0;
+    }
     if (raster_preflight(context, raster, stream, stream_size, texture_descs,
         texture_count, texture_texels, texture_bytes, width, height) < 0) return -1;
     if (!r->full_scan_diagnostic &&
@@ -1494,6 +1505,11 @@ int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
             r->work_group_y, &r->tile_lists) < 0 ||
          ((uint64_t)r->tile_lists.stats.tile_count+1)*4 > impl->max_storage_buffer_range ||
          r->tile_lists.stats.total_refs*4 > impl->max_storage_buffer_range)) return -1;
+    if (!r->full_scan_diagnostic) {
+        r->binned_stream = stream;
+        r->binned_stream_size = stream_size;
+    }
+    r->preflight_reuse = 1;
     return 0;
 }
 
@@ -1575,8 +1591,15 @@ static int raster_render_range(void *context, void *raster,
     }
     if (timing) timing->pack_validation_ms = now_ms() - segment_start;
     segment_start = now_ms();
-    if(!r->full_scan_diagnostic && rf_gpu_raster_bin_v1(stream,stream_size,r->work_group_x,r->work_group_y,
-                            &r->tile_lists)<0)goto failed;
+    if(!r->full_scan_diagnostic &&
+       (!r->preflight_reuse || r->binned_stream != stream || r->binned_stream_size != stream_size)) {
+        if(rf_gpu_raster_bin_v1(stream,stream_size,r->work_group_x,r->work_group_y,
+                               &r->tile_lists)<0)goto failed;
+        if (r->preflight_reuse) {
+            r->binned_stream=stream;
+            r->binned_stream_size=stream_size;
+        }
+    }
     if(!r->full_scan_diagnostic &&
        (((uint64_t)r->tile_lists.stats.tile_count+1)*4>impl->max_storage_buffer_range ||
         r->tile_lists.stats.total_refs*4>impl->max_storage_buffer_range))goto failed;
@@ -1587,23 +1610,30 @@ static int raster_render_range(void *context, void *raster,
         timing->total_refs=r->full_scan_diagnostic?tiles*timing->command_count:r->tile_lists.stats.total_refs;
         timing->max_refs_per_tile=r->full_scan_diagnostic?timing->command_count:r->tile_lists.stats.max_refs_per_tile;}
     segment_start=now_ms();
-    if(raster_upload(impl,&r->command,stream,stream_size)<0)goto failed;
+    if(!r->preflight_reuse || r->uploaded_stream != stream || r->uploaded_stream_size != stream_size)
+        if(raster_upload(impl,&r->command,stream,stream_size)<0)goto failed;
     if(timing)timing->command_upload_ms=now_ms()-segment_start;
     segment_start=now_ms();
-    if(!r->full_scan_diagnostic && (raster_upload(impl,&r->tile_offsets,r->tile_lists.offsets,
+    if((!r->preflight_reuse || r->uploaded_stream != stream || r->uploaded_stream_size != stream_size) &&
+       !r->full_scan_diagnostic && (raster_upload(impl,&r->tile_offsets,r->tile_lists.offsets,
         ((uint64_t)r->tile_lists.stats.tile_count+1)*4)<0 ||
        (r->tile_lists.stats.total_refs && raster_upload(impl,&r->tile_indices,
         r->tile_lists.indices,r->tile_lists.stats.total_refs*4)<0)))goto failed;
     if(timing){timing->tile_upload_ms=now_ms()-segment_start;
         timing->upload_ms=timing->command_upload_ms+timing->tile_upload_ms;}
     segment_start=now_ms();
-    if (raster_upload(impl, &r->texture_descs,
+    if ((!r->preflight_reuse || r->uploaded_stream != stream || r->uploaded_stream_size != stream_size) &&
+        (raster_upload(impl, &r->texture_descs,
             texture_count ? texture_descs : empty_texture,
             texture_count ? (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture)) < 0 ||
         raster_upload(impl, &r->texture_texels,
             texture_count ? texture_texels : &empty_texel,
-            texture_count ? texture_bytes : sizeof(empty_texel)) < 0)
+            texture_count ? texture_bytes : sizeof(empty_texel)) < 0))
         goto failed;
+    if (r->preflight_reuse) {
+        r->uploaded_stream=stream;
+        r->uploaded_stream_size=stream_size;
+    }
     if (timing) {
         timing->texture_upload_ms=now_ms()-segment_start;
         timing->texture_count=texture_count;
@@ -1755,6 +1785,12 @@ static int raster_render_range(void *context, void *raster,
             RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
         if (native_present) {
+            if (r->pending_capture_color) {
+                memset(copies, 0, sizeof(copies));
+                copies[0].size = byte_size;
+                impl->api.cmd_copy_buffer(r->command_buffer, presentation_color->buffer,
+                    r->color_readback.buffer, 1, &copies[0]);
+            }
             struct rf_vk_image_memory_barrier image_barrier;
             struct rf_vk_buffer_image_copy region;
             double copy_start = now_ms();
@@ -1846,6 +1882,11 @@ static int raster_render_range(void *context, void *raster,
         }
     }
     r->segment_valid = !final;
+    if (final) {
+        r->binned_stream = NULL; r->binned_stream_size = 0;
+        r->uploaded_stream = NULL; r->uploaded_stream_size = 0;
+        r->preflight_reuse = 0;
+    }
     if (!final) {
         impl->api.destroy_fence(impl->device, fence, NULL);
         snprintf(message, message_capacity, "GPU Raster V1 segment retained");
@@ -1854,6 +1895,15 @@ static int raster_render_range(void *context, void *raster,
     if (native_present) {
         struct rf_vk_present_info present;
         double present_start = now_ms();
+        if (r->pending_capture_color) {
+            if (impl->api.map_memory(impl->device, r->color_readback.memory, 0,
+                    r->color_readback.allocation_size, 0, &mapped_color) != RF_VK_SUCCESS)
+                goto failed;
+            if (raster_invalidate(impl, &r->color_readback) < 0) goto failed;
+            memcpy(r->pending_capture_color, mapped_color, (size_t)byte_size);
+            impl->api.unmap_memory(impl->device, r->color_readback.memory);
+            mapped_color = NULL;
+        }
         memset(&present, 0, sizeof(present));
         present.s_type = RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present.wait_semaphore_count = 1;
@@ -1916,6 +1966,9 @@ failed:
     snprintf(message, message_capacity, "Vulkan Raster V1 operation failed");
 cleanup:
     r->segment_valid = 0;
+    r->binned_stream = NULL; r->binned_stream_size = 0;
+    r->uploaded_stream = NULL; r->uploaded_stream_size = 0;
+    r->preflight_reuse = 0;
     if (mapped_depth) impl->api.unmap_memory(impl->device, r->depth_readback.memory);
     if (mapped_color) impl->api.unmap_memory(impl->device, r->color_readback.memory);
     if (fence) impl->api.destroy_fence(impl->device, fence, NULL);
@@ -1964,6 +2017,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
     unsigned int overlay_stride, unsigned int coverage_stride,
     unsigned int width, unsigned int height,
     struct rf_gpu_native_present_timing *timing,
+    unsigned int *capture_color,
     char *message, unsigned long capacity)
 {
     struct rf_gpu_vulkan_raster *r = raster;
@@ -1986,6 +2040,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
     }
     memset(timing, 0, sizeof(*timing));
     r->pending_present_timing = timing;
+    r->pending_capture_color = capture_color;
     r->pending_overlay_color = colors;
     r->pending_overlay_coverage = coverage;
     r->pending_overlay_stride = width;
@@ -1995,6 +2050,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
         NULL, NULL, width, height, 0, 0, NULL, message, capacity,
         first, end, (uint32_t)load, 1);
     r->pending_present_timing = NULL;
+    r->pending_capture_color = NULL;
     r->pending_overlay_color = NULL;
     r->pending_overlay_coverage = NULL;
     free(colors); free(coverage);

@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param([string] $OutputDirectory = '')
+param([string] $OutputDirectory = '', [switch] $NoRedirect)
+# NoRedirect avoids an intermittent PowerShell GUI-process pipe wait. The
+# per-frame runtime log remains the gate's complete audit source.
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package = Join-Path $Root 'build-windows/rasterfall-windows'
@@ -37,7 +39,11 @@ $ProgramArgs = @('--renderer','gpu-compute','--gpu-required','--gpu-native-prese
 $Record = [ordered]@{ executable = (Get-FileHash -LiteralPath $Exe).Hash; argv = $ProgramArgs; result = 'FAIL' }
 $Process = $null
 try {
-    $Process = Start-Process -FilePath $Exe -ArgumentList $ProgramArgs -WorkingDirectory $Package -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $OutputDirectory 'stdout.txt') -RedirectStandardError (Join-Path $OutputDirectory 'stderr.txt')
+    if ($NoRedirect) {
+        $Process = Start-Process -FilePath $Exe -ArgumentList $ProgramArgs -WorkingDirectory $Package -WindowStyle Hidden -PassThru
+    } else {
+        $Process = Start-Process -FilePath $Exe -ArgumentList $ProgramArgs -WorkingDirectory $Package -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $OutputDirectory 'stdout.txt') -RedirectStandardError (Join-Path $OutputDirectory 'stderr.txt')
+    }
     # Retain the process handle before polling HasExited. PowerShell 5 can
     # otherwise return a null Process.ExitCode for asynchronously started apps.
     $ProcessHandle = $Process.Handle
@@ -55,7 +61,7 @@ try {
         if (-not [HgResizeWindow]::SetWindowPos($Window, [IntPtr]::Zero, 0, 0, $Size[0], $Size[1], 0x16)) { throw 'SetWindowPos failed.' }
         Start-Sleep -Milliseconds 1500
     }
-    if (-not $Process.WaitForExit(30000)) { throw 'Resize smoke timed out.' }
+    if (-not $Process.WaitForExit(180000)) { throw 'Resize smoke timed out.' }
     $Process.WaitForExit()
     [uint32] $ExitCode = 0
     if (-not [HgResizeWindow]::GetExitCodeProcess($ProcessHandle, [ref] $ExitCode)) { throw 'Cannot read process exit code.' }

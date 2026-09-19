@@ -18,6 +18,7 @@
 #include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
 #include "rasterfall_draw.h"
+#include "rf_core_mixed_frame.h"
 #include "rf_gpu_raster_pack.h"
 
 #define special_target_active ability.special_target_active
@@ -1944,12 +1945,19 @@ int rasterfall_render_static_prop(
         rejection = static_prop_draw_preflight(renderer, &draw_instance);
         if (rejection == RASTERFALL_DRAW_ACCEPTED) {
             scene_stats.static_draw_instances++;
-            pixels = static_prop_draw_reference(renderer, &view, &draw_instance);
+            pixels = render_ctx && render_ctx->mixed_frame ?
+                static_prop_draw_mixed(renderer, &view, &draw_instance,
+                    render_ctx->mixed_frame) :
+                static_prop_draw_reference(renderer, &view, &draw_instance);
         } else {
             scene_stats.static_draw_legacy_instances++;
             scene_stats.static_draw_rejected[rejection]++;
-            pixels = render_gallery_model(renderer, camera, model, instance->x,
-                                          instance->y, instance->z, scale);
+            if (render_ctx && render_ctx->mixed_frame) {
+                pixels = -1;
+            } else {
+                pixels = render_gallery_model(renderer, camera, model,
+                    instance->x, instance->y, instance->z, scale);
+            }
         }
     }
     active_gallery_facing = previous_facing;
@@ -2105,6 +2113,27 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
         instance.length = map_prop->length;
+        if (instance.asset_id != RASTERFALL_PROP_ASSET_BOUNDARY_WALL) {
+            const struct rasterfall_prop_asset_profile *profile =
+                rasterfall_prop_asset_profile(instance.asset_id);
+            struct rasterfall_resource_handle visibility_handle;
+            const struct rasterfall_model_asset *model =
+                profile ? static_prop_model(instance.asset_id, &visibility_handle) : NULL;
+            if (model) {
+                int scale = rasterfall_prop_render_scale(profile, instance.scale_milli);
+                int yaw = instance.yaw_degrees % 360;
+                if (yaw < 0) yaw += 360;
+                if (scale > 0 && !gallery_model_visible(&renderer->surface, camera,
+                        model, instance.x, instance.y, instance.z, scale, 1,
+                        (int)(sin((double)yaw * 3.141592653589793 / 180.0) * 1024.0),
+                        (int)(cos((double)yaw * 3.141592653589793 / 180.0) * 1024.0))) {
+                    scene_stats.models_tested++;
+                    scene_stats.models_culled++;
+                    scene_stats.model_triangles_culled += model->index_count / 3;
+                    continue;
+                }
+            }
+        }
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL;
         /* Only normal map RMESH consumes the field here. Keep the model's
@@ -2115,7 +2144,15 @@ static int render_static_props(struct toy_renderer *renderer,
             active_scene_light_override_q8 = rasterfall_world_light_v2_q8(
                 rasterfall_world_light_at(active_world_lighting,
                     instance.x, instance.y, instance.z));
-        pixels += rasterfall_render_static_prop(renderer, camera, &instance);
+        {
+            int drawn = rasterfall_render_static_prop(renderer, camera, &instance);
+            if (drawn < 0 && render_ctx && render_ctx->mixed_frame) {
+                active_scene_light_override_q8 = previous_scene_light;
+                active_world_light_v2 = 0;
+                return -1;
+            }
+            pixels += drawn;
+        }
         active_scene_light_override_q8 = previous_scene_light;
         active_world_light_v2 = 0;
     }
@@ -4942,12 +4979,16 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     floor_submission = 0;
     if (active_coordinate_axes)
         pixels += render_coordinate_ruler(renderer, camera);
-    scene_stats.floor_command_end = renderer->cmd_count;
+    scene_stats.floor_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.sky_floor_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
-        scene_stats.map_command_begin[i] = renderer->cmd_count;
+        scene_stats.map_command_begin[i] = renderer->cmd_count +
+            (render_ctx && render_ctx->mixed_frame ?
+                render_ctx->mixed_frame->raster_count : 0);
         if (!map_draw_visible(&renderer->surface, camera, x))
             goto map_record_done;
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
@@ -5027,27 +5068,41 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels += render_world_sign(renderer, camera, x);
         }
 map_record_done:
-        scene_stats.map_command_limit[i] = renderer->cmd_count;
+        scene_stats.map_command_limit[i] = renderer->cmd_count +
+            (render_ctx && render_ctx->mixed_frame ?
+                render_ctx->mixed_frame->raster_count : 0);
         scene_stats.map_command_range_count = i + 1;
     }
     active_world_light_v2 = 0;
-    scene_stats.map_command_end = renderer->cmd_count;
+    scene_stats.map_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
-    pixels += render_static_props(renderer, camera);
-    scene_stats.static_command_end = renderer->cmd_count;
+    {
+        int drawn = render_static_props(renderer, camera);
+        if (drawn < 0 && render_ctx && render_ctx->mixed_frame) return -1;
+        pixels += drawn;
+    }
+    scene_stats.static_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.static_props_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     if (active_session->content.model_gallery_enabled)
         pixels += render_model_gallery(renderer, camera);
-    scene_stats.gallery_command_end = renderer->cmd_count;
+    scene_stats.gallery_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.model_gallery_us = render_monotonic_us() - phase_start;
     scene_stats.gallery_us = scene_stats.static_props_us +
                              scene_stats.model_gallery_us;
     phase_start = render_monotonic_us();
     if (active_session->content.character_test_strip_enabled)
         pixels += render_character_test_strip(renderer, camera);
-    scene_stats.character_command_end = renderer->cmd_count;
+    scene_stats.character_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     /* Eula and the developer character strip are Campaign Content fixtures.
@@ -5061,11 +5116,15 @@ map_record_done:
         pixels += render_private_character(renderer, camera);
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
-    scene_stats.private_command_end = renderer->cmd_count;
+    scene_stats.private_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
-    scene_stats.projectile_command_end = renderer->cmd_count;
+    scene_stats.projectile_command_end = renderer->cmd_count +
+        (render_ctx && render_ctx->mixed_frame ?
+            render_ctx->mixed_frame->raster_count : 0);
     scene_stats.projectiles_us = render_monotonic_us() - phase_start;
     return pixels;
 }

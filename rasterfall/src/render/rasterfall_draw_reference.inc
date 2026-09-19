@@ -130,6 +130,47 @@ static int static_prop_draw_lower_item(struct toy_renderer *renderer,
         0, draw->material.texture != NULL, draw->material.color);
 }
 
+/* Normal producer entry for an ordered mixed frame. The caller installs a
+ * Core Raster consumer before binding mixed_frame; flushing establishes the
+ * exact Raster-before-Draw boundary without preparing mesh vertices. */
+static int static_prop_draw_mixed(struct toy_renderer *renderer,
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance,
+    struct rf_core_mixed_frame *frame)
+{
+    unsigned int i;
+    if (!frame || !instance->mesh ||
+        renderer->command_consumer != rf_core_mixed_world_consume ||
+        renderer->command_consumer_context != frame) {
+        __fprintf(2, "mixed static prop: WORLD consumer mismatch\n");
+        return -1;
+    }
+    if (!gallery_model_visible(&renderer->surface, &view->camera, instance->mesh,
+            instance->x, instance->y, instance->z, instance->scale_milli, 1,
+            instance->yaw_sin_q10, instance->yaw_cos_q10)) {
+        scene_stats.models_tested++;
+        scene_stats.models_culled++;
+        scene_stats.model_triangles_culled += instance->mesh->index_count / 3;
+        return 0;
+    }
+    if (rf_core_mixed_require_draws(frame, instance->mesh->primitive_count) < 0 ||
+        toy_renderer_flush(renderer) < 0) {
+        __fprintf(2, "mixed static prop: preceding raster flush failed\n");
+        return -1;
+    }
+    scene_stats.models_tested++;
+    for (i = 0; i < instance->mesh->primitive_count; ++i) {
+        struct rasterfall_draw_item draw;
+        if (static_prop_draw_resolve(instance, i, &draw) != RASTERFALL_DRAW_ACCEPTED ||
+            rf_core_mixed_draw(frame, view, instance, &draw) < 0) {
+            __fprintf(2, "mixed static prop: Draw %u rejected\n", i);
+            return -1;
+        }
+        scene_stats.static_draw_items++;
+    }
+    return 0;
+}
+
 static int static_prop_draw_reference(struct toy_renderer *renderer,
     const struct rasterfall_draw_view *view,
     const struct rasterfall_draw_instance *instance)

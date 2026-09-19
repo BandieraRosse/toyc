@@ -22,9 +22,12 @@ struct rasterfall_render_context {
     struct rasterfall_world_lighting world_lighting;
     int textures_enabled;
     int diagnostic_fixed_lighting; /* Fixed lighting override for isolated captures only. */
+    /* Bound only while Core records an ordered mixed WORLD frame. */
+    struct rf_core_mixed_frame *mixed_frame;
 };
 
 struct rasterfall_character_profile;
+struct rf_core_mixed_frame;
 
 /* Presentation snapshot, borrowed for one draw; no actor ownership or culling.
  * x/z and lift use RFU; lift = ground_y + airborne_y (feet at -900 + lift).

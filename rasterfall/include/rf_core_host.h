@@ -11,6 +11,9 @@
 #include "rf_core_input.h"
 #include "rf_viewmodel_contract.h"
 
+struct rf_core_mixed_frame;
+struct rf_gpu_mixed_executor;
+
 enum rf_core_renderer {
     RF_CORE_RENDERER_CPU = 0,
     RF_CORE_RENDERER_GPU_COMPUTE = 1
@@ -77,6 +80,13 @@ struct rf_render_frame_v1 {
 
 struct rf_core_gpu_frame_stats {
     unsigned long long frames_attempted, gpu_frames, cpu_fallback_frames;
+    unsigned long long mixed_draws;
+    unsigned long long mixed_raster_spans, mixed_draw_spans;
+    unsigned long long mixed_bridge_transfers, mixed_bridge_bytes;
+    unsigned long long mixed_graphics_submits, mixed_graphics_waits;
+    unsigned long long mixed_gpu_upload_bytes;
+    double mixed_graphics_submit_ms, mixed_graphics_wait_ms, mixed_bridge_ms;
+    unsigned long long capture_readback_bytes;
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;
     unsigned long long texture_commands, texture_upload_bytes;
@@ -131,6 +141,8 @@ struct rf_core_gpu_frame {
     int strict_gpu_only, runtime_failed;
     int native_prepared, overlay_active;
     int retaining_pre_post;
+    const char *capture_path;
+    int capture_completed;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the
@@ -143,6 +155,10 @@ struct rf_core {
     struct toy_renderer *renderer;
     struct rf_core_filesystem filesystem;
     struct rf_gpu gpu;
+    struct rf_core_mixed_frame *mixed_frame;
+    struct rf_gpu_mixed_executor *mixed_executor;
+    struct rf_gpu_post_params_v1 mixed_post;
+    uint32_t mixed_clear_color;
     struct rf_core_gpu_frame gpu_frame;
     struct rf_render_frame_v1 render_frame;
     int *viewmodel_depth;
@@ -214,6 +230,8 @@ int64_t rf_core_begin_tick(struct rf_core *core);
 int rf_core_request_exit(struct rf_core *core);
 int rf_core_should_exit(const struct rf_core *core);
 int rf_core_runtime_failed(const struct rf_core *core);
+struct rf_core_mixed_frame *rf_core_mixed_current(struct rf_core *core);
+void rf_core_mixed_fail(struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
 void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
                                   int camera_z, int direction_sy,

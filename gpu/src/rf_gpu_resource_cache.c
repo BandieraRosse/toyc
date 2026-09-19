@@ -174,6 +174,15 @@ int rf_gpu_resource_cache_bind(struct rf_gpu_resource_cache *c,
     e = cache_find(c, h, primitive, texture);
     return e ? rf_gpu_graphics_resource_bind(c->graphics, e->resource) : -1;
 }
+struct rf_gpu_graphics_resource *rf_gpu_resource_cache_resource(
+    struct rf_gpu_resource_cache *c, unsigned long long epoch,
+    struct rasterfall_resource_handle h, uint32_t primitive, uint32_t texture)
+{
+    struct cache_entry *e;
+    if (!cache_model(c, epoch, h)) return NULL;
+    e = cache_find(c, h, primitive, texture);
+    return e ? e->resource : NULL;
+}
 void rf_gpu_resource_cache_get_stats(const struct rf_gpu_resource_cache *c,
     struct rf_gpu_resource_cache_stats *stats)
 {

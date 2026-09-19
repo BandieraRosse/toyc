@@ -3,6 +3,7 @@
 #include "rf_vulkan_graphics_min.h"
 #include "rf_gpu_graphics.h"
 #include "rf_gpu_graphics_spirv.inc"
+#include <limits.h>
 
 #define RF_GFX_FUNCTIONS(X) \
     X(GetPhysicalDeviceFormatProperties) X(CreateImage) X(DestroyImage) \
@@ -36,6 +37,8 @@ struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics_resource *next;
     struct rf_gpu_vulkan_raster_buffer vertices, indices, compat_indices, texture;
     uint32_t index_count, texture_width, texture_height;
+    rf_vk_descriptor_pool descriptor_pool;
+    rf_vk_descriptor_set descriptor_set;
     int position_bound[3];
 };
 struct rf_gpu_graphics {
@@ -80,15 +83,22 @@ static int gfx_submit(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *impl = g->owner;
     struct rf_vk_submit_info submit = {0};
+    double stamp;
     if (impl->api.end_command_buffer(g->cmd) != RF_VK_SUCCESS ||
         impl->api.reset_fences(impl->device, 1, &g->fence) != RF_VK_SUCCESS)
         goto failed;
     submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.command_buffer_count = 1; submit.command_buffers = &g->cmd;
-    if (impl->api.queue_submit(impl->queue, 1, &submit, g->fence) != RF_VK_SUCCESS ||
-        impl->api.wait_for_fences(impl->device, 1, &g->fence,
-                                  RF_VK_TRUE, UINT64_MAX) != RF_VK_SUCCESS)
+    stamp=now_ms();
+    g->stats.queue_submits++;
+    if (impl->api.queue_submit(impl->queue, 1, &submit, g->fence) != RF_VK_SUCCESS)
         goto failed;
+    g->stats.submit_wall_ms+=now_ms()-stamp;
+    stamp=now_ms();
+    g->stats.fence_waits++;
+    if (impl->api.wait_for_fences(impl->device, 1, &g->fence,
+                                  RF_VK_TRUE, UINT64_MAX) != RF_VK_SUCCESS) goto failed;
+    g->stats.fence_wait_wall_ms+=now_ms()-stamp;
     return 0;
 failed:
     g->poisoned = 1;
@@ -133,8 +143,8 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     if (g->bridge_set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->bridge_set_layout, NULL);
     if (g->layout) impl->api.destroy_pipeline_layout(impl->device, g->layout, NULL);
     if (g->descriptor_pool) impl->api.destroy_descriptor_pool(impl->device, g->descriptor_pool, NULL);
-    if (g->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->set_layout, NULL);
     while (g->resources) rf_gpu_graphics_resource_destroy(g, g->resources);
+    if (g->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->set_layout, NULL);
     free(g);
 }
 
@@ -521,6 +531,11 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
 {
     struct rf_gpu_graphics_resource *resource;
+    struct rf_vk_descriptor_pool_size size = {RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
+    struct rf_vk_descriptor_pool_create_info pool = {0};
+    struct rf_vk_descriptor_set_allocate_info set = {0};
+    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
+    struct rf_vk_write_descriptor_set write[3] = {{0}};
     if (!g || g->poisoned) return NULL;
     resource = calloc(1, sizeof(*resource));
     if (!resource) return NULL;
@@ -532,27 +547,38 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
         rf_gpu_graphics_resource_destroy(g, resource);
         return NULL;
     }
+    pool.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.max_sets = 1; pool.pool_size_count = 1; pool.pool_sizes = &size;
+    set.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    set.descriptor_set_count = 1; set.set_layouts = &g->set_layout;
+    if (g->owner->api.create_descriptor_pool(g->owner->device, &pool, NULL,
+            &resource->descriptor_pool) != RF_VK_SUCCESS) goto descriptor_failed;
+    set.descriptor_pool = resource->descriptor_pool;
+    if (g->owner->api.allocate_descriptor_sets(g->owner->device, &set,
+            &resource->descriptor_set) != RF_VK_SUCCESS) goto descriptor_failed;
+    buffer[0].buffer = resource->texture.buffer; buffer[0].range = resource->texture.size;
+    buffer[1].buffer = resource->vertices.buffer; buffer[1].range = resource->vertices.size;
+    buffer[2].buffer = resource->indices.buffer; buffer[2].range = resource->indices.size;
+    for (unsigned i = 0; i < 3; ++i) {
+        write[i].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write[i].dst_set = resource->descriptor_set; write[i].dst_binding = i;
+        write[i].descriptor_count = 1;
+        write[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write[i].buffer_info = &buffer[i];
+    }
+    g->owner->api.update_descriptor_sets(g->owner->device, 3, write, 0, NULL);
     return resource;
+descriptor_failed:
+    rf_gpu_graphics_resource_destroy(g, resource);
+    return NULL;
 }
 
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource)
 {
-    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
-    struct rf_vk_write_descriptor_set write[3] = {{0}};
     if (!g || g->poisoned || !resource || resource->owner != g ||
         !resource->index_count) return -1;
-    if (g->resource == resource) return 0;
     g->resource = resource;
-    buffer[0].buffer = g->resource->texture.buffer; buffer[0].range = g->resource->texture.size;
-    buffer[1].buffer = g->resource->vertices.buffer; buffer[1].range = g->resource->vertices.size;
-    buffer[2].buffer = g->resource->indices.buffer; buffer[2].range = g->resource->indices.size;
-    for (unsigned i = 0; i < 3; ++i) {
-        write[i].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write[i].dst_set = g->set; write[i].dst_binding = i; write[i].descriptor_count = 1;
-        write[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; write[i].buffer_info = &buffer[i];
-    }
-    g->owner->api.update_descriptor_sets(g->owner->device, 3, write, 0, NULL);
     return 0;
 }
 
@@ -567,6 +593,8 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
         if (!*link) return -1;
     *link = resource->next;
     if (g->resource == resource) g->resource = NULL;
+    if (resource->descriptor_pool)
+        g->owner->api.destroy_descriptor_pool(g->owner->device, resource->descriptor_pool, NULL);
     raster_buffer_destroy(g->owner, &resource->vertices);
     raster_buffer_destroy(g->owner, &resource->indices);
     raster_buffer_destroy(g->owner, &resource->compat_indices);
@@ -593,7 +621,7 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 || d->material[2] > 1 ||
         d->material[3] || d->camera[3] || d->texture[2] || d->texture[3] ||
-        d->translation_scale[3] < 1 || d->translation_scale[3] > 4000 ||
+        d->translation_scale[3] < 1 || d->translation_scale[3] > 8000 ||
         d->rotation[2] < -32767 || d->rotation[2] > 32767 ||
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
         d->projection[0] != (int)g->target.width || d->projection[1] != (int)g->target.height ||
@@ -610,19 +638,40 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
         /* O(1) conservative mesh bounds, before recording any draw. With
          * projected coordinates in [-16384,16384], edge*UV sums fit int64.
          * Deliberately conservative hosted-proof limit, not silent clipping. */
-        int64_t x = ((int64_t)g->resource->position_bound[0]*abs(d->rotation[1]) +
-                     (int64_t)g->resource->position_bound[2]*abs(d->rotation[0]))/1024;
-        int64_t z = ((int64_t)g->resource->position_bound[2]*abs(d->rotation[1]) +
-                     (int64_t)g->resource->position_bound[0]*abs(d->rotation[0]))/1024;
-        int64_t y = g->resource->position_bound[1]+abs(d->rotation[2]);
-        x=x*d->translation_scale[3]/1000+abs(d->translation_scale[0]-d->camera[0]);
-        y=y*d->translation_scale[3]/1000+abs(d->translation_scale[1]-d->camera[1]);
-        z=z*d->translation_scale[3]/1000+abs(d->translation_scale[2]-d->camera[2]);
+        int64_t rotated_x=(int64_t)g->resource->position_bound[0]*abs(d->rotation[1]) +
+            (int64_t)g->resource->position_bound[2]*abs(d->rotation[0]);
+        int64_t rotated_z=(int64_t)g->resource->position_bound[2]*abs(d->rotation[1]) +
+            (int64_t)g->resource->position_bound[0]*abs(d->rotation[0]);
+        if (rotated_x>INT_MAX || rotated_z>INT_MAX) return 0;
+        int64_t x=rotated_x/1024;
+        int64_t z=rotated_z/1024;
+        int64_t y = (int64_t)g->resource->position_bound[1]+abs(d->rotation[2]);
+        if (x*d->translation_scale[3] > INT_MAX ||
+            y*d->translation_scale[3] > INT_MAX ||
+            z*d->translation_scale[3] > INT_MAX) return 0;
+        x=x*d->translation_scale[3]/1000;
+        y=y*d->translation_scale[3]/1000;
+        z=z*d->translation_scale[3]/1000;
+        /* A distant mesh cannot reach the near plane. Bound its closest
+         * possible depth before dividing the screen bounds; retain near=64
+         * whenever the box could cross that plane. */
+        int64_t center_x=d->translation_scale[0]-d->camera[0];
+        int64_t center_y=d->translation_scale[1]-d->camera[1];
+        int64_t center_z=d->translation_scale[2]-d->camera[2];
+        int64_t axial=(center_x*d->view[0]+center_z*d->view[1])/1024;
+        int64_t depth=(center_y*d->view[2]+axial*d->view[3])/1024;
+        int64_t axial_radius=(x*abs(d->view[0])+z*abs(d->view[1])+1023)/1024;
+        int64_t depth_radius=(y*abs(d->view[2])+axial_radius*abs(d->view[3])+1023)/1024;
+        int64_t min_depth=depth-depth_radius-4;
+        if (min_depth<64) min_depth=64;
+        x+=abs(d->translation_scale[0]-d->camera[0]);
+        y+=abs(d->translation_scale[1]-d->camera[1]);
+        z+=abs(d->translation_scale[2]-d->camera[2]);
         int64_t vx=(x*abs(d->view[1])+z*abs(d->view[0]))/1024;
         int64_t vz=(x*abs(d->view[0])+z*abs(d->view[1]))/1024;
         int64_t vy=(y*abs(d->view[3])+vz*abs(d->view[2]))/1024;
-        if (vx*d->projection[3]/64+d->projection[0]/2 > 16384 ||
-            vy*d->projection[3]/64+d->projection[1]/2 > 16384) return 0;
+        if (vx*d->projection[3]/min_depth+d->projection[0]/2 > 16384 ||
+            vy*d->projection[3]/min_depth+d->projection[1]/2 > 16384) return 0;
     }
     return 1;
 }
@@ -635,8 +684,10 @@ int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
 }
 
 /* mode: 0 diagnostic roundtrip, 1 raster -> attachments, 2 attachments -> raster. */
-static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r, int mode)
+static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
+                      int mode, int append_to_draw, int record_only)
 {
+    double bridge_start=now_ms();
     struct rf_gpu_vulkan_impl *impl=g->owner;
     uint64_t bytes=(uint64_t)g->target.width*g->target.height*4;
     struct rf_vk_descriptor_buffer_info buffers[2]={{0}};
@@ -654,7 +705,7 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
         writes[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;writes[i].buffer_info=&buffers[i];
     }
     impl->api.update_descriptor_sets(impl->device,2,writes,0,NULL);
-    if(gfx_begin(g)<0)return -1;
+    if(!append_to_draw && gfx_begin(g)<0)return -1;
     /* Prior render pass stores both images in TRANSFER_SRC. Prior bridge
      * buffers may still have shader/transfer readers; order their reuse. */
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -715,10 +766,11 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
         import.buffer_offset=bytes;import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_DEPTH_BIT;
         impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
     }
-    if(gfx_submit(g)<0)return -1;
+    if(!record_only && gfx_submit(g)<0)return -1;
     if(mode==0)g->stats.bridge_roundtrips++;
     else g->stats.raster_bridge_transfers++;
     g->stats.bridge_transfer_bytes+=bytes*4;
+    g->stats.bridge_wall_ms+=now_ms()-bridge_start;
     g->target.bridge_valid=1;
     return 0;
 }
@@ -726,7 +778,8 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
 static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t pixel_capacity,int load,
-    struct rf_gpu_vulkan_raster *r)
+    struct rf_gpu_vulkan_raster *r,
+    const struct rf_gpu_graphics_batch_item *items)
 {
     struct rf_gpu_vulkan_impl *impl;
     VkClearValue clear[2];
@@ -737,22 +790,32 @@ static int gfx_render(struct rf_gpu_graphics *g,
     VkBufferImageCopy copy = {0};
     uint64_t offset = 0, bytes;
     void *mapped = NULL;
-    if (!g || g->poisoned || !g->resource || !g->resource->index_count || !g->target.framebuffer ||
-        !draws || !count || count > 4096 ||
+    if (!g || g->poisoned || (!items && (!g->resource || !g->resource->index_count)) || !g->target.framebuffer ||
+        (!draws && !items) || !count || count > 65536 ||
         (!r && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
-    for (uint32_t i = 0; i < count; ++i) if (!gfx_draw_valid(g, &draws[i])) return -1;
+    {
+        struct rf_gpu_graphics_resource *saved = g->resource;
+        int valid = 1;
+        for (uint32_t i = 0; i < count; ++i) {
+            const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
+            if (items) g->resource = items[i].resource;
+            if (!g->resource || g->resource->owner != g || !gfx_draw_valid(g, d) ||
+                (r && !d->integer_depth)) { valid = 0; break; }
+        }
+        g->resource = saved;
+        if (!valid) return -1;
+    }
     if(r) {
         if(r->owner!=g->owner || !r->segment_valid || !r->segment_graphics_compatible ||
            r->width!=g->target.width || r->height!=g->target.height)return -1;
-        for(uint32_t i=0;i<count;++i)if(!draws[i].integer_depth)return -1;
     } else if(load && !g->target.valid)return -1;
     impl = g->owner; bytes = (uint64_t)g->target.width*g->target.height*4;
     g->target.bridge_valid=0;
     if(r)r->segment_valid=0;
-    if(load && gfx_bridge(g,r,r?1:0)<0){g->poisoned=1;g->target.valid=0;return -1;}
+    if(load && gfx_bridge(g,r,r?1:0,0,r!=NULL)<0){g->poisoned=1;g->target.valid=0;return -1;}
     g->target.valid=0;
     memset(clear, 0, sizeof(clear));
-    if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
+    if (!r && gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = load?g->load_pass:g->render_pass; begin.framebuffer = g->target.framebuffer;
@@ -762,19 +825,24 @@ static int gfx_render(struct rf_gpu_graphics *g,
     viewport.width = (float)g->target.width; viewport.height = (float)g->target.height; viewport.maxDepth = 1.0f;
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
-    g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &g->resource->vertices.buffer, &offset);
-    g->api.CmdBindIndexBuffer(g->cmd, g->resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-    impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->layout, 0, 1, &g->set, 0, NULL);
     for (uint32_t i = 0; i < count; ++i) {
-        uint32_t factor = draws[i].integer_depth ? 2 : 1;
-        g->api.CmdBindIndexBuffer(g->cmd, draws[i].integer_depth ? g->resource->compat_indices.buffer : g->resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-        impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pipelines[draws[i].double_sided+draws[i].integer_depth*2]);
-        g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, &draws[i]);
-        g->api.CmdDrawIndexed(g->cmd, draws[i].index_count*factor, 1, draws[i].first_index*factor, 0, 0);
+        const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
+        struct rf_gpu_graphics_resource *resource = items ? items[i].resource : g->resource;
+        uint32_t factor = d->integer_depth ? 2 : 1;
+        g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &resource->vertices.buffer, &offset);
+        g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            g->layout, 0, 1, &resource->descriptor_set, 0, NULL);
+        impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pipelines[d->double_sided+d->integer_depth*2]);
+        g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
+        g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
     if(r) {
-        if(gfx_submit(g)<0 || gfx_bridge(g,r,2)<0){g->poisoned=1;return -1;}
+        /* The render pass ends in TRANSFER_SRC with an external transfer
+         * dependency. Record export after it in this command buffer so the
+         * Draw and bridge share one queue submit and fence. */
+        if(gfx_bridge(g,r,2,1,0)<0){g->poisoned=1;return -1;}
         r->segment_valid=1;
     } else {
         copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -806,18 +874,25 @@ static int gfx_render(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0,NULL); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0,NULL,NULL); }
 
 int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1,NULL); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1,NULL,NULL); }
 
 int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_draw *draws, uint32_t count)
 {
     if(!raster)return -1;
-    return gfx_render(g,draws,count,NULL,NULL,0,1,raster);
+    return gfx_render(g,draws,count,NULL,NULL,0,1,raster,NULL);
+}
+
+int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
+    const struct rf_gpu_graphics_batch_item *items, uint32_t count)
+{
+    if (!raster || !items) return -1;
+    return gfx_render(g,NULL,count,NULL,NULL,0,1,raster,items);
 }
 
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,

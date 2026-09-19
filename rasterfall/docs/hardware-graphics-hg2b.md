@@ -1,18 +1,18 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 `rasterfall-gpu-mixed-test.exe --native-window` 已在真实 SDL/Win32 窗口中消费混合 Draw/Raster frozen frame，三次 native present 跨两次客户区尺寸变化；`hardware_graphics_proof.ps1 -NativeGate` 记录实机适配器、日志和 manifest。Intel smoke 的 Post/overlay 上传与零 readback/CPU framebuffer copy 已验证；不代表 normal producer、整图像素或设备丢失恢复验收。
-> 源码核对基线补充：2026-09-19 mixed output 增加 `strict_native`；预检在 CLEAR 前拒绝 strict 诊断读回及不具备 native presentation 能力的设备。Intel 离屏 `-ExecutorGate` 覆盖 strict 拒绝且无 CLEAR。窗口呈现、resize/swapchain 与完整 unexpected lowering/copy 门禁仍待验证。
-> 源码核对基线补充：2026-09-19 mixed executor 的末段新增 overlay/native present 入口，复用既有 Vulkan 合成与 swapchain；诊断读回门禁仍通过。混合 native 的窗口、resize、strict 验收及 normal-frame 接线尚未完成。
-> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
-> 源码核对基线补充：2026-09-19 `rf_gpu_resource_cache.h/.c` 已实现 registry generation → 持久 GPU submesh/texture adapter；`rf_gpu_graphics_resource_*()` 将资源与 target/pipeline 分离。旧记录中的“GPU cache 待实现”已由本次增量推进；真实 Core mixed executor/native 仍待实现。实现与验收见 [registry GPU cache](#registry-gpu-cache)。
-> 源码核对基线补充：2026-09-19 `rf_core_mixed_frame.h/.inc` 已实现独立 Core 混合帧记录、WORLD 稳定分区、整帧 executor preflight 和 registry 帧 epoch 检查。以下旧记录中的“Core 未实现”指当时状态；真实 Vulkan mixed executor、GPU cache adapter 与 native 门禁仍待实现。
-> 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_graphics_raster_draw()`，连接 Raster ABI 分段与 graphics LOAD；Intel 实际交错回归和同步验证见下文。Core/native 混合编排仍待实现。
+> 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。证据见下文。
 > 源码核对基线：`0d721581` 加本次工作区；`rf_gpu_graphics.h`、`rf_gpu_vulkan_graphics.inc`、`graphics_compat.vert/.frag`、`graphics_bridge.comp` 与独立 oracle；CPU 合同对照 `rasterfall_render.c` near clipping/project 和 `lib/graphics/renderer.c`；Windows Intel 实测。
 
-HG-2B 进行中：整数深度前置阻塞已修复，GPU attachment/buffer 往返转换与 LOAD 续画已通过。
-Raster ABI 分段与 graphics 已通过 GPU buffer adapter 互操作；Core Draw/Raster 顺序已建立独立计划接口，但真实 Vulkan 提交和 strict native 门禁尚未实现，不能标记
-HG-2B 完成或推进 normal-frame hardware props。正常游戏仍消费原 CPU/compute 路径。
+HG-2B 已按 Windows Intel Iris Xe 的修订口径完成：整数深度、GPU attachment/buffer 往返、Raster ABI 分段、Core 混合帧提交和 strict native 正常帧均已验证。视觉验收依赖真实近/中距离窗口帧、Fog/resize 运行与固定混合遮挡 fixture；不要求真实正常帧逐像素一致。设备在运行期间视为可信有效，不要求设备丢失恢复。其他模式仍消费原 CPU/compute 路径；Linux 和其他 GPU 未验收。
+
+## Windows strict native 正常帧接线
+
+`rf_core_host.c` 在资源 registry 帧开始后创建/重置 `rf_core_mixed_frame`，并在 WORLD 阶段安装 `rf_core_mixed_world_consume`。`rf_game_runtime.c` 将同一指针绑定到 render context；static prop 在每个可见实例的 Draw 前 flush 前序 RasterCmd，随后逐 submesh 提交 Draw。Core 在 Effects/VIEWMODEL 层继续记录 RasterCmd；overlay 仍绘制到 CPU coverage surface，最终由 mixed executor 与天空 clear、Post 一起在 Vulkan swapchain 呈现。成功呈现后才完成 registry 帧 pin；失败帧不重试部分 GPU target。
+
+严格门禁在 freeze 时核对 producer 声明的 Draw 数，在预检时核对全部 RasterCmd、Draw、纹理、尺寸及目标资源；呈现后再核对实际 indexed Draw、finish 次数、零读回和零 CPU framebuffer copy。graphics 的包围范围预检使用物体最近可能深度，允许正常场景的远距离及 4414 milli-scale prop，同时保持整数乘法和屏幕投影边界检查。`FRAME-AUDIT gpu` 输出本帧 `mixed_draws`。
+
+Intel Iris Xe 实测：near/0 两帧分别执行 57、147 Draw；mid/30 三帧执行 67、147、147 Draw，CPU lowered triangles 均为 0。`tools/hardware_graphics_resize.ps1` 的 140 帧 Fog 正常窗口测试记录于 `tmp/hg2b-normal-resize-20260919-b/manifest.json`：四种 extent、资源 loads 恒定、每帧 pin 归零、零读回和零 CPU framebuffer copy。该临时证据不提交。此证据与离屏混合 fixture 共同满足修订后的视觉正常标准；当前会话的桌面截图接口不可用，未把窗口截图或真实正常帧逐像素比较列为证据。
 
 ## 入口与判定
 
@@ -117,10 +117,10 @@ import/export 单向次数；`bridge_transfer_bytes` 统计实际 bridge copy �
   `tmp/hg2b-normal-regression/manifest.json` 为 PASS：原完整 differential、CLI/logic、
   selected world captures、strict native/Fog 与 Campaign 波次均通过。此 native 验收仍是旧 compute 路径。
 
-以上旧证据是独立 oracle 和 attachment↔buffer bridge proof。新增真实 Raster ABI 交错证据见
+以上旧证据是独立 oracle 和 attachment↔buffer bridge proof。以下至文末的阶段性“待实现”只描述各增量当时的状态；当前 HG-2B 结论以本文开头的签收记录为准。新增真实 Raster ABI 交错证据见
 下文；Linux、其他 GPU、设备恢复、混合 native present 均未验证。
 
-## 后续实施顺序
+## 当时的后续实施顺序（历史记录）
 
 1. 已实现 compute CLEAR / LOAD_EXISTING 与 graphics 桥接及固定 fixture 双向遮挡；扩大正式混合帧前仍需保留近面、薄墙和资源资格门禁。
 2. Core 冻结 Draw/Raster spans，保持 WORLD partition 后稳定顺序，检查整帧资格后再提交；
@@ -128,7 +128,7 @@ import/export 单向次数；`bridge_transfer_bytes` 统计实际 bridge copy �
 3. 完成 strict hardware-required 的 unexpected lowering/readback/copy 门禁、native present
    与 resize/swapchain 重建。全部通过后再进入 HG-3A normal-prop allowlist。
 
-## Raster ABI 分段基础（HG-2B 进行中）
+## Raster ABI 分段基础（阶段记录）
 
 `gpu/include/rf_gpu_vulkan_backend.h` 的 `rf_gpu_vulkan_raster_segment()` 是 hosted
 诊断接口，复用原 raster owner 的 device-local color/depth。每次提交仍验证完整 Raster ABI
@@ -320,7 +320,7 @@ differential、固定视角 captures、strict native/Fog 与 Campaign 波次。�
 
 上述 cache 增量之后，Core frozen plan → GPU encoder/executor 已由下节接通；normal props 仍同步 reference lowering。
 混合 native present/strict unexpected-lowering、真实设备重建、Linux 和其他 GPU 尚未验证；
-HG-2B 保持进行中，不能据此启用 HG-3A。
+此阶段尚未完成 HG-2B，不能单独据此启用 HG-3A。
 
 ## Core 真实离屏执行器
 
@@ -372,4 +372,4 @@ instance/device layer 实际加载，启用同步检查，无 VUID/SYNC-HAZARD�
 
 当前输出合同仅含 clear color、Post 与最终诊断 readback；sky、overlay、混合 native present、
 strict unexpected-lowering/readback/copy 门禁及真实 swapchain/device 重建仍待实现。HG-2B
-保持进行中，尚不能启用 HG-3A normal allowlist。Linux 与其他 GPU 未验证。
+在该阶段仍进行中，尚不能启用 HG-3A normal allowlist。Linux 与其他 GPU 未验证。

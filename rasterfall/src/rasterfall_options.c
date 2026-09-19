@@ -118,6 +118,7 @@ void rasterfall_options_usage(int fd)
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
         "  --gpu-normal-scene <near|mid> <0|30> (normal deterministic Campaign runtime)\n"
+        "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
@@ -186,6 +187,14 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
         else if (!strcmp(option,"--gpu-native-present")) o->gpu_native_present=1;
         else if (!strcmp(option,"--gpu-post-fog")) o->gpu_post_fog=1;
+        else if (!strcmp(option,"--gpu-frame-capture")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->gpu_frame_capture=argv[++arg];
+        } else if (!strcmp(option,"--gpu-capture-frame")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->gpu_capture_frame=positive_int(argv[++arg],0);
+            if (!o->gpu_capture_frame) return -1;
+        }
         else if (!strcmp(option,"--textures")) o->textures_enabled=1;
         else if (!strcmp(option,"--no-textures")) o->textures_enabled=0;
         else if (!strcmp(option,"--edge-pass")) o->edge_pass_enabled=1;
@@ -441,6 +450,16 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
     if (o->gpu_post_fog && (!o->renderer_mode || !o->gpu_native_present)) {
         __fprintf(2,"rasterfall: --gpu-post-fog requires --renderer gpu-compute --gpu-native-present\n");
         return -1;
+    }
+    if (o->gpu_frame_capture || o->gpu_capture_frame) {
+        if (!o->gpu_frame_capture || !o->gpu_normal_view || !o->renderer_mode ||
+            !o->gpu_native_present || !o->gpu_required) {
+            __fprintf(2,"rasterfall: GPU frame capture requires --gpu-normal-scene, --renderer gpu-compute, --gpu-native-present and --gpu-required\n");
+            return -1;
+        }
+        if (!o->gpu_capture_frame) o->gpu_capture_frame=30;
+        if (!o->frame_limit) o->frame_limit=o->gpu_capture_frame;
+        if (o->frame_limit < o->gpu_capture_frame) return -1;
     }
     return 0;
 }

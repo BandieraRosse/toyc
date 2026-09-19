@@ -46,6 +46,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
     unsigned int overlay_stride, unsigned int coverage_stride,
     unsigned int width, unsigned int height,
     struct rf_gpu_native_present_timing *timing,
+    unsigned int *capture_color,
     char *message, unsigned long message_capacity);
 
 #endif

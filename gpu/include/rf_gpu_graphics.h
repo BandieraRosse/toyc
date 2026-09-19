@@ -31,9 +31,15 @@ struct rf_gpu_graphics_stats {
     uint64_t mesh_upload_bytes, texture_upload_bytes;
     uint64_t instance_upload_bytes, indexed_draws, frames, target_builds;
     uint64_t bridge_roundtrips, bridge_transfer_bytes, raster_bridge_transfers;
+    uint64_t queue_submits, fence_waits;
+    double submit_wall_ms, fence_wait_wall_ms, bridge_wall_ms;
 };
 struct rf_gpu_graphics;
 struct rf_gpu_graphics_resource;
+struct rf_gpu_graphics_batch_item {
+    struct rf_gpu_graphics_resource *resource;
+    struct rf_gpu_graphics_draw draw;
+};
 
 /* Persistent immutable submesh/texture bundles, independent of target extent.
  * Resources belong to this graphics owner (and device), share its pipelines,
@@ -79,6 +85,8 @@ int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
  * failure invalidates it. Caller owns frame ordering and lifetime. */
 int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_draw *draws, uint32_t count);
+int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
+    const struct rf_gpu_graphics_batch_item *items, uint32_t count);
 /* Inspect the last bridge's exported compute encoding, never used as input
  * to drawing/import. Diagnostic readback validates the conversion itself. */
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
