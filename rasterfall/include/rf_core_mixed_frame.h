@@ -51,6 +51,8 @@ int rf_core_mixed_draw(struct rf_core_mixed_frame *frame,
 /* Stable partition across the COMPLETE WORLD, including Draw positions.
  * Allocation/rejection leaves the record unchanged and available to replay. */
 int rf_core_mixed_freeze(struct rf_core_mixed_frame *frame);
+/* Reuse normal Core Raster V1 eligibility before a hosted packer reads texels. */
+int rf_core_mixed_raster_preflight(const struct rf_core_mixed_frame *frame);
 
 /* Backend checks the entire immutable plan (resources, numeric eligibility,
  * pack, target and terminal operations) before any execute call. A rejected

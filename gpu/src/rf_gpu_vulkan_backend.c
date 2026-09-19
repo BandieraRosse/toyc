@@ -1430,6 +1430,73 @@ static int raster_invalidate(struct rf_gpu_vulkan_impl *impl,
 
 #include "rf_gpu_vulkan_graphics.inc"
 
+static int raster_preflight(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int width, unsigned int height)
+{
+    struct rf_gpu_vulkan_impl *impl = context ? context->implementation : NULL;
+    struct rf_gpu_vulkan_raster *r = raster;
+    if (!impl || !r || r->owner != impl || r->width != width ||
+        r->height != height || !stream_size ||
+        stream_size > impl->max_storage_buffer_range ||
+        rf_gpu_raster_validate_v1(stream, stream_size) ||
+        ((const uint32_t *)stream)[5] != width ||
+        ((const uint32_t *)stream)[6] != height)
+        return -1;
+    if ((texture_count && (!texture_descs || !texture_texels || !texture_bytes)) ||
+        (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) >
+            impl->max_storage_buffer_range ||
+        texture_bytes > impl->max_storage_buffer_range)
+        return -1;
+    {
+        const uint32_t *words = stream;
+        uint32_t ci, command_count = words[4];
+        for (ci = 0; ci < command_count; ++ci) {
+            uint32_t base = 8U + ci * 24U;
+            if (words[base] == 5U &&
+                (!words[base + 3U] || words[base + 3U] > texture_count))
+                return -1;
+        }
+    }
+    if (texture_count) {
+        const struct rf_gpu_texture_desc_host_v1 *descs = texture_descs;
+        unsigned int ti;
+        for (ti = 0; ti < texture_count; ++ti) {
+            uint64_t row_bytes = (uint64_t)descs[ti].width *
+                (descs[ti].format == RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1 ? 4 : 3);
+            uint64_t end = (uint64_t)descs[ti].texel_offset +
+                (uint64_t)descs[ti].stride * descs[ti].height;
+            if (!descs[ti].width || !descs[ti].height ||
+                (descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGB8_HOST_V1 &&
+                 descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1) ||
+                descs[ti].sampling != RF_GPU_TEXTURE_SAMPLING_NEAREST_HOST_V1 ||
+                descs[ti].stride < row_bytes || end > texture_bytes)
+                return -1;
+        }
+    }
+    return 0;
+}
+
+int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int width, unsigned int height)
+{
+    struct rf_gpu_vulkan_impl *impl = context ? context->implementation : NULL;
+    struct rf_gpu_vulkan_raster *r = raster;
+    if (raster_preflight(context, raster, stream, stream_size, texture_descs,
+        texture_count, texture_texels, texture_bytes, width, height) < 0) return -1;
+    if (!r->full_scan_diagnostic &&
+        (rf_gpu_raster_bin_v1(stream, stream_size, r->work_group_x,
+            r->work_group_y, &r->tile_lists) < 0 ||
+         ((uint64_t)r->tile_lists.stats.tile_count+1)*4 > impl->max_storage_buffer_range ||
+         r->tile_lists.stats.total_refs*4 > impl->max_storage_buffer_range)) return -1;
+    return 0;
+}
+
 static int raster_render_range(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
@@ -1464,13 +1531,9 @@ static int raster_render_range(void *context, void *raster,
     static const uint32_t empty_texel = 0xffffffffU;
     if (timing) memset(timing, 0, sizeof(*timing));
     segment_start = now_ms();
-    if (!impl || !r || r->owner != impl || r->width != width ||
-        r->height != height || !stream_size ||
-        stream_size > impl->max_storage_buffer_range ||
-        rf_gpu_raster_validate_v1(stream, stream_size) ||
-        ((const uint32_t *)stream)[5] != width ||
-        ((const uint32_t *)stream)[6] != height)
-        return -1;
+    if (raster_preflight(backend_context, raster, stream, stream_size,
+            texture_descs, texture_count, texture_texels, texture_bytes,
+            width, height) < 0) return -1;
     if (end == UINT32_MAX) end = ((const uint32_t *)stream)[4];
     if (load > RF_GPU_RASTER_LOAD_EXISTING || first > end ||
         end > ((const uint32_t *)stream)[4] ||
@@ -1509,37 +1572,6 @@ static int raster_render_range(void *context, void *raster,
         }
         if (result != RF_VK_SUCCESS && result != RF_VK_SUBOPTIMAL_KHR) return -1;
         native_timing->acquire_ms = now_ms() - acquire_start;
-    }
-    if ((texture_count && (!texture_descs || !texture_texels || !texture_bytes)) ||
-        (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) >
-            impl->max_storage_buffer_range ||
-        texture_bytes > impl->max_storage_buffer_range)
-        return -1;
-    {
-        const uint32_t *words = stream;
-        uint32_t ci, command_count = words[4];
-        for (ci = 0; ci < command_count; ++ci) {
-            uint32_t base = 8U + ci * 24U;
-            if (words[base] == 5U &&
-                (!words[base + 3U] || words[base + 3U] > texture_count))
-                return -1;
-        }
-    }
-    if (texture_count) {
-        const struct rf_gpu_texture_desc_host_v1 *descs = texture_descs;
-        unsigned int ti;
-        for (ti = 0; ti < texture_count; ++ti) {
-            uint64_t row_bytes = (uint64_t)descs[ti].width *
-                (descs[ti].format == RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1 ? 4 : 3);
-            uint64_t end = (uint64_t)descs[ti].texel_offset +
-                (uint64_t)descs[ti].stride * descs[ti].height;
-            if (!descs[ti].width || !descs[ti].height ||
-                (descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGB8_HOST_V1 &&
-                 descs[ti].format != RF_GPU_TEXTURE_FORMAT_RGBA8_HOST_V1) ||
-                descs[ti].sampling != RF_GPU_TEXTURE_SAMPLING_NEAREST_HOST_V1 ||
-                descs[ti].stride < row_bytes || end > texture_bytes)
-                return -1;
-        }
     }
     if (timing) timing->pack_validation_ms = now_ms() - segment_start;
     segment_start = now_ms();
@@ -1921,6 +1953,52 @@ int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
         texture_descs, texture_count, texture_texels, texture_bytes,
         color, depth, width, height, color_stride, depth_stride, NULL,
         message, capacity, first, end, (uint32_t)load, final);
+}
+
+int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int first, unsigned int end, enum rf_gpu_raster_load load,
+    const unsigned int *overlay_color, const unsigned char *overlay_coverage,
+    unsigned int overlay_stride, unsigned int coverage_stride,
+    unsigned int width, unsigned int height,
+    struct rf_gpu_native_present_timing *timing,
+    char *message, unsigned long capacity)
+{
+    struct rf_gpu_vulkan_raster *r = raster;
+    uint64_t pixels = (uint64_t)width * height;
+    uint32_t *colors;
+    unsigned char *coverage;
+    int result;
+    if (!r || !timing || !message || !capacity || !overlay_color ||
+        !overlay_coverage || !width || !height || pixels > SIZE_MAX / 4 ||
+        overlay_stride < width || coverage_stride < width ||
+        first > end || end == UINT32_MAX) return -1;
+    colors = malloc((size_t)pixels * 4);
+    coverage = calloc(1, (size_t)((pixels + 3U) & ~3ULL));
+    if (!colors || !coverage) { free(colors); free(coverage); return -1; }
+    for (unsigned int y = 0; y < height; ++y) {
+        memcpy(colors + (size_t)y * width, overlay_color + (size_t)y * overlay_stride,
+            (size_t)width * 4);
+        memcpy(coverage + (size_t)y * width, overlay_coverage + (size_t)y * coverage_stride,
+            width);
+    }
+    memset(timing, 0, sizeof(*timing));
+    r->pending_present_timing = timing;
+    r->pending_overlay_color = colors;
+    r->pending_overlay_coverage = coverage;
+    r->pending_overlay_stride = width;
+    r->pending_coverage_stride = width;
+    result = raster_render_range(context, raster, stream, stream_size,
+        texture_descs, texture_count, texture_texels, texture_bytes,
+        NULL, NULL, width, height, 0, 0, NULL, message, capacity,
+        first, end, (uint32_t)load, 1);
+    r->pending_present_timing = NULL;
+    r->pending_overlay_color = NULL;
+    r->pending_overlay_coverage = NULL;
+    free(colors); free(coverage);
+    return result;
 }
 
 static int raster_set_post(void *context, void *raster,

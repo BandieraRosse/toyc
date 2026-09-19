@@ -7,8 +7,8 @@
 #include "rasterfall_render_resources.h"
 
 /* CPU-backed Draw V0. Normal props use HG-1B registry identity and frame pins;
- * borrowed backing is only for synchronous diagnostic fixtures. No retained
- * DrawSpan or GPU cache yet. WORLD triangle lists, nearest/repeat textures,
+ * borrowed backing is only for synchronous diagnostic fixtures. Hosted mixed
+ * frames/cache consume registered snapshots separately. WORLD triangle lists, nearest/repeat textures,
  * bottom pivot, no primitive fog, rigid props only. */
 struct rasterfall_draw_view {
     struct camera camera;

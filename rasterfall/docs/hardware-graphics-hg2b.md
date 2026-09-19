@@ -1,6 +1,8 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 mixed executor 的末段新增 overlay/native present 入口，复用既有 Vulkan 合成与 swapchain；诊断读回门禁仍通过。混合 native 的窗口、resize、strict 验收及 normal-frame 接线尚未完成。
+> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 `rf_gpu_resource_cache.h/.c` 已实现 registry generation → 持久 GPU submesh/texture adapter；`rf_gpu_graphics_resource_*()` 将资源与 target/pipeline 分离。旧记录中的“GPU cache 待实现”已由本次增量推进；真实 Core mixed executor/native 仍待实现。实现与验收见 [registry GPU cache](#registry-gpu-cache)。
 > 源码核对基线补充：2026-09-19 `rf_core_mixed_frame.h/.inc` 已实现独立 Core 混合帧记录、WORLD 稳定分区、整帧 executor preflight 和 registry 帧 epoch 检查。以下旧记录中的“Core 未实现”指当时状态；真实 Vulkan mixed executor、GPU cache adapter 与 native 门禁仍待实现。
 > 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_graphics_raster_draw()`，连接 Raster ABI 分段与 graphics LOAD；Intel 实际交错回归和同步验证见下文。Core/native 混合编排仍待实现。
@@ -314,6 +316,58 @@ proof 脚本将参数显式固定为 string array，避免单参数 splat 拆分
 differential、固定视角 captures、strict native/Fog 与 Campaign 波次。使用新构建的 exe 更新
 既有 package 目录，资产未变；这些 native 帧仍属于原 compute 路径。
 
-尚未连接 Core frozen plan → GPU encoder/executor，normal props 仍同步 reference lowering。
+上述 cache 增量之后，Core frozen plan → GPU encoder/executor 已由下节接通；normal props 仍同步 reference lowering。
 混合 native present/strict unexpected-lowering、真实设备重建、Linux 和其他 GPU 尚未验证；
 HG-2B 保持进行中，不能据此启用 HG-3A。
+
+## Core 真实离屏执行器
+
+`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 拥有 hosted
+同步消费者的 graphics/cache/raster 生命周期，借用同一 Vulkan service 与 CPU registry。
+`rf_gpu_mixed_render()` 调用真实 `rf_core_mixed_execute()`；必须在 service/registry 销毁前
+销毁 executor。没有接入 normal producer，也没有正常帧 shadow lowering。
+
+- preflight 复用 Core Raster V1 分类，先拒绝不支持的材质、edge、overlay 和无效 texture backing，
+  再按 frozen spans 的顺序复制并 pack 完整 Raster ABI，插入 transparent/VIEWMODEL markers。
+  `rf_gpu_vulkan_raster_preflight()` 检查完整 stream、texture/device limits 和 binning；原执行
+  路径复用同一验证函数，没有为 normal frame 增加第二次 binning。
+- Draw encoder 只处理每实例/submesh 参数：显式相机、底部 pivot、yaw、scale、光照、颜色与
+  sidedness。要求完整 primitive range；ambient/specular 等尚未支持的 policy 保守拒绝。
+  cache prepare 验证并预上传资源，随后 bind 与 `rf_gpu_graphics_validate_draw()` 检查所有 Draw
+  的数值资格。WORLD inverse-Z 必须位于 `[0,16384]`。这些检查全部先于首次 CLEAR；失败保留
+  FROZEN，可修正输出条件或显式 replay。资源上传/target resize 可能已发生，拒绝不承诺撤销它们。
+- 原 opaque 顺序中的 Raster 段在遇到 Draw 时执行，Draw 逐项绑定缓存后进入 GPU bridge。
+  首项 Draw 会先执行 clear 前缀，连续 Draw 不重放 compute 前段；最后一个 Draw 后允许空尾段。
+  transparent/effects/完整 VIEWMODEL 后缀统一由 finish 消费，只执行一次 Post 和诊断 readback。
+  空帧同样只 clear/finish 一次。提交失败遵循 Core FAILED 状态，不自动 CPU replay。
+- `rf_gpu_mixed_stats` 记录实际 clears、segments、indexed draws、finishes、最终 readback bytes
+  和 graphics 上传/bridge 统计。资源稳态/resize 零重传；Raster stream 仍在每段重新上传与分桶，
+  Draw bridge 仍同步逐次提交。本增量是正确性接线，不代表性能收益。
+
+`tools/rasterfall_gpu_mixed_test.c` 链接真实 Core、registry 与 Vulkan。独立 fullscreen Raster
+参考替代 Draw 几何，要求全图 color/depth 精确一致，不排除边缘；无 Fog 时另与 CPU reference
+比较。覆盖跨批次透明分区、交错与连续 Draw、双向遮挡、同深度覆盖、flat/texture、独立
+VIEWMODEL、Fog、奇数 extent/非紧密 stride、resize 零重传、首尾 Draw、空帧、退休后完成当前帧、
+旧 epoch 拒绝，以及后段非法 Draw/Raster/texture/edge 在 CLEAR 前拒绝。资源退休后禁止新增 pin；
+测试在退休前冻结待消费计划。
+
+```powershell
+& C:\msys64\usr\bin\make.exe -j8 -f windows/Makefile gpu-mixed-executor-test
+powershell -ExecutionPolicy Bypass -File tools/hardware_graphics_proof.ps1 -ExecutorGate -OutputDirectory tmp/hg2b-executor-new
+```
+
+Windows 新增独立 hosted 目标，根 `win-gpu-mixed-executor-test` 转发；新编译单元仅用于诊断，
+不进入 normal player、Linux freestanding/self 或 package。无 shader、玩家 CLI 或资产变化。
+`tmp/hg2b-executor-proof/manifest.json` 保存 Intel adapter/driver、二进制与日志 hash 和 PASS；
+`tmp/hg2b-executor-validation.log` / `tmp/hg2b-executor-validation-loader.log` 确认 Khronos
+instance/device layer 实际加载，启用同步检查，无 VUID/SYNC-HAZARD。原 depth gate 与 bridge
+回归见 `tmp/hg2b-executor-depth-proof/manifest.json` 和 `tmp/hg2b-executor-bridge-regression.log`。
+最终 Windows hosted 构建记录为 `tmp/hg2b-executor-build3.log`；normal exe 构建记录为
+`tmp/hg2b-executor-build-final.log`。更新既有 package 中的 exe 后，
+`tmp/hg2b-executor-normal/manifest.json` 记录完整回归 PASS：新编译的 differential、实际
+`--help`/`--logic-test`、固定视角 captures、strict native/Fog 与 Campaign 波次。
+这些 native 帧仍使用原 compute 路径，不构成混合 native 验收证据。
+
+当前输出合同仅含 clear color、Post 与最终诊断 readback；sky、overlay、混合 native present、
+strict unexpected-lowering/readback/copy 门禁及真实 swapchain/device 重建仍待实现。HG-2B
+保持进行中，尚不能启用 HG-3A normal allowlist。Linux 与其他 GPU 未验证。

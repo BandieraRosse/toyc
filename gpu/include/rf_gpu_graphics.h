@@ -53,6 +53,9 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
 /* Caller shuts graphics down before its shared backend context. All calls
  * are synchronous, one frame in flight. Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
+/* Validate the currently bound resource/draw without touching target contents. */
+int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_draw *draw);
 int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,

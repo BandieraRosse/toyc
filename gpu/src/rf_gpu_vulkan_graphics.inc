@@ -627,6 +627,13 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
     return 1;
 }
 
+int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_draw *draw)
+{
+    return g && !g->poisoned && g->resource && g->target.framebuffer && draw &&
+        gfx_draw_valid(g, draw) ? 0 : -1;
+}
+
 /* mode: 0 diagnostic roundtrip, 1 raster -> attachments, 2 attachments -> raster. */
 static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r, int mode)
 {

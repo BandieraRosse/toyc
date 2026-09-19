@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 已提供 generation/epoch/pin 校验、持久 submesh/texture 上传、纯绑定及退休回收；graphics owner 共用 target/pipeline，缓存仅绑定一个 registry 和 device 生命周期。真实 Core Vulkan executor 尚未接入。
 > 源码核对基线补充：2026-09-19 [HG-2B Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 已增加 `rf_core_mixed_frame.h/.inc`，按 registry 帧 epoch 冻结 Draw、pin backing、跨 WORLD 稳定分区并通过 executor 整帧 preflight；真实 Vulkan adapter 与 normal producer 接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
@@ -13,7 +14,7 @@
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
 HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
-HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已建立独立 Core 混合帧记录接口，真实延迟 Draw 消费与 Vulkan adapter 仍待实现。
+HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已接通独立 Core 混合帧到真实离屏 Vulkan executor，混合 native/strict 门禁仍待实现。
 当前 native 路径仍为 compute raster，不能将其称为 hardware indexed draw。
 
 ## 状态所有者与 producer 边界
@@ -26,7 +27,7 @@ HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics e
 | 顶点与三角形 frontend | `render/rasterfall_draw_reference.inc`、`prepare_gallery_vertex_cache()`、`lower_gallery_triangles()` | HG-1A 同步 reference；旧 gallery 与 Draw 共用整数循环，尚无跳过 lowering 的 hardware 路径 |
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
-| 层顺序、retained、fallback | `rf_core_host.c`、`rf_core_mixed_frame.h/.inc` | 正常帧保留原 retained；独立 mixed API 冻结 Draw/Raster spans 并稳定分区，executor 先整帧 preflight，拒绝后保留记录供显式 replay；Vulkan/replay adapter 待接入 |
+| 层顺序、retained、fallback | `rf_core_host.c`、`rf_core_mixed_frame.h/.inc` | 正常帧保留原 retained；独立 mixed API 冻结 Draw/Raster spans 并稳定分区；hosted `rf_gpu_mixed_executor.c` 先整帧 preflight，再消费 GPU spans；显式 replay adapter 与 native/strict 待接入 |
 | Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc`、`rf_gpu_resource_cache.c` | normal compute buffer/Win32 transfer present；graphics owner 共享 RGBA8/D32 target/pipeline，独立 immutable resources 持有 VB/IB/texels，registry cache 负责 generation/epoch/pin；HG-2B 已连接 Raster ABI 分段与 attachment/buffer bridge；Core 混合帧/presenter 待接入 |
 | 基线、验收 | `tools/hardware_graphics_baseline.ps1`、`rf_gpu_raster_diff_test.c` | 保留退出码、原始审计、stream、color/depth、环境标识 |
 

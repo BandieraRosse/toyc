@@ -100,6 +100,12 @@ $(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_te
 -include $(BUILD)/win/tools/rasterfall_resource_test.d
 
 .PHONY: gpu-resource-cache-test
+.PHONY: gpu-mixed-executor-test
+gpu-mixed-executor-test: $(BUILD)/rasterfall-gpu-mixed-test.exe
+$(BUILD)/rasterfall-gpu-mixed-test.exe: $(BUILD)/win/tools/rasterfall_gpu_mixed_test.o $(BUILD)/win/gpu/src/rf_gpu_mixed_executor.o $(BUILD)/win/gpu/src/rf_gpu_resource_cache.o $(RESOURCE_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
+-include $(BUILD)/win/tools/rasterfall_gpu_mixed_test.d $(BUILD)/win/gpu/src/rf_gpu_mixed_executor.d
+
 gpu-resource-cache-test: $(BUILD)/rasterfall-gpu-cache-test.exe
 $(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_test.o $(BUILD)/win/gpu/src/rf_gpu_resource_cache.o $(RESOURCE_TEST_OBJS)
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)

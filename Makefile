@@ -1243,6 +1243,10 @@ win-gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
 # Registry integration uses the Windows hosted game/model runtime. It is not
 # linked into Linux freestanding/self or the normal Windows player yet.
 .PHONY: win-gpu-resource-cache-test
+.PHONY: win-gpu-mixed-executor-test
+win-gpu-mixed-executor-test:
+	$(MAKE) -f windows/Makefile gpu-mixed-executor-test
+
 win-gpu-resource-cache-test:
 	$(MAKE) -f windows/Makefile gpu-resource-cache-test
 

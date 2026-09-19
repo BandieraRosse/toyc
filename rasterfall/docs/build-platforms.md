@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 新增 hosted `gpu/src/rf_gpu_resource_cache.c`，仅由 Windows `gpu-resource-cache-test` 链接真实 registry/model runtime；根 `win-gpu-resource-cache-test` 转发此目标。未加入 normal player、Linux freestanding 或 self；无新玩家参数、shader 或资源。graphics 资源拆分仍由既有 backend `.inc` 和依赖规则编译。
 > 源码核对基线补充：2026-09-19 HG-2B [Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 由既有 `rf_core_host.c` 包含 `.inc`，无新编译单元、CLI 或资产；根 Makefile 显式依赖头文件/实现/fixture，Windows `-MMD` 自动依赖覆盖；self 无独立 Core 规则需要扩充。`--logic-test` 进入同一 Core 实现。
 > 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。

@@ -181,6 +181,16 @@ int rf_core_mixed_freeze(struct rf_core_mixed_frame *f)
     return 0;
 }
 
+int rf_core_mixed_raster_preflight(const struct rf_core_mixed_frame *f)
+{
+    unsigned long i;
+    if (!f) return -1;
+    for (i = 0; i < f->raster_count; ++i)
+        if (rf_core_cmd_fallback_reason_v1(&f->raster[i]) != RF_PRE_POST_FALLBACK_NONE)
+            return -1;
+    return 0;
+}
+
 int rf_core_mixed_execute(struct rf_core_mixed_frame *f,
     const struct rf_core_mixed_executor *executor, void *context)
 {

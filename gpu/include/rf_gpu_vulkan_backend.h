@@ -22,6 +22,12 @@ extern const struct rf_gpu_backend rf_gpu_vulkan_backend;
  * Rejection before submission preserves existing contents; execution failure
  * invalidates continuation. Resize creates a new, invalid target. */
 enum rf_gpu_raster_load { RF_GPU_RASTER_CLEAR, RF_GPU_RASTER_LOAD_EXISTING };
+/* Complete stream/texture/device limits and binning, no target writes. */
+int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int width, unsigned int height);
 int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
     void *raster, const void *stream, unsigned long stream_size,
     const void *texture_descs, unsigned int texture_count,
@@ -30,6 +36,16 @@ int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
     int final, unsigned int *color, int *depth,
     unsigned int width, unsigned int height,
     unsigned int color_stride, unsigned int depth_stride,
+    char *message, unsigned long message_capacity);
+int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int first, unsigned int end, enum rf_gpu_raster_load load,
+    const unsigned int *overlay_color, const unsigned char *overlay_coverage,
+    unsigned int overlay_stride, unsigned int coverage_stride,
+    unsigned int width, unsigned int height,
+    struct rf_gpu_native_present_timing *timing,
     char *message, unsigned long message_capacity);
 
 #endif

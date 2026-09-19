@@ -1,7 +1,7 @@
 # Hardware Graphics 开发计划
 
 > 计划更新：2026-09-19
-> 当前进度：HG-0、HG-1A、HG-1B、HG-2A 已实现；HG-2B 已接通真实 Raster ABI compute → graphics → compute GPU bridge、Core 独立混合帧计划及 registry generation → GPU submesh cache。缓存与 target/pipeline 分离，Intel 已验证稳态零上传、resize 复用、epoch/pin/退休释放。下一步接通真实 mixed executor 与 native present 门禁。正常帧仍使用原 CPU/compute 路径。
+> 当前进度：HG-0、HG-1A、HG-1B、HG-2A 已实现；HG-2B 已接通 Core frozen plan → registry GPU cache → Raster ABI / indexed draw 真实离屏执行器，整帧预检先于 CLEAR，透明/VIEWMODEL/Post 留在末段。Intel 全图参考与同步验证通过。混合执行器末段已新增 overlay/native present 入口，尚待窗口实机、resize/swapchain 与 strict 门禁验证。正常帧仍使用原 CPU/compute 路径。
 > 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
 
 | Checkpoint | 状态 | 交付/下一步 |
@@ -10,7 +10,7 @@
 | HG-1A | 完成 | CPU planar 前置修复；普通 opaque static RMESH 按实例/submesh 提交 Draw，同步 reference；命令/color/depth 精确回归与 Windows Intel 基线通过 |
 | HG-1B | 完成 | CPU bundle registry、generation、Core 帧 pin 与延迟释放；[实现与验证](rasterfall/docs/hardware-graphics-hg1b.md) |
 | HG-2A | 完成 | 持久 device-local VB/IB/texels、flat/nearest、RGBA8/D32 离屏 indexed draw；[数值合同与验收边界](rasterfall/docs/hardware-graphics-hg2a.md) |
-| HG-2B | 进行中 | [整数深度、target bridge、Core 帧计划与 registry GPU cache](rasterfall/docs/hardware-graphics-hg2b.md) 已实现；真实 mixed executor 与 native present 待实现 |
+| HG-2B | 进行中 | [Core 真实离屏执行器](rasterfall/docs/hardware-graphics-hg2b.md#core-真实离屏执行器) 已实现；混合 overlay/native present 与 strict 门禁待实现 |
 | HG-3A / HG-3B | 待开发 | opaque static props allowlist → 扩围 |
 | HG-4A / HG-4B | 待开发 | Ground → map/boundary 几何 |
 | HG-5A / HG-5B | 待开发 | Character geometry → GPU skinning |
