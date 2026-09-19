@@ -1,7 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-19
-> 源码核对基线：2026-09-19；HG-2C1 已接入 mixed CPU 分项计时，Windows package、`--logic-test` 与 strict native 短帧审计通过。GPU timestamp、共享 target、统一 command recording 与多帧在途尚未实现。
+> 源码核对基线：2026-09-19；HG-2C1 已完成 mixed CPU 分项与 Vulkan GPU timestamp。Windows package 和 40 帧 strict native 审计通过；共享 target、统一 command recording 与多帧在途尚未实现。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
 帧的固定全屏搬运与单帧同步成本，避免 HG-3 至 HG-5 建立在双向 bridge 架构上。
@@ -25,7 +25,7 @@ bridge 包含全屏 copy、compute 格式转换、barrier 和资源状态往返�
 
 | 阶段 | 状态 | 交付 |
 | --- | --- | --- |
-| HG-2C1 | 进行中 | 完整 CPU/GPU 分项计时；当前已完成 mixed CPU 分项，GPU timestamp 待实现 |
+| HG-2C1 | 完成 | mixed CPU 分项，以及 Raster、bridge import、Draw、bridge export、Post、overlay、swapchain copy 的 Vulkan timestamp |
 | HG-2C2 | 待开发 | compute Raster 与 graphics Draw 共享 color target，先取消 color 回程 bridge |
 | HG-2C3 | 待开发 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
 | HG-2C4 | 待开发 | 2–3 个 frame context；正常帧删除 `vkQueueWaitIdle` |
@@ -60,5 +60,23 @@ HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完�
 - graphics bridge/Draw：`gpu/src/rf_gpu_vulkan_graphics.inc`
 - Raster/Post/overlay/present：`gpu/src/rf_gpu_vulkan_backend.c`
 
-下一步在 Vulkan backend 增加 query pool 与设备 timestamp 能力检查。不能用现有
-`bridge_ms`、`graphics_draw_ms`、`fence_wait_ms` 或 `native_total_ms` 代替 GPU timestamp。
+`--frame-audit` 的 `mixed-gpu` 行是设备 timestamp：
+
+- `supported`：物理设备、graphics+compute queue 和 Vulkan 入口共同支持 timestamp。
+- `valid`：本帧 query 已在最终 fence 后成功读取。
+- `raster_ms`：帧内所有 compute Raster segment 的设备执行时间总和。
+- `bridge_import_ms` / `bridge_export_ms`：Raster storage buffer 与 graphics attachment
+  之间两向 bridge 的设备执行时间。
+- `draw_ms`：indexed Draw render pass 的设备执行时间。
+- `post_ms`、`overlay_ms`、`present_copy_ms`：尾段 Post、overlay composite 和 buffer 到
+  swapchain image copy 的设备执行时间。
+
+query pool 属于 Raster target；CLEAR segment 重置本帧 query，跨 Raster 与 graphics command
+buffer 写入成对时间戳，最终 fence 后读取并按类别聚合。不支持 timestamp 时正常 GPU 帧仍可运行，
+审计输出 `supported=0 valid=0`。这些字段不能用现有 CPU 墙钟 `bridge_ms`、
+`graphics_draw_ms`、`fence_wait_ms` 或 `native_total_ms` 替代。
+
+Windows Intel 实机 1280×720 near/0、40 帧 strict native 验证为 40/40 GPU 帧、零 fallback、
+零普通读回/CPU framebuffer copy；`mixed-gpu` 每帧均为 `supported=1 valid=1`。热帧观察到
+Raster 约 10–16 ms、bridge import 约 1.0–2.3 ms、Draw 约 0.3–0.5 ms、bridge export
+约 0.9–1.5 ms，说明下一步 HG-2C2 应优先消除完整 color bridge，并继续保留 depth 契约审计。

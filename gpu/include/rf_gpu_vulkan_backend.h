@@ -11,6 +11,12 @@ struct rf_gpu_vulkan_context {
     unsigned int require_graphics;
 };
 
+struct rf_gpu_mixed_gpu_timing {
+    double raster_ms, bridge_import_ms, draw_ms, bridge_export_ms;
+    double post_ms, overlay_ms, present_copy_ms;
+    unsigned int supported, valid;
+};
+
 extern const struct rf_gpu_backend rf_gpu_vulkan_backend;
 
 /* HG-2B hosted segmented consumer. Every call validates the COMPLETE Raster
@@ -48,5 +54,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
     struct rf_gpu_native_present_timing *timing,
     unsigned int *capture_color,
     char *message, unsigned long message_capacity);
+void rf_gpu_vulkan_mixed_gpu_timing(void *raster,
+    struct rf_gpu_mixed_gpu_timing *timing);
 
 #endif

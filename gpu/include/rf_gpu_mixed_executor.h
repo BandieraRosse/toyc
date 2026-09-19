@@ -28,6 +28,7 @@ struct rf_gpu_mixed_stats {
     double cache_collect_ms, preflight_ms, texture_measure_ms, pack_ms;
     double draw_encode_ms, draw_batch_prepare_ms, graphics_draw_ms;
     double raster_segment_ms;
+    struct rf_gpu_mixed_gpu_timing gpu_timing;
     struct rf_gpu_graphics_stats graphics;
 };
 struct rf_gpu_mixed_executor *rf_gpu_mixed_create(struct rf_gpu *gpu,

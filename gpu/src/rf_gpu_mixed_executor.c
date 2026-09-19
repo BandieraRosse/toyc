@@ -314,6 +314,7 @@ void rf_gpu_mixed_get_stats(struct rf_gpu_mixed_executor *e, struct rf_gpu_mixed
 {
     if (!e || !stats) return;
     *stats=e->stats; rf_gpu_graphics_get_stats(e->graphics,&stats->graphics);
+    rf_gpu_vulkan_mixed_gpu_timing(e->raster.implementation,&stats->gpu_timing);
 }
 void rf_gpu_mixed_destroy(struct rf_gpu_mixed_executor *e)
 {

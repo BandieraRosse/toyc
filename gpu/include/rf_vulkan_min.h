@@ -48,6 +48,10 @@
 #define RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO 42
 #define RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER 46
 #define RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE 6
+#define RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO 11
+#define RF_VK_QUERY_TYPE_TIMESTAMP 2
+#define RF_VK_QUERY_RESULT_64_BIT 0x00000001U
+#define RF_VK_QUERY_RESULT_WAIT_BIT 0x00000002U
 
 #define RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT 0x00000020U
 #define RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT 0x00000001U
@@ -82,6 +86,7 @@
 #define RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT 0x00000800U
 #define RF_VK_PIPELINE_STAGE_TRANSFER_BIT 0x00001000U
 #define RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT 0x00000001U
+#define RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT 0x00002000U
 #define RF_VK_IMAGE_USAGE_TRANSFER_DST_BIT 0x00000002U
 #define RF_VK_IMAGE_LAYOUT_UNDEFINED 0
 #define RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL 7
@@ -136,6 +141,7 @@ typedef struct rf_vk_surface_t *rf_vk_surface;
 typedef struct rf_vk_swapchain_t *rf_vk_swapchain;
 typedef struct rf_vk_image_t *rf_vk_image;
 typedef struct rf_vk_semaphore_t *rf_vk_semaphore;
+typedef struct rf_vk_query_pool_t *rf_vk_query_pool;
 typedef void (RF_VK_CALL *rf_vk_void_function)(void);
 
 struct rf_vk_application_info {
@@ -286,6 +292,8 @@ struct rf_vk_memory_barrier {
     uint32_t s_type; const void *next; rf_vk_flags src_access_mask;
     rf_vk_flags dst_access_mask;
 };
+struct rf_vk_query_pool_create_info { uint32_t s_type; const void *next;
+    rf_vk_flags flags; uint32_t query_type, query_count, pipeline_statistics; };
 struct rf_vk_buffer_copy { uint64_t src_offset; uint64_t dst_offset; uint64_t size; };
 struct rf_vk_descriptor_set_layout_binding {
     uint32_t binding; uint32_t descriptor_type; uint32_t descriptor_count;
@@ -506,6 +514,16 @@ typedef void (RF_VK_CALL *rf_vk_cmd_pipeline_barrier_fn)(rf_vk_command_buffer,
     const void *);
 typedef void (RF_VK_CALL *rf_vk_cmd_copy_buffer_fn)(rf_vk_command_buffer,
     rf_vk_buffer, rf_vk_buffer, uint32_t, const struct rf_vk_buffer_copy *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_create_query_pool_fn)(rf_vk_device,
+    const struct rf_vk_query_pool_create_info *, const void *, rf_vk_query_pool *);
+typedef void (RF_VK_CALL *rf_vk_destroy_query_pool_fn)(rf_vk_device,
+    rf_vk_query_pool, const void *);
+typedef void (RF_VK_CALL *rf_vk_cmd_reset_query_pool_fn)(rf_vk_command_buffer,
+    rf_vk_query_pool, uint32_t, uint32_t);
+typedef void (RF_VK_CALL *rf_vk_cmd_write_timestamp_fn)(rf_vk_command_buffer,
+    rf_vk_flags, rf_vk_query_pool, uint32_t);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_query_pool_results_fn)(rf_vk_device,
+    rf_vk_query_pool, uint32_t, uint32_t, size_t, void *, uint64_t, rf_vk_flags);
 typedef rf_vk_result (RF_VK_CALL *rf_vk_create_fence_fn)(rf_vk_device,
     const struct rf_vk_fence_create_info *, const void *, rf_vk_fence *);
 typedef void (RF_VK_CALL *rf_vk_destroy_fence_fn)(rf_vk_device, rf_vk_fence,

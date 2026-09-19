@@ -688,6 +688,7 @@ int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
 static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
                       int mode, int append_to_draw, int record_only)
 {
+    uint32_t timestamp=UINT32_MAX;
     double bridge_start=now_ms();
     struct rf_gpu_vulkan_impl *impl=g->owner;
     uint64_t bytes=(uint64_t)g->target.width*g->target.height*4;
@@ -707,6 +708,8 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
     }
     impl->api.update_descriptor_sets(impl->device,2,writes,0,NULL);
     if(!append_to_draw && gfx_begin(g)<0)return -1;
+    if (r) timestamp=timestamp_begin(r,g->cmd,
+        mode==1?RF_GPU_TS_IMPORT:RF_GPU_TS_EXPORT);
     /* Prior render pass stores both images in TRANSFER_SRC. Prior bridge
      * buffers may still have shader/transfer readers; order their reuse. */
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -770,6 +773,7 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
     /* Mixed Raster follows this export on the same queue and waits its final
      * frame fence, so an intermediate CPU fence wait would only serialize
      * command production. Standalone/diagnostic bridges remain synchronous. */
+    timestamp_end(r,g->cmd,timestamp);
     if(!record_only && gfx_submit(g,mode!=2)<0)return -1;
     if(mode==0)g->stats.bridge_roundtrips++;
     else g->stats.raster_bridge_transfers++;
@@ -829,6 +833,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     viewport.width = (float)g->target.width; viewport.height = (float)g->target.height; viewport.maxDepth = 1.0f;
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
+    uint32_t draw_timestamp=timestamp_begin(r,g->cmd,RF_GPU_TS_DRAW);
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
         struct rf_gpu_graphics_resource *resource = items ? items[i].resource : g->resource;
@@ -842,6 +847,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
+    timestamp_end(r,g->cmd,draw_timestamp);
     if(r) {
         /* The render pass ends in TRANSFER_SRC with an external transfer
          * dependency. Record export after it in this command buffer so the

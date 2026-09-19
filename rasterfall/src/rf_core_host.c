@@ -1822,6 +1822,15 @@ static int core_end_frame_present(struct rf_core *core)
             after.draw_batch_prepare_ms-before.draw_batch_prepare_ms;
         frame->stats.mixed_graphics_draw_ms = after.graphics_draw_ms-before.graphics_draw_ms;
         frame->stats.mixed_raster_segment_ms = after.raster_segment_ms-before.raster_segment_ms;
+        frame->stats.mixed_gpu_raster_ms=after.gpu_timing.raster_ms;
+        frame->stats.mixed_gpu_bridge_import_ms=after.gpu_timing.bridge_import_ms;
+        frame->stats.mixed_gpu_draw_ms=after.gpu_timing.draw_ms;
+        frame->stats.mixed_gpu_bridge_export_ms=after.gpu_timing.bridge_export_ms;
+        frame->stats.mixed_gpu_post_ms=after.gpu_timing.post_ms;
+        frame->stats.mixed_gpu_overlay_ms=after.gpu_timing.overlay_ms;
+        frame->stats.mixed_gpu_present_copy_ms=after.gpu_timing.present_copy_ms;
+        frame->stats.mixed_gpu_timing_supported=after.gpu_timing.supported;
+        frame->stats.mixed_gpu_timing_valid=after.gpu_timing.valid;
         if (output.capture_color) {
             const char *capture_path = frame->capture_path;
             int saved = gpu_oracle_write_bmp(capture_path, output.capture_color,

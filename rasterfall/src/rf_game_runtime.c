@@ -4265,6 +4265,15 @@ startup_again:
                     gpu_audit.mixed_raster_segment_ms);
                 __printf("%s\n",audit_line);
                 rf_windows_log(audit_line);
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT mixed-gpu supported=%u valid=%u raster_ms=%.3f bridge_import_ms=%.3f draw_ms=%.3f bridge_export_ms=%.3f post_ms=%.3f overlay_ms=%.3f present_copy_ms=%.3f",
+                    gpu_audit.mixed_gpu_timing_supported,gpu_audit.mixed_gpu_timing_valid,
+                    gpu_audit.mixed_gpu_raster_ms,gpu_audit.mixed_gpu_bridge_import_ms,
+                    gpu_audit.mixed_gpu_draw_ms,gpu_audit.mixed_gpu_bridge_export_ms,
+                    gpu_audit.mixed_gpu_post_ms,gpu_audit.mixed_gpu_overlay_ms,
+                    gpu_audit.mixed_gpu_present_copy_ms);
+                __printf("%s\n",audit_line);
+                rf_windows_log(audit_line);
                 {
                     struct rasterfall_scene_stats scene_audit;
                     rasterfall_render_scene_stats(&scene_audit);

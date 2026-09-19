@@ -97,6 +97,11 @@ struct rf_vk_api {
     rf_vk_destroy_semaphore_fn destroy_semaphore;
     rf_vk_reset_fences_fn reset_fences;
     rf_vk_cmd_copy_buffer_to_image_fn cmd_copy_buffer_to_image;
+    rf_vk_create_query_pool_fn create_query_pool;
+    rf_vk_destroy_query_pool_fn destroy_query_pool;
+    rf_vk_cmd_reset_query_pool_fn cmd_reset_query_pool;
+    rf_vk_cmd_write_timestamp_fn cmd_write_timestamp;
+    rf_vk_get_query_pool_results_fn get_query_pool_results;
 };
 
 #if defined(_WIN32)
@@ -270,6 +275,11 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_OPTIONAL(destroy_semaphore, "vkDestroySemaphore");
     RF_LOAD_OPTIONAL(reset_fences, "vkResetFences");
     RF_LOAD_OPTIONAL(cmd_copy_buffer_to_image, "vkCmdCopyBufferToImage");
+    RF_LOAD_OPTIONAL(create_query_pool, "vkCreateQueryPool");
+    RF_LOAD_OPTIONAL(destroy_query_pool, "vkDestroyQueryPool");
+    RF_LOAD_OPTIONAL(cmd_reset_query_pool, "vkCmdResetQueryPool");
+    RF_LOAD_OPTIONAL(cmd_write_timestamp, "vkCmdWriteTimestamp");
+    RF_LOAD_OPTIONAL(get_query_pool_results, "vkGetQueryPoolResults");
 #undef RF_LOAD_OPTIONAL
 #undef RF_LOAD_DEVICE
     return 0;
@@ -593,6 +603,9 @@ struct rf_gpu_vulkan_impl {
     uint32_t queue_flags;
     uint32_t shader_int64_enabled;
     uint64_t max_storage_buffer_range;
+    float timestamp_period;
+    uint32_t timestamp_valid_bits;
+    int timestamp_supported;
     rf_vk_surface surface;
     int native_presentation_supported;
 };
@@ -977,7 +990,70 @@ struct rf_gpu_vulkan_raster {
     uint32_t pending_overlay_stride, pending_coverage_stride;
     uint32_t *pending_capture_color;
     struct rf_gpu_post_params_v1 post;
+    rf_vk_query_pool timestamp_pool;
+    uint32_t timestamp_count;
+    unsigned char timestamp_category[32];
+    struct rf_gpu_mixed_gpu_timing gpu_timing;
 };
+
+enum { RF_GPU_TS_RASTER, RF_GPU_TS_IMPORT, RF_GPU_TS_DRAW,
+       RF_GPU_TS_EXPORT, RF_GPU_TS_POST, RF_GPU_TS_OVERLAY,
+       RF_GPU_TS_PRESENT_COPY };
+
+static uint32_t timestamp_begin(struct rf_gpu_vulkan_raster *r,
+    rf_vk_command_buffer command, unsigned int category)
+{
+    struct rf_gpu_vulkan_impl *impl = r ? r->owner : NULL;
+    uint32_t first;
+    if (!impl || !r->timestamp_pool || r->timestamp_count > 30) return UINT32_MAX;
+    first = r->timestamp_count;
+    r->timestamp_category[first / 2] = (unsigned char)category;
+    impl->api.cmd_write_timestamp(command, RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        r->timestamp_pool, first);
+    r->timestamp_count += 2;
+    return first;
+}
+
+static void timestamp_end(struct rf_gpu_vulkan_raster *r,
+    rf_vk_command_buffer command, uint32_t first)
+{
+    if (r && first != UINT32_MAX)
+        r->owner->api.cmd_write_timestamp(command,
+            RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, r->timestamp_pool, first + 1);
+}
+
+static void timestamp_collect(struct rf_gpu_vulkan_raster *r)
+{
+    uint64_t values[32];
+    double *fields[7];
+    uint64_t mask;
+    if (!r || !r->timestamp_pool || !r->timestamp_count) return;
+    fields[0]=&r->gpu_timing.raster_ms; fields[1]=&r->gpu_timing.bridge_import_ms;
+    fields[2]=&r->gpu_timing.draw_ms; fields[3]=&r->gpu_timing.bridge_export_ms;
+    fields[4]=&r->gpu_timing.post_ms; fields[5]=&r->gpu_timing.overlay_ms;
+    fields[6]=&r->gpu_timing.present_copy_ms;
+    if (r->owner->api.get_query_pool_results(r->owner->device,r->timestamp_pool,
+            0,r->timestamp_count,sizeof(values),values,sizeof(values[0]),
+            RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS) return;
+    mask = r->owner->timestamp_valid_bits >= 64 ? UINT64_MAX :
+        ((1ULL << r->owner->timestamp_valid_bits) - 1ULL);
+    for (uint32_t n=0;n<r->timestamp_count;n+=2) {
+        uint64_t delta=(values[n+1]-values[n])&mask;
+        *fields[r->timestamp_category[n/2]] +=
+            (double)delta * r->owner->timestamp_period / 1000000.0;
+    }
+    r->gpu_timing.valid=1;
+}
+
+void rf_gpu_vulkan_mixed_gpu_timing(void *raster,
+    struct rf_gpu_mixed_gpu_timing *timing)
+{
+    struct rf_gpu_vulkan_raster *r=raster;
+    if (!timing) return;
+    memset(timing,0,sizeof(*timing));
+    if (!r) return;
+    *timing=r->gpu_timing;
+}
 
 static int raster_buffer_create(struct rf_gpu_vulkan_impl *impl,
                                 uint64_t size, rf_vk_flags usage,
@@ -1166,6 +1242,8 @@ static void raster_destroy(void *context, void *raster)
         ? backend_context->implementation : NULL;
     if (!r) return;
     if (!impl || r->owner != impl) { free(r); return; }
+    if (r->timestamp_pool)
+        impl->api.destroy_query_pool(impl->device,r->timestamp_pool,NULL);
     raster_swapchain_destroy(impl, r);
     if (r->command_pool)
         impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
@@ -1226,6 +1304,15 @@ static int raster_create(void *context, unsigned int width,
     if (!r) goto failed;
     r->owner = impl; r->width = width; r->height = height;
     r->work_group_x = work_group_x; r->work_group_y = work_group_y;
+    r->gpu_timing.supported=impl->timestamp_supported;
+    if (impl->timestamp_supported) {
+        struct rf_vk_query_pool_create_info query_info;
+        memset(&query_info,0,sizeof(query_info));
+        query_info.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        query_info.query_type=RF_VK_QUERY_TYPE_TIMESTAMP; query_info.query_count=32;
+        if (impl->api.create_query_pool(impl->device,&query_info,NULL,
+                &r->timestamp_pool)!=RF_VK_SUCCESS) r->gpu_timing.supported=0;
+    }
     if (raster_buffer_create(impl, byte_size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
@@ -1711,6 +1798,11 @@ static int raster_render_range(void *context, void *raster,
         begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         if (impl->api.begin_command_buffer(r->command_buffer, &begin) !=
             RF_VK_SUCCESS) goto failed;
+        if (load==RF_GPU_RASTER_CLEAR && r->timestamp_pool) {
+            memset(&r->gpu_timing,0,sizeof(r->gpu_timing));
+            r->gpu_timing.supported=1; r->timestamp_count=0;
+            impl->api.cmd_reset_query_pool(r->command_buffer,r->timestamp_pool,0,32);
+        }
         memset(&barrier, 0, sizeof(barrier));
         barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         barrier.src_access_mask = RF_VK_ACCESS_HOST_WRITE_BIT;
@@ -1738,11 +1830,16 @@ static int raster_render_range(void *context, void *raster,
             impl->api.cmd_push_constants(r->command_buffer, r->pipeline_layout,
                 RF_VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(range), range);
         }
+        {
+        uint32_t timestamp=timestamp_begin(r,r->command_buffer,RF_GPU_TS_RASTER);
         impl->api.cmd_dispatch(r->command_buffer,
             (width + r->work_group_x - 1) / r->work_group_x,
             (height + r->work_group_y - 1) / r->work_group_y, 1);
+        timestamp_end(r,r->command_buffer,timestamp);
+        }
         if (post_enabled) {
             double post_start = now_ms();
+            uint32_t timestamp;
             memset(&barrier, 0, sizeof(barrier));
             barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
@@ -1753,13 +1850,16 @@ static int raster_render_range(void *context, void *raster,
                 0,1,&barrier,0,NULL,0,NULL);
             impl->api.cmd_bind_pipeline(r->command_buffer,
                 RF_VK_PIPELINE_BIND_POINT_COMPUTE,r->post_pipeline);
+            timestamp=timestamp_begin(r,r->command_buffer,RF_GPU_TS_POST);
             impl->api.cmd_dispatch(r->command_buffer,
                 (width+r->work_group_x-1)/r->work_group_x,
                 (height+r->work_group_y-1)/r->work_group_y,1);
+            timestamp_end(r,r->command_buffer,timestamp);
             if (native_timing) native_timing->post_raster_ms=now_ms()-post_start;
         }
         if (composite) {
             double composite_start = now_ms();
+            uint32_t timestamp;
             memset(&barrier, 0, sizeof(barrier));
             barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
             barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT;
@@ -1771,9 +1871,11 @@ static int raster_render_range(void *context, void *raster,
                 0, 1, &barrier, 0, NULL, 0, NULL);
             impl->api.cmd_bind_pipeline(r->command_buffer,
                 RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->overlay_pipeline);
+            timestamp=timestamp_begin(r,r->command_buffer,RF_GPU_TS_OVERLAY);
             impl->api.cmd_dispatch(r->command_buffer,
                 (width + r->work_group_x - 1) / r->work_group_x,
                 (height + r->work_group_y - 1) / r->work_group_y, 1);
+            timestamp_end(r,r->command_buffer,timestamp);
             if (native_timing)
                 native_timing->overlay_composite_ms = now_ms() - composite_start;
         }
@@ -1785,6 +1887,7 @@ static int raster_render_range(void *context, void *raster,
             RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
         if (native_present) {
+            uint32_t timestamp=timestamp_begin(r,r->command_buffer,RF_GPU_TS_PRESENT_COPY);
             if (r->pending_capture_color) {
                 memset(copies, 0, sizeof(copies));
                 copies[0].size = byte_size;
@@ -1823,6 +1926,7 @@ static int raster_render_range(void *context, void *raster,
             impl->api.cmd_pipeline_barrier(r->command_buffer,
                 RF_VK_PIPELINE_STAGE_TRANSFER_BIT, RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 0, 0, NULL, 0, NULL, 1, &image_barrier);
+            timestamp_end(r,r->command_buffer,timestamp);
             native_timing->buffer_to_swapchain_ms = now_ms() - copy_start;
         } else if (final) {
             memset(copies, 0, sizeof(copies));
@@ -1867,6 +1971,7 @@ static int raster_render_range(void *context, void *raster,
             goto cleanup;
         }
         if (result != RF_VK_SUCCESS) goto failed;
+        if (final) timestamp_collect(r);
         if (timing) timing->execution_wait_ms = now_ms() - segment_start;
     }
     /* Track accumulated target compatibility; rejected calls preserve it. */
@@ -2516,6 +2621,25 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     }
     impl->physical_device = selected_device;
     impl->queue_family = selected_family;
+    {
+        struct rf_vk_physical_device_properties properties;
+        struct rf_vk_queue_family_properties *families=NULL;
+        uint32_t family_count=0;
+        memset(&properties,0,sizeof(properties));
+        api->get_physical_device_properties(selected_device,&properties);
+        api->get_physical_device_queue_family_properties(selected_device,&family_count,NULL);
+        if (family_count) families=calloc(family_count,sizeof(*families));
+        if (families) api->get_physical_device_queue_family_properties(
+            selected_device,&family_count,families);
+        impl->timestamp_period=properties.limits.timestamp_period;
+        impl->timestamp_valid_bits=families && selected_family<family_count ?
+            families[selected_family].timestamp_valid_bits : 0;
+        impl->timestamp_supported=properties.limits.timestamp_compute_and_graphics &&
+            impl->timestamp_valid_bits && api->create_query_pool &&
+            api->destroy_query_pool && api->cmd_reset_query_pool &&
+            api->cmd_write_timestamp && api->get_query_pool_results;
+        free(families);
+    }
     if (device_smoke(api, selected_device, impl->device, impl->queue,
                      selected_family) < 0)
         goto done;
