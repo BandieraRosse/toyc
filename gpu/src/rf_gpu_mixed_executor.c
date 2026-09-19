@@ -90,6 +90,8 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     e->started=0; e->cursor=0; e->pending_end=2;
     if (f->registry != e->registry || f->raster_count > INT_MAX-4 ||
         f->draw_count > ULONG_MAX/sizeof(*e->draws) ||
+        (e->output.strict_native && !e->output.present_timing) ||
+        (e->output.present_timing && !e->gpu->info.capabilities.native_presentation_v1) ||
         (e->output.present_timing ?
             (e->output.color || e->output.depth || !e->output.overlay_color ||
              !e->output.overlay_coverage ||

@@ -1,6 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-2B 窗口 native smoke 入口为 `rasterfall-gpu-mixed-test.exe --native-window` / `hardware_graphics_proof.ps1 -NativeGate`；真实混合帧跨 resize 后呈现且无读回或 CPU framebuffer copy。normal producer 与完整 strict 门禁仍待实现，详见 [HG-2B](hardware-graphics-hg2b.md)。
+> 源码核对基线补充：2026-09-19 HG-2B mixed executor 的 native capability 与 `strict_native` 输出在整帧 CLEAR 前预检；离屏 `-ExecutorGate` 已覆盖 strict 诊断读回拒绝。窗口实机、resize/swapchain、完整 strict 门禁和 normal producer 仍待验证，详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 已分离持久 submesh 资源与 graphics target；`gpu/include/rf_gpu_resource_cache.h` → `gpu/src/rf_gpu_resource_cache.c` 负责 generation/epoch/pin 校验、预上传、纯绑定与退休回收；`tools/rasterfall_gpu_cache_test.c` / `hardware_graphics_proof.ps1 -CacheGate` 为实机入口。真实 mixed executor 与 normal producer 尚未接通。
 > 源码核对基线补充：2026-09-19 [HG-2B Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础)：`rf_core_mixed_frame.h` / `rf_core_mixed_frame.inc` 拥有 Draw/Raster 快照、WORLD 稳定分区和整帧 preflight 执行接口；registry frame epoch 防止跨帧重用。`--logic-test` 覆盖顺序与生命周期；真实 Vulkan executor、normal producer 和 native 接线仍待实现。

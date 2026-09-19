@@ -1,6 +1,8 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rasterfall-gpu-mixed-test.exe --native-window` 已在真实 SDL/Win32 窗口中消费混合 Draw/Raster frozen frame，三次 native present 跨两次客户区尺寸变化；`hardware_graphics_proof.ps1 -NativeGate` 记录实机适配器、日志和 manifest。Intel smoke 的 Post/overlay 上传与零 readback/CPU framebuffer copy 已验证；不代表 normal producer、整图像素或设备丢失恢复验收。
+> 源码核对基线补充：2026-09-19 mixed output 增加 `strict_native`；预检在 CLEAR 前拒绝 strict 诊断读回及不具备 native presentation 能力的设备。Intel 离屏 `-ExecutorGate` 覆盖 strict 拒绝且无 CLEAR。窗口呈现、resize/swapchain 与完整 unexpected lowering/copy 门禁仍待验证。
 > 源码核对基线补充：2026-09-19 mixed executor 的末段新增 overlay/native present 入口，复用既有 Vulkan 合成与 swapchain；诊断读回门禁仍通过。混合 native 的窗口、resize、strict 验收及 normal-frame 接线尚未完成。
 > 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
 > 源码核对基线补充：2026-09-19 `rf_gpu_resource_cache.h/.c` 已实现 registry generation → 持久 GPU submesh/texture adapter；`rf_gpu_graphics_resource_*()` 将资源与 target/pipeline 分离。旧记录中的“GPU cache 待实现”已由本次增量推进；真实 Core mixed executor/native 仍待实现。实现与验收见 [registry GPU cache](#registry-gpu-cache)。

@@ -2,6 +2,13 @@
 #include "rf_gpu_mixed_executor.h"
 #include "rf_gpu_raster_pack.h"
 #include "rf_gpu_raster_cpu_ref.h"
+#include "toy_window.h"
+#ifdef TOYC_WINDOWS
+struct native_rect { long left, top, right, bottom; };
+__declspec(dllimport) int __stdcall GetClientRect(void *, struct native_rect *);
+__declspec(dllimport) int __stdcall SetWindowPos(void *, void *, int, int, int, int, unsigned int);
+#define NATIVE_SWP_FLAGS 0x16U
+#endif
 static void put32(unsigned char *p, uint32_t v)
 {
     for (unsigned i = 0; i < 4; ++i) p[i] = (unsigned char)(v>>(i*8));
@@ -60,8 +67,108 @@ static struct toy_raster_cmd triangle(int width, int height, int inverse, uint32
     c.color=color; c.light=256; c.material_alpha=255;
     return c;
 }
-int main(void)
+static int native_window_test(void)
 {
+#ifdef TOYC_WINDOWS
+    struct toy_window *window=NULL;
+    struct toy_native_window_handle handle={0};
+    struct rf_gpu_vulkan_context context={0};
+    struct rf_gpu gpu={0};
+    struct rasterfall_resource_registry *registry=NULL;
+    struct rasterfall_resource_handle resource;
+    struct rf_gpu_mixed_executor *executor=NULL;
+    struct rf_core_mixed_frame frame={0};
+    struct rf_gpu_mixed_stats before,after;
+    struct toy_window_events events;
+    struct rf_gpu_native_present_timing timing;
+    unsigned int overlay[160*120]={0};
+    unsigned char coverage[160*120]={0};
+    struct native_rect client;
+    int initialized=0, failure=0, previous_width=0, previous_height=0;
+#define NATIVE_CHECK(x) do { if (!(x)) { __printf("native FAIL line %d: %s\n",__LINE__,#x); failure=__LINE__; goto native_done; } } while(0)
+    window=toy_window_open("Rasterfall HG-2B mixed native",96,72);
+    NATIVE_CHECK(window && toy_window_get_native_handle(window,&handle)==1);
+    context.native_window.type=handle.type;
+    context.native_window.window=handle.window;
+    context.native_window.instance=handle.instance;
+    context.require_graphics=1;
+    registry=tlibc_malloc(sizeof(*registry));
+    NATIVE_CHECK(registry);memset(registry,0,sizeof(*registry));
+    NATIVE_CHECK(fixture(registry,0,&resource,211)==0);
+    NATIVE_CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
+    initialized=1;
+    __printf("HG-2B adapter=%s vendor=%x device=%x type=%u queue=%u\n",gpu.info.adapter_name,
+        gpu.info.vendor_id,gpu.info.device_id,gpu.info.adapter_type,gpu.info.queue_family);
+    NATIVE_CHECK(gpu.info.capabilities.native_presentation_v1);
+    executor=rf_gpu_mixed_create(&gpu,&context,registry);
+    NATIVE_CHECK(executor);
+    for (int pass=0;pass<3;++pass) {
+        struct rasterfall_draw_view view={0};
+        struct rasterfall_draw_instance instance={0};
+        struct rasterfall_draw_item item={0};
+        struct rf_gpu_mixed_output output={0};
+        struct toy_raster_cmd background;
+        int width,height;
+        if(pass==1) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,128,96,
+            NATIVE_SWP_FLAGS));
+        if(pass==2) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,96,72,
+            NATIVE_SWP_FLAGS));
+        NATIVE_CHECK(toy_window_poll(window,&events,20)>=0);
+        NATIVE_CHECK(GetClientRect((void *)(uintptr_t)handle.window,&client));
+        width=client.right-client.left;height=client.bottom-client.top;
+        NATIVE_CHECK(width>0 && width<=160 && height>0 && height<=120);
+        if(pass) NATIVE_CHECK(width!=previous_width || height!=previous_height);
+        previous_width=width;previous_height=height;
+        NATIVE_CHECK(rasterfall_resources_frame_begin(registry)==0);
+        NATIVE_CHECK(rf_core_mixed_begin(&frame,registry,width,height)==0);
+        background=triangle(width,height,512,0x102030);
+        NATIVE_CHECK(rf_core_mixed_raster(&frame,RF_RENDER_LAYER_WORLD,&background,1)==0);
+        view.width=width;view.height=height;view.near_z=64;view.focal=width*3/4;
+        view.camera.cy=view.camera.pitch_cy=1024;
+        instance.mesh=registry->slots[0].model;instance.mesh_handle=resource;
+        instance.z=256;instance.scale_milli=1000;instance.yaw_cos_q10=1024;
+        instance.scene_light_q8=256;
+        item.index_count=3;item.material.color=0x2266aa;item.material.double_sided=1;
+        NATIVE_CHECK(rf_core_mixed_draw(&frame,&view,&instance,&item)==0);
+        NATIVE_CHECK(rf_core_mixed_freeze(&frame)==0);
+        for(int y=0;y<height;++y)for(int x=0;x<width;++x) {
+            unsigned p=(unsigned)y*width+x;
+            overlay[p]=0xffee4422;coverage[p]=(x<width/8 && y<height/8);
+        }
+        output.clear_color=0xff070809;output.overlay_color=overlay;
+        output.overlay_coverage=coverage;output.overlay_stride=output.coverage_stride=width;
+        output.present_timing=&timing;output.strict_native=1;
+        if(pass==1){output.post.mode=RF_GPU_POST_DEPTH_FOG_V0;
+            output.post.fog_color=0x334455;output.post.fog_near_inv_z=8192;
+            output.post.fog_far_inv_z=1;output.post.max_density_q8=128;}
+        rf_gpu_mixed_get_stats(executor,&before);
+        NATIVE_CHECK(rf_gpu_mixed_render(executor,&frame,&output)==0);
+        rf_gpu_mixed_get_stats(executor,&after);
+        NATIVE_CHECK(after.clears==before.clears+1 && after.draws==before.draws+1 &&
+            after.finishes==before.finishes+1 && after.readback_bytes==0 &&
+            timing.color_readback_bytes==0 && timing.cpu_framebuffer_copy_bytes==0 &&
+            timing.overlay_upload_bytes>0);
+        if(pass) NATIVE_CHECK(after.graphics.mesh_upload_bytes==before.graphics.mesh_upload_bytes &&
+            after.graphics.texture_upload_bytes==before.graphics.texture_upload_bytes);
+        __printf("native pass=%d extent=%dx%d overlay=%u readback=%u copy=%u\n",pass,
+            width,height,timing.overlay_upload_bytes,timing.color_readback_bytes,
+            timing.cpu_framebuffer_copy_bytes);
+        rf_core_mixed_reset(&frame);rasterfall_resources_frame_complete(registry);
+    }
+native_done:
+    rf_core_mixed_destroy(&frame);rf_gpu_mixed_destroy(executor);
+    if(initialized)rf_gpu_shutdown(&gpu);
+    if(registry){rasterfall_resources_invalidate(registry);rasterfall_resources_frame_complete(registry);tlibc_free(registry);}
+    if(window)toy_window_close(window);
+    __printf("core-mixed-native: %s line=%d\n",failure?"FAIL":"PASS",failure);
+    return failure?1:0;
+#else
+    return 1;
+#endif
+}
+int main(int argc, char **argv)
+{
+    if(argc==2 && !strcmp(argv[1],"--native-window")) return native_window_test();
     struct rf_gpu gpu;
     struct rf_gpu_vulkan_context context={0};
     struct rasterfall_resource_registry *r=tlibc_malloc(sizeof(*r));
@@ -144,6 +251,22 @@ int main(void)
         /* Late invalid Draw and RasterCmd must reject before the first CLEAR,
          * leaving the immutable frame retryable and host output untouched. */
         if(iteration==0){
+            out.strict_native=1;
+            color[0]=0xdeadbeef;
+            CHECK(rf_gpu_mixed_render(e,&f,&out)<0 && f.state==RF_CORE_MIXED_FROZEN);
+            CHECK(color[0]==0xdeadbeef);
+            rf_gpu_mixed_get_stats(e,&after);CHECK(after.clears==before.clears && after.draws==before.draws);
+            out.strict_native=0;
+            if (!gpu.info.capabilities.native_presentation_v1) {
+                unsigned char overlay_coverage[64*48]={0};
+                struct rf_gpu_native_present_timing timing;
+                out.color=NULL;out.depth=NULL;
+                out.overlay_color=color;out.overlay_coverage=overlay_coverage;
+                out.overlay_stride=out.coverage_stride=64;out.present_timing=&timing;
+                CHECK(rf_gpu_mixed_render(e,&f,&out)<0 && f.state==RF_CORE_MIXED_FROZEN);
+                rf_gpu_mixed_get_stats(e,&after);CHECK(after.clears==before.clears && after.draws==before.draws);
+                out.color=color;out.depth=depth;out.present_timing=NULL;
+            }
             f.draws[2].instance.scale_milli=5000;color[0]=0xdeadbeef;
             CHECK(rf_gpu_mixed_render(e,&f,&out)<0 && f.state==RF_CORE_MIXED_FROZEN);
             CHECK(color[0]==0xdeadbeef);
