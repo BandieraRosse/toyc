@@ -322,7 +322,7 @@ static int mixed_test(struct rf_gpu_vulkan_context *context, unsigned group,
     CHECK(after.mesh_upload_bytes==before.mesh_upload_bytes && after.texture_upload_bytes==before.texture_upload_bytes);
     CHECK(after.indexed_draws-before.indexed_draws==6);
     CHECK(after.raster_bridge_transfers-before.raster_bridge_transfers==12);
-    CHECK(after.bridge_transfer_bytes-before.bridge_transfer_bytes==(uint64_t)width*height*16*12);
+    CHECK(after.bridge_transfer_bytes-before.bridge_transfer_bytes==(uint64_t)width*height*12*12);
     /* Unsafe inverse-depth remains sticky across later valid/empty segments. */
     f.commands[2].payload.flat_triangle.a.inv_z=16385;
     CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));

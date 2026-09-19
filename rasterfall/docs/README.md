@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-19
+> 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C2 首步完成 BGRA8 direct-color：mixed color 绕过中间 staging/compute 格式转换，depth bridge 保留；1280×720 两次 bridge 统计由 29,491,200 降至 22,118,400 bytes。真正共享 color target 与取消整屏 color copy 仍待后续。
 > 源码核对基线补充：2026-09-19 [HG-2C](hardware-graphics-hg2c.md) 的 mixed CPU 分项与 Vulkan GPU timestamp 已完成；后续依次处理共享 color/depth target、统一 command recording 与多帧在途。HG-3A 在该架构门槛完成前暂缓。
 > 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量、借用连续 overlay 并取消同队列中间 graphics fence wait；当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。

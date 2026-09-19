@@ -87,7 +87,7 @@ int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_draw *draws, uint32_t count);
 int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count);
-/* Inspect the last bridge's exported compute encoding, never used as input
+/* Inspect the last diagnostic bridge's exported compute encoding, never used as input
  * to drawing/import. Diagnostic readback validates the conversion itself. */
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
     uint32_t *argb, int32_t *inverse_depth, uint32_t pixel_capacity);

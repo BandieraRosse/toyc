@@ -11,8 +11,12 @@ void main() {
     if(p.import_to_graphics==0u) {
         raster.words[i]=swap_rb(attachment.words[i]);
         raster.words[n+i]=uint(uintBitsToFloat(attachment.words[n+i])*16384.0);
-    } else {
+    } else if(p.import_to_graphics==1u) {
         attachment.words[i]=swap_rb(raster.words[i]);
         attachment.words[n+i]=floatBitsToUint(float(raster.words[n+i])/16384.0);
+    } else if(p.import_to_graphics==2u) {
+        raster.words[i]=uint(uintBitsToFloat(attachment.words[i])*16384.0);
+    } else {
+        attachment.words[i]=floatBitsToUint(float(raster.words[i])/16384.0);
     }
 }

@@ -1,7 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
-> 文档更新：2026-09-19
-> 源码核对基线：2026-09-19；HG-2C1 已完成 mixed CPU 分项与 Vulkan GPU timestamp。Windows package 和 40 帧 strict native 审计通过；共享 target、统一 command recording 与多帧在途尚未实现。
+> 文档更新：2026-09-20
+> 源码核对基线：2026-09-20；HG-2C1 已完成。HG-2C2 首步将 graphics color attachment 改为与 Raster packed color 同字节布局的 BGRA8，color 双向直拷、compute bridge 仅转换 depth；真正共享 target、统一 command recording 与多帧在途尚未实现。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
 帧的固定全屏搬运与单帧同步成本，避免 HG-3 至 HG-5 建立在双向 bridge 架构上。
@@ -26,7 +26,7 @@ bridge 包含全屏 copy、compute 格式转换、barrier 和资源状态往返�
 | 阶段 | 状态 | 交付 |
 | --- | --- | --- |
 | HG-2C1 | 完成 | mixed CPU 分项，以及 Raster、bridge import、Draw、bridge export、Post、overlay、swapchain copy 的 Vulkan timestamp |
-| HG-2C2 | 待开发 | compute Raster 与 graphics Draw 共享 color target，先取消 color 回程 bridge |
+| HG-2C2 | 进行中 | BGRA8 direct-color 已取消 color 的中间 staging/compute 转换；下一步让 compute Raster 与 graphics Draw 共享 color target，取消整屏 color copy |
 | HG-2C3 | 待开发 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
 | HG-2C4 | 待开发 | 2–3 个 frame context；正常帧删除 `vkQueueWaitIdle` |
 
@@ -80,3 +80,20 @@ Windows Intel 实机 1280×720 near/0、40 帧 strict native 验证为 40/40 GPU
 零普通读回/CPU framebuffer copy；`mixed-gpu` 每帧均为 `supported=1 valid=1`。热帧观察到
 Raster 约 10–16 ms、bridge import 约 1.0–2.3 ms、Draw 约 0.3–0.5 ms、bridge export
 约 0.9–1.5 ms，说明下一步 HG-2C2 应优先消除完整 color bridge，并继续保留 depth 契约审计。
+
+## HG-2C2 direct-color 首步
+
+graphics color attachment 改用 `B8G8R8A8_UNORM`。在 little-endian 主机上，它与 Raster
+`0xAARRGGBB` storage buffer 的字节布局一致，因此 mixed import/export 的 color 不再经过
+`bridge_raster`、`bridge_transfer` 和 `swap_rb` compute；depth 仍通过 D32 ↔ inverse-Z bridge，
+保持原遮挡合同。独立 HG-2A diagnostic roundtrip 继续保留完整 RGBA/depth 转换模式。
+
+1280×720 normal mixed 帧的两次 bridge 总统计由 29,491,200 bytes 降至 22,118,400 bytes，
+即每个方向由 16 B/px 降为 12 B/px。Windows Intel near/0 40 帧 strict native 为 40/40 GPU、
+零 fallback/readback/CPU framebuffer copy；热帧观察到 bridge import 约 0.8–1.2 ms、export
+约 0.54–0.93 ms。该轮次未固定与 HG-2C1 完全相同的系统调度条件，因此只把结构性字节下降
+作为严格结论，timestamp 区间作为观察值。
+
+`--mixed-gate`、`HG-2B-core-executor`、Windows package、package `--logic-test` 均通过。
+HG-2C2 尚未完成：color 仍在 Raster buffer 与 graphics attachment 之间各复制一次；后续应取消
+这些整屏 copy，而不是把本步的编码兼容直拷误记为共享 target 完成。
