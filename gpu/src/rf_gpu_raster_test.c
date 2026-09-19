@@ -136,6 +136,88 @@ static uint32_t expected_shade(uint32_t color, int light, int fog)
     return 0xff000000u | (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
 }
 
+static int segmented_test(struct rf_gpu_vulkan_context *context, unsigned int group,
+                          int full_scan, int fog)
+{
+    enum { W=19, H=13, S=24 };
+    struct fixture f = {0};
+    struct rf_gpu_post_params_v1 post = {0};
+    void *r = NULL;
+    uint32_t expected[S*H], actual[S*H];
+    int expected_depth[S*H], actual_depth[S*H];
+    char message[256];
+    int result = -1;
+    unsigned int i;
+#define SEG(a,b,mode,last) rf_gpu_vulkan_raster_segment(context,r,f.bytes, \
+    (unsigned long)f.size,NULL,0,NULL,0,a,b,mode,last, \
+    last?actual:NULL,last?actual_depth:NULL,W,H,S,S,message,sizeof(message))
+    CHECK(!fixture_init(&f,W,H,8,0x102030));
+    for (i=0;i<8;i++) triangle(&f,i,2,2,100,16,2,100,2,11,100,
+                               0x102030*(i+1),256,0);
+    /* Far rejection, equal-depth replacement, transparent no-depth-write,
+     * then a VIEWMODEL triangle behind the world in its independent domain. */
+    f.commands[3].payload.flat_triangle.a.inv_z=50;
+    f.commands[3].payload.flat_triangle.b.inv_z=50;
+    f.commands[3].payload.flat_triangle.c.inv_z=50;
+    memset(&f.commands[5],0,sizeof(f.commands[5]));
+    f.commands[5].kind=RF_GPU_RASTER_CMD_BEGIN_TRANSPARENT_V1;
+    f.commands[5].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+    for(i=6;i<8;i++) {
+        f.commands[i].flags=RF_GPU_RASTER_FLAG_DEPTH_TEST_V1|RF_GPU_RASTER_FLAG_SOURCE_OVER_V1;
+        f.commands[i].payload.flat_triangle.reserved[0]=128;
+    }
+    memset(&f.commands[8],0,sizeof(f.commands[8]));
+    f.commands[8].kind=RF_GPU_RASTER_CMD_BEGIN_VIEWMODEL_V1;
+    f.commands[8].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+    triangle(&f,7,4,4,1,10,4,1,4,9,1,0xff0080,256,0);
+    CHECK(!rf_gpu_raster_validate_v1(f.bytes,f.size));
+    CHECK(!rf_gpu_vulkan_backend.raster_create(context,W,H,group,group,&r,message,sizeof(message)));
+    rf_gpu_vulkan_backend.raster_set_full_scan_diagnostic(context,r,full_scan);
+    post.mode=fog?RF_GPU_POST_DEPTH_FOG_V0:RF_GPU_POST_DISABLED;
+    post.fog_near_inv_z=200;post.fog_far_inv_z=0;
+    post.fog_color=0x90a0b0;post.max_density_q8=192;
+    CHECK(!rf_gpu_vulkan_backend.raster_set_post(context,r,&post));
+    memset(expected,0x35,sizeof(expected));memset(actual,0x35,sizeof(actual));
+    memset(expected_depth,0x47,sizeof(expected_depth));memset(actual_depth,0x47,sizeof(actual_depth));
+    CHECK(SEG(2,10,RF_GPU_RASTER_LOAD_EXISTING,1)<0);
+    CHECK(!rf_gpu_vulkan_backend.raster_render(context,r,f.bytes,(unsigned long)f.size,
+        NULL,0,NULL,0,expected,expected_depth,W,H,S,S,NULL,message,sizeof(message)));
+    CHECK(SEG(2,10,RF_GPU_RASTER_LOAD_EXISTING,1)<0);
+    CHECK(SEG(0,9,RF_GPU_RASTER_CLEAR,0)<0); /* illegal VIEWMODEL cut */
+    CHECK(!SEG(0,3,RF_GPU_RASTER_CLEAR,0));
+    /* Poison consumed commands, while leaving a fully valid ABI stream.
+     * Replaying the prefix (or an old shader ignoring ranges) must fail. */
+    f.commands[0].payload.clear.value=0xabcdef;
+    f.commands[2].payload.flat_triangle.color=0xff0000;
+    f.commands[9].byte_size=0; /* invalid OUTSIDE selected segment */
+    CHECK(SEG(3,4,RF_GPU_RASTER_LOAD_EXISTING,0)<0);
+    f.commands[9].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+    f.header->endian_tag=0;
+    CHECK(SEG(3,4,RF_GPU_RASTER_LOAD_EXISTING,0)<0);
+    f.header->endian_tag=RF_GPU_RASTER_ENDIAN_LITTLE;
+    CHECK(SEG(0,3,RF_GPU_RASTER_LOAD_EXISTING,0)<0);
+    CHECK(SEG(3,11,RF_GPU_RASTER_LOAD_EXISTING,0)<0);
+    CHECK(SEG(9,10,RF_GPU_RASTER_LOAD_EXISTING,1)<0);
+    CHECK(!SEG(3,5,RF_GPU_RASTER_LOAD_EXISTING,0));
+    CHECK(!SEG(5,7,RF_GPU_RASTER_LOAD_EXISTING,0));
+    CHECK(!SEG(7,7,RF_GPU_RASTER_LOAD_EXISTING,0)); /* empty preserves target */
+    CHECK(!SEG(7,10,RF_GPU_RASTER_LOAD_EXISTING,1));
+    CHECK(!memcmp(expected,actual,sizeof(actual)));
+    CHECK(!memcmp(expected_depth,actual_depth,sizeof(actual_depth)));
+    CHECK(SEG(7,10,RF_GPU_RASTER_LOAD_EXISTING,1)<0);
+    f.commands[0].payload.clear.value=0x102030;
+    f.commands[2].payload.flat_triangle.color=0x102030;
+    CHECK(!SEG(0,10,RF_GPU_RASTER_CLEAR,1));
+    CHECK(!memcmp(expected,actual,sizeof(actual)));
+    printf("segmented-clear-load: group=%u full_scan=%d fog=%d exact color/depth/stride PASS\n",group,full_scan,fog);
+    result=0;
+done:
+    rf_gpu_vulkan_backend.raster_destroy(context,r);
+    free(f.bytes);
+    return result;
+#undef SEG
+}
+
 int main(void)
 {
     struct rf_gpu gpu;
@@ -154,6 +236,9 @@ int main(void)
                       &context) == 0);
     CHECK(rf_gpu_get_status(&gpu, &status) == 0 && status.renderer.raster_v1);
     CHECK(status.info.capabilities.shader_int64);
+    for(unsigned int group=8;group<=16;group+=8)
+        for(int full=0;full<2;full++) for(int fog=0;fog<2;fog++)
+            CHECK(!segmented_test(&context,group,full,fog));
     CHECK((status.renderer.raster_work_group_x == 16 &&
            status.renderer.raster_work_group_y == 16) ||
           (status.renderer.raster_work_group_x == 8 &&

@@ -1,7 +1,8 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。完整 Raster ABI 分段消费、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已实现普通 opaque static RMESH 同步 CPU-backed Draw；原 CPU/compute 精确回归通过，后续资源生命周期见 HG-1B。
@@ -85,7 +86,8 @@ fixture 必须覆盖 yaw/scale、缺失纹理、单/双面、近面交叉、scen
 
 同一 Vulkan device，首版单 graphics+compute+present queue、单帧在途。HG-2A 独立离屏 indexed draw，
 HG-2B 验证 compute 前段 → GPU export → graphics → GPU import → compute 后段 → Post/overlay/present。
-当前 shader 每 dispatch 从黑色与 depth=0 开始；HG-2B 必须新增 CLEAR/LOAD_EXISTING，明确 clear/sky 唯一执行点。
+compute shader 已支持独立 CLEAR/LOAD_EXISTING 与执行范围；clear/sky 仅由起始段消费。
+现阶段为 hosted 分段诊断，尚未绑定 graphics bridge 或 Core 有序混合帧。
 
 Target 合同必须描述 extent、format、color encoding、depth encoding、内容有效性、owner 与访问转换。
 现有 color/depth/post_color 是 storage buffer，不能直接充当 attachment。

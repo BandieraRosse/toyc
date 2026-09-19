@@ -496,6 +496,8 @@ typedef void (RF_VK_CALL *rf_vk_cmd_bind_pipeline_fn)(rf_vk_command_buffer,
 typedef void (RF_VK_CALL *rf_vk_cmd_bind_descriptor_sets_fn)(rf_vk_command_buffer,
     uint32_t, rf_vk_pipeline_layout, uint32_t, uint32_t,
     const rf_vk_descriptor_set *, uint32_t, const uint32_t *);
+typedef void (RF_VK_CALL *rf_vk_cmd_push_constants_fn)(rf_vk_command_buffer,
+    rf_vk_pipeline_layout, rf_vk_flags, uint32_t, uint32_t, const void *);
 typedef void (RF_VK_CALL *rf_vk_cmd_dispatch_fn)(rf_vk_command_buffer,
     uint32_t, uint32_t, uint32_t);
 typedef void (RF_VK_CALL *rf_vk_cmd_pipeline_barrier_fn)(rf_vk_command_buffer,

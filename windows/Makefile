@@ -108,6 +108,12 @@ GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc) \
     $(wildcard rasterfall/include/rf_gpu*.h) include/toy_renderer.h
 .PHONY: gpu-graphics-test
 gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
+.PHONY: gpu-raster-test
+gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
+$(BUILD)/rf-gpu-raster-test.exe: gpu/src/rf_gpu_raster_test.c $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
+	    -I include -I include/tlibc -I rasterfall/include gpu/src/rf_gpu_raster_test.c \
+	    $(filter-out gpu/src/rf_gpu_graphics_test.c,$(GPU_GRAPHICS_SRCS)) -o $@
 $(BUILD)/rf-gpu-graphics-test.exe: $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
 	    -I include -I include/tlibc -I rasterfall/include $(GPU_GRAPHICS_SRCS) -o $@

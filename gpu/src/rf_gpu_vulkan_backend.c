@@ -74,6 +74,7 @@ struct rf_vk_api {
     rf_vk_cmd_bind_pipeline_fn cmd_bind_pipeline;
     rf_vk_cmd_bind_descriptor_sets_fn cmd_bind_descriptor_sets;
     rf_vk_cmd_dispatch_fn cmd_dispatch;
+    rf_vk_cmd_push_constants_fn cmd_push_constants;
     rf_vk_cmd_pipeline_barrier_fn cmd_pipeline_barrier;
     rf_vk_cmd_copy_buffer_fn cmd_copy_buffer;
     rf_vk_create_fence_fn create_fence;
@@ -240,6 +241,7 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(cmd_bind_pipeline, "vkCmdBindPipeline");
     RF_LOAD_DEVICE(cmd_bind_descriptor_sets, "vkCmdBindDescriptorSets");
     RF_LOAD_DEVICE(cmd_dispatch, "vkCmdDispatch");
+    RF_LOAD_DEVICE(cmd_push_constants, "vkCmdPushConstants");
     RF_LOAD_DEVICE(cmd_pipeline_barrier, "vkCmdPipelineBarrier");
     RF_LOAD_DEVICE(cmd_copy_buffer, "vkCmdCopyBuffer");
     RF_LOAD_DEVICE(create_fence, "vkCreateFence");
@@ -956,6 +958,7 @@ struct rf_gpu_vulkan_raster {
     uint32_t width, height;
     uint32_t work_group_x, work_group_y;
     int full_scan_diagnostic;
+    int segment_valid;
     struct rf_gpu_raster_tile_lists tile_lists;
     rf_vk_swapchain swapchain;
     rf_vk_image *swapchain_images;
@@ -1287,6 +1290,8 @@ static int raster_create(void *context, unsigned int width,
         struct rf_vk_shader_module_create_info shader_info;
         struct rf_vk_pipeline_layout_create_info layout_info;
         struct rf_vk_compute_pipeline_create_info pipeline_info;
+        const struct { uint32_t stages, offset, size; } push = {
+            RF_VK_SHADER_STAGE_COMPUTE_BIT, 0, 12 };
         memset(&shader_info, 0, sizeof(shader_info));
         shader_info.s_type = RF_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         shader_info.code_size = spirv_size;
@@ -1296,6 +1301,8 @@ static int raster_create(void *context, unsigned int width,
         memset(&layout_info, 0, sizeof(layout_info));
         layout_info.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         layout_info.set_layout_count = 1; layout_info.set_layouts = &r->set_layout;
+        layout_info.push_constant_range_count = 1;
+        layout_info.push_constant_ranges = &push;
         if (impl->api.create_pipeline_layout(impl->device, &layout_info, NULL,
                                              &r->pipeline_layout) != RF_VK_SUCCESS)
             goto failed;
@@ -1422,7 +1429,7 @@ static int raster_invalidate(struct rf_gpu_vulkan_impl *impl,
 
 #include "rf_gpu_vulkan_graphics.inc"
 
-static int raster_render(void *context, void *raster,
+static int raster_render_range(void *context, void *raster,
                          const void *stream, unsigned long stream_size,
                          const void *texture_descs, unsigned int texture_count,
                          const void *texture_texels, unsigned long texture_bytes,
@@ -1430,7 +1437,9 @@ static int raster_render(void *context, void *raster,
                          unsigned int width, unsigned int height,
                          unsigned int color_stride, unsigned int depth_stride,
                          struct rf_gpu_raster_timing *timing,
-                         char *message, unsigned long message_capacity)
+                         char *message, unsigned long message_capacity,
+                         uint32_t first, uint32_t end, uint32_t load,
+                         int final)
 {
     struct rf_gpu_vulkan_context *backend_context = context;
     struct rf_gpu_vulkan_impl *impl = backend_context
@@ -1441,12 +1450,12 @@ static int raster_render(void *context, void *raster,
     uint64_t byte_size = (uint64_t)width * height * 4;
     unsigned int y;
     rf_vk_result result;
-    int native_present = color == NULL && depth == NULL;
-    int composite = native_present ||
-        (r->pending_overlay_color && r->pending_overlay_coverage);
-    int post_enabled = r->post.mode != RF_GPU_POST_DISABLED && r->post_pipeline;
+    int native_present = final && color == NULL && depth == NULL;
+    int composite = final && r && (native_present ||
+        (r->pending_overlay_color && r->pending_overlay_coverage));
+    int post_enabled = final && r && r->post.mode != RF_GPU_POST_DISABLED && r->post_pipeline;
     struct rf_gpu_vulkan_raster_buffer *presentation_color =
-        post_enabled ? &r->post_color : &r->color;
+        r ? (post_enabled ? &r->post_color : &r->color) : NULL;
     uint32_t swapchain_image = 0;
     struct rf_gpu_native_present_timing *native_timing = NULL;
     double total_start = now_ms(), segment_start;
@@ -1461,6 +1470,22 @@ static int raster_render(void *context, void *raster,
         ((const uint32_t *)stream)[5] != width ||
         ((const uint32_t *)stream)[6] != height)
         return -1;
+    if (end == UINT32_MAX) end = ((const uint32_t *)stream)[4];
+    if (load > RF_GPU_RASTER_LOAD_EXISTING || first > end ||
+        end > ((const uint32_t *)stream)[4] ||
+        (load == RF_GPU_RASTER_CLEAR && (first != 0 || end < 2)) ||
+        (load == RF_GPU_RASTER_LOAD_EXISTING && (!r->segment_valid || first < 2)) ||
+        (final && !native_present && (!color || !depth ||
+            color_stride < width || depth_stride < width))) return -1;
+    /* VIEWMODEL depth is local to a dispatch. Keep its entire domain in the
+     * terminal segment; never silently reset it across a cut. */
+    if (first || !final || end != ((const uint32_t *)stream)[4]) {
+        const uint32_t *words = stream;
+        uint32_t ci;
+        for (ci = 2; ci < words[4]; ++ci)
+            if (words[8 + ci * 24] == 7U &&
+                (ci < first || (ci < end && (!final || end != words[4])))) return -1;
+    }
     if (native_present) {
         double acquire_start;
         native_timing = r->pending_present_timing;
@@ -1581,6 +1606,10 @@ static int raster_render(void *context, void *raster,
         infos[3].range = ((uint64_t)r->tile_lists.stats.tile_count+1)*4;
         infos[4].buffer = r->tile_indices.buffer;
         infos[4].range = r->tile_lists.stats.total_refs*4;
+        /* Full-scan has no tile buffers; empty bins may have no index buffer.
+         * Vulkan still requires valid descriptors for every written binding. */
+        if (!infos[3].buffer || !infos[3].range) infos[3] = infos[0];
+        if (!infos[4].buffer || !infos[4].range) infos[4] = infos[0];
         infos[5].buffer = r->texture_descs.buffer;
         infos[5].range = texture_count ?
             (uint64_t)texture_count * sizeof(struct rf_gpu_texture_desc_host_v1) : sizeof(empty_texture);
@@ -1632,6 +1661,20 @@ static int raster_render(void *context, void *raster,
         impl->api.cmd_bind_descriptor_sets(r->command_buffer,
             RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->pipeline_layout, 0, 1,
             &r->descriptor_set, 0, NULL);
+        /* Earlier segments may have been sampled/copied as well as written.
+         * This dependency also protects CLEAR after a prior diagnostic read. */
+        barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT |
+            RF_VK_ACCESS_SHADER_READ_BIT | RF_VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.dst_access_mask = RF_VK_ACCESS_SHADER_READ_BIT |
+            RF_VK_ACCESS_SHADER_WRITE_BIT;
+        impl->api.cmd_pipeline_barrier(r->command_buffer,
+            RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+            RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, NULL, 0, NULL);
+        {
+            const uint32_t range[3] = { first, end, load };
+            impl->api.cmd_push_constants(r->command_buffer, r->pipeline_layout,
+                RF_VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(range), range);
+        }
         impl->api.cmd_dispatch(r->command_buffer,
             (width + r->work_group_x - 1) / r->work_group_x,
             (height + r->work_group_y - 1) / r->work_group_y, 1);
@@ -1712,7 +1755,7 @@ static int raster_render(void *context, void *raster,
                 RF_VK_PIPELINE_STAGE_TRANSFER_BIT, RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                 0, 0, NULL, 0, NULL, 1, &image_barrier);
             native_timing->buffer_to_swapchain_ms = now_ms() - copy_start;
-        } else {
+        } else if (final) {
             memset(copies, 0, sizeof(copies));
             copies[0].size = byte_size; copies[1].size = byte_size;
             impl->api.cmd_copy_buffer(r->command_buffer, presentation_color->buffer,
@@ -1756,6 +1799,12 @@ static int raster_render(void *context, void *raster,
         }
         if (result != RF_VK_SUCCESS) goto failed;
         if (timing) timing->execution_wait_ms = now_ms() - segment_start;
+    }
+    r->segment_valid = !final;
+    if (!final) {
+        impl->api.destroy_fence(impl->device, fence, NULL);
+        snprintf(message, message_capacity, "GPU Raster V1 segment retained");
+        return 0;
     }
     if (native_present) {
         struct rf_vk_present_info present;
@@ -1821,10 +1870,44 @@ static int raster_render(void *context, void *raster,
 failed:
     snprintf(message, message_capacity, "Vulkan Raster V1 operation failed");
 cleanup:
+    r->segment_valid = 0;
     if (mapped_depth) impl->api.unmap_memory(impl->device, r->depth_readback.memory);
     if (mapped_color) impl->api.unmap_memory(impl->device, r->color_readback.memory);
     if (fence) impl->api.destroy_fence(impl->device, fence, NULL);
     return -1;
+}
+
+static int raster_render(void *context, void *raster,
+    const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int *color, int *depth, unsigned int width, unsigned int height,
+    unsigned int color_stride, unsigned int depth_stride,
+    struct rf_gpu_raster_timing *timing, char *message, unsigned long capacity)
+{
+    return raster_render_range(context, raster, stream, stream_size,
+        texture_descs, texture_count, texture_texels, texture_bytes,
+        color, depth, width, height, color_stride, depth_stride, timing,
+        message, capacity, 0, UINT32_MAX, RF_GPU_RASTER_CLEAR, 1);
+}
+
+int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
+    void *raster, const void *stream, unsigned long stream_size,
+    const void *texture_descs, unsigned int texture_count,
+    const void *texture_texels, unsigned long texture_bytes,
+    unsigned int first, unsigned int end, enum rf_gpu_raster_load load,
+    int final, unsigned int *color, int *depth,
+    unsigned int width, unsigned int height,
+    unsigned int color_stride, unsigned int depth_stride,
+    char *message, unsigned long capacity)
+{
+    if (!message || !capacity || (final != 0 && final != 1) ||
+        end == UINT32_MAX || (final && (!color || !depth)) ||
+        (!final && (color || depth))) return -1;
+    return raster_render_range(context, raster, stream, stream_size,
+        texture_descs, texture_count, texture_texels, texture_bytes,
+        color, depth, width, height, color_stride, depth_stride, NULL,
+        message, capacity, first, end, (uint32_t)load, final);
 }
 
 static int raster_set_post(void *context, void *raster,

@@ -1,10 +1,11 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_vulkan_raster_segment()`、compute CLEAR/LOAD 范围执行和 Intel 分段回归；实现与限制见下文。尚未连接 graphics bridge。
 > 源码核对基线：`0d721581` 加本次工作区；`rf_gpu_graphics.h`、`rf_gpu_vulkan_graphics.inc`、`graphics_compat.vert/.frag`、`graphics_bridge.comp` 与独立 oracle；CPU 合同对照 `rasterfall_render.c` near clipping/project 和 `lib/graphics/renderer.c`；Windows Intel 实测。
 
 HG-2B 进行中：整数深度前置阻塞已修复，GPU attachment/buffer 往返转换与 LOAD 续画已通过。
-完整 Raster ABI 分段消费者、Core Draw/Raster 顺序和 strict native 门禁尚未实现，不能标记
+Raster ABI 已有独立分段执行基础；graphics 互操作、Core Draw/Raster 顺序和 strict native 门禁尚未实现，不能标记
 HG-2B 完成或推进 normal-frame hardware props。正常游戏仍消费原 CPU/compute 路径。
 
 ## 入口与判定
@@ -114,9 +115,48 @@ shader、early/late-depth、color-attachment 访问依赖和 image layout transi
 
 ## 后续实施顺序
 
-1. 为原 compute raster 增加明确 CLEAR / LOAD_EXISTING 执行合同与 buffer 有效性；不复用
-   ABI 的 endian_tag 或绕过完整 stream preflight。接入当前桥接目标，并验证真实双向遮挡。
+1. 将已实现的 compute CLEAR / LOAD_EXISTING 分段基础接入当前 graphics 桥接目标，验证真实双向遮挡。
 2. Core 冻结 Draw/Raster spans，保持 WORLD partition 后稳定顺序，检查整帧资格后再提交；
    补 transparent 后段、独立 VIEWMODEL depth/coverage、一次 Post/overlay。
 3. 完成 strict hardware-required 的 unexpected lowering/readback/copy 门禁、native present
    与 resize/swapchain 重建。全部通过后再进入 HG-3A normal-prop allowlist。
+
+## Raster ABI 分段基础（HG-2B 进行中）
+
+`gpu/include/rf_gpu_vulkan_backend.h` 的 `rf_gpu_vulkan_raster_segment()` 是 hosted
+诊断接口，复用原 raster owner 的 device-local color/depth。每次提交仍验证完整 Raster ABI
+stream 和全部纹理描述；push constants 单独携带 `[first,end)` 与 CLEAR/LOAD_EXISTING，
+不修改 ABI header、endian tag 或命令编码。分桶与 full-scan shader 均只执行所选范围。
+
+- CLEAR 必须从 command 0 开始且包含原 clear/sky 和 clear-depth。LOAD 必须有此前成功的
+  非末段内容，且不能重新执行这两条起始命令；新建/resize target 与已结束的帧均拒绝 LOAD。
+- 非末段不做 Post、overlay、present、GPU→host copy 或 map；后续 LOAD 从 GPU buffer
+  读取已有 color/inverse-Z。段间 barrier 覆盖 compute 读写与此前 transfer 读取。
+- VIEWMODEL marker 与完整后缀只能位于末段，避免跨 dispatch 丢失独立 viewmodel depth；
+  WORLD depth 保持独立，末段生成 coverage 后只执行一次 Post。当前末段输出是诊断 readback。
+- 参数/完整 stream/纹理 preflight 拒绝保留此前有效目标；执行失败使 continuation 无效。
+  调用者负责冻结帧及安排范围顺序，本接口尚不替代 Core 整帧计划或整帧原子 preflight。
+- full-scan 未分配 tile buffers 时，未使用的 descriptor 绑定有效 buffer，避免写入空句柄；
+  validation 层发现并验证了此修复。
+
+构建与复核：`make -f windows/Makefile gpu-raster-test` 后运行
+`build-windows/rf-gpu-raster-test.exe`；Linux 原 `make gpu-raster-test` 使用同一测试源。
+无新增编译单元、玩家 CLI 或资源；检入的四种 raster SPIR-V 已重新生成并通过
+`spirv-val --target-env vulkan1.0`。
+
+Intel 实测记录在 `tmp/hg2b-segments-validation-clean.log`：8/16 工作组、分桶/full-scan、
+Fog 开关、奇数 extent/非紧密 stride、远处遮挡、同深度、透明后段和独立 VIEWMODEL
+与一次性执行的 color/depth 精确一致。用例修改已消费的前段命令后再 LOAD，以防整帧重放
+产生假阳性；覆盖未初始化/结束后 LOAD、空段、非法范围、非法 VIEWMODEL 切点与范围外坏命令。
+日志确认 Khronos validation 实际加载，开启 `VK_VALIDATION_VALIDATE_SYNC=1`，无 VUID/hazard。
+正常路径完整回归记录在 `tmp/hg2b-segments-normal/manifest.json`：differential、CLI/logic、
+固定视角 captures、strict native/Fog 与 Campaign 波次通过。随后修复的 full-scan 空 descriptor
+由上述 validation 用例覆盖，最终 differential 记录为
+`tmp/hg2b-segments-differential-final.log`，Windows package 构建记录为
+`tmp/hg2b-segments-package-final.log`。最终 package 的 strict native smoke 记录为
+`tmp/hg2b-segments-native-final.log`，退出码 0，readback/CPU copy 为零。
+这些 native 结果仍属于原 compute 路径。
+
+目前每段仍重新上传、验证和分桶完整 stream，属于正确性基础而非性能交付。没有 graphics
+buffer adapter、Core mixed spans 或混合 native present；这些仍是 HG-2B 下一步，正常
+producer 不进入 hardware 路径。Linux 与其他 GPU 尚未验证本次改动。

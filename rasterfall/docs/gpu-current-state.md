@@ -1,7 +1,8 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。完整 Raster ABI 分段消费、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
+> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 提供独立 graphics indexed draw、持久 VB/IB/texels、RGBA8/D32 离屏 target；Intel 数值与资源复用门禁通过。下文 HG-1A/1B 的“尚无 hardware”仅指对应阶段与正常帧。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已接入 CPU resource registry、generation、帧 pin 与延迟释放；Windows native/Fog resize 验证见该 checkpoint。尚无 GPU mesh cache、retained Draw 或 hardware indexed draw。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已接入普通 opaque static RMESH；CPU/compute 输出保持精确一致，当前仍无 hardware indexed draw 或持久 GPU mesh cache。

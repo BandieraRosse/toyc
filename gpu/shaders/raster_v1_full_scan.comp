@@ -5,8 +5,9 @@
 #endif
 layout(local_size_x=RF_RASTER_LOCAL_SIZE,local_size_y=RF_RASTER_LOCAL_SIZE,local_size_z=1) in;
 layout(set=0,binding=0,std430) readonly buffer CommandStream{uint words[];}stream;
-layout(set=0,binding=1,std430) writeonly buffer ColorBuffer{uint pixels[];}color_out;
-layout(set=0,binding=2,std430) writeonly buffer DepthBuffer{int values[];}depth_out;
+layout(push_constant) uniform Segment { uint first; uint end; uint load; } segment;
+layout(set=0,binding=1,std430) buffer ColorBuffer{uint pixels[];}color_out;
+layout(set=0,binding=2,std430) buffer DepthBuffer{int values[];}depth_out;
 layout(set=0,binding=5,std430) readonly buffer TextureDescriptors{uint words[];}texture_descs;
 layout(set=0,binding=6,std430) readonly buffer TextureTexels{uint words[];}texture_texels;
 layout(set=0,binding=11,std430) writeonly buffer ViewmodelCoverage{uint values[];}viewmodel_coverage;
@@ -27,8 +28,8 @@ void main()
     if (x >= width || y >= height)
         return;
 
-    uint color = 0xff000000u;
-    int depth = 0;
+    uint color = segment.load != 0u ? color_out.pixels[y * width + x] : 0xff000000u;
+    int depth = segment.load != 0u ? depth_out.values[y * width + x] : 0;
     int viewmodel_depth = 0;
     bool viewmodel_active = false;
     uint covered = 0u;
@@ -41,6 +42,7 @@ void main()
 #endif
     for (uint list_index = list_begin; list_index < list_end; ++list_index) {
         uint command_index = list_index;
+        if (command_index < segment.first || command_index >= segment.end) continue;
         uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
         uint kind = stream.words[base];
         if (kind == CMD_SKY) {
