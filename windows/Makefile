@@ -21,7 +21,9 @@ CPPFLAGS := -DTOYC_WINDOWS \
             -include windows/include/windows_stdlib.h
 CFLAGS := -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections \
           -MMD -MP
-LDFLAGS := -static -static-libgcc -mwindows -municode -Wl,--gc-sections
+# The aggregate logic-test keeps large gameplay/session fixtures on its call stack.
+# Reserve 16 MiB for the Windows main thread; pages are committed on demand.
+LDFLAGS := -static -static-libgcc -mwindows -municode -Wl,--gc-sections -Wl,--stack,16777216
 LDLIBS := -L$(SDL_PREFIX)/lib -lSDL2 -lws2_32 -lwinmm \
           -lgdi32 -limm32 -lole32 -loleaut32 -luuid -lversion -lsetupapi \
           -lshell32

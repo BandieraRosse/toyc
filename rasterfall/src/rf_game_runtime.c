@@ -3229,7 +3229,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
     if (options.render_performance || options.gpu_world_raster_view ||
-        options.gpu_normal_view || options.environment_capture_dir ||
+        options.gpu_normal_view || options.gpu_wave_repro || options.environment_capture_dir ||
         options.normal_frame_audit_output ||
         options.character_world_capture_dir) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
@@ -3237,6 +3237,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (seed == 0) seed = 1;
     rasterfall_session_reset(&session, &camera, seed);
     rf_windows_log("startup: session reset");
+    if (options.gpu_wave_repro) {
+        game.state = TOY_GAME_PLAYING;
+        game.campaign_phase = TOY_GAME_PHASE_CALM;
+        game.spawn_timer_ms = 1;
+        __printf("GPU-WAVE-REPRO world=%d spawn_timer_ms=%d seed=1\n",
+                 session.world_id, game.spawn_timer_ms);
+    }
     if ((options.render_performance || options.gpu_world_raster_view ||
          options.gpu_normal_view || options.environment_capture_dir ||
          options.normal_frame_audit_output ||
@@ -3958,6 +3965,18 @@ startup_again:
                     game_runtime.lifecycle_paused = paused;
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
+                    if (options.gpu_wave_repro) {
+                        static int previous_phase = -1, previous_alive = -1;
+                        if (previous_phase != game.campaign_phase ||
+                            previous_alive != game.enemies_alive) {
+                            __printf("GPU-WAVE-REPRO wave=%d phase=%d alive=%d queued=%d timer=%d\n",
+                                     game.wave, game.campaign_phase,
+                                     game.enemies_alive, game.to_spawn,
+                                     game.spawn_timer_ms);
+                            previous_phase = game.campaign_phase;
+                            previous_alive = game.enemies_alive;
+                        }
+                    }
                     camera = game_runtime.camera;
                     if (game_runtime.gui.active) {
                         paused = 1;

@@ -118,6 +118,7 @@ void rasterfall_options_usage(int fd)
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
         "  --gpu-normal-scene <near|mid> <0|30> (normal deterministic Campaign runtime)\n"
+        "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
         "  --model-humanoid-basis <model>\n"
@@ -256,6 +257,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                 __fprintf(2,"rasterfall: --gpu-normal-scene expects near|mid and 0|30\n");
                 return -1;
             }
+        } else if (!strcmp(option,"--gpu-wave-repro")) {
+            o->gpu_wave_repro=1;
         } else if (!strcmp(option,"--environment-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->environment_capture_dir=argv[++arg];

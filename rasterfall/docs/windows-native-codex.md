@@ -44,8 +44,9 @@ present、readback/copy 或 native GPU 初始化失败都会得到非零退出�
 
 Windows native 验收以当前构建的 CLI 输出和退出码为准。原 GPU 堆损坏已修复为
 retained command 跨帧容量失配；完整生命周期和 WIN-DEV-1 最终签收仍待完成。
-普通构建的完整 `--logic-test` 另有栈容量限制，须与 GPU 堆越界区分；增大栈的临时
-诊断程序可用于隔离验证，不代表普通构建门禁通过，也不改变正式游戏的栈配置。
+普通构建的完整 `--logic-test` 曾受默认 Windows 主线程栈容量限制，以
+0xC00000FD 退出，与 GPU 堆越界不同。正式 `windows/Makefile` 已将栈 reserve 设为
+16 MiB，聚合逻辑测试在正式链接配置下通过。
 
 在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 无 required failure；
 `package` 成功并包含 exe、`rasterfall/assets`，以及本地 `private-assets`（若存在）；

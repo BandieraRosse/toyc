@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：Windows `--logic-test` 聚合测试的大型局部 fixture 曾超过默认主线程栈并以 0xC00000FD 退出；`windows/Makefile` 将链接栈 reserve 设为 16 MiB，正式构建现可完整通过逻辑测试。栈按需提交，不改变玩法或 GPU 帧逻辑。
 > 源码核对基线补充：2026-09-19 Windows strict GPU 老地图全向扫视覆盖 Texture V1 高命令量 pack；纹理 handle 改为本帧唯一视图表查找，避免方向相关的 watchdog 退出。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。

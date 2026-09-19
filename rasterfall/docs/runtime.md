@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。
 > 正常退出判定：native GPU frame 不写 CPU `scene_pixels`；帧上限退出时须同时检查成功 GPU 帧数，不能仅因 CPU 像素计数为零返回 2。GPU contract 失败仍优先返回 3。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。完整冻结矩阵见 [GPU V1 最终收尾与冻结验收](gpu-v1-final-acceptance.md)。

@@ -1,6 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 实测状态补充：用户确认旧地图开枪、行动、互动及波次游戏流程正常；`--gpu-wave-repro --legacy-map` 首波 320 帧 strict native GPU 测试也正常退出，零 CPU fallback。该观察不等同于完整 GPU 生命周期矩阵冻结。
+> 源码核对基线补充：`--gpu-wave-repro --legacy-map` 在 session reset 后将真实波次倒计时设为 1ms，逐次打印 phase、alive 和 queued；与 `--frames`、`--gpu-required --gpu-native-present --frame-audit` 组合可直接检查敌人逐步出现的正常 world GPU 帧，不注入平台按键事件。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线补充：2026-09-19 Texture V1 measure 从最近命令检查重复纹理，packer 通过本帧唯一纹理视图表复用 handle；老地图右转进入约四万条 retained command 的高负载视野时，不再二次回扫此前全部命令并触发 200ms watchdog。
 > 源码核对基线：RenderFrame V1 与 GPU-8B2d 已达到 local pass；GPU Required Runtime Contract 已禁止 strict 模式的 CPU replay/software present/readback/copy。Windows Intel strict native smoke 与 Fog/Post smoke 已各通过 120 帧，适配器为 Intel Iris Xe，zero-fallback audit 和 acceptance 产物已完成。retained command 堆越界已修复，完整生命周期矩阵仍待签收，GPU-8B1/GPU-9A 仍未冻结。Legacy anime normal renderer 已编译期隔离，anime actor 保留 gameplay identity 但统一落入 modular/procedural humanoid presentation，原 toon/material `0x40` 不再进入 normal frame。
