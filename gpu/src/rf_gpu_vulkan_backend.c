@@ -2022,21 +2022,35 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
 {
     struct rf_gpu_vulkan_raster *r = raster;
     uint64_t pixels = (uint64_t)width * height;
-    uint32_t *colors;
-    unsigned char *coverage;
+    const uint32_t *colors;
+    const unsigned char *coverage;
+    int packed = 0;
     int result;
     if (!r || !timing || !message || !capacity || !overlay_color ||
         !overlay_coverage || !width || !height || pixels > SIZE_MAX / 4 ||
         overlay_stride < width || coverage_stride < width ||
         first > end || end == UINT32_MAX) return -1;
-    colors = malloc((size_t)pixels * 4);
-    coverage = calloc(1, (size_t)((pixels + 3U) & ~3ULL));
-    if (!colors || !coverage) { free(colors); free(coverage); return -1; }
-    for (unsigned int y = 0; y < height; ++y) {
-        memcpy(colors + (size_t)y * width, overlay_color + (size_t)y * overlay_stride,
-            (size_t)width * 4);
-        memcpy(coverage + (size_t)y * width, overlay_coverage + (size_t)y * coverage_stride,
-            width);
+    colors = overlay_color;
+    coverage = overlay_coverage;
+    /* The normal Core path already owns tightly packed, synchronous overlay
+     * buffers.  Borrow them directly instead of allocating and copying a
+     * full color and coverage plane every frame.  Odd pixel counts still
+     * need a padded coverage copy for the 32-bit storage-buffer upload. */
+    if (overlay_stride != width || coverage_stride != width || (pixels & 3U)) {
+        uint32_t *packed_colors = malloc((size_t)pixels * 4);
+        unsigned char *packed_coverage = calloc(1, (size_t)((pixels + 3U) & ~3ULL));
+        if (!packed_colors || !packed_coverage) {
+            free(packed_colors); free(packed_coverage); return -1;
+        }
+        for (unsigned int y = 0; y < height; ++y) {
+            memcpy(packed_colors + (size_t)y * width,
+                overlay_color + (size_t)y * overlay_stride, (size_t)width * 4);
+            memcpy(packed_coverage + (size_t)y * width,
+                overlay_coverage + (size_t)y * coverage_stride, width);
+        }
+        colors = packed_colors;
+        coverage = packed_coverage;
+        packed = 1;
     }
     memset(timing, 0, sizeof(*timing));
     r->pending_present_timing = timing;
@@ -2053,7 +2067,7 @@ int rf_gpu_vulkan_raster_segment_present(struct rf_gpu_vulkan_context *context,
     r->pending_capture_color = NULL;
     r->pending_overlay_color = NULL;
     r->pending_overlay_coverage = NULL;
-    free(colors); free(coverage);
+    if (packed) { free((void *)colors); free((void *)coverage); }
     return result;
 }
 

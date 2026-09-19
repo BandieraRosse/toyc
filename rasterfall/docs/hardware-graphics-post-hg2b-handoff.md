@@ -1,7 +1,13 @@
 # HG-2B 后续：GPU 帧诊断与 mixed 帧优化记录
 
 > 文档更新：2026-09-19
-> 源码核对基线：2026-09-19；核对 Windows CLI、mixed executor、graphics bridge 与 Intel Iris Xe 测量记录。实现与验证结果以当前 CLI 和下文证据为准。
+> 源码核对基线：2026-09-19；补充 mixed 热路径持久缓冲、连续 overlay 零复制借用及同队列 graphics 中间 fence 消除；核对 Windows CLI、mixed executor、graphics bridge 与 Intel Iris Xe 测量记录。实现与验证结果以当前 CLI 和下文证据为准。
+
+## 2026-09-19 mixed 热路径优化
+
+Windows normal mixed 帧不再为连续 Core overlay 逐帧分配并复制完整 color/coverage 平面；非连续 stride 或 coverage 需要 32-bit 补齐时仍使用安全打包路径。mixed executor 的 ordered RasterCmd、encoded Draw、纹理表、packed stream 与 Draw batch 改为持久 grow-only 容量，resize/内容增长时才重新分配。graphics Draw/export 与后续 Raster/Post 位于同一 Vulkan queue，normal mixed 路径不再在二者之间等待 CPU fence；最终 Raster/present fence 仍覆盖此前 graphics 工作，独立 graphics/readback 诊断保持同步。
+
+同机 Windows、1280×720、Fog、near/0、80 帧取第 17–80 帧中位数：优化前 CPU `whole_loop_ms=27.984`，HG `render/present/whole=16.424/25.023/43.315`；overlay 零复制后为 `17.131/22.754/40.998`；再加入 mixed 持久容量后为 `17.141/20.446/38.954`。最终中间 fence 版本以 140 帧取第 17–140 帧为 `16.855/20.672/38.563`，每帧 1 次 graphics submit、0 次 graphics fence wait，strict 运行 140/140 通过。不同轮次存在窗口调度噪声，结构性结果是移除每帧约 4.6 MB CPU overlay copy、热帧 mixed 堆分配和中间 CPU wait；29,491,200 bridge bytes 仍未消除，HG 仍慢于本机 CPU 基线。`HG-2B-core-executor` 门禁通过。
 
 Windows strict native 已支持 `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 导出最终 GPU 帧；普通 strict 帧保持零读回。冻结 mixed stream 在 Raster 分段复用 binning/上传，连续 Draw span 合并 graphics 提交，static prop 的视锥检查先于 world-light 查询。剩余跨段提交和 bridge 成本见下文。
 

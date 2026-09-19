@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 normal mixed 热路径已移除连续 overlay 的逐帧整屏 CPU copy、复用 mixed pack/batch 容量，并依赖同队列最终 Raster/present fence 覆盖 graphics Draw，取消中间 graphics CPU fence wait；140 帧 strict native 及 HG-2B Core executor 门禁通过。当前 1280×720 本机中位数由 `whole_loop_ms=43.315` 降至 `38.563`，仍慢于 CPU `27.984`；剩余首要成本是双向全屏 color/depth bridge 和单帧同步架构。详见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 修复 static RMESH 在特定近面/侧向视角下过晚触发 mixed graphics 数值预检、导致 strict 帧退出的问题：producer 现在先按 graphics 整数投影范围判定，不合格实例留在 GPU compute RasterCmd 路径。Windows Outpost 与 legacy map 的 `--auto --frames 300` strict native 自动旋转/传送均通过，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-19 RTX 3050 Windows 首帧 native swapchain 兼容修复：Core config 为 native present 选择 SDL software renderer 窗口，避免 SDL 硬件 renderer 与 Vulkan 在同一 HWND 上同时建立呈现链。strict native 10/10 帧、零回退、零读回及零 CPU framebuffer copy；Fog 10 帧及三 extent native gate 通过，长时运行未验收。详见 [兼容修复记录](gpu-nvidia-swapchain-compat.md)。
 

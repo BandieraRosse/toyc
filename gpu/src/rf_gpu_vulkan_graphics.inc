@@ -79,21 +79,22 @@ static int gfx_begin(struct rf_gpu_graphics *g)
     return g->owner->api.begin_command_buffer(g->cmd, &begin) == RF_VK_SUCCESS ? 0 : -1;
 }
 
-static int gfx_submit(struct rf_gpu_graphics *g)
+static int gfx_submit(struct rf_gpu_graphics *g, int wait)
 {
     struct rf_gpu_vulkan_impl *impl = g->owner;
     struct rf_vk_submit_info submit = {0};
     double stamp;
     if (impl->api.end_command_buffer(g->cmd) != RF_VK_SUCCESS ||
-        impl->api.reset_fences(impl->device, 1, &g->fence) != RF_VK_SUCCESS)
+        (wait && impl->api.reset_fences(impl->device, 1, &g->fence) != RF_VK_SUCCESS))
         goto failed;
     submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submit.command_buffer_count = 1; submit.command_buffers = &g->cmd;
     stamp=now_ms();
     g->stats.queue_submits++;
-    if (impl->api.queue_submit(impl->queue, 1, &submit, g->fence) != RF_VK_SUCCESS)
+    if (impl->api.queue_submit(impl->queue, 1, &submit, wait ? g->fence : NULL) != RF_VK_SUCCESS)
         goto failed;
     g->stats.submit_wall_ms+=now_ms()-stamp;
+    if (!wait) return 0;
     stamp=now_ms();
     g->stats.fence_waits++;
     if (impl->api.wait_for_fences(impl->device, 1, &g->fence,
@@ -471,7 +472,7 @@ static int gfx_upload_buffer(struct rf_gpu_graphics *g, const void *data, uint64
     impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 1, &barrier, 0, NULL, 0, NULL);
-    result = gfx_submit(g);
+    result = gfx_submit(g, 1);
 done:
     if (mapped) impl->api.unmap_memory(impl->device, staging.memory);
     if (g->poisoned) impl->api.queue_wait_idle(impl->queue);
@@ -766,7 +767,10 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
         import.buffer_offset=bytes;import.image_subresource.aspect_mask=VK_IMAGE_ASPECT_DEPTH_BIT;
         impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
     }
-    if(!record_only && gfx_submit(g)<0)return -1;
+    /* Mixed Raster follows this export on the same queue and waits its final
+     * frame fence, so an intermediate CPU fence wait would only serialize
+     * command production. Standalone/diagnostic bridges remain synchronous. */
+    if(!record_only && gfx_submit(g,mode!=2)<0)return -1;
     if(mode==0)g->stats.bridge_roundtrips++;
     else g->stats.raster_bridge_transfers++;
     g->stats.bridge_transfer_bytes+=bytes*4;
@@ -855,7 +859,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask = VK_ACCESS_HOST_READ_BIT;
         impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
-        if (gfx_submit(g) < 0) return -1;
+        if (gfx_submit(g, 1) < 0) return -1;
         if (impl->api.map_memory(impl->device, g->target.readback.memory, 0,
                 g->target.readback.allocation_size, 0, &mapped) != RF_VK_SUCCESS) return -1;
         if (raster_invalidate(impl, &g->target.readback) < 0) {
@@ -915,7 +919,7 @@ int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
         0,1,&barrier,0,NULL,0,NULL);
-    if(gfx_submit(g)<0 || impl->api.map_memory(impl->device,g->target.readback.memory,0,
+    if(gfx_submit(g,1)<0 || impl->api.map_memory(impl->device,g->target.readback.memory,0,
         g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS)return -1;
     int result=raster_invalidate(impl,&g->target.readback);
     if(result==0){memcpy(argb,mapped,(size_t)bytes);memcpy(inverse_depth,(unsigned char *)mapped+bytes,(size_t)bytes);}
