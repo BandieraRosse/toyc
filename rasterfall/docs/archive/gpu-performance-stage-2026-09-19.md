@@ -1,4 +1,6 @@
-# Rasterfall GPU 性能阶段与 Windows Platform 路线
+# Rasterfall GPU 性能阶段与 Windows Platform 路线（历史计划）
+
+> 历史归档：此处保留 2026-09-19 上一轮性能工作顺序，不再作为当前开发任务或验收门槛。当前实现与最近实测见 [GPU 当前状态](../gpu-current-state.md)。
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：逐帧审计已区分 `native_present_ms`（`vkQueuePresentKHR` 调用）与 `native_present_queue_idle_ms`（随后 `vkQueueWaitIdle`）；同时输出 classification、texture measure、binning 及各上传阶段。两者均为 CPU 墙钟计时，尚未提供 GPU timestamp。
@@ -6,7 +8,7 @@
 
 ## 当前阶段
 
-GPU normal gameplay 的功能阶段已结束。现在的主任务是提高 Windows Intel 实机帧率。旧的 GPU V1 冻结矩阵不再作为当前开发门槛；当时的范围与证据保存在[历史验收记录](../rasterfall/docs/archive/gpu-v1-final-acceptance-2026-09-19.md)。长期 soak、完整窗口生命周期组合和故障注入不是本阶段的前置条件，后续遇到相关故障再据实处理。
+GPU normal gameplay 的功能阶段已结束。现在的主任务是提高 Windows Intel 实机帧率。旧的 GPU V1 冻结矩阵不再作为当前开发门槛；当时的范围与证据保存在[历史验收记录](gpu-v1-final-acceptance-2026-09-19.md)。长期 soak、完整窗口生命周期组合和故障注入不是本阶段的前置条件，后续遇到相关故障再据实处理。
 
 现有 normal frame 链路为：world frontend → Raster Command ABI V1 → CPU tile binning → Vulkan compute raster → optional Fog Post → CPU 生成的 HUD/overlay 上传 → GPU composite → Win32 swapchain present。CPU renderer 保留作为兼容路径和正确性参考。Windows 窗口、输入和音频仍由 SDL2 提供；SDL-free Windows Native Platform 是独立后续工作。
 

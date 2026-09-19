@@ -53,8 +53,8 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - `rasterfall/docs/map-format.md`：地图文本格式和跨层修改要求。
 - `rasterfall/docs/networking.md`：协议、快照、预测、可靠事件和房间发现。
 - `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
-- `docs/Rasterfall GPU 与 Windows Native Platform 总体计划.md`：GPU 与 Windows Native Platform
-  路线的计划交接和进度同步入口；继续相关阶段前先核对当前 checkpoint、完成边界与近期关键路径。
+- `rasterfall/docs/gpu-current-state.md`：GPU 当前实现、实机验证和性能快照入口；新 GPU
+  硬件开发计划从此状态重新立项，旧阶段计划仅保存在 `rasterfall/docs/archive/`。
 - `rasterfall/docs/animation-architecture.md`、`rasterfall/docs/network-architecture.md`：专题设计。
 - `rasterfall/docs/asset-sources.md`：资源来源、许可状态和发布边界。
 - `rasterfall/docs/archive/`：历史现场记录，不作为当前设计依据。

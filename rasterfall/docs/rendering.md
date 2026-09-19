@@ -1,12 +1,14 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
-> 源码核对基线补充：正常 AI actor 在既有前后距离检查后、动态光照与模型/装备/武器提交前，使用以角色根部上方为中心、2600 RFU 半径的保守包围球做屏幕侧平面剔除；穿越近面的角色仍由原逐三角形近裁剪处理。`ai-triage screen_culled` 计数这一早期剔除。该检查共用于 CPU/GPU frontend，不改变玩法状态或开发者展示角色。
+> 源码核对基线补充：正常 AI 的提交前侧平面检查按展示路径选横向半径：程序化角色 1600 RFU，模块化角色仍为 2600 RFU；垂直半径仍为 2600 RFU。程序化范围覆盖最大 920 RFU 武器模型、260 RFU 握持偏移、55 RFU 动画前后移以及身体 175/110 缩放与倒地旋转余量；模块化身体、装备和 socket 武器不套用这一较窄界限。近面仍由逐三角形裁剪。
+> 源码核对基线补充：正常 AI 完成身体、装备和武器提交后，按每条命令的三顶点屏幕包围盒原地压紧该 actor 的命令段；完全位于任一视口侧平面外的命令不会进入 CPU/GPU flush，保留命令的相对顺序不变。`ai-triage offscreen_cmd` 仍统计移除前的数量。此阶段不节省姿态或逐三角形提交耗时；继续做提交前剔除需覆盖角色、装备、武器的空间边界。
+> 源码核对基线补充：正常 AI actor 在既有前后距离检查后、动态光照与模型/装备/武器提交前，使用以角色根部上方为中心的保守侧平面检查；各展示路径的水平半径见上条，垂直半径 2600 RFU。穿越近面的角色仍由原逐三角形近裁剪处理。`ai-triage screen_culled` 计数这一早期剔除。该检查共用于 CPU/GPU frontend，不改变玩法状态或开发者展示角色。
 > 源码核对基线补充：`--frame-audit` 的 `ai-triage` 记录 AI depth 门槛前后数量、命令为零及屏幕包围盒完全在外的 actor/命令数、模块化身体和武器的源三角形数，并细分身体蒙皮/缓存/三角形及武器准备/三角形耗时。屏幕包围盒是保守无像素贡献判据，不等同于最终 depth 可见性；Campaign 开发者展示角色计入 body/weapon 命令和源三角形，不计入 gameplay actor 数。
 > 源码核对基线补充：`--frame-audit` 的 `ai-detail` 按模块化 AI 的动作求值、身体、被动装备、当前武器记录提交耗时，按身体、装备、武器和程序化回退记录命令数，并列出各路径角色数；这些是 frontend 提交阶段数据，不是可见三角形或独立 GPU 耗时。分项之和可能小于 `ai_teammates_ms`，其余为视锥检查、光照及调用边界等开销。
 > 源码核对基线补充：`--frame-audit` 输出 normal scene 的 floor/map/static/gallery/character/private/projectile 命令分布与分段耗时，并拆分 world 的敌人、AI 队友、托管玩家、网络队友、文字和交互物提交；静态物件和陈列台耗时已从原合并统计中单独采样。该边界是 scene batch 提交数，不代表最终可见三角形数。
 > 源码核对基线补充：GPU 性能审计将 `vkQueuePresentKHR` 与随后每帧 `vkQueueWaitIdle` 分开计时；`--frame-audit` 增加 classification、texture measure、binning 和上传阶段耗时。`fence_wait_ms` 仍是 CPU 等待墙钟时间，不是 GPU timestamp。
-> 实测状态补充：用户确认地图核心游玩及窗口拉伸正常；正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback/readback/CPU copy。功能阶段结束；当前转入 Intel 实机帧率优化，旧冻结矩阵见 [历史记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。
+> 实测状态补充：用户确认地图核心游玩及窗口拉伸正常；正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback/readback/CPU copy。最近固定视角快照和当前边界见 [GPU 当前状态](gpu-current-state.md)，旧冻结矩阵见 [历史记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。
 > 源码核对基线补充：`--gpu-wave-repro --legacy-map` 在 session reset 后将真实波次倒计时设为 1ms，逐次打印 phase、alive 和 queued；与 `--frames`、`--gpu-required --gpu-native-present --frame-audit` 组合可直接检查敌人逐步出现的正常 world GPU 帧，不注入平台按键事件。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线补充：2026-09-19 Texture V1 measure 从最近命令检查重复纹理，packer 通过本帧唯一纹理视图表复用 handle；老地图右转进入约四万条 retained command 的高负载视野时，不再二次回扫此前全部命令并触发 200ms watchdog。
@@ -176,11 +178,11 @@ B2d-5 在 Core retained-span 门禁中同时放入 opaque/transparent WORLD、EF
 VIEWMODEL，断言稳定 WORLD 分区、EFFECTS 原序、VIEWMODEL 独立 barrier、零 direct-pixel/
 fallback reason、native-prepared 路径与完整 Raster V1 stream；既有 unsupported fixture 继续断言
 任一不支持命令在提交前拒绝整帧，不允许部分 GPU 成功。这是 GPU-8B2 的 local-pass
-收口，不代替 Windows Intel 上 GPU-8B1/GPU-9A 的 native present、resize 和 timing 验收。
+收口；后续 Windows Intel native present、resize 和 timing 结果见 [GPU 当前状态](gpu-current-state.md)。
 GPU-8B2 已按 opaque effects、direct producer、VIEWMODEL consumer/local muzzle、Transparent V1 的
 顺序收口。Transparent V1 固定 source-over、material/texture alpha、depth test/no-depth-write
-和原始顺序，不以 OIT 或重排作为首版前提。后续工作转入 Windows Intel normal-frame
-冻结，不在 GPU-8B2 内扩张新材质或高级透明能力。
+和原始顺序，不以 OIT 或重排作为首版前提。这里的 GPU-8B2 编号仅描述已实现的阶段，
+不作为当前开发队列。
 
 ### GPU-9A Post-Raster Compute Pass V1
 
@@ -421,7 +423,7 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 
 ## Windows Intel GPU 验收状态
 
-strict native smoke 与 Fog/Post smoke 已各通过 120 帧，正式地图 320 帧零回退运行和窗口拉伸已确认。性能阶段从 `--frame-audit` 的整循环与 frontend、pack、fence、present 分阶段耗时建立基线；旧冻结矩阵不再作为当前工作队列。
+strict native smoke 与 Fog/Post smoke 已各通过 120 帧，正式地图 320 帧零回退运行和窗口拉伸已确认。最近固定视角的命令与耗时快照见 [GPU 当前状态](gpu-current-state.md)；旧冻结矩阵不再作为当前工作队列。
 
 ## 一帧的数据流
 
@@ -456,7 +458,7 @@ GPU-8B1 只恢复 post 之后的 screen-space 层。interactables、world effect
 之前；opaque viewmodel command 由 GPU-8B2c consumer 消费，LOCAL_VIEW muzzle core 与 outer/lobe
 复用该层的 projection/depth/coverage，remote/AI muzzle 仍为 world EFFECTS；outer/lobe 已通过
 Transparent V1 的真实 material alpha 和 no-depth-write policy 表达，不能上传为 overlay。B4 冻结的是
-submission/target/order 契约，不宣称 GPU-8B2 完成。
+submission/target/order 契约；GPU-8B2 的后续功能边界见上文历史说明。
 
 主循环更新 session/net/effects 后，展示层从 `actors[TOY_GAME_PLAYER_ACTOR_INDEX]` 和其他 actor
 读取玩家状态，再设置 `rasterfall_render_context`，调用场景及实体公开入口；客户端远端玩家的

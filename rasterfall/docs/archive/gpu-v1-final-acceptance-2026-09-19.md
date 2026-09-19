@@ -1,6 +1,6 @@
 # GPU V1 最终收尾与冻结验收
 
-> 历史归档：2026-09-19 功能阶段结束后，冻结矩阵不再是当前工作计划；性能阶段以 `docs/Rasterfall GPU 与 Windows Native Platform 总体计划.md` 为准。
+> 历史归档：2026-09-19 功能阶段结束后的验收现场；当前状态以 [GPU 当前状态](../gpu-current-state.md) 为准。
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。

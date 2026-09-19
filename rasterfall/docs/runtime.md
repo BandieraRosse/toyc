@@ -4,7 +4,7 @@
 > 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。
 > 正常退出判定：native GPU frame 不写 CPU `scene_pixels`；帧上限退出时须同时检查成功 GPU 帧数，不能仅因 CPU 像素计数为零返回 2。GPU contract 失败仍优先返回 3。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。当前性能路线见 [GPU 性能阶段与 Windows Platform 路线](../../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。实机验证与最近基线见 [GPU 当前状态](gpu-current-state.md)。
 > 当前阶段：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退和窗口拉伸已确认；功能阶段结束，转入帧率优化。Legacy anime normal rendering 已冻结并回退 humanoid，原 toon/material `0x40` 不再是 normal frame 输入；Console/Desktop normal runtime 也已隔离，F12、反引号和 station 交互只产生 HUD 暂时不可用提示。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。

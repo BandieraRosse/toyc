@@ -6719,13 +6719,14 @@ static int render_humanoid_debug(struct toy_renderer *renderer,
                                       TOY_GAME_MAX_ACTORS);
 }
 
-/* Conservative screen-box audit: a command outside one viewport plane
- * cannot cover a pixel, even though record_cmd retains it. */
-static void audit_ai_actor_screen_commands(const struct toy_renderer *renderer,
+/* A triangle outside one viewport plane cannot cover a pixel. Compact only
+ * this actor's command span, preserving the order of all retained commands. */
+static void audit_ai_actor_screen_commands(struct toy_renderer *renderer,
                                            unsigned long begin)
 {
-    unsigned long i, overlapping = 0;
-    for (i = begin; i < renderer->cmd_count; i++) {
+    unsigned long i, write = begin;
+    unsigned long end = renderer->cmd_count;
+    for (i = begin; i < end; i++) {
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
         int min_x = cmd->a.x < cmd->b.x ? cmd->a.x : cmd->b.x;
         int max_x = cmd->a.x > cmd->b.x ? cmd->a.x : cmd->b.x;
@@ -6738,10 +6739,14 @@ static void audit_ai_actor_screen_commands(const struct toy_renderer *renderer,
         if (max_x < 0 || min_x >= renderer->surface.width ||
             max_y < 0 || min_y >= renderer->surface.height)
             ai_submission_stats.offscreen_commands++;
-        else overlapping++;
+        else {
+            if (write != i) renderer->cmds[write] = renderer->cmds[i];
+            write++;
+        }
     }
-    if (renderer->cmd_count > begin && !overlapping)
+    if (end > begin && write == begin)
         ai_submission_stats.offscreen_actors++;
+    renderer->cmd_count = (int)write;
 }
 
 /* Covers the standing/crouched body, limb motion, gear and held weapon with
@@ -6751,10 +6756,18 @@ static int ai_actor_outside_screen(const struct toy_renderer *renderer,
                                    const struct camera *camera,
                                    const struct toy_game_actor *actor)
 {
-    const int radius = 2600;
+    /* Procedural geometry is bounded horizontally by the 920 RFU AWP model
+     * size, its 260 RFU grip offset, the 55 RFU animation shift and the
+     * 175/110 authored-body scale. Leave ample room for limb/fall rotation.
+     * Modular body, gear and socket weapons retain the broader bound. */
+    int horizontal_radius;
+    const int vertical_radius = 2600;
     struct vec3 center, view;
     long long focal, half_width, half_height;
     if (!renderer || !camera || !actor) return 0;
+    horizontal_radius =
+        rasterfall_character_visual_recipe_for_character(actor->character_id) ?
+        2600 : 1600;
     center.x = actor->x;
     center.y = -900 + actor->ground_y + actor->airborne_y + 800;
     center.z = actor->z;
@@ -6763,13 +6776,17 @@ static int ai_actor_outside_screen(const struct toy_renderer *renderer,
     half_width = renderer->surface.width / 2 + 32;
     half_height = renderer->surface.height / 2 + 32;
     return (long long)view.x * focal >
-               (long long)view.z * half_width + radius * (focal + half_width) ||
+               (long long)view.z * half_width +
+                   horizontal_radius * (focal + half_width) ||
            (long long)view.x * focal <
-               -(long long)view.z * half_width - radius * (focal + half_width) ||
+               -(long long)view.z * half_width -
+                   horizontal_radius * (focal + half_width) ||
            (long long)view.y * focal >
-               (long long)view.z * half_height + radius * (focal + half_height) ||
+               (long long)view.z * half_height +
+                   vertical_radius * (focal + half_height) ||
            (long long)view.y * focal <
-               -(long long)view.z * half_height - radius * (focal + half_height);
+               -(long long)view.z * half_height -
+                   vertical_radius * (focal + half_height);
 }
 
 static int render_ai_teammate(struct toy_renderer *renderer,

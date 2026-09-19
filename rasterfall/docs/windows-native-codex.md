@@ -1,6 +1,7 @@
 # Windows Native Codex
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退波次与窗口拉伸已确认；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、当前 `rasterfall_options.c`
 
@@ -43,17 +44,16 @@ present、readback/copy 或 native GPU 初始化失败都会得到非零退出�
 ## WIN-DEV-1 验收
 
 Windows native 验收以当前构建的 CLI 输出和退出码为准。原 GPU 堆损坏已修复为
-retained command 跨帧容量失配；完整生命周期和 WIN-DEV-1 最终签收仍待完成。
+retained command 跨帧容量失配；完整生命周期组合仍无同一份实机证据。
 普通构建的完整 `--logic-test` 曾受默认 Windows 主线程栈容量限制，以
 0xC00000FD 退出，与 GPU 堆越界不同。正式 `windows/Makefile` 已将栈 reserve 设为
 16 MiB，聚合逻辑测试在正式链接配置下通过。
 
-在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 无 required failure；
-`package` 成功并包含 exe、`rasterfall/assets`，以及本地 `private-assets`（若存在）；
-`test` 退出码为 0；`gpu-test` 退出码为 0 且 audit 明确为 `gpu-native`、无 CPU
-fallback/readback/copy；`acceptance` 生成 normal-frame audit BMP、visual capture
-BMP 和 package 内 `rasterfall.log`，三者命令退出码均为 0。Linux `build/` 不应因
-Windows 构建产生或复用对象。
+在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 检查依赖；`package` 包含 exe、
+公开资产及本地私有资产（若存在）；`test` 运行逻辑回归；`gpu-test` 要求 audit 为
+`gpu-native` 且无 CPU fallback/readback/copy；`acceptance` 生成 normal-frame audit BMP、
+visual capture BMP 和 package 内 `rasterfall.log`。这些命令的当前退出码和生成物才是本次
+验证结果；Linux `build/` 不应因 Windows 构建产生或复用对象。
 
 ## 留到后续
 

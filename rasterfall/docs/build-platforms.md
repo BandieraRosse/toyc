@@ -5,7 +5,7 @@
 > 源码核对基线补充：2026-09-19 Windows strict GPU 老地图全向扫视覆盖 Texture V1 高命令量 pack；纹理 handle 改为本帧唯一视图表查找，避免方向相关的 watchdog 退出。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
-> 当前平台边界：Intel Iris Xe 的 strict/Fog smoke、正式地图 320 帧零回退波次复现与窗口拉伸已确认，GPU 功能阶段结束；当前进入实机性能阶段。Windows window/input/audio 仍由 SDL2 提供，SDL-free Native Platform 是独立后续工作。
+> 当前平台边界：Intel Iris Xe 的 strict/Fog smoke、正式地图 320 帧零回退波次复现与窗口拉伸已确认，GPU 功能阶段结束；最近性能快照见 [GPU 当前状态](gpu-current-state.md)。Windows window/input/audio 仍由 SDL2 提供，SDL-free Native Platform 尚未实现。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
 > 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
@@ -15,7 +15,7 @@
 
 ## 当前 Windows GPU 验收状态
 
-Intel Iris Xe 已通过 strict native present、Fog/Post smoke、正式地图 320 帧 zero-fallback audit 和窗口拉伸；当前以同一 package 和场景记录帧时分布、frontend、GPU fence 与 native present，定位低帧率瓶颈。
+Intel Iris Xe 已通过 strict native present、Fog/Post smoke、正式地图 320 帧 zero-fallback audit 和窗口拉伸；最近固定视角的命令、frontend、GPU fence 与 native present 记录见 [GPU 当前状态](gpu-current-state.md)。
 
 ## Linux
 

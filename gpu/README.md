@@ -1,12 +1,11 @@
 # Rasterfall GPU 目录
 
-> 文档更新：2026-09-18
-> 源码核对基线：GPU-8B2d B2d-5 checkpoint（2026-09-18）
-> 阶段状态：GPU-0 ～ GPU-8A 已完成相应 checkpoint；GPU-8B2c Phase 4/5 已实现 retained VIEWMODEL span marker、独立 depth/coverage、Post fog skip、CPU/GPU differential 与 local muzzle 接入；GPU-8B2d 真实 transparent producer 与 B2d-5 normal-frame pre-post hand-off 门禁已完成，GPU-8B2 达到 local pass；GPU-8B1/GPU-9A 的 Windows normal-frame 实机验收仍待完成。
+> 文档更新：2026-09-19
+> 源码核对基线：`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_raster_pack.c`、`gpu/src/rf_gpu_raster_bin.c`、`rasterfall/src/rf_core_host.c`；当前 Intel 实机状态见 [GPU 当前状态](../rasterfall/docs/gpu-current-state.md)。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
-参考性外部代码。GPU 路线的 checkpoint、最终目标和剩余问题统一见
-[`../docs/Rasterfall GPU 与 Windows Native Platform 总体计划.md`](../docs/Rasterfall%20GPU%20%E4%B8%8E%20Windows%20Native%20Platform%20%E6%80%BB%E4%BD%93%E8%AE%A1%E5%88%92.md)。
+参考性外部代码。本目录说明代码所有权和已实现的技术边界；实机验证与性能快照以
+[GPU 当前状态](../rasterfall/docs/gpu-current-state.md) 为准。旧阶段计划保存在 `rasterfall/docs/archive/`。
 
 ## 当前所有权
 
@@ -56,19 +55,9 @@ Rasterfall normal frontend
 - Post-Raster V1 使用独立 device-local `post_color`，不对 raster color 原位读写。
 - normal native present 使用 BGRA8 transfer-destination swapchain，不读回 color/depth，不复制 CPU framebuffer。
 
-## 当前阻塞
+## 实机状态
 
-GPU pass 的局部 differential 不能证明 normal frontend 输入、sky/world submission 和 present ownership 正确。
-当前暂停新 GPU 功能，优先在 Windows 实机捕获真实坏帧：
-
-```text
-rasterfall.exe --renderer gpu-compute --gpu-native-present --frame-audit
-rasterfall.exe --renderer gpu-compute --gpu-native-present \
-  --normal-frame-audit <x> <z> <sy> <cy> <pitch-sy> <pitch-cy> <width> <height> <output.bmp>
-```
-
-在坏姿态可精确重放、根因修复、normal frame 完整且仍保持零 readback 前，GPU-8B1 和 GPU-9A
-不标记 FROZEN，GPU-8B2 不开始。
+normal gameplay 已在 Windows Intel Iris Xe 通过 strict native/Fog smoke、正式地图 320 帧零回退波次复现及窗口拉伸。该结果是功能范围验收；最近固定视角的命令和帧时见 [GPU 当前状态](../rasterfall/docs/gpu-current-state.md)。GPU-8B1/8B2/9A 等旧阶段编号仅用于定位实现历史，不再作为待执行计划。
 
 ## 验证入口
 
@@ -106,5 +95,5 @@ WSL llvmpipe 只是 correctness 环境，不提供物理 GPU 性能结论。性�
 - 新增 shader 时，同步检查 SPIR-V 生成物、Makefile 依赖、Linux hosted 与 Windows 交叉构建。
 - 不将 Vulkan handle/type 暴露给 Game、session、console 或 status snapshot。
 - 不将 hosted readback timing 或 llvmpipe timing 宣称为 normal native GPU frame 性能。
-- checkpoint 变化时同步更新阶段计划、`rasterfall/docs/rendering.md`、`runtime.md` 和
-  `build-platforms.md`。
+- 实现边界或验证状态变化时同步更新 `rasterfall/docs/gpu-current-state.md` 及受影响的
+  `rendering.md`、`runtime.md` 和 `build-platforms.md`。
