@@ -1,0 +1,18 @@
+#version 450
+layout(local_size_x=16,local_size_y=16) in;
+layout(push_constant) uniform Bridge { uint width,height,import_to_graphics; } p;
+layout(set=0,binding=0,std430) buffer Transfer { uint words[]; } attachment;
+layout(set=0,binding=1,std430) buffer Raster { uint words[]; } raster;
+uint swap_rb(uint c) { return (c&0xff00ff00u)|((c&255u)<<16)|((c>>16)&255u); }
+void main() {
+    uvec2 xy=gl_GlobalInvocationID.xy;
+    if(xy.x>=p.width || xy.y>=p.height)return;
+    uint i=xy.y*p.width+xy.x,n=p.width*p.height;
+    if(p.import_to_graphics==0u) {
+        raster.words[i]=swap_rb(attachment.words[i]);
+        raster.words[n+i]=uint(uintBitsToFloat(attachment.words[n+i])*16384.0);
+    } else {
+        attachment.words[i]=swap_rb(raster.words[i]);
+        attachment.words[n+i]=floatBitsToUint(float(raster.words[n+i])/16384.0);
+    }
+}

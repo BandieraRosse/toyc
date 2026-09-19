@@ -1230,7 +1230,8 @@ GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
 GPU_RASTER_TEST_DEPS += rasterfall/include/rf_gpu_raster_bin.h
 GPU_GRAPHICS_DEPS := gpu/include/rf_gpu_graphics.h gpu/include/rf_vulkan_graphics_min.h \
 	gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_graphics_spirv.inc \
-	gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag
+	gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
+	gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_bridge.comp
 GPU_RASTER_TEST_DEPS += $(GPU_GRAPHICS_DEPS)
 $(BUILD)/rf-gpu-probe $(BUILD)/rf-gpu-probe.exe \
 $(BUILD)/rf-gpu-framebuffer-test $(BUILD)/rf-gpu-framebuffer-test.exe: $(GPU_GRAPHICS_DEPS)

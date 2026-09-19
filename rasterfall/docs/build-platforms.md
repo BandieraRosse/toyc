@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。完整 Raster ABI 分段消费、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md)：根 Makefile 的 `gpu-graphics-test` / `win-gpu-graphics-test` 与 Windows `gpu-graphics-test` 构建独立 hosted proof；graphics ABI/shader 已纳入 backend 依赖。无新增 freestanding/self 编译单元或玩家 CLI/资产；Windows package 与原 compute 基线通过。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 新增资源编译单元，根 Makefile 正常/self 与 Windows 列表同步；Windows 独立 `rasterfall-resource-test.exe` 验证真实 world switch、CPU renderer resize 和释放，不进入玩家 package；`tools/hardware_graphics_resize.ps1` 检查 native/Fog resize 与 registry 稳态。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 的 header/inc 已加入根 Makefile 正常/self 依赖，Windows 自动依赖覆盖；`--logic-test` 增加无外部资产 Draw 对照，Windows package 与 Intel 基线验收通过。

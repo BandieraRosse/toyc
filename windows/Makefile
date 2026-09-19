@@ -104,6 +104,7 @@ GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backen
     gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc) \
     gpu/src/rf_gpu_vulkan_graphics.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
+    gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_bridge.comp \
     $(wildcard rasterfall/include/rf_gpu*.h) include/toy_renderer.h
 .PHONY: gpu-graphics-test
 gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe

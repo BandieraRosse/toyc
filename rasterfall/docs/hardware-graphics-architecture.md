@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。完整 Raster ABI 分段消费、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
 > 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 已实现普通 opaque static RMESH 同步 CPU-backed Draw；原 CPU/compute 精确回归通过，后续资源生命周期见 HG-1B。
@@ -22,7 +23,7 @@ HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics e
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
 | 层顺序、retained、fallback | `rf_core_host.c` | 持有 DrawSpan/RasterSpan 有序帧记录，整帧 preflight 后执行或 replay |
-| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 再建立混合 target/presenter |
+| Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 已有独立整数兼容路径与 attachment/buffer roundtrip；完整混合帧/presenter 待接入 |
 | 基线、验收 | `tools/hardware_graphics_baseline.ps1`、`rf_gpu_raster_diff_test.c` | 保留退出码、原始审计、stream、color/depth、环境标识 |
 
 首个接点在 `rasterfall_render_static_prop()` 得到 model/profile 和实例策略之后、进入模型顶点准备之前。
@@ -148,7 +149,7 @@ HG-1A 已先修复 HG-0 遗留的 CPU planar vertex-lit 透明度与深度差异
 HG-1A 的普通 opaque static RMESH Draw/reference 与 Windows Intel 精确回归已完成，见
 [验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)。
 HG-2A 已完成独立 graphics proof，数值误差、近面深度待验证边界与复现见 [HG-2A](hardware-graphics-hg2a.md)；下一步是 HG-2B。
-HG-2B、HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
+HG-2B 的[整数深度与 target bridge](hardware-graphics-hg2b.md)前置验证通过，完整分段/顺序/native 门禁仍待实现；HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
 `--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。
 资源上传、instance upload、bridge bytes/time、unexpected_lowering 仍在对应 owner 实现时加入，
 不以占位零值伪装已实现 hardware 数据。
