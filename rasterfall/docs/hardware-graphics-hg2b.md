@@ -1,6 +1,7 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_gpu_resource_cache.h/.c` 已实现 registry generation → 持久 GPU submesh/texture adapter；`rf_gpu_graphics_resource_*()` 将资源与 target/pipeline 分离。旧记录中的“GPU cache 待实现”已由本次增量推进；真实 Core mixed executor/native 仍待实现。实现与验收见 [registry GPU cache](#registry-gpu-cache)。
 > 源码核对基线补充：2026-09-19 `rf_core_mixed_frame.h/.inc` 已实现独立 Core 混合帧记录、WORLD 稳定分区、整帧 executor preflight 和 registry 帧 epoch 检查。以下旧记录中的“Core 未实现”指当时状态；真实 Vulkan mixed executor、GPU cache adapter 与 native 门禁仍待实现。
 > 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_graphics_raster_draw()`，连接 Raster ABI 分段与 graphics LOAD；Intel 实际交错回归和同步验证见下文。Core/native 混合编排仍待实现。
 > 源码核对基线：`0d721581` 加本次工作区；`rf_gpu_graphics.h`、`rf_gpu_vulkan_graphics.inc`、`graphics_compat.vert/.frag`、`graphics_bridge.comp` 与独立 oracle；CPU 合同对照 `rasterfall_render.c` near clipping/project 和 `lib/graphics/renderer.c`；Windows Intel 实测。
@@ -260,6 +261,59 @@ registry epoch 递增；没有 shadow lowering 或逐帧构造这份独立计划
 `--logic-test`、differential、固定视角 captures、strict native/Fog 与 Campaign 波次。
 其中 native 帧仍消费原 compute 路径，不能作为 Core mixed GPU/native 接线完成的证据。
 
-下一步依次接通 registry generation → GPU cache adapter、冻结计划 → Raster ABI/graphics
-executor（整帧资格检查先于首次 CLEAR）、真实 VIEWMODEL/Post/overlay 尾段和 native
-present/resize/strict 门禁，再进入 HG-3A allowlist。Linux 和其他 GPU 需另行验证。
+registry generation → GPU cache adapter 已由下述增量实现。下一步接通冻结计划 → Raster
+ABI/graphics executor（整帧资格检查先于首次 CLEAR）、真实 VIEWMODEL/Post/overlay 尾段和
+native present/resize/strict 门禁，再进入 HG-3A allowlist。Linux 和其他 GPU 需另行验证。
+
+## Registry GPU cache
+
+`gpu/include/rf_gpu_resource_cache.h` / `gpu/src/rf_gpu_resource_cache.c` 提供 hosted
+adapter，固定绑定一个 CPU registry 和一个 graphics owner。cache 必须先于这两个 owner
+销毁；设备重建需销毁旧 cache/graphics，再以保留的 CPU backing 创建新缓存。
+
+- `rf_gpu_graphics_resource_*()` 拥有 immutable VB/IB、整数裁剪索引与 opaque texels；
+  graphics owner 持有共享 descriptor、pipeline、command/fence 和唯一尺寸相关 target。
+  prepare 新资源不更改已有绑定或 target；bind 更新 descriptor，所有提交同步完成后才返回。
+  跨 owner bind/destroy 拒绝，销毁当前资源会清除绑定；graphics teardown 回收剩余资源。
+- cache key 为 registry slot/generation + primitive + texture table index，flat 使用显式
+  sentinel。每个 submesh 在首次 miss 时展开源三角形角点，保留三源 normal、Q16 UV 和原始
+  position，不做实例变换或额外 position_scale 缩放。跨 submesh 的共享顶点/纹理尚未去重；
+  V0 有显式容量和既有 graphics 数值限制，超出时拒绝，不静默截断。
+- `prepare()` 验证当前 frame epoch、pin、generation、immutable backing 范围、索引和
+  opaque RGB/RGBA 纹理后上传；cache hit 不扫描三角形或 texels。它应在未来整帧 preflight
+  内、首次 CLEAR 之前调用，但自身不验证 Draw material/transform 或整帧资格。
+- `bind()` 只查已准备条目并重新验证 epoch/pin/generation；没有 hidden upload/lowering。
+  submesh index 从 0 开始，返回的 count/texture extent 供未来 encoder 使用。
+- `collect()` 由同步消费者显式调用，不在 prepare 中隐式更改绑定。world 退休但仍 pinned
+  的资源可继续消费；frame complete 后回收失效 generation，无需解引用已释放 CPU backing。
+  帧 epoch 拒绝上一帧请求，即使新帧重新 pin 相同 generation。resize 不改变缓存身份或上传量。
+
+`tools/rasterfall_gpu_cache_test.c` 链接真实 registry/model 生命周期；受控 RFM2 backing
+提供颜色/整数深度 oracle，真实 ARCH_BEAM 资源验证多 submesh 上传与 indexed draw。测试覆盖
+多资源交替、prepare 不改绑定、flat/texture、坏索引/数据长度/alpha/位置/骨骼拒绝、resize 零重传、
+退休仍可画、完成后回收、slot 重用与旧 epoch 拒绝、graphics/cache 重建后重新上传。
+graphics proof 另测同 device 不同 owner 的资源拒绝。重建测试不等同真实 device loss 恢复。
+
+```powershell
+& C:\msys64\usr\bin\make.exe -j8 -f windows/Makefile gpu-resource-cache-test gpu-graphics-test gpu-raster-test
+powershell -ExecutionPolicy Bypass -File tools/hardware_graphics_proof.ps1 -CacheGate -OutputDirectory tmp/hg2b-cache-new
+```
+
+Windows 新增独立测试目标，根 `win-gpu-resource-cache-test` 转发；缓存编译单元不进入 normal
+player、Linux freestanding/self 或 package。原 backend `.inc` 继续使用既有 Linux/Windows
+编译规则，无 shader/玩家 CLI/资源变化。CPU registry 所有权不变，正常帧没有新缓存或上传成本。
+
+Intel Iris Xe 的 `tmp/hg2b-cache-proof-final/manifest.json` 记录 PASS、设备/驱动、二进制及日志 hash。
+`tmp/hg2b-cache-validation.log` 与 `tmp/hg2b-cache-graphics-validation.log` 确认加载 Khronos
+validation 并启用同步检查，无 VUID/SYNC-HAZARD；原 graphics、depth gate 与 mixed gate
+回归分别见 `tmp/hg2b-cache-graphics-proof-final/manifest.json`、
+`tmp/hg2b-cache-depth-proof-final/manifest.json`、`tmp/hg2b-cache-mixed-proof-final/manifest.json`。
+proof 脚本将参数显式固定为 string array，避免单参数 splat 拆分字符；首轮脚本失败证据保留在
+未带 `-final` 的 depth/mixed proof 目录。Windows 构建记录为 `tmp/hg2b-cache-build-final.log`。
+`tmp/hg2b-cache-normal/manifest.json` 为完整正常路径回归 PASS：实际 `--help`/`--logic-test`、
+differential、固定视角 captures、strict native/Fog 与 Campaign 波次。使用新构建的 exe 更新
+既有 package 目录，资产未变；这些 native 帧仍属于原 compute 路径。
+
+尚未连接 Core frozen plan → GPU encoder/executor，normal props 仍同步 reference lowering。
+混合 native present/strict unexpected-lowering、真实设备重建、Linux 和其他 GPU 尚未验证；
+HG-2B 保持进行中，不能据此启用 HG-3A。

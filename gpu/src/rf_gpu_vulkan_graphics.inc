@@ -31,11 +31,18 @@ struct rf_graphics_target {
     uint32_t width, height;
     int valid, bridge_valid;
 };
+struct rf_gpu_graphics_resource {
+    struct rf_gpu_graphics *owner;
+    struct rf_gpu_graphics_resource *next;
+    struct rf_gpu_vulkan_raster_buffer vertices, indices, compat_indices, texture;
+    uint32_t index_count, texture_width, texture_height;
+    int position_bound[3];
+};
 struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
     struct rf_graphics_api api;
     struct rf_graphics_target target;
-    struct rf_gpu_vulkan_raster_buffer vertices, indices, compat_indices, texture;
+    struct rf_gpu_graphics_resource *resource, *resources;
     rf_vk_descriptor_set_layout set_layout;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
@@ -51,8 +58,6 @@ struct rf_gpu_graphics {
     rf_vk_command_pool pool;
     rf_vk_command_buffer cmd;
     rf_vk_fence fence;
-    uint32_t index_count, texture_width, texture_height;
-    int position_bound[3];
     int poisoned;
     struct rf_gpu_graphics_stats stats;
 };
@@ -129,10 +134,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     if (g->layout) impl->api.destroy_pipeline_layout(impl->device, g->layout, NULL);
     if (g->descriptor_pool) impl->api.destroy_descriptor_pool(impl->device, g->descriptor_pool, NULL);
     if (g->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->set_layout, NULL);
-    raster_buffer_destroy(impl, &g->vertices);
-    raster_buffer_destroy(impl, &g->indices);
-    raster_buffer_destroy(impl, &g->compat_indices);
-    raster_buffer_destroy(impl, &g->texture);
+    while (g->resources) rf_gpu_graphics_resource_destroy(g, g->resources);
     free(g);
 }
 
@@ -467,15 +469,13 @@ done:
     return result;
 }
 
-int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
+static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
 {
-    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
-    struct rf_vk_write_descriptor_set write[3] = {{0}};
     uint32_t *expanded;
-    if (!g || g->poisoned || g->vertices.buffer || !vertices || !indices ||
+    if (!g || g->poisoned || resource->vertices.buffer || !vertices || !indices ||
         !vertex_count || vertex_count > 65536 || !index_count || index_count > 196608 || index_count % 3 ||
         !rgb_texels || !texture_width || !texture_height || texture_width > 1024 || texture_height > 1024) return -1;
     for (uint32_t i = 0; i < index_count; ++i) if (indices[i] >= vertex_count) return -1;
@@ -495,25 +495,58 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     if (!expanded) return -1;
     for (uint32_t i = 0; i < index_count*2; ++i) expanded[i] = i;
     int upload_failed =
-        gfx_upload_buffer(g, vertices, (uint64_t)vertex_count*sizeof(*vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &g->vertices) < 0 ||
-        gfx_upload_buffer(g, indices, (uint64_t)index_count*4, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &g->indices) < 0 ||
-        gfx_upload_buffer(g, expanded, (uint64_t)index_count*8, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &g->compat_indices) < 0 ||
-        gfx_upload_buffer(g, rgb_texels, (uint64_t)texture_width*texture_height*4, RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &g->texture) < 0;
+        gfx_upload_buffer(g, vertices, (uint64_t)vertex_count*sizeof(*vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->vertices) < 0 ||
+        gfx_upload_buffer(g, indices, (uint64_t)index_count*4, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->indices) < 0 ||
+        gfx_upload_buffer(g, expanded, (uint64_t)index_count*8, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &resource->compat_indices) < 0 ||
+        gfx_upload_buffer(g, rgb_texels, (uint64_t)texture_width*texture_height*4, RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->texture) < 0;
     free(expanded);
     if (upload_failed) {
         g->poisoned = 1;
         return -1;
     }
-    g->index_count = index_count; g->texture_width = texture_width; g->texture_height = texture_height;
+    resource->index_count = index_count; resource->texture_width = texture_width; resource->texture_height = texture_height;
     for (uint32_t i = 0; i < vertex_count; ++i)
         for (unsigned j = 0; j < 3; ++j)
-            if (abs(vertices[i].position[j]) > g->position_bound[j])
-                g->position_bound[j] = abs(vertices[i].position[j]);
+            if (abs(vertices[i].position[j]) > resource->position_bound[j])
+                resource->position_bound[j] = abs(vertices[i].position[j]);
     g->stats.mesh_upload_bytes += (uint64_t)vertex_count*sizeof(*vertices) + (uint64_t)index_count*12;
     g->stats.texture_upload_bytes += (uint64_t)texture_width*texture_height*4;
-    buffer[0].buffer = g->texture.buffer; buffer[0].range = g->texture.size;
-    buffer[1].buffer = g->vertices.buffer; buffer[1].range = g->vertices.size;
-    buffer[2].buffer = g->indices.buffer; buffer[2].range = g->indices.size;
+    return 0;
+}
+
+struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
+    const uint32_t *indices, uint32_t index_count,
+    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
+{
+    struct rf_gpu_graphics_resource *resource;
+    if (!g || g->poisoned) return NULL;
+    resource = calloc(1, sizeof(*resource));
+    if (!resource) return NULL;
+    resource->owner = g;
+    resource->next = g->resources;
+    g->resources = resource;
+    if (gfx_resource_upload(g, resource, vertices, vertex_count, indices,
+            index_count, rgb_texels, texture_width, texture_height) < 0) {
+        rf_gpu_graphics_resource_destroy(g, resource);
+        return NULL;
+    }
+    return resource;
+}
+
+int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource)
+{
+    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
+    struct rf_vk_write_descriptor_set write[3] = {{0}};
+    if (!g || g->poisoned || !resource || resource->owner != g ||
+        !resource->index_count) return -1;
+    if (g->resource == resource) return 0;
+    g->resource = resource;
+    buffer[0].buffer = g->resource->texture.buffer; buffer[0].range = g->resource->texture.size;
+    buffer[1].buffer = g->resource->vertices.buffer; buffer[1].range = g->resource->vertices.size;
+    buffer[2].buffer = g->resource->indices.buffer; buffer[2].range = g->resource->indices.size;
     for (unsigned i = 0; i < 3; ++i) {
         write[i].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         write[i].dst_set = g->set; write[i].dst_binding = i; write[i].descriptor_count = 1;
@@ -523,10 +556,41 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     return 0;
 }
 
+int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource)
+{
+    struct rf_gpu_graphics_resource **link;
+    if (!g || !resource || resource->owner != g) return -1;
+    /* Successful submissions already waited. A failed wait may leave work. */
+    if (g->poisoned) g->owner->api.queue_wait_idle(g->owner->queue);
+    for (link = &g->resources; *link != resource; link = &(*link)->next)
+        if (!*link) return -1;
+    *link = resource->next;
+    if (g->resource == resource) g->resource = NULL;
+    raster_buffer_destroy(g->owner, &resource->vertices);
+    raster_buffer_destroy(g->owner, &resource->indices);
+    raster_buffer_destroy(g->owner, &resource->compat_indices);
+    raster_buffer_destroy(g->owner, &resource->texture);
+    free(resource);
+    return 0;
+}
+
+int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
+    const uint32_t *indices, uint32_t index_count,
+    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
+{
+    struct rf_gpu_graphics_resource *resource;
+    if (!g || g->resources) return -1;
+    resource = rf_gpu_graphics_resource_create(g, vertices, vertex_count,
+        indices, index_count, rgb_texels, texture_width, texture_height);
+    return resource ? rf_gpu_graphics_resource_bind(g, resource) : -1;
+}
+
 static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphics_draw *d)
 {
     if (!d->index_count || d->index_count % 3 || d->first_index % 3 ||
-        d->first_index > g->index_count || d->index_count > g->index_count-d->first_index ||
+        d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 || d->material[2] > 1 ||
         d->material[3] || d->camera[3] || d->texture[2] || d->texture[3] ||
         d->translation_scale[3] < 1 || d->translation_scale[3] > 4000 ||
@@ -534,7 +598,7 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
         d->projection[0] != (int)g->target.width || d->projection[1] != (int)g->target.height ||
         d->projection[2] != 64 || d->projection[3] != (int)g->target.width*3/4 ||
-        d->texture[0] != (int)g->texture_width || d->texture[1] != (int)g->texture_height) return 0;
+        d->texture[0] != (int)g->resource->texture_width || d->texture[1] != (int)g->resource->texture_height) return 0;
     for (unsigned i = 0; i < 3; ++i)
         if (d->translation_scale[i] < -131072 || d->translation_scale[i] > 131072 ||
             d->camera[i] < -131072 || d->camera[i] > 131072) return 0;
@@ -546,11 +610,11 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
         /* O(1) conservative mesh bounds, before recording any draw. With
          * projected coordinates in [-16384,16384], edge*UV sums fit int64.
          * Deliberately conservative hosted-proof limit, not silent clipping. */
-        int64_t x = ((int64_t)g->position_bound[0]*abs(d->rotation[1]) +
-                     (int64_t)g->position_bound[2]*abs(d->rotation[0]))/1024;
-        int64_t z = ((int64_t)g->position_bound[2]*abs(d->rotation[1]) +
-                     (int64_t)g->position_bound[0]*abs(d->rotation[0]))/1024;
-        int64_t y = g->position_bound[1]+abs(d->rotation[2]);
+        int64_t x = ((int64_t)g->resource->position_bound[0]*abs(d->rotation[1]) +
+                     (int64_t)g->resource->position_bound[2]*abs(d->rotation[0]))/1024;
+        int64_t z = ((int64_t)g->resource->position_bound[2]*abs(d->rotation[1]) +
+                     (int64_t)g->resource->position_bound[0]*abs(d->rotation[0]))/1024;
+        int64_t y = g->resource->position_bound[1]+abs(d->rotation[2]);
         x=x*d->translation_scale[3]/1000+abs(d->translation_scale[0]-d->camera[0]);
         y=y*d->translation_scale[3]/1000+abs(d->translation_scale[1]-d->camera[1]);
         z=z*d->translation_scale[3]/1000+abs(d->translation_scale[2]-d->camera[2]);
@@ -666,7 +730,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     VkBufferImageCopy copy = {0};
     uint64_t offset = 0, bytes;
     void *mapped = NULL;
-    if (!g || g->poisoned || !g->index_count || !g->target.framebuffer ||
+    if (!g || g->poisoned || !g->resource || !g->resource->index_count || !g->target.framebuffer ||
         !draws || !count || count > 4096 ||
         (!r && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     for (uint32_t i = 0; i < count; ++i) if (!gfx_draw_valid(g, &draws[i])) return -1;
@@ -691,12 +755,12 @@ static int gfx_render(struct rf_gpu_graphics *g,
     viewport.width = (float)g->target.width; viewport.height = (float)g->target.height; viewport.maxDepth = 1.0f;
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
-    g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &g->vertices.buffer, &offset);
-    g->api.CmdBindIndexBuffer(g->cmd, g->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &g->resource->vertices.buffer, &offset);
+    g->api.CmdBindIndexBuffer(g->cmd, g->resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
     impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->layout, 0, 1, &g->set, 0, NULL);
     for (uint32_t i = 0; i < count; ++i) {
         uint32_t factor = draws[i].integer_depth ? 2 : 1;
-        g->api.CmdBindIndexBuffer(g->cmd, draws[i].integer_depth ? g->compat_indices.buffer : g->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        g->api.CmdBindIndexBuffer(g->cmd, draws[i].integer_depth ? g->resource->compat_indices.buffer : g->resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
         impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pipelines[draws[i].double_sided+draws[i].integer_depth*2]);
         g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, &draws[i]);
         g->api.CmdDrawIndexed(g->cmd, draws[i].index_count*factor, 1, draws[i].first_index*factor, 0, 0);

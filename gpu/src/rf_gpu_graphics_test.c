@@ -489,7 +489,8 @@ int main(int argc,char **argv)
 {
     struct rf_gpu gpu;
     struct rf_gpu_vulkan_context context;
-    struct rf_gpu_graphics *g=NULL;
+    struct rf_gpu_graphics *g=NULL, *other=NULL;
+    struct rf_gpu_graphics_resource *extra=NULL;
     struct rf_gpu_graphics_draw d, pair[2];
     struct rf_gpu_graphics_stats initial,stats;
     const int positions[7][3]={{-64,-64,0},{64,-64,0},{64,64,0},{-64,64,0},
@@ -617,8 +618,20 @@ int main(int argc,char **argv)
         (unsigned long long)stats.mesh_upload_bytes,(unsigned long long)stats.texture_upload_bytes,
         (unsigned long long)stats.instance_upload_bytes,(unsigned long long)stats.indexed_draws,
         (unsigned long long)stats.frames,(unsigned long long)stats.target_builds);
+    /* Resource owner identity is stricter than sharing the same device.
+     * Prepare/bind/release must neither re-create targets nor poison them. */
+    CHECK((other=rf_gpu_graphics_create(&context))!=NULL);
+    CHECK((extra=rf_gpu_graphics_resource_create(other,vertices,7,indices,15,texels,2,2))!=NULL);
+    CHECK(rf_gpu_graphics_resource_bind(g,extra)<0);
+    CHECK(rf_gpu_graphics_resource_destroy(g,extra)<0);
+    CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(memcmp(saved,pixels,128*96*4)==0 && memcmp(saved_depths,depths,128*96*4)==0);
+    CHECK(rf_gpu_graphics_resource_bind(other,extra)==0);
+    CHECK(rf_gpu_graphics_resource_destroy(other,extra)==0);extra=NULL;
+    CHECK(rf_gpu_graphics_render(other,&d,1,pixels,depths,MAX_PIXELS)<0);
     result=0;
 done:
+    rf_gpu_graphics_destroy(other);
     rf_gpu_graphics_destroy(g);rf_gpu_shutdown(&gpu);
     printf("%s: %s checks=%u\n",depth_gate?"HG-2B prerequisite execution":"HG-2A graphics proof",result?"FAIL":"PASS",checks);
     return result;

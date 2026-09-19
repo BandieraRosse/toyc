@@ -33,6 +33,22 @@ struct rf_gpu_graphics_stats {
     uint64_t bridge_roundtrips, bridge_transfer_bytes, raster_bridge_transfers;
 };
 struct rf_gpu_graphics;
+struct rf_gpu_graphics_resource;
+
+/* Persistent immutable submesh/texture bundles, independent of target extent.
+ * Resources belong to this graphics owner (and device), share its pipelines,
+ * and are destroyed automatically with it. Bind/upload/destroy are synchronous.
+ * Creating a resource does not change the current binding or target contents.
+ * Caller must not use a resource pointer after releasing it. */
+struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
+    const uint32_t *indices, uint32_t index_count,
+    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
+int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource);
+int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource);
 
 /* Caller shuts graphics down before its shared backend context. All calls
  * are synchronous, one frame in flight. Failure never invokes CPU lowering. */

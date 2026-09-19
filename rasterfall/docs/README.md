@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 已分离持久 submesh 资源与 graphics target；`gpu/include/rf_gpu_resource_cache.h` → `gpu/src/rf_gpu_resource_cache.c` 负责 generation/epoch/pin 校验、预上传、纯绑定与退休回收；`tools/rasterfall_gpu_cache_test.c` / `hardware_graphics_proof.ps1 -CacheGate` 为实机入口。真实 mixed executor 与 normal producer 尚未接通。
 > 源码核对基线补充：2026-09-19 [HG-2B Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础)：`rf_core_mixed_frame.h` / `rf_core_mixed_frame.inc` 拥有 Draw/Raster 快照、WORLD 稳定分区和整帧 preflight 执行接口；registry frame epoch 防止跨帧重用。`--logic-test` 覆盖顺序与生命周期；真实 Vulkan executor、normal producer 和 native 接线仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
@@ -151,6 +152,8 @@ World Content V1 由 Game-owned parser 单独加载，描述 actor、terminal、
 Normal world 的 actor 与 renderer-only fixture 还必须经过当前 World Content policy；`toy_game_init()`
 不创建 Jesus 或其他命名队友，固定 Eula/developer strip 与 Humanoid debug 也不会在 Outpost
 normal render 中进入。诊断 CLI 保留自己的独立 fixture 路径。
+
+GPU registry/cache 生命周期任务：先读 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache)，再查 `gpu/include/rf_gpu_resource_cache.h` 的 prepare/bind/collect 合同、`gpu/src/rf_gpu_resource_cache.c` 与 `rf_gpu_graphics_resource_*()`；CPU backing/pin 仍由 `rasterfall_render_resources` 拥有，资源不得跨 graphics/device owner 使用。
 
 GPU compute/graphics 交错任务：先读 [HG-2B](hardware-graphics-hg2b.md)，再查 `gpu/include/rf_gpu_graphics.h`、`gpu/src/rf_gpu_vulkan_graphics.inc` 的 adapter，`gpu/src/rf_gpu_vulkan_backend.c` 的 Raster target 续画状态，以及 `gpu/src/rf_gpu_raster_test.c` 的 `--mixed-gate`。
 

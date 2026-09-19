@@ -99,6 +99,12 @@ $(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_te
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
 -include $(BUILD)/win/tools/rasterfall_resource_test.d
 
+.PHONY: gpu-resource-cache-test
+gpu-resource-cache-test: $(BUILD)/rasterfall-gpu-cache-test.exe
+$(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_test.o $(BUILD)/win/gpu/src/rf_gpu_resource_cache.o $(RESOURCE_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
+-include $(BUILD)/win/tools/rasterfall_gpu_cache_test.d $(BUILD)/win/gpu/src/rf_gpu_resource_cache.d
+
 # HG-2A hosted diagnostic: independent of SDL and player package/assets.
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
     gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c

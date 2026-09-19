@@ -1240,6 +1240,12 @@ $(BUILD)/rf-gpu-framebuffer-test $(BUILD)/rf-gpu-framebuffer-test.exe: $(GPU_GRA
 gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test
 win-gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
 
+# Registry integration uses the Windows hosted game/model runtime. It is not
+# linked into Linux freestanding/self or the normal Windows player yet.
+.PHONY: win-gpu-resource-cache-test
+win-gpu-resource-cache-test:
+	$(MAKE) -f windows/Makefile gpu-resource-cache-test
+
 $(BUILD)/rf-gpu-graphics-test: gpu/src/rf_gpu_graphics_test.c $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I include -I include/tlibc -I rasterfall/include \
 		gpu/src/rf_gpu_graphics_test.c $(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_TEST_SRCS)) -ldl -lm -o $@
