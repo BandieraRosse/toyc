@@ -97,7 +97,9 @@ int rasterfall_resources_pin(struct rasterfall_resource_registry *registry,
 
 int rasterfall_resources_frame_begin(struct rasterfall_resource_registry *registry)
 {
-    if (!registry || registry->frame_active) return -1;
+    if (!registry || registry->frame_active || registry->frame_epoch == ULLONG_MAX)
+        return -1;
+    registry->frame_epoch++;
     registry->frame_active = 1;
     return 0;
 }

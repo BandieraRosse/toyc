@@ -857,7 +857,8 @@ static int run_logic_test(void)
     uint32_t *pixels;
     int count;
     long long direction_length;
-    if (rf_core_retained_span_logic_test_v1() < 0) return 249;
+    if (rf_core_retained_span_logic_test_v1() < 0 ||
+        rf_core_mixed_frame_logic_test() < 0) return 249;
     {
         struct rf_core exit_core;
         memset(&exit_core, 0, sizeof(exit_core));

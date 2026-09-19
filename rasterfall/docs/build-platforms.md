@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-2B [Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 由既有 `rf_core_host.c` 包含 `.inc`，无新编译单元、CLI 或资产；根 Makefile 显式依赖头文件/实现/fixture，Windows `-MMD` 自动依赖覆盖；self 无独立 Core 规则需要扩充。`--logic-test` 进入同一 Core 实现。
 > 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md)：根 Makefile 的 `gpu-graphics-test` / `win-gpu-graphics-test` 与 Windows `gpu-graphics-test` 构建独立 hosted proof；graphics ABI/shader 已纳入 backend 依赖。无新增 freestanding/self 编译单元或玩家 CLI/资产；Windows package 与原 compute 基线通过。

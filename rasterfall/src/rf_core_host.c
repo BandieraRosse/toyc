@@ -62,6 +62,8 @@ static unsigned int rf_core_cmd_fallback_reason_v1(
     return RF_PRE_POST_FALLBACK_NONE;
 }
 
+#include "rf_core_mixed_frame.inc"
+
 static int gpu_pre_post_finalize(struct rf_core *core);
 
 const char *rf_core_renderer_name(int renderer)

@@ -1,6 +1,7 @@
 # HG-1B：资源身份与生命周期
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-2B 在 registry 增加单调 `frame_epoch`；每次成功 `frame_begin` 递增，上限拒绝回绕。混合帧保存 epoch，跨帧重 pin 同一 generation 不能恢复旧计划的执行资格。正常 pin/退休/释放规则不变，详见 [Core 帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础)。
 > 源码核对基线：2026-09-19 工作区；`rasterfall_render_resources.h`、`render/rasterfall_render_resources.c`、`rasterfall_draw.h`、`rf_core_host.c`、`rf_game_lifecycle.c` 与 Windows 验证入口。
 
 普通 static prop 的 CPU 资源已由 renderer registry 持有。Draw/reference 保持 HG-1A 的

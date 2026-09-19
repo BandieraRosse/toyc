@@ -1,11 +1,12 @@
 # HG-2B：整数深度与 GPU target bridge
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 `rf_core_mixed_frame.h/.inc` 已实现独立 Core 混合帧记录、WORLD 稳定分区、整帧 executor preflight 和 registry 帧 epoch 检查。以下旧记录中的“Core 未实现”指当时状态；真实 Vulkan mixed executor、GPU cache adapter 与 native 门禁仍待实现。
 > 源码核对基线补充：2026-09-19 工作区新增 `rf_gpu_graphics_raster_draw()`，连接 Raster ABI 分段与 graphics LOAD；Intel 实际交错回归和同步验证见下文。Core/native 混合编排仍待实现。
 > 源码核对基线：`0d721581` 加本次工作区；`rf_gpu_graphics.h`、`rf_gpu_vulkan_graphics.inc`、`graphics_compat.vert/.frag`、`graphics_bridge.comp` 与独立 oracle；CPU 合同对照 `rasterfall_render.c` near clipping/project 和 `lib/graphics/renderer.c`；Windows Intel 实测。
 
 HG-2B 进行中：整数深度前置阻塞已修复，GPU attachment/buffer 往返转换与 LOAD 续画已通过。
-Raster ABI 分段与 graphics 已通过 GPU buffer adapter 互操作；Core Draw/Raster 顺序和 strict native 门禁尚未实现，不能标记
+Raster ABI 分段与 graphics 已通过 GPU buffer adapter 互操作；Core Draw/Raster 顺序已建立独立计划接口，但真实 Vulkan 提交和 strict native 门禁尚未实现，不能标记
 HG-2B 完成或推进 normal-frame hardware props。正常游戏仍消费原 CPU/compute 路径。
 
 ## 入口与判定
@@ -217,6 +218,48 @@ suite 的同步验证：确认实际插入 Khronos instance/device layer，启�
 `--help`/`--logic-test`、固定视角 captures、strict native/Fog 和 Campaign 波次；这些
 native 帧仍消费原 compute 路径，不能作为混合 native 已完成的证据。
 
-Core 尚未冻结并提交 Draw/Raster 混合 spans，也没有 mixed native present、swapchain 重建、
-strict unexpected-lowering/readback/copy 门禁或 registry GPU cache adapter；不得据此标记
-HG-2B 完成或启用 HG-3 normal props。
+上述 bridge 增量没有实现 Core 混合编排。后续 Core 计划基础见下节；mixed native present、
+swapchain 重建、strict unexpected-lowering/readback/copy 门禁及 registry GPU cache adapter
+仍未接通，不得据此标记 HG-2B 完成或启用 HG-3 normal props。
+
+## Core 混合帧计划基础
+
+`rasterfall/include/rf_core_mixed_frame.h` 定义独立 Core API；`src/rf_core_mixed_frame.inc`
+由 `rf_core_host.c` 编译，复用其透明分类规则。正常 retained consumer 和 static prop producer
+尚不调用该 API。此增量交付的是后续真实 mixed executor 所需的顺序与引用基础。
+
+- RasterCmd 按值复制；WORLD 中透明分类在提交时确定，跨全部批次稳定分区。Draw 处于原有
+  opaque 序列位置，不整体前移/后移；effects、viewmodel 各自保持提交顺序。相邻同类且
+  backing 连续的记录合并为 span。clear/sky、Post、overlay 属于 executor 的独立职责。
+- Draw 复制 view、instance、submesh/material，校验 extent/near/focal、range 与 registry
+  handle，拒绝借用 backing 和外部 texture view。pin 住 mesh bundle，保护其材料与纹理；
+  world 退休后本帧仍可消费，资源由原帧 owner 在完成后释放。RasterCmd 的非 Draw 纹理
+  仍按原 retained 合同由调用者保持存活，不声称该 API 取得所有纹理的所有权。
+- registry 每次成功 frame begin 递增 `frame_epoch`；混合帧必须匹配 epoch 且仍有 pin。
+  防止 frame complete 后下一帧重新 pin 同一 generation 使旧计划恢复资格；epoch 不回绕。
+- 状态为 RECORDING → FROZEN → EXECUTING → COMPLETE/FAILED。只在 RECORDING 写入；
+  freeze 分配失败不破坏逻辑记录。executor 先对整帧执行 preflight，再逐 span 消费，最后
+  调用一次 finish；空帧也有 finish。preflight 拒绝保留 FROZEN 供显式 replay，执行失败
+  标记 FAILED，禁止重试部分 GPU target。API 不自行触发 CPU replay 或降低 strict policy。
+- preflight callback **必须**负责真实 GPU 资源、数值资格、全 stream/texture pack、目标及
+  末端操作的检查；Core 的引用与顺序检查不能替代它。目前尚无 Vulkan/replay adapter，
+  finish 的一次调用也不等同真实 VIEWMODEL/Post/overlay 已验证。
+
+`src/dev-tests/rf_core_mixed_frame_test.inc` 接入 `--logic-test`，以独立事件序列检查跨批次
+opaque/Draw/transparent 顺序、连续 Draw、effects/viewmodel、producer 栈快照、非法 layer
+与 range、后段 Raster/Draw preflight 拒绝、提交失败禁止重试、空帧与 finish 失败、容量
+缩小后增长、资源退休及跨帧 epoch。此 fixture 使用记录型 executor，不验证 GPU 像素。
+GPU 数值/遮挡仍由 `--mixed-gate` 和原 depth oracle 验证。
+
+根 Makefile 增加 Core `.inc`/header/fixture 显式依赖；Windows 自动依赖覆盖这些 include，
+无新编译单元、self 规则、玩家参数或 package 资源。正常 CPU/compute 的每帧唯一变化是
+registry epoch 递增；没有 shadow lowering 或逐帧构造这份独立计划。
+
+本次 Windows package 构建记录为 `tmp/hg2b-core-plan-build-final.log`；
+`tmp/hg2b-core-plan-normal/manifest.json` 记录完整回归 PASS，包括实际 `--help`、
+`--logic-test`、differential、固定视角 captures、strict native/Fog 与 Campaign 波次。
+其中 native 帧仍消费原 compute 路径，不能作为 Core mixed GPU/native 接线完成的证据。
+
+下一步依次接通 registry generation → GPU cache adapter、冻结计划 → Raster ABI/graphics
+executor（整帧资格检查先于首次 CLEAR）、真实 VIEWMODEL/Post/overlay 尾段和 native
+present/resize/strict 门禁，再进入 HG-3A allowlist。Linux 和其他 GPU 需另行验证。

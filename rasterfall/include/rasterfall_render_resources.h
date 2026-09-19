@@ -18,6 +18,7 @@ struct rasterfall_resource_slot {
 struct rasterfall_resource_registry {
     struct rasterfall_resource_slot slots[RASTERFALL_RESOURCE_CAPACITY];
     int frame_active;
+    unsigned long long frame_epoch;
     unsigned int loads, releases;
 };
 struct rasterfall_resource_stats {

@@ -814,7 +814,7 @@ $(BUILD)/rf_core_filesystem.o: rasterfall/src/rf_core_filesystem.c rasterfall/in
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
+$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/src/rf_core_mixed_frame.inc rasterfall/src/dev-tests/rf_core_mixed_frame_test.inc rasterfall/include/rf_core_mixed_frame.h rasterfall/include/rasterfall_draw.h rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 [HG-2B Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 已增加 `rf_core_mixed_frame.h/.inc`，按 registry 帧 epoch 冻结 Draw、pin backing、跨 WORLD 稳定分区并通过 executor 整帧 preflight；真实 Vulkan adapter 与 normal producer 接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B 真实交错桥接](hardware-graphics-hg2b.md#真实-raster-abi--graphics-交错桥接)：`rf_gpu_graphics_raster_draw()` 在同 device/extent 的未结束 Raster target 中插入整数 indexed draws，GPU 内双向传递 color/depth；`rf-gpu-raster-test --mixed-gate` 验证交错顺序。Core/native 混合接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实交错已由 `rf_gpu_graphics_raster_draw()` 接通；Core/native 接入仍待实现。
 > 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接已通过 Intel 固定 fixture；Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
@@ -11,7 +12,7 @@
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
 HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
-HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor，延迟 Draw 消费与 Core DrawSpan 仍待实现。
+HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已建立独立 Core 混合帧记录接口，真实延迟 Draw 消费与 Vulkan adapter 仍待实现。
 当前 native 路径仍为 compute raster，不能将其称为 hardware indexed draw。
 
 ## 状态所有者与 producer 边界
@@ -24,7 +25,7 @@ HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics e
 | 顶点与三角形 frontend | `render/rasterfall_draw_reference.inc`、`prepare_gallery_vertex_cache()`、`lower_gallery_triangles()` | HG-1A 同步 reference；旧 gallery 与 Draw 共用整数循环，尚无跳过 lowering 的 hardware 路径 |
 | 隐式模型状态 | `rasterfall_frontend_state` 及 renderer 文件级 lighting scopes | 提交时冻结，延迟 consumer 不重读 scope |
 | RasterCmd | `toy_renderer`、`include/toy_renderer.h` | 保留 CPU 指针结构；不要与固定宽度 Raster ABI 混淆 |
-| 层顺序、retained、fallback | `rf_core_host.c` | 持有 DrawSpan/RasterSpan 有序帧记录，整帧 preflight 后执行或 replay |
+| 层顺序、retained、fallback | `rf_core_host.c`、`rf_core_mixed_frame.h/.inc` | 正常帧保留原 retained；独立 mixed API 冻结 Draw/Raster spans 并稳定分区，executor 先整帧 preflight，拒绝后保留记录供显式 replay；Vulkan/replay adapter 待接入 |
 | Vulkan 资源与 present | `gpu/src/rf_gpu_vulkan_backend.c`、`rf_gpu_vulkan_graphics.inc` | normal compute buffer/Win32 transfer present；HG-2A 单 mesh graphics owner 持有 VB/IB/texels 和离屏 RGBA8/D32；HG-2B 已连接 Raster ABI 分段与整数兼容 attachment/buffer bridge；Core 混合帧/presenter 待接入 |
 | 基线、验收 | `tools/hardware_graphics_baseline.ps1`、`rf_gpu_raster_diff_test.c` | 保留退出码、原始审计、stream、color/depth、环境标识 |
 

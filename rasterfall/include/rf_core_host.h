@@ -254,6 +254,7 @@ void rf_core_gpu_world_begin(struct rf_core *core);
 void rf_core_gpu_world_flush(struct rf_core *core);
 /* Deterministic retained-span contract fixture used by --logic-test. */
 int rf_core_retained_span_logic_test_v1(void);
+int rf_core_mixed_frame_logic_test(void);
 /* Feed a producer's retained commands through the real native hand-off. */
 int rf_core_transparent_command_logic_test_v1(
     const struct toy_raster_cmd *commands, int count);
