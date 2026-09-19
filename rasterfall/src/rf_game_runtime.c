@@ -4278,7 +4278,7 @@ startup_again:
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                     snprintf(audit_line, sizeof(audit_line),
-                        "FRAME-AUDIT draw-reference instances=%lu items=%lu cpu_lowered_triangles=%lu legacy_instances=%lu reject_scope=%lu reject_deformation=%lu reject_material=%lu reject_transparent=%lu reject_range=%lu",
+                        "FRAME-AUDIT draw-reference instances=%lu items=%lu cpu_lowered_triangles=%lu legacy_instances=%lu reject_scope=%lu reject_deformation=%lu reject_material=%lu reject_transparent=%lu reject_range=%lu reject_numeric=%lu",
                         scene_audit.static_draw_instances, scene_audit.static_draw_items,
                         scene_audit.static_draw_lowered_triangles,
                         scene_audit.static_draw_legacy_instances,
@@ -4286,7 +4286,8 @@ startup_again:
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_DEFORMATION],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_MATERIAL],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_TRANSPARENT],
-                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_RANGE]);
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_RANGE],
+                        scene_audit.static_draw_rejected[RASTERFALL_DRAW_NUMERIC]);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                 }

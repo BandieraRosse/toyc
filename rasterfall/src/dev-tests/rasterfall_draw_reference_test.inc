@@ -152,7 +152,7 @@ int rasterfall_render_draw_reference_logic_test(void)
             }
             static_prop_draw_snapshot(&r[1], &camera, model, &prop, prop.scale_milli,
                                       &view, &instance);
-            if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_ACCEPTED) {
+            if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_ACCEPTED) {
                 result = 3; break;
             }
             render_gallery_model(&r[0], &camera, model, prop.x, prop.y, prop.z, prop.scale_milli);
@@ -185,19 +185,25 @@ int rasterfall_render_draw_reference_logic_test(void)
         struct rasterfall_draw_view view;
         memset(&view, 0, sizeof(view));
         memset(&instance, 0, sizeof(instance)); instance.mesh = model;
+        view.camera = camera; view.width = view.height = 96;
+        view.focal = 72; view.near_z = 64;
+        instance.scale_milli = 1000;
+        instance.yaw_cos_q10 = 1024;
         model->format_version = 9; texture_asset.data = texels;
         materials[44] = 128;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_TRANSPARENT) result = 9;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_TRANSPARENT) result = 9;
         materials[44] = 255; texture_view.has_transparency = 1;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_TRANSPARENT) result = 10;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_TRANSPARENT) result = 10;
         texture_view.has_transparency = 0; materials[6] = 2;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_MATERIAL) result = 11;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_MATERIAL) result = 11;
         materials[6] = 0; model->skinning_enabled = 1;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_DEFORMATION) result = 12;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_DEFORMATION) result = 12;
         model->skinning_enabled = 0; primitives[5] = 9;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_RANGE) result = 13;
-        primitives[5] = 6; r[1].recording_edge = 1;
-        if (static_prop_draw_preflight(&r[1], &instance) != RASTERFALL_DRAW_SCOPE ||
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_RANGE) result = 13;
+        primitives[5] = 6; instance.x = 100000; instance.z = 64;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_NUMERIC) result = 18;
+        instance.x = instance.z = 0; r[1].recording_edge = 1;
+        if (static_prop_draw_preflight(&r[1], &view, &instance) != RASTERFALL_DRAW_SCOPE ||
             r[1].cmd_count != 0) result = 15;
         r[1].recording_edge = 0;
         /* Reject stale registry identity before touching borrowed backing. */

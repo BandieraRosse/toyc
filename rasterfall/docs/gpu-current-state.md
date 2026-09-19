@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 修复 static RMESH 在特定近面/侧向视角下过晚触发 mixed graphics 数值预检、导致 strict 帧退出的问题：producer 现在先按 graphics 整数投影范围判定，不合格实例留在 GPU compute RasterCmd 路径。Windows Outpost 与 legacy map 的 `--auto --frames 300` strict native 自动旋转/传送均通过，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-19 RTX 3050 Windows 首帧 native swapchain 兼容修复：Core config 为 native present 选择 SDL software renderer 窗口，避免 SDL 硬件 renderer 与 Vulkan 在同一 HWND 上同时建立呈现链。strict native 10/10 帧、零回退、零读回及零 CPU framebuffer copy；Fog 10 帧及三 extent native gate 通过，长时运行未验收。详见 [兼容修复记录](gpu-nvidia-swapchain-compat.md)。
 
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。

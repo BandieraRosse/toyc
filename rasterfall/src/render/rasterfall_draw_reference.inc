@@ -71,8 +71,69 @@ static enum rasterfall_draw_reject static_prop_draw_resolve(
     return RASTERFALL_DRAW_ACCEPTED;
 }
 
+static long long static_prop_draw_abs64(long long value)
+{
+    return value < 0 ? -value : value;
+}
+
+/* Match the integer indexed-draw shader's conservative coordinate gate
+ * before committing this instance to a hardware Draw. Rejected instances
+ * remain eligible for compute RasterCmds in the same strict GPU frame. */
+static int static_prop_draw_numeric_eligible(
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance)
+{
+    const struct rasterfall_model_asset *model = instance->mesh;
+    long long bx, by, bz, rx, rz, x, y, z;
+    long long cx, cy, cz, axial, depth, ar, dr, min_depth, vx, vz, vy;
+    if (!view || !model || instance->scale_milli < 1 ||
+        instance->scale_milli > 8000 || view->near_z != 64 ||
+        view->focal != view->width * 3 / 4) return 0;
+    bx = static_prop_draw_abs64(model->min_x);
+    if (static_prop_draw_abs64(model->max_x) > bx) bx = static_prop_draw_abs64(model->max_x);
+    by = static_prop_draw_abs64(model->min_y);
+    if (static_prop_draw_abs64(model->max_y) > by) by = static_prop_draw_abs64(model->max_y);
+    bz = static_prop_draw_abs64(model->min_z);
+    if (static_prop_draw_abs64(model->max_z) > bz) bz = static_prop_draw_abs64(model->max_z);
+    rx = bx * static_prop_draw_abs64(instance->yaw_cos_q10) +
+         bz * static_prop_draw_abs64(instance->yaw_sin_q10);
+    rz = bz * static_prop_draw_abs64(instance->yaw_cos_q10) +
+         bx * static_prop_draw_abs64(instance->yaw_sin_q10);
+    if (rx > INT_MAX || rz > INT_MAX) return 0;
+    x = rx / 1024; z = rz / 1024;
+    y = by + static_prop_draw_abs64(model->min_y);
+    if (x * instance->scale_milli > INT_MAX ||
+        y * instance->scale_milli > INT_MAX ||
+        z * instance->scale_milli > INT_MAX) return 0;
+    x = x * instance->scale_milli / 1000;
+    y = y * instance->scale_milli / 1000;
+    z = z * instance->scale_milli / 1000;
+    cx = (long long)instance->x - view->camera.x;
+    cy = (long long)instance->y - view->camera.y;
+    cz = (long long)instance->z - view->camera.z;
+    axial = (cx * view->camera.sy + cz * view->camera.cy) / 1024;
+    depth = (cy * view->camera.pitch_sy + axial * view->camera.pitch_cy) / 1024;
+    ar = (x * static_prop_draw_abs64(view->camera.sy) +
+          z * static_prop_draw_abs64(view->camera.cy) + 1023) / 1024;
+    dr = (y * static_prop_draw_abs64(view->camera.pitch_sy) +
+          ar * static_prop_draw_abs64(view->camera.pitch_cy) + 1023) / 1024;
+    min_depth = depth - dr - 4;
+    if (min_depth < view->near_z) min_depth = view->near_z;
+    x += static_prop_draw_abs64(cx); y += static_prop_draw_abs64(cy);
+    z += static_prop_draw_abs64(cz);
+    vx = (x * static_prop_draw_abs64(view->camera.cy) +
+          z * static_prop_draw_abs64(view->camera.sy)) / 1024;
+    vz = (x * static_prop_draw_abs64(view->camera.sy) +
+          z * static_prop_draw_abs64(view->camera.cy)) / 1024;
+    vy = (y * static_prop_draw_abs64(view->camera.pitch_cy) +
+          vz * static_prop_draw_abs64(view->camera.pitch_sy)) / 1024;
+    return vx * view->focal / min_depth + view->width / 2 <= 16384 &&
+           vy * view->focal / min_depth + view->height / 2 <= 16384;
+}
+
 static enum rasterfall_draw_reject static_prop_draw_preflight(
-    struct toy_renderer *renderer, const struct rasterfall_draw_instance *instance)
+    struct toy_renderer *renderer, const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance)
 {
     const struct rasterfall_model_asset *model = instance->mesh;
     unsigned int i;
@@ -84,6 +145,8 @@ static enum rasterfall_draw_reject static_prop_draw_preflight(
     if (model->skinning_enabled || model->bone_count || model->has_character_contract ||
         character_perceptual_model(model) != CHARACTER_PERCEPTUAL_NONE)
         return RASTERFALL_DRAW_DEFORMATION;
+    if (!static_prop_draw_numeric_eligible(view, instance))
+        return RASTERFALL_DRAW_NUMERIC;
     for (i = 0; i < model->primitive_count; ++i) {
         struct rasterfall_draw_item draw;
         enum rasterfall_draw_reject result = static_prop_draw_resolve(instance, i, &draw);

@@ -1942,7 +1942,7 @@ int rasterfall_render_static_prop(
         static_prop_draw_snapshot(renderer, camera, model, instance, scale,
                                   &view, &draw_instance);
         draw_instance.mesh_handle = handle;
-        rejection = static_prop_draw_preflight(renderer, &draw_instance);
+        rejection = static_prop_draw_preflight(renderer, &view, &draw_instance);
         if (rejection == RASTERFALL_DRAW_ACCEPTED) {
             scene_stats.static_draw_instances++;
             pixels = render_ctx && render_ctx->mixed_frame ?
@@ -1952,12 +1952,8 @@ int rasterfall_render_static_prop(
         } else {
             scene_stats.static_draw_legacy_instances++;
             scene_stats.static_draw_rejected[rejection]++;
-            if (render_ctx && render_ctx->mixed_frame) {
-                pixels = -1;
-            } else {
-                pixels = render_gallery_model(renderer, camera, model,
-                    instance->x, instance->y, instance->z, scale);
-            }
+            pixels = render_gallery_model(renderer, camera, model,
+                instance->x, instance->y, instance->z, scale);
         }
     }
     active_gallery_facing = previous_facing;
