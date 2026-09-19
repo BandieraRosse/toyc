@@ -1,9 +1,10 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：GPU normal gameplay 功能阶段结束；`--gpu-required` 保持逐帧 native GPU-only fatal contract。旧 GPU V1 冻结矩阵已移入 [历史验收记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
-> GPU 当前状态：Intel strict native/Fog smoke、正式地图 320 帧零回退波次复现、核心游玩与窗口拉伸已确认；最近固定视角的命令与耗时基线见 [GPU 当前状态](gpu-current-state.md)。旧阶段计划已归档，尚未制定新 GPU 硬件开发计划。`--frame-audit` 同时写入 `rasterfall.log`。
+> GPU 当前状态：Intel strict native/Fog smoke、正式地图 320 帧零回退波次复现、核心游玩与窗口拉伸已确认；最近固定视角的命令与耗时基线见 [GPU 当前状态](gpu-current-state.md)。旧阶段计划已归档；新计划与进度见 [Hardware Graphics](hardware-graphics-architecture.md)。`--frame-audit` 同时写入 `rasterfall.log`。
 > 源码核对基线补充：2026-09-19 Texture V1 pack 使用本帧唯一纹理视图表分配句柄；老地图高命令量转向不再因重复回扫历史命令触发 200ms renderer watchdog。
 > 源码核对基线补充：GPU-8B2c Phase 1+2 已冻结 Viewmodel Render Contract V1（near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth、Post coverage mask），并在 CPU/reference 路径建立 domain switch 与固定 fixture；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，direct framebuffer producer 门禁为 0；Phase 4 已接入 GPU VIEWMODEL span consumer、独立 depth/coverage 与 Post fog skip，并由 CPU/GPU differential fixture 覆盖；Phase 5 已将 LOCAL_VIEW muzzle core 以及 outer/lobe 按同一 projection/depth 接入 VIEWMODEL，remote/AI 三类 muzzle 仍使用 world EFFECTS，其中 outer/lobe 以真实 material alpha 进入 Transparent V1。源码基线：2026-09-18。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
@@ -61,6 +62,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
+| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md) | static prop producer → frontend/reference → Core spans → GPU target；`tools/hardware_graphics_baseline.ps1` |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |

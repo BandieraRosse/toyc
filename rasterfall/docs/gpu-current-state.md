@@ -1,9 +1,10 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线：`windows/NativeCodex.ps1`、`rasterfall/src/rf_core_host.c`、`rasterfall/src/rf_gpu.c`、`gpu/src/rf_gpu_vulkan_backend.c`、`rasterfall/src/rasterfall_render.c`；Windows package 的 `--help`、`--logic-test` 与固定视角 `--frame-audit` 实测。
 
-此文档只记录已实现的边界和最近可复核的状态，不设下一阶段目标或 GPU 硬件开发任务。旧 GPU V1 功能验收见 [归档](archive/gpu-v1-final-acceptance-2026-09-19.md)，上一轮性能工作顺序见 [历史计划](archive/gpu-performance-stage-2026-09-19.md)。新硬件开发计划应以此状态重新立项。
+此文档只记录已实现的边界和最近可复核的状态，不设下一阶段目标或 GPU 硬件开发任务。旧 GPU V1 功能验收见 [归档](archive/gpu-v1-final-acceptance-2026-09-19.md)，上一轮性能工作顺序见 [历史计划](archive/gpu-performance-stage-2026-09-19.md)。新阶段计划和进度见 [Hardware Graphics](hardware-graphics-architecture.md)，HG-0 实测与统计边界见 [checkpoint 记录](hardware-graphics-hg0.md)。
 
 ## 当前实现
 
@@ -13,6 +14,8 @@
 - `--frame-audit` 在 Windows 同时写入 `rasterfall.log`；`fence_wait_ms`、`native_present_queue_idle_ms` 是 CPU 墙钟等待，不是 GPU timestamp。
 
 ## 已验证范围和性能快照
+
+以下 28k 数据保留为前一轮历史快照，不能作为新阶段性能分母；HG-0 已采用逐帧审计重新记录基线。
 
 - Intel Iris Xe 上 strict native/Fog smoke、正式地图 320/320 帧零回退波次运行、核心游玩和窗口拉伸已确认。该功能验收不等于性能目标或完整生命周期矩阵通过。
 - 最近的 Windows Campaign 固定视角复测：1280×720、camera `(-13000,-12000)`、方向 `(0,1024)`、第 17–46 帧中位数。46/46 帧 `gpu-native`，零回退、零 readback、零 CPU framebuffer copy；包内 `--logic-test` 通过。

@@ -4195,8 +4195,9 @@ startup_again:
             now = rf_core_time_us(&core);
             last_active = now - t_frame;
             rasterfall_perf_record_frame(&stats, &stats_total, last_active);
-            if (options.frame_audit &&
-                (audit_interval_us >= 50000 || (rendered_frames % 60) == 1)) {
+            /* Explicit audit must include fast frames too: sampled logs cannot
+             * establish a complete strict run or an unbiased timing baseline. */
+            if (options.frame_audit) {
                 struct rf_core_gpu_frame_stats gpu_audit;
                 struct rf_render_frame_v1 frame_audit;
                 char audit_line[768];

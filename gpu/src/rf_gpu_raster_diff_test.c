@@ -287,6 +287,9 @@ static void save_artifacts(const char *dir, const struct stream *s,
     snprintf(path,sizeof(path),"%s/report.txt",dir);write_file(path,report,strlen(report));
 }
 
+/* Opt-in baseline capture; normal regression runs only persist failures. */
+static int capture_success;
+
 static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
                         const char *name, const struct stream *s,
                         const char *artifact_dir, int run_full_scan,
@@ -333,7 +336,7 @@ static int compare_case(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
       o.width,o.height,gt.command_count,gt.tile_count,gt.total_refs,gt.tile_count?(double)gt.total_refs/gt.tile_count:0.0,gt.max_refs_per_tile,
       ct.raster_ms,gt.cpu_binning_ms,gt.tile_upload_ms,gt.command_upload_ms,gt.pack_validation_ms,gt.upload_ms,gt.submit_ms,ft.execution_wait_ms,gt.execution_wait_ms,gt.readback_ms,gt.total_ms);
     fputs(report,stdout);
-    if(cm||dm){save_artifacts(artifact_dir,s,&o,report);fprintf(stderr,"mismatch artifacts: %s\n",artifact_dir);}
+    if(cm||dm||capture_success){save_artifacts(artifact_dir,s,&o,report);fprintf(stderr,"raster artifacts: %s\n",artifact_dir);}
     free(o.cpu_color);free(o.gpu_color);free(o.cpu_depth);free(o.gpu_depth);return (cm||dm||fcm||fdm)?-1:0;
 }
 
@@ -529,11 +532,11 @@ int main(int argc,char **argv)
       {"vertex-lit-fixed",37,29,0,0},
       {"stress-seed-2",641,359,256,2},{"stress-seed-0x5246",1279,719,1024,0x5246}};
     int result=1;memset(&context,0,sizeof(context));memset(&raster,0,sizeof(raster));
-    for(int i=1;i<argc;i++){if(!strcmp(argv[i],"--replay-raster-stream")&&i+1<argc)replay=argv[++i];else if(!strcmp(argv[i],"--artifact-dir")&&i+1<argc)artifacts=argv[++i];else{fprintf(stderr,"usage: %s [--replay-raster-stream commands.bin] [--artifact-dir dir]\n",argv[0]);return 2;}}
+    for(int i=1;i<argc;i++){if(!strcmp(argv[i],"--replay-raster-stream")&&i+1<argc)replay=argv[++i];else if(!strcmp(argv[i],"--artifact-dir")&&i+1<argc)artifacts=argv[++i];else if(!strcmp(argv[i],"--capture-success"))capture_success=1;else{fprintf(stderr,"usage: %s [--replay-raster-stream commands.bin] [--artifact-dir dir] [--capture-success]\n",argv[0]);return 2;}}
+    if(capture_success&&!replay){fprintf(stderr,"--capture-success requires --replay-raster-stream\n");return 2;}
     CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     CHECK(rf_gpu_get_status(&gpu,&status)==0&&status.renderer.raster_v1);
     printf("adapter: %s\n",status.info.adapter_name);
-    if(replay){struct texture_bundle tb={0};char tp[1024];int tr;CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);snprintf(tp,sizeof(tp),"%s.textures",replay);tr=read_texture_bundle(tp,&tb);CHECK(tr>=0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0,tr==0?&tb:NULL)==0);free(tb.descs);free(tb.texels);free(s.data);s.data=NULL;}
     if(replay){struct texture_bundle tb={0};char tp[1024];int tr;CHECK(read_file(replay,&s)==0);CHECK(rf_gpu_raster_validate_v1(s.data,s.size)==0);snprintf(tp,sizeof(tp),"%s.textures",replay);tr=read_texture_bundle(tp,&tb);CHECK(tr>=0);const struct rf_gpu_raster_stream_header_v1*h=(void*)s.data;CHECK(rf_gpu_raster_init(&gpu,&raster,h->framebuffer_width,h->framebuffer_height)==0);CHECK(compare_case(&gpu,&raster,"replay",&s,artifacts,0,tr==0?&tb:NULL)==0);free(tb.descs);free(tb.texels);free(s.data);s.data=NULL;}
     else {CHECK(rf_gpu_raster_init(&gpu,&raster,19,13)==0);CHECK(viewmodel_span_fixture(&gpu, &raster)==0);for(size_t i=0;i<sizeof(cases)/sizeof(cases[0]);i++){CHECK(make_fixture(cases[i].name,cases[i].w,cases[i].h,cases[i].n,cases[i].seed,&s)==0);CHECK(compare_case(&gpu,&raster,cases[i].name,&s,artifacts,1,NULL)==0);if(i==1)CHECK(write_file("build/gpu-raster-diff-replay.bin",s.data,s.size)==0);free(s.data);s.data=NULL;}CHECK(read_file("build/gpu-raster-diff-replay.bin",&s)==0);CHECK(compare_case(&gpu,&raster,"replay-self-check",&s,artifacts,1,NULL)==0);free(s.data);s.data=NULL;CHECK(texture_fixture(&gpu,&raster)==0);
       /* Failure authority: no partial output and all malformed classes reject. */

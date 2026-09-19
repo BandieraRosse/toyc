@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
 > 源码核对基线补充：`--normal-frame-audit` 输出已有 scene 阶段命令边界的 floor/map/static/gallery/character/private/projectile/later 汇总；later 是该离屏入口在 scene 后提交的 flags、enemies、AI 与文字等命令，不等同于正常 `--frame-audit` 的 world-submission 分类。
 > 源码核对基线补充：正常地图遍历在提交前按 render record 的三维包围盒剔除完全屏外的 wall、texture、box、ramp、platform；保留近面交叉记录及原 map command range 顺序。MODEL、LABEL、SIGN 不套用这些几何 bounds。
 > 源码核对基线补充：ground 2048 RFU 大板在分区/颜色查找前、boundary wall 组件盒在面生成前按保守视锥剔除；普通 static RMESH 保留现有模型级顶点准备前剔除。近面交叉仍交给三角形裁剪。
