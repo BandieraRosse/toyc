@@ -1764,9 +1764,12 @@ static int raster_render(void *context, void *raster,
         present.swapchain_count = 1; present.swapchains = &r->swapchain;
         present.image_indices = &swapchain_image;
         result = impl->api.queue_present(impl->queue, &present);
-        if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR)
-            impl->api.queue_wait_idle(impl->queue);
         native_timing->present_ms = now_ms() - present_start;
+        if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR) {
+            double idle_start = now_ms();
+            impl->api.queue_wait_idle(impl->queue);
+            native_timing->present_queue_idle_ms = now_ms() - idle_start;
+        }
         native_timing->submit_ms = timing ? timing->submit_ms : 0.0;
         native_timing->gpu_raster_ms = timing ? timing->execution_wait_ms : 0.0;
         native_timing->total_ms = now_ms() - total_start;

@@ -77,6 +77,8 @@ static struct rasterfall_actor_action_layers
 static int active_character_palette_override;
 static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
+static struct rasterfall_ai_submission_stats ai_submission_stats;
+static int ai_submission_scope;
 #if RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED
 struct rasterfall_authored_locomotion_clock {
     int valid;
@@ -4928,10 +4930,14 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     pixels += render_static_props(renderer, camera);
     scene_stats.static_command_end = renderer->cmd_count;
+    scene_stats.static_props_us = render_monotonic_us() - phase_start;
+    phase_start = render_monotonic_us();
     if (active_session->content.model_gallery_enabled)
         pixels += render_model_gallery(renderer, camera);
     scene_stats.gallery_command_end = renderer->cmd_count;
-    scene_stats.gallery_us = render_monotonic_us() - phase_start;
+    scene_stats.model_gallery_us = render_monotonic_us() - phase_start;
+    scene_stats.gallery_us = scene_stats.static_props_us +
+                             scene_stats.model_gallery_us;
     phase_start = render_monotonic_us();
     if (active_session->content.character_test_strip_enabled)
         pixels += render_character_test_strip(renderer, camera);
@@ -4950,7 +4956,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
     scene_stats.private_command_end = renderer->cmd_count;
-    scene_stats.private_model_us = render_monotonic_us() - phase_start;
+    scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
     scene_stats.projectile_command_end = renderer->cmd_count;
@@ -6121,6 +6127,7 @@ static int render_modular_active_weapon(
     const char *path;
     int length, geometry_scale, character_scale, socket;
     int has_muzzle = 0, i, pixels = 0;
+    long audit_start = render_monotonic_us();
     if (!renderer || !camera || !instance || !actor_to_world ||
         actor_to_world->scale_milli <= 0 || weapon < 0) return 0;
     asset = rasterfall_weapon_asset_profile(weapon);
@@ -6228,6 +6235,13 @@ static int render_modular_active_weapon(
                 muzzle_length);
         } else __printf("  MUZZLE direction=UNAVAILABLE\n");
     }
+    if (ai_submission_scope) {
+        ai_submission_stats.weapon_source_triangles +=
+            weapon_model->index_count / 3;
+        ai_submission_stats.weapon_setup_us +=
+            render_monotonic_us() - audit_start;
+    }
+    audit_start = render_monotonic_us();
     for (i = 0; i < (int)weapon_model->primitive_count; i++) {
         const unsigned char *primitive = weapon_model->primitives +
             i * RASTERFALL_MODEL_PRIMITIVE_BYTES;
@@ -6279,6 +6293,9 @@ static int render_modular_active_weapon(
                     &v[0], &v[1], &v[2], color);
         }
     }
+    if (ai_submission_scope)
+        ai_submission_stats.weapon_triangle_us +=
+            render_monotonic_us() - audit_start;
     if (muzzle_flash > 0 && has_muzzle)
     {
         int saved_flash_scene = active_scene_light_override_q8;
@@ -6478,6 +6495,9 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     int lower_time_ms, upper_time_ms, additive_time_ms;
     int debug_actor, weapon, have_weapon_source, pixels, scale = 835;
     int action_trace_changed;
+    unsigned long command_start;
+    long phase_start = render_monotonic_us();
+    struct rasterfall_model_setup_timing body_timing_before;
     debug_actor = actor_index == TOY_GAME_MAX_ACTORS;
     profile = actor ? rasterfall_character_profile(actor->character_id) : NULL;
     recipe = actor ? rasterfall_character_visual_recipe_for_character(
@@ -6579,16 +6599,36 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         active_gallery_sy = actor_sy; active_gallery_cy = actor_cy;
     }
     actor_to_world.scale_milli = scale;
+    ai_submission_stats.pose_us += render_monotonic_us() - phase_start;
+    command_start = renderer->cmd_count;
+    phase_start = render_monotonic_us();
+    body_timing_before = model_setup_timing;
+    ai_submission_stats.body_source_triangles +=
+        runtime->body.definition.index_count / 3;
     pixels = rasterfall_render_character_instance(renderer, camera, instance,
         &actor_to_world, recipe->shirt_color, recipe->pants_color);
+    ai_submission_stats.body_commands += renderer->cmd_count - command_start;
+    ai_submission_stats.body_us += render_monotonic_us() - phase_start;
+    ai_submission_stats.body_skin_us += model_setup_timing.skinning_us -
+        body_timing_before.skinning_us;
+    ai_submission_stats.body_vertex_cache_us +=
+        model_setup_timing.vertex_cache_us - body_timing_before.vertex_cache_us;
+    ai_submission_stats.body_triangle_us +=
+        model_setup_timing.body_triangles_us - body_timing_before.body_triangles_us;
     active_gallery_facing = 0;
     if (pixels < 0) return -1;
+    command_start = renderer->cmd_count;
+    phase_start = render_monotonic_us();
     {
         int passive_pixels = render_modular_passive_equipment(renderer, camera,
             instance, recipe, runtime->gear, &actor_to_world);
         if (passive_pixels < 0) return -1;
         pixels += passive_pixels;
     }
+    ai_submission_stats.gear_commands += renderer->cmd_count - command_start;
+    ai_submission_stats.gear_us += render_monotonic_us() - phase_start;
+    command_start = renderer->cmd_count;
+    phase_start = render_monotonic_us();
     if (have_weapon_source && weapon >= 0 &&
         rasterfall_weapon_asset_profile(weapon)->skeletal)
         pixels += render_modular_active_weapon(renderer, camera, instance,
@@ -6598,6 +6638,9 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         pixels += render_actor_model_weapon(renderer, camera, actor->x, actor->z,
             actor->sy, actor->cy, weapon, actor->muzzle_flash_ms,
             actor->animation.id, actor->animation.time_ms, 0, 0);
+    ai_submission_stats.weapon_commands += renderer->cmd_count - command_start;
+    ai_submission_stats.weapon_us += render_monotonic_us() - phase_start;
+    ai_submission_stats.modular_actors++;
     return pixels;
 }
 
@@ -6676,21 +6719,83 @@ static int render_humanoid_debug(struct toy_renderer *renderer,
                                       TOY_GAME_MAX_ACTORS);
 }
 
+/* Conservative screen-box audit: a command outside one viewport plane
+ * cannot cover a pixel, even though record_cmd retains it. */
+static void audit_ai_actor_screen_commands(const struct toy_renderer *renderer,
+                                           unsigned long begin)
+{
+    unsigned long i, overlapping = 0;
+    for (i = begin; i < renderer->cmd_count; i++) {
+        const struct toy_raster_cmd *cmd = &renderer->cmds[i];
+        int min_x = cmd->a.x < cmd->b.x ? cmd->a.x : cmd->b.x;
+        int max_x = cmd->a.x > cmd->b.x ? cmd->a.x : cmd->b.x;
+        int min_y = cmd->a.y < cmd->b.y ? cmd->a.y : cmd->b.y;
+        int max_y = cmd->a.y > cmd->b.y ? cmd->a.y : cmd->b.y;
+        if (cmd->c.x < min_x) min_x = cmd->c.x;
+        if (cmd->c.x > max_x) max_x = cmd->c.x;
+        if (cmd->c.y < min_y) min_y = cmd->c.y;
+        if (cmd->c.y > max_y) max_y = cmd->c.y;
+        if (max_x < 0 || min_x >= renderer->surface.width ||
+            max_y < 0 || min_y >= renderer->surface.height)
+            ai_submission_stats.offscreen_commands++;
+        else overlapping++;
+    }
+    if (renderer->cmd_count > begin && !overlapping)
+        ai_submission_stats.offscreen_actors++;
+}
+
+/* Covers the standing/crouched body, limb motion, gear and held weapon with
+ * generous slack. Side-plane rejection is valid even if the sphere crosses
+ * the near plane; near clipping stays with the per-triangle clipper. */
+static int ai_actor_outside_screen(const struct toy_renderer *renderer,
+                                   const struct camera *camera,
+                                   const struct toy_game_actor *actor)
+{
+    const int radius = 2600;
+    struct vec3 center, view;
+    long long focal, half_width, half_height;
+    if (!renderer || !camera || !actor) return 0;
+    center.x = actor->x;
+    center.y = -900 + actor->ground_y + actor->airborne_y + 800;
+    center.z = actor->z;
+    world_to_view(camera, &center, &view);
+    focal = (long long)renderer->surface.width * 3 / 4;
+    half_width = renderer->surface.width / 2 + 32;
+    half_height = renderer->surface.height / 2 + 32;
+    return (long long)view.x * focal >
+               (long long)view.z * half_width + radius * (focal + half_width) ||
+           (long long)view.x * focal <
+               -(long long)view.z * half_width - radius * (focal + half_width) ||
+           (long long)view.y * focal >
+               (long long)view.z * half_height + radius * (focal + half_height) ||
+           (long long)view.y * focal <
+               -(long long)view.z * half_height - radius * (focal + half_height);
+}
+
 static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
     int i, pixels = 0;
     int saved_scene = active_scene_light_override_q8;
+    memset(&ai_submission_stats, 0, sizeof(ai_submission_stats));
+    ai_submission_scope = 1;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         active_scene_light_override_q8 = saved_scene;
         const struct toy_game_actor *actor = &game.actors[i];
         struct vec3 center, view;
         uint32_t color;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        ai_submission_stats.active_actors++;
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);
         if (view.z < NEAR_Z || view.z > ENEMY_RENDER_DISTANCE)
             continue;
+        ai_submission_stats.depth_actors++;
+        if (ai_actor_outside_screen(renderer, camera, actor)) {
+            ai_submission_stats.screen_culled_actors++;
+            continue;
+        }
+        unsigned long actor_command_start = renderer->cmd_count;
         if (active_dynamic_world_lighting)
             active_scene_light_override_q8 = dynamic_scene_light(
                 actor->x, actor->ground_y, actor->z);
@@ -6876,6 +6981,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                                              actor, i);
             if (modular_pixels >= 0) {
                 pixels += modular_pixels;
+                if (renderer->cmd_count == actor_command_start)
+                    ai_submission_stats.zero_command_actors++;
+                audit_ai_actor_screen_commands(renderer, actor_command_start);
                 continue;
             }
             /* Presentation assets are optional. Fall through to the existing
@@ -6896,6 +7004,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                                           profile->profession_id
             };
             struct rasterfall_character_profile character = *profile;
+            unsigned long command_start = renderer->cmd_count;
+            long phase_start = render_monotonic_us();
             if (actor->character_id < 0) {
                 /* Keep the historical ordinary-AI leg color.  The class tint
                  * belongs to the torso; profession profiles keep their own
@@ -6905,6 +7015,14 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             }
             pixels += rasterfall_render_procedural_humanoid(
                 renderer, camera, &state, &character);
+            ai_submission_stats.procedural_commands +=
+                renderer->cmd_count - command_start;
+            ai_submission_stats.procedural_us +=
+                render_monotonic_us() - phase_start;
+            ai_submission_stats.procedural_actors++;
+            if (renderer->cmd_count == actor_command_start)
+                ai_submission_stats.zero_command_actors++;
+            audit_ai_actor_screen_commands(renderer, actor_command_start);
         }
     }
     active_scene_light_override_q8 = saved_scene;
@@ -6915,6 +7033,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         pixels += render_humanoid_debug(renderer, camera);
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
+    ai_submission_scope = 0;
     return pixels;
 }
 
@@ -8064,6 +8183,11 @@ int rasterfall_render_scene(struct toy_renderer *renderer,
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out)
 {
     if (out) memcpy(out, &scene_stats, sizeof(*out));
+}
+
+void rasterfall_render_ai_submission_stats(struct rasterfall_ai_submission_stats *out)
+{
+    if (out) memcpy(out, &ai_submission_stats, sizeof(*out));
 }
 
 int rasterfall_render_sign_text(struct toy_renderer *renderer,

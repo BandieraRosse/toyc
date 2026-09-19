@@ -2562,6 +2562,13 @@ int rf_game_update(struct rf_game_runtime *runtime,
     return 0;
 }
 
+static struct {
+    unsigned long enemies, ai_teammates, managed_player, network_teammates;
+    unsigned long text, interaction_commands;
+    double enemies_ms, ai_teammates_ms, managed_player_ms;
+    double network_teammates_ms, text_ms, interaction_ms;
+} rf_world_submission_audit;
+
 static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface,
@@ -2581,6 +2588,8 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     unsigned long perf_tris = renderer ? renderer->submitted_triangles : 0;
     unsigned long raster_commands = 0;
     unsigned long overlay_pixels = 0;
+    unsigned long audit_commands;
+    int64_t audit_start;
 
     if (!runtime || !runtime->initialized || !runtime->session ||
         !runtime->core || !renderer || !surface)
@@ -2616,15 +2625,44 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             &perf_start, renderer->submitted_triangles-perf_tris, 0);
         perf_tris=renderer->submitted_triangles;
     }
+    memset(&rf_world_submission_audit, 0, sizeof(rf_world_submission_audit));
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_enemies(renderer, render_camera);
+    rf_world_submission_audit.enemies = renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.enemies_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_ai_teammate(renderer, render_camera);
+    rf_world_submission_audit.ai_teammates =
+        renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.ai_teammates_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     if (runtime->managed_spectator && runtime->managed_third_person)
         pixels += rasterfall_render_managed_player(
             renderer, render_camera, body_camera);
+    rf_world_submission_audit.managed_player =
+        renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.managed_player_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_network_teammate(
         renderer, render_camera, &runtime->net, &game_session->game_state);
+    rf_world_submission_audit.network_teammates =
+        renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.network_teammates_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_sign_text(renderer, render_camera);
     pixels += rasterfall_render_flag_text(renderer, render_camera);
+    rf_world_submission_audit.text = renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.text_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
 
     if (perf_window) {
         rasterfall_perf_end_stage(perf_window, perf_total, RASTERFALL_STATS_ENEMIES,
@@ -2635,9 +2673,15 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
      * one normal-world consumer so native GPU frames and CPU fallback classify
      * and consume the same complete batch.  Keep this after the enemies timing
      * boundary so their triangles remain owned by the raster stage. */
+    audit_commands = renderer->cmd_count;
+    audit_start = rf_core_clock_now_us();
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->shop_open)
         pixels += rasterfall_render_interactables(renderer, render_camera);
+    rf_world_submission_audit.interaction_commands =
+        renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.interaction_ms =
+        (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
     /* Existing world-to-overlay ordering barrier. */
     if (rf_core_render_frame_enter_layer_v1(
             runtime->core, RF_RENDER_LAYER_WORLD) < 0) return -1;
@@ -4178,6 +4222,77 @@ startup_again:
                     (double)audit_interval_us / 1000.0);
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
+                {
+                    struct rasterfall_scene_stats scene_audit;
+                    rasterfall_render_scene_stats(&scene_audit);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT scene floor_cmd=%lu map_cmd=%lu static_cmd=%lu gallery_cmd=%lu character_cmd=%lu private_cmd=%lu projectile_cmd=%lu sky_floor_ms=%.3f map_ms=%.3f static_ms=%.3f gallery_ms=%.3f character_private_ms=%.3f projectiles_ms=%.3f models_tested=%lu models_culled=%lu triangles_culled=%lu",
+                        scene_audit.floor_command_end,
+                        scene_audit.map_command_end - scene_audit.floor_command_end,
+                        scene_audit.static_command_end - scene_audit.map_command_end,
+                        scene_audit.gallery_command_end - scene_audit.static_command_end,
+                        scene_audit.character_command_end - scene_audit.gallery_command_end,
+                        scene_audit.private_command_end - scene_audit.character_command_end,
+                        scene_audit.projectile_command_end - scene_audit.private_command_end,
+                        (double)scene_audit.sky_floor_us / 1000.0,
+                        (double)scene_audit.map_us / 1000.0,
+                        (double)scene_audit.static_props_us / 1000.0,
+                        (double)scene_audit.model_gallery_us / 1000.0,
+                        (double)scene_audit.private_model_us / 1000.0,
+                        (double)scene_audit.projectiles_us / 1000.0,
+                        scene_audit.models_tested, scene_audit.models_culled,
+                        scene_audit.model_triangles_culled);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
+                snprintf(audit_line, sizeof(audit_line),
+                    "FRAME-AUDIT world-submission enemies_cmd=%lu ai_teammates_cmd=%lu managed_player_cmd=%lu network_teammates_cmd=%lu text_cmd=%lu interactables_cmd=%lu enemies_ms=%.3f ai_teammates_ms=%.3f managed_player_ms=%.3f network_teammates_ms=%.3f text_ms=%.3f interactables_ms=%.3f",
+                    rf_world_submission_audit.enemies,
+                    rf_world_submission_audit.ai_teammates,
+                    rf_world_submission_audit.managed_player,
+                    rf_world_submission_audit.network_teammates,
+                    rf_world_submission_audit.text,
+                    rf_world_submission_audit.interaction_commands,
+                    rf_world_submission_audit.enemies_ms,
+                    rf_world_submission_audit.ai_teammates_ms,
+                    rf_world_submission_audit.managed_player_ms,
+                    rf_world_submission_audit.network_teammates_ms,
+                    rf_world_submission_audit.text_ms,
+                    rf_world_submission_audit.interaction_ms);
+                __printf("%s\n", audit_line);
+                rf_windows_log(audit_line);
+                {
+                    struct rasterfall_ai_submission_stats ai_audit;
+                    rasterfall_render_ai_submission_stats(&ai_audit);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT ai-detail modular=%u procedural=%u body_cmd=%lu gear_cmd=%lu weapon_cmd=%lu procedural_cmd=%lu pose_ms=%.3f body_ms=%.3f gear_ms=%.3f weapon_ms=%.3f procedural_ms=%.3f",
+                        ai_audit.modular_actors, ai_audit.procedural_actors,
+                        ai_audit.body_commands, ai_audit.gear_commands,
+                        ai_audit.weapon_commands, ai_audit.procedural_commands,
+                        (double)ai_audit.pose_us / 1000.0,
+                        (double)ai_audit.body_us / 1000.0,
+                        (double)ai_audit.gear_us / 1000.0,
+                        (double)ai_audit.weapon_us / 1000.0,
+                        (double)ai_audit.procedural_us / 1000.0);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT ai-triage active=%u depth=%u screen_culled=%u zero_cmd=%u offscreen_actors=%u offscreen_cmd=%lu body_source=%lu weapon_source=%lu body_skin_ms=%.3f body_cache_ms=%.3f body_triangle_ms=%.3f weapon_setup_ms=%.3f weapon_triangle_ms=%.3f",
+                        ai_audit.active_actors, ai_audit.depth_actors,
+                        ai_audit.screen_culled_actors,
+                        ai_audit.zero_command_actors,
+                        ai_audit.offscreen_actors,
+                        ai_audit.offscreen_commands,
+                        ai_audit.body_source_triangles,
+                        ai_audit.weapon_source_triangles,
+                        (double)ai_audit.body_skin_us / 1000.0,
+                        (double)ai_audit.body_vertex_cache_us / 1000.0,
+                        (double)ai_audit.body_triangle_us / 1000.0,
+                        (double)ai_audit.weapon_setup_us / 1000.0,
+                        (double)ai_audit.weapon_triangle_us / 1000.0);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
                 snprintf(audit_line, sizeof(audit_line),
                     "FRAME-AUDIT layers sky=%lu world=%lu transparent=%lu effects=%lu/%lu/direct=%lu viewmodel=%lu/%lu/direct=%lu overlay_pixels=%lu cursor=%u invalid_transitions=%u retained_pre_post=%lu pre_post_cpu_fallback=%u fallback_reason=0x%x classification texture=%lu overlay=%lu edge=%lu other=%lu",
                     frame_audit.command_count[RF_RENDER_LAYER_SKY],
@@ -4202,13 +4317,19 @@ startup_again:
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT gpu frontend_ms=%.3f pack_ms=%.3f submit_ms=%.3f fence_wait_ms=%.3f native_acquire_ms=%.3f native_submit_ms=%.3f native_present_ms=%.3f native_total_ms=%.3f overlay_upload_bytes=%u readback_bytes=%u cpu_framebuffer_copy_bytes=%u",
-                    gpu_audit.frontend_ms, gpu_audit.raster_abi_pack_ms,
+                    "FRAME-AUDIT gpu frontend_ms=%.3f classification_ms=%.3f texture_measure_ms=%.3f pack_ms=%.3f binning_ms=%.3f tile_upload_ms=%.3f command_upload_ms=%.3f texture_upload_ms=%.3f submit_ms=%.3f fence_wait_ms=%.3f native_acquire_ms=%.3f native_submit_ms=%.3f native_present_ms=%.3f native_present_queue_idle_ms=%.3f native_total_ms=%.3f overlay_upload_bytes=%u readback_bytes=%u cpu_framebuffer_copy_bytes=%u",
+                    gpu_audit.frontend_ms, gpu_audit.classification_ms,
+                    gpu_audit.texture_measure_ms, gpu_audit.raster_abi_pack_ms,
+                    gpu_audit.last_timing.cpu_binning_ms,
+                    gpu_audit.last_timing.tile_upload_ms,
+                    gpu_audit.last_timing.command_upload_ms,
+                    gpu_audit.last_timing.texture_upload_ms,
                     gpu_audit.last_timing.submit_ms,
                     gpu_audit.last_timing.execution_wait_ms,
                     gpu_audit.native_present_timing.acquire_ms,
                     gpu_audit.native_present_timing.submit_ms,
                     gpu_audit.native_present_timing.present_ms,
+                    gpu_audit.native_present_timing.present_queue_idle_ms,
                     gpu_audit.native_present_timing.total_ms,
                     gpu_audit.native_present_timing.overlay_upload_bytes,
                     gpu_audit.native_present_timing.color_readback_bytes,
@@ -4263,7 +4384,7 @@ startup_again:
             rf_windows_log(gpu_log);
             if (core.gpu_frame.native_present) {
                 snprintf(gpu_log, sizeof(gpu_log),
-                    "gpu-native overlay-composite=ready acquire=%.3fms raster-wait=%.3fms post=%.3fms overlay-draw=%.3fms overlay-upload=%.3fms overlay-composite=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms total=%.3fms overlay-bytes=%u readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
+                    "gpu-native overlay-composite=ready acquire=%.3fms raster-wait=%.3fms post=%.3fms overlay-draw=%.3fms overlay-upload=%.3fms overlay-composite=%.3fms copy-record=%.3fms submit=%.3fms present=%.3fms present-queue-idle=%.3fms total=%.3fms overlay-bytes=%u readback=%u cpu-copy=%u format=%u mode=%u images=%u extent=%ux%u",
                     gpu_stats.native_present_timing.acquire_ms,
                     gpu_stats.native_present_timing.gpu_raster_ms,
                     gpu_stats.native_present_timing.post_raster_ms,
@@ -4273,6 +4394,7 @@ startup_again:
                     gpu_stats.native_present_timing.buffer_to_swapchain_ms,
                     gpu_stats.native_present_timing.submit_ms,
                     gpu_stats.native_present_timing.present_ms,
+                    gpu_stats.native_present_timing.present_queue_idle_ms,
                     gpu_stats.native_present_timing.total_ms,
                     gpu_stats.native_present_timing.overlay_upload_bytes,
                     gpu_stats.native_present_timing.color_readback_bytes,

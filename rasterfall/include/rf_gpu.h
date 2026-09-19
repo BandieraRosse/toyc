@@ -114,7 +114,7 @@ struct rf_gpu_native_window {
 struct rf_gpu_native_present_timing {
     double acquire_ms, gpu_raster_ms, buffer_to_swapchain_ms;
     double post_raster_ms, overlay_upload_ms, overlay_composite_ms;
-    double submit_ms, present_ms, total_ms;
+    double submit_ms, present_ms, present_queue_idle_ms, total_ms;
     unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
     unsigned int overlay_upload_bytes;
     unsigned int format, present_mode, image_count, width, height;

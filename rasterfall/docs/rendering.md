@@ -1,6 +1,11 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：正常 AI actor 在既有前后距离检查后、动态光照与模型/装备/武器提交前，使用以角色根部上方为中心、2600 RFU 半径的保守包围球做屏幕侧平面剔除；穿越近面的角色仍由原逐三角形近裁剪处理。`ai-triage screen_culled` 计数这一早期剔除。该检查共用于 CPU/GPU frontend，不改变玩法状态或开发者展示角色。
+> 源码核对基线补充：`--frame-audit` 的 `ai-triage` 记录 AI depth 门槛前后数量、命令为零及屏幕包围盒完全在外的 actor/命令数、模块化身体和武器的源三角形数，并细分身体蒙皮/缓存/三角形及武器准备/三角形耗时。屏幕包围盒是保守无像素贡献判据，不等同于最终 depth 可见性；Campaign 开发者展示角色计入 body/weapon 命令和源三角形，不计入 gameplay actor 数。
+> 源码核对基线补充：`--frame-audit` 的 `ai-detail` 按模块化 AI 的动作求值、身体、被动装备、当前武器记录提交耗时，按身体、装备、武器和程序化回退记录命令数，并列出各路径角色数；这些是 frontend 提交阶段数据，不是可见三角形或独立 GPU 耗时。分项之和可能小于 `ai_teammates_ms`，其余为视锥检查、光照及调用边界等开销。
+> 源码核对基线补充：`--frame-audit` 输出 normal scene 的 floor/map/static/gallery/character/private/projectile 命令分布与分段耗时，并拆分 world 的敌人、AI 队友、托管玩家、网络队友、文字和交互物提交；静态物件和陈列台耗时已从原合并统计中单独采样。该边界是 scene batch 提交数，不代表最终可见三角形数。
+> 源码核对基线补充：GPU 性能审计将 `vkQueuePresentKHR` 与随后每帧 `vkQueueWaitIdle` 分开计时；`--frame-audit` 增加 classification、texture measure、binning 和上传阶段耗时。`fence_wait_ms` 仍是 CPU 等待墙钟时间，不是 GPU timestamp。
 > 实测状态补充：用户确认地图核心游玩及窗口拉伸正常；正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback/readback/CPU copy。功能阶段结束；当前转入 Intel 实机帧率优化，旧冻结矩阵见 [历史记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。
 > 源码核对基线补充：`--gpu-wave-repro --legacy-map` 在 session reset 后将真实波次倒计时设为 1ms，逐次打印 phase、alive 和 queued；与 `--frames`、`--gpu-required --gpu-native-present --frame-audit` 组合可直接检查敌人逐步出现的正常 world GPU 帧，不注入平台按键事件。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。

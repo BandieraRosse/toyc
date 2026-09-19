@@ -74,6 +74,8 @@ struct rasterfall_scene_stats {
     long sky_floor_us;
     long map_us;
     long gallery_us;
+    long static_props_us;
+    long model_gallery_us;
     long private_model_us;
     long projectiles_us;
     /* Diagnostic command boundaries in the single normal scene batch. */
@@ -90,6 +92,20 @@ struct rasterfall_scene_stats {
     unsigned long models_tested;
     unsigned long models_culled;
     unsigned long model_triangles_culled;
+};
+
+struct rasterfall_ai_submission_stats {
+    unsigned long body_commands, gear_commands, weapon_commands;
+    unsigned long procedural_commands;
+    unsigned long body_source_triangles, weapon_source_triangles;
+    long pose_us, body_us, gear_us, weapon_us, procedural_us;
+    long body_skin_us, body_vertex_cache_us, body_triangle_us;
+    long weapon_setup_us, weapon_triangle_us;
+    unsigned int active_actors, depth_actors, screen_culled_actors;
+    unsigned int modular_actors, procedural_actors;
+    unsigned int zero_command_actors;
+    unsigned int offscreen_actors;
+    unsigned long offscreen_commands;
 };
 
 /* Row-major rotation and RFU translation. scale_milli is uniform and 1000
@@ -183,6 +199,7 @@ int rasterfall_render_action_composition_capture(const char *model_path,
     int upper_time_ms, const char *additive_path, int additive_time_ms,
     const char *output_path);
 void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
+void rasterfall_render_ai_submission_stats(struct rasterfall_ai_submission_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);
 int rasterfall_render_static_prop_lighting_logic_test(void);

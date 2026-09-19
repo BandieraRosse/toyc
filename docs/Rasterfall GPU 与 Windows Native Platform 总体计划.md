@@ -1,6 +1,7 @@
 # Rasterfall GPU 性能阶段与 Windows Platform 路线
 
 > 文档更新：2026-09-19
+> 源码核对基线补充：逐帧审计已区分 `native_present_ms`（`vkQueuePresentKHR` 调用）与 `native_present_queue_idle_ms`（随后 `vkQueueWaitIdle`）；同时输出 classification、texture measure、binning 及各上传阶段。两者均为 CPU 墙钟计时，尚未提供 GPU timestamp。
 > 源码核对基线：Windows Intel Iris Xe 上，正式地图 `--gpu-wave-repro --frames 320 --renderer gpu-compute --gpu-required --gpu-native-present --frame-audit` 产生 320/320 帧 `gpu-native`，零 fallback、readback、CPU framebuffer copy 和无效层切换；用户确认地图核心游玩与窗口拉伸正常。Windows build、logic-test 和重新打包后的 3 帧 strict smoke 通过。
 
 ## 当前阶段

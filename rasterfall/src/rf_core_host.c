@@ -1772,7 +1772,7 @@ void rf_core_shutdown(struct rf_core *core)
         if (core->gpu_frame.native_present)
             __printf("GPU-NATIVE overlay-composite=ready acquire=%.3f raster=%.3f "
                      "overlay-draw=%.3f overlay-upload=%.3f overlay-composite=%.3f "
-                     "buffer-copy=%.3f submit=%.3f present=%.3f total=%.3f "
+                     "buffer-copy=%.3f submit=%.3f present=%.3f present-queue-idle=%.3f total=%.3f "
                      "overlay-bytes=%u color-readback=%u cpu-framebuffer-copy=%u "
                      "format=%u mode=%u images=%u extent=%ux%u\n",
                      s->native_present_timing.acquire_ms,
@@ -1783,6 +1783,7 @@ void rf_core_shutdown(struct rf_core *core)
                      s->native_present_timing.buffer_to_swapchain_ms,
                      s->native_present_timing.submit_ms,
                      s->native_present_timing.present_ms,
+                     s->native_present_timing.present_queue_idle_ms,
                      s->native_present_timing.total_ms,
                      s->native_present_timing.overlay_upload_bytes,
                      s->native_present_timing.color_readback_bytes,
