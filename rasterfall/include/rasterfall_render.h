@@ -84,6 +84,9 @@ struct rasterfall_scene_stats {
     long static_draw_flush_us, static_draw_submit_us;
     /* Indexed by rasterfall_draw_reject, including the unused accepted slot. */
     unsigned long static_draw_rejected[RASTERFALL_DRAW_REJECT_COUNT];
+    unsigned long ground_draw_items, ground_draw_triangles;
+    unsigned long ground_legacy_commands;
+    unsigned long ground_mesh_builds;
     long sky_floor_us;
     long map_us;
     long gallery_us;

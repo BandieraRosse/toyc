@@ -11,6 +11,7 @@ layout(push_constant) uniform Draw {
 layout(location=0) out vec2 texcoord;
 layout(location=1) flat out uint form_light;
 layout(location=2) noperspective out float inverse_z;
+layout(location=3) noperspective out float vertex_light;
 
 ivec3 rotate_normal(ivec3 n) {
     ivec3 r = ivec3((n.x*d.rotation.y+n.z*d.rotation.x)/1024,
@@ -33,6 +34,7 @@ void main() {
                      float(d.projection.z), float(z));
     inverse_z = float(1048576/max(z,1));
     texcoord = vec2(uv)/65536.0;
+    vertex_light = float(uv.x);
     ivec3 n = (rotate_normal(normal0)+rotate_normal(normal1)+rotate_normal(normal2))/3;
     int dot_light = clamp((n.x*(-13377)+n.y*26755+n.z*(-13377))/32767,0,32767);
     form_light = d.rotation.w == 0 ? 256u : uint(clamp(136+dot_light*120/32767,136,256));

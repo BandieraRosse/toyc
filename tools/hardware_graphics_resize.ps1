@@ -73,12 +73,29 @@ try {
     $Log | Set-Content -Encoding UTF8 (Join-Path $OutputDirectory 'runtime.log')
     $Frames = @($Log | Select-String 'FRAME-AUDIT frame=')
     $Gpu = @($Log | Select-String 'FRAME-AUDIT gpu ')
+    $Mixed = @($Log | Select-String 'FRAME-AUDIT mixed ')
+    $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
-    if ($Frames.Count -ne 140 -or $Gpu.Count -ne 140 -or $Layers.Count -ne 140 -or $Resources.Count -ne 140) { throw 'Incomplete frame audit.' }
+    if ($Frames.Count -ne 140 -or $Gpu.Count -ne 140 -or
+        $Mixed.Count -ne 140 -or $Ground.Count -ne 140 -or
+        $Layers.Count -ne 140 -or $Resources.Count -ne 140) {
+        throw 'Incomplete frame audit.'
+    }
     foreach ($Line in $Frames) { if ($Line.Line -notmatch 'path=gpu-native ') { throw 'Unexpected render path.' } }
     foreach ($Line in $Gpu) { if ($Line.Line -notmatch 'readback_bytes=0 cpu_framebuffer_copy_bytes=0') { throw 'Readback/copy detected.' } }
     foreach ($Line in $Layers) { if ($Line.Line -notmatch 'invalid_transitions=0 .*pre_post_cpu_fallback=0 fallback_reason=0x0 ') { throw 'Fallback/order failure.' } }
+    $GroundBuilds = 0
+    for ($Index = 0; $Index -lt $Ground.Count; ++$Index) {
+        if ($Ground[$Index].Line -notmatch 'items=162 triangles=21366 legacy_commands=0 mesh_builds=(\d+)') {
+            throw 'Ground Draw audit changed during resize.'
+        }
+        $GroundBuilds += [int]$Matches[1]
+        if ($Index -ge 2 -and $Mixed[$Index].Line -notmatch 'gpu_upload_bytes=0') {
+            throw 'Steady ground/static GPU upload detected after initial frame-slot warmup.'
+        }
+    }
+    if ($GroundBuilds -ne 1) { throw 'Ground mesh was not built exactly once.' }
     $Pinned = @()
     foreach ($Line in $Resources) {
         if ($Line.Line -notmatch 'live=(\d+) retired=0 pinned=(\d+) failed=0') { throw 'Resource lifetime failure.' }
@@ -91,6 +108,7 @@ try {
     $Loads = @($Resources | ForEach-Object { if ($_.Line -match 'loads=(\d+) ') { $Matches[1] } } | Sort-Object -Unique)
     if ($Extents.Count -lt 4 -or $Loads.Count -ne 1) { throw 'Resize did not produce four extents or reloaded mesh resources.' }
     $Record.extents = $Extents; $Record.loads = $Loads
+    $Record.ground = [ordered]@{ items = 162; triangles = 21366; mesh_builds = $GroundBuilds; steady_upload_bytes = 0 }
     $Record.pinned = @($Pinned | Sort-Object -Unique); $Record.frames = $Frames.Count
     $Record.result = 'PASS'
 } catch {

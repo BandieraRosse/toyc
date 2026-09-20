@@ -111,7 +111,8 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
     struct rf_gpu_graphics_draw *d = &out->draw;
     struct rf_gpu_cached_submesh info;
     const unsigned char *primitive;
-    if (m->ambient || m->specular || (m->color & 0xff000000U) ||
+    if ((!i->vertex_light_q8 && (m->ambient || m->specular)) ||
+        (m->color & 0xff000000U) ||
         (m->double_sided != 0 && m->double_sided != 1)) return -1;
     out->texture = RF_GPU_CACHE_FLAT_TEXTURE;
     if (m->texture) {
@@ -126,8 +127,10 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
     if (src->item.first_index != read32(primitive) ||
         src->item.index_count != info.index_count) return -1;
     memset(d, 0, sizeof(*d));
-    d->translation_scale[0]=i->x; d->translation_scale[1]=i->y;
-    d->translation_scale[2]=i->z; d->translation_scale[3]=i->scale_milli;
+    d->translation_scale[0]=i->x+(i->vertex_light_q8 ? (int32_t)m->ambient : 0);
+    d->translation_scale[1]=i->y;
+    d->translation_scale[2]=i->z+(i->vertex_light_q8 ? (int32_t)m->specular : 0);
+    d->translation_scale[3]=i->scale_milli;
     d->rotation[0]=i->yaw_sin_q10; d->rotation[1]=i->yaw_cos_q10;
     d->rotation[2]=mesh->min_y; d->rotation[3]=i->form_lighting;
     d->camera[0]=c->x; d->camera[1]=c->y; d->camera[2]=c->z;
@@ -136,6 +139,7 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
     d->projection[2]=src->view.near_z; d->projection[3]=src->view.focal;
     d->material[0]=m->color; d->material[1]=i->scene_light_q8;
     d->material[2]=m->texture != NULL;
+    d->material[3]=i->vertex_light_q8 != 0;
     d->texture[0]=info.texture_width; d->texture[1]=info.texture_height;
     d->index_count=info.index_count;
     d->double_sided=!i->force_backface_culling && m->double_sided;
@@ -232,7 +236,12 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,
         e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) goto done;
     phase_start=mixed_now_ms();
-    for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) goto done;
+    for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) {
+        __fprintf(2, "mixed preflight: Draw encode failed index=%lu primitive=%u indices=%u asset=%d vertex_light=%d\n",
+            n, f->draws[n].item.primitive, f->draws[n].item.index_count,
+            f->draws[n].instance.asset_id, f->draws[n].instance.vertex_light_q8);
+        goto done;
+    }
     e->stats.draw_encode_ms+=mixed_now_ms()-phase_start;
     result=0;
 done:

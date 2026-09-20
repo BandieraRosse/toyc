@@ -2376,6 +2376,7 @@ fail:
 #define net_loss_percent options.net_loss_percent
 #define net_address options.net_address
 #define auto_mode options.auto_mode
+#define world_cycle_gate options.world_cycle_gate
 #define edge_pass_enabled options.edge_pass_enabled
 #define stats_enabled options.stats_enabled
 #define texture_stats options.texture_stats
@@ -3292,7 +3293,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (options.render_performance || options.gpu_world_raster_view ||
         options.gpu_normal_view || options.gpu_wave_repro || options.environment_capture_dir ||
         options.normal_frame_audit_output ||
-        options.character_world_capture_dir) seed = 1;
+        options.character_world_capture_dir || world_cycle_gate) seed = 1;
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
@@ -3344,6 +3345,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     }
     if (options.gpu_normal_view) {
         int enemy;
+        struct toy_game_actor *local_actor;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(&camera, 0, sizeof(camera));
         if (!strcmp(options.gpu_normal_view, "interior")) {
@@ -3356,6 +3358,25 @@ int rf_game_runtime_run(const struct rf_game_config *config)
              * silhouette; these are the far-depth thin-structure fixture. */
             camera.x = -5000; camera.z = 5500;
             camera.sy = -1024;
+        } else if (!strcmp(options.gpu_normal_view, "base")) {
+            camera.x = 0; camera.z = -3400; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "spawn")) {
+            camera.x = 0; camera.z = -4850; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
+            camera.x = -10500; camera.z = 2000;
+            camera.sy = -819; camera.cy = 614;
+        } else if (!strcmp(options.gpu_normal_view, "whu-a18")) {
+            camera.x = session.level.start_x; camera.z = session.level.start_z;
+            camera.sy = session.level.start_sy; camera.cy = session.level.start_cy;
+        } else if (!strcmp(options.gpu_normal_view, "whu-b-plaza")) {
+            camera.x = -64000; camera.z = 8000;
+            camera.sy = 819; camera.cy = -614;
+        } else if (!strcmp(options.gpu_normal_view, "whu-library")) {
+            camera.x = 32000; camera.z = -43000;
+            camera.sy = 614; camera.cy = 819;
+        } else if (!strcmp(options.gpu_normal_view, "whu-d-ef")) {
+            camera.x = 74000; camera.z = -48000;
+            camera.cy = -1024;
         } else {
             camera.z = !strcmp(options.gpu_normal_view, "mid") ? -8400 : -3400;
             camera.cy = 1024;
@@ -3364,8 +3385,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         camera.pitch_cy = 1024;
         /* Session takes the camera body from the local actor on the first
          * fixed tick. Keep the deterministic view at its requested distance. */
-        toy_game_local_player_actor(&game)->x = camera.x;
-        toy_game_local_player_actor(&game)->z = camera.z;
+        local_actor = toy_game_local_player_actor(&game);
+        local_actor->x = camera.x;
+        local_actor->z = camera.z;
+        local_actor->sy = camera.sy;
+        local_actor->cy = camera.cy;
         for (enemy = 0; enemy < options.gpu_normal_enemies; ++enemy) {
             struct toy_game_enemy *fixture = &game.enemies[enemy];
             fixture->active = 1;
@@ -3528,6 +3552,36 @@ startup_again:
     while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
         int64_t audit_loop_start = rf_core_time_us(&core);
+        if (world_cycle_gate &&
+            (rendered_frames == 30 || rendered_frames == 60 ||
+             rendered_frames == 90)) {
+            enum rasterfall_world_id next_world = rendered_frames == 30 ?
+                RASTERFALL_WORLD_CAMPAIGN_01 : rendered_frames == 60 ?
+                RASTERFALL_WORLD_RETURN_TO_WHU_V0 :
+                RASTERFALL_WORLD_CAMPAIGN_01;
+            if (rf_game_request_world(&game_runtime, next_world) < 0) {
+                __fprintf(2, "rasterfall: world cycle gate failed at frame %d world %d\n",
+                          rendered_frames, next_world);
+                running = 0;
+                break;
+            }
+            __printf("WORLD-CYCLE frame=%d world=%d seed=%llu\n",
+                     rendered_frames, next_world,
+                     (unsigned long long)session.seed);
+            {
+                struct rasterfall_resource_stats cycle_resources;
+                char cycle_line[192];
+                rasterfall_resources_stats(rasterfall_render_resources(),
+                                            &cycle_resources);
+                snprintf(cycle_line, sizeof(cycle_line),
+                    "WORLD-CYCLE-RESOURCES frame=%d world=%d live=%u retired=%u pinned=%u loads=%u releases=%u",
+                    rendered_frames, next_world, cycle_resources.live,
+                    cycle_resources.retired, cycle_resources.pinned,
+                    cycle_resources.loads, cycle_resources.releases);
+                __printf("%s\n", cycle_line);
+                rf_windows_log(cycle_line);
+            }
+        }
         int64_t audit_update_us = 0, audit_render_us = 0;
         int64_t audit_present_us = 0, audit_interval_us = 0;
         int logic_steps = 0;
@@ -4341,6 +4395,14 @@ startup_again:
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_TRANSPARENT],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_RANGE],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_NUMERIC]);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT ground-draw items=%lu triangles=%lu legacy_commands=%lu mesh_builds=%lu",
+                        scene_audit.ground_draw_items,
+                        scene_audit.ground_draw_triangles,
+                        scene_audit.ground_legacy_commands,
+                        scene_audit.ground_mesh_builds);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                 }

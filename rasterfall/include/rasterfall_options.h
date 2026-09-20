@@ -27,7 +27,7 @@ struct rasterfall_options {
     int normal_frame_audit_sy, normal_frame_audit_cy;
     int normal_frame_audit_pitch_sy, normal_frame_audit_pitch_cy;
     int normal_frame_audit_width, normal_frame_audit_height;
-    int frame_audit;
+    int frame_audit, world_cycle_gate;
     const char *view_model_path, *view_output_dir;
     int model_views_supersample, model_skinning, model_pose;
     int material_regression;

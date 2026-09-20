@@ -3690,6 +3690,171 @@ static int draw_floor_zone(struct toy_renderer *renderer,
 
 #define FLOOR_SPLIT_MAX 48
 
+struct floor_mesh_patch {
+    int minx, maxx, minz, maxz;
+    uint32_t color;
+    unsigned short light[4];
+};
+
+struct floor_mesh_build {
+    struct floor_mesh_patch *patches;
+    unsigned long count, capacity;
+};
+
+static struct rasterfall_resource_handle floor_mesh_handle;
+
+static void floor_store_u16(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value; p[1] = (unsigned char)(value >> 8);
+}
+
+static void floor_store_u32(unsigned char *p, unsigned int value)
+{
+    p[0] = (unsigned char)value; p[1] = (unsigned char)(value >> 8);
+    p[2] = (unsigned char)(value >> 16); p[3] = (unsigned char)(value >> 24);
+}
+
+static int floor_mesh_add_patch(struct floor_mesh_build *build,
+    int minx, int maxx, int minz, int maxz, uint32_t color)
+{
+    int x, z;
+    for (z = minz; z < maxz; z += 1024) {
+        int z1 = z + 1024 < maxz ? z + 1024 : maxz;
+        for (x = minx; x < maxx; x += 1024) {
+            int x1 = x + 1024 < maxx ? x + 1024 : maxx;
+            struct floor_mesh_patch *patch;
+    if (build->count == build->capacity) {
+        unsigned long capacity = build->capacity ? build->capacity * 2 : 128;
+        struct floor_mesh_patch *grown;
+        if (capacity < build->capacity ||
+            capacity > ULONG_MAX / sizeof(*grown)) return -1;
+        grown = tlibc_malloc(capacity * sizeof(*grown));
+        if (!grown) return -1;
+        if (build->count)
+            memcpy(grown, build->patches, build->count * sizeof(*grown));
+        tlibc_free(build->patches);
+        build->patches = grown; build->capacity = capacity;
+    }
+    patch = &build->patches[build->count++];
+    patch->minx = x; patch->maxx = x1;
+    patch->minz = z; patch->maxz = z1; patch->color = color;
+    patch->light[0] = (unsigned short)world_brightness_at(x, -900, z);
+    patch->light[1] = (unsigned short)world_brightness_at(x1, -900, z);
+    patch->light[2] = (unsigned short)world_brightness_at(x1, -900, z1);
+    patch->light[3] = (unsigned short)world_brightness_at(x, -900, z1);
+        }
+    }
+    return 0;
+}
+
+static struct rasterfall_model_asset *floor_mesh_finish(
+    const struct floor_mesh_build *build)
+{
+    struct rasterfall_model_asset *model;
+    unsigned long primitive_bytes, material_bytes, vertex_bytes, index_bytes, total;
+    uint32_t *colors;
+    int *origin_x, *origin_z;
+    unsigned int *groups, *group_counts, *group_offsets, group_count = 0;
+    unsigned char *data;
+    unsigned long i;
+    if (!build->count || build->count > UINT_MAX / 4 ||
+        build->count > UINT_MAX / 6) return NULL;
+    colors = tlibc_malloc(build->count * sizeof(*colors));
+    groups = tlibc_malloc(build->count * sizeof(*groups));
+    group_counts = tlibc_malloc(build->count * sizeof(*group_counts));
+    group_offsets = tlibc_malloc(build->count * sizeof(*group_offsets));
+    origin_x = tlibc_malloc(build->count * sizeof(*origin_x));
+    origin_z = tlibc_malloc(build->count * sizeof(*origin_z));
+    if (!colors || !groups || !group_counts || !group_offsets || !origin_x || !origin_z) {
+        tlibc_free(colors); tlibc_free(groups); tlibc_free(group_counts);
+        tlibc_free(group_offsets); tlibc_free(origin_x); tlibc_free(origin_z); return NULL;
+    }
+    memset(group_counts, 0, build->count * sizeof(*group_counts));
+    for (i = 0; i < build->count; ++i) {
+        unsigned int g;
+        int ox = build->patches[i].minx / 16000 * 16000;
+        int oz = build->patches[i].minz / 16000 * 16000;
+        if (build->patches[i].minx < 0 && build->patches[i].minx % 16000) ox -= 16000;
+        if (build->patches[i].minz < 0 && build->patches[i].minz % 16000) oz -= 16000;
+        /* The graphics resource contract caps expanded vertices at 65536.
+         * Six indices per patch leaves headroom when a dominant base colour
+         * covers almost the entire world. */
+        for (g = 0; g < group_count &&
+             (colors[g] != build->patches[i].color || origin_x[g] != ox ||
+              origin_z[g] != oz || group_counts[g] >= 8000); ++g) {}
+        if (g == group_count) {
+            colors[group_count] = build->patches[i].color;
+            origin_x[group_count] = ox; origin_z[group_count] = oz; group_count++;
+        }
+        groups[i] = g; group_counts[g]++;
+    }
+    primitive_bytes = group_count * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+    material_bytes = group_count * RASTERFALL_MODEL_MATERIAL_BYTES;
+    vertex_bytes = build->count * 4 * RASTERFALL_MODEL_VERTEX_BYTES;
+    index_bytes = build->count * 6 * 4;
+    if (primitive_bytes > ULONG_MAX - material_bytes ||
+        primitive_bytes + material_bytes > ULONG_MAX - vertex_bytes ||
+        primitive_bytes + material_bytes + vertex_bytes > ULONG_MAX - index_bytes)
+        goto failed_groups;
+    total = primitive_bytes + material_bytes + vertex_bytes + index_bytes;
+    model = tlibc_malloc(sizeof(*model)); data = tlibc_malloc(total);
+    if (!model || !data) { tlibc_free(model); tlibc_free(data); goto failed_groups; }
+    memset(model, 0, sizeof(*model)); memset(data, 0, total);
+    model->data = data; model->data_size = (int)total; model->format_version = 9;
+    model->primitive_count = model->material_count = group_count;
+    model->vertex_count = (unsigned int)build->count * 4;
+    model->index_count = (unsigned int)build->count * 6;
+    model->material_bytes = RASTERFALL_MODEL_MATERIAL_BYTES;
+    model->vertex_bytes = RASTERFALL_MODEL_VERTEX_BYTES; model->position_scale = 1000;
+    model->primitives = data;
+    model->materials = data + primitive_bytes;
+    model->vertices = model->materials + material_bytes;
+    model->indices = model->vertices + vertex_bytes;
+    model->min_x = level_map.minx; model->max_x = level_map.maxx;
+    model->min_y = model->max_y = -900;
+    model->min_z = level_map.minz; model->max_z = level_map.maxz;
+    {
+        unsigned int g, first = 0;
+        for (g = 0; g < group_count; ++g) {
+            unsigned char *primitive = (unsigned char *)model->primitives + g * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+            unsigned char *material = (unsigned char *)model->materials + g * RASTERFALL_MODEL_MATERIAL_BYTES;
+            floor_store_u32(primitive, first); floor_store_u32(primitive + 4, group_counts[g] * 6);
+            floor_store_u32(primitive + 8, g); floor_store_u32(material, colors[g]);
+            material[4] = 255; material[7] = 1; floor_store_u32(material + 8, UINT_MAX);
+            floor_store_u32(material + 24, (unsigned int)origin_x[g]);
+            floor_store_u32(material + 28, (unsigned int)origin_z[g]);
+            group_offsets[g] = first; first += group_counts[g] * 6;
+        }
+    }
+    for (i = 0; i < build->count; ++i) {
+        const struct floor_mesh_patch *p = &build->patches[i];
+        unsigned char *vertex = (unsigned char *)model->vertices + i * 4 * RASTERFALL_MODEL_VERTEX_BYTES;
+        unsigned char *index = (unsigned char *)model->indices + group_offsets[groups[i]] * 4;
+        const int x[4] = {p->minx-origin_x[groups[i]], p->maxx-origin_x[groups[i]],
+                          p->maxx-origin_x[groups[i]], p->minx-origin_x[groups[i]]};
+        const int z[4] = {p->minz-origin_z[groups[i]], p->minz-origin_z[groups[i]],
+                          p->maxz-origin_z[groups[i]], p->maxz-origin_z[groups[i]]};
+        static const unsigned int order[6] = {0, 1, 2, 0, 2, 3};
+        unsigned int k;
+        for (k = 0; k < 4; ++k) {
+            unsigned char *v = vertex + k * RASTERFALL_MODEL_VERTEX_BYTES;
+            floor_store_u32(v, (unsigned int)x[k]); floor_store_u32(v + 4, (unsigned int)-900);
+            floor_store_u32(v + 8, (unsigned int)z[k]);
+            floor_store_u16(v + 12, 0); floor_store_u16(v + 14, 32767); floor_store_u16(v + 16, 0);
+            floor_store_u16(v + 18, p->light[k]); floor_store_u16(v + 20, 0);
+        }
+        for (k = 0; k < 6; ++k) floor_store_u32(index + k * 4, (unsigned int)i * 4 + order[k]);
+        group_offsets[groups[i]] += 6;
+    }
+    tlibc_free(colors); tlibc_free(groups); tlibc_free(group_counts);
+    tlibc_free(group_offsets); tlibc_free(origin_x); tlibc_free(origin_z);
+    return model;
+failed_groups:
+    tlibc_free(colors); tlibc_free(groups); tlibc_free(group_counts);
+    tlibc_free(group_offsets); tlibc_free(origin_x); tlibc_free(origin_z);
+    return NULL;
+}
+
 static void floor_split_add(int *values, int *count, int value,
                             int min_value, int max_value)
 {
@@ -3744,6 +3909,35 @@ static int map_has_floor_ground(int x, int z)
     return 0;
 }
 
+static int draw_floor_mesh_mixed(struct toy_renderer *renderer,
+    const struct camera *camera, const struct rasterfall_model_asset *model,
+    struct rasterfall_resource_handle handle)
+{
+    struct rasterfall_draw_view view;
+    struct rasterfall_draw_instance instance;
+    unsigned int i;
+    if (!render_ctx || !render_ctx->mixed_frame || !model) return -1;
+    memset(&view, 0, sizeof(view)); memset(&instance, 0, sizeof(instance));
+    view.camera = *camera; view.width = renderer->surface.width;
+    view.height = renderer->surface.height; view.focal = view.width * 3 / 4;
+    view.near_z = NEAR_Z;
+    instance.mesh = model; instance.mesh_handle = handle;
+    instance.y = -900; instance.scale_milli = 1000; instance.yaw_cos_q10 = 1024;
+    instance.scene_light_q8 = 256; instance.vertex_light_q8 = 1;
+    if (rf_core_mixed_require_draws(render_ctx->mixed_frame,
+            model->primitive_count) < 0) return -1;
+    if (renderer->cmd_count > 0 && toy_renderer_flush(renderer) < 0) return -1;
+    for (i = 0; i < model->primitive_count; ++i) {
+        struct rasterfall_draw_item item;
+        if (static_prop_draw_resolve(&instance, i, &item) != RASTERFALL_DRAW_ACCEPTED ||
+            rf_core_mixed_draw(render_ctx->mixed_frame, &view, &instance, &item) < 0)
+            return -1;
+        scene_stats.ground_draw_items++;
+        scene_stats.ground_draw_triangles += item.index_count / 3;
+    }
+    return 0;
+}
+
 /* Render continuous slab colours and authored floor paint as one tessellated
  * plane.  A colour region changes the colour of the affected sub-rectangles;
  * it never creates a second, nearly coplanar surface. */
@@ -3751,16 +3945,27 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                   const struct camera *camera)
 {
     int base_x, base_z, i, j, k, pixels = 0;
+    struct floor_mesh_build build;
+    const struct rasterfall_model_asset *cached = NULL;
+    int hardware_floor = render_ctx && render_ctx->mixed_frame &&
+        active_world_light_v2 && !diagnostic_flat_planar;
     int authored_ground = active_session &&
         rasterfall_world_uses_authored_ground(active_session->world_id);
     int slab = 2048, joint = authored_ground ? 0 : 10;
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
+    memset(&build, 0, sizeof(build));
+    if (hardware_floor) {
+        cached = rasterfall_resources_resolve_active(
+            rasterfall_render_resources(), floor_mesh_handle);
+        if (cached) return draw_floor_mesh_mixed(renderer, camera, cached,
+                                                 floor_mesh_handle);
+    }
     for (base_z = level_map.minz; base_z < level_map.maxz; base_z += slab) {
         for (base_x = level_map.minx; base_x < level_map.maxx; base_x += slab) {
             int tile_max_x = base_x + slab < level_map.maxx ? base_x + slab : level_map.maxx;
             int tile_max_z = base_z + slab < level_map.maxz ? base_z + slab : level_map.maxz;
             int x_count = 0, z_count = 0;
-            if (!world_box_visible(&renderer->surface, camera,
+            if (!hardware_floor && !world_box_visible(&renderer->surface, camera,
                                    base_x, tile_max_x, -900, -900,
                                    base_z, tile_max_z))
                 continue;
@@ -3852,12 +4057,32 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                         struct toy_game_box patch;
                         patch.minx = minx; patch.maxx = maxx;
                         patch.minz = minz; patch.maxz = maxz;
-                        pixels += draw_floor_zone(renderer, camera, &patch, color);
+                        if (hardware_floor) {
+                            if (floor_mesh_add_patch(&build, minx, maxx,
+                                                    minz, maxz, color) < 0) {
+                                tlibc_free(build.patches);
+                                return -1;
+                            }
+                        } else {
+                            pixels += draw_floor_zone(renderer, camera, &patch, color);
+                        }
                     }
                 }
             }
         }
     }
+    if (hardware_floor) {
+        struct rasterfall_model_asset *model = floor_mesh_finish(&build);
+        tlibc_free(build.patches);
+        if (!model || rasterfall_resources_adopt(rasterfall_render_resources(),
+                "@world/partitioned-floor", model, &floor_mesh_handle) < 0) {
+            if (model) { rasterfall_model_unload(model); tlibc_free(model); }
+            return -1;
+        }
+        scene_stats.ground_mesh_builds++;
+        return draw_floor_mesh_mixed(renderer, camera, model, floor_mesh_handle);
+    }
+    scene_stats.ground_legacy_commands = renderer->cmd_count;
     return pixels;
 }
 

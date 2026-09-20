@@ -27,6 +27,20 @@ static int resource_test_load(struct rasterfall_model_asset *model, const char *
     return 0;
 }
 
+static struct rasterfall_model_asset *resource_test_build_adopted(void)
+{
+    struct rasterfall_model_asset *model =
+        tlibc_malloc(sizeof(*model));
+    if (!model) return NULL;
+    memset(model, 0, sizeof(*model));
+    if (resource_test_load(model, "generated") < 0) {
+        rasterfall_model_unload(model);
+        tlibc_free(model);
+        return NULL;
+    }
+    return model;
+}
+
 int rasterfall_render_resources_logic_test(void)
 {
     struct rasterfall_resource_registry *r = tlibc_malloc(sizeof(*r));
@@ -76,6 +90,48 @@ int rasterfall_render_resources_logic_test(void)
     }
     RESOURCE_CHECK(r->loads == loads);
     rasterfall_resources_invalidate(r);
+    /* Generated world meshes use the same generation, pin and retirement
+     * contract as file-loaded bundles. A duplicate identity is rejected
+     * without transferring ownership; after invalidation an in-flight old
+     * generation may coexist with the rebuilt mesh until frame completion. */
+    {
+        struct rasterfall_model_asset *adopted = resource_test_build_adopted();
+        struct rasterfall_model_asset *duplicate;
+        struct rasterfall_model_asset *rebuilt;
+        struct rasterfall_resource_handle generated, duplicate_handle, regenerated;
+        RESOURCE_CHECK(adopted != NULL);
+        RESOURCE_CHECK(rasterfall_resources_adopt(r, "@world/ground", adopted,
+                                                  &generated) == 0);
+        RESOURCE_CHECK(rasterfall_resources_resolve(r, generated) == adopted);
+        RESOURCE_CHECK(rasterfall_resources_resolve_active(r, generated) == adopted);
+        duplicate = resource_test_build_adopted();
+        RESOURCE_CHECK(duplicate != NULL);
+        RESOURCE_CHECK(rasterfall_resources_adopt(r, "@world/ground", duplicate,
+                                                  &duplicate_handle) < 0);
+        RESOURCE_CHECK(duplicate_handle.slot == generated.slot &&
+                       duplicate_handle.generation == generated.generation);
+        rasterfall_model_unload(duplicate);
+        tlibc_free(duplicate);
+        RESOURCE_CHECK(rasterfall_resources_frame_begin(r) == 0);
+        RESOURCE_CHECK(rasterfall_resources_pin(r, generated) == 0);
+        rasterfall_resources_invalidate(r);
+        RESOURCE_CHECK(rasterfall_resources_resolve(r, generated) == adopted);
+        RESOURCE_CHECK(!rasterfall_resources_resolve_active(r, generated));
+        rebuilt = resource_test_build_adopted();
+        RESOURCE_CHECK(rebuilt != NULL);
+        RESOURCE_CHECK(rasterfall_resources_adopt(r, "@world/ground", rebuilt,
+                                                  &regenerated) == 0);
+        RESOURCE_CHECK(regenerated.slot != generated.slot &&
+                       rasterfall_resources_resolve(r, regenerated) == rebuilt);
+        rasterfall_resources_stats(r, &stats);
+        RESOURCE_CHECK(stats.live == 1 && stats.retired == 1 && stats.pinned == 1);
+        rasterfall_resources_frame_complete(r);
+        RESOURCE_CHECK(!rasterfall_resources_resolve(r, generated));
+        RESOURCE_CHECK(rasterfall_resources_resolve(r, regenerated) == rebuilt);
+        rasterfall_resources_stats(r, &stats);
+        RESOURCE_CHECK(stats.live == 1 && !stats.retired && !stats.pinned);
+        rasterfall_resources_invalidate(r);
+    }
     /* Repeated world unload/reload, including failed loads and pinned exit. */
     for (i = 0; i < 32; ++i) {
         RESOURCE_CHECK(resource_load(r, "mesh", &next, resource_test_load) == 0);
@@ -105,7 +161,7 @@ done:
     rasterfall_resources_frame_complete(r);
     tlibc_free(r);
     if (failure) __printf("draw-resources: FAIL line=%d\n", failure);
-    else __printf("draw-resources: PASS identity, pinning, texture lifetime, reload, failure, generation exhaustion\n");
+    else __printf("draw-resources: PASS identity, pinning, generated adoption, texture lifetime, reload, failure, generation exhaustion\n");
 #undef RESOURCE_CHECK
     return failure != 0;
 }

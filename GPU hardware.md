@@ -1,6 +1,7 @@
 # Hardware Graphics 开发计划
 
 > 计划更新：2026-09-20
+> 当前进度补充：HG-4A Ground 已按 Windows Intel 签收：持久 world mesh、noperspective V2 vertex-light Draw、strict native/Fog/resize/world-switch/逻辑回归及 Campaign/WHU 七组 CPU/native capture 均通过；HG-4B 尚未开始。
 > 当前进度：HG-0、HG-1A、HG-1B、HG-2A、HG-2B、HG-2C1--2C5、P0 性能事实门禁、HG-3 与 AI frontend checkpoint 已按 Windows Intel Iris Xe 口径完成。HG-3 的完整 120 帧 near/mid/Fog、320 帧 Campaign、static RMESH 审计及建筑内部/远处薄结构 native capture 均通过；AI frontend 的性能/Campaign audit 与边缘入镜、近面交叉角色 capture 也已通过。Linux/其他 GPU 未验收。
 > 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
 
@@ -15,7 +16,7 @@
 | P0 性能事实门禁 | 完成（Windows Intel） | 预热后 median/P95、实际帧间隔、审计扰动、历史 GPU timestamp 对齐、Campaign 波次有效性校验；入口为 `tools/hardware_graphics_metrics.ps1` 与更新后的 baseline 脚本 |
 | HG-3A / HG-3B | 完成 | [普通 opaque static RMESH 扩围](rasterfall/docs/hardware-graphics-hg3.md)：实现覆盖全部当前 eligible RMESH；连续 Draw 空 flush 已消除，完整 Intel baseline、Campaign 与专项视觉门禁通过 |
 | AI frontend checkpoint | 完成 | [角色 frontend 缓存与组合边界](rasterfall/docs/hardware-graphics-ai-frontend.md)：finalized pose/skinning、被动 gear 与 active weapon placement cache 及 body/gear/weapon 组合 bounds 已接入；性能/Campaign audit、边缘入镜与近面交叉专用 capture 通过 |
-| HG-4A / HG-4B | 待开发 | Ground → map/boundary 几何；按 producer 分别记录 GPU Raster 减量 |
+| HG-4A / HG-4B | HG-4A 完成（Windows Intel） | [Ground 持久 mesh](rasterfall/docs/hardware-graphics-hg4.md)的视觉、生命周期与性能审计门禁已完成。HG-4B map/boundary geometry 尚未开始 |
 | HG-5A / HG-5B | 待开发 | Character geometry → GPU skinning；若正式 30/60 敌人 GPU 基线显示角色扩展成本主导，可在 HG-4B 前重新排序 |
 
 ## P0 性能事实门禁

@@ -1,8 +1,10 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-20
+> 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-4A 为 `--gpu-normal-scene` 增加 Campaign base/spawn/west-facility 与 WHU A18/B广场/分馆前场/D→E/F 固定视角；CPU `--dump-frame` 与 strict native `--gpu-frame-capture` 可在同一 map/姿态生成对照证据，入口为 `tools/hardware_graphics_ground_capture.ps1`。
+> 源码核对基线补充：2026-09-20 `--world-cycle-gate` 是 HG-4A 正常窗口生命周期诊断：固定 seed，按 30 帧间隔执行 Outpost → Campaign → WHU → Campaign，并输出切换瞬间的 retired/pinned 资源审计；配套 `tools/hardware_graphics_world_cycle.ps1` 验证 strict native 与延迟退休。
 > 源码核对基线补充：2026-09-20 `--auto` 在原持续转向、射击和定期场景传送基础上，增加确定性的前后/横移与每 90 帧跳跃，用于 HG-2C5 动态 gameplay soak；它仍是显式诊断模式，不改变正常输入。Windows worker 等待改用按地址 `WaitOnAddress`，修复长时 renderer job 丢失唤醒。
-> 源码核对基线补充：2026-09-19 Windows `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 从 strict native mixed 正常帧的最终 GPU Post/overlay 结果显式读回一帧；默认第 30 帧。须同时提供 `--renderer gpu-compute --gpu-native-present --gpu-required --gpu-normal-scene <near|mid> <0|30>`；诊断字节单列，普通帧零读回合同不变。`--help` 是完整参数入口。固定场景同时设置本地 actor 的位置，防止首个固定步长将 camera 重置。
+> 源码核对基线补充：2026-09-19 Windows `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 从 strict native mixed 正常帧的最终 GPU Post/overlay 结果显式读回一帧；默认第 30 帧。须同时提供 `--renderer gpu-compute --gpu-native-present --gpu-required --gpu-normal-scene <view> <0|30>`；诊断字节单列，普通帧零读回合同不变。`--help` 是完整参数入口。固定场景同时设置本地 actor 的位置与方向，防止首个固定步长将 camera 重置。
 > 源码核对基线补充：2026-09-19 Windows strict native 正常帧使用 Core-owned mixed frame/executor；`rf_core_begin_frame()` 建立资源 pin 与计划，WORLD/Effects/VIEWMODEL 依序录制，overlay 完成后同帧 native 呈现并释放 pin。preflight/submit 失败使 required runtime 非零退出，不回退部分 GPU target。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md)：Core begin/end 包围 static prop 资源的单帧 pin；失败帧保留到 backend teardown 后释放。Game init、成功 world switch 与 shutdown 使旧资源退休，仍在消费中的帧不提前释放。
 > 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
@@ -139,7 +141,7 @@ Windows normal GPU batch 同时用同一 packed stream 与 Texture V1 table 执�
 oracle 在 GPU dispatch 前生成；若逐 RGB/depth 比较失败，Core 自动保存
 `gpu-oracle-mismatch/commands.bin`、`.textures`、CPU/GPU/diff BMP、双方 depth 与报告，再逐行复制
 完整 CPU oracle color/depth 回正式 surface 并消费该批。stream 可直接交给 hosted differential replay。
-`--gpu-normal-scene <near|mid> <0|30>` 只固定 seed、Campaign、camera/enemy fixture，仍执行正常
+`--gpu-normal-scene <view> <0|30>` 只固定 seed、world、camera/enemy fixture，仍执行正常
 window/Core/world/present 主循环。shutdown timing 覆盖 frontend、classification、texture measure、
 ABI pack + texture table、binning/upload/submit/execution-wait/readback、CPU oracle、present 与 frame total；
 presentation copy 在 V1 中标为与 readback 合并。

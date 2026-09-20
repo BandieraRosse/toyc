@@ -654,22 +654,26 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
 {
     if (!d->index_count || d->index_count % 3 || d->first_index % 3 ||
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
-        d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 || d->material[2] > 1 ||
-        d->material[3] || d->camera[3] || d->texture[2] || d->texture[3] ||
+        d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 ||
+        d->material[2] > 1 || d->material[3] > 1 ||
+        d->camera[3] || d->texture[2] || d->texture[3] ||
         d->translation_scale[3] < 1 || d->translation_scale[3] > 8000 ||
         d->rotation[2] < -32767 || d->rotation[2] > 32767 ||
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
         d->projection[0] != (int)g->target.width || d->projection[1] != (int)g->target.height ||
         d->projection[2] != 64 || d->projection[3] != (int)g->target.width*3/4 ||
         d->texture[0] != (int)g->resource->texture_width || d->texture[1] != (int)g->resource->texture_height) return 0;
+    /* Runtime Map permits a 240000 RFU room. Keep one signed power-of-two
+     * envelope beyond that contract so chunk-local meshes can place their
+     * origins at the WHU south edge without weakening the int32 shader ABI. */
     for (unsigned i = 0; i < 3; ++i)
-        if (d->translation_scale[i] < -131072 || d->translation_scale[i] > 131072 ||
-            d->camera[i] < -131072 || d->camera[i] > 131072) return 0;
+        if (d->translation_scale[i] < -262144 || d->translation_scale[i] > 262144 ||
+            d->camera[i] < -262144 || d->camera[i] > 262144) return 0;
     for (unsigned i = 0; i < 2; ++i)
         if (d->rotation[i] < -1024 || d->rotation[i] > 1024) return 0;
     for (unsigned i = 0; i < 4; ++i)
         if (d->view[i] < -1024 || d->view[i] > 1024) return 0;
-    if (d->integer_depth) {
+    if (d->integer_depth && !d->material[3]) {
         /* O(1) conservative mesh bounds, before recording any draw. With
          * projected coordinates in [-16384,16384], edge*UV sums fit int64.
          * Deliberately conservative hosted-proof limit, not silent clipping. */

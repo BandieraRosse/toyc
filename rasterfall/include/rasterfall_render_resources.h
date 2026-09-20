@@ -31,7 +31,17 @@ struct rasterfall_resource_stats {
  * are canonical identities supplied by the prop profile table. */
 int rasterfall_resources_load(struct rasterfall_resource_registry *registry,
     const char *path, struct rasterfall_resource_handle *handle);
+/* Adopt an already-built immutable renderer mesh. On success the registry
+ * owns model and its backing exactly like a file-loaded bundle. */
+int rasterfall_resources_adopt(struct rasterfall_resource_registry *registry,
+    const char *identity, struct rasterfall_model_asset *model,
+    struct rasterfall_resource_handle *handle);
 const struct rasterfall_model_asset *rasterfall_resources_resolve(
+    const struct rasterfall_resource_registry *registry,
+    struct rasterfall_resource_handle handle);
+/* Producer lookup for new submissions. Retired generations remain resolvable
+ * to already-pinned consumers, but must never be reused by a later frame. */
+const struct rasterfall_model_asset *rasterfall_resources_resolve_active(
     const struct rasterfall_resource_registry *registry,
     struct rasterfall_resource_handle handle);
 int rasterfall_resources_pin(struct rasterfall_resource_registry *registry,

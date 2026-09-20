@@ -1,6 +1,8 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-20
+> 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 `tools/hardware_graphics_ground_capture.ps1` 串行启动 Windows package 的 CPU 与 strict native 固定视角，保存 Campaign/WHU 七组 PPM/BMP、日志、哈希和像素差；脚本使用原生 process handle 等待 GUI subsystem 进程，不能与其他 GPU 验证实例并发运行。
+> 源码核对基线补充：2026-09-20 `tools/hardware_graphics_world_cycle.ps1` 启动 package 内 GUI subsystem 可执行文件，使用原生 process handle 取得退出码，并从 `rasterfall.log` 验证 120 帧 Outpost/Campaign/WHU/Campaign strict native 生命周期；不与其他 GPU 验证实例并发运行。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收。Windows worker `done=7/8` 来自旧 `__futex()` 全局 condition variable 的丢失唤醒；runtime 现动态解析 `WaitOnAddress`/`WakeByAddressAll`，不新增静态链接库。最终代码的 package、`--logic-test`、固定 300 帧、五种 fault injection 与 7分40秒动态 soak 均通过预期合同，零 renderer watchdog/fallback/readback/CPU copy/hot queue-idle。进程私有 `VK_LAYER_PATH` 加载 Khronos validation 后，300 帧与五种故障注入均零 VUID/SYNC-HAZARD。该 checkpoint 不执行 resize。
 > 源码核对基线补充：2026-09-20 Windows Intel 长时呈现门禁提高到至少 300 帧：唯一 backend swapchain + 双离屏 slot + 每 slot acquire/render-complete semaphore，并在 present 后 queue-idle。300/300 strict native 正常退出；短 120/140 帧 smoke 不再足以证明 present 生命周期稳定。
 > 源码核对基线补充：2026-09-20 HG-2C4 最新 Windows package 通过 strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate。`hardware_graphics_resize.ps1` 的资源检查适配双帧在途：允许 fence 完成前的非零 pin，但要求 `retired=0`、`failed=0` 且 pinned resources 不超过 live resources；loads 在 resize 全程稳定。

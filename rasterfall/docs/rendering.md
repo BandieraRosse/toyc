@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-21 HG-4A Ground 已按 Windows Intel 签收：partitioned floor 固化为 world-generation immutable mesh；strict mixed 以局部坐标、颜色/空间分组 submesh 和 U 分量 Q8 `noperspective` vertex light 提交。120/120 strict native、Fog/resize/world-cycle、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态 capture 通过；完整门禁见 [HG-4](hardware-graphics-hg4.md)。
 > 源码核对基线补充：2026-09-20 AI frontend checkpoint 已签收：模块化 finalized pose 缓存扩展为每 actor 独立 frontend，并以 pose generation 约束 skinned vertex、被动 gear 与 active weapon actor-local placement 复用；提交前合并 body/gear/weapon 实际变换 AABB，weapon 绘制与边界共用 finalized `WEAPON_R + PRIMARY_GRIP` placement。`ai-triage` 输出 pose/bounds/gear-transform cache 与 combined-bounds cull；边缘入镜和近面交叉专用 capture 已通过。
 > 源码核对基线补充：2026-09-20 HG-3 已签收：static RMESH 审计覆盖 Draw/legacy 三角形与资产 mask；连续 Draw 间不再执行空 ordering flush，near strict static 中位数由 10.044 ms 降至 1.554 ms；建筑内部与远处薄结构 native capture 及完整 Intel baseline 通过，详见 [HG-3](hardware-graphics-hg3.md)。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收：同 image 再次 acquire 证明 render-finished 可复用；mixed slot 只持有 acquire semaphore、render fence 与离屏资源，正常热路径 `native_present_queue_idle_ms=0.000`，recreate/teardown 才排空 queue。Windows worker 等待改用按地址 `WaitOnAddress` 后，最终代码在 Intel 固定 300/300 与动态 10000/10000（7分40秒）无 renderer watchdog，五种 fault injection 得到预期结果。Khronos validation + sync validation 修复并覆盖 render-pass compatibility、每录制 segment 独立 descriptor set 与 acquire 后 layout transition stage 依赖，最终 300 帧和五种故障注入零 VUID/SYNC-HAZARD。本 checkpoint 不做 resize 检查。

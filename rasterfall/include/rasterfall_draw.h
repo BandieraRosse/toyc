@@ -24,6 +24,9 @@ struct rasterfall_draw_instance {
     int x, y, z, scale_milli;
     int yaw_sin_q10, yaw_cos_q10;
     int scene_light_q8, form_lighting;
+    /* HG-4A: untextured procedural meshes may carry Q8 vertex light in U.
+     * It is interpolated noperspective to match planar RasterCmd semantics. */
+    int vertex_light_q8;
     int force_backface_culling, disable_material_light;
 };
 

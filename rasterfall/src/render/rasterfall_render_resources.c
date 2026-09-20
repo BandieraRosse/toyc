@@ -72,6 +72,38 @@ int rasterfall_resources_load(struct rasterfall_resource_registry *registry,
     return resource_load(registry, path, handle, rasterfall_model_load);
 }
 
+int rasterfall_resources_adopt(struct rasterfall_resource_registry *registry,
+    const char *identity, struct rasterfall_model_asset *model,
+    struct rasterfall_resource_handle *handle)
+{
+    unsigned int i, available = RASTERFALL_RESOURCE_CAPACITY;
+    struct rasterfall_resource_slot *slot;
+    if (!handle) return -1;
+    memset(handle, 0, sizeof(*handle));
+    if (!registry || !identity || !*identity || !model || !model->data ||
+        strlen(identity) >= RASTERFALL_RESOURCE_PATH_BYTES) return -1;
+    for (i = 0; i < RASTERFALL_RESOURCE_CAPACITY; ++i) {
+        slot = &registry->slots[i];
+        if (slot->active && !strcmp(slot->path, identity)) {
+            handle->slot = i; handle->generation = slot->generation;
+            return -1; /* caller still owns the duplicate model */
+        }
+        if (!slot->active && !slot->model && !slot->pinned &&
+            slot->generation != UINT_MAX && available == RASTERFALL_RESOURCE_CAPACITY)
+            available = i;
+    }
+    if (available == RASTERFALL_RESOURCE_CAPACITY) return -1;
+    slot = &registry->slots[available];
+    slot->model = model;
+    slot->generation++;
+    strcpy(slot->path, identity);
+    slot->active = 1;
+    slot->failed = 0;
+    registry->loads++;
+    handle->slot = available; handle->generation = slot->generation;
+    return 0;
+}
+
 const struct rasterfall_model_asset *rasterfall_resources_resolve(
     const struct rasterfall_resource_registry *registry,
     struct rasterfall_resource_handle handle)
@@ -83,6 +115,18 @@ const struct rasterfall_model_asset *rasterfall_resources_resolve(
     if (slot->generation != handle.generation || (!slot->active && !slot->pinned))
         return NULL;
     return slot->model;
+}
+
+const struct rasterfall_model_asset *rasterfall_resources_resolve_active(
+    const struct rasterfall_resource_registry *registry,
+    struct rasterfall_resource_handle handle)
+{
+    const struct rasterfall_resource_slot *slot;
+    if (!registry || !handle.generation ||
+        handle.slot >= RASTERFALL_RESOURCE_CAPACITY) return NULL;
+    slot = &registry->slots[handle.slot];
+    return slot->active && slot->generation == handle.generation ?
+        slot->model : NULL;
 }
 
 int rasterfall_resources_pin(struct rasterfall_resource_registry *registry,
