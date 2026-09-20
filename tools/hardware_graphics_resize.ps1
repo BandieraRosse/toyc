@@ -77,11 +77,19 @@ try {
     foreach ($Line in $Frames) { if ($Line.Line -notmatch 'path=gpu-native ') { throw 'Unexpected render path.' } }
     foreach ($Line in $Gpu) { if ($Line.Line -notmatch 'readback_bytes=0 cpu_framebuffer_copy_bytes=0') { throw 'Readback/copy detected.' } }
     foreach ($Line in $Layers) { if ($Line.Line -notmatch 'invalid_transitions=0 .*pre_post_cpu_fallback=0 fallback_reason=0x0 ') { throw 'Fallback/order failure.' } }
-    foreach ($Line in $Resources) { if ($Line.Line -notmatch 'retired=0 pinned=0 failed=0') { throw 'Resource lifetime failure.' } }
+    $Pinned = @()
+    foreach ($Line in $Resources) {
+        if ($Line.Line -notmatch 'live=(\d+) retired=0 pinned=(\d+) failed=0') { throw 'Resource lifetime failure.' }
+        $LiveCount = [int]$Matches[1]
+        $PinnedCount = [int]$Matches[2]
+        if ($PinnedCount -gt $LiveCount) { throw 'Pinned resource count exceeds live resources.' }
+        $Pinned += $PinnedCount
+    }
     $Extents = @($Frames | ForEach-Object { if ($_.Line -match 'extent=(\d+x\d+)') { $Matches[1] } } | Sort-Object -Unique)
     $Loads = @($Resources | ForEach-Object { if ($_.Line -match 'loads=(\d+) ') { $Matches[1] } } | Sort-Object -Unique)
     if ($Extents.Count -lt 4 -or $Loads.Count -ne 1) { throw 'Resize did not produce four extents or reloaded mesh resources.' }
-    $Record.extents = $Extents; $Record.loads = $Loads; $Record.frames = $Frames.Count
+    $Record.extents = $Extents; $Record.loads = $Loads
+    $Record.pinned = @($Pinned | Sort-Object -Unique); $Record.frames = $Frames.Count
     $Record.result = 'PASS'
 } catch {
     $Record.error = $_.Exception.Message

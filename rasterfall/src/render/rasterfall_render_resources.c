@@ -91,8 +91,20 @@ int rasterfall_resources_pin(struct rasterfall_resource_registry *registry,
     if (!registry || !registry->frame_active ||
         !rasterfall_resources_resolve(registry, handle) ||
         !registry->slots[handle.slot].active) return -1;
-    registry->slots[handle.slot].pinned = 1;
+    if (registry->slots[handle.slot].pinned == UINT_MAX) return -1;
+    registry->slots[handle.slot].pinned++;
     return 0;
+}
+
+void rasterfall_resources_unpin(struct rasterfall_resource_registry *registry,
+    struct rasterfall_resource_handle handle)
+{
+    struct rasterfall_resource_slot *slot;
+    if (!registry || !handle.generation ||
+        handle.slot >= RASTERFALL_RESOURCE_CAPACITY) return;
+    slot=&registry->slots[handle.slot];
+    if (slot->generation==handle.generation && slot->pinned) slot->pinned--;
+    resource_collect(registry);
 }
 
 int rasterfall_resources_frame_begin(struct rasterfall_resource_registry *registry)
@@ -111,6 +123,11 @@ void rasterfall_resources_frame_complete(struct rasterfall_resource_registry *re
     for (i = 0; i < RASTERFALL_RESOURCE_CAPACITY; ++i) registry->slots[i].pinned = 0;
     registry->frame_active = 0;
     resource_collect(registry);
+}
+
+void rasterfall_resources_frame_submitted(struct rasterfall_resource_registry *registry)
+{
+    if (registry) registry->frame_active=0;
 }
 
 void rasterfall_resources_invalidate(struct rasterfall_resource_registry *registry)

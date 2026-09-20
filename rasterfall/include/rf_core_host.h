@@ -94,6 +94,7 @@ struct rf_core_gpu_frame_stats {
     double mixed_gpu_draw_ms, mixed_gpu_bridge_export_ms;
     double mixed_gpu_post_ms, mixed_gpu_overlay_ms, mixed_gpu_present_copy_ms;
     unsigned int mixed_gpu_timing_supported, mixed_gpu_timing_valid;
+    unsigned long long mixed_gpu_timing_frame;
     unsigned long long capture_readback_bytes;
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;

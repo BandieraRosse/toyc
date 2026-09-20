@@ -15,6 +15,7 @@ struct rf_gpu_mixed_gpu_timing {
     double raster_ms, bridge_import_ms, draw_ms, bridge_export_ms;
     double post_ms, overlay_ms, present_copy_ms;
     unsigned int supported, valid;
+    uint64_t frame_number;
 };
 
 extern const struct rf_gpu_backend rf_gpu_vulkan_backend;
@@ -34,6 +35,8 @@ int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
     const void *texture_descs, unsigned int texture_count,
     const void *texture_texels, unsigned long texture_bytes,
     unsigned int width, unsigned int height);
+/* Waits only when this target still owns an outstanding submission. */
+int rf_gpu_vulkan_raster_recycle(void *raster);
 int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
     void *raster, const void *stream, unsigned long stream_size,
     const void *texture_descs, unsigned int texture_count,

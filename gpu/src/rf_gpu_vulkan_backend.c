@@ -976,6 +976,8 @@ struct rf_gpu_vulkan_raster {
     rf_vk_pipeline post_image_pipeline;
     rf_vk_command_pool command_pool;
     rf_vk_command_buffer command_buffer;
+    rf_vk_fence render_fence;
+    int render_in_flight;
     uint32_t width, height;
     rf_vk_image shared_color_image;
     rf_vk_image_view shared_color_view;
@@ -1056,6 +1058,24 @@ static void timestamp_collect(struct rf_gpu_vulkan_raster *r)
             (double)delta * r->owner->timestamp_period / 1000000.0;
     }
     r->gpu_timing.valid=1;
+}
+
+static int raster_recycle_frame(struct rf_gpu_vulkan_raster *r,
+                                uint64_t timeout)
+{
+    rf_vk_result result;
+    if (!r || !r->render_in_flight) return 0;
+    result = r->owner->api.wait_for_fences(r->owner->device, 1,
+        &r->render_fence, RF_VK_TRUE, timeout);
+    if (result != RF_VK_SUCCESS) return result == RF_VK_TIMEOUT ? 1 : -1;
+    timestamp_collect(r);
+    r->render_in_flight = 0;
+    return 0;
+}
+
+int rf_gpu_vulkan_raster_recycle(void *raster)
+{
+    return raster_recycle_frame(raster,5000000000ULL);
 }
 
 void rf_gpu_vulkan_mixed_gpu_timing(void *raster,
@@ -1273,6 +1293,9 @@ static void raster_destroy(void *context, void *raster)
         ? backend_context->implementation : NULL;
     if (!r) return;
     if (!impl || r->owner != impl) { free(r); return; }
+    raster_recycle_frame(r, UINT64_MAX);
+    if (r->render_fence)
+        impl->api.destroy_fence(impl->device,r->render_fence,NULL);
     if (r->timestamp_pool)
         impl->api.destroy_query_pool(impl->device,r->timestamp_pool,NULL);
     raster_swapchain_destroy(impl, r);
@@ -1341,6 +1364,13 @@ static int raster_create(void *context, unsigned int width,
     if (!r) goto failed;
     r->owner = impl; r->width = width; r->height = height;
     r->work_group_x = work_group_x; r->work_group_y = work_group_y;
+    {
+        struct rf_vk_fence_create_info fence_info;
+        memset(&fence_info,0,sizeof(fence_info));
+        fence_info.s_type=RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+        if (!impl->api.reset_fences || impl->api.create_fence(impl->device,
+                &fence_info,NULL,&r->render_fence)!=RF_VK_SUCCESS) goto failed;
+    }
     r->gpu_timing.supported=impl->timestamp_supported;
     if (impl->timestamp_supported) {
         struct rf_vk_query_pool_create_info query_info;
@@ -1642,6 +1672,7 @@ int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
 {
     struct rf_gpu_vulkan_impl *impl = context ? context->implementation : NULL;
     struct rf_gpu_vulkan_raster *r = raster;
+    if (raster_recycle_frame(r, 5000000000ULL) != 0) return -1;
     if (r) {
         r->binned_stream = NULL; r->binned_stream_size = 0;
         r->uploaded_stream = NULL; r->uploaded_stream_size = 0;
@@ -1678,7 +1709,6 @@ static int raster_render_range(void *context, void *raster,
     struct rf_gpu_vulkan_impl *impl = backend_context
         ? backend_context->implementation : NULL;
     struct rf_gpu_vulkan_raster *r = raster;
-    rf_vk_fence fence = NULL;
     void *mapped_color = NULL, *mapped_depth = NULL;
     uint64_t byte_size = (uint64_t)width * height * 4;
     unsigned int y;
@@ -2064,12 +2094,10 @@ static int raster_render_range(void *context, void *raster,
         return 0;
     }
     {
-        struct rf_vk_fence_create_info fence_info;
         struct rf_vk_submit_info submit;
-        memset(&fence_info, 0, sizeof(fence_info));
-        fence_info.s_type = RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        if (impl->api.create_fence(impl->device, &fence_info, NULL, &fence) !=
-            RF_VK_SUCCESS) goto failed;
+        if (!r->render_fence || r->render_in_flight || !impl->api.reset_fences ||
+            impl->api.reset_fences(impl->device,1,&r->render_fence)!=RF_VK_SUCCESS)
+            goto failed;
         memset(&submit, 0, sizeof(submit));
         submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
         if (native_present) {
@@ -2083,20 +2111,21 @@ static int raster_render_range(void *context, void *raster,
         submit.command_buffer_count = 1;
         submit.command_buffers = &r->command_buffer;
         segment_start = now_ms();
-        if (impl->api.queue_submit(impl->queue, 1, &submit, fence) != RF_VK_SUCCESS)
+        if (impl->api.queue_submit(impl->queue, 1, &submit, r->render_fence) != RF_VK_SUCCESS)
             goto failed;
+        r->render_in_flight=1;
         if (timing) timing->submit_ms = now_ms() - segment_start;
-        segment_start = now_ms();
-        result = impl->api.wait_for_fences(impl->device, 1, &fence, RF_VK_TRUE,
-                                           5000000000ULL);
-        if (result == RF_VK_TIMEOUT) {
-            snprintf(message, message_capacity,
-                     "GPU Raster V1 fence timed out after 5 seconds");
-            goto cleanup;
+        if (!native_present || r->pending_capture_color) {
+            segment_start = now_ms();
+            result = raster_recycle_frame(r,5000000000ULL);
+            if (result == 1) {
+                snprintf(message, message_capacity,
+                         "GPU Raster V1 fence timed out after 5 seconds");
+                goto cleanup;
+            }
+            if (result != 0) goto failed;
+            if (timing) timing->execution_wait_ms = now_ms() - segment_start;
         }
-        if (result != RF_VK_SUCCESS) goto failed;
-        if (final) timestamp_collect(r);
-        if (timing) timing->execution_wait_ms = now_ms() - segment_start;
     }
     r->segment_valid = !final;
     if (final) {
@@ -2135,7 +2164,6 @@ static int raster_render_range(void *context, void *raster,
         native_timing->image_count = r->swapchain_image_count;
         native_timing->width = r->swapchain_width;
         native_timing->height = r->swapchain_height;
-        impl->api.destroy_fence(impl->device, fence, NULL);
         if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
             if (raster_surface_recreate(backend_context, impl, r) < 0)
                 return -1;
@@ -2163,7 +2191,6 @@ static int raster_render_range(void *context, void *raster,
     }
     impl->api.unmap_memory(impl->device, r->depth_readback.memory);
     impl->api.unmap_memory(impl->device, r->color_readback.memory);
-    impl->api.destroy_fence(impl->device, fence, NULL);
     if (timing) {
         timing->readback_ms = now_ms() - segment_start;
         timing->total_ms = now_ms() - total_start;
@@ -2180,7 +2207,6 @@ cleanup:
     r->preflight_reuse = 0;
     if (mapped_depth) impl->api.unmap_memory(impl->device, r->depth_readback.memory);
     if (mapped_color) impl->api.unmap_memory(impl->device, r->color_readback.memory);
-    if (fence) impl->api.destroy_fence(impl->device, fence, NULL);
     return -1;
 }
 

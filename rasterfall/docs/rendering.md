@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-19
-> 源码核对基线补充：2026-09-20 HG-2C4 的 present queue-idle 增量按 swapchain image 分配完成 semaphore，正常帧不再调用 `vkQueueWaitIdle`；Intel strict native near/0 120/120，`native_present_queue_idle_ms=0.000`。帧末 render fence 与多帧在途仍待完成，详见 [HG-2C](hardware-graphics-hg2c.md)。
+> 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C4 已完成双帧在途：两个完整 slot 延迟回收 render fence、GPU timestamp 与 Core resource pin；正常帧不调用 `vkQueueWaitIdle`。Intel strict native near/0 120/120、mixed gate 与四 extent resize gate 通过，热帧 graphics submit/wait 为 0，详见 [HG-2C](hardware-graphics-hg2c.md)。
 > 源码核对基线补充：2026-09-19 HG-2C1 为正常 mixed 帧增加互斥的 CPU 调用分项：freeze、cache collect、texture measure、pack、Draw encode/cache lookup、batch prepare、graphics Draw/bridge 与 Raster segment；`preflight_ms` 是包含若干子项的总墙钟，不能与子项相加。设备 GPU timestamp 已在后续 HG-2C1 增量接入，详见 [HG-2C](hardware-graphics-hg2c.md)。
 > 源码核对基线补充：2026-09-19 static RMESH hardware Draw 的整数投影资格已前移到 producer；近面/侧向极端视角不满足 graphics `[-16384,16384]` 保守范围时，同一 strict GPU 帧改走 compute RasterCmd，不再到 mixed executor preflight 才拒绝整帧。`--auto --frames 300` 在 Outpost 与 `--legacy-map` 的 Windows strict native 自动旋转/传送回归均为 300/300 GPU 帧、零 CPU fallback/readback/copy。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。

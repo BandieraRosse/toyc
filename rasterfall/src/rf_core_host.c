@@ -1831,6 +1831,7 @@ static int core_end_frame_present(struct rf_core *core)
         frame->stats.mixed_gpu_present_copy_ms=after.gpu_timing.present_copy_ms;
         frame->stats.mixed_gpu_timing_supported=after.gpu_timing.supported;
         frame->stats.mixed_gpu_timing_valid=after.gpu_timing.valid;
+        frame->stats.mixed_gpu_timing_frame=after.gpu_timing.frame_number;
         if (output.capture_color) {
             const char *capture_path = frame->capture_path;
             int saved = gpu_oracle_write_bmp(capture_path, output.capture_color,
@@ -1939,10 +1940,14 @@ static int core_end_frame_present(struct rf_core *core)
 int rf_core_end_frame(struct rf_core *core)
 {
     int result = core_end_frame_present(core);
-    /* Both CPU flush and the current single-frame GPU present are complete.
-     * Failed submits keep their pins until backend teardown in shutdown. */
-    if (result >= 0)
-        rasterfall_resources_frame_complete(rasterfall_render_resources());
+    /* Async mixed frames transfer their pins to the selected GPU frame slot.
+     * The slot releases them only after its render fence completes. */
+    if (result >= 0) {
+        if (core->mixed_executor)
+            rasterfall_resources_frame_submitted(rasterfall_render_resources());
+        else
+            rasterfall_resources_frame_complete(rasterfall_render_resources());
+    }
     return result;
 }
 

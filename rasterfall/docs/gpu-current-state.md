@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C4 已签收：两个完整 mixed frame slot 使 normal native submit 不再立即等待本帧 render fence；slot 复用时回收 fence/timestamp，并按引用计数延迟释放 Core resource pin。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过；`mixed-gpu frame=` 从当前第 3 帧关联历史帧 1，最终报告帧 118，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-20 HG-2C4 的首个增量已删除 normal present 后的 `vkQueueWaitIdle`：完成 semaphore 按 swapchain image 分配，重建/销毁边界才排空 queue。Intel strict native near/0 120/120、零 fallback/readback/CPU framebuffer copy，所有帧 `native_present_queue_idle_ms=0.000`。帧末 render fence、单帧资源与多帧在途仍待完成。
 > 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 录入同一 command buffer，热帧 graphics submit/fence wait 均为 0；共享 RGBA8 color target 保持 1280×720 两次 depth bridge 共 14,745,600 bytes。
 > 源码核对基线补充：2026-09-19 HG-2C1 已开始：`--frame-audit` 新增 `mixed-cpu`，区分 freeze、cache collect、preflight、texture measure、pack、Draw encode、batch prepare、graphics Draw/bridge 调用与 Raster segment 墙钟。它们不是 GPU timestamp；设备执行分项仍待 query pool 接入。计划与口径见 [HG-2C](hardware-graphics-hg2c.md)。

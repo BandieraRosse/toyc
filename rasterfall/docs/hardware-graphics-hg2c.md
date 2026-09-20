@@ -1,7 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-20
-> 源码核对基线：2026-09-20；HG-2C1、HG-2C2、HG-2C3 已完成，HG-2C4 已完成 present queue-idle 移除增量。normal mixed 的 compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment，双向 bridge 只保留 depth；Raster、Draw/bridge、Post、overlay 与 present copy 统一录入一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。正常 present 后不再调用 `vkQueueWaitIdle`；帧末 render fence 与多帧在途仍留待 HG-2C4 后续。
+> 源码核对基线：2026-09-20；HG-2C1 至 HG-2C4 已完成。两个完整 mixed frame slot 分别拥有 Raster/Graphics target、上传 buffer、command buffer、render fence 与 timestamp query pool；normal native submit 后不等待本帧 fence，复用 slot 时才回收。资源 pin 使用跨帧引用计数并由 slot fence 完成后释放，`mixed-gpu frame=` 报告被回收的历史帧编号。Intel strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate 均通过。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
 帧的固定全屏搬运与单帧同步成本，避免 HG-3 至 HG-5 建立在双向 bridge 架构上。
@@ -28,7 +28,7 @@ depth bridge 包含 D32/inverse-Z 转换、全屏 depth copy、barrier 和资源
 | HG-2C1 | 完成 | mixed CPU 分项，以及 Raster、bridge import、Draw、bridge export、Post、overlay、swapchain copy 的 Vulkan timestamp |
 | HG-2C2 | 完成 | compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment；双向整屏 color copy 已取消，diagnostic readback 独立 |
 | HG-2C3 | 完成 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
-| HG-2C4 | 进行中 | 正常 present 后的 `vkQueueWaitIdle` 已删除；仍需 2–3 个 frame context 与延迟 fence/timestamp 回收 |
+| HG-2C4 | 完成 | 两个完整 frame slot、延迟 fence/timestamp 回收和延迟资源 unpin；strict 120 帧、mixed gate 与四 extent resize gate 通过 |
 
 HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完整 color、正常 present 后不调用
 `vkQueueWaitIdle`、至少双帧在途，并能用 GPU timestamp 区分 Raster、bridge、Draw、Post、overlay
@@ -164,3 +164,33 @@ readback 与 CPU framebuffer copy；swapchain 为 3 images，所有帧
 `native_present_queue_idle_ms=0.000`，热帧 `graphics_submits=0 graphics_waits=0`，bridge 仍为每帧
 2 次、14,745,600 bytes。该增量只删除 present 完成等待；最终 render submit 仍同步等待 fence，
 timestamp 也仍在同帧 fence 后收集，因此尚未形成双帧在途，HG-2C4 不标记完成。
+
+## HG-2C4 双 frame slot 增量
+
+mixed executor 轮换两个完整 Raster/Graphics slot。每个 slot 独立持有共享 color/depth target、Raster
+上传与 presentation buffer、graphics bridge target、command pool/buffer、持久 render fence 和 timestamp
+query pool。final native submit 后立即进入 present，不等待本帧 fence；CPU 继续构建下一帧，只在再次
+选择同一 slot 时等待其旧 fence。resize 和销毁也先回收所有涉及的 slot。
+
+timestamp 在 slot 回收时读取并归档，`FRAME-AUDIT mixed-gpu frame=N` 中的 `N` 是对应的已完成历史
+帧，而不是当前正在提交的帧。前两个预热帧没有可回收结果，因此输出 `frame=0 valid=0`。
+
+Core resource pin 改为引用计数。成功提交后，当前 CPU recording frame 结束，但 Draw mesh/material/texture
+pin 转交给 GPU slot；slot fence 完成后按本帧 Draw handle 逐项释放。相邻在途帧引用同一资源时，前一帧
+完成不会提前解除后一帧的保护。
+
+Intel Iris Xe 最终 near/0、1280×720、Fog strict native 为 120/120 GPU 帧、零
+fallback/readback/CPU framebuffer copy。前两帧为 timestamp 预热，从第 3 帧开始回收帧 1，最终第 120
+帧报告帧 118；118 个历史帧结果全部 `supported=1 valid=1`。热帧
+`graphics_submits=0 graphics_waits=0`，所有帧 `native_present_queue_idle_ms=0.000`。
+
+同一最新 package 的 `hardware_graphics_proof.ps1 -MixedGate` 与
+`hardware_graphics_resize.ps1 -NoRedirect` 均通过；resize 覆盖 140 帧和四个 extent，资源 loads 稳定，
+在途 pin 不超过 live resources。resize 门禁不再要求每帧 `pinned=0`，因为双帧在途时 fence 未完成的
+Draw 资源应保持 pin；销毁、resize 与 slot 复用负责在安全点释放。
+
+固定视角热帧 17--120 的观测值：`whole_loop_ms` 中位数/P95 为 22.925/25.835，
+`render_ms` 为 16.293/18.855，`present_wall_ms` 为 4.549/5.521。GPU timestamp 中位数/P95：
+Raster 10.835/13.838 ms、depth import 0.522/0.602 ms、Draw 0.313/0.365 ms、depth export
+0.442/0.517 ms、Post 0.315/1.275 ms、overlay 0.075/0.096 ms、present copy 0.106/0.152 ms。
+这些是单次 Intel 实机观测值，不替代跨机器性能基线。

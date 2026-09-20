@@ -12,7 +12,8 @@ struct rasterfall_resource_handle { unsigned int slot, generation; };
 struct rasterfall_resource_slot {
     struct rasterfall_model_asset *model;
     unsigned int generation;
-    int active, pinned, failed;
+    int active, failed;
+    unsigned int pinned;
     char path[RASTERFALL_RESOURCE_PATH_BYTES];
 };
 struct rasterfall_resource_registry {
@@ -39,6 +40,10 @@ int rasterfall_resources_frame_begin(struct rasterfall_resource_registry *regist
 /* Caller guarantees all GPU work and CPU replay using this frame are done,
  * or cancelled after backend teardown. Failure is NOT completion. */
 void rasterfall_resources_frame_complete(struct rasterfall_resource_registry *registry);
+/* Ends CPU recording while GPU frame pins remain owned by an async consumer. */
+void rasterfall_resources_frame_submitted(struct rasterfall_resource_registry *registry);
+void rasterfall_resources_unpin(struct rasterfall_resource_registry *registry,
+    struct rasterfall_resource_handle handle);
 void rasterfall_resources_invalidate(struct rasterfall_resource_registry *registry);
 void rasterfall_resources_stats(const struct rasterfall_resource_registry *registry,
     struct rasterfall_resource_stats *stats);
