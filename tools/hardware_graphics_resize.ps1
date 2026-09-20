@@ -61,7 +61,9 @@ try {
         if (-not [HgResizeWindow]::SetWindowPos($Window, [IntPtr]::Zero, 0, 0, $Size[0], $Size[1], 0x16)) { throw 'SetWindowPos failed.' }
         Start-Sleep -Milliseconds 1500
     }
-    if (-not $Process.WaitForExit(180000)) { throw 'Resize smoke timed out.' }
+    # The current Intel correctness path waits for present completion every
+    # frame; four extent rebuilds can exceed the former three-minute budget.
+    if (-not $Process.WaitForExit(300000)) { throw 'Resize smoke timed out.' }
     $Process.WaitForExit()
     [uint32] $ExitCode = 0
     if (-not [HgResizeWindow]::GetExitCodeProcess($ProcessHandle, [ref] $ExitCode)) { throw 'Cannot read process exit code.' }

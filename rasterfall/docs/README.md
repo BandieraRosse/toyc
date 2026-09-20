@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C4 长时稳定性修复：双 mixed frame slot 继续独立持有离屏 target、上传、command、fence 与 query，但窗口 surface 只允许 Vulkan backend 拥有一个 swapchain。每 slot 使用独立 acquire/render-complete semaphore；Intel 实机要求 present 后 queue-idle 才安全复用完成信号量，因此当前提交实际在 present 边界串行。300 帧约一分钟 strict native 通过，修复交替旧帧闪回与 30--60 秒呈现卡死；当前 `native_present_queue_idle_ms` 不再承诺为零。
 > 源码核对基线补充：2026-09-20 HG-2C4 已签收：双 frame slot 使用独立 target/上传区/command/fence/query，复用 slot 时才等待并回收 timestamp，Core resource pin 随 fence 延迟释放。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-20 HG-2C4 已完成 present queue-idle 移除增量：normal present 按 swapchain image 使用独立完成 semaphore，正常帧 `native_present_queue_idle_ms=0.000`；Intel strict native near/0 120/120 通过。帧末 render fence、单帧资源与多帧在途仍待后续完成。
 > 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 共用一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。共享 RGBA8 color target 下 1280×720 两次 bridge仍为 14,745,600 bytes。

@@ -1,6 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 长时实机修复：frame slot 不再各自持有 swapchain；唯一 swapchain/图像属于 Vulkan backend presenter，slot 仅持有自己的 acquire/render-complete semaphore 与离屏资源。Intel 上按 image 复用完成 semaphore 且不等待 present 的实现会在 30--60 秒内停滞；当前 present 后恢复 queue-idle 作为正确性门槛。300/300 strict native、零 fallback/readback/CPU copy，历史 timestamp 到 frame 298。
 > 源码核对基线：2026-09-20；HG-2C1 至 HG-2C4 已完成。两个完整 mixed frame slot 分别拥有 Raster/Graphics target、上传 buffer、command buffer、render fence 与 timestamp query pool；normal native submit 后不等待本帧 fence，复用 slot 时才回收。资源 pin 使用跨帧引用计数并由 slot fence 完成后释放，`mixed-gpu frame=` 报告被回收的历史帧编号。Intel strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate 均通过。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
@@ -194,3 +195,18 @@ Draw 资源应保持 pin；销毁、resize 与 slot 复用负责在安全点释�
 Raster 10.835/13.838 ms、depth import 0.522/0.602 ms、Draw 0.313/0.365 ms、depth export
 0.442/0.517 ms、Post 0.315/1.275 ms、overlay 0.075/0.096 ms、present copy 0.106/0.152 ms。
 这些是单次 Intel 实机观测值，不替代跨机器性能基线。
+
+## HG-2C4 长时稳定性修复
+
+最初的双 slot 实现错误地把 swapchain、swapchain images 和 present completion semaphore 复制进每个
+Raster target，导致两个 slot 针对同一窗口 surface 交替 acquire/present。移动画面因此可能在两条
+呈现时间线之间切换旧帧；长时运行还会停在呈现同步链。修复后 swapchain 与 images 由 Vulkan backend
+唯一拥有，双 slot 只保留离屏资源、command/fence/query，以及各自的 acquire/render-complete semaphore。
+
+Intel Iris Xe 实测还确认，render fence 只覆盖 graphics queue submit，不能作为 present 完成证明。
+按 swapchain image 复用完成 semaphore、移除 queue-idle 的版本分别在第 39 帧和第 123 帧停滞；恢复
+present 后 queue-idle，并按 slot 复用完成 semaphore 后，near/0 strict native 300/300 正常退出，零
+fallback、普通 readback 与 CPU framebuffer copy，最终回收 frame 298。该修复优先保证正确性，当前
+`native_present_queue_idle_ms` 重新成为非零成本；后续若再次异步化 present，必须引入可证明的 present
+完成机制并通过至少 300 帧长时门禁，不能只依赖 render fence 或短 smoke。当前虽然保留两个资源 slot，
+但 queue-idle 使 normal present 边界重新串行，不应再把该状态描述为两帧真实并发在途。

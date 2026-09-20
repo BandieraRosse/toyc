@@ -608,6 +608,10 @@ struct rf_gpu_vulkan_impl {
     int timestamp_supported;
     rf_vk_surface surface;
     int native_presentation_supported;
+    rf_vk_swapchain swapchain;
+    rf_vk_image *swapchain_images;
+    uint32_t swapchain_image_count, swapchain_width, swapchain_height;
+    uint32_t swapchain_format, present_mode;
 };
 
 struct rf_gpu_vulkan_framebuffer {
@@ -993,12 +997,8 @@ struct rf_gpu_vulkan_raster {
     const void *uploaded_stream;
     unsigned long uploaded_stream_size;
     int preflight_reuse;
-    rf_vk_swapchain swapchain;
-    rf_vk_image *swapchain_images;
-    uint32_t swapchain_image_count, swapchain_width, swapchain_height;
-    uint32_t swapchain_format, present_mode;
     rf_vk_semaphore acquire_semaphore;
-    rf_vk_semaphore *complete_semaphores;
+    rf_vk_semaphore complete_semaphore;
     struct rf_gpu_native_present_timing *pending_present_timing;
     const uint32_t *pending_overlay_color;
     const unsigned char *pending_overlay_coverage;
@@ -1134,43 +1134,28 @@ static void raster_buffer_destroy(struct rf_gpu_vulkan_impl *impl,
     memset(buffer, 0, sizeof(*buffer));
 }
 
-static void raster_swapchain_destroy(struct rf_gpu_vulkan_impl *impl,
-                                     struct rf_gpu_vulkan_raster *r)
+static void presenter_swapchain_destroy(struct rf_gpu_vulkan_impl *impl)
 {
-    uint32_t i;
-    /* Present completion is not covered by the render submission fence.  The
-     * normal path keeps one completion semaphore per acquired image, but a
-     * swapchain rebuild still has to retire all outstanding presentation work
-     * before destroying those semaphores and images. */
-    if ((r->swapchain || r->complete_semaphores) && impl->api.queue_wait_idle)
+    /* Present completion is not covered by a slot's render fence.  Rebuild and
+     * teardown retire the unique presenter before destroying its images. */
+    if (impl->swapchain && impl->api.queue_wait_idle)
         impl->api.queue_wait_idle(impl->queue);
-    if (r->acquire_semaphore)
-        impl->api.destroy_semaphore(impl->device, r->acquire_semaphore, NULL);
-    for (i = 0; i < r->swapchain_image_count; ++i)
-        if (r->complete_semaphores && r->complete_semaphores[i])
-            impl->api.destroy_semaphore(impl->device,
-                r->complete_semaphores[i], NULL);
-    if (r->swapchain)
-        impl->api.destroy_swapchain(impl->device, r->swapchain, NULL);
-    free(r->complete_semaphores);
-    free(r->swapchain_images);
-    r->acquire_semaphore = NULL; r->complete_semaphores = NULL;
-    r->swapchain = NULL; r->swapchain_images = NULL;
-    r->swapchain_image_count = 0;
+    if (impl->swapchain)
+        impl->api.destroy_swapchain(impl->device, impl->swapchain, NULL);
+    free(impl->swapchain_images);
+    impl->swapchain = NULL; impl->swapchain_images = NULL;
+    impl->swapchain_image_count = 0;
 }
 
-static int raster_swapchain_create(struct rf_gpu_vulkan_impl *impl,
-                                   struct rf_gpu_vulkan_raster *r,
-                                   uint32_t width, uint32_t height)
+static int presenter_swapchain_create(struct rf_gpu_vulkan_impl *impl,
+                                      uint32_t width, uint32_t height)
 {
     struct rf_vk_surface_capabilities caps;
     struct rf_vk_surface_format *formats = NULL;
     uint32_t *modes = NULL, format_count = 0, mode_count = 0, i;
     struct rf_vk_swapchain_create_info info;
-    struct rf_vk_semaphore_create_info semaphore_info;
     rf_vk_swapchain replacement = NULL;
     rf_vk_image *images = NULL;
-    rf_vk_semaphore acquire = NULL, *completes = NULL;
     uint32_t image_count, chosen_format = 0, chosen_mode = RF_VK_PRESENT_MODE_FIFO_KHR;
     struct rf_vk_extent2d extent;
     if (!impl->native_presentation_supported || !width || !height) return -1;
@@ -1219,7 +1204,7 @@ static int raster_swapchain_create(struct rf_gpu_vulkan_impl *impl,
     info.pre_transform = caps.current_transform;
     info.composite_alpha = RF_VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     info.present_mode = chosen_mode; info.clipped = RF_VK_TRUE;
-    info.old_swapchain = r->swapchain;
+    info.old_swapchain = impl->swapchain;
     if (impl->api.create_swapchain(impl->device, &info, NULL, &replacement) !=
         RF_VK_SUCCESS) goto fail;
     image_count = 0;
@@ -1228,36 +1213,19 @@ static int raster_swapchain_create(struct rf_gpu_vulkan_impl *impl,
     images = calloc(image_count, sizeof(*images));
     if (!images || impl->api.get_swapchain_images(impl->device, replacement,
             &image_count, images) != RF_VK_SUCCESS) goto fail;
-    memset(&semaphore_info, 0, sizeof(semaphore_info));
-    semaphore_info.s_type = RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    completes = calloc(image_count, sizeof(*completes));
-    if (!completes || impl->api.create_semaphore(impl->device,
-            &semaphore_info, NULL, &acquire) != RF_VK_SUCCESS) goto fail;
-    for (i = 0; i < image_count; ++i)
-        if (impl->api.create_semaphore(impl->device, &semaphore_info, NULL,
-                &completes[i]) != RF_VK_SUCCESS) goto fail;
-    raster_swapchain_destroy(impl, r);
-    r->swapchain = replacement; r->swapchain_images = images;
-    r->swapchain_image_count = image_count;
-    r->swapchain_width = extent.width; r->swapchain_height = extent.height;
-    r->swapchain_format = info.image_format; r->present_mode = chosen_mode;
-    r->acquire_semaphore = acquire; r->complete_semaphores = completes;
+    presenter_swapchain_destroy(impl);
+    impl->swapchain = replacement; impl->swapchain_images = images;
+    impl->swapchain_image_count = image_count;
+    impl->swapchain_width = extent.width; impl->swapchain_height = extent.height;
+    impl->swapchain_format = info.image_format; impl->present_mode = chosen_mode;
     free(formats); free(modes); return 0;
 fail:
-    if (acquire) impl->api.destroy_semaphore(impl->device, acquire, NULL);
-    if (completes) {
-        for (i = 0; i < image_count; ++i)
-            if (completes[i]) impl->api.destroy_semaphore(impl->device,
-                completes[i], NULL);
-        free(completes);
-    }
     if (replacement) impl->api.destroy_swapchain(impl->device, replacement, NULL);
     free(images); free(formats); free(modes); return -1;
 }
 
 static int raster_surface_recreate(struct rf_gpu_vulkan_context *context,
-                                   struct rf_gpu_vulkan_impl *impl,
-                                   struct rf_gpu_vulkan_raster *r)
+                                   struct rf_gpu_vulkan_impl *impl)
 {
     struct rf_vk_win32_surface_create_info info;
     rf_vk_surface replacement = NULL;
@@ -1278,7 +1246,7 @@ static int raster_surface_recreate(struct rf_gpu_vulkan_context *context,
         impl->api.destroy_surface(impl->instance, replacement, NULL);
         return -1;
     }
-    raster_swapchain_destroy(impl, r);
+    presenter_swapchain_destroy(impl);
     if (impl->surface)
         impl->api.destroy_surface(impl->instance, impl->surface, NULL);
     impl->surface = replacement;
@@ -1298,7 +1266,10 @@ static void raster_destroy(void *context, void *raster)
         impl->api.destroy_fence(impl->device,r->render_fence,NULL);
     if (r->timestamp_pool)
         impl->api.destroy_query_pool(impl->device,r->timestamp_pool,NULL);
-    raster_swapchain_destroy(impl, r);
+    if (r->acquire_semaphore)
+        impl->api.destroy_semaphore(impl->device,r->acquire_semaphore,NULL);
+    if (r->complete_semaphore)
+        impl->api.destroy_semaphore(impl->device,r->complete_semaphore,NULL);
     if (r->command_pool)
         impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
     if (r->pipeline) impl->api.destroy_pipeline(impl->device, r->pipeline, NULL);
@@ -1366,10 +1337,19 @@ static int raster_create(void *context, unsigned int width,
     r->work_group_x = work_group_x; r->work_group_y = work_group_y;
     {
         struct rf_vk_fence_create_info fence_info;
+        struct rf_vk_semaphore_create_info semaphore_info;
         memset(&fence_info,0,sizeof(fence_info));
         fence_info.s_type=RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         if (!impl->api.reset_fences || impl->api.create_fence(impl->device,
                 &fence_info,NULL,&r->render_fence)!=RF_VK_SUCCESS) goto failed;
+        if (impl->native_presentation_supported) {
+            memset(&semaphore_info,0,sizeof(semaphore_info));
+            semaphore_info.s_type=RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+            if (impl->api.create_semaphore(impl->device,&semaphore_info,NULL,
+                    &r->acquire_semaphore)!=RF_VK_SUCCESS ||
+                impl->api.create_semaphore(impl->device,&semaphore_info,NULL,
+                    &r->complete_semaphore)!=RF_VK_SUCCESS) goto failed;
+        }
     }
     r->gpu_timing.supported=impl->timestamp_supported;
     if (impl->timestamp_supported) {
@@ -1751,20 +1731,20 @@ static int raster_render_range(void *context, void *raster,
         double acquire_start;
         native_timing = r->pending_present_timing;
         if (!native_timing) return -1;
-        if (!r->swapchain || r->swapchain_width != width ||
-            r->swapchain_height != height)
-            if (raster_swapchain_create(impl, r, width, height) < 0) return -1;
+        if (!impl->swapchain || impl->swapchain_width != width ||
+            impl->swapchain_height != height)
+            if (presenter_swapchain_create(impl, width, height) < 0) return -1;
         acquire_start = now_ms();
-        result = impl->api.acquire_next_image(impl->device, r->swapchain,
+        result = impl->api.acquire_next_image(impl->device, impl->swapchain,
             UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
         if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
-            if (raster_surface_recreate(backend_context, impl, r) < 0)
+            if (raster_surface_recreate(backend_context, impl) < 0)
                 return -1;
             result = RF_VK_ERROR_OUT_OF_DATE_KHR;
         }
         if (result == RF_VK_ERROR_OUT_OF_DATE_KHR) {
-            if (raster_swapchain_create(impl, r, width, height) < 0) return -1;
-            result = impl->api.acquire_next_image(impl->device, r->swapchain,
+            if (presenter_swapchain_create(impl, width, height) < 0) return -1;
+            result = impl->api.acquire_next_image(impl->device, impl->swapchain,
                 UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
         }
         if (result != RF_VK_SUCCESS && result != RF_VK_SUBOPTIMAL_KHR) return -1;
@@ -2039,7 +2019,7 @@ static int raster_render_range(void *context, void *raster,
             image_barrier.dst_access_mask = RF_VK_ACCESS_TRANSFER_WRITE_BIT;
             image_barrier.src_queue_family_index = 0xffffffffU;
             image_barrier.dst_queue_family_index = 0xffffffffU;
-            image_barrier.image = r->swapchain_images[swapchain_image];
+            image_barrier.image = impl->swapchain_images[swapchain_image];
             image_barrier.subresource_range.aspect_mask = RF_VK_IMAGE_ASPECT_COLOR_BIT;
             image_barrier.subresource_range.level_count = 1;
             image_barrier.subresource_range.layer_count = 1;
@@ -2052,7 +2032,7 @@ static int raster_render_range(void *context, void *raster,
             region.image_extent.width = width; region.image_extent.height = height;
             region.image_extent.depth = 1;
             impl->api.cmd_copy_buffer_to_image(r->command_buffer, presentation_color->buffer,
-                r->swapchain_images[swapchain_image],
+                impl->swapchain_images[swapchain_image],
                 RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
             image_barrier.src_access_mask = RF_VK_ACCESS_TRANSFER_WRITE_BIT;
             image_barrier.dst_access_mask = 0;
@@ -2106,7 +2086,7 @@ static int raster_render_range(void *context, void *raster,
             submit.wait_semaphores = &r->acquire_semaphore;
             submit.wait_dst_stage_mask = &wait_stage;
             submit.signal_semaphore_count = 1;
-            submit.signal_semaphores = &r->complete_semaphores[swapchain_image];
+            submit.signal_semaphores = &r->complete_semaphore;
         }
         submit.command_buffer_count = 1;
         submit.command_buffers = &r->command_buffer;
@@ -2148,28 +2128,33 @@ static int raster_render_range(void *context, void *raster,
         memset(&present, 0, sizeof(present));
         present.s_type = RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         present.wait_semaphore_count = 1;
-        present.wait_semaphores = &r->complete_semaphores[swapchain_image];
-        present.swapchain_count = 1; present.swapchains = &r->swapchain;
+        present.wait_semaphores = &r->complete_semaphore;
+        present.swapchain_count = 1; present.swapchains = &impl->swapchain;
         present.image_indices = &swapchain_image;
         result = impl->api.queue_present(impl->queue, &present);
         native_timing->present_ms = now_ms() - present_start;
-        native_timing->present_queue_idle_ms = 0.0;
+        if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR) {
+            double idle_start = now_ms();
+            if (impl->api.queue_wait_idle(impl->queue) != RF_VK_SUCCESS)
+                return -1;
+            native_timing->present_queue_idle_ms = now_ms() - idle_start;
+        }
         native_timing->submit_ms = timing ? timing->submit_ms : 0.0;
         native_timing->gpu_raster_ms = timing ? timing->execution_wait_ms : 0.0;
         native_timing->total_ms = now_ms() - total_start;
         native_timing->color_readback_bytes = 0;
         native_timing->cpu_framebuffer_copy_bytes = 0;
-        native_timing->format = r->swapchain_format;
-        native_timing->present_mode = r->present_mode;
-        native_timing->image_count = r->swapchain_image_count;
-        native_timing->width = r->swapchain_width;
-        native_timing->height = r->swapchain_height;
+        native_timing->format = impl->swapchain_format;
+        native_timing->present_mode = impl->present_mode;
+        native_timing->image_count = impl->swapchain_image_count;
+        native_timing->width = impl->swapchain_width;
+        native_timing->height = impl->swapchain_height;
         if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
-            if (raster_surface_recreate(backend_context, impl, r) < 0)
+            if (raster_surface_recreate(backend_context, impl) < 0)
                 return -1;
         } else if (result == RF_VK_ERROR_OUT_OF_DATE_KHR ||
                    result == RF_VK_SUBOPTIMAL_KHR)
-            raster_swapchain_create(impl, r, width, height);
+            presenter_swapchain_create(impl, width, height);
         else if (result != RF_VK_SUCCESS) return -1;
         snprintf(message, message_capacity, "GPU Raster V1 native-presented");
         return 0;
@@ -2525,6 +2510,7 @@ static void snapshot_capabilities(struct rf_vk_api *api,
 static void backend_cleanup(struct rf_gpu_vulkan_impl *impl)
 {
     if (!impl) return;
+    if (impl->device) presenter_swapchain_destroy(impl);
     if (impl->device && impl->api.destroy_device)
         impl->api.destroy_device(impl->device, NULL);
     if (impl->surface && impl->api.destroy_surface)

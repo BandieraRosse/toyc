@@ -1,6 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 Windows Intel 长时呈现门禁提高到至少 300 帧：唯一 backend swapchain + 双离屏 slot + 每 slot acquire/render-complete semaphore，并在 present 后 queue-idle。300/300 strict native 正常退出；短 120/140 帧 smoke 不再足以证明 present 生命周期稳定。
 > 源码核对基线补充：2026-09-20 HG-2C4 最新 Windows package 通过 strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate。`hardware_graphics_resize.ps1` 的资源检查适配双帧在途：允许 fence 完成前的非零 pin，但要求 `retired=0`、`failed=0` 且 pinned resources 不超过 live resources；loads 在 resize 全程稳定。
 > 源码核对基线补充：2026-09-19 `toy_window_open_native()` 在 Windows 为 native Vulkan 窗口创建 SDL software renderer；普通 `toy_window_open()` 仍使用原 SDL renderer。Core config 根据 `native_present` 选择入口，Wayland 共用原窗口实现。RTX 3050 strict native 10 帧零回退、零读回、零 CPU framebuffer copy；Fog 10 帧、三 extent native gate 与 Windows `--logic-test` 通过。
 > 源码核对基线补充：2026-09-19 GPU 最终帧诊断沿用 Windows normal player 与现有 Vulkan backend，不新增编译单元或资源。Windows `gpu-mixed-executor-test`、`gpu-raster-test` 和 `hardware_graphics_proof.ps1 -ExecutorGate/-MixedGate/-NativeGate` 覆盖批量 Draw 交错和 native 呈现；`hardware_graphics_resize.ps1 -NoRedirect` 在 PowerShell 重定向停滞时仍用 runtime log 验证 140 帧四 extent。Linux freestanding 路径不调用 hosted mixed executor。
