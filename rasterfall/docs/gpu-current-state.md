@@ -1,7 +1,8 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 录入同一 command buffer，热帧 graphics submit/fence wait 均为 0；共享 RGBA8 color target 保持 1280×720 两次 depth bridge 共 14,745,600 bytes。Intel strict native near/0 120/120、零 fallback/readback/CPU framebuffer copy。帧末 fence、单帧资源与 `vkQueueWaitIdle` 留待 HG-2C4。
+> 源码核对基线补充：2026-09-20 HG-2C4 的首个增量已删除 normal present 后的 `vkQueueWaitIdle`：完成 semaphore 按 swapchain image 分配，重建/销毁边界才排空 queue。Intel strict native near/0 120/120、零 fallback/readback/CPU framebuffer copy，所有帧 `native_present_queue_idle_ms=0.000`。帧末 render fence、单帧资源与多帧在途仍待完成。
+> 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 录入同一 command buffer，热帧 graphics submit/fence wait 均为 0；共享 RGBA8 color target 保持 1280×720 两次 depth bridge 共 14,745,600 bytes。
 > 源码核对基线补充：2026-09-19 HG-2C1 已开始：`--frame-audit` 新增 `mixed-cpu`，区分 freeze、cache collect、preflight、texture measure、pack、Draw encode、batch prepare、graphics Draw/bridge 调用与 Raster segment 墙钟。它们不是 GPU timestamp；设备执行分项仍待 query pool 接入。计划与口径见 [HG-2C](hardware-graphics-hg2c.md)。
 > 源码核对基线补充：2026-09-19 normal mixed 热路径已移除连续 overlay 的逐帧整屏 CPU copy，并复用 mixed pack/batch 容量。当时取消的中间 graphics CPU fence wait 后续确认会在连续 Draw span 间重置仍在执行的 command pool，2026-09-20 已为正确性恢复；历史性能数字不能作为当前同步版本的基线。剩余首要工作仍是共享 target、统一 command recording 和多帧在途。详见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 修复 static RMESH 在特定近面/侧向视角下过晚触发 mixed graphics 数值预检、导致 strict 帧退出的问题：producer 现在先按 graphics 整数投影范围判定，不合格实例留在 GPU compute RasterCmd 路径。Windows Outpost 与 legacy map 的 `--auto --frames 300` strict native 自动旋转/传送均通过，零 fallback/readback/CPU framebuffer copy。

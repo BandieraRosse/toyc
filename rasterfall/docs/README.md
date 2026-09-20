@@ -1,7 +1,8 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 共用一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。共享 RGBA8 color target 下 1280×720 两次 bridge 仍为 14,745,600 bytes；帧末 fence、`vkQueueWaitIdle` 与多帧在途留待 HG-2C4。
+> 源码核对基线补充：2026-09-20 HG-2C4 已完成 present queue-idle 移除增量：normal present 按 swapchain image 使用独立完成 semaphore，正常帧 `native_present_queue_idle_ms=0.000`；Intel strict native near/0 120/120 通过。帧末 render fence、单帧资源与多帧在途仍待后续完成。
+> 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 共用一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。共享 RGBA8 color target 下 1280×720 两次 bridge仍为 14,745,600 bytes。
 > 源码核对基线补充：2026-09-19 [HG-2C](hardware-graphics-hg2c.md) 的 mixed CPU 分项与 Vulkan GPU timestamp 已完成；后续依次处理共享 color/depth target、统一 command recording 与多帧在途。HG-3A 在该架构门槛完成前暂缓。
 > 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量并借用连续 overlay；曾取消的同队列中间 graphics fence wait 因 command-buffer reset 生命周期不安全而于 2026-09-20 恢复，后续由 HG-2C3 统一 command recording 正确消除。当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。

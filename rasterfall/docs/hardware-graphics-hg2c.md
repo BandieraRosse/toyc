@@ -1,7 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-20
-> 源码核对基线：2026-09-20；HG-2C1、HG-2C2、HG-2C3 已完成。normal mixed 的 compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment，双向 bridge 只保留 depth；Raster、Draw/bridge、Post、overlay 与 present copy 统一录入一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。帧末 fence、`vkQueueWaitIdle` 与多帧在途留待 HG-2C4。
+> 源码核对基线：2026-09-20；HG-2C1、HG-2C2、HG-2C3 已完成，HG-2C4 已完成 present queue-idle 移除增量。normal mixed 的 compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment，双向 bridge 只保留 depth；Raster、Draw/bridge、Post、overlay 与 present copy 统一录入一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。正常 present 后不再调用 `vkQueueWaitIdle`；帧末 render fence 与多帧在途仍留待 HG-2C4 后续。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
 帧的固定全屏搬运与单帧同步成本，避免 HG-3 至 HG-5 建立在双向 bridge 架构上。
@@ -28,7 +28,7 @@ depth bridge 包含 D32/inverse-Z 转换、全屏 depth copy、barrier 和资源
 | HG-2C1 | 完成 | mixed CPU 分项，以及 Raster、bridge import、Draw、bridge export、Post、overlay、swapchain copy 的 Vulkan timestamp |
 | HG-2C2 | 完成 | compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment；双向整屏 color copy 已取消，diagnostic readback 独立 |
 | HG-2C3 | 完成 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
-| HG-2C4 | 待开发 | 2–3 个 frame context；正常帧删除 `vkQueueWaitIdle` |
+| HG-2C4 | 进行中 | 正常 present 后的 `vkQueueWaitIdle` 已删除；仍需 2–3 个 frame context 与延迟 fence/timestamp 回收 |
 
 HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完整 color、正常 present 后不调用
 `vkQueueWaitIdle`、至少双帧在途，并能用 GPU timestamp 区分 Raster、bridge、Draw、Post、overlay
@@ -150,3 +150,17 @@ Windows Intel Iris Xe strict native near/0 120 帧通过，零 fallback、普通
 copy；热帧 `graphics_submits=0 graphics_waits=0`，每帧仍为 2 次 depth bridge、14,745,600 bytes，
 `mixed-gpu supported=1 valid=1`。专用 `rasterfall-gpu-mixed-test` 多 extent/双 Draw span 回归通过，并
 断言稳态 graphics queue submit 不增长。
+
+## HG-2C4 present queue-idle 移除增量
+
+normal native present 不再复用单个 render-complete semaphore。swapchain 创建时按 image 数量分配
+完成 semaphore；本帧 acquire 到的 image 决定 submit signal 与 present wait 使用哪一个。再次 acquire
+同一 image 时，前一次 presentation 已释放该 image，因此对应 semaphore 可以安全复用。acquire
+semaphore 仍由本帧 render fence 保护；swapchain 重建、surface 重建和 teardown 才显式
+`vkQueueWaitIdle`，不进入正常帧热路径。
+
+Windows Intel Iris Xe near/0 strict native 120 帧通过：120/120 `gpu-native`，零 fallback、普通
+readback 与 CPU framebuffer copy；swapchain 为 3 images，所有帧
+`native_present_queue_idle_ms=0.000`，热帧 `graphics_submits=0 graphics_waits=0`，bridge 仍为每帧
+2 次、14,745,600 bytes。该增量只删除 present 完成等待；最终 render submit 仍同步等待 fence，
+timestamp 也仍在同帧 fence 后收集，因此尚未形成双帧在途，HG-2C4 不标记完成。
