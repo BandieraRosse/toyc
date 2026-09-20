@@ -820,9 +820,8 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
         import.buffer_offset=mode==1?0:bytes;
         impl->api.cmd_copy_buffer_to_image(g->cmd,g->target.bridge_transfer.buffer,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&import);
     }
-    /* This command buffer is reset before the next graphics span. Keep the
-     * export synchronous until HG-2C3 records the full mixed frame in one
-     * command context (or provides independently fenced command buffers). */
+    /* Mixed records this bridge into Raster's frame command buffer. Hosted
+     * diagnostics still own and synchronously submit the graphics buffer. */
     timestamp_end(r,g->cmd,timestamp);
     if(!record_only && gfx_submit(g,1)<0)return -1;
     if(mode==0)g->stats.bridge_roundtrips++;
@@ -864,13 +863,14 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if (!valid) return -1;
     }
     if(r) {
-        if(r->owner!=g->owner || !r->segment_valid || !r->segment_graphics_compatible ||
+        if(r->owner!=g->owner || !r->segment_valid || !r->frame_recording ||
+           !r->segment_graphics_compatible ||
            r->width!=g->target.width || r->height!=g->target.height)return -1;
     } else if(load && !g->target.valid)return -1;
     impl = g->owner; bytes = (uint64_t)g->target.width*g->target.height*4;
     g->target.bridge_valid=0;
     if(r)r->segment_valid=0;
-    if(load && gfx_bridge(g,r,r?1:0,0,r!=NULL)<0){g->poisoned=1;g->target.valid=0;return -1;}
+    if(load && gfx_bridge(g,r,r?1:0,r!=NULL,r!=NULL)<0){g->poisoned=1;g->target.valid=0;return -1;}
     g->target.valid=0;
     memset(clear, 0, sizeof(clear));
     if (!r && gfx_begin(g) < 0) { g->poisoned=1; return -1; }
@@ -902,7 +902,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         /* The render pass ends in TRANSFER_SRC with an external transfer
          * dependency. Record export after it in this command buffer so the
          * Draw and bridge share one queue submit and fence. */
-        if(gfx_bridge(g,r,2,1,0)<0){g->poisoned=1;return -1;}
+        if(gfx_bridge(g,r,2,1,1)<0){g->poisoned=1;return -1;}
         r->segment_valid=1;
     } else {
         struct rf_vk_buffer_copy color_readback={0},depth_readback={0};
@@ -962,15 +962,25 @@ int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_draw *draws, uint32_t count)
 {
+    rf_vk_command_buffer saved;
+    int result;
     if(!raster || rf_gpu_graphics_share_color(g,raster)<0)return -1;
-    return gfx_render(g,draws,count,NULL,NULL,0,1,raster,NULL);
+    saved=g->cmd;g->cmd=((struct rf_gpu_vulkan_raster *)raster)->command_buffer;
+    result=gfx_render(g,draws,count,NULL,NULL,0,1,raster,NULL);
+    g->cmd=saved;
+    return result;
 }
 
 int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count)
 {
+    rf_vk_command_buffer saved;
+    int result;
     if (!raster || !items || rf_gpu_graphics_share_color(g,raster)<0) return -1;
-    return gfx_render(g,NULL,count,NULL,NULL,0,1,raster,items);
+    saved=g->cmd;g->cmd=((struct rf_gpu_vulkan_raster *)raster)->command_buffer;
+    result=gfx_render(g,NULL,count,NULL,NULL,0,1,raster,items);
+    g->cmd=saved;
+    return result;
 }
 
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,

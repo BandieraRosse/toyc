@@ -984,6 +984,7 @@ struct rf_gpu_vulkan_raster {
     int full_scan_diagnostic;
     int segment_valid;
     int segment_graphics_compatible;
+    int frame_recording;
     struct rf_gpu_raster_tile_lists tile_lists;
     const void *binned_stream;
     unsigned long binned_stream_size;
@@ -1845,16 +1846,20 @@ static int raster_render_range(void *context, void *raster,
             impl->api.update_descriptor_sets(impl->device,1,&write,0,NULL);
         }
     }
-    if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
-        RF_VK_SUCCESS) goto failed;
+    if (!r->frame_recording &&
+        impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
+            RF_VK_SUCCESS) goto failed;
     {
         struct rf_vk_command_buffer_begin_info begin;
         struct rf_vk_memory_barrier barrier;
         struct rf_vk_buffer_copy copies[2];
         memset(&begin, 0, sizeof(begin));
         begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        if (impl->api.begin_command_buffer(r->command_buffer, &begin) !=
-            RF_VK_SUCCESS) goto failed;
+        if (!r->frame_recording) {
+            if (impl->api.begin_command_buffer(r->command_buffer, &begin) !=
+                RF_VK_SUCCESS) goto failed;
+            r->frame_recording = 1;
+        }
         if (load==RF_GPU_RASTER_CLEAR && r->timestamp_pool) {
             memset(&r->gpu_timing,0,sizeof(r->gpu_timing));
             r->gpu_timing.supported=1; r->timestamp_count=0;
@@ -2017,8 +2022,27 @@ static int raster_render_range(void *context, void *raster,
             impl->api.cmd_copy_buffer(r->command_buffer, r->depth.buffer,
                                       r->depth_readback.buffer, 1, &copies[1]);
         }
-        if (impl->api.end_command_buffer(r->command_buffer) != RF_VK_SUCCESS)
-            goto failed;
+        if (final) {
+            if (impl->api.end_command_buffer(r->command_buffer) != RF_VK_SUCCESS)
+                goto failed;
+            r->frame_recording = 0;
+        }
+    }
+    if (!final) {
+        if(load==RF_GPU_RASTER_CLEAR)r->segment_graphics_compatible=1;
+        {
+            const uint32_t *words=stream;
+            for(uint32_t ci=first;ci<end;++ci) {
+                const uint32_t *c=words+8+ci*24;
+                if(c[0]==2U && c[4]>16384U)r->segment_graphics_compatible=0;
+                if(c[0]>=3U && c[0]<=5U &&
+                   (c[8]>16384U || c[11]>16384U || c[14]>16384U))
+                    r->segment_graphics_compatible=0;
+            }
+        }
+        r->segment_valid=1;
+        snprintf(message,message_capacity,"GPU Raster V1 segment recorded");
+        return 0;
     }
     {
         struct rf_vk_fence_create_info fence_info;
@@ -2055,28 +2079,11 @@ static int raster_render_range(void *context, void *raster,
         if (final) timestamp_collect(r);
         if (timing) timing->execution_wait_ms = now_ms() - segment_start;
     }
-    /* Track accumulated target compatibility; rejected calls preserve it. */
-    if(!final) {
-        if(load==RF_GPU_RASTER_CLEAR)r->segment_graphics_compatible=1;
-        const uint32_t *words=stream;
-        for(uint32_t ci=first;ci<end;++ci) {
-            const uint32_t *c=words+8+ci*24;
-            if(c[0]==2U && c[4]>16384U)r->segment_graphics_compatible=0;
-            if(c[0]>=3U && c[0]<=5U &&
-               (c[8]>16384U || c[11]>16384U || c[14]>16384U))
-                r->segment_graphics_compatible=0;
-        }
-    }
     r->segment_valid = !final;
     if (final) {
         r->binned_stream = NULL; r->binned_stream_size = 0;
         r->uploaded_stream = NULL; r->uploaded_stream_size = 0;
         r->preflight_reuse = 0;
-    }
-    if (!final) {
-        impl->api.destroy_fence(impl->device, fence, NULL);
-        snprintf(message, message_capacity, "GPU Raster V1 segment retained");
-        return 0;
     }
     if (native_present) {
         struct rf_vk_present_info present;
@@ -2151,6 +2158,7 @@ static int raster_render_range(void *context, void *raster,
 failed:
     snprintf(message, message_capacity, "Vulkan Raster V1 operation failed");
 cleanup:
+    r->frame_recording = 0;
     r->segment_valid = 0;
     r->binned_stream = NULL; r->binned_stream_size = 0;
     r->uploaded_stream = NULL; r->uploaded_stream_size = 0;

@@ -1,7 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-20
-> 源码核对基线：2026-09-20；HG-2C1、HG-2C2 已完成。normal mixed 的 compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment，双向 bridge 只保留 depth；1280×720 两次 bridge 为 14,745,600 bytes。mixed export 仍同步等待，统一 command recording 与多帧在途尚未实现。
+> 源码核对基线：2026-09-20；HG-2C1、HG-2C2、HG-2C3 已完成。normal mixed 的 compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment，双向 bridge 只保留 depth；Raster、Draw/bridge、Post、overlay 与 present copy 统一录入一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。帧末 fence、`vkQueueWaitIdle` 与多帧在途留待 HG-2C4。
 
 HG-2C 位于 HG-2B 与 HG-3A 之间。它不扩大 hardware Draw 的内容 allowlist，而是先消除当前 mixed
 帧的固定全屏搬运与单帧同步成本，避免 HG-3 至 HG-5 建立在双向 bridge 架构上。
@@ -27,7 +27,7 @@ depth bridge 包含 D32/inverse-Z 转换、全屏 depth copy、barrier 和资源
 | --- | --- | --- |
 | HG-2C1 | 完成 | mixed CPU 分项，以及 Raster、bridge import、Draw、bridge export、Post、overlay、swapchain copy 的 Vulkan timestamp |
 | HG-2C2 | 完成 | compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment；双向整屏 color copy 已取消，diagnostic readback 独立 |
-| HG-2C3 | 待开发 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
+| HG-2C3 | 完成 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
 | HG-2C4 | 待开发 | 2–3 个 frame context；正常帧删除 `vkQueueWaitIdle` |
 
 HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完整 color、正常 present 后不调用
@@ -134,3 +134,19 @@ standalone HG-2A 继续使用独立 diagnostic bridge/readback。attachment 改�
 Windows Intel strict native near/0 46 帧验证为 46/46 `gpu-native`、零 fallback、普通 readback 与 CPU
 framebuffer copy；每帧 2 次 bridge、14,745,600 bytes、`mixed-gpu supported=1 valid=1`。swapchain
 仍报告 format 44；该值不是共享 color attachment 的格式。`graphics_waits=1` 仍是当前正确性同步。
+
+## HG-2C3 统一 frame command recording
+
+Raster target 现在拥有 normal mixed 单帧命令录制状态。首个非 final Raster segment 重置并开始主命令
+缓冲，但不结束、不提交；graphics batch 临时借用同一个命令缓冲，把 depth import、indexed Draw 和
+depth export 依次追加；尾段 Raster 再追加 Post、overlay 与 present copy，最后统一结束并提交。这样
+不再重置仍在执行的 graphics/Raster command pool，也不需要 mixed 中间 graphics fence。
+
+独立 HG-2A graphics/readback 诊断仍使用 graphics 自己的 command pool、submit 与 fence，不受 normal
+mixed 借用路径影响。当前最终 Raster submit 仍同步等待 fence，native present 后仍调用
+`vkQueueWaitIdle`；资源也仍只有一套，因此这一步不是多帧在途实现。
+
+Windows Intel Iris Xe strict native near/0 120 帧通过，零 fallback、普通 readback 与 CPU framebuffer
+copy；热帧 `graphics_submits=0 graphics_waits=0`，每帧仍为 2 次 depth bridge、14,745,600 bytes，
+`mixed-gpu supported=1 valid=1`。专用 `rasterfall-gpu-mixed-test` 多 extent/双 Draw span 回归通过，并
+断言稳态 graphics queue submit 不增长。

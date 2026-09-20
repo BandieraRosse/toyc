@@ -293,7 +293,7 @@ int main(int argc, char **argv)
         CHECK(after.clears==before.clears+1 && after.finishes==before.finishes+1 && after.draws==before.draws+3);
         CHECK(after.draw_spans==before.draw_spans+2 &&
             after.graphics.raster_bridge_transfers==before.graphics.raster_bridge_transfers+4);
-        if(iteration>4) CHECK(after.graphics.queue_submits==before.graphics.queue_submits+2);
+        if(iteration>4) CHECK(after.graphics.queue_submits==before.graphics.queue_submits);
         if(iteration>4)CHECK(after.graphics.mesh_upload_bytes==before.graphics.mesh_upload_bytes &&
             after.graphics.texture_upload_bytes==before.graphics.texture_upload_bytes);
         memset(&renderer,0,sizeof(renderer));renderer.surface.width=width;renderer.surface.height=height;
