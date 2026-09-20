@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 [AI frontend checkpoint](hardware-graphics-ai-frontend.md) 已签收：模块化角色按 actor/action/time/weapon 精确键复用 finalized pose，并以每 actor frontend + pose generation 安全复用 skinned vertex、被动 gear 与 active weapon actor-local placement；body/gear/weapon 实际变换边界共同接入，性能、Campaign audit、边缘入镜与近面交叉专用 capture 均通过。
 > 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：普通 static RMESH 的 Draw/legacy 三角形与资产 mask 门禁、连续 Draw 空 flush 优化、120 帧 near/mid/Fog、320 帧 Campaign 以及建筑内部/远处薄结构 native capture 均在 Intel 通过。
 > 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成：`tools/hardware_graphics_metrics.ps1` 对预热后 CPU 墙钟和历史帧 GPU timestamp 分别汇总 mean/median/P95/max，估算逐帧审计与未采样调度间隙，并拒绝 world/敌人命令不成立的伪 Campaign 波次。Intel 实机固定 near/0 120 帧和显式 Campaign 320 帧均为全 native；正式波次 279 帧含敌人命令，CPU scene 中位数约 34.95 ms、GPU Raster 中位数约 19.69 ms，present API 约 0.021 ms。后续默认顺序为 HG-3、AI frontend checkpoint、HG-4、HG-5。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收 Windows Native presenter：唯一 swapchain generation、两个 frame slot、三种 completion 分离、image-owned render-finished 与 image-reacquire reuse；固定/动态/fault/validation 门禁通过，热路径 queue-idle 为零。详见 [HG-2C5](hardware-graphics-hg2c5.md)。

@@ -114,6 +114,10 @@ struct rasterfall_ai_submission_stats {
     long pose_us, body_us, gear_us, weapon_us, procedural_us;
     long body_skin_us, body_vertex_cache_us, body_triangle_us;
     long weapon_setup_us, weapon_triangle_us;
+    unsigned int pose_cache_hits, pose_cache_misses;
+    unsigned int bounds_cache_hits, bounds_cache_misses;
+    unsigned int combined_bounds_culled;
+    unsigned int gear_transform_cache_hits, gear_transform_cache_misses;
     unsigned int active_actors, depth_actors, screen_culled_actors;
     unsigned int modular_actors, procedural_actors;
     unsigned int zero_command_actors;
@@ -215,6 +219,7 @@ void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out);
 void rasterfall_render_ai_submission_stats(struct rasterfall_ai_submission_stats *out);
 int rasterfall_render_near_clip_test(void);
 int rasterfall_render_static_prop_culling_logic_test(void);
+int rasterfall_render_modular_bounds_culling_logic_test(void);
 int rasterfall_render_static_prop_lighting_logic_test(void);
 int rasterfall_render_draw_reference_logic_test(void);
 int rasterfall_render_world_light_source_logic_test(void);

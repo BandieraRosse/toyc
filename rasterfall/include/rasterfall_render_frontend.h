@@ -25,6 +25,8 @@ struct rasterfall_frontend_state {
     struct rasterfall_model_setup_timing timing;
     int reuse_skinned_vertices;
     int skinned_vertices_valid;
+    unsigned int requested_pose_generation;
+    unsigned int skinned_pose_generation;
     int disable_edge;
     int disable_sphere;
     int disable_toon;

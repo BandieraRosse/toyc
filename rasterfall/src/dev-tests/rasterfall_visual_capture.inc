@@ -940,7 +940,7 @@ static int capture_map_world(const char *output_dir,
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
     int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
-    for (i = 0; i < (whu ? 4 : environment ? 21 : 15); i++) {
+    for (i = 0; i < (whu ? 4 : environment ? 21 : 17); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -952,17 +952,21 @@ static int capture_map_world(const char *output_dir,
         unsigned long submitted_triangles;
         struct toy_game *saved_fixture_game = NULL;
         int c2_fixture = environment && !whu && i >= 12;
+        int character_bounds_fixture = !environment && i >= 15;
+        int saved_campaign_fixture_enabled = 0;
         struct camera c2_body_camera;
         int preflush_commands=0;
         long preflush_raster_us=0;
         uint64_t fixture_hash=1469598103934665603ULL;
         int distance_index = i < 3 ? i : (i - 3) / 4;
         static const char *subjects[] = {"old", "idle", "aim", "motion"};
-        character_world_capture_camera(&camera, distances[distance_index]);
-        if (i >= 3) camera.body.x = -18000 + ((i - 3) % 4) * 4000 + distances[distance_index] * 3 / 5;
-        if (i < 3) snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[distance_index]);
-        else snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir,
-                      names[distance_index], subjects[(i - 3) % 4]);
+        if (!character_bounds_fixture) {
+            character_world_capture_camera(&camera, distances[distance_index]);
+            if (i >= 3) camera.body.x = -18000 + ((i - 3) % 4) * 4000 + distances[distance_index] * 3 / 5;
+            if (i < 3) snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, names[distance_index]);
+            else snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir,
+                          names[distance_index], subjects[(i - 3) % 4]);
+        }
         if (environment && !c2_fixture) {
             /* RFU eye-level views, looking along clear existing routes.
              * No simulation tick or alternate environment renderer. */
@@ -1051,6 +1055,43 @@ static int capture_map_world(const char *output_dir,
             if(i>=15) snprintf(path,sizeof(path),"%s/c2-shadow-enemy-%d.bmp",output_dir,i-15);
             __printf("C2 fixture root=(%d,%d) root_light=%d\n",root_x,root_z,best);
         }
+        if (character_bounds_fixture) {
+            struct toy_game_actor *actor;
+            saved_fixture_game = tlibc_malloc(sizeof(game));
+            if (!saved_fixture_game) return 1;
+            *saved_fixture_game = game;
+            saved_campaign_fixture_enabled =
+                active_session->content.campaign_fixture_enabled;
+            active_session->content.campaign_fixture_enabled = 0;
+            memset(game.actors, 0, sizeof(game.actors));
+            memset(game.enemies, 0, sizeof(game.enemies));
+            actor = &game.actors[0];
+            actor->active = 1;
+            actor->actor_id = 900 + i;
+            actor->kind = TOY_GAME_ACTOR_AI;
+            actor->state = TOY_GAME_ACTOR_ALIVE;
+            actor->hp = actor->max_hp = 100;
+            actor->character_id = RASTERFALL_CHARACTER_RF_RIFLEMAN;
+            actor->animation.id = i == 15 ? TOY_GAME_ANIM_IDLE : TOY_GAME_ANIM_MOVE;
+            actor->animation.time_ms = i == 15 ? 0 : 375;
+            actor->current_slot = toy_game_weapon_info(TOY_GAME_WEAPON_AK)->slot;
+            actor->slots[actor->current_slot].weapon = TOY_GAME_WEAPON_AK;
+            actor->sy = 0;
+            actor->cy = 1024;
+            memset(&camera, 0, sizeof(camera));
+            camera.view.y = -350;
+            camera.view.cy = 1024;
+            camera.view.pitch_cy = 1024;
+            if (i == 15) {
+                actor->x = 1450;
+                actor->z = 2200;
+                snprintf(path, sizeof(path), "%s/edge-entry.bmp", output_dir);
+            } else {
+                actor->x = 0;
+                actor->z = 128;
+                snprintf(path, sizeof(path), "%s/near-crossing.bmp", output_dir);
+            }
+        }
         if(c2_fixture) {
             const unsigned char *truth=(const unsigned char *)&game;
             for(size_t byte=0;byte<sizeof(game);byte++)
@@ -1120,6 +1161,30 @@ static int capture_map_world(const char *output_dir,
         if (environment) rasterfall_render_end_dynamic_lighting();
         rasterfall_render_sign_text(&renderer, &camera);
         rasterfall_render_flag_text(&renderer, &camera);
+        if (character_bounds_fixture) {
+            struct rasterfall_ai_submission_stats bounds_stats;
+            rasterfall_render_ai_submission_stats(&bounds_stats);
+            __printf("CHARACTER-BOUNDS fixture=%s modular=%u combined_culled=%u body_cmd=%lu gear_cmd=%lu weapon_cmd=%lu pose_hit=%u pose_miss=%u\n",
+                i == 15 ? "edge-entry" : "near-crossing",
+                bounds_stats.modular_actors,
+                bounds_stats.combined_bounds_culled,
+                bounds_stats.body_commands,
+                bounds_stats.gear_commands,
+                bounds_stats.weapon_commands,
+                bounds_stats.pose_cache_hits,
+                bounds_stats.pose_cache_misses);
+            if (bounds_stats.modular_actors != 1 ||
+                bounds_stats.combined_bounds_culled != 0 ||
+                bounds_stats.body_commands == 0 ||
+                bounds_stats.gear_commands == 0 ||
+                bounds_stats.weapon_commands == 0)
+                return 1;
+            game = *saved_fixture_game;
+            active_session->content.campaign_fixture_enabled =
+                saved_campaign_fixture_enabled;
+            tlibc_free(saved_fixture_game);
+            saved_fixture_game = NULL;
+        }
         if (c2_fixture) {
             __printf("C2 sample queries=%d local_scene=%d\n",dynamic_world_light_queries,local_scene);
             preflush_commands=renderer.cmd_count;
@@ -1431,7 +1496,7 @@ static int visual_modular_profession_frame(
     if (pixels < 0) goto fail;
     if (mode)
         pixels += render_modular_active_weapon(renderer, camera, host, &actor,
-            TOY_GAME_WEAPON_AK, 0, 0);
+            TOY_GAME_WEAPON_AK, 0, 0, NULL);
     {
         int passive_pixels = render_modular_passive_equipment(renderer, camera,
             host, recipe, gear, &actor);
@@ -2010,7 +2075,7 @@ int rasterfall_render_action_preview(const char *model_path,
            0x40566F,0x2B3440)<0)goto render_done;
     if (instance.pose.has_character_contract)
         render_modular_active_weapon(&renderer, &camera, &instance, &actor,
-            TOY_GAME_WEAPON_AK, 0, 0);
+            TOY_GAME_WEAPON_AK, 0, 0, NULL);
     else if (rifle_frame_transform(&instance.pose, &rifle_frame) == 0)
         render_skeletal_rifle(&renderer, &camera, &instance.pose, &rifle_frame,
             &visual_rf_profile, visual_rf_calibration(1), 0,
@@ -2077,7 +2142,7 @@ int rasterfall_render_action_composition_capture(const char *model_path,
             0x40566F, 0x2B3440) < 0) goto render_done;
     if (instance.pose.has_character_contract)
         render_modular_active_weapon(&renderer, &camera, &instance, &actor,
-            TOY_GAME_WEAPON_AK, 0, 0);
+            TOY_GAME_WEAPON_AK, 0, 0, NULL);
     else if (rifle_frame_transform(&instance.pose, &rifle_frame) == 0)
         render_skeletal_rifle(&renderer, &camera, &instance.pose, &rifle_frame,
             &visual_rf_profile, visual_rf_calibration(1), 0,

@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 [AI frontend checkpoint](hardware-graphics-ai-frontend.md) 已签收：模块化 finalized pose/skinned vertex、被动 gear 与 active weapon actor-local placement 绑定每 actor pose generation；body/gear/weapon 实际变换边界共同参与提交前剔除。Windows package、逻辑测试、角色 world capture、0/10/30/60 actor benchmark、Campaign strict native audit，以及边缘入镜/近面交叉专用 capture 均通过。
 > 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：连续 Draw 间空 ordering flush 被消除，near strict whole-loop/static 中位数降至 22.488/1.554 ms（CPU 为 27.813/2.956 ms），mid 为 25.690/1.681 ms（CPU 为 38.326/3.237 ms）；完整 Intel baseline、320 帧 Campaign 及建筑内部/远处薄结构 native capture 通过。
 > 源码核对基线补充：2026-09-20 Hardware Graphics P0 性能事实门禁完成：新增 `tools/hardware_graphics_metrics.ps1`，按预热窗口汇总 CPU/GPU 分项、对齐历史 GPU timestamp、估算逐帧审计扰动并验证 Campaign world/敌人命令；当前实机基线与后续顺序见 [GPU 当前状态](gpu-current-state.md) 和 [Hardware Graphics](hardware-graphics-architecture.md)。
 > 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已签收：Windows futex 丢失 worker 唤醒已修复；最终代码在 Intel 上固定 300 帧、五种 fault injection 与动态 `--auto` 10000 帧/7分40秒通过，零 watchdog/fallback/readback/CPU copy/hot queue-idle。Khronos validation + sync validation 进一步修复 render-pass compatibility、统一 command recording 内 descriptor set 更新失效与 acquire/layout-transition stage 依赖，最终 300 帧及五种 fault injection 均零 VUID/SYNC-HAZARD。HG-2C5 假设窗口尺寸不变，不执行 resize 检查。

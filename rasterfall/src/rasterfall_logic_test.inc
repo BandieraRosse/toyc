@@ -947,6 +947,7 @@ static int run_logic_test(void)
     if (toy_map_lifecycle_logic_test() != 0) return 173;
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
+    if (rasterfall_render_modular_bounds_culling_logic_test() != 0) return 258;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
     if (rasterfall_render_draw_reference_logic_test() != 0) return 252;
     if (rasterfall_render_resources_logic_test() != 0) return 253;
