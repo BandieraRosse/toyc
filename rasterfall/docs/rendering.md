@@ -1,6 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-3 已签收：static RMESH 审计覆盖 Draw/legacy 三角形与资产 mask；连续 Draw 间不再执行空 ordering flush，near strict static 中位数由 10.044 ms 降至 1.554 ms；建筑内部与远处薄结构 native capture 及完整 Intel baseline 通过，详见 [HG-3](hardware-graphics-hg3.md)。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收：同 image 再次 acquire 证明 render-finished 可复用；mixed slot 只持有 acquire semaphore、render fence 与离屏资源，正常热路径 `native_present_queue_idle_ms=0.000`，recreate/teardown 才排空 queue。Windows worker 等待改用按地址 `WaitOnAddress` 后，最终代码在 Intel 固定 300/300 与动态 10000/10000（7分40秒）无 renderer watchdog，五种 fault injection 得到预期结果。Khronos validation + sync validation 修复并覆盖 render-pass compatibility、每录制 segment 独立 descriptor set 与 acquire 后 layout transition stage 依赖，最终 300 帧和五种故障注入零 VUID/SYNC-HAZARD。本 checkpoint 不做 resize 检查。
 > 源码核对基线补充：2026-09-20 HG-2C4 已完成双帧在途：两个完整 slot 延迟回收 render fence、GPU timestamp 与 Core resource pin；正常帧不调用 `vkQueueWaitIdle`。Intel strict native near/0 120/120、mixed gate 与四 extent resize gate 通过，热帧 graphics submit/wait 为 0，详见 [HG-2C](hardware-graphics-hg2c.md)。
 > 源码核对基线补充：2026-09-19 HG-2C1 为正常 mixed 帧增加互斥的 CPU 调用分项：freeze、cache collect、texture measure、pack、Draw encode/cache lookup、batch prepare、graphics Draw/bridge 与 Raster segment；`preflight_ms` 是包含若干子项的总墙钟，不能与子项相加。设备 GPU timestamp 已在后续 HG-2C1 增量接入，详见 [HG-2C](hardware-graphics-hg2c.md)。

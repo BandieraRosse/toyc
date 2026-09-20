@@ -3346,9 +3346,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         int enemy;
         memset(game.enemies, 0, sizeof(game.enemies));
         memset(&camera, 0, sizeof(camera));
-        camera.z = !strcmp(options.gpu_normal_view, "mid") ? -8400 : -3400;
+        if (!strcmp(options.gpu_normal_view, "interior")) {
+            /* Inside the west maintenance building, facing its beams,
+             * panels, trays, pipes and back wall. */
+            camera.x = -17500; camera.z = 5000;
+            camera.sy = -1024;
+        } else if (!strcmp(options.gpu_normal_view, "thin-far")) {
+            /* Long view toward the west building's cable trays and pipe
+             * silhouette; these are the far-depth thin-structure fixture. */
+            camera.x = -5000; camera.z = 5500;
+            camera.sy = -1024;
+        } else {
+            camera.z = !strcmp(options.gpu_normal_view, "mid") ? -8400 : -3400;
+            camera.cy = 1024;
+        }
         camera.y = -350;
-        camera.cy = camera.pitch_cy = 1024;
+        camera.pitch_cy = 1024;
         /* Session takes the camera body from the local actor on the first
          * fixed tick. Keep the deterministic view at its requested distance. */
         toy_game_local_player_actor(&game)->x = camera.x;
@@ -4312,10 +4325,16 @@ startup_again:
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                     snprintf(audit_line, sizeof(audit_line),
-                        "FRAME-AUDIT draw-reference instances=%lu items=%lu cpu_lowered_triangles=%lu legacy_instances=%lu reject_scope=%lu reject_deformation=%lu reject_material=%lu reject_transparent=%lu reject_range=%lu reject_numeric=%lu",
+                        "FRAME-AUDIT draw-reference instances=%lu items=%lu draw_triangles=%lu cpu_lowered_triangles=%lu legacy_instances=%lu legacy_triangles=%lu draw_asset_mask=%llx legacy_asset_mask=%llx flush_ms=%.3f submit_ms=%.3f reject_scope=%lu reject_deformation=%lu reject_material=%lu reject_transparent=%lu reject_range=%lu reject_numeric=%lu",
                         scene_audit.static_draw_instances, scene_audit.static_draw_items,
+                        scene_audit.static_draw_triangles,
                         scene_audit.static_draw_lowered_triangles,
                         scene_audit.static_draw_legacy_instances,
+                        scene_audit.static_draw_legacy_triangles,
+                        scene_audit.static_draw_asset_mask,
+                        scene_audit.static_draw_legacy_asset_mask,
+                        scene_audit.static_draw_flush_us / 1000.0,
+                        scene_audit.static_draw_submit_us / 1000.0,
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_SCOPE],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_DEFORMATION],
                         scene_audit.static_draw_rejected[RASTERFALL_DRAW_MATERIAL],

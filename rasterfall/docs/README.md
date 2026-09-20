@@ -1,6 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：连续 Draw 间空 ordering flush 被消除，near strict whole-loop/static 中位数降至 22.488/1.554 ms（CPU 为 27.813/2.956 ms），mid 为 25.690/1.681 ms（CPU 为 38.326/3.237 ms）；完整 Intel baseline、320 帧 Campaign 及建筑内部/远处薄结构 native capture 通过。
 > 源码核对基线补充：2026-09-20 Hardware Graphics P0 性能事实门禁完成：新增 `tools/hardware_graphics_metrics.ps1`，按预热窗口汇总 CPU/GPU 分项、对齐历史 GPU timestamp、估算逐帧审计扰动并验证 Campaign world/敌人命令；当前实机基线与后续顺序见 [GPU 当前状态](gpu-current-state.md) 和 [Hardware Graphics](hardware-graphics-architecture.md)。
 > 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已签收：Windows futex 丢失 worker 唤醒已修复；最终代码在 Intel 上固定 300 帧、五种 fault injection 与动态 `--auto` 10000 帧/7分40秒通过，零 watchdog/fallback/readback/CPU copy/hot queue-idle。Khronos validation + sync validation 进一步修复 render-pass compatibility、统一 command recording 内 descriptor set 更新失效与 acquire/layout-transition stage 依赖，最终 300 帧及五种 fault injection 均零 VUID/SYNC-HAZARD。HG-2C5 假设窗口尺寸不变，不执行 resize 检查。
 > 源码核对基线补充：2026-09-20 HG-2C4 长时稳定性修复：双 mixed frame slot 继续独立持有离屏 target、上传、command、fence 与 query，但窗口 surface 只允许 Vulkan backend 拥有一个 swapchain。每 slot 使用独立 acquire/render-complete semaphore；Intel 实机要求 present 后 queue-idle 才安全复用完成信号量，因此当前提交实际在 present 边界串行。300 帧约一分钟 strict native 通过，修复交替旧帧闪回与 30--60 秒呈现卡死；当前 `native_present_queue_idle_ms` 不再承诺为零。
@@ -74,7 +75,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[HG-2C](hardware-graphics-hg2c.md) | `include/rasterfall_draw.h` → static prop producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/hardware_graphics_baseline.ps1` 调用 `tools/hardware_graphics_metrics.ps1` 完成预热统计、GPU 历史帧对齐、审计扰动与 Campaign 有效性门禁；下一阶段从 HG-3 static allowlist 扩围开始 |
+| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[HG-2C](hardware-graphics-hg2c.md)、[HG-3](hardware-graphics-hg3.md) | `include/rasterfall_draw.h` → static prop producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/hardware_graphics_baseline.ps1` 调用 `tools/hardware_graphics_metrics.ps1` 完成预热统计、GPU 历史帧对齐、审计扰动、Campaign 有效性及 HG-3 static Draw/legacy 迁移门禁 |
 | GPU mixed 正常帧截图与性能优化交接 | [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)、[HG-2C](hardware-graphics-hg2c.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |

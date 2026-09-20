@@ -120,7 +120,7 @@ void rasterfall_options_usage(int fd)
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
-        "  --gpu-normal-scene <near|mid> <0|30> (normal deterministic Campaign runtime)\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far> <0|30> (normal deterministic Campaign runtime)\n"
         "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
@@ -285,10 +285,12 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->gpu_normal_view=argv[++arg];
             o->gpu_normal_enemies=atoi(argv[++arg]);
             if ((strcmp(o->gpu_normal_view,"near") &&
-                 strcmp(o->gpu_normal_view,"mid")) ||
+                 strcmp(o->gpu_normal_view,"mid") &&
+                 strcmp(o->gpu_normal_view,"interior") &&
+                 strcmp(o->gpu_normal_view,"thin-far")) ||
                 (o->gpu_normal_enemies != 0 &&
                  o->gpu_normal_enemies != 30)) {
-                __fprintf(2,"rasterfall: --gpu-normal-scene expects near|mid and 0|30\n");
+                __fprintf(2,"rasterfall: --gpu-normal-scene expects near|mid|interior|thin-far and 0|30\n");
                 return -1;
             }
         } else if (!strcmp(option,"--gpu-wave-repro")) {

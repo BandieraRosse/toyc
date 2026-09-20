@@ -1,7 +1,7 @@
 # Hardware Graphics 开发计划
 
 > 计划更新：2026-09-20
-> 当前进度：HG-0、HG-1A、HG-1B、HG-2A、HG-2B、HG-2C1--2C5 与 P0 性能事实门禁已按 Windows Intel Iris Xe 口径完成。下一阶段进入 HG-3；Linux/其他 GPU 未验收。
+> 当前进度：HG-0、HG-1A、HG-1B、HG-2A、HG-2B、HG-2C1--2C5、P0 性能事实门禁与 HG-3 已按 Windows Intel Iris Xe 口径完成。HG-3 的完整 120 帧 near/mid/Fog、320 帧 Campaign、static RMESH 审计及建筑内部/远处薄结构 native capture 均通过。Linux/其他 GPU 未验收。
 > 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
 
 | Checkpoint | 状态 | 交付/下一步 |
@@ -13,7 +13,7 @@
 | HG-2B | 完成（Windows Intel） | [正常 Windows strict native 混合帧](rasterfall/docs/hardware-graphics-hg2b.md)、遮挡/层顺序 fixture、近/中距离窗口帧与四 extent resize 按视觉正常标准通过 |
 | HG-2C1–2C5 | 完成（Windows Intel） | [mixed 帧诊断、共享 target、统一 command recording、多 frame slot 与 presenter ownership](rasterfall/docs/hardware-graphics-hg2c.md) |
 | P0 性能事实门禁 | 完成（Windows Intel） | 预热后 median/P95、实际帧间隔、审计扰动、历史 GPU timestamp 对齐、Campaign 波次有效性校验；入口为 `tools/hardware_graphics_metrics.ps1` 与更新后的 baseline 脚本 |
-| HG-3A / HG-3B | 待开发 | 优先扩大 opaque static props hardware Draw allowlist；以 static CPU 提交、legacy RasterCmd 和 GPU Raster 降幅共同验收 |
+| HG-3A / HG-3B | 完成 | [普通 opaque static RMESH 扩围](rasterfall/docs/hardware-graphics-hg3.md)：实现覆盖全部当前 eligible RMESH；连续 Draw 空 flush 已消除，完整 Intel baseline、Campaign 与专项视觉门禁通过 |
 | AI frontend checkpoint | 待开发 | 精确 bounds/culling、姿态/蒙皮/装备缓存，先减少生成后丢弃的角色命令，不提前改变玩法或动画所有权 |
 | HG-4A / HG-4B | 待开发 | Ground → map/boundary 几何；按 producer 分别记录 GPU Raster 减量 |
 | HG-5A / HG-5B | 待开发 | Character geometry → GPU skinning；若正式 30/60 敌人 GPU 基线显示角色扩展成本主导，可在 HG-4B 前重新排序 |

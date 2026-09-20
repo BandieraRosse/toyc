@@ -80,10 +80,18 @@ foreach ($Line in $SelectedLines) {
             whole_loop_ms = Number $Line 'whole_loop_ms'
             frame_interval_ms = Number $Line 'frame_interval_ms'
             scene_ms = $null
+            static_ms = $null
             enemies_ms = $null
             ai_teammates_ms = $null
             enemies_cmd = $null
             mixed_preflight_ms = $null
+            mixed_freeze_ms = $null
+            mixed_cache_collect_ms = $null
+            mixed_texture_measure_ms = $null
+            mixed_pack_ms = $null
+            mixed_draw_encode_ms = $null
+            mixed_draw_batch_prepare_ms = $null
+            mixed_graphics_draw_ms = $null
             mixed_raster_segment_ms = $null
             native_acquire_ms = $null
             native_present_ms = $null
@@ -107,6 +115,7 @@ foreach ($Line in $SelectedLines) {
     }
     if ($null -eq $Current) { continue }
     if ($Line -match '^FRAME-AUDIT scene ') {
+        $Current.static_ms = Number $Line 'static_ms'
         $Current.scene_ms =
             (Number $Line 'sky_floor_ms') + (Number $Line 'map_ms') +
             (Number $Line 'static_ms') + (Number $Line 'gallery_ms') +
@@ -116,7 +125,14 @@ foreach ($Line in $SelectedLines) {
         $Current.enemies_ms = Number $Line 'enemies_ms'
         $Current.ai_teammates_ms = Number $Line 'ai_teammates_ms'
     } elseif ($Line -match '^FRAME-AUDIT mixed-cpu ') {
+        $Current.mixed_freeze_ms = Number $Line 'freeze_ms'
+        $Current.mixed_cache_collect_ms = Number $Line 'cache_collect_ms'
         $Current.mixed_preflight_ms = Number $Line 'preflight_ms'
+        $Current.mixed_texture_measure_ms = Number $Line 'texture_measure_ms'
+        $Current.mixed_pack_ms = Number $Line 'pack_ms'
+        $Current.mixed_draw_encode_ms = Number $Line 'draw_encode_ms'
+        $Current.mixed_draw_batch_prepare_ms = Number $Line 'draw_batch_prepare_ms'
+        $Current.mixed_graphics_draw_ms = Number $Line 'graphics_draw_ms'
         $Current.mixed_raster_segment_ms = Number $Line 'raster_segment_ms'
     } elseif ($Line -match '^FRAME-AUDIT gpu ') {
         $Current.native_acquire_ms = Number $Line 'native_acquire_ms'
@@ -159,8 +175,11 @@ foreach ($Frame in $Measured) {
 }
 
 $CpuFields = @(
-    'render_ms','present_wall_ms','whole_loop_ms','frame_interval_ms','scene_ms',
-    'enemies_ms','ai_teammates_ms','mixed_preflight_ms','mixed_raster_segment_ms',
+    'render_ms','present_wall_ms','whole_loop_ms','frame_interval_ms','scene_ms','static_ms',
+    'enemies_ms','ai_teammates_ms','mixed_freeze_ms','mixed_cache_collect_ms',
+    'mixed_preflight_ms','mixed_texture_measure_ms','mixed_pack_ms',
+    'mixed_draw_encode_ms','mixed_draw_batch_prepare_ms','mixed_graphics_draw_ms',
+    'mixed_raster_segment_ms',
     'native_acquire_ms','native_present_ms','native_queue_idle_ms'
 )
 $GpuFields = @(

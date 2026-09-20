@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：普通 static RMESH 的 Draw/legacy 三角形与资产 mask 门禁、连续 Draw 空 flush 优化、120 帧 near/mid/Fog、320 帧 Campaign 以及建筑内部/远处薄结构 native capture 均在 Intel 通过。
 > 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成：`tools/hardware_graphics_metrics.ps1` 对预热后 CPU 墙钟和历史帧 GPU timestamp 分别汇总 mean/median/P95/max，估算逐帧审计与未采样调度间隙，并拒绝 world/敌人命令不成立的伪 Campaign 波次。Intel 实机固定 near/0 120 帧和显式 Campaign 320 帧均为全 native；正式波次 279 帧含敌人命令，CPU scene 中位数约 34.95 ms、GPU Raster 中位数约 19.69 ms，present API 约 0.021 ms。后续默认顺序为 HG-3、AI frontend checkpoint、HG-4、HG-5。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收 Windows Native presenter：唯一 swapchain generation、两个 frame slot、三种 completion 分离、image-owned render-finished 与 image-reacquire reuse；固定/动态/fault/validation 门禁通过，热路径 queue-idle 为零。详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
@@ -11,7 +12,7 @@
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
 HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
-HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已接通 Core 混合帧、正常 static prop indexed Draw 与 Windows strict native present；HG-2C5 已冻结 vendor-independent Windows presenter 基线。其他 GPU 模式仍使用原 compute raster 路径。
+HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已接通 Core 混合帧、正常 static prop indexed Draw 与 Windows strict native present；HG-2C5 已冻结 vendor-independent Windows presenter 基线。HG-3 已完成普通 opaque static RMESH 扩围与量化验收。其他 GPU 模式仍使用原 compute raster 路径。
 
 ## 状态所有者与 producer 边界
 

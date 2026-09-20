@@ -76,7 +76,12 @@ struct rasterfall_model_setup_timing {
 
 struct rasterfall_scene_stats {
     unsigned long static_draw_instances, static_draw_items;
-    unsigned long static_draw_lowered_triangles, static_draw_legacy_instances;
+    unsigned long static_draw_triangles, static_draw_lowered_triangles;
+    unsigned long static_draw_legacy_instances, static_draw_legacy_triangles;
+    /* Bit N identifies presentation asset ID N. Boundary wall is procedural
+     * and therefore never enters either RMESH mask. */
+    unsigned long long static_draw_asset_mask, static_draw_legacy_asset_mask;
+    long static_draw_flush_us, static_draw_submit_us;
     /* Indexed by rasterfall_draw_reject, including the unused accepted slot. */
     unsigned long static_draw_rejected[RASTERFALL_DRAW_REJECT_COUNT];
     long sky_floor_us;

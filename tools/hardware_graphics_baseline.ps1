@@ -21,12 +21,13 @@ $Diff = (Resolve-Path (Join-Path $Root $DifferentialExe)).Path
 if (-not (Test-Path -LiteralPath $Exe)) { throw 'Run windows/NativeCodex.ps1 package first.' }
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $Runs = [Collections.Generic.List[object]]::new()
+$FixedSceneFrames = 120
 $Manifest = [ordered]@{
     schema = 1; checkpoint = $Checkpoint; started = (Get-Date).ToString('o')
     commit = (& git -C $Root rev-parse HEAD); worktree = @(& git -C $Root status --short)
     executable = (Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash
     differential = (Get-FileHash -Algorithm SHA256 -LiteralPath $Diff).Hash
-    warmup_frames = 16; measured_frames = '17-46'; runs = $Runs
+    warmup_frames = 16; measured_frames = "17-$FixedSceneFrames"; runs = $Runs
 }
 try { $Manifest.adapters = @(Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, PNPDeviceID) }
 catch {
@@ -38,7 +39,8 @@ $Manifest.assets = @(Get-ChildItem -LiteralPath (Join-Path $Package 'rasterfall'
     @{ path = $_.FullName.Substring($Package.Length + 1); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
 })
 function Save-Manifest { $Manifest | ConvertTo-Json -Depth 12 | Set-Content -Encoding UTF8 (Join-Path $OutputDirectory 'manifest.json') }
-function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $Frames = 0, [string] $ExpectedPath = '') {
+function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs,
+    [int] $Frames = 0, [string] $ExpectedPath = '', [bool] $AllowNumericLegacy = $false) {
     Write-Host "[$Checkpoint] $Name"
     $stdout = Join-Path $OutputDirectory "$Name.stdout.txt"
     $stderr = Join-Path $OutputDirectory "$Name.stderr.txt"
@@ -65,10 +67,30 @@ function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $
         $headers = @($log | Select-String 'FRAME-AUDIT frame=')
         $gpu = @($log | Select-String 'FRAME-AUDIT gpu ')
         $layers = @($log | Select-String 'FRAME-AUDIT layers ')
+        $drawReference = @($log | Select-String 'FRAME-AUDIT draw-reference ')
         if ($headers.Count -ne $Frames -or $gpu.Count -ne $Frames -or $layers.Count -ne $Frames) { throw "$Name incomplete frame audit" }
         foreach ($line in $headers) { if ($line.Line -notmatch "path=$ExpectedPath ") { throw "$Name unexpected render path" } }
         foreach ($line in $gpu) { if ($line.Line -notmatch 'readback_bytes=0 cpu_framebuffer_copy_bytes=0') { throw "$Name readback/copy detected" } }
         foreach ($line in $layers) { if ($line.Line -notmatch 'invalid_transitions=0 .*pre_post_cpu_fallback=0 fallback_reason=0x0 ') { throw "$Name fallback/order failure" } }
+        if ($Checkpoint -like 'HG-3*' -and $ExpectedPath -eq 'gpu-native') {
+            if ($drawReference.Count -ne $Frames) { throw "$Name incomplete HG-3 Draw audit" }
+            foreach ($line in $drawReference) {
+                $strictMigration = $line.Line -match 'draw_triangles=([1-9][0-9]*) cpu_lowered_triangles=0 legacy_instances=0 legacy_triangles=0 draw_asset_mask=([1-9a-f][0-9a-f]*) legacy_asset_mask=0 '
+                $numericVisualFallback = $AllowNumericLegacy -and
+                    $line.Line -match 'draw_triangles=([1-9][0-9]*) cpu_lowered_triangles=0 legacy_instances=([1-9][0-9]*) legacy_triangles=([1-9][0-9]*) draw_asset_mask=([1-9a-f][0-9a-f]*) legacy_asset_mask=([1-9a-f][0-9a-f]*) .*reject_scope=0 reject_deformation=0 reject_material=0 reject_transparent=0 reject_range=0 reject_numeric=\2'
+                if (-not $strictMigration -and -not $numericVisualFallback) {
+                    throw "$Name HG-3 static RMESH migration gate failed"
+                }
+            }
+            $record.hg3_static_draw = [ordered]@{
+                verified_frames = $drawReference.Count
+                draw_triangles = [int]([regex]::Match($drawReference[-1].Line, 'draw_triangles=([0-9]+)').Groups[1].Value)
+                draw_asset_mask = [regex]::Match($drawReference[-1].Line, 'draw_asset_mask=([0-9a-f]+)').Groups[1].Value
+                legacy_instances = [int]([regex]::Match($drawReference[-1].Line, 'legacy_instances=([0-9]+)').Groups[1].Value)
+                legacy_triangles = [int]([regex]::Match($drawReference[-1].Line, 'legacy_triangles=([0-9]+)').Groups[1].Value)
+                numeric_visual_fallback_allowed = $AllowNumericLegacy
+            }
+        }
         $stats = [ordered]@{}
         foreach ($field in @('frontend_ms','fence_wait_ms','native_present_queue_idle_ms')) {
             $values = @($gpu | Select-Object -Skip 16 | ForEach-Object { if ($_.Line -match "$field=([0-9.]+)") { [double]::Parse($Matches[1], [Globalization.CultureInfo]::InvariantCulture) } } | Sort-Object)
@@ -109,11 +131,22 @@ try {
                 if (-not (Test-Path -LiteralPath (Join-Path $capture $file))) { throw "Missing reference artifact: $name/$file" }
             }
         }
-        Run "cpu-$view" $Exe @('--renderer','cpu','--gpu-normal-scene',$view,'0','--frame-audit','--frames','46') 46 'cpu'
+        Run "cpu-$view" $Exe @('--renderer','cpu','--gpu-normal-scene',$view,'0','--frame-audit','--frames',"$FixedSceneFrames") $FixedSceneFrames 'cpu'
         foreach ($fog in @($false,$true)) {
-            $argsForRun = @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene',$view,'0','--frame-audit','--frames','46')
+            $argsForRun = @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene',$view,'0','--frame-audit','--frames',"$FixedSceneFrames")
             if ($fog) { $argsForRun += '--gpu-post-fog' }
-            Run "native-$view-fog-$fog" $Exe $argsForRun 46 'gpu-native'
+            Run "native-$view-fog-$fog" $Exe $argsForRun $FixedSceneFrames 'gpu-native'
+        }
+    }
+    if ($Checkpoint -like 'HG-3*') {
+        foreach ($view in @('interior','thin-far')) {
+            $capture = Join-Path $OutputDirectory "native-$view.bmp"
+            Run "native-$view-capture" $Exe @('--renderer','gpu-compute','--gpu-required',
+                '--gpu-native-present','--gpu-normal-scene',$view,'0','--gpu-frame-capture',
+                $capture,'--gpu-capture-frame','30','--frame-audit','--frames','30') 30 'gpu-native' $true
+            if (-not (Test-Path -LiteralPath $capture)) {
+                throw "Missing HG-3 visual capture: $view"
+            }
         }
     }
     Run 'wave' $Exe @('--map','rasterfall/assets/maps/rasterfall.map','--gpu-wave-repro','--frames','320','--renderer','gpu-compute','--gpu-required','--gpu-native-present','--frame-audit') 320 'gpu-native'

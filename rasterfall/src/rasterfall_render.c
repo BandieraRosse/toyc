@@ -1891,9 +1891,6 @@ static const struct rasterfall_model_asset *static_prop_model(int asset_id,
     if (!profile) return 0;
     if (rasterfall_resources_load(registry, profile->model_path, handle) < 0)
         return 0;
-    /* Also pin legacy prop textures: their RasterCmds outlive lowering. */
-    if (registry->frame_active && rasterfall_resources_pin(registry, *handle) < 0)
-        return 0;
     return rasterfall_resources_resolve(registry, *handle);
 }
 
@@ -1945,15 +1942,33 @@ int rasterfall_render_static_prop(
         rejection = static_prop_draw_preflight(renderer, &view, &draw_instance);
         if (rejection == RASTERFALL_DRAW_ACCEPTED) {
             scene_stats.static_draw_instances++;
-            pixels = render_ctx && render_ctx->mixed_frame ?
-                static_prop_draw_mixed(renderer, &view, &draw_instance,
-                    render_ctx->mixed_frame) :
-                static_prop_draw_reference(renderer, &view, &draw_instance);
+            scene_stats.static_draw_asset_mask |= 1ULL << instance->asset_id;
+            if (render_ctx && render_ctx->mixed_frame) {
+                /* Each Draw pins its immutable bundle in rf_core_mixed_draw().
+                 * Do not add another instance pin here. */
+                pixels = static_prop_draw_mixed(renderer, &view, &draw_instance,
+                    render_ctx->mixed_frame);
+            } else {
+                /* Reference RasterCmd texture pointers outlive lowering. */
+                if (rasterfall_render_resources()->frame_active &&
+                    rasterfall_resources_pin(rasterfall_render_resources(), handle) < 0)
+                    pixels = -1;
+                else
+                    pixels = static_prop_draw_reference(renderer, &view, &draw_instance);
+            }
         } else {
             scene_stats.static_draw_legacy_instances++;
+            scene_stats.static_draw_legacy_triangles += model->index_count / 3;
+            scene_stats.static_draw_legacy_asset_mask |= 1ULL << instance->asset_id;
             scene_stats.static_draw_rejected[rejection]++;
-            pixels = render_gallery_model(renderer, camera, model,
-                instance->x, instance->y, instance->z, scale);
+            /* Legacy RasterCmds retain texture pointers until their consumer
+             * has copied or executed the command stream. */
+            if (rasterfall_render_resources()->frame_active &&
+                rasterfall_resources_pin(rasterfall_render_resources(), handle) < 0)
+                pixels = -1;
+            else
+                pixels = render_gallery_model(renderer, camera, model,
+                    instance->x, instance->y, instance->z, scale);
         }
     }
     active_gallery_facing = previous_facing;

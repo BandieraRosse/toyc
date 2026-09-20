@@ -186,6 +186,7 @@ static int static_prop_draw_lower_item(struct toy_renderer *renderer,
     toy_renderer_set_base_texture_bilinear(renderer, 0);
     active_model_triangle_stats = collect_model_render_stats ? &model_render_stats.body : NULL;
     scene_stats.static_draw_items++;
+    scene_stats.static_draw_triangles += draw->index_count / 3;
     scene_stats.static_draw_lowered_triangles += draw->index_count / 3;
     return lower_gallery_triangles(renderer, &view->camera, instance->mesh,
         instance->x, instance->y, instance->z, instance->scale_milli,
@@ -202,6 +203,7 @@ static int static_prop_draw_mixed(struct toy_renderer *renderer,
     struct rf_core_mixed_frame *frame)
 {
     unsigned int i;
+    long phase;
     if (!frame || !instance->mesh ||
         renderer->command_consumer != rf_core_mixed_world_consume ||
         renderer->command_consumer_context != frame) {
@@ -216,12 +218,21 @@ static int static_prop_draw_mixed(struct toy_renderer *renderer,
         scene_stats.model_triangles_culled += instance->mesh->index_count / 3;
         return 0;
     }
-    if (rf_core_mixed_require_draws(frame, instance->mesh->primitive_count) < 0 ||
-        toy_renderer_flush(renderer) < 0) {
+    if (rf_core_mixed_require_draws(frame, instance->mesh->primitive_count) < 0) {
+        __fprintf(2, "mixed static prop: Draw requirement failed\n");
+        return -1;
+    }
+    phase = render_monotonic_us();
+    /* Consecutive Draw instances have no intervening RasterCmds. An empty
+     * flush still performs watchdog/timing bookkeeping, so only establish a
+     * mixed ordering boundary when there is actually a Raster prefix. */
+    if (renderer->cmd_count > 0 && toy_renderer_flush(renderer) < 0) {
         __fprintf(2, "mixed static prop: preceding raster flush failed\n");
         return -1;
     }
+    scene_stats.static_draw_flush_us += render_monotonic_us() - phase;
     scene_stats.models_tested++;
+    phase = render_monotonic_us();
     for (i = 0; i < instance->mesh->primitive_count; ++i) {
         struct rasterfall_draw_item draw;
         if (static_prop_draw_resolve(instance, i, &draw) != RASTERFALL_DRAW_ACCEPTED ||
@@ -230,7 +241,9 @@ static int static_prop_draw_mixed(struct toy_renderer *renderer,
             return -1;
         }
         scene_stats.static_draw_items++;
+        scene_stats.static_draw_triangles += draw.index_count / 3;
     }
+    scene_stats.static_draw_submit_us += render_monotonic_us() - phase;
     return 0;
 }
 

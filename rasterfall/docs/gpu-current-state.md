@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-3 已签收。strict static 的退化定位为连续 Draw 间重复空 flush；只在存在 Raster 前缀时建立边界后，Intel near CPU/strict whole-loop 中位数为 27.813/22.488 ms、static 为 2.956/1.554 ms，mid 为 38.326/25.690 ms、static 为 3.237/1.681 ms。完整 baseline、320 帧 Campaign 与建筑内部/远处薄结构 native capture 通过，零 CPU lowering/readback/copy。详见 [HG-3](hardware-graphics-hg3.md)。
 > 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成并接入 `tools/hardware_graphics_metrics.ps1`：固定丢弃前 16 帧，分开汇总 CPU whole-loop/frame interval 与按历史 frame ID 对齐的 GPU timestamp，并校验 Campaign `world=1`/敌人命令。Intel 实机固定 near/0 120 帧与显式 Campaign 320 帧均为全 native；Campaign 279 帧含敌人命令，活敌输出通过。既有默认 Outpost 320 帧样本不再称为正式波次。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收。`done=7/8` 已定位为 Windows condition-variable futex 仿真的丢失唤醒，并改用按地址 `WaitOnAddress`。最终代码在 Intel 上固定 near 300/300、动态 `--auto` 10000/10000（7分40秒）及五种 fault injection 均通过预期合同；全程 hot queue-idle、fallback、readback、CPU copy 与 renderer watchdog 为零。Khronos validation + sync validation 覆盖 300 帧、五种 fault injection 与 teardown/recreate，零 VUID/SYNC-HAZARD；期间发现并修复 render-pass compatibility、录制中 descriptor set 更新与 acquire/layout transition 同步问题。详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-20 修复 HG-2C4 双 slot 呈现所有权：Vulkan backend 只保留一个 swapchain，两个 slot 分别持有 acquire/render-complete semaphore 和离屏资源。Intel 长时验证表明 render fence 不覆盖 present 完成，当前恢复 present 后 queue-idle；300/300 strict native 正常退出、零 fallback/readback/CPU copy，最终 timestamp frame 298。此前“正常帧 queue-idle 为零”已撤销。
