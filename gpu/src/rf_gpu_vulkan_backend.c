@@ -593,6 +593,14 @@ cleanup:
     return ok;
 }
 
+struct rf_gpu_vulkan_present_image {
+    uint64_t generation;
+    uint64_t acquire_generation, submit_generation;
+    uint64_t present_generation, retire_generation;
+    uint32_t owner_slot;
+    uint32_t state;
+};
+
 struct rf_gpu_vulkan_impl {
     struct rf_vk_api api;
     rf_vk_instance instance;
@@ -612,6 +620,12 @@ struct rf_gpu_vulkan_impl {
     rf_vk_image *swapchain_images;
     uint32_t swapchain_image_count, swapchain_width, swapchain_height;
     uint32_t swapchain_format, present_mode;
+    struct rf_gpu_vulkan_present_image *present_images;
+    uint64_t presenter_generation, next_present_generation, next_frame_number;
+    uint64_t hot_queue_idle_count, recreate_queue_idle_count;
+    uint32_t outstanding_presents;
+    int presenter_poisoned;
+    uint32_t next_slot_id;
 };
 
 struct rf_gpu_vulkan_framebuffer {
@@ -999,6 +1013,9 @@ struct rf_gpu_vulkan_raster {
     int preflight_reuse;
     rf_vk_semaphore acquire_semaphore;
     rf_vk_semaphore complete_semaphore;
+    uint32_t audit_slot_id;
+    uint32_t acquire_semaphore_state, complete_semaphore_state;
+    uint64_t slot_generation, submitted_frame;
     struct rf_gpu_native_present_timing *pending_present_timing;
     const uint32_t *pending_overlay_color;
     const unsigned char *pending_overlay_coverage;
@@ -1010,6 +1027,57 @@ struct rf_gpu_vulkan_raster {
     unsigned char timestamp_category[32];
     struct rf_gpu_mixed_gpu_timing gpu_timing;
 };
+
+static int present_audit_fail(const char *invariant)
+{
+    fprintf(stderr, "PRESENT-AUDIT invariant-failure=%s\n", invariant);
+    return -1;
+}
+
+static void present_audit_poison(struct rf_gpu_vulkan_impl *impl,
+    struct rf_gpu_vulkan_raster *r, uint32_t image, int image_valid)
+{
+    if (!impl || !r) return;
+    impl->presenter_poisoned = 1;
+    if (r->acquire_semaphore_state != RF_GPU_PRESENT_AUDIT_REUSABLE)
+        r->acquire_semaphore_state = RF_GPU_PRESENT_AUDIT_POISONED;
+    if (r->complete_semaphore_state != RF_GPU_PRESENT_AUDIT_REUSABLE)
+        r->complete_semaphore_state = RF_GPU_PRESENT_AUDIT_POISONED;
+    if (image_valid && impl->present_images &&
+        image < impl->swapchain_image_count)
+        impl->present_images[image].state = RF_GPU_PRESENT_AUDIT_POISONED;
+}
+
+static void present_audit_snapshot(struct rf_gpu_vulkan_impl *impl,
+    struct rf_gpu_vulkan_raster *r, uint32_t image,
+    struct rf_gpu_native_present_timing *timing, uint32_t completion_source)
+{
+    struct rf_gpu_vulkan_present_image *pi = NULL;
+    if (!impl || !r || !timing) return;
+    if (impl->present_images && image < impl->swapchain_image_count)
+        pi = &impl->present_images[image];
+    timing->audit_frame = r->submitted_frame;
+    timing->audit_swapchain_generation = impl->presenter_generation;
+    timing->audit_slot_generation = r->slot_generation;
+    timing->audit_image_generation = pi ? pi->generation : 0;
+    timing->audit_acquire_generation = pi ? pi->acquire_generation : 0;
+    timing->audit_submit_generation = pi ? pi->submit_generation : 0;
+    timing->audit_present_generation = pi ? pi->present_generation : 0;
+    timing->audit_retire_generation = pi ? pi->retire_generation : 0;
+    timing->audit_hot_queue_idle_count = impl->hot_queue_idle_count;
+    timing->audit_recreate_queue_idle_count = impl->recreate_queue_idle_count;
+    timing->audit_slot = r->audit_slot_id;
+    timing->audit_image = image;
+    timing->audit_image_owner_slot = pi ? pi->owner_slot : UINT32_MAX;
+    timing->audit_slot_fence_state = r->render_in_flight ?
+        RF_GPU_PRESENT_AUDIT_PENDING : RF_GPU_PRESENT_AUDIT_RETIRED;
+    timing->audit_acquire_semaphore_state = r->acquire_semaphore_state;
+    timing->audit_image_state = pi ? pi->state : RF_GPU_PRESENT_AUDIT_POISONED;
+    timing->audit_render_finished_semaphore_state = r->complete_semaphore_state;
+    timing->audit_outstanding_presents = impl->outstanding_presents;
+    timing->audit_presenter_poisoned = impl->presenter_poisoned != 0;
+    timing->audit_completion_source = completion_source;
+}
 
 enum { RF_GPU_TS_RASTER, RF_GPU_TS_IMPORT, RF_GPU_TS_DRAW,
        RF_GPU_TS_EXPORT, RF_GPU_TS_POST, RF_GPU_TS_OVERLAY,
@@ -1138,13 +1206,18 @@ static void presenter_swapchain_destroy(struct rf_gpu_vulkan_impl *impl)
 {
     /* Present completion is not covered by a slot's render fence.  Rebuild and
      * teardown retire the unique presenter before destroying its images. */
-    if (impl->swapchain && impl->api.queue_wait_idle)
+    if (impl->swapchain && impl->api.queue_wait_idle) {
         impl->api.queue_wait_idle(impl->queue);
+        impl->recreate_queue_idle_count++;
+    }
     if (impl->swapchain)
         impl->api.destroy_swapchain(impl->device, impl->swapchain, NULL);
     free(impl->swapchain_images);
+    free(impl->present_images);
     impl->swapchain = NULL; impl->swapchain_images = NULL;
+    impl->present_images = NULL;
     impl->swapchain_image_count = 0;
+    impl->outstanding_presents = 0;
 }
 
 static int presenter_swapchain_create(struct rf_gpu_vulkan_impl *impl,
@@ -1156,6 +1229,7 @@ static int presenter_swapchain_create(struct rf_gpu_vulkan_impl *impl,
     struct rf_vk_swapchain_create_info info;
     rf_vk_swapchain replacement = NULL;
     rf_vk_image *images = NULL;
+    struct rf_gpu_vulkan_present_image *present_images = NULL;
     uint32_t image_count, chosen_format = 0, chosen_mode = RF_VK_PRESENT_MODE_FIFO_KHR;
     struct rf_vk_extent2d extent;
     if (!impl->native_presentation_supported || !width || !height) return -1;
@@ -1213,15 +1287,25 @@ static int presenter_swapchain_create(struct rf_gpu_vulkan_impl *impl,
     images = calloc(image_count, sizeof(*images));
     if (!images || impl->api.get_swapchain_images(impl->device, replacement,
             &image_count, images) != RF_VK_SUCCESS) goto fail;
+    present_images = calloc(image_count, sizeof(*present_images));
+    if (!present_images) goto fail;
     presenter_swapchain_destroy(impl);
     impl->swapchain = replacement; impl->swapchain_images = images;
+    impl->present_images = present_images;
     impl->swapchain_image_count = image_count;
+    impl->presenter_generation++;
+    impl->presenter_poisoned = 0;
+    for (i = 0; i < image_count; ++i) {
+        impl->present_images[i].generation = impl->presenter_generation;
+        impl->present_images[i].owner_slot = UINT32_MAX;
+        impl->present_images[i].state = RF_GPU_PRESENT_AUDIT_REUSABLE;
+    }
     impl->swapchain_width = extent.width; impl->swapchain_height = extent.height;
     impl->swapchain_format = info.image_format; impl->present_mode = chosen_mode;
     free(formats); free(modes); return 0;
 fail:
     if (replacement) impl->api.destroy_swapchain(impl->device, replacement, NULL);
-    free(images); free(formats); free(modes); return -1;
+    free(present_images); free(images); free(formats); free(modes); return -1;
 }
 
 static int raster_surface_recreate(struct rf_gpu_vulkan_context *context,
@@ -1334,6 +1418,9 @@ static int raster_create(void *context, unsigned int width,
     r = calloc(1, sizeof(*r));
     if (!r) goto failed;
     r->owner = impl; r->width = width; r->height = height;
+    r->audit_slot_id = impl->next_slot_id++;
+    r->acquire_semaphore_state = RF_GPU_PRESENT_AUDIT_REUSABLE;
+    r->complete_semaphore_state = RF_GPU_PRESENT_AUDIT_REUSABLE;
     r->work_group_x = work_group_x; r->work_group_y = work_group_y;
     {
         struct rf_vk_fence_create_info fence_info;
@@ -1702,6 +1789,8 @@ static int raster_render_range(void *context, void *raster,
     struct rf_gpu_vulkan_raster_buffer *presentation_color =
         r ? (post_enabled ? &r->post_color : &r->color) : NULL;
     uint32_t swapchain_image = 0;
+    int swapchain_image_acquired = 0;
+    int present_transaction_complete = 0;
     struct rf_gpu_native_present_timing *native_timing = NULL;
     double total_start = now_ms(), segment_start;
     static const uint32_t empty_texture[6] = {0, 1, 1, 4, 2, 1};
@@ -1734,6 +1823,10 @@ static int raster_render_range(void *context, void *raster,
         if (!impl->swapchain || impl->swapchain_width != width ||
             impl->swapchain_height != height)
             if (presenter_swapchain_create(impl, width, height) < 0) return -1;
+        if (impl->presenter_poisoned)
+            return present_audit_fail("presenter-generation-poisoned");
+        if (r->acquire_semaphore_state != RF_GPU_PRESENT_AUDIT_REUSABLE)
+            return present_audit_fail("acquire-semaphore-not-reusable");
         acquire_start = now_ms();
         result = impl->api.acquire_next_image(impl->device, impl->swapchain,
             UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
@@ -1748,6 +1841,27 @@ static int raster_render_range(void *context, void *raster,
                 UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
         }
         if (result != RF_VK_SUCCESS && result != RF_VK_SUBOPTIMAL_KHR) return -1;
+        swapchain_image_acquired = 1;
+        if (swapchain_image >= impl->swapchain_image_count ||
+            !impl->present_images ||
+            impl->present_images[swapchain_image].generation !=
+                impl->presenter_generation) {
+            present_audit_poison(impl, r, swapchain_image,
+                swapchain_image < impl->swapchain_image_count);
+            return present_audit_fail("image-generation-mismatch");
+        }
+        if (impl->present_images[swapchain_image].state ==
+                RF_GPU_PRESENT_AUDIT_PENDING) {
+            present_audit_poison(impl, r, swapchain_image, 1);
+            return present_audit_fail("pending-image-reacquired-before-retire");
+        }
+        r->slot_generation++;
+        r->acquire_semaphore_state = RF_GPU_PRESENT_AUDIT_SIGNALED;
+        impl->present_images[swapchain_image].state =
+            RF_GPU_PRESENT_AUDIT_REUSABLE;
+        impl->present_images[swapchain_image].owner_slot = r->audit_slot_id;
+        impl->present_images[swapchain_image].acquire_generation =
+            ++impl->next_present_generation;
         native_timing->acquire_ms = now_ms() - acquire_start;
     }
     if (timing) timing->pack_validation_ms = now_ms() - segment_start;
@@ -2090,10 +2204,24 @@ static int raster_render_range(void *context, void *raster,
         }
         submit.command_buffer_count = 1;
         submit.command_buffers = &r->command_buffer;
+        if (native_present &&
+            (r->acquire_semaphore_state != RF_GPU_PRESENT_AUDIT_SIGNALED ||
+             r->complete_semaphore_state != RF_GPU_PRESENT_AUDIT_REUSABLE)) {
+            present_audit_poison(impl, r, swapchain_image,
+                swapchain_image_acquired);
+            return present_audit_fail("submit-semaphore-state");
+        }
         segment_start = now_ms();
         if (impl->api.queue_submit(impl->queue, 1, &submit, r->render_fence) != RF_VK_SUCCESS)
             goto failed;
         r->render_in_flight=1;
+        r->submitted_frame = ++impl->next_frame_number;
+        if (native_present) {
+            r->acquire_semaphore_state = RF_GPU_PRESENT_AUDIT_REUSABLE;
+            r->complete_semaphore_state = RF_GPU_PRESENT_AUDIT_SIGNALED;
+            impl->present_images[swapchain_image].submit_generation =
+                ++impl->next_present_generation;
+        }
         if (timing) timing->submit_ms = now_ms() - segment_start;
         if (!native_present || r->pending_capture_color) {
             segment_start = now_ms();
@@ -2134,10 +2262,32 @@ static int raster_render_range(void *context, void *raster,
         result = impl->api.queue_present(impl->queue, &present);
         native_timing->present_ms = now_ms() - present_start;
         if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR) {
+            if (r->complete_semaphore_state != RF_GPU_PRESENT_AUDIT_SIGNALED) {
+                present_audit_poison(impl, r, swapchain_image, 1);
+                return present_audit_fail("present-wait-semaphore-not-signaled");
+            }
+            r->complete_semaphore_state = RF_GPU_PRESENT_AUDIT_PENDING;
+            impl->present_images[swapchain_image].state =
+                RF_GPU_PRESENT_AUDIT_PENDING;
+            impl->present_images[swapchain_image].present_generation =
+                ++impl->next_present_generation;
+            impl->outstanding_presents++;
             double idle_start = now_ms();
-            if (impl->api.queue_wait_idle(impl->queue) != RF_VK_SUCCESS)
-                return -1;
+            if (impl->api.queue_wait_idle(impl->queue) != RF_VK_SUCCESS) {
+                present_audit_poison(impl, r, swapchain_image, 1);
+                goto failed;
+            }
             native_timing->present_queue_idle_ms = now_ms() - idle_start;
+            impl->hot_queue_idle_count++;
+            r->complete_semaphore_state = RF_GPU_PRESENT_AUDIT_REUSABLE;
+            impl->present_images[swapchain_image].state =
+                RF_GPU_PRESENT_AUDIT_RETIRED;
+            impl->present_images[swapchain_image].retire_generation =
+                ++impl->next_present_generation;
+            if (impl->outstanding_presents) impl->outstanding_presents--;
+            present_transaction_complete = 1;
+        } else {
+            present_audit_poison(impl, r, swapchain_image, 1);
         }
         native_timing->submit_ms = timing ? timing->submit_ms : 0.0;
         native_timing->gpu_raster_ms = timing ? timing->execution_wait_ms : 0.0;
@@ -2149,6 +2299,9 @@ static int raster_render_range(void *context, void *raster,
         native_timing->image_count = impl->swapchain_image_count;
         native_timing->width = impl->swapchain_width;
         native_timing->height = impl->swapchain_height;
+        present_audit_snapshot(impl, r, swapchain_image, native_timing,
+            present_transaction_complete ? RF_GPU_PRESENT_COMPLETION_QUEUE_IDLE :
+            RF_GPU_PRESENT_COMPLETION_NONE);
         if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
             if (raster_surface_recreate(backend_context, impl) < 0)
                 return -1;
@@ -2183,6 +2336,10 @@ static int raster_render_range(void *context, void *raster,
     snprintf(message, message_capacity, "GPU Raster V1 rendered");
     return 0;
 failed:
+    if (native_present && swapchain_image_acquired &&
+        !present_transaction_complete)
+        present_audit_poison(impl, r, swapchain_image,
+            swapchain_image < impl->swapchain_image_count);
     snprintf(message, message_capacity, "Vulkan Raster V1 operation failed");
 cleanup:
     r->frame_recording = 0;

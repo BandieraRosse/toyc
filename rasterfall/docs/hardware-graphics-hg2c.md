@@ -1,6 +1,7 @@
 # HG-2C：mixed 帧架构与性能基础设施
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已按 Windows Native present 基线重新立项；先以 Phase 0 审计当前 queue-idle 路径，再迁移 image-owned render-finished semaphore，最后以 image reacquire 证明移除 hot wait。厂商扩展不属于正确性依赖。
 > 源码核对基线补充：2026-09-20 长时实机修复：frame slot 不再各自持有 swapchain；唯一 swapchain/图像属于 Vulkan backend presenter，slot 仅持有自己的 acquire/render-complete semaphore 与离屏资源。Intel 上按 image 复用完成 semaphore 且不等待 present 的实现会在 30--60 秒内停滞；当前 present 后恢复 queue-idle 作为正确性门槛。300/300 strict native、零 fallback/readback/CPU copy，历史 timestamp 到 frame 298。
 > 源码核对基线：2026-09-20；HG-2C1 至 HG-2C4 已完成。两个完整 mixed frame slot 分别拥有 Raster/Graphics target、上传 buffer、command buffer、render fence 与 timestamp query pool；normal native submit 后不等待本帧 fence，复用 slot 时才回收。资源 pin 使用跨帧引用计数并由 slot fence 完成后释放，`mixed-gpu frame=` 报告被回收的历史帧编号。Intel strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate 均通过。
 
@@ -30,6 +31,7 @@ depth bridge 包含 D32/inverse-Z 转换、全屏 depth copy、barrier 和资源
 | HG-2C2 | 完成 | compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment；双向整屏 color copy 已取消，diagnostic readback 独立 |
 | HG-2C3 | 完成 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
 | HG-2C4 | 完成 | 两个完整 frame slot、延迟 fence/timestamp 回收和延迟资源 unpin；strict 120 帧、mixed gate 与四 extent resize gate 通过 |
+| HG-2C5 | 进行中 | 唯一 presenter generation、slot/image 生命周期解耦、failure-path ownership、移除 hot-frame queue-idle；Intel Iris Xe 为最低能力签收基线 |
 
 HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完整 color、正常 present 后不调用
 `vkQueueWaitIdle`、至少双帧在途，并能用 GPU timestamp 区分 Raster、bridge、Draw、Post、overlay

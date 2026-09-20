@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
-> 文档更新：2026-09-19
+> 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C5 已开始收口 Windows Native presenter：唯一 swapchain generation、两个 frame slot、三种 completion 分离；当前 Phase 0 保留 hot queue-idle 并增加 `PRESENT-AUDIT`，详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已实现 static prop CPU bundle registry、stable handle/generation、Core 单帧 pin 与 world 退休/延迟释放。
@@ -9,7 +10,7 @@
 
 本阶段执行根目录 [GPU hardware.md](../../GPU%20hardware.md) 的 HG-0 → HG-1A/1B → HG-2A/2B → HG-3 顺序。
 HG-0 冻结事实、接口草案和诊断基线；HG-1A 已实现同步 CPU-backed Draw/reference。
-HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已接通 Core 混合帧、正常 static prop indexed Draw 与 Windows strict native present。其他 GPU 模式仍使用原 compute raster 路径。
+HG-1B 已建立 CPU registry 与帧 pin；HG-2A 已建立独立离屏 graphics executor；HG-2B 已接通 Core 混合帧、正常 static prop indexed Draw 与 Windows strict native present；HG-2C5 正在冻结 vendor-independent Windows presenter 基线。其他 GPU 模式仍使用原 compute raster 路径。
 
 ## 状态所有者与 producer 边界
 

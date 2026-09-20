@@ -118,6 +118,32 @@ struct rf_gpu_native_present_timing {
     unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
     unsigned int overlay_upload_bytes;
     unsigned int format, present_mode, image_count, width, height;
+    unsigned long long audit_frame, audit_swapchain_generation;
+    unsigned long long audit_slot_generation, audit_image_generation;
+    unsigned long long audit_acquire_generation, audit_submit_generation;
+    unsigned long long audit_present_generation, audit_retire_generation;
+    unsigned long long audit_hot_queue_idle_count;
+    unsigned long long audit_recreate_queue_idle_count;
+    unsigned int audit_slot, audit_image, audit_image_owner_slot;
+    unsigned int audit_slot_fence_state, audit_acquire_semaphore_state;
+    unsigned int audit_image_state, audit_render_finished_semaphore_state;
+    unsigned int audit_outstanding_presents, audit_presenter_poisoned;
+    unsigned int audit_completion_source;
+};
+
+enum rf_gpu_present_audit_state {
+    RF_GPU_PRESENT_AUDIT_REUSABLE = 0,
+    RF_GPU_PRESENT_AUDIT_SIGNALED = 1,
+    RF_GPU_PRESENT_AUDIT_PENDING = 2,
+    RF_GPU_PRESENT_AUDIT_RETIRED = 3,
+    RF_GPU_PRESENT_AUDIT_POISONED = 4
+};
+
+enum rf_gpu_present_completion_source {
+    RF_GPU_PRESENT_COMPLETION_NONE = 0,
+    RF_GPU_PRESENT_COMPLETION_QUEUE_IDLE = 1,
+    RF_GPU_PRESENT_COMPLETION_IMAGE_REACQUIRED = 2,
+    RF_GPU_PRESENT_COMPLETION_RECREATE_DRAIN = 3
 };
 
 struct rf_gpu_backend_info {

@@ -4413,6 +4413,31 @@ startup_again:
                     gpu_audit.mixed_draws);
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
+                if (gpu_audit.native_present_timing.audit_swapchain_generation) {
+                    const struct rf_gpu_native_present_timing *pa =
+                        &gpu_audit.native_present_timing;
+                    snprintf(audit_line, sizeof(audit_line),
+                        "PRESENT-AUDIT frame=%llu slot=%u swapchain_gen=%llu image=%u slot_gen=%llu image_gen=%llu slot_fence=%u acquire_sem=%u image_state=%u render_finished_sem=%u acquire_gen=%llu submit_gen=%llu present_gen=%llu retire_gen=%llu image_owner_slot=%u outstanding_presents=%u hot_queue_idle_count=%llu recreate_queue_idle_count=%llu presenter_poisoned=%u completion_source=%u",
+                        pa->audit_frame, pa->audit_slot,
+                        pa->audit_swapchain_generation, pa->audit_image,
+                        pa->audit_slot_generation, pa->audit_image_generation,
+                        pa->audit_slot_fence_state,
+                        pa->audit_acquire_semaphore_state,
+                        pa->audit_image_state,
+                        pa->audit_render_finished_semaphore_state,
+                        pa->audit_acquire_generation,
+                        pa->audit_submit_generation,
+                        pa->audit_present_generation,
+                        pa->audit_retire_generation,
+                        pa->audit_image_owner_slot,
+                        pa->audit_outstanding_presents,
+                        pa->audit_hot_queue_idle_count,
+                        pa->audit_recreate_queue_idle_count,
+                        pa->audit_presenter_poisoned,
+                        pa->audit_completion_source);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
             }
             fps_elapsed = now - fps_window_start;
             if (fps_elapsed >= 1000000) {

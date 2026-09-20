@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 HG-2C5 Phase 0 已建立 Intel Iris Xe 实机检查点：strict native 120/120 与四 extent resize 140/140 通过；slot 交替、generation 配对、semaphore reusable、image retired、outstanding=0、hot/recreate queue-idle 分类均符合审计，无 invariant failure、poison、fallback、readback 或 CPU copy。当前呈现行为仍在成功 present 后 queue-idle；Phase 1 的 image-owned render-finished semaphore 尚未迁移，详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-20 修复 HG-2C4 双 slot 呈现所有权：Vulkan backend 只保留一个 swapchain，两个 slot 分别持有 acquire/render-complete semaphore 和离屏资源。Intel 长时验证表明 render fence 不覆盖 present 完成，当前恢复 present 后 queue-idle；300/300 strict native 正常退出、零 fallback/readback/CPU copy，最终 timestamp frame 298。此前“正常帧 queue-idle 为零”已撤销。
 > 源码核对基线补充：2026-09-20 HG-2C4 已签收：两个完整 mixed frame slot 使 normal native submit 不再立即等待本帧 render fence；slot 复用时回收 fence/timestamp，并按引用计数延迟释放 Core resource pin。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过；`mixed-gpu frame=` 从当前第 3 帧关联历史帧 1，最终报告帧 118，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-20 HG-2C4 的首个增量已删除 normal present 后的 `vkQueueWaitIdle`：完成 semaphore 按 swapchain image 分配，重建/销毁边界才排空 queue。Intel strict native near/0 120/120、零 fallback/readback/CPU framebuffer copy，所有帧 `native_present_queue_idle_ms=0.000`。帧末 render fence、单帧资源与多帧在途仍待完成。
@@ -27,6 +28,7 @@
 - `rf-gpu-graphics-test` 是独立 HG-2A hosted 诊断：选择 graphics+compute queue、上传 mesh 与 opaque texture、提交 indexed draw 并读回离屏 color/depth。`rf_gpu_vulkan_graphics.inc` 已将持久资源与共享 target/pipeline 分离；HG-2B 连接 Raster ABI、GPU attachment/buffer bridge、Core mixed consumer 和 normal-frame static prop hardware producer。
 - 普通 opaque static RMESH 按实例/submesh 生成 Draw；Windows strict native 的 eligible 实例提交 hardware Draw 并跳过同步 CPU lowering，其他模式仍同步 lowering 为 RasterCmd。特殊/透明实例保留原 producer。CPU registry 持有 mesh/material/texture bundle 和 generation，Core 帧 pin 保护混合帧资源引用。
 - `--frame-audit` 在 Windows 同时写入 `rasterfall.log`；`fence_wait_ms`、`native_present_queue_idle_ms` 是 CPU 墙钟等待，不是 GPU timestamp。
+- HG-2C5 Phase 0 的 `PRESENT-AUDIT` 是软件 ownership/state 审计；`completion_source=QUEUE_IDLE` 只表示当前保守 drain，不声称显示扫描完成。
 
 ## 已验证范围和性能快照
 
