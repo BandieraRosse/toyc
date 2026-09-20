@@ -3154,6 +3154,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.gpu_post_fog = options.gpu_post_fog;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
+        gpu_vulkan_context.present_fault =
+            (unsigned int)options.gpu_present_fault;
+        gpu_vulkan_context.present_fault_frame =
+            (unsigned int)options.gpu_present_fault_frame;
         if (options.renderer_mode) {
             core_config.gpu_backend = &rf_gpu_vulkan_backend;
             core_config.gpu_backend_context = &gpu_vulkan_context;
@@ -3864,6 +3868,16 @@ startup_again:
                 if (game.state != TOY_GAME_PLAYING)
                     input.key_pressed[KEY_R] = 1;   /* 死亡重开 */
                 fire_edge = 1;
+                /* Long-running GPU/presenter soak also needs authoritative
+                 * gameplay motion instead of a stationary firing camera.
+                 * Alternate forward/strafe input and request a periodic jump;
+                 * teleport remains the bounded scene-coverage reset. */
+                input.key_down[KEY_W] = ((rendered_frames / 120) & 1) == 0;
+                input.key_down[KEY_S] = !input.key_down[KEY_W];
+                input.key_down[KEY_A] = ((rendered_frames / 60) & 1) == 0;
+                input.key_down[KEY_D] = !input.key_down[KEY_A];
+                if (rendered_frames % 90 == 0)
+                    input.key_pressed[KEY_SPACE] = 1;
                 /* 只在水平面扫射：向上俯仰会让大部分几何体离开视锥，
                  * 帧数虚高，无法反映真实渲染负载。 */
                 rasterfall_camera_rotate(&camera, 37, 0);

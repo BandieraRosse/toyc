@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 HG-2C5 以 Windows Native Vulkan 为唯一 GPU 维护平台；Phase 2 image-reacquire 热路径已在 Intel 固定窗口 300/300 通过，image-owned render-finished 且 hot queue-idle=0，recreate/teardown 保留 slow-path drain。该 checkpoint 不执行 resize 检查；Windows 高层缩放不能作为 swapchain extent 变化证据。后续 validation gate 必须区分 `validation unavailable` 与零错误 PASS；WSL/llvmpipe 不进入正确性、兼容性或性能验收。
+> 源码核对基线补充：2026-09-20 HG-2C5 已签收。Windows worker `done=7/8` 来自旧 `__futex()` 全局 condition variable 的丢失唤醒；runtime 现动态解析 `WaitOnAddress`/`WakeByAddressAll`，不新增静态链接库。最终代码的 package、`--logic-test`、固定 300 帧、五种 fault injection 与 7分40秒动态 soak 均通过预期合同，零 renderer watchdog/fallback/readback/CPU copy/hot queue-idle。进程私有 `VK_LAYER_PATH` 加载 Khronos validation 后，300 帧与五种故障注入均零 VUID/SYNC-HAZARD。该 checkpoint 不执行 resize。
 > 源码核对基线补充：2026-09-20 Windows Intel 长时呈现门禁提高到至少 300 帧：唯一 backend swapchain + 双离屏 slot + 每 slot acquire/render-complete semaphore，并在 present 后 queue-idle。300/300 strict native 正常退出；短 120/140 帧 smoke 不再足以证明 present 生命周期稳定。
 > 源码核对基线补充：2026-09-20 HG-2C4 最新 Windows package 通过 strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate。`hardware_graphics_resize.ps1` 的资源检查适配双帧在途：允许 fence 完成前的非零 pin，但要求 `retired=0`、`failed=0` 且 pinned resources 不超过 live resources；loads 在 resize 全程稳定。
 > 源码核对基线补充：2026-09-19 `toy_window_open_native()` 在 Windows 为 native Vulkan 窗口创建 SDL software renderer；普通 `toy_window_open()` 仍使用原 SDL renderer。Core config 根据 `native_present` 选择入口，Wayland 共用原窗口实现。RTX 3050 strict native 10 帧零回退、零读回、零 CPU framebuffer copy；Fog 10 帧、三 extent native gate 与 Windows `--logic-test` 通过。

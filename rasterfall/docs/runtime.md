@@ -1,6 +1,7 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-19
+> 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 `--auto` 在原持续转向、射击和定期场景传送基础上，增加确定性的前后/横移与每 90 帧跳跃，用于 HG-2C5 动态 gameplay soak；它仍是显式诊断模式，不改变正常输入。Windows worker 等待改用按地址 `WaitOnAddress`，修复长时 renderer job 丢失唤醒。
 > 源码核对基线补充：2026-09-19 Windows `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 从 strict native mixed 正常帧的最终 GPU Post/overlay 结果显式读回一帧；默认第 30 帧。须同时提供 `--renderer gpu-compute --gpu-native-present --gpu-required --gpu-normal-scene <near|mid> <0|30>`；诊断字节单列，普通帧零读回合同不变。`--help` 是完整参数入口。固定场景同时设置本地 actor 的位置，防止首个固定步长将 camera 重置。
 > 源码核对基线补充：2026-09-19 Windows strict native 正常帧使用 Core-owned mixed frame/executor；`rf_core_begin_frame()` 建立资源 pin 与计划，WORLD/Effects/VIEWMODEL 依序录制，overlay 完成后同帧 native 呈现并释放 pin。preflight/submit 失败使 required runtime 非零退出，不回退部分 GPU target。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md)：Core begin/end 包围 static prop 资源的单帧 pin；失败帧保留到 backend teardown 后释放。Game init、成功 world switch 与 shutdown 使旧资源退休，仍在消费中的帧不提前释放。
@@ -8,7 +9,7 @@
 > 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。
 > 正常退出判定：native GPU frame 不写 CPU `scene_pixels`；帧上限退出时须同时检查成功 GPU 帧数，不能仅因 CPU 像素计数为零返回 2。GPU contract 失败仍优先返回 3。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。实机验证与最近基线见 [GPU 当前状态](gpu-current-state.md)。
+> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。HG-2C5 可用 `--gpu-present-fault <name> [frame]` 对指定 native-present attempt 做一次性诊断故障注入；它不是普通玩家参数。实机验证与最近基线见 [GPU 当前状态](gpu-current-state.md)。
 > 当前阶段：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退和窗口拉伸已确认；功能阶段结束，转入帧率优化。Legacy anime normal rendering 已冻结并回退 humanoid，原 toon/material `0x40` 不再是 normal frame 输入；Console/Desktop normal runtime 也已隔离，F12、反引号和 station 交互只产生 HUD 暂时不可用提示。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
 > 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
 > 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。

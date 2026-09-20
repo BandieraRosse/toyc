@@ -5,6 +5,7 @@
 #include "rasterfall_model.h"
 #include "rasterfall_enemy_visual.h"
 #include "rasterfall_options.h"
+#include "rf_gpu_vulkan_backend.h"
 
 static int positive_int(const char *text, int fallback)
 {
@@ -78,6 +79,7 @@ void rasterfall_options_init(struct rasterfall_options *o,
     o->performance_warmup = 3;
     o->performance_repeats = 3;
     o->actor_raster_workers = 8;
+    o->gpu_present_fault_frame = 1;
 }
 
 void rasterfall_options_usage(int fd)
@@ -87,6 +89,7 @@ void rasterfall_options_usage(int fd)
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
         "  --renderer <cpu|gpu-compute> [--gpu-required] [--gpu-native-present] [--gpu-post-fog]\n"
+        "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
@@ -187,6 +190,28 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
         else if (!strcmp(option,"--gpu-native-present")) o->gpu_native_present=1;
         else if (!strcmp(option,"--gpu-post-fog")) o->gpu_post_fog=1;
+        else if (!strcmp(option,"--gpu-present-fault")) {
+            const char *fault;
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            fault=argv[++arg];
+            if(!strcmp(fault,"acquire-out-of-date"))
+                o->gpu_present_fault=RF_GPU_PRESENT_FAULT_ACQUIRE_OUT_OF_DATE;
+            else if(!strcmp(fault,"record-failure"))
+                o->gpu_present_fault=RF_GPU_PRESENT_FAULT_RECORD_FAILURE;
+            else if(!strcmp(fault,"submit-failure"))
+                o->gpu_present_fault=RF_GPU_PRESENT_FAULT_SUBMIT_FAILURE;
+            else if(!strcmp(fault,"present-out-of-date"))
+                o->gpu_present_fault=RF_GPU_PRESENT_FAULT_PRESENT_OUT_OF_DATE;
+            else if(!strcmp(fault,"present-suboptimal"))
+                o->gpu_present_fault=RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL;
+            else {
+                __fprintf(2,"rasterfall: invalid GPU present fault %s\n",fault);
+                return -1;
+            }
+            if(numeric_argument(argc,argv,arg))
+                o->gpu_present_fault_frame=positive_int(argv[++arg],0);
+            if(!o->gpu_present_fault_frame)return -1;
+        }
         else if (!strcmp(option,"--gpu-frame-capture")) {
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             o->gpu_frame_capture=argv[++arg];

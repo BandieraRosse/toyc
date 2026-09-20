@@ -31,7 +31,7 @@ depth bridge 包含 D32/inverse-Z 转换、全屏 depth copy、barrier 和资源
 | HG-2C2 | 完成 | compute Raster、graphics Draw 与 Post 共享 RGBA8 storage/color attachment；双向整屏 color copy 已取消，diagnostic readback 独立 |
 | HG-2C3 | 完成 | 前段 Raster、Draw、后段 Raster、Post、overlay 与 present copy 使用统一 frame command context |
 | HG-2C4 | 完成 | 两个完整 frame slot、延迟 fence/timestamp 回收和延迟资源 unpin；strict 120 帧、mixed gate 与四 extent resize gate 通过 |
-| HG-2C5 | 进行中 | 唯一 presenter generation、slot/image 生命周期解耦、failure-path ownership、移除 hot-frame queue-idle；Intel Iris Xe 为最低能力签收基线 |
+| HG-2C5 | 完成 | 唯一 presenter generation、slot/image 生命周期解耦、failure-path ownership、移除 hot-frame queue-idle；Intel Iris Xe 固定/动态/fault/validation 门禁通过 |
 
 HG-2C 完成后才进入 HG-3A。最低门槛是正常帧不再双向搬运完整 color、正常 present 后不调用
 `vkQueueWaitIdle`、至少双帧在途，并能用 GPU timestamp 区分 Raster、bridge、Draw、Post、overlay

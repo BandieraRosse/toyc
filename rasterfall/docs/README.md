@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) Phase 1 已完成，Phase 2 image-reacquire 热路径已在 Intel 固定 1280×720 strict native 300/300 通过：slot-owned acquire、image-owned render-finished，hot queue-idle=0，零 poison/fallback/readback/CPU copy。HG-2C5 假设窗口尺寸不变，不再执行 resize 检查；动态 soak、fault injection 与 validation 尚未完成。
+> 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已签收：Windows futex 丢失 worker 唤醒已修复；最终代码在 Intel 上固定 300 帧、五种 fault injection 与动态 `--auto` 10000 帧/7分40秒通过，零 watchdog/fallback/readback/CPU copy/hot queue-idle。Khronos validation + sync validation 进一步修复 render-pass compatibility、统一 command recording 内 descriptor set 更新失效与 acquire/layout-transition stage 依赖，最终 300 帧及五种 fault injection 均零 VUID/SYNC-HAZARD。HG-2C5 假设窗口尺寸不变，不执行 resize 检查。
 > 源码核对基线补充：2026-09-20 HG-2C4 长时稳定性修复：双 mixed frame slot 继续独立持有离屏 target、上传、command、fence 与 query，但窗口 surface 只允许 Vulkan backend 拥有一个 swapchain。每 slot 使用独立 acquire/render-complete semaphore；Intel 实机要求 present 后 queue-idle 才安全复用完成信号量，因此当前提交实际在 present 边界串行。300 帧约一分钟 strict native 通过，修复交替旧帧闪回与 30--60 秒呈现卡死；当前 `native_present_queue_idle_ms` 不再承诺为零。
 > 源码核对基线补充：2026-09-20 HG-2C4 已签收：双 frame slot 使用独立 target/上传区/command/fence/query，复用 slot 时才等待并回收 timestamp，Core resource pin 随 fence 延迟释放。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-20 HG-2C4 已完成 present queue-idle 移除增量：normal present 按 swapchain image 使用独立完成 semaphore，正常帧 `native_present_queue_idle_ms=0.000`；Intel strict native near/0 120/120 通过。帧末 render fence、单帧资源与多帧在途仍待后续完成。

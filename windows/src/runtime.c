@@ -218,16 +218,24 @@ int __ioctl(int fd, unsigned long request, void *argp)
 { (void)fd; (void)request; (void)argp; return -1; }
 long __getdents64(unsigned int fd, struct linux_dirent64 *dirp, unsigned int count)
 { (void)fd; (void)dirp; (void)count; return -1; }
+typedef BOOL (WINAPI *toy_wait_on_address_fn)(volatile VOID *, PVOID,
+                                              SIZE_T, DWORD);
+typedef VOID (WINAPI *toy_wake_by_address_all_fn)(PVOID);
+
 static INIT_ONCE futex_once = INIT_ONCE_STATIC_INIT;
-static CRITICAL_SECTION futex_lock;
-static CONDITION_VARIABLE futex_condition;
+static toy_wait_on_address_fn futex_wait_on_address;
+static toy_wake_by_address_all_fn futex_wake_by_address_all;
 
 static BOOL WINAPI init_futex(PINIT_ONCE once, PVOID parameter, LPVOID *context)
 {
+    HMODULE kernel32 = GetModuleHandleA("kernel32.dll");
     (void)once; (void)parameter; (void)context;
-    InitializeCriticalSection(&futex_lock);
-    InitializeConditionVariable(&futex_condition);
-    return TRUE;
+    if (!kernel32) return FALSE;
+    futex_wait_on_address = (toy_wait_on_address_fn)(void *)
+        GetProcAddress(kernel32, "WaitOnAddress");
+    futex_wake_by_address_all = (toy_wake_by_address_all_fn)(void *)
+        GetProcAddress(kernel32, "WakeByAddressAll");
+    return futex_wait_on_address && futex_wake_by_address_all;
 }
 
 long __futex(unsigned int *uaddr, int op, unsigned int value,
@@ -237,20 +245,22 @@ long __futex(unsigned int *uaddr, int op, unsigned int value,
     DWORD milliseconds = INFINITE;
     (void)uaddr2; (void)value3;
     if (!uaddr) return -1;
-    if (InitOnceExecuteOnce(&futex_once, init_futex, NULL, NULL) == FALSE)
-        return -1;
+    if (!InitOnceExecuteOnce(&futex_once, init_futex, NULL, NULL)) return -1;
     if (timeout)
         milliseconds = (DWORD)(timeout->tv_sec * 1000 + timeout->tv_nsec / 1000000);
     if (op == 0) {
-        EnterCriticalSection(&futex_lock);
-        while (*uaddr == value &&
-               SleepConditionVariableCS(&futex_condition, &futex_lock, milliseconds))
+        /* WaitOnAddress atomically compares and parks on this exact address.
+         * The former process-wide condition variable allowed a renderer job
+         * generation change and wake to pass between the worker's comparison
+         * and sleep, leaving one worker parked forever (done=7/8). */
+        while (__atomic_load_n(uaddr, __ATOMIC_ACQUIRE) == value) {
+            if (!futex_wait_on_address((volatile VOID *)uaddr, &value,
+                                       sizeof(value), milliseconds))
+                break;
             milliseconds = INFINITE;
-        LeaveCriticalSection(&futex_lock);
+        }
         return 0;
     }
-    EnterCriticalSection(&futex_lock);
-    WakeAllConditionVariable(&futex_condition);
-    LeaveCriticalSection(&futex_lock);
+    futex_wake_by_address_all((PVOID)uaddr);
     return 0;
 }

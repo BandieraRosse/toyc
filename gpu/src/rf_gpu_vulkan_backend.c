@@ -627,6 +627,9 @@ struct rf_gpu_vulkan_impl {
     uint32_t outstanding_presents;
     int presenter_poisoned;
     uint32_t next_slot_id;
+    uint32_t present_fault, present_fault_frame;
+    uint64_t present_attempt;
+    int present_fault_triggered;
 };
 
 struct rf_gpu_vulkan_framebuffer {
@@ -959,6 +962,8 @@ struct rf_gpu_vulkan_raster_buffer {
     rf_vk_flags memory_flags;
 };
 
+#define RF_GPU_RASTER_DESCRIPTOR_SET_COUNT 32
+
 struct rf_gpu_vulkan_raster {
     struct rf_gpu_vulkan_impl *owner;
     struct rf_gpu_vulkan_raster_buffer color;
@@ -977,7 +982,8 @@ struct rf_gpu_vulkan_raster {
     struct rf_gpu_vulkan_raster_buffer depth_readback;
     rf_vk_descriptor_set_layout set_layout;
     rf_vk_descriptor_pool descriptor_pool;
-    rf_vk_descriptor_set descriptor_set;
+    rf_vk_descriptor_set descriptor_sets[RF_GPU_RASTER_DESCRIPTOR_SET_COUNT];
+    uint32_t descriptor_set_cursor;
     rf_vk_shader_module shader;
     rf_vk_shader_module full_scan_shader;
     rf_vk_shader_module image_shader;
@@ -1032,6 +1038,35 @@ static int present_audit_fail(const char *invariant)
 {
     fprintf(stderr, "PRESENT-AUDIT invariant-failure=%s\n", invariant);
     return -1;
+}
+
+static const char *present_fault_name(uint32_t fault)
+{
+    switch (fault) {
+    case RF_GPU_PRESENT_FAULT_ACQUIRE_OUT_OF_DATE:
+        return "acquire-out-of-date";
+    case RF_GPU_PRESENT_FAULT_RECORD_FAILURE: return "record-failure";
+    case RF_GPU_PRESENT_FAULT_SUBMIT_FAILURE: return "submit-failure";
+    case RF_GPU_PRESENT_FAULT_PRESENT_OUT_OF_DATE:
+        return "present-out-of-date";
+    case RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL:
+        return "present-suboptimal";
+    default: return "none";
+    }
+}
+
+static int present_fault_take(struct rf_gpu_vulkan_impl *impl,
+                              uint32_t fault)
+{
+    if (!impl || impl->present_fault_triggered ||
+        impl->present_fault != fault ||
+        impl->present_attempt != impl->present_fault_frame)
+        return 0;
+    impl->present_fault_triggered = 1;
+    fprintf(stderr, "PRESENT-AUDIT fault-injection=%s frame=%llu\n",
+        present_fault_name(fault),
+        (unsigned long long)impl->present_attempt);
+    return 1;
 }
 
 static void present_audit_poison(struct rf_gpu_vulkan_impl *impl,
@@ -1514,12 +1549,14 @@ static int raster_create(void *context, unsigned int width,
         struct rf_vk_descriptor_pool_create_info pool_info;
         struct rf_vk_descriptor_set_allocate_info allocation;
         sizes[0].type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        sizes[0].descriptor_count = 12;
+        sizes[0].descriptor_count =
+            12 * RF_GPU_RASTER_DESCRIPTOR_SET_COUNT;
         sizes[1].type = RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        sizes[1].descriptor_count = 1;
+        sizes[1].descriptor_count = RF_GPU_RASTER_DESCRIPTOR_SET_COUNT;
         memset(&pool_info, 0, sizeof(pool_info));
         pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.max_sets = 1; pool_info.pool_size_count = 2;
+        pool_info.max_sets = RF_GPU_RASTER_DESCRIPTOR_SET_COUNT;
+        pool_info.pool_size_count = 2;
         pool_info.pool_sizes = sizes;
         if (impl->api.create_descriptor_pool(impl->device, &pool_info, NULL,
                                              &r->descriptor_pool) != RF_VK_SUCCESS)
@@ -1527,11 +1564,18 @@ static int raster_create(void *context, unsigned int width,
         memset(&allocation, 0, sizeof(allocation));
         allocation.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocation.descriptor_pool = r->descriptor_pool;
-        allocation.descriptor_set_count = 1;
-        allocation.set_layouts = &r->set_layout;
-        if (impl->api.allocate_descriptor_sets(impl->device, &allocation,
-                                               &r->descriptor_set) != RF_VK_SUCCESS)
-            goto failed;
+        {
+            rf_vk_descriptor_set_layout layouts[
+                RF_GPU_RASTER_DESCRIPTOR_SET_COUNT];
+            for (i = 0; i < RF_GPU_RASTER_DESCRIPTOR_SET_COUNT; ++i)
+                layouts[i] = r->set_layout;
+            allocation.descriptor_set_count =
+                RF_GPU_RASTER_DESCRIPTOR_SET_COUNT;
+            allocation.set_layouts = layouts;
+            if (impl->api.allocate_descriptor_sets(impl->device, &allocation,
+                    r->descriptor_sets) != RF_VK_SUCCESS)
+                goto failed;
+        }
     }
     spirv = work_group_x == 16 ? rf_gpu_raster_v1_16_spirv
                                : rf_gpu_raster_v1_8_spirv;
@@ -1810,6 +1854,7 @@ static int raster_render_range(void *context, void *raster,
     int present_transaction_complete = 0;
     int image_reacquired = 0;
     struct rf_gpu_native_present_timing *native_timing = NULL;
+    rf_vk_descriptor_set descriptor_set = NULL;
     double total_start = now_ms(), segment_start;
     static const uint32_t empty_texture[6] = {0, 1, 1, 4, 2, 1};
     static const uint32_t empty_texel = 0xffffffffU;
@@ -1825,6 +1870,10 @@ static int raster_render_range(void *context, void *raster,
         (load == RF_GPU_RASTER_LOAD_EXISTING && (!r->segment_valid || first < 2)) ||
         (final && !native_present && (!color || !depth ||
             color_stride < width || depth_stride < width))) return -1;
+    if (!r->frame_recording) r->descriptor_set_cursor = 0;
+    if (r->descriptor_set_cursor >= RF_GPU_RASTER_DESCRIPTOR_SET_COUNT)
+        return -1;
+    descriptor_set = r->descriptor_sets[r->descriptor_set_cursor++];
     /* VIEWMODEL depth is local to a dispatch. Keep its entire domain in the
      * terminal segment; never silently reset it across a cut. */
     if (first || !final || end != ((const uint32_t *)stream)[4]) {
@@ -1836,6 +1885,7 @@ static int raster_render_range(void *context, void *raster,
     }
     if (native_present) {
         double acquire_start;
+        impl->present_attempt++;
         native_timing = r->pending_present_timing;
         if (!native_timing) return -1;
         if (!impl->swapchain || impl->swapchain_width != width ||
@@ -1846,8 +1896,11 @@ static int raster_render_range(void *context, void *raster,
         if (r->acquire_semaphore_state != RF_GPU_PRESENT_AUDIT_REUSABLE)
             return present_audit_fail("acquire-semaphore-not-reusable");
         acquire_start = now_ms();
-        result = impl->api.acquire_next_image(impl->device, impl->swapchain,
-            UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
+        result = present_fault_take(impl,
+            RF_GPU_PRESENT_FAULT_ACQUIRE_OUT_OF_DATE) ?
+            RF_VK_ERROR_OUT_OF_DATE_KHR :
+            impl->api.acquire_next_image(impl->device, impl->swapchain,
+                UINT64_MAX, r->acquire_semaphore, NULL, &swapchain_image);
         if (result == RF_VK_ERROR_SURFACE_LOST_KHR) {
             if (raster_surface_recreate(backend_context, impl) < 0)
                 return -1;
@@ -1998,7 +2051,7 @@ static int raster_render_range(void *context, void *raster,
         infos[10].range = post_enabled ? sizeof(r->post) : stream_size;
         for (y = 0; y < 12; ++y) {
             writes[y].s_type = RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            writes[y].dst_set = r->descriptor_set; writes[y].dst_binding = y;
+            writes[y].dst_set = descriptor_set; writes[y].dst_binding = y;
             writes[y].descriptor_count = 1;
             writes[y].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
             writes[y].buffer_info = &infos[y];
@@ -2011,7 +2064,7 @@ static int raster_render_range(void *context, void *raster,
             image.image_view=r->shared_color_view;
             image.image_layout=RF_VK_IMAGE_LAYOUT_GENERAL;
             write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            write.dst_set=r->descriptor_set; write.dst_binding=12;
+            write.dst_set=descriptor_set; write.dst_binding=12;
             write.descriptor_count=1;
             write.descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
             write.image_info=&image;
@@ -2072,7 +2125,7 @@ static int raster_render_range(void *context, void *raster,
                 (r->full_scan_diagnostic?r->full_scan_pipeline:r->pipeline));
         impl->api.cmd_bind_descriptor_sets(r->command_buffer,
             RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->pipeline_layout, 0, 1,
-            &r->descriptor_set, 0, NULL);
+            &descriptor_set, 0, NULL);
         /* Earlier segments may have been sampled/copied as well as written.
          * This dependency also protects CLEAR after a prior diagnostic read. */
         barrier.src_access_mask = RF_VK_ACCESS_SHADER_WRITE_BIT |
@@ -2195,6 +2248,9 @@ static int raster_render_range(void *context, void *raster,
                                       r->depth_readback.buffer, 1, &copies[1]);
         }
         if (final) {
+            if (native_present && present_fault_take(impl,
+                    RF_GPU_PRESENT_FAULT_RECORD_FAILURE))
+                goto failed;
             if (impl->api.end_command_buffer(r->command_buffer) != RF_VK_SUCCESS)
                 goto failed;
             r->frame_recording = 0;
@@ -2224,7 +2280,11 @@ static int raster_render_range(void *context, void *raster,
         memset(&submit, 0, sizeof(submit));
         submit.s_type = RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
         if (native_present) {
-            static const rf_vk_flags wait_stage = RF_VK_PIPELINE_STAGE_TRANSFER_BIT;
+            /* The command buffer first transitions the acquired swapchain
+             * image before the transfer copy.  Waiting only at TRANSFER does
+             * not order that earlier layout transition against acquire. */
+            static const rf_vk_flags wait_stage =
+                RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             submit.wait_semaphore_count = 1;
             submit.wait_semaphores = &r->acquire_semaphore;
             submit.wait_dst_stage_mask = &wait_stage;
@@ -2243,7 +2303,8 @@ static int raster_render_range(void *context, void *raster,
             return present_audit_fail("submit-semaphore-state");
         }
         segment_start = now_ms();
-        if (impl->api.queue_submit(impl->queue, 1, &submit, r->render_fence) != RF_VK_SUCCESS)
+        if (present_fault_take(impl, RF_GPU_PRESENT_FAULT_SUBMIT_FAILURE) ||
+            impl->api.queue_submit(impl->queue, 1, &submit, r->render_fence) != RF_VK_SUCCESS)
             goto failed;
         r->render_in_flight=1;
         r->submitted_frame = ++impl->next_frame_number;
@@ -2292,7 +2353,18 @@ static int raster_render_range(void *context, void *raster,
             &impl->present_images[swapchain_image].render_finished;
         present.swapchain_count = 1; present.swapchains = &impl->swapchain;
         present.image_indices = &swapchain_image;
-        result = impl->api.queue_present(impl->queue, &present);
+        if (present_fault_take(impl, RF_GPU_PRESENT_FAULT_PRESENT_OUT_OF_DATE))
+            result = RF_VK_ERROR_OUT_OF_DATE_KHR;
+        else if (impl->present_fault == RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL &&
+                 !impl->present_fault_triggered &&
+                 impl->present_attempt == impl->present_fault_frame) {
+            result = impl->api.queue_present(impl->queue, &present);
+            if (result == RF_VK_SUCCESS && present_fault_take(impl,
+                    RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL))
+                result = RF_VK_SUBOPTIMAL_KHR;
+        }
+        else
+            result = impl->api.queue_present(impl->queue, &present);
         native_timing->present_ms = now_ms() - present_start;
         if (result == RF_VK_SUCCESS || result == RF_VK_SUBOPTIMAL_KHR) {
             if (impl->present_images[swapchain_image].render_finished_state !=
@@ -2328,8 +2400,10 @@ static int raster_render_range(void *context, void *raster,
             if (raster_surface_recreate(backend_context, impl) < 0)
                 return -1;
         } else if (result == RF_VK_ERROR_OUT_OF_DATE_KHR ||
-                   result == RF_VK_SUBOPTIMAL_KHR)
-            presenter_swapchain_create(impl, width, height);
+                   result == RF_VK_SUBOPTIMAL_KHR) {
+            if (presenter_swapchain_create(impl, width, height) < 0)
+                return -1;
+        }
         else if (result != RF_VK_SUCCESS) return -1;
         snprintf(message, message_capacity, "GPU Raster V1 native-presented");
         return 0;
@@ -2733,6 +2807,9 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         snprintf(message, message_capacity, "out of memory creating Vulkan backend");
         return RF_GPU_BACKEND_FAILED;
     }
+    impl->present_fault = backend_context->present_fault;
+    impl->present_fault_frame = backend_context->present_fault_frame ?
+        backend_context->present_fault_frame : 1;
     api = &impl->api;
     if (api_open(api) < 0) {
         snprintf(message, message_capacity, "Vulkan loader unavailable");

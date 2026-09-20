@@ -288,8 +288,15 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &color;
     subpass.pDepthStencilAttachment = &depth;
     deps[0].srcSubpass = VK_SUBPASS_EXTERNAL; deps[0].dstSubpass = 0;
-    deps[0].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT;
-    deps[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    /* Keep the clear and load render passes compatible.  Normal mixed frames
+     * enter the load pass after either a compute Raster segment or a transfer
+     * bridge, while the standalone clear pass has no stronger predecessor.
+     * Using the conservative mixed dependency for both passes is valid for
+     * the clear case and lets one framebuffer/pipeline serve both passes. */
+    deps[0].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT |
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    deps[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT |
+        VK_ACCESS_SHADER_WRITE_BIT;
     deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
         VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
@@ -309,9 +316,6 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
             attachments[i].initialLayout = i ? VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL : VK_IMAGE_LAYOUT_GENERAL;
         }
         attachments[0].finalLayout = VK_IMAGE_LAYOUT_GENERAL;
-        deps[0].srcStageMask = VK_PIPELINE_STAGE_TRANSFER_BIT|VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
-        deps[0].srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT|VK_ACCESS_SHADER_WRITE_BIT;
-        deps[0].dstAccessMask |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT;
         if (g->api.CreateRenderPass(impl->device, &pass, NULL, &g->load_pass) != RF_VK_SUCCESS) return -1;
     }
     layout.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

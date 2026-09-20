@@ -1,7 +1,7 @@
 # HG-2C5：Windows Native Present 基线收口
 
 > 文档更新：2026-09-20
-> 源码核对基线：2026-09-20 Phase 1 ownership 搬迁与 Phase 2 image-reacquire 热路径已实现；Intel Iris Xe 固定 1280×720 strict native 300/300 通过，hot queue-idle 为零。slot 只拥有 acquire semaphore，presenter 的每个 swapchain image 独立拥有 `render_finished`；recreate/teardown 仍保留 slow-path drain。窗口尺寸在 HG-2C5 全程固定，不再用 Windows resize 观察推断 swapchain 行为。五分钟动态 soak、fault injection 与 validation 尚未完成。
+> 源码核对基线：2026-09-20 HG-2C5 已签收。Phase 2 image-reacquire 热路径、完整故障注入矩阵与 Intel 动态 soak 已通过。Windows futex 仿真改用动态解析的 `WaitOnAddress`/`WakeByAddressAll`，修复全局 condition variable 偶发丢失 renderer job 唤醒导致的 `done=7/8`；修复后固定 near 300/300 与动态 `--auto` 10000/10000（5分09秒）均无 watchdog。slot 只拥有 acquire semaphore，presenter 的每个 swapchain image 独立拥有 `render_finished`；hot queue-idle、fallback、readback 与 CPU framebuffer copy 均为零。Khronos validation + sync validation 覆盖固定 300 帧、五种故障注入与 teardown/recreate，零 VUID/SYNC-HAZARD。
 
 HG-2C5 在 Windows Native Vulkan 下冻结唯一 presenter、双 frame slot 与可证明的呈现生命周期。
 Intel Iris Xe 是最低能力与最终签收基线；NVIDIA/AMD 首先必须运行相同的 image-reacquire 基线路径。
@@ -31,7 +31,7 @@ frame/generation。禁止恢复 per-slot swapchain，也禁止让 slot 拥有 pr
 | --- | --- | --- |
 | Phase 0 | 完成 | 建立 generation、owner、semaphore state、outstanding presents、hot/recreate idle count、资源高水位与 fail-fast invariant；`--frame-audit` 输出 `PRESENT-AUDIT` |
 | Phase 1 | 完成 | slot 仅保留 acquire/fence；每个 presenter image 拥有 `render_finished`；固定窗口 300/300 strict native 通过 |
-| Phase 2 | 进行中 | 同 generation 同 image 再次 acquire 作为 image semaphore 可复用证明；hot-frame queue-idle 已删除，recreate/teardown 保留 slow-path drain。固定窗口 300/300 通过；动态 soak、fault injection 与 validation 待完成 |
+| Phase 2 | 完成 | image-reacquire 热路径、固定窗口 300/300、五种 fault injection、5分09秒动态 soak 与 Khronos validation + sync validation 通过；hot-frame queue-idle 为零 |
 
 ## 固定窗口边界
 
@@ -79,6 +79,46 @@ strict native 300/300，`hot_queue_idle_count=0`、`native_present_queue_idle_ms
 `outstanding_presents=3` 是预期的 presentation 在途数量；每个 image 再次 acquire 时先记录 retire generation，
 再将其 `render_finished` 变回 reusable 并用于本次 submit。全程 presenter generation=1、零 poison、零
 fallback/readback/CPU framebuffer copy。该检查点不替代剩余动态 soak、fault injection 与 validation。
+
+故障注入使用 `--gpu-present-fault <name> [frame]`，frame 为从 1 开始的 native-present attempt，默认 1，
+每次进程只触发一次。当前名称为 `acquire-out-of-date`、`record-failure`、`submit-failure`、
+`present-out-of-date` 与 `present-suboptimal`。每次触发输出 `PRESENT-AUDIT fault-injection=...`；
+record/submit 用例预期 strict 进程失败并由 teardown drain，acquire/present/SUBOPTIMAL 用例预期走保守
+recreate 并继续。入口已通过 Windows package 编译与 `--logic-test`，尚不能记为实机 fault gate PASS。
+
+2026-09-20 继续验证结果：Windows package 与 package 内 `--logic-test` 通过。固定窗口 300 帧复跑完成
+193 帧审计后，下一帧 CPU raster worker 长期停在 `done=7/8`；已完成的 193 帧仍为 generation 1、
+`hot_queue_idle_count=0`、`presenter_poisoned=0`、零 fallback/readback/CPU framebuffer copy。第 5 次
+present attempt 注入 `acquire-out-of-date` 与 `present-out-of-date` 均完成 20/20，重建到 generation 2，
+`recreate_queue_idle_count=1`，热路径 idle 仍为零；`submit-failure` 输出注入审计并按 GPU-required contract
+失败。`present-suboptimal` 与 `record-failure` 的本轮进程被同一 `done=7/8` worker 卡死阻断，不能判定
+PASS/FAIL。validation layer 尚未执行。原始本地日志位于 `tmp/hg2c5-phase2/`，不提交。
+
+随后定位到 Windows `__futex()` 使用进程级 condition variable 模拟任意 futex 地址；renderer worker 的
+generation 比较与休眠之间可丢失唤醒，使一个 idle worker 永久停放。Windows runtime 现动态解析
+`WaitOnAddress`/`WakeByAddressAll` 并按实际地址等待。修复后的当前 package：固定 near 300/300，动态
+`--auto` 10000/10000，墙钟 5分09秒；动态模式覆盖交替前后/横移、每 90 帧跳跃、持续转向与射击，保留
+每 60 帧场景传送。两轮均零 watchdog、fallback、readback、CPU framebuffer copy 与 hot queue-idle。
+`acquire-out-of-date`、`present-out-of-date`、`present-suboptimal` 均在第 5 次 attempt 重建到 generation 2
+并完成 20/20；`record-failure`、`submit-failure` 均在第 5 次 attempt 按 GPU-required contract 以退出码 3
+失败，teardown 正常结束。系统仍未列出 `VK_LAYER_KHRONOS_validation`，所以 validation 状态保持
+UNAVAILABLE，而不是 PASS。原始日志继续位于 `tmp/hg2c5-phase2/`，不提交。
+
+最终签收使用仓库本地保留、此前 HG-2A/HG-2B 已验证过的 Khronos validation layer，通过进程私有
+`VK_LAYER_PATH` 与 `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` 加载，并设置
+`VK_VALIDATION_VALIDATE_SYNC=1`。首轮 validation 暴露三项此前未被软件审计覆盖的问题：clear/load
+render pass 的 external dependency 不兼容却共享 framebuffer/pipeline；统一 command recording 中后续
+segment 更新已绑定 descriptor set，导致已录制命令失效；acquire semaphore 仅等待到 TRANSFER，未覆盖
+更早的 swapchain image layout transition。当前实现统一两个 render pass 的保守 dependency，每个录制
+segment 使用独立 descriptor set，并从 TOP_OF_PIPE 等待 acquire semaphore。
+
+修复后的 Intel Iris Xe 最终矩阵：固定 near 300/300 退出码 0；动态 `--auto` 10000/10000 在
+7分40秒完成，零 watchdog/fallback/readback/CPU framebuffer copy/hot queue-idle；`acquire-out-of-date`、
+`present-out-of-date`、`present-suboptimal` 第 5 次 attempt 重建并完成 20/20，退出码 0；
+`record-failure`、`submit-failure` 第 5 次 attempt 按 GPU-required contract 退出码 3。六项均确认实际插入
+Khronos instance/device layer，零 Validation Error、VUID 与 SYNC-HAZARD；正常帧仍为零
+fallback/readback/CPU framebuffer copy/hot queue-idle。最终原始日志与汇总位于
+`tmp/hg2c5-phase2/validation-final-*`，不提交。
 
 ## 性能与厂商路径
 

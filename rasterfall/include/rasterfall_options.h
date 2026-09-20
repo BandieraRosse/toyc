@@ -10,6 +10,7 @@ struct rasterfall_options {
     const char *net_address;
     int auto_mode, textures_enabled, edge_pass_enabled;
     int renderer_mode, gpu_required, gpu_native_present, gpu_post_fog;
+    int gpu_present_fault, gpu_present_fault_frame;
     const char *map_path;
     int stats_enabled, texture_stats, frame_limit;
     const char *dump_path;

@@ -116,6 +116,26 @@ Linux 默认从仓库目录读取资产；内嵌公开资源使用 `make rasterf
 `docs/AGENTS-toyc-history.md` 扩大到编译器测试。不要在普通 Rasterfall 修改中运行
 `make update-bootstrap`。
 
+## PowerShell 与 Windows 进程注意事项
+
+在 Windows 验证中，优先使用仓库已有的 `windows/NativeCodex.ps1` 和明确的 package 工作目录。
+PowerShell/Win32 进程行为有以下已确认陷阱；后续 Agent 遇到新的可复现问题时，应在本节继续补充：
+
+- `rasterfall.exe` 使用 GUI subsystem。PowerShell 的 `& .\rasterfall.exe ...`、`$LASTEXITCODE`，以及
+  `cmd /c` 在不同的输出继承或重定向方式下可能提前返回，不能据此证明子进程已退出。执行长时或故障
+  注入门禁时，必须同时核对目标进程、最终日志和预期帧数；不要让多个 GPU 验证实例并发运行。
+- `Start-Process -Wait -PassThru` 通常适合取得真实退出码，但当前环境若同时存在大小写不同的 `Path`
+  与 `PATH` 环境项，可能抛出“字典中已添加相同键”的异常。遇到此问题不要反复重试或并发启动；改用
+  能明确等待的单进程包装方式，并在启动后用 `Get-Process`/日志确认生命周期。
+- PowerShell 中 `&` 是调用/控制运算符。需要把 `&` 交给 `cmd.exe /c` 时，应将完整命令作为一个字符串
+  参数传递；不要让外层 PowerShell 先解析它。复杂重定向尤其要先用一个短用例验证实际等待与退出码。
+- 删除或覆盖 `rasterfall.log` 前，先确认没有仍在写该文件的 `rasterfall` 进程。出现“文件正在由另一
+  进程使用”通常说明上一个 GUI 进程仍存活，而不是测试已经完成。
+- `Get-CimInstance`/`Get-PnpDevice` 的 GPU 枚举可能因权限失败；这不等于 Vulkan 不可用。GPU 事实以
+  程序自身的 adapter 输出、退出码和帧审计为准，并单独报告系统枚举未覆盖。
+- 卡死进程先精确查询 PID、路径和启动时间，再只终止目标 `rasterfall.exe`；终止后再次查询，避免遗留
+  进程污染后续日志。不要用宽泛的递归或名称模式清理无关进程。
+
 ## 修改与提交约束
 
 - 保留用户已有工作区修改，不格式化或改写无关文件。
