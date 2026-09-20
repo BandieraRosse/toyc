@@ -79,6 +79,17 @@ function Run([string] $Name, [string] $Program, [string[]] $ProgramArgs, [int] $
         $record.statistics = $stats
         $record.measured_frames = "17-$Frames"
         $record.verified_frames = $headers.Count
+        $metricsPath = Join-Path $OutputDirectory "$Name.metrics.json"
+        $metricsArgs = @(
+            '-ExecutionPolicy','Bypass','-File',(Join-Path $Root 'tools/hardware_graphics_metrics.ps1'),
+            '-LogPath',(Join-Path $OutputDirectory "$Name.runtime.log"),
+            '-WarmupFrames','16','-ExpectedFrames',"$Frames",'-ExpectedPath',$ExpectedPath,
+            '-OutputJson',$metricsPath
+        )
+        if ($Name -eq 'wave') { $metricsArgs += '-RequireCampaignLoad' }
+        & powershell @metricsArgs | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "$Name performance metrics gate failed" }
+        $record.performance_metrics = (Get-Content -Raw -Encoding UTF8 -LiteralPath $metricsPath | ConvertFrom-Json)
         Save-Manifest
     }
 }

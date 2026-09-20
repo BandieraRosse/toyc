@@ -1,6 +1,7 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成：`tools/hardware_graphics_metrics.ps1` 对预热后 CPU 墙钟和历史帧 GPU timestamp 分别汇总 mean/median/P95/max，估算逐帧审计与未采样调度间隙，并拒绝 world/敌人命令不成立的伪 Campaign 波次。Intel 实机固定 near/0 120 帧和显式 Campaign 320 帧均为全 native；正式波次 279 帧含敌人命令，CPU scene 中位数约 34.95 ms、GPU Raster 中位数约 19.69 ms，present API 约 0.021 ms。后续默认顺序为 HG-3、AI frontend checkpoint、HG-4、HG-5。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收 Windows Native presenter：唯一 swapchain generation、两个 frame slot、三种 completion 分离、image-owned render-finished 与 image-reacquire reuse；固定/动态/fault/validation 门禁通过，热路径 queue-idle 为零。详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md) 独立 indexed draw proof 已通过 Intel 实机；新增 graphics executor 复用 backend device/queue，正常帧尚未消费它。
@@ -150,7 +151,22 @@ HG-1A 已先修复 HG-0 遗留的 CPU planar vertex-lit 透明度与深度差异
 HG-1A 的普通 opaque static RMESH Draw/reference 与 Windows Intel 精确回归已完成，见
 [验收记录](hardware-graphics-hg1a.md)。HG-1B registry、generation、帧 pinning 与释放见 [资源生命周期](hardware-graphics-hg1b.md)。
 HG-2A 已完成独立 graphics proof，数值误差、近面深度验证边界与复现见 [HG-2A](hardware-graphics-hg2a.md)。
-HG-2B 的[整数深度、target bridge 与正常混合帧](hardware-graphics-hg2b.md)已按 Windows Intel Iris Xe 修订口径完成；正常 producer、strict 门禁、窗口呈现及 resize 已通过。HG-3A/3B、HG-4A/4B、HG-5A/5B 尚未开始。
+HG-2B 的[整数深度、target bridge 与正常混合帧](hardware-graphics-hg2b.md)已按 Windows Intel Iris Xe 修订口径完成；正常 producer、strict 门禁、窗口呈现及 resize 已通过。HG-2C1--2C5 也已完成。
+
+进入 HG-3 前先通过 P0 性能事实门禁：基线脚本调用 `tools/hardware_graphics_metrics.ps1`，固定丢弃前
+16 帧，同时保留 whole-loop 与实际 frame interval；GPU timestamp 按 `mixed-gpu frame=N` 的历史帧号
+筛选。正式波次除显式 Campaign map 和 `GPU-WAVE-REPRO` 活敌输出外，还要求逐帧日志全部 `world=1`
+且至少一帧 `enemies_cmd>0`。`frame_interval[N]-whole_loop[N-1]` 只作为审计日志与未采样调度间隙，
+不归因给 renderer；Acquire/present/raster CPU 墙钟存在嵌套，禁止求和。
+
+P0 已于 Windows Intel 实机通过。固定 near/0 第 17--120 帧 whole-loop 中位数/P95 为
+29.956/32.975 ms；正式 Campaign 第 17--320 帧为 60.847/71.792 ms，320/320 native、279 帧含敌人
+命令，活敌输出门禁通过。两类负载均为零 fallback/readback/CPU framebuffer copy/queue-idle。
+
+后续默认顺序为 HG-3A/3B → AI frontend checkpoint → HG-4A/4B → HG-5A/5B。HG-3 同时以
+static scene CPU 时间、legacy RasterCmd 数量和 GPU Raster timestamp 验收；AI checkpoint 先处理精确
+bounds/culling 与姿态/蒙皮/装备缓存；若正式 30/60 敌人基线证明角色扩展成本主导，可将 HG-5 提前到
+HG-4B 之前。
 `--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。
 资源上传、instance upload、bridge bytes/time、unexpected_lowering 仍在对应 owner 实现时加入，
 不以占位零值伪装已实现 hardware 数据。

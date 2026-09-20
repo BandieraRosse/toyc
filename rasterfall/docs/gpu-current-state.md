@@ -1,6 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
+> 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成并接入 `tools/hardware_graphics_metrics.ps1`：固定丢弃前 16 帧，分开汇总 CPU whole-loop/frame interval 与按历史 frame ID 对齐的 GPU timestamp，并校验 Campaign `world=1`/敌人命令。Intel 实机固定 near/0 120 帧与显式 Campaign 320 帧均为全 native；Campaign 279 帧含敌人命令，活敌输出通过。既有默认 Outpost 320 帧样本不再称为正式波次。
 > 源码核对基线补充：2026-09-20 HG-2C5 已签收。`done=7/8` 已定位为 Windows condition-variable futex 仿真的丢失唤醒，并改用按地址 `WaitOnAddress`。最终代码在 Intel 上固定 near 300/300、动态 `--auto` 10000/10000（7分40秒）及五种 fault injection 均通过预期合同；全程 hot queue-idle、fallback、readback、CPU copy 与 renderer watchdog 为零。Khronos validation + sync validation 覆盖 300 帧、五种 fault injection 与 teardown/recreate，零 VUID/SYNC-HAZARD；期间发现并修复 render-pass compatibility、录制中 descriptor set 更新与 acquire/layout transition 同步问题。详见 [HG-2C5](hardware-graphics-hg2c5.md)。
 > 源码核对基线补充：2026-09-20 修复 HG-2C4 双 slot 呈现所有权：Vulkan backend 只保留一个 swapchain，两个 slot 分别持有 acquire/render-complete semaphore 和离屏资源。Intel 长时验证表明 render fence 不覆盖 present 完成，当前恢复 present 后 queue-idle；300/300 strict native 正常退出、零 fallback/readback/CPU copy，最终 timestamp frame 298。此前“正常帧 queue-idle 为零”已撤销。
 > 源码核对基线补充：2026-09-20 HG-2C4 已签收：两个完整 mixed frame slot 使 normal native submit 不再立即等待本帧 render fence；slot 复用时回收 fence/timestamp，并按引用计数延迟释放 Core resource pin。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过；`mixed-gpu frame=` 从当前第 3 帧关联历史帧 1，最终报告帧 118，零 fallback/readback/CPU framebuffer copy。
@@ -31,6 +32,38 @@
 - HG-2C5 的 `PRESENT-AUDIT` 是软件 ownership/state 审计；正常热路径的 `completion_source=IMAGE_REACQUIRED` 只证明该 image 的 present wait 已可安全复用，不声称显示扫描完成。
 
 ## 已验证范围和性能快照
+
+### P0 口径校正
+
+- 固定场景 120 帧旧平均包含首两帧约 289/128 ms 的 present cold-start。第 17--120 帧稳态观察为：
+  whole-loop 平均约 33.6 ms、中位数约 32.6 ms、P95 约 40.3 ms；实际 frame interval 平均约
+  41.2 ms。两者约 7.6 ms 的差值主要包含逐帧审计写日志和未采样调度，不能归入 renderer。
+- 同一窗口 GPU timestamp 第 17--120 帧：Raster 平均约 26.6 ms，depth bridge 合计约 2.2 ms，
+  Draw 约 0.76 ms，Post/overlay/copy 均为次要项。CPU scene 平均约 15.9 ms，其中 static 是主要来源；
+  AI 提交约 6.7 ms。
+- 已检查的 320 帧低负载日志为 `world=0`、无敌人命令，因此不是正式 Campaign 波次。其约 16--19 ms
+  Acquire 等待表示 swapchain/显示背压；`vkQueuePresentKHR` 调用自身约 0.02 ms，不支持“GPU 提交或
+  present API 是主瓶颈”的结论。
+- 后续性能数字由 `tools/hardware_graphics_metrics.ps1` 生成；正式波次必须显式加载 Campaign 并通过
+  world、敌人命令及活敌输出三重门禁。
+
+### P0 最新实机基线
+
+同一 Windows package、Intel Iris Xe、1280×720，丢弃前 16 帧：
+
+| 场景 | whole-loop median/P95 | scene median/P95 | AI median/P95 | GPU Raster median/P95 | acquire / present median |
+| --- | --- | --- | --- | --- | --- |
+| 固定 near/0，120 帧 | 29.956 / 32.975 ms | 13.881 / 15.686 ms | 6.283 / 6.760 ms | 15.608 / 31.452 ms | 0.005 / 0.021 ms |
+| Campaign 波次，320 帧 | 60.847 / 71.792 ms | 34.950 / 42.834 ms | 7.714 / 8.431 ms | 19.691 / 27.894 ms | 0.005 / 0.021 ms |
+
+两轮分别为 120/120、320/320 native，零 fallback/readback/CPU framebuffer copy/hot queue-idle。
+Campaign 全部 `world=1`，279 帧有敌人命令，标准输出观察到活敌 1--7。其 CPU scene 平均约
+35.90 ms，明显高于 GPU Raster 平均约 20.08 ms；当前正式波次首先是 CPU scene/frontend 瓶颈，
+其次才是 GPU Raster。bridge 合计中位数约 0.91 ms，Draw 约 0.55 ms，Post/overlay/copy 均不足
+0.21 ms，不应排在 HG-3 前。
+
+逐帧审计与未采样调度间隙两轮中位数均约 8.47 ms。Campaign 有审计和无审计的完整进程墙钟分别约
+25.40 秒和 21.36 秒；该数字包含启动/退出，只用于确认审计扰动，不替代预热后逐帧统计。
 
 以下 28k 数据保留为前一轮历史快照，不能作为新阶段性能分母；HG-0 已采用逐帧审计重新记录基线。
 
