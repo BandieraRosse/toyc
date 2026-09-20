@@ -150,6 +150,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         rf_core_mixed_raster_preflight(f) < 0) return -1;
     if (rf_gpu_raster_resize(e->gpu, &e->raster, f->width, f->height) < 0 ||
         rf_gpu_graphics_resize(e->graphics, f->width, f->height) < 0 ||
+        rf_gpu_graphics_share_color(e->graphics,e->raster.implementation) < 0 ||
         rf_gpu_raster_set_post(&e->raster, &e->output.post) < 0) return -1;
     if (reserve((void **)&e->ordered, &e->ordered_capacity,
             f->raster_count ? f->raster_count : 1, sizeof(*e->ordered)) < 0 ||

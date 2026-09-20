@@ -60,6 +60,7 @@
 #define RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT 0x00000002U
 #define RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT 0x00000004U
 #define RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER 7
+#define RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE 3
 #define RF_VK_SHADER_STAGE_COMPUTE_BIT 0x00000020U
 #define RF_VK_COMMAND_BUFFER_LEVEL_PRIMARY 0
 #define RF_VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT 0x00000002U
@@ -89,6 +90,7 @@
 #define RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT 0x00002000U
 #define RF_VK_IMAGE_USAGE_TRANSFER_DST_BIT 0x00000002U
 #define RF_VK_IMAGE_LAYOUT_UNDEFINED 0
+#define RF_VK_IMAGE_LAYOUT_GENERAL 1
 #define RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL 7
 #define RF_VK_IMAGE_LAYOUT_PRESENT_SRC_KHR 1000001002
 #define RF_VK_IMAGE_ASPECT_COLOR_BIT 1
@@ -140,6 +142,7 @@ typedef struct rf_vk_fence_t *rf_vk_fence;
 typedef struct rf_vk_surface_t *rf_vk_surface;
 typedef struct rf_vk_swapchain_t *rf_vk_swapchain;
 typedef struct rf_vk_image_t *rf_vk_image;
+typedef struct rf_vk_image_view_t *rf_vk_image_view;
 typedef struct rf_vk_semaphore_t *rf_vk_semaphore;
 typedef struct rf_vk_query_pool_t *rf_vk_query_pool;
 typedef void (RF_VK_CALL *rf_vk_void_function)(void);
@@ -319,6 +322,9 @@ struct rf_vk_descriptor_set_allocate_info {
 };
 struct rf_vk_descriptor_buffer_info {
     rf_vk_buffer buffer; uint64_t offset; uint64_t range;
+};
+struct rf_vk_descriptor_image_info {
+    void *sampler; rf_vk_image_view image_view; uint32_t image_layout;
 };
 struct rf_vk_write_descriptor_set {
     uint32_t s_type; const void *next; rf_vk_descriptor_set dst_set;

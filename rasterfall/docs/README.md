@@ -1,9 +1,9 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 HG-2C2 首步完成 BGRA8 direct-color：mixed color 绕过中间 staging/compute 格式转换，depth bridge 保留；1280×720 两次 bridge 统计由 29,491,200 降至 22,118,400 bytes。真正共享 color target 与取消整屏 color copy 仍待后续。
+> 源码核对基线补充：2026-09-20 HG-2C2 已完成共享 RGBA8 storage/color target：normal mixed 的 Raster、Draw 与 Post 共用 color image，双向 bridge 只保留 depth；1280×720 两次 bridge 为 14,745,600 bytes。mixed export fence 继续保留，统一 command recording 与多帧在途待 HG-2C3/2C4。
 > 源码核对基线补充：2026-09-19 [HG-2C](hardware-graphics-hg2c.md) 的 mixed CPU 分项与 Vulkan GPU timestamp 已完成；后续依次处理共享 color/depth target、统一 command recording 与多帧在途。HG-3A 在该架构门槛完成前暂缓。
-> 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量、借用连续 overlay 并取消同队列中间 graphics fence wait；当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
+> 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量并借用连续 overlay；曾取消的同队列中间 graphics fence wait 因 command-buffer reset 生命周期不安全而于 2026-09-20 恢复，后续由 HG-2C3 统一 command recording 正确消除。当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
 > 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。

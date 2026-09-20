@@ -1,9 +1,9 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-20 HG-2C2 首步将 graphics color attachment 改为 BGRA8，与 Raster packed color 字节布局一致；normal mixed color 双向直拷，compute bridge 仅处理 depth。1280×720 两次 bridge 统计由 29,491,200 降至 22,118,400 bytes；Intel near/0 strict native 40/40、零回退/读回/CPU framebuffer copy。color 整屏 copy、单帧同步和 `vkQueueWaitIdle` 仍未消除。
+> 源码核对基线补充：2026-09-20 HG-2C2 已完成共享 RGBA8 storage/color target，normal mixed 的 Raster、Draw 与 Post 不再双向复制整屏 color；1280×720 两次 bridge 降至 14,745,600 bytes，仅保留 depth 中转。Intel strict native near/0 46/46、零 fallback/readback/CPU framebuffer copy。mixed export fence、单帧同步和 `vkQueueWaitIdle` 仍未消除。
 > 源码核对基线补充：2026-09-19 HG-2C1 已开始：`--frame-audit` 新增 `mixed-cpu`，区分 freeze、cache collect、preflight、texture measure、pack、Draw encode、batch prepare、graphics Draw/bridge 调用与 Raster segment 墙钟。它们不是 GPU timestamp；设备执行分项仍待 query pool 接入。计划与口径见 [HG-2C](hardware-graphics-hg2c.md)。
-> 源码核对基线补充：2026-09-19 normal mixed 热路径已移除连续 overlay 的逐帧整屏 CPU copy、复用 mixed pack/batch 容量，并依赖同队列最终 Raster/present fence 覆盖 graphics Draw，取消中间 graphics CPU fence wait；140 帧 strict native 及 HG-2B Core executor 门禁通过。当前 1280×720 本机中位数由 `whole_loop_ms=43.315` 降至 `38.563`，仍慢于 CPU `27.984`；剩余首要成本是双向全屏 color/depth bridge 和单帧同步架构。详见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
+> 源码核对基线补充：2026-09-19 normal mixed 热路径已移除连续 overlay 的逐帧整屏 CPU copy，并复用 mixed pack/batch 容量。当时取消的中间 graphics CPU fence wait 后续确认会在连续 Draw span 间重置仍在执行的 command pool，2026-09-20 已为正确性恢复；历史性能数字不能作为当前同步版本的基线。剩余首要工作仍是共享 target、统一 command recording 和多帧在途。详见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
 > 源码核对基线补充：2026-09-19 修复 static RMESH 在特定近面/侧向视角下过晚触发 mixed graphics 数值预检、导致 strict 帧退出的问题：producer 现在先按 graphics 整数投影范围判定，不合格实例留在 GPU compute RasterCmd 路径。Windows Outpost 与 legacy map 的 `--auto --frames 300` strict native 自动旋转/传送均通过，零 fallback/readback/CPU framebuffer copy。
 > 源码核对基线补充：2026-09-19 RTX 3050 Windows 首帧 native swapchain 兼容修复：Core config 为 native present 选择 SDL software renderer 窗口，避免 SDL 硬件 renderer 与 Vulkan 在同一 HWND 上同时建立呈现链。strict native 10/10 帧、零回退、零读回及零 CPU framebuffer copy；Fog 10 帧及三 extent native gate 通过，长时运行未验收。详见 [兼容修复记录](gpu-nvidia-swapchain-compat.md)。
 

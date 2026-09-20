@@ -927,8 +927,10 @@ cleanup:
 
 #include "rf_gpu_raster_v1_spirv.inc"
 #include "rf_gpu_raster_v1_full_spirv.inc"
+#include "rf_gpu_raster_v1_image_spirv.inc"
 #include "rf_gpu_overlay_spirv.inc"
 #include "rf_gpu_post_spirv.inc"
+#include "rf_gpu_post_image_spirv.inc"
 
 struct rf_gpu_vulkan_raster_buffer {
     rf_vk_buffer buffer;
@@ -959,16 +961,25 @@ struct rf_gpu_vulkan_raster {
     rf_vk_descriptor_set descriptor_set;
     rf_vk_shader_module shader;
     rf_vk_shader_module full_scan_shader;
+    rf_vk_shader_module image_shader;
+    rf_vk_shader_module full_scan_image_shader;
     rf_vk_shader_module overlay_shader;
     rf_vk_shader_module post_shader;
+    rf_vk_shader_module post_image_shader;
     rf_vk_pipeline_layout pipeline_layout;
     rf_vk_pipeline pipeline;
     rf_vk_pipeline full_scan_pipeline;
+    rf_vk_pipeline image_pipeline;
+    rf_vk_pipeline full_scan_image_pipeline;
     rf_vk_pipeline overlay_pipeline;
     rf_vk_pipeline post_pipeline;
+    rf_vk_pipeline post_image_pipeline;
     rf_vk_command_pool command_pool;
     rf_vk_command_buffer command_buffer;
     uint32_t width, height;
+    rf_vk_image shared_color_image;
+    rf_vk_image_view shared_color_view;
+    int shared_color_enabled, shared_color_layout_valid;
     uint32_t work_group_x, work_group_y;
     int full_scan_diagnostic;
     int segment_valid;
@@ -1249,18 +1260,24 @@ static void raster_destroy(void *context, void *raster)
         impl->api.destroy_command_pool(impl->device, r->command_pool, NULL);
     if (r->pipeline) impl->api.destroy_pipeline(impl->device, r->pipeline, NULL);
     if (r->full_scan_pipeline) impl->api.destroy_pipeline(impl->device, r->full_scan_pipeline, NULL);
+    if (r->image_pipeline) impl->api.destroy_pipeline(impl->device, r->image_pipeline, NULL);
+    if (r->full_scan_image_pipeline) impl->api.destroy_pipeline(impl->device, r->full_scan_image_pipeline, NULL);
     if (r->overlay_pipeline) impl->api.destroy_pipeline(impl->device, r->overlay_pipeline, NULL);
     if (r->post_pipeline) impl->api.destroy_pipeline(impl->device, r->post_pipeline, NULL);
+    if (r->post_image_pipeline) impl->api.destroy_pipeline(impl->device, r->post_image_pipeline, NULL);
     if (r->pipeline_layout)
         impl->api.destroy_pipeline_layout(impl->device, r->pipeline_layout, NULL);
     if (r->shader)
         impl->api.destroy_shader_module(impl->device, r->shader, NULL);
     if (r->full_scan_shader)
         impl->api.destroy_shader_module(impl->device, r->full_scan_shader, NULL);
+    if (r->image_shader) impl->api.destroy_shader_module(impl->device, r->image_shader, NULL);
+    if (r->full_scan_image_shader) impl->api.destroy_shader_module(impl->device, r->full_scan_image_shader, NULL);
     if (r->overlay_shader)
         impl->api.destroy_shader_module(impl->device, r->overlay_shader, NULL);
     if (r->post_shader)
         impl->api.destroy_shader_module(impl->device, r->post_shader, NULL);
+    if (r->post_image_shader) impl->api.destroy_shader_module(impl->device, r->post_image_shader, NULL);
     if (r->descriptor_pool)
         impl->api.destroy_descriptor_pool(impl->device, r->descriptor_pool, NULL);
     if (r->set_layout)
@@ -1338,7 +1355,7 @@ static int raster_create(void *context, unsigned int width,
             RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &r->depth_readback) < 0) goto failed;
     {
-        struct rf_vk_descriptor_set_layout_binding bindings[12];
+        struct rf_vk_descriptor_set_layout_binding bindings[13];
         struct rf_vk_descriptor_set_layout_create_info info;
         memset(bindings, 0, sizeof(bindings));
         for (i = 0; i < 12; ++i) {
@@ -1347,23 +1364,29 @@ static int raster_create(void *context, unsigned int width,
             bindings[i].descriptor_count = 1;
             bindings[i].stage_flags = RF_VK_SHADER_STAGE_COMPUTE_BIT;
         }
+        bindings[12].binding = 12;
+        bindings[12].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        bindings[12].descriptor_count = 1;
+        bindings[12].stage_flags = RF_VK_SHADER_STAGE_COMPUTE_BIT;
         memset(&info, 0, sizeof(info));
         info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        info.binding_count = 12; info.bindings = bindings;
+        info.binding_count = 13; info.bindings = bindings;
         if (impl->api.create_descriptor_set_layout(impl->device, &info, NULL,
                                                    &r->set_layout) != RF_VK_SUCCESS)
             goto failed;
     }
     {
-        struct rf_vk_descriptor_pool_size size;
+        struct rf_vk_descriptor_pool_size sizes[2];
         struct rf_vk_descriptor_pool_create_info pool_info;
         struct rf_vk_descriptor_set_allocate_info allocation;
-        size.type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        size.descriptor_count = 12;
+        sizes[0].type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        sizes[0].descriptor_count = 12;
+        sizes[1].type = RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        sizes[1].descriptor_count = 1;
         memset(&pool_info, 0, sizeof(pool_info));
         pool_info.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.max_sets = 1; pool_info.pool_size_count = 1;
-        pool_info.pool_sizes = &size;
+        pool_info.max_sets = 1; pool_info.pool_size_count = 2;
+        pool_info.pool_sizes = sizes;
         if (impl->api.create_descriptor_pool(impl->device, &pool_info, NULL,
                                              &r->descriptor_pool) != RF_VK_SUCCESS)
             goto failed;
@@ -1416,6 +1439,16 @@ static int raster_create(void *context, unsigned int width,
         if (impl->api.create_shader_module(impl->device,&shader_info,NULL,&r->full_scan_shader)!=RF_VK_SUCCESS)goto failed;
         pipeline_info.stage.module=r->full_scan_shader;
         if(impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline_info,NULL,&r->full_scan_pipeline)!=RF_VK_SUCCESS)goto failed;
+        shader_info.code_size = work_group_x == 16 ? rf_gpu_raster_v1_image_16_spirv_len : rf_gpu_raster_v1_image_8_spirv_len;
+        shader_info.code = (const uint32_t *)(const void *)(work_group_x == 16 ? rf_gpu_raster_v1_image_16_spirv : rf_gpu_raster_v1_image_8_spirv);
+        if (impl->api.create_shader_module(impl->device,&shader_info,NULL,&r->image_shader)!=RF_VK_SUCCESS) goto failed;
+        pipeline_info.stage.module=r->image_shader;
+        if(impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline_info,NULL,&r->image_pipeline)!=RF_VK_SUCCESS)goto failed;
+        shader_info.code_size = work_group_x == 16 ? rf_gpu_raster_v1_full_image_16_spirv_len : rf_gpu_raster_v1_full_image_8_spirv_len;
+        shader_info.code = (const uint32_t *)(const void *)(work_group_x == 16 ? rf_gpu_raster_v1_full_image_16_spirv : rf_gpu_raster_v1_full_image_8_spirv);
+        if (impl->api.create_shader_module(impl->device,&shader_info,NULL,&r->full_scan_image_shader)!=RF_VK_SUCCESS) goto failed;
+        pipeline_info.stage.module=r->full_scan_image_shader;
+        if(impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline_info,NULL,&r->full_scan_image_pipeline)!=RF_VK_SUCCESS)goto failed;
         shader_info.code_size = work_group_x == 16 ? rf_gpu_overlay_16_spirv_len : rf_gpu_overlay_8_spirv_len;
         shader_info.code = (const uint32_t *)(const void *)(work_group_x == 16 ? rf_gpu_overlay_16_spirv : rf_gpu_overlay_8_spirv);
         if (impl->api.create_shader_module(impl->device,&shader_info,NULL,
@@ -1432,6 +1465,15 @@ static int raster_create(void *context, unsigned int width,
                     &pipeline_info,NULL,&r->post_pipeline)!=RF_VK_SUCCESS) {
                 impl->api.destroy_shader_module(impl->device,r->post_shader,NULL);
                 r->post_shader=NULL;
+            }
+        }
+        shader_info.code_size = work_group_x == 16 ? rf_gpu_post_image_16_spirv_len : rf_gpu_post_image_8_spirv_len;
+        shader_info.code = (const uint32_t *)(const void *)(work_group_x == 16 ? rf_gpu_post_image_16_spirv : rf_gpu_post_image_8_spirv);
+        if (impl->api.create_shader_module(impl->device,&shader_info,NULL,&r->post_image_shader)==RF_VK_SUCCESS) {
+            pipeline_info.stage.module=r->post_image_shader;
+            if (impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline_info,NULL,&r->post_image_pipeline)!=RF_VK_SUCCESS) {
+                impl->api.destroy_shader_module(impl->device,r->post_image_shader,NULL);
+                r->post_image_shader=NULL;
             }
         }
     }
@@ -1624,7 +1666,9 @@ static int raster_render_range(void *context, void *raster,
     int native_present = final && color == NULL && depth == NULL;
     int composite = final && r && (native_present ||
         (r->pending_overlay_color && r->pending_overlay_coverage));
-    int post_enabled = final && r && r->post.mode != RF_GPU_POST_DISABLED && r->post_pipeline;
+    int post_enabled = final && r &&
+        ((r->shared_color_enabled && r->post_image_pipeline) ||
+         (r->post.mode != RF_GPU_POST_DISABLED && r->post_pipeline));
     struct rf_gpu_vulkan_raster_buffer *presentation_color =
         r ? (post_enabled ? &r->post_color : &r->color) : NULL;
     uint32_t swapchain_image = 0;
@@ -1787,6 +1831,19 @@ static int raster_render_range(void *context, void *raster,
             writes[y].buffer_info = &infos[y];
         }
         impl->api.update_descriptor_sets(impl->device, 12, writes, 0, NULL);
+        if (r->shared_color_enabled) {
+            struct rf_vk_descriptor_image_info image;
+            struct rf_vk_write_descriptor_set write;
+            memset(&image,0,sizeof(image)); memset(&write,0,sizeof(write));
+            image.image_view=r->shared_color_view;
+            image.image_layout=RF_VK_IMAGE_LAYOUT_GENERAL;
+            write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write.dst_set=r->descriptor_set; write.dst_binding=12;
+            write.descriptor_count=1;
+            write.descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+            write.image_info=&image;
+            impl->api.update_descriptor_sets(impl->device,1,&write,0,NULL);
+        }
     }
     if (impl->api.reset_command_pool(impl->device, r->command_pool, 0) !=
         RF_VK_SUCCESS) goto failed;
@@ -1803,6 +1860,27 @@ static int raster_render_range(void *context, void *raster,
             r->gpu_timing.supported=1; r->timestamp_count=0;
             impl->api.cmd_reset_query_pool(r->command_buffer,r->timestamp_pool,0,32);
         }
+        if (r->shared_color_enabled) {
+            struct rf_vk_image_memory_barrier image;
+            memset(&image,0,sizeof(image));
+            image.s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image.old_layout=r->shared_color_layout_valid ?
+                RF_VK_IMAGE_LAYOUT_GENERAL : RF_VK_IMAGE_LAYOUT_UNDEFINED;
+            image.new_layout=RF_VK_IMAGE_LAYOUT_GENERAL;
+            image.src_access_mask=r->shared_color_layout_valid ?
+                (RF_VK_ACCESS_SHADER_WRITE_BIT|RF_VK_ACCESS_SHADER_READ_BIT) : 0;
+            image.dst_access_mask=RF_VK_ACCESS_SHADER_READ_BIT|RF_VK_ACCESS_SHADER_WRITE_BIT;
+            image.src_queue_family_index=image.dst_queue_family_index=UINT32_MAX;
+            image.image=r->shared_color_image;
+            image.subresource_range.aspect_mask=RF_VK_IMAGE_ASPECT_COLOR_BIT;
+            image.subresource_range.level_count=image.subresource_range.layer_count=1;
+            impl->api.cmd_pipeline_barrier(r->command_buffer,
+                r->shared_color_layout_valid ?
+                    (RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT) :
+                    RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,NULL,0,NULL,1,&image);
+            r->shared_color_layout_valid=1;
+        }
         memset(&barrier, 0, sizeof(barrier));
         barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         barrier.src_access_mask = RF_VK_ACCESS_HOST_WRITE_BIT;
@@ -1811,8 +1889,10 @@ static int raster_render_range(void *context, void *raster,
             RF_VK_PIPELINE_STAGE_HOST_BIT, RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
         impl->api.cmd_bind_pipeline(r->command_buffer,
-                                   RF_VK_PIPELINE_BIND_POINT_COMPUTE,
-                                   r->full_scan_diagnostic?r->full_scan_pipeline:r->pipeline);
+            RF_VK_PIPELINE_BIND_POINT_COMPUTE,
+            r->shared_color_enabled ?
+                (r->full_scan_diagnostic?r->full_scan_image_pipeline:r->image_pipeline) :
+                (r->full_scan_diagnostic?r->full_scan_pipeline:r->pipeline));
         impl->api.cmd_bind_descriptor_sets(r->command_buffer,
             RF_VK_PIPELINE_BIND_POINT_COMPUTE, r->pipeline_layout, 0, 1,
             &r->descriptor_set, 0, NULL);
@@ -1849,7 +1929,8 @@ static int raster_render_range(void *context, void *raster,
                 RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 0,1,&barrier,0,NULL,0,NULL);
             impl->api.cmd_bind_pipeline(r->command_buffer,
-                RF_VK_PIPELINE_BIND_POINT_COMPUTE,r->post_pipeline);
+                RF_VK_PIPELINE_BIND_POINT_COMPUTE,
+                r->shared_color_enabled?r->post_image_pipeline:r->post_pipeline);
             timestamp=timestamp_begin(r,r->command_buffer,RF_GPU_TS_POST);
             impl->api.cmd_dispatch(r->command_buffer,
                 (width+r->work_group_x-1)/r->work_group_x,

@@ -15,9 +15,13 @@ layout(set = 0, binding = 0, std430) readonly buffer CommandStream {
     uint words[];
 } stream;
 layout(push_constant) uniform Segment { uint first; uint end; uint load; } segment;
+#ifdef RF_RASTER_IMAGE_COLOR
+layout(set = 0, binding = 12, rgba8) uniform image2D color_image;
+#else
 layout(set = 0, binding = 1, std430) buffer ColorBuffer {
     uint pixels[];
 } color_out;
+#endif
 layout(set = 0, binding = 2, std430) buffer DepthBuffer {
     int values[];
 } depth_out;
@@ -52,6 +56,29 @@ const uint FLAG_DEPTH_TEST = 1u;
 const uint FLAG_DEPTH_WRITE = 2u;
 const uint FLAG_OPAQUE = 4u;
 const uint FLAG_SOURCE_OVER = 32u;
+
+uint load_color(uint x, uint y, uint width)
+{
+#ifdef RF_RASTER_IMAGE_COLOR
+    vec4 c = imageLoad(color_image, ivec2(x, y));
+    uvec4 b = uvec4(round(clamp(c, 0.0, 1.0) * 255.0));
+    return (b.a << 24u) | (b.r << 16u) | (b.g << 8u) | b.b;
+#else
+    return color_out.pixels[y * width + x];
+#endif
+}
+
+void store_color(uint x, uint y, uint width, uint packed)
+{
+#ifdef RF_RASTER_IMAGE_COLOR
+    vec4 c = vec4(float((packed >> 16u) & 255u),
+                  float((packed >> 8u) & 255u),
+                  float(packed & 255u), float((packed >> 24u) & 255u)) / 255.0;
+    imageStore(color_image, ivec2(x, y), c);
+#else
+    color_out.pixels[y * width + x] = packed;
+#endif
+}
 
 uint texture_byte(uint offset)
 {
@@ -154,7 +181,7 @@ void main()
     if (x >= width || y >= height)
         return;
 
-    uint color = segment.load != 0u ? color_out.pixels[y * width + x] : 0xff000000u;
+    uint color = segment.load != 0u ? load_color(x, y, width) : 0xff000000u;
     int depth = segment.load != 0u ? depth_out.values[y * width + x] : 0;
     int viewmodel_depth = 0;
     bool viewmodel_active = false;
@@ -280,7 +307,7 @@ void main()
         }
     }
     uint index = y * width + x;
-    color_out.pixels[index] = color;
+    store_color(x, y, width, color);
     depth_out.values[index] = depth;
     viewmodel_coverage.values[index] = covered;
 }

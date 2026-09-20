@@ -1221,10 +1221,10 @@ GPU_RASTER_TEST_SRCS := gpu/src/rf_gpu_raster_test.c \
 	rasterfall/src/rf_gpu.c
 GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
 	gpu/include/rf_gpu_vulkan_backend.h gpu/src/rf_gpu_raster_v1_spirv.inc \
-	gpu/src/rf_gpu_raster_v1_full_spirv.inc gpu/shaders/raster_v1.comp \
+	gpu/src/rf_gpu_raster_v1_full_spirv.inc gpu/src/rf_gpu_raster_v1_image_spirv.inc gpu/shaders/raster_v1.comp \
 	gpu/shaders/raster_v1_full_scan.comp gpu/src/rf_gpu_overlay_spirv.inc \
 	gpu/shaders/overlay_composite.comp rasterfall/include/rf_gpu.h \
-	gpu/src/rf_gpu_post_spirv.inc gpu/shaders/post_raster_v1.comp \
+	gpu/src/rf_gpu_post_spirv.inc gpu/src/rf_gpu_post_image_spirv.inc gpu/shaders/post_raster_v1.comp \
 	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
 
 GPU_RASTER_TEST_DEPS += rasterfall/include/rf_gpu_raster_bin.h

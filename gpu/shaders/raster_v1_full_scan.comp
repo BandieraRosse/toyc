@@ -6,12 +6,30 @@
 layout(local_size_x=RF_RASTER_LOCAL_SIZE,local_size_y=RF_RASTER_LOCAL_SIZE,local_size_z=1) in;
 layout(set=0,binding=0,std430) readonly buffer CommandStream{uint words[];}stream;
 layout(push_constant) uniform Segment { uint first; uint end; uint load; } segment;
+#ifdef RF_RASTER_IMAGE_COLOR
+layout(set=0,binding=12,rgba8) uniform image2D color_image;
+#else
 layout(set=0,binding=1,std430) buffer ColorBuffer{uint pixels[];}color_out;
+#endif
 layout(set=0,binding=2,std430) buffer DepthBuffer{int values[];}depth_out;
 layout(set=0,binding=5,std430) readonly buffer TextureDescriptors{uint words[];}texture_descs;
 layout(set=0,binding=6,std430) readonly buffer TextureTexels{uint words[];}texture_texels;
 layout(set=0,binding=11,std430) writeonly buffer ViewmodelCoverage{uint values[];}viewmodel_coverage;
 const uint HEADER_WORDS=8u,COMMAND_WORDS=24u,CMD_CLEAR_COLOR=1u,CMD_CLEAR_DEPTH=2u,CMD_FLAT_TRIANGLE=3u,CMD_VERTEX_LIT_TRIANGLE=4u,CMD_TEXTURED_TRIANGLE=5u,CMD_SKY=6u,CMD_BEGIN_VIEWMODEL=7u,CMD_BEGIN_TRANSPARENT=8u,FLAG_TEXTURE_REPEAT=16u,FLAG_DEPTH_TEST=1u,FLAG_DEPTH_WRITE=2u,FLAG_OPAQUE=4u,FLAG_SOURCE_OVER=32u;
+uint load_color(uint x,uint y,uint width){
+#ifdef RF_RASTER_IMAGE_COLOR
+vec4 c=imageLoad(color_image,ivec2(x,y));uvec4 b=uvec4(round(clamp(c,0.0,1.0)*255.0));return(b.a<<24u)|(b.r<<16u)|(b.g<<8u)|b.b;
+#else
+return color_out.pixels[y*width+x];
+#endif
+}
+void store_color(uint x,uint y,uint width,uint packed){
+#ifdef RF_RASTER_IMAGE_COLOR
+vec4 c=vec4(float((packed>>16u)&255u),float((packed>>8u)&255u),float(packed&255u),float((packed>>24u)&255u))/255.0;imageStore(color_image,ivec2(x,y),c);
+#else
+color_out.pixels[y*width+x]=packed;
+#endif
+}
 uint texture_byte(uint offset){return(texture_texels.words[offset>>2u]>>((offset&3u)*8u))&255u;}
 uint sample_texture(uint handle,int64_t u,int64_t v,bool repeat){uint d=(handle-1u)*6u,offset=texture_descs.words[d],width=texture_descs.words[d+1u],height=texture_descs.words[d+2u],stride=texture_descs.words[d+3u],format=texture_descs.words[d+4u];if(repeat){u&=int64_t(65535);v&=int64_t(65535);}else{u=clamp(u,int64_t(0),int64_t(65535));v=clamp(v,int64_t(0),int64_t(65535));}uint tx=uint((u*int64_t(width))/int64_t(65536)),ty=uint((v*int64_t(height))/int64_t(65536)),channels=format==2u?4u:3u,at=offset+ty*stride+tx*channels,alpha=format==2u?texture_byte(at+3u):255u;return(alpha<<24u)|(texture_byte(at)<<16u)|(texture_byte(at+1u)<<8u)|texture_byte(at+2u);}
 int64_t s64(uint low,uint high){return int64_t(uint64_t(low)|(uint64_t(high)<<32));}
@@ -28,7 +46,7 @@ void main()
     if (x >= width || y >= height)
         return;
 
-    uint color = segment.load != 0u ? color_out.pixels[y * width + x] : 0xff000000u;
+    uint color = segment.load != 0u ? load_color(x,y,width) : 0xff000000u;
     int depth = segment.load != 0u ? depth_out.values[y * width + x] : 0;
     int viewmodel_depth = 0;
     bool viewmodel_active = false;
@@ -152,7 +170,7 @@ void main()
         }
     }
     uint index = y * width + x;
-    color_out.pixels[index] = color;
+    store_color(x,y,width,color);
     depth_out.values[index] = depth;
     viewmodel_coverage.values[index] = covered;
 }

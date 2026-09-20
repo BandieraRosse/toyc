@@ -67,6 +67,9 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height);
+/* Bind the normal mixed Raster target to this graphics owner's color image.
+ * The binding is invalidated by either target's resize/destruction. */
+int rf_gpu_graphics_share_color(struct rf_gpu_graphics *g, void *raster);
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t pixel_capacity);
