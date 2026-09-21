@@ -95,7 +95,9 @@ void rasterfall_options_usage(int fd)
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
         "  --world-cycle-gate  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|hg4-wall|hg4-ramp|hg4-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|hg4-wall|hg4-ramp|hg4-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene frame)\n"
+        "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
@@ -122,7 +124,7 @@ void rasterfall_options_usage(int fd)
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far> <0|30> (normal deterministic Campaign runtime)\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far> <0|30|60> (normal deterministic Campaign runtime)\n"
         "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
@@ -302,10 +304,15 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"whu-library") &&
                  strcmp(o->gpu_normal_view,"whu-d-ef")) ||
                 (o->gpu_normal_enemies != 0 &&
-                 o->gpu_normal_enemies != 30)) {
+                 o->gpu_normal_enemies != 30 &&
+                 o->gpu_normal_enemies != 60)) {
                 __fprintf(2,"rasterfall: invalid --gpu-normal-scene view or enemy count\n");
                 return -1;
             }
+        } else if (!strcmp(option,"--gpu-normal-fixed-tick")) {
+            o->gpu_normal_fixed_tick=1;
+        } else if (!strcmp(option,"--gpu-character-vertex-diff")) {
+            o->gpu_character_vertex_diff=1;
         } else if (!strcmp(option,"--gpu-wave-repro")) {
             o->gpu_wave_repro=1;
         } else if (!strcmp(option,"--environment-capture")) {
@@ -501,5 +508,17 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         if (!o->frame_limit) o->frame_limit=o->gpu_capture_frame;
         if (o->frame_limit < o->gpu_capture_frame) return -1;
     }
+    if (o->gpu_normal_fixed_tick && !o->gpu_normal_view) {
+        __fprintf(2,"rasterfall: --gpu-normal-fixed-tick requires --gpu-normal-scene\n");
+        return -1;
+    }
+    if (o->gpu_character_vertex_diff &&
+        (!o->gpu_normal_view || !o->renderer_mode || !o->gpu_native_present ||
+         !o->gpu_required)) {
+        __fprintf(2,"rasterfall: --gpu-character-vertex-diff requires --gpu-normal-scene, --renderer gpu-compute, --gpu-native-present and --gpu-required\n");
+        return -1;
+    }
+    if (o->gpu_character_vertex_diff && !o->frame_limit) o->frame_limit=30;
+    if (o->gpu_character_vertex_diff && o->frame_limit < 30) return -1;
     return 0;
 }

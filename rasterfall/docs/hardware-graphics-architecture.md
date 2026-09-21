@@ -1,6 +1,9 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 [HG-5A](hardware-graphics-hg5.md) 已按 Windows Intel 签收：动态角色 Draw 的帧副本、resize/lifecycle、视觉、device-local VB 差分与 30/60 敌人性能门禁通过；两轮 60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms。下一步进入 HG-5B GPU skinning。
+> 源码核对基线补充：2026-09-21 [HG-5](hardware-graphics-hg5.md) 的 near/mid × 0/30 敌人四组 30 帧 CPU/strict-native 同状态角色视觉证据已人工审阅通过；`--gpu-normal-fixed-tick` 仅为采集固定每帧一个 16ms gameplay tick，性能基线仍使用真实墙钟。
+> 源码核对基线补充：2026-09-21 [HG-5](hardware-graphics-hg5.md) 的 30/60 敌人 strict-native 基线已在 Windows Intel 通过；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms，据此下一步进入 HG-5A character geometry，GPU skinning 保持 HG-5B 独立迁移。
 > 源码核对基线补充：2026-09-21 [HG-4 Ground / Map geometry](hardware-graphics-hg4.md) 已按 Windows Intel 签收：partition/paint/V2 lighting 及 wall、box、ramp、opaque platform、boundary 五类地图几何固化为 world-generation immutable mesh；strict native、Fog、四 extent resize、world-cycle、逻辑回归及 CPU/native 同姿态视觉对照通过。动态 air-gate、透明 platform 与 texture wall 按合同保留 RasterCmd 路径；Linux/其他 GPU 未重复实机验收。HG-4 完成。
 > 源码核对基线补充：2026-09-20 [AI frontend checkpoint](hardware-graphics-ai-frontend.md) 已签收：模块化角色按 actor/action/time/weapon 精确键复用 finalized pose，并以每 actor frontend + pose generation 安全复用 skinned vertex、被动 gear 与 active weapon actor-local placement；body/gear/weapon 实际变换边界共同接入，性能、Campaign audit、边缘入镜与近面交叉专用 capture 均通过。
 > 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：普通 static RMESH 的 Draw/legacy 三角形与资产 mask 门禁、连续 Draw 空 flush 优化、120 帧 near/mid/Fog、320 帧 Campaign 以及建筑内部/远处薄结构 native capture 均在 Intel 通过。
@@ -166,7 +169,7 @@ P0 已于 Windows Intel 实机通过。固定 near/0 第 17--120 帧 whole-loop 
 29.956/32.975 ms；正式 Campaign 第 17--320 帧为 60.847/71.792 ms，320/320 native、279 帧含敌人
 命令，活敌输出门禁通过。两类负载均为零 fallback/readback/CPU framebuffer copy/queue-idle。
 
-HG-3A/3B、AI frontend checkpoint 与 HG-4A/4B 均已完成；后续默认进入 HG-5A/5B。HG-3 以
+HG-3A/3B、AI frontend checkpoint、HG-4A/4B 与 HG-5A 均已完成；下一步进入 HG-5B GPU skinning。HG-3 以
 static scene CPU 时间、legacy RasterCmd 数量和 GPU Raster timestamp 验收；AI checkpoint 已处理精确
 bounds/culling 与姿态/蒙皮/装备缓存；HG-4 已完成 ground 与 map/boundary persistent Draw 迁移。
 `--frame-audit` 的 `draw-reference` 已统计实例、submesh Draw、`cpu_lowered_triangles` 和 legacy 拒绝原因。

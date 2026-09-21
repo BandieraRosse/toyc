@@ -3992,6 +3992,7 @@ startup_again:
         now = rf_core_begin_tick(&core);
         elapsed = now - last_time;
         last_time = now;
+        if (options.gpu_normal_fixed_tick) elapsed = FIXED_STEP_US;
         if (elapsed < 0) elapsed = 0;
         if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
         accumulator += elapsed;
@@ -4290,6 +4291,8 @@ startup_again:
             if (options.gpu_frame_capture &&
                 rendered_frames + 1 == options.gpu_capture_frame)
                 core.gpu_frame.capture_path = options.gpu_frame_capture;
+            if (options.gpu_character_vertex_diff && rendered_frames + 1 == 30)
+                core.gpu_frame.character_vertex_diff_requested = 1;
             t_stage = rf_core_time_us(&core);
             present_result = rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
@@ -4334,6 +4337,18 @@ startup_again:
                     (double)audit_interval_us / 1000.0);
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
+                if (gpu_audit.character_diff_frames) {
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT character-vertex-diff vertices=%llu position_mismatches=%llu normal_mismatches=%llu uv_mismatches=%llu max_position_delta=%u max_normal_delta=%u",
+                        gpu_audit.character_diff_vertices,
+                        gpu_audit.character_position_mismatches,
+                        gpu_audit.character_normal_mismatches,
+                        gpu_audit.character_uv_mismatches,
+                        gpu_audit.character_max_position_delta,
+                        gpu_audit.character_max_normal_delta);
+                    __printf("%s\n",audit_line);
+                    rf_windows_log(audit_line);
+                }
                 snprintf(audit_line, sizeof(audit_line),
                     "FRAME-AUDIT mixed raster_spans=%llu draw_spans=%llu draws=%llu bridge_transfers=%llu bridge_bytes=%llu graphics_submits=%llu graphics_waits=%llu gpu_upload_bytes=%llu graphics_submit_ms=%.3f graphics_wait_ms=%.3f bridge_ms=%.3f gpu_capture_readback_bytes=%llu",
                     gpu_audit.mixed_raster_spans,gpu_audit.mixed_draw_spans,
@@ -4385,6 +4400,15 @@ startup_again:
                         (double)scene_audit.projectiles_us / 1000.0,
                         scene_audit.models_tested, scene_audit.models_culled,
                         scene_audit.model_triangles_culled);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT character-draw instances=%lu items=%lu triangles=%lu upload_vertices=%lu legacy_items=%lu",
+                        scene_audit.character_draw_instances,
+                        scene_audit.character_draw_items,
+                        scene_audit.character_draw_triangles,
+                        scene_audit.character_draw_upload_vertices,
+                        scene_audit.character_draw_legacy_items);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                     snprintf(audit_line, sizeof(audit_line),
@@ -4635,11 +4659,13 @@ startup_again:
         int core_runtime_failed = rf_core_runtime_failed(&core);
         int capture_missing = options.gpu_frame_capture &&
             !core.gpu_frame.capture_completed;
+        int character_diff_missing = options.gpu_character_vertex_diff &&
+            !core.gpu_frame.character_vertex_diff_completed;
         /* Native GPU frames never write the CPU scene pixel counter. */
         int no_scene_output = rendered_frames > 0 && scene_pixels == 0 &&
             core.gpu_frame.stats.gpu_frames == 0;
         rf_core_shutdown(&core);
-        if (core_runtime_failed || capture_missing) return 3;
+        if (core_runtime_failed || capture_missing || character_diff_missing) return 3;
         return no_scene_output ? 2 : 0;
     }
 }

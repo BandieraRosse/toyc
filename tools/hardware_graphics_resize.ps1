@@ -76,10 +76,12 @@ try {
     $Mixed = @($Log | Select-String 'FRAME-AUDIT mixed ')
     $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
     $MapDraw = @($Log | Select-String 'FRAME-AUDIT map-draw ')
+    $CharacterDraw = @($Log | Select-String 'FRAME-AUDIT character-draw ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
     if ($Frames.Count -ne 140 -or $Gpu.Count -ne 140 -or
         $Mixed.Count -ne 140 -or $Ground.Count -ne 140 -or $MapDraw.Count -ne 140 -or
+        $CharacterDraw.Count -ne 140 -or
         $Layers.Count -ne 140 -or $Resources.Count -ne 140) {
         throw 'Incomplete frame audit.'
     }
@@ -92,9 +94,6 @@ try {
             throw 'Ground Draw audit changed during resize.'
         }
         $GroundBuilds += [int]$Matches[1]
-        if ($Index -ge 2 -and $Mixed[$Index].Line -notmatch 'gpu_upload_bytes=0') {
-            throw 'Steady ground/static GPU upload detected after initial frame-slot warmup.'
-        }
     }
     if ($GroundBuilds -ne 1) { throw 'Ground mesh was not built exactly once.' }
     $MapBuilds = @(0, 0, 0, 0, 0)
@@ -116,6 +115,29 @@ try {
         if ($Builds -gt 1) { throw 'Map mesh rebuilt during resize.' }
     }
     if (($MapBuilds | Measure-Object -Sum).Sum -le 0) { throw 'Resize fixture did not exercise an HG-4B mesh.' }
+    $CharacterStable = $null
+    foreach ($Line in $CharacterDraw) {
+        if ($Line.Line -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) upload_vertices=(\d+) legacy_items=(\d+)') {
+            throw 'Character Draw audit changed during resize.'
+        }
+        $Counts = @([int64]$Matches[1], [int64]$Matches[2], [int64]$Matches[3],
+            [int64]$Matches[4], [int64]$Matches[5])
+        if ($Counts[0] -le 0 -or $Counts[1] -le 0 -or $Counts[2] -le 0 -or
+            $Counts[3] -ne $Counts[2] * 3) {
+            throw 'Resize fixture did not exercise valid HG-5A dynamic character Draws.'
+        }
+        if ($null -eq $CharacterStable) { $CharacterStable = $Counts }
+        elseif (Compare-Object $CharacterStable $Counts) {
+            throw 'Character Draw counts changed across resize.'
+        }
+    }
+    $SteadyUploads = @($Mixed | Select-Object -Skip 2 | ForEach-Object {
+        if ($_.Line -notmatch 'gpu_upload_bytes=(\d+)') { throw 'Missing mixed upload audit.' }
+        [int64]$Matches[1]
+    } | Sort-Object -Unique)
+    if ($SteadyUploads.Count -ne 1 -or $SteadyUploads[0] -le 0) {
+        throw 'Dynamic character upload bytes changed across resize.'
+    }
     $Pinned = @()
     foreach ($Line in $Resources) {
         if ($Line.Line -notmatch 'live=(\d+) retired=0 pinned=(\d+) failed=0') { throw 'Resource lifetime failure.' }
@@ -128,8 +150,11 @@ try {
     $Loads = @($Resources | ForEach-Object { if ($_.Line -match 'loads=(\d+) ') { $Matches[1] } } | Sort-Object -Unique)
     if ($Extents.Count -lt 4 -or $Loads.Count -ne 1) { throw 'Resize did not produce four extents or reloaded mesh resources.' }
     $Record.extents = $Extents; $Record.loads = $Loads
-    $Record.ground = [ordered]@{ items = 162; triangles = 21366; mesh_builds = $GroundBuilds; steady_upload_bytes = 0 }
+    $Record.ground = [ordered]@{ items = 162; triangles = 21366; mesh_builds = $GroundBuilds }
     $Record.map_mesh_builds = $MapBuilds
+    $Record.character_draw = [ordered]@{ instances = $CharacterStable[0]; items = $CharacterStable[1]
+        triangles = $CharacterStable[2]; upload_vertices = $CharacterStable[3]
+        legacy_items = $CharacterStable[4]; steady_gpu_upload_bytes = $SteadyUploads[0] }
     $Record.pinned = @($Pinned | Sort-Object -Unique); $Record.frames = $Frames.Count
     $Record.result = 'PASS'
 } catch {

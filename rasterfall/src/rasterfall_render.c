@@ -1621,6 +1621,71 @@ static int lower_gallery_triangles(struct toy_renderer *renderer,
     return drawn;
 }
 
+static int character_dynamic_draw_submit(struct toy_renderer *renderer,
+    const struct camera *camera, const struct rasterfall_model_asset *model,
+    int center_x, int base_y, int center_z, int scale, unsigned int primitive,
+    const unsigned char *indices, unsigned int index_begin,
+    unsigned int index_end, uint32_t color)
+{
+    struct rasterfall_dynamic_draw_vertex *vertices;
+    struct rasterfall_draw_view view;
+    struct rasterfall_draw_instance instance;
+    struct rasterfall_draw_item item;
+    unsigned int count=index_end-index_begin, out=0;
+    long phase;
+    if (!render_ctx || !render_ctx->mixed_frame || !count || count%3 ||
+        count>65536 || active_rigid_transform_enabled || active_infected_model ||
+        renderer->recording_edge || active_texture_view || active_sphere_texture ||
+        active_toon_texture || active_toon_shared>=0 || active_material_alpha!=255 ||
+        active_material_ambient || active_material_specular) return 0;
+    vertices=tlibc_malloc((size_t)count*sizeof(*vertices));
+    if (!vertices) return -1;
+    for (unsigned int j=index_begin;j<index_end;j+=3) {
+        unsigned int id[3];
+        for (unsigned int n=0;n<3;++n) {
+            id[n]=model_u32(indices+(j+n)*4);
+            if (id[n]>=model->vertex_count) { tlibc_free(vertices); return -1; }
+        }
+        for (unsigned int n=0;n<3;++n) {
+            struct rasterfall_dynamic_draw_vertex *v=&vertices[out++];
+            const struct gallery_cached_vertex *source=&gallery_vertex_cache[id[n]];
+            const unsigned char *raw=model->vertices+(size_t)id[n]*model->vertex_bytes;
+            memcpy(v->position,source->model_position,sizeof(v->position));
+            v->uv[0]=raw[18]|(uint32_t)raw[19]<<8;
+            v->uv[1]=raw[20]|(uint32_t)raw[21]<<8;
+            for (unsigned int corner=0;corner<3;++corner)
+                memcpy(v->normals+corner*3,gallery_vertex_cache[id[corner]].source_normal,
+                    3*sizeof(v->normals[0]));
+        }
+    }
+    memset(&view,0,sizeof(view)); memset(&instance,0,sizeof(instance));
+    memset(&item,0,sizeof(item));
+    view.camera=*camera; view.width=renderer->surface.width;
+    view.height=renderer->surface.height; view.focal=view.width*3/4; view.near_z=NEAR_Z;
+    instance.mesh=model; instance.x=center_x; instance.y=base_y; instance.z=center_z;
+    instance.scale_milli=scale; instance.yaw_sin_q10=active_gallery_sy;
+    instance.yaw_cos_q10=active_gallery_cy; instance.scene_light_q8=
+        active_scene_light_override_q8>=0?active_scene_light_override_q8:256;
+    instance.form_lighting=active_model_form_lighting;
+    item.primitive=primitive; item.index_count=count; item.material.color=color;
+    item.material.double_sided=active_material_double_sided;
+    if (rf_core_mixed_require_draws(render_ctx->mixed_frame,1)<0) {
+        tlibc_free(vertices); return -1;
+    }
+    phase=render_monotonic_us();
+    if (renderer->cmd_count>0 && toy_renderer_flush(renderer)<0) {
+        tlibc_free(vertices); return -1;
+    }
+    scene_stats.static_draw_flush_us+=render_monotonic_us()-phase;
+    if (rf_core_mixed_dynamic_draw(render_ctx->mixed_frame,&view,&instance,&item,
+            vertices,count)<0) { tlibc_free(vertices); return -1; }
+    tlibc_free(vertices);
+    scene_stats.character_draw_items++;
+    scene_stats.character_draw_triangles+=count/3;
+    scene_stats.character_draw_upload_vertices+=count;
+    return 1;
+}
+
 static int render_gallery_model_range(struct toy_renderer *renderer,
                                 const struct camera *camera,
                                 const struct rasterfall_model_asset *model,
@@ -1650,6 +1715,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     long phase_start;
     int drawn = 0, i;
     int command_overflow_before = renderer->cmd_overflow;
+    unsigned long character_draw_before = scene_stats.character_draw_items;
     const struct toy_texture_view *previous_texture = active_texture_view;
     const struct toy_texture_view *previous_sphere = active_sphere_texture;
     const struct toy_texture_view *previous_toon = active_toon_texture;
@@ -1853,9 +1919,19 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         }
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         phase_start = render_monotonic_us();
-        drawn += lower_gallery_triangles(renderer, camera, model,
-            center_x, base_y, center_z, scale, indices, index_begin, index_end,
-            character_model, texture || shared_texture, color);
+        {
+            int hardware=character_model && model->skinning_enabled ?
+                character_dynamic_draw_submit(renderer,camera,model,center_x,base_y,
+                    center_z,scale,(unsigned int)i,indices,index_begin,index_end,color) : 0;
+            if (hardware<0) return 0;
+            if (!hardware) {
+                if (character_model && render_ctx && render_ctx->mixed_frame)
+                    scene_stats.character_draw_legacy_items++;
+                drawn += lower_gallery_triangles(renderer, camera, model,
+                    center_x, base_y, center_z, scale, indices, index_begin, index_end,
+                    character_model, texture || shared_texture, color);
+            }
+        }
         body_us = render_monotonic_us() - phase_start;
         model_setup_timing.body_triangles_us += body_us;
         model_setup_timing.material_us += render_monotonic_us() -
@@ -1885,6 +1961,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     if (collect_model_render_stats)
         model_render_stats.command_overflow += renderer->cmd_overflow -
                                                command_overflow_before;
+    if (scene_stats.character_draw_items != character_draw_before)
+        scene_stats.character_draw_instances++;
     model_setup_timing.total_us += render_monotonic_us() - render_start;
     return drawn;
 }
@@ -7806,7 +7884,10 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         &actor_to_world, recipe->shirt_color, recipe->pants_color);
     runtime->frontends[actor_index].gallery_facing = 0;
     frontend_set_override(renderer, 0);
-    ai_submission_stats.body_commands += renderer->cmd_count - command_start;
+    /* HG-5A may flush the preceding Raster prefix while replacing the body
+     * with Draws, so cmd_count is not monotonic across this call. */
+    if ((unsigned long)renderer->cmd_count >= command_start)
+        ai_submission_stats.body_commands += renderer->cmd_count - command_start;
     ai_submission_stats.body_us += render_monotonic_us() - phase_start;
     ai_submission_stats.body_skin_us += model_setup_timing.skinning_us -
         body_timing_before.skinning_us;

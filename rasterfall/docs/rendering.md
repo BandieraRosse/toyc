@@ -1,6 +1,10 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-5A 已签收。动态资源在 unified-memory GPU 上优先使用 device-local + host-visible 直接上传，缺少该内存类型时保留 staging fallback；Intel 两轮受控复测的 60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms，下一步为 HG-5B GPU skinning。
+> 源码核对基线补充：2026-09-21 HG-5A 动态 position/normal 帧副本回归、Windows Intel 140 帧四 extent resize/lifecycle、near/mid × 0/30 敌人四组视觉审阅和 device-local 角色 VB 精确差分均通过；near/0 第 30 帧比较 20400 顶点，position/normal/UV mismatch 与最大差值均为 0。当前只剩性能签收。
+> 源码核对基线补充：2026-09-21 HG-5A 首个纵切已接入 CPU-skinned 普通不透明 body 的帧槽合并动态 Draw；CPU pose/IK/skinning、gear/weapon/socket authority 不变。Intel near/0 strict-native 20/20 通过，每帧 4 instance、20 Draw、6800 triangles、20400 upload vertices；完整 HG-5A 签收仍待完成，详见 [HG-5](hardware-graphics-hg5.md)。
+> 源码核对基线补充：2026-09-21 HG-5 的 30/60 敌人 strict-native 基线已通过；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms。下一步先迁 character geometry；当前仍未改变角色 CPU pose/IK/skinning 或 geometry producer。
 > 源码核对基线补充：2026-09-21 HG-4B 已按 Windows Intel 签收：正常 strict mixed 将 wall、opaque box、ramp、opaque platform 与 procedural boundary wall 分成持久 world mesh，并复用 HG-4A 局部坐标、V2 vertex-light 与 generation/pin 生命周期；动态/透明 air-gate 继续走 RasterCmd。`map-draw` 审计、专用 V1 runtime fixture、五类 CPU/native 对照、Fog/resize/world-cycle、Windows build 与逻辑回归通过，详见 [HG-4](hardware-graphics-hg4.md)。
 > 源码核对基线补充：2026-09-21 HG-4A Ground 已按 Windows Intel 签收：partitioned floor 固化为 world-generation immutable mesh；strict mixed 以局部坐标、颜色/空间分组 submesh 和 U 分量 Q8 `noperspective` vertex light 提交。120/120 strict native、Fog/resize/world-cycle、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态 capture 通过；完整门禁见 [HG-4](hardware-graphics-hg4.md)。
 > 源码核对基线补充：2026-09-20 AI frontend checkpoint 已签收：模块化 finalized pose 缓存扩展为每 actor 独立 frontend，并以 pose generation 约束 skinned vertex、被动 gear 与 active weapon actor-local placement 复用；提交前合并 body/gear/weapon 实际变换 AABB，weapon 绘制与边界共用 finalized `WEAPON_R + PRIMARY_GRIP` placement。`ai-triage` 输出 pose/bounds/gear-transform cache 与 combined-bounds cull；边缘入镜和近面交叉专用 capture 已通过。

@@ -26,6 +26,7 @@ void rf_core_mixed_reset(struct rf_core_mixed_frame *f)
 {
     if (!f || f->state == RF_CORE_MIXED_EXECUTING) return;
     f->raster_count = f->draw_count = f->span_count = 0;
+    f->dynamic_vertex_count = 0;
     f->required_draw_count = 0;
     f->registry = NULL;
     f->registry_epoch = 0;
@@ -38,6 +39,7 @@ void rf_core_mixed_destroy(struct rf_core_mixed_frame *f)
 {
     if (!f || f->state == RF_CORE_MIXED_EXECUTING) return;
     tlibc_free(f->raster); tlibc_free(f->draws); tlibc_free(f->spans);
+    tlibc_free(f->dynamic_vertices);
     memset(f, 0, sizeof(*f));
 }
 
@@ -144,6 +146,20 @@ static int mixed_draw_valid(const struct rf_core_mixed_frame *f,
     return 0;
 }
 
+static int mixed_dynamic_draw_valid(const struct rf_core_mixed_frame *f,
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance,
+    const struct rasterfall_draw_item *item, unsigned int vertex_count)
+{
+    return view && instance && item && mixed_lifetime_valid(f) &&
+        view->width == f->width && view->height == f->height &&
+        view->focal == f->width * 3 / 4 && view->near_z == 64 &&
+        !instance->mesh_handle.generation && instance->mesh &&
+        vertex_count && vertex_count <= 65536 && vertex_count % 3 == 0 &&
+        item->first_index == 0 && item->index_count == vertex_count &&
+        !item->material.texture;
+}
+
 int rf_core_mixed_draw(struct rf_core_mixed_frame *f,
     const struct rasterfall_draw_view *view,
     const struct rasterfall_draw_instance *instance,
@@ -160,7 +176,41 @@ int rf_core_mixed_draw(struct rf_core_mixed_frame *f,
             sizeof(*f->spans)) < 0 ||
         rasterfall_resources_pin(f->registry, instance->mesh_handle) < 0) return -1;
     d = &f->draws[f->draw_count];
+    memset(d, 0, sizeof(*d));
     d->view = *view; d->instance = *instance; d->item = *item;
+    mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_DRAW,
+        RF_RENDER_LAYER_WORLD, f->draw_count++, 1);
+    return 0;
+}
+
+int rf_core_mixed_dynamic_draw(struct rf_core_mixed_frame *f,
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance,
+    const struct rasterfall_draw_item *item,
+    const struct rasterfall_dynamic_draw_vertex *vertices,
+    unsigned int vertex_count)
+{
+    struct rf_core_mixed_draw *d;
+    unsigned long first;
+    if (!f || f->state != RF_CORE_MIXED_RECORDING ||
+        f->last_layer != RF_RENDER_LAYER_WORLD || !vertices ||
+        f->draw_count == ULONG_MAX || f->span_count == ULONG_MAX ||
+        vertex_count > ULONG_MAX - f->dynamic_vertex_count ||
+        !mixed_dynamic_draw_valid(f, view, instance, item, vertex_count)) return -1;
+    first = f->dynamic_vertex_count;
+    if (mixed_reserve((void **)&f->draws, &f->draw_capacity, f->draw_count + 1,
+            sizeof(*f->draws)) < 0 ||
+        mixed_reserve((void **)&f->spans, &f->span_capacity, f->span_count + 1,
+            sizeof(*f->spans)) < 0 ||
+        mixed_reserve((void **)&f->dynamic_vertices, &f->dynamic_vertex_capacity,
+            first + vertex_count, sizeof(*f->dynamic_vertices)) < 0) return -1;
+    memcpy(f->dynamic_vertices + first, vertices,
+        (size_t)vertex_count * sizeof(*vertices));
+    f->dynamic_vertex_count += vertex_count;
+    d = &f->draws[f->draw_count];
+    memset(d, 0, sizeof(*d));
+    d->view = *view; d->instance = *instance; d->item = *item;
+    d->dynamic_first_vertex = first; d->dynamic_vertex_count = vertex_count;
     mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_DRAW,
         RF_RENDER_LAYER_WORLD, f->draw_count++, 1);
     return 0;
@@ -226,7 +276,13 @@ int rf_core_mixed_execute(struct rf_core_mixed_frame *f,
     /* Check lifetime again: a plan cannot outlive its registry frame pin. */
     for (i = 0; i < f->draw_count; ++i) {
         const struct rf_core_mixed_draw *d = &f->draws[i];
-        if (!mixed_draw_valid(f, &d->view, &d->instance, &d->item) ||
+        if (d->dynamic_vertex_count) {
+            if (!mixed_dynamic_draw_valid(f, &d->view, &d->instance, &d->item,
+                    d->dynamic_vertex_count) ||
+                d->dynamic_first_vertex > f->dynamic_vertex_count ||
+                d->dynamic_vertex_count > f->dynamic_vertex_count -
+                    d->dynamic_first_vertex) return -1;
+        } else if (!mixed_draw_valid(f, &d->view, &d->instance, &d->item) ||
             !f->registry->slots[d->instance.mesh_handle.slot].pinned) return -1;
     }
     f->state = RF_CORE_MIXED_EXECUTING;

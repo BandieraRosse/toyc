@@ -55,6 +55,15 @@ int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
 int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
+/* Diagnostic proof for dynamic geometry: copy the device-local vertex buffer
+ * back through the GPU transfer path and compare the bytes consumed by the
+ * configured vertex-input ABI with the CPU reference. */
+int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_graphics_vertex *reference, uint32_t vertex_count,
+    uint64_t *position_mismatches, uint64_t *normal_mismatches,
+    uint64_t *uv_mismatches, uint32_t *max_position_delta,
+    uint32_t *max_normal_delta);
 
 /* Caller shuts graphics down before its shared backend context. All calls
  * are synchronous, one frame in flight. Failure never invokes CPU lowering. */

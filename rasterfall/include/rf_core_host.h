@@ -96,6 +96,10 @@ struct rf_core_gpu_frame_stats {
     unsigned int mixed_gpu_timing_supported, mixed_gpu_timing_valid;
     unsigned long long mixed_gpu_timing_frame;
     unsigned long long capture_readback_bytes;
+    unsigned long long character_diff_frames, character_diff_vertices;
+    unsigned long long character_position_mismatches, character_normal_mismatches;
+    unsigned long long character_uv_mismatches;
+    unsigned int character_max_position_delta, character_max_normal_delta;
     unsigned long long unsupported_texture, unsupported_transparent;
     unsigned long long unsupported_overlay, unsupported_edge, unsupported_other;
     unsigned long long texture_commands, texture_upload_bytes;
@@ -152,6 +156,7 @@ struct rf_core_gpu_frame {
     int retaining_pre_post;
     const char *capture_path;
     int capture_completed;
+    int character_vertex_diff_requested, character_vertex_diff_completed;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the

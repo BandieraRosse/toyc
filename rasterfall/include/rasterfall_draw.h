@@ -43,6 +43,14 @@ struct rasterfall_draw_item {
     struct rasterfall_draw_material material;
 };
 
+/* HG-5A frame-owned CPU-skinned geometry.  The layout deliberately mirrors
+ * the hardware graphics vertex without making the renderer depend on the GPU
+ * module.  Triangle corners carry the three source normals required by the
+ * existing integer per-primitive lighting contract. */
+struct rasterfall_dynamic_draw_vertex {
+    int32_t position[3], uv[2], normals[9];
+};
+
 enum rasterfall_draw_reject {
     RASTERFALL_DRAW_ACCEPTED,
     RASTERFALL_DRAW_SCOPE,

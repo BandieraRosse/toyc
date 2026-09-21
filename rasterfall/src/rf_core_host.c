@@ -1728,6 +1728,7 @@ static int core_end_frame_present(struct rf_core *core)
         output.coverage_stride = (unsigned int)frame->overlay_surface.width;
         output.present_timing = &frame->stats.native_present_timing;
         output.strict_native = 1;
+        output.character_vertex_diff = frame->character_vertex_diff_requested;
         if (frame->capture_path) {
             __fprintf(2,"gpu-capture requested extent=%dx%d path=%s\n",core->surface.width,core->surface.height,frame->capture_path);
             uint64_t pixels = (uint64_t)core->surface.width * core->surface.height;
@@ -1774,7 +1775,10 @@ static int core_end_frame_present(struct rf_core *core)
         if (after.draws - before.draws != core->mixed_frame->draw_count ||
             after.finishes - before.finishes != 1 ||
             after.readback_bytes - before.readback_bytes !=
-                (output.capture_color ? (uint64_t)core->surface.width * core->surface.height * 4 : 0) ||
+                (output.capture_color ? (uint64_t)core->surface.width * core->surface.height * 4 : 0) +
+                (output.character_vertex_diff ?
+                    (uint64_t)core->mixed_frame->dynamic_vertex_count *
+                    sizeof(struct rasterfall_dynamic_draw_vertex) : 0) ||
             frame->stats.native_present_timing.color_readback_bytes ||
             frame->stats.native_present_timing.cpu_framebuffer_copy_bytes) {
             __fprintf(2,"mixed capture audit draws=%llu/%lu finishes=%llu readback=%llu/%llu native=%u copy=%u\n",
@@ -1807,6 +1811,17 @@ static int core_end_frame_present(struct rf_core *core)
         frame->stats.mixed_gpu_upload_bytes =
             after.graphics.mesh_upload_bytes-before.graphics.mesh_upload_bytes +
             after.graphics.texture_upload_bytes-before.graphics.texture_upload_bytes;
+        frame->stats.character_diff_frames=after.character_diff_frames-before.character_diff_frames;
+        frame->stats.character_diff_vertices=after.character_diff_vertices-before.character_diff_vertices;
+        frame->stats.character_position_mismatches=after.character_position_mismatches-before.character_position_mismatches;
+        frame->stats.character_normal_mismatches=after.character_normal_mismatches-before.character_normal_mismatches;
+        frame->stats.character_uv_mismatches=after.character_uv_mismatches-before.character_uv_mismatches;
+        frame->stats.character_max_position_delta=after.character_max_position_delta;
+        frame->stats.character_max_normal_delta=after.character_max_normal_delta;
+        if (output.character_vertex_diff) {
+            frame->character_vertex_diff_completed=1;
+            frame->character_vertex_diff_requested=0;
+        }
         frame->stats.mixed_graphics_submit_ms =
             after.graphics.submit_wall_ms-before.graphics.submit_wall_ms;
         frame->stats.mixed_graphics_wait_ms =

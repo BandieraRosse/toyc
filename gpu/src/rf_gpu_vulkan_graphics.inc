@@ -475,51 +475,31 @@ fail:
     return NULL;
 }
 
-/* Device-local VB/IB/texels; host staging is discarded after fence completion. */
-static int gfx_upload_buffer(struct rf_gpu_graphics *g, const void *data, uint64_t bytes,
-    uint32_t usage, struct rf_gpu_vulkan_raster_buffer *out)
-{
-    struct rf_gpu_vulkan_impl *impl = g->owner;
-    struct rf_gpu_vulkan_raster_buffer staging = {0};
-    struct rf_vk_buffer_copy copy = {0,0,bytes};
-    struct rf_vk_memory_barrier barrier = {0};
-    void *mapped = NULL;
-    int result = -1;
-    if (raster_buffer_create(impl, bytes, RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT, RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &staging) < 0 ||
-        raster_buffer_create(impl, bytes, usage | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, out) < 0) goto done;
-    if (impl->api.map_memory(impl->device, staging.memory, 0, staging.allocation_size, 0, &mapped) != RF_VK_SUCCESS) goto done;
-    memcpy(mapped, data, (size_t)bytes);
-    if (!(staging.memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
-        struct rf_vk_mapped_memory_range range = {0};
-        range.s_type = RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        range.memory = staging.memory; range.size = staging.allocation_size;
-        if (impl->api.flush_mapped_memory_ranges(impl->device, 1, &range) != RF_VK_SUCCESS) goto done;
-    }
-    impl->api.unmap_memory(impl->device, staging.memory); mapped = NULL;
-    if (gfx_begin(g) < 0) goto done;
-    impl->api.cmd_copy_buffer(g->cmd, staging.buffer, out->buffer, 1, &copy);
-    barrier.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dst_access_mask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
-    impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 1, &barrier, 0, NULL, 0, NULL);
-    result = gfx_submit(g, 1);
-done:
-    if (mapped) impl->api.unmap_memory(impl->device, staging.memory);
-    if (g->poisoned) impl->api.queue_wait_idle(impl->queue);
-    raster_buffer_destroy(impl, &staging);
-    return result;
-}
-
 static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
 {
+    struct rf_gpu_vulkan_impl *impl = g->owner;
+    struct rf_gpu_vulkan_raster_buffer staging[4] = {{0}};
+    struct rf_gpu_vulkan_raster_buffer *target[4] = {
+        &resource->vertices, &resource->indices, &resource->compat_indices, &resource->texture
+    };
+    const void *data[4];
+    uint64_t bytes[4];
+    uint32_t usage[4] = {
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+            RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+    };
+    struct rf_vk_buffer_copy copy[4] = {{0}};
+    struct rf_vk_memory_barrier barrier = {0};
+    void *mapped = NULL;
+    unsigned mapped_index = 0;
     uint32_t *expanded;
+    int upload_failed = 1;
     if (!g || g->poisoned || resource->vertices.buffer || !vertices || !indices ||
         !vertex_count || vertex_count > 65536 || !index_count || index_count > 196608 || index_count % 3 ||
         !rgb_texels || !texture_width || !texture_height || texture_width > 1024 || texture_height > 1024) return -1;
@@ -539,11 +519,81 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
     expanded = malloc((size_t)index_count*2*sizeof(*expanded));
     if (!expanded) return -1;
     for (uint32_t i = 0; i < index_count*2; ++i) expanded[i] = i;
-    int upload_failed =
-        gfx_upload_buffer(g, vertices, (uint64_t)vertex_count*sizeof(*vertices), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->vertices) < 0 ||
-        gfx_upload_buffer(g, indices, (uint64_t)index_count*4, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->indices) < 0 ||
-        gfx_upload_buffer(g, expanded, (uint64_t)index_count*8, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, &resource->compat_indices) < 0 ||
-        gfx_upload_buffer(g, rgb_texels, (uint64_t)texture_width*texture_height*4, RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &resource->texture) < 0;
+    data[0]=vertices; data[1]=indices; data[2]=expanded; data[3]=rgb_texels;
+    bytes[0]=(uint64_t)vertex_count*sizeof(*vertices);
+    bytes[1]=(uint64_t)index_count*4;
+    bytes[2]=(uint64_t)index_count*8;
+    bytes[3]=(uint64_t)texture_width*texture_height*4;
+    /* Integrated GPUs commonly expose device-local host-visible memory.  Use
+     * it for per-frame geometry so upload does not submit behind the previous
+     * frame and synchronously wait for the graphics queue.  Discrete devices
+     * without that memory type retain the staging-copy path below. */
+    for (unsigned n=0;n<4;++n) {
+        if (raster_buffer_create(impl,bytes[n],usage[n] | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,target[n])<0) {
+            for (unsigned k=0;k<=n;++k) raster_buffer_destroy(impl,target[k]);
+            break;
+        }
+        if (impl->api.map_memory(impl->device,target[n]->memory,0,
+                target[n]->allocation_size,0,&mapped)!=RF_VK_SUCCESS) {
+            for (unsigned k=0;k<=n;++k) raster_buffer_destroy(impl,target[k]);
+            mapped=NULL;
+            break;
+        }
+        mapped_index=n;
+        memcpy(mapped,data[n],(size_t)bytes[n]);
+        if (!(target[n]->memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+            struct rf_vk_mapped_memory_range range={0};
+            range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory=target[n]->memory; range.size=target[n]->allocation_size;
+            if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS) {
+                impl->api.unmap_memory(impl->device,target[n]->memory); mapped=NULL;
+                for (unsigned k=0;k<=n;++k) raster_buffer_destroy(impl,target[k]);
+                break;
+            }
+        }
+        impl->api.unmap_memory(impl->device,target[n]->memory); mapped=NULL;
+        if (n==3) { upload_failed=0; goto upload_done; }
+    }
+    for (unsigned n=0;n<4;++n) {
+        if (raster_buffer_create(impl,bytes[n],RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                &staging[n])<0 ||
+            raster_buffer_create(impl,bytes[n],usage[n] | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                target[n])<0 ||
+            impl->api.map_memory(impl->device,staging[n].memory,0,
+                staging[n].allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto upload_done;
+        mapped_index=n;
+        memcpy(mapped,data[n],(size_t)bytes[n]);
+        if (!(staging[n].memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+            struct rf_vk_mapped_memory_range range={0};
+            range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory=staging[n].memory; range.size=staging[n].allocation_size;
+            if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS)
+                goto upload_done;
+        }
+        impl->api.unmap_memory(impl->device,staging[n].memory); mapped=NULL;
+        copy[n].size=bytes[n];
+    }
+    if (gfx_begin(g)<0) goto upload_done;
+    for (unsigned n=0;n<4;++n)
+        impl->api.cmd_copy_buffer(g->cmd,staging[n].buffer,target[n]->buffer,1,&copy[n]);
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT |
+        VK_ACCESS_SHADER_READ_BIT;
+    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        0,1,&barrier,0,NULL,0,NULL);
+    if (gfx_submit(g,1)<0) goto upload_done;
+    upload_failed=0;
+upload_done:
+    if (mapped) impl->api.unmap_memory(impl->device,staging[mapped_index].memory);
+    if (g->poisoned) impl->api.queue_wait_idle(impl->queue);
+    for (unsigned n=0;n<4;++n) raster_buffer_destroy(impl,&staging[n]);
     free(expanded);
     if (upload_failed) {
         g->poisoned = 1;
@@ -557,6 +607,63 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
     g->stats.mesh_upload_bytes += (uint64_t)vertex_count*sizeof(*vertices) + (uint64_t)index_count*12;
     g->stats.texture_upload_bytes += (uint64_t)texture_width*texture_height*4;
     return 0;
+}
+
+int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_graphics_vertex *reference, uint32_t vertex_count,
+    uint64_t *position_mismatches, uint64_t *normal_mismatches,
+    uint64_t *uv_mismatches, uint32_t *max_position_delta,
+    uint32_t *max_normal_delta)
+{
+    struct rf_gpu_vulkan_impl *impl;
+    struct rf_gpu_vulkan_raster_buffer readback={0};
+    struct rf_vk_buffer_copy copy={0};
+    struct rf_vk_mapped_memory_range range={0};
+    const struct rf_gpu_graphics_vertex *actual;
+    void *mapped=NULL;
+    uint64_t bytes;
+    int result=-1;
+    if (!g || g->poisoned || !resource || resource->owner!=g || !reference ||
+        !vertex_count || !position_mismatches || !normal_mismatches ||
+        !uv_mismatches || !max_position_delta || !max_normal_delta) return -1;
+    bytes=(uint64_t)vertex_count*sizeof(*reference);
+    if (bytes>resource->vertices.size) return -1;
+    impl=g->owner;
+    if (raster_buffer_create(impl,bytes,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            &readback)<0 || gfx_begin(g)<0) goto done;
+    copy.size=bytes;
+    impl->api.cmd_copy_buffer(g->cmd,resource->vertices.buffer,readback.buffer,1,&copy);
+    if (gfx_submit(g,1)<0 || impl->api.map_memory(impl->device,readback.memory,0,
+            readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto done;
+    if (!(readback.memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory=readback.memory;range.size=readback.allocation_size;
+        if (impl->api.invalidate_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS)
+            goto done;
+    }
+    *position_mismatches=*normal_mismatches=*uv_mismatches=0;
+    *max_position_delta=*max_normal_delta=0;
+    actual=mapped;
+    for (uint32_t n=0;n<vertex_count;++n) {
+        for (unsigned k=0;k<3;++k) {
+            uint32_t delta=(uint32_t)llabs((long long)actual[n].position[k]-reference[n].position[k]);
+            if (delta) (*position_mismatches)++;
+            if (delta>*max_position_delta) *max_position_delta=delta;
+        }
+        for (unsigned k=0;k<2;++k) if (actual[n].uv[k]!=reference[n].uv[k]) (*uv_mismatches)++;
+        for (unsigned k=0;k<9;++k) {
+            uint32_t delta=(uint32_t)llabs((long long)actual[n].normals[k]-reference[n].normals[k]);
+            if (delta) (*normal_mismatches)++;
+            if (delta>*max_normal_delta) *max_normal_delta=delta;
+        }
+    }
+    result=0;
+done:
+    if (mapped) impl->api.unmap_memory(impl->device,readback.memory);
+    raster_buffer_destroy(impl,&readback);
+    return result;
 }
 
 struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(

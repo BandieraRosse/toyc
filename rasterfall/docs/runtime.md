@@ -1,6 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 `--gpu-normal-fixed-tick` 仅用于 `--gpu-normal-scene` 诊断，使每个渲染帧恰好推进一个 16ms gameplay tick；HG-5A CPU/native 视觉采集据此比较相同 simulation state。`--gpu-character-vertex-diff` 在第 30 帧回读并精确比较 device-local 动态角色 VB；正常运行与性能基线仍按真实墙钟驱动。
 > 源码核对基线补充：2026-09-21 HG-4A 为 `--gpu-normal-scene` 增加 Campaign base/spawn/west-facility 与 WHU A18/B广场/分馆前场/D→E/F 固定视角；CPU `--dump-frame` 与 strict native `--gpu-frame-capture` 可在同一 map/姿态生成对照证据，入口为 `tools/hardware_graphics_ground_capture.ps1`。
 > 源码核对基线补充：2026-09-20 `--world-cycle-gate` 是 HG-4A 正常窗口生命周期诊断：固定 seed，按 30 帧间隔执行 Outpost → Campaign → WHU → Campaign，并输出切换瞬间的 retired/pinned 资源审计；配套 `tools/hardware_graphics_world_cycle.ps1` 验证 strict native 与延迟退休。
 > 源码核对基线补充：2026-09-20 `--auto` 在原持续转向、射击和定期场景传送基础上，增加确定性的前后/横移与每 90 帧跳跃，用于 HG-2C5 动态 gameplay soak；它仍是显式诊断模式，不改变正常输入。Windows worker 等待改用按地址 `WaitOnAddress`，修复长时 renderer job 丢失唤醒。

@@ -191,6 +191,48 @@ int rf_core_mixed_frame_logic_test(void)
             MIXED_CHECK(observed.events[n] == n + 1 &&
                 observed.events[batches + n] == n + 201);
     }
+    /* HG-5A dynamic Draws own an exact frame copy of CPU-skinned positions
+     * and source normals.  Mutating the producer buffer after submission must
+     * not affect the frozen GPU upload, and reset must retain only capacity. */
+    {
+        struct rasterfall_dynamic_draw_vertex dynamic[6], expected_dynamic[6];
+        memset(dynamic, 0, sizeof(dynamic));
+        for (i = 0; i < 6; ++i) {
+            unsigned int component;
+            for (component = 0; component < 3; ++component)
+                dynamic[i].position[component] = (int32_t)(1000 + i * 10 + component);
+            dynamic[i].uv[0] = (int32_t)(i * 100); dynamic[i].uv[1] = (int32_t)(i * 200);
+            for (component = 0; component < 9; ++component)
+                dynamic[i].normals[component] = (int32_t)(-12000 + i * 100 + component);
+        }
+        memcpy(expected_dynamic, dynamic, sizeof(dynamic));
+        rf_core_mixed_reset(&f);
+        MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);
+        instance.mesh_handle.generation = 0;
+        item.index_count = 6; item.material.color = 601;
+        MIXED_CHECK(rf_core_mixed_dynamic_draw(&f, &view, &instance, &item,
+            dynamic, 6) == 0);
+        item.index_count = 3; item.material.color = 602;
+        MIXED_CHECK(rf_core_mixed_dynamic_draw(&f, &view, &instance, &item,
+            dynamic + 3, 3) == 0);
+        memset(dynamic, 0x5a, sizeof(dynamic));
+        MIXED_CHECK(f.dynamic_vertex_count == 9 && f.draw_count == 2 &&
+            f.draws[0].dynamic_first_vertex == 0 &&
+            f.draws[0].dynamic_vertex_count == 6 &&
+            f.draws[1].dynamic_first_vertex == 6 &&
+            f.draws[1].dynamic_vertex_count == 3 &&
+            !memcmp(f.dynamic_vertices, expected_dynamic, sizeof(expected_dynamic)) &&
+            !memcmp(f.dynamic_vertices + 6, expected_dynamic + 3,
+                3 * sizeof(*expected_dynamic)));
+        MIXED_CHECK(rf_core_mixed_freeze(&f) == 0);
+        memset(&observed, 0, sizeof(observed));
+        MIXED_CHECK(rf_core_mixed_execute(&f, &executor, &observed) == 0 &&
+            observed.count == 2 && observed.events[0] == 601 &&
+            observed.events[1] == 602);
+        rf_core_mixed_reset(&f);
+        MIXED_CHECK(!f.dynamic_vertex_count && f.dynamic_vertex_capacity >= 9);
+        item.index_count = 3;
+    }
     /* Failed execution is not eligible for retry or a final Post/present. */
     rf_core_mixed_reset(&f);
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);

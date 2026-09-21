@@ -22,9 +22,15 @@ struct rf_gpu_mixed_output {
     unsigned int *capture_color;
     /* Require a native GPU-only finish; reject diagnostic readback. */
     unsigned int strict_native;
+    /* Opt-in HG-5A device-local dynamic vertex proof for this frame. */
+    unsigned int character_vertex_diff;
 };
 struct rf_gpu_mixed_stats {
     uint64_t clears, raster_segments, draw_spans, draws, finishes, readback_bytes;
+    uint64_t character_diff_frames, character_diff_vertices;
+    uint64_t character_position_mismatches, character_normal_mismatches;
+    uint64_t character_uv_mismatches;
+    uint32_t character_max_position_delta, character_max_normal_delta;
     double cache_collect_ms, preflight_ms, texture_measure_ms, pack_ms;
     double draw_encode_ms, draw_batch_prepare_ms, graphics_draw_ms;
     double raster_segment_ms;
