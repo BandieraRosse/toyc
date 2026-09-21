@@ -331,8 +331,8 @@ Static World Lighting V2 is the sole normal-runtime world-light source.
 正常 static RMESH、players/AI/RFCHAR、普通/特殊感染体、世界武器和投掷物、viewmodel
 均消费 V2；默认 `world_brightness_at()` 也只查询 V2，覆盖 sign/交互物等辅助 world geometry。
 只有显式 diagnostic scope 可以查询 V1。V1 的 32×24 cache 不在正常 render context 中，
-独立诊断 owner 按需 bake；固定诊断例外与架构回归见 [Phase C3](static-world-lighting-phase-c3.md)。
-最终 field 世界尺度、bake/contact/interpolation、性能与冻结边界见 [Phase D](static-world-lighting-phase-d.md)。
+独立诊断 owner 按需 bake；固定参数、诊断例外、世界尺度与冻结边界见
+[static-world-lighting.md](static-world-lighting.md)。
 组合顺序为 `world light × form lighting × material policy → final color → fog`；material policy
 在 scene×form 后应用材质下限，原地面无雾与专用 VFX 策略保留。
 
@@ -619,13 +619,13 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 `rasterfall_render_static_prop()` → `render_gallery_model_range()`。地图遍历按实例世界原点
 （`x, -900 + map_prop.y, z`）查询一次 `rasterfall_world_light_at()`，将 V2 Q8 因子临时放入
 已有 `active_scene_light_override_q8`，提交后恢复。RMESH 不开启 planar V2 scope，
-不在三角形/顶点热循环重复查询。boundary wall 保留 Phase B 的独立 procedural 路径。
+不在三角形/顶点热循环重复查询。boundary wall 保留独立 procedural 路径。
 
 环境因子与原 normal/form 因子相乘，纹理提交直接组合 Q8；无 role 的 flat 材质保留
 原 form 调色再乘 scene 的整数舍入。material policy 与 fog 仍属于已有提交层；static prop
-保留原 gallery 无雾策略。gallery 与独立诊断保留专用策略；actors、RFCHAR 和 viewmodel 已在 C2 接入。
-设施由多个实例构件组成，第一版不引入大型 RMESH 细采样；证据和边界见
-[Phase C1](static-world-lighting-phase-c1.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。
+保留原 gallery 无雾策略。gallery 与独立诊断保留专用策略；actors、RFCHAR 和 viewmodel 使用同一
+V2 scene factor 契约。设施由多个实例构件组成，当前不引入大型 RMESH 细采样；边界见
+[static-world-lighting.md](static-world-lighting.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。
 
 
 ## 敌人波次性能诊断

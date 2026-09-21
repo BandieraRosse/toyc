@@ -1,7 +1,7 @@
 # Enemy Visual / Procedural Animation Framework V1
 
-> 文档更新：2026-09-14
-> 源码核对基线补充：Phase C2 正常 enemy 主体在 `render_enemies()` 按 gameplay root 单点消费 V2；infected RFCHAR、rigid specials 与 procedural fallback 共用 scene scope，tongue/VFX 和独立固定验收不迁移。见 [Phase C2](static-world-lighting-phase-c2.md)。
+> 文档更新：2026-09-21
+> 源码核对基线补充：正常 enemy 主体在 `render_enemies()` 按 gameplay root 单点消费 V2；infected RFCHAR、rigid specials 与 procedural fallback 共用 scene scope，tongue/VFX 和独立固定验收保留专用策略。见 [static-world-lighting.md](static-world-lighting.md)。
 > 源码核对基线：工作区（普通感染体新模型混合比例 V1；Smoker / Charger / Tank rigid profiles、truth adapter、procedural pose 与 generic prism renderer；Charger 新冲锋包围盒判定；固定关键帧/轮廓/world capture；协议 43 显式命中 mask；保留六份普通感染体 RFM2）
 
 ## Enemy visual pipeline 与所有权

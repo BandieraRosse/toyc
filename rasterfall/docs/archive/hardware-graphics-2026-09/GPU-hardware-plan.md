@@ -4,21 +4,21 @@
 > 当前进度补充：HG-5 的 30/60 敌人 strict-native 基线已在 Windows Intel 完成；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms。下一步进入 HG-5A character geometry，GPU skinning 保持 HG-5B 独立迁移。
 > 当前进度补充：HG-4A Ground 与 HG-4B map/boundary geometry 已按 Windows Intel 签收：ground 及 wall、box、ramp、opaque platform、boundary 五类地图几何已迁移为 world-generation persistent Draw；专用 V1 runtime fixture、CPU/native 视觉对照、Fog/四 extent resize、world-cycle、Windows package 与完整逻辑回归通过。HG-4 完成；Linux/其他 GPU 未重复实机验收。
 > 当前进度：HG-0、HG-1A、HG-1B、HG-2A、HG-2B、HG-2C1--2C5、P0 性能事实门禁、HG-3 与 AI frontend checkpoint 已按 Windows Intel Iris Xe 口径完成。HG-3 的完整 120 帧 near/mid/Fog、320 帧 Campaign、static RMESH 审计及建筑内部/远处薄结构 native capture 均通过；AI frontend 的性能/Campaign audit 与边缘入镜、近面交叉角色 capture 也已通过。Linux/其他 GPU 未验收。
-> 实施入口：[架构与基线](rasterfall/docs/hardware-graphics-architecture.md)；[HG-0 checkpoint 证据与限制](rasterfall/docs/hardware-graphics-hg0.md)。
+> 实施入口：[当前 GPU 渲染架构](../../gpu-rendering-architecture.md)；[HG-0 checkpoint 证据与限制](hardware-graphics-hg0.md)。
 
 | Checkpoint | 状态 | 交付/下一步 |
 | --- | --- | --- |
 | HG-0 | 完成 | ownership/Draw V0/数值合同、可复现 Windows 测量脚本、CPU/compute captures、native/Fog/正式地图波次基线 |
 | HG-1A | 完成 | CPU planar 前置修复；普通 opaque static RMESH 按实例/submesh 提交 Draw，同步 reference；命令/color/depth 精确回归与 Windows Intel 基线通过 |
-| HG-1B | 完成 | CPU bundle registry、generation、Core 帧 pin 与延迟释放；[实现与验证](rasterfall/docs/hardware-graphics-hg1b.md) |
-| HG-2A | 完成 | 持久 device-local VB/IB/texels、flat/nearest、RGBA8/D32 离屏 indexed draw；[数值合同与验收边界](rasterfall/docs/hardware-graphics-hg2a.md) |
-| HG-2B | 完成（Windows Intel） | [正常 Windows strict native 混合帧](rasterfall/docs/hardware-graphics-hg2b.md)、遮挡/层顺序 fixture、近/中距离窗口帧与四 extent resize 按视觉正常标准通过 |
-| HG-2C1–2C5 | 完成（Windows Intel） | [mixed 帧诊断、共享 target、统一 command recording、多 frame slot 与 presenter ownership](rasterfall/docs/hardware-graphics-hg2c.md) |
+| HG-1B | 完成 | CPU bundle registry、generation、Core 帧 pin 与延迟释放；[实现与验证](hardware-graphics-hg1b.md) |
+| HG-2A | 完成 | 持久 device-local VB/IB/texels、flat/nearest、RGBA8/D32 离屏 indexed draw；[数值合同与验收边界](hardware-graphics-hg2a.md) |
+| HG-2B | 完成（Windows Intel） | [正常 Windows strict native 混合帧](hardware-graphics-hg2b.md)、遮挡/层顺序 fixture、近/中距离窗口帧与四 extent resize 按视觉正常标准通过 |
+| HG-2C1–2C5 | 完成（Windows Intel） | [mixed 帧诊断、共享 target、统一 command recording、多 frame slot 与 presenter ownership](hardware-graphics-hg2c.md) |
 | P0 性能事实门禁 | 完成（Windows Intel） | 预热后 median/P95、实际帧间隔、审计扰动、历史 GPU timestamp 对齐、Campaign 波次有效性校验；入口为 `tools/hardware_graphics_metrics.ps1` 与更新后的 baseline 脚本 |
-| HG-3A / HG-3B | 完成 | [普通 opaque static RMESH 扩围](rasterfall/docs/hardware-graphics-hg3.md)：实现覆盖全部当前 eligible RMESH；连续 Draw 空 flush 已消除，完整 Intel baseline、Campaign 与专项视觉门禁通过 |
-| AI frontend checkpoint | 完成 | [角色 frontend 缓存与组合边界](rasterfall/docs/hardware-graphics-ai-frontend.md)：finalized pose/skinning、被动 gear 与 active weapon placement cache 及 body/gear/weapon 组合 bounds 已接入；性能/Campaign audit、边缘入镜与近面交叉专用 capture 通过 |
-| HG-4A / HG-4B | 完成（Windows Intel） | [Ground / map geometry](rasterfall/docs/hardware-graphics-hg4.md)的视觉、生命周期与性能审计门禁已完成；动态 air-gate、透明 platform 与 texture wall 按合同保留 RasterCmd 路径 |
-| HG-5A / HG-5B | 基线完成，HG-5A 待开发 | [Character geometry / GPU skinning](rasterfall/docs/hardware-graphics-hg5.md)；正式 30/60 敌人 strict-native 基线已通过，按 geometry → skinning 顺序实施 |
+| HG-3A / HG-3B | 完成 | [普通 opaque static RMESH 扩围](hardware-graphics-hg3.md)：实现覆盖全部当前 eligible RMESH；连续 Draw 空 flush 已消除，完整 Intel baseline、Campaign 与专项视觉门禁通过 |
+| AI frontend checkpoint | 完成 | [角色 frontend 缓存与组合边界](hardware-graphics-ai-frontend.md)：finalized pose/skinning、被动 gear 与 active weapon placement cache 及 body/gear/weapon 组合 bounds 已接入；性能/Campaign audit、边缘入镜与近面交叉专用 capture 通过 |
+| HG-4A / HG-4B | 完成（Windows Intel） | [Ground / map geometry](hardware-graphics-hg4.md)的视觉、生命周期与性能审计门禁已完成；动态 air-gate、透明 platform 与 texture wall 按合同保留 RasterCmd 路径 |
+| HG-5A / HG-5B | 基线完成，HG-5A 待开发 | [Character geometry / GPU skinning](hardware-graphics-hg5.md)；正式 30/60 敌人 strict-native 基线已通过，按 geometry → skinning 顺序实施 |
 
 ## P0 性能事实门禁
 
@@ -50,7 +50,7 @@ near/0 两类负载共同验收，不能再用默认 Outpost 320 帧替代波次
 HG-0 校正：显式 frame audit 现逐帧输出；normal near/mid 标签只控制初始相机，稳定位置以实际审计为准；
 波次必须显式加载 Campaign 并验证活敌。原始 HEAD 的独立 texture full-scan fixture 已复现失败，
 HG-1A 已定位为 CPU planar vertex-lit 忽略 alpha/no-depth-write，并补齐恒定与插值光照路径；
-前置记录见 [HG-1A 前置修复](rasterfall/docs/hardware-graphics-hg1-preflight.md)，Draw 接入及验收见
-[HG-1A Draw/reference](rasterfall/docs/hardware-graphics-hg1a.md)。Windows strict native 已启用 hardware normal-frame 接入；其他平台/模式仍按各自现有路径运行。
+前置记录见 [HG-1A 前置修复](hardware-graphics-hg1-preflight.md)，Draw 接入及验收见
+[HG-1A Draw/reference](hardware-graphics-hg1a.md)。Windows strict native 已启用 hardware normal-frame 接入；其他平台/模式仍按各自现有路径运行。
 
-原始调研与阶段实施草案见 [归档](rasterfall/docs/archive/hardware-graphics-original-plan-2026-09-19.md)；当前实现与验收以各 checkpoint 文档和 CLI 输出为准。
+原始调研与阶段实施草案见 [归档](../hardware-graphics-original-plan-2026-09-19.md)；当前实现与验收以各 checkpoint 文档和 CLI 输出为准。

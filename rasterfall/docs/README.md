@@ -57,7 +57,7 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 | RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
-| 世界位置光照查询、静态太阳遮挡、ground/architecture/static RMESH/dynamic entities 接入 | [rendering.md](rendering.md)、[Phase B 说明](static-world-lighting-phase-b.md)、[Phase A 开发记录](static-world-lighting-phase-a.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有缓存；正常 static RMESH 在 `render_static_props()` 按实例采样，详见 [Phase C1](static-world-lighting-phase-c1.md)；normal actor/enemy 与 owner weapons 的 frame scope、local viewmodel sample 见 [Phase C2](static-world-lighting-phase-c2.md)；form/material/fog 仍归原层 |
+| 世界位置光照查询、静态太阳遮挡、ground/architecture/static RMESH/dynamic entities 接入 | [static-world-lighting.md](static-world-lighting.md)、[rendering.md](rendering.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有 V2 cache 和显式 diagnostic scope；form/material/fog 仍归原层 |
 | Hurd 职业外观、低模 AI 人体、RF Humanoid V1/V2、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的基础/职业 profile；`dev-tests/rasterfall_visual_capture.inc` 的角色验收与 world strip |
 | 中文 UI、UTF-8 文本和 GB2312 点阵字库 | [rendering.md](rendering.md)、[asset-sources.md](asset-sources.md) | `lib/graphics/fb_font.c`、`assets/fonts/` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |
@@ -91,11 +91,9 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 | 网络状态所有权、协议和房间生命周期 | [network-architecture.md](network-architecture.md) | `src/rasterfall_net.c`、公共协议头 |
 | 资源来源、许可和发布检查 | [asset-sources.md](asset-sources.md) | 资源目录与导入工具 |
 
-世界光照最终冻结、世界尺度、性能与验收边界见 [Phase D](static-world-lighting-phase-d.md)。
-已有 Character world capture 的固定输入/headless 配置归 `rf_game_runtime.c`，不改变 renderer 测试带光照。
-世界光照 consumer 清理、诊断边界与回归入口见 [Phase C3](static-world-lighting-phase-c3.md)：
-`rasterfall_world_light.h/.c` 拥有 V2 field；`rasterfall_render.c` 的默认 world adapter、scene override
-及 `src/dev-tests/` 的显式诊断 scope 共同定义消费边界。
+世界光照的冻结参数、所有权、normal consumer、诊断例外与验证边界统一见
+[static-world-lighting.md](static-world-lighting.md)。已有 Character world capture 的固定输入/headless
+配置归 `rf_game_runtime.c`，不改变 renderer 测试带光照。
 
 ## 地图 V1 输入链路
 

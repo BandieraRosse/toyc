@@ -1,6 +1,6 @@
 # Hardware Graphics 原始计划与调研记录
 
-> 归档：2026-09-19。当前状态以 [架构与 checkpoint](../hardware-graphics-architecture.md) 和 [HG-2B](../hardware-graphics-hg2b.md) 为准。
+> 归档：2026-09-19。当前状态以 [GPU 渲染架构](../gpu-rendering-architecture.md) 和 [HG-2B](hardware-graphics-2026-09/hardware-graphics-hg2b.md) 为准。
 
 ---
 

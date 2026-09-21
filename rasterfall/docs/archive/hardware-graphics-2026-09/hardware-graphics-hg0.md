@@ -4,8 +4,8 @@
 > 源码核对基线补充：2026-09-19 下述 texture full-scan 失败已由 HG-1A 前置修复定位并处理；原 HG-0 结果保留，后续证据见 [修复记录](hardware-graphics-hg1-preflight.md)。
 > 源码核对基线：`e036b809ed28a17f0151d241e8b34b04794f067e` + HG-0 改动；Windows MinGW package、Intel Iris Xe 实测。
 
-状态：HG-0 完成。接口和数值合同见 [架构文档](hardware-graphics-architecture.md)，后续顺序见
-[根计划](../../GPU%20hardware.md)。本 checkpoint 没有实现 Draw IR 或硬件 graphics pipeline。
+状态：HG-0 完成。当前接口和数值合同见 [GPU 渲染架构](../../gpu-rendering-architecture.md)，历史后续顺序见
+[阶段计划](GPU-hardware-plan.md)。本 checkpoint 没有实现 Draw IR 或硬件 graphics pipeline。
 
 ## 交付与可复核证据
 
