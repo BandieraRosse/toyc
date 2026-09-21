@@ -1,7 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-21
-> 源码核对基线：`fc75009`；2026-09-21 mixed native 四 extent cache/resize 合同修复
+> 源码核对基线：`055906e`；2026-09-21 mixed executor/native 四 extent 已纳入 Quick/Full，native presenter audit 按帧完整性检查
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。阶段过程与历史性能数字见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -68,8 +68,9 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_acceptance.ps1 -Quick
 powershell -ExecutionPolicy Bypass -File tools/gpu_acceptance.ps1 -Full
 ```
 
-Quick 覆盖 logic test、hosted graphics/raster differential、resource cache、native
-mixed near smoke、角色 vertex diff，以及零 fallback/readback/CPU framebuffer copy/hot queue-idle。
+Quick 覆盖 logic test、hosted graphics/raster differential、resource cache、mixed executor hosted、
+mixed native 四 extent resize、native mixed near smoke、角色 vertex diff，以及逐帧完整 presenter audit
+与零 fallback/readback/CPU framebuffer copy/hot queue-idle。
 
 Full 包含 Quick，并增加 near/mid CPU/GPU 对照、thin-far、300 帧 presenter、world-cycle、Campaign 320 帧、
 30/60 敌人统计、ground/map/character 固定采集和角色回滚。结果写入
@@ -85,8 +86,9 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_metrics.ps1 `
 `rf-gpu-raster-diff-test`、resource-cache test 和 mixed-executor test。它们验证 ABI、资源与执行器
 合同，不由窗口程序替代。
 
-`-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。mixed hosted 四 extent resize 由上述
-独立目标覆盖；Vulkan validation/sync validation、fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
+`-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。mixed executor hosted 与 native
+四 extent resize 已纳入 Quick/Full，并继续由独立目标提供合同覆盖；Vulkan validation/sync validation、
+fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
 专项签收；涉及 presenter、同步、资源生命周期、驱动兼容或发布判断时必须按风险单独补跑并报告。
 
 ## 下一阶段立项条件

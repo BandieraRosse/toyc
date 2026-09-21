@@ -3,7 +3,7 @@
 > 文档更新：2026-09-21
 > 源码核对基线补充：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退波次与窗口拉伸已确认；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、当前 `rasterfall_options.c`
+> 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_acceptance.ps1`、当前 `rasterfall_options.c`
 
 这是 Rasterfall 当前主要且优先的开发、构建编排、GPU 实机验证和签收 lane。唯一入口是
 `windows/NativeCodex.ps1`；它固定使用 MSYS2 `mingw64` + `usr/bin`，将对象、exe
@@ -44,6 +44,9 @@ present、readback/copy 或 native GPU 初始化失败都会得到非零退出�
 ```powershell
 .\windows\NativeCodex.ps1 run --help
 ```
+
+系统 GPU 枚举可能因 CIM/PnP 权限不可用；`doctor` 会将其报告为非致命的枚举缺口，不以此推断 Vulkan
+不可用。物理 GPU 事实仍以 required native GPU 测试打印的 adapter、退出码和帧审计为准。
 
 ## WIN-DEV-1 验收
 

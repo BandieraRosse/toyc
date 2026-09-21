@@ -90,13 +90,13 @@ function Doctor {
     $vulkan = Join-Path $env:WINDIR 'System32\vulkan-1.dll'
     if (Test-Path $vulkan) { Say "Vulkan runtime: OK ($vulkan)" } else { Say 'Vulkan runtime: MISSING'; $requiredFailed = $true }
     try {
-        $gpus = Get-CimInstance Win32_VideoController | ForEach-Object { "$($_.Name) [$($_.DriverVersion)]" }
+        $gpus = Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { "$($_.Name) [$($_.DriverVersion)]" }
         if ($gpus) { $gpus | ForEach-Object { Say "GPU: $_" } } else { Say 'GPU: no Win32_VideoController result' }
     } catch {
         try {
-            $gpus = Get-PnpDevice -Class Display | ForEach-Object { $_.FriendlyName }
+            $gpus = Get-PnpDevice -Class Display -ErrorAction Stop | ForEach-Object { $_.FriendlyName }
             if ($gpus) { $gpus | ForEach-Object { Say "GPU: $_ (PnP)" } } else { Say 'GPU: no display device result' }
-        } catch { Say "GPU: query failed ($($_.Exception.Message))" }
+        } catch { Say "GPU: system enumeration unavailable ($($_.Exception.Message)); Vulkan runtime tests remain authoritative" }
     }
     if (Test-Path $PackageRoot) { Say "package root: OK ($PackageRoot)" } else { Say "package root: MISSING ($PackageRoot)" }
     if (Test-Path $Exe) { Say "package exe: OK ($Exe)" } else { Say 'package exe: MISSING' }

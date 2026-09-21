@@ -72,6 +72,7 @@ function Run-Game([string] $Name, [string[]] $Arguments, [int] $ExpectedFrames =
         $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
         $Present = @($Log | Select-String 'PRESENT-AUDIT frame=')
         if ($Frames.Count -ne $ExpectedFrames -or $Gpu.Count -ne $ExpectedFrames -or $Layers.Count -ne $ExpectedFrames) { throw "$Name has an incomplete frame audit." }
+        if ($ExpectedPath -eq 'gpu-native' -and $Present.Count -ne $ExpectedFrames) { throw "$Name has an incomplete presenter audit." }
         foreach ($Line in $Frames) { if ($ExpectedPath -and $Line.Line -notmatch "path=$ExpectedPath ") { throw "$Name used an unexpected render path." } }
         foreach ($Line in $Gpu) { if ($Line.Line -notmatch 'readback_bytes=0 cpu_framebuffer_copy_bytes=0') { throw "$Name performed a readback or CPU framebuffer copy." } }
         foreach ($Line in $Layers) { if ($Line.Line -notmatch 'invalid_transitions=0 .*pre_post_cpu_fallback=0 fallback_reason=0x0 ') { throw "$Name used fallback or invalid layer ordering." } }
@@ -113,6 +114,8 @@ try {
     Run-Process 'hosted-graphics' $Graphics @((Join-Path $OutputDirectory 'graphics-proof')) | Out-Null
     Run-Process 'resource-cache' $Cache @() | Out-Null
     Run-Process 'raster-differential' $Diff @('--artifact-dir',(Join-Path $OutputDirectory 'differential-failure')) | Out-Null
+    Run-Process 'mixed-executor' $Mixed @() | Out-Null
+    Run-Process 'mixed-native-resize' $Mixed @('--native-window') | Out-Null
 
     $Near = Run-Game 'near-native' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near','0','--frame-audit','--frames','30') 30 'gpu-native'
     Assert-Character $Near.log
