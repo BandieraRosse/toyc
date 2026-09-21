@@ -55,8 +55,10 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - `rasterfall/docs/map-format.md`：地图文本格式和跨层修改要求。
 - `rasterfall/docs/networking.md`：协议、快照、预测、可靠事件和房间发现。
 - `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
-- `rasterfall/docs/gpu-current-state.md`：GPU 当前实现、实机验证和性能快照入口；新 GPU
-  硬件开发计划从此状态重新立项，旧阶段计划仅保存在 `rasterfall/docs/archive/`。
+- `rasterfall/docs/gpu-current-state.md`：GPU 当前实现、实机验证和性能快照入口。
+- `rasterfall/docs/gpu-raster-bridge-plan.md`：当前 GPU 硬件开发的优先计划；先完成 RB-0
+  可信测量与归因，再按 RB-1 bridge/同步收敛、RB-2 高成本 opaque RasterCmd 迁移、RB-3 CPU
+  producer 长尾的顺序推进。旧阶段计划仅保存在 `rasterfall/docs/archive/`。
 - `rasterfall/docs/windows-native-codex.md`：当前 Rasterfall 主开发 lane；PowerShell 构建、package、
   GPU 实机运行和验收入口。
 - `rasterfall/docs/animation-architecture.md`、`rasterfall/docs/network-architecture.md`：专题设计。
@@ -86,6 +88,9 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - 当前 Rasterfall 开发决策以 Windows 原生 PowerShell lane 和物理 GPU 证据为准。WSL、llvmpipe
   或 Linux hosted Vulkan 可以用于辅助编译和 correctness 诊断，但不能代替 Windows native present、
   驱动、窗口生命周期与性能验收；WSL 路径不承诺持续维护或正确性。
+- 当前 GPU 性能开发优先遵循 `rasterfall/docs/gpu-raster-bridge-plan.md`。在 RB-0/RB-1 完成前，
+  不因单次帧数据直接扩大 Graphics 类型；迁移优先选择数据证明高成本的 opaque enemy、gear、weapon
+  和 rigid 内容，不把透明、粒子、复杂 VFX、新材质体系或低收益 Draw 微优化顺带混入。
 
 ## 重要目录
 

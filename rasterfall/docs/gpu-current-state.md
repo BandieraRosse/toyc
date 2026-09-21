@@ -1,9 +1,10 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-21
-> 源码核对基线：`055906e`；2026-09-21 mixed executor/native 四 extent 已纳入 Quick/Full，native presenter audit 按帧完整性检查
+> 源码核对基线：`486e7e5`；2026-09-21 Raster/bridge 性能归因已形成当前收敛计划
 
-本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。阶段过程与历史性能数字见
+本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
+[GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)，阶段过程与历史性能数字见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
 
 ## 当前开发阶段
@@ -54,10 +55,14 @@ HG-5B 最终 Intel Iris Xe 基线中，near 30/60 敌人的稳态 whole-loop 中
 29.337/54.782 ms，GPU Raster 约为 11.449/27.363 ms，GPU Draw 约为 1.816/1.814 ms。
 这些数字只用于确定当前优化优先级，不构成跨机器或跨厂商性能承诺。
 
-60 敌人场景中 Draw 已不是主要成本；继续微调 Draw 或 skinning shader 预计不是最高收益方向。
-下一轮工作应先按 producer 分类统计剩余 RasterCmd、bridge、透明/特效、高级材质、gear/weapon 和
-特殊敌人 rigid 内容，并分解 CPU worker、slot wait、acquire、submit、present 与 GPU 阶段时间。
-在获得这份成本清单前，不预设新的 HG-6 迁移范围。
+最新两轮 Full 进一步确认，60 敌人场景中 Draw 已不是主要成本；一轮预热后 whole-loop 中位数/P95 为
+50.12/143.92 ms，GPU Raster 为 22.08/62.64 ms，GPU Draw 为 1.43/2.08 ms。典型重帧仍有
+10 次、73,728,000 bytes bridge transfer；`native_present_ms` 中位数约 0.02 ms，因此较大的
+`present_wall_ms` 不能归因为 present API 本身。
+
+下一轮按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 实施：先固定 workload 并补齐
+producer、bridge、slot/fence wait 与 P95/P99 归因，再收敛 bridge/同步，随后只迁移数据证明高成本的
+opaque enemy、gear、weapon 或 rigid 内容。透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
 
 ## 验证命令
 
@@ -91,9 +96,10 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_metrics.ps1 `
 fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
 专项签收；涉及 presenter、同步、资源生命周期、驱动兼容或发布判断时必须按风险单独补跑并报告。
 
-## 下一阶段立项条件
+## 当前计划入口
 
-新 GPU 阶段应先满足以下前置条件：
+当前阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的 RB-0 至
+RB-3 checkpoint。立项前置条件为：
 
 - 至少在 Intel 与另一种物理 GPU 上运行当前 Full，明确厂商差异；条件允许时补 AMD。
 - presenter/synchronization 改动恢复 resize、validation、fault injection 和长时 soak。

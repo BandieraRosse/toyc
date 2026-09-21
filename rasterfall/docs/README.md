@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-21
-> 源码核对基线：`fc75009`；当前 GPU 开发方向、Windows PowerShell 主 lane 与 WSL 支持边界
+> 源码核对基线：`486e7e5`；当前 GPU Raster/bridge 收敛计划、Windows PowerShell 主 lane 与 WSL 支持边界
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -33,8 +33,8 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
-| GPU mixed 正常帧截图与性能诊断 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
+| GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
+| GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
@@ -168,7 +168,8 @@ player/actor 和敌人的 airborne forced/knockback movement 均由玩法核心�
 
 专题设计和活动台账：
 
-- [GPU 当前状态](gpu-current-state.md)：实现边界、Intel 实机验证、最近固定视角快照与可执行验证入口。旧性能阶段计划在 [archive/](archive/gpu-performance-stage-2026-09-19.md)。
+- [GPU 当前状态](gpu-current-state.md)：实现边界、Intel 实机验证、最近固定视角快照与可执行验证入口。
+- [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)：当前性能立项、可信测量、bridge/同步、opaque RasterCmd 迁移与 CPU 长尾 checkpoint。旧性能阶段计划只保存在 [archive/](archive/)。
 - [industrial-props.md](industrial-props.md)：十件 V2 Hybrid 规格、flat/decal 分工、米制轴向、碰撞建议与生成/统一导入流程。
 - [environment-art.md](environment-art.md)：十件工业 / 军事组件的 V2 light upgrade 风格、逐件要点、预算、验收与试点顺序。
 
