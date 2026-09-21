@@ -102,7 +102,7 @@ static int native_window_test(void)
     NATIVE_CHECK(gpu.info.capabilities.native_presentation_v1);
     executor=rf_gpu_mixed_create(&gpu,&context,registry);
     NATIVE_CHECK(executor);
-    for (int pass=0;pass<3;++pass) {
+    for (int pass=0;pass<4;++pass) {
         struct rasterfall_draw_view view={0};
         struct rasterfall_draw_instance instance={0};
         struct rasterfall_draw_item item={0};
@@ -111,7 +111,9 @@ static int native_window_test(void)
         int width,height;
         if(pass==1) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,128,96,
             NATIVE_SWP_FLAGS));
-        if(pass==2) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,96,72,
+        if(pass==2) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,144,112,
+            NATIVE_SWP_FLAGS));
+        if(pass==3) NATIVE_CHECK(SetWindowPos((void *)(uintptr_t)handle.window,NULL,0,0,96,72,
             NATIVE_SWP_FLAGS));
         NATIVE_CHECK(toy_window_poll(window,&events,20)>=0);
         NATIVE_CHECK(GetClientRect((void *)(uintptr_t)handle.window,&client));

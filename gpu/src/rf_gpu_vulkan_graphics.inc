@@ -39,6 +39,11 @@ struct rf_gpu_graphics_resource {
     uint32_t index_count, texture_width, texture_height;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set descriptor_set;
+    struct {
+        struct rf_gpu_graphics *owner;
+        rf_vk_descriptor_pool pool;
+        rf_vk_descriptor_set set;
+    } shared_binding;
     struct rf_gpu_vulkan_raster_buffer skin_bind, skin_palette;
     rf_vk_descriptor_pool skin_descriptor_pool;
     rf_vk_descriptor_set skin_descriptor_set;
@@ -73,6 +78,60 @@ struct rf_gpu_graphics {
     int poisoned;
     struct rf_gpu_graphics_stats stats;
 };
+
+static int gfx_resource_compatible(const struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_resource *resource)
+{
+    return g && resource && resource->owner &&
+        resource->owner->owner == g->owner;
+}
+
+static rf_vk_descriptor_set gfx_resource_descriptor(
+    const struct rf_gpu_graphics *g, const struct rf_gpu_graphics_resource *resource)
+{
+    if (!gfx_resource_compatible(g,resource)) return NULL;
+    if (resource->owner==g) return resource->descriptor_set;
+    return resource->shared_binding.owner==g ? resource->shared_binding.set : NULL;
+}
+
+static int gfx_resource_share(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource)
+{
+    struct rf_vk_descriptor_pool_size size = {RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
+    struct rf_vk_descriptor_pool_create_info pool = {0};
+    struct rf_vk_descriptor_set_allocate_info set = {0};
+    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
+    struct rf_vk_write_descriptor_set write[3] = {{0}};
+    if (!gfx_resource_compatible(g,resource)) return -1;
+    if (resource->owner==g || resource->shared_binding.owner==g) return 0;
+    if (resource->shared_binding.owner) return -1;
+    pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pool.max_sets=1;pool.pool_size_count=1;pool.pool_sizes=&size;
+    if (g->owner->api.create_descriptor_pool(g->owner->device,&pool,NULL,
+            &resource->shared_binding.pool)!=RF_VK_SUCCESS) return -1;
+    set.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    set.descriptor_pool=resource->shared_binding.pool;set.descriptor_set_count=1;
+    set.set_layouts=&g->set_layout;
+    if (g->owner->api.allocate_descriptor_sets(g->owner->device,&set,
+            &resource->shared_binding.set)!=RF_VK_SUCCESS) goto failed;
+    buffer[0].buffer=resource->texture.buffer;buffer[0].range=resource->texture.size;
+    buffer[1].buffer=resource->vertices.buffer;buffer[1].range=resource->vertices.size;
+    buffer[2].buffer=resource->indices.buffer;buffer[2].range=resource->indices.size;
+    for(unsigned i=0;i<3;++i){
+        write[i].s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write[i].dst_set=resource->shared_binding.set;write[i].dst_binding=i;
+        write[i].descriptor_count=1;write[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write[i].buffer_info=&buffer[i];
+    }
+    g->owner->api.update_descriptor_sets(g->owner->device,3,write,0,NULL);
+    resource->shared_binding.owner=g;
+    return 0;
+failed:
+    g->owner->api.destroy_descriptor_pool(g->owner->device,
+        resource->shared_binding.pool,NULL);
+    memset(&resource->shared_binding,0,sizeof(resource->shared_binding));
+    return -1;
+}
 
 _Static_assert(sizeof(struct rf_gpu_graphics_vertex) == 56, "HG vertex ABI");
 _Static_assert(sizeof(void *) == 8, "HG-2A supports the existing 64-bit Vulkan ABI");
@@ -882,7 +941,8 @@ fail:
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource)
 {
-    if (!g || g->poisoned || !resource || resource->owner != g ||
+    if (!g || g->poisoned || !gfx_resource_compatible(g,resource) ||
+        gfx_resource_share(g,resource)<0 ||
         !resource->index_count) return -1;
     g->resource = resource;
     return 0;
@@ -909,6 +969,9 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     if (g->resource == resource) g->resource = NULL;
     if (resource->descriptor_pool)
         g->owner->api.destroy_descriptor_pool(g->owner->device, resource->descriptor_pool, NULL);
+    if (resource->shared_binding.pool)
+        g->owner->api.destroy_descriptor_pool(g->owner->device,
+            resource->shared_binding.pool,NULL);
     if (resource->skin_descriptor_pool)
         g->owner->api.destroy_descriptor_pool(g->owner->device,resource->skin_descriptor_pool,NULL);
     raster_buffer_destroy(g->owner,&resource->skin_bind);
@@ -1159,7 +1222,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         for (uint32_t i = 0; i < count; ++i) {
             const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
             if (items) g->resource = items[i].resource;
-            if (!g->resource || g->resource->owner != g ||
+            if (!gfx_resource_compatible(g,g->resource) ||
                 !gfx_draw_valid(g, d, !g->resource->frame_dynamic) ||
                 (r && !d->integer_depth)) { valid = 0; break; }
         }
@@ -1194,8 +1257,10 @@ static int gfx_render(struct rf_gpu_graphics *g,
         uint32_t factor = d->integer_depth ? 2 : 1;
         g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &resource->vertices.buffer, &offset);
         g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        rf_vk_descriptor_set descriptor=gfx_resource_descriptor(g,resource);
+        if(!descriptor){g->poisoned=1;return -1;}
         impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            g->layout, 0, 1, &resource->descriptor_set, 0, NULL);
+            g->layout, 0, 1, &descriptor, 0, NULL);
         impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pipelines[d->double_sided+d->integer_depth*2]);
         g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);

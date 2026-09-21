@@ -18,6 +18,7 @@ static double mixed_now_ms(void)
 struct encoded_draw {
     struct rf_gpu_graphics_draw draw;
     struct rf_gpu_graphics_resource *dynamic_resource;
+    struct rf_gpu_graphics_resource *resource;
     uint32_t texture;
 };
 #define RF_GPU_MIXED_FRAMES 2
@@ -26,7 +27,9 @@ struct rf_gpu_mixed_executor {
     struct rf_gpu_vulkan_context *context;
     struct rasterfall_resource_registry *registry;
     struct rf_gpu_graphics *graphics[RF_GPU_MIXED_FRAMES];
-    struct rf_gpu_resource_cache *cache[RF_GPU_MIXED_FRAMES];
+    /* Extent targets and command state are frame-slot local. Immutable model
+     * resources are device-stable and must not be uploaded once per slot. */
+    struct rf_gpu_resource_cache *cache;
     struct rf_gpu_raster raster[RF_GPU_MIXED_FRAMES];
     unsigned int active_frame, next_frame;
     struct rasterfall_resource_handle *pins[RF_GPU_MIXED_FRAMES];
@@ -51,7 +54,7 @@ struct rf_gpu_mixed_executor {
 static struct rf_gpu_graphics *mixed_graphics(struct rf_gpu_mixed_executor *e)
 { return e->graphics[e->active_frame]; }
 static struct rf_gpu_resource_cache *mixed_cache(struct rf_gpu_mixed_executor *e)
-{ return e->cache[e->active_frame]; }
+{ return e->cache; }
 static struct rf_gpu_raster *mixed_raster(struct rf_gpu_mixed_executor *e)
 { return &e->raster[e->active_frame]; }
 static void mixed_release_pins(struct rf_gpu_mixed_executor *e, unsigned int frame)
@@ -137,6 +140,7 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
         (m->double_sided != 0 && m->double_sided != 1)) return -1;
     out->texture = RF_GPU_CACHE_FLAT_TEXTURE;
     out->dynamic_resource = NULL;
+    out->resource = NULL;
     if (m->texture) {
         for (uint32_t n = 0; n < mesh->textures.count; ++n)
             if (m->texture == &mesh->textures.views[n]) { out->texture = n; break; }
@@ -148,10 +152,14 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
         out->dynamic_resource=e->dynamic[e->active_frame][0];
         info.index_count=src->dynamic_vertex_count;
         info.texture_width=info.texture_height=1;
+        out->resource=out->dynamic_resource;
     } else {
     /* prepare validates backing ranges before the primitive dereference. */
     if (rf_gpu_resource_cache_prepare(mixed_cache(e), f->registry_epoch,
         i->mesh_handle, src->item.primitive, out->texture, &info) < 0) return -1;
+    if (!src->dynamic_vertex_count)
+        out->resource=rf_gpu_resource_cache_resource(mixed_cache(e),f->registry_epoch,
+            i->mesh_handle,src->item.primitive,out->texture);
     primitive = mesh->primitives + src->item.primitive * RASTERFALL_MODEL_PRIMITIVE_BYTES;
     if (src->item.first_index != read32(primitive) ||
         src->item.index_count != info.index_count) return -1;
@@ -176,13 +184,15 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
     d->index_count=info.index_count;
     d->double_sided=!i->force_backface_culling && m->double_sided;
     d->integer_depth=1;
-    return (src->dynamic_vertex_count ?
+    {
+    int bind_result=(src->dynamic_vertex_count ?
         rf_gpu_graphics_resource_bind(mixed_graphics(e),out->dynamic_resource) < 0 :
-        rf_gpu_resource_cache_bind(mixed_cache(e), f->registry_epoch, i->mesh_handle,
-            src->item.primitive, out->texture) < 0) ? -1 :
-        (src->dynamic_vertex_count ?
+        rf_gpu_graphics_resource_bind(mixed_graphics(e),out->resource) < 0) ? -1 : 0;
+    int validate_result=bind_result<0 ? -1 : (src->dynamic_vertex_count ?
             rf_gpu_graphics_validate_dynamic_draw(mixed_graphics(e), d) :
             rf_gpu_graphics_validate_draw(mixed_graphics(e), d));
+    return validate_result;
+    }
 }
 static int preflight(void *context, const struct rf_core_mixed_frame *f)
 {
@@ -215,7 +225,6 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->completed_timing.frame_number=e->submitted_frame[e->active_frame];
         e->submitted_frame[e->active_frame]=0;
     }
-    mixed_release_pins(e,e->active_frame);
     mixed_release_dynamic(e,e->active_frame);
     if (reserve((void **)&e->pins[e->active_frame],
             &e->pin_capacity[e->active_frame],f->draw_count ? f->draw_count : 1,
@@ -373,6 +382,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             f->draws[n].dynamic_vertex_count);
         goto done;
     }
+    mixed_release_pins(e,e->active_frame);
     e->stats.draw_encode_ms+=mixed_now_ms()-phase_start;
     result=0;
 done:
@@ -428,11 +438,7 @@ static int span(void *context, const struct rf_core_mixed_frame *f, const struct
     if (s->count > 65536 || reserve((void **)&e->batch, &e->batch_capacity,
             s->count, sizeof(*e->batch)) < 0) return -1;
     for (unsigned long n=s->first;n<s->first+s->count;++n) {
-        const struct rf_core_mixed_draw *d=&f->draws[n];
-        e->batch[n-s->first].resource=e->draws[n].dynamic_resource ?
-            e->draws[n].dynamic_resource :
-            rf_gpu_resource_cache_resource(mixed_cache(e),f->registry_epoch,
-                d->instance.mesh_handle,d->item.primitive,e->draws[n].texture);
+        e->batch[n-s->first].resource=e->draws[n].resource;
         e->batch[n-s->first].draw=e->draws[n].draw;
         if (!e->batch[n-s->first].resource) return -1;
     }
@@ -475,12 +481,12 @@ struct rf_gpu_mixed_executor *rf_gpu_mixed_create(struct rf_gpu *gpu,
     e->gpu=gpu; e->context=context; e->registry=registry;
     for (unsigned int n=0;n<RF_GPU_MIXED_FRAMES;++n) {
         e->graphics[n]=rf_gpu_graphics_create(context);
-        if (!e->graphics[n] ||
-            !(e->cache[n]=rf_gpu_resource_cache_create(e->graphics[n],registry)) ||
-            rf_gpu_raster_init(gpu,&e->raster[n],1,1)<0) {
+        if (!e->graphics[n] || rf_gpu_raster_init(gpu,&e->raster[n],1,1)<0) {
             rf_gpu_mixed_destroy(e); return NULL;
         }
     }
+    e->cache=rf_gpu_resource_cache_create(e->graphics[0],registry);
+    if (!e->cache) { rf_gpu_mixed_destroy(e); return NULL; }
     return e;
 }
 int rf_gpu_mixed_render(struct rf_gpu_mixed_executor *e,
@@ -521,15 +527,16 @@ void rf_gpu_mixed_destroy(struct rf_gpu_mixed_executor *e)
 {
     if (!e) return;
     release_plan(e);
-    for (unsigned int n=0;n<RF_GPU_MIXED_FRAMES;++n) {
+    for (unsigned int n=0;n<RF_GPU_MIXED_FRAMES;++n)
         if (e->raster[n].implementation)
             rf_gpu_vulkan_raster_recycle(e->raster[n].implementation);
+    rf_gpu_resource_cache_destroy(e->cache); e->cache=NULL;
+    for (unsigned int n=0;n<RF_GPU_MIXED_FRAMES;++n) {
         mixed_release_pins(e,n);
         mixed_release_dynamic(e,n);
         free(e->pins[n]);
         free(e->dynamic[n]);
         rf_gpu_raster_shutdown(&e->raster[n]);
-        rf_gpu_resource_cache_destroy(e->cache[n]);
         rf_gpu_graphics_destroy(e->graphics[n]);
     }
     free(e);

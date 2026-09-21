@@ -1,7 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-21
-> 源码核对基线：`fc75009`；HG-5B 签收、统一 GPU 验收脚本及当前开发方向
+> 源码核对基线：`fc75009`；2026-09-21 mixed native 四 extent cache/resize 合同修复
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。阶段过程与历史性能数字见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -28,6 +28,8 @@ native present、物理驱动、窗口生命周期和性能验收。
 - Intel Iris Xe 已覆盖 strict native、Fog、Campaign enemy、resize、world cycle、角色 vertex diff 和
   长帧稳定性；RTX 3050 已覆盖 native swapchain smoke。Linux hosted Vulkan 路径用于 correctness，
   Linux normal window/native presentation尚未按同一矩阵验收。
+- `rasterfall-gpu-mixed-test.exe --native-window` 独立覆盖四个连续 extent；extent target/swapchain
+  重建期间稳定 mesh/texture upload counter 保持不变。该底层合同仍独立于 Full 的 normal-runtime 覆盖。
 
 ## 回滚与失败边界
 
@@ -83,8 +85,8 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_metrics.ps1 `
 `rf-gpu-raster-diff-test`、resource-cache test 和 mixed-executor test。它们验证 ABI、资源与执行器
 合同，不由窗口程序替代。
 
-`-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。四 extent resize、Vulkan validation/
-sync validation、fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
+`-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。mixed hosted 四 extent resize 由上述
+独立目标覆盖；Vulkan validation/sync validation、fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
 专项签收；涉及 presenter、同步、资源生命周期、驱动兼容或发布判断时必须按风险单独补跑并报告。
 
 ## 下一阶段立项条件

@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
 > 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 源码核对基线：`208532c`；2026-09-21 mixed executor 跨帧槽稳定资源 cache 修复
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -35,7 +35,9 @@ Post/overlay 语义。
 Core 在 begin-frame 固定本帧引用，frame slot 完成前不得释放。world 切换时旧 generation 进入 retired，
 只有 pin 清零后才释放。resize 只重建 extent 相关 target/presenter 资源，不得重建稳定 world mesh。
 
-双帧 slot 分别持有上传区、command/fence/query 和动态 Draw backing。swapchain 由 backend 统一拥有；
+双帧 slot 分别持有 extent target、command/fence/query 和动态 Draw backing；不可变 mesh/texture cache
+由 executor/device 统一持有，同一设备上的 graphics slot 只建立各自 descriptor binding，不重复上传。
+swapchain 由 backend 统一拥有；
 acquire、render fence、present wait completion 分开跟踪。正常热路径禁止 queue-idle，recreate/teardown
 才允许排空 queue。
 

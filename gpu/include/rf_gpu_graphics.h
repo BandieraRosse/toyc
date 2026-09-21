@@ -42,8 +42,11 @@ struct rf_gpu_graphics_batch_item {
 };
 
 /* Persistent immutable submesh/texture bundles, independent of target extent.
- * Resources belong to this graphics owner (and device), share its pipelines,
- * and are destroyed automatically with it. Bind/upload/destroy are synchronous.
+ * Resources belong to their creating graphics owner and device, and are
+ * destroyed automatically with that owner. Another graphics frame slot on the
+ * same backend device may bind the immutable resource through its own descriptor
+ * set; target resize never duplicates the mesh/texture upload. Bind/upload/
+ * destroy are synchronous.
  * Creating a resource does not change the current binding or target contents.
  * Caller must not use a resource pointer after releasing it. */
 struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
