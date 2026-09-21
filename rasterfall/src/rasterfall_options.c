@@ -95,7 +95,7 @@ void rasterfall_options_usage(int fd)
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
         "  --world-cycle-gate  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|hg4-wall|hg4-ramp|hg4-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30>\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
@@ -294,6 +294,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"base") &&
                  strcmp(o->gpu_normal_view,"spawn") &&
                  strcmp(o->gpu_normal_view,"west-facility") &&
+                 strcmp(o->gpu_normal_view,"hg4-wall") &&
+                 strcmp(o->gpu_normal_view,"hg4-ramp") &&
+                 strcmp(o->gpu_normal_view,"hg4-platform") &&
                  strcmp(o->gpu_normal_view,"whu-a18") &&
                  strcmp(o->gpu_normal_view,"whu-b-plaza") &&
                  strcmp(o->gpu_normal_view,"whu-library") &&

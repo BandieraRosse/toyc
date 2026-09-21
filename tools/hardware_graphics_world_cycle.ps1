@@ -42,17 +42,19 @@ try {
     $Gpu = @($Log | Select-String 'FRAME-AUDIT gpu ')
     $Mixed = @($Log | Select-String 'FRAME-AUDIT mixed ')
     $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
+    $MapDraw = @($Log | Select-String 'FRAME-AUDIT map-draw ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
     $Cycles = @($Log | Select-String 'WORLD-CYCLE-RESOURCES ')
     $Present = @($Log | Select-String 'PRESENT-AUDIT frame=')
     if ($Frames.Count -ne 120 -or $Gpu.Count -ne 120 -or $Mixed.Count -ne 120 -or
-        $Ground.Count -ne 120 -or $Layers.Count -ne 120 -or $Resources.Count -ne 120 -or
+        $Ground.Count -ne 120 -or $MapDraw.Count -ne 120 -or $Layers.Count -ne 120 -or $Resources.Count -ne 120 -or
         $Cycles.Count -ne 3 -or $Present.Count -ne 120) {
         throw 'Incomplete frame audit.'
     }
     $ExpectedWorlds = @(0, 1, 2, 1)
     $GroundBuilds = 0
+    $MapBuilds = @(0, 0, 0, 0, 0)
     $SawRetired = $false
     $LastLoads = -1
     $LastReleases = -1
@@ -65,6 +67,16 @@ try {
         if ($Ground[$Index].Line -notmatch 'legacy_commands=0 mesh_builds=(\d+)') { throw 'Ground Draw audit missing.' }
         $Builds = [int]$Matches[1]
         $GroundBuilds += $Builds
+        if ($MapDraw[$Index].Line -notmatch 'wall=\d+/\d+/(\d+) box=\d+/\d+/(\d+) ramp=\d+/\d+/(\d+) platform=\d+/\d+/(\d+) boundary=\d+/\d+/(\d+)') {
+            throw 'Map Draw audit missing.'
+        }
+        for ($Kind = 0; $Kind -lt 5; ++$Kind) {
+            $ClassBuilds = [int]$Matches[1 + $Kind]
+            if (($Index % 30) -gt 0 -and $ClassBuilds -ne 0) {
+                throw 'Stable world rebuilt an HG-4B map mesh.'
+            }
+            $MapBuilds[$Kind] += $ClassBuilds
+        }
         if (($Index % 30) -ge 2 -and $Mixed[$Index].Line -notmatch 'gpu_upload_bytes=0') { throw 'Stable world re-uploaded GPU resources.' }
         if ($Resources[$Index].Line -notmatch 'live=(\d+) retired=(\d+) pinned=(\d+) failed=0 loads=(\d+) releases=(\d+)') { throw 'Resource lifetime audit changed.' }
         $Live = [int]$Matches[1]; $Retired = [int]$Matches[2]; $Pinned = [int]$Matches[3]
@@ -75,6 +87,9 @@ try {
         $LastLoads = $Loads; $LastReleases = $Releases
     }
     if ($GroundBuilds -ne 4) { throw "Expected four ground mesh generations, saw $GroundBuilds." }
+    if (($MapBuilds | Measure-Object -Sum).Sum -lt 4) {
+        throw 'World cycle did not rebuild HG-4B geometry across world generations.'
+    }
     foreach ($Cycle in $Cycles) {
         if ($Cycle.Line -notmatch 'retired=([1-9]\d*) pinned=([1-9]\d*)') {
             throw 'World switch did not expose an in-flight retired generation.'
@@ -87,6 +102,7 @@ try {
     $Record.frames = 120
     $Record.worlds = $ExpectedWorlds
     $Record.ground_mesh_builds = $GroundBuilds
+    $Record.map_mesh_builds = $MapBuilds
     $Record.saw_retired_in_flight = $true
     $Record.final_loads = $LastLoads
     $Record.final_releases = $LastReleases

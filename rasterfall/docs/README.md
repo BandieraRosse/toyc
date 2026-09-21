@@ -1,7 +1,8 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-20
-> 源码核对基线补充：2026-09-21 [HG-4A Ground](hardware-graphics-hg4.md) 已按 Windows Intel 签收：正常窗口 world-cycle、Fog/resize、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态视觉对照通过；HG-4B map/boundary geometry 尚未开始。
+> 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 [HG-4B map/boundary](hardware-graphics-hg4.md) 已按 Windows Intel 签收：wall、opaque box、ramp、opaque platform 与 boundary geometry 分类接入 world-generation persistent Draw；专用 V1 runtime fixture、五类 CPU/native 同姿态对照、Fog/四 extent resize、world-cycle、Windows package 与完整逻辑回归通过。动态/透明 air-gate 保留 RasterCmd。
+> 源码核对基线补充：2026-09-21 [HG-4A Ground](hardware-graphics-hg4.md) 已按 Windows Intel 签收：正常窗口 world-cycle、Fog/resize、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态视觉对照通过。
 > 源码核对基线补充：2026-09-20 [HG-4A Ground](hardware-graphics-hg4.md) 纵切已接入持久 world mesh 与 V2 vertex-light Draw；Intel strict native 120/120 通过，完整视觉/生命周期验收仍待完成。
 > 源码核对基线补充：2026-09-20 [AI frontend checkpoint](hardware-graphics-ai-frontend.md) 已签收：模块化 finalized pose/skinned vertex、被动 gear 与 active weapon actor-local placement 绑定每 actor pose generation；body/gear/weapon 实际变换边界共同参与提交前剔除。Windows package、逻辑测试、角色 world capture、0/10/30/60 actor benchmark、Campaign strict native audit，以及边缘入镜/近面交叉专用 capture 均通过。
 > 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：连续 Draw 间空 ordering flush 被消除，near strict whole-loop/static 中位数降至 22.488/1.554 ms（CPU 为 27.813/2.956 ms），mid 为 25.690/1.681 ms（CPU 为 38.326/3.237 ms）；完整 Intel baseline、320 帧 Campaign 及建筑内部/远处薄结构 native capture 通过。

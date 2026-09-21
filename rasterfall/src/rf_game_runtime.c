@@ -3307,7 +3307,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                  session.world_id, game.spawn_timer_ms);
     }
     if ((options.render_performance || options.gpu_world_raster_view ||
-         options.gpu_normal_view || options.environment_capture_dir ||
+         (options.gpu_normal_view &&
+          strncmp(options.gpu_normal_view, "hg4-", 4)) ||
+         options.environment_capture_dir ||
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
@@ -3365,6 +3367,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
             camera.x = -10500; camera.z = 2000;
             camera.sy = -819; camera.cy = 614;
+        } else if (!strcmp(options.gpu_normal_view, "hg4-wall")) {
+            /* Stable V1 runtime fixture, aimed at its left wall panel. */
+            camera.sy = -384; camera.cy = 949;
+        } else if (!strcmp(options.gpu_normal_view, "hg4-ramp")) {
+            camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "hg4-platform")) {
+            camera.sy = 384; camera.cy = 949;
         } else if (!strcmp(options.gpu_normal_view, "whu-a18")) {
             camera.x = session.level.start_x; camera.z = session.level.start_z;
             camera.sy = session.level.start_sy; camera.cy = session.level.start_cy;
@@ -4403,6 +4412,16 @@ startup_again:
                         scene_audit.ground_draw_triangles,
                         scene_audit.ground_legacy_commands,
                         scene_audit.ground_mesh_builds);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT map-draw wall=%lu/%lu/%lu box=%lu/%lu/%lu ramp=%lu/%lu/%lu platform=%lu/%lu/%lu boundary=%lu/%lu/%lu",
+                        scene_audit.map_draw_items[0], scene_audit.map_draw_triangles[0], scene_audit.map_mesh_builds[0],
+                        scene_audit.map_draw_items[1], scene_audit.map_draw_triangles[1], scene_audit.map_mesh_builds[1],
+                        scene_audit.map_draw_items[2], scene_audit.map_draw_triangles[2], scene_audit.map_mesh_builds[2],
+                        scene_audit.map_draw_items[3], scene_audit.map_draw_triangles[3], scene_audit.map_mesh_builds[3],
+                        scene_audit.boundary_draw_items, scene_audit.boundary_draw_triangles,
+                        scene_audit.boundary_mesh_builds);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                 }

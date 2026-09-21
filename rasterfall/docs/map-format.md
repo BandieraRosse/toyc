@@ -1,6 +1,7 @@
 # Rasterfall 地图格式
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-4B 使用 `assets/maps/hg4_map_geometry_fixture.map` 作为无 world identity 的诊断空间地图，经正常 V1 Runtime Map/projection 链路承载 wall、ramp 与 opaque platform；它只由 `--gpu-normal-scene hg4-*` 和 `tools/hardware_graphics_map_capture.ps1` 使用，不是正式关卡或玩法内容。
 > 源码核对基线补充：GPU-8B2d B2d-4d 保持现有 map 语义不变，并为 authored transparent platform（alpha 96）与启用状态 air-gate box（alpha 48）建立真实 WORLD producer 门禁；两者显式 source-over/no-depth-write，保持 map traversal 的 platform-before-gate 提交顺序并可由 Raster V1 pack。
 > 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
 > 源码核对基线补充：Static World Lighting Phase B 只读 Runtime collision 的 bounds/base_y/height 和 surface 的 kind/height/height2/axis 烘焙；未改地图格式、稳定 ID 或 collision/gameplay 语义。单层高度选择限制见 static-world-lighting-phase-b.md。

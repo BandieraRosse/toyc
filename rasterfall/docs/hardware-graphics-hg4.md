@@ -1,7 +1,7 @@
 # Hardware Graphics HG-4：Ground / Map geometry
 
 > 文档更新：2026-09-21
-> 源码核对基线：当前工作区；HG-4A Ground 已按 Windows Intel 签收。strict native、Fog、resize、world-cycle、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态 capture 均通过；HG-4B map/boundary geometry 尚未开始，HG-4 整体未签收。
+> 源码核对基线：2026-09-21 当前工作区；HG-4A Ground 与 HG-4B map/boundary 均已按 Windows Intel 签收。五类几何已接入持久 Draw/GPU geometry；专用 runtime fixture、五类 CPU/native 对照、Fog/四 extent resize、Outpost/Campaign/WHU/Campaign world-cycle、Windows package 与完整逻辑回归通过。HG-4 完成。
 
 ## HG-4A 当前实现
 
@@ -47,8 +47,38 @@ strict native 黑色天空，不能解释为 ground 误差。
 固定为 212 Draw / 73390 triangles / 0 legacy ground command。七组 native capture 均为零普通 readback、
 零 CPU framebuffer copy、零 hot queue-idle；单次显式 capture readback 只用于保存验收 BMP。
 
-## 剩余验收
+## HG-4B 实现
 
-- HG-4B：wall/box/ramp/platform 与 boundary geometry，按 producer 独立迁移和回滚。
+正常 strict mixed world 将 wall、非 air-gate box、ramp、opaque 非 air-gate platform 与 procedural
+boundary wall 分成五个 renderer-owned immutable mesh。mesh 沿用 HG-4A 的 1024 RFU V2 lighting
+细分、16000 RFU 局部坐标块、U 分量 Q8 vertex-light、resource generation/pin 与延迟退休合同；每类
+首次实际进入相机可见遍历时构建一次，后续帧只提交持久 Draw。颜色与局部坐标相同的 patch 合并为
+submesh，避免逐 patch GPU resource/cache entry。
 
-HG-4A 已完成；HG-4 整体在 HG-4B 前不标记完成。
+动态 air-gate box、透明 platform、texture wall、CPU/非 mixed 和显式 flat/no-planar diagnostic 继续走
+原 RasterCmd producer。这是有意的回滚边界：当前 Draw 合同只接收不透明无纹理几何，不改变
+`air_walls_enabled` 或透明无深度写语义。
+
+`--frame-audit` 新增 `map-draw`，按 wall/box/ramp/platform/boundary 输出 `items/triangles/mesh_builds`。
+Windows 实测：Campaign boundary 为 469 Draw / 22876 triangles；WHU box 为 34 Draw / 7952 triangles。
+`rasterfall/assets/maps/hg4_map_geometry_fixture.map` 通过正常 V1 Runtime Map/projection 链路提供 wall、ramp
+与 opaque platform，三个 `--gpu-normal-scene hg4-*` 固定相机分别得到 wall 1 Draw / 24 triangles、
+ramp 4 Draw / 46 triangles、platform 1 Draw / 12 triangles；各进程仅首帧 build 一次，之后为零。
+
+`tools/hardware_graphics_map_capture.ps1` 串行生成五类 CPU PPM/审阅 BMP、strict native GPU BMP、日志与
+哈希。2026-09-21 Intel 实机五组均为 30/30 strict native，零 fallback；原尺寸审阅确认 wall、box、ramp、
+platform、boundary 的轮廓、遮挡、坡面与平台高度一致。CPU 蓝色天空与 strict native 黑色天空仍是既有
+全帧差异来源，不属于 map geometry 偏差。
+
+## HG-4B 生命周期签收
+
+Fog + 四 extent resize 的 140/140 strict native 门禁通过：ground 只 build 一次，当前 near 视角的
+boundary 也只 build 一次；extent 变化不重建 world mesh，双 frame-slot 预热后 `gpu_upload_bytes=0`，
+零 fallback/readback/CPU framebuffer copy。world-cycle 的 120/120 strict native 门禁通过：四个 ground
+generation 与当前各 world 实际存在/进入视野的 map class 均只在 phase 首帧构建；统计为 wall 1、
+ramp 2、boundary 2，旧 generation 在切换时可见 retired + pinned，最终 `retired=0`、loads=67、releases=41。
+
+Windows package build、完整 `--logic-test`、PowerShell 语法检查与 `git diff --check` 通过。Linux/其他 GPU
+没有在本 checkpoint 重复实机验收。
+
+HG-4A 与 HG-4B 已完成，HG-4 签收。

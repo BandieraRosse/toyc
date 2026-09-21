@@ -43,6 +43,9 @@
 #include "math.h"
 
 #define NEAR_Z RASTERFALL_NEAR_Z
+
+enum hg4_map_class { HG4_MAP_WALL, HG4_MAP_BOX, HG4_MAP_RAMP,
+                     HG4_MAP_PLATFORM, HG4_MAP_BOUNDARY, HG4_MAP_CLASS_COUNT };
 #define ENEMY_RENDER_DISTANCE 24000
 #define UV_ONE 65536
 #define RASTERFALL_CHARACTER_NEAR_RFU 1536
@@ -1913,6 +1916,7 @@ static const struct rasterfall_model_asset *static_prop_model(int asset_id,
 
 static int render_boundary_wall(struct toy_renderer *, const struct camera *,
                                  const struct rasterfall_prop_instance *);
+static int hg4_submit_class(struct toy_renderer *, const struct camera *, int);
 
 int rasterfall_render_static_prop(
     struct toy_renderer *renderer, const struct camera *camera,
@@ -2128,7 +2132,10 @@ int rasterfall_rigid_attachment_transform_logic_test(void)
 static int render_static_props(struct toy_renderer *renderer,
                                const struct camera *camera)
 {
-    int i, pixels = 0;
+    int i, pixels = 0, boundary_submitted = 0;
+    int hardware_boundary = render_ctx && render_ctx->mixed_frame &&
+        !diagnostic_no_planar_v2 && !diagnostic_flat_planar &&
+        active_session->map_ops.runtime_loaded;
     for (i = 0; i < level_map.prop_count; i++)
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
@@ -2141,6 +2148,16 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
         instance.length = map_prop->length;
+        if (hardware_boundary &&
+            instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL) {
+            if (!boundary_submitted) {
+                active_world_light_v2 = 1;
+                if (hg4_submit_class(renderer, camera, HG4_MAP_BOUNDARY) < 0)
+                    return -1;
+                boundary_submitted = 1;
+            }
+            continue;
+        }
         if (instance.asset_id != RASTERFALL_PROP_ASSET_BOUNDARY_WALL) {
             const struct rasterfall_prop_asset_profile *profile =
                 rasterfall_prop_asset_profile(instance.asset_id);
@@ -3703,6 +3720,169 @@ struct floor_mesh_build {
 
 static struct rasterfall_resource_handle floor_mesh_handle;
 
+static void floor_store_u16(unsigned char *, unsigned int);
+static void floor_store_u32(unsigned char *, unsigned int);
+static uint32_t mix_color(uint32_t, uint32_t, int, int);
+
+struct hg4_quad_patch {
+    struct vec3 v[4];
+    uint32_t color;
+    unsigned short light[4];
+};
+
+struct hg4_mesh_build {
+    struct hg4_quad_patch *patches;
+    unsigned long count, capacity;
+};
+
+static struct rasterfall_resource_handle hg4_map_handles[HG4_MAP_CLASS_COUNT];
+
+static int hg4_mesh_push(struct hg4_mesh_build *build,
+                         const struct vec3 v[4], uint32_t color)
+{
+    struct hg4_quad_patch *patch;
+    unsigned long capacity;
+    int i;
+    if (build->count == build->capacity) {
+        struct hg4_quad_patch *grown;
+        capacity = build->capacity ? build->capacity * 2 : 128;
+        if (capacity < build->capacity || capacity > ULONG_MAX / sizeof(*grown))
+            return -1;
+        grown = tlibc_malloc(capacity * sizeof(*grown));
+        if (!grown) return -1;
+        if (build->count)
+            memcpy(grown, build->patches, build->count * sizeof(*grown));
+        tlibc_free(build->patches);
+        build->patches = grown; build->capacity = capacity;
+    }
+    patch = build->patches + build->count++;
+    patch->color = color;
+    for (i = 0; i < 4; ++i) {
+        patch->v[i] = v[i];
+        patch->light[i] = (unsigned short)world_brightness_at(
+            v[i].x, v[i].y, v[i].z);
+    }
+    return 0;
+}
+
+static int hg4_mesh_add_quad(struct hg4_mesh_build *build,
+                             const struct vec3 v[4], uint32_t color)
+{
+    int du = abs(v[1].x-v[0].x) + abs(v[1].y-v[0].y) + abs(v[1].z-v[0].z);
+    int dv = abs(v[3].x-v[0].x) + abs(v[3].y-v[0].y) + abs(v[3].z-v[0].z);
+    int nu = (du + 1023) / 1024, nv = (dv + 1023) / 1024, u, w;
+    if (nu < 1) nu = 1;
+    if (nv < 1) nv = 1;
+    for (w = 0; w < nv; ++w) for (u = 0; u < nu; ++u) {
+        struct vec3 q[4];
+        q[0] = light_quad_position(v, v+1, v+2, v+3, u, w, nu, nv);
+        q[1] = light_quad_position(v, v+1, v+2, v+3, u+1, w, nu, nv);
+        q[2] = light_quad_position(v, v+1, v+2, v+3, u+1, w+1, nu, nv);
+        q[3] = light_quad_position(v, v+1, v+2, v+3, u, w+1, nu, nv);
+        if (hg4_mesh_push(build, q, color) < 0) return -1;
+    }
+    return 0;
+}
+
+static int hg4_mesh_add_box(struct hg4_mesh_build *build,
+    int minx, int maxx, int miny, int maxy, int minz, int maxz, uint32_t color,
+    int include_bottom)
+{
+    struct vec3 v[8], q[4];
+    int i;
+    for (i = 0; i < 8; ++i) {
+        v[i].x = (i & 1) ? maxx : minx;
+        v[i].y = (i & 2) ? maxy : miny;
+        v[i].z = (i & 4) ? maxz : minz;
+    }
+#define HG4_QUAD(a,b,c,d,co) do { q[0]=v[a]; q[1]=v[b]; q[2]=v[c]; q[3]=v[d]; if (hg4_mesh_add_quad(build,q,co)<0) return -1; } while (0)
+    HG4_QUAD(0,1,3,2,color); HG4_QUAD(4,6,7,5,color);
+    HG4_QUAD(0,2,6,4,color-0x080808); HG4_QUAD(1,5,7,3,color+0x080808);
+    HG4_QUAD(2,3,7,6,color+0x181818);
+    if (include_bottom) HG4_QUAD(0,4,5,1,color-0x080808);
+#undef HG4_QUAD
+    return 0;
+}
+
+static struct rasterfall_model_asset *hg4_mesh_finish(
+    const struct hg4_mesh_build *build)
+{
+    struct rasterfall_model_asset *model;
+    unsigned long pb, mb, vb, ib, total, i;
+    uint32_t *colors;
+    int *origin_x, *origin_z;
+    unsigned int *groups, *counts, *offsets, group_count=0;
+    unsigned char *data;
+    if (!build->count || build->count > UINT_MAX / 6) return NULL;
+    colors=tlibc_malloc(build->count*sizeof(*colors));
+    origin_x=tlibc_malloc(build->count*sizeof(*origin_x));
+    origin_z=tlibc_malloc(build->count*sizeof(*origin_z));
+    groups=tlibc_malloc(build->count*sizeof(*groups));
+    counts=tlibc_malloc(build->count*sizeof(*counts));
+    offsets=tlibc_malloc(build->count*sizeof(*offsets));
+    if(!colors||!origin_x||!origin_z||!groups||!counts||!offsets) goto failed_arrays;
+    memset(counts,0,build->count*sizeof(*counts));
+    for(i=0;i<build->count;++i){unsigned int g;int ox=build->patches[i].v[0].x/16000*16000,oz=build->patches[i].v[0].z/16000*16000;
+        if(build->patches[i].v[0].x<0&&build->patches[i].v[0].x%16000)ox-=16000;
+        if(build->patches[i].v[0].z<0&&build->patches[i].v[0].z%16000)oz-=16000;
+        for(g=0;g<group_count&&(colors[g]!=build->patches[i].color||origin_x[g]!=ox||origin_z[g]!=oz||counts[g]>=8000);++g){}
+        if(g==group_count){colors[g]=build->patches[i].color;origin_x[g]=ox;origin_z[g]=oz;group_count++;}
+        groups[i]=g;counts[g]++;
+    }
+    pb = group_count * RASTERFALL_MODEL_PRIMITIVE_BYTES;
+    mb = group_count * RASTERFALL_MODEL_MATERIAL_BYTES;
+    vb = build->count * 4 * RASTERFALL_MODEL_VERTEX_BYTES;
+    ib = build->count * 6 * 4;
+    if (pb > ULONG_MAX-mb || pb+mb > ULONG_MAX-vb || pb+mb+vb > ULONG_MAX-ib)
+        goto failed_arrays;
+    total = pb+mb+vb+ib;
+    model=tlibc_malloc(sizeof(*model)); data=tlibc_malloc(total);
+    if (!model || !data) { tlibc_free(model); tlibc_free(data); goto failed_arrays; }
+    memset(model,0,sizeof(*model)); memset(data,0,total);
+    model->data=data; model->data_size=(int)total; model->format_version=9;
+    model->primitive_count=model->material_count=group_count;
+    model->vertex_count=(unsigned int)build->count*4;
+    model->index_count=(unsigned int)build->count*6;
+    model->material_bytes=RASTERFALL_MODEL_MATERIAL_BYTES;
+    model->vertex_bytes=RASTERFALL_MODEL_VERTEX_BYTES; model->position_scale=1000;
+    model->primitives=data; model->materials=data+pb;
+    model->vertices=model->materials+mb; model->indices=model->vertices+vb;
+    model->min_x=model->min_y=model->min_z=INT_MAX;
+    model->max_x=model->max_y=model->max_z=INT_MIN;
+    {unsigned int g,first=0;for(g=0;g<group_count;++g){unsigned char *primitive=data+g*RASTERFALL_MODEL_PRIMITIVE_BYTES;unsigned char *material=data+pb+g*RASTERFALL_MODEL_MATERIAL_BYTES;
+        floor_store_u32(primitive,first);floor_store_u32(primitive+4,counts[g]*6);floor_store_u32(primitive+8,g);
+        floor_store_u32(material,colors[g]);material[4]=255;material[7]=1;floor_store_u32(material+8,UINT_MAX);
+        floor_store_u32(material+24,(unsigned int)origin_x[g]);floor_store_u32(material+28,(unsigned int)origin_z[g]);offsets[g]=first;first+=counts[g]*6;}}
+    for (i=0;i<build->count;++i) {
+        const struct hg4_quad_patch *p=build->patches+i;
+        unsigned char *vertex=data+pb+mb+i*4*RASTERFALL_MODEL_VERTEX_BYTES;
+        unsigned char *index=data+pb+mb+vb+offsets[groups[i]]*4;
+        int ox=origin_x[groups[i]], oz=origin_z[groups[i]], k;
+        static const unsigned int order[6]={0,1,2,0,2,3};
+        for(k=0;k<4;++k) {
+            unsigned char *dst=vertex+k*RASTERFALL_MODEL_VERTEX_BYTES;
+            floor_store_u32(dst,(unsigned int)(p->v[k].x-ox));
+            floor_store_u32(dst+4,(unsigned int)p->v[k].y);
+            floor_store_u32(dst+8,(unsigned int)(p->v[k].z-oz));
+            floor_store_u16(dst+12,0); floor_store_u16(dst+14,32767); floor_store_u16(dst+16,0);
+            floor_store_u16(dst+18,p->light[k]); floor_store_u16(dst+20,0);
+            if(p->v[k].x<model->min_x)model->min_x=p->v[k].x;
+            if(p->v[k].x>model->max_x)model->max_x=p->v[k].x;
+            if(p->v[k].y<model->min_y)model->min_y=p->v[k].y;
+            if(p->v[k].y>model->max_y)model->max_y=p->v[k].y;
+            if(p->v[k].z<model->min_z)model->min_z=p->v[k].z;
+            if(p->v[k].z>model->max_z)model->max_z=p->v[k].z;
+        }
+        for(k=0;k<6;++k)floor_store_u32(index+k*4,(unsigned int)i*4+order[k]);
+        offsets[groups[i]]+=6;
+    }
+    tlibc_free(colors);tlibc_free(origin_x);tlibc_free(origin_z);tlibc_free(groups);tlibc_free(counts);tlibc_free(offsets);
+    return model;
+failed_arrays:
+    tlibc_free(colors);tlibc_free(origin_x);tlibc_free(origin_z);tlibc_free(groups);tlibc_free(counts);tlibc_free(offsets);
+    return NULL;
+}
+
 static void floor_store_u16(unsigned char *p, unsigned int value)
 {
     p[0] = (unsigned char)value; p[1] = (unsigned char)(value >> 8);
@@ -4084,6 +4264,112 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
     }
     scene_stats.ground_legacy_commands = renderer->cmd_count;
     return pixels;
+}
+
+static int hg4_map_class_for_draw(const struct toy_map_draw *draw)
+{
+    if (draw->type == TOY_MAP_DRAW_WALL) return HG4_MAP_WALL;
+    if (draw->type == TOY_MAP_DRAW_BOX && strncmp(draw->text,"air_gate_",9))
+        return HG4_MAP_BOX;
+    if (draw->type == TOY_MAP_DRAW_RAMP) return HG4_MAP_RAMP;
+    if (draw->type == TOY_MAP_DRAW_PLATFORM && draw->style == 2 &&
+        strncmp(draw->text,"air_gate_",9)) return HG4_MAP_PLATFORM;
+    return -1;
+}
+
+static int hg4_build_map_class(int kind, struct hg4_mesh_build *build)
+{
+    int i;
+    for (i=0;i<level_map.draw_count;++i) {
+        const struct toy_map_draw *x=level_map.draw+i;
+        struct vec3 v[4];
+        if (hg4_map_class_for_draw(x)!=kind) continue;
+        if (kind==HG4_MAP_WALL) {
+            if(x->c==x->d) v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->b,-900,x->c},v[2]=(struct vec3){x->b,x->e,x->c},v[3]=(struct vec3){x->a,x->e,x->c};
+            else v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->a,-900,x->d},v[2]=(struct vec3){x->a,x->e,x->d},v[3]=(struct vec3){x->a,x->e,x->c};
+            if(hg4_mesh_add_quad(build,v,x->color)<0)return -1;
+        } else if(kind==HG4_MAP_BOX) {
+            if(hg4_mesh_add_box(build,x->a,x->b,-900,x->e-900,x->c,x->d,x->color,0)<0)return -1;
+        } else if(kind==HG4_MAP_PLATFORM) {
+            int y=-900+x->e;
+            v[0]=(struct vec3){x->a,y,x->c}; v[1]=(struct vec3){x->b,y,x->c};
+            v[2]=(struct vec3){x->b,y,x->d}; v[3]=(struct vec3){x->a,y,x->d};
+            if(hg4_mesh_add_quad(build,v,x->color)<0)return -1;
+        } else if(kind==HG4_MAP_RAMP) {
+            struct vec3 a,b,c,d,ba,bb,bc,bd;
+            int low=-900+x->e, high=-900+x->f;
+            a=(struct vec3){x->a,low,x->c}; b=(struct vec3){x->b,low,x->c};
+            c=(struct vec3){x->b,high,x->d}; d=(struct vec3){x->a,high,x->d};
+            if(x->style==TOY_MAP_PRIMITIVE_RAMP_X) {
+                a.y=d.y=low; b.y=c.y=high;
+            }
+            ba=a;bb=b;bc=c;bd=d;ba.y=bb.y=bc.y=bd.y=-900;
+#define HG4_ADD4(p0,p1,p2,p3,co) do { v[0]=p0;v[1]=p1;v[2]=p2;v[3]=p3;if(hg4_mesh_add_quad(build,v,co)<0)return -1;} while(0)
+            HG4_ADD4(a,b,c,d,x->color);
+            HG4_ADD4(ba,bb,b,a,mix_color(x->color,0x10151D,1,3));
+            HG4_ADD4(bb,bc,c,b,mix_color(x->color,0x10151D,1,3));
+            HG4_ADD4(bc,bd,d,c,mix_color(x->color,0x10151D,1,3));
+            HG4_ADD4(bd,ba,a,d,mix_color(x->color,0x10151D,1,3));
+#undef HG4_ADD4
+        }
+    }
+    return 0;
+}
+
+static int hg4_build_boundary(struct hg4_mesh_build *build)
+{
+    int i,j;
+    for(i=0;i<level_map.prop_count;++i) {
+        const struct toy_map_prop *p=level_map.props+i;
+        struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
+        int count;
+        if(p->asset_id!=RASTERFALL_PROP_ASSET_BOUNDARY_WALL)continue;
+        count=rf_map_wall_visual_boxes(p->length,parts); if(count<0)return -1;
+        for(j=0;j<count;++j) {
+            if(rf_map_component_transform(parts+j,p->x,0,p->z,p->yaw_degrees,p->scale_milli,&b)<0)return -1;
+            if(hg4_mesh_add_box(build,b.min_x,b.max_x,-900+p->y+b.min_y,
+                -900+p->y+b.max_y,b.min_z,b.max_z,parts[j].color,1)<0)return -1;
+        }
+    }
+    return 0;
+}
+
+static int hg4_submit_class(struct toy_renderer *renderer,
+    const struct camera *camera, int kind)
+{
+    struct rasterfall_resource_handle *handle=hg4_map_handles+kind;
+    const struct rasterfall_model_asset *model;
+    struct rasterfall_draw_view view; struct rasterfall_draw_instance instance;
+    unsigned int i;
+    model=rasterfall_resources_resolve_active(rasterfall_render_resources(),*handle);
+    if(!model) {
+        struct hg4_mesh_build build; struct rasterfall_model_asset *made;
+        const char *identity[HG4_MAP_CLASS_COUNT]={"@world/map-wall","@world/map-box","@world/map-ramp","@world/map-platform","@world/boundary"};
+        memset(&build,0,sizeof(build));
+        if((kind==HG4_MAP_BOUNDARY?hg4_build_boundary(&build):hg4_build_map_class(kind,&build))<0) { tlibc_free(build.patches); return -1; }
+        if(!build.count) { tlibc_free(build.patches); return 0; }
+        made=hg4_mesh_finish(&build); tlibc_free(build.patches);
+        if(!made || rasterfall_resources_adopt(rasterfall_render_resources(),identity[kind],made,handle)<0) {
+            if(made){rasterfall_model_unload(made);tlibc_free(made);} return -1;
+        }
+        model=made;
+        if(kind==HG4_MAP_BOUNDARY)scene_stats.boundary_mesh_builds++;
+        else scene_stats.map_mesh_builds[kind]++;
+    }
+    memset(&view,0,sizeof(view));memset(&instance,0,sizeof(instance));
+    view.camera=*camera;view.width=renderer->surface.width;view.height=renderer->surface.height;
+    view.focal=view.width*3/4;view.near_z=NEAR_Z;
+    instance.mesh=model;instance.mesh_handle=*handle;instance.scale_milli=1000;
+    instance.yaw_cos_q10=1024;instance.scene_light_q8=256;instance.vertex_light_q8=1;
+    if(rf_core_mixed_require_draws(render_ctx->mixed_frame,model->primitive_count)<0)return -1;
+    if(renderer->cmd_count>0&&toy_renderer_flush(renderer)<0)return -1;
+    for(i=0;i<model->primitive_count;++i){struct rasterfall_draw_item item;
+        if(static_prop_draw_resolve(&instance,i,&item)!=RASTERFALL_DRAW_ACCEPTED||
+           rf_core_mixed_draw(render_ctx->mixed_frame,&view,&instance,&item)<0)return -1;
+        if(kind==HG4_MAP_BOUNDARY){scene_stats.boundary_draw_items++;scene_stats.boundary_draw_triangles+=item.index_count/3;}
+        else {scene_stats.map_draw_items[kind]++;scene_stats.map_draw_triangles[kind]+=item.index_count/3;}
+    }
+    return 0;
 }
 
 static void draw_world_label(struct toy_renderer *renderer,
@@ -5219,6 +5505,10 @@ static int map_draw_visible(const struct toy_surface *surface,
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
+    int hg4_submitted[4] = {0,0,0,0};
+    int hardware_map = render_ctx && render_ctx->mixed_frame &&
+        !diagnostic_no_planar_v2 && !diagnostic_flat_planar &&
+        active_session->map_ops.runtime_loaded;
     long phase_start;
     struct vec3 a, b, c, d;
     rasterfall_render_frame++;
@@ -5239,11 +5529,20 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
+        int hg4_kind = hardware_map ? hg4_map_class_for_draw(x) : -1;
         scene_stats.map_command_begin[i] = renderer->cmd_count +
             (render_ctx && render_ctx->mixed_frame ?
                 render_ctx->mixed_frame->raster_count : 0);
         if (!map_draw_visible(&renderer->surface, camera, x))
             goto map_record_done;
+        if (hg4_kind >= 0) {
+            if (!hg4_submitted[hg4_kind]) {
+                active_world_light_v2 = 1;
+                if (hg4_submit_class(renderer, camera, hg4_kind) < 0) return -1;
+                hg4_submitted[hg4_kind] = 1;
+            }
+            goto map_record_done;
+        }
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
              x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||

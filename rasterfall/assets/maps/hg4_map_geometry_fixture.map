@@ -1,0 +1,14 @@
+# HG-4B runtime visual fixture. No identity: retain Campaign policy while
+# loading this spatial map through the normal V1 runtime/projection path.
+map version=1 units=rfu
+world min_x=-7000 max_x=7000 min_z=-2000 max_z=9000 room_limit=10000
+
+surface id=fixture_floor kind=ground min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 material=294B45 attr.collision_id=fixture_floor_collision
+region id=fixture_safe kind=safe min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 attr.legacy_index=0
+region id=player_start kind=start min_x=0 max_x=0 min_z=0 max_z=0 attr.sy=0 attr.cy=1024
+collision id=fixture_floor_collision shape=flat min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=0
+
+render id=fixture_ground kind=ground min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 color=294B45 attr.legacy_index=0
+render id=fixture_wall kind=wall min_x=-4200 max_x=-1400 min_z=4200 max_z=4200 height=2700 color=6B7880 attr.legacy_index=1
+render id=fixture_ramp kind=ramp min_x=-900 max_x=900 min_z=3200 max_z=5600 height=0 color=596775 attr.height2=1400 attr.style=3 attr.axis=z attr.legacy_index=2
+render id=fixture_platform kind=platform min_x=1800 max_x=4600 min_z=3900 max_z=5900 height=1200 color=525F65 attr.style=2 attr.legacy_index=3

@@ -87,6 +87,10 @@ struct rasterfall_scene_stats {
     unsigned long ground_draw_items, ground_draw_triangles;
     unsigned long ground_legacy_commands;
     unsigned long ground_mesh_builds;
+    unsigned long map_draw_items[5], map_draw_triangles[5];
+    unsigned long map_mesh_builds[5];
+    unsigned long boundary_draw_items, boundary_draw_triangles;
+    unsigned long boundary_mesh_builds;
     long sky_floor_us;
     long map_us;
     long gallery_us;

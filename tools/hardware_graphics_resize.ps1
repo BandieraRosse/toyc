@@ -75,10 +75,11 @@ try {
     $Gpu = @($Log | Select-String 'FRAME-AUDIT gpu ')
     $Mixed = @($Log | Select-String 'FRAME-AUDIT mixed ')
     $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
+    $MapDraw = @($Log | Select-String 'FRAME-AUDIT map-draw ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
     if ($Frames.Count -ne 140 -or $Gpu.Count -ne 140 -or
-        $Mixed.Count -ne 140 -or $Ground.Count -ne 140 -or
+        $Mixed.Count -ne 140 -or $Ground.Count -ne 140 -or $MapDraw.Count -ne 140 -or
         $Layers.Count -ne 140 -or $Resources.Count -ne 140) {
         throw 'Incomplete frame audit.'
     }
@@ -96,6 +97,25 @@ try {
         }
     }
     if ($GroundBuilds -ne 1) { throw 'Ground mesh was not built exactly once.' }
+    $MapBuilds = @(0, 0, 0, 0, 0)
+    $MapStable = $null
+    for ($Index = 0; $Index -lt $MapDraw.Count; ++$Index) {
+        if ($MapDraw[$Index].Line -notmatch 'wall=(\d+)/(\d+)/(\d+) box=(\d+)/(\d+)/(\d+) ramp=(\d+)/(\d+)/(\d+) platform=(\d+)/(\d+)/(\d+) boundary=(\d+)/(\d+)/(\d+)') {
+            throw 'Map Draw audit changed during resize.'
+        }
+        $Counts = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[4], [int]$Matches[5],
+            [int]$Matches[7], [int]$Matches[8], [int]$Matches[10], [int]$Matches[11],
+            [int]$Matches[13], [int]$Matches[14])
+        if ($null -eq $MapStable) { $MapStable = $Counts }
+        elseif (Compare-Object $MapStable $Counts) { throw 'Map Draw counts changed across resize.' }
+        for ($Kind = 0; $Kind -lt 5; ++$Kind) {
+            $MapBuilds[$Kind] += [int]$Matches[3 + $Kind * 3]
+        }
+    }
+    foreach ($Builds in $MapBuilds) {
+        if ($Builds -gt 1) { throw 'Map mesh rebuilt during resize.' }
+    }
+    if (($MapBuilds | Measure-Object -Sum).Sum -le 0) { throw 'Resize fixture did not exercise an HG-4B mesh.' }
     $Pinned = @()
     foreach ($Line in $Resources) {
         if ($Line.Line -notmatch 'live=(\d+) retired=0 pinned=(\d+) failed=0') { throw 'Resource lifetime failure.' }
@@ -109,6 +129,7 @@ try {
     if ($Extents.Count -lt 4 -or $Loads.Count -ne 1) { throw 'Resize did not produce four extents or reloaded mesh resources.' }
     $Record.extents = $Extents; $Record.loads = $Loads
     $Record.ground = [ordered]@{ items = 162; triangles = 21366; mesh_builds = $GroundBuilds; steady_upload_bytes = 0 }
+    $Record.map_mesh_builds = $MapBuilds
     $Record.pinned = @($Pinned | Sort-Object -Unique); $Record.frames = $Frames.Count
     $Record.result = 'PASS'
 } catch {
