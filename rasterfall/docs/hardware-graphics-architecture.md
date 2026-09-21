@@ -1,6 +1,9 @@
 # Hardware Graphics：架构与 checkpoint
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-5B 已签收：normal GPU skin 帧的 CPU reference/上传为零，mixed frame 显式区分 bind input、GPU output 与按需 CPU reference；回滚、三场景零差分、30/60 性能、resize、world-cycle、视觉和 300 帧生命周期门禁通过。HG-0～HG-5B 完成，尚未定义后续正式阶段。
+> 源码核对基线补充：2026-09-21 HG-5B executor 纵切已接入逐帧 bind/palette storage backing、compute skin output、CPU reference device-local 差分与独立回滚开关；近场 20400 顶点全零差分，完整阶段门禁仍待继续。
+> 源码核对基线补充：2026-09-21 HG-5B frame input 已把逐实例 finalized palette 与 bind position/normal/BDEF influence 纳入 mixed-frame 所有权，并保留 HG-5A CPU-skinned reference；GPU upload/shader 尚未接入，正常帧实际绑定路径不变。
 > 源码核对基线补充：2026-09-21 [HG-5A](hardware-graphics-hg5.md) 已按 Windows Intel 签收：动态角色 Draw 的帧副本、resize/lifecycle、视觉、device-local VB 差分与 30/60 敌人性能门禁通过；两轮 60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms。下一步进入 HG-5B GPU skinning。
 > 源码核对基线补充：2026-09-21 [HG-5](hardware-graphics-hg5.md) 的 near/mid × 0/30 敌人四组 30 帧 CPU/strict-native 同状态角色视觉证据已人工审阅通过；`--gpu-normal-fixed-tick` 仅为采集固定每帧一个 16ms gameplay tick，性能基线仍使用真实墙钟。
 > 源码核对基线补充：2026-09-21 [HG-5](hardware-graphics-hg5.md) 的 30/60 敌人 strict-native 基线已在 Windows Intel 通过；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms，据此下一步进入 HG-5A character geometry，GPU skinning 保持 HG-5B 独立迁移。

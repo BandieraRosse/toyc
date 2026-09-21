@@ -114,6 +114,12 @@ static uint32_t read32(const unsigned char *p)
 {
     return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
 }
+static uint32_t float_bits(float value)
+{
+    uint32_t bits;
+    memcpy(&bits,&value,sizeof(bits));
+    return bits;
+}
 static int encode_draw(struct rf_gpu_mixed_executor *e,
     const struct rf_core_mixed_frame *f, unsigned long index)
 {
@@ -221,21 +227,72 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         rf_gpu_raster_set_post(mixed_raster(e), &e->output.post) < 0) return -1;
     if (f->dynamic_vertex_count) {
         uint32_t *indices, white=0xffffff;
+        uint32_t *bind_words=NULL,*palette_words=NULL;
         if (f->dynamic_vertex_count>UINT32_MAX) return -1;
         indices=malloc((size_t)f->dynamic_vertex_count*sizeof(*indices));
         if (!indices) return -1;
         for (uint32_t n=0;n<(uint32_t)f->dynamic_vertex_count;++n) indices[n]=n;
-        e->dynamic[e->active_frame][0]=rf_gpu_graphics_resource_create(
-            mixed_graphics(e),
-            (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices,
-            (uint32_t)f->dynamic_vertex_count,indices,
-            (uint32_t)f->dynamic_vertex_count,&white,1,1);
+        if (e->output.character_skinning) {
+            if (f->skin_vertex_count!=f->dynamic_vertex_count || !f->skin_palette_count ||
+                f->skin_palette_count>65535 || f->skin_palette_count>UINT32_MAX/15) {
+                free(indices); return -1;
+            }
+            bind_words=calloc((size_t)f->dynamic_vertex_count*22,sizeof(*bind_words));
+            palette_words=malloc((size_t)f->skin_palette_count*15*sizeof(*palette_words));
+            if (!bind_words || !palette_words) { free(bind_words); free(palette_words); free(indices); return -1; }
+            for (unsigned long n=0;n<f->skin_palette_count;++n) {
+                const struct rasterfall_model_skin_palette_bone *p=&f->skin_palette[n];
+                uint32_t *out=palette_words+n*15;
+                for(unsigned k=0;k<9;++k) out[k]=float_bits((float)p->rotation[k]);
+                for(unsigned k=0;k<3;++k) out[9+k]=float_bits((float)p->position[k]);
+                for(unsigned k=0;k<3;++k) out[12+k]=(uint32_t)p->rest[k];
+            }
+            for (unsigned long d=0;d<f->draw_count;++d) if (f->draws[d].skin_vertex_count) {
+                const struct rf_core_mixed_draw *draw=&f->draws[d];
+                const struct rf_core_mixed_skin_instance *instance=&f->skin_instances[draw->skin_instance];
+                for (unsigned int v=0;v<draw->skin_vertex_count;++v) {
+                    const struct rasterfall_skinned_draw_vertex *src=&f->skin_vertices[draw->skin_first_vertex+v];
+                    uint32_t *out=bind_words+(draw->dynamic_first_vertex+v)*22;
+                    for(unsigned k=0;k<3;++k) out[k]=(uint32_t)src->position[k];
+                    for(unsigned k=0;k<2;++k) out[3+k]=(uint32_t)src->uv[k];
+                    for(unsigned k=0;k<9;++k) out[5+k]=(uint32_t)src->normals[k];
+                    for(unsigned k=0;k<4;++k) {
+                        const struct rasterfall_skin_influence *in=&src->influences[k];
+                        uint32_t b0=(uint32_t)instance->first_palette_bone+in->bone0;
+                        uint32_t b1=(uint32_t)instance->first_palette_bone+in->bone1;
+                        out[14+k*2]=(b0&65535u)|(b1<<16);
+                        out[15+k*2]=in->weight|((uint32_t)(in->type|
+                            (draw->instance.mesh->animation.pose==RASTERFALL_MODEL_POSE_BIND ? 0x100 : 0))<<16);
+                    }
+                }
+            }
+            e->dynamic[e->active_frame][0]=rf_gpu_graphics_skinned_resource_create(
+                mixed_graphics(e),e->output.character_vertex_diff ?
+                    (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices : NULL,
+                (uint32_t)f->dynamic_vertex_count,indices,(uint32_t)f->dynamic_vertex_count,
+                bind_words,(uint32_t)f->dynamic_vertex_count*22,palette_words,
+                (uint32_t)f->skin_palette_count*15,&white,1,1);
+            free(bind_words); free(palette_words);
+        } else {
+            if (f->reference_vertex_count!=f->dynamic_vertex_count) {
+                free(indices); return -1;
+            }
+            e->dynamic[e->active_frame][0]=rf_gpu_graphics_resource_create(
+                mixed_graphics(e),(const struct rf_gpu_graphics_vertex *)f->dynamic_vertices,
+                (uint32_t)f->dynamic_vertex_count,indices,
+                (uint32_t)f->dynamic_vertex_count,&white,1,1);
+        }
         free(indices);
         if (!e->dynamic[e->active_frame][0]) return -1;
+        if (e->output.character_skinning) {
+            e->stats.character_skin_frames++;
+            e->stats.character_skin_vertices+=f->dynamic_vertex_count;
+        }
         e->dynamic_count[e->active_frame]=1;
         if (e->output.character_vertex_diff) {
             uint64_t p=0,n=0,uv=0;
             uint32_t max_p=0,max_n=0;
+            if (f->reference_vertex_count!=f->dynamic_vertex_count) return -1;
             if (rf_gpu_graphics_resource_diff_vertices(mixed_graphics(e),
                     e->dynamic[e->active_frame][0],
                     (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices,

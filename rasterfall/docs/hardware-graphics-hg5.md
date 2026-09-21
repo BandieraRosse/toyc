@@ -1,7 +1,7 @@
 # Hardware Graphics HG-5：Character geometry / GPU skinning
 
 > 文档更新：2026-09-21
-> 源码核对基线：2026-09-21 当前工作区；HG-5A 已签收。普通不透明 CPU-skinned body 已接入帧内动态 Draw，CPU animation/IK/skinning authority 不变；帧副本、Windows resize/lifecycle、四组 CPU/native 同状态视觉审阅、device-local 角色 VB 精确差分与受控 30/60 敌人性能复测均通过。
+> 源码核对基线：2026-09-21 当前工作区；HG-5B 已签收。普通 GPU skin 帧只保存 finalized palette、bind input 与 GPU output 顶点索引空间，CPU-skinned reference/上传为零；`--gpu-character-vertex-diff` 在目标帧按需生成 oracle，`--gpu-character-skinning-off` 恢复 HG-5A CPU VB。animation/IK/grant/socket authority 未迁移。
 
 ## 当前阶段
 
@@ -103,3 +103,96 @@ fallback/readback/CPU framebuffer copy。丢弃前 16 帧后，两轮 30 敌人 
 小幅摆动，但角色 Draw 明显下降，未见 HG-5A 引入的持续退化；P95 不作为跨设备承诺。当前最终 SHA
 对应的 vertex diff 再次精确比较 20400 顶点且全部差值为零，证据位于
 `tmp/hg5-character-vertex-diff-final-current-20260921/`。HG-5A 正式签收，下一步进入 HG-5B GPU skinning。
+
+## HG-5B preflight：finalized palette 合同
+
+HG-5B 首个前置增量先冻结 CPU→GPU 的姿态边界，不改变正常帧输出。`rasterfall_model_skin_palette_bone`
+逐骨骼保存 finalized rotation、position 与显式 rest pivot；`rasterfall_model_build_skin_palette()` 只在
+animation composition、grant 与 IK 已完成后复制 presentation snapshot，不拥有或推进任何动作状态。
+rest pivot 暂不预折叠进 translation，以保持现有 `rotation * (bind - rest) + position` 的求值顺序，便于
+后续 GPU 输出与 CPU reference 做逐顶点 position/normal 差分。
+
+`rasterfall_model_skin_vertex_palette()` 是同一合同的 CPU oracle，覆盖单骨与 BDEF 双骨权重、bind-pose
+normal 特例和最终法线归一化。逻辑回归要求它与现有 authority evaluator 逐字节一致，并拒绝不足的
+palette range。Windows build、package 与完整 `--logic-test` 已通过。此 checkpoint 只签收稳定输入合同；
+尚未上传 palette、尚未由 shader 生成顶点，也不宣称减少了 CPU skinning 成本。下一纵切应让混合帧按
+实例持有该 snapshot 与 bind vertex/weight 引用，保留 HG-5A CPU-skinned 路径为独立回滚开关。
+
+## HG-5B frame input：逐实例 palette 与 bind corner
+
+混合帧现拥有独立的 skinned-instance 表、连续 finalized palette、连续 bind-corner 输入，并让每个普通
+opaque body Draw 同时引用 HG-5A CPU-skinned reference 与 HG-5B bind 输入。同一角色的多个 primitive
+只登记一次 palette；bind corner 保存 bind position、UV、自身 BDEF influence，以及现有 flat-lighting 合同
+所需的三组 bind normal 与对应 influence。该布局不改变模型资源所有权，也不把 palette 塞进普通静态
+Draw ABI。
+
+Core 冻结后的执行前校验会检查实例 palette range、Draw bind range、单骨/BDEF 类型及全部骨骼索引；
+reset 只清空计数并复用容量。`--logic-test` 覆盖 palette/bind/reference 的帧副本隔离、同实例引用、执行
+和容量复用。`--frame-audit` 在既有 `character-draw` 行末追加 `skin_instances`、`bind_vertices` 与
+`palette_bones`，旧 HG-5A 字段顺序不变，现有脚本仍可读取。
+
+本 checkpoint 仍由 HG-5A CPU-skinned stream 创建并绑定实际 graphics vertex resource，因此不是 GPU
+skinning 完成点，也尚未减少 CPU skinning。下一纵切应在 mixed executor 建立逐帧 bind/palette GPU
+backing，由 shader 生成 position/normal，并以现有 reference stream 做差分；独立回滚开关在该纵切接入。
+
+## HG-5B executor：bind/palette backing 与 shader output
+
+mixed executor 现把连续 bind corner 打包为 storage buffer，把 finalized double palette 收窄为逐骨 15-word
+float/int GPU palette，并由 `graphics_skin.comp` 生成实际绑定给既有 indexed Draw 的 56-byte graphics vertex。
+输出 VB、bind buffer 与 palette buffer 都属于当前 graphics frame slot，随 slot recycle 销毁；普通静态资源
+registry/pin 合同不变。bind pose normal 的既有 CPU 特例显式编码进本帧输入，单骨/BDEF 双骨 position 与
+三组 source normal 均在 shader 求值。
+
+GPU skinning 在 native mixed path 默认开启；`--gpu-character-skinning-off` 是独立回滚边界，只把实际 VB
+恢复为 HG-5A CPU-skinned upload，不改变 producer、palette snapshot 或 Draw 资格。`--gpu-character-vertex-diff`
+现比较 compute shader 写入的 device-local VB 与同帧 HG-5A reference，而非仅验证上传输入。
+
+2026-09-21 Windows Intel near/0 fixed-tick 30 帧 strict-native smoke 通过：每帧 4 skin instance、20400 bind
+corner、116 palette bone；第 30 帧 position/normal/UV mismatch 和最大差值均为 0。独立回滚 5 帧也保持
+strict-native，审计中无 `character-gpu-skin`。该结果只签收 executor 纵切；CPU reference 仍每帧生成，且
+30/60 敌人、resize、多姿态/LOD 与性能复测尚未完成，因此仍不宣称 HG-5B 完成。
+
+## HG-5B 扩展门禁进展
+
+2026-09-21 后续门禁已把现有脚本从只验证 HG-5A `character-draw` 升级为同时验证逐帧
+`character-gpu-skin`：dispatch 顶点数必须与同帧 bind/reference stream 完全一致。Windows Intel 上，
+near 30/60 敌人各 120 帧均为 strict native，零 fallback/readback/CPU framebuffer copy；丢弃前 16 帧后，
+whole-loop 中位数分别为 30.815/55.564 ms，GPU Raster 为 10.727/27.361 ms，GPU Draw 为
+1.808/1.824 ms。该轮 P95 与均值受明显调度抖动影响，不作为跨轮性能承诺。
+
+resize 140 帧覆盖四种 extent，20400 bind/reference/output 顶点始终一致；world-cycle 120 帧覆盖
+Outpost → Campaign → WHU → Campaign，只有 Campaign 两段执行 20400 顶点 GPU skin，旧 world generation
+仍能在双帧在途后正确退休并释放。near/0、mid/30 与 near/60 的第 30 帧 device-local output 均精确比较
+20400 顶点，position/normal/UV mismatch 与最大差值全部为 0。near/mid × 0/30 固定 tick CPU/native
+组图经人工检查，角色姿态、轮廓、装备/武器衔接与远近视图未见 GPU skin 专属异常。独立回滚 5 帧再次
+通过，且没有 `character-gpu-skin` 审计。
+
+这些结果补齐 executor correctness、规模、resize、视图/姿态和资源生命周期证据，但正常帧仍生成并上传
+HG-5A CPU-skinned reference。当前性能数据证明 shader 路径没有引入稳定 Draw 退化，却不能证明已消除
+CPU skinning 成本；因此本轮仍不正式签收 HG-5B，也不直接删除 reference。下一增量应把 CPU reference
+限定到显式 vertex-diff/诊断或回滚路径，并在移除正常帧 reference 后重跑同一矩阵。
+
+## HG-5B 最终签收
+
+mixed-frame 现显式区分三条顶点流：`bind_vertices` 是 shader 输入，`output_vertices` 是 GPU 生成并由
+Draw 消费的顶点索引空间，`reference_vertices` 只在 CPU 回滚或显式差分帧存在。普通 GPU skin 帧不再
+调用完整 CPU skin cache 来构造已迁移 body reference，也不再上传 CPU-skinned VB；executor 为输出 VB
+直接分配 device-local backing，再由 compute shader 写入。遇到仍属 legacy 的材质/primitive 时，producer
+才惰性建立旧 cache，不改变未迁移内容的行为。
+
+`--gpu-character-vertex-diff` 只在第 30 帧生成同帧 CPU oracle，其他 29 帧保持 reference 为零；
+`--gpu-character-skinning-off` 每帧生成并上传 HG-5A reference，executor 拒绝 reference 数量不足的回滚帧。
+逐实例 palette、IK 后 finalized pose、socket 与武器挂点仍由原 CPU presentation 链路拥有。
+
+2026-09-21 Windows Intel 最终矩阵通过：package/完整 `--logic-test`；near 30/60 各 120 帧性能门禁；
+四 extent resize；Outpost → Campaign → WHU → Campaign；near/0、mid/30、near/60 第 30 帧各 20400
+顶点 position/normal/UV 全零差分；near/mid × 0/30 固定 tick CPU/native 视觉复核；5 帧 CPU 回滚；
+以及 near/30 连续 300 帧。普通帧审计全部为 `reference_vertices=0`，诊断帧和回滚帧为 20400；300 帧
+运行保持 300/300 GPU skin dispatch 且 reference 始终为零。证据位于 `tmp/hg5b-reference-finalization-*`，
+不提交。
+
+最终 30/60 敌人稳态 whole-loop 中位数约 29.337/54.782 ms，GPU Raster 中位数约 11.449/27.363 ms，
+GPU Draw 中位数约 1.816/1.814 ms；scene 中位数约 2.509/2.493 ms。该轮调度 P95 仍有明显抖动，不单独
+用于结论；中位数不差于 executor checkpoint，normal reference 顶点/上传已由审计确认为零，且未见持续
+GPU Draw/Raster 退化。
+HG-5B 至此正式签收；当前没有已定义的后续 HG 正式阶段。

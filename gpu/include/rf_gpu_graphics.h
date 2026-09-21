@@ -51,6 +51,16 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
+/* HG-5B: create the ordinary indexed resource, then fill its vertex buffer
+ * from packed bind/palette words. Reference may be NULL on normal frames;
+ * explicit diff supplies it as a CPU oracle. */
+struct rf_gpu_graphics_resource *rf_gpu_graphics_skinned_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *reference, uint32_t vertex_count,
+    const uint32_t *indices, uint32_t index_count,
+    const uint32_t *bind_words, uint32_t bind_word_count,
+    const uint32_t *palette_words, uint32_t palette_word_count,
+    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
 int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,

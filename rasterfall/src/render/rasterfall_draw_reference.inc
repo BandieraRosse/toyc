@@ -166,7 +166,7 @@ static int static_prop_draw_lower_item(struct toy_renderer *renderer,
     if (draw->primitive == 0) {
         long phase = render_monotonic_us();
         if (prepare_gallery_vertex_cache(renderer, instance->mesh, &view->camera,
-                instance->x, instance->y, instance->z, instance->scale_milli) < 0)
+                instance->x, instance->y, instance->z, instance->scale_milli,1) < 0)
             return -1;
         skin_trace_capture(renderer, instance->mesh);
         model_setup_timing.vertex_cache_us += render_monotonic_us() - phase;

@@ -109,6 +109,17 @@ struct rasterfall_model_bone_transform {
     double position[3];
 };
 
+/* HG-5B finalized skinning input.  This is a presentation snapshot, not a
+ * second animation state: CPU animation/IK/grants remain authoritative and
+ * publish one entry per immutable skeleton bone after pose finalization.
+ * Keeping the rest pivot explicit preserves the established evaluation order
+ * for CPU/GPU differential work. */
+struct rasterfall_model_skin_palette_bone {
+    double rotation[9];
+    double position[3];
+    int32_t rest[3];
+};
+
 /* Read-only snapshot of a named bone after animation composition, IK and
  * grant evaluation.  Values remain in model space so presentation code can
  * apply its asset scale and forward-axis correction exactly once. */
@@ -565,6 +576,13 @@ void rasterfall_model_print_two_bone_diagnostics(
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],
                                  int normal[3]);
+int rasterfall_model_build_skin_palette(const struct rasterfall_model_asset *asset,
+    struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int palette_count);
+int rasterfall_model_skin_vertex_palette(const struct rasterfall_model_asset *asset,
+    const struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int palette_count, unsigned int index, int position[3],
+    int normal[3]);
 int rasterfall_model_find_bone(const struct rasterfall_model_asset *asset,
                                const char *name);
 void rasterfall_model_dump_bones(const struct rasterfall_model_asset *asset,

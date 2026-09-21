@@ -1729,6 +1729,7 @@ static int core_end_frame_present(struct rf_core *core)
         output.present_timing = &frame->stats.native_present_timing;
         output.strict_native = 1;
         output.character_vertex_diff = frame->character_vertex_diff_requested;
+        output.character_skinning = frame->character_skinning;
         if (frame->capture_path) {
             __fprintf(2,"gpu-capture requested extent=%dx%d path=%s\n",core->surface.width,core->surface.height,frame->capture_path);
             uint64_t pixels = (uint64_t)core->surface.width * core->surface.height;
@@ -1813,6 +1814,8 @@ static int core_end_frame_present(struct rf_core *core)
             after.graphics.texture_upload_bytes-before.graphics.texture_upload_bytes;
         frame->stats.character_diff_frames=after.character_diff_frames-before.character_diff_frames;
         frame->stats.character_diff_vertices=after.character_diff_vertices-before.character_diff_vertices;
+        frame->stats.character_skin_frames=after.character_skin_frames-before.character_skin_frames;
+        frame->stats.character_skin_vertices=after.character_skin_vertices-before.character_skin_vertices;
         frame->stats.character_position_mismatches=after.character_position_mismatches-before.character_position_mismatches;
         frame->stats.character_normal_mismatches=after.character_normal_mismatches-before.character_normal_mismatches;
         frame->stats.character_uv_mismatches=after.character_uv_mismatches-before.character_uv_mismatches;

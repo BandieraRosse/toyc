@@ -51,6 +51,20 @@ struct rasterfall_dynamic_draw_vertex {
     int32_t position[3], uv[2], normals[9];
 };
 
+/* HG-5B bind-pose input kept beside the HG-5A CPU-skinned reference.  Each
+ * triangle corner carries its own influence plus the three source-normal
+ * influences required by the existing flat per-primitive lighting contract.
+ * This is a frame ABI only; GPU packing may narrow/convert the finalized
+ * double-precision palette without changing animation ownership. */
+struct rasterfall_skin_influence {
+    uint16_t bone0, bone1, weight;
+    uint8_t type, reserved;
+};
+struct rasterfall_skinned_draw_vertex {
+    int32_t position[3], uv[2], normals[9];
+    struct rasterfall_skin_influence influences[4];
+};
+
 enum rasterfall_draw_reject {
     RASTERFALL_DRAW_ACCEPTED,
     RASTERFALL_DRAW_SCOPE,

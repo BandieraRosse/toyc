@@ -97,6 +97,7 @@ struct rf_core_gpu_frame_stats {
     unsigned long long mixed_gpu_timing_frame;
     unsigned long long capture_readback_bytes;
     unsigned long long character_diff_frames, character_diff_vertices;
+    unsigned long long character_skin_frames, character_skin_vertices;
     unsigned long long character_position_mismatches, character_normal_mismatches;
     unsigned long long character_uv_mismatches;
     unsigned int character_max_position_delta, character_max_normal_delta;
@@ -157,6 +158,7 @@ struct rf_core_gpu_frame {
     const char *capture_path;
     int capture_completed;
     int character_vertex_diff_requested, character_vertex_diff_completed;
+    int character_skinning;
 };
 
 /* The single V0 Core context.  The game may borrow the objects through the

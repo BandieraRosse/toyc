@@ -59,9 +59,10 @@ foreach ($EnemyCount in @(30, 60)) {
     $GpuAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT gpu ' })
     $LayerAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT layers ' })
     $CharacterAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT character-draw ' })
+    $SkinAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT character-gpu-skin ' })
     if ($GpuAudit.Count -ne $Frames -or $LayerAudit.Count -ne $Frames -or
-        $CharacterAudit.Count -ne $Frames) {
-        throw "$Name has incomplete GPU/layer/character audit rows."
+        $CharacterAudit.Count -ne $Frames -or $SkinAudit.Count -ne $Frames) {
+        throw "$Name has incomplete GPU/layer/character/skin audit rows."
     }
     $ForbiddenGpu = @($GpuAudit | Where-Object {
         $_ -notmatch 'readback_bytes=0' -or $_ -notmatch 'cpu_framebuffer_copy_bytes=0'
@@ -73,14 +74,30 @@ foreach ($EnemyCount in @(30, 60)) {
         throw "$Name violated fallback/readback/copy gates."
     }
     $InvalidCharacter = @($CharacterAudit | Where-Object {
-        if ($_ -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) upload_vertices=(\d+) legacy_items=(\d+)') {
+        if ($_ -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) reference_vertices=(\d+) output_vertices=(\d+) legacy_items=(\d+)') {
             return $true
         }
         [int64]$Matches[1] -le 0 -or [int64]$Matches[2] -le 0 -or
             [int64]$Matches[3] -le 0 -or
-            [int64]$Matches[4] -ne [int64]$Matches[3] * 3
+            [int64]$Matches[4] -ne 0 -or
+            [int64]$Matches[5] -ne [int64]$Matches[3] * 3
     })
     if ($InvalidCharacter.Count) { throw "$Name contains invalid HG-5A character Draw rows." }
+    for ($Index = 0; $Index -lt $Frames; ++$Index) {
+        if ($CharacterAudit[$Index] -notmatch 'reference_vertices=(\d+) output_vertices=(\d+).*bind_vertices=(\d+)') {
+            throw "$Name has an invalid HG-5B character input row."
+        }
+        $ReferenceVertices = [int64]$Matches[1]
+        $OutputVertices = [int64]$Matches[2]
+        $BindVertices = [int64]$Matches[3]
+        if ($SkinAudit[$Index] -notmatch 'frames=1 vertices=(\d+)') {
+            throw "$Name has an invalid HG-5B GPU skin row."
+        }
+        if ([int64]$Matches[1] -ne $BindVertices -or $BindVertices -ne $OutputVertices -or
+            $ReferenceVertices -ne 0) {
+            throw "$Name normal GPU skin frame retained a CPU reference or has inconsistent streams."
+        }
+    }
     $Metrics = Join-Path $OutputDirectory "$Name.metrics.json"
     & powershell -ExecutionPolicy Bypass -File (Join-Path $Root 'tools/hardware_graphics_metrics.ps1') `
         -LogPath $RunLog -WarmupFrames $WarmupFrames -ExpectedFrames $Frames `
@@ -99,7 +116,7 @@ foreach ($EnemyCount in @(30, 60)) {
 
 $Manifest = [ordered]@{
     schema = 1
-    checkpoint = 'HG-5A-character-baseline'
+    checkpoint = 'HG-5B-character-baseline'
     created_at = (Get-Date).ToString('o')
     executable = $Exe
     executable_sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash
@@ -108,7 +125,8 @@ $Manifest = [ordered]@{
     runs = $Runs
     notes = @(
         'Runs are serial because Windows native-present evidence must not overlap.',
-        'This gate measures CPU frontend and GPU mixed-frame cost after the HG-5A dynamic character Draw vertical slice.',
+        'Every frame must dispatch HG-5B GPU skinning for exactly the bind/output vertex count.',
+        'Normal frames must report zero CPU reference vertices.',
         'Use the metrics JSON files to compare enemies_ms, whole_loop_ms and GPU raster/draw timestamps.'
     )
 }

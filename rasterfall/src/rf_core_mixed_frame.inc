@@ -27,6 +27,8 @@ void rf_core_mixed_reset(struct rf_core_mixed_frame *f)
     if (!f || f->state == RF_CORE_MIXED_EXECUTING) return;
     f->raster_count = f->draw_count = f->span_count = 0;
     f->dynamic_vertex_count = 0;
+    f->reference_vertex_count = 0;
+    f->skin_vertex_count = f->skin_palette_count = f->skin_instance_count = 0;
     f->required_draw_count = 0;
     f->registry = NULL;
     f->registry_epoch = 0;
@@ -40,6 +42,8 @@ void rf_core_mixed_destroy(struct rf_core_mixed_frame *f)
     if (!f || f->state == RF_CORE_MIXED_EXECUTING) return;
     tlibc_free(f->raster); tlibc_free(f->draws); tlibc_free(f->spans);
     tlibc_free(f->dynamic_vertices);
+    tlibc_free(f->skin_vertices); tlibc_free(f->skin_palette);
+    tlibc_free(f->skin_instances);
     memset(f, 0, sizeof(*f));
 }
 
@@ -196,23 +200,101 @@ int rf_core_mixed_dynamic_draw(struct rf_core_mixed_frame *f,
         f->last_layer != RF_RENDER_LAYER_WORLD || !vertices ||
         f->draw_count == ULONG_MAX || f->span_count == ULONG_MAX ||
         vertex_count > ULONG_MAX - f->dynamic_vertex_count ||
+        vertex_count > ULONG_MAX - f->reference_vertex_count ||
         !mixed_dynamic_draw_valid(f, view, instance, item, vertex_count)) return -1;
     first = f->dynamic_vertex_count;
     if (mixed_reserve((void **)&f->draws, &f->draw_capacity, f->draw_count + 1,
             sizeof(*f->draws)) < 0 ||
         mixed_reserve((void **)&f->spans, &f->span_capacity, f->span_count + 1,
             sizeof(*f->spans)) < 0 ||
-        mixed_reserve((void **)&f->dynamic_vertices, &f->dynamic_vertex_capacity,
-            first + vertex_count, sizeof(*f->dynamic_vertices)) < 0) return -1;
-    memcpy(f->dynamic_vertices + first, vertices,
+        mixed_reserve((void **)&f->dynamic_vertices, &f->reference_vertex_capacity,
+            f->reference_vertex_count + vertex_count,
+            sizeof(*f->dynamic_vertices)) < 0) return -1;
+    memcpy(f->dynamic_vertices + f->reference_vertex_count, vertices,
         (size_t)vertex_count * sizeof(*vertices));
     f->dynamic_vertex_count += vertex_count;
     d = &f->draws[f->draw_count];
     memset(d, 0, sizeof(*d));
     d->view = *view; d->instance = *instance; d->item = *item;
     d->dynamic_first_vertex = first; d->dynamic_vertex_count = vertex_count;
+    d->reference_first_vertex=f->reference_vertex_count;
+    d->reference_vertex_count=vertex_count;
+    f->reference_vertex_count+=vertex_count;
     mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_DRAW,
         RF_RENDER_LAYER_WORLD, f->draw_count++, 1);
+    return 0;
+}
+
+int rf_core_mixed_skin_instance(struct rf_core_mixed_frame *f,
+    const struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int palette_count, unsigned int *instance_index)
+{
+    struct rf_core_mixed_skin_instance *instance;
+    unsigned long first;
+    if (!f || f->state != RF_CORE_MIXED_RECORDING || !mixed_lifetime_valid(f) ||
+        !palette || !palette_count || !instance_index ||
+        palette_count > ULONG_MAX - f->skin_palette_count ||
+        f->skin_instance_count >= UINT_MAX) return -1;
+    first=f->skin_palette_count;
+    if (mixed_reserve((void **)&f->skin_palette,&f->skin_palette_capacity,
+            first+palette_count,sizeof(*f->skin_palette))<0 ||
+        mixed_reserve((void **)&f->skin_instances,&f->skin_instance_capacity,
+            f->skin_instance_count+1,sizeof(*f->skin_instances))<0) return -1;
+    memcpy(f->skin_palette+first,palette,(size_t)palette_count*sizeof(*palette));
+    instance=&f->skin_instances[f->skin_instance_count];
+    instance->first_palette_bone=first;
+    instance->palette_bone_count=palette_count;
+    *instance_index=(unsigned int)f->skin_instance_count++;
+    f->skin_palette_count+=palette_count;
+    return 0;
+}
+
+int rf_core_mixed_skinned_draw(struct rf_core_mixed_frame *f,
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance,
+    const struct rasterfall_draw_item *item,
+    const struct rasterfall_dynamic_draw_vertex *reference_vertices,
+    const struct rasterfall_skinned_draw_vertex *bind_vertices,
+    unsigned int vertex_count, unsigned int skin_instance)
+{
+    unsigned long first=f ? f->skin_vertex_count : 0;
+    unsigned long reference_first=f ? f->reference_vertex_count : 0;
+    struct rf_core_mixed_draw *draw;
+    if (!f || !bind_vertices || skin_instance>=f->skin_instance_count ||
+        vertex_count>ULONG_MAX-f->skin_vertex_count ||
+        vertex_count>ULONG_MAX-f->dynamic_vertex_count ||
+        (reference_vertices && vertex_count>ULONG_MAX-f->reference_vertex_count) ||
+        mixed_reserve((void **)&f->skin_vertices,&f->skin_vertex_capacity,
+            first+vertex_count,sizeof(*f->skin_vertices))<0) return -1;
+    if (reference_vertices &&
+        mixed_reserve((void **)&f->dynamic_vertices,&f->reference_vertex_capacity,
+            reference_first+vertex_count,sizeof(*f->dynamic_vertices))<0) return -1;
+    if (!mixed_dynamic_draw_valid(f,view,instance,item,vertex_count) ||
+        f->draw_count==ULONG_MAX || f->span_count==ULONG_MAX ||
+        mixed_reserve((void **)&f->draws,&f->draw_capacity,f->draw_count+1,
+            sizeof(*f->draws))<0 ||
+        mixed_reserve((void **)&f->spans,&f->span_capacity,f->span_count+1,
+            sizeof(*f->spans))<0) return -1;
+    if (reference_vertices) {
+        memcpy(f->dynamic_vertices+reference_first,reference_vertices,
+            (size_t)vertex_count*sizeof(*reference_vertices));
+        f->reference_vertex_count+=vertex_count;
+    }
+    memcpy(f->skin_vertices+first,bind_vertices,
+        (size_t)vertex_count*sizeof(*bind_vertices));
+    f->skin_vertex_count+=vertex_count;
+    draw=&f->draws[f->draw_count]; memset(draw,0,sizeof(*draw));
+    draw->view=*view; draw->instance=*instance; draw->item=*item;
+    draw->dynamic_first_vertex=f->dynamic_vertex_count;
+    draw->dynamic_vertex_count=vertex_count;
+    draw->reference_first_vertex=reference_first;
+    draw->reference_vertex_count=reference_vertices ? vertex_count : 0;
+    draw->skin_first_vertex=first;
+    draw->skin_vertex_count=vertex_count;
+    draw->skin_instance=skin_instance;
+    mixed_append_span(f->spans,&f->span_count,RF_CORE_MIXED_DRAW,
+        RF_RENDER_LAYER_WORLD,f->draw_count++,1);
+    f->dynamic_vertex_count+=vertex_count;
     return 0;
 }
 
@@ -265,6 +347,30 @@ int rf_core_mixed_raster_preflight(const struct rf_core_mixed_frame *f)
     return 0;
 }
 
+static int mixed_skin_draw_valid(const struct rf_core_mixed_frame *f,
+    const struct rf_core_mixed_draw *draw)
+{
+    const struct rf_core_mixed_skin_instance *instance;
+    if (!draw->skin_vertex_count) return 1;
+    if (draw->skin_instance>=f->skin_instance_count) return 0;
+    instance=&f->skin_instances[draw->skin_instance];
+    if (!instance->palette_bone_count ||
+        instance->first_palette_bone>f->skin_palette_count ||
+        instance->palette_bone_count>f->skin_palette_count-
+            instance->first_palette_bone) return 0;
+    for (unsigned long n=draw->skin_first_vertex;
+         n<draw->skin_first_vertex+draw->skin_vertex_count;++n)
+        for (unsigned int k=0;k<4;++k) {
+            const struct rasterfall_skin_influence *influence=
+                &f->skin_vertices[n].influences[k];
+            if (influence->type>1 ||
+                influence->bone0>=instance->palette_bone_count ||
+                (influence->type &&
+                 influence->bone1>=instance->palette_bone_count)) return 0;
+        }
+    return 1;
+}
+
 int rf_core_mixed_execute(struct rf_core_mixed_frame *f,
     const struct rf_core_mixed_executor *executor, void *context)
 {
@@ -281,7 +387,17 @@ int rf_core_mixed_execute(struct rf_core_mixed_frame *f,
                     d->dynamic_vertex_count) ||
                 d->dynamic_first_vertex > f->dynamic_vertex_count ||
                 d->dynamic_vertex_count > f->dynamic_vertex_count -
-                    d->dynamic_first_vertex) return -1;
+                    d->dynamic_first_vertex ||
+                (d->skin_vertex_count &&
+                 (d->skin_vertex_count != d->dynamic_vertex_count ||
+                  d->skin_instance >= f->skin_instance_count ||
+                  d->skin_first_vertex > f->skin_vertex_count ||
+                  d->skin_vertex_count > f->skin_vertex_count-d->skin_first_vertex ||
+                  !mixed_skin_draw_valid(f,d))) ||
+                d->reference_first_vertex>f->reference_vertex_count ||
+                d->reference_vertex_count>f->reference_vertex_count-
+                    d->reference_first_vertex)
+                return -1;
         } else if (!mixed_draw_valid(f, &d->view, &d->instance, &d->item) ||
             !f->registry->slots[d->instance.mesh_handle.slot].pinned) return -1;
     }

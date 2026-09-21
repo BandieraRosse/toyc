@@ -3921,6 +3921,92 @@ static void model_transform_vertex(const struct rasterfall_model_asset *asset,
                   bind_normal[2], &normal[0], &normal[1], &normal[2]);
 }
 
+static void model_palette_transform_vertex(
+    const struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int bone_index, const int bind_position[3],
+    const int bind_normal[3], double position[3], double normal[3])
+{
+    const struct rasterfall_model_skin_palette_bone *bone=&palette[bone_index];
+    matrix_vector(bone->rotation,
+                  bind_position[0]-bone->rest[0],
+                  bind_position[1]-bone->rest[1],
+                  bind_position[2]-bone->rest[2],
+                  &position[0],&position[1],&position[2]);
+    position[0]+=bone->position[0];
+    position[1]+=bone->position[1];
+    position[2]+=bone->position[2];
+    matrix_vector(bone->rotation,bind_normal[0],bind_normal[1],bind_normal[2],
+                  &normal[0],&normal[1],&normal[2]);
+}
+
+int rasterfall_model_build_skin_palette(const struct rasterfall_model_asset *asset,
+    struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int palette_count)
+{
+    unsigned int i;
+    if (!asset || !palette || !asset->bones || !asset->bone_transforms ||
+        !asset->bone_count || palette_count<asset->bone_count) return -1;
+    for (i=0;i<asset->bone_count;++i) {
+        memcpy(palette[i].rotation,asset->bone_transforms[i].rotation,
+            sizeof(palette[i].rotation));
+        memcpy(palette[i].position,asset->bone_transforms[i].position,
+            sizeof(palette[i].position));
+        palette[i].rest[0]=asset->bones[i].rest_x;
+        palette[i].rest[1]=asset->bones[i].rest_y;
+        palette[i].rest[2]=asset->bones[i].rest_z;
+    }
+    return 0;
+}
+
+int rasterfall_model_skin_vertex_palette(const struct rasterfall_model_asset *asset,
+    const struct rasterfall_model_skin_palette_bone *palette,
+    unsigned int palette_count, unsigned int index, int position[3],
+    int normal[3])
+{
+    const unsigned char *vertex,*skin;
+    int bind_position[3],bind_normal[3];
+    unsigned int bone0,bone1,weight,type;
+    double p0[3],p1[3],n0[3],n1[3],length;
+    int axis;
+    if (!asset || !palette || index>=asset->vertex_count || !position || !normal)
+        return -1;
+    vertex=asset->vertices+index*asset->vertex_bytes;
+    for (axis=0;axis<3;++axis) {
+        bind_position[axis]=*(const int *)(vertex+axis*4);
+        bind_normal[axis]=*(const short *)(vertex+12+axis*2);
+    }
+    if (!asset->skinning_enabled || !asset->skin_vertices) {
+        memcpy(position,bind_position,sizeof(bind_position));
+        memcpy(normal,bind_normal,sizeof(bind_normal));
+        return 0;
+    }
+    skin=asset->skin_vertices+index*RASTERFALL_MODEL_SKIN_VERTEX_BYTES;
+    bone0=model_u16(skin);bone1=model_u16(skin+2);
+    weight=model_u16(skin+4);type=skin[6];
+    if (bone0>=palette_count || (type!=0 && bone1>=palette_count)) return -1;
+    model_palette_transform_vertex(palette,bone0,bind_position,bind_normal,p0,n0);
+    if (type==0) {
+        for (axis=0;axis<3;++axis) {
+            position[axis]=rounded(p0[axis]);normal[axis]=rounded(n0[axis]);
+        }
+    } else {
+        model_palette_transform_vertex(palette,bone1,bind_position,bind_normal,p1,n1);
+        for (axis=0;axis<3;++axis) {
+            position[axis]=rounded((p0[axis]*weight+p1[axis]*(65535U-weight))/65535.0);
+            normal[axis]=rounded((n0[axis]*weight+n1[axis]*(65535U-weight))/65535.0);
+        }
+    }
+    if (asset->animation.pose==RASTERFALL_MODEL_POSE_BIND) {
+        memcpy(normal,bind_normal,sizeof(bind_normal));
+        return 0;
+    }
+    length=sqrt((double)normal[0]*normal[0]+(double)normal[1]*normal[1]+
+                (double)normal[2]*normal[2]);
+    if (length>0.0) for (axis=0;axis<3;++axis)
+        normal[axis]=rounded(normal[axis]*32767.0/length);
+    return 0;
+}
+
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
                                  unsigned int index, int position[3],
                                  int normal[3])
@@ -4488,7 +4574,8 @@ int rasterfall_model_skinning_logic_test(void)
     unsigned char vertices[RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE];
     unsigned char skin[RASTERFALL_MODEL_SKIN_VERTEX_BYTES];
     struct rasterfall_model_attachment_transform attachment;
-    int position[3], normal[3];
+    struct rasterfall_model_skin_palette_bone palette[2];
+    int position[3], normal[3], palette_position[3], palette_normal[3];
     __memset(&asset, 0, sizeof(asset));
     __memset(bones, 0, sizeof(bones));
     __memset(vertices, 0, sizeof(vertices));
@@ -4540,11 +4627,19 @@ int rasterfall_model_skinning_logic_test(void)
         position[0] != 15 || position[1] != 5 ||
         normal[0] < 23160 || normal[0] > 23180 ||
         normal[1] < 23160 || normal[1] > 23180) return 5;
+    if (rasterfall_model_build_skin_palette(&asset,palette,2)<0 ||
+        rasterfall_model_skin_vertex_palette(&asset,palette,2,0,
+            palette_position,palette_normal)<0 ||
+        memcmp(position,palette_position,sizeof(position)) ||
+        memcmp(normal,palette_normal,sizeof(normal)) ||
+        rasterfall_model_build_skin_palette(&asset,palette,1)==0 ||
+        rasterfall_model_skin_vertex_palette(&asset,palette,1,0,
+            palette_position,palette_normal)==0) return 6;
     if (rasterfall_model_attachment_transform(
             &asset, "RIGHT_HAND", &attachment) < 0 ||
         attachment.position[0] != 10.0 || attachment.position[1] != 0.0 ||
         attachment.rotation[0] > 0.001 || attachment.rotation[0] < -0.001 ||
-        attachment.rotation[3] < 0.999) return 6;
+        attachment.rotation[3] < 0.999) return 7;
     {
         struct rasterfall_model_asset arm;
         struct rasterfall_model_bone arm_bones[4];

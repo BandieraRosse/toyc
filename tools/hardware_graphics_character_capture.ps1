@@ -83,8 +83,10 @@ function Read-CharacterAudit([string] $Name, [string] $LogPath) {
     $GpuAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT gpu ' })
     $LayerAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT layers ' })
     $CharacterAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT character-draw ' })
+    $SkinAudit = @($Lines | Where-Object { $_ -match '^FRAME-AUDIT character-gpu-skin ' })
     if ($Headers.Count -ne $Frames -or $GpuAudit.Count -ne $Frames -or
-        $LayerAudit.Count -ne $Frames -or $CharacterAudit.Count -ne $Frames) {
+        $LayerAudit.Count -ne $Frames -or $CharacterAudit.Count -ne $Frames -or
+        $SkinAudit.Count -ne $Frames) {
         throw "$Name has incomplete frame audit rows."
     }
     if (@($Headers | Where-Object { $_ -notmatch ' path=gpu-native ' }).Count) {
@@ -99,26 +101,34 @@ function Read-CharacterAudit([string] $Name, [string] $LogPath) {
         $_ -notmatch 'pre_post_cpu_fallback=0' -or $_ -notmatch 'fallback_reason=0x0'
     }).Count) { throw "$Name violated fallback/readback/copy gates." }
     $First = $null
-    foreach ($Line in $CharacterAudit) {
-        if ($Line -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) upload_vertices=(\d+) legacy_items=(\d+)') {
+    for ($Index = 0; $Index -lt $CharacterAudit.Count; ++$Index) {
+        $Line = $CharacterAudit[$Index]
+        if ($Line -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) reference_vertices=(\d+) output_vertices=(\d+) legacy_items=(\d+).*bind_vertices=(\d+)') {
             throw "$Name has an invalid character-draw row."
         }
         $Current = @([int64]$Matches[1], [int64]$Matches[2], [int64]$Matches[3],
-            [int64]$Matches[4], [int64]$Matches[5])
+            [int64]$Matches[4], [int64]$Matches[5], [int64]$Matches[6], [int64]$Matches[7])
         if ($Current[0] -le 0 -or $Current[1] -le 0 -or $Current[2] -le 0 -or
-            $Current[3] -ne $Current[2] * 3) {
-            throw "$Name did not keep valid character body geometry in HG-5A Draw."
+            $Current[3] -ne 0 -or $Current[4] -ne $Current[2] * 3 -or
+            $Current[6] -ne $Current[4]) {
+            throw "$Name did not keep valid HG-5B character body inputs."
+        }
+        if ($SkinAudit[$Index] -notmatch 'frames=1 vertices=(\d+)' -or
+            [int64]$Matches[1] -ne $Current[6]) {
+            throw "$Name did not execute GPU skinning for the complete bind stream."
         }
         if ($null -eq $First) { $First = $Current }
-        elseif ((Compare-Object $First[0..3] $Current[0..3]).Count) {
+        elseif ((Compare-Object $First[0..4] $Current[0..4]).Count) {
             throw "$Name migrated character-draw audit changed across frames."
         }
     }
-    if ($Name -eq 'near-0' -and $First[4] -ne 0) {
+    if ($Name -eq 'near-0' -and $First[5] -ne 0) {
         throw "$Name unexpectedly retained legacy character items."
     }
     return [ordered]@{ instances=$First[0]; draws=$First[1]; triangles=$First[2]
-        upload_vertices=$First[3]; legacy_items=$First[4] }
+        reference_vertices=$First[3]; output_vertices=$First[4]
+        legacy_items=$First[5]; bind_vertices=$First[6]
+        gpu_skin_vertices=$First[6] }
 }
 
 function Run-Capture([string] $View, [int] $EnemyCount) {
@@ -180,15 +190,15 @@ foreach ($View in @('near','mid')) {
     foreach ($EnemyCount in @(0,30)) { $Results.Add((Run-Capture $View $EnemyCount)) }
 }
 $Manifest = [ordered]@{
-    schema=1; checkpoint='HG-5A-character-visual'; created_at=(Get-Date).ToString('o')
+    schema=1; checkpoint='HG-5B-character-visual'; created_at=(Get-Date).ToString('o')
     executable=$Exe; executable_sha256=(Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash
     result='CAPTURED'; captures=$Results
     notes=@(
         'CPU and strict-native images use the same deterministic scene and exactly one 16ms gameplay tick per rendered frame.',
         'Pixel metrics are evidence for review, not a zero-difference gate between distinct rasterizers.',
-        'legacy_items is recorded because procedural and unsupported character paths remain outside the HG-5A body slice.',
+        'legacy_items is recorded because procedural and unsupported character paths remain outside the HG-5 body slice.',
         'A reviewer must inspect each CPU/GPU BMP pair before marking the visual checkpoint PASS.'
     )
 }
 $Manifest | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $OutputDirectory 'manifest.json') -Encoding UTF8
-Write-Host "[HG-5A] character CPU/native capture complete: $OutputDirectory"
+Write-Host "[HG-5B] character CPU/native capture complete: $OutputDirectory"

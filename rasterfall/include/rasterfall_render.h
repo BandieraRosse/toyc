@@ -24,6 +24,10 @@ struct rasterfall_render_context {
     int diagnostic_fixed_lighting; /* Fixed lighting override for isolated captures only. */
     /* Bound only while Core records an ordered mixed WORLD frame. */
     struct rf_core_mixed_frame *mixed_frame;
+    /* HG-5B frame policy. GPU skinning keeps only bind/palette by default;
+     * rollback and explicit vertex diff request the CPU oracle stream. */
+    int character_gpu_skinning;
+    int character_cpu_reference;
 };
 
 struct rasterfall_character_profile;
@@ -87,6 +91,8 @@ struct rasterfall_scene_stats {
     unsigned long character_draw_instances, character_draw_items;
     unsigned long character_draw_triangles, character_draw_upload_vertices;
     unsigned long character_draw_legacy_items;
+    unsigned long character_skin_instances, character_skin_bind_vertices;
+    unsigned long character_skin_palette_bones;
     unsigned long character_draw_rejected[RASTERFALL_DRAW_REJECT_COUNT];
     unsigned long ground_draw_items, ground_draw_triangles;
     unsigned long ground_legacy_commands;

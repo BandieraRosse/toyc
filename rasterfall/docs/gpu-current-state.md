@@ -1,6 +1,9 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-5B 已正式签收。normal GPU skin 帧不生成或上传 CPU-skinned reference；reference 只属于显式 vertex diff 和 `--gpu-character-skinning-off`。30/60、resize、world-cycle、三场景精确差分、视觉、回滚和 300 帧动态运行通过；当前没有新的正式 HG 阶段。
+> 源码核对基线补充：2026-09-21 HG-5B executor 扩展门禁已通过：near 30/60 各 120 帧、四 extent resize、Outpost/Campaign/WHU world-cycle、near/0 + mid/30 + near/60 精确顶点差分及 near/mid × 0/30 视觉审阅均确认 GPU skin dispatch 与 bind/reference 顶点一致；回滚路径无 dispatch。正常帧 CPU reference 尚未移除，因此 HG-5B 仍未正式签收。
+> 源码核对基线补充：2026-09-21 HG-5B executor checkpoint 已让 native mixed 角色 Draw 默认消费 compute shader 生成的 device-local VB；bind/palette/output 随双帧 slot 回收，`--gpu-character-skinning-off` 保留 HG-5A 回滚。Intel near/0 fixed-tick 第 30 帧比较 20400 顶点，position/normal/UV 全零差分；完整 HG-5B 尚未签收。
 > 源码核对基线补充：2026-09-21 HG-5A 已签收。CPU-skinned 普通不透明角色 body 使用帧槽动态 hardware Draw；Intel 两轮 near 60 strict-native whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms，最终 20400 顶点 device-local VB 精确差分为零。统一内存设备优先使用 device-local + host-visible 动态上传，其他设备保留 staging fallback。详见 [HG-5](hardware-graphics-hg5.md)。
 > 源码核对基线补充：2026-09-20 HG-3 已签收。strict static 的退化定位为连续 Draw 间重复空 flush；只在存在 Raster 前缀时建立边界后，Intel near CPU/strict whole-loop 中位数为 27.813/22.488 ms、static 为 2.956/1.554 ms，mid 为 38.326/25.690 ms、static 为 3.237/1.681 ms。完整 baseline、320 帧 Campaign 与建筑内部/远处薄结构 native capture 通过，零 CPU lowering/readback/copy。详见 [HG-3](hardware-graphics-hg3.md)。
 > 源码核对基线补充：2026-09-20 P0 性能事实门禁已完成并接入 `tools/hardware_graphics_metrics.ps1`：固定丢弃前 16 帧，分开汇总 CPU whole-loop/frame interval 与按历史 frame ID 对齐的 GPU timestamp，并校验 Campaign `world=1`/敌人命令。Intel 实机固定 near/0 120 帧与显式 Campaign 320 帧均为全 native；Campaign 279 帧含敌人命令，活敌输出通过。既有默认 Outpost 320 帧样本不再称为正式波次。

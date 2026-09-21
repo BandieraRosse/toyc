@@ -1,0 +1,52 @@
+#version 450
+layout(local_size_x=64) in;
+layout(std430,binding=0) readonly buffer BindWords { uint bind_words[]; };
+layout(std430,binding=1) readonly buffer PaletteWords { uint palette_words[]; };
+layout(std430,binding=2) writeonly buffer OutputWords { int output_words[]; };
+layout(push_constant) uniform SkinParams { uint vertex_count; } p;
+
+float pf(uint base, uint word) { return uintBitsToFloat(palette_words[base+word]); }
+vec3 transform_position(uint base, ivec3 v) {
+    vec3 q=vec3(v)-vec3(int(palette_words[base+12]),int(palette_words[base+13]),int(palette_words[base+14]));
+    return vec3(dot(vec3(pf(base,0),pf(base,1),pf(base,2)),q),
+                dot(vec3(pf(base,3),pf(base,4),pf(base,5)),q),
+                dot(vec3(pf(base,6),pf(base,7),pf(base,8)),q))+
+           vec3(pf(base,9),pf(base,10),pf(base,11));
+}
+vec3 transform_normal(uint base, ivec3 v) {
+    vec3 q=vec3(v);
+    return vec3(dot(vec3(pf(base,0),pf(base,1),pf(base,2)),q),
+                dot(vec3(pf(base,3),pf(base,4),pf(base,5)),q),
+                dot(vec3(pf(base,6),pf(base,7),pf(base,8)),q));
+}
+ivec3 skin(uint vertex_base, uint influence_word, ivec3 value, bool normal) {
+    uint bones=bind_words[vertex_base+influence_word];
+    uint wt=bind_words[vertex_base+influence_word+1];
+    uint b0=(bones&65535u)*15u, b1=(bones>>16)*15u;
+    uint weight=wt&65535u, flags=wt>>16, type=flags&255u;
+    if(normal && (flags&256u)!=0u) return value;
+    vec3 a=normal?transform_normal(b0,value):transform_position(b0,value);
+    vec3 result=a;
+    if(type!=0u) {
+        vec3 b=normal?transform_normal(b1,value):transform_position(b1,value);
+        result=(a*float(weight)+b*float(65535u-weight))/65535.0;
+    }
+    ivec3 rounded=ivec3(round(result));
+    if(normal) {
+        float length_n=length(vec3(rounded));
+        if(length_n>0.0) rounded=ivec3(round(vec3(rounded)*32767.0/length_n));
+    }
+    return rounded;
+}
+void main() {
+    uint i=gl_GlobalInvocationID.x;
+    if(i>=p.vertex_count) return;
+    uint src=i*22u, dst=i*14u;
+    ivec3 position=skin(src,14u,ivec3(bind_words[src],bind_words[src+1],bind_words[src+2]),false);
+    output_words[dst]=position.x; output_words[dst+1]=position.y; output_words[dst+2]=position.z;
+    output_words[dst+3]=int(bind_words[src+3]); output_words[dst+4]=int(bind_words[src+4]);
+    for(uint n=0u;n<3u;++n) {
+        ivec3 normal=skin(src,16u+n*2u,ivec3(bind_words[src+5u+n*3u],bind_words[src+6u+n*3u],bind_words[src+7u+n*3u]),true);
+        output_words[dst+5u+n*3u]=normal.x; output_words[dst+6u+n*3u]=normal.y; output_words[dst+7u+n*3u]=normal.z;
+    }
+}

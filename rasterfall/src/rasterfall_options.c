@@ -74,6 +74,7 @@ void rasterfall_options_init(struct rasterfall_options *o,
     o->stats_enabled = 1;
     o->model_views_supersample = 1;
     o->model_skinning = -1;
+    o->gpu_character_skinning = 1;
     o->model_pose = RASTERFALL_MODEL_POSE_BIND;
     o->performance_iterations = 5;
     o->performance_warmup = 3;
@@ -98,6 +99,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|hg4-wall|hg4-ramp|hg4-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
+        "  --gpu-character-skinning-off  (rollback HG-5B to HG-5A CPU-skinned vertex upload)\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
@@ -313,6 +315,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->gpu_normal_fixed_tick=1;
         } else if (!strcmp(option,"--gpu-character-vertex-diff")) {
             o->gpu_character_vertex_diff=1;
+        } else if (!strcmp(option,"--gpu-character-skinning-off")) {
+            o->gpu_character_skinning=0;
         } else if (!strcmp(option,"--gpu-wave-repro")) {
             o->gpu_wave_repro=1;
         } else if (!strcmp(option,"--environment-capture")) {

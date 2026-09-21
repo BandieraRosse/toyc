@@ -1,7 +1,8 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：2026-09-21 HG-5A 已签收。动态资源在 unified-memory GPU 上优先使用 device-local + host-visible 直接上传，缺少该内存类型时保留 staging fallback；Intel 两轮受控复测的 60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms，下一步为 HG-5B GPU skinning。
+> 源码核对基线补充：2026-09-21 HG-5B 最终合同已签收：角色 Draw 审计分别报告 bind input、GPU output 和 CPU reference；普通 GPU skin 帧 reference 为零，差分/回滚按需恢复，legacy primitive 仅在自身需要时惰性建立 CPU cache。
+> 源码核对基线补充：2026-09-21 HG-5B executor 已上传 bind/palette storage backing，并以 compute shader 生成普通 body Draw 实际绑定的 position/normal VB；near/0 第 30 帧 20400 顶点对 HG-5A reference 全零差分。`--gpu-character-skinning-off` 可独立回滚实际 VB，CPU pose/IK/socket 与每帧 reference 保持不变；完整 HG-5B 签收仍待 30/60、resize、多姿态和性能门禁。
 > 源码核对基线补充：2026-09-21 HG-5A 动态 position/normal 帧副本回归、Windows Intel 140 帧四 extent resize/lifecycle、near/mid × 0/30 敌人四组视觉审阅和 device-local 角色 VB 精确差分均通过；near/0 第 30 帧比较 20400 顶点，position/normal/UV mismatch 与最大差值均为 0。当前只剩性能签收。
 > 源码核对基线补充：2026-09-21 HG-5A 首个纵切已接入 CPU-skinned 普通不透明 body 的帧槽合并动态 Draw；CPU pose/IK/skinning、gear/weapon/socket authority 不变。Intel near/0 strict-native 20/20 通过，每帧 4 instance、20 Draw、6800 triangles、20400 upload vertices；完整 HG-5A 签收仍待完成，详见 [HG-5](hardware-graphics-hg5.md)。
 > 源码核对基线补充：2026-09-21 HG-5 的 30/60 敌人 strict-native 基线已通过；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms。下一步先迁 character geometry；当前仍未改变角色 CPU pose/IK/skinning 或 geometry producer。

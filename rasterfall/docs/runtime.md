@@ -1,6 +1,8 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 `--gpu-character-vertex-diff` 仅在目标帧请求 CPU reference，`--gpu-character-skinning-off` 恢复 HG-5A CPU VB；普通 native GPU skin 帧的 `character-draw reference_vertices` 必须为零。
+> 源码核对基线补充：2026-09-21 新增 `--gpu-character-skinning-off`，仅用于把 native mixed 角色 body 的实际 vertex backing 从 HG-5B shader output 回滚到 HG-5A CPU-skinned upload；完整参数仍以 `build/rasterfall --help` 或 package `rasterfall.exe --help` 为准。
 > 源码核对基线补充：2026-09-21 `--gpu-normal-fixed-tick` 仅用于 `--gpu-normal-scene` 诊断，使每个渲染帧恰好推进一个 16ms gameplay tick；HG-5A CPU/native 视觉采集据此比较相同 simulation state。`--gpu-character-vertex-diff` 在第 30 帧回读并精确比较 device-local 动态角色 VB；正常运行与性能基线仍按真实墙钟驱动。
 > 源码核对基线补充：2026-09-21 HG-4A 为 `--gpu-normal-scene` 增加 Campaign base/spawn/west-facility 与 WHU A18/B广场/分馆前场/D→E/F 固定视角；CPU `--dump-frame` 与 strict native `--gpu-frame-capture` 可在同一 map/姿态生成对照证据，入口为 `tools/hardware_graphics_ground_capture.ps1`。
 > 源码核对基线补充：2026-09-20 `--world-cycle-gate` 是 HG-4A 正常窗口生命周期诊断：固定 seed，按 30 帧间隔执行 Outpost → Campaign → WHU → Campaign，并输出切换瞬间的 retired/pinned 资源审计；配套 `tools/hardware_graphics_world_cycle.ps1` 验证 strict native 与延迟退休。

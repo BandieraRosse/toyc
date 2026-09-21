@@ -1044,7 +1044,7 @@ static int character_model_scale(const struct rasterfall_model_asset *model,
 static int prepare_gallery_vertex_cache(
     struct toy_renderer *renderer, const struct rasterfall_model_asset *model,
     const struct camera *camera,
-    int center_x, int base_y, int center_z, int scale)
+    int center_x, int base_y, int center_z, int scale, int skin_vertices)
 {
     unsigned int i;
     long phase_start;
@@ -1058,6 +1058,7 @@ static int prepare_gallery_vertex_cache(
         frontend_state()->skinned_model = model;
         frontend_state()->skinned_vertices_valid = 0;
     }
+    if (!skin_vertices && model->skinning_enabled && model->bone_count) return 0;
     if (gallery_vertex_cache_capacity < model->vertex_count) {
         struct gallery_cached_vertex *vertices =
             tlibc_malloc((size_t)model->vertex_count * sizeof(*vertices));
@@ -1625,37 +1626,100 @@ static int character_dynamic_draw_submit(struct toy_renderer *renderer,
     const struct camera *camera, const struct rasterfall_model_asset *model,
     int center_x, int base_y, int center_z, int scale, unsigned int primitive,
     const unsigned char *indices, unsigned int index_begin,
-    unsigned int index_end, uint32_t color)
+    unsigned int index_end, uint32_t color, unsigned int *skin_instance)
 {
     struct rasterfall_dynamic_draw_vertex *vertices;
+    struct rasterfall_skinned_draw_vertex *bind_vertices;
+    const struct rasterfall_model_skin_palette_bone *palette;
+    struct rasterfall_model_skin_palette_bone *new_palette=NULL;
     struct rasterfall_draw_view view;
     struct rasterfall_draw_instance instance;
     struct rasterfall_draw_item item;
     unsigned int count=index_end-index_begin, out=0;
+    int added_skin_instance=0;
     long phase;
     if (!render_ctx || !render_ctx->mixed_frame || !count || count%3 ||
         count>65536 || active_rigid_transform_enabled || active_infected_model ||
         renderer->recording_edge || active_texture_view || active_sphere_texture ||
         active_toon_texture || active_toon_shared>=0 || active_material_alpha!=255 ||
         active_material_ambient || active_material_specular) return 0;
-    vertices=tlibc_malloc((size_t)count*sizeof(*vertices));
-    if (!vertices) return -1;
+    vertices=render_ctx->character_cpu_reference ?
+        tlibc_malloc((size_t)count*sizeof(*vertices)) : NULL;
+    bind_vertices=tlibc_malloc((size_t)count*sizeof(*bind_vertices));
+    if ((render_ctx->character_cpu_reference && !vertices) || !bind_vertices) {
+        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
+    }
+    if (*skin_instance==UINT_MAX) {
+        new_palette=tlibc_malloc((size_t)model->bone_count*sizeof(*new_palette));
+        if (!new_palette || rasterfall_model_build_skin_palette(model,new_palette,
+                model->bone_count)<0 ||
+            rf_core_mixed_skin_instance(render_ctx->mixed_frame,new_palette,
+                model->bone_count,skin_instance)<0) {
+            tlibc_free(new_palette); tlibc_free(vertices); tlibc_free(bind_vertices);
+            return -1;
+        }
+        added_skin_instance=1;
+    }
+    {
+        const struct rf_core_mixed_skin_instance *stored=
+            &render_ctx->mixed_frame->skin_instances[*skin_instance];
+        palette=render_ctx->mixed_frame->skin_palette+stored->first_palette_bone;
+    }
+    tlibc_free(new_palette);
     for (unsigned int j=index_begin;j<index_end;j+=3) {
         unsigned int id[3];
         for (unsigned int n=0;n<3;++n) {
             id[n]=model_u32(indices+(j+n)*4);
-            if (id[n]>=model->vertex_count) { tlibc_free(vertices); return -1; }
+            if (id[n]>=model->vertex_count) {
+                tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
+            }
         }
         for (unsigned int n=0;n<3;++n) {
-            struct rasterfall_dynamic_draw_vertex *v=&vertices[out++];
-            const struct gallery_cached_vertex *source=&gallery_vertex_cache[id[n]];
+            struct rasterfall_dynamic_draw_vertex *v=vertices ? &vertices[out] : NULL;
+            struct rasterfall_skinned_draw_vertex *bind=&bind_vertices[out++];
             const unsigned char *raw=model->vertices+(size_t)id[n]*model->vertex_bytes;
-            memcpy(v->position,source->model_position,sizeof(v->position));
-            v->uv[0]=raw[18]|(uint32_t)raw[19]<<8;
-            v->uv[1]=raw[20]|(uint32_t)raw[21]<<8;
-            for (unsigned int corner=0;corner<3;++corner)
-                memcpy(v->normals+corner*3,gallery_vertex_cache[id[corner]].source_normal,
-                    3*sizeof(v->normals[0]));
+            const unsigned char *skin=model->skin_vertices+
+                (size_t)id[n]*RASTERFALL_MODEL_SKIN_VERTEX_BYTES;
+            bind->uv[0]=raw[18]|(uint32_t)raw[19]<<8;
+            bind->uv[1]=raw[20]|(uint32_t)raw[21]<<8;
+            if (v) {
+                if (rasterfall_model_skin_vertex_palette(model,palette,
+                        model->bone_count,id[n],v->position,v->normals)<0) {
+                    tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
+                }
+                memcpy(v->uv,bind->uv,sizeof(v->uv));
+            }
+            memcpy(bind->position,raw,sizeof(bind->position));
+            bind->influences[0].bone0=(uint16_t)(skin[0]|skin[1]<<8);
+            bind->influences[0].bone1=(uint16_t)(skin[2]|skin[3]<<8);
+            bind->influences[0].weight=(uint16_t)(skin[4]|skin[5]<<8);
+            bind->influences[0].type=skin[6]; bind->influences[0].reserved=0;
+            for (unsigned int corner=0;corner<3;++corner) {
+                const unsigned char *corner_raw=model->vertices+
+                    (size_t)id[corner]*model->vertex_bytes;
+                const unsigned char *corner_skin=model->skin_vertices+
+                    (size_t)id[corner]*RASTERFALL_MODEL_SKIN_VERTEX_BYTES;
+                for (int axis=2;axis>=0;--axis)
+                    bind->normals[corner*3+axis]=
+                        (int16_t)(uint16_t)(corner_raw[12+axis*2]|
+                            corner_raw[13+axis*2]<<8);
+                bind->influences[corner+1].bone0=
+                    (uint16_t)(corner_skin[0]|corner_skin[1]<<8);
+                bind->influences[corner+1].bone1=
+                    (uint16_t)(corner_skin[2]|corner_skin[3]<<8);
+                bind->influences[corner+1].weight=
+                    (uint16_t)(corner_skin[4]|corner_skin[5]<<8);
+                bind->influences[corner+1].type=corner_skin[6];
+                bind->influences[corner+1].reserved=0;
+                if (v && corner) {
+                    int unused_position[3];
+                    if (rasterfall_model_skin_vertex_palette(model,palette,
+                            model->bone_count,id[corner],unused_position,
+                            v->normals+corner*3)<0) {
+                        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
+                    }
+                }
+            }
         }
     }
     memset(&view,0,sizeof(view)); memset(&instance,0,sizeof(instance));
@@ -1670,19 +1734,29 @@ static int character_dynamic_draw_submit(struct toy_renderer *renderer,
     item.primitive=primitive; item.index_count=count; item.material.color=color;
     item.material.double_sided=active_material_double_sided;
     if (rf_core_mixed_require_draws(render_ctx->mixed_frame,1)<0) {
-        tlibc_free(vertices); return -1;
+        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
     }
     phase=render_monotonic_us();
     if (renderer->cmd_count>0 && toy_renderer_flush(renderer)<0) {
-        tlibc_free(vertices); return -1;
+        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
     }
     scene_stats.static_draw_flush_us+=render_monotonic_us()-phase;
-    if (rf_core_mixed_dynamic_draw(render_ctx->mixed_frame,&view,&instance,&item,
-            vertices,count)<0) { tlibc_free(vertices); return -1; }
-    tlibc_free(vertices);
+    if (rf_core_mixed_skinned_draw(render_ctx->mixed_frame,&view,&instance,&item,
+            vertices,bind_vertices,count,*skin_instance)<0) {
+        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
+    }
+    {
+        int uploaded_reference=vertices!=NULL;
+        tlibc_free(vertices); tlibc_free(bind_vertices);
+        scene_stats.character_draw_upload_vertices+=uploaded_reference ? count : 0;
+    }
     scene_stats.character_draw_items++;
     scene_stats.character_draw_triangles+=count/3;
-    scene_stats.character_draw_upload_vertices+=count;
+    scene_stats.character_skin_bind_vertices+=count;
+    if (added_skin_instance) {
+        scene_stats.character_skin_instances++;
+        scene_stats.character_skin_palette_bones+=model->bone_count;
+    }
     return 1;
 }
 
@@ -1716,6 +1790,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     int drawn = 0, i;
     int command_overflow_before = renderer->cmd_overflow;
     unsigned long character_draw_before = scene_stats.character_draw_items;
+    unsigned int skin_instance=UINT_MAX;
+    int vertex_cache_prepared=0;
     const struct toy_texture_view *previous_texture = active_texture_view;
     const struct toy_texture_view *previous_sphere = active_sphere_texture;
     const struct toy_texture_view *previous_toon = active_toon_texture;
@@ -1746,9 +1822,14 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         phase_start = render_monotonic_us();
         bone_before = model_setup_timing.bone_hierarchy_us;
         skin_before = model_setup_timing.skinning_us;
+        int need_cpu_vertices=!(character_model && model->skinning_enabled &&
+            render_ctx && render_ctx->mixed_frame &&
+            render_ctx->character_gpu_skinning &&
+            !render_ctx->character_cpu_reference);
         if (prepare_gallery_vertex_cache(renderer, model, camera, center_x, base_y,
-                                         center_z, scale) < 0)
+                                         center_z, scale,need_cpu_vertices) < 0)
             return 0;
+        vertex_cache_prepared=need_cpu_vertices;
         skin_trace_capture(renderer, model);
         model_setup_timing.vertex_cache_us += render_monotonic_us() - phase_start -
             (model_setup_timing.bone_hierarchy_us - bone_before) -
@@ -1839,6 +1920,11 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
             edge_size = (int)((long long)edge_size *
                               policy.edge_width_milli / 1000);
             if ((material_data[7] & 0x10) && edge_size > 0 && (edge >> 24)) {
+                if (!vertex_cache_prepared) {
+                    if (prepare_gallery_vertex_cache(renderer,model,camera,center_x,
+                            base_y,center_z,scale,1)<0) return 0;
+                    vertex_cache_prepared=1;
+                }
                 const struct toy_texture_view *saved_texture = active_texture_view;
                 const struct toy_texture_view *saved_sphere = active_sphere_texture;
                 const struct toy_texture_view *saved_toon = active_toon_texture;
@@ -1922,9 +2008,15 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         {
             int hardware=character_model && model->skinning_enabled ?
                 character_dynamic_draw_submit(renderer,camera,model,center_x,base_y,
-                    center_z,scale,(unsigned int)i,indices,index_begin,index_end,color) : 0;
+                    center_z,scale,(unsigned int)i,indices,index_begin,index_end,color,
+                    &skin_instance) : 0;
             if (hardware<0) return 0;
             if (!hardware) {
+                if (!vertex_cache_prepared) {
+                    if (prepare_gallery_vertex_cache(renderer,model,camera,center_x,
+                            base_y,center_z,scale,1)<0) return 0;
+                    vertex_cache_prepared=1;
+                }
                 if (character_model && render_ctx && render_ctx->mixed_frame)
                     scene_stats.character_draw_legacy_items++;
                 drawn += lower_gallery_triangles(renderer, camera, model,

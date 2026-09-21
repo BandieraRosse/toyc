@@ -7,9 +7,9 @@ import sys
 import tempfile
 
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
-output = ['/* Generated from gpu/shaders/graphics_{v0,compat}.{vert,frag} and graphics_bridge.comp. */']
+output = ['/* Generated from gpu/shaders/graphics_{v0,compat}.{vert,frag}, graphics_bridge.comp and graphics_skin.comp. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [(v, s) for v in ('v0', 'compat') for s in ('vert', 'frag')] + [('bridge', 'comp')]:
+    for variant, stage in [(v, s) for v in ('v0', 'compat') for s in ('vert', 'frag')] + [('bridge', 'comp'), ('skin', 'comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
         subprocess.run([compiler, '-V', '--target-env', 'vulkan1.0', '-o', str(path),
                         'gpu/shaders/graphics_' + variant + '.' + stage], check=True)

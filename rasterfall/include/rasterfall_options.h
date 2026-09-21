@@ -60,6 +60,7 @@ struct rasterfall_options {
     int gpu_world_raster_enemies;
     const char *gpu_normal_view;
     int gpu_normal_enemies, gpu_normal_fixed_tick, gpu_character_vertex_diff;
+    int gpu_character_skinning;
     int gpu_wave_repro;
     const char *gpu_frame_capture;
     int gpu_capture_frame;

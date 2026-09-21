@@ -230,8 +230,70 @@ int rf_core_mixed_frame_logic_test(void)
             observed.count == 2 && observed.events[0] == 601 &&
             observed.events[1] == 602);
         rf_core_mixed_reset(&f);
-        MIXED_CHECK(!f.dynamic_vertex_count && f.dynamic_vertex_capacity >= 9);
+        MIXED_CHECK(!f.dynamic_vertex_count && !f.reference_vertex_count &&
+            f.reference_vertex_capacity >= 9);
         item.index_count = 3;
+    }
+    /* HG-5B keeps one finalized palette per instance and immutable bind
+     * corner/influence input beside the HG-5A reference rollback stream. */
+    {
+        struct rasterfall_dynamic_draw_vertex reference[3];
+        struct rasterfall_skinned_draw_vertex bind[3], expected_bind[3];
+        struct rasterfall_model_skin_palette_bone palette[2], expected_palette[2];
+        unsigned int skin_instance;
+        memset(reference,0,sizeof(reference)); memset(bind,0,sizeof(bind));
+        memset(palette,0,sizeof(palette));
+        for (i=0;i<2;++i) {
+            palette[i].rotation[0]=palette[i].rotation[4]=palette[i].rotation[8]=1.0;
+            palette[i].position[0]=(double)(i+10); palette[i].rest[1]=(int32_t)(i+20);
+        }
+        for (i=0;i<3;++i) for (unsigned int k=0;k<4;++k) {
+            bind[i].influences[k].bone0=(uint16_t)(k&1);
+            bind[i].influences[k].bone1=(uint16_t)((k+1)&1);
+            bind[i].influences[k].weight=32768;
+            bind[i].influences[k].type=(uint8_t)(k!=0);
+        }
+        memcpy(expected_bind,bind,sizeof(bind)); memcpy(expected_palette,palette,sizeof(palette));
+        rf_core_mixed_reset(&f);
+        MIXED_CHECK(rf_core_mixed_begin(&f,registry,128,72)==0 &&
+            rf_core_mixed_skin_instance(&f,palette,2,&skin_instance)==0 &&
+            skin_instance==0);
+        item.index_count=3; item.material.color=603;
+        MIXED_CHECK(rf_core_mixed_skinned_draw(&f,&view,&instance,&item,
+            reference,bind,3,skin_instance)==0);
+        memset(bind,0x5a,sizeof(bind)); memset(palette,0x5a,sizeof(palette));
+        MIXED_CHECK(f.skin_instance_count==1 && f.skin_palette_count==2 &&
+            f.skin_vertex_count==3 && f.draws[0].skin_instance==0 &&
+            !memcmp(f.skin_vertices,expected_bind,sizeof(expected_bind)) &&
+            !memcmp(f.skin_palette,expected_palette,sizeof(expected_palette)));
+        MIXED_CHECK(rf_core_mixed_freeze(&f)==0);
+        memset(&observed,0,sizeof(observed));
+        MIXED_CHECK(rf_core_mixed_execute(&f,&executor,&observed)==0 &&
+            observed.count==1 && observed.events[0]==603);
+        rf_core_mixed_reset(&f);
+        MIXED_CHECK(!f.skin_instance_count && !f.skin_palette_count &&
+            !f.skin_vertex_count && f.skin_instance_capacity>=1 &&
+            f.skin_palette_capacity>=2 && f.skin_vertex_capacity>=3);
+        MIXED_CHECK(rf_core_mixed_begin(&f,registry,128,72)==0 &&
+            rf_core_mixed_skin_instance(&f,expected_palette,2,&skin_instance)==0 &&
+            rf_core_mixed_skinned_draw(&f,&view,&instance,&item,NULL,
+                expected_bind,3,skin_instance)==0 &&
+            f.dynamic_vertex_count==3 && !f.reference_vertex_count &&
+            f.draws[0].dynamic_vertex_count==3 &&
+            !f.draws[0].reference_vertex_count &&
+            rf_core_mixed_freeze(&f)==0);
+        memset(&observed,0,sizeof(observed));
+        MIXED_CHECK(rf_core_mixed_execute(&f,&executor,&observed)==0 &&
+            observed.count==1 && observed.events[0]==603);
+        rf_core_mixed_reset(&f);
+        MIXED_CHECK(rf_core_mixed_begin(&f,registry,128,72)==0 &&
+            rf_core_mixed_skin_instance(&f,expected_palette,2,&skin_instance)==0);
+        expected_bind[0].influences[0].bone0=2;
+        MIXED_CHECK(rf_core_mixed_skinned_draw(&f,&view,&instance,&item,
+            reference,expected_bind,3,skin_instance)==0 &&
+            rf_core_mixed_freeze(&f)==0 &&
+            rf_core_mixed_execute(&f,&executor,&observed)<0 &&
+            f.state==RF_CORE_MIXED_FROZEN);
     }
     /* Failed execution is not eligible for retry or a final Post/present. */
     rf_core_mixed_reset(&f);

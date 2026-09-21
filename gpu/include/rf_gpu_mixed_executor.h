@@ -24,10 +24,13 @@ struct rf_gpu_mixed_output {
     unsigned int strict_native;
     /* Opt-in HG-5A device-local dynamic vertex proof for this frame. */
     unsigned int character_vertex_diff;
+    /* HG-5B rollback boundary: zero keeps the HG-5A CPU-skinned upload. */
+    unsigned int character_skinning;
 };
 struct rf_gpu_mixed_stats {
     uint64_t clears, raster_segments, draw_spans, draws, finishes, readback_bytes;
     uint64_t character_diff_frames, character_diff_vertices;
+    uint64_t character_skin_frames, character_skin_vertices;
     uint64_t character_position_mismatches, character_normal_mismatches;
     uint64_t character_uv_mismatches;
     uint32_t character_max_position_delta, character_max_normal_delta;

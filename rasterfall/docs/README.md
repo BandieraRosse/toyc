@@ -1,6 +1,10 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已正式签收：normal GPU skin 帧取消 CPU-skinned reference/上传，回滚与按需差分保持完整；30/60、resize、world-cycle、三场景零差分、视觉及长时运行通过。HG-0～HG-5B 已完成，尚未定义后续正式阶段。
+> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) executor 扩展门禁已覆盖 30/60 敌人、四 extent resize、near/mid 多场景精确差分与视觉审阅、Outpost/Campaign/WHU 生命周期；GPU skin 输出保持零差分。正常帧 CPU reference 仍待收敛，HG-5B 尚未正式签收。
+> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成 executor 纵切：native mixed 默认用 bind/palette compute shader 生成角色 Draw VB，保留 HG-5A reference 差分与独立回滚；near/0 的 20400 顶点 position/normal/UV 全零差分，完整 HG-5B 尚未签收。
+> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成 HG-5B frame-input checkpoint：mixed frame 按角色实例保存 finalized palette，普通 body Draw 同时携带 bind position/normal/BDEF influence 与 HG-5A CPU reference；GPU buffer upload 与 shader 求值尚未接入。
 > 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 的 HG-5A 已签收：Intel near 30/60 strict-native 两轮受控复测中，60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms；最终 device-local VB 差分仍为 20400 顶点全零差异。下一步进入 HG-5B GPU skinning。
 > 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 的视觉对照与 device-local 角色 VB 数值差分已通过；near/0 第 30 帧精确比较 20400 个 CPU-skinned 顶点，position/normal/UV mismatch 与最大差值均为 0。当前只剩受控性能复测。
 > 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成首个 HG-5A 纵切：CPU-skinned 普通不透明 body 进入帧槽合并动态 Draw，CPU pose/IK/skinning 与 gear/weapon/socket 所有权不变；Intel near/0 strict-native 20/20 smoke 通过，完整签收仍待继续。

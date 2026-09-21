@@ -4271,6 +4271,14 @@ startup_again:
             game_runtime.have_last_key = have_last_key;
             game_runtime.input_event_count = input_event_count;
             game_runtime.console = developer_console;
+            game_runtime.render_context.character_gpu_skinning =
+                options.gpu_character_skinning;
+            game_runtime.render_context.character_cpu_reference =
+                !options.gpu_character_skinning ||
+                (options.gpu_character_vertex_diff && rendered_frames + 1 == 30);
+            core.gpu_frame.character_skinning=options.gpu_character_skinning;
+            core.gpu_frame.character_vertex_diff_requested=
+                options.gpu_character_vertex_diff && rendered_frames + 1 == 30;
             {
                 int64_t audit_render_start = rf_core_time_us(&core);
                 if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
@@ -4291,8 +4299,6 @@ startup_again:
             if (options.gpu_frame_capture &&
                 rendered_frames + 1 == options.gpu_capture_frame)
                 core.gpu_frame.capture_path = options.gpu_frame_capture;
-            if (options.gpu_character_vertex_diff && rendered_frames + 1 == 30)
-                core.gpu_frame.character_vertex_diff_requested = 1;
             t_stage = rf_core_time_us(&core);
             present_result = rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
@@ -4346,6 +4352,13 @@ startup_again:
                         gpu_audit.character_uv_mismatches,
                         gpu_audit.character_max_position_delta,
                         gpu_audit.character_max_normal_delta);
+                    __printf("%s\n",audit_line);
+                    rf_windows_log(audit_line);
+                }
+                if (gpu_audit.character_skin_frames) {
+                    snprintf(audit_line,sizeof(audit_line),
+                        "FRAME-AUDIT character-gpu-skin frames=%llu vertices=%llu",
+                        gpu_audit.character_skin_frames,gpu_audit.character_skin_vertices);
                     __printf("%s\n",audit_line);
                     rf_windows_log(audit_line);
                 }
@@ -4403,12 +4416,16 @@ startup_again:
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                     snprintf(audit_line, sizeof(audit_line),
-                        "FRAME-AUDIT character-draw instances=%lu items=%lu triangles=%lu upload_vertices=%lu legacy_items=%lu",
+                        "FRAME-AUDIT character-draw instances=%lu items=%lu triangles=%lu reference_vertices=%lu output_vertices=%lu legacy_items=%lu skin_instances=%lu bind_vertices=%lu palette_bones=%lu",
                         scene_audit.character_draw_instances,
                         scene_audit.character_draw_items,
                         scene_audit.character_draw_triangles,
                         scene_audit.character_draw_upload_vertices,
-                        scene_audit.character_draw_legacy_items);
+                        scene_audit.character_skin_bind_vertices,
+                        scene_audit.character_draw_legacy_items,
+                        scene_audit.character_skin_instances,
+                        scene_audit.character_skin_bind_vertices,
+                        scene_audit.character_skin_palette_bones);
                     __printf("%s\n", audit_line);
                     rf_windows_log(audit_line);
                     snprintf(audit_line, sizeof(audit_line),

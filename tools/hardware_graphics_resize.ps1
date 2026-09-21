@@ -77,11 +77,12 @@ try {
     $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
     $MapDraw = @($Log | Select-String 'FRAME-AUDIT map-draw ')
     $CharacterDraw = @($Log | Select-String 'FRAME-AUDIT character-draw ')
+    $CharacterSkin = @($Log | Select-String 'FRAME-AUDIT character-gpu-skin ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
     if ($Frames.Count -ne 140 -or $Gpu.Count -ne 140 -or
         $Mixed.Count -ne 140 -or $Ground.Count -ne 140 -or $MapDraw.Count -ne 140 -or
-        $CharacterDraw.Count -ne 140 -or
+        $CharacterDraw.Count -ne 140 -or $CharacterSkin.Count -ne 140 -or
         $Layers.Count -ne 140 -or $Resources.Count -ne 140) {
         throw 'Incomplete frame audit.'
     }
@@ -117,18 +118,25 @@ try {
     if (($MapBuilds | Measure-Object -Sum).Sum -le 0) { throw 'Resize fixture did not exercise an HG-4B mesh.' }
     $CharacterStable = $null
     foreach ($Line in $CharacterDraw) {
-        if ($Line.Line -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) upload_vertices=(\d+) legacy_items=(\d+)') {
+        if ($Line.Line -notmatch 'instances=(\d+) items=(\d+) triangles=(\d+) reference_vertices=(\d+) output_vertices=(\d+) legacy_items=(\d+).*bind_vertices=(\d+)') {
             throw 'Character Draw audit changed during resize.'
         }
         $Counts = @([int64]$Matches[1], [int64]$Matches[2], [int64]$Matches[3],
-            [int64]$Matches[4], [int64]$Matches[5])
+            [int64]$Matches[4], [int64]$Matches[5], [int64]$Matches[6], [int64]$Matches[7])
         if ($Counts[0] -le 0 -or $Counts[1] -le 0 -or $Counts[2] -le 0 -or
-            $Counts[3] -ne $Counts[2] * 3) {
-            throw 'Resize fixture did not exercise valid HG-5A dynamic character Draws.'
+            $Counts[3] -ne 0 -or $Counts[4] -ne $Counts[2] * 3 -or
+            $Counts[6] -ne $Counts[4]) {
+            throw 'Resize fixture did not exercise valid HG-5B character inputs.'
         }
         if ($null -eq $CharacterStable) { $CharacterStable = $Counts }
         elseif (Compare-Object $CharacterStable $Counts) {
             throw 'Character Draw counts changed across resize.'
+        }
+    }
+    for ($Index = 0; $Index -lt $CharacterSkin.Count; ++$Index) {
+        if ($CharacterSkin[$Index].Line -notmatch 'frames=1 vertices=(\d+)' -or
+            [int64]$Matches[1] -ne $CharacterStable[6]) {
+            throw 'GPU character skinning changed or did not execute during resize.'
         }
     }
     $SteadyUploads = @($Mixed | Select-Object -Skip 2 | ForEach-Object {
@@ -153,8 +161,10 @@ try {
     $Record.ground = [ordered]@{ items = 162; triangles = 21366; mesh_builds = $GroundBuilds }
     $Record.map_mesh_builds = $MapBuilds
     $Record.character_draw = [ordered]@{ instances = $CharacterStable[0]; items = $CharacterStable[1]
-        triangles = $CharacterStable[2]; upload_vertices = $CharacterStable[3]
-        legacy_items = $CharacterStable[4]; steady_gpu_upload_bytes = $SteadyUploads[0] }
+        triangles = $CharacterStable[2]; reference_vertices = $CharacterStable[3]
+        output_vertices = $CharacterStable[4]; legacy_items = $CharacterStable[5]
+        bind_vertices = $CharacterStable[6]
+        gpu_skin_vertices = $CharacterStable[6]; steady_gpu_upload_bytes = $SteadyUploads[0] }
     $Record.pinned = @($Pinned | Sort-Object -Unique); $Record.frames = $Frames.Count
     $Record.result = 'PASS'
 } catch {

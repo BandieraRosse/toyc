@@ -1,6 +1,8 @@
 # 资源、模型与动画
 
-> 文档更新：2026-09-18
+> 文档更新：2026-09-21
+> 源码核对基线补充：2026-09-21 HG-5B 只迁移逐顶点 skin 求值：GPU 消费 IK/grant 后 finalized palette 与 bind influence；动画、palette、socket、武器挂点所有权不变。CPU vertex oracle 仅在显式差分或回滚路径生成。
+> 源码核对基线补充：2026-09-21 HG-5B executor 已消费逐实例 finalized palette 与 bind influence，由 GPU compute 生成普通 body position/normal；CPU animation、IK、grant、socket/weapon mount authority 和每帧 reference 保持不变，独立开关可回滚实际 Draw VB。
 > 源码核对基线补充：普通 RFM2 material alpha 与 RGBA texel alpha 由 world model frontend 按 flat/textured primitive 保持真实类型提交；RGBA texture 在 material alpha=255 时仍于 CPU command 端标记 source-over/no-depth-write，RGB + alpha=255 保留 opaque 快路径，material × texel 组合有效 alpha 固定为 `texel × material / 255` 向下取整；高级 sphere/toon/specular 仍由 GPU typed fallback 接管。B2d-4c 已由真实 RFM2 fixture 覆盖组合舍入和零边界。
 > 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid，FAR（4096 RFU 起）才切 compact LOD2；骨架与 pose 同步路径不变。
 > 源码核对基线补充：Eula Animation Acceptance V1 直接把同一 legacy walk VMD 映射到四个 Eula LOD instance；head/neck 固定姿态只作为 deformation acceptance，weapon 复用既有 legacy rifle presentation。

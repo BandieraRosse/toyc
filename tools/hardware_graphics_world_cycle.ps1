@@ -43,12 +43,16 @@ try {
     $Mixed = @($Log | Select-String 'FRAME-AUDIT mixed ')
     $Ground = @($Log | Select-String 'FRAME-AUDIT ground-draw ')
     $MapDraw = @($Log | Select-String 'FRAME-AUDIT map-draw ')
+    $CharacterDraw = @($Log | Select-String 'FRAME-AUDIT character-draw ')
+    $CharacterSkin = @($Log | Select-String 'FRAME-AUDIT character-gpu-skin ')
     $Layers = @($Log | Select-String 'FRAME-AUDIT layers ')
     $Resources = @($Log | Select-String 'FRAME-AUDIT draw-resources ')
     $Cycles = @($Log | Select-String 'WORLD-CYCLE-RESOURCES ')
     $Present = @($Log | Select-String 'PRESENT-AUDIT frame=')
     if ($Frames.Count -ne 120 -or $Gpu.Count -ne 120 -or $Mixed.Count -ne 120 -or
-        $Ground.Count -ne 120 -or $MapDraw.Count -ne 120 -or $Layers.Count -ne 120 -or $Resources.Count -ne 120 -or
+        $Ground.Count -ne 120 -or $MapDraw.Count -ne 120 -or
+        $CharacterDraw.Count -ne 120 -or
+        $Layers.Count -ne 120 -or $Resources.Count -ne 120 -or
         $Cycles.Count -ne 3 -or $Present.Count -ne 120) {
         throw 'Incomplete frame audit.'
     }
@@ -58,6 +62,9 @@ try {
     $SawRetired = $false
     $LastLoads = -1
     $LastReleases = -1
+    $PhaseCharacter = @($null, $null, $null, $null)
+    $PhaseUploads = @($null, $null, $null, $null)
+    $SkinIndex = 0
     for ($Index = 0; $Index -lt 120; ++$Index) {
         $Phase = [Math]::Min([int][Math]::Floor($Index / 30.0), 3)
         if ($Frames[$Index].Line -notmatch "path=gpu-native world=$($ExpectedWorlds[$Phase]) ") { throw "Unexpected path/world at frame $($Index + 1)." }
@@ -77,7 +84,35 @@ try {
             }
             $MapBuilds[$Kind] += $ClassBuilds
         }
-        if (($Index % 30) -ge 2 -and $Mixed[$Index].Line -notmatch 'gpu_upload_bytes=0') { throw 'Stable world re-uploaded GPU resources.' }
+        if ($CharacterDraw[$Index].Line -notmatch 'reference_vertices=(\d+) output_vertices=(\d+).*bind_vertices=(\d+)') {
+            throw 'Character Draw input audit missing.'
+        }
+        $ReferenceVertices = [int64]$Matches[1]
+        $OutputVertices = [int64]$Matches[2]
+        $BindVertices = [int64]$Matches[3]
+        if ($BindVertices -gt 0) {
+            if ($SkinIndex -ge $CharacterSkin.Count -or
+                $CharacterSkin[$SkinIndex].Line -notmatch 'frames=1 vertices=(\d+)' -or
+                [int64]$Matches[1] -ne $BindVertices -or $BindVertices -ne $OutputVertices -or
+                $ReferenceVertices -ne 0) {
+                throw 'GPU character skinning did not cover the complete world-cycle character stream.'
+            }
+            ++$SkinIndex
+        } elseif ($ReferenceVertices -ne 0 -or $OutputVertices -ne 0) {
+            throw 'World-cycle empty character phase has unexpected vertex streams.'
+        }
+        if ($Mixed[$Index].Line -notmatch 'gpu_upload_bytes=(\d+)') { throw 'Mixed upload audit missing.' }
+        $GpuUploadBytes = [int64]$Matches[1]
+        $CharacterState = "$ReferenceVertices/$OutputVertices/$BindVertices"
+        if (($Index % 30) -ge 2) {
+            if ($null -eq $PhaseCharacter[$Phase]) {
+                $PhaseCharacter[$Phase] = $CharacterState
+                $PhaseUploads[$Phase] = $GpuUploadBytes
+            } elseif ($PhaseCharacter[$Phase] -ne $CharacterState -or
+                $PhaseUploads[$Phase] -ne $GpuUploadBytes) {
+                throw 'Stable world changed character input or dynamic GPU upload counts.'
+            }
+        }
         if ($Resources[$Index].Line -notmatch 'live=(\d+) retired=(\d+) pinned=(\d+) failed=0 loads=(\d+) releases=(\d+)') { throw 'Resource lifetime audit changed.' }
         $Live = [int]$Matches[1]; $Retired = [int]$Matches[2]; $Pinned = [int]$Matches[3]
         $Loads = [int]$Matches[4]; $Releases = [int]$Matches[5]
@@ -86,6 +121,7 @@ try {
         if ($Loads -lt $LastLoads -or $Releases -lt $LastReleases) { throw 'Resource counters regressed.' }
         $LastLoads = $Loads; $LastReleases = $Releases
     }
+    if ($SkinIndex -ne $CharacterSkin.Count) { throw 'Unexpected extra GPU character skin audit rows.' }
     if ($GroundBuilds -ne 4) { throw "Expected four ground mesh generations, saw $GroundBuilds." }
     if (($MapBuilds | Measure-Object -Sum).Sum -lt 4) {
         throw 'World cycle did not rebuild HG-4B geometry across world generations.'
@@ -103,6 +139,8 @@ try {
     $Record.worlds = $ExpectedWorlds
     $Record.ground_mesh_builds = $GroundBuilds
     $Record.map_mesh_builds = $MapBuilds
+    $Record.character_vertices_by_world_phase = $PhaseCharacter
+    $Record.gpu_upload_bytes_by_world_phase = $PhaseUploads
     $Record.saw_retired_in_flight = $true
     $Record.final_loads = $LastLoads
     $Record.final_releases = $LastReleases
