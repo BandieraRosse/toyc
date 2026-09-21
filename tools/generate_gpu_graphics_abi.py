@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the hosted HG-2 graphics ABI subset from Khronos vk.xml v1.3.290.
+"""Generate the hosted GPU graphics ABI subset from Khronos vk.xml v1.3.290.
 
 Usage: python3 tools/generate_gpu_graphics_abi.py path/to/vk.xml
 No SDK is required to build the checked-in result. Existing backend handles

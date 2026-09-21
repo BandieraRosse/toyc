@@ -1,7 +1,7 @@
 # Rasterfall 模型与动画架构
 
 > 文档更新：2026-09-21
-> 源码核对基线：2026-09-21 HG-5B executor 只把 finalized palette 与 bind influence 交给 GPU compute 求 body position/normal；composition、grant、IK、socket、attachment 与 weapon placement truth 仍由 CPU presentation 链路拥有。
+> 源码核对基线：2026-09-21 GPU skinning executor 只把 finalized palette 与 bind influence 交给 GPU compute 求 body position/normal；composition、grant、IK、socket、attachment 与 weapon placement truth 仍由 CPU presentation 链路拥有。
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。

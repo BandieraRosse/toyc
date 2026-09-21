@@ -1,21 +1,7 @@
 # Rasterfall 地图格式
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：2026-09-21 HG-4B 使用 `assets/maps/hg4_map_geometry_fixture.map` 作为无 world identity 的诊断空间地图，经正常 V1 Runtime Map/projection 链路承载 wall、ramp 与 opaque platform；它只由 `--gpu-normal-scene hg4-*` 和 `tools/hardware_graphics_map_capture.ps1` 使用，不是正式关卡或玩法内容。
-> 源码核对基线补充：GPU-8B2d B2d-4d 保持现有 map 语义不变，并为 authored transparent platform（alpha 96）与启用状态 air-gate box（alpha 48）建立真实 WORLD producer 门禁；两者显式 source-over/no-depth-write，保持 map traversal 的 platform-before-gate 提交顺序并可由 Raster V1 pack。
-> 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
-> 源码核对基线补充：Static World Lighting Phase B 只读 Runtime collision 的 bounds/base_y/height 和 surface 的 kind/height/height2/axis 烘焙；未改地图格式、稳定 ID 或 collision/gameplay 语义。单层高度选择限制见 static-world-lighting-phase-b.md。
-> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
-> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
-> 源码核对基线补充：Campaign `env_arch_*` 的局部建筑接入；`toy_map_prop.y` 保留 V1 object.y，renderer 使用 `-900 + y`，legacy prop 初始化 y=0；未新增碰撞或玩法 surface。
-> 源码核对基线补充：World record 保留已有 `attr.*` 扩展到 IR；`attr.identity=outpost|campaign_01|return_to_whu_v0` 经 Runtime Map 暴露，由 session 解析为已有 world ID。未知显式 identity 加载失败；无 identity 的实验地图仍使用历史 Campaign policy。身份不再来自文件名，改名不会改变 world behavior。`player_start` region 的既有 `attr.sy`/`attr.cy` 是 Q10 facing 向量（+Z 为 0/1024）；Runtime 保存并检查整数范围和非零方向，projection → level.start_sy/cy → session actor/camera 初始化及 reset/respawn。缺省仍为 0/1024，WHU 明确为 -724/-724（yaw 225°），坐标仍为 A18 设计占位。道路、广场和 E/F 是 presentation floor paint，不新增 gameplay surface type。
-> 源码核对基线补充：正式 Campaign 环境 object 组合；V1 object 连续 projection index、独立 collision 真值；多区域 environment capture。
-> 源码核对基线补充：保留既有开发坡道/墙顶几何，玩法连续性补充高端重叠衔接，规则见 gameplay.md。
-> 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；正式 `rasterfall.map` 为完整 V1 source；`rasterfall_legacy.map` 仅保留显式 fallback；layout exporter 默认读取 V1 source）
-
-> 源码核对补充：北侧通道扩宽为 Hurd 防区，原中央北侧刷怪区拆到左右两翼。
-> 源码核对补充：独立 `outpost.map` 使用 V1 Runtime Map；三终端与 Null 已由对应 World Content 定义提供。
-> 源码核对补充：`--map <path>` 可在不改变默认世界的情况下加载任意本地 V1 空间地图，供实验布局第一人称检查；Return-to-WHU Planar Massing V0 使用该入口。
+> 源码核对基线：`208532c`
 
 ## World Definition V1
 

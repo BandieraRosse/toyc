@@ -3308,7 +3308,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     }
     if ((options.render_performance || options.gpu_world_raster_view ||
          (options.gpu_normal_view &&
-          strncmp(options.gpu_normal_view, "hg4-", 4)) ||
+          strncmp(options.gpu_normal_view, "map-", 4)) ||
          options.environment_capture_dir ||
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
@@ -3367,12 +3367,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
             camera.x = -10500; camera.z = 2000;
             camera.sy = -819; camera.cy = 614;
-        } else if (!strcmp(options.gpu_normal_view, "hg4-wall")) {
+        } else if (!strcmp(options.gpu_normal_view, "map-wall")) {
             /* Stable V1 runtime fixture, aimed at its left wall panel. */
             camera.sy = -384; camera.cy = 949;
-        } else if (!strcmp(options.gpu_normal_view, "hg4-ramp")) {
+        } else if (!strcmp(options.gpu_normal_view, "map-ramp")) {
             camera.cy = 1024;
-        } else if (!strcmp(options.gpu_normal_view, "hg4-platform")) {
+        } else if (!strcmp(options.gpu_normal_view, "map-platform")) {
             camera.sy = 384; camera.cy = 949;
         } else if (!strcmp(options.gpu_normal_view, "whu-a18")) {
             camera.x = session.level.start_x; camera.z = session.level.start_z;
@@ -3574,7 +3574,7 @@ startup_again:
                 running = 0;
                 break;
             }
-            __printf("WORLD-CYCLE frame=%d world=%d seed=%llu\n",
+            __printf("GPU-WORLD-CYCLE frame=%d world=%d seed=%llu\n",
                      rendered_frames, next_world,
                      (unsigned long long)session.seed);
             {
@@ -3583,7 +3583,7 @@ startup_again:
                 rasterfall_resources_stats(rasterfall_render_resources(),
                                             &cycle_resources);
                 snprintf(cycle_line, sizeof(cycle_line),
-                    "WORLD-CYCLE-RESOURCES frame=%d world=%d live=%u retired=%u pinned=%u loads=%u releases=%u",
+                    "GPU-WORLD-CYCLE-RESOURCES frame=%d world=%d live=%u retired=%u pinned=%u loads=%u releases=%u",
                     rendered_frames, next_world, cycle_resources.live,
                     cycle_resources.retired, cycle_resources.pinned,
                     cycle_resources.loads, cycle_resources.releases);

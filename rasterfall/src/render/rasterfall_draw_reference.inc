@@ -1,6 +1,6 @@
-/* HG-1A: producer resolves submeshes, reference alone traverses vertices and
+/* Draw/reference: producer resolves submeshes, reference alone traverses vertices and
  * triangles. This file shares the legacy integer frontend helpers; it is not
- * a Vulkan encoder. HG-1B registry pins also protect the lowered RasterCmds. */
+ * a Vulkan encoder. resource registry registry pins also protect the lowered RasterCmds. */
 static void static_prop_draw_snapshot(struct toy_renderer *renderer,
     const struct camera *camera, const struct rasterfall_model_asset *model,
     const struct rasterfall_prop_instance *prop, int scale,
@@ -291,7 +291,7 @@ static int static_prop_draw_reference(struct toy_renderer *renderer,
         long vertex_before;
         phase = render_monotonic_us();
         /* Preflight already resolved every material before any submission.
-         * HG-1A borrows immutable backing for this synchronous loop. */
+         * Draw/reference borrows immutable backing for this synchronous loop. */
         if (static_prop_draw_resolve(instance, i, &draw) != RASTERFALL_DRAW_ACCEPTED) {
             drawn = -1; break;
         }

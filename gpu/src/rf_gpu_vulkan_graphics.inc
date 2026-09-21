@@ -43,6 +43,7 @@ struct rf_gpu_graphics_resource {
     rf_vk_descriptor_pool skin_descriptor_pool;
     rf_vk_descriptor_set skin_descriptor_set;
     int position_bound[3];
+    int frame_dynamic;
 };
 struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
@@ -887,6 +888,14 @@ int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     return 0;
 }
 
+int rf_gpu_graphics_resource_set_frame_dynamic(
+    struct rf_gpu_graphics_resource *resource)
+{
+    if (!resource || !resource->owner) return -1;
+    resource->frame_dynamic=1;
+    return 0;
+}
+
 int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource)
 {
@@ -924,7 +933,8 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     return resource ? rf_gpu_graphics_resource_bind(g, resource) : -1;
 }
 
-static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphics_draw *d)
+static int gfx_draw_valid(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_draw *d, int validate_resource_bounds)
 {
     if (!d->index_count || d->index_count % 3 || d->first_index % 3 ||
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
@@ -947,7 +957,7 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g, const struct rf_gpu_graphic
         if (d->rotation[i] < -1024 || d->rotation[i] > 1024) return 0;
     for (unsigned i = 0; i < 4; ++i)
         if (d->view[i] < -1024 || d->view[i] > 1024) return 0;
-    if (d->integer_depth && !d->material[3]) {
+    if (validate_resource_bounds && d->integer_depth && !d->material[3]) {
         /* O(1) conservative mesh bounds, before recording any draw. With
          * projected coordinates in [-16384,16384], edge*UV sums fit int64.
          * Deliberately conservative hosted-proof limit, not silent clipping. */
@@ -993,7 +1003,18 @@ int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draw)
 {
     return g && !g->poisoned && g->resource && g->target.framebuffer && draw &&
-        gfx_draw_valid(g, draw) ? 0 : -1;
+        gfx_draw_valid(g, draw, 1) ? 0 : -1;
+}
+
+int rf_gpu_graphics_validate_dynamic_draw(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_draw *draw)
+{
+    /* A frame-slot character resource combines many independently translated
+     * instances, so its aggregate position_bound is not a valid bound for one
+     * Draw. The producer has already range-checked each bind vertex and the
+     * common validator still enforces transforms, projection and index range. */
+    return g && !g->poisoned && g->resource && g->target.framebuffer && draw &&
+        gfx_draw_valid(g, draw, 0) ? 0 : -1;
 }
 
 static void gfx_bridge_bind(struct rf_gpu_graphics *g, uint64_t range)
@@ -1138,7 +1159,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
         for (uint32_t i = 0; i < count; ++i) {
             const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
             if (items) g->resource = items[i].resource;
-            if (!g->resource || g->resource->owner != g || !gfx_draw_valid(g, d) ||
+            if (!g->resource || g->resource->owner != g ||
+                !gfx_draw_valid(g, d, !g->resource->frame_dynamic) ||
                 (r && !d->integer_depth)) { valid = 0; break; }
         }
         g->resource = saved;

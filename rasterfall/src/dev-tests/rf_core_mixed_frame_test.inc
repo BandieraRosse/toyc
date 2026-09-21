@@ -1,6 +1,6 @@
 /* Exercise production recording/partition/lifetime, with an executor that
  * independently observes exact order and models preflight/submission faults.
- * GPU numeric/occlusion correctness remains the separate HG-2B mixed gate. */
+ * GPU numeric/occlusion correctness remains the separate GPU-MIXED mixed gate. */
 struct mixed_test_executor {
     unsigned int events[512], layers[512];
     unsigned long count, checked, finished, calls;
@@ -191,7 +191,7 @@ int rf_core_mixed_frame_logic_test(void)
             MIXED_CHECK(observed.events[n] == n + 1 &&
                 observed.events[batches + n] == n + 201);
     }
-    /* HG-5A dynamic Draws own an exact frame copy of CPU-skinned positions
+    /* CPU-skinned Draw dynamic Draws own an exact frame copy of CPU-skinned positions
      * and source normals.  Mutating the producer buffer after submission must
      * not affect the frozen GPU upload, and reset must retain only capacity. */
     {
@@ -234,8 +234,8 @@ int rf_core_mixed_frame_logic_test(void)
             f.reference_vertex_capacity >= 9);
         item.index_count = 3;
     }
-    /* HG-5B keeps one finalized palette per instance and immutable bind
-     * corner/influence input beside the HG-5A reference rollback stream. */
+    /* GPU skinning keeps one finalized palette per instance and immutable bind
+     * corner/influence input beside the CPU-skinned Draw reference rollback stream. */
     {
         struct rasterfall_dynamic_draw_vertex reference[3];
         struct rasterfall_skinned_draw_vertex bind[3], expected_bind[3];

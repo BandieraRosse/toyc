@@ -85,7 +85,7 @@ int main(void)
     CHECK(r && profile && fixture(r, 0, &a, 211) == 0 && fixture(r, 1, &b, 53) == 0);
     CHECK(rf_gpu_init(&gpu, RF_GPU_POLICY_REQUIRED, &rf_gpu_vulkan_backend, &context) == 0);
     initialized = 1;
-    __printf("HG-2B adapter=%s vendor=%x device=%x type=%u queue=%u\n", gpu.info.adapter_name,
+    __printf("GPU-MIXED adapter=%s vendor=%x device=%x type=%u queue=%u\n", gpu.info.adapter_name,
         gpu.info.vendor_id, gpu.info.device_id, gpu.info.adapter_type, gpu.info.queue_family);
     CHECK((g = rf_gpu_graphics_create(&context)) != NULL);
     CHECK((cache = rf_gpu_resource_cache_create(g, r)) != NULL);

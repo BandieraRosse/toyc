@@ -1,4 +1,4 @@
-# HG-4B runtime visual fixture. No identity: retain Campaign policy while
+# GPU persistent-map-geometry regression fixture. No identity: retain Campaign policy while
 # loading this spatial map through the normal V1 runtime/projection path.
 map version=1 units=rfu
 world min_x=-7000 max_x=7000 min_z=-2000 max_z=9000 room_limit=10000

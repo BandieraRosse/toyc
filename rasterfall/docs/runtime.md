@@ -1,31 +1,7 @@
 # 运行时与主循环
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：2026-09-21 `--gpu-character-vertex-diff` 仅在目标帧请求 CPU reference，`--gpu-character-skinning-off` 恢复 HG-5A CPU VB；普通 native GPU skin 帧的 `character-draw reference_vertices` 必须为零。
-> 源码核对基线补充：2026-09-21 新增 `--gpu-character-skinning-off`，仅用于把 native mixed 角色 body 的实际 vertex backing 从 HG-5B shader output 回滚到 HG-5A CPU-skinned upload；完整参数仍以 `build/rasterfall --help` 或 package `rasterfall.exe --help` 为准。
-> 源码核对基线补充：2026-09-21 `--gpu-normal-fixed-tick` 仅用于 `--gpu-normal-scene` 诊断，使每个渲染帧恰好推进一个 16ms gameplay tick；HG-5A CPU/native 视觉采集据此比较相同 simulation state。`--gpu-character-vertex-diff` 在第 30 帧回读并精确比较 device-local 动态角色 VB；正常运行与性能基线仍按真实墙钟驱动。
-> 源码核对基线补充：2026-09-21 HG-4A 为 `--gpu-normal-scene` 增加 Campaign base/spawn/west-facility 与 WHU A18/B广场/分馆前场/D→E/F 固定视角；CPU `--dump-frame` 与 strict native `--gpu-frame-capture` 可在同一 map/姿态生成对照证据，入口为 `tools/hardware_graphics_ground_capture.ps1`。
-> 源码核对基线补充：2026-09-20 `--world-cycle-gate` 是 HG-4A 正常窗口生命周期诊断：固定 seed，按 30 帧间隔执行 Outpost → Campaign → WHU → Campaign，并输出切换瞬间的 retired/pinned 资源审计；配套 `tools/hardware_graphics_world_cycle.ps1` 验证 strict native 与延迟退休。
-> 源码核对基线补充：2026-09-20 `--auto` 在原持续转向、射击和定期场景传送基础上，增加确定性的前后/横移与每 90 帧跳跃，用于 HG-2C5 动态 gameplay soak；它仍是显式诊断模式，不改变正常输入。Windows worker 等待改用按地址 `WaitOnAddress`，修复长时 renderer job 丢失唤醒。
-> 源码核对基线补充：2026-09-19 Windows `--gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>]` 从 strict native mixed 正常帧的最终 GPU Post/overlay 结果显式读回一帧；默认第 30 帧。须同时提供 `--renderer gpu-compute --gpu-native-present --gpu-required --gpu-normal-scene <view> <0|30>`；诊断字节单列，普通帧零读回合同不变。`--help` 是完整参数入口。固定场景同时设置本地 actor 的位置与方向，防止首个固定步长将 camera 重置。
-> 源码核对基线补充：2026-09-19 Windows strict native 正常帧使用 Core-owned mixed frame/executor；`rf_core_begin_frame()` 建立资源 pin 与计划，WORLD/Effects/VIEWMODEL 依序录制，overlay 完成后同帧 native 呈现并释放 pin。preflight/submit 失败使 required runtime 非零退出，不回退部分 GPU target。详见 [HG-2B](hardware-graphics-hg2b.md)。
-> 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md)：Core begin/end 包围 static prop 资源的单帧 pin；失败帧保留到 backend teardown 后释放。Game init、成功 world switch 与 shutdown 使旧资源退休，仍在消费中的帧不提前释放。
-> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
-> 源码核对基线补充：`--gpu-wave-repro` 在所加载地图的 session reset 后直接触发真实首波倒计时；`--legacy-map` 可保持旧地图，不走 `--gpu-normal-scene` 强制 Campaign 的固定敌人场景。搭配 `--frames` 限制运行长度。
-> 正常退出判定：native GPU frame 不写 CPU `scene_pixels`；帧上限退出时须同时检查成功 GPU 帧数，不能仅因 CPU 像素计数为零返回 2。GPU contract 失败仍优先返回 3。
-> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：默认 CPU；显式 `--renderer gpu-compute` 启用 Core-owned normal GPU frame，`--gpu-native-present` 启用零 readback swapchain 路径；RenderFrame V1 以单调 cursor 强制六层顺序。optional 模式仍可整帧 CPU replay；`--gpu-required` 必须与 native present 同用，并将 unsupported/direct pixel/consumer/Post/native-present/readback/copy 变为非零退出。HG-2C5 可用 `--gpu-present-fault <name> [frame]` 对指定 native-present attempt 做一次性诊断故障注入；它不是普通玩家参数。实机验证与最近基线见 [GPU 当前状态](gpu-current-state.md)。
-> 当前阶段：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退和窗口拉伸已确认；功能阶段结束，转入帧率优化。Legacy anime normal rendering 已冻结并回退 humanoid，原 toon/material `0x40` 不再是 normal frame 输入；Console/Desktop normal runtime 也已隔离，F12、反引号和 station 交互只产生 HUD 暂时不可用提示。Windows `--frame-audit` 同步写 `rasterfall.log`，`--normal-frame-audit` 用于精确重放。
-> 源码核对基线补充：`--gpu-world-raster-test <near|mid> <0|30> <commands.bin>` 是窗口前的固定 Campaign world capture；它不选择 GPU renderer，正常 `RF_GPU_POLICY_DISABLED` 不变。
-> 源码核对基线补充：Eula animation acceptance 与 unified character performance 均在字体、Core、startup/pause UI、session、window/audio 之前早退。
-> 源码核对基线补充：2026-09-15 工作区；`--render-performance` 使用 headless Core、固定 seed 与 Campaign request；Game render 内记录互不重叠的 scene/enemies/raster/overlay，外层只记录 begin/present。V2 planar 诊断同时跑正常专用路径与 `generic-planar` 旧回退，逐元素比较 framebuffer/depth。
-> 源码核对基线补充：Phase D 补齐 Character world capture 的既有 headless 初始化、固定 seed=1 与 Campaign 选择；正常窗口启动不变，冻结验收边界见 [Phase D](static-world-lighting-phase-d.md)。
-> 源码核对基线补充：Return-to-WHU session identity 来自 Runtime Map 的 world attr.identity；content 和地面 policy 均使用已有 world ID。player_start 的 position 与 sy/cy 由 projection 写入 level，session 复用原有 reset/respawn 初始化链。`--map` 指定的 WHU 地图可配合 `--environment-capture` 做四个眼高离屏视角，其他 world 保持现有 Campaign capture 行为。
-> 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
-> 源码核对基线：工作区（Humanoid Action Composition V1 CLI；双正式四人 squad runtime；Lighting V1；`game_state.actors[]` 是 gameplay truth；RF Core Runtime V0.2 `rf_game_runtime` facade、Core status query、service access cleanup 与 Input view；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；RF Command Runtime V0 registry/context/status；Command Runtime Stabilization V0.1 output/metadata/permission；RF Terminal Frontend Prototype V0 session 与 Console frontend；RF GUI Runtime Prototype V0）
-
-> 源码核对补充：session reset 在原 flag 1 和原坐标恢复 Maid 四人旗卫，并创建使用 flag 2 的正式 Hurd squad/outpost；Hurd 控制状态保持派生。
-> 源码核对补充：Outpost V0 默认 landing、world switch 与 Return-to-WHU Planar Massing V0 入口已接入；station desktop request 已冻结为暂时不可用提示。
+> 源码核对基线：`208532c`
 
 ## 当前 GPU 验收阻塞
 

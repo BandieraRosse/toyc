@@ -180,7 +180,9 @@ static int encode_draw(struct rf_gpu_mixed_executor *e,
         rf_gpu_graphics_resource_bind(mixed_graphics(e),out->dynamic_resource) < 0 :
         rf_gpu_resource_cache_bind(mixed_cache(e), f->registry_epoch, i->mesh_handle,
             src->item.primitive, out->texture) < 0) ? -1 :
-        rf_gpu_graphics_validate_draw(mixed_graphics(e), d);
+        (src->dynamic_vertex_count ?
+            rf_gpu_graphics_validate_dynamic_draw(mixed_graphics(e), d) :
+            rf_gpu_graphics_validate_draw(mixed_graphics(e), d));
 }
 static int preflight(void *context, const struct rf_core_mixed_frame *f)
 {
@@ -284,6 +286,8 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         }
         free(indices);
         if (!e->dynamic[e->active_frame][0]) return -1;
+        if (rf_gpu_graphics_resource_set_frame_dynamic(
+                e->dynamic[e->active_frame][0]) < 0) return -1;
         if (e->output.character_skinning) {
             e->stats.character_skin_frames++;
             e->stats.character_skin_vertices+=f->dynamic_vertex_count;
@@ -361,9 +365,12 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) goto done;
     phase_start=mixed_now_ms();
     for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) {
-        __fprintf(2, "mixed preflight: Draw encode failed index=%lu primitive=%u indices=%u asset=%d vertex_light=%d\n",
+        __fprintf(2, "mixed preflight: Draw encode failed index=%lu primitive=%u indices=%u asset=%d vertex_light=%d ambient=%u specular=%u double_sided=%d dynamic=%lu\n",
             n, f->draws[n].item.primitive, f->draws[n].item.index_count,
-            f->draws[n].instance.asset_id, f->draws[n].instance.vertex_light_q8);
+            f->draws[n].instance.asset_id, f->draws[n].instance.vertex_light_q8,
+            f->draws[n].item.material.ambient, f->draws[n].item.material.specular,
+            f->draws[n].item.material.double_sided,
+            f->draws[n].dynamic_vertex_count);
         goto done;
     }
     e->stats.draw_encode_ms+=mixed_now_ms()-phase_start;

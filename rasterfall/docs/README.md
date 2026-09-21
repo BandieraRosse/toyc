@@ -1,66 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已正式签收：normal GPU skin 帧取消 CPU-skinned reference/上传，回滚与按需差分保持完整；30/60、resize、world-cycle、三场景零差分、视觉及长时运行通过。HG-0～HG-5B 已完成，尚未定义后续正式阶段。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) executor 扩展门禁已覆盖 30/60 敌人、四 extent resize、near/mid 多场景精确差分与视觉审阅、Outpost/Campaign/WHU 生命周期；GPU skin 输出保持零差分。正常帧 CPU reference 仍待收敛，HG-5B 尚未正式签收。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成 executor 纵切：native mixed 默认用 bind/palette compute shader 生成角色 Draw VB，保留 HG-5A reference 差分与独立回滚；near/0 的 20400 顶点 position/normal/UV 全零差分，完整 HG-5B 尚未签收。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成 HG-5B frame-input checkpoint：mixed frame 按角色实例保存 finalized palette，普通 body Draw 同时携带 bind position/normal/BDEF influence 与 HG-5A CPU reference；GPU buffer upload 与 shader 求值尚未接入。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 的 HG-5A 已签收：Intel near 30/60 strict-native 两轮受控复测中，60 敌人 whole-loop 为 53.647/60.560 ms、GPU Raster 为 26.899/30.559 ms、GPU Draw 均约 1.823 ms；最终 device-local VB 差分仍为 20400 顶点全零差异。下一步进入 HG-5B GPU skinning。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 的视觉对照与 device-local 角色 VB 数值差分已通过；near/0 第 30 帧精确比较 20400 个 CPU-skinned 顶点，position/normal/UV mismatch 与最大差值均为 0。当前只剩受控性能复测。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 已完成首个 HG-5A 纵切：CPU-skinned 普通不透明 body 进入帧槽合并动态 Draw，CPU pose/IK/skinning 与 gear/weapon/socket 所有权不变；Intel near/0 strict-native 20/20 smoke 通过，完整签收仍待继续。
-> 源码核对基线补充：2026-09-21 [HG-5 Character](hardware-graphics-hg5.md) 的 30/60 敌人 strict-native 基线已在 Windows Intel 通过；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms，下一步进入 HG-5A character geometry，GPU skinning 留在 HG-5B。
-> 源码核对基线补充：2026-09-21 [HG-4B map/boundary](hardware-graphics-hg4.md) 已按 Windows Intel 签收：wall、opaque box、ramp、opaque platform 与 boundary geometry 分类接入 world-generation persistent Draw；专用 V1 runtime fixture、五类 CPU/native 同姿态对照、Fog/四 extent resize、world-cycle、Windows package 与完整逻辑回归通过。动态/透明 air-gate 保留 RasterCmd。
-> 源码核对基线补充：2026-09-21 [HG-4A Ground](hardware-graphics-hg4.md) 已按 Windows Intel 签收：正常窗口 world-cycle、Fog/resize、逻辑回归及 Campaign/WHU 七组 CPU/native 同姿态视觉对照通过。
-> 源码核对基线补充：2026-09-20 [HG-4A Ground](hardware-graphics-hg4.md) 纵切已接入持久 world mesh 与 V2 vertex-light Draw；Intel strict native 120/120 通过，完整视觉/生命周期验收仍待完成。
-> 源码核对基线补充：2026-09-20 [AI frontend checkpoint](hardware-graphics-ai-frontend.md) 已签收：模块化 finalized pose/skinned vertex、被动 gear 与 active weapon actor-local placement 绑定每 actor pose generation；body/gear/weapon 实际变换边界共同参与提交前剔除。Windows package、逻辑测试、角色 world capture、0/10/30/60 actor benchmark、Campaign strict native audit，以及边缘入镜/近面交叉专用 capture 均通过。
-> 源码核对基线补充：2026-09-20 [HG-3](hardware-graphics-hg3.md) 已签收：连续 Draw 间空 ordering flush 被消除，near strict whole-loop/static 中位数降至 22.488/1.554 ms（CPU 为 27.813/2.956 ms），mid 为 25.690/1.681 ms（CPU 为 38.326/3.237 ms）；完整 Intel baseline、320 帧 Campaign 及建筑内部/远处薄结构 native capture 通过。
-> 源码核对基线补充：2026-09-20 Hardware Graphics P0 性能事实门禁完成：新增 `tools/hardware_graphics_metrics.ps1`，按预热窗口汇总 CPU/GPU 分项、对齐历史 GPU timestamp、估算逐帧审计扰动并验证 Campaign world/敌人命令；当前实机基线与后续顺序见 [GPU 当前状态](gpu-current-state.md) 和 [Hardware Graphics](hardware-graphics-architecture.md)。
-> 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已签收：Windows futex 丢失 worker 唤醒已修复；最终代码在 Intel 上固定 300 帧、五种 fault injection 与动态 `--auto` 10000 帧/7分40秒通过，零 watchdog/fallback/readback/CPU copy/hot queue-idle。Khronos validation + sync validation 进一步修复 render-pass compatibility、统一 command recording 内 descriptor set 更新失效与 acquire/layout-transition stage 依赖，最终 300 帧及五种 fault injection 均零 VUID/SYNC-HAZARD。HG-2C5 假设窗口尺寸不变，不执行 resize 检查。
-> 源码核对基线补充：2026-09-20 HG-2C4 长时稳定性修复：双 mixed frame slot 继续独立持有离屏 target、上传、command、fence 与 query，但窗口 surface 只允许 Vulkan backend 拥有一个 swapchain。每 slot 使用独立 acquire/render-complete semaphore；Intel 实机要求 present 后 queue-idle 才安全复用完成信号量，因此当前提交实际在 present 边界串行。300 帧约一分钟 strict native 通过，修复交替旧帧闪回与 30--60 秒呈现卡死；当前 `native_present_queue_idle_ms` 不再承诺为零。
-> 源码核对基线补充：2026-09-20 HG-2C4 已签收：双 frame slot 使用独立 target/上传区/command/fence/query，复用 slot 时才等待并回收 timestamp，Core resource pin 随 fence 延迟释放。Intel strict native 120/120、专用 mixed gate 与四 extent 140 帧 resize gate 通过，零 fallback/readback/CPU framebuffer copy。
-> 源码核对基线补充：2026-09-20 HG-2C4 已完成 present queue-idle 移除增量：normal present 按 swapchain image 使用独立完成 semaphore，正常帧 `native_present_queue_idle_ms=0.000`；Intel strict native near/0 120/120 通过。帧末 render fence、单帧资源与多帧在途仍待后续完成。
-> 源码核对基线补充：2026-09-20 HG-2C3 已完成统一 frame command recording：normal mixed 的 Raster、depth bridge、Draw、Post、overlay 与 present copy 共用一个 frame command buffer，热帧 graphics submit/fence wait 均为 0。共享 RGBA8 color target 下 1280×720 两次 bridge仍为 14,745,600 bytes。
-> 源码核对基线补充：2026-09-19 [HG-2C](hardware-graphics-hg2c.md) 的 mixed CPU 分项与 Vulkan GPU timestamp 已完成；后续依次处理共享 color/depth target、统一 command recording 与多帧在途。HG-3A 在该架构门槛完成前暂缓。
-> 源码核对基线补充：2026-09-19 HG mixed 热路径已复用 CPU pack/batch 容量并借用连续 overlay；曾取消的同队列中间 graphics fence wait 因 command-buffer reset 生命周期不安全而于 2026-09-20 恢复，后续由 HG-2C3 统一 command recording 正确消除。当前性能与剩余 bridge 边界见 [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)。
-> 源码核对基线补充：2026-09-19 Windows native Vulkan 窗口使用 SDL software renderer，避免同一 HWND 上 SDL 硬件呈现链与 Vulkan swapchain 冲突；RTX 3050 strict native 10 帧通过。完整排查与验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)，平台与现状入口见 [构建与平台](build-platforms.md)、[GPU 当前状态](gpu-current-state.md)。
-> 源码核对基线补充：2026-09-19 HG-2B 已按 Windows Intel Iris Xe 修订口径签收：strict native 正常混合帧、混合遮挡/层顺序 fixture、近/中距离窗口帧及四 extent 的 140 帧 resize 通过；正常帧逐像素对照与设备丢失恢复未验证且不属本 checkpoint 门禁。Linux/其他 GPU 未验收，HG-3A 尚未开始。详见 [HG-2B](hardware-graphics-hg2b.md)。
-> 源码核对基线补充：2026-09-19 [HG-1B 资源生命周期](hardware-graphics-hg1b.md)：static prop registry 拥有模型、材质与纹理；Core 管理单帧 pin，world unload/reload 淘汰旧 generation，帧完成后释放。
-> 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 接入普通 opaque static RMESH；按实例/submesh 同步提交，CPU/compute 精确回归与原输出一致；资源生命周期后续进度见 HG-1B。
-> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
-> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：GPU normal gameplay 功能阶段结束；`--gpu-required` 保持逐帧 native GPU-only fatal contract。旧 GPU V1 冻结矩阵已移入 [历史验收记录](archive/gpu-v1-final-acceptance-2026-09-19.md)。Legacy anime normal rendering 已冻结，带 anime identity 的 actor 在正常 world 统一回退 modular/procedural humanoid，因而 toon/material `0x40` 不再属于 normal frame 语义。Console/Desktop normal runtime 同期冻结，入口只显示暂时不可用提示；实现与诊断代码保留但不初始化、不更新、不提交 overlay。
-> GPU 当前状态：Intel strict native/Fog smoke、正式地图 320 帧零回退波次复现、核心游玩与窗口拉伸已确认；最近固定视角的命令与耗时基线见 [GPU 当前状态](gpu-current-state.md)。旧阶段计划已归档；新计划与进度见 [Hardware Graphics](hardware-graphics-architecture.md)。`--frame-audit` 同时写入 `rasterfall.log`。
-> 源码核对基线补充：2026-09-19 Texture V1 pack 使用本帧唯一纹理视图表分配句柄；老地图高命令量转向不再因重复回扫历史命令触发 200ms renderer watchdog。
-> 源码核对基线补充：GPU-8B2c Phase 1+2 已冻结 Viewmodel Render Contract V1（near=192、focal=3/4、真近平面裁剪、独立 inverse-Z depth、Post coverage mask），并在 CPU/reference 路径建立 domain switch 与固定 fixture；Phase 3 已将 weapon/hands/pill normal producer 收敛为共享 flat/lit/textured triangle commands，direct framebuffer producer 门禁为 0；Phase 4 已接入 GPU VIEWMODEL span consumer、独立 depth/coverage 与 Post fog skip，并由 CPU/GPU differential fixture 覆盖；Phase 5 已将 LOCAL_VIEW muzzle core 以及 outer/lobe 按同一 projection/depth 接入 VIEWMODEL，remote/AI 三类 muzzle 仍使用 world EFFECTS，其中 outer/lobe 以真实 material alpha 进入 Transparent V1。源码基线：2026-09-18。
-> 源码核对基线补充：Eula 正常 world/展示在 near/mid 使用 Gameplay Hybrid `eula_lod3.rmesh`，仅 FAR（4096 RFU 起）使用 compact LOD2；Hybrid 缺失时回退原模型。
-> 源码核对基线补充：Eula Animation Acceptance V1 提供 legacy VMD carrier 的固定离屏姿态组图；统一 `--character-performance[-suite]` 保留 model/actor/world benchmark 的原职责并提供单角色、固定资产族及常见实例组合的同口径统计。
-> 源码核对基线补充：Anime Gameplay Hybrid LOD V1 的 Eula pilot 使用离线 region descriptor、按骨长定义的关节邻域与 BDEF pair/weight 分区生成普通 compact RFM2；runtime、renderer 与 skinning 不增加角色特判。
-> 源码核对基线补充：True Vertex-Reduced Character LOD 在离线索引简化后 compact 实际引用 vertex 与对应 SKN1 BDEF；不改变 skeleton、CHR1 attachment、动画或 renderer skinning 算法。
-> 源码核对基线补充：2026-09-15 工作区；V2 Planar Raster Optimization 为 V2 无纹理细分平面增加专用 solid + interpolated vertex light + fog + depth command/worker 路径；`--render-performance` 保留 `generic-planar` A/B，输出 framebuffer/depth 差异、专用/回退 command 及路径耗时。
-> 源码核对基线补充：RF Humanoid V2.1 职业 palette 统一同步 Blender viewport diffuse 与 glTF Principled Base Color；`tools/rf_profession_round.py --generate` 同时核对 GLB 和 RFM2 中的 HEAD/CHEST/BACK/HIP gear 色，防止 CPU renderer 消费灰白的陈旧导出材质。
-> 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 已改为 near/mid Hybrid、FAR compact LOD2。Campaign Maid 四人内容武器为 AK。
-> 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
-> 源码核对基线补充：Static World Lighting V2 — FROZEN；最终64×48世界尺度、参数、consumer、验收与平台覆盖边界见 [Phase D](static-world-lighting-phase-d.md)。
-> 源码核对基线补充：Static World Lighting V2 Phase C3：V2 为唯一正常 runtime world-light source；V1 独立 diagnostic owner、显式 fixed override 与统一 scene factor，见 [Phase C3](static-world-lighting-phase-c3.md)。
-> 源码核对基线补充：Static World Lighting V2 Phase C2：正常 actor/enemy root 单点采样，世界武器继承 owner，本地第三人称/viewmodel 共用 sample，保留 form/material policy；固定诊断例外见 [Phase C2](static-world-lighting-phase-c2.md)。
-> 源码核对基线补充：Static World Lighting V2 Phase C1：正常 map static RMESH 在 `render_static_props()` 按实例世界原点采样一次 V2，通过已有 scene override 与原 form lighting 组合；诊断/gallery 不变。见 [Phase C1](static-world-lighting-phase-c1.md)。
-> 源码核对基线补充：Static World Lighting V2 Phase B：64×48 ground-following field，Runtime Map 三维 AABB 太阳遮挡、独立弱 contact 与 Q8 bilinear；主地面/建筑平面/边界墙消费 V2，角色与 static RMESH 保留原策略。见 static-world-lighting-phase-b.md。
-> 源码核对基线补充：Static World Lighting V2 Phase A：独立 world-light owner 与显式 position sample；V1 32×24 bake/nearest-cell 和 renderer bypass 保持原行为。
-> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
-> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
-> 源码核对基线补充：Campaign `env_arch_*` 接入西侧维修巷、东侧开放设施与南侧动力区；V1 object.y → toy_map_prop.y → static prop 的地面相对高度，既有 collision/surface/region 不变。
-> 源码核对基线补充：Return-to-WHU compatibility/readability 入口：`world attr.identity` → session world ID → `rasterfall_world_uses_authored_ground()`；WHU floor paint 复用单平面分区，出生方向由 Runtime region sy/cy 投影。四个眼高视角用 `--map ... --environment-capture ...`。
-> 源码核对基线补充：Temporary Campus Kit V0 的库存audit、12件米制临时构件和隔离campus-*验收；见temporary-campus-kit-v0.md，未改WHU Reference JSON或正式地图。
-> 源码核对基线补充：新增《重返武汉大学》信息学部核心区 V0 资料参考入口；仅核对米制/RFU契约，未改正式地图或运行时，高程与道路宽度仍未核实。
-> 源码核对基线补充：Architectural V1 最终 panel/hatch 与 arch-* runtime 视觉签收完成，VISUALLY FROZEN；工程 checkpoint 待 Sol，边界及证据见 architectural-environment-v1.md。
-> 源码核对基线补充：Architectural 闭合 prop scoped backface culling 位于 static prop renderer / frontend state，处理旧 static RFM2 v2 的双面薄墙穿透。
-> 源码核对基线补充：Architectural Environment V1 的 Builder/registry、Wall/Floor Surface 与独立 arch-* 原型验收；设计冻结入口见 architectural-environment-v1.md。
-> 源码核对基线补充：Campaign 环境设施组合、power_unit / gate_frame / control_cabinet；`--environment-capture` 与 `tools/environment_sheet.py` 复用正常 world render 验收。
-> 源码核对基线补充：旧开发坡道/墙顶平台高端重叠衔接修复；未更改地图碰撞记录或 AI/波次/spawn 配置，边界见 gameplay.md。
-> 源码核对基线补充：Enemy Procedural Rig V1 的 profile / truth adapter / pose / generic renderer；特感关键帧、轮廓与 world 验收；普通敌人新模型混合比例、Charger 新冲锋碰撞代理、Tank 击飞真实位置历史 ribbon；协议 43 命中 mask。
-> 源码核对补充：RF Core lifecycle boundary 已覆盖 poll/exit、tick clock 与 frame begin/end；Runtime Environment V1 ownership audit 与 checkpoint 已完成。
-> 源码核对补充：Outpost V0 保留 world identity/switch lifecycle 与三终端地图语义；F12、反引号和前哨站 Desktop/Console 入口已冻结为暂时不可用提示。
-> 源码核对基线：工作区（Runtime Map V1 projection ownership cleanup；RF Application Projection Layer V0 query boundary；Phase 4.4 render IR/runtime/legacy draw adapter；Enemy Visual V2 六份公开 RFM2 / renderer-only family；Enemy Visual Family Mix V1 自动比例 resolver 与强制 family capture；MODEL_DISPLAY style 6--14 的三类型×三家族感染体展示；Character Material Lighting Policy V1；Enemy Presentation V1 1000ms ballistic fade / rotating irregular fragments / directional trailing emitter 与开发者死亡测试排；Humanoid Action Composition V1.1 additive recoil；modular RFANIM presentation clock；双手 RFANIM 持枪轨道；RFCHAR +Z forward basis；PRIMARY_GRIP weapon presentation；开发者 world strip 与战斗区共用 modular path；双正式四人小队 runtime；RF Core Runtime V0.2 `rf_game_runtime` facade 与 status query；Core/Game startup config split；renderer frame ownership cleanup；Core filesystem service V0；唯一 `rf_core` context 与 Core clock service；Runtime Facade Authority audit；Phase 3A `rf_game_update()` gameplay update authority；Phase 3B-1 world presentation migration；Phase 3B-2 steady-state Game UI presentation authority；Phase 4.3 surface IR/runtime/legacy primitive adapter）
+> 源码核对基线：`208532c`
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -87,8 +28,8 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
-| Hardware Graphics / Draw IR / GPU 硬件迁移 | [hardware-graphics-architecture.md](hardware-graphics-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[HG-2C](hardware-graphics-hg2c.md)、[HG-3](hardware-graphics-hg3.md)、[HG-5](hardware-graphics-hg5.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/hardware_graphics_baseline.ps1` 与 `tools/hardware_graphics_character_baseline.ps1` 调用 metrics 工具完成阶段门禁 |
-| GPU mixed 正常帧截图与性能优化交接 | [HG-2B 后续交接](hardware-graphics-post-hg2b-handoff.md)、[HG-2C](hardware-graphics-hg2c.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
+| GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
+| GPU mixed 正常帧截图与性能诊断 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |
@@ -110,9 +51,9 @@ Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复�
 | 修改地图排布、导出地图俯视图、agent 可读 JSON 和精确布局查询 | [map-format.md](map-format.md) | `tools/map_layout_export.py`、`tools/map_layout_query.py`、`make map-layout` |
 | Return-to-WHU runtime compatibility、地面可读性、出生朝向与眼高验收 | [map-format.md](map-format.md)、[rendering.md](rendering.md)、[runtime.md](runtime.md) | `world attr.identity` → `rasterfall_session.c`；`rasterfall_world_content.c` 的单布尔 ground policy → `draw_partitioned_floor()`；`player_start` → Runtime region sy/cy → projection → session；`--map ... --environment-capture ...` |
 | 《重返武汉大学》真实地点底图、坐标、尺寸来源与白盒前置调查 | [V0 计划](reference/return-to-whu-core/return-to-whu-core-v0-plan.md)、[调查报告](reference/return-to-whu-core/investigation-report.md)、[来源台账](reference/return-to-whu-core/sources.md)、[资料补充 V1](reference/return-to-whu-core/evidence-addendum-v1.md) | `reference/return-to-whu-core/whu-info-core-reference.json` 与同名 SVG/PNG；仅资料层，未知高程/宽度不得作为正式地图事实 |
-| Hardware Graphics Draw/reference 迁移与 CPU/compute 精确回归 | [架构与计划](hardware-graphics-architecture.md)、[HG-1A 前置修复](hardware-graphics-hg1-preflight.md) | `rasterfall_render_static_prop()` → `render_gallery_model_range()`；`lib/graphics/renderer.c`、`gpu/src/rf_gpu_raster_diff_test.c`、`tools/hardware_graphics_baseline.ps1` |
-| Core Draw/Raster 混合帧顺序、冻结、资源引用 | [HG-2B Core 帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) | `include/rf_core_mixed_frame.h` → `src/rf_core_mixed_frame.inc`（由 `rf_core_host.c` 编译）；`dev-tests/rf_core_mixed_frame_test.inc` → `--logic-test`；registry `frame_epoch` 与 pin 生命周期联动 |
-| 冻结混合帧到真实 GPU 执行、整帧预检与尾段 | [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器) | `gpu/include/rf_gpu_mixed_executor.h` → `gpu/src/rf_gpu_mixed_executor.c`；联动 Core eligibility、registry cache、Raster ABI pack/bin、graphics 数值验证；`tools/rasterfall_gpu_mixed_test.c` / `-ExecutorGate` |
+| Hardware Draw/reference 与 CPU/compute 精确回归 | [GPU 渲染架构](gpu-rendering-architecture.md) | `rasterfall_render_static_prop()` → `render_gallery_model_range()`；`lib/graphics/renderer.c`、`gpu/src/rf_gpu_raster_diff_test.c`、`tools/gpu_acceptance.ps1 -Full` |
+| Core Draw/Raster 混合帧顺序、冻结、资源引用 | [GPU 渲染架构](gpu-rendering-architecture.md) | `include/rf_core_mixed_frame.h` → `src/rf_core_mixed_frame.inc`（由 `rf_core_host.c` 编译）；`dev-tests/rf_core_mixed_frame_test.inc` → `--logic-test`；registry `frame_epoch` 与 pin 生命周期联动 |
+| 冻结混合帧到真实 GPU 执行、整帧预检与尾段 | [GPU 渲染架构](gpu-rendering-architecture.md) | `gpu/include/rf_gpu_mixed_executor.h` → `gpu/src/rf_gpu_mixed_executor.c`；联动 Core eligibility、registry cache、Raster ABI pack/bin 与 graphics 数值验证；`tools/rasterfall_gpu_mixed_test.c` 由统一验收入口调用 |
 | RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
@@ -172,9 +113,9 @@ Normal world 的 actor 与 renderer-only fixture 还必须经过当前 World Con
 不创建 Jesus 或其他命名队友，固定 Eula/developer strip 与 Humanoid debug 也不会在 Outpost
 normal render 中进入。诊断 CLI 保留自己的独立 fixture 路径。
 
-GPU registry/cache 生命周期任务：先读 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache)，再查 `gpu/include/rf_gpu_resource_cache.h` 的 prepare/bind/collect 合同、`gpu/src/rf_gpu_resource_cache.c` 与 `rf_gpu_graphics_resource_*()`；CPU backing/pin 仍由 `rasterfall_render_resources` 拥有，资源不得跨 graphics/device owner 使用。
+GPU registry/cache 生命周期任务：先读 [GPU 渲染架构](gpu-rendering-architecture.md)，再查 `gpu/include/rf_gpu_resource_cache.h` 的 prepare/bind/collect 合同、`gpu/src/rf_gpu_resource_cache.c` 与 `rf_gpu_graphics_resource_*()`；CPU backing/pin 仍由 `rasterfall_render_resources` 拥有，资源不得跨 graphics/device owner 使用。
 
-GPU compute/graphics 交错任务：先读 [HG-2B](hardware-graphics-hg2b.md)，再查 `gpu/include/rf_gpu_graphics.h`、`gpu/src/rf_gpu_vulkan_graphics.inc` 的 adapter，`gpu/src/rf_gpu_vulkan_backend.c` 的 Raster target 续画状态，以及 `gpu/src/rf_gpu_raster_test.c` 的 `--mixed-gate`。
+GPU compute/graphics 交错任务：先读 [GPU 渲染架构](gpu-rendering-architecture.md)，再查 `gpu/include/rf_gpu_graphics.h`、`gpu/src/rf_gpu_vulkan_graphics.inc` 的 adapter，`gpu/src/rf_gpu_vulkan_backend.c` 的 Raster target 续画状态，以及 `gpu/src/rf_gpu_raster_test.c` 的 `--mixed-gate`。
 
 ## 架构主线
 

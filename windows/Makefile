@@ -113,7 +113,7 @@ $(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
 -include $(BUILD)/win/tools/rasterfall_gpu_cache_test.d $(BUILD)/win/gpu/src/rf_gpu_resource_cache.d
 
-# HG-2A hosted diagnostic: independent of SDL and player package/assets.
+# GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
     gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc) \

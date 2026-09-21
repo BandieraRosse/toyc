@@ -95,11 +95,11 @@ void rasterfall_options_usage(int fd)
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
-        "  --world-cycle-gate  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|hg4-wall|hg4-ramp|hg4-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
-        "  --gpu-character-skinning-off  (rollback HG-5B to HG-5A CPU-skinned vertex upload)\n"
+        "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
@@ -165,7 +165,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         }
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
-        else if (!strcmp(option, "--world-cycle-gate")) o->world_cycle_gate = 1;
+        else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;
         else if (!strcmp(option, "--host"))
@@ -298,9 +298,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"base") &&
                  strcmp(o->gpu_normal_view,"spawn") &&
                  strcmp(o->gpu_normal_view,"west-facility") &&
-                 strcmp(o->gpu_normal_view,"hg4-wall") &&
-                 strcmp(o->gpu_normal_view,"hg4-ramp") &&
-                 strcmp(o->gpu_normal_view,"hg4-platform") &&
+                 strcmp(o->gpu_normal_view,"map-wall") &&
+                 strcmp(o->gpu_normal_view,"map-ramp") &&
+                 strcmp(o->gpu_normal_view,"map-platform") &&
                  strcmp(o->gpu_normal_view,"whu-a18") &&
                  strcmp(o->gpu_normal_view,"whu-b-plaza") &&
                  strcmp(o->gpu_normal_view,"whu-library") &&

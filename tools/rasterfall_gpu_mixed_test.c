@@ -86,7 +86,7 @@ static int native_window_test(void)
     struct native_rect client;
     int initialized=0, failure=0, previous_width=0, previous_height=0;
 #define NATIVE_CHECK(x) do { if (!(x)) { __printf("native FAIL line %d: %s\n",__LINE__,#x); failure=__LINE__; goto native_done; } } while(0)
-    window=toy_window_open_native("Rasterfall HG-2B mixed native",96,72);
+    window=toy_window_open_native("Rasterfall GPU-MIXED mixed native",96,72);
     NATIVE_CHECK(window && toy_window_get_native_handle(window,&handle)==1);
     context.native_window.type=handle.type;
     context.native_window.window=handle.window;
@@ -97,7 +97,7 @@ static int native_window_test(void)
     NATIVE_CHECK(fixture(registry,0,&resource,211)==0);
     NATIVE_CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     initialized=1;
-    __printf("HG-2B adapter=%s vendor=%x device=%x type=%u queue=%u\n",gpu.info.adapter_name,
+    __printf("GPU-MIXED adapter=%s vendor=%x device=%x type=%u queue=%u\n",gpu.info.adapter_name,
         gpu.info.vendor_id,gpu.info.device_id,gpu.info.adapter_type,gpu.info.queue_family);
     NATIVE_CHECK(gpu.info.capabilities.native_presentation_v1);
     executor=rf_gpu_mixed_create(&gpu,&context,registry);
@@ -187,7 +187,7 @@ int main(int argc, char **argv)
     context.require_graphics=1;
     CHECK(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)==0);
     initialized=1;
-    __printf("HG-2B adapter=%s vendor=%x device=%x type=%u queue=%u\n",gpu.info.adapter_name,
+    __printf("GPU-MIXED adapter=%s vendor=%x device=%x type=%u queue=%u\n",gpu.info.adapter_name,
         gpu.info.vendor_id,gpu.info.device_id,gpu.info.adapter_type,gpu.info.queue_family);
     CHECK((e=rf_gpu_mixed_create(&gpu,&context,r))!=NULL);
     CHECK(rf_gpu_raster_init(&gpu,&reference,64,48)==0);

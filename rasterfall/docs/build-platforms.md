@@ -1,36 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：2026-09-21 `tools/hardware_graphics_ground_capture.ps1` 串行启动 Windows package 的 CPU 与 strict native 固定视角，保存 Campaign/WHU 七组 PPM/BMP、日志、哈希和像素差；脚本使用原生 process handle 等待 GUI subsystem 进程，不能与其他 GPU 验证实例并发运行。
-> 源码核对基线补充：2026-09-20 `tools/hardware_graphics_world_cycle.ps1` 启动 package 内 GUI subsystem 可执行文件，使用原生 process handle 取得退出码，并从 `rasterfall.log` 验证 120 帧 Outpost/Campaign/WHU/Campaign strict native 生命周期；不与其他 GPU 验证实例并发运行。
-> 源码核对基线补充：2026-09-20 HG-2C5 已签收。Windows worker `done=7/8` 来自旧 `__futex()` 全局 condition variable 的丢失唤醒；runtime 现动态解析 `WaitOnAddress`/`WakeByAddressAll`，不新增静态链接库。最终代码的 package、`--logic-test`、固定 300 帧、五种 fault injection 与 7分40秒动态 soak 均通过预期合同，零 renderer watchdog/fallback/readback/CPU copy/hot queue-idle。进程私有 `VK_LAYER_PATH` 加载 Khronos validation 后，300 帧与五种故障注入均零 VUID/SYNC-HAZARD。该 checkpoint 不执行 resize。
-> 源码核对基线补充：2026-09-20 Windows Intel 长时呈现门禁提高到至少 300 帧：唯一 backend swapchain + 双离屏 slot + 每 slot acquire/render-complete semaphore，并在 present 后 queue-idle。300/300 strict native 正常退出；短 120/140 帧 smoke 不再足以证明 present 生命周期稳定。
-> 源码核对基线补充：2026-09-20 HG-2C4 最新 Windows package 通过 strict native 120 帧、专用 mixed gate 与四 extent 140 帧 resize gate。`hardware_graphics_resize.ps1` 的资源检查适配双帧在途：允许 fence 完成前的非零 pin，但要求 `retired=0`、`failed=0` 且 pinned resources 不超过 live resources；loads 在 resize 全程稳定。
-> 源码核对基线补充：2026-09-19 `toy_window_open_native()` 在 Windows 为 native Vulkan 窗口创建 SDL software renderer；普通 `toy_window_open()` 仍使用原 SDL renderer。Core config 根据 `native_present` 选择入口，Wayland 共用原窗口实现。RTX 3050 strict native 10 帧零回退、零读回、零 CPU framebuffer copy；Fog 10 帧、三 extent native gate 与 Windows `--logic-test` 通过。
-> 源码核对基线补充：2026-09-19 GPU 最终帧诊断沿用 Windows normal player 与现有 Vulkan backend，不新增编译单元或资源。Windows `gpu-mixed-executor-test`、`gpu-raster-test` 和 `hardware_graphics_proof.ps1 -ExecutorGate/-MixedGate/-NativeGate` 覆盖批量 Draw 交错和 native 呈现；`hardware_graphics_resize.ps1 -NoRedirect` 在 PowerShell 重定向停滞时仍用 runtime log 验证 140 帧四 extent。Linux freestanding 路径不调用 hosted mixed executor。
-> 源码核对基线补充：2026-09-19 Windows normal player 已链接 `rf_gpu_mixed_executor.c` 与 `rf_gpu_resource_cache.c`，仅 strict native GPU 模式启用正常 mixed 帧；独立测试目标复用这些对象。`tools/hardware_graphics_resize.ps1` 等待窗口 140 帧上限已放宽为 180 秒，Intel 四种 extent 与 pin 稳态通过。Linux freestanding/self 未增加 hosted GPU 编译单元。
-> 源码核对基线补充：2026-09-19 Windows `gpu-mixed-executor-test` 增加 `--native-window` 模式，复用 SDL/Win32 native handle、Vulkan swapchain 与现有测试目标；`tools/hardware_graphics_proof.ps1 -NativeGate` 是三帧 resize/native 呈现实机 smoke。未增加玩家 CLI、编译单元或 package 资源。
-> 源码核对基线补充：2026-09-19 [HG-2B Core GPU executor](hardware-graphics-hg2b.md#core-真实离屏执行器)：`gpu/include/rf_gpu_mixed_executor.h` / `gpu/src/rf_gpu_mixed_executor.c` 已接通 frozen plan、registry cache 和 Raster ABI/indexed draw；整帧 preflight 先于 CLEAR，VIEWMODEL/Post 仅在尾段执行。`gpu-mixed-executor-test` / `-ExecutorGate` 为真实离屏门禁。混合 overlay/native/strict 和 normal producer 仍待实现；下方旧增量记录中的待实现项以本条及新 checkpoint 节为准。
-> 源码核对基线补充：2026-09-19 [HG-2B registry GPU cache](hardware-graphics-hg2b.md#registry-gpu-cache) 新增 hosted `gpu/src/rf_gpu_resource_cache.c`，仅由 Windows `gpu-resource-cache-test` 链接真实 registry/model runtime；根 `win-gpu-resource-cache-test` 转发此目标。未加入 normal player、Linux freestanding 或 self；无新玩家参数、shader 或资源。graphics 资源拆分仍由既有 backend `.inc` 和依赖规则编译。
-> 源码核对基线补充：2026-09-19 HG-2B [Core 混合帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础) 由既有 `rf_core_host.c` 包含 `.inc`，无新编译单元、CLI 或资产；根 Makefile 显式依赖头文件/实现/fixture，Windows `-MMD` 自动依赖覆盖；self 无独立 Core 规则需要扩充。`--logic-test` 进入同一 Core 实现。
-> 源码核对基线补充：2026-09-19 [HG-2B Raster ABI 分段基础](hardware-graphics-hg2b.md#raster-abi-分段基础hg-2b-进行中)：`rf_gpu_vulkan_raster_segment()` 使用独立范围/CLEAR/LOAD 参数，验证完整 stream；中间段不读回，VIEWMODEL/Post 留在末段。真实 graphics 交错与 Core/native 接入仍待实现。
-> 源码核对基线补充：2026-09-19 [HG-2B 整数深度与 target bridge](hardware-graphics-hg2b.md) 已实现 GPU 整数裁剪/投影/深度、GPU color/depth 往返转换及 attachment LOAD；Intel 前置门禁通过。Raster ABI CLEAR/LOAD 分段基础已在 Intel 验证；compute/graphics 桥接、Core 混合顺序与 strict native 门禁仍待实现，正常帧不变。
-> 源码核对基线补充：2026-09-19 [HG-2A](hardware-graphics-hg2a.md)：根 Makefile 的 `gpu-graphics-test` / `win-gpu-graphics-test` 与 Windows `gpu-graphics-test` 构建独立 hosted proof；graphics ABI/shader 已纳入 backend 依赖。无新增 freestanding/self 编译单元或玩家 CLI/资产；Windows package 与原 compute 基线通过。
-> 源码核对基线补充：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 新增资源编译单元，根 Makefile 正常/self 与 Windows 列表同步；Windows 独立 `rasterfall-resource-test.exe` 验证真实 world switch、CPU renderer resize 和释放，不进入玩家 package；`tools/hardware_graphics_resize.ps1` 检查 native/Fog resize 与 registry 稳态。
-> 源码核对基线补充：2026-09-19 [HG-1A Draw/reference](hardware-graphics-hg1a.md) 的 header/inc 已加入根 Makefile 正常/self 依赖，Windows 自动依赖覆盖；`--logic-test` 增加无外部资产 Draw 对照，Windows package 与 Intel 基线验收通过。
-> 源码核对基线补充：2026-09-19 HG-1A 前置修复沿用共享 renderer 与现有 Windows package/differential 编译列表；基线脚本先运行完整 differential suite，`-Checkpoint` 标注 manifest，详见 [修复记录](hardware-graphics-hg1-preflight.md)。
-> 源码核对基线补充：2026-09-19 HG-0 冻结 [Hardware Graphics 架构与基线](hardware-graphics-architecture.md)；显式 `--frame-audit` 改为逐帧输出，测量脚本记录各入口独立口径与原始证据。
-> 源码核对基线补充：Windows `--logic-test` 聚合测试的大型局部 fixture 曾超过默认主线程栈并以 0xC00000FD 退出；`windows/Makefile` 将链接栈 reserve 设为 16 MiB，正式构建现可完整通过逻辑测试。栈按需提交，不改变玩法或 GPU 帧逻辑。
-> 源码核对基线补充：2026-09-19 Windows strict GPU 老地图全向扫视覆盖 Texture V1 高命令量 pack；纹理 handle 改为本帧唯一视图表查找，避免方向相关的 watchdog 退出。
-> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：Windows normal binary 已链接共享 Vulkan backend、Raster V1、Texture V1、Post-Raster V1、overlay composite 和 Win32 swapchain presentation；Core 在 viewmodel barrier 之前按层保留 pre-post command。纯 Raster V1 effects command 与 VIEWMODEL span marker 可随 retained stream 消费；transparent、effects direct pixels 或 generic unsupported command 会记录原因并使整帧按原批次 CPU replay。默认仍为 CPU，GPU 由命令行显式选择。
-> 当前平台边界：Intel Iris Xe 的 strict/Fog smoke、正式地图 320 帧零回退波次复现与窗口拉伸已确认，GPU 功能阶段结束；最近性能快照见 [GPU 当前状态](gpu-current-state.md)。Windows window/input/audio 仍由 SDL2 提供，SDL-free Native Platform 尚未实现。
-> 源码核对基线补充：Windows 启动地图加载的容量型 Map IR 改为临时堆分配，成功与失败均释放；不依赖扩大线程栈，详见 map-format.md 的 Runtime Bridge。
-> 源码核对基线补充：Static World Lighting V2 Phase D Linux GCC freestanding / Windows MinGW 构建通过；Linux headless capture 验收，Windows仅build，Wayland交互环境不可用，见 [Phase D](static-world-lighting-phase-d.md)。
-> 源码核对基线补充：Static World Lighting Phase B 复用现有编译单元与顶点亮度 rasterizer；Linux/self world-light 规则补 Runtime Map header 依赖，Windows 既有 GAME_SRCS/-MMD 覆盖；ray slab 的 double 仅用于 bake，不引入宿主 libc。
-> 源码核对基线补充：Static World Lighting Phase A 的 `rasterfall_world_light.c` 已接入 Linux Game 对象、适用 self 规则与 Windows GAME_SRCS；无宿主 libc 或新资源依赖。
-> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；`make win-rasterfall` 显式进入 Windows `all`；正式 squad roster 编译单元已纳入 Linux/Windows；Rasterfall 对象无条件重建规则；GB2312 字库进入 Linux embedded 与 Windows 资产包）
+> 源码核对基线：`208532c`
 
 ## 当前 Windows GPU 验收状态
 

@@ -63,6 +63,8 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_skinned_resource_create(
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
+int rf_gpu_graphics_resource_set_frame_dynamic(
+    struct rf_gpu_graphics_resource *resource);
 int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
 /* Diagnostic proof for dynamic geometry: copy the device-local vertex buffer
@@ -80,6 +82,8 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
 /* Validate the currently bound resource/draw without touching target contents. */
 int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_draw *draw);
+int rf_gpu_graphics_validate_dynamic_draw(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draw);
 int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,

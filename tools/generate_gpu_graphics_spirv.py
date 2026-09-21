@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile HG-2A shaders; checked-in SPIR-V keeps builds SDK-free."""
+"""Compile GPU-GRAPHICS shaders; checked-in SPIR-V keeps builds SDK-free."""
 import pathlib
 import struct
 import subprocess
