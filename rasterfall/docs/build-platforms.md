@@ -1,7 +1,15 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 源码核对基线：`fc75009`；Windows PowerShell 主开发 lane 与 WSL 支持边界
+
+## 当前开发平台优先级
+
+Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell 是主要开发、构建编排、物理 GPU
+验证和签收环境；`windows/NativeCodex.ps1`、package root、帧审计和实际适配器输出构成当前事实入口。
+共享源码和 freestanding Linux 路径继续保留，但 WSL 仅作为辅助/历史兼容路径，不保证随主线同步更新、
+可构建或运行正确。WSL/llvmpipe/hosted Vulkan 结果不能替代 Windows native present、驱动、窗口生命周期
+和性能验收。
 
 ## 当前 Windows GPU 验收状态
 
@@ -20,6 +28,10 @@ Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会�
 `rasterfall/assets`；`rasterfall-embedded` 才嵌入公开资源。
 GB2312 字库位于 `rasterfall/assets/fonts/`，普通运行缺少 `gb2312-16.rfh` 时会明确报错并停止；
 embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源。
+
+Linux 原生或 freestanding 修改仍应尽量保持构建正确；但不要把 WSL 当作 Rasterfall 当前主要开发环境。
+若 WSL 构建、Wayland、音频或 Vulkan 路径落后，应明确记录为未维护/未覆盖，而不是据此否定 Windows
+主线结果，也不要求 GPU 功能开发等待 WSL 修复。
 
 平台相关实现主要是：
 

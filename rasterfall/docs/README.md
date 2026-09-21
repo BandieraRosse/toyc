@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 源码核对基线：`fc75009`；当前 GPU 开发方向、Windows PowerShell 主 lane 与 WSL 支持边界
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -19,6 +19,11 @@
 ## 当前 GPU 验收状态
 
 Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
+
+Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后续不应直接按编号扩展新 HG 阶段。
+当前优先级是 Windows 原生 PowerShell 下的跨设备验证、剩余 RasterCmd 成本归因和帧时间/P95 分解，
+再由数据决定下一批硬件迁移内容。Windows PowerShell 是主要开发与签收 lane；WSL 仅保留辅助用途，
+不保证同步更新或正确性，不能作为 native GPU 结论。
 
 ## 先读哪一篇
 

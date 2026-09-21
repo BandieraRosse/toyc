@@ -1,7 +1,9 @@
 # Rasterfall 项目协作说明
 
 本仓库源自 Toyc：`compiler/` 是面向 Linux x86_64 的自托管 C 工具链，`lib/` 和 `include/`
-包含 Tinylibc 与公共平台设施。当前开发重点是 `rasterfall/`。编译器时期的完整代理说明保存在
+包含 Tinylibc 与公共平台设施。当前开发重点是 `rasterfall/`，并处于 GPU 渲染持续开发阶段。
+Rasterfall 的主要开发、构建编排、实机验证和签收环境已经转为 Windows 原生 PowerShell；WSL
+仅保留为辅助/历史兼容路径，不保证随主线同步更新、可构建或运行结果正确。编译器时期的完整代理说明保存在
 `docs/AGENTS-toyc-history.md`；用户文档和语言特性仍分别以 `README.md`、`README_en.md` 和
 `toyc-c-features.md` 为准。
 
@@ -55,6 +57,8 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
 - `rasterfall/docs/gpu-current-state.md`：GPU 当前实现、实机验证和性能快照入口；新 GPU
   硬件开发计划从此状态重新立项，旧阶段计划仅保存在 `rasterfall/docs/archive/`。
+- `rasterfall/docs/windows-native-codex.md`：当前 Rasterfall 主开发 lane；PowerShell 构建、package、
+  GPU 实机运行和验收入口。
 - `rasterfall/docs/animation-architecture.md`、`rasterfall/docs/network-architecture.md`：专题设计。
 - `rasterfall/docs/asset-sources.md`：资源来源、许可状态和发布边界。
 - `rasterfall/docs/archive/`：历史现场记录，不作为当前设计依据。
@@ -79,6 +83,9 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - Rasterfall 不要求由 Toyc 编译。Linux 版本以 GCC 验证，不为 Toyc 兼容限制 Rasterfall 实现。
 - Linux 和 Windows 共用玩法与渲染源码；平台差异优先留在公共平台层或 `windows/src/`。
 - 保留 freestanding Linux 路径，不无意引入宿主 libc 依赖。
+- 当前 Rasterfall 开发决策以 Windows 原生 PowerShell lane 和物理 GPU 证据为准。WSL、llvmpipe
+  或 Linux hosted Vulkan 可以用于辅助编译和 correctness 诊断，但不能代替 Windows native present、
+  驱动、窗口生命周期与性能验收；WSL 路径不承诺持续维护或正确性。
 
 ## 重要目录
 
@@ -93,19 +100,17 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 
 ## 构建与验证
 
-```sh
-make generate-assets
-make app-rasterfall
-build/rasterfall
-build/rasterfall --logic-test
-
-make win-deps
-make win-rasterfall
-make win-rasterfall-package
+```powershell
+.\windows\NativeCodex.ps1 doctor
+.\windows\NativeCodex.ps1 build
+.\windows\NativeCodex.ps1 test
+.\windows\NativeCodex.ps1 gpu-test
+.\windows\NativeCodex.ps1 acceptance
 ```
 
-Linux 默认从仓库目录读取资产；内嵌公开资源使用 `make rasterfall-embedded`。可用
-`make RASTERFALL_OPT=-O0 build/rasterfall` 做优化级别对照。
+这是当前 Rasterfall 的主要开发闭环。Linux/freestanding 构建仍可使用 `make rasterfall`、
+`build/rasterfall --logic-test`；WSL 可继续尝试这些入口，但属于 best-effort 辅助路径，不作为
+当前 GPU 开发的签收依据，也不保证其依赖、窗口、音频或 Vulkan 路径保持可用。
 
 修改后先运行最近的验证，再按风险扩大：玩法/session/map 至少构建并运行 `--logic-test`；渲染、
 模型和动画使用相关 dump、benchmark 或诊断参数并在可用时实际启动；网络先跑纯逻辑用例，再按
@@ -118,8 +123,9 @@ Linux 默认从仓库目录读取资产；内嵌公开资源使用 `make rasterf
 
 ## PowerShell 与 Windows 进程注意事项
 
-在 Windows 验证中，优先使用仓库已有的 `windows/NativeCodex.ps1` 和明确的 package 工作目录。
-PowerShell/Win32 进程行为有以下已确认陷阱；后续 Agent 遇到新的可复现问题时，应在本节继续补充：
+Rasterfall 当前主要在 Windows 原生 PowerShell 下开发。构建、运行、GPU 测试和签收优先使用仓库已有的
+`windows/NativeCodex.ps1` 和明确的 package 工作目录；不要先在 WSL 复现再把 WSL 结果当作 Windows
+GPU 结论。PowerShell/Win32 进程行为有以下已确认陷阱；后续 Agent 遇到新的可复现问题时，应在本节继续补充：
 
 - `rasterfall.exe` 使用 GUI subsystem。PowerShell 的 `& .\rasterfall.exe ...`、`$LASTEXITCODE`，以及
   `cmd /c` 在不同的输出继承或重定向方式下可能提前返回，不能据此证明子进程已退出。执行长时或故障

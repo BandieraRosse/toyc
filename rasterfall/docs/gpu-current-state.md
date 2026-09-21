@@ -1,10 +1,21 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 源码核对基线：`fc75009`；HG-5B 签收、统一 GPU 验收脚本及当前开发方向
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。阶段过程与历史性能数字见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
+
+## 当前开发阶段
+
+Rasterfall 当前处于 GPU 渲染持续开发阶段。HG-0 至 HG-5B 已完成，现阶段不是继续按历史计划机械增加
+HG 编号，而是先补强 Windows 物理 GPU 覆盖、恢复专项稳定性矩阵，并量化剩余 RasterCmd 和整帧耗时。
+主要开发、构建编排、GPU 实机运行和签收环境为 Windows 原生 PowerShell，入口是
+`windows/NativeCodex.ps1` 与本页列出的统一验收脚本。
+
+共享 C 源码和 freestanding Linux 路径继续保留。WSL、llvmpipe 和 Linux hosted Vulkan 只适合辅助编译
+或 correctness 诊断；WSL 路径不保证随 GPU 主线同步更新、可构建或运行结果正确，也不能替代 Windows
+native present、物理驱动、窗口生命周期和性能验收。
 
 ## 当前支持范围
 
@@ -35,6 +46,17 @@
 - frame-dynamic 角色资源不使用跨实例聚合 position bound 代替单 Draw bound；`thin-far` 是 Full
   门禁中的固定回归场景。
 
+## 当前性能判断
+
+HG-5B 最终 Intel Iris Xe 基线中，near 30/60 敌人的稳态 whole-loop 中位数约为
+29.337/54.782 ms，GPU Raster 约为 11.449/27.363 ms，GPU Draw 约为 1.816/1.814 ms。
+这些数字只用于确定当前优化优先级，不构成跨机器或跨厂商性能承诺。
+
+60 敌人场景中 Draw 已不是主要成本；继续微调 Draw 或 skinning shader 预计不是最高收益方向。
+下一轮工作应先按 producer 分类统计剩余 RasterCmd、bridge、透明/特效、高级材质、gear/weapon 和
+特殊敌人 rigid 内容，并分解 CPU worker、slot wait、acquire、submit、present 与 GPU 阶段时间。
+在获得这份成本清单前，不预设新的 HG-6 迁移范围。
+
 ## 验证命令
 
 先完成 Windows package 与 hosted GPU test targets，再从仓库根运行：
@@ -60,3 +82,20 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_metrics.ps1 `
 底层独立目标继续保留：`rf-gpu-graphics-test`、`rf-gpu-raster-test`、
 `rf-gpu-raster-diff-test`、resource-cache test 和 mixed-executor test。它们验证 ABI、资源与执行器
 合同，不由窗口程序替代。
+
+`-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。四 extent resize、Vulkan validation/
+sync validation、fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/native 人工组图属于
+专项签收；涉及 presenter、同步、资源生命周期、驱动兼容或发布判断时必须按风险单独补跑并报告。
+
+## 下一阶段立项条件
+
+新 GPU 阶段应先满足以下前置条件：
+
+- 至少在 Intel 与另一种物理 GPU 上运行当前 Full，明确厂商差异；条件允许时补 AMD。
+- presenter/synchronization 改动恢复 resize、validation、fault injection 和长时 soak。
+- 新增按 producer 分类的 RasterCmd、bridge、CPU encode 与 GPU timestamp 审计。
+- 使用同一 package、固定电源/冷启动条件做多轮 median、P95/P99 和最慢帧分类。
+
+若审计确认主要成本来自可迁移 opaque 内容，下一阶段可以限定为 gear、weapon、rigid enemy part 或
+正式支持的 textured opaque Draw；透明、粒子、overlay、复杂 VFX、动态光照和新材质体系不应顺带混入。
+若主要成本来自 compute Raster 或同步边界，则应优先做调度和吞吐优化，而不是扩大 Draw 类型。

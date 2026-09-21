@@ -41,13 +41,28 @@ Rasterfall 是一个使用仓库内 Tinylibc、由 GCC 构建的第一人称射�
 freestanding 运行时；Windows 版本通过独立平台层使用 SDL2、Win32 线程/同步和
 Winsock，不要求 Toyc 输出 PE/COFF。
 
+Rasterfall 当前处于 GPU 渲染持续开发阶段。主要开发、构建编排、物理 GPU 验证和签收环境已经转为
+Windows 原生 PowerShell，统一入口为 `windows/NativeCodex.ps1`。共享 C 源码和 freestanding Linux
+路径仍保留；WSL 仅作为辅助/历史兼容环境，不保证随主线同步更新、可构建或运行结果正确，也不能替代
+Windows native present 和驱动实机结论。
+
 Rasterfall 的用户构建和启动入口见 [`rasterfall/README.md`](rasterfall/README.md)；维护者导航和
 模块边界见 [`rasterfall/docs/README.md`](rasterfall/docs/README.md)。
 
 模型、动画格式、重定向与 IK 的模块边界见
 [`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)。
 
-Linux 构建和运行（从项目资源目录读取）：
+当前推荐的 Windows 原生开发闭环：
+
+```powershell
+.\windows\NativeCodex.ps1 doctor
+.\windows\NativeCodex.ps1 build
+.\windows\NativeCodex.ps1 test
+.\windows\NativeCodex.ps1 gpu-test
+.\windows\NativeCodex.ps1 acceptance
+```
+
+保留的 Linux/freestanding 构建和运行入口（从项目资源目录读取）：
 
 ```sh
 make rasterfall

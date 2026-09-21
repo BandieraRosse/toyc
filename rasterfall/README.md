@@ -1,18 +1,32 @@
 # Rasterfall
 
-> 文档更新：2026-09-12
-> 源码核对基线：工作区（Enemy Visual V2 可选家族；Enemy Procedural Rig V1 特感与固定视觉验收；易变参数以 `build/rasterfall --help` 为准）
+> 文档更新：2026-09-21
+> 源码核对基线：`fc75009`；当前 GPU 主线、Windows PowerShell 开发入口与 WSL 支持边界
 
 Rasterfall 是 Toyc 仓库中的 freestanding 第一人称合作射击实验，使用软件光栅器，包含地图、
 战斗、波次、AI 队友、音频、联机和静态/骨骼模型。Linux 版本使用仓库内 Tinylibc 与 Wayland/音频
 后端；Windows 版本使用 MinGW-w64 和 SDL2。
+
+Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell 是主要开发、构建编排、物理 GPU
+验证和签收环境；WSL 仅保留为辅助/历史兼容路径，不保证持续更新、可构建或运行正确。Linux/freestanding
+源码路径继续保留，但 WSL/llvmpipe 结果不能替代 Windows native present、驱动和窗口生命周期验收。
 
 本页是用户入口，只保留构建、启动和稳定工具入口。维护者应从
 [`docs/README.md`](docs/README.md) 开始；资产、模型、地图、网络和平台细节分别见对应专题文档。
 
 ## 构建与运行
 
-在仓库根目录构建 Linux 版本：
+当前推荐从仓库根目录使用 Windows 原生 PowerShell：
+
+```powershell
+.\windows\NativeCodex.ps1 doctor
+.\windows\NativeCodex.ps1 build
+.\windows\NativeCodex.ps1 test
+.\windows\NativeCodex.ps1 gpu-test
+.\windows\NativeCodex.ps1 acceptance
+```
+
+保留的 Linux/freestanding 构建入口：
 
 ```sh
 make generate-assets
@@ -27,7 +41,7 @@ make rasterfall-embedded
 build/rasterfall-embedded
 ```
 
-Windows 版本使用独立工具链，不要求 Toyc 输出 PE/COFF：
+底层 Windows Makefile 入口仍可直接使用，但日常开发优先使用上述 PowerShell wrapper：
 
 ```sh
 make win-deps

@@ -44,10 +44,27 @@ The Linux build uses Wayland, ALSA/WSLg audio, and the repository's freestanding
 runtime. The Windows build is isolated in a platform layer using SDL2, Win32
 threads/synchronization, and Winsock; Toyc does not need to emit PE/COFF.
 
+Rasterfall is currently in an active GPU-rendering development phase. Native Windows
+PowerShell is the primary environment for development, build orchestration, physical-GPU
+validation, and acceptance, with `windows/NativeCodex.ps1` as the unified entry point.
+The shared C sources and freestanding Linux path remain, but WSL is now an auxiliary and
+legacy-compatibility environment: it is not guaranteed to stay current, build successfully,
+or produce correct runtime results, and it cannot replace Windows native-present evidence.
+
 See [`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)
 for the model, animation-format, retargeting, and IK module boundaries.
 
-Linux build and run:
+Recommended native Windows development loop:
+
+```powershell
+.\windows\NativeCodex.ps1 doctor
+.\windows\NativeCodex.ps1 build
+.\windows\NativeCodex.ps1 test
+.\windows\NativeCodex.ps1 gpu-test
+.\windows\NativeCodex.ps1 acceptance
+```
+
+Retained Linux/freestanding build and run path:
 
 ```sh
 make rasterfall
@@ -65,8 +82,9 @@ The Linux program reads assets from `rasterfall/assets/`. The previous single-fi
 packaging mode remains available as `make rasterfall-embedded` or
 `make app-rasterfall-embedded`, producing `build/rasterfall-embedded`.
 
-The Windows build requires MinGW-w64, CMake, Ninja, and SDL2 build dependencies on
-the Linux host. Prepare them once, then build `build/rasterfall.exe`:
+The lower-level Windows Makefile path remains available, but day-to-day development should
+use the PowerShell wrapper above. Its MinGW-w64/MSYS2 and SDL2 requirements are documented
+in `rasterfall/docs/windows-native-codex.md`. The legacy make entry points are:
 
 ```sh
 make win-deps

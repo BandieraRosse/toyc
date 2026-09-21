@@ -1,14 +1,18 @@
 # Windows Native Codex
 
-> 文档更新：2026-09-19
+> 文档更新：2026-09-21
 > 源码核对基线补充：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退波次与窗口拉伸已确认；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、当前 `rasterfall_options.c`
 
-这是 Rasterfall 的 Windows 原生开发 lane，不替代 Linux/WSL。唯一入口是
+这是 Rasterfall 当前主要且优先的开发、构建编排、GPU 实机验证和签收 lane。唯一入口是
 `windows/NativeCodex.ps1`；它固定使用 MSYS2 `mingw64` + `usr/bin`，将对象、exe
 和 package 放入 `build-windows/`，并且始终从 `build-windows/rasterfall-windows`
 运行真实 `rasterfall.exe`。
+
+共享 C 源码与 freestanding Linux 路径继续保留，但 WSL 现在只属于辅助/历史兼容环境，不保证同步更新、
+可构建或结果正确。WSL/llvmpipe/hosted Vulkan 可以帮助定位纯逻辑或 ABI 问题，不能替代 Windows native
+present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 
 ## 最小软件
 
