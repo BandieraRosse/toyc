@@ -1,4 +1,5 @@
 #include "rasterfall_enemy_visual.h"
+#include <limits.h>
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
  *
@@ -3039,6 +3040,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int coordinate_axes = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int rendered_frames = 0, scene_pixels = 0;
+#ifndef TOYC_WINDOWS
+    unsigned int watchdog_warm_world = UINT_MAX;
+#endif
     int display_fps = 0, fps_window_frames = 0;
     int fire_edge = 0, shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
@@ -3345,9 +3349,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             rf_core_renderer_name(core.gpu_frame.renderer),
             rf_gpu_policy_name(core.gpu.policy));
 #ifndef TOYC_WINDOWS
-        /* WSL's first CPU frame performs lazy model/resource preparation on
-         * the software-render path.  Let that one warm-up frame finish; the
-         * normal 200 ms interactive watchdog is restored after it presents. */
+        /* Each world's first CPU frame performs lazy model/resource
+         * preparation on the software-render path.  The initial world starts
+         * with the watchdog disabled; world transitions repeat this warm-up
+         * below until their first frame presents successfully. */
         if (!options.renderer_mode)
             toy_renderer_set_frame_budget(&renderer, 0);
 #endif
@@ -4458,6 +4463,11 @@ startup_again:
             core.gpu_frame.character_skinning=options.gpu_character_skinning;
             core.gpu_frame.character_vertex_diff_requested=
                 options.gpu_character_vertex_diff && rendered_frames + 1 == 30;
+#ifndef TOYC_WINDOWS
+            if (!options.renderer_mode &&
+                watchdog_warm_world != (unsigned int)session.world_id)
+                toy_renderer_set_frame_budget(&renderer, 0);
+#endif
             {
                 int64_t audit_render_start = rf_core_time_us(&core);
                 audit_prepare_us = audit_render_start - audit_loop_start;
@@ -4492,8 +4502,11 @@ startup_again:
                            &t_stage, 0, 0);
             rendered_frames++;
 #ifndef TOYC_WINDOWS
-            if (!options.renderer_mode && rendered_frames == 1)
+            if (!options.renderer_mode &&
+                watchdog_warm_world != (unsigned int)session.world_id) {
+                watchdog_warm_world = (unsigned int)session.world_id;
                 toy_renderer_set_frame_budget(&renderer, 200);
+            }
 #endif
             fps_window_frames++;
             now = rf_core_time_us(&core);

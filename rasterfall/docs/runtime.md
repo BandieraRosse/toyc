@@ -95,7 +95,7 @@ world effects、viewmodel、HUD、pause、scoreboard、debug overlay、labels �
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
 
 正常窗口默认使用 CPU renderer，Windows 与 freestanding Linux/WSL 的默认 framebuffer 均为
-1280×720。WSL CPU 首帧完成懒加载预热后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV
+1280×720。WSL CPU 在每个 world 的首帧完成懒加载预热并成功 present 后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV
 和权威状态不依赖该策略。WSL 的 GPU、音频与额外窗口集成仍不属于 CPU 最小可玩承诺。
 
 本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后

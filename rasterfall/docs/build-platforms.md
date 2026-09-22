@@ -30,8 +30,8 @@ Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会�
 GB2312 字库位于 `rasterfall/assets/fonts/`，普通运行缺少 `gb2312-16.rfh` 时会明确报错并停止；
 embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源。
 
-Windows 与 freestanding Linux/WSL 均保持 1280×720 默认窗口。WSL CPU 首帧允许完成模型与表现
-资源的懒加载预热；首次成功 present 后恢复正常的 200 ms 交互帧 watchdog。该预热不改变地图、
+Windows 与 freestanding Linux/WSL 均保持 1280×720 默认窗口。WSL CPU 在每个新 world 的首帧允许完成模型与表现
+资源的懒加载预热；该 world 首次成功 present 后恢复正常的 200 ms 交互帧 watchdog。该预热不改变地图、
 玩法、相机 FOV 或 Windows GPU 验收工作负载。
 
 Linux 原生或 freestanding 修改仍应保持上述 WSL CPU 最小闭环；但不要把 WSL 当作 Rasterfall 当前
