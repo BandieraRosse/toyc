@@ -7738,9 +7738,21 @@ fail:
     return -1;
 }
 
+struct modular_equipment_submission {
+    const struct toy_game_actor *actor;
+    const struct rasterfall_character_visual_recipe *recipe;
+    struct rasterfall_rigid_transform actor_to_world;
+    int actor_index;
+    int weapon;
+    int have_weapon_source;
+    int action_trace_changed;
+    int scene_light_override_q8;
+    int valid;
+};
+
 static int render_modular_ai_teammate(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_actor *actor,
-    int actor_index)
+    int actor_index, struct modular_equipment_submission *deferred)
 {
     struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
     const struct rasterfall_character_profile *profile;
@@ -7986,6 +7998,19 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     ai_submission_stats.body_triangle_us +=
         model_setup_timing.body_triangles_us - body_timing_before.body_triangles_us;
     if (pixels < 0) return -1;
+    if (deferred) {
+        deferred->actor = actor;
+        deferred->recipe = recipe;
+        deferred->actor_to_world = actor_to_world;
+        deferred->actor_index = actor_index;
+        deferred->weapon = weapon;
+        deferred->have_weapon_source = have_weapon_source;
+        deferred->action_trace_changed = action_trace_changed;
+        deferred->scene_light_override_q8 = active_scene_light_override_q8;
+        deferred->valid = 1;
+        ai_submission_stats.modular_actors++;
+        return pixels;
+    }
     if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_GEAR) < 0)
         return -1;
     command_start = renderer->cmd_count;
@@ -8016,6 +8041,51 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     ai_submission_stats.weapon_commands += renderer->cmd_count - command_start;
     ai_submission_stats.weapon_us += render_monotonic_us() - phase_start;
     ai_submission_stats.modular_actors++;
+    return pixels;
+}
+
+static int render_modular_ai_equipment(struct toy_renderer *renderer,
+    const struct camera *camera, const struct modular_equipment_submission *submission)
+{
+    struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
+    const struct toy_game_actor *actor;
+    struct rasterfall_model_instance *instance;
+    unsigned long command_start;
+    long phase_start;
+    int pixels = 0;
+    if (!renderer || !camera || !submission || !submission->valid ||
+        submission->actor_index < 0 ||
+        submission->actor_index >= TOY_GAME_MAX_ACTORS)
+        return -1;
+    actor = submission->actor;
+    instance = &runtime->instances[submission->actor_index];
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_GEAR) < 0)
+        return -1;
+    command_start = renderer->cmd_count;
+    phase_start = render_monotonic_us();
+    pixels = render_modular_cached_passive_equipment(renderer, camera,
+        submission->recipe, runtime->gear,
+        &runtime->pose_cache[submission->actor_index],
+        &submission->actor_to_world);
+    if (pixels < 0) return -1;
+    ai_submission_stats.gear_commands += renderer->cmd_count - command_start;
+    ai_submission_stats.gear_us += render_monotonic_us() - phase_start;
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_WEAPON) < 0)
+        return -1;
+    command_start = renderer->cmd_count;
+    phase_start = render_monotonic_us();
+    if (submission->have_weapon_source && submission->weapon >= 0 &&
+        rasterfall_weapon_asset_profile(submission->weapon)->skeletal)
+        pixels += render_modular_active_weapon(renderer, camera, instance,
+            &submission->actor_to_world, submission->weapon,
+            actor->muzzle_flash_ms, submission->action_trace_changed,
+            &runtime->pose_cache[submission->actor_index].weapon_placement);
+    else if (submission->weapon >= 0)
+        pixels += render_actor_model_weapon(renderer, camera, actor->x, actor->z,
+            actor->sy, actor->cy, submission->weapon, actor->muzzle_flash_ms,
+            actor->animation.id, actor->animation.time_ms, 0, 0);
+    ai_submission_stats.weapon_commands += renderer->cmd_count - command_start;
+    ai_submission_stats.weapon_us += render_monotonic_us() - phase_start;
     return pixels;
 }
 
@@ -8091,7 +8161,7 @@ static int render_humanoid_debug(struct toy_renderer *renderer,
         TOY_GAME_ANIM_FIRE : TOY_GAME_ANIM_IDLE;
     actor.animation.time_ms = active_session->humanoid_debug_time_ms;
     return render_modular_ai_teammate(renderer, camera, &actor,
-                                      TOY_GAME_MAX_ACTORS);
+                                      TOY_GAME_MAX_ACTORS, NULL);
 }
 
 /* A triangle outside one viewport plane cannot cover a pixel. Compact only
@@ -8198,6 +8268,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
 {
     int i, pixels = 0;
     int saved_scene = active_scene_light_override_q8;
+    struct modular_equipment_submission deferred[TOY_GAME_MAX_ACTORS];
+    int deferred_count = 0;
+    memset(deferred, 0, sizeof(deferred));
     memset(&ai_submission_stats, 0, sizeof(ai_submission_stats));
     ai_submission_scope = 1;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -8398,12 +8471,16 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         if (rasterfall_character_visual_recipe_for_character(
                 actor->character_id)) {
             struct ai_actor_command_scope scope;
+            struct modular_equipment_submission *submission =
+                &deferred[deferred_count];
             ai_actor_command_scope_begin(renderer, &scope);
             int modular_pixels = render_modular_ai_teammate(renderer, camera,
-                                                             actor, i);
+                                                             actor, i,
+                                                             submission);
             ai_actor_command_scope_end(renderer, &scope);
             if (modular_pixels >= 0) {
                 pixels += modular_pixels;
+                if (submission->valid) deferred_count++;
                 continue;
             }
             /* Presentation assets are optional. Fall through to the existing
@@ -8444,6 +8521,26 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             ai_submission_stats.procedural_actors++;
             ai_actor_command_scope_end(renderer, &scope);
         }
+    }
+    /* All deferred bodies are opaque WORLD Draws. Submit them as one run,
+     * then retain the original actor order for opaque gear/weapon RasterCmds.
+     * This removes actor-local backend alternation without crossing a
+     * transparent/effects layer or changing pose and placement ownership. */
+    for (i = 0; i < deferred_count; i++) {
+        struct ai_actor_command_scope scope;
+        int equipment_pixels;
+        active_scene_light_override_q8 =
+            deferred[i].scene_light_override_q8;
+        ai_actor_command_scope_begin(renderer, &scope);
+        equipment_pixels = render_modular_ai_equipment(renderer, camera,
+                                                        &deferred[i]);
+        ai_actor_command_scope_end(renderer, &scope);
+        if (equipment_pixels < 0) {
+            active_scene_light_override_q8 = saved_scene;
+            ai_submission_scope = 0;
+            return -1;
+        }
+        pixels += equipment_pixels;
     }
     active_scene_light_override_q8 = saved_scene;
     if (active_session && active_session->content.campaign_fixture_enabled) {

@@ -167,7 +167,7 @@ static int architecture_capture(const char *scenario, const char *output)
         actor.cy=-1024; actor.current_slot=weapon->slot;
         actor.slots[weapon->slot].weapon=TOY_GAME_WEAPON_AK;
         actor.animation.id=TOY_GAME_ANIM_IDLE;
-        if(render_modular_ai_teammate(&renderer,&camera,&actor,i)<0) goto done;
+        if(render_modular_ai_teammate(&renderer,&camera,&actor,i,NULL)<0) goto done;
     }
     if(!family && !detail) {
         for(int i=0;i<3;i++) {
@@ -417,7 +417,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
             actor.animation.id = actions[i]; actor.animation.time_ms = 180;
             actor.moving = actions[i] == TOY_GAME_ANIM_MOVE;
             actor.muzzle_flash_ms = actions[i] == TOY_GAME_ANIM_FIRE ? 40 : 0;
-            if (render_modular_ai_teammate(&renderer, &camera, &actor, i) < 0)
+            if (render_modular_ai_teammate(&renderer, &camera, &actor, i, NULL) < 0)
                 goto done;
         }
     }
@@ -574,7 +574,7 @@ int rasterfall_render_squad_acceptance(const char *model_dir,
             actors[actor_index].z =
                 -(int)((long long)camera.view.sy * offset / 1024);
             if (render_modular_ai_teammate(&renderer, &camera,
-                                           &actors[actor_index], actor_index) < 0)
+                    &actors[actor_index], actor_index, NULL) < 0)
                 failed = 1;
         }
         if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0 ||

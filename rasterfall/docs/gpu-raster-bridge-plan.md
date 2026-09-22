@@ -1,7 +1,7 @@
 # GPU Raster / Bridge 收敛计划
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-1 连续 Draw run bridge 合并工作区
+> 源码核对基线：RB-1 模块化队友 opaque 提交编排工作区
 
 本文定义 HG-0 至 HG-5B 完成后的下一轮 GPU 性能工作。它不是新的通用 Graphics 功能阶段，也不继续
 沿用历史 HG 编号；目标是先建立可信、可复现的帧耗时归因，再收敛剩余 RasterCmd、Draw/Raster bridge
@@ -170,9 +170,13 @@ Raster/Draw segment 的合并，而不是绕过深度或层顺序合同。
 producer 边界仍保留在 frozen frame 中用于命令归因，但不再单独触发 import/export；GPU timestamp 预留和
 Core bridge event 审计均改为按实际 Draw run 计数。mixed-executor 回归显式覆盖跨 producer 的相邻 Draw，
 保持原绘制顺序、像素/depth differential，并要求只产生一次 import/export。Windows native `gpu-test`
-已通过。当前 normal near 场景仍有 5 个由真实 RasterCmd 隔开的 Draw run、10 次 transfer，因此此项尚未
-满足 RB-1 的场景级下降退出条件；下一步应根据这些交替点决定 producer 编排或迁移边界，不能把诊断 span
-减少误报为实际收益。
+已通过。随后 frame audit 将 normal near 的 5 个 Draw run 定位为逐个模块化队友的
+`body Draw -> gear/weapon Raster` 交替。正常 AI 提交现在先冻结所有可见模块化队友的 body Draw，再按原 actor
+顺序提交其 opaque gear/weapon RasterCmd；pose、IK、attachment、逐 actor 光照和资源所有权不变，且不跨越
+transparent/effects 层。相同 native `gpu-test` 场景的实际 Draw run 从 5 降到 2，transfer 从 10 降到 4，
+bridge bytes 从 73,728,000 降到 29,491,200。剩余两段由前置 world/map Draw 与其后的真实 Raster 内容隔开，
+不能只凭 opaque 分类继续跨越。该单次门禁证明结构计数下降，性能退出结论仍需固定 workload 多轮数据和
+第二物理 GPU 复核；Windows `gpu-test`、Quick 8/8 与 Full 正确性门禁已通过。
 
 实施项：
 

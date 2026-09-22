@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-1 连续 Draw run bridge 合并工作区
+> 源码核对基线：RB-1 模块化队友 opaque 提交编排工作区
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -39,6 +39,12 @@ producer 身份只形成诊断 span，不独立构成 target 可见性边界。�
 中间没有 Raster span，mixed executor 按原顺序将它们编码为一个 graphics batch，只执行一次
 import/Draw/export；timestamp 预留、执行统计和 bridge event 也按该实际 Draw run 计数。Raster span
 仍是硬边界，不能仅因同层或同为 opaque 而跨越合并。
+
+正常 AI world producer 对模块化队友使用局部两阶段提交：先按 actor 顺序完成 pose/IK、冻结全部可见 body
+Draw，再按相同 actor 顺序提交 opaque gear/weapon RasterCmd。每个附件仍读取对应 actor 的 finalized pose、
+placement 和 scene-light override；只是去掉逐 actor 的 Draw/Raster 往返。该编排不用于独立 visual capture，
+也不越过 transparent、effects、viewmodel 或 overlay 层。前置 world/map Draw 与中间真实 Raster 仍保留为
+独立 run。
 
 actor 裁剪现在用 renderer 的 command_filter 在 flush observer/consumer 之前处理本段，随后从新缓冲
 零位置继续，actor 结束时处理尾段并解除作用域。原缺陷见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)。

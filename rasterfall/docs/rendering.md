@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
+> 源码核对基线：RB-1 模块化队友 opaque 两阶段提交工作区
 
 actor 屏幕命令裁剪由 `rasterfall_render.c` 的 `ai_actor_command_scope_*()` 拥有。
 公共 renderer 的 command_filter 在每次 flush 消费之前执行本段裁剪，避免 producer 切换后继续使用旧
@@ -24,6 +24,11 @@ vertical slice：actor 的 stable character ID 解析到 Rifleman recipe，prese
 共享 V2 body 和共享 rigid gear resources；`render_modular_ai_teammate()` 按 actor index 保持独立
 model instance。这个路径不从 actor 读取资源路径、gear list 或 palette override，失败时仍回退到
 既有 procedural actor。
+
+正常 world AI 提交为减少 mixed bridge 往返，先逐 actor 完成 pose、IK、bounds 与 body Draw 冻结，再按
+相同 actor 顺序提交不透明 gear/weapon RasterCmd。延迟记录保存 actor transform、weapon placement 和当时的
+scene-light override；因此仅改变同一 WORLD opaque 层内的 backend 编排，不改变动画/附件所有权。独立 visual
+capture 仍即时提交单个角色，透明、effects、viewmodel 与 overlay 不参与该聚合。
 
 modular actor 在提交 body 前把玩法 animation semantic 适配为固定 action layers：IDLE/MOVE 更新并
 保留 lower IDLE/WALK，FIRE 只替换 upper 为 RIFLE_FIRE，因此移动中开火不会清掉腿部动作；普通持枪
