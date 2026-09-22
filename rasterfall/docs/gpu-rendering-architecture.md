@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 Intel 最终签收、SKY 轴向朝向合同与 shared-color 生命周期修复工作区
+> 源码核对基线：RB-1 连续 Draw run bridge 合并工作区
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -34,6 +34,11 @@ special、gear、weapon、transparent、effects、viewmodel 和 overlay；身份
 RasterCmd 送入 retained frame，从而形成可审计边界，不触发 GPU 执行，也不改变原命令顺序。每个
 Raster/Draw 交替点另外记录 import/export、layer、color/depth traffic、前后 producer 与 frame-slot
 target generation。该信息只用于测量，不扩展 Graphics 类型或改变深度/画面合同。
+
+producer 身份只形成诊断 span，不独立构成 target 可见性边界。若两个或更多 WORLD Draw spans 连续且
+中间没有 Raster span，mixed executor 按原顺序将它们编码为一个 graphics batch，只执行一次
+import/Draw/export；timestamp 预留、执行统计和 bridge event 也按该实际 Draw run 计数。Raster span
+仍是硬边界，不能仅因同层或同为 opaque 而跨越合并。
 
 actor 裁剪现在用 renderer 的 command_filter 在 flush observer/consumer 之前处理本段，随后从新缓冲
 零位置继续，actor 结束时处理尾段并解除作用域。原缺陷见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)。

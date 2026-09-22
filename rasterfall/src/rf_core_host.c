@@ -1817,12 +1817,21 @@ static int core_end_frame_present(struct rf_core *core)
                         frame->stats.producer_opaque_commands[producer] += span->count;
                 }
             } else if (span->kind == RF_CORE_MIXED_DRAW &&
+                       (!n || core->mixed_frame->spans[n-1].kind !=
+                           RF_CORE_MIXED_DRAW) &&
                        frame->stats.bridge_event_count + 2 <=
                            RF_CORE_BRIDGE_EVENT_MAX) {
+                unsigned long run_end = n + 1;
+                while (run_end < core->mixed_frame->span_count &&
+                       core->mixed_frame->spans[run_end].kind ==
+                           RF_CORE_MIXED_DRAW)
+                    run_end++;
                 unsigned int previous = n ? core->mixed_frame->spans[n-1].producer :
                     RF_CORE_PRODUCER_WORLD_MAP;
-                unsigned int next = n + 1 < core->mixed_frame->span_count ?
-                    core->mixed_frame->spans[n+1].producer : span->producer;
+                unsigned int last_producer =
+                    core->mixed_frame->spans[run_end-1].producer;
+                unsigned int next = run_end < core->mixed_frame->span_count ?
+                    core->mixed_frame->spans[run_end].producer : last_producer;
                 unsigned long long depth_bytes =
                     (unsigned long long)core->surface.width * core->surface.height * 8;
                 unsigned int event = frame->stats.bridge_event_count;
@@ -1834,7 +1843,7 @@ static int core_end_frame_present(struct rf_core *core)
                 event++;
                 frame->stats.bridge_events[event].direction = 1;
                 frame->stats.bridge_events[event].layer = span->layer;
-                frame->stats.bridge_events[event].previous_producer = span->producer;
+                frame->stats.bridge_events[event].previous_producer = last_producer;
                 frame->stats.bridge_events[event].next_producer = next;
                 frame->stats.bridge_events[event].depth_bytes = depth_bytes;
                 frame->stats.bridge_event_count += 2;

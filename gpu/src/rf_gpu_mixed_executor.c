@@ -254,9 +254,11 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     {
         unsigned int intervals = 4; /* final Raster, Post, overlay, present copy */
         for (unsigned long n=0;n<f->span_count;++n) {
-            if (f->spans[n].kind!=RF_CORE_MIXED_DRAW || !f->spans[n].count) continue;
+            if (f->spans[n].kind!=RF_CORE_MIXED_DRAW || !f->spans[n].count ||
+                (n && f->spans[n-1].kind==RF_CORE_MIXED_DRAW &&
+                 f->spans[n-1].count)) continue;
             if (intervals > UINT32_MAX/2-4) return -1;
-            intervals += 4; /* preceding Raster + import/Draw/export */
+            intervals += 4; /* preceding Raster + one import/Draw/export run */
         }
         if (rf_gpu_vulkan_timestamp_reserve(mixed_raster(e)->implementation,
                 intervals)<0) { __fprintf(2,"mixed preflight: timestamp reserve failed intervals=%u\n",intervals); return -1; }
@@ -476,6 +478,7 @@ static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_f
 static int span(void *context, const struct rf_core_mixed_frame *f, const struct rf_core_mixed_span *s)
 {
     struct rf_gpu_mixed_executor *e=context;
+    unsigned long span_index, run_end, draw_count=0, batch_index=0;
     int result;
     double start;
     if (s->kind==RF_CORE_MIXED_RASTER) {
@@ -485,25 +488,38 @@ static int span(void *context, const struct rf_core_mixed_frame *f, const struct
         return 0;
     }
     if (!s->count) return 0;
+    span_index=(unsigned long)(s-f->spans);
+    if (span_index && f->spans[span_index-1].kind==RF_CORE_MIXED_DRAW &&
+        f->spans[span_index-1].count) return 0;
+    for (run_end=span_index;run_end<f->span_count &&
+         f->spans[run_end].kind==RF_CORE_MIXED_DRAW;++run_end) {
+        if (f->spans[run_end].count>65536-draw_count) return -1;
+        draw_count+=f->spans[run_end].count;
+    }
     start=mixed_now_ms();
-    if (s->count > 65536 || reserve((void **)&e->batch, &e->batch_capacity,
-            s->count, sizeof(*e->batch)) < 0) return -1;
-    for (unsigned long n=s->first;n<s->first+s->count;++n) {
-        e->batch[n-s->first].resource=e->draws[n].resource;
-        e->batch[n-s->first].draw=e->draws[n].draw;
-        if (!e->batch[n-s->first].resource) return -1;
+    if (!draw_count || reserve((void **)&e->batch, &e->batch_capacity,
+            draw_count, sizeof(*e->batch)) < 0) return -1;
+    for (unsigned long run=span_index;run<run_end;++run) {
+        const struct rf_core_mixed_span *draw_span=&f->spans[run];
+        for (unsigned long n=draw_span->first;
+             n<draw_span->first+draw_span->count;++n) {
+            e->batch[batch_index].resource=e->draws[n].resource;
+            e->batch[batch_index].draw=e->draws[n].draw;
+            if (!e->batch[batch_index].resource) return -1;
+            batch_index++;
+        }
     }
     e->stats.draw_batch_prepare_ms+=mixed_now_ms()-start;
     result=segment(e,f,0);
     if (result==0) {
         start=mixed_now_ms();
         result=rf_gpu_graphics_raster_batch(mixed_graphics(e),
-            mixed_raster(e)->implementation,e->batch,(uint32_t)s->count);
+            mixed_raster(e)->implementation,e->batch,(uint32_t)draw_count);
         e->stats.graphics_draw_ms+=mixed_now_ms()-start;
     }
     if (result<0) return -1;
     e->stats.draw_spans++;
-    e->stats.draws+=s->count;
+    e->stats.draws+=draw_count;
     return 0;
 }
 static int finish(void *context, const struct rf_core_mixed_frame *f)

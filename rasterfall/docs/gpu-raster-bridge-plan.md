@@ -1,7 +1,7 @@
 # GPU Raster / Bridge 收敛计划
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 Intel 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
+> 源码核对基线：RB-1 连续 Draw run bridge 合并工作区
 
 本文定义 HG-0 至 HG-5B 完成后的下一轮 GPU 性能工作。它不是新的通用 Graphics 功能阶段，也不继续
 沿用历史 HG 编号；目标是先建立可信、可复现的帧耗时归因，再收敛剩余 RasterCmd、Draw/Raster bridge
@@ -165,6 +165,14 @@ median/P95/P99、未覆盖时间和 GPU timestamp frame ID。GPU timestamp 由�
 
 RB-1 先处理 mixed frame 的结构性往返，不新增 Draw 语义。主要手段应是 producer/layer 编排和已有
 Raster/Draw segment 的合并，而不是绕过深度或层顺序合同。
+
+当前进展：mixed executor 已将没有 Raster span 介入的连续 WORLD Draw spans 合为一个 graphics batch。
+producer 边界仍保留在 frozen frame 中用于命令归因，但不再单独触发 import/export；GPU timestamp 预留和
+Core bridge event 审计均改为按实际 Draw run 计数。mixed-executor 回归显式覆盖跨 producer 的相邻 Draw，
+保持原绘制顺序、像素/depth differential，并要求只产生一次 import/export。Windows native `gpu-test`
+已通过。当前 normal near 场景仍有 5 个由真实 RasterCmd 隔开的 Draw run、10 次 transfer，因此此项尚未
+满足 RB-1 的场景级下降退出条件；下一步应根据这些交替点决定 producer 编排或迁移边界，不能把诊断 span
+减少误报为实际收益。
 
 实施项：
 

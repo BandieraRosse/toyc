@@ -244,7 +244,11 @@ int main(int argc, char **argv)
         CHECK(rf_core_mixed_draw(&f,&view,&instance,&item)==0);
         cmds[count++]=triangle(width,height,1048576/later_z,0x336699);
         CHECK(rf_core_mixed_freeze(&f)<0 && f.state==RF_CORE_MIXED_RECORDING);
-        /* Consecutive draws share a span and still preserve submission order. */
+        /* A producer boundary keeps diagnostic identity but does not make the
+         * target visible to Raster, so the executor may keep one Draw run. */
+        memset(&renderer,0,sizeof(renderer));
+        CHECK(rf_core_mixed_set_producer(&f,&renderer,
+            RF_CORE_PRODUCER_WEAPON)==0);
         item.material.color=0x6688aa;
         CHECK(rf_core_mixed_draw(&f,&view,&instance,&item)==0);
         cmds[count++]=triangle(width,height,1048576/later_z,0x6688aa);
