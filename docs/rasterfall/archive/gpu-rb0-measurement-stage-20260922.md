@@ -2,13 +2,13 @@
 
 > 归档：2026-09-22
 > 本文保留签收前的现场、数字与当时阻塞条件，不定义当前推进状态。
-> 当前状态见 [Raster / Bridge 计划](../gpu-raster-bridge-plan.md)。
+> 当前状态见 [Raster / Bridge 计划](../plans/gpu-raster-bridge.md)。
 
-最新状态以 [RB-0 专项续接](gpu-rb0-special-20260922.md) 为准；
-修复前失败保留在 [RB-0 修复与续接](gpu-rb0-repair-20260922.md)。应先补齐画面及设备签收缺口，
+最新状态以 [RB-0 专项续接](../gpu-rb0-special-20260922.md) 为准；
+修复前失败保留在 [RB-0 修复与续接](../gpu-rb0-repair-20260922.md)。应先补齐画面及设备签收缺口，
 再讨论 RB-1。下方阶段数字属于修复前记录。
 
-最新 [RB-0 排查报告](gpu-rb0-investigation-20260922.md) 修正了下文阶段记录的解释：
+最新 [RB-0 排查报告](../gpu-rb0-investigation-20260922.md) 修正了下文阶段记录的解释：
 producer 切换触发 flush 后，actor 裁剪仍使用旧命令起点，可能恢复已消费的槽位；GPU query pool
 存在静默截断；graphics fence 不是 bridge 专属计时。当前先修复这些正确性/测量问题，
 再重做固定 workload 基线。不得由跨轮 hash 一致推断观察代码没有改变实际负载。

@@ -5,18 +5,18 @@
 
 本文定义 HG-0 至 HG-5B 完成后的下一轮 GPU 性能工作。它不是新的通用 Graphics 功能阶段，也不继续
 沿用历史 HG 编号；目标是先建立可信、可复现的帧耗时归因，再收敛剩余 RasterCmd、Draw/Raster bridge
-和同步长尾。当前实现边界见 [GPU 渲染架构](gpu-rendering-architecture.md)，硬件覆盖与日常门禁见
-[GPU 当前状态](gpu-current-state.md)。历史 HG 计划只保存在 `archive/`，不作为本计划的实施顺序。
+和同步长尾。当前实现边界见 [GPU 渲染架构](../gpu-rendering-architecture.md)，硬件覆盖与日常门禁见
+[GPU 当前状态](../gpu-current-state.md)。历史 HG 计划只保存在 `../archive/`，不作为本计划的实施顺序。
 
 ## 立项结论
 
-当前状态以 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md) 为准：Intel RB-0 已签收、
+当前状态以 [RB-2 候选评估](../gpu-rb2-candidate-review-20260922.md) 为准：Intel RB-0 已签收、
 RB-1 已有结构收敛证据；RB-2 的 rigid-only 与普通 infected body/shadow 两个切片均已否决并撤销，
 迁移候选保留 gear/weapon 边界预检。当前优先执行不改变 producer 合同的
-[Mixed 优化计划](gpu-mixed-optimization-20260922.md)：M1 segment 遍历已按原 Intel 单设备范围签收，
+[Mixed 优化计划](../gpu-mixed-optimization-20260922.md)：M1 segment 遍历已按原 Intel 单设备范围签收，
 M2 起以 RTX 3050 为性能主线，依次做动态资源复用、按证据决定 skinning 同步、depth bridge 与选择性
 opaque 迁移；infected 须先补光照等价合同。两档设备、60/30 FPS 目标和冻结基线见
-[GPU 性能标准与冻结基线](gpu-performance-standards.md)。以下立项数字为历史背景，
+[GPU 性能标准与冻结基线](../gpu-performance-standards.md)。以下立项数字为历史背景，
 不作为当前性能基线。
 
 ## 当前唯一执行链
@@ -93,7 +93,7 @@ bridge 与 whole-loop 的 opaque 内容；透明、粒子、overlay、复杂 VFX
 
 ## Checkpoint RB-0：可信测量与归因
 
-最新执行记录见 [RB-0 专项续接](gpu-rb0-special-20260922.md)；专项入口为
+最新执行记录见 [RB-0 专项续接](../gpu-rb0-special-20260922.md)；专项入口为
 `tools/gpu_rb0_special.ps1`，审计分析使用 metrics schema 5。以下阶段数字不能替代修复后的新基线。
 
 RB-0 签收状态：最终 package `F407FD19...63D762` 的 Full 31/31、validation/sync、五类 fault 与
@@ -102,14 +102,14 @@ RTX 3050 当时尚未进入同组复核，因此该历史 checkpoint 按 Intel �
 RTX 3050 为后续性能主线，Intel 为普通标准；不得把 RB-0 的历史单设备签收误写成当前设备范围。
 
 签收前的测量缺陷、修复前五轮数据和当时的阶段阻塞条件已移到
-[RB-0 测量阶段记录](archive/gpu-rb0-measurement-stage-20260922.md)。不得用这些历史数字替代当前基线。
+[RB-0 测量阶段记录](../archive/gpu-rb0-measurement-stage-20260922.md)。不得用这些历史数字替代当前基线。
 
 持续保留的测量合同：固定 tick、相机、extent 与 package；audit 用于 workload/边界归因，
 `--gpu-rb0-stats` 用于低扰动性能；GPU timestamp 按历史 frame ID 回填；CPU 细项与 wait 不直接相加。
 正式收益签收仍要求多轮采样；M2 起按当前双档标准分别承担性能主签收与普通标准复核。
 
 本轮局部修补处理无独立 graphics submit 时的旧 watermark，详见
-[RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)。这不重新开启整个 RB-0，也不宣称解决已冻结的长尾根因。
+[RB-2 候选评估](../gpu-rb2-candidate-review-20260922.md)。这不重新开启整个 RB-0，也不宣称解决已冻结的长尾根因。
 
 ## Checkpoint RB-1：Bridge 与同步收敛
 
@@ -178,7 +178,7 @@ RB-2 只迁移 RB-0 证明为主要成本、且适合现有 Graphics 数值合�
 
 以上是候选范围，不是机械执行顺序。普通 infected body 与 shadow 编排虽在 near 60 短测显著降低
 Raster 时间，但通用 skinned Draw 未保持现有逐面光照画面，已撤销且未进入五轮收益签收。下一候选为
-gear/weapon 的边界预检，具体证据与否决条件见 [候选评估](gpu-rb2-candidate-review-20260922.md)。
+gear/weapon 的边界预检，具体证据与否决条件见 [候选评估](../gpu-rb2-candidate-review-20260922.md)。
 
 每个候选先做单独 ablation，再决定是否进入实现。迁移不得顺带引入透明材质、复杂 VFX 或新的通用材质
 抽象。CPU 继续拥有 pose、IK、socket、gear/weapon placement；GPU 只接收冻结后的绘制输入。

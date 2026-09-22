@@ -1,7 +1,7 @@
 # 《重返武汉大学》信息学部核心区 V0 来源与测量台账
 
 > 文档更新：2026-09-13
-> 源码核对基线：只读核对 `rasterfall/docs/map-format.md`、`tools/map_layout_export.py` 与现有 `outpost.map`；未修改运行时、格式或正式地图。
+> 源码核对基线：只读核对 `docs/rasterfall/map-format.md`、`tools/map_layout_export.py` 与现有 `outpost.map`；未修改运行时、格式或正式地图。
 > 调查日期：2026-09-13。本文、JSON 和派生 SVG/PNG 为同一调查批次。**这是有缺口的比例参考，不能作为已完成的竖向工程底图。**
 
 ## 使用规则
@@ -83,4 +83,4 @@ S8明确为DSM，含建筑及植被，主要采集早于新宿舍建设；30m网
 
 排除华北电力大学“学17舍/学18舍24.3m”PDF、温州肯恩大学Campus Map、文理学部十八栋、工学部17舍、旧6351m²信息分馆和旧信息学部宿舍。官方新闻转载效果图及商业卫星图只作为候选来源，未复制或用来臆测尺寸。2025环境整治公告S9是现状时效风险提醒，不直接证明本任务广场重建。400m标准跑道的转载文字没有取得官方尺寸图，故不作为本版精准尺度控制。
 
-中文图中文字使用仓库[GB2312字库](../../../assets/fonts/README.md)（WenQuanYi Bitmap Song，GPLv2+附字体嵌入例外）转换为像素路径；字库许可见仓库现有COPYING。它不含外部地图或照片。
+中文图中文字使用仓库[GB2312字库](../../../../rasterfall/assets/fonts/README.md)（WenQuanYi Bitmap Song，GPLv2+附字体嵌入例外）转换为像素路径；字库许可见仓库现有COPYING。它不含外部地图或照片。

@@ -28,10 +28,10 @@ GPU normal gameplay 的功能阶段已结束。现在的主任务是提高 Windo
 
 | 工作 | 入口 |
 | --- | --- |
-| 实机复现、帧审计、参数 | `rasterfall/docs/runtime.md`、`rendering.md`；`build-windows/rasterfall-windows/rasterfall.exe --help` |
+| 实机复现、帧审计、参数 | `docs/rasterfall/runtime.md`、`rendering.md`；`build-windows/rasterfall-windows/rasterfall.exe --help` |
 | normal frontend 与分阶段统计 | `rasterfall/src/rasterfall_render.c`、`rasterfall/src/rasterfall_perf.c`、`rasterfall/src/render/` |
 | Core command、pack、retained frame | `rasterfall/src/rf_core_host.c`、`gpu/src/rf_gpu_raster_pack.c` |
 | GPU raster、Post 与 native present | `gpu/src/rf_gpu_vulkan_backend.c`、`gpu/shaders/`、`rasterfall/src/rf_gpu.c` |
-| Windows package 与实机验证 | `rasterfall/docs/build-platforms.md`、`windows/NativeCodex.ps1` |
+| Windows package 与实机验证 | `docs/rasterfall/build-platforms.md`、`windows/NativeCodex.ps1` |
 
 不要把性能优化写成新增玩法功能，也不要为旧 diagnostic/legacy 路径扩大 normal Raster ABI。Linux freestanding CPU 路径、Windows 共享玩法源码和 `--gpu-required` 的逐帧失败契约继续保留。后续 Windows Native Platform 自有 Win32 window/input/audio 与 SDL2 移除另立阶段；当前 HWND native present 不代表该阶段完成。

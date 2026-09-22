@@ -1,0 +1,71 @@
+# Rasterfall 维护者入口
+
+> 状态：当前
+> 所有者：Rasterfall
+> 事实入口：`windows/NativeCodex.ps1`、`build/rasterfall --help`
+> 最近核对：2026-09-23
+
+Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事实所有者；不记录阶段进度、性能数字或完整
+参数表。用户构建和启动说明见 [`../../rasterfall/README.md`](../../rasterfall/README.md)，全仓库文档
+规则见 [`../repository/documentation.md`](../repository/documentation.md)。
+
+## 开始任务
+
+| 任务 | 先读 | 主要代码或工具入口 |
+| --- | --- | --- |
+| 当前优先级、GPU 实施顺序 | [活动计划](plans/README.md) | 计划指向的单一执行文档 |
+| Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
+| 启动、参数、主循环、Core Host | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
+| 玩法、session、AI、战斗 | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
+| 地图格式、Runtime Map、World Content | [map-format.md](map-format.md)、[gameplay.md](gameplay.md) | map parser/runtime、projection adapter、布局工具 |
+| 世界渲染、HUD、特效、视觉诊断 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、visual capture CLI |
+| GPU Draw/Raster/present 架构 | [gpu-rendering-architecture.md](gpu-rendering-architecture.md)、[GPU 当前边界](gpu-current-state.md) | `gpu/`、mixed executor、GPU acceptance |
+| 模型、蒙皮、动画求值 | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
+| 资产导入、LOD、检查器 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
+| 角色与附件资产合同 | [character-assets.md](character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
+| 联机协议、快照、预测 | [network-architecture.md](network-architecture.md)、[networking.md](networking.md) | `src/rasterfall_net.c` |
+| 资源来源、许可、发布 | [asset-sources.md](asset-sources.md) | 资源台账和发布前检查 |
+| 武大资料、真实空间依据 | [reference/return-to-whu-core/](reference/return-to-whu-core/) | 来源台账、调查报告、白盒计划 |
+| 已完成或撤销的现场 | [archive/](archive/) | 只作历史证据，不作当前设计依据 |
+
+## 可执行事实
+
+优先以这些入口取得当前事实：
+
+- `build/rasterfall --help`：运行参数的完整清单。
+- `build/rasterfall --logic-test`：玩法、session、地图和网络逻辑回归。
+- Visual capture、model views、character acceptance 和 world capture：角色、模型及真实 world render。
+- `build/glb-inspect ... contract`、`build/rfchar_runtime_test <model.rmesh>`：资产与 runtime 契约。
+- `make map-layout`、`tools/map_layout_query.py`：地图布局导出和精确空间查询。
+- `tools/gpu_acceptance.ps1`、`tools/gpu_metrics.ps1`：GPU 正确性、生命周期和性能证据。
+
+退出码、标准输出、日志和生成物属于可复核事实。文档与实际行为不一致时，先检查 Makefile、脚本、参数
+解析和调用入口，再修正文档。
+
+## 所有权主线
+
+```text
+平台事件、网络包
+    → process / Core Host / Game runtime 编排
+    → single-player、host、client session
+    → actor API 与确定性 Game 状态
+    → 只读 gameplay projection
+    → renderer / HUD / audio / network presentation
+```
+
+权威玩法状态归 Game；模式编排归 session；渲染和 HUD 只读玩法或展示状态；客户端预测、校正和插值属于
+网络展示链。地图文本、Runtime Map、玩法投影、碰撞和渲染不得互相替代。资产坐标、bind pose、动画求值
+和末端渲染补偿也必须保持分层。
+
+## 修改后的文档联动
+
+| 改动 | 同步检查 |
+| --- | --- |
+| 模块职责、状态所有权或主数据流 | 本页和受影响的架构文档 |
+| 构建、脚本、诊断或验收方式 | 相应 guide |
+| 地图、资产、动画或协议格式 | 相应 reference、生产者与消费者 |
+| 当前执行顺序 | 只更新 `plans/README.md` 和其活动计划 |
+| 完成、撤销或被替代的阶段记录 | 移入 `archive/` 并写明当前替代入口 |
+
+新增跨模块功能必须补充本页的任务路由。稳定导航中不维护测试数量、单次性能数字或完整参数表。
+

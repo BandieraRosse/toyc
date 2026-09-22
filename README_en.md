@@ -51,7 +51,7 @@ The shared C sources and freestanding Linux path remain, but WSL is now an auxil
 legacy-compatibility environment: it is not guaranteed to stay current, build successfully,
 or produce correct runtime results, and it cannot replace Windows native-present evidence.
 
-See [`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)
+See [`docs/rasterfall/animation-architecture.md`](docs/rasterfall/animation-architecture.md)
 for the model, animation-format, retargeting, and IK module boundaries.
 
 Recommended native Windows development loop:
@@ -84,7 +84,7 @@ packaging mode remains available as `make rasterfall-embedded` or
 
 The lower-level Windows Makefile path remains available, but day-to-day development should
 use the PowerShell wrapper above. Its MinGW-w64/MSYS2 and SDL2 requirements are documented
-in `rasterfall/docs/windows-native-codex.md`. The legacy make entry points are:
+in `docs/rasterfall/guides/windows-native.md`. The legacy make entry points are:
 
 ```sh
 make win-deps

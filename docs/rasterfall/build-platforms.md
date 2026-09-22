@@ -53,7 +53,7 @@ Windows Native Codex 的统一入口是 `windows/NativeCodex.ps1`。它固定将
 `windows/Makefile` 和静态 SDL2，不引入新的构建系统。Windows 对象、exe 和
 package 默认位于 `build-windows/`，Linux `build/` 保持独立；`package` 后的真实
 运行 root 是 `build-windows/rasterfall-windows`，日常闭环与 WIN-DEV-1 标准见
-[Windows Native Codex](windows-native-codex.md)。
+[Windows Native](guides/windows-native.md)。
 
 除 Rasterfall 专用构建外，`windows/Makefile` 还提供通用应用验证链路。`app/windows`
 与 `app/portable` 中的应用链接 `lib/windows` 与 `lib/portable`；根目标

@@ -47,10 +47,10 @@ Windows 原生 PowerShell，统一入口为 `windows/NativeCodex.ps1`。共享 C
 Windows native present 和驱动实机结论。
 
 Rasterfall 的用户构建和启动入口见 [`rasterfall/README.md`](rasterfall/README.md)；维护者导航和
-模块边界见 [`rasterfall/docs/README.md`](rasterfall/docs/README.md)。
+模块边界见 [`docs/rasterfall/README.md`](docs/rasterfall/README.md)。
 
 模型、动画格式、重定向与 IK 的模块边界见
-[`rasterfall/docs/animation-architecture.md`](rasterfall/docs/animation-architecture.md)。
+[`docs/rasterfall/animation-architecture.md`](docs/rasterfall/animation-architecture.md)。
 
 当前推荐的 Windows 原生开发闭环：
 

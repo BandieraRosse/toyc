@@ -1,0 +1,12 @@
+# Rasterfall 工作指南
+
+指南描述可执行工作流，实际参数以 CLI 和脚本输出为准。
+
+- [Windows Native 开发与验收](windows-native.md)
+- [构建、平台和验证矩阵](../build-platforms.md)
+- [资产转换与诊断](../asset-pipeline.md)
+- [视觉场景与截图](../rendering.md#visual-cli-v1固定场景观察)
+- [地图布局与查询](../map-format.md#俯视布局导出)
+
+当前指南仍引用部分兼具架构内容的旧专题；拆分时以 [文档治理规则](../../repository/documentation.md) 为准。
+

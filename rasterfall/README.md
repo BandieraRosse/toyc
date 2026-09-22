@@ -12,7 +12,7 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 源码路径继续保留，但 WSL/llvmpipe 结果不能替代 Windows native present、驱动和窗口生命周期验收。
 
 本页是用户入口，只保留构建、启动和稳定工具入口。维护者应从
-[`docs/README.md`](docs/README.md) 开始；资产、模型、地图、网络和平台细节分别见对应专题文档。
+[`../docs/rasterfall/README.md`](../docs/rasterfall/README.md) 开始；资产、模型、地图、网络和平台细节分别见对应专题文档。
 
 ## 构建与运行
 
@@ -68,20 +68,20 @@ build/rfchar_runtime_test <model.rmesh>
 ```
 
 角色和模型观察使用 `--model-views`、`--model-pose-views`、`--character-acceptance` 和
-`--character-world-capture`；具体流程见 [`docs/character-assets.md`](docs/character-assets.md)
-和 [`docs/rendering.md`](docs/rendering.md)。所有易变命令行选项以 `build/rasterfall --help` 的
+`--character-world-capture`；具体流程见 [`../docs/rasterfall/character-assets.md`](../docs/rasterfall/character-assets.md)
+和 [`../docs/rasterfall/rendering.md`](../docs/rasterfall/rendering.md)。所有易变命令行选项以 `build/rasterfall --help` 的
 当前输出为准。逻辑测试不能代替视觉检查或真实多人联机验收。
 
 ## 开发文档
 
-- [`docs/README.md`](docs/README.md)：代码导航总入口。
-- [`docs/animation-architecture.md`](docs/animation-architecture.md)：模型与动画架构契约。
-- [`docs/network-architecture.md`](docs/network-architecture.md)：联机架构与扩展边界。
-- [`docs/asset-sources.md`](docs/asset-sources.md)：资源来源、许可和发布检查。
-- [`docs/archive/project-handoff-2026-09.md`](docs/archive/project-handoff-2026-09.md)：历史现场记录，
+- [`../docs/rasterfall/README.md`](../docs/rasterfall/README.md)：维护者导航总入口。
+- [`../docs/rasterfall/animation-architecture.md`](../docs/rasterfall/animation-architecture.md)：模型与动画架构契约。
+- [`../docs/rasterfall/network-architecture.md`](../docs/rasterfall/network-architecture.md)：联机架构与扩展边界。
+- [`../docs/rasterfall/asset-sources.md`](../docs/rasterfall/asset-sources.md)：资源来源、许可和发布检查。
+- [`../docs/rasterfall/archive/project-handoff-2026-09.md`](../docs/rasterfall/archive/project-handoff-2026-09.md)：历史现场记录，
   不代表当前实现。
 
 普通感染敌人默认按 enemy type 混合 LEGACY、BLOCK_INFECTED、HUMANOID_INFECTED；可使用
 `--enemy-visual-family legacy|block-infected|humanoid-infected` 强制单一家族进行截图、性能和资产验证。
 六份模型为公开资源。Smoker、Charger、Tank 使用独立程序化刚性模型与攻击姿态；
-重建、关键帧、轮廓和实景验收见 [Enemy Visual / Procedural Animation](docs/enemy-visuals.md)。
+重建、关键帧、轮廓和实景验收见 [Enemy Visual / Procedural Animation](../docs/rasterfall/enemy-visuals.md)。

@@ -1,20 +1,30 @@
-# Toyc 文档总览
+# Toyc / Rasterfall 维护文档
 
-本目录保存 Toyc 工具链的维护资料与项目历史。Rasterfall 有独立的维护者文档入口，
-不要将两套文档的职责混在一起。
+`docs/` 是本仓库唯一的维护文档根。先按任务选择子系统，不要从归档或日期化调查记录进入当前实现。
 
-## 文档入口
+| 任务范围 | 入口 | 内容 |
+| --- | --- | --- |
+| Rasterfall | [rasterfall/README.md](rasterfall/README.md) | 当前主线；架构、构建、GPU、玩法、资产、地图和网络 |
+| Toyc / Tinylibc | [toolchain/README.md](toolchain/README.md) | 编译器、公共库、自举、平台迁移和历史考证 |
+| 应用与离线工具 | [applications/README.md](applications/README.md) | `app/`、`tools/` 及跨平台应用边界 |
+| GPT-2 / Qwen2 | [llm/README.md](llm/README.md) | `llm/` 的实现、构建和验证入口 |
+| 文档与仓库治理 | [repository/documentation.md](repository/documentation.md) | 文档类型、状态、放置和更新规则 |
 
-- [Toyc 考古记录](archaeology/README.md)：追溯 Tinylibc、ToyCCompiler 与 Toyc 的传承，
-  整理时间线、技术演化、开发方式和可复核证据。
-- [编译器时期协作说明](AGENTS-toyc-history.md)：仓库开发重心转向 Rasterfall 前的构建、
-  自举和测试约定，仅作为历史参考。
-- [Toyc Windows Platform V1 计划与进度](windows-platform-plan.md)：跨平台 userland
-  contract、source set 和 Checkpoint 验收记录。
-- [Rasterfall 维护者导航](../rasterfall/docs/README.md)：Rasterfall 当前架构、模块边界和验证入口。
+## 事实优先级
 
-## 维护原则
+1. 可执行 CLI、测试、构建脚本和实际行为。
+2. 当前架构与 reference 文档。
+3. 操作指南。
+4. 当前活动计划。
+5. `archive/` 中的历史现场。
 
-- 当前功能说明仍以根目录 `README.md`、`README_en.md`、`toyc-c-features.md` 和实际构建行为为准。
-- 考古文档区分 Git 可验证事实、仓库文本陈述、作者回忆和后续推断。
-- 历史提交中的测试数字、能力声明和因果解释只代表当时记录，不自动视为当前事实。
+文档和实现不一致时，应核对 Makefile、脚本、参数解析与调用入口；以实际行为修正文档，而不是用历史记录覆盖当前事实。
+
+## 用户文档
+
+- 仓库与工具链总览：[../README.md](../README.md)
+- Rasterfall 构建和运行：[../rasterfall/README.md](../rasterfall/README.md)
+- Toyc 语言特性：[../toyc-c-features.md](../toyc-c-features.md)
+
+这些页面面向使用者，不替代维护者架构与计划。
+
