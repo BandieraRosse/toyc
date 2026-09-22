@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-1 模块化队友 opaque 提交编排工作区
+> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -47,12 +47,33 @@ placement 和 scene-light override；只是去掉逐 actor 的 Draw/Raster 往�
 也不越过 transparent、effects、viewmodel 或 overlay 层。前置 world/map Draw 与中间真实 Raster 仍保留为
 独立 run。
 
+Campaign 当前剩余 5 个实际 Draw run：2 个 world/map 与 3 个 enemy-body。相邻 run 之间均有真实 Raster
+span；其中 enemy-body 的分隔来自普通模型 Draw 与 special rigid/body Raster 的 actor 顺序，而非诊断
+producer 边界。mixed executor 不跨越这些 span；若要继续减少 bridge，必须在 producer 侧迁移或重排目标
+opaque Raster，并按 RB-2 的 ablation、画面与生命周期合同验证。
+
+RB-2 对 `enemy-rigid-special` 做过一次默认关闭、随后撤销的受控 ablation。procedural rigid 本体可冻结为
+纯色 world-space 顶点，并可用现有 Q8 vertex-light 数值语义保持逐面光照；但 normal GPU skinning 与
+CPU dynamic Draw 当前共享一个 frame resource，preflight 要求每个 dynamic 顶点都有 skin 输入，合同不能
+直接混装两类顶点。更重要的是，在双方都关闭 GPU skinning 的可比实验中，单独迁移 rigid 本体后，actor
+前后的 blob shadow、tongue/特殊组件等 Raster 仍保留，Campaign bridge 从 10 次反增到 12 次。由此当前
+架构不增加 procedural dynamic stream；下一次 rigid 设计必须先解决 producer 侧相邻 opaque Raster 的批次
+边界，而不能只扩大 vertex carrier。
+
 actor 裁剪现在用 renderer 的 command_filter 在 flush observer/consumer 之前处理本段，随后从新缓冲
 零位置继续，actor 结束时处理尾段并解除作用域。原缺陷见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)。
 mixed preflight 在 recycle 后按执行计划预留 query pool；requested/recorded/dropped 随 GPU frame 返回，
 截断不得置 valid。代码与验证边界见 [RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
 
 ## 资源生命周期
+
+Raster binning 按原 command index 递增填入每个 tile 的列表，顺序属于 consumer 合同。binned shader
+对非初始 segment 用 lower_bound 跳过已消费前缀，到 `segment.end` 即停止；保留原 command 顺序、
+CLEAR/LOAD、透明和 viewmodel marker 语义。独立 full-scan shader 不使用该优化，继续作为 differential
+对照。`rf_gpu_raster_test.c` 的 sparse-segment 回归覆盖 tile 内 ID 间隙和无本段命令的 tile。
+Windows 可用 `tools/generate_gpu_raster_spirv.py <glslangValidator>` 生成 buffer/image 的 8×8/16×16
+变体；checked-in SPIR-V 仍是无 SDK 构建入口。执行与验证证据见
+[Mixed 优化执行计划](gpu-mixed-optimization-20260922.md)。
 
 raw Raster 分段重传使用 `input_versions` 保留先前录制引用的 command/bin/texture backing，直至完成后
 的新录制或销毁；冻结帧 preflight/upload reuse 仍共用一次上传。Graphics 的 `shared_rasters` 追踪
@@ -73,6 +94,11 @@ RB-0 低扰动统计在 frame-slot recycle 调用外记录 render-fence wait，�
 swapchain acquire/present 以及由 image reacquire 证明的 presenter completion 分开保存。GPU timestamp
 属于完成的旧 slot，必须使用其 frame ID 回填对应 CPU frame；不能把当前 CPU frame 与刚返回的旧 slot
 timestamp 直接比较。退出前尚未回收的末尾 timestamp 不进入 GPU 分位数。
+
+Core 对独立 graphics submit 的累计计数取本帧差值；若本帧 submit 为零，审计 frame 归属当前
+render frame，predecessor 清零，不沿用 backend 的最后提交 watermark。metrics 对旧日志仅在
+七类 caller 完整、全部 submit/wait 为零且 aggregate submit 为零时接受历史 watermark；活动提交、
+非零等待和未来 frame 仍拒绝。离线回放入口为 `tools/gpu_metrics_test.ps1 -LogPath <audit.log>`。
 
 graphics submit fence 统计聚合所有 `gfx_submit()` 调用者；正常 mixed bridge 只录制命令，
 preflight 中每帧创建 skinned resource 的独立同步提交会计入该字段，并可能等待前一帧的队列工作。

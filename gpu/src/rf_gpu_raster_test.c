@@ -219,6 +219,48 @@ done:
 #undef SEG
 }
 
+/* Each tile sees gaps in the global command IDs and segments with no local
+ * entries. Exercise lower_bound at the beginning, middle and end of a list. */
+static int sparse_segment_test(struct rf_gpu_vulkan_context *context,
+                               unsigned int group, int full_scan)
+{
+    enum { W=65, H=17, S=68, N=18 };
+    struct fixture f={0};
+    void *r=NULL;
+    uint32_t expected[S*H],actual[S*H];
+    int expected_depth[S*H],actual_depth[S*H];
+    char message[256];
+    int result=-1;
+    CHECK(!fixture_init(&f,W,H,N,0x102030));
+    for(unsigned i=0;i<N;++i) {
+        int x=(i%3)*24;
+        triangle(&f,i,x,1,100+(int)i,x+12,1,100+(int)i,x,15,100+(int)i,
+            0x010203*(i+1),256,0);
+    }
+    CHECK(!rf_gpu_vulkan_backend.raster_create(context,W,H,group,group,&r,message,sizeof(message)));
+    rf_gpu_vulkan_backend.raster_set_full_scan_diagnostic(context,r,full_scan);
+    memset(expected,0x35,sizeof(expected));memset(actual,0x35,sizeof(actual));
+    memset(expected_depth,0x47,sizeof(expected_depth));memset(actual_depth,0x47,sizeof(actual_depth));
+    CHECK(!rf_gpu_vulkan_backend.raster_render(context,r,f.bytes,(unsigned long)f.size,
+        NULL,0,NULL,0,expected,expected_depth,W,H,S,S,NULL,message,sizeof(message)));
+    for(unsigned first=0;first<N+2;) {
+        unsigned end=first ? first+1 : 2;
+        int final=end==N+2;
+        CHECK(!rf_gpu_vulkan_raster_segment(context,r,f.bytes,(unsigned long)f.size,
+            NULL,0,NULL,0,first,end,first?RF_GPU_RASTER_LOAD_EXISTING:RF_GPU_RASTER_CLEAR,
+            final,final?actual:NULL,final?actual_depth:NULL,W,H,S,S,message,sizeof(message)));
+        first=end;
+    }
+    CHECK(!memcmp(expected,actual,sizeof(actual)));
+    CHECK(!memcmp(expected_depth,actual_depth,sizeof(actual_depth)));
+    printf("sparse-segments: group=%u full_scan=%d exact color/depth/stride PASS\n",group,full_scan);
+    result=0;
+done:
+    rf_gpu_vulkan_backend.raster_destroy(context,r);
+    free(f.bytes);
+    return result;
+}
+
 /* Full-viewport graphics quad has no exterior edge inside the target.
  * Its reference placeholders use one oversized raster triangle, allowing
  * byte-exact comparisons without masking hardware edge differences. */
@@ -401,6 +443,7 @@ int main(int argc, char **argv)
         for(int full=0;full<2;full++) for(int fog=0;fog<2;fog++)
         {
             CHECK(!segmented_test(&context,group,full,fog));
+            if(!fog) CHECK(!sparse_segment_test(&context,group,full));
             if(mixed) {
                 CHECK(!mixed_test(&context,group,full,fog,19));
                 CHECK(!mixed_test(&context,group,full,fog,37));

@@ -194,10 +194,24 @@ void main()
     uint tile_id = gl_WorkGroupID.y * tiles_x + gl_WorkGroupID.x;
     uint list_begin = tile_offsets.offsets[tile_id];
     uint list_end = tile_offsets.offsets[tile_id + 1u];
+    // The initial segment starts at zero; later segments can skip the consumed
+    // prefix with lower_bound without replaying clears or layer markers.
+    if (segment.first != 0u) {
+        uint low = list_begin, high = list_end;
+        while (low < high) {
+            uint middle = low + (high - low) / 2u;
+            if (tile_commands.indices[middle] < segment.first) low = middle + 1u;
+            else high = middle;
+        }
+        list_begin = low;
+    }
 #endif
     for (uint list_index = list_begin; list_index < list_end; ++list_index) {
         uint command_index = tile_commands.indices[list_index];
-        if (command_index < segment.first || command_index >= segment.end) continue;
+        // Binning appends command indices in stream order for every tile.
+        // Later segments retain the same list; do not scan their suffix here.
+        if (command_index >= segment.end) break;
+        if (command_index < segment.first) continue;
         uint base = HEADER_WORDS + command_index * COMMAND_WORDS;
         uint kind = stream.words[base];
         if (kind == CMD_SKY) {

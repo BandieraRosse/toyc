@@ -10,6 +10,8 @@ struct rf_gpu_raster_tile_stats {
 
 struct rf_gpu_raster_tile_lists {
     unsigned int *offsets;
+    /* Each tile's [offsets[t], offsets[t+1]) slice is strictly increasing in
+     * command index. Raster segment lower_bound/early-stop relies on this. */
     unsigned int *indices;
     unsigned long long offsets_capacity;
     unsigned long long indices_capacity;

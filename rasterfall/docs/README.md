@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-1 模块化队友 opaque 提交编排工作区
+> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -18,15 +18,26 @@
 
 ## 当前 GPU 验收状态
 
+当前优化执行入口为 [Mixed 路径优化计划与证据](gpu-mixed-optimization-20260922.md)：先收敛 Raster
+segment 的重复 tile 扫描，再按证据推进动态资源复用、skinning 同步和 depth bridge。该工作保留现有
+producer 与光照语义；gear/weapon 边界预检和 infected 光照合同仍为后续迁移前置条件。
+
+当前推进：Intel RB-0 已签收，RB-1 已取得单设备结构收敛证据，RB-2 的 rigid-only 与普通
+infected body/shadow 两个切片均已否决并撤销，M1 已按 Intel 单设备范围签收；下一步先为 M2 补动态输入
+打包、资源创建/上传与 Raster binning 的互斥计时，再决定复用切片。下一迁移候选仍为 gear/weapon 边界预检。
+第二物理 GPU 继续暂缓。候选、四场景成本/边界与审计修补见
+[RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)；`tools/gpu_rb2_candidate_report.ps1`
+汇总同 package 的 audit/no-audit 证据，不把 producer 命令数解释为 GPU 耗时。
+
 最新专项修复与证据见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。raw 分段输入覆盖与 resize 后
 附件悬空已修复；`tools/gpu_rb0_special.ps1` 是 validation/sync、fault、soak 串行入口。
 状态所有者为 backend 的 `input_versions` 和 Graphics 的 `shared_rasters`；metrics schema 5
 将七类 wait、互斥 CPU phase 和前序 GPU 帧纳入审计分析。正确口径五轮未复现历史 near60 数百毫秒双态；
-55 个低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结，仍不进入 RB-1。
+低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结。
 
 RB-0 最终签收 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
 签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。Intel 单设备 RB-0 已签收；第二物理
-GPU 按用户要求暂缓，所以当前不是跨设备签收，仍不进入 RB-1。
+GPU 按用户要求暂缓，所以当前不是跨设备签收。
 
 同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage。RB-0 签收后的统一
 渲染策略已移除 Rasterfall runtime 的 fog 接入：CPU 与 GPU normal producer 均提交中性 fog，GPU Post
@@ -43,9 +54,21 @@ Intel 同一 package 的 audit/低扰动固定 workload 各五轮通过：near 0
 29,491,200 bytes，Campaign 为 10 次、73,728,000 bytes，四场景各自 workload hash 跨轮一致。hosted 与
 native resize 合同现精确验证 transfer、bytes 和 frame-slot target rebuild；第二物理 GPU 仍未复核。
 
+RB-2 首个 `enemy-rigid-special` 独立 ablation 已完成并撤销。现有 dynamic Draw 在正常 GPU skinning
+开启时要求整帧 dynamic 顶点都有对应 skin bind/palette，不能直接混入 procedural rigid 顶点；受控
+CPU-skinning-off A/B 虽将 Campaign 的该 producer RasterCmd 从 963 降到 0，却因 actor 顺序中的 blob
+shadow/特殊组件等真实 Raster 边界把 bridge 从 10 次、73,728,000 bytes 增到 12 次、88,473,600 bytes。
+单轮低扰动 whole-loop median 也由 17.532 ms 增到 18.298 ms，因此不保留该实现，不据此扩展 typed
+dynamic stream。下一候选必须先连同相邻 opaque Raster 和 actor 编排一起证明能减少真实 Draw run。
+
+普通 infected body + shadow 的后续受限 ablation 也已撤销。near 60 短测将 enemy-body RasterCmd
+降到约 0.32–0.63 万、GPU Raster median 从 16.565 ms 降到 7.588 ms，但 Draw run/bridge 从
+2/4 增到 3/6，且最终截图的逐面光照明显不等价；device-local 顶点 differential 虽为零 mismatch，
+不能替代画面合同。该切片未进入五轮签收，下一候选回到 gear/weapon 边界预检。
+
 此前 RB-0 排查发现 actor 命令范围跨 flush 失效、GPU timestamp 容量截断及 graphics wait 归因问题。
-推进顺序与证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；应先修复负载与测量，
-再重建基线，当前 producer 计数不能直接用于决定迁移优先级。
+修复前证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；该历史现场不能替代修复后的基线，
+producer 命令计数也不能单独决定迁移优先级。
 
 Windows Intel strict native 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。历史 Fog smoke 只证明保留的底层 ABI，当前 normal runtime 不启用 fog。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
 
@@ -88,6 +111,7 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 | Hardware Draw/reference 与 CPU/compute 精确回归 | [GPU 渲染架构](gpu-rendering-architecture.md) | `rasterfall_render_static_prop()` → `render_gallery_model_range()`；`lib/graphics/renderer.c`、`gpu/src/rf_gpu_raster_diff_test.c`、`tools/gpu_acceptance.ps1 -Full` |
 | Core Draw/Raster 混合帧顺序、冻结、资源引用 | [GPU 渲染架构](gpu-rendering-architecture.md) | `include/rf_core_mixed_frame.h` → `src/rf_core_mixed_frame.inc`（由 `rf_core_host.c` 编译）；`dev-tests/rf_core_mixed_frame_test.inc` → `--logic-test`；registry `frame_epoch` 与 pin 生命周期联动 |
 | 冻结混合帧到真实 GPU 执行、整帧预检与尾段 | [GPU 渲染架构](gpu-rendering-architecture.md) | `gpu/include/rf_gpu_mixed_executor.h` → `gpu/src/rf_gpu_mixed_executor.c`；联动 Core eligibility、registry cache、Raster ABI pack/bin 与 graphics 数值验证；`tools/rasterfall_gpu_mixed_test.c` 由统一验收入口调用 |
+| Raster segment 重复扫描、shader 原生生成与交替 A/B | [Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) | `gpu/src/rf_gpu_raster_bin.c` 有序 tile indices → `gpu/shaders/raster_v1.comp` 范围定位；`tools/generate_gpu_raster_spirv.py`、`tools/gpu_mixed_ablation.ps1` |
 | RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |

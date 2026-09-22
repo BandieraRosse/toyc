@@ -4,13 +4,19 @@ param(
     [int] $Rounds = 5,
     [string] $OutputDirectory = '',
     [string] $DriverLibraryPath = '',
+    [string] $ExecutablePath = '',
+    [ValidateRange(30,10000)][int] $NearFrames = 120,
+    [ValidateSet('all','near-0','near-30','near-60','campaign-320')][string] $Scene = 'all',
     [switch] $NoAudit
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package = Join-Path $Root 'build-windows/rasterfall-windows'
-$Exe = Join-Path $Package 'rasterfall.exe'
+$Exe = if ($ExecutablePath) { (Resolve-Path -LiteralPath $ExecutablePath).Path } else { Join-Path $Package 'rasterfall.exe' }
+if ([IO.Path]::GetDirectoryName($Exe) -ne $Package) {
+    throw 'The executable must be in the package directory: Windows resolves assets relative to its executable.'
+}
 $RuntimeLog = Join-Path $Package 'rasterfall.log'
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $Root ('tmp/gpu-rb0-sampling-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -20,7 +26,7 @@ if (Test-Path -LiteralPath $OutputDirectory) { throw 'Use a new output directory
 if (-not (Test-Path -LiteralPath $Exe)) {
     throw 'Missing packaged rasterfall.exe. Run windows/NativeCodex.ps1 package first.'
 }
-if (Get-Process -Name rasterfall -ErrorAction SilentlyContinue) {
+if (Get-Process -Name @('rasterfall', [IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction SilentlyContinue) {
     throw 'A rasterfall process is already running; stop it before starting serial RB-0 sampling.'
 }
 
@@ -35,6 +41,8 @@ $Manifest = [ordered]@{
     suite = 'gpu-rb0-sampling'
     mode = $Mode
     rounds = $Rounds
+    near_frames = $NearFrames
+    selected_scene = $Scene
     started_at = (Get-Date).ToString('o')
     commit = (& git -C $Root rev-parse HEAD)
     worktree = @(& git -C $Root status --short)
@@ -233,15 +241,17 @@ function Run-Sample([int] $Round, [string] $Scene, [string[]] $Arguments, [int] 
 try {
     for ($Round = 1; $Round -le $Rounds; $Round++) {
         foreach ($Enemies in @(0, 30, 60)) {
+            if ($Scene -ne 'all' -and $Scene -ne "near-$Enemies") { continue }
             $NearArguments = @(
                 '--renderer','gpu-compute','--gpu-required','--gpu-native-present',
                 '--gpu-normal-scene','near',"$Enemies",'--gpu-normal-fixed-tick'
             )
             if (-not $NoAudit) { $NearArguments += '--frame-audit' }
             if ($NoAudit) { $NearArguments += '--gpu-rb0-stats' }
-            $NearArguments += @('--frames','120')
-            Run-Sample $Round "near-$Enemies" $NearArguments 120
+            $NearArguments += @('--frames',"$NearFrames")
+            Run-Sample $Round "near-$Enemies" $NearArguments $NearFrames
         }
+        if ($Scene -ne 'all' -and $Scene -ne 'campaign-320') { continue }
         $CampaignArguments = @(
             '--map','rasterfall/assets/maps/rasterfall.map','--gpu-wave-repro',
             '--gpu-normal-fixed-tick','--renderer','gpu-compute','--gpu-required',
