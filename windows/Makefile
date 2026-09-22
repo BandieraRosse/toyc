@@ -218,7 +218,7 @@ package: $(TARGET)
 	@cd "$(PACKAGE_DIR)" && $(PYTHON) -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"
 
-$(BUILD)/win/app/glb_inspect.o: app/glb_inspect.c windows/Makefile rasterfall-rebuild | $(BUILD)
+$(BUILD)/win/app/linux/glb_inspect.o: app/linux/glb_inspect.c windows/Makefile rasterfall-rebuild | $(BUILD)
 	@mkdir -p "$(dir $@)"
 	@printf '  WIN-CC  %s (library)\n' "$<"
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -DRASTERFALL_GLB_LIBRARY=1 -c $< -o $@
