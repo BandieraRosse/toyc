@@ -1910,6 +1910,12 @@ static int core_end_frame_present(struct rf_core *core)
         }
         frame->stats.mixed_wait_frame=after.graphics.wait_frame;
         frame->stats.mixed_wait_predecessor_frame=after.graphics.wait_predecessor_frame;
+        /* No independent graphics submit: the cumulative backend watermark
+         * belongs to an older frame, but these zero deltas belong to this one. */
+        if (!frame->stats.mixed_graphics_submits) {
+            frame->stats.mixed_wait_frame=core->render_frame.frame_id;
+            frame->stats.mixed_wait_predecessor_frame=0;
+        }
         frame->stats.mixed_gpu_timing_frame=after.gpu_timing.frame_number;
         for (unsigned int n = 0; n < frame->stats.bridge_event_count; ++n)
             frame->stats.bridge_events[n].target_generation =

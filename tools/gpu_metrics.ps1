@@ -128,6 +128,8 @@ foreach ($Line in $SelectedLines) {
             remainder_ms = $null
             phase_whole_ms = $null
             graphics_submit = @{}
+            graphics_submits = $null
+            stale_submit_frame = $false
             gpu_timing = $null
             wait_predecessor_frame = $null
             predecessor_gpu_timing = $null
@@ -180,7 +182,17 @@ foreach ($Line in $SelectedLines) {
         if ([Math]::Abs($PhaseSum - $Current.phase_whole_ms) -gt 0.005) { throw 'CPU phases do not partition whole-loop time.' }
     } elseif ($Line -match '^FRAME-AUDIT graphics-submit frame=(\d+) caller=([^ ]+) ') {
         $SubmitFrame = [int]$Matches[1]; $Caller = $Matches[2]
-        if ($SubmitFrame -ne $Current.frame) { throw 'Graphics submit frame mismatch.' }
+        if ($SubmitFrame -ne $Current.frame) {
+            # Older logs printed the last submit watermark even on zero-submit
+            # frames. Accept only past watermarks with zero deltas; validate the
+            # complete caller group and aggregate below before using the frame.
+            if ($SubmitFrame -gt $Current.frame -or
+                (Number $Line 'submits') -ne 0 -or (Number $Line 'wait_ms') -ne 0) {
+                throw 'Graphics submit frame mismatch.'
+            }
+            $Current.stale_submit_frame = $true
+        }
+        if ($Current.graphics_submit.ContainsKey($Caller)) { throw 'Duplicate graphics submit caller.' }
         $Current.graphics_submit[$Caller] = [pscustomobject][ordered]@{
             submits = Number $Line 'submits'
             wait_ms = Number $Line 'wait_ms'
@@ -219,6 +231,7 @@ foreach ($Line in $SelectedLines) {
         $Current.draw_spans = Number $Line 'draw_spans'
         $Current.bridge_transfers = Number $Line 'bridge_transfers'
         $Current.bridge_bytes = Number $Line 'bridge_bytes'
+        $Current.graphics_submits = Number $Line 'graphics_submits'
         $Current.mixed_graphics_wait_ms = Number $Line 'graphics_wait_ms'
     } elseif ($Line -match '^FRAME-AUDIT producer name=([^ ]+) ') {
         $Current.producers[$Matches[1]] = [pscustomobject][ordered]@{
@@ -265,6 +278,22 @@ foreach ($Line in $SelectedLines) {
         $Current.native_acquire_ms = Number $Line 'native_acquire_ms'
         $Current.native_present_ms = Number $Line 'native_present_ms'
         $Current.native_queue_idle_ms = Number $Line 'native_present_queue_idle_ms'
+    }
+}
+
+foreach ($Frame in $Frames) {
+    if ($Frame.stale_submit_frame) {
+        $Callers = @('upload','vertex-diff','skin-input','skinning','bridge','draw','readback')
+        if ($Frame.graphics_submits -ne 0 -or $Frame.graphics_submit.Count -ne $Callers.Count) {
+            throw 'Graphics submit frame mismatch.'
+        }
+        foreach ($Caller in $Callers) {
+            $Row = $Frame.graphics_submit[$Caller]
+            if ($null -eq $Row -or $Row.submits -ne 0 -or $Row.wait_ms -ne 0) {
+                throw 'Graphics submit frame mismatch.'
+            }
+        }
+        $Frame.wait_predecessor_frame = 0
     }
 }
 
