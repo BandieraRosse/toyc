@@ -28,7 +28,10 @@ Intel 单设备 RB-0 已签收，第二物理 GPU 仍暂缓，当前结论不外
 RB-1 已合并连续跨 producer Draw spans，并将正常 world 中模块化队友改为 body Draw 集中冻结、随后按原
 actor 顺序提交 opaque gear/weapon RasterCmd。Intel native near 审计的实际 Draw run 从 5 降到 2，bridge
 transfer 从 10 降到 4、bytes 从 73,728,000 降到 29,491,200；Windows `gpu-test`、Quick 8/8 与 Full
-均通过。该结果证明结构计数和固定回归正确性，尚未完成固定 workload 多轮性能签收或第二物理 GPU 复核。
+均通过。随后同一 package 的 audit/低扰动组各五轮固定 workload 采样通过：near 0/30/60 均稳定为
+4 次、29,491,200 bytes，Campaign 稳定为 10 次、73,728,000 bytes，各场景 workload hash 跨轮一致；
+低扰动 whole-loop 中位轮依次为 16.283/22.813/33.197/21.240 ms。该 package 同时包含此前修复，不能把
+相对旧文档的全部耗时下降只归因于 RB-1；Intel 单设备 bridge 结构下降已可重复，第二物理 GPU 尚未复核。
 
 Rasterfall 当前处于 GPU 渲染持续开发阶段。HG-0 至 HG-5B 已完成，现阶段不是继续按历史计划机械增加
 HG 编号，而是先补强 Windows 物理 GPU 覆盖、恢复专项稳定性矩阵，并量化剩余 RasterCmd 和整帧耗时。
@@ -84,7 +87,9 @@ HG-5B 最终 Intel Iris Xe 基线中，near 30/60 敌人的稳态 whole-loop 中
 RB-1 前的两轮 Full 确认，60 敌人场景中 Draw 已不是主要成本；一轮预热后 whole-loop 中位数/P95 为
 50.12/143.92 ms，GPU Raster 为 22.08/62.64 ms，GPU Draw 为 1.43/2.08 ms。典型重帧仍有
 10 次、73,728,000 bytes bridge transfer；RB-1 当前 normal near 结构计数已降为 4 次、29,491,200 bytes，
-但尚未完成多轮性能重采样。`native_present_ms` 中位数约 0.02 ms，因此较大的
+且五轮固定 workload 已确认 near 0/30/60 均保持该值，Campaign 保持 10 次、73,728,000 bytes。
+同组低扰动 whole-loop 中位轮依次为 16.283/22.813/33.197/21.240 ms；由于 package 同时包含此前修复，
+这些耗时不能作为单项 ablation 收益。`native_present_ms` 中位数约 0.02 ms，因此较大的
 `present_wall_ms` 不能归因为 present API 本身。
 
 下一轮按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 实施：先固定 workload 并补齐

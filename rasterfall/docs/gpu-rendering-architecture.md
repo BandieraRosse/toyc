@@ -38,7 +38,8 @@ target generation。该信息只用于测量，不扩展 Graphics 类型或改�
 producer 身份只形成诊断 span，不独立构成 target 可见性边界。若两个或更多 WORLD Draw spans 连续且
 中间没有 Raster span，mixed executor 按原顺序将它们编码为一个 graphics batch，只执行一次
 import/Draw/export；timestamp 预留、执行统计和 bridge event 也按该实际 Draw run 计数。Raster span
-仍是硬边界，不能仅因同层或同为 opaque 而跨越合并。
+仍是硬边界，不能仅因同层或同为 opaque 而跨越合并。hosted mixed 回归按 extent 验证每个 Draw run 的
+transfer 与 bridge bytes；native resize 回归同时验证这些计数和活动 frame-slot target rebuild。
 
 正常 AI world producer 对模块化队友使用局部两阶段提交：先按 actor 顺序完成 pose/IK、冻结全部可见 body
 Draw，再按相同 actor 顺序提交 opaque gear/weapon RasterCmd。每个附件仍读取对应 actor 的 finalized pose、

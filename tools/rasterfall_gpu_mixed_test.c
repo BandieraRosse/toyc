@@ -155,6 +155,17 @@ static int native_window_test(void)
             after.finishes==before.finishes+1 && after.readback_bytes==0 &&
             timing.color_readback_bytes==0 && timing.cpu_framebuffer_copy_bytes==0 &&
             timing.overlay_upload_bytes>0);
+        /* Eight Raster-separated Draw runs each import and export the shared
+         * depth attachment.  Color remains shared, so each run accounts for
+         * two transfers and width*height*16 bridge bytes.  Every pass changes
+         * extent and must rebuild exactly the active frame-slot target. */
+        NATIVE_CHECK(after.draw_spans==before.draw_spans+8 &&
+            after.graphics.raster_bridge_transfers==
+                before.graphics.raster_bridge_transfers+16 &&
+            after.graphics.bridge_transfer_bytes==
+                before.graphics.bridge_transfer_bytes+
+                    (uint64_t)width*(uint64_t)height*128 &&
+            after.graphics.target_builds==before.graphics.target_builds+1);
         if (pass>=2 && after.gpu_timing.supported) {
             NATIVE_CHECK(after.gpu_timing.valid && after.gpu_timing.requested>16 &&
                 after.gpu_timing.recorded==after.gpu_timing.requested &&
@@ -310,7 +321,9 @@ int main(int argc, char **argv)
         rf_gpu_mixed_get_stats(e,&after);
         CHECK(after.clears==before.clears+1 && after.finishes==before.finishes+1 && after.draws==before.draws+3);
         CHECK(after.draw_spans==before.draw_spans+2 &&
-            after.graphics.raster_bridge_transfers==before.graphics.raster_bridge_transfers+4);
+            after.graphics.raster_bridge_transfers==before.graphics.raster_bridge_transfers+4 &&
+            after.graphics.bridge_transfer_bytes==before.graphics.bridge_transfer_bytes+
+                (uint64_t)width*(uint64_t)height*32);
         if(iteration>4) CHECK(after.graphics.queue_submits==before.graphics.queue_submits);
         if(iteration>4)CHECK(after.graphics.mesh_upload_bytes==before.graphics.mesh_upload_bytes &&
             after.graphics.texture_upload_bytes==before.graphics.texture_upload_bytes);

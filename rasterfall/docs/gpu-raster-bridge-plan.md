@@ -176,7 +176,19 @@ Core bridge event 审计均改为按实际 Draw run 计数。mixed-executor 回�
 transparent/effects 层。相同 native `gpu-test` 场景的实际 Draw run 从 5 降到 2，transfer 从 10 降到 4，
 bridge bytes 从 73,728,000 降到 29,491,200。剩余两段由前置 world/map Draw 与其后的真实 Raster 内容隔开，
 不能只凭 opaque 分类继续跨越。该单次门禁证明结构计数下降，性能退出结论仍需固定 workload 多轮数据和
-第二物理 GPU 复核；Windows `gpu-test`、Quick 8/8 与 Full 正确性门禁已通过。
+第二物理 GPU 复核；Windows `gpu-test`、Quick 8/8 与 Full 正确性门禁已通过。mixed-executor hosted
+回归现按 extent 精确验证 bridge 次数与字节；native resize 回归也逐 pass 验证 Draw run、transfer、
+bridge bytes 以及活动 frame-slot target rebuild，防止只保持画面却让 bridge/resize 合同回退。
+
+同一 package 随后完成 audit 与 `-NoAudit` 各五轮固定 workload 采样。四个场景各自的规范化 workload
+sequence hash 均跨五轮一致；near 0/30/60 的 bridge 固定为 4 次、29,491,200 bytes，Campaign 固定为
+10 次、73,728,000 bytes，相比 RB-0 的 near 12 次、88,473,600 bytes 与 Campaign 14/16 次、
+103,219,200/117,964,800 bytes 均可重复下降。低扰动组 whole-loop median 的五轮范围/中位轮为：
+near 0 `15.575--16.680/16.283 ms`，near 30 `21.928--23.021/22.813 ms`，near 60
+`32.336--33.518/33.197 ms`，Campaign `20.819--21.690/21.240 ms`。audit 组对应中位轮为
+`13.511/20.686/31.328/16.401 ms`；audit 只用于归因，不与低扰动数据混作同一性能基线。该 package
+包含 RB-0 修复与此前 RB-1 改动，因此相对更早文档数字的全部耗时下降不能只归因于本次 bridge 编排；
+但相同 workload 下的 bridge 计数/字节下降已满足 Intel 单设备结构退出证据。第二物理 GPU 仍未复核。
 
 实施项：
 

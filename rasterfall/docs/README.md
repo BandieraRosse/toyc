@@ -38,6 +38,11 @@ GPU 按用户要求暂缓，所以当前不是跨设备签收，仍不进入 RB-
 代码入口为 `toy_renderer.command_filter` → `ai_actor_command_scope_*()`，以及
 `rf_gpu_vulkan_timestamp_reserve()` → mixed preflight → Core stats → runtime audit/RB0-COVERAGE。
 
+RB-1 当前已将连续 Draw span 合批，并把模块化队友的 body Draw 与 opaque gear/weapon Raster 提交分组。
+Intel 同一 package 的 audit/低扰动固定 workload 各五轮通过：near 0/30/60 的 bridge 均稳定为 4 次、
+29,491,200 bytes，Campaign 为 10 次、73,728,000 bytes，四场景各自 workload hash 跨轮一致。hosted 与
+native resize 合同现精确验证 transfer、bytes 和 frame-slot target rebuild；第二物理 GPU 仍未复核。
+
 此前 RB-0 排查发现 actor 命令范围跨 flush 失效、GPU timestamp 容量截断及 graphics wait 归因问题。
 推进顺序与证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；应先修复负载与测量，
 再重建基线，当前 producer 计数不能直接用于决定迁移优先级。
