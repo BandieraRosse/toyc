@@ -62,7 +62,7 @@ static struct rf_gpu_graphics_draw draw(unsigned width, unsigned height)
     d.index_count = 3; d.double_sided = 1; d.integer_depth = 1;
     return d;
 }
-int main(void)
+int main(int argc, char **argv)
 {
     struct rf_gpu gpu;
     struct rf_gpu_vulkan_context context;
@@ -79,10 +79,12 @@ int main(void)
     int failure = 0, initialized = 0;
     const struct rasterfall_prop_asset_profile *profile =
         rasterfall_prop_asset_profile(RASTERFALL_PROP_ASSET_ARCH_BEAM);
+    const char *reload_path = argc > 1 ? argv[1] : NULL;
 #define CHECK(x) do { if (!(x)) { __printf("FAIL line %d: %s\n", __LINE__, #x); failure = __LINE__; goto done; } } while (0)
     if (r) memset(r, 0, sizeof(*r));
     memset(&context, 0, sizeof(context)); context.require_graphics = 1;
-    CHECK(r && profile && fixture(r, 0, &a, 211) == 0 && fixture(r, 1, &b, 53) == 0);
+    CHECK(r && profile && argc <= 2 && fixture(r, 0, &a, 211) == 0 && fixture(r, 1, &b, 53) == 0);
+    if (!reload_path) reload_path = profile->model_path;
     CHECK(rf_gpu_init(&gpu, RF_GPU_POLICY_REQUIRED, &rf_gpu_vulkan_backend, &context) == 0);
     initialized = 1;
     __printf("GPU-MIXED adapter=%s vendor=%x device=%x type=%u queue=%u\n", gpu.info.adapter_name,
@@ -174,7 +176,7 @@ int main(void)
     rf_gpu_resource_cache_collect(cache);
     rf_gpu_resource_cache_get_stats(cache, &stats); CHECK(!stats.entries && stats.releases == 3);
     CHECK(rf_gpu_graphics_render(g, &d, 1, pixels, depth, 80*60) < 0);
-    CHECK(rasterfall_resources_load(r, profile->model_path, &loaded) == 0);
+    CHECK(rasterfall_resources_load(r, reload_path, &loaded) == 0);
     CHECK(loaded.slot == a.slot && loaded.generation != a.generation);
     CHECK(rasterfall_resources_frame_begin(r) == 0); epoch = r->frame_epoch;
     CHECK(rasterfall_resources_pin(r, loaded) == 0);

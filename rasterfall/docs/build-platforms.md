@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略；Windows PowerShell 主开发 lane 与 WSL 支持边界
+> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略；Windows PowerShell 主开发 lane、hosted asset 路径与 WSL 支持边界
 
 ## 当前开发平台优先级
 
@@ -63,6 +63,8 @@ WinSock、SDL 窗口/音频、线程和 WinMain 适配。平台契约头在 `win
 Windows package 复制整个 `rasterfall/assets`，因此会同时携带字库、BDF 源文件和许可。
 normal GPU 实机必须从 package 目录启动，确保 exe-relative 的 `rasterfall/assets` 可见；直接运行
 `build/rasterfall.exe` 会按其所在目录寻找 `build/rasterfall/assets`，不代表 GPU 初始化失败。
+位于 `build-windows/` 顶层的 hosted resource-cache 测试同样遵循 exe-relative 文件规则；统一 GPU
+验收脚本会把 package 内真实 RMESH 的绝对路径传给它，不依赖顶层构建目录中的残留资产副本。
 
 ## GPU 探针
 

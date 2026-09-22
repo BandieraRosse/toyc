@@ -16,6 +16,7 @@ $Graphics = Join-Path $Root 'build-windows/rf-gpu-graphics-test.exe'
 $Raster = Join-Path $Root 'build-windows/rf-gpu-raster-test.exe'
 $Cache = Join-Path $Root 'build-windows/rasterfall-gpu-cache-test.exe'
 $Mixed = Join-Path $Root 'build-windows/rasterfall-gpu-mixed-test.exe'
+$CacheReloadAsset = Join-Path $Package 'rasterfall/assets/models/props/industrial/rf_arch_beam.rmesh'
 $Mode = if ($Full) { 'full' } else { 'quick' }
 if (-not $OutputDirectory) {
     $OutputDirectory = Join-Path $Root ('tmp/gpu-acceptance-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -24,6 +25,9 @@ $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $OutputDirectory) { throw 'Use a new output directory.' }
 foreach ($Required in @($Exe, $Diff, $Graphics, $Raster, $Cache, $Mixed)) {
     if (-not (Test-Path -LiteralPath $Required)) { throw "Missing required executable: $Required. Run windows/NativeCodex.ps1 package and the GPU test targets first." }
+}
+if (-not (Test-Path -LiteralPath $CacheReloadAsset)) {
+    throw "Missing packaged resource-cache reload asset: $CacheReloadAsset"
 }
 if (Get-Process -Name rasterfall -ErrorAction SilentlyContinue) {
     throw 'A rasterfall process is already running; stop it before starting serial GPU acceptance.'
@@ -120,7 +124,9 @@ function Measure-Run([string] $Name, [string] $LogPath, [int] $Frames, [switch] 
 try {
     Run-Process 'logic' $Exe @('--logic-test') $Package | Out-Null
     Run-Process 'hosted-graphics' $Graphics @((Join-Path $OutputDirectory 'graphics-proof')) | Out-Null
-    Run-Process 'resource-cache' $Cache @() | Out-Null
+    # Windows resolves asset paths relative to the executable.  Hosted GPU
+    # tests live beside the package, so pass the packaged asset explicitly.
+    Run-Process 'resource-cache' $Cache @($CacheReloadAsset) | Out-Null
     Run-Process 'raster-differential' $Diff @('--artifact-dir',(Join-Path $OutputDirectory 'differential-failure')) | Out-Null
     Run-Process 'mixed-executor' $Mixed @() | Out-Null
     Run-Process 'mixed-native-resize' $Mixed @('--native-window') | Out-Null

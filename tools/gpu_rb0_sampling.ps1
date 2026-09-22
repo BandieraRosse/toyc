@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateRange(1, 20)]
-    [int] $Rounds = 5,
+    [int] $Rounds = 1,
     [string] $OutputDirectory = '',
     [string] $DriverLibraryPath = '',
     [string] $ExecutablePath = '',

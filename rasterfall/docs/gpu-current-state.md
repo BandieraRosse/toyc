@@ -1,7 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-22
-> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
+> 源码核对基线：Mixed M1 segment 有序 tile 遍历、RB-2 候选审计、GPU 采样轮数分级与 Windows hosted asset 显式路径
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)，阶段过程与历史性能数字见
@@ -155,6 +155,11 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -Rounds 5 -N
 归因；`-NoAudit` 组记录不受逐帧日志扰动的最终 stats，作为真实性能对照。两组都保存原始输出、manifest
 和跨轮摘要；开始前会拒绝已有 `rasterfall.exe` 进程。输出位于 `tmp/`，不提交仓库。
 
+脚本未显式指定 `-Rounds` 时只运行一轮，用于 workload、producer、Draw run、bridge 和失败边界诊断；
+确定性合同、画面或结构失败后不应机械重复。只有候选通过正确性与结构预检、准备形成性能收益结论时，
+才显式使用 `-Rounds 5`。正式 baseline/candidate 比较优先使用 `gpu_mixed_ablation.ps1`，由它保持五轮
+AB/BA 交替、AC 供电和 executable hash 合同。
+
 签收前后的阶段采样与历史阻塞条件见
 [测量阶段归档](archive/gpu-current-measurement-stage-20260922.md)。当前四场景盘点与下一候选见
 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)。
@@ -162,6 +167,10 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -Rounds 5 -N
 底层独立目标继续保留：`rf-gpu-graphics-test`、`rf-gpu-raster-test`、
 `rf-gpu-raster-diff-test`、resource-cache test 和 mixed-executor test。它们验证 ABI、资源与执行器
 合同，不由窗口程序替代。
+
+Windows resource-cache test 位于 package 外；Full 会显式传入 package 内的 `rf_arch_beam.rmesh`
+绝对路径，避免 Windows 的 exe-relative 文件解析把缺失的 `build-windows/rasterfall/assets` 旧目录
+误当成测试前置条件。该资产只验证 invalidate 后的真实重新加载与新 generation，不是性能输入。
 
 `-Full` 是当前日常完整回归，不等于重新执行全部历史 HG 签收矩阵。mixed executor hosted 与 native
 四 extent resize 已纳入 Quick/Full，并继续由独立目标提供合同覆盖；Vulkan validation/sync validation、
