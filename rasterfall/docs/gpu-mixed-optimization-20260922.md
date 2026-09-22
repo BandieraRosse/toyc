@@ -120,6 +120,30 @@ RB-0 的 validation/sync、fault、soak；这些门禁在后续 M2/M3 涉及相�
   gear/weapon 实际边界预检。
 - 第二物理 GPU 继续按用户要求暂缓；M1 当前不是跨设备签收。
 
+## M2 preflight 细分（AMD 5600H + RTX 3050）
+
+同一新 package 在 Windows native、交流电、OEM 均衡方案下完成 near 0/30/60 与 Campaign 各三轮审计，
+证据位于 `tmp/amd3050-m2-breakdown-20260922/`。四场景各自 workload sequence hash 跨轮一致，normal
+路径保持零 fallback/readback/CPU framebuffer copy/hot queue-idle。`gpu_metrics.ps1` 升为 schema 6，
+在原 preflight 下新增 dynamic release、target setup、dynamic CPU pack、dynamic resource create、plan build
+和 Vulkan Raster preflight 六类计时。
+
+轮间中位结果（ms）：
+
+| 场景 | preflight | dynamic release | dynamic pack | dynamic resource | plan build | Raster preflight | texture measure | Raster pack | Draw encode | 子项未覆盖 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| near 0 | 20.482 | 5.591 | 0.872 | 10.881 | 0.218 | 0.514 | 0.036 | 0.294 | 0.974 | 1.100 |
+| near 30 | 23.390 | 5.711 | 0.801 | 10.546 | 0.681 | 1.743 | 0.124 | 0.975 | 1.081 | 1.726 |
+| near 60 | 24.516 | 5.150 | 0.885 | 10.314 | 1.106 | 2.802 | 0.214 | 1.576 | 0.952 | 1.515 |
+| Campaign | 20.640 | 5.834 | 0.960 | 10.256 | 0.278 | 0.760 | 0.050 | 0.419 | 1.094 | 0.987 |
+
+target setup 各场景中位均约 0.002 ms，未单列。子项合计已将 preflight 缺口压到约 1.0--1.7 ms。
+动态资源创建包含当前每帧一次的 skinning submit/wait；对应四场景 skinning fence wait 中位约
+5.236--5.488 ms。因此固定 CPU 动态输入打包不是主要成本，主要固定成本是 frame-slot 再次使用时销毁
+上一资源约 5.2--5.8 ms，以及创建/上传/descriptor/skinning 整体约 10.3--10.9 ms。下一切片限定为
+按 frame slot 复用动态 resource 与 descriptor，同时保持当前 skinning submit/wait 边界；先证明销毁/
+重建消失且 workload、bridge、画面和生命周期门禁不变，再决定是否进入 M3。
+
 ## 后续阶段的重新归因
 
 M1 候选 near 60 audit 的 median：CPU enemies 10.942 ms、AI teammates 3.841 ms、mixed preflight

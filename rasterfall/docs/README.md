@@ -23,15 +23,16 @@ segment 的重复 tile 扫描，再按证据推进动态资源复用、skinning 
 producer 与光照语义；gear/weapon 边界预检和 infected 光照合同仍为后续迁移前置条件。
 
 当前推进：Intel RB-0 已签收，RB-1 已取得单设备结构收敛证据，RB-2 的 rigid-only 与普通
-infected body/shadow 两个切片均已否决并撤销，M1 已按 Intel 单设备范围签收；下一步先为 M2 补动态输入
-打包、资源创建/上传与 Raster binning 的互斥计时，再决定复用切片。下一迁移候选仍为 gear/weapon 边界预检。
+infected body/shadow 两个切片均已否决并撤销，M1 已按 Intel 单设备范围签收；M2 已在 AMD 5600H +
+RTX 3050 上补齐 preflight 子阶段计时，定位到逐帧动态资源销毁/重建为主要固定成本；下一步只做
+frame-slot 动态资源复用 A/B，暂不改变 skinning 同步模型。下一迁移候选仍为 gear/weapon 边界预检。
 第二物理 GPU 继续暂缓。候选、四场景成本/边界与审计修补见
 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)；`tools/gpu_rb2_candidate_report.ps1`
 汇总同 package 的 audit/no-audit 证据，不把 producer 命令数解释为 GPU 耗时。
 
 最新专项修复与证据见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。raw 分段输入覆盖与 resize 后
 附件悬空已修复；`tools/gpu_rb0_special.ps1` 是 validation/sync、fault、soak 串行入口。
-状态所有者为 backend 的 `input_versions` 和 Graphics 的 `shared_rasters`；metrics schema 5
+状态所有者为 backend 的 `input_versions` 和 Graphics 的 `shared_rasters`；metrics schema 6
 将七类 wait、互斥 CPU phase 和前序 GPU 帧纳入审计分析。正确口径五轮未复现历史 near60 数百毫秒双态；
 低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结。
 
@@ -86,7 +87,7 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
-| GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit / `--gpu-rb0-stats` → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait；`gpu_metrics.ps1` schema 5 提供规范化 workload hash/diff 与 phase/wait 归因 |
+| GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit / `--gpu-rb0-stats` → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait；`gpu_metrics.ps1` schema 6 提供规范化 workload hash/diff、phase/wait 与 preflight 子阶段归因 |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |

@@ -1883,6 +1883,12 @@ static int core_end_frame_present(struct rf_core *core)
         frame->stats.mixed_cache_collect_ms = after.cache_collect_ms-before.cache_collect_ms;
         frame->stats.mixed_slot_wait_ms = after.slot_wait_ms-before.slot_wait_ms;
         frame->stats.mixed_preflight_ms = after.preflight_ms-before.preflight_ms;
+        frame->stats.mixed_dynamic_release_ms = after.dynamic_release_ms-before.dynamic_release_ms;
+        frame->stats.mixed_target_setup_ms = after.target_setup_ms-before.target_setup_ms;
+        frame->stats.mixed_dynamic_pack_ms = after.dynamic_pack_ms-before.dynamic_pack_ms;
+        frame->stats.mixed_dynamic_resource_ms = after.dynamic_resource_ms-before.dynamic_resource_ms;
+        frame->stats.mixed_plan_build_ms = after.plan_build_ms-before.plan_build_ms;
+        frame->stats.mixed_raster_preflight_ms = after.raster_preflight_ms-before.raster_preflight_ms;
         frame->stats.mixed_texture_measure_ms = after.texture_measure_ms-before.texture_measure_ms;
         frame->stats.mixed_pack_ms = after.pack_ms-before.pack_ms;
         frame->stats.mixed_draw_encode_ms = after.draw_encode_ms-before.draw_encode_ms;

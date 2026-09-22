@@ -236,8 +236,11 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->completed_timing.frame_number=e->submitted_frame[e->active_frame];
         e->submitted_frame[e->active_frame]=0;
     }
+    phase_start=mixed_now_ms();
     mixed_release_dynamic(e,e->active_frame);
+    e->stats.dynamic_release_ms+=mixed_now_ms()-phase_start;
     rf_gpu_vulkan_measure_frame(e->context,e->next_frame_number+1);
+    phase_start=mixed_now_ms();
     if (reserve((void **)&e->pins[e->active_frame],
             &e->pin_capacity[e->active_frame],f->draw_count ? f->draw_count : 1,
             sizeof(*e->pins[e->active_frame]))<0 ||
@@ -263,10 +266,12 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         if (rf_gpu_vulkan_timestamp_reserve(mixed_raster(e)->implementation,
                 intervals)<0) { __fprintf(2,"mixed preflight: timestamp reserve failed intervals=%u\n",intervals); return -1; }
     }
+    e->stats.target_setup_ms+=mixed_now_ms()-phase_start;
     if (f->dynamic_vertex_count) {
         uint32_t *indices, white=0xffffff;
         uint32_t *bind_words=NULL,*palette_words=NULL;
         if (f->dynamic_vertex_count>UINT32_MAX) return -1;
+        phase_start=mixed_now_ms();
         indices=malloc((size_t)f->dynamic_vertex_count*sizeof(*indices));
         if (!indices) return -1;
         for (uint32_t n=0;n<(uint32_t)f->dynamic_vertex_count;++n) indices[n]=n;
@@ -304,21 +309,27 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
                     }
                 }
             }
+            e->stats.dynamic_pack_ms+=mixed_now_ms()-phase_start;
+            phase_start=mixed_now_ms();
             e->dynamic[e->active_frame][0]=rf_gpu_graphics_skinned_resource_create(
                 mixed_graphics(e),e->output.character_vertex_diff ?
                     (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices : NULL,
                 (uint32_t)f->dynamic_vertex_count,indices,(uint32_t)f->dynamic_vertex_count,
                 bind_words,(uint32_t)f->dynamic_vertex_count*22,palette_words,
                 (uint32_t)f->skin_palette_count*15,&white,1,1);
+            e->stats.dynamic_resource_ms+=mixed_now_ms()-phase_start;
             free(bind_words); free(palette_words);
         } else {
             if (f->reference_vertex_count!=f->dynamic_vertex_count) {
                 free(indices); return -1;
             }
+            e->stats.dynamic_pack_ms+=mixed_now_ms()-phase_start;
+            phase_start=mixed_now_ms();
             e->dynamic[e->active_frame][0]=rf_gpu_graphics_resource_create(
                 mixed_graphics(e),(const struct rf_gpu_graphics_vertex *)f->dynamic_vertices,
                 (uint32_t)f->dynamic_vertex_count,indices,
                 (uint32_t)f->dynamic_vertex_count,&white,1,1);
+            e->stats.dynamic_resource_ms+=mixed_now_ms()-phase_start;
         }
         free(indices);
         if (!e->dynamic[e->active_frame][0]) return -1;
@@ -351,6 +362,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
                 sizeof(struct rf_gpu_graphics_vertex);
         }
     }
+    phase_start=mixed_now_ms();
     if (reserve((void **)&e->ordered, &e->ordered_capacity,
             f->raster_count ? f->raster_count : 1, sizeof(*e->ordered)) < 0 ||
         reserve((void **)&e->draws, &e->draw_capacity,
@@ -366,6 +378,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     memset(&renderer,0,sizeof(renderer));
     renderer.surface.width=f->width; renderer.surface.height=f->height;
     renderer.cmds=e->ordered; renderer.cmd_count=count;
+    e->stats.plan_build_ms+=mixed_now_ms()-phase_start;
     phase_start=mixed_now_ms();
     if (rf_gpu_raster_measure_textures_toy_v1(&renderer,&unique,&bytes)<0 || bytes>ULONG_MAX) {
         __fprintf(2,"mixed preflight: texture measure failed commands=%u bytes=%zu\n",count,bytes); goto done;
@@ -418,6 +431,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             }
         }
     }
+    phase_start=mixed_now_ms();
     if (rf_gpu_vulkan_raster_preflight(e->context,mixed_raster(e)->implementation,e->stream,
         (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,
         e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) {
@@ -425,6 +439,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             (unsigned long)e->stream_size,e->textures.desc_count,(unsigned long)e->textures.texel_size);
         goto done;
     }
+    e->stats.raster_preflight_ms+=mixed_now_ms()-phase_start;
     phase_start=mixed_now_ms();
     for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) {
         __fprintf(2, "mixed preflight: Draw encode failed index=%lu primitive=%u indices=%u asset=%d vertex_light=%d ambient=%u specular=%u double_sided=%d dynamic=%lu\n",

@@ -100,6 +100,9 @@ struct rf_core_gpu_frame_stats {
     double mixed_graphics_submit_ms, mixed_graphics_wait_ms, mixed_bridge_ms;
     double mixed_freeze_ms, mixed_cache_collect_ms, mixed_slot_wait_ms;
     double mixed_preflight_ms;
+    double mixed_dynamic_release_ms, mixed_target_setup_ms;
+    double mixed_dynamic_pack_ms, mixed_dynamic_resource_ms;
+    double mixed_plan_build_ms, mixed_raster_preflight_ms;
     double mixed_texture_measure_ms, mixed_pack_ms, mixed_draw_encode_ms;
     double mixed_draw_batch_prepare_ms, mixed_graphics_draw_ms;
     double mixed_raster_segment_ms;

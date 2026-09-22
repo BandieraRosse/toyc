@@ -113,6 +113,12 @@ foreach ($Line in $SelectedLines) {
             ai_teammates_ms = $null
             enemies_cmd = $null
             mixed_preflight_ms = $null
+            mixed_dynamic_release_ms = $null
+            mixed_target_setup_ms = $null
+            mixed_dynamic_pack_ms = $null
+            mixed_dynamic_resource_ms = $null
+            mixed_plan_build_ms = $null
+            mixed_raster_preflight_ms = $null
             mixed_freeze_ms = $null
             mixed_cache_collect_ms = $null
             mixed_texture_measure_ms = $null
@@ -220,6 +226,12 @@ foreach ($Line in $SelectedLines) {
         $Current.mixed_freeze_ms = Number $Line 'freeze_ms'
         $Current.mixed_cache_collect_ms = Number $Line 'cache_collect_ms'
         $Current.mixed_preflight_ms = Number $Line 'preflight_ms'
+        $Current.mixed_dynamic_release_ms = Number $Line 'dynamic_release_ms'
+        $Current.mixed_target_setup_ms = Number $Line 'target_setup_ms'
+        $Current.mixed_dynamic_pack_ms = Number $Line 'dynamic_pack_ms'
+        $Current.mixed_dynamic_resource_ms = Number $Line 'dynamic_resource_ms'
+        $Current.mixed_plan_build_ms = Number $Line 'plan_build_ms'
+        $Current.mixed_raster_preflight_ms = Number $Line 'raster_preflight_ms'
         $Current.mixed_texture_measure_ms = Number $Line 'texture_measure_ms'
         $Current.mixed_pack_ms = Number $Line 'pack_ms'
         $Current.mixed_draw_encode_ms = Number $Line 'draw_encode_ms'
@@ -470,7 +482,9 @@ $SlowFrames = @($Measured | Sort-Object whole_loop_ms -Descending | Select-Objec
 $CpuFields = @(
     'render_ms','present_wall_ms','whole_loop_ms','frame_interval_ms','scene_ms','static_ms',
     'enemies_ms','ai_teammates_ms','mixed_freeze_ms','mixed_cache_collect_ms',
-    'mixed_preflight_ms','mixed_texture_measure_ms','mixed_pack_ms',
+    'mixed_preflight_ms','mixed_dynamic_release_ms','mixed_target_setup_ms',
+    'mixed_dynamic_pack_ms','mixed_dynamic_resource_ms','mixed_plan_build_ms',
+    'mixed_raster_preflight_ms','mixed_texture_measure_ms','mixed_pack_ms',
     'mixed_draw_encode_ms','mixed_draw_batch_prepare_ms','mixed_graphics_draw_ms',
     'mixed_raster_segment_ms','mixed_graphics_wait_ms',
     'prepare_ms','cpu_render_ms','execute_ms','remainder_ms',
@@ -492,7 +506,7 @@ foreach ($Caller in @('upload','vertex-diff','skin-input','skinning','bridge','d
 $WaitPairs = @($Measured | Where-Object { $null -ne $_.predecessor_gpu_timing })
 
 $Result = [ordered]@{
-    schema = 5
+    schema = 6
     log = $ResolvedLog
     selected_run_from_end = $RunFromEnd
     warmup_frames = $WarmupFrames

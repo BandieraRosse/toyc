@@ -34,7 +34,10 @@ struct rf_gpu_mixed_stats {
     uint64_t character_position_mismatches, character_normal_mismatches;
     uint64_t character_uv_mismatches;
     uint32_t character_max_position_delta, character_max_normal_delta;
-    double cache_collect_ms, slot_wait_ms, preflight_ms, texture_measure_ms, pack_ms;
+    double cache_collect_ms, slot_wait_ms, preflight_ms;
+    double dynamic_release_ms, target_setup_ms, dynamic_pack_ms;
+    double dynamic_resource_ms, plan_build_ms, raster_preflight_ms;
+    double texture_measure_ms, pack_ms;
     double draw_encode_ms, draw_batch_prepare_ms, graphics_draw_ms;
     double raster_segment_ms;
     struct rf_gpu_mixed_gpu_timing gpu_timing;

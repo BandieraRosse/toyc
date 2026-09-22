@@ -22,7 +22,7 @@ RasterCmd fog 字段、CPU/GPU consumer 和底层 Post Fog V0 仍保留 ABI 与�
 
 负载/测量及专项生命周期修复已完成 Windows Quick/Full、validation/sync、fault 与 soak；
 采样结果和限制见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。下文性能数字为修复前历史现场，
-不能替代新基线。低扰动 whole_us 已统一到整轮起点，兜底分类为 unclassified。schema 5 离线归因已完成：
+不能替代新基线。低扰动 whole_us 已统一到整轮起点，兜底分类为 unclassified。schema 6 离线归因已完成：
 正确口径五轮没有复现历史 near60 数百毫秒双态；55 个低扰动未分类慢帧均由互斥顶层 phase 覆盖，
 但缺少 phase 内因果计时，按根因未知的已知风险冻结。此前 fog/远墙差异已通过统一禁用 runtime fog 消除。
 RB-0 最终签收 package `F407FD19BFC1FBC049ADE78EA21EB9E71D7CD2B627C0CAD388CB1DC8E363D762` 已通过
@@ -111,7 +111,8 @@ RB-1 前的两轮 Full 确认，60 敌人场景中 Draw 已不是主要成本；
 这些耗时不能作为单项 ablation 收益。`native_present_ms` 中位数约 0.02 ms，因此较大的
 `present_wall_ms` 不能归因为 present API 本身。
 
-M1 segment 遍历已收敛；后续按 [Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 先细分 M2 preflight 计时，producer 迁移
+M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细分，下一步按
+[Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 做 frame-slot 动态资源复用 A/B；producer 迁移
 仍按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的 gear/weapon RB-2 候选门禁实施；
 透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
 
@@ -136,7 +137,7 @@ Full 包含 Quick，并增加 near/mid CPU/GPU 对照、thin-far、300 帧 prese
 其中 presenter-300、Campaign 320 和 near 30/60 性能统计均启用固定 16 ms simulation tick；指标 JSON
 包含 P99、tick/accumulator 集合、关键命令与 bridge 计数范围，以及最慢 5% 帧的初步分类。normal frame
 日志还逐 producer 输出 RasterCmd/span/opaque/transparent，并逐 bridge direction 输出 color/depth traffic、
-layer、前后 producer 和 target generation；schema 5 metrics JSON 提供逐类范围、whole-loop 相关系数、
+layer、前后 producer 和 target generation；schema 6 metrics JSON 提供逐类范围、whole-loop 相关系数、
 慢帧明细，以及排除计时和 target generation 后的逐帧规范化 workload 与 SHA-256。
 
 ```powershell
@@ -151,7 +152,7 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -Rounds 5
 powershell -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -Rounds 5 -NoAudit
 ```
 
-该脚本严格串行运行 near 0/30/60 与 Campaign。默认组生成逐轮 schema 5 metrics 并用于 producer/bridge
+该脚本严格串行运行 near 0/30/60 与 Campaign。默认组生成逐轮 schema 6 metrics 并用于 producer/bridge
 归因；`-NoAudit` 组记录不受逐帧日志扰动的最终 stats，作为真实性能对照。两组都保存原始输出、manifest
 和跨轮摘要；开始前会拒绝已有 `rasterfall.exe` 进程。输出位于 `tmp/`，不提交仓库。
 

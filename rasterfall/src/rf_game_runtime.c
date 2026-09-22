@@ -4648,9 +4648,12 @@ startup_again:
                     rf_windows_log(audit_line);
                 }
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT mixed-cpu freeze_ms=%.3f cache_collect_ms=%.3f preflight_ms=%.3f texture_measure_ms=%.3f pack_ms=%.3f draw_encode_ms=%.3f draw_batch_prepare_ms=%.3f graphics_draw_ms=%.3f raster_segment_ms=%.3f",
+                    "FRAME-AUDIT mixed-cpu freeze_ms=%.3f cache_collect_ms=%.3f preflight_ms=%.3f dynamic_release_ms=%.3f target_setup_ms=%.3f dynamic_pack_ms=%.3f dynamic_resource_ms=%.3f plan_build_ms=%.3f raster_preflight_ms=%.3f texture_measure_ms=%.3f pack_ms=%.3f draw_encode_ms=%.3f draw_batch_prepare_ms=%.3f graphics_draw_ms=%.3f raster_segment_ms=%.3f",
                     gpu_audit.mixed_freeze_ms,gpu_audit.mixed_cache_collect_ms,
-                    gpu_audit.mixed_preflight_ms,gpu_audit.mixed_texture_measure_ms,
+                    gpu_audit.mixed_preflight_ms,gpu_audit.mixed_dynamic_release_ms,
+                    gpu_audit.mixed_target_setup_ms,gpu_audit.mixed_dynamic_pack_ms,
+                    gpu_audit.mixed_dynamic_resource_ms,gpu_audit.mixed_plan_build_ms,
+                    gpu_audit.mixed_raster_preflight_ms,gpu_audit.mixed_texture_measure_ms,
                     gpu_audit.mixed_pack_ms,gpu_audit.mixed_draw_encode_ms,
                     gpu_audit.mixed_draw_batch_prepare_ms,
                     gpu_audit.mixed_graphics_draw_ms,
