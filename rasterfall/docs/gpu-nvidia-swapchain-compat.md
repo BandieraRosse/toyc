@@ -39,7 +39,8 @@ SDL software renderer 只负责窗口侧兼容与既有软件 surface 能力；s
 从 package 运行根目录 `build-windows/rasterfall-windows` 执行；构建命令为 `make -f windows/Makefile all` 和 `make -f windows/Makefile gpu-mixed-executor-test`。在 RTX 3050 Laptop GPU 上：
 
 - strict native normal scene 连续 10 帧退出码 0；`--frame-audit` 显示 10/10 GPU 帧、零 fallback、零 color readback 和零 CPU framebuffer copy。
-- 加 `--gpu-post-fog` 的 strict native 连续 10 帧退出码 0。
+- 当时尚存在的 `--gpu-post-fog` strict native 连续 10 帧退出码 0；该开关已在后续统一 fog-free runtime
+  策略中移除，本条只保留为底层 Post ABI 的历史实机证据。
 - `rasterfall-gpu-mixed-test.exe --native-window` 通过，覆盖 96×72、120×57、120×33 三个 extent，均为零 readback 与零 CPU framebuffer copy。
 - Windows `--logic-test`、普通 GPU compute 单帧和 CPU 单帧均通过；`git diff --check` 通过。
 

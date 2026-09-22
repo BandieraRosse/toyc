@@ -1,11 +1,12 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 文档更新：2026-09-22
+> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略工作区
 
 ## 当前 GPU 验收阻塞
 
-Windows Intel strict native smoke 与 Fog/Post smoke 已通过；原闪退已修复为 retained command 跨帧容量失配；完整窗口生命周期仍按验收矩阵独立签收。
+Windows Intel strict native smoke 已通过；历史 Fog/Post smoke 只保留为底层 ABI 证据，当前 runtime
+不再提供 fog 开关。原闪退已修复为 retained command 跨帧容量失配；完整窗口生命周期仍按验收矩阵独立签收。
 
 ## 状态所有者
 

@@ -312,7 +312,6 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
                                const struct vec3 *vc, uint32_t color);
 static void world_to_view(const struct camera *camera, const struct vec3 *world,
                           struct vec3 *view);
-static int world_distance(const struct camera *camera, int x, int z);
 static void project_vertex(const struct toy_surface *surface,
                            const struct vec3 *view,
                            struct toy_screen_vertex *screen);
@@ -3096,18 +3095,12 @@ void rasterfall_render_end_dynamic_lighting(void)
     active_dynamic_world_lighting = 0;
 }
 
-static int baked_fog_at(int distance)
+static int runtime_command_fog_q8(void)
 {
-    if (distance <= 12000) return 0;
-    if (distance >= 24000) return 210;
-    return (distance - 12000) * 210 / 12000;
-}
-
-static int world_distance(const struct camera *camera, int x, int z)
-{
-    long long dx = (long long)x - camera->x;
-    long long dz = (long long)z - camera->z;
-    return (int)isqrt(dx * dx + dz * dz);
+    /* Keep RasterCmd fog fields and CPU/GPU consumer semantics intact for ABI
+     * compatibility and focused tests.  Current Rasterfall runtime policy is
+     * fog-free, so every normal producer emits the neutral value. */
+    return 0;
 }
 
 static void copy_vec3(struct vec3 *out, const struct vec3 *in)
@@ -3366,8 +3359,7 @@ static int draw_world_triangle_views(struct toy_renderer *renderer,
                     (active_diagnostic_fixed_lighting && !active_world_light_v2) ? 256 :
                     world_brightness_at(center_x, (a->y + b->y + c->y) / 3,
                                         center_z);
-        int fog = active_gallery_lighting ? 0 : floor_submission ? 0 :
-                  baked_fog_at(world_distance(camera, center_x, center_z));
+        int fog = runtime_command_fog_q8();
         if (active_material_lighting_min_q8 > 0) {
             light = light * active_material_form_light_q8 / 256;
             light = clampi(light, active_material_lighting_min_q8,
@@ -3472,9 +3464,7 @@ static int draw_world_triangle_alpha(struct toy_renderer *renderer,
             (active_diagnostic_fixed_lighting && !active_world_light_v2) ? 256 : world_brightness_at(
                 (a->x + b->x + c->x) / 3, (a->y + b->y + c->y) / 3,
                 (a->z + b->z + c->z) / 3),
-            floor_submission ? 0 : baked_fog_at(world_distance(
-                camera, (a->x + b->x + c->x) / 3,
-                (a->z + b->z + c->z) / 3)), alpha);
+            runtime_command_fog_q8(), alpha);
     }
     /* Alpha in this path is source-over presentation, not a translucent
      * depth layer. Keep the command contract explicit for the GPU packer and
@@ -3585,8 +3575,7 @@ static int draw_world_triangle_tex_views(struct toy_renderer *renderer,
                               (a->p.y + b->p.y + c->p.y) / 3, center_z);
         int model_light = (a->light + b->light + c->light) / 3;
         int light = scene_light * model_light / 256;
-        int fog = active_gallery_lighting ? 0 :
-                  floor_submission ? 0 : baked_fog_at(world_distance(camera, center_x, center_z));
+        int fog = runtime_command_fog_q8();
         if (active_material_lighting_min_q8 > 0) {
             sa.light = clipped[0].light * scene_light / 256;
             sb.light = (reversed ? clipped[i + 1].light : clipped[i].light) *

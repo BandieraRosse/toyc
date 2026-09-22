@@ -1333,26 +1333,9 @@ int rf_core_init_config(struct rf_core *core,
             core->gpu_frame.renderer = RF_CORE_RENDERER_CPU;
         } else {
             core->gpu_frame.initialized = 1;
-            if (config->gpu_post_fog && core->gpu_frame.native_present) {
-                struct rf_gpu_post_params_v1 post;
-                memset(&post,0,sizeof(post));
-                post.mode=RF_GPU_POST_DEPTH_FOG_V0;
-                /* Raster depth is Q20 inverse Z.  512--4096 RFU provides a
-                 * monotonic diagnostic fog without claiming metre units. */
-                post.fog_near_inv_z=1048576/512;
-                post.fog_far_inv_z=1048576/4096;
-                post.fog_color=0xff7890a0U;
-                post.max_density_q8=192;
-                core->mixed_post = post;
-                if (rf_gpu_raster_set_post(&core->gpu_frame.raster,&post)<0) {
-                    if (core->gpu_frame.strict_gpu_only) {
-                        __fprintf(2, "gpu-required: requested GPU Post-Raster V1 unavailable\n");
-                        rf_core_shutdown(core);
-                        return -1;
-                    }
-                    __printf("GPU Post-Raster V1 unavailable; bypassing post pass\n");
-                }
-            }
+            /* Rasterfall runtime deliberately leaves Post disabled.  The
+             * backend Fog V0 ABI remains available to low-level differential
+             * fixtures, but neither normal CPU nor GPU rendering enables it. */
             toy_renderer_set_command_consumer(core->renderer,
                                                gpu_pre_post_retain_consume,
                                                core);

@@ -1,7 +1,7 @@
 # GPU Raster / Bridge 收敛计划
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 Intel 最终 Full/专项签收、SKY 轴向朝向合同及 metrics schema 5 工作区
+> 源码核对基线：RB-0 Intel 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
 
 本文定义 HG-0 至 HG-5B 完成后的下一轮 GPU 性能工作。它不是新的通用 Graphics 功能阶段，也不继续
 沿用历史 HG 编号；目标是先建立可信、可复现的帧耗时归因，再收敛剩余 RasterCmd、Draw/Raster bridge
@@ -44,7 +44,7 @@
 
 1. 让同一 package、同一固定 workload 的 median、P95、P99 和最慢帧原因可以复核。
 2. 将 CPU encode、frame-slot/fence wait、GPU Raster、GPU Draw、bridge 和 present API 分开归因。
-3. 减少全屏 bridge 次数/字节，并保持 color、depth、层顺序与 Fog 数值合同。
+3. 减少全屏 bridge 次数/字节，并保持 color、depth、层顺序与 runtime fog 中性值合同。
 4. 将高成本、语义稳定的 opaque RasterCmd producer 迁移到现有 Draw 路径。
 5. 在 Intel 与至少另一种物理 GPU 上验证收益和正确性，再决定透明/VFX 后续路线。
 
@@ -60,7 +60,7 @@
 最新执行记录见 [RB-0 专项续接](gpu-rb0-special-20260922.md)；专项入口为
 `tools/gpu_rb0_special.ps1`，审计分析使用 metrics schema 5。以下阶段数字不能替代修复后的新基线。
 
-当前签收状态：最终 package `F407FD19...63D762` 的 Full 31/31、validation/sync、五类 fault 与
+RB-0 签收状态：最终 package `F407FD19...63D762` 的 Full 31/31、validation/sync、五类 fault 与
 10,000 帧 soak 已在 Intel Iris Xe 通过；schema 5 性能归因完成。Intel 单设备 RB-0 已签收，但计划要求的
 RTX 3050/第二物理 GPU 由用户明确暂缓，因此本轮按 Intel 单设备范围结束，不称为跨设备签收，
 也不自动进入 RB-1。
@@ -182,7 +182,7 @@ Raster/Draw segment 的合并，而不是绕过深度或层顺序合同。
 - near 0/30/60 与 Campaign 的 bridge 次数或字节有可重复下降；目标值由 RB-0 归因后确定，不提前用
   不可靠数字强行设定百分比。
 - GPU bridge timestamp 和 whole-loop/P95 在 Intel 上有一致改善，另一物理 GPU 不出现反向显著退化。
-- CPU/reference、hosted differential、Fog、thin-far、四 extent resize、world-cycle 和固定 capture 保持
+- CPU/reference、hosted differential、fog-free runtime、thin-far、四 extent resize、world-cycle 和固定 capture 保持
   正确；所有帧仍为 required `gpu-native`。
 
 ## Checkpoint RB-2：高成本 Opaque RasterCmd 迁移
@@ -200,7 +200,7 @@ RB-2 只迁移 RB-0 证明为主要成本、且适合现有 Graphics 数值合�
 每批迁移必须：
 
 - 明确 producer、资源所有者、frame pin/generation 和回滚边界。
-- 保留 CPU/reference 或可复核 differential；近裁剪、逆深度、Fog、lighting、alpha/depth-write 语义不得
+- 保留 CPU/reference 或可复核 differential；近裁剪、逆深度、fog-free runtime、lighting、alpha/depth-write 语义不得
   变化。
 - 输出迁移前后的 RasterCmd、Draw、span、bridge、upload、GPU Raster/Draw 和 whole-loop/P95 对照。
 - 覆盖 near 0/30/60、Campaign、thin-far、角色/敌人边缘入镜以及相关固定 capture。
@@ -230,7 +230,7 @@ submission，以及 mixed pack 的重复扫描/复制。优化以 P95/P99 和最
 RB-0 至 RB-3 完成后再决定下一阶段：
 
 - 若主要剩余成本仍是 opaque Raster，继续扩展已证明的 Draw 类型。
-- 若成本集中在透明和粒子，单独立项 transparent/VFX GPU 路径，并先冻结排序、blend、depth 和 Fog
+- 若成本集中在透明和粒子，单独立项 transparent/VFX GPU 路径，并先冻结排序、blend、depth 和中性 fog
   合同。
 - 若成本集中在 bridge/同步，继续优化 mixed scheduling，不扩大材质范围。
 - 若 Intel 与独显差异显著，先做厂商/驱动专项，不把单设备优化当作通用结论。
@@ -250,5 +250,5 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_acceptance.ps1 -Quick
 
 涉及 bridge、同步、presenter 或资源生命周期时，至少增加 Full、四 extent native resize、validation/
 sync validation、fault injection 和专项 soak。涉及 producer 迁移时，增加 CPU/reference differential、
-near/mid/thin-far、30/60 敌人、Campaign、Fog 和受影响资产的固定 capture。发布或跨设备结论必须在 Intel
+near/mid/thin-far、30/60 敌人、Campaign、fog-free runtime 和受影响资产的固定 capture。发布或跨设备结论必须在 Intel
 与至少另一种物理 GPU 上使用同一 package 重复验证。

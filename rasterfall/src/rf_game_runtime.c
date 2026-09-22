@@ -3324,7 +3324,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
         core_config.native_present = options.gpu_native_present;
-        core_config.gpu_post_fog = options.gpu_post_fog;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
         gpu_vulkan_context.present_fault =

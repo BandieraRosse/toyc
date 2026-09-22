@@ -1,7 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 Intel 最终 Full/专项签收、SKY 轴向朝向合同及 schema 5 性能归因工作区
+> 源码核对基线：RB-0 Intel 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)，阶段过程与历史性能数字见
@@ -12,17 +12,16 @@
 最新专项状态以 [RB-0 专项续接](gpu-rb0-special-20260922.md) 为准；其中记录 raw 输入覆盖和
 resize 附件生命周期修复，以及真实启用 validation/sync 的证据。下方旧结果不能替代新 package 验收。
 
-同 fixed tick 的 near/mid 复核已补齐 mixed SKY 与世界血条 overlay coverage；远墙 fog 仍不一致，
-因为 CPU planar 路径的 camera-dependent baked fog 尚未进入 persistent-map Graphics Draw 合同。
-RB-0 不扩大 Graphics，因此不能据此宣称完整 CPU/native 画面对照；该差异已按已知边界冻结，
-不影响 Intel 单设备 RB-0 的最终签收。
+同 fixed tick 的 near/mid 复核已补齐 mixed SKY 与世界血条 overlay coverage。RB-0 签收后，Rasterfall
+runtime 已统一为无 fog：CPU/GPU normal producer 只提交中性 fog，GPU Post 不再由 CLI/Core 接入。
+RasterCmd fog 字段、CPU/GPU consumer 和底层 Post Fog V0 仍保留 ABI 与专项测试语义，但不参与正常游戏画面。
 
 负载/测量及专项生命周期修复已完成 Windows Quick/Full、validation/sync、fault 与 soak；
 采样结果和限制见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。下文性能数字为修复前历史现场，
 不能替代新基线。低扰动 whole_us 已统一到整轮起点，兜底分类为 unclassified。schema 5 离线归因已完成：
 正确口径五轮没有复现历史 near60 数百毫秒双态；55 个低扰动未分类慢帧均由互斥顶层 phase 覆盖，
-但缺少 phase 内因果计时，按根因未知的已知风险冻结。fog/远墙差异也按用户决定冻结；均不作为当前阻点。
-最终 package `F407FD19BFC1FBC049ADE78EA21EB9E71D7CD2B627C0CAD388CB1DC8E363D762` 已通过
+但缺少 phase 内因果计时，按根因未知的已知风险冻结。此前 fog/远墙差异已通过统一禁用 runtime fog 消除。
+RB-0 最终签收 package `F407FD19BFC1FBC049ADE78EA21EB9E71D7CD2B627C0CAD388CB1DC8E363D762` 已通过
 Full 31/31、validation/sync、五类 fault 和 10,000 帧 soak；证据与 SKY 轴向朝向 validator 修复见专项续接。
 Intel 单设备 RB-0 已签收，第二物理 GPU 仍暂缓，当前结论不外推为跨设备签收。
 
@@ -37,13 +36,13 @@ native present、物理驱动、窗口生命周期和性能验收。
 
 ## 当前支持范围
 
-- Windows normal runtime 支持 Core-owned mixed Draw/Raster frame、Vulkan native present、Post/fog、
+- Windows normal runtime 支持 Core-owned mixed Draw/Raster frame、Vulkan native present、Post bypass、
   overlay、双帧资源槽和 swapchain resize。
 - 普通 opaque static RMESH、持久 ground/map/boundary geometry 和角色 body Draw 使用 hardware
   graphics；动态、透明和未迁移 producer 继续使用 compute RasterCmd。
 - 角色 normal path 使用 GPU skinning；CPU 仍拥有 pose、IK、socket、gear 与 weapon placement。
 - world generation retirement、frame pin、GPU cache 和 presenter completion 均有逐帧审计。
-- Intel Iris Xe 已覆盖 strict native、Fog、Campaign enemy、resize、world cycle、角色 vertex diff 和
+- Intel Iris Xe 已覆盖 strict native、Campaign enemy、resize、world cycle、角色 vertex diff 和
   长帧稳定性；RTX 3050 已覆盖 native swapchain smoke。Linux hosted Vulkan 路径用于 correctness，
   Linux normal window/native presentation尚未按同一矩阵验收。
 - `rasterfall-gpu-mixed-test.exe --native-window` 独立覆盖四个连续 extent；extent target/swapchain

@@ -1,8 +1,9 @@
 # Windows Native Codex
 
 > 文档更新：2026-09-22
+> 源码核对基线补充：RB-0 最终签收后的 runtime fog-free 策略与已移除 `--gpu-post-fog` 接入。
 > 源码核对基线补充：`tools/gpu_rb0_special.ps1` 的 layer 依赖 PATH、加载证明与分阶段专项。
-> 源码核对基线补充：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退波次与窗口拉伸已确认；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
+> 源码核对基线补充：Windows Intel strict native、正式地图 320 帧零回退波次与窗口拉伸已确认；历史 Fog smoke 仅证明保留的底层 ABI，当前 runtime 不接入 fog；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_acceptance.ps1`、当前 `rasterfall_options.c`
 

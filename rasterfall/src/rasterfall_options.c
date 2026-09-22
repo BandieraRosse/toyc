@@ -89,7 +89,7 @@ void rasterfall_options_usage(int fd)
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
-        "  --renderer <cpu|gpu-compute> [--gpu-required] [--gpu-native-present] [--gpu-post-fog]\n"
+        "  --renderer <cpu|gpu-compute> [--gpu-required] [--gpu-native-present]\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
@@ -197,7 +197,6 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         }
         else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
         else if (!strcmp(option,"--gpu-native-present")) o->gpu_native_present=1;
-        else if (!strcmp(option,"--gpu-post-fog")) o->gpu_post_fog=1;
         else if (!strcmp(option,"--gpu-present-fault")) {
             const char *fault;
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
@@ -497,10 +496,6 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
     }
     if (o->gpu_required && !o->gpu_native_present) {
         __fprintf(2,"rasterfall: --gpu-required requires --renderer gpu-compute --gpu-native-present\n");
-        return -1;
-    }
-    if (o->gpu_post_fog && (!o->renderer_mode || !o->gpu_native_present)) {
-        __fprintf(2,"rasterfall: --gpu-post-fog requires --renderer gpu-compute --gpu-native-present\n");
         return -1;
     }
     if (o->gpu_frame_capture || o->gpu_capture_frame) {

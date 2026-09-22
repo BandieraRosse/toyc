@@ -1,7 +1,7 @@
 # 渲染、HUD、特效与性能
 
 > 文档更新：2026-09-22
-> 源码核对基线：`79b405d` 加 RB-0 最终签收、SKY 轴向朝向合同与同 tick 画面对照
+> 源码核对基线：RB-0 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
 
 actor 屏幕命令裁剪由 `rasterfall_render.c` 的 `ai_actor_command_scope_*()` 拥有。
 公共 renderer 的 command_filter 在每次 flush 消费之前执行本段裁剪，避免 producer 切换后继续使用旧
@@ -94,9 +94,10 @@ native mixed 现在把 Core 相机方向和 pitch 冻结到 `rf_core_mixed_frame
 通过 `fb_fill_rect()` 同时写 color 与 coverage，世界血条不再在 native composite 中只剩文字。
 SKY 的 yaw 与 pitch 各由 sin/cos 对表示；每对不能同时为零，但合法轴向允许任一分量为零。
 `thin-far` 固定视角 `direction=(-1024,0)` 是该合同的最终 Full 回归。
-远墙仍有可见明暗差异：CPU planar 路径应用 camera-dependent `baked_fog_at()`，persistent-map
-Graphics Draw 尚无等价 fog 参数；RB-0 不以扩展 Graphics 掩盖该边界。这仍是完整 CPU/native 画面
-签收缺口，不能以 replay 的零差异代替。证据见
+RB-0 签收后的当前策略是 CPU/GPU normal runtime 均不使用 fog。world/model/transparent producer 统一
+向 RasterCmd 写中性 fog `0`，hardware Graphics Draw 也不增加 fog 参数；`--gpu-post-fog` 已从 CLI/Core
+接入删除。RasterCmd fog 字段及 CPU/GPU consumer、Post Fog V0 backend ABI 和 differential fixture
+继续保留，防止破坏命令格式，但它们不是当前游戏渲染策略。RB-0 时期的旧差异证据仍见
 [RB-0 专项续接](gpu-rb0-special-20260922.md)。
 
 B3 通过 `rf_core_render_frame_record_world_v1()` 对正常 world batch 按
@@ -183,8 +184,9 @@ Core 收集/pack Raster V1 stream
   → 单次 queue submit/fence → present
 ```
 
-Post disabled 时 presentation color 直接别名选择 raster color，不 dispatch、不复制；identity/fog
-enabled 时选择同尺寸、device-local、replacement-first 随 raster resize 重建的 `post_color`。Raster V1
+Rasterfall runtime 保持 Post disabled，presentation color 直接别名选择 raster color，不 dispatch、不复制；
+底层 identity/fog fixture 启用时才选择同尺寸、device-local、replacement-first 随 raster resize 重建的
+`post_color`。Raster V1
 ABI 不变，且避免 Raster 与 Post 的原位读写 hazard。Raster→Post dependency 是
 `COMPUTE_SHADER / SHADER_WRITE` → `COMPUTE_SHADER / SHADER_READ`。depth 是真实的 signed 32-bit
 `inv_z = 1048576 / camera_z`，不是线性米制距离；Fog V0 在 far/near inverse-depth 阈值间做单调反向
@@ -340,16 +342,16 @@ World/environment lighting 的 owner 为 `include/rasterfall_world_light.h` 与
 `rasterfall_world_light_v2_q8()` 组合 environment × (192 + visibility×64/256)/256 × contact/256；
 开放区 environment 为 256，旧 gradient/proximity/east boost 不进入 V2。建筑平面细分并复用
 现有 textured rasterizer 的 flat fallback/vertex light 插值，近裁剪同时插值光照。
-正常 partitioned ground/floor paint 消费 V2 并保留原无雾策略；map wall/texture/box/ramp/platform
-及独立 boundary wall visual boxes 消费 V2，原 form、面调色和 fog 数学不变。
+正常 partitioned ground/floor paint、map wall/texture/box/ramp/platform 及独立 boundary wall visual boxes
+均消费 V2；form 与面调色数学不变，runtime fog 统一为中性值。
 Static World Lighting V2 is the sole normal-runtime world-light source.
 正常 static RMESH、players/AI/RFCHAR、普通/特殊感染体、世界武器和投掷物、viewmodel
 均消费 V2；默认 `world_brightness_at()` 也只查询 V2，覆盖 sign/交互物等辅助 world geometry。
 只有显式 diagnostic scope 可以查询 V1。V1 的 32×24 cache 不在正常 render context 中，
 独立诊断 owner 按需 bake；固定参数、诊断例外、世界尺度与冻结边界见
 [static-world-lighting.md](static-world-lighting.md)。
-组合顺序为 `world light × form lighting × material policy → final color → fog`；material policy
-在 scene×form 后应用材质下限，原地面无雾与专用 VFX 策略保留。
+组合顺序为 `world light × form lighting × material policy → final color`；material policy
+在 scene×form 后应用材质下限。保留的 command fog consumer 位于其后，但 normal runtime 固定输入 `0`。
 
 正式 RMESH 路径在 `render_gallery_model_range()` 统一应用低成本 ambient + directional
 form-lighting，覆盖 RFCHAR/skeletal body、static prop 和通过同一模型入口绘制的第三人称 weapon。
@@ -405,7 +407,8 @@ Character Acceptance 还输出 `lighting-policy/{normal-light,back-light,dark-en
 
 ## Windows Intel GPU 验收状态
 
-strict native smoke 与 Fog/Post smoke 已各通过 120 帧，正式地图 320 帧零回退运行和窗口拉伸已确认。最近固定视角的命令与耗时快照见 [GPU 当前状态](gpu-current-state.md)；旧冻结矩阵不再作为当前工作队列。
+strict native smoke 与正式地图 320 帧零回退运行和窗口拉伸已确认。历史 Fog/Post smoke 继续证明底层 ABI，
+但当前 Rasterfall runtime 不再接入 fog。最近固定视角的命令与耗时快照见 [GPU 当前状态](gpu-current-state.md)；旧冻结矩阵不再作为当前工作队列。
 
 ## 一帧的数据流
 
@@ -637,8 +640,8 @@ renderer 不修改玩法。墙脚、主体、压顶不叠共面大板；扶壁�
 不在三角形/顶点热循环重复查询。boundary wall 保留独立 procedural 路径。
 
 环境因子与原 normal/form 因子相乘，纹理提交直接组合 Q8；无 role 的 flat 材质保留
-原 form 调色再乘 scene 的整数舍入。material policy 与 fog 仍属于已有提交层；static prop
-保留原 gallery 无雾策略。gallery 与独立诊断保留专用策略；actors、RFCHAR 和 viewmodel 使用同一
+原 form 调色再乘 scene 的整数舍入。material policy 仍属于已有提交层；fog command 语义保留但
+normal producer 固定提交 `0`。gallery 与独立诊断保留专用光照策略；actors、RFCHAR 和 viewmodel 使用同一
 V2 scene factor 契约。设施由多个实例构件组成，当前不引入大型 RMESH 细采样；边界见
 [static-world-lighting.md](static-world-lighting.md)。`--logic-test` 包含实际模型命令的 scene × form 回归。
 
@@ -673,7 +676,7 @@ NULL-texture `textured_lit` 路径作 A/B；`constant-world` 把 helper world/ro
 
 V2 planar normal 由 `draw_world_triangle_views()` 提交
 `toy_renderer_triangle_planar_vertex_lit()`。该 command 只携带投影顶点、不透明 base
-color、逐顶点 Q8.8 light 和三角形常量 fog；worker 保留与旧路径完全相同的
+color、逐顶点 Q8.8 light 和三角形常量 fog；normal runtime 的 fog 常量固定为 `0`，worker 仍保留
 边函数覆盖、屏幕空间 light 重心插值、逆深度 `>=` 比较/写入、
 `shade_color()` 光照后 fog 及整数舍入。它不携带 UV、texture sampler、material、
 alpha 或 blend 分支。近裁剪与 light 插值仍在 world frontend 完成，1024 RFU

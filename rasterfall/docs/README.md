@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 Intel 最终 Full/专项签收、SKY 轴向朝向合同及 schema 5 性能归因工作区
+> 源码核对基线：RB-0 Intel 最终签收后的 CPU/GPU runtime fog-free 策略及保留命令 ABI 工作区
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -24,13 +24,13 @@
 将七类 wait、互斥 CPU phase 和前序 GPU 帧纳入审计分析。正确口径五轮未复现历史 near60 数百毫秒双态；
 55 个低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结，仍不进入 RB-1。
 
-最终 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
+RB-0 最终签收 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
 签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。Intel 单设备 RB-0 已签收；第二物理
 GPU 按用户要求暂缓，所以当前不是跨设备签收，仍不进入 RB-1。
 
-同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage；远墙仍因 CPU
-camera-dependent baked fog 与 persistent-map Graphics Draw 合同不同而存在明暗差异。RB-0 不扩展
-Graphics；完整画面对照仍未签收，边界与证据见专项续接。
+同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage。RB-0 签收后的统一
+渲染策略已移除 Rasterfall runtime 的 fog 接入：CPU 与 GPU normal producer 均提交中性 fog，GPU Post
+不再由 CLI/Core 启用；RasterCmd 与底层 Post 的 fog ABI/consumer 语义只为兼容和专项测试保留。
 
 本轮修复已实现 actor flush 前裁剪、按计划预留 timestamp、真实 submit 调用者计时及 CPU 顶层阶段。
 当前验证结果与采样见 [RB-0 专项续接](gpu-rb0-special-20260922.md)；上一轮失败现场保存在
@@ -42,7 +42,7 @@ Graphics；完整画面对照仍未签收，边界与证据见专项续接。
 推进顺序与证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；应先修复负载与测量，
 再重建基线，当前 producer 计数不能直接用于决定迁移优先级。
 
-Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
+Windows Intel strict native 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。历史 Fog smoke 只证明保留的底层 ABI，当前 normal runtime 不启用 fog。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
 
 Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后续不应直接按编号扩展新 HG 阶段。
 当前优先级是 Windows 原生 PowerShell 下的跨设备验证、剩余 RasterCmd 成本归因和帧时间/P95 分解，
@@ -86,7 +86,7 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 | RenderFrame V1、sky/world/transparent/effects/viewmodel/overlay 层、场景、HUD、性能 | [rendering.md](rendering.md) | `include/rf_core_host.h`、`src/rf_game_runtime.c`、`src/rf_core_host.c`、`src/rasterfall_render.c`、`gpu/shaders/raster_v1.comp` |
 | 角色 humanoid / 实景距离观察组图 | [asset-pipeline.md](asset-pipeline.md)、[rendering.md](rendering.md) | `tools/character_lab_sheet.py`、`tools/character_world_sheet.py` |
 | RMESH 基础光照、角色 role 可读性策略、Lighting OFF/V1 回归 | [rendering.md](rendering.md) | `model_form_light_q8()` → `character_render_policy()` → `render_gallery_model_range()`；`lighting-props` / Character Acceptance `lighting-policy` |
-| 世界位置光照查询、静态太阳遮挡、ground/architecture/static RMESH/dynamic entities 接入 | [static-world-lighting.md](static-world-lighting.md)、[rendering.md](rendering.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有 V2 cache 和显式 diagnostic scope；form/material/fog 仍归原层 |
+| 世界位置光照查询、静态太阳遮挡、ground/architecture/static RMESH/dynamic entities 接入 | [static-world-lighting.md](static-world-lighting.md)、[rendering.md](rendering.md) | `include/rasterfall_world_light.h` / `src/rasterfall_world_light.c` 拥有 field/bake/bilinear/compose；Runtime Map collision/surface 只读进入 bake；renderer 持有 V2 cache 和显式 diagnostic scope；form/material 仍归原层，runtime fog 固定为中性值 |
 | Hurd 职业外观、低模 AI 人体、RF Humanoid V1/V2、基础外观、指定角色独立绘制入口 | [rendering.md](rendering.md) | `rasterfall_render.h` 的 `rasterfall_procedural_humanoid_state` / `rasterfall_render_procedural_humanoid()`；`rasterfall_character.h` 的基础/职业 profile；`dev-tests/rasterfall_visual_capture.inc` 的角色验收与 world strip |
 | 中文 UI、UTF-8 文本和 GB2312 点阵字库 | [rendering.md](rendering.md)、[asset-sources.md](asset-sources.md) | `lib/graphics/fb_font.c`、`assets/fonts/` |
 | world-space 静态 RMESH prop、实例变换和开发展示 | [rendering.md](rendering.md) | `include/rasterfall_render.h`、`src/rasterfall_render.c` |

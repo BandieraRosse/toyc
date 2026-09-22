@@ -1,7 +1,7 @@
 # 构建、平台与验证
 
-> 文档更新：2026-09-21
-> 源码核对基线：`fc75009`；Windows PowerShell 主开发 lane 与 WSL 支持边界
+> 文档更新：2026-09-22
+> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略；Windows PowerShell 主开发 lane 与 WSL 支持边界
 
 ## 当前开发平台优先级
 
@@ -13,7 +13,7 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 ## 当前 Windows GPU 验收状态
 
-Intel Iris Xe 已通过 strict native present、Fog/Post smoke、正式地图 320 帧 zero-fallback audit 和窗口拉伸；最近固定视角的命令、frontend、GPU fence 与 native present 记录见 [GPU 当前状态](gpu-current-state.md)。
+Intel Iris Xe 已通过 strict native present、正式地图 320 帧 zero-fallback audit 和窗口拉伸；历史 Fog/Post smoke 只证明保留的底层 ABI，当前 runtime 不接入 fog。最近固定视角的命令、frontend、GPU fence 与 native present 记录见 [GPU 当前状态](gpu-current-state.md)。
 RTX 3050 上曾在 `vkCreateSwapchainKHR` 首次调用时访问冲突；native Vulkan 窗口改用 SDL software renderer 后，strict native mixed 帧已通过 10 帧 smoke。该软件 renderer 只负责窗口侧 SDL 兼容，world 与最终帧仍由 GPU mixed 和 Vulkan present 完成。
 复现过程、排除项、窗口 API 的职责及实机验证边界见 [RTX 3050 swapchain 兼容修复](gpu-nvidia-swapchain-compat.md)。
 
