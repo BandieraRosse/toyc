@@ -1,13 +1,14 @@
 # Mixed 路径优化执行计划
 
 > 文档更新：2026-09-22
-> 源码核对基线：`f14e5fe6` 工作区，RB-2 infected ablation 撤销后的 mixed executor / Raster / Graphics
+> 源码核对基线：`2c318a1` metrics schema 6 与 RTX 3050 M2 preflight 三轮审计
 
 ## 目标与执行顺序
 
 保留当前 producer、光照、color/depth、层序与 required native 合同，逐项减少 mixed 路径的重复工作。
-Windows 原生 Intel 为本轮实机范围；第二物理 GPU 继续暂缓。各阶段独立 ablation，不把多个改动的
-收益混为一个结论；用户已有工作区修改保留。
+Windows 原生 RTX 3050 现为性能开发与 A/B 主设备，Intel Iris Xe 为普通正确性和性能下限设备；具体目标、
+冻结基线和采样口径见 [GPU 性能标准与冻结基线](gpu-performance-standards.md)。各阶段独立 ablation，
+不把多个改动的收益混为一个结论；用户已有工作区修改保留。
 
 | 阶段 | 实现与所有者 | 进入下一步的依据 |
 | --- | --- | --- |
@@ -17,7 +18,8 @@ Windows 原生 Intel 为本轮实机范围；第二物理 GPU 继续暂缓。各
 | M4：depth bridge 去中间复制 | bridge 转换直接读写 Raster depth buffer，保留 D32 映射和 image copy | 独立 baseline；精确 depth differential、流量重新核算及完整同步/生命周期门禁 |
 | M5：producer 后续候选 | infected 先补 material/tint/form/scene/clamp/整数舍入合同；gear/weapon 先做实际边界清单 | 隔离画面等价通过后才接入 mixed；不能用顶点 differential 代替最终画面，不能由端点标签推断 run 消失 |
 
-M1 已按 Intel 单设备范围签收。M2–M5 为后续独立阶段，具体实现由前序测量和合同检查收敛，不能一次性混入。
+M1 已按原 Intel 单设备范围签收。M2 起以 RTX 3050 为性能主线、Intel 为普通标准复核；M2–M5 为后续
+独立阶段，具体实现由前序测量和合同检查收敛，不能一次性混入。
 
 ## M1 验证和证据
 
@@ -109,16 +111,19 @@ RB-0 的 validation/sync、fault、soak；这些门禁在后续 M2/M3 涉及相�
 `tools/gpu_mixed_ablation.ps1` 现默认在创建输出目录和启动首个样本前要求 AC，并在每个 manifest 后再次
 检查 `ac_line_status=1`；电池拒绝路径已验证为非零退出且不创建输出目录。
 
-## 后续未完成计划
+## 后续执行计划
 
-- M2 先增加动态输入打包、GPU 资源创建/上传、Raster binning 的互斥计时，再由数据选择 frame-slot
-  容量或 staging/descriptor 复用切片；不得把整个 preflight 归为 skinning wait。
-- M3 仅在 M2 证据显示同步为优先成本后推进；若实施，必须补 Full、四 extent resize、validation/sync、
+- M2 计时已完成。实现按 frame slot 持久复用动态 resource、buffer 和 descriptor，容量只增长；稳态只
+  上传当前有效数据，只有扩容、失败回滚或 executor teardown 才销毁。先保持当前 skinning submit/wait。
+- M2 开工前补同 package 的 RTX 3050 `-NoAudit` 五轮 baseline；候选随后做五轮 AB/BA。审计必须新增或
+  保留 build/reuse/grow/descriptor-update 计数，证明成本没有转移到 slot recycle 或 present。
+- M3 仅在 M2 后 skinning fence 仍是最大固定成本时推进；若实施，必须补 Full、四 extent resize、validation/sync、
   fault 与 soak，明确等待从哪里转移到哪里。
 - M4 depth bridge 保持独立 ablation，先建立精确 depth differential 和重新核算的 transfer 字节合同。
 - M5 不恢复已撤销的 infected body 实验；infected 必须先补齐最终光照合同，下一 producer 候选仍先做
   gear/weapon 实际边界预检。
-- 第二物理 GPU 继续按用户要求暂缓；M1 当前不是跨设备签收。
+- 性能选择和 60 FPS 签收以 RTX 3050 为准；Intel 保留正确性、完整功能、普通 30 FPS 下限及不超过 10%
+  可重复退化的复核，不要求两个设备达到相同帧率。
 
 ## M2 preflight 细分（AMD 5600H + RTX 3050）
 
@@ -143,6 +148,10 @@ target setup 各场景中位均约 0.002 ms，未单列。子项合计已将 pre
 上一资源约 5.2--5.8 ms，以及创建/上传/descriptor/skinning 整体约 10.3--10.9 ms。下一切片限定为
 按 frame slot 复用动态 resource 与 descriptor，同时保持当前 skinning submit/wait 边界；先证明销毁/
 重建消失且 workload、bridge、画面和生命周期门禁不变，再决定是否进入 M3。
+
+本组 audit 的 whole-loop 数字及 package/hash 已冻结在
+[GPU 性能标准与冻结基线](gpu-performance-standards.md)。audit 日志会扰动帧墙钟，因此不得把本组
+whole-loop 直接当作 60 FPS 基线；正式性能基线与收益使用 `-NoAudit` 五轮 AB/BA。
 
 ## 后续阶段的重新归因
 

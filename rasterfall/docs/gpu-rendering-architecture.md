@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
 > 文档更新：2026-09-22
-> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
+> 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 与双档性能标准
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -23,6 +23,11 @@
 
 producer 按 WORLD、EFFECTS、VIEWMODEL、POST、OVERLAY 的既定层序生成 retained frame。帧可混合
 `Draw` 与 `RasterCmd`：前者由 graphics pipeline 执行，后者保留给动态、透明、特效及尚未迁移的几何。
+
+长期方向不是清空软件 Raster。规则 opaque mesh 只有在保持最终画面、减少真实 Draw/Raster run 与 bridge、
+并改善 RTX 3050 whole-loop 后才迁移到硬件 Graphics；透明、粒子、overlay、复杂 VFX 和未冻结逐面光照
+合同的内容继续由 RasterCmd 承担。设备职责与性能门见
+[GPU 性能标准与冻结基线](gpu-performance-standards.md)。
 
 Core 在任何 target 写入前冻结计划并完成整帧 preflight。required 模式下，unsupported、编码失败、
 资源 generation 不匹配或 presenter 失败都会使整帧失败；不允许在已写入部分 GPU target 后切回 CPU。

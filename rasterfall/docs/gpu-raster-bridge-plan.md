@@ -1,7 +1,7 @@
 # GPU Raster / Bridge 收敛计划
 
 > 文档更新：2026-09-22
-> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
+> 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 三轮审计与双档性能标准
 
 本文定义 HG-0 至 HG-5B 完成后的下一轮 GPU 性能工作。它不是新的通用 Graphics 功能阶段，也不继续
 沿用历史 HG 编号；目标是先建立可信、可复现的帧耗时归因，再收敛剩余 RasterCmd、Draw/Raster bridge
@@ -13,9 +13,26 @@
 当前状态以 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md) 为准：Intel RB-0 已签收、
 RB-1 已有结构收敛证据；RB-2 的 rigid-only 与普通 infected body/shadow 两个切片均已否决并撤销，
 迁移候选保留 gear/weapon 边界预检。当前优先执行不改变 producer 合同的
-[Mixed 优化计划](gpu-mixed-optimization-20260922.md)：M1 segment 遍历已按 Intel 单设备范围签收，随后按成本证据决定 M2 动态资源
-复用、M3 skinning 同步、M4 depth bridge；infected 须先补光照等价合同。以下立项数字为历史背景，
+[Mixed 优化计划](gpu-mixed-optimization-20260922.md)：M1 segment 遍历已按原 Intel 单设备范围签收，
+M2 起以 RTX 3050 为性能主线，依次做动态资源复用、按证据决定 skinning 同步、depth bridge 与选择性
+opaque 迁移；infected 须先补光照等价合同。两档设备、60/30 FPS 目标和冻结基线见
+[GPU 性能标准与冻结基线](gpu-performance-standards.md)。以下立项数字为历史背景，
 不作为当前性能基线。
+
+## 当前执行顺序
+
+1. 冻结 RTX 3050 三轮 audit 归因基线，并补同 package 的低扰动五轮 baseline。
+2. M2 按 frame slot 复用动态 resource/buffer/descriptor，保留现有 skinning submit/wait，完成 RTX 3050
+   五轮 AB/BA 与生命周期专项门禁。
+3. M2 后重新归因：skinning fence 若仍为最大固定项则进入 M3；否则按剩余成本在 depth bridge 与
+   gear/weapon 实际边界预检之间选择。
+4. GPU 固定成本收敛后，再按可见性/LOD、presentation snapshot、静态模板、pose/socket/gear 缓存、
+   重复扫描/分配的顺序削减 CPU producer；暂不先引入多线程。
+5. RTX 3050 负责 60 FPS 性能签收；Intel 负责 required-native 正确性、普通 30 FPS 下限和退化复核。
+
+不以“全部软件 Raster 迁移”为目标。硬件 Graphics 只接收能保持画面合同并减少真实 Draw/Raster run、
+bridge 与 whole-loop 的 opaque 内容；透明、粒子、overlay、复杂 VFX 和未冻结光照合同的内容继续留在
+软件 Raster。
 
 2026-09-21 的 Windows Intel Iris Xe Full 验收中，1280x720 required native present 的预热后结果为：
 
@@ -53,7 +70,7 @@ RB-1 已有结构收敛证据；RB-2 的 rigid-only 与普通 infected body/shad
 2. 将 CPU encode、frame-slot/fence wait、GPU Raster、GPU Draw、bridge 和 present API 分开归因。
 3. 减少全屏 bridge 次数/字节，并保持 color、depth、层顺序与 runtime fog 中性值合同。
 4. 将高成本、语义稳定的 opaque RasterCmd producer 迁移到现有 Draw 路径。
-5. 在 Intel 与至少另一种物理 GPU 上验证收益和正确性，再决定透明/VFX 后续路线。
+5. 在 RTX 3050 上验证主要收益并在 Intel 上验证正确性与普通性能下限，再决定透明/VFX 后续路线。
 
 本计划不包括：
 
@@ -69,15 +86,15 @@ RB-1 已有结构收敛证据；RB-2 的 rigid-only 与普通 infected body/shad
 
 RB-0 签收状态：最终 package `F407FD19...63D762` 的 Full 31/31、validation/sync、五类 fault 与
 10,000 帧 soak 已在 Intel Iris Xe 通过；schema 5 性能归因完成。Intel 单设备 RB-0 已签收，但计划要求的
-RTX 3050/第二物理 GPU 由用户明确暂缓，因此本轮按 Intel 单设备范围结束，不称为跨设备签收，
-此后 RB-1 的 Intel 结构收敛与 RB-2 候选评估按下文继续推进；不宣称跨设备退出条件已满足。
+RTX 3050 当时尚未进入同组复核，因此该历史 checkpoint 按 Intel 单设备范围结束。当前设备政策已经更新：
+RTX 3050 为后续性能主线，Intel 为普通标准；不得把 RB-0 的历史单设备签收误写成当前设备范围。
 
 签收前的测量缺陷、修复前五轮数据和当时的阶段阻塞条件已移到
 [RB-0 测量阶段记录](archive/gpu-rb0-measurement-stage-20260922.md)。不得用这些历史数字替代当前基线。
 
 持续保留的测量合同：固定 tick、相机、extent 与 package；audit 用于 workload/边界归因，
 `--gpu-rb0-stats` 用于低扰动性能；GPU timestamp 按历史 frame ID 回填；CPU 细项与 wait 不直接相加。
-正式收益签收仍要求多轮采样；另一物理 GPU 的复核继续单独列为暂缓项。
+正式收益签收仍要求多轮采样；M2 起按当前双档标准分别承担性能主签收与普通标准复核。
 
 本轮局部修补处理无独立 graphics submit 时的旧 watermark，详见
 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)。这不重新开启整个 RB-0，也不宣称解决已冻结的长尾根因。
@@ -96,8 +113,8 @@ Core bridge event 审计均改为按实际 Draw run 计数。mixed-executor 回�
 顺序提交其 opaque gear/weapon RasterCmd；pose、IK、attachment、逐 actor 光照和资源所有权不变，且不跨越
 transparent/effects 层。相同 native `gpu-test` 场景的实际 Draw run 从 5 降到 2，transfer 从 10 降到 4，
 bridge bytes 从 73,728,000 降到 29,491,200。剩余两段由前置 world/map Draw 与其后的真实 Raster 内容隔开，
-不能只凭 opaque 分类继续跨越。该单次门禁证明结构计数下降，性能退出结论仍需固定 workload 多轮数据和
-第二物理 GPU 复核；Windows `gpu-test`、Quick 8/8 与 Full 正确性门禁已通过。mixed-executor hosted
+不能只凭 opaque 分类继续跨越。该单次门禁证明结构计数下降，性能退出结论仍需固定 workload 多轮数据；
+Windows `gpu-test`、Quick 8/8 与 Full 正确性门禁已通过。mixed-executor hosted
 回归现按 extent 精确验证 bridge 次数与字节；native resize 回归也逐 pass 验证 Draw run、transfer、
 bridge bytes 以及活动 frame-slot target rebuild，防止只保持画面却让 bridge/resize 合同回退。
 
@@ -109,7 +126,7 @@ near 0 `15.575--16.680/16.283 ms`，near 30 `21.928--23.021/22.813 ms`，near 60
 `32.336--33.518/33.197 ms`，Campaign `20.819--21.690/21.240 ms`。audit 组对应中位轮为
 `13.511/20.686/31.328/16.401 ms`；audit 只用于归因，不与低扰动数据混作同一性能基线。该 package
 包含 RB-0 修复与此前 RB-1 改动，因此相对更早文档数字的全部耗时下降不能只归因于本次 bridge 编排；
-但相同 workload 下的 bridge 计数/字节下降已满足 Intel 单设备结构退出证据。第二物理 GPU 仍未复核。
+但相同 workload 下的 bridge 计数/字节下降已满足该历史 Intel 单设备结构退出证据。
 
 随后对 Campaign 剩余 10 次 transfer 做了逐边界复核：5 个实际 Draw run 分别是 2 个 world/map run 与
 3 个 enemy-body run；每个 run 之间都有真实 Raster span，不是 producer 身份变化产生的伪边界。最后一组
@@ -219,5 +236,5 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_acceptance.ps1 -Quick
 
 涉及 bridge、同步、presenter 或资源生命周期时，至少增加 Full、四 extent native resize、validation/
 sync validation、fault injection 和专项 soak。涉及 producer 迁移时，增加 CPU/reference differential、
-near/mid/thin-far、30/60 敌人、Campaign、fog-free runtime 和受影响资产的固定 capture。发布或跨设备结论必须在 Intel
-与至少另一种物理 GPU 上使用同一 package 重复验证。
+near/mid/thin-far、30/60 敌人、Campaign、fog-free runtime 和受影响资产的固定 capture。阶段性能结论
+以 RTX 3050 为主，Intel 使用同一 package 重复验证正确性、生命周期合同和普通性能下限。

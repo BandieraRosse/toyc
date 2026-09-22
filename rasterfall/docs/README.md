@@ -32,7 +32,9 @@ producer 与光照语义；gear/weapon 边界预检和 infected 光照合同仍�
 infected body/shadow 两个切片均已否决并撤销，M1 已按 Intel 单设备范围签收；M2 已在 AMD 5600H +
 RTX 3050 上补齐 preflight 子阶段计时，定位到逐帧动态资源销毁/重建为主要固定成本；下一步只做
 frame-slot 动态资源复用 A/B，暂不改变 skinning 同步模型。下一迁移候选仍为 gear/weapon 边界预检。
-第二物理 GPU 继续暂缓。候选、四场景成本/边界与审计修补见
+自 M2 起，RTX 3050 是高性能开发与 60 FPS 签收主线，Intel Iris Xe 是普通正确性与 30 FPS 下限设备；
+当前只设置这两档。目标和冻结数据见 [GPU 性能标准与冻结基线](gpu-performance-standards.md)，候选、
+四场景成本/边界与审计修补见
 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)；`tools/gpu_rb2_candidate_report.ps1`
 汇总同 package 的 audit/no-audit 证据，不把 producer 命令数解释为 GPU 耗时。
 
@@ -43,8 +45,8 @@ frame-slot 动态资源复用 A/B，暂不改变 skinning 同步模型。下一�
 低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结。
 
 RB-0 最终签收 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
-签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。Intel 单设备 RB-0 已签收；第二物理
-GPU 按用户要求暂缓，所以当前不是跨设备签收。
+签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。RB-0 是历史 Intel 单设备签收；
+M2 起的当前设备政策已改为 RTX 3050 性能主线与 Intel 普通标准。
 
 同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage。RB-0 签收后的统一
 渲染策略已移除 Rasterfall runtime 的 fog 接入：CPU 与 GPU normal producer 均提交中性 fog，GPU Post
@@ -59,7 +61,7 @@ GPU 按用户要求暂缓，所以当前不是跨设备签收。
 RB-1 当前已将连续 Draw span 合批，并把模块化队友的 body Draw 与 opaque gear/weapon Raster 提交分组。
 Intel 同一 package 的 audit/低扰动固定 workload 各五轮通过：near 0/30/60 的 bridge 均稳定为 4 次、
 29,491,200 bytes，Campaign 为 10 次、73,728,000 bytes，四场景各自 workload hash 跨轮一致。hosted 与
-native resize 合同现精确验证 transfer、bytes 和 frame-slot target rebuild；第二物理 GPU 仍未复核。
+native resize 合同现精确验证 transfer、bytes 和 frame-slot target rebuild；该段只记录历史 Intel 证据。
 
 RB-2 首个 `enemy-rigid-special` 独立 ablation 已完成并撤销。现有 dynamic Draw 在正常 GPU skinning
 开启时要求整帧 dynamic 顶点都有对应 skin bind/palette，不能直接混入 procedural rigid 顶点；受控
@@ -93,6 +95,7 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
+| RTX 3050/Intel 两档性能标准、60/30 FPS 目标与冻结基线 | [GPU 性能标准与冻结基线](gpu-performance-standards.md) | RTX 3050 为性能主线；Intel 为普通正确性与性能下限；正式收益使用同 package、固定 workload、低扰动五轮 AB/BA |
 | GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit / `--gpu-rb0-stats` → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait；`gpu_metrics.ps1` schema 6 提供规范化 workload hash/diff、phase/wait 与 preflight 子阶段归因 |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |

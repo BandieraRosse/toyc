@@ -1,7 +1,7 @@
 # GPU 当前状态
 
 > 文档更新：2026-09-22
-> 源码核对基线：Mixed M1 segment 有序 tile 遍历、RB-2 候选审计、GPU 采样轮数分级与 Windows hosted asset 显式路径
+> 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 三轮审计与双档性能标准
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)，阶段过程与历史性能数字见
@@ -12,6 +12,10 @@
 当前优化执行以 [Mixed 路径优化计划与证据](gpu-mixed-optimization-20260922.md) 为准。
 M1 已按 Intel 单设备范围签收：利用有序 tile indices 跳过 segment 外命令，保留独立 full-scan 对照，不改变 Draw run、bridge、
 producer 或光照语义；后续资源与同步改动各自单独验证。阶段测量只保存在该专题报告中。
+
+自 M2 起，RTX 3050 是高性能开发、正式 A/B 与初期稳定 60 FPS 签收主设备；Intel Iris Xe 是普通正确性、
+完整功能与 30 FPS 下限设备。当前只设置这两档，不要求两个设备达到相同帧率。目标、冻结数字和采样口径
+见 [GPU 性能标准与冻结基线](gpu-performance-standards.md)。
 
 最新专项状态以 [RB-0 专项续接](gpu-rb0-special-20260922.md) 为准；其中记录 raw 输入覆盖和
 resize 附件生命周期修复，以及真实启用 validation/sync 的证据。下方旧结果不能替代新 package 验收。
@@ -27,7 +31,7 @@ RasterCmd fog 字段、CPU/GPU consumer 和底层 Post Fog V0 仍保留 ABI 与�
 但缺少 phase 内因果计时，按根因未知的已知风险冻结。此前 fog/远墙差异已通过统一禁用 runtime fog 消除。
 RB-0 最终签收 package `F407FD19BFC1FBC049ADE78EA21EB9E71D7CD2B627C0CAD388CB1DC8E363D762` 已通过
 Full 31/31、validation/sync、五类 fault 和 10,000 帧 soak；证据与 SKY 轴向朝向 validator 修复见专项续接。
-Intel 单设备 RB-0 已签收，第二物理 GPU 仍暂缓，当前结论不外推为跨设备签收。
+RB-0 是历史 Intel 单设备签收；M2 起已改用 RTX 3050 性能主线与 Intel 普通标准，不重写该历史证据范围。
 
 RB-1 已合并连续跨 producer Draw spans，并将正常 world 中模块化队友改为 body Draw 集中冻结、随后按原
 actor 顺序提交 opaque gear/weapon RasterCmd。Intel native near 审计的实际 Draw run 从 5 降到 2，bridge
@@ -35,7 +39,7 @@ transfer 从 10 降到 4、bytes 从 73,728,000 降到 29,491,200；Windows `gpu
 均通过。随后同一 package 的 audit/低扰动组各五轮固定 workload 采样通过：near 0/30/60 均稳定为
 4 次、29,491,200 bytes，Campaign 稳定为 10 次、73,728,000 bytes，各场景 workload hash 跨轮一致；
 低扰动 whole-loop 中位轮依次为 16.283/22.813/33.197/21.240 ms。该 package 同时包含此前修复，不能把
-相对旧文档的全部耗时下降只归因于 RB-1；Intel 单设备 bridge 结构下降已可重复，第二物理 GPU 尚未复核。
+相对旧文档的全部耗时下降只归因于 RB-1；该历史 Intel 单设备 bridge 结构下降已可重复。
 Campaign 剩余 10 次 transfer 已逐边界复核为 2 个 world/map 与 3 个 enemy-body Draw run，彼此均由真实
 Raster span 隔开；尝试只重排 Campaign fixture 不会减少 run 或 bridge，故未保留。进一步下降需要迁移
 special rigid/body 等真实 opaque Raster 内容，属于 RB-2，而不是继续在 RB-1 跨越资源边界。
@@ -66,7 +70,7 @@ native present、物理驱动、窗口生命周期和性能验收。
 - 角色 normal path 使用 GPU skinning；CPU 仍拥有 pose、IK、socket、gear 与 weapon placement。
 - world generation retirement、frame pin、GPU cache 和 presenter completion 均有逐帧审计。
 - Intel Iris Xe 已覆盖 strict native、Campaign enemy、resize、world cycle、角色 vertex diff 和
-  长帧稳定性；RTX 3050 已覆盖 native swapchain smoke。Linux hosted Vulkan 路径用于 correctness，
+  长帧稳定性；RTX 3050 已覆盖 native swapchain、四场景三轮 audit 与 M2 preflight 归因。Linux hosted Vulkan 路径用于 correctness，
   Linux normal window/native presentation尚未按同一矩阵验收。
 - `rasterfall-gpu-mixed-test.exe --native-window` 独立覆盖四个连续 extent；extent target/swapchain
   重建期间稳定 mesh/texture upload counter 保持不变。该底层合同仍独立于 Full 的 normal-runtime 覆盖。
@@ -115,6 +119,11 @@ M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细�
 [Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 做 frame-slot 动态资源复用 A/B；producer 迁移
 仍按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的 gear/weapon RB-2 候选门禁实施；
 透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
+
+RTX 3050 当前三轮 audit whole-loop 中位轮为 near 0/30/60/Campaign 的
+`34.151/52.130/73.555/39.594 ms`；这是开启逐帧日志的归因基线，不是低扰动 FPS 成绩。对应 package、
+GPU Raster、P95、bridge 和 preflight 冻结数据见性能标准文档。正式 60 FPS 基线尚需补同 package
+`-NoAudit` 五轮采样，后续候选一律与该低扰动 baseline 做 AB/BA。
 
 ## 验证命令
 
@@ -181,9 +190,9 @@ fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/nat
 ## 当前计划入口
 
 当前阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的 RB-0 至
-RB-3 checkpoint。Intel 上继续受限候选实验；完整收益与跨设备签收保留以下要求：
+RB-3 checkpoint。RTX 3050 承担性能候选与 60 FPS 主签收，Intel 承担普通标准复核：
 
-- 至少在 Intel 与另一种物理 GPU 上运行当前 Full，明确厂商差异；条件允许时补 AMD。
+- RTX 3050 使用固定 workload 做低扰动五轮 A/B；Intel 使用同一 package 跑适用 Full 与普通性能门。
 - presenter/synchronization 改动恢复 resize、validation、fault injection 和长时 soak。
 - 新增按 producer 分类的 RasterCmd、bridge、CPU encode 与 GPU timestamp 审计。
 - 使用同一 package、固定电源/冷启动条件做多轮 median、P95/P99 和最慢帧分类。
