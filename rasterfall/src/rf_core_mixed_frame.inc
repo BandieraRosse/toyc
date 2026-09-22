@@ -33,7 +33,11 @@ void rf_core_mixed_reset(struct rf_core_mixed_frame *f)
     f->registry = NULL;
     f->registry_epoch = 0;
     f->width = f->height = 0;
+    f->sky_enabled = 0;
+    f->direction_sy = f->direction_cy = 0;
+    f->pitch_sy = f->pitch_cy = 0;
     f->last_layer = RF_RENDER_LAYER_WORLD;
+    f->producer = RF_CORE_PRODUCER_WORLD_MAP;
     f->state = RF_CORE_MIXED_EMPTY;
 }
 
@@ -56,6 +60,7 @@ int rf_core_mixed_begin(struct rf_core_mixed_frame *f,
     f->registry = registry; f->width = width; f->height = height;
     f->registry_epoch = registry->frame_epoch;
     f->last_layer = RF_RENDER_LAYER_WORLD;
+    f->producer = RF_CORE_PRODUCER_WORLD_MAP;
     f->state = RF_CORE_MIXED_RECORDING;
     return 0;
 }
@@ -75,16 +80,39 @@ static unsigned int mixed_raster_layer(unsigned int layer,
 
 static void mixed_append_span(struct rf_core_mixed_span *spans,
     unsigned long *count, unsigned int kind, unsigned int layer,
+    unsigned int producer,
     unsigned long first, unsigned long length)
 {
     struct rf_core_mixed_span *previous = *count ? &spans[*count - 1] : NULL;
     if (previous && previous->kind == kind && previous->layer == layer &&
+        previous->producer == producer &&
         previous->first + previous->count == first) {
         previous->count += length;
     } else {
         struct rf_core_mixed_span *s = &spans[(*count)++];
-        s->kind = kind; s->layer = layer; s->first = first; s->count = length;
+        s->kind = kind; s->layer = layer; s->producer = producer;
+        s->first = first; s->count = length;
     }
+}
+
+const char *rf_core_mixed_producer_name(unsigned int producer)
+{
+    static const char *names[RF_CORE_PRODUCER_COUNT] = {
+        "world-map", "enemy-body", "enemy-rigid-special", "gear", "weapon",
+        "transparent", "effects", "viewmodel", "overlay"
+    };
+    return producer < RF_CORE_PRODUCER_COUNT ? names[producer] : "unknown";
+}
+
+int rf_core_mixed_set_producer(struct rf_core_mixed_frame *f,
+    struct toy_renderer *renderer, unsigned int producer)
+{
+    if (!f || !renderer || f->state != RF_CORE_MIXED_RECORDING ||
+        producer >= RF_CORE_PRODUCER_COUNT) return -1;
+    if (f->producer == producer) return 0;
+    if (renderer->cmd_count && toy_renderer_flush(renderer) < 0) return -1;
+    f->producer = producer;
+    return 0;
 }
 
 int rf_core_mixed_raster(struct rf_core_mixed_frame *f, unsigned int layer,
@@ -104,8 +132,15 @@ int rf_core_mixed_raster(struct rf_core_mixed_frame *f, unsigned int layer,
             f->span_count + count, sizeof(*f->spans)) < 0) return -1;
     memcpy(f->raster + f->raster_count, commands, count * sizeof(*commands));
     for (i = 0; i < count; ++i)
-        mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_RASTER,
-            mixed_raster_layer(layer, &commands[i]), f->raster_count + i, 1);
+        {
+            unsigned int command_layer = mixed_raster_layer(layer, &commands[i]);
+            unsigned int producer = command_layer == RF_RENDER_LAYER_TRANSPARENT ?
+                RF_CORE_PRODUCER_TRANSPARENT : layer == RF_RENDER_LAYER_EFFECTS ?
+                RF_CORE_PRODUCER_EFFECTS : layer == RF_RENDER_LAYER_VIEWMODEL ?
+                RF_CORE_PRODUCER_VIEWMODEL : f->producer;
+            mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_RASTER,
+                command_layer, producer, f->raster_count + i, 1);
+        }
     f->raster_count = needed; f->last_layer = layer;
     return 0;
 }
@@ -183,7 +218,7 @@ int rf_core_mixed_draw(struct rf_core_mixed_frame *f,
     memset(d, 0, sizeof(*d));
     d->view = *view; d->instance = *instance; d->item = *item;
     mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_DRAW,
-        RF_RENDER_LAYER_WORLD, f->draw_count++, 1);
+        RF_RENDER_LAYER_WORLD, f->producer, f->draw_count++, 1);
     return 0;
 }
 
@@ -221,7 +256,7 @@ int rf_core_mixed_dynamic_draw(struct rf_core_mixed_frame *f,
     d->reference_vertex_count=vertex_count;
     f->reference_vertex_count+=vertex_count;
     mixed_append_span(f->spans, &f->span_count, RF_CORE_MIXED_DRAW,
-        RF_RENDER_LAYER_WORLD, f->draw_count++, 1);
+        RF_RENDER_LAYER_WORLD, f->producer, f->draw_count++, 1);
     return 0;
 }
 
@@ -293,7 +328,7 @@ int rf_core_mixed_skinned_draw(struct rf_core_mixed_frame *f,
     draw->skin_vertex_count=vertex_count;
     draw->skin_instance=skin_instance;
     mixed_append_span(f->spans,&f->span_count,RF_CORE_MIXED_DRAW,
-        RF_RENDER_LAYER_WORLD,f->draw_count++,1);
+        RF_RENDER_LAYER_WORLD,f->producer,f->draw_count++,1);
     f->dynamic_vertex_count+=vertex_count;
     return 0;
 }
@@ -328,7 +363,7 @@ int rf_core_mixed_freeze(struct rf_core_mixed_frame *f)
             const struct rf_core_mixed_span *s = &f->spans[i];
             if (s->layer == layer)
                 mixed_append_span(ordered, &count, s->kind, s->layer,
-                                  s->first, s->count);
+                                  s->producer, s->first, s->count);
         }
     tlibc_free(f->spans); f->spans = ordered;
     /* Allocation is the pre-coalescing count, not the old capacity. */

@@ -195,6 +195,10 @@ struct toy_renderer {
     /* Optional caller-owned state used while recording commands.  The core
      * renderer never dereferences it. */
     void *recording_context;
+    /* Optional scoped compaction before ANY flush observes/consumes commands.
+     * Callback must not flush recursively. It owns its range across flushes. */
+    void (*command_filter)(struct toy_renderer *renderer, void *context);
+    void *command_filter_context;
     /* Diagnostic-only, read-only observation immediately before a flush
      * consumes/reorders the recorded command list. */
     toy_renderer_command_observer_fn command_observer;

@@ -76,6 +76,19 @@ int main(void)
                                 RF_GPU_RASTER_FLAG_OPAQUE_V1 |
                                 RF_GPU_RASTER_FLAG_FOG_V1));
 
+    memset(&commands[0], 0, sizeof(commands[0]));
+    commands[0].kind = RF_GPU_RASTER_CMD_SKY_V1;
+    commands[0].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    commands[0].payload.sky.direction_sy = -1024;
+    commands[0].payload.sky.pitch_cy = 1024;
+    CHECK(rf_gpu_raster_validate_v1(first, written) == RF_GPU_RASTER_PACK_OK);
+    commands[0].payload.sky.direction_sy = 0;
+    CHECK(rf_gpu_raster_validate_v1(first, written) == RF_GPU_RASTER_PACK_INVALID);
+    memset(&commands[0], 0, sizeof(commands[0]));
+    commands[0].kind = RF_GPU_RASTER_CMD_CLEAR_COLOR_V1;
+    commands[0].byte_size = RF_GPU_RASTER_CMD_V1_SIZE;
+    commands[0].payload.clear.value = 0xff102030U;
+
     source.planar_vertex_lit = 1;
     source.a.light = 0; source.b.light = 256; source.c.light = 384;
     CHECK(rf_gpu_raster_pack_toy_v1(&renderer, 0, 0, first, sizeof(first),

@@ -1,7 +1,7 @@
 # GPU 渲染架构
 
-> 文档更新：2026-09-21
-> 源码核对基线：`208532c`；2026-09-21 mixed executor 跨帧槽稳定资源 cache 修复
+> 文档更新：2026-09-22
+> 源码核对基线：RB-0 Intel 最终签收、SKY 轴向朝向合同与 shared-color 生命周期修复工作区
 
 本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
 [Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
@@ -29,7 +29,23 @@ Core 在任何 target 写入前冻结计划并完成整帧 preflight。required 
 不同命令段共享同一 color/depth target，并由统一 command recording 保持 Draw/Raster 的深度、顺序和
 Post/overlay 语义。
 
+RB-0 诊断在每个 mixed span 上保存 producer 身份。当前分类为 world/map、enemy body、enemy rigid
+special、gear、weapon、transparent、effects、viewmodel 和 overlay；身份变化前只将 renderer 中已有
+RasterCmd 送入 retained frame，从而形成可审计边界，不触发 GPU 执行，也不改变原命令顺序。每个
+Raster/Draw 交替点另外记录 import/export、layer、color/depth traffic、前后 producer 与 frame-slot
+target generation。该信息只用于测量，不扩展 Graphics 类型或改变深度/画面合同。
+
+actor 裁剪现在用 renderer 的 command_filter 在 flush observer/consumer 之前处理本段，随后从新缓冲
+零位置继续，actor 结束时处理尾段并解除作用域。原缺陷见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)。
+mixed preflight 在 recycle 后按执行计划预留 query pool；requested/recorded/dropped 随 GPU frame 返回，
+截断不得置 valid。代码与验证边界见 [RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
+
 ## 资源生命周期
+
+raw Raster 分段重传使用 `input_versions` 保留先前录制引用的 command/bin/texture backing，直至完成后
+的新录制或销毁；冻结帧 preflight/upload reuse 仍共用一次上传。Graphics 的 `shared_rasters` 追踪
+color attachment 借用方，resize 在借用帧完成后废弃旧录制并重绑定匹配 extent，下次必须 CLEAR；
+任一方销毁都解除借用。专项合同与验证见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。
 
 模型 registry 拥有不可变 CPU bundle 和 stable handle/generation；GPU cache 拥有对应 device resource。
 Core 在 begin-frame 固定本帧引用，frame slot 完成前不得释放。world 切换时旧 generation 进入 retired，
@@ -40,6 +56,17 @@ Core 在 begin-frame 固定本帧引用，frame slot 完成前不得释放。wor
 swapchain 由 backend 统一拥有；
 acquire、render fence、present wait completion 分开跟踪。正常热路径禁止 queue-idle，recreate/teardown
 才允许排空 queue。
+
+RB-0 低扰动统计在 frame-slot recycle 调用外记录 render-fence wait，并与 graphics submit fence wait、
+swapchain acquire/present 以及由 image reacquire 证明的 presenter completion 分开保存。GPU timestamp
+属于完成的旧 slot，必须使用其 frame ID 回填对应 CPU frame；不能把当前 CPU frame 与刚返回的旧 slot
+timestamp 直接比较。退出前尚未回收的末尾 timestamp 不进入 GPU 分位数。
+
+graphics submit fence 统计聚合所有 `gfx_submit()` 调用者；正常 mixed bridge 只录制命令，
+preflight 中每帧创建 skinned resource 的独立同步提交会计入该字段，并可能等待前一帧的队列工作。
+CPU/GPU frame ID 对齐不能替代 wait 因果。gfx_submit 已按七类调用者统计，并记录提交时尚未确认完成的
+最近 Raster frame；成功 wait/recycle 更新已确认完成水位。这只是队列先后关系，不是 GPU 时间分摊。
+timestamp valid 现在要求 recorded=requested 且 dropped=0；末尾未回收样本仍不进入 GPU 分位数。
 
 ## 持久地图几何
 
@@ -68,7 +95,10 @@ Windows native presenter 使用同一 Vulkan device/queue 和唯一 swapchain ge
 
 - `tools/gpu_acceptance.ps1 -Quick`：日常 GPU 修改门禁。
 - `tools/gpu_acceptance.ps1 -Full`：合并/发布前完整门禁。
-- `tools/gpu_metrics.ps1`：从 frame audit 计算预热后 CPU 墙钟与 GPU timestamp 统计。
+- `tools/gpu_metrics.ps1`：从 frame audit 计算预热后 CPU 墙钟与 GPU timestamp 的 median/P95/P99/max，
+  核对固定 tick 与关键计数范围，汇总 producer/bridge 范围和 whole-loop 相关性，并分类最慢 5% 帧。
+- `tools/gpu_rb0_special.ps1`：串行执行 raw 分段/timestamp、真实 layer/sync validation、故障注入和 soak；
+  schema 5 metrics 补充七类 submit/wait、互斥 CPU phase 及前序 GPU frame 关联。
 - `rf-gpu-graphics-test`、`rf-gpu-raster-test`、`rf-gpu-raster-diff-test`、resource-cache test、
   mixed-executor test：底层合同的独立 hosted 门禁。
 

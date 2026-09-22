@@ -54,6 +54,7 @@ struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
     struct rf_graphics_api api;
     struct rf_graphics_target target;
+    struct rf_gpu_vulkan_raster *shared_rasters;
     struct rf_gpu_graphics_resource *resource, *resources;
     rf_vk_descriptor_set_layout set_layout;
     rf_vk_descriptor_pool descriptor_pool;
@@ -78,6 +79,36 @@ struct rf_gpu_graphics {
     int poisoned;
     struct rf_gpu_graphics_stats stats;
 };
+
+static void gfx_raster_unshare(struct rf_gpu_vulkan_raster *r)
+{
+    if (r->shared_color_owner) {
+        struct rf_gpu_vulkan_raster **link = &r->shared_color_owner->shared_rasters;
+        while (*link && *link != r) link = &(*link)->shared_color_next;
+        if (*link) *link = r->shared_color_next;
+    }
+    r->shared_color_owner = NULL; r->shared_color_next = NULL;
+    r->shared_color_image = 0; r->shared_color_view = 0;
+    r->shared_color_enabled = r->shared_color_layout_valid = 0;
+}
+
+/* Extent replacement invalidates recordings borrowing the old attachment.
+ * Submitted work must finish before that attachment can be destroyed. */
+static int gfx_rasters_invalidate(struct rf_gpu_graphics *g)
+{
+    struct rf_gpu_vulkan_raster *r;
+    for (r = g->shared_rasters; r; r = r->shared_color_next)
+        if (raster_recycle_frame(r, UINT64_MAX) != 0) return -1;
+    for (r = g->shared_rasters; r; r = r->shared_color_next) {
+        r->frame_recording = r->segment_valid = 0;
+        r->shared_color_image = 0; r->shared_color_view = 0;
+        r->shared_color_enabled = r->shared_color_layout_valid = 0;
+        r->binned_stream = r->uploaded_stream = NULL;
+        r->binned_stream_size = r->uploaded_stream_size = 0;
+        r->preflight_reuse = 0;
+    }
+    return 0;
+}
 
 static int gfx_resource_compatible(const struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_resource *resource)
@@ -147,7 +178,8 @@ static int gfx_begin(struct rf_gpu_graphics *g)
     return g->owner->api.begin_command_buffer(g->cmd, &begin) == RF_VK_SUCCESS ? 0 : -1;
 }
 
-static int gfx_submit(struct rf_gpu_graphics *g, int wait)
+static int gfx_submit(struct rf_gpu_graphics *g, int wait,
+                      enum rf_gpu_graphics_submit_kind kind)
 {
     struct rf_gpu_vulkan_impl *impl = g->owner;
     struct rf_vk_submit_info submit = {0};
@@ -159,6 +191,12 @@ static int gfx_submit(struct rf_gpu_graphics *g, int wait)
     submit.command_buffer_count = 1; submit.command_buffers = &g->cmd;
     stamp=now_ms();
     g->stats.queue_submits++;
+    g->stats.submits_by_kind[kind]++;
+    if (g->stats.wait_frame!=impl->mixed_cpu_frame)
+        g->stats.wait_predecessor_frame=0;
+    g->stats.wait_frame=impl->mixed_cpu_frame;
+    if (impl->next_frame_number>impl->mixed_completed_frame)
+        g->stats.wait_predecessor_frame=impl->next_frame_number;
     if (impl->api.queue_submit(impl->queue, 1, &submit, wait ? g->fence : NULL) != RF_VK_SUCCESS)
         goto failed;
     g->stats.submit_wall_ms+=now_ms()-stamp;
@@ -167,7 +205,10 @@ static int gfx_submit(struct rf_gpu_graphics *g, int wait)
     g->stats.fence_waits++;
     if (impl->api.wait_for_fences(impl->device, 1, &g->fence,
                                   RF_VK_TRUE, UINT64_MAX) != RF_VK_SUCCESS) goto failed;
-    g->stats.fence_wait_wall_ms+=now_ms()-stamp;
+    stamp=now_ms()-stamp;
+    g->stats.fence_wait_wall_ms+=stamp;
+    g->stats.wait_ms_by_kind[kind]+=stamp;
+    impl->mixed_completed_frame=impl->next_frame_number;
     return 0;
 failed:
     g->poisoned = 1;
@@ -201,6 +242,8 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     impl = g->owner;
     /* Also covers a failed submission/wait: never destroy pending resources. */
     impl->api.queue_wait_idle(impl->queue);
+    gfx_rasters_invalidate(g);
+    while (g->shared_rasters) gfx_raster_unshare(g->shared_rasters);
     gfx_target_destroy(g, &g->target);
     if (g->pool) impl->api.destroy_command_pool(impl->device, g->pool, NULL);
     if (g->fence) impl->api.destroy_fence(impl->device, g->fence, NULL);
@@ -286,7 +329,14 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
     fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO; fb.renderPass = g->render_pass;
     fb.attachmentCount = 2; fb.pAttachments = views; fb.width = width; fb.height = height; fb.layers = 1;
     if (g->api.CreateFramebuffer(g->owner->device, &fb, NULL, &t.framebuffer) != RF_VK_SUCCESS) goto fail;
+    if (gfx_rasters_invalidate(g) < 0) goto fail;
     gfx_target_destroy(g, &g->target); g->target = t;
+    for (struct rf_gpu_vulkan_raster *r = g->shared_rasters; r; r = r->shared_color_next)
+        if (r->width == width && r->height == height) {
+            r->shared_color_image = t.color.image;
+            r->shared_color_view = (rf_vk_image_view)t.color.view;
+            r->shared_color_enabled = 1;
+        }
     g->stats.target_builds++;
     return 0;
 fail:
@@ -301,6 +351,13 @@ int rf_gpu_graphics_share_color(struct rf_gpu_graphics *g, void *raster)
         (!g->target.valid && !g->target.framebuffer) ||
         r->width!=g->target.width || r->height!=g->target.height ||
         !g->target.color.image || !g->target.color.view) return -1;
+    if (r->shared_color_owner != g) {
+        /* Rebinding a live recording to a different target is not valid. */
+        if (r->shared_color_owner && (r->frame_recording || r->render_in_flight)) return -1;
+        gfx_raster_unshare(r);
+        r->shared_color_owner = g;
+        r->shared_color_next = g->shared_rasters; g->shared_rasters = r;
+    }
     if (r->shared_color_image!=g->target.color.image)
         r->shared_color_layout_valid=0;
     r->shared_color_image=g->target.color.image;
@@ -702,7 +759,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0,1,&barrier,0,NULL,0,NULL);
-    if (gfx_submit(g,1)<0) goto upload_done;
+    if (gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0) goto upload_done;
     upload_failed=0;
 upload_done:
     if (mapped) impl->api.unmap_memory(impl->device,staging[mapped_index].memory);
@@ -750,7 +807,7 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
             &readback)<0 || gfx_begin(g)<0) goto done;
     copy.size=bytes;
     impl->api.cmd_copy_buffer(g->cmd,resource->vertices.buffer,readback.buffer,1,&copy);
-    if (gfx_submit(g,1)<0 || impl->api.map_memory(impl->device,readback.memory,0,
+    if (gfx_submit(g,1,RF_GPU_SUBMIT_VERTEX_DIFF)<0 || impl->api.map_memory(impl->device,readback.memory,0,
             readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto done;
     if (!(readback.memory_flags & RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
         range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
@@ -877,7 +934,7 @@ static int gfx_upload_skin_input(struct rf_gpu_graphics *g,
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         0,1,&barrier,0,NULL,0,NULL);
-    if (gfx_submit(g,1)<0) goto fail;
+    if (gfx_submit(g,1,RF_GPU_SUBMIT_SKIN_INPUT)<0) goto fail;
     raster_buffer_destroy(impl,&staging); return 0;
 fail:
     if (mapped) impl->api.unmap_memory(impl->device,staging.memory);
@@ -931,7 +988,7 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_skinned_resource_create(
     barrier.dst_access_mask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT;
     g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    if (gfx_submit(g,1)<0) goto fail;
+    if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto fail;
     g->stats.mesh_upload_bytes+=(uint64_t)(bind_word_count+palette_word_count)*4;
     return r;
 fail:
@@ -1189,7 +1246,7 @@ static int gfx_bridge(struct rf_gpu_graphics *g, struct rf_gpu_vulkan_raster *r,
     /* Mixed records this bridge into Raster's frame command buffer. Hosted
      * diagnostics still own and synchronously submit the graphics buffer. */
     timestamp_end(r,g->cmd,timestamp);
-    if(!record_only && gfx_submit(g,1)<0)return -1;
+    if(!record_only && gfx_submit(g,1,RF_GPU_SUBMIT_BRIDGE)<0)return -1;
     if(mode==0)g->stats.bridge_roundtrips++;
     else g->stats.raster_bridge_transfers++;
     g->stats.bridge_transfer_bytes+=bytes*(mode?(r&&r->shared_color_enabled?2:3):4);
@@ -1302,7 +1359,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         barrier.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask = VK_ACCESS_HOST_READ_BIT;
         impl->api.cmd_pipeline_barrier(g->cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
             0, 1, &barrier, 0, NULL, 0, NULL);
-        if (gfx_submit(g, 1) < 0) return -1;
+        if (gfx_submit(g, 1,RF_GPU_SUBMIT_DRAW) < 0) return -1;
         if (impl->api.map_memory(impl->device, g->target.readback.memory, 0,
                 g->target.readback.allocation_size, 0, &mapped) != RF_VK_SUCCESS) return -1;
         if (raster_invalidate(impl, &g->target.readback) < 0) {
@@ -1372,7 +1429,7 @@ int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
     impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
         0,1,&barrier,0,NULL,0,NULL);
-    if(gfx_submit(g,1)<0 || impl->api.map_memory(impl->device,g->target.readback.memory,0,
+    if(gfx_submit(g,1,RF_GPU_SUBMIT_READBACK)<0 || impl->api.map_memory(impl->device,g->target.readback.memory,0,
         g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS)return -1;
     int result=raster_invalidate(impl,&g->target.readback);
     if(result==0){memcpy(argb,mapped,(size_t)bytes);memcpy(inverse_depth,(unsigned char *)mapped+bytes,(size_t)bytes);}

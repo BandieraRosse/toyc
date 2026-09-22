@@ -1,6 +1,7 @@
 # Windows Native Codex
 
-> 文档更新：2026-09-21
+> 文档更新：2026-09-22
+> 源码核对基线补充：`tools/gpu_rb0_special.ps1` 的 layer 依赖 PATH、加载证明与分阶段专项。
 > 源码核对基线补充：Windows Intel strict native/Fog smoke、正式地图 320 帧零回退波次与窗口拉伸已确认；最近固定视角快照见 [GPU 当前状态](gpu-current-state.md)。
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_acceptance.ps1`、当前 `rasterfall_options.c`
@@ -61,6 +62,13 @@ retained command 跨帧容量失配；完整生命周期组合仍无同一份实
 `gpu-native` 且无 CPU fallback/readback/copy；`acceptance` 生成 normal-frame audit BMP、
 visual capture BMP 和 package 内 `rasterfall.log`。这些命令的当前退出码和生成物才是本次
 验证结果；Linux `build/` 不应因 Windows 构建产生或复用对象。
+
+## 专项验证
+
+RB-0 专项使用 `tools/gpu_rb0_special.ps1`，可选 `-Stage Validation/Faults/Soak`。
+只有设置 `VK_INSTANCE_LAYERS` 不足以证明验证层已加载：本地 MinGW layer DLL 还需要其目录与
+MinGW runtime DLL 目录进入 PATH。脚本要求 loader 插入 Khronos layer，且信息日志明确列出
+Synchronization；缺少任一证明即失败。环境和具体证据见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。
 
 ## 留到后续
 

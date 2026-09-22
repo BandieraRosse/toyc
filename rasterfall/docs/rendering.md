@@ -1,7 +1,12 @@
 # 渲染、HUD、特效与性能
 
-> 文档更新：2026-09-21
-> 源码核对基线：`208532c`
+> 文档更新：2026-09-22
+> 源码核对基线：`79b405d` 加 RB-0 最终签收、SKY 轴向朝向合同与同 tick 画面对照
+
+actor 屏幕命令裁剪由 `rasterfall_render.c` 的 `ai_actor_command_scope_*()` 拥有。
+公共 renderer 的 command_filter 在每次 flush 消费之前执行本段裁剪，避免 producer 切换后继续使用旧
+cmd_count 起点；actor 结束处理尾段并解除 callback。跨层合同与验证见
+[RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
 
 正常 world render 的开发展示由 Game-owned World Content policy 控制：
 `model_gallery` 与 `Character Test Strip` 只在 Campaign 01 启用，Outpost
@@ -83,6 +88,16 @@ sky → world → transparent → effects → viewmodel → overlay。当前 ver
 `RF_GPU_RASTER_CMD_SKY_V1`，由 Raster dispatch 在任何 depth-tested world command 前生成 device-local
 背景；不上传 CPU 天空，也不把 sky 伪装成 screen overlay。CPU reference、full-scan 与 tile-binned
 shader 消费同一命令，sky 不写 depth。
+
+native mixed 现在把 Core 相机方向和 pitch 冻结到 `rf_core_mixed_frame`，临时 renderer pack 后将命令 0
+替换为同一 `SKY_V1` 参数；同 tick near 实测的天空主体已逐像素一致。screen-overlay 的私有矩形 helper
+通过 `fb_fill_rect()` 同时写 color 与 coverage，世界血条不再在 native composite 中只剩文字。
+SKY 的 yaw 与 pitch 各由 sin/cos 对表示；每对不能同时为零，但合法轴向允许任一分量为零。
+`thin-far` 固定视角 `direction=(-1024,0)` 是该合同的最终 Full 回归。
+远墙仍有可见明暗差异：CPU planar 路径应用 camera-dependent `baked_fog_at()`，persistent-map
+Graphics Draw 尚无等价 fog 参数；RB-0 不以扩展 Graphics 掩盖该边界。这仍是完整 CPU/native 画面
+签收缺口，不能以 replay 的零差异代替。证据见
+[RB-0 专项续接](gpu-rb0-special-20260922.md)。
 
 B3 通过 `rf_core_render_frame_record_world_v1()` 对正常 world batch 按
 `transparent || material_alpha != 255 || (textured && texture->has_transparency)` 分类。B2d-0..2 已使透明成为 Raster state：

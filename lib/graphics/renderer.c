@@ -1933,6 +1933,8 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     long flat_us = 0, tex_us = 0, planar_us = 0;
     long sort_start, phase_start;
     if (!renderer) return 0;
+    if (renderer->command_filter)
+        renderer->command_filter(renderer, renderer->command_filter_context);
     if (toy_renderer_job_cancelled(renderer)) {
         renderer->cmd_count = 0;
         __fprintf(2, "renderer watchdog: frame exceeded 200ms; dropping frame\n");

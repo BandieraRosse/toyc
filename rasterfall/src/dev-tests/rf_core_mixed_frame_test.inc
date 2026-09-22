@@ -86,13 +86,26 @@ int rf_core_mixed_frame_logic_test(void)
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) < 0);
     MIXED_CHECK(rasterfall_resources_frame_begin(registry) == 0);
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);
+    MIXED_CHECK(!f.sky_enabled && !f.direction_sy && !f.direction_cy &&
+        !f.pitch_sy && !f.pitch_cy);
     sink.surface.width = 128; sink.surface.height = 72;
     MIXED_CHECK(rf_core_mixed_world_consume(&sink, commands, 1, &f) == 0 &&
         f.raster_count == 1);
     sink.surface.width++;
     MIXED_CHECK(rf_core_mixed_world_consume(&sink, commands, 1, &f) < 0 &&
         f.raster_count == 1);
+    MIXED_CHECK(rf_core_mixed_set_producer(&f, &sink,
+        RF_CORE_PRODUCER_ENEMY_BODY) == 0);
+    sink.surface.width--;
+    MIXED_CHECK(rf_core_mixed_world_consume(&sink, commands, 1, &f) == 0 &&
+        f.span_count == 2 &&
+        f.spans[0].producer == RF_CORE_PRODUCER_WORLD_MAP &&
+        f.spans[1].producer == RF_CORE_PRODUCER_ENEMY_BODY);
+    f.sky_enabled = 1; f.direction_sy = 3; f.direction_cy = 4;
+    f.pitch_sy = 5; f.pitch_cy = 6;
     rf_core_mixed_reset(&f);
+    MIXED_CHECK(!f.sky_enabled && !f.direction_sy && !f.direction_cy &&
+        !f.pitch_sy && !f.pitch_cy);
     MIXED_CHECK(rf_core_mixed_begin(&f, registry, 128, 72) == 0);
     MIXED_CHECK(rf_core_mixed_require_draws(&f, 3) == 0);
     MIXED_CHECK(rf_core_mixed_freeze(&f) < 0 && f.state == RF_CORE_MIXED_RECORDING);

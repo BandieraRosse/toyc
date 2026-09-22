@@ -44,6 +44,69 @@ static int draw_test_command_equal(const struct toy_raster_cmd *a,
         draw_test_vertex_equal(&a->c, &b->c, a->textured);
 }
 
+struct actor_range_test_output {
+    struct toy_raster_cmd commands[32];
+    int count;
+};
+
+static int actor_range_test_consume(struct toy_renderer *r,
+    const struct toy_raster_cmd *commands, int count, void *context)
+{
+    struct actor_range_test_output *out = context;
+    (void)r;
+    if (count > 32 - out->count) return -1;
+    memcpy(out->commands + out->count, commands, count * sizeof(*commands));
+    out->count += count;
+    return 0;
+}
+
+static int actor_range_logic_test(void)
+{
+    struct rasterfall_ai_submission_stats saved = ai_submission_stats;
+    int failed = 0;
+    /* Both sides of the old begin, equality, and repeated flushes. Compare
+     * actual commands against an independent expected stream, including a
+     * preceding actor's offscreen command that this scope must not touch. */
+    for (int flush_mode=0;flush_mode<2;++flush_mode)
+    for (int tail = 1; tail <= 7; tail += 2) {
+        struct toy_renderer r;
+        struct toy_raster_cmd commands[32], expected[32], cmd;
+        struct actor_range_test_output out;
+        struct ai_actor_command_scope scope;
+        int expected_count = 0;
+        memset(&r, 0, sizeof(r)); memset(&out, 0, sizeof(out));
+        memset(&cmd, 0, sizeof(cmd));
+        r.cmds = commands; r.cmd_cap = 32;
+        r.surface.width = r.surface.height = 96;
+        r.command_consumer = actor_range_test_consume;
+        r.command_consumer_context = &out;
+        for (int n = 0; n < 3; n++) {
+            cmd.color = 100 + n; cmd.a.x = cmd.b.x = cmd.c.x = -10;
+            commands[r.cmd_count++] = cmd;
+            expected[expected_count++] = cmd;
+        }
+        ai_actor_command_scope_begin(&r, &scope);
+        for (int chunk = 0; chunk < 3; chunk++) {
+            for (int n = 0; n < tail; n++) {
+                cmd.color = 200 + chunk * 16 + n;
+                cmd.a.x = cmd.b.x = cmd.c.x = n % 2 ? -10 : 10;
+                commands[r.cmd_count++] = cmd;
+                if (!(n % 2)) expected[expected_count++] = cmd;
+            }
+            if (flush_mode && chunk != 2 && toy_renderer_flush(&r) < 0) failed = 1;
+        }
+        ai_actor_command_scope_end(&r, &scope);
+        if (toy_renderer_flush(&r) < 0 || out.count != expected_count ||
+            r.command_filter || r.command_filter_context ||
+            scope.generated != (unsigned long)(3 * tail)) failed = 1;
+        for (int n = 0; n < out.count && n < expected_count; n++)
+            if (!draw_test_command_equal(&out.commands[n], &expected[n])) failed = 1;
+    }
+    ai_submission_stats = saved;
+    __printf("actor command flush scope: %s\n", failed ? "FAIL" : "PASS");
+    return failed;
+}
+
 int rasterfall_render_draw_reference_logic_test(void)
 {
     struct toy_renderer r[2];
@@ -70,7 +133,7 @@ int rasterfall_render_draw_reference_logic_test(void)
     int saved_gallery = active_gallery_lighting, saved_scene = active_scene_light_override_q8;
     int saved_v2 = active_world_light_v2, saved_floor = active_floor_submission;
     int saved_form = active_model_form_lighting, saved_material = active_disable_material_light;
-    int result = 0, tested = 0, commands = 0, touched = 0;
+    int result = actor_range_logic_test(), tested = 0, commands = 0, touched = 0;
     if (!model) return 1;
     memset(model, 0, sizeof(*model));
     memset(states, 0, sizeof(states)); memset(surfaces, 0, sizeof(surfaces));

@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
-> 文档更新：2026-09-21
-> 源码核对基线：`486e7e5`；当前 GPU Raster/bridge 收敛计划、Windows PowerShell 主 lane 与 WSL 支持边界
+> 文档更新：2026-09-22
+> 源码核对基线：RB-0 Intel 最终 Full/专项签收、SKY 轴向朝向合同及 schema 5 性能归因工作区
 
 本目录面向接手 Rasterfall 任务的编码代理。目标不是介绍玩法，而是先把问题归到正确的
 状态所有者和文件，再开始搜索。命令、资源导入方法和用户可见特性仍以
@@ -17,6 +17,30 @@
 > 源码核对补充：Standard Response Squad 与 Assault Squad 各四人由 `rasterfall_roster` 提供有序 identity；session reset 将其接入普通 AI actor，并分别绑定中部 `RESP` 与东部 `ASLT` 旗帜部署位，renderer 再按 character profile 解析 modular recipe；`--squad-acceptance` 输出八人三视角验收。
 
 ## 当前 GPU 验收状态
+
+最新专项修复与证据见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。raw 分段输入覆盖与 resize 后
+附件悬空已修复；`tools/gpu_rb0_special.ps1` 是 validation/sync、fault、soak 串行入口。
+状态所有者为 backend 的 `input_versions` 和 Graphics 的 `shared_rasters`；metrics schema 5
+将七类 wait、互斥 CPU phase 和前序 GPU 帧纳入审计分析。正确口径五轮未复现历史 near60 数百毫秒双态；
+55 个低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结，仍不进入 RB-1。
+
+最终 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
+签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。Intel 单设备 RB-0 已签收；第二物理
+GPU 按用户要求暂缓，所以当前不是跨设备签收，仍不进入 RB-1。
+
+同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage；远墙仍因 CPU
+camera-dependent baked fog 与 persistent-map Graphics Draw 合同不同而存在明暗差异。RB-0 不扩展
+Graphics；完整画面对照仍未签收，边界与证据见专项续接。
+
+本轮修复已实现 actor flush 前裁剪、按计划预留 timestamp、真实 submit 调用者计时及 CPU 顶层阶段。
+当前验证结果与采样见 [RB-0 专项续接](gpu-rb0-special-20260922.md)；上一轮失败现场保存在
+[RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
+代码入口为 `toy_renderer.command_filter` → `ai_actor_command_scope_*()`，以及
+`rf_gpu_vulkan_timestamp_reserve()` → mixed preflight → Core stats → runtime audit/RB0-COVERAGE。
+
+此前 RB-0 排查发现 actor 命令范围跨 flush 失效、GPU timestamp 容量截断及 graphics wait 归因问题。
+推进顺序与证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；应先修复负载与测量，
+再重建基线，当前 producer 计数不能直接用于决定迁移优先级。
 
 Windows Intel strict native/Fog smoke 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
 
@@ -34,7 +58,7 @@ Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后
 | 任务或症状 | 首先阅读 | 主要入口 |
 | --- | --- | --- |
 | GPU 架构、Draw IR 与验收 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `include/rasterfall_draw.h` → static prop/ground/map/character producer → mixed frame；Vulkan graphics/Raster/presenter 位于 `gpu/`；`tools/gpu_acceptance.ps1 -Quick/-Full` 与 `tools/gpu_metrics.ps1` 提供统一门禁 |
-| GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait |
+| GPU mixed 正常帧截图、耗时归因与下一阶段优化 | [GPU 渲染架构](gpu-rendering-architecture.md)、[GPU 当前状态](gpu-current-state.md)、[Raster/Bridge 收敛计划](gpu-raster-bridge-plan.md) | `rasterfall_options.c` → `rf_game_runtime.c` → `rf_core_host.c` → `rf_gpu_mixed_executor.c` → Vulkan 最终合成/诊断 readback；性能路径为 producer audit / `--gpu-rb0-stats` → mixed `span()` → `rf_gpu_graphics_raster_draw()` → `gfx_render()`/`gfx_bridge()` → slot/fence/presenter wait；`gpu_metrics.ps1` schema 5 提供规范化 workload hash/diff 与 phase/wait 归因 |
 | 启动、参数、Core Host、runtime update/render 调度、Outpost landing | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_game_lifecycle.c`、`include/rf_game_lifecycle.h`；world switch 入口为 `rf_game_request_world()` |
 | Windows 原生 Codex 环境、MinGW/SDL2/Vulkan doctor、package 与 GPU smoke | [windows-native-codex.md](windows-native-codex.md)、[build-platforms.md](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile`、`windows/src/`；真实运行 root 为 `build-windows/rasterfall-windows` |
 | Runtime Environment V1 总体边界与 checkpoint | [runtime-environment-v1.md](runtime-environment-v1.md) | Core、Game、Command、GUI、Application、Projection 与 Map Runtime 的 ownership relationship |

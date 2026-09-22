@@ -65,6 +65,9 @@ static unsigned int rf_core_cmd_fallback_reason_v1(
 
 #include "rf_core_mixed_frame.inc"
 
+_Static_assert(RF_CORE_PRODUCER_COUNT == RF_CORE_PRODUCER_TOTAL,
+    "producer audit ABI");
+
 struct rf_core_mixed_frame *rf_core_mixed_current(struct rf_core *core)
 {
     return core && core->mixed_executor ? core->mixed_frame : NULL;
@@ -1461,6 +1464,17 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     core->gpu_frame.stats.last_path = 0;
     core->gpu_frame.stats.mixed_draws = 0;
     core->gpu_frame.stats.capture_readback_bytes = 0;
+    memset(core->gpu_frame.stats.producer_raster_commands, 0,
+           sizeof(core->gpu_frame.stats.producer_raster_commands));
+    memset(core->gpu_frame.stats.producer_raster_spans, 0,
+           sizeof(core->gpu_frame.stats.producer_raster_spans));
+    memset(core->gpu_frame.stats.producer_opaque_commands, 0,
+           sizeof(core->gpu_frame.stats.producer_opaque_commands));
+    memset(core->gpu_frame.stats.producer_transparent_commands, 0,
+           sizeof(core->gpu_frame.stats.producer_transparent_commands));
+    core->gpu_frame.stats.bridge_event_count = 0;
+    memset(core->gpu_frame.stats.bridge_events, 0,
+           sizeof(core->gpu_frame.stats.bridge_events));
     return ready;
 }
 
@@ -1485,6 +1499,14 @@ void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
     core->render_frame.current_layer = RF_RENDER_LAYER_SKY;
     core->render_frame.sky_enabled = 1;
     core->render_frame.viewmodel_near_z = RF_VIEWMODEL_NEAR_Z_V1;
+    if (core->mixed_frame &&
+        core->mixed_frame->state == RF_CORE_MIXED_RECORDING) {
+        core->mixed_frame->sky_enabled = 1;
+        core->mixed_frame->direction_sy = direction_sy;
+        core->mixed_frame->direction_cy = direction_cy;
+        core->mixed_frame->pitch_sy = pitch_sy;
+        core->mixed_frame->pitch_cy = pitch_cy;
+    }
 }
 
 void rf_core_render_frame_record_v1(struct rf_core *core,
@@ -1797,9 +1819,44 @@ static int core_end_frame_present(struct rf_core *core)
         frame->native_prepared = 0;
         frame->stats.mixed_draws = core->mixed_frame->draw_count;
         frame->stats.mixed_raster_spans = 0;
-        for (unsigned long n=0; n<core->mixed_frame->span_count; ++n)
-            frame->stats.mixed_raster_spans +=
-                core->mixed_frame->spans[n].kind == RF_CORE_MIXED_RASTER;
+        frame->stats.bridge_event_count = 0;
+        for (unsigned long n=0; n<core->mixed_frame->span_count; ++n) {
+            const struct rf_core_mixed_span *span = &core->mixed_frame->spans[n];
+            if (span->kind == RF_CORE_MIXED_RASTER) {
+                unsigned int producer = span->producer;
+                frame->stats.mixed_raster_spans++;
+                if (producer < RF_CORE_PRODUCER_TOTAL) {
+                    frame->stats.producer_raster_commands[producer] += span->count;
+                    frame->stats.producer_raster_spans[producer]++;
+                    if (span->layer == RF_RENDER_LAYER_TRANSPARENT)
+                        frame->stats.producer_transparent_commands[producer] += span->count;
+                    else
+                        frame->stats.producer_opaque_commands[producer] += span->count;
+                }
+            } else if (span->kind == RF_CORE_MIXED_DRAW &&
+                       frame->stats.bridge_event_count + 2 <=
+                           RF_CORE_BRIDGE_EVENT_MAX) {
+                unsigned int previous = n ? core->mixed_frame->spans[n-1].producer :
+                    RF_CORE_PRODUCER_WORLD_MAP;
+                unsigned int next = n + 1 < core->mixed_frame->span_count ?
+                    core->mixed_frame->spans[n+1].producer : span->producer;
+                unsigned long long depth_bytes =
+                    (unsigned long long)core->surface.width * core->surface.height * 8;
+                unsigned int event = frame->stats.bridge_event_count;
+                frame->stats.bridge_events[event].direction = 0;
+                frame->stats.bridge_events[event].layer = span->layer;
+                frame->stats.bridge_events[event].previous_producer = previous;
+                frame->stats.bridge_events[event].next_producer = span->producer;
+                frame->stats.bridge_events[event].depth_bytes = depth_bytes;
+                event++;
+                frame->stats.bridge_events[event].direction = 1;
+                frame->stats.bridge_events[event].layer = span->layer;
+                frame->stats.bridge_events[event].previous_producer = span->producer;
+                frame->stats.bridge_events[event].next_producer = next;
+                frame->stats.bridge_events[event].depth_bytes = depth_bytes;
+                frame->stats.bridge_event_count += 2;
+            }
+        }
         frame->stats.mixed_draw_spans = after.draw_spans-before.draw_spans;
         frame->stats.mixed_bridge_transfers =
             after.graphics.raster_bridge_transfers-before.graphics.raster_bridge_transfers;
@@ -1832,6 +1889,7 @@ static int core_end_frame_present(struct rf_core *core)
         frame->stats.mixed_bridge_ms =
             after.graphics.bridge_wall_ms-before.graphics.bridge_wall_ms;
         frame->stats.mixed_cache_collect_ms = after.cache_collect_ms-before.cache_collect_ms;
+        frame->stats.mixed_slot_wait_ms = after.slot_wait_ms-before.slot_wait_ms;
         frame->stats.mixed_preflight_ms = after.preflight_ms-before.preflight_ms;
         frame->stats.mixed_texture_measure_ms = after.texture_measure_ms-before.texture_measure_ms;
         frame->stats.mixed_pack_ms = after.pack_ms-before.pack_ms;
@@ -1849,7 +1907,23 @@ static int core_end_frame_present(struct rf_core *core)
         frame->stats.mixed_gpu_present_copy_ms=after.gpu_timing.present_copy_ms;
         frame->stats.mixed_gpu_timing_supported=after.gpu_timing.supported;
         frame->stats.mixed_gpu_timing_valid=after.gpu_timing.valid;
+        frame->stats.mixed_gpu_requested=after.gpu_timing.requested;
+        frame->stats.mixed_gpu_recorded=after.gpu_timing.recorded;
+        frame->stats.mixed_gpu_dropped=after.gpu_timing.dropped;
+        for (unsigned int k=0;k<RF_GPU_SUBMIT_KIND_COUNT;++k) {
+            frame->stats.mixed_submits_by_kind[k]=
+                after.graphics.submits_by_kind[k]-before.graphics.submits_by_kind[k];
+            frame->stats.mixed_wait_ms_by_kind[k]=
+                after.graphics.wait_ms_by_kind[k]-before.graphics.wait_ms_by_kind[k];
+        }
+        frame->stats.mixed_wait_frame=after.graphics.wait_frame;
+        frame->stats.mixed_wait_predecessor_frame=after.graphics.wait_predecessor_frame;
         frame->stats.mixed_gpu_timing_frame=after.gpu_timing.frame_number;
+        for (unsigned int n = 0; n < frame->stats.bridge_event_count; ++n)
+            frame->stats.bridge_events[n].target_generation =
+                frame->stats.native_present_timing.audit_slot_generation ?
+                    frame->stats.native_present_timing.audit_slot_generation :
+                    after.gpu_timing.frame_number;
         if (output.capture_color) {
             const char *capture_path = frame->capture_path;
             int saved = gpu_oracle_write_bmp(capture_path, output.capture_color,

@@ -27,12 +27,21 @@ struct rf_gpu_graphics_draw {
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
 };
+enum rf_gpu_graphics_submit_kind {
+    RF_GPU_SUBMIT_UPLOAD, RF_GPU_SUBMIT_VERTEX_DIFF, RF_GPU_SUBMIT_SKIN_INPUT,
+    RF_GPU_SUBMIT_SKINNING, RF_GPU_SUBMIT_BRIDGE, RF_GPU_SUBMIT_DRAW,
+    RF_GPU_SUBMIT_READBACK, RF_GPU_SUBMIT_KIND_COUNT
+};
 struct rf_gpu_graphics_stats {
     uint64_t mesh_upload_bytes, texture_upload_bytes;
     uint64_t instance_upload_bytes, indexed_draws, frames, target_builds;
     uint64_t bridge_roundtrips, bridge_transfer_bytes, raster_bridge_transfers;
     uint64_t queue_submits, fence_waits;
     double submit_wall_ms, fence_wait_wall_ms, bridge_wall_ms;
+    uint64_t submits_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    double wait_ms_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    /* Unconfirmed predecessor at submit time, not a measured GPU duration. */
+    uint64_t wait_frame, wait_predecessor_frame;
 };
 struct rf_gpu_graphics;
 struct rf_gpu_graphics_resource;
@@ -94,7 +103,9 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height);
 /* Bind the normal mixed Raster target to this graphics owner's color image.
- * The binding is invalidated by either target's resize/destruction. */
+ * Resize discards unfinished borrower recordings and rebinds matching extents;
+ * a new CLEAR is required. Destruction detaches borrowers. Submitted borrowers
+ * must complete before the old attachment is released. */
 int rf_gpu_graphics_share_color(struct rf_gpu_graphics *g, void *raster);
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,

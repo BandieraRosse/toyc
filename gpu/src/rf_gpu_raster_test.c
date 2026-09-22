@@ -303,6 +303,8 @@ static int mixed_test(struct rf_gpu_vulkan_context *context, unsigned group,
         CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
         CHECK(!rf_gpu_graphics_resize(g,width,height));
         /* Shared color target resize invalidates the prior Raster image. */
+        CHECK(MIX(3,4,RF_GPU_RASTER_LOAD_EXISTING,0)<0);
+        CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
         CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
         CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
         /* Change consumed prefix: replaying it would destroy the result. */
@@ -325,6 +327,25 @@ static int mixed_test(struct rf_gpu_vulkan_context *context, unsigned group,
     CHECK(after.indexed_draws-before.indexed_draws==6);
     CHECK(after.raster_bridge_transfers-before.raster_bridge_transfers==12);
     CHECK(after.bridge_transfer_bytes-before.bridge_transfer_bytes==(uint64_t)width*height*8*12);
+    /* More than the historical 16 intervals: explicit truncation must never
+     * report valid; reserving from a plan must cover even the final suffix. */
+    for (unsigned expanded=0;expanded<2;++expanded) {
+        struct rf_gpu_mixed_gpu_timing timing;
+        if (expanded) CHECK(!rf_gpu_vulkan_timestamp_reserve(r,40));
+        CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
+        for (unsigned batch=0;batch<8;++batch)
+            CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+        CHECK(!MIX(3,12,RF_GPU_RASTER_LOAD_EXISTING,1));
+        rf_gpu_vulkan_mixed_gpu_timing(r,&timing);
+        if (timing.supported) {
+            CHECK(timing.requested>16);
+            CHECK(timing.requested==timing.recorded+timing.dropped);
+            if (expanded) CHECK(timing.valid && !timing.dropped);
+            else CHECK(!timing.valid && timing.dropped && timing.recorded==16);
+            printf("timestamp-coverage: expanded=%u requested=%u recorded=%u dropped=%u valid=%u PASS\n",
+                expanded,timing.requested,timing.recorded,timing.dropped,timing.valid);
+        }
+    }
     /* Unsafe inverse-depth remains sticky across later valid/empty segments. */
     f.commands[2].payload.flat_triangle.a.inv_z=16385;
     CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
@@ -334,6 +355,13 @@ static int mixed_test(struct rf_gpu_vulkan_context *context, unsigned group,
     CHECK(rf_gpu_graphics_raster_draw(g,r,&d,1)<0);
     CHECK(!MIX(0,3,RF_GPU_RASTER_CLEAR,0));
     CHECK(!rf_gpu_graphics_raster_draw(g,r,&d,1));
+    /* Destroy the lender with an unfinished recording. A new raw frame must
+     * use its own color target, never a stale shared image/view. */
+    rf_gpu_graphics_destroy(g); g=NULL;
+    CHECK(MIX(3,12,RF_GPU_RASTER_LOAD_EXISTING,1)<0);
+    CHECK(!MIX(0,12,RF_GPU_RASTER_CLEAR,1));
+    CHECK(!memcmp(expected,actual,sizeof(actual)));
+    CHECK(!memcmp(expected_depth,actual_depth,sizeof(actual_depth)));
     printf("mixed-compute-graphics: group=%u full_scan=%d fog=%d extent=%ux%u exact color/depth/stride PASS\n",group,full_scan,fog,width,height);
     result=0;
 done:

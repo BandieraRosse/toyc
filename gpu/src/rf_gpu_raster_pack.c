@@ -374,8 +374,9 @@ int rf_gpu_raster_validate_v1(const void *stream, size_t stream_size)
             return RF_GPU_RASTER_PACK_INVALID;
         if (cmd->kind == RF_GPU_RASTER_CMD_SKY_V1) {
             if (i != 0 || cmd->flags || cmd->resource_handle ||
-                !cmd->payload.sky.direction_cy ||
-                !cmd->payload.sky.pitch_cy || cmd->payload.sky.flags ||
+                (!cmd->payload.sky.direction_sy && !cmd->payload.sky.direction_cy) ||
+                (!cmd->payload.sky.pitch_sy && !cmd->payload.sky.pitch_cy) ||
+                cmd->payload.sky.flags ||
                 !bytes_are_zero(cmd->payload.sky.reserved,
                                 sizeof(cmd->payload.sky.reserved)))
                 return RF_GPU_RASTER_PACK_INVALID;

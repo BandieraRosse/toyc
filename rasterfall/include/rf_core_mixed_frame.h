@@ -8,6 +8,18 @@
  * The caller owns the registry frame and all non-Draw RasterCmd textures until
  * synchronous execution/replay completes. Draw backing is pinned here. */
 enum rf_core_mixed_kind { RF_CORE_MIXED_RASTER, RF_CORE_MIXED_DRAW };
+enum rf_core_mixed_producer {
+    RF_CORE_PRODUCER_WORLD_MAP,
+    RF_CORE_PRODUCER_ENEMY_BODY,
+    RF_CORE_PRODUCER_ENEMY_RIGID_SPECIAL,
+    RF_CORE_PRODUCER_GEAR,
+    RF_CORE_PRODUCER_WEAPON,
+    RF_CORE_PRODUCER_TRANSPARENT,
+    RF_CORE_PRODUCER_EFFECTS,
+    RF_CORE_PRODUCER_VIEWMODEL,
+    RF_CORE_PRODUCER_OVERLAY,
+    RF_CORE_PRODUCER_COUNT
+};
 enum rf_core_mixed_state {
     RF_CORE_MIXED_EMPTY, RF_CORE_MIXED_RECORDING, RF_CORE_MIXED_FROZEN,
     RF_CORE_MIXED_EXECUTING, RF_CORE_MIXED_COMPLETE, RF_CORE_MIXED_FAILED
@@ -28,7 +40,7 @@ struct rf_core_mixed_skin_instance {
     unsigned int palette_bone_count;
 };
 struct rf_core_mixed_span {
-    unsigned int kind, layer;
+    unsigned int kind, layer, producer;
     unsigned long first, count;
 };
 struct rf_core_mixed_frame {
@@ -50,7 +62,9 @@ struct rf_core_mixed_frame {
     struct rasterfall_resource_registry *registry;
     unsigned long long registry_epoch;
     int width, height;
-    unsigned int state, last_layer;
+    int sky_enabled;
+    int direction_sy, direction_cy, pitch_sy, pitch_cy;
+    unsigned int state, last_layer, producer;
 };
 
 /* Zero initialize before first use. Reset does not release registry pins:
@@ -64,6 +78,11 @@ int rf_core_mixed_begin(struct rf_core_mixed_frame *frame,
  * overlay belong to the executor, outside this pre-Post record. */
 int rf_core_mixed_raster(struct rf_core_mixed_frame *frame, unsigned int layer,
     const struct toy_raster_cmd *commands, unsigned long count);
+/* Diagnostic-only producer boundary. Flushes retained RasterCmds before the
+ * identity changes; this does not execute GPU work or change command order. */
+int rf_core_mixed_set_producer(struct rf_core_mixed_frame *frame,
+    struct toy_renderer *renderer, unsigned int producer);
+const char *rf_core_mixed_producer_name(unsigned int producer);
 /* toy_renderer WORLD consumer for normal producer interleaving. */
 int rf_core_mixed_world_consume(struct toy_renderer *renderer,
     const struct toy_raster_cmd *commands, int count, void *context);

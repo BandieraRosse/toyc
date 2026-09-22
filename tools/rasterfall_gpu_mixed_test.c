@@ -123,7 +123,7 @@ static int native_window_test(void)
         previous_width=width;previous_height=height;
         NATIVE_CHECK(rasterfall_resources_frame_begin(registry)==0);
         NATIVE_CHECK(rf_core_mixed_begin(&frame,registry,width,height)==0);
-        NATIVE_CHECK(rf_core_mixed_require_draws(&frame,1)==0);
+        NATIVE_CHECK(rf_core_mixed_require_draws(&frame,8)==0);
         background=triangle(width,height,512,0x102030);
         NATIVE_CHECK(rf_core_mixed_raster(&frame,RF_RENDER_LAYER_WORLD,&background,1)==0);
         view.width=width;view.height=height;view.near_z=64;view.focal=width*3/4;
@@ -133,6 +133,10 @@ static int native_window_test(void)
         instance.scene_light_q8=256;
         item.index_count=3;item.material.color=0x2266aa;item.material.double_sided=1;
         NATIVE_CHECK(rf_core_mixed_draw(&frame,&view,&instance,&item)==0);
+        for (int batch=1;batch<8;++batch) {
+            NATIVE_CHECK(rf_core_mixed_raster(&frame,RF_RENDER_LAYER_WORLD,&background,1)==0);
+            NATIVE_CHECK(rf_core_mixed_draw(&frame,&view,&instance,&item)==0);
+        }
         NATIVE_CHECK(rf_core_mixed_freeze(&frame)==0);
         for(int y=0;y<height;++y)for(int x=0;x<width;++x) {
             unsigned p=(unsigned)y*width+x;
@@ -147,10 +151,18 @@ static int native_window_test(void)
         rf_gpu_mixed_get_stats(executor,&before);
         NATIVE_CHECK(rf_gpu_mixed_render(executor,&frame,&output)==0);
         rf_gpu_mixed_get_stats(executor,&after);
-        NATIVE_CHECK(after.clears==before.clears+1 && after.draws==before.draws+1 &&
+        NATIVE_CHECK(after.clears==before.clears+1 && after.draws==before.draws+8 &&
             after.finishes==before.finishes+1 && after.readback_bytes==0 &&
             timing.color_readback_bytes==0 && timing.cpu_framebuffer_copy_bytes==0 &&
             timing.overlay_upload_bytes>0);
+        if (pass>=2 && after.gpu_timing.supported) {
+            NATIVE_CHECK(after.gpu_timing.valid && after.gpu_timing.requested>16 &&
+                after.gpu_timing.recorded==after.gpu_timing.requested &&
+                !after.gpu_timing.dropped && after.gpu_timing.frame_number==(uint64_t)pass-1);
+            __printf("timestamp coverage frame=%llu requested=%u recorded=%u dropped=%u\n",
+                (unsigned long long)after.gpu_timing.frame_number,
+                after.gpu_timing.requested,after.gpu_timing.recorded,after.gpu_timing.dropped);
+        }
         if(pass) NATIVE_CHECK(after.graphics.mesh_upload_bytes==before.graphics.mesh_upload_bytes &&
             after.graphics.texture_upload_bytes==before.graphics.texture_upload_bytes);
         __printf("native pass=%d extent=%dx%d overlay=%u readback=%u copy=%u\n",pass,

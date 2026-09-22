@@ -94,10 +94,10 @@ void rasterfall_options_usage(int fd)
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
-        "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
+        "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit  --gpu-rb0-stats\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
         "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
-        "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene frame)\n"
+        "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
@@ -165,6 +165,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         }
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
+        else if (!strcmp(option, "--gpu-rb0-stats")) o->gpu_rb0_stats = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;
@@ -512,8 +513,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         if (!o->frame_limit) o->frame_limit=o->gpu_capture_frame;
         if (o->frame_limit < o->gpu_capture_frame) return -1;
     }
-    if (o->gpu_normal_fixed_tick && !o->gpu_normal_view) {
-        __fprintf(2,"rasterfall: --gpu-normal-fixed-tick requires --gpu-normal-scene\n");
+    if (o->gpu_normal_fixed_tick && !o->gpu_normal_view && !o->gpu_wave_repro) {
+        __fprintf(2,"rasterfall: --gpu-normal-fixed-tick requires --gpu-normal-scene or --gpu-wave-repro\n");
         return -1;
     }
     if (o->gpu_character_vertex_diff &&

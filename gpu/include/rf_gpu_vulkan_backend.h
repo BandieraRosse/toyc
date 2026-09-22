@@ -29,6 +29,7 @@ struct rf_gpu_mixed_gpu_timing {
     double raster_ms, bridge_import_ms, draw_ms, bridge_export_ms;
     double post_ms, overlay_ms, present_copy_ms;
     unsigned int supported, valid;
+    unsigned int requested, recorded, dropped;
     uint64_t frame_number;
 };
 
@@ -39,11 +40,15 @@ extern const struct rf_gpu_backend rf_gpu_vulkan_backend;
  * starts at zero and includes both clear commands. LOAD requires a successful
  * non-final segment on this target. VIEWMODEL must stay wholly in the final
  * segment. Intermediate segments do no Post, overlay, present or readback.
+ * Raw calls retain separate uploaded inputs until the recorded frame finishes;
+ * changing later input cannot rewrite an earlier recorded segment.
  * Final output is diagnostic readback; normal-frame integration is separate.
  * Rejection before submission preserves existing contents; execution failure
  * invalidates continuation. Resize creates a new, invalid target. */
 enum rf_gpu_raster_load { RF_GPU_RASTER_CLEAR, RF_GPU_RASTER_LOAD_EXISTING };
-/* Complete stream/texture/device limits and binning, no target writes. */
+/* Complete stream/texture/device limits and binning, no target writes.
+ * Enables upload reuse: the stream and texture inputs must remain immutable
+ * for the entire frame, as guaranteed by the mixed executor's frozen plan. */
 int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
     void *raster, const void *stream, unsigned long stream_size,
     const void *texture_descs, unsigned int texture_count,
@@ -51,6 +56,10 @@ int rf_gpu_vulkan_raster_preflight(struct rf_gpu_vulkan_context *context,
     unsigned int width, unsigned int height);
 /* Waits only when this target still owns an outstanding submission. */
 int rf_gpu_vulkan_raster_recycle(void *raster);
+/* Reserve intervals before recording, after recycling this slot. */
+int rf_gpu_vulkan_timestamp_reserve(void *raster, unsigned int intervals);
+void rf_gpu_vulkan_measure_frame(struct rf_gpu_vulkan_context *context,
+    uint64_t frame);
 int rf_gpu_vulkan_raster_segment(struct rf_gpu_vulkan_context *context,
     void *raster, const void *stream, unsigned long stream_size,
     const void *texture_descs, unsigned int texture_count,

@@ -279,6 +279,8 @@ static struct vec3 enemy_rig_point(const struct enemy_rig_profile *p,
 static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *camera,
     const struct toy_game_enemy *e,int scale,uint32_t feedback)
 {
+    if (render_set_mixed_producer(renderer,
+            RF_CORE_PRODUCER_ENEMY_RIGID_SPECIAL) < 0) return -1;
     /* An octagonal prism keeps broad low-poly planes but removes the hard
      * armor-box corner from flesh. Same primitive for every profile/part. */
     static const int ring[8][2]={{-3,-4},{3,-4},{4,-3},{4,3},

@@ -69,6 +69,14 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
+
+static int render_set_mixed_producer(struct toy_renderer *renderer,
+                                     unsigned int producer)
+{
+    if (!render_ctx || !render_ctx->mixed_frame) return 0;
+    return rf_core_mixed_set_producer(render_ctx->mixed_frame, renderer,
+                                      producer);
+}
 static struct rasterfall_action_clip humanoid_actions[RASTERFALL_ACTION_COUNT];
 static unsigned int humanoid_action_ready_mask;
 static int humanoid_actions_load_attempted;
@@ -911,12 +919,9 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
     if (y < 0) y = 0;
     if (right > surface->width) right = surface->width;
     if (bottom > surface->height) bottom = surface->height;
-    for (int py = y; py < bottom; py++)
-        for (int px = x; px < right; px++) {
-            uint32_t *row = (uint32_t *)((unsigned char *)surface->pixels +
-                                         py * surface->stride);
-            row[px] = color;
-        }
+    if (right > x && bottom > y)
+        fb_fill_rect((unsigned char *)surface->pixels, x, y,
+                     right - x, bottom - y, color, surface->stride);
 }
 
 static uint32_t mix_color(uint32_t from, uint32_t to, int num, int den)
@@ -5897,6 +5902,8 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
                                    const struct enemy_body_part *parts,
                                    int count)
 {
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
+        return -1;
     int pixels = 0, i;
     int charger_xy_scale = scale * 100 / 1120;
     if (charger_xy_scale < 1) charger_xy_scale = 1;
@@ -7963,6 +7970,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         ai_submission_stats.bounds_cache_misses += pose_cache_hit == 0;
     }
     ai_submission_stats.pose_us += render_monotonic_us() - phase_start;
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
+        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     body_timing_before = model_setup_timing;
@@ -7988,6 +7997,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     ai_submission_stats.body_triangle_us +=
         model_setup_timing.body_triangles_us - body_timing_before.body_triangles_us;
     if (pixels < 0) return -1;
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_GEAR) < 0)
+        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     {
@@ -7999,6 +8010,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     }
     ai_submission_stats.gear_commands += renderer->cmd_count - command_start;
     ai_submission_stats.gear_us += render_monotonic_us() - phase_start;
+    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_WEAPON) < 0)
+        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     if (have_weapon_source && weapon >= 0 &&
@@ -8094,11 +8107,22 @@ static int render_humanoid_debug(struct toy_renderer *renderer,
 
 /* A triangle outside one viewport plane cannot cover a pixel. Compact only
  * this actor's command span, preserving the order of all retained commands. */
+struct ai_actor_command_scope {
+    unsigned long begin, generated, retained;
+};
+
 static void audit_ai_actor_screen_commands(struct toy_renderer *renderer,
-                                           unsigned long begin)
+                                           void *context)
 {
+    struct ai_actor_command_scope *scope = context;
+    unsigned long begin = scope->begin;
     unsigned long i, write = begin;
     unsigned long end = renderer->cmd_count;
+    /* This callback runs before consumption, never after a stale range has
+     * lost its identity. The next flush starts a fresh command list. */
+    scope->begin = 0;
+    if (begin > end) return;
+    scope->generated += end - begin;
     for (i = begin; i < end; i++) {
         const struct toy_raster_cmd *cmd = &renderer->cmds[i];
         int min_x = cmd->a.x < cmd->b.x ? cmd->a.x : cmd->b.x;
@@ -8117,9 +8141,27 @@ static void audit_ai_actor_screen_commands(struct toy_renderer *renderer,
             write++;
         }
     }
-    if (end > begin && write == begin)
-        ai_submission_stats.offscreen_actors++;
+    scope->retained += write - begin;
     renderer->cmd_count = (int)write;
+}
+
+static void ai_actor_command_scope_begin(struct toy_renderer *renderer,
+                                         struct ai_actor_command_scope *scope)
+{
+    memset(scope, 0, sizeof(*scope));
+    scope->begin = renderer->cmd_count;
+    renderer->command_filter = audit_ai_actor_screen_commands;
+    renderer->command_filter_context = scope;
+}
+
+static void ai_actor_command_scope_end(struct toy_renderer *renderer,
+                                       struct ai_actor_command_scope *scope)
+{
+    audit_ai_actor_screen_commands(renderer, scope);
+    renderer->command_filter = NULL;
+    renderer->command_filter_context = NULL;
+    if (!scope->generated) ai_submission_stats.zero_command_actors++;
+    else if (!scope->retained) ai_submission_stats.offscreen_actors++;
 }
 
 /* Covers the standing/crouched body, limb motion, gear and held weapon with
@@ -8185,7 +8227,6 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             ai_submission_stats.screen_culled_actors++;
             continue;
         }
-        unsigned long actor_command_start = renderer->cmd_count;
         if (active_dynamic_world_lighting)
             active_scene_light_override_q8 = dynamic_scene_light(
                 actor->x, actor->ground_y, actor->z);
@@ -8367,13 +8408,13 @@ static int render_ai_teammate(struct toy_renderer *renderer,
 #endif
         if (rasterfall_character_visual_recipe_for_character(
                 actor->character_id)) {
+            struct ai_actor_command_scope scope;
+            ai_actor_command_scope_begin(renderer, &scope);
             int modular_pixels = render_modular_ai_teammate(renderer, camera,
                                                              actor, i);
+            ai_actor_command_scope_end(renderer, &scope);
             if (modular_pixels >= 0) {
                 pixels += modular_pixels;
-                if (renderer->cmd_count == actor_command_start)
-                    ai_submission_stats.zero_command_actors++;
-                audit_ai_actor_screen_commands(renderer, actor_command_start);
                 continue;
             }
             /* Presentation assets are optional. Fall through to the existing
@@ -8403,6 +8444,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 character.body_color = color;
                 character.leg_color = 0x25354A;
             }
+            struct ai_actor_command_scope scope;
+            ai_actor_command_scope_begin(renderer, &scope);
             pixels += rasterfall_render_procedural_humanoid(
                 renderer, camera, &state, &character);
             ai_submission_stats.procedural_commands +=
@@ -8410,9 +8453,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             ai_submission_stats.procedural_us +=
                 render_monotonic_us() - phase_start;
             ai_submission_stats.procedural_actors++;
-            if (renderer->cmd_count == actor_command_start)
-                ai_submission_stats.zero_command_actors++;
-            audit_ai_actor_screen_commands(renderer, actor_command_start);
+            ai_actor_command_scope_end(renderer, &scope);
         }
     }
     active_scene_light_override_q8 = saved_scene;

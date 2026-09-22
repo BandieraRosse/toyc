@@ -618,11 +618,11 @@ int main(int argc,char **argv)
         (unsigned long long)stats.mesh_upload_bytes,(unsigned long long)stats.texture_upload_bytes,
         (unsigned long long)stats.instance_upload_bytes,(unsigned long long)stats.indexed_draws,
         (unsigned long long)stats.frames,(unsigned long long)stats.target_builds);
-    /* Resource owner identity is stricter than sharing the same device.
-     * Prepare/bind/release must neither re-create targets nor poison them. */
+    /* Immutable resources can bind on another slot of the SAME device;
+     * destruction remains exclusive to the creating graphics owner. */
     CHECK((other=rf_gpu_graphics_create(&context))!=NULL);
     CHECK((extra=rf_gpu_graphics_resource_create(other,vertices,7,indices,15,texels,2,2))!=NULL);
-    CHECK(rf_gpu_graphics_resource_bind(g,extra)<0);
+    CHECK(rf_gpu_graphics_resource_bind(g,extra)==0);
     CHECK(rf_gpu_graphics_resource_destroy(g,extra)<0);
     CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
     CHECK(memcmp(saved,pixels,128*96*4)==0 && memcmp(saved_depths,depths,128*96*4)==0);

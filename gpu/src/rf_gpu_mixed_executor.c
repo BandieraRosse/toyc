@@ -216,9 +216,20 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             (!e->output.color || !e->output.depth ||
              e->output.color_stride < (unsigned)f->width ||
              e->output.depth_stride < (unsigned)f->width)) ||
-        rf_core_mixed_raster_preflight(f) < 0) return -1;
-    if (rf_gpu_vulkan_raster_recycle(mixed_raster(e)->implementation)!=0)
+        rf_core_mixed_raster_preflight(f) < 0) {
+        __fprintf(2,"mixed preflight: input contract failed registry=%d strict=%u present=%d native=%u extent=%dx%d raster=%lu draw=%lu span=%lu\n",
+            f->registry==e->registry,e->output.strict_native,e->output.present_timing!=NULL,
+            e->gpu->info.capabilities.native_presentation_v1,f->width,f->height,
+            f->raster_count,f->draw_count,f->span_count);
         return -1;
+    }
+    {
+        double slot_wait_start=mixed_now_ms();
+        int recycle_result=rf_gpu_vulkan_raster_recycle(
+            mixed_raster(e)->implementation);
+        e->stats.slot_wait_ms+=mixed_now_ms()-slot_wait_start;
+        if (recycle_result!=0) { __fprintf(2,"mixed preflight: recycle failed result=%d\n",recycle_result); return -1; }
+    }
     if (e->submitted_frame[e->active_frame]) {
         rf_gpu_vulkan_mixed_gpu_timing(mixed_raster(e)->implementation,
             &e->completed_timing);
@@ -226,6 +237,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->submitted_frame[e->active_frame]=0;
     }
     mixed_release_dynamic(e,e->active_frame);
+    rf_gpu_vulkan_measure_frame(e->context,e->next_frame_number+1);
     if (reserve((void **)&e->pins[e->active_frame],
             &e->pin_capacity[e->active_frame],f->draw_count ? f->draw_count : 1,
             sizeof(*e->pins[e->active_frame]))<0 ||
@@ -235,7 +247,20 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         rf_gpu_raster_resize(e->gpu, mixed_raster(e), f->width, f->height) < 0 ||
         rf_gpu_graphics_resize(mixed_graphics(e), f->width, f->height) < 0 ||
         rf_gpu_graphics_share_color(mixed_graphics(e),mixed_raster(e)->implementation) < 0 ||
-        rf_gpu_raster_set_post(mixed_raster(e), &e->output.post) < 0) return -1;
+        rf_gpu_raster_set_post(mixed_raster(e), &e->output.post) < 0) {
+        __fprintf(2,"mixed preflight: target setup failed extent=%dx%d\n",f->width,f->height);
+        return -1;
+    }
+    {
+        unsigned int intervals = 4; /* final Raster, Post, overlay, present copy */
+        for (unsigned long n=0;n<f->span_count;++n) {
+            if (f->spans[n].kind!=RF_CORE_MIXED_DRAW || !f->spans[n].count) continue;
+            if (intervals > UINT32_MAX/2-4) return -1;
+            intervals += 4; /* preceding Raster + import/Draw/export */
+        }
+        if (rf_gpu_vulkan_timestamp_reserve(mixed_raster(e)->implementation,
+                intervals)<0) { __fprintf(2,"mixed preflight: timestamp reserve failed intervals=%u\n",intervals); return -1; }
+    }
     if (f->dynamic_vertex_count) {
         uint32_t *indices, white=0xffffff;
         uint32_t *bind_words=NULL,*palette_words=NULL;
@@ -340,20 +365,38 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
     renderer.surface.width=f->width; renderer.surface.height=f->height;
     renderer.cmds=e->ordered; renderer.cmd_count=count;
     phase_start=mixed_now_ms();
-    if (rf_gpu_raster_measure_textures_toy_v1(&renderer,&unique,&bytes)<0 || bytes>ULONG_MAX) goto done;
+    if (rf_gpu_raster_measure_textures_toy_v1(&renderer,&unique,&bytes)<0 || bytes>ULONG_MAX) {
+        __fprintf(2,"mixed preflight: texture measure failed commands=%u bytes=%zu\n",count,bytes); goto done;
+    }
     e->stats.texture_measure_ms+=mixed_now_ms()-phase_start;
     if (reserve_u32((void **)&e->textures.descs, &e->textures.desc_capacity,
             unique ? unique : 1, sizeof(*e->textures.descs)) < 0 ||
         reserve_u32((void **)&e->textures.views, &e->textures.view_capacity,
             unique ? unique : 1, sizeof(*e->textures.views)) < 0 ||
         reserve((void **)&e->textures.texels, &e->textures.texel_capacity,
-            bytes ? bytes : 1, 1) < 0) goto done;
+            bytes ? bytes : 1, 1) < 0) { __fprintf(2,"mixed preflight: texture reserve failed unique=%u bytes=%zu\n",unique,bytes); goto done; }
     capacity=rf_gpu_raster_stream_size_v1(count+4);
     if (!capacity || capacity>ULONG_MAX ||
-        reserve(&e->stream, &e->stream_capacity, capacity, 1) < 0) goto done;
+        reserve(&e->stream, &e->stream_capacity, capacity, 1) < 0) { __fprintf(2,"mixed preflight: stream reserve failed commands=%u capacity=%zu\n",count,capacity); goto done; }
     phase_start=mixed_now_ms();
     if (rf_gpu_raster_pack_toy_textured_spans_v2(&renderer,e->output.clear_color,0,
-        e->stream,capacity,&e->stream_size,&e->textures,transparent,viewmodel)<0) goto done;
+        e->stream,capacity,&e->stream_size,&e->textures,transparent,viewmodel)<0) {
+        __fprintf(2,"mixed preflight: raster pack failed commands=%u transparent=%u viewmodel=%u\n",count,transparent,viewmodel); goto done;
+    }
+    if (f->sky_enabled) {
+        struct rf_gpu_raster_stream_header_v1 *header=e->stream;
+        struct rf_gpu_raster_cmd_v1 *commands=(void *)(header+1);
+        memset(&commands[0],0,sizeof(commands[0]));
+        commands[0].kind=RF_GPU_RASTER_CMD_SKY_V1;
+        commands[0].byte_size=RF_GPU_RASTER_CMD_V1_SIZE;
+        commands[0].payload.sky.direction_sy=f->direction_sy;
+        commands[0].payload.sky.direction_cy=f->direction_cy;
+        commands[0].payload.sky.pitch_sy=f->pitch_sy;
+        commands[0].payload.sky.pitch_cy=f->pitch_cy;
+        commands[0].payload.sky.zenith_color=0x3B82C4U;
+        commands[0].payload.sky.horizon_color=0xB9E3FFU;
+        commands[0].payload.sky.ground_color=0x0F1218U;
+    }
     e->stats.pack_ms+=mixed_now_ms()-phase_start;
     e->command_count=((struct rf_gpu_raster_stream_header_v1 *)e->stream)->command_count;
     /* All WORLD inverse depths must survive the integer attachment bridge.
@@ -365,13 +408,21 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             if (cmd[n].kind>=3 && cmd[n].kind<=5) {
                 const struct rf_gpu_raster_flat_triangle_v1 *t=&cmd[n].payload.flat_triangle;
                 if (t->a.inv_z<0 || t->a.inv_z>16384 || t->b.inv_z<0 ||
-                    t->b.inv_z>16384 || t->c.inv_z<0 || t->c.inv_z>16384) goto done;
+                    t->b.inv_z>16384 || t->c.inv_z<0 || t->c.inv_z>16384) {
+                    __fprintf(2,"mixed preflight: world inverse depth failed command=%u kind=%u inv_z=%d/%d/%d\n",
+                        n,cmd[n].kind,t->a.inv_z,t->b.inv_z,t->c.inv_z);
+                    goto done;
+                }
             }
         }
     }
     if (rf_gpu_vulkan_raster_preflight(e->context,mixed_raster(e)->implementation,e->stream,
         (unsigned long)e->stream_size,e->textures.descs,e->textures.desc_count,
-        e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) goto done;
+        e->textures.texels,(unsigned long)e->textures.texel_size,f->width,f->height)<0) {
+        __fprintf(2,"mixed preflight: Vulkan raster preflight failed stream=%lu textures=%u texels=%lu\n",
+            (unsigned long)e->stream_size,e->textures.desc_count,(unsigned long)e->textures.texel_size);
+        goto done;
+    }
     phase_start=mixed_now_ms();
     for (unsigned long n=0;n<f->draw_count;++n) if (encode_draw(e,f,n)<0) {
         __fprintf(2, "mixed preflight: Draw encode failed index=%lu primitive=%u indices=%u asset=%d vertex_light=%d ambient=%u specular=%u double_sided=%d dynamic=%lu\n",
@@ -520,6 +571,14 @@ void rf_gpu_mixed_get_stats(struct rf_gpu_mixed_executor *e, struct rf_gpu_mixed
         ADD_GRAPHICS_FIELD(bridge_transfer_bytes); ADD_GRAPHICS_FIELD(submit_wall_ms);
         ADD_GRAPHICS_FIELD(fence_wait_wall_ms); ADD_GRAPHICS_FIELD(bridge_wall_ms);
 #undef ADD_GRAPHICS_FIELD
+        for (unsigned int k=0;k<RF_GPU_SUBMIT_KIND_COUNT;++k) {
+            stats->graphics.submits_by_kind[k]+=s.submits_by_kind[k];
+            stats->graphics.wait_ms_by_kind[k]+=s.wait_ms_by_kind[k];
+        }
+        if (s.wait_frame>=stats->graphics.wait_frame) {
+            stats->graphics.wait_frame=s.wait_frame;
+            stats->graphics.wait_predecessor_frame=s.wait_predecessor_frame;
+        }
     }
     stats->gpu_timing=e->completed_timing;
 }

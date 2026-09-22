@@ -7,11 +7,14 @@
 #include "toy_window.h"
 #include "rf_core_filesystem.h"
 #include "rf_gpu.h"
+#include "rf_gpu_graphics.h"
 #include "rf_gpu_raster_pack.h"
 #include "rf_core_input.h"
 #include "rf_viewmodel_contract.h"
 
 struct rf_core_mixed_frame;
+#define RF_CORE_PRODUCER_TOTAL 9
+#define RF_CORE_BRIDGE_EVENT_MAX 256
 struct rf_gpu_mixed_executor;
 
 enum rf_core_renderer {
@@ -83,10 +86,20 @@ struct rf_core_gpu_frame_stats {
     unsigned long long mixed_draws;
     unsigned long long mixed_raster_spans, mixed_draw_spans;
     unsigned long long mixed_bridge_transfers, mixed_bridge_bytes;
+    unsigned long long producer_raster_commands[RF_CORE_PRODUCER_TOTAL];
+    unsigned long long producer_raster_spans[RF_CORE_PRODUCER_TOTAL];
+    unsigned long long producer_opaque_commands[RF_CORE_PRODUCER_TOTAL];
+    unsigned long long producer_transparent_commands[RF_CORE_PRODUCER_TOTAL];
+    unsigned int bridge_event_count;
+    struct {
+        unsigned int direction, layer, previous_producer, next_producer;
+        unsigned long long color_bytes, depth_bytes, target_generation;
+    } bridge_events[RF_CORE_BRIDGE_EVENT_MAX];
     unsigned long long mixed_graphics_submits, mixed_graphics_waits;
     unsigned long long mixed_gpu_upload_bytes;
     double mixed_graphics_submit_ms, mixed_graphics_wait_ms, mixed_bridge_ms;
-    double mixed_freeze_ms, mixed_cache_collect_ms, mixed_preflight_ms;
+    double mixed_freeze_ms, mixed_cache_collect_ms, mixed_slot_wait_ms;
+    double mixed_preflight_ms;
     double mixed_texture_measure_ms, mixed_pack_ms, mixed_draw_encode_ms;
     double mixed_draw_batch_prepare_ms, mixed_graphics_draw_ms;
     double mixed_raster_segment_ms;
@@ -94,6 +107,10 @@ struct rf_core_gpu_frame_stats {
     double mixed_gpu_draw_ms, mixed_gpu_bridge_export_ms;
     double mixed_gpu_post_ms, mixed_gpu_overlay_ms, mixed_gpu_present_copy_ms;
     unsigned int mixed_gpu_timing_supported, mixed_gpu_timing_valid;
+    unsigned int mixed_gpu_requested, mixed_gpu_recorded, mixed_gpu_dropped;
+    unsigned long long mixed_submits_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    double mixed_wait_ms_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    unsigned long long mixed_wait_frame, mixed_wait_predecessor_frame;
     unsigned long long mixed_gpu_timing_frame;
     unsigned long long capture_readback_bytes;
     unsigned long long character_diff_frames, character_diff_vertices;

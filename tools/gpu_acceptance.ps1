@@ -77,6 +77,13 @@ function Run-Game([string] $Name, [string[]] $Arguments, [int] $ExpectedFrames =
         foreach ($Line in $Gpu) { if ($Line.Line -notmatch 'readback_bytes=0 cpu_framebuffer_copy_bytes=0') { throw "$Name performed a readback or CPU framebuffer copy." } }
         foreach ($Line in $Layers) { if ($Line.Line -notmatch 'invalid_transitions=0 .*pre_post_cpu_fallback=0 fallback_reason=0x0 ') { throw "$Name used fallback or invalid layer ordering." } }
         foreach ($Line in $Present) { if ($Line.Line -notmatch 'hot_queue_idle_count=0 .*presenter_poisoned=0 ') { throw "$Name used hot queue-idle or poisoned the presenter." } }
+        foreach ($Line in ($Log | Select-String '^FRAME-AUDIT mixed-gpu frame=[1-9]')) {
+            if ($Line.Line -match 'supported=1 ') {
+                if ($Line.Line -notmatch 'valid=1 .*requested=(\d+) recorded=(\d+) dropped=0$' -or $Matches[1] -ne $Matches[2]) {
+                    throw "$Name has truncated or invalid GPU timing."
+                }
+            }
+        }
         $Record.frames = $ExpectedFrames
         $Record.path = $ExpectedPath
     }
@@ -102,10 +109,11 @@ function Assert-VertexDiff([object[]] $Log) {
     $Rows = @($Log | Select-String 'FRAME-AUDIT character-vertex-diff ')
     if ($Rows.Count -ne 1 -or $Rows[0].Line -notmatch 'position_mismatches=0 normal_mismatches=0 uv_mismatches=0') { throw 'GPU character vertex diff failed.' }
 }
-function Measure-Run([string] $Name, [string] $LogPath, [int] $Frames, [switch] $Campaign) {
+function Measure-Run([string] $Name, [string] $LogPath, [int] $Frames, [switch] $Campaign, [switch] $FixedTick) {
     $Json = Join-Path $OutputDirectory "$Name.metrics.json"
     $Arguments = @('-ExecutionPolicy','Bypass','-File',(Join-Path $Root 'tools/gpu_metrics.ps1'),'-LogPath',$LogPath,'-WarmupFrames','16','-ExpectedFrames',"$Frames",'-ExpectedPath','gpu-native','-OutputJson',$Json)
     if ($Campaign) { $Arguments += '-RequireCampaignLoad' }
+    if ($FixedTick) { $Arguments += '-RequireFixedTick' }
     Run-Process "$Name-metrics" 'powershell.exe' $Arguments $Root | Out-Null
 }
 
@@ -135,8 +143,8 @@ try {
         }
         $ThinFar = Run-Game 'thin-far' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','thin-far','0','--frame-audit','--frames','30') 30 'gpu-native'
         Assert-Character $ThinFar.log
-        $Stable = Run-Game 'presenter-300' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near','0','--frame-audit','--frames','300') 300 'gpu-native'
-        Measure-Run 'presenter-300' $Stable.log_path 300
+        $Stable = Run-Game 'presenter-300' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near','0','--gpu-normal-fixed-tick','--frame-audit','--frames','300') 300 'gpu-native'
+        Measure-Run 'presenter-300' $Stable.log_path 300 -FixedTick
         $Cycle = Run-Game 'world-cycle' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-world-cycle-test','--frame-audit','--frames','120') 120 'gpu-native'
         $CycleRows = @($Cycle.log | Select-String 'GPU-WORLD-CYCLE-RESOURCES ')
         $Resources = @($Cycle.log | Select-String 'FRAME-AUDIT draw-resources ')
@@ -145,12 +153,12 @@ try {
         if ($CycleRows.Count -ne 3 -or $Resources.Count -ne 120 -or $Ground.Count -ne 120 -or $Map.Count -ne 120) { throw 'World-cycle lifetime/mesh audit is incomplete.' }
         foreach ($Row in $CycleRows) { if ($Row.Line -notmatch 'retired=([1-9]\d*) pinned=([1-9]\d*)') { throw 'World switch did not retain an in-flight retired generation.' } }
         if ($Resources[-1].Line -notmatch 'retired=0 .*failed=0') { throw 'Retired world resources did not drain.' }
-        $Wave = Run-Game 'campaign-320' @('--map','rasterfall/assets/maps/rasterfall.map','--gpu-wave-repro','--renderer','gpu-compute','--gpu-required','--gpu-native-present','--frame-audit','--frames','320') 320 'gpu-native'
-        Measure-Run 'campaign-320' $Wave.log_path 320 -Campaign
+        $Wave = Run-Game 'campaign-320' @('--map','rasterfall/assets/maps/rasterfall.map','--gpu-wave-repro','--gpu-normal-fixed-tick','--renderer','gpu-compute','--gpu-required','--gpu-native-present','--frame-audit','--frames','320') 320 'gpu-native'
+        Measure-Run 'campaign-320' $Wave.log_path 320 -Campaign -FixedTick
         foreach ($Enemies in @(30,60)) {
-            $EnemyRun = Run-Game "near-$Enemies" @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near',"$Enemies",'--frame-audit','--frames','120') 120 'gpu-native'
+            $EnemyRun = Run-Game "near-$Enemies" @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near',"$Enemies",'--gpu-normal-fixed-tick','--frame-audit','--frames','120') 120 'gpu-native'
             Assert-Character $EnemyRun.log
-            Measure-Run "near-$Enemies" $EnemyRun.log_path 120
+            Measure-Run "near-$Enemies" $EnemyRun.log_path 120 -FixedTick
         }
         $Rollback = Run-Game 'character-rollback' @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near','0','--gpu-character-skinning-off','--frame-audit','--frames','30') 30 'gpu-native'
         Assert-Character $Rollback.log -RequireReference -ForbidGpuSkin

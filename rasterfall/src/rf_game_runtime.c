@@ -75,6 +75,7 @@
 #include "rasterfall_action.h"
 #include "rasterfall_options.h"
 #include "rf_core_host.h"
+#include "rf_core_mixed_frame.h"
 #include "rf_game_lifecycle.h"
 #include "rf_application_projection.h"
 #include "rasterfall_feature_freeze.h"
@@ -2571,6 +2572,164 @@ static struct {
     double network_teammates_ms, text_ms, interaction_ms;
 } rf_world_submission_audit;
 
+#define RF_RB0_WARMUP_FRAMES 16
+#define RF_RB0_SAMPLE_MAX 1024
+#define RF_RB0_SLOW_MAX 64
+struct rf_rb0_sample {
+    unsigned long long frame;
+    unsigned long long gpu_timing_frame;
+    int gpu_timing_valid;
+    unsigned int gpu_requested, gpu_recorded, gpu_dropped;
+    unsigned long long wait_predecessor_frame;
+    unsigned long long submits_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    int wait_us_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
+    int prepare_us, render_us, execute_us, remainder_us;
+    int whole_us, raster_us, gpu_raster_us, gpu_draw_us, gpu_bridge_us;
+    int cpu_producer_us, slot_wait_us, graphics_wait_us;
+    int acquire_us, present_us, presenter_completion_us;
+    unsigned long long bridge_transfers, bridge_bytes;
+    unsigned long long producer_raster_commands[RF_CORE_PRODUCER_TOTAL];
+};
+struct rf_rb0_stats {
+    struct rf_rb0_sample samples[RF_RB0_SAMPLE_MAX];
+    int count;
+};
+
+static int rf_rb0_unattributed(const struct rf_rb0_sample *sample)
+{
+    int covered = sample->raster_us;
+    if (sample->gpu_timing_valid && sample->gpu_raster_us > covered)
+        covered = sample->gpu_raster_us;
+    if (sample->cpu_producer_us > covered) covered = sample->cpu_producer_us;
+    if (sample->slot_wait_us > covered) covered = sample->slot_wait_us;
+    if (sample->graphics_wait_us > covered) covered = sample->graphics_wait_us;
+    if (sample->acquire_us + sample->present_us > covered)
+        covered = sample->acquire_us + sample->present_us;
+    return sample->whole_us > covered ? sample->whole_us - covered : 0;
+}
+
+static int rf_rb0_percentile(const struct rf_rb0_stats *stats, int field, int pct)
+{
+    int values[RF_RB0_SAMPLE_MAX], i, j, value, index, count = 0;
+    for (i = 0; i < stats->count; ++i) {
+        const struct rf_rb0_sample *sample = &stats->samples[i];
+        if (field >= 6 && field <= 8 && !sample->gpu_timing_valid) continue;
+        values[count++] = field == 0 ? sample->whole_us :
+                    field == 1 ? sample->raster_us :
+                    field == 2 ? sample->cpu_producer_us :
+                    field == 3 ? sample->graphics_wait_us :
+                    field == 4 ? sample->acquire_us :
+                    field == 5 ? sample->present_us :
+                    field == 6 ? sample->gpu_raster_us :
+                    field == 7 ? sample->gpu_draw_us :
+                    field == 8 ? sample->gpu_bridge_us :
+                    field == 9 ? sample->slot_wait_us :
+                    field == 10 ? sample->presenter_completion_us :
+                    rf_rb0_unattributed(sample);
+    }
+    for (i = 1; i < count; ++i) {
+        value = values[i];
+        for (j = i - 1; j >= 0 && values[j] > value; --j) values[j + 1] = values[j];
+        values[j + 1] = value;
+    }
+    index = (count * pct + 99) / 100 - 1;
+    if (index < 0) index = 0;
+    if (index >= count) index = count - 1;
+    return count ? values[index] : 0;
+}
+
+static void rf_rb0_dump(const struct rf_rb0_stats *stats)
+{
+    int order[RF_RB0_SAMPLE_MAX], slow_count, i, j, value;
+    if (!stats->count) return;
+    {
+        int complete=0, incomplete=0, pending=0, dropped=0, max_requested=0;
+        for (i=0;i<stats->count;++i) {
+            const struct rf_rb0_sample *s=&stats->samples[i];
+            if (!s->gpu_timing_frame) pending++;
+            else if (s->gpu_timing_valid && s->gpu_requested==s->gpu_recorded &&
+                     !s->gpu_dropped) complete++;
+            else incomplete++;
+            dropped+=(int)s->gpu_dropped;
+            if ((int)s->gpu_requested>max_requested) max_requested=(int)s->gpu_requested;
+        }
+        __printf("RB0-COVERAGE complete=%d incomplete=%d pending=%d dropped=%d max_requested=%d\n",
+            complete,incomplete,pending,dropped,max_requested);
+    }
+    __printf("RB0-STATS warmup=%d frames=%d whole_us median=%d p95=%d p99=%d max=%d raster_us p95=%d cpu_producer_us p95=%d wait_us p95=%d acquire_us p95=%d present_us p95=%d gpu_raster_us median=%d p95=%d p99=%d gpu_draw_us median=%d p95=%d p99=%d gpu_bridge_us median=%d p95=%d p99=%d slot_wait_us median=%d p95=%d p99=%d presenter_completion_us median=%d p95=%d p99=%d unattributed_us median=%d p95=%d p99=%d\n",
+        RF_RB0_WARMUP_FRAMES, stats->count,
+        rf_rb0_percentile(stats, 0, 50), rf_rb0_percentile(stats, 0, 95),
+        rf_rb0_percentile(stats, 0, 99), rf_rb0_percentile(stats, 0, 100),
+        rf_rb0_percentile(stats, 1, 95), rf_rb0_percentile(stats, 2, 95),
+        rf_rb0_percentile(stats, 3, 95), rf_rb0_percentile(stats, 4, 95),
+        rf_rb0_percentile(stats, 5, 95),
+        rf_rb0_percentile(stats, 6, 50), rf_rb0_percentile(stats, 6, 95),
+        rf_rb0_percentile(stats, 6, 99), rf_rb0_percentile(stats, 7, 50),
+        rf_rb0_percentile(stats, 7, 95), rf_rb0_percentile(stats, 7, 99),
+        rf_rb0_percentile(stats, 8, 50), rf_rb0_percentile(stats, 8, 95),
+        rf_rb0_percentile(stats, 8, 99), rf_rb0_percentile(stats, 9, 50),
+        rf_rb0_percentile(stats, 9, 95), rf_rb0_percentile(stats, 9, 99),
+        rf_rb0_percentile(stats, 10, 50), rf_rb0_percentile(stats, 10, 95),
+        rf_rb0_percentile(stats, 10, 99), rf_rb0_percentile(stats, 11, 50),
+        rf_rb0_percentile(stats, 11, 95), rf_rb0_percentile(stats, 11, 99));
+    for (i = 0; i < stats->count; ++i) order[i] = i;
+    for (i = 1; i < stats->count; ++i) {
+        value = order[i];
+        for (j = i - 1; j >= 0 && stats->samples[order[j]].whole_us < stats->samples[value].whole_us; --j)
+            order[j + 1] = order[j];
+        order[j + 1] = value;
+    }
+    slow_count = (stats->count + 19) / 20;
+    if (slow_count > RF_RB0_SLOW_MAX) slow_count = RF_RB0_SLOW_MAX;
+    for (i = 0; i < slow_count; ++i) {
+        const struct rf_rb0_sample *sample = &stats->samples[order[i]];
+        const char *reason = "unclassified";
+        int reason_us = sample->raster_us;
+        if (sample->cpu_producer_us > reason_us) { reason = "cpu_producer"; reason_us = sample->cpu_producer_us; }
+        else if (reason_us > 0) reason = "raster_workload";
+        if (sample->gpu_timing_valid && sample->gpu_raster_us > reason_us) { reason = "gpu_raster_workload"; reason_us = sample->gpu_raster_us; }
+        if (sample->slot_wait_us > reason_us) { reason = "frame_slot_wait"; reason_us = sample->slot_wait_us; }
+        if (sample->graphics_wait_us > reason_us) { reason = "graphics_fence_wait"; reason_us = sample->graphics_wait_us; }
+        if (sample->presenter_completion_us > reason_us) { reason = "presenter_completion_wait"; reason_us = sample->presenter_completion_us; }
+        if (sample->acquire_us + sample->present_us > reason_us) {
+            reason = "present_or_acquire";
+            reason_us = sample->acquire_us + sample->present_us;
+        }
+        if (reason_us * 2 < sample->whole_us) reason = "unclassified";
+        __printf("RB0-SLOW frame=%llu gpu_timing_frame=%llu whole_us=%d reason=%s attributed_us=%d unattributed_us=%d raster_us=%d gpu_raster_us=%d gpu_draw_us=%d gpu_bridge_us=%d cpu_producer_us=%d slot_wait_us=%d graphics_wait_us=%d wait_us=%d acquire_us=%d present_us=%d presenter_completion_us=%d bridge_transfers=%llu bridge_bytes=%llu",
+            sample->frame, sample->gpu_timing_frame, sample->whole_us, reason,
+            reason_us, rf_rb0_unattributed(sample), sample->raster_us,
+            sample->gpu_raster_us, sample->gpu_draw_us, sample->gpu_bridge_us,
+            sample->cpu_producer_us, sample->slot_wait_us,
+            sample->graphics_wait_us, sample->graphics_wait_us,
+            sample->acquire_us, sample->present_us,
+            sample->presenter_completion_us, sample->bridge_transfers,
+            sample->bridge_bytes);
+        __printf(" gpu_valid=%d requested=%u recorded=%u dropped=%u predecessor_frame=%llu prepare_us=%d render_us=%d execute_us=%d remainder_us=%d",
+            sample->gpu_timing_valid,sample->gpu_requested,sample->gpu_recorded,
+            sample->gpu_dropped,sample->wait_predecessor_frame,
+            sample->prepare_us,sample->render_us,sample->execute_us,sample->remainder_us);
+        for (j=0;j<RF_GPU_SUBMIT_KIND_COUNT;++j) {
+            static const char *names[]={"upload","vertex_diff","skin_input",
+                "skinning","bridge","draw","readback"};
+            __printf(" %s_submits=%llu %s_wait_us=%d",names[j],sample->submits_by_kind[j],
+                names[j],sample->wait_us_by_kind[j]);
+        }
+        for (j = 0; j < RF_CORE_PRODUCER_COUNT; ++j)
+            __printf(" %s=%llu", rf_core_mixed_producer_name((unsigned int)j),
+                sample->producer_raster_commands[j]);
+        __printf("\n");
+    }
+}
+
+static unsigned long rf_world_audit_command_position(
+    const struct rf_game_runtime *runtime, const struct toy_renderer *renderer)
+{
+    return (unsigned long)renderer->cmd_count +
+        (runtime->render_context.mixed_frame ?
+            runtime->render_context.mixed_frame->raster_count : 0UL);
+}
+
 static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface,
@@ -2617,6 +2776,9 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     rf_core_gpu_world_begin(runtime->core);
     runtime->render_context.mixed_frame =
         rf_core_mixed_current(runtime->core);
+    if (runtime->render_context.mixed_frame &&
+        rf_core_mixed_set_producer(runtime->render_context.mixed_frame, renderer,
+            RF_CORE_PRODUCER_WORLD_MAP) < 0) return -1;
 
     /* World and actor submission order is intentionally unchanged. */
     {
@@ -2637,41 +2799,49 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         perf_tris=renderer->submitted_triangles;
     }
     memset(&rf_world_submission_audit, 0, sizeof(rf_world_submission_audit));
-    audit_commands = renderer->cmd_count;
+    if (runtime->render_context.mixed_frame &&
+        rf_core_mixed_set_producer(runtime->render_context.mixed_frame, renderer,
+            RF_CORE_PRODUCER_ENEMY_BODY) < 0) return -1;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_enemies(renderer, render_camera);
-    rf_world_submission_audit.enemies = renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.enemies =
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.enemies_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
-    audit_commands = renderer->cmd_count;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_ai_teammate(renderer, render_camera);
     rf_world_submission_audit.ai_teammates =
-        renderer->cmd_count - audit_commands;
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.ai_teammates_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
-    audit_commands = renderer->cmd_count;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     if (runtime->managed_spectator && runtime->managed_third_person)
         pixels += rasterfall_render_managed_player(
             renderer, render_camera, body_camera);
     rf_world_submission_audit.managed_player =
-        renderer->cmd_count - audit_commands;
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.managed_player_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
-    audit_commands = renderer->cmd_count;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_network_teammate(
         renderer, render_camera, &runtime->net, &game_session->game_state);
     rf_world_submission_audit.network_teammates =
-        renderer->cmd_count - audit_commands;
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.network_teammates_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
-    audit_commands = renderer->cmd_count;
+    if (runtime->render_context.mixed_frame &&
+        rf_core_mixed_set_producer(runtime->render_context.mixed_frame, renderer,
+            RF_CORE_PRODUCER_WORLD_MAP) < 0) return -1;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     pixels += rasterfall_render_sign_text(renderer, render_camera);
     pixels += rasterfall_render_flag_text(renderer, render_camera);
-    rf_world_submission_audit.text = renderer->cmd_count - audit_commands;
+    rf_world_submission_audit.text =
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.text_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
 
@@ -2684,13 +2854,13 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
      * one normal-world consumer so native GPU frames and CPU fallback classify
      * and consume the same complete batch.  Keep this after the enemies timing
      * boundary so their triangles remain owned by the raster stage. */
-    audit_commands = renderer->cmd_count;
+    audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->shop_open)
         pixels += rasterfall_render_interactables(renderer, render_camera);
     rf_world_submission_audit.interaction_commands =
-        renderer->cmd_count - audit_commands;
+        rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.interaction_ms =
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
     /* Existing world-to-overlay ordering barrier. */
@@ -2875,6 +3045,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     int input_event_count = 0, have_last_key = 0;
     struct rasterfall_perf_stats stats, stats_total;
+    struct rf_rb0_stats rb0_stats;
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
@@ -2892,6 +3063,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
 
     if (!config || !config->options) return 2;
     options = *config->options;
+    memset(&rb0_stats, 0, sizeof(rb0_stats));
     rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
     if (options.enemy_visual_capture_dir)
         return rasterfall_render_enemy_visual_capture(options.enemy_visual_capture_dir);
@@ -3593,6 +3765,7 @@ startup_again:
         }
         int64_t audit_update_us = 0, audit_render_us = 0;
         int64_t audit_present_us = 0, audit_interval_us = 0;
+        int64_t audit_prepare_us = 0;
         int logic_steps = 0;
         int resumed = 0;
         int ready;
@@ -4281,6 +4454,7 @@ startup_again:
                 options.gpu_character_vertex_diff && rendered_frames + 1 == 30;
             {
                 int64_t audit_render_start = rf_core_time_us(&core);
+                audit_prepare_us = audit_render_start - audit_loop_start;
                 if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
                     rf_core_mixed_fail(&core);
@@ -4315,6 +4489,72 @@ startup_again:
             now = rf_core_time_us(&core);
             last_active = now - t_frame;
             rasterfall_perf_record_frame(&stats, &stats_total, last_active);
+            if (options.gpu_rb0_stats && rendered_frames > RF_RB0_WARMUP_FRAMES &&
+                rb0_stats.count < RF_RB0_SAMPLE_MAX) {
+                struct rf_core_gpu_frame_stats gpu_audit;
+                struct rasterfall_scene_stats scene_audit;
+                struct rf_rb0_sample *sample = &rb0_stats.samples[rb0_stats.count++];
+                int producer;
+                memset(&gpu_audit, 0, sizeof(gpu_audit));
+                memset(&scene_audit, 0, sizeof(scene_audit));
+                rf_core_get_gpu_frame_stats(&core, &gpu_audit);
+                rasterfall_render_scene_stats(&scene_audit);
+                sample->frame = (unsigned long long)rendered_frames;
+                sample->whole_us = (int)(now - audit_loop_start);
+                sample->prepare_us = (int)audit_prepare_us;
+                sample->render_us = (int)audit_render_us;
+                sample->execute_us = (int)audit_present_us;
+                sample->remainder_us = sample->whole_us - sample->prepare_us -
+                    sample->render_us - sample->execute_us;
+                sample->raster_us = (int)(gpu_audit.mixed_raster_segment_ms * 1000.0);
+                if (gpu_audit.mixed_gpu_timing_frame) {
+                    int timing_sample;
+                    for (timing_sample = 0; timing_sample < rb0_stats.count;
+                         ++timing_sample) {
+                        struct rf_rb0_sample *gpu_sample =
+                            &rb0_stats.samples[timing_sample];
+                        if (gpu_sample->frame !=
+                            gpu_audit.mixed_gpu_timing_frame) continue;
+                        gpu_sample->gpu_raster_us = (int)(
+                            gpu_audit.mixed_gpu_raster_ms * 1000.0);
+                        gpu_sample->gpu_draw_us = (int)(
+                            gpu_audit.mixed_gpu_draw_ms * 1000.0);
+                        gpu_sample->gpu_bridge_us = (int)((
+                            gpu_audit.mixed_gpu_bridge_import_ms +
+                            gpu_audit.mixed_gpu_bridge_export_ms) * 1000.0);
+                        gpu_sample->gpu_timing_frame =
+                            gpu_audit.mixed_gpu_timing_frame;
+                        gpu_sample->gpu_timing_valid = gpu_audit.mixed_gpu_timing_valid;
+                        gpu_sample->gpu_requested = gpu_audit.mixed_gpu_requested;
+                        gpu_sample->gpu_recorded = gpu_audit.mixed_gpu_recorded;
+                        gpu_sample->gpu_dropped = gpu_audit.mixed_gpu_dropped;
+                        break;
+                    }
+                }
+                sample->cpu_producer_us = (int)(scene_audit.sky_floor_us + scene_audit.map_us +
+                    scene_audit.static_props_us + scene_audit.model_gallery_us +
+                    scene_audit.private_model_us + scene_audit.projectiles_us +
+                    (rf_world_submission_audit.enemies_ms +
+                     rf_world_submission_audit.ai_teammates_ms) * 1000.0);
+                sample->slot_wait_us = (int)(gpu_audit.mixed_slot_wait_ms * 1000.0);
+                sample->graphics_wait_us = (int)(gpu_audit.mixed_graphics_wait_ms * 1000.0);
+                sample->wait_predecessor_frame = gpu_audit.mixed_wait_predecessor_frame;
+                for (int k=0;k<RF_GPU_SUBMIT_KIND_COUNT;++k) {
+                    sample->submits_by_kind[k]=gpu_audit.mixed_submits_by_kind[k];
+                    sample->wait_us_by_kind[k]=(int)(gpu_audit.mixed_wait_ms_by_kind[k]*1000.0);
+                }
+                sample->acquire_us = (int)(gpu_audit.native_present_timing.acquire_ms * 1000.0);
+                sample->present_us = (int)(gpu_audit.native_present_timing.present_ms * 1000.0);
+                sample->presenter_completion_us =
+                    gpu_audit.native_present_timing.audit_completion_source ==
+                        RF_GPU_PRESENT_COMPLETION_IMAGE_REACQUIRED ?
+                    sample->acquire_us : 0;
+                sample->bridge_transfers = gpu_audit.mixed_bridge_transfers;
+                sample->bridge_bytes = gpu_audit.mixed_bridge_bytes;
+                for (producer = 0; producer < RF_CORE_PRODUCER_TOTAL; ++producer)
+                    sample->producer_raster_commands[producer] =
+                        gpu_audit.producer_raster_commands[producer];
+            }
             /* Explicit audit must include fast frames too: sampled logs cannot
              * establish a complete strict run or an unbiased timing baseline. */
             if (options.frame_audit) {
@@ -4343,6 +4583,13 @@ startup_again:
                     (double)audit_interval_us / 1000.0);
                 __printf("%s\n", audit_line);
                 rf_windows_log(audit_line);
+                snprintf(audit_line,sizeof(audit_line),
+                    "FRAME-AUDIT cpu-phases frame=%llu prepare_us=%lld render_us=%lld execute_us=%lld remainder_us=%lld whole_us=%lld",
+                    (unsigned long long)rendered_frames,(long long)audit_prepare_us,
+                    (long long)audit_render_us,(long long)audit_present_us,
+                    (long long)(now-audit_loop_start-audit_prepare_us-audit_render_us-audit_present_us),
+                    (long long)(now-audit_loop_start));
+                __printf("%s\n",audit_line); rf_windows_log(audit_line);
                 if (gpu_audit.character_diff_frames) {
                     snprintf(audit_line, sizeof(audit_line),
                         "FRAME-AUDIT character-vertex-diff vertices=%llu position_mismatches=%llu normal_mismatches=%llu uv_mismatches=%llu max_position_delta=%u max_normal_delta=%u",
@@ -4373,6 +4620,34 @@ startup_again:
                     gpu_audit.capture_readback_bytes);
                 __printf("%s\n",audit_line);
                 rf_windows_log(audit_line);
+                for (unsigned int producer = 0;
+                     producer < RF_CORE_PRODUCER_COUNT; ++producer) {
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT producer name=%s raster_cmd=%llu spans=%llu opaque_cmd=%llu transparent_cmd=%llu",
+                        rf_core_mixed_producer_name(producer),
+                        gpu_audit.producer_raster_commands[producer],
+                        gpu_audit.producer_raster_spans[producer],
+                        gpu_audit.producer_opaque_commands[producer],
+                        gpu_audit.producer_transparent_commands[producer]);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
+                for (unsigned int event = 0;
+                     event < gpu_audit.bridge_event_count; ++event) {
+                    snprintf(audit_line, sizeof(audit_line),
+                        "FRAME-AUDIT bridge direction=%s color_bytes=%llu depth_bytes=%llu layer=%u previous=%s next=%s target_generation=%llu",
+                        gpu_audit.bridge_events[event].direction ? "export" : "import",
+                        gpu_audit.bridge_events[event].color_bytes,
+                        gpu_audit.bridge_events[event].depth_bytes,
+                        gpu_audit.bridge_events[event].layer,
+                        rf_core_mixed_producer_name(
+                            gpu_audit.bridge_events[event].previous_producer),
+                        rf_core_mixed_producer_name(
+                            gpu_audit.bridge_events[event].next_producer),
+                        gpu_audit.bridge_events[event].target_generation);
+                    __printf("%s\n", audit_line);
+                    rf_windows_log(audit_line);
+                }
                 snprintf(audit_line, sizeof(audit_line),
                     "FRAME-AUDIT mixed-cpu freeze_ms=%.3f cache_collect_ms=%.3f preflight_ms=%.3f texture_measure_ms=%.3f pack_ms=%.3f draw_encode_ms=%.3f draw_batch_prepare_ms=%.3f graphics_draw_ms=%.3f raster_segment_ms=%.3f",
                     gpu_audit.mixed_freeze_ms,gpu_audit.mixed_cache_collect_ms,
@@ -4384,15 +4659,27 @@ startup_again:
                 __printf("%s\n",audit_line);
                 rf_windows_log(audit_line);
                 snprintf(audit_line, sizeof(audit_line),
-                    "FRAME-AUDIT mixed-gpu frame=%llu supported=%u valid=%u raster_ms=%.3f bridge_import_ms=%.3f draw_ms=%.3f bridge_export_ms=%.3f post_ms=%.3f overlay_ms=%.3f present_copy_ms=%.3f",
+                    "FRAME-AUDIT mixed-gpu frame=%llu supported=%u valid=%u raster_ms=%.3f bridge_import_ms=%.3f draw_ms=%.3f bridge_export_ms=%.3f post_ms=%.3f overlay_ms=%.3f present_copy_ms=%.3f requested=%u recorded=%u dropped=%u",
                     gpu_audit.mixed_gpu_timing_frame,
                     gpu_audit.mixed_gpu_timing_supported,gpu_audit.mixed_gpu_timing_valid,
                     gpu_audit.mixed_gpu_raster_ms,gpu_audit.mixed_gpu_bridge_import_ms,
                     gpu_audit.mixed_gpu_draw_ms,gpu_audit.mixed_gpu_bridge_export_ms,
                     gpu_audit.mixed_gpu_post_ms,gpu_audit.mixed_gpu_overlay_ms,
-                    gpu_audit.mixed_gpu_present_copy_ms);
+                    gpu_audit.mixed_gpu_present_copy_ms,
+                    gpu_audit.mixed_gpu_requested,gpu_audit.mixed_gpu_recorded,
+                    gpu_audit.mixed_gpu_dropped);
                 __printf("%s\n",audit_line);
                 rf_windows_log(audit_line);
+                for (unsigned int k=0;k<RF_GPU_SUBMIT_KIND_COUNT;++k) {
+                    static const char *names[]={"upload","vertex-diff","skin-input",
+                        "skinning","bridge","draw","readback"};
+                    snprintf(audit_line,sizeof(audit_line),
+                        "FRAME-AUDIT graphics-submit frame=%llu caller=%s submits=%llu wait_ms=%.3f predecessor_frame=%llu",
+                        gpu_audit.mixed_wait_frame,names[k],
+                        gpu_audit.mixed_submits_by_kind[k],gpu_audit.mixed_wait_ms_by_kind[k],
+                        gpu_audit.mixed_wait_predecessor_frame);
+                    __printf("%s\n",audit_line); rf_windows_log(audit_line);
+                }
                 {
                     struct rasterfall_scene_stats scene_audit;
                     rasterfall_render_scene_stats(&scene_audit);
@@ -4618,6 +4905,7 @@ startup_again:
     }
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");
+    if (options.gpu_rb0_stats) rf_rb0_dump(&rb0_stats);
     rasterfall_audio_stop(&audio);
     rasterfall_audio_unload_assets(&audio);
     rasterfall_net_discovery_close(&discovery);
