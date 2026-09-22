@@ -96,7 +96,8 @@ native present、物理驱动、窗口生命周期和性能验收。
 
 当前正常 GPU skinning 的四场景成本/bridge 盘点见 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)。
 普通 infected body 与相邻 shadow 编排已短测并撤销：结构与 Raster 耗时改善，但最终画面的逐面光照
-不等价，且 bridge 由 4 次增到 6 次。下一候选回到 gear/weapon 边界预检；producer GPU 毫秒尚不可分摊。
+不等价，且 bridge 由 4 次增到 6 次。下一 producer 候选回到 gear/weapon 边界预检，但它不是当前立即
+执行项，须等待 M2 后重新归因；producer GPU 毫秒尚不可分摊。
 `tools/gpu_rb2_candidate_report.ps1` 从同 package 的 audit/no-audit 结果重建盘点表。
 
 以下历史数字不能直接作为下一批迁移的收益基线。[RB-0 排查](gpu-rb0-investigation-20260922.md)
@@ -115,10 +116,11 @@ RB-1 前的两轮 Full 确认，60 敌人场景中 Draw 已不是主要成本；
 这些耗时不能作为单项 ablation 收益。`native_present_ms` 中位数约 0.02 ms，因此较大的
 `present_wall_ms` 不能归因为 present API 本身。
 
-M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细分，下一步按
-[Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 做 frame-slot 动态资源复用 A/B；producer 迁移
-仍按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的 gear/weapon RB-2 候选门禁实施；
-透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
+M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细分。当前唯一未完成前置是补同一
+package 的低扰动 `-NoAudit` 五轮 baseline；完成后才按
+[Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 实现 frame-slot 动态资源复用并进行 A/B。
+producer 迁移等待 M2 后重新归因；届时仍按 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md)
+执行 gear/weapon RB-2 候选门禁。透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
 
 RTX 3050 当前三轮 audit whole-loop 中位轮为 near 0/30/60/Campaign 的
 `34.151/52.130/73.555/39.594 ms`；这是开启逐帧日志的归因基线，不是低扰动 FPS 成绩。对应 package、

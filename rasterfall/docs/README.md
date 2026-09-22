@@ -24,67 +24,17 @@
 
 ## 当前 GPU 验收状态
 
-当前优化执行入口为 [Mixed 路径优化计划与证据](gpu-mixed-optimization-20260922.md)：先收敛 Raster
-segment 的重复 tile 扫描，再按证据推进动态资源复用、skinning 同步和 depth bridge。该工作保留现有
-producer 与光照语义；gear/weapon 边界预检和 infected 光照合同仍为后续迁移前置条件。
+当前主线只从 [GPU Raster / Bridge 收敛计划](gpu-raster-bridge-plan.md) 的“当前唯一执行链”进入：
+M1 已签收，M2 的 preflight 归因已完成；**当前唯一未完成前置是补现有 RTX 3050 package 的低扰动
+`-NoAudit` 五轮 baseline**。完成后才实现 frame-slot 动态资源复用，保持现有 skinning 同步模型，随后以
+五轮 AB/BA 和生命周期门禁签收。M2 后重新归因，再决定 M3、depth bridge 或 gear/weapon 边界预检。
 
-当前推进：Intel RB-0 已签收，RB-1 已取得单设备结构收敛证据，RB-2 的 rigid-only 与普通
-infected body/shadow 两个切片均已否决并撤销，M1 已按 Intel 单设备范围签收；M2 已在 AMD 5600H +
-RTX 3050 上补齐 preflight 子阶段计时，定位到逐帧动态资源销毁/重建为主要固定成本；下一步只做
-frame-slot 动态资源复用 A/B，暂不改变 skinning 同步模型。下一迁移候选仍为 gear/weapon 边界预检。
-自 M2 起，RTX 3050 是高性能开发与 60 FPS 签收主线，Intel Iris Xe 是普通正确性与 30 FPS 下限设备；
-当前只设置这两档。目标和冻结数据见 [GPU 性能标准与冻结基线](gpu-performance-standards.md)，候选、
-四场景成本/边界与审计修补见
-[RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)；`tools/gpu_rb2_candidate_report.ps1`
-汇总同 package 的 audit/no-audit 证据，不把 producer 命令数解释为 GPU 耗时。
-
-最新专项修复与证据见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。raw 分段输入覆盖与 resize 后
-附件悬空已修复；`tools/gpu_rb0_special.ps1` 是 validation/sync、fault、soak 串行入口。
-状态所有者为 backend 的 `input_versions` 和 Graphics 的 `shared_rasters`；metrics schema 6
-将七类 wait、互斥 CPU phase 和前序 GPU 帧纳入审计分析。正确口径五轮未复现历史 near60 数百毫秒双态；
-低扰动未分类慢帧已定位到顶层 phase，但缺少 phase 内因果计时，按根因未知的已知风险冻结。
-
-RB-0 最终签收 package `F407FD19...63D762` 已通过 Full 31/31、validation/sync、五类 fault 与 10,000 帧 soak。
-签收中修复 SKY validator 对合法轴向 `sin/cos=(-1024,0)` 的误拒绝。RB-0 是历史 Intel 单设备签收；
-M2 起的当前设备政策已改为 RTX 3050 性能主线与 Intel 普通标准。
-
-同 tick 画面复核已修复 mixed SKY 快照缺失和世界血条矩形未写 overlay coverage。RB-0 签收后的统一
-渲染策略已移除 Rasterfall runtime 的 fog 接入：CPU 与 GPU normal producer 均提交中性 fog，GPU Post
-不再由 CLI/Core 启用；RasterCmd 与底层 Post 的 fog ABI/consumer 语义只为兼容和专项测试保留。
-
-本轮修复已实现 actor flush 前裁剪、按计划预留 timestamp、真实 submit 调用者计时及 CPU 顶层阶段。
-当前验证结果与采样见 [RB-0 专项续接](gpu-rb0-special-20260922.md)；上一轮失败现场保存在
-[RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
-代码入口为 `toy_renderer.command_filter` → `ai_actor_command_scope_*()`，以及
-`rf_gpu_vulkan_timestamp_reserve()` → mixed preflight → Core stats → runtime audit/RB0-COVERAGE。
-
-RB-1 当前已将连续 Draw span 合批，并把模块化队友的 body Draw 与 opaque gear/weapon Raster 提交分组。
-Intel 同一 package 的 audit/低扰动固定 workload 各五轮通过：near 0/30/60 的 bridge 均稳定为 4 次、
-29,491,200 bytes，Campaign 为 10 次、73,728,000 bytes，四场景各自 workload hash 跨轮一致。hosted 与
-native resize 合同现精确验证 transfer、bytes 和 frame-slot target rebuild；该段只记录历史 Intel 证据。
-
-RB-2 首个 `enemy-rigid-special` 独立 ablation 已完成并撤销。现有 dynamic Draw 在正常 GPU skinning
-开启时要求整帧 dynamic 顶点都有对应 skin bind/palette，不能直接混入 procedural rigid 顶点；受控
-CPU-skinning-off A/B 虽将 Campaign 的该 producer RasterCmd 从 963 降到 0，却因 actor 顺序中的 blob
-shadow/特殊组件等真实 Raster 边界把 bridge 从 10 次、73,728,000 bytes 增到 12 次、88,473,600 bytes。
-单轮低扰动 whole-loop median 也由 17.532 ms 增到 18.298 ms，因此不保留该实现，不据此扩展 typed
-dynamic stream。下一候选必须先连同相邻 opaque Raster 和 actor 编排一起证明能减少真实 Draw run。
-
-普通 infected body + shadow 的后续受限 ablation 也已撤销。near 60 短测将 enemy-body RasterCmd
-降到约 0.32–0.63 万、GPU Raster median 从 16.565 ms 降到 7.588 ms，但 Draw run/bridge 从
-2/4 增到 3/6，且最终截图的逐面光照明显不等价；device-local 顶点 differential 虽为零 mismatch，
-不能替代画面合同。该切片未进入五轮签收，下一候选回到 gear/weapon 边界预检。
-
-此前 RB-0 排查发现 actor 命令范围跨 flush 失效、GPU timestamp 容量截断及 graphics wait 归因问题。
-修复前证据见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)；该历史现场不能替代修复后的基线，
-producer 命令计数也不能单独决定迁移优先级。
-
-Windows Intel strict native 和正式地图 320 帧零回退波次复现已完成，适配器为 Intel Iris Xe；用户确认核心游玩与窗口拉伸。历史 Fog smoke 只证明保留的底层 ABI，当前 normal runtime 不启用 fog。功能阶段结束，最近固定视角实测与仍未覆盖的边界统一见 [GPU 当前状态](gpu-current-state.md)。
-
-Rasterfall 当前仍处于 GPU 开发状态，但 HG-0 至 HG-5B 已完成；后续不应直接按编号扩展新 HG 阶段。
-当前优先级是 Windows 原生 PowerShell 下的跨设备验证、剩余 RasterCmd 成本归因和帧时间/P95 分解，
-再由数据决定下一批硬件迁移内容。Windows PowerShell 是主要开发与签收 lane；WSL 仅保留辅助用途，
-不保证同步更新或正确性，不能作为 native GPU 结论。
+RTX 3050 是 60 FPS 性能主线，Intel Iris Xe 负责 required-native 正确性、完整功能、30 FPS 下限和退化
+复核。当前实现边界、已知限制与验证命令见 [GPU 当前状态](gpu-current-state.md)；目标和冻结数据见
+[GPU 性能标准与冻结基线](gpu-performance-standards.md)；M1/M2 的实施证据见
+[Mixed 路径优化计划](gpu-mixed-optimization-20260922.md)。RB-0/RB-1 的历史签收、两次已撤销的 RB-2
+实验及具体数字留在相应专题文档，不在本导航重复维护。Windows PowerShell 是主开发与签收 lane；WSL
+仅用于辅助诊断，不能作为 native GPU 结论。
 
 ## 先读哪一篇
 

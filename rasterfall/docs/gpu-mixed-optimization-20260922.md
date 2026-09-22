@@ -113,9 +113,11 @@ RB-0 的 validation/sync、fault、soak；这些门禁在后续 M2/M3 涉及相�
 
 ## 后续执行计划
 
+- 当前唯一未完成前置是补现有 RTX 3050 package 的 `-NoAudit` 五轮 baseline。完成前不开始 M2 候选实现，
+  避免 baseline 与候选来自不同代码或 package。
 - M2 计时已完成。实现按 frame slot 持久复用动态 resource、buffer 和 descriptor，容量只增长；稳态只
   上传当前有效数据，只有扩容、失败回滚或 executor teardown 才销毁。先保持当前 skinning submit/wait。
-- M2 开工前补同 package 的 RTX 3050 `-NoAudit` 五轮 baseline；候选随后做五轮 AB/BA。审计必须新增或
+- M2 候选随后做五轮 AB/BA。审计必须新增或
   保留 build/reuse/grow/descriptor-update 计数，证明成本没有转移到 slot recycle 或 present。
 - M3 仅在 M2 后 skinning fence 仍是最大固定成本时推进；若实施，必须补 Full、四 extent resize、validation/sync、
   fault 与 soak，明确等待从哪里转移到哪里。

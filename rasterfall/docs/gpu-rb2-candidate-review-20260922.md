@@ -97,7 +97,10 @@ producer_attribution 的 bridge 计数会同时归属两个端点，不能相加
 或 rigid body。shadow 是 `draw_quad()` 的不透明近地几何；即使颜色像半透明阴影，也不能把它当作无 depth
 副作用的装饰。special/死亡分支、深度相等时的覆盖与共享 pose scratch 都限制批次重排。
 
-## 下一 ablation 的范围与门禁
+## 已执行并否决的 infected ablation 方案
+
+本节记录普通 infected body 实验实施前冻结的范围与门禁，现已由下一节的结果完成验证并否决，
+**不是当前待执行计划**。当前 producer 候选是 gear/weapon 边界预检，但必须等待 M2 完成后的重新归因。
 
 候选：COMMON/FAST/HEAVY 的存活、完全 opaque infected 模型，保留现有 pose、方向、逐面光照、受击 tint
 和资源所有权。保持现有 GPU skinning，冻结每个 actor 的 palette/输入后才复用共享 instance。
@@ -114,9 +117,9 @@ shadow 纳入同一编排评估，但不预设它必须迁移；special、死亡
 4. 若结构与短测均支持收益，双方各五轮低扰动串行交替采样；audit 独立运行。要求 near 30/60 有可重复
    整帧收益，near 0/Campaign 无显著回退，P95/P99 和上传成本不过度增加。正式收益只能由此确认。
 
-排序：普通 infected body 优先；gear/weapon 为备选，其规模较小且不能从当前端点标签证明迁移会消除
-bridge；special rigid-only 维持否决。world/map 若要迁移应另做内容归因，不顺带扩大 textured/material
-范围。透明/VFX 不属于本轮。RB-3 仍等待迁移范围明确后的 CPU 长尾证据。
+当时的排序是普通 infected body 优先、gear/weapon 备选；下一节记录了为何该排序已经失效。
+special rigid-only 维持否决。world/map 若要迁移应另做内容归因，不顺带扩大 textured/material 范围；
+透明/VFX 不属于本轮。RB-3 仍等待迁移范围明确后的 CPU 长尾证据。
 
 ## 普通 infected body ablation 结果
 
@@ -134,8 +137,9 @@ skinned Draw 的 material/form-light 合同不能保持该结果。由于正确�
 采样，实验代码及临时 CLI 已全部撤销。
 
 证据保存在 `tmp/rb2-infected-short-20260922/`、`tmp/rb2-infected-short4-20260922/` 与
-`tmp/rb2-infected-diff-audit-20260922/`。下一候选回到 gear/weapon，但在实现前必须先证明它能与已有
-AI body Draw 合并并保持 socket、受击/动作和材质语义；不能由本次 infected 的短测数字推导其收益。
+`tmp/rb2-infected-diff-audit-20260922/`。下一 producer 候选回到 gear/weapon，但须等待 M2 后重新归因；
+进入实现前还必须证明它能与已有 AI body Draw 合并并保持 socket、受击/动作和材质语义，不能由本次
+infected 的短测数字推导其收益。
 
 ## 复核入口与验证边界
 

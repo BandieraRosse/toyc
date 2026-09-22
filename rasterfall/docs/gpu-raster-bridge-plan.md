@@ -19,9 +19,12 @@ opaque 迁移；infected 须先补光照等价合同。两档设备、60/30 FPS 
 [GPU 性能标准与冻结基线](gpu-performance-standards.md)。以下立项数字为历史背景，
 不作为当前性能基线。
 
-## 当前执行顺序
+## 当前唯一执行链
 
-1. 冻结 RTX 3050 三轮 audit 归因基线，并补同 package 的低扰动五轮 baseline。
+当前只推进下面这一条串行链；前一项未完成时，不并行实施后一项：
+
+1. **当前未完成前置：**补现有 RTX 3050 package 的低扰动 `-NoAudit` 五轮 baseline。三轮 audit 归因
+   基线已经冻结，但不能替代这组性能基线。
 2. M2 按 frame slot 复用动态 resource/buffer/descriptor，保留现有 skinning submit/wait，完成 RTX 3050
    五轮 AB/BA 与生命周期专项门禁。
 3. M2 后重新归因：skinning fence 若仍为最大固定项则进入 M3；否则按剩余成本在 depth bridge 与
@@ -29,6 +32,15 @@ opaque 迁移；infected 须先补光照等价合同。两档设备、60/30 FPS 
 4. GPU 固定成本收敛后，再按可见性/LOD、presentation snapshot、静态模板、pose/socket/gear 缓存、
    重复扫描/分配的顺序削减 CPU producer；暂不先引入多线程。
 5. RTX 3050 负责 60 FPS 性能签收；Intel 负责 required-native 正确性、普通 30 FPS 下限和退化复核。
+
+阶段编号的关系如下，避免把问题域和实际执行切片混为一谈：
+
+| 编号 | 用途 | 当前关系 |
+| --- | --- | --- |
+| RB-0--RB-3 | 长期问题域与 checkpoint：测量、bridge/同步、opaque 迁移、CPU 长尾 | RB-0 已按历史 Intel 范围签收；RB-1 有结构收敛证据；RB-2 候选受 M2 后重新归因约束；RB-3 尚未开始 |
+| M1--M5 | 当前 mixed 路径的串行实施切片 | M1 已签收；当前处于 M2 的低扰动 baseline 前置；M3--M5 必须由前一阶段证据触发 |
+
+M2--M4 主要收敛 RB-1 所属的 mixed 固定成本；M5 才重新进入 RB-2 producer 迁移。编号相邻不表示可并行。
 
 不以“全部软件 Raster 迁移”为目标。硬件 Graphics 只接收能保持画面合同并减少真实 Draw/Raster run、
 bridge 与 whole-loop 的 opaque 内容；透明、粒子、overlay、复杂 VFX 和未冻结光照合同的内容继续留在

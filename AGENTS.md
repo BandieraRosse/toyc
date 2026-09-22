@@ -56,9 +56,8 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - `rasterfall/docs/networking.md`：协议、快照、预测、可靠事件和房间发现。
 - `rasterfall/docs/build-platforms.md`：Linux/Windows 构建、平台边界和验证矩阵。
 - `rasterfall/docs/gpu-current-state.md`：GPU 当前实现、实机验证和性能快照入口。
-- `rasterfall/docs/gpu-raster-bridge-plan.md`：当前 GPU 硬件开发的优先计划；先完成 RB-0
-  可信测量与归因，再按 RB-1 bridge/同步收敛、RB-2 高成本 opaque RasterCmd 迁移、RB-3 CPU
-  producer 长尾的顺序推进。旧阶段计划仅保存在 `rasterfall/docs/archive/`。
+- `rasterfall/docs/gpu-raster-bridge-plan.md`：当前 GPU 硬件开发的唯一优先计划；顶部记录当前串行执行链
+  以及 RB 问题域与 M 实施切片的关系。旧阶段计划仅保存在 `rasterfall/docs/archive/`。
 - `rasterfall/docs/windows-native-codex.md`：当前 Rasterfall 主开发 lane；PowerShell 构建、package、
   GPU 实机运行和验收入口。
 - `rasterfall/docs/animation-architecture.md`、`rasterfall/docs/network-architecture.md`：专题设计。
@@ -74,6 +73,10 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 
 ## 关键架构原则
 
+- 代码首先为维护者和大模型协作阅读而写：使用能表达领域语义的稳定命名、短而单一职责的函数、显式的
+  数据流与所有权边界，优先沿用仓库现有模式。避免依赖隐含调用顺序、跨文件隐藏状态、语义不明的缩写、
+  过度宏技巧和无必要的紧凑写法；复杂约束应在接口附近说明“为什么”，并让测试与诊断入口能够直接定位
+  关键状态。不要为了形式上的拆分制造大量只有一次调用、不能独立表达语义的薄包装。
 - `rasterfall/src/rasterfall.c` 只做进程生命周期、输入、固定步长主循环及顶层音画网络编排。
 - `rasterfall/src/rasterfall_session.c` 负责编排单机、主机和客户端会话。
 - `rasterfall/lib/game.c` 与 `rasterfall/include/toy_game.h` 拥有确定性规则和权威玩法状态。
@@ -88,9 +91,9 @@ Agent 获取 Rasterfall 重要事实时，优先使用下面这些可执行 CLI 
 - 当前 Rasterfall 开发决策以 Windows 原生 PowerShell lane 和物理 GPU 证据为准。WSL、llvmpipe
   或 Linux hosted Vulkan 可以用于辅助编译和 correctness 诊断，但不能代替 Windows native present、
   驱动、窗口生命周期与性能验收；WSL 路径不承诺持续维护或正确性。
-- 当前 GPU 性能开发优先遵循 `rasterfall/docs/gpu-raster-bridge-plan.md`。在 RB-0/RB-1 完成前，
-  不因单次帧数据直接扩大 Graphics 类型；迁移优先选择数据证明高成本的 opaque enemy、gear、weapon
-  和 rigid 内容，不把透明、粒子、复杂 VFX、新材质体系或低收益 Draw 微优化顺带混入。
+- 当前 GPU 性能开发优先遵循 `rasterfall/docs/gpu-raster-bridge-plan.md`；具体正在执行的切片以该文档顶部
+  “当前唯一执行链”为准。不因单次帧数据直接扩大 Graphics 类型；迁移优先选择数据证明高成本且能减少
+  真实 Draw/Raster run 的 opaque 内容，不把透明、粒子、复杂 VFX、新材质体系或低收益 Draw 微优化顺带混入。
 
 ## 重要目录
 
