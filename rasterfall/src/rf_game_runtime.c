@@ -3344,6 +3344,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         __printf("Rasterfall renderer=%s gpu_policy=%s\n",
             rf_core_renderer_name(core.gpu_frame.renderer),
             rf_gpu_policy_name(core.gpu.policy));
+#ifndef TOYC_WINDOWS
+        /* WSL's first CPU frame performs lazy model/resource preparation on
+         * the software-render path.  Let that one warm-up frame finish; the
+         * normal 200 ms interactive watchdog is restored after it presents. */
+        if (!options.renderer_mode)
+            toy_renderer_set_frame_budget(&renderer, 0);
+#endif
 #ifdef TOYC_WINDOWS
         {
             char gpu_log[320];
@@ -4484,6 +4491,10 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
                            &t_stage, 0, 0);
             rendered_frames++;
+#ifndef TOYC_WINDOWS
+            if (!options.renderer_mode && rendered_frames == 1)
+                toy_renderer_set_frame_budget(&renderer, 200);
+#endif
             fps_window_frames++;
             now = rf_core_time_us(&core);
             last_active = now - t_frame;

@@ -40,6 +40,7 @@
 #include "rasterfall_prop.h"
 #include "rasterfall_map_components.h"
 #include "rasterfall_vmd.h"
+#include <limits.h>
 #include "math.h"
 
 #define NEAR_Z RASTERFALL_NEAR_Z

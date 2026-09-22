@@ -1,7 +1,7 @@
 # Rasterfall 代码导航
 
 > 文档更新：2026-09-22
-> 源码核对基线：Mixed M1 segment 有序 tile 遍历与 RB-2 候选审计
+> 源码核对基线：Mixed M1 segment 有序 tile 遍历、RB-2 候选审计与 WSL CPU 最小可玩闭环
 > 源码核对补充：Toyc 应用与 Tinylibc 平台实现已分别归入 `app/linux/` 和
 > `lib/linux/`；`app/portable/`、`app/windows/`、`lib/portable/` 与 `lib/windows/` 是跨平台迁移入口。
 > 源码核对补充：通用应用由 Linux `app-*` 与 Windows `win-app-*` 共用

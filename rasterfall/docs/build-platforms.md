@@ -1,15 +1,16 @@
 # 构建、平台与验证
 
 > 文档更新：2026-09-22
-> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略；Windows PowerShell 主开发 lane、hosted asset 路径与 WSL 支持边界
+> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略；Windows PowerShell 主开发 lane、hosted asset 路径与 WSL CPU 可玩支持边界
 
 ## 当前开发平台优先级
 
 Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell 是主要开发、构建编排、物理 GPU
 验证和签收环境；`windows/NativeCodex.ps1`、package root、帧审计和实际适配器输出构成当前事实入口。
-共享源码和 freestanding Linux 路径继续保留，但 WSL 仅作为辅助/历史兼容路径，不保证随主线同步更新、
-可构建或运行正确。WSL/llvmpipe/hosted Vulkan 结果不能替代 Windows native present、驱动、窗口生命周期
-和性能验收。
+共享源码和 freestanding Linux 路径继续保留。WSL 仅承诺 CPU renderer 的最小可玩闭环：
+`make rasterfall`、`build/rasterfall --logic-test` 与 CPU 模式实际启动保持可用；WSL GPU、音频后端、
+窗口集成细节和性能不属于该承诺。WSL/llvmpipe/hosted Vulkan 结果不能替代 Windows native present、
+驱动、窗口生命周期和性能验收。
 
 ## 当前 Windows GPU 验收状态
 
@@ -29,9 +30,14 @@ Tinylibc/app 对象统一依赖 `rasterfall-rebuild`，每次目标构建都会�
 GB2312 字库位于 `rasterfall/assets/fonts/`，普通运行缺少 `gb2312-16.rfh` 时会明确报错并停止；
 embedded 目标通过公开资产扫描自动纳入该文件及其许可/来源。
 
-Linux 原生或 freestanding 修改仍应尽量保持构建正确；但不要把 WSL 当作 Rasterfall 当前主要开发环境。
-若 WSL 构建、Wayland、音频或 Vulkan 路径落后，应明确记录为未维护/未覆盖，而不是据此否定 Windows
-主线结果，也不要求 GPU 功能开发等待 WSL 修复。
+Windows 与 freestanding Linux/WSL 均保持 1280×720 默认窗口。WSL CPU 首帧允许完成模型与表现
+资源的懒加载预热；首次成功 present 后恢复正常的 200 ms 交互帧 watchdog。该预热不改变地图、
+玩法、相机 FOV 或 Windows GPU 验收工作负载。
+
+Linux 原生或 freestanding 修改仍应保持上述 WSL CPU 最小闭环；但不要把 WSL 当作 Rasterfall 当前
+主要开发环境。Wayland/WSLg 可用时应补一次 CPU 实际启动冒烟；无图形环境时至少完成构建与
+`--logic-test`，并明确窗口未覆盖。若 WSL GPU、音频或额外窗口集成路径落后，应记录为未维护/未覆盖，
+而不是据此否定 Windows 主线结果，也不要求 GPU 功能开发等待 WSL 修复。
 
 平台相关实现主要是：
 
