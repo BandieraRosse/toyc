@@ -1,6 +1,7 @@
 # Rasterfall 资产转换与诊断
 
 > 文档更新：2026-09-15
+> 源码核对补充：资产转换 app 当前位于 `app/linux/`；Windows/portable 入口目录已预留，尚未迁移工具实现。
 > 源码核对基线补充：Eula Gameplay Hybrid 已接入正常 world/展示：near/mid 使用 `eula_lod3.rmesh`，FAR（4096 RFU 起）才使用 compact `eula_lod2.rmesh`。
 > 源码核对基线补充：新增 Eula 4×11 动画 comparison sheet 与统一 character performance suite；不改变 simplifier、资产格式或正常 gameplay LOD 选择。
 > 源码核对基线补充：Anime Gameplay Hybrid LOD V1 Eula pilot 在既有聚类简化器上增加离线 region descriptor、humanoid bone influence、按相邻骨长缩放的 joint zone，以及 dominant bone + 完整 BDEF2 pair + weight bucket 约束；输出仍为普通 compact RFM2。
@@ -106,7 +107,7 @@ Blender 只负责 FBX、复杂场景和源坐标的预处理，按上述类型�
 tools/assets/import_asset.py prop.asset.json
 ```
 
-`app/glb2rmesh.c` 读取 GLB mesh primitive 的 POSITION、可选 NORMAL/TEXCOORD_0、基础 PBR 因子、
+`app/linux/glb2rmesh.c` 读取 GLB mesh primitive 的 POSITION、可选 NORMAL/TEXCOORD_0、基础 PBR 因子、
 baseColorTexture 索引和常见三角形索引，合并 primitive 并修正索引基址。importer 从 GLB bufferView、
 base64 data URI 或受源目录约束的相对 URI 提取所引用的 PNG/JPEG，再调用 `toyasset` 解码并转换为
 TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX，不解析 glTF JSON。
@@ -146,7 +147,7 @@ Temporary Campus Kit V0安装到公开`props/campus/`；IDs 24–35的零碰撞�
 tools/assets/import_asset.py character.asset.json
 ```
 
-`app/pmx2rmesh.c` 负责 PMX 网格、材质、骨骼、BDEF1/BDEF2 蒙皮及已支持 IK/grant metadata，
+`app/linux/pmx2rmesh.c` 负责 PMX 网格、材质、骨骼、BDEF1/BDEF2 蒙皮及已支持 IK/grant metadata，
 并按纹理表索引复制源图片；统一入口调用 `toyasset convert` 转成规范 TTEX，最终目录不保留中间图片。
 旧的 `tools/import-pmx-model.sh` 暂时保留给既有调用者，新接入和自动化使用统一入口。
 

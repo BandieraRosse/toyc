@@ -1,6 +1,7 @@
 #ifndef TOYC_WINDOWS_CORE_H
 #define TOYC_WINDOWS_CORE_H
 
+#include "toyc_platform_contract.h"
 #include "tlibc_types.h"
 #include "errno.h"
 #include "fcntl.h"
@@ -12,11 +13,7 @@
 
 #define TOYC_WINDOWS 1
 
-long __write(int fd, const void *buf, size_t len);
-long __read(int fd, void *buf, size_t len);
-int __openat(int fd, const char *path, int flags, int mode);
 int __creat(const char *path, int mode);
-int __close(int fd);
 int __fstat(int fd, struct stat *st);
 void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off);
 int __munmap(void *addr, size_t length);
@@ -43,10 +40,5 @@ long __futex(unsigned int *uaddr, int op, unsigned int value,
 
 void __printf(const char *fmt, ...);
 void __fprintf(int fd, const char *fmt, ...);
-
-#define AT_FDCWD (-100)
-#define STDIN 0
-#define STDOUT 1
-#define STDERR 2
 
 #endif

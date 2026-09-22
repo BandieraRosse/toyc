@@ -172,11 +172,15 @@ byte-level BPE prompt 编码、UTF-8 token 解码、采样和 KV-cache 推理。
 compiler/        编译器、汇编器、链接器、归档器与运行时
 compiler-tests/  编译器、链接器和 Tinylibc 测试
 include/         Toyc/Tinylibc 头文件
-lib/             Tinylibc 源码
-app/             示例与自托管应用
+lib/             平台库源码（lib/linux、lib/windows）与跨平台共享实现（lib/portable）
+app/             应用源码（app/linux、app/windows）与双平台应用（app/portable）
 llm/             GPT-2、Qwen2 推理实现与共享数值基础设施
 bootstrap/       版本控制内的自举种子
 ```
+
+`app/portable/` 中的程序同时进入两套应用构建。以首个迁移程序 `cat` 为例，
+`make app-cat` 生成 Linux `build/cat`，`make win-app-cat` 生成 Windows
+`build/windows/cat.exe`；`make win-app` 构建全部 Windows portable 应用。
 
 更细的语言特性记录见 [toyc-c-features.md](toyc-c-features.md)，种子说明见
 [bootstrap/README.md](bootstrap/README.md)。
