@@ -764,7 +764,7 @@ rasterfall-rebuild:
 # gcc 标志：无 libc、独立环境、包含 Tinylibc 头文件路径
 LIBC_CFLAGS := -nostdlib -ffreestanding -Wall -Wextra $(RASTERFALL_OPT) \
                -I include -I include/posix -I include/tlibc \
-               -I arch -I arch/x86_64 \
+               -I arch -I arch/x86_64 -I gpu/include \
                -DX86_64_TLIBC=1 \
                -fno-stack-protector -fno-common -MD
 

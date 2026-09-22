@@ -34,11 +34,16 @@ typedef signed short int int16_t;
 typedef unsigned short int uint16_t;
 typedef signed int int32_t;
 typedef unsigned int uint32_t;
-/* LP64 (Linux) and LLP64 (64-bit Windows) disagree on the width of long.
- * Fixed-width data must therefore use long long, which is 64 bits on both
- * targets supported by Rasterfall. */
+/* Match the target compiler's native stdint types when GCC/MinGW headers and
+ * Tinylibc declarations meet in one translation unit.  Toyc itself keeps the
+ * portable long-long fallback because it does not define GCC type macros. */
+#ifdef __GNUC__
+typedef __INT64_TYPE__ int64_t;
+typedef __UINT64_TYPE__ uint64_t;
+#else
 typedef signed long long int int64_t;
 typedef unsigned long long int uint64_t;
+#endif
 
 /* Toyc does not yet parse sizeof expressions in array bounds.  Hosted GCC
  * builds on both platforms still enforce the fixed-width contract. */
