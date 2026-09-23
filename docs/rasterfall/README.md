@@ -27,7 +27,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[GPU 性能标准](gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
 | 模型、蒙皮、动画求值 | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
-| 角色与附件资产合同 | [character-assets.md](character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
+| 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
+| 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |
 | 联机协议、快照、预测与测试 | [联机架构](network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 武大资料、真实空间依据 | [reference/return-to-whu-core/](reference/return-to-whu-core/) | 来源台账、调查报告、白盒计划 |

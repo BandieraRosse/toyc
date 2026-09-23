@@ -13,7 +13,7 @@
 > 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 按距离选择 Hybrid/compact LOD2。Campaign Maid 四人内容武器为 AK。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；Humanoid Action Composition V1.1 additive recoil；Model Resource / Model Instance V1；双手 RFANIM 持枪轨道；PRIMARY_GRIP weapon presentation；modular world strip）
 
-新建或生成 Blender 人形资产必须先读 [`character-assets.md`](character-assets.md)。它冻结
+新建或生成 Blender 人形资产必须先读 [`reference/character-assets.md`](reference/character-assets.md)。它冻结
 Blender source → Character GLB → importer → runtime character asset → humanoid animation 主线；
 本文继续说明既有运行时模块。
 
@@ -95,7 +95,7 @@ resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 re
 - 刚性角色附件复用静态 GLB→RMESH 转换器，但 manifest 类型为 `rigid_attachment`，并强制声明
   mount origin、canonical character orientation 与 meter units。runtime 产物没有 SKN1/CHR1。
 - PMX 转换：`app/pmx2rmesh.c`、`tools/import-pmx-model.sh`。
-- Blender 角色导出：新资产遵循 `character-assets.md` 输出 canonical GLB；RF Humanoid V1.1
+- Blender 角色导出：新资产遵循 `reference/character-assets.md` 输出 canonical GLB；RF Humanoid V1.1
   的对照生成器为 `tools/blender/generate_rasterfall_humanoid.py`，V2 body 生成器为
   `tools/blender/generate_rasterfall_humanoid_v2.py`；现有
   `tools/blender/export_rasterfall_character.py` 是 Mixamo FBX→PMX/RFM2 兼容桥，不是新标准。

@@ -4,7 +4,7 @@
 > 归档原因：阶段完成或已由当前文档取代
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
-日期：2026-09-10。本记录是当前工作区验收现场，不替代 character-assets.md 的契约。
+日期：2026-09-10。本记录是当前工作区验收现场，不替代 [character asset contract](../reference/character-assets.md) 的契约。
 
 建议冻结本版 body 的比例、几何、五色块和附件布局，作为通用 AI/NPC 扩展基线。
 这是 base body 的冻结，不代表所有 locomotion、reload、downed 动画或职业附件已经验收。

@@ -24,7 +24,7 @@ TSND 和字体格式仍由各自现有 loader 负责；它们未来可以增加 
 现有 loader、资源格式或旁车纹理路径规则。
 
 人形角色的 canonical skeleton、GLB、attachment 与 skinning 输入门见
-[`character-assets.md`](character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。
+[`character-assets.md`](reference/character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。
 
 ## Enemy Visual V2
 

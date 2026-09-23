@@ -8,7 +8,7 @@
 转换工具为准。
 
 新角色骨架、rest pose、attachment 和 skinning 的离线输入规范由
-[`character-assets.md`](character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
+[`character-assets.md`](reference/character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
 
 ## 数据流
 
