@@ -7,7 +7,7 @@ Toyc 是面向 Linux x86_64 的自托管 C 工具链，`lib/` 与 `include/` 同
 - 用户构建、测试和工具说明：[../../README.md](../../README.md)
 - 语言特性：[../../toyc-c-features.md](../../toyc-c-features.md)
 - 自举种子：[../../bootstrap/README.md](../../bootstrap/README.md)
-- Windows 平台迁移计划：[../windows-platform-plan.md](../windows-platform-plan.md)
+- Windows 平台迁移计划：[plans/windows-platform.md](plans/windows-platform.md)
 - 历史与考古：[../archaeology/README.md](../archaeology/README.md)
 - 编译器时期协作说明：[archive/compiler-era-agents.md](archive/compiler-era-agents.md)
 

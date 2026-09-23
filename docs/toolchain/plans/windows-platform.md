@@ -14,7 +14,7 @@ contract 的 Win32 实现。V1 首先覆盖 UTF-8 路径、Toyc fd、错误映�
 
 ## 冻结的共同 contract（CP1）
 
-共同声明位于 [`include/toyc_platform_contract.h`](../include/toyc_platform_contract.h)：
+共同声明位于 [`include/toyc_platform_contract.h`](../../../include/toyc_platform_contract.h)：
 
 - 所有 portable 路径输入是 UTF-8，内部路径分隔符是 `/`。
 - 平台失败统一返回负 Toyc errno；不得把宿主 `errno` 或裸 Win32 error 暴露给 portable app。
