@@ -1,5 +1,9 @@
 # RB-2 候选评估与审计修补
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-22
 > 源码核对基线：`14e5fe6` 工作区，Core 零 submit 帧归属、候选汇总与普通 infected ablation 否决
 

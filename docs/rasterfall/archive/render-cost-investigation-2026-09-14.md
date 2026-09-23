@@ -1,5 +1,9 @@
 # Campaign 敌人波次渲染开销调查（2026-09-14）
 
+> 状态：历史
+> 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
+> 当前入口：[Rasterfall 维护者入口](../README.md)
+
 > 文档更新：2026-09-15
 > 源码核对基线：`e5186b9` + Render Cost Investigation checkpoint 工作区。
 

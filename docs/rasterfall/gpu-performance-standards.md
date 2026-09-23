@@ -1,7 +1,9 @@
 # GPU 性能标准与冻结基线
 
-> 文档更新：2026-09-22
-> 源码核对基线：`2c318a1` metrics schema 6 与 RTX 3050 M2 preflight 三轮审计
+> 状态：当前 reference
+> 所有者：Rasterfall GPU 性能标准
+> 最近核对：2026-09-23
+> 证据基线：`2c318a1` metrics schema 6 与 RTX 3050 M2 preflight 三轮审计
 
 本文冻结 Rasterfall 当前仅使用的两档 Windows 物理 GPU 标准，并区分“已经测得的基线”与“后续优化
 目标”。性能开发以高性能标准为主线；普通标准保留正确性、功能完整性和合理性能下限，不要求两个设备
@@ -56,7 +58,7 @@ metrics schema 6 工作区改动，Windows native、交流电、OEM 均衡方案
 | Campaign | 39.594 ms | 57.344–83.401 ms | 9.470–9.678 ms | 10 / 73,728,000 bytes |
 
 同组 preflight 子阶段的三轮中位结果已冻结在
-[Mixed 路径优化执行计划](gpu-mixed-optimization-20260922.md)：preflight 20.482–24.516 ms，动态资源
+[Mixed 路径优化阶段归档](archive/gpu-2026-09-22/gpu-mixed-optimization-20260922.md)：preflight 20.482–24.516 ms，动态资源
 销毁 5.150–5.834 ms，动态资源创建/上传/descriptor/skinning 10.256–10.881 ms，其中 skinning fence
 约 5.236–5.488 ms。CPU dynamic pack 仅 0.801–0.960 ms。
 

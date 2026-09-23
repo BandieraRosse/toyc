@@ -18,8 +18,12 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 启动、参数、主循环、Core Host | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | 玩法、session、AI、战斗 | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [map-format.md](map-format.md)、[gameplay.md](gameplay.md) | map parser/runtime、projection adapter、布局工具 |
-| 世界渲染、HUD、特效、视觉诊断 | [rendering.md](rendering.md) | `src/rasterfall_render.c`、visual capture CLI |
-| GPU Draw/Raster/present 架构 | [gpu-rendering-architecture.md](gpu-rendering-architecture.md)、[GPU 当前边界](gpu-current-state.md) | `gpu/`、mixed executor、GPU acceptance |
+| 世界渲染与帧分层 | [渲染架构](rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
+| 角色、敌人与附件表现 | [角色表现](character-presentation.md) | character/enemy presentation adapters |
+| HUD、Viewmodel 与特效 | [HUD 与特效](hud-effects.md) | `rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c` |
+| 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |
+| GPU Draw/Raster/present 架构 | [GPU 渲染架构](gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
+| GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[GPU 性能标准](gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
 | 模型、蒙皮、动画求值 | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
@@ -68,4 +72,3 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 完成、撤销或被替代的阶段记录 | 移入 `archive/` 并写明当前替代入口 |
 
 新增跨模块功能必须补充本页的任务路由。稳定导航中不维护测试数量、单次性能数字或完整参数表。
-

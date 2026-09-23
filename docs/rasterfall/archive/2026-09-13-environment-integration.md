@@ -1,7 +1,11 @@
 # Campaign 环境组件整合 checkpoint
 
+> 状态：历史
+> 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
+> 当前入口：[Rasterfall 维护者入口](../README.md)
+
 日期：2026-09-13。这是本轮现场验收记录；当前入口见 ../industrial-props.md、
-../map-format.md 和 ../rendering.md。
+../map-format.md、../rendering-architecture.md 和 ../guides/visual-validation.md。
 
 ## 地图成果
 

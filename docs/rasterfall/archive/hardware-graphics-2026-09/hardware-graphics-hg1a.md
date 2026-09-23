@@ -1,5 +1,9 @@
 # HG-1A：Static prop Draw/reference
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-19
 > 后续源码核对：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已替换正常 static prop 的借用资源适配器；下文保留 HG-1A checkpoint 当时的实现与证据。
 > 源码核对基线：2026-09-19 工作区；`rasterfall_draw.h`、`render/rasterfall_draw_reference.inc`、`rasterfall_render.c`、`dev-tests/rasterfall_draw_reference_test.inc`、`rf_game_runtime.c`。

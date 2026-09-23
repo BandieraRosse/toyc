@@ -1,5 +1,9 @@
 # Hardware Graphics HG-5：Character geometry / GPU skinning
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-21
 > 源码核对基线：2026-09-21 当前工作区；HG-5B 已签收。普通 GPU skin 帧只保存 finalized palette、bind input 与 GPU output 顶点索引空间，CPU-skinned reference/上传为零；`--gpu-character-vertex-diff` 在目标帧按需生成 oracle，`--gpu-character-skinning-off` 恢复 HG-5A CPU VB。animation/IK/grant/socket authority 未迁移。
 

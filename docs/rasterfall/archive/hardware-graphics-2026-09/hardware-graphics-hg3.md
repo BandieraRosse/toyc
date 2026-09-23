@@ -1,5 +1,9 @@
 # Hardware Graphics HG-3：普通 opaque static RMESH 扩围
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-20
 > 源码核对基线：当前工作区；Windows Intel 最终 baseline `tmp/hg3-20260920-final2` 已通过 differential、near/mid、Fog、strict-native、建筑内部/远处薄结构 native capture 与 320 帧 Campaign 门禁。连续 Draw 间的空 ordering flush 已消除，P0 A/B 证明稳定净收益，HG-3 完成。
 

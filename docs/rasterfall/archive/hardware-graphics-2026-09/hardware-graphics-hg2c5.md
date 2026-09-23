@@ -1,5 +1,9 @@
 # HG-2C5：Windows Native Present 基线收口
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-20
 > 源码核对基线：2026-09-20 HG-2C5 已签收。Phase 2 image-reacquire 热路径、完整故障注入矩阵与 Intel 动态 soak 已通过。Windows futex 仿真改用动态解析的 `WaitOnAddress`/`WakeByAddressAll`，修复全局 condition variable 偶发丢失 renderer job 唤醒导致的 `done=7/8`；修复后固定 near 300/300 与动态 `--auto` 10000/10000（5分09秒）均无 watchdog。slot 只拥有 acquire semaphore，presenter 的每个 swapchain image 独立拥有 `render_finished`；hot queue-idle、fallback、readback 与 CPU framebuffer copy 均为零。Khronos validation + sync validation 覆盖固定 300 帧、五种故障注入与 teardown/recreate，零 VUID/SYNC-HAZARD。
 

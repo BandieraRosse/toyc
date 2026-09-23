@@ -1,5 +1,9 @@
 # Hardware Graphics 开发计划
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 计划更新：2026-09-21
 > 当前进度补充：HG-5 的 30/60 敌人 strict-native 基线已在 Windows Intel 完成；60 敌人 whole-loop/GPU Raster 中位数为 58.888/26.547 ms。下一步进入 HG-5A character geometry，GPU skinning 保持 HG-5B 独立迁移。
 > 当前进度补充：HG-4A Ground 与 HG-4B map/boundary geometry 已按 Windows Intel 签收：ground 及 wall、box、ramp、opaque platform、boundary 五类地图几何已迁移为 world-generation persistent Draw；专用 V1 runtime fixture、CPU/native 视觉对照、Fog/四 extent resize、world-cycle、Windows package 与完整逻辑回归通过。HG-4 完成；Linux/其他 GPU 未重复实机验收。

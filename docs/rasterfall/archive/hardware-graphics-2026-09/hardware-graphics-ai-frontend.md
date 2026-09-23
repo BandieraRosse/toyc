@@ -1,5 +1,9 @@
 # Hardware Graphics：AI frontend checkpoint
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-20
 > 源码核对基线：当前工作区；模块化角色 finalized pose/skinned vertex、被动 gear 与 active weapon actor-local placement 均绑定 pose generation，body/gear/weapon 实际变换边界已接入组合剔除；Windows package、`--logic-test`、角色 world capture、0/10/30/60 actor benchmark、20 帧 Campaign strict native audit，以及 `edge-entry.bmp` / `near-crossing.bmp` 专用 capture 均已通过。本 checkpoint 签收。
 

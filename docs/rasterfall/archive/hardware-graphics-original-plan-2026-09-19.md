@@ -1,5 +1,9 @@
 # Hardware Graphics 原始计划与调研记录
 
+> 状态：历史
+> 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
+> 当前入口：[Rasterfall 维护者入口](../README.md)
+
 > 归档：2026-09-19。当前状态以 [GPU 渲染架构](../gpu-rendering-architecture.md) 和 [HG-2B](hardware-graphics-2026-09/hardware-graphics-hg2b.md) 为准。
 
 ---

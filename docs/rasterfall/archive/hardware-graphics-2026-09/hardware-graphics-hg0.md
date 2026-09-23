@@ -1,5 +1,9 @@
 # HG-0 checkpoint：事实与架构冻结
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 下述 texture full-scan 失败已由 HG-1A 前置修复定位并处理；原 HG-0 结果保留，后续证据见 [修复记录](hardware-graphics-hg1-preflight.md)。
 > 源码核对基线：`e036b809ed28a17f0151d241e8b34b04794f067e` + HG-0 改动；Windows MinGW package、Intel Iris Xe 实测。

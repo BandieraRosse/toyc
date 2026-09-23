@@ -69,7 +69,7 @@ build/rfchar_runtime_test <model.rmesh>
 
 角色和模型观察使用 `--model-views`、`--model-pose-views`、`--character-acceptance` 和
 `--character-world-capture`；具体流程见 [`../docs/rasterfall/character-assets.md`](../docs/rasterfall/character-assets.md)
-和 [`../docs/rasterfall/rendering.md`](../docs/rasterfall/rendering.md)。所有易变命令行选项以 `build/rasterfall --help` 的
+和 [`../docs/rasterfall/guides/visual-validation.md`](../docs/rasterfall/guides/visual-validation.md)。所有易变命令行选项以 `build/rasterfall --help` 的
 当前输出为准。逻辑测试不能代替视觉检查或真实多人联机验收。
 
 ## 开发文档

@@ -1,11 +1,15 @@
 # GPU 当前状态
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-22
 > 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 三轮审计与双档性能标准
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
-[GPU Raster / Bridge 收敛计划](plans/gpu-raster-bridge.md)，阶段过程与历史性能数字见
-[Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
+[GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)，阶段过程与历史性能数字见
+[Hardware Graphics 归档](../hardware-graphics-2026-09/README.md)。
 
 ## 当前开发阶段
 
@@ -15,7 +19,7 @@ producer 或光照语义；后续资源与同步改动各自单独验证。阶�
 
 自 M2 起，RTX 3050 是高性能开发、正式 A/B 与初期稳定 60 FPS 签收主设备；Intel Iris Xe 是普通正确性、
 完整功能与 30 FPS 下限设备。当前只设置这两档，不要求两个设备达到相同帧率。目标、冻结数字和采样口径
-见 [GPU 性能标准与冻结基线](gpu-performance-standards.md)。
+见 [GPU 性能标准与冻结基线](../../gpu-performance-standards.md)。
 
 最新专项状态以 [RB-0 专项续接](gpu-rb0-special-20260922.md) 为准；其中记录 raw 输入覆盖和
 resize 附件生命周期修复，以及真实启用 validation/sync 的证据。下方旧结果不能替代新 package 验收。
@@ -119,7 +123,7 @@ RB-1 前的两轮 Full 确认，60 敌人场景中 Draw 已不是主要成本；
 M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细分。当前唯一未完成前置是补同一
 package 的低扰动 `-NoAudit` 五轮 baseline；完成后才按
 [Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 实现 frame-slot 动态资源复用并进行 A/B。
-producer 迁移等待 M2 后重新归因；届时仍按 [GPU Raster / Bridge 收敛计划](plans/gpu-raster-bridge.md)
+producer 迁移等待 M2 后重新归因；届时仍按 [GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)
 执行 gear/weapon RB-2 候选门禁。透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
 
 RTX 3050 当前三轮 audit whole-loop 中位轮为 near 0/30/60/Campaign 的
@@ -173,7 +177,7 @@ powershell -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -Rounds 5 -N
 AB/BA 交替、AC 供电和 executable hash 合同。
 
 签收前后的阶段采样与历史阻塞条件见
-[测量阶段归档](archive/gpu-current-measurement-stage-20260922.md)。当前四场景盘点与下一候选见
+[测量阶段归档](../gpu-current-measurement-stage-20260922.md)。当前四场景盘点与下一候选见
 [RB-2 候选评估](gpu-rb2-candidate-review-20260922.md)。
 
 底层独立目标继续保留：`rf-gpu-graphics-test`、`rf-gpu-raster-test`、
@@ -191,7 +195,7 @@ fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/nat
 
 ## 当前计划入口
 
-当前阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 收敛计划](plans/gpu-raster-bridge.md) 的 RB-0 至
+当前阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md) 的 RB-0 至
 RB-3 checkpoint。RTX 3050 承担性能候选与 60 FPS 主签收，Intel 承担普通标准复核：
 
 - RTX 3050 使用固定 workload 做低扰动五轮 A/B；Intel 使用同一 package 跑适用 Full 与普通性能门。

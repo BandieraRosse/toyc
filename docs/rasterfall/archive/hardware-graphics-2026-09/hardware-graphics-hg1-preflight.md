@@ -1,5 +1,9 @@
 # HG-1A 前置修复：CPU/compute 透明顶点光照等价
 
+> 状态：历史
+> 归档原因：阶段完成或已由当前文档取代
+> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+
 > 文档更新：2026-09-19
 > 源码核对基线：`37b47c0` 加本次工作区；`lib/graphics/renderer.c`、`gpu/src/rf_gpu_raster_diff_test.c`、`tools/hardware_graphics_baseline.ps1`。
 

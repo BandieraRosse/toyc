@@ -1,5 +1,9 @@
 # Architectural V1 最终视觉签收现场
 
+> 状态：历史
+> 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
+> 当前入口：[Rasterfall 维护者入口](../README.md)
+
 日期：2026-09-13。Visual design = **VISUALLY FROZEN**；Engineering checkpoint = **pending Sol**。
 当前规范仍以 [Architectural Environment V1](../architectural-environment-v1.md) 为准。
 

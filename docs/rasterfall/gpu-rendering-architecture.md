@@ -1,149 +1,104 @@
 # GPU 渲染架构
 
-> 文档更新：2026-09-22
-> 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 与双档性能标准
+> 状态：当前
+> 所有者：Rasterfall GPU renderer、Core Host 与 Windows presenter
+> 最近核对：2026-09-23
 
-本文只描述当前 GPU 渲染数据流与所有权。历史阶段、性能数字和故障排查过程见
-[Hardware Graphics 归档](archive/hardware-graphics-2026-09/README.md)。
+本文只定义 GPU 渲染的稳定所有权、数据流和失败边界。验收命令见
+[GPU 验收与诊断](guides/gpu-validation.md)，设备档位和性能门槛见
+[GPU 性能标准](gpu-performance-standards.md)，尚未完成的工作只见
+[当前活动计划](plans/README.md)。阶段调查、单次设备现场和已撤销实验位于
+[GPU 2026-09-22 归档](archive/gpu-2026-09-22/README.md)。
 
-## 所有权与入口
+## 所有权
 
-| 职责 | 当前所有者 |
+| 职责 | 所有者 |
 | --- | --- |
-| world/角色/特效 producer 与层顺序 | `rasterfall/src/rasterfall_render.c`、`rasterfall/include/rasterfall_render_frontend.h` |
+| world、角色、特效 producer 与层顺序 | `rasterfall/src/rasterfall_render.c`、`rasterfall/include/rasterfall_render_frontend.h` |
 | 帧冻结、资源 pin、整帧 preflight 与执行编排 | `rasterfall/src/rf_core_host.c` |
 | GPU service、mixed executor 与资源 cache | `gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_mixed_executor.c`、`gpu/src/rf_gpu_resource_cache.c` |
 | normal runtime 与 presenter 生命周期 | `rasterfall/src/rf_game_runtime.c`、`windows/src/window_sdl.c` |
 | CPU reference 与 Raster ABI | `rasterfall/src/render/rasterfall_draw_reference.inc`、`rasterfall/include/rf_gpu_raster_abi.h` |
 
-`rasterfall.c` 只负责进程、输入、固定步长主循环和顶层编排。渲染读取玩法/展示状态，
-不修改 `toy_game` 的权威结果。
+`rasterfall.c` 只负责进程、输入、固定步长主循环和顶层编排。renderer 读取玩法或展示投影，
+不修改 `toy_game` 的权威结果。地图文本、Runtime Map、玩法碰撞和可见几何保持分层。
 
-## Producer 与混合帧
+## 混合帧数据流
 
-producer 按 WORLD、EFFECTS、VIEWMODEL、POST、OVERLAY 的既定层序生成 retained frame。帧可混合
-`Draw` 与 `RasterCmd`：前者由 graphics pipeline 执行，后者保留给动态、透明、特效及尚未迁移的几何。
+```text
+game/session presentation snapshot
+    -> renderer producers
+    -> retained frame (Draw + RasterCmd)
+    -> Core freeze / pin / whole-frame preflight
+    -> mixed executor on shared color/depth targets
+    -> native presenter
+```
 
-长期方向不是清空软件 Raster。规则 opaque mesh 只有在保持最终画面、减少真实 Draw/Raster run 与 bridge、
-并改善 RTX 3050 whole-loop 后才迁移到硬件 Graphics；透明、粒子、overlay、复杂 VFX 和未冻结逐面光照
-合同的内容继续由 RasterCmd 承担。设备职责与性能门见
-[GPU 性能标准与冻结基线](gpu-performance-standards.md)。
+producer 按 WORLD、EFFECTS、VIEWMODEL、POST、OVERLAY 的固定层序生成 retained frame。普通 opaque
+static RMESH、持久 ground/map/boundary geometry 和角色 body 可进入 hardware Draw；动态、透明、特效、
+viewmodel、overlay 及尚未满足数值合同的内容保留为 RasterCmd。
 
-Core 在任何 target 写入前冻结计划并完成整帧 preflight。required 模式下，unsupported、编码失败、
-资源 generation 不匹配或 presenter 失败都会使整帧失败；不允许在已写入部分 GPU target 后切回 CPU。
-不同命令段共享同一 color/depth target，并由统一 command recording 保持 Draw/Raster 的深度、顺序和
-Post/overlay 语义。
+Core 必须在任何 target 写入前冻结执行计划并完成整帧 preflight。required 模式下，unsupported、编码失败、
+资源 generation 不匹配或 presenter 失败都会使整帧失败；禁止先写入部分 GPU target 再回放 CPU 整帧。
+Draw 与 RasterCmd 共用 color/depth target，命令顺序、CLEAR/LOAD、透明、viewmodel 和 overlay 语义由统一
+recording 保持。
 
-RB-0 诊断在每个 mixed span 上保存 producer 身份。当前分类为 world/map、enemy body、enemy rigid
-special、gear、weapon、transparent、effects、viewmodel 和 overlay；身份变化前只将 renderer 中已有
-RasterCmd 送入 retained frame，从而形成可审计边界，不触发 GPU 执行，也不改变原命令顺序。每个
-Raster/Draw 交替点另外记录 import/export、layer、color/depth traffic、前后 producer 与 frame-slot
-target generation。该信息只用于测量，不扩展 Graphics 类型或改变深度/画面合同。
+producer 身份只用于诊断，不自动形成 target 可见性边界。相邻 WORLD Draw spans 之间没有 Raster span 时，
+executor 可按原顺序合并为一个 graphics batch；Raster span 是硬边界。任何进一步合并或迁移必须同时
+保持画面合同并减少实际 Draw/Raster run、bridge 或 whole-loop 成本，不能只以 RasterCmd 数量下降签收。
 
-producer 身份只形成诊断 span，不独立构成 target 可见性边界。若两个或更多 WORLD Draw spans 连续且
-中间没有 Raster span，mixed executor 按原顺序将它们编码为一个 graphics batch，只执行一次
-import/Draw/export；timestamp 预留、执行统计和 bridge event 也按该实际 Draw run 计数。Raster span
-仍是硬边界，不能仅因同层或同为 opaque 而跨越合并。hosted mixed 回归按 extent 验证每个 Draw run 的
-transfer 与 bridge bytes；native resize 回归同时验证这些计数和活动 frame-slot target rebuild。
+normal AI world 对模块化角色先按 actor 顺序求值 pose/IK 并冻结全部可见 body Draw，再按相同顺序提交
+opaque gear/weapon RasterCmd。附件继续读取对应 actor 的 finalized pose、placement 和 scene-light override；
+该编排不得跨越 transparent、effects、viewmodel 或 overlay 层。
 
-正常 AI world producer 对模块化队友使用局部两阶段提交：先按 actor 顺序完成 pose/IK、冻结全部可见 body
-Draw，再按相同 actor 顺序提交 opaque gear/weapon RasterCmd。每个附件仍读取对应 actor 的 finalized pose、
-placement 和 scene-light override；只是去掉逐 actor 的 Draw/Raster 往返。该编排不用于独立 visual capture，
-也不越过 transparent、effects、viewmodel 或 overlay 层。前置 world/map Draw 与中间真实 Raster 仍保留为
-独立 run。
+## Raster 与诊断合同
 
-Campaign 当前剩余 5 个实际 Draw run：2 个 world/map 与 3 个 enemy-body。相邻 run 之间均有真实 Raster
-span；其中 enemy-body 的分隔来自普通模型 Draw 与 special rigid/body Raster 的 actor 顺序，而非诊断
-producer 边界。mixed executor 不跨越这些 span；若要继续减少 bridge，必须在 producer 侧迁移或重排目标
-opaque Raster，并按 RB-2 的 ablation、画面与生命周期合同验证。
+Raster binning 按原 command index 将命令写入 tile 列表。binned shader 可用有序索引跳过当前 segment 外
+命令，但必须在 `segment.end` 停止；独立 full-scan shader 保留为 differential 对照。帧审计按 producer
+记录 RasterCmd/span，并按实际 bridge 记录方向、color/depth traffic、层、相邻 producer 和 target generation。
 
-RB-2 对 `enemy-rigid-special` 做过一次默认关闭、随后撤销的受控 ablation。procedural rigid 本体可冻结为
-纯色 world-space 顶点，并可用现有 Q8 vertex-light 数值语义保持逐面光照；但 normal GPU skinning 与
-CPU dynamic Draw 当前共享一个 frame resource，preflight 要求每个 dynamic 顶点都有 skin 输入，合同不能
-直接混装两类顶点。更重要的是，在双方都关闭 GPU skinning 的可比实验中，单独迁移 rigid 本体后，actor
-前后的 blob shadow、tongue/特殊组件等 Raster 仍保留，Campaign bridge 从 10 次反增到 12 次。由此当前
-架构不增加 procedural dynamic stream；下一次 rigid 设计必须先解决 producer 侧相邻 opaque Raster 的批次
-边界，而不能只扩大 vertex carrier。
+GPU timestamp 属于完成的旧 frame slot，必须按其 frame ID 回填，不能直接归到当前 CPU frame。
+`valid` 要求 requested 与 recorded 相等且 dropped 为零；退出时未回收的尾部样本不进入分位数。
+graphics submit/wait 是队列关系证据，不等于某个 producer 的 GPU 时间。
 
-actor 裁剪现在用 renderer 的 command_filter 在 flush observer/consumer 之前处理本段，随后从新缓冲
-零位置继续，actor 结束时处理尾段并解除作用域。原缺陷见 [RB-0 排查报告](gpu-rb0-investigation-20260922.md)。
-mixed preflight 在 recycle 后按执行计划预留 query pool；requested/recorded/dropped 随 GPU frame 返回，
-截断不得置 valid。代码与验证边界见 [RB-0 修复与续接](gpu-rb0-repair-20260922.md)。
+正常游戏画面使用中性 fog。RasterCmd fog 字段、CPU/GPU consumer 和底层 Post Fog 测试合同仍可保留，
+但 normal runtime 不把它们接入画面。
 
 ## 资源生命周期
 
-Raster binning 按原 command index 递增填入每个 tile 的列表，顺序属于 consumer 合同。binned shader
-对非初始 segment 用 lower_bound 跳过已消费前缀，到 `segment.end` 即停止；保留原 command 顺序、
-CLEAR/LOAD、透明和 viewmodel marker 语义。独立 full-scan shader 不使用该优化，继续作为 differential
-对照。`rf_gpu_raster_test.c` 的 sparse-segment 回归覆盖 tile 内 ID 间隙和无本段命令的 tile。
-Windows 可用 `tools/generate_gpu_raster_spirv.py <glslangValidator>` 生成 buffer/image 的 8×8/16×16
-变体；checked-in SPIR-V 仍是无 SDK 构建入口。执行与验证证据见
-[Mixed 优化执行计划](gpu-mixed-optimization-20260922.md)。
-
-raw Raster 分段重传使用 `input_versions` 保留先前录制引用的 command/bin/texture backing，直至完成后
-的新录制或销毁；冻结帧 preflight/upload reuse 仍共用一次上传。Graphics 的 `shared_rasters` 追踪
-color attachment 借用方，resize 在借用帧完成后废弃旧录制并重绑定匹配 extent，下次必须 CLEAR；
-任一方销毁都解除借用。专项合同与验证见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。
-
-模型 registry 拥有不可变 CPU bundle 和 stable handle/generation；GPU cache 拥有对应 device resource。
-Core 在 begin-frame 固定本帧引用，frame slot 完成前不得释放。world 切换时旧 generation 进入 retired，
-只有 pin 清零后才释放。resize 只重建 extent 相关 target/presenter 资源，不得重建稳定 world mesh。
-
-双帧 slot 分别持有 extent target、command/fence/query 和动态 Draw backing；不可变 mesh/texture cache
-由 executor/device 统一持有，同一设备上的 graphics slot 只建立各自 descriptor binding，不重复上传。
-swapchain 由 backend 统一拥有；
-acquire、render fence、present wait completion 分开跟踪。正常热路径禁止 queue-idle，recreate/teardown
-才允许排空 queue。
-
-RB-0 低扰动统计在 frame-slot recycle 调用外记录 render-fence wait，并与 graphics submit fence wait、
-swapchain acquire/present 以及由 image reacquire 证明的 presenter completion 分开保存。GPU timestamp
-属于完成的旧 slot，必须使用其 frame ID 回填对应 CPU frame；不能把当前 CPU frame 与刚返回的旧 slot
-timestamp 直接比较。退出前尚未回收的末尾 timestamp 不进入 GPU 分位数。
-
-Core 对独立 graphics submit 的累计计数取本帧差值；若本帧 submit 为零，审计 frame 归属当前
-render frame，predecessor 清零，不沿用 backend 的最后提交 watermark。metrics 对旧日志仅在
-七类 caller 完整、全部 submit/wait 为零且 aggregate submit 为零时接受历史 watermark；活动提交、
-非零等待和未来 frame 仍拒绝。离线回放入口为 `tools/gpu_metrics_test.ps1 -LogPath <audit.log>`。
-
-graphics submit fence 统计聚合所有 `gfx_submit()` 调用者；正常 mixed bridge 只录制命令，
-preflight 中每帧创建 skinned resource 的独立同步提交会计入该字段，并可能等待前一帧的队列工作。
-CPU/GPU frame ID 对齐不能替代 wait 因果。gfx_submit 已按七类调用者统计，并记录提交时尚未确认完成的
-最近 Raster frame；成功 wait/recycle 更新已确认完成水位。这只是队列先后关系，不是 GPU 时间分摊。
-timestamp valid 现在要求 recorded=requested 且 dropped=0；末尾未回收样本仍不进入 GPU 分位数。
-
-## 持久地图几何
-
-partition ground、wall、opaque box、ramp、opaque platform 和 procedural boundary wall 按 world
-generation 建立不可变 mesh，并使用局部坐标、顶点光照和资源 pin 生命周期。动态或透明 air-gate、
-透明 platform、texture wall 继续使用 RasterCmd。可见 mesh 不替代玩法碰撞；地图文本、Runtime Map、
-碰撞绑定和渲染几何仍是独立层。
+- 模型 registry 拥有不可变 CPU bundle 与 stable handle/generation；GPU cache 拥有 device resource。
+- Core 在 begin-frame pin 本帧引用；frame slot 完成前不得释放。world 切换后的旧 generation 只有 pin 清零
+  后才能回收。
+- 双帧 slot 分别持有 extent target、command/fence/query 和动态 Draw backing；不可变 mesh/texture cache
+  由 executor/device 统一持有。
+- raw Raster 分段重传必须保留先前录制引用的 backing，直到相关录制完成或销毁。
+- resize 只重建 extent 相关 target、slot binding 与 swapchain，不得重复上传稳定 world mesh/texture。
+- swapchain 由 backend 唯一拥有；acquire、render fence 与 present completion 分开跟踪。正常热路径禁止
+  queue-idle，只有明确的 recreate/teardown 边界可以排空队列。
 
 ## 角色 GPU skinning
 
-CPU 继续拥有 pose、IK、socket、gear 和 weapon placement。mixed frame 按角色实例冻结 finalized
-palette，以及 bind position/normal、BDEF influence 和索引数据。compute shader 将 skinning 输出写入
-frame-slot device-local vertex buffer，普通 body Draw 直接绑定该输出。
+CPU 继续拥有 pose、IK、socket、gear 和 weapon placement。mixed frame 冻结 finalized palette、bind
+position/normal、BDEF influence 和索引；compute skinning 输出写入 frame-slot device-local vertex buffer，
+body Draw 直接消费。
 
-正常 GPU skin 帧不生成 CPU-skinned reference。`--gpu-character-vertex-diff` 只在目标帧建立 reference
-并精确比较实际 Draw backing；`--gpu-character-skinning-off` 是正式回滚边界，恢复 CPU-skinned vertex
-upload，且不改变 pose/IK/socket 所有权。
+normal GPU skinning 不生成 CPU reference。`--gpu-character-vertex-diff` 只为目标帧建立对照；
+`--gpu-character-skinning-off` 是正式回滚边界，只恢复 CPU-skinned vertex upload，不改变上游所有权。
 
 ## Presenter 与失败边界
 
-Windows native presenter 使用同一 Vulkan device/queue 和唯一 swapchain generation。逐帧审计必须
-保持 fallback、readback、CPU framebuffer copy、hot queue-idle、非法层转换和 poisoned presenter 为零。
-设备/交换链重建发生在明确边界；required runtime 不把失败静默降级为软件呈现。
+Windows native presenter 使用同一 Vulkan device/queue 和唯一 swapchain generation。逐帧审计必须保持
+fallback、readback、CPU framebuffer copy、hot queue-idle、非法层转换和 poisoned presenter 为零。
+`--gpu-required` 下任何 unsupported、preflight、submit、present、readback 或 CPU copy 都必须非零退出。
 
-## 长期验证入口
+省略 `--gpu-native-present` 只用于显式的软件呈现 A/B，不是 required runtime 的降级路径。CPU renderer
+仍是独立完整实现，用于 reference 和不启用 GPU renderer 的正常运行。
 
-- `tools/gpu_acceptance.ps1 -Quick`：日常 GPU 修改门禁。
-- `tools/gpu_acceptance.ps1 -Full`：合并/发布前完整门禁。
-- `tools/gpu_metrics.ps1`：从 frame audit 计算预热后 CPU 墙钟与 GPU timestamp 的 median/P95/P99/max，
-  核对固定 tick 与关键计数范围，汇总 producer/bridge 范围和 whole-loop 相关性，并分类最慢 5% 帧。
-- `tools/gpu_rb0_special.ps1`：串行执行 raw 分段/timestamp、真实 layer/sync validation、故障注入和 soak；
-  schema 5 metrics 补充七类 submit/wait、互斥 CPU phase 及前序 GPU frame 关联。
-- `rf-gpu-graphics-test`、`rf-gpu-raster-test`、`rf-gpu-raster-diff-test`、resource-cache test、
-  mixed-executor test：底层合同的独立 hosted 门禁。
+## 支持边界
 
-运行参数的完整清单始终以 package 中 `rasterfall.exe --help` 为准；当前硬件覆盖、限制与命令见
-[GPU 当前状态](gpu-current-state.md)。
+- Windows 原生 PowerShell、物理 GPU 和 native present 是主开发与签收环境。
+- Linux hosted Vulkan、WSL 与 llvmpipe 只用于编译、ABI 或 correctness 辅助诊断，不能替代驱动、窗口、
+  resize、presenter 生命周期或性能结论。
+- 设备丢失恢复、跨厂商完整矩阵、validation/sync、fault injection 和长时 soak 属于按风险触发的专项，
+  不由日常 Quick 自动替代。
+- 运行参数以 package 中 `rasterfall.exe --help` 为准；验收范围与证据要求由 GPU 验收指南拥有。

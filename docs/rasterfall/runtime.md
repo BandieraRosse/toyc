@@ -66,7 +66,7 @@ surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加
 `--character-world-capture <output-dir> [--character-world-model <model.rmesh>]`；`procedural-humanoid` 与
 `hurd-squad` 仍是独立的纯展示 fixture，不读取正式 world actor；
 正式 Hurd 四人另由 session reset 创建，两条路径共享 character/profession profile 和程序化人物绘制入口。
-场景与离屏输出契约见 [rendering.md](rendering.md) 的 Visual CLI。未知场景、缺少参数、
+场景与离屏输出契约见 [视觉验收](guides/visual-validation.md)。未知场景、缺少参数、
 资源加载/渲染/文件写入失败均返回非零并输出错误。
 
 旧的 PMX/VMD 开发者预览参数（`--vmd-eula-walk`、`--vmd-freeze-*`、

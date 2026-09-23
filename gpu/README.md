@@ -1,11 +1,11 @@
 # Rasterfall GPU 目录
 
 > 文档更新：2026-09-19
-> 源码核对基线：`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_raster_pack.c`、`gpu/src/rf_gpu_raster_bin.c`、`rasterfall/src/rf_core_host.c`；当前 Intel 实机状态见 [GPU 当前状态](../docs/rasterfall/gpu-current-state.md)。
+> 源码核对基线：`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_raster_pack.c`、`gpu/src/rf_gpu_raster_bin.c`、`rasterfall/src/rf_core_host.c`；当前实现边界见 [GPU 渲染架构](../docs/rasterfall/gpu-rendering-architecture.md)。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
 参考性外部代码。本目录说明代码所有权和已实现的技术边界；实机验证与性能快照以
-[GPU 当前状态](../docs/rasterfall/gpu-current-state.md) 为准。旧阶段计划保存在 `docs/rasterfall/archive/`。
+[GPU 验收与诊断](../docs/rasterfall/guides/gpu-validation.md) 为准。旧阶段计划保存在 `docs/rasterfall/archive/`。
 
 ## 当前所有权
 
@@ -57,7 +57,7 @@ Rasterfall normal frontend
 
 ## 实机状态
 
-normal gameplay 已在 Windows Intel Iris Xe 通过 strict native/Fog smoke、正式地图 320 帧零回退波次复现及窗口拉伸。该结果是功能范围验收；最近固定视角的命令和帧时见 [GPU 当前状态](../docs/rasterfall/gpu-current-state.md)。GPU-8B1/8B2/9A 等旧阶段编号仅用于定位实现历史，不再作为待执行计划。
+normal gameplay 已在 Windows Intel Iris Xe 通过 strict native/Fog smoke、正式地图 320 帧零回退波次复现及窗口拉伸。该结果是历史功能范围验收；当前固定视角、命令和帧时复核见 [GPU 验收与诊断](../docs/rasterfall/guides/gpu-validation.md)。GPU-8B1/8B2/9A 等旧阶段编号仅用于定位实现历史，不再作为待执行计划。
 
 ## 验证入口
 
@@ -95,5 +95,6 @@ WSL llvmpipe 只是 correctness 环境，不提供物理 GPU 性能结论。性�
 - 新增 shader 时，同步检查 SPIR-V 生成物、Makefile 依赖、Linux hosted 与 Windows 交叉构建。
 - 不将 Vulkan handle/type 暴露给 Game、session、console 或 status snapshot。
 - 不将 hosted readback timing 或 llvmpipe timing 宣称为 normal native GPU frame 性能。
-- 实现边界或验证状态变化时同步更新 `docs/rasterfall/gpu-current-state.md` 及受影响的
-  `rendering.md`、`runtime.md` 和 `build-platforms.md`。
+- 实现边界变化时更新 `docs/rasterfall/gpu-rendering-architecture.md`；验证流程变化时更新
+  `docs/rasterfall/guides/gpu-validation.md`，并同步检查受影响的 `rendering-architecture.md`、`runtime.md` 和
+  `build-platforms.md`。
