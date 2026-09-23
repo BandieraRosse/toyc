@@ -241,6 +241,7 @@ int rasterfall_render_static_prop_lighting_logic_test(void);
 int rasterfall_render_draw_reference_logic_test(void);
 int rasterfall_render_world_light_source_logic_test(void);
 int rasterfall_render_map_transparency_logic_test(void);
+void rasterfall_render_map_labels(struct toy_renderer *renderer, const struct camera *camera);
 
 int rasterfall_render_scene(struct toy_renderer *renderer,
                             const struct camera *camera);

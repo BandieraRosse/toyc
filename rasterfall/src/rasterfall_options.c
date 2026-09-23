@@ -95,8 +95,10 @@ void rasterfall_options_usage(int fd)
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit  --gpu-rb0-stats\n"
+        "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
+        "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -167,6 +169,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
         else if (!strcmp(option, "--gpu-rb0-stats")) o->gpu_rb0_stats = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
+        else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
+        else if (!strcmp(option, "--gpu-scene-pose-test")) o->gpu_scene_pose_test = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;
         else if (!strcmp(option, "--host"))
@@ -301,6 +305,12 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"map-wall") &&
                  strcmp(o->gpu_normal_view,"map-ramp") &&
                  strcmp(o->gpu_normal_view,"map-platform") &&
+                 strcmp(o->gpu_normal_view,"map-label") &&
+                 strcmp(o->gpu_normal_view,"map-sign") &&
+                 strcmp(o->gpu_normal_view,"map-gate-on") &&
+                 strcmp(o->gpu_normal_view,"map-gate-off") &&
+                 strcmp(o->gpu_normal_view,"map-near") &&
+                 strcmp(o->gpu_normal_view,"map-thin") &&
                  strcmp(o->gpu_normal_view,"whu-a18") &&
                  strcmp(o->gpu_normal_view,"whu-b-plaza") &&
                  strcmp(o->gpu_normal_view,"whu-library") &&

@@ -96,7 +96,8 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     uint32_t *max_normal_delta);
 
 /* Caller shuts graphics down before its shared backend context. All calls
- * are synchronous, one frame in flight. Failure never invokes CPU lowering. */
+ * are synchronous except the explicitly retired Scene submission below.
+ * Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
 /* Validate the currently bound resource/draw without touching target contents. */
 int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
@@ -116,7 +117,7 @@ int rf_gpu_graphics_share_color(struct rf_gpu_graphics *g, void *raster);
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t pixel_capacity);
-/* Diagnostic target interop: GPU export RGBA8/D32 -> packed RGB/inverse-Z
+/* Diagnostic target interop: GPU export RGBA8/D32 -> RGBA8/inverse-Z
  * buffers -> GPU import, then attachment LOAD and later indexed draws.
  * No host framebuffer upload; final readback is diagnostic only. Requires
  * a successfully rendered target at this extent; resize invalidates it.
@@ -136,9 +137,21 @@ int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
 /* Inspect the last diagnostic bridge's exported compute encoding, never used as input
  * to drawing/import. Diagnostic readback validates the conversion itself. */
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
-    uint32_t *argb, int32_t *inverse_depth, uint32_t pixel_capacity);
+    uint32_t *rgba, int32_t *inverse_depth, uint32_t pixel_capacity);
 void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_stats *stats);
 void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g);
+
+/* Isolated Scene slot: no Raster stream, bridge, or CPU framebuffer. All
+ * items must be preflighted and pinned before this call. Successful submission
+ * retains resources until scene_retire; failure is not completion. Destroying
+ * the graphics owner drains pending work before releasing device resources. */
+int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items, uint32_t count);
+int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g);
+/* Explicit diagnostic only: direct attachment readback, no Raster conversion. */
+int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items, uint32_t count,
+    uint32_t *rgba, float *depth, uint32_t capacity);
 
 #endif

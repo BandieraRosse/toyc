@@ -12,11 +12,23 @@
 隔离的 actor generation tracker 与只读 actor snapshot 构建由 `rf_gpu_scene_identity.h/.c`
 实现；`rf_gpu_scene_frame.h/.c` 扩为 V2 值 snapshot，含 world/transient 输入、map generation 与展示开关。
 `rf_gpu_scene_extract.h/.c` 已实现首批有序 Scene 元数据，两类构建均有独立逻辑用例。
-数据源 adapter、UI 输入、完整资源/材质/pose 提取、资源表和正常帧接线仍未实现。
+本地 session roster adapter 已由 `rf_gpu_scene_local.h/.c` 接入，非 client 的 frame audit 可生成
+真实 actor snapshot 与 Scene 元数据。UI 输入、完整资源/材质/pose 提取、资源表和正常帧接线仍未实现。
+local frame 的 presentation sidecar 按 actor identity 关联角色配置、状态、移动、地面/腾空高度、
+pitch、locomotion blend 与 muzzle flash；snapshot 携带动作 ID/时间、武器和世界变换。它是姿态与
+附件求值的真实输入，不是 finalized palette。新增 lower-body 展示时钟值由 local source 冻结；
+`rf_gpu_scene_pose.h` 定义隔离的 palette/gear/weapon 值输出，求值归属见
+[角色表现](../architecture/character-presentation.md)。该输出只有 catalog 资源 ID，尚未成为可直接提交
+的通用 GPU Scene 资源表。独立 `rf_gpu_scene_native.c` fixture 已将固定 body/HEAD catalog ID 解析为
+registry handle/generation，整帧 preflight 后统一 pin，并绑定 Scene slot 退休；该 bounded executor 不代表
+通用 V1 Scene 接口完成。当前所有权见 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
+pose 同时冻结 finalized instance 的 bind-normal 策略，避免 GPU consumer 改变现有法线语义。
+adapter 仅覆盖生命周期由 session reset/unload
+控制的首位非 hired RF rifleman，不能扩用到 hired、remote 或任意直接重写的 actor。
 
 ## 帧身份与状态
 
-每个结构携带 `abi_version = 1`、`byte_size`、单调 `frame_id` 和 `world_generation`。
+每个版本化结构携带其声明的 `abi_version`、`byte_size`、单调 `frame_id` 和 `world_generation`。
 `frame_id` 标识本次冻结及诊断计时；`world_generation` 在 world load/unload 时增长，禁止
 将前一世界的实例混入本帧。`byte_size` 用于拒绝版本或布局不匹配，不能靠读取未声明尾字段兼容。
 所有数组以 `(first, count)` 索引本帧 arena；冻结后直到对应 slot 退休均只读。
@@ -57,9 +69,11 @@ transient 本帧 ID，但没有资源、pose、材质和 pass 分类，不能提
 源码核对：本地 AI 的 `actor_id` 通常由可重用 slot `+1` 生成；清除 hired AI 后同一 ID 可分配给
 新 actor。remote player 使用 `100 + player_id`，断线后也可复用；客户端 snapshot 投影又按
 `actor_index + 1` 写入 `actor_id`。因此现有 `actor_id` 只能作本帧来源标签，不能单独作跨帧身份。
-V1 的 actor generation 由隔离的 snapshot tracker 按 `(source, source_id)` 的生命周期维护：同一来源身份
-连续出现在相邻 snapshot 时，即使更换 slot 也保持 generation；消失后重现或 world generation 更换时
-分配未使用的 generation。slot 只决定本帧输出顺序，不能作为身份计数器。
+actor input 必须携带非零 `source_epoch`，由来源 adapter 的生命周期事件或可靠对象版本提供；同一来源
+对象连续出现且 epoch 不变时，即使换 slot 也保持 generation。epoch 改变、消失后重现或 world 更换时
+分配新的 generation。销毁并复用 ID 即使发生于两次 snapshot 之间也必须改变 epoch；完整 inactive slot
+输入不能替代此保证。epoch 属展示身份，不写入玩法或网络协议；未取得可靠来源版本的 adapter 不得接线。
+epoch 只作为输入和 tracker 状态，不改变现有 V1/V2 snapshot 输出布局。slot 只决定本帧顺序。
 客户端须以网络 `actor_index` 的来源命名空间建立此 generation，不能把投影后的 `actor_id`
 当作 host ID。generation 状态不写入 `toy_game`，也不影响网络协议。
 
@@ -81,6 +95,9 @@ scene extraction 消费一个冻结 snapshot，完成保守可见性、LOD、pos
 attachment_slot)` 派生，静态 map/prop 使用 authored/runtime stable ID；同一 actor 的 body、gear、weapon
 角色不同，不能复用一个 ID。generation 只在身份的对象或资源生命周期更换时增长；pose 更新只改变
 本帧 payload。`submission_ordinal` 是冻结时的原始可见提交序号，透明项严禁材质排序或从 ID 重建顺序。
+目前元数据中的 actor ordinal 不是最终 primitive 序号；body、gear、weapon、透明 primitive 展开后，
+须按现行 producer 阶段与子项顺序分配全帧唯一 ordinal，不能简单把一个 actor 的全部子项连续拼接。
+冻结前验证最终序号唯一，透明层保留原始序列；具体 adapter 必须以 body/附件跨 actor 顺序 fixture 验证。
 材质/贴图覆盖不能暗含资源指针；缺少资源、范围越界、重复 ID 且 payload 冲突均拒绝整帧。
 
 地图来源核对：Runtime Map 的 `rf_map_runtime_render.id` 是 authored stable ID；当前

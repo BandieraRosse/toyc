@@ -1,5 +1,6 @@
 #ifndef RASTERFALL_SESSION_H
 #define RASTERFALL_SESSION_H
+#include "rf_gpu_scene_local.h"
 
 #include "core.h"
 #include "toy_game.h"
@@ -128,6 +129,7 @@ enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_
 enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFALL_HUMANOID_DEBUG_WALK, RASTERFALL_HUMANOID_DEBUG_AIM, RASTERFALL_HUMANOID_DEBUG_RECOIL, RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT };
 
 struct rasterfall_session {
+    struct rf_gpu_scene_local_source scene_local;
     enum rasterfall_world_id world_id;
     struct rasterfall_world_content content;
     enum rasterfall_world_id world_request;

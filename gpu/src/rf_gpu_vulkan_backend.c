@@ -2901,6 +2901,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     uint32_t selected_family = 0;
     uint32_t selected_type = RF_VK_PHYSICAL_DEVICE_TYPE_OTHER;
     uint32_t selected_index = 0;
+    const char *vendor_filter = getenv("RF_GPU_VULKAN_VENDOR_ID");
+    unsigned long required_vendor = 0;
     char selected_name[RF_VK_MAX_PHYSICAL_DEVICE_NAME_SIZE] = {0};
     uint32_t i;
     int want_present = backend_context &&
@@ -2911,6 +2913,14 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     if (!backend_context || !info || backend_context->implementation) {
         snprintf(message, message_capacity, "invalid Vulkan backend context");
         return RF_GPU_BACKEND_FAILED;
+    }
+    if (vendor_filter && *vendor_filter) {
+        char *end = NULL;
+        required_vendor = strtoul(vendor_filter, &end, 16);
+        if (!end || *end || !required_vendor || required_vendor > 0xffff) {
+            snprintf(message, message_capacity, "invalid RF_GPU_VULKAN_VENDOR_ID (hex vendor required)");
+            return RF_GPU_BACKEND_FAILED;
+        }
     }
     impl = calloc(1, sizeof(*impl));
     if (!impl) {
@@ -3018,6 +3028,10 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
 
         memset(&property_storage, 0, sizeof(property_storage));
         api->get_physical_device_properties(devices[i], property_storage.bytes);
+        fprintf(stderr, "rf-gpu-device: index=%u vendor=%04x device=%04x driver=%u api=%u name=%s\n",
+            i, properties->vendor_id, properties->device_id,
+            properties->driver_version, properties->api_version, properties->device_name);
+        if (required_vendor && properties->vendor_id != required_vendor) continue;
         api->get_physical_device_queue_family_properties(devices[i],
                                                          &family_count, NULL);
         if (family_count)
@@ -3049,6 +3063,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         free(families);
     }
     if (!selected_device) {
+        if (required_vendor)
+            fprintf(stderr, "rf-gpu-device: required vendor=%04lx unavailable; no device substitution\n", required_vendor);
         fprintf(stderr, "rf-gpu-probe: no %s queue family\n",
             backend_context->require_graphics ? "graphics+compute" : "compute-capable");
         backend_result = RF_GPU_BACKEND_UNAVAILABLE;

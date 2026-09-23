@@ -34,7 +34,8 @@ int rf_gpu_scene_snapshot_build_v1(
         struct rf_gpu_scene_actor_v1 *actor;
         if (!input[i].active) continue;
         if (input[i].source < RF_GPU_SCENE_ACTOR_GAME ||
-            input[i].source > RF_GPU_SCENE_ACTOR_MANAGED) return -1;
+            input[i].source > RF_GPU_SCENE_ACTOR_MANAGED ||
+            !input[i].source_epoch) return -1;
         for (j = 0; j < snapshot.actor_count; ++j)
             if (snapshot.actors[j].identity.source == input[i].source &&
                 snapshot.actors[j].identity.source_id == input[i].source_id)
@@ -46,7 +47,8 @@ int rf_gpu_scene_snapshot_build_v1(
             for (j = 0; j < TOY_GAME_MAX_ACTORS; ++j)
                 if (tracker->slots[j].active &&
                     tracker->slots[j].source == input[i].source &&
-                    tracker->slots[j].source_id == input[i].source_id) {
+                    tracker->slots[j].source_id == input[i].source_id &&
+                    tracker->slots[j].source_epoch == input[i].source_epoch) {
                     actor->identity.generation = tracker->slots[j].generation;
                     break;
                 }
@@ -57,6 +59,7 @@ int rf_gpu_scene_snapshot_build_v1(
         }
         next.slots[i].source = input[i].source;
         next.slots[i].source_id = input[i].source_id;
+        next.slots[i].source_epoch = input[i].source_epoch;
         next.slots[i].generation = actor->identity.generation;
         next.slots[i].active = 1;
         actor->source_slot = i;

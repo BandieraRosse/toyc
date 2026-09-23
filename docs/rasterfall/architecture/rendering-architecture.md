@@ -25,6 +25,15 @@ renderer 只读玩法或派生展示状态，不修改 `toy_game`。客户端位
 
 GPU Scene 迁移中的 `rf_gpu_scene_extract.c` 只从冻结的 V2 snapshot 生成有序 Scene 元数据；
 它不拥有资源、pose、pass 或正常帧提交。现行渲染仍由下述 mixed frame 数据流负责。
+隔离 snapshot 的 actor 输入由调用者提供非零来源生命周期 `source_epoch`；身份 tracker 将来源 ID
+与 epoch 共同用于 generation 延续判断，避免两次冻结之间 ID 复用被当成同一对象。epoch 不进入
+玩法或网络真值，也不进入当前 snapshot 输出。`rf_gpu_scene_local.c` 适配 session 创建的首位非 hired
+RF rifleman：reset 完成时登记创建，reset/unload 结束其来源生命周期；计数器在 session load 清空
+其他状态时保留。freeze 按来源 ID 查找当前 slot，仅复制展示值。非 client 的 `--frame-audit`
+将其送入 snapshot 和 Scene 元数据提取；正常提交仍走 mixed。local presentation sidecar 冻结
+角色配置、动作时间、武器、状态、地面/腾空高度及来源独立的 lower-body 展示时钟。
+隔离的 `rf_gpu_scene_pose_extract` 已从这些冻结值生成 finalized palette 与 gear/weapon placement；
+其所有权和限制见[角色表现](character-presentation.md)。此值 payload 尚未接 GPU 资源表或 Scene submit。
 
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用
@@ -77,6 +86,13 @@ ramp/platform 和 static RMESH 在各自 record 入口做保守 frustum/AABB 剔
 Static World Lighting V2 是 normal runtime 唯一 world-light 来源。renderer 只消费其 Q8 查询结果，按
 `world light × form lighting × material policy` 形成最终提交颜色；normal runtime 的 fog 输入固定为 0。
 field bake、固定参数和诊断例外由 [Static World Lighting V2](static-world-lighting.md) 拥有。
+
+持久地图 mesh 的顶点 Y 已是世界高度，`persistent_map_instance` 以 `min_y` 为实例 Y，抵消通用
+模型 Draw 的 foot-origin 归一化；floor mesh 的局部原点合同另行保留，不改通用 shader。
+
+地图 LABEL 是无深度屏幕注记，`rasterfall_render_map_labels` 在 Core 进入 OVERLAY 后、HUD 前
+输出到 overlay color/coverage；不再在未 flush 的 WORLD 表面直接写字。SIGN 牌面与文字仍是
+WORLD 几何，参与遮挡。
 
 static RMESH 使用实例 world origin 查询一次 scene light，再通过既有 override 传给模型提交；不在逐顶点
 热循环重复查询。角色材质的 FACE/SKIN/EYES/HAIR visibility floor 属于 character render policy，非角色

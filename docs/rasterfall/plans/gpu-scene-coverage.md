@@ -18,7 +18,7 @@
 | WORLD 地图透明：`render_platform`、`draw_box_alpha` | platform 与 air gate box 有 authored alpha；Core 从 WORLD 稳定分到 TRANSPARENT。source-over、深度测试、不写深度 | WORLD transparent 有序项；保留原提交序号和条件开关。覆盖平台/air gate 的固定 fixture |
 | WORLD 角色 body：`render_enemies`、队友、managed/network actor | 普通模块化 body 可为动态 Draw，finalized pose 后 GPU skinning；其他 body/特殊敌人和材质路径可能仍降为 RasterCmd。标签主要为 `ENEMY_BODY`，特殊 rigid 有独立枚举。材质含 base texture、sphere、toon、edge、alpha、双面、角色 visibility floor、实例衣裤色 | WORLD opaque/transparent 角色实例；GPU Scene 要承接 finalized palette 和材质覆盖。逐项查清特殊敌人、edge、透明材质的 GPU 表示，不能按 `ENEMY_BODY` 标签认定全部 opaque |
 | WORLD gear/weapon：`render_modular_ai_equipment` 等 | body 后按 actor 顺序提交；`GEAR`、`WEAPON` 标签。rigid 附件消费 pose cache/socket/placement、scene-light override；当前多为 RasterCmd | WORLD opaque/transparent 附件实例；保持同一 actor 的 finalized placement 和可见顺序，避免 body Draw 与附件 Raster 的 bridge |
-| WORLD 投射物、交互物、旗帜、sign、world label/name/status | 投射物、交互物及 sign board 为世界几何；sign/flag 字面经 `render_world_text_plane` 生成 depth-tested 三角形。地图 `TOY_MAP_DRAW_LABEL` 则在 `render_scene` 内调用 `draw_world_label`，先投影到屏幕并直接 `fb_draw_string`，无深度测试，发生在 WORLD flush 前。actor name/status 在 `rf_core_begin_screen_overlay` 后绘制，属 OVERLAY | 几何和世界文字进入 WORLD；地图 LABEL 的现行写入时刻、后续 WORLD 覆盖结果与 GPU native 可见性须单独固定。actor name/status 属屏幕 OVERLAY，保持 near/distance 投影门槛及血条顺序。地图 LABEL 未转为有序 GPU payload 前阻断统一正常帧，不能当作已有 WORLD 命令 |
+| WORLD 投射物、交互物、旗帜、sign、world label/name/status | 投射物、交互物及 sign board 为世界几何；sign/flag 字面经 `render_world_text_plane` 生成 depth-tested 三角形。地图 `TOY_MAP_DRAW_LABEL` 在 `rasterfall_render_map_labels` 中投影为无深度屏幕文字，进入正式 OVERLAY color/coverage。actor name/status 在 `rf_core_begin_screen_overlay` 后绘制，属 OVERLAY | 几何和世界文字进入 WORLD；地图 LABEL 属 OVERLAY，保持无世界深度语义。actor name/status 属屏幕 OVERLAY，保持 near/distance 投影门槛及血条顺序。地图 LABEL 未转为有序 GPU payload 前阻断统一正常帧，不能当作已有 WORLD 命令 |
 | EFFECTS：`rasterfall_render_effects` | 射线、billboard、死亡碎片/尘埃等 RasterCmd；碎片和尘埃强制有序透明、不写深度。粒子入口仅在返回正像素且无新增命令时累计 EFFECTS direct pixels。`render_effect_overlay` 实际由帧尾 `rasterfall_render_overlays` 调用，在 OVERLAY 中直接改像素 | WORLD effects 进入 EFFECTS pass；damage flash 等屏幕覆盖进入 OVERLAY。两类分别保持提交与 source-over 顺序，不能因 effect 数据来源相同而合并 pass |
 | VIEWMODEL：`rasterfall_viewmodel_render` | 手、武器、药品、枪口效果为三角命令；Core 使用独立 near/depth/coverage，透明子项有序混合 | 独立 VIEWMODEL depth/coverage pass；不得共用 WORLD depth，保持手/武器/枪口层序 |
 | POST、OVERLAY：`rf_core_begin_screen_overlay` 后的 HUD/UI | normal Post disabled；HUD、菜单、准星等绘入 CPU overlay color + 8-bit coverage，native presenter 上传并合成；不写 WORLD depth | 保留 POST 语义边界和 OVERLAY pass；阶段 3 需明确定义 GPU 表示及覆盖，不能把现行 CPU overlay 上传误报为统一 GPU Scene 已完成 |
@@ -31,7 +31,7 @@
 | --- | --- | --- |
 | wall、普通 box、ramp；`style == 2` 且非 air gate 的 platform | 只有 mixed frame、runtime map 已加载且诊断平面开关关闭时，才由 `persistent_map_map_class_for_draw` 进入持久 Draw mesh；否则走普通地图绘制 | 同一内容在新路径中有 mesh/instance 表示；不能把旧 Draw 命中率当成完整地图覆盖 |
 | `air_gate_` box/platform | 不进入上述持久 mesh；`active_session->air_walls_enabled` 决定是否提交，box 以 authored alpha 48 绘制 | 冻结条件开关、透明序号和无深度写入语义 |
-| 地图 LABEL、SIGN | LABEL 在 WORLD 几何 flush 前直接写屏幕；SIGN board 是几何，文字随后作为世界三角形提交 | 两者使用不同表示与遮挡规则，不能合并为一种世界文字实例 |
+| 地图 LABEL、SIGN | LABEL 在世界/viewmodel flush 后进入 OVERLAY；SIGN board 是几何，文字随后作为世界三角形提交 | 两者使用不同表示与遮挡规则，不能合并为一种世界文字实例 |
 
 `rasterfall.map` 的 runtime render 记录已覆盖这些类型；地图 parser、Runtime Map、兼容
 `toy_map_draw` 和 GPU Scene 的身份/顺序仍须各守其边界。
@@ -50,18 +50,21 @@
   退休。`edge`、`overlay`、无效纹理/命令、direct pixels、consumer 失败均可使 required 帧失败。
 - **标签局限：** `RF_CORE_PRODUCER_*` 共九类，`WORLD_MAP` 还覆盖 scene、world text 和交互物；
   `ENEMY_BODY` 还覆盖多个 actor 来源。透明由命令属性和 Core 的稳定分段决定，不能由标签决定。
-- **审计盲点：** `draw_world_label` 的直接像素写入不经过
-  `rf_core_render_frame_record_direct_pixels_v1`；现有 WORLD direct-pixel 计数为零也不能证明地图 LABEL
-  不可见或已被 GPU 表示。阶段 0 须先以固定 LABEL fixture 确认旧 mixed 与 CPU reference 的实际结果，
-  再决定有序 GPU payload 的层序和遮挡合同；不得仅按帧审计计数签收覆盖。
+- **LABEL 覆盖：** 固定镜头暴露了旧直接像素被延迟 WORLD flush 覆盖的问题；现已移到正式
+  overlay color/coverage。CPU/native 固定镜头必须看到 WORLD_LABEL；它不写 WORLD 深度。
+  新 Scene 的有序 overlay payload 尚待接入，不能把当前 CPU overlay 上传当作完成迁移。
 - **现有内容证据：** 正式 `rasterfall.map` 包含 `render ... kind=label`（例如
   `return_outpost_label`、`legacy_render_003`）和 `kind=sign`。`rasterfall_map.c` 把 runtime render
   按原顺序投影为 `level_map.draw`；因此 LABEL 并非仅存在于旧格式或开发测试场景。
 
 ## 阶段 0 待核对证据
 
+定向输入已建立为[专用渲染地图](../guides/gpu-scene-fixture.md)，提供 opaque、透明 air gate、
+LABEL/SIGN、近处 box 与远处薄墙。它通过现行 mixed 路径采集证据，不代表新 Scene 覆盖；
+air gate 开/关已各有固定镜头；特殊材质、角色与附件、effects/UI 仍须各自冻结输入和验证。一个镜头不能签收全部地图条目。
+
 1. 阶段 0 退出时用固定 near 0/30/60、Campaign、mid、thin-far 的 frame audit，记录各层
-   Draw/Raster span、unsupported 与 direct-pixel 的**实际出现值**；地图 LABEL 须另按上述盲点
+   Draw/Raster span、unsupported 与 direct-pixel 的**实际出现值**；地图 LABEL 须按固定 overlay 镜头
    检查，源码列举和审计零计数都不能证明其 GPU 覆盖。
 2. 为世界文字/状态、条件性地图内容、特殊敌人与所有 EFFECTS 记录固定 capture，确认遮挡、
    alpha、材质及 near 边界。任何未列入本表的正常帧可见内容先补归属，再冻结阶段 0 合同。

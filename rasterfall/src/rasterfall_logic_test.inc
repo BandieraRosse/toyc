@@ -1,3 +1,4 @@
+#include "dev-tests/rf_gpu_scene_local_test.inc"
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
 #define special_target_kind ability.special_target_kind
@@ -949,6 +950,7 @@ static int run_logic_test(void)
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;
     if (rasterfall_render_modular_bounds_culling_logic_test() != 0) return 258;
     if (rasterfall_render_static_prop_lighting_logic_test() != 0) return 242;
+    if (scene_local_source_test() != 0) return 253;
     if (rasterfall_render_draw_reference_logic_test() != 0) return 252;
     if (rasterfall_render_resources_logic_test() != 0) return 253;
     if (rfm2_material_alpha_producer_logic_test() != 0) return 244;

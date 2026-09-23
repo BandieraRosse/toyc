@@ -31,6 +31,11 @@ LDLIBS := -L$(SDL_PREFIX)/lib -lSDL2 -lws2_32 -lwinmm \
           -lshell32
 
 GAME_SRCS := rasterfall/src/rasterfall.c \
+             rasterfall/src/rf_gpu_scene_native.c \
+             rasterfall/src/rf_gpu_scene_local.c \
+             rasterfall/src/rf_gpu_scene_identity.c \
+             rasterfall/src/rf_gpu_scene_frame.c \
+             rasterfall/src/rf_gpu_scene_extract.c \
              rasterfall/src/rf_game_runtime.c \
              rasterfall/src/rasterfall_gui.c \
              rasterfall/src/rasterfall_app.c \
@@ -196,7 +201,7 @@ $(BUILD)/rf-gpu-scene-identity-test.exe: tools/rf_gpu_scene_identity_test.c rast
 
 .PHONY: gpu-scene-frame-test
 gpu-scene-frame-test: $(BUILD)/rf-gpu-scene-frame-test.exe
-$(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h | $(BUILD)
+$(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
 
 # GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.

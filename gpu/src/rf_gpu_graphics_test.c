@@ -292,7 +292,9 @@ static void cpu_draw(const struct rf_gpu_graphics_draw *d)
         for(int fan=1;fan+1<count;++fan) {
             struct cpu_screen a=p[0],b=p[fan],c=p[fan+1];
             long long area=cpu_edge(a,b,c.x,c.y);
-            if(!area || (!d->double_sided && area>=0))continue;
+            /* cpu_edge is (b-a) x (c-a), the negative of the production
+             * renderer's area. Production rejects its area >= 0. */
+            if(!area || (!d->double_sided && area<=0))continue;
             for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
                 long long e0=cpu_edge(b,c,x,y),e1=cpu_edge(c,a,x,y),e2=cpu_edge(a,b,x,y);
                 int at=y*w+x;
@@ -345,9 +347,10 @@ static int bridge_case(struct rf_gpu_graphics *g,struct rf_gpu_graphics_draw fir
     if(rf_gpu_graphics_render(g,pair,2,saved,saved_depths,MAX_PIXELS)<0 ||
        rf_gpu_graphics_render(g,&first,1,pixels,depths,MAX_PIXELS)<0)return -1;
     for(unsigned i=0;i<size;++i) {
-        uint32_t p=pixels[i];
-        oracle_color[i]=(p&0xff00ff00u)|((p&255u)<<16)|((p>>16)&255u);
-        oracle_depth[i]=(int)(depths[i]*16384.0f);
+        /* Diagnostic readback exports the final draw, not the pre-LOAD
+         * snapshot. Shared-color RGBA8 bytes are preserved; depth converts. */
+        oracle_color[i]=saved[i];
+        oracle_depth[i]=(int)(saved_depths[i]*16384.0f);
     }
     // Host output is intentionally destroyed; the continuation must load GPU targets.
     memset(pixels,0xa5,size*4);memset(depths,0x5a,size*4);
@@ -439,8 +442,9 @@ static int compat_suite(struct rf_gpu_graphics *g)
     d.view[0]=89;d.view[1]=1020;d.view[2]=53;d.view[3]=1022;
     failed+=compat_oracle(g,&d,1,"transform-camera-nearest",1)!=0;
     d.double_sided=0;
-    failed+=compat_oracle(g,&d,1,"single-sided-front",1)!=0;
     d.first_index=6;
+    failed+=compat_oracle(g,&d,1,"single-sided-front",1)!=0;
+    d.first_index=0;
     failed+=compat_oracle(g,&d,1,"single-sided-back",0)!=0;
     d.double_sided=1;
     failed+=compat_oracle(g,&d,1,"double-sided-back",1)!=0;
@@ -551,7 +555,7 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
     CHECK((depths[48*128+64]!=0)!=front_visible);
     printf("winding original-front=%d\n",front_visible);
-    CHECK(front_visible);
+    CHECK(!front_visible); /* Original quad is back-facing in production. */
     d.double_sided=1;
     CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
     CHECK(memcmp(saved,pixels,128*96*4)==0);

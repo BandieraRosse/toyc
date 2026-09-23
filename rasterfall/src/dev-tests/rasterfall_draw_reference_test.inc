@@ -107,6 +107,58 @@ static int actor_range_logic_test(void)
     return failed;
 }
 
+/* Exercise real mesh packing and the production placement, then independently
+ * decode the Draw transform against authored world coordinates. Zero tolerance
+ * on world/view/screen coordinates; hardware edge coverage is a separate test. */
+static int persistent_map_projection_test(void)
+{
+    static const struct vec3 quads[3][4] = {
+        {{-900,-900,3200},{900,-900,3200},{900,500,5600},{-900,500,5600}},
+        {{-4200,-900,4200},{-1400,-900,4200},{-1400,2700,4200},{-4200,2700,4200}},
+        {{1800,300,3900},{4600,300,3900},{4600,300,5900},{1800,300,5900}}
+    };
+    int failed = 0, checked = 0;
+    for (int shape=0; shape<3; ++shape) {
+        struct persistent_map_mesh_build build = {0};
+        struct rasterfall_model_asset *model;
+        struct rasterfall_draw_instance instance;
+        struct rasterfall_resource_handle handle = {0};
+        if (persistent_map_mesh_push(&build, quads[shape], 0x596775) < 0) return 1;
+        model = persistent_map_mesh_finish(&build);
+        tlibc_free(build.patches);
+        if (!model) return 1;
+        persistent_map_instance(model, handle, &instance);
+        for (int angle=0; angle<3; ++angle) {
+            struct camera camera = {0};
+            struct toy_surface surface = {0};
+            camera.y = -350; camera.cy = angle ? 949 : 1024;
+            camera.sy = angle == 1 ? -384 : angle == 2 ? 384 : 0;
+            camera.pitch_cy = angle == 2 ? 989 : 1024;
+            camera.pitch_sy = angle == 2 ? 265 : 0;
+            surface.width=1280; surface.height=720;
+            for (int k=0; k<4; ++k) {
+                const unsigned char *v=model->vertices+k*model->vertex_bytes;
+                struct vec3 decoded, a, b;
+                struct toy_screen_vertex sa, sb;
+                decoded.x=(int)model_u32(v)+(int)model_u32(model->materials+24);
+                decoded.y=(int)model_u32(v+4)-model->min_y+instance.y;
+                decoded.z=(int)model_u32(v+8)+(int)model_u32(model->materials+28);
+                world_to_view(&camera, &quads[shape][k], &a);
+                world_to_view(&camera, &decoded, &b);
+                project_vertex(&surface,&a,&sa); project_vertex(&surface,&b,&sb);
+                if (memcmp(&decoded,&quads[shape][k],sizeof(decoded)) ||
+                    memcmp(&a,&b,sizeof(a)) || sa.x!=sb.x || sa.y!=sb.y || sa.inv_z!=sb.inv_z) failed=1;
+                if (!angle) __printf("MAP-PROJECTION shape=%d vertex=%d world=(%d,%d,%d) cpu=(%d,%d) draw=(%d,%d)\n",
+                    shape,k,decoded.x,decoded.y,decoded.z,sa.x,sa.y,sb.x,sb.y);
+                ++checked;
+            }
+        }
+        rasterfall_model_unload(model); tlibc_free(model);
+    }
+    __printf("persistent map projection: %s vertices=%d\n",failed?"FAIL":"PASS",checked);
+    return failed;
+}
+
 int rasterfall_render_draw_reference_logic_test(void)
 {
     struct toy_renderer r[2];
@@ -133,7 +185,7 @@ int rasterfall_render_draw_reference_logic_test(void)
     int saved_gallery = active_gallery_lighting, saved_scene = active_scene_light_override_q8;
     int saved_v2 = active_world_light_v2, saved_floor = active_floor_submission;
     int saved_form = active_model_form_lighting, saved_material = active_disable_material_light;
-    int result = actor_range_logic_test(), tested = 0, commands = 0, touched = 0;
+    int result = actor_range_logic_test() | persistent_map_projection_test(), tested = 0, commands = 0, touched = 0;
     if (!model) return 1;
     memset(model, 0, sizeof(*model));
     memset(states, 0, sizeof(states)); memset(surfaces, 0, sizeof(surfaces));

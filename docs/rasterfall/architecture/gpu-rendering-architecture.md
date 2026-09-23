@@ -53,6 +53,11 @@ opaque gear/weapon RasterCmd。附件继续读取对应 actor 的 finalized pose
 
 ## Raster 与诊断合同
 
+indexed Draw 的正面必须与正式 CPU renderer 一致：屏幕 Y 向下，CPU 接受 `(c-a) × (b-a) < 0`，
+正高度 Vulkan viewport 使用 `VK_FRONT_FACE_CLOCKWISE`。普通与 integer-compatible pipeline 共用该规则；
+单面材质剔除背面，双面材质保留两面，opaque 深度测试/写入仍为 GREATER_OR_EQUAL。
+独立测试若使用相反的叉积顺序，必须同时反转符号判定，不能把错误 GPU 绕序写成 reference。
+
 Raster binning 按原 command index 将命令写入 tile 列表。binned shader 可用有序索引跳过当前 segment 外
 命令，但必须在 `segment.end` 停止；独立 full-scan shader 保留为 differential 对照。帧审计按 producer
 记录 RasterCmd/span，并按实际 bridge 记录方向、color/depth traffic、层、相邻 producer 和 target generation。
@@ -77,6 +82,28 @@ graphics submit/wait 是队列关系证据，不等于某个 producer 的 GPU �
 - resize 只重建 extent 相关 target、slot binding 与 swapchain，不得重复上传稳定 world mesh/texture。
 - swapchain 由 backend 唯一拥有；acquire、render fence 与 present completion 分开跟踪。正常热路径禁止
   queue-idle，只有明确的 recreate/teardown 边界可以排空队列。
+
+## 独立 Scene fixture 提交
+
+`rf_gpu_scene_native.c` 拥有显式 `--gpu-scene-native-fixture` 的冻结输入、资源解析、整帧验证和单个
+Scene slot；正常帧仍由 Core mixed executor 编排。fixture 只提交 `opaque_box` 地图几何、RF rifleman
+body 和 HEAD 附件。地图沿用正式地图 mesh builder；catalog ID 解析为独立 registry 的 handle/generation。
+材质、索引、palette 范围与变换全部检查后才统一 pin；设备准备失败也不会提交 target 写入。
+
+CPU pose 仍由独立 instance 求值，并冻结 finalized pose 的 bind-normal 策略。body palette 上传到既有 compute skinning，rigid HEAD 的 finalized
+矩阵通过单骨 palette 消费，资源 `position_scale` 到 RFU 的换算只在资源解析侧执行一次。不可变地图
+资源跨帧保留，动态 device backing 在退休后 update 或增长；CPU pose/pack backing 暂未复用。
+
+graphics owner 持有独立 command pool/buffer、fence、acquire semaphore 和 WORLD color/depth。
+`rf_gpu_graphics_scene_present` 将全部 mesh 放入同一 render pass，直接 blit color 到 backend 唯一
+swapchain，完全不接收 Raster stream，也不调用 bridge。render-finished semaphore 按 swapchain image
+索引持有，重新 acquire 同一 image 才证明此前 present wait 完成。单 graphics queue 串联上传、compute、draw
+和 present；当前 fixture 在每次提交后显式等 fence，再释放 pin，不是多帧流水实现。
+
+`scene_retire` 成功才允许 slot 复用；失败保留 pin 到 graphics/backend teardown 排空 GPU 后。resize
+只替换 extent target/swapchain，world 失效后的旧 handle 在 fence 完成前保持可解析。诊断 capture 直接
+读取 Scene color/depth，不经过 Raster 转换；该显式 readback 与连续 native 提交分别统计。复现和未完成
+门禁见 [Scene fixture 指南](../guides/gpu-scene-fixture.md)。
 
 ## 角色 GPU skinning
 

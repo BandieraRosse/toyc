@@ -12,7 +12,14 @@
     X(CreateFramebuffer) X(DestroyFramebuffer) X(CreateGraphicsPipelines) \
     X(CmdBeginRenderPass) X(CmdEndRenderPass) X(CmdBindVertexBuffers) \
     X(CmdBindIndexBuffer) X(CmdDrawIndexed) X(CmdSetViewport) X(CmdSetScissor) \
-    X(CmdPushConstants) X(CmdCopyImageToBuffer)
+    X(CmdPushConstants) X(CmdCopyImageToBuffer) X(CmdBlitImage)
+
+typedef struct rf_scene_blit {
+    VkImageSubresourceLayers src; VkOffset3D src_offsets[2];
+    VkImageSubresourceLayers dst; VkOffset3D dst_offsets[2];
+} rf_scene_blit;
+typedef void (RF_VK_CALL *rf_gfx_CmdBlitImage_fn)(VkCommandBuffer, VkImage,
+    VkImageLayout, VkImage, VkImageLayout, uint32_t, const rf_scene_blit *, uint32_t);
 
 struct rf_graphics_api {
 #define RF_GFX_FIELD(n) rf_gfx_##n##_fn n;
@@ -77,7 +84,8 @@ struct rf_gpu_graphics {
     rf_vk_command_pool pool;
     rf_vk_command_buffer cmd;
     rf_vk_fence fence;
-    int poisoned;
+    int poisoned, scene_in_flight;
+    rf_vk_semaphore scene_acquire;
     struct rf_gpu_graphics_stats stats;
 };
 
@@ -173,7 +181,7 @@ _Static_assert(offsetof(struct rf_gpu_graphics_draw, first_index) == 112,
 static int gfx_begin(struct rf_gpu_graphics *g)
 {
     struct rf_vk_command_buffer_begin_info begin = {0};
-    if (g->poisoned || g->owner->api.reset_command_pool(
+    if (g->poisoned || g->scene_in_flight || g->owner->api.reset_command_pool(
             g->owner->device, g->pool, 0) != RF_VK_SUCCESS) return -1;
     begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     return g->owner->api.begin_command_buffer(g->cmd, &begin) == RF_VK_SUCCESS ? 0 : -1;
@@ -243,6 +251,8 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     impl = g->owner;
     /* Also covers a failed submission/wait: never destroy pending resources. */
     impl->api.queue_wait_idle(impl->queue);
+    g->scene_in_flight=0;
+    if (g->scene_acquire) impl->api.destroy_semaphore(impl->device,g->scene_acquire,NULL);
     gfx_rasters_invalidate(g);
     while (g->shared_rasters) gfx_raster_unshare(g->shared_rasters);
     gfx_target_destroy(g, &g->target);
@@ -304,7 +314,7 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
     VkFormatProperties properties;
     VkFramebufferCreateInfo fb = {0};
     VkImageView views[2];
-    if (!g || g->poisoned || !width || !height || width > 4096 || height > 4096) return -1;
+    if (!g || g->poisoned || g->scene_in_flight || !width || !height || width > 4096 || height > 4096) return -1;
     if (g->target.width == width && g->target.height == height) return 0;
     t.width = width; t.height = height;
     memset(&properties,0,sizeof(properties));
@@ -471,7 +481,9 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     viewport.viewportCount = viewport.scissorCount = 1;
     raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     raster.polygonMode = VK_POLYGON_MODE_FILL; raster.lineWidth = 1.0f;
-    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    /* Rasterfall projects Y down and accepts (c-a) x (b-a) < 0.
+     * With a positive-height viewport this is Vulkan CLOCKWISE. */
+    raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
     multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisample.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     depth_state.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -1013,7 +1025,7 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     void *mapped=NULL;
     unsigned mapped_index=0;
     int result=-1;
-    if (!g || g->poisoned || !r || r->owner!=g || !r->skin_descriptor_set ||
+    if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g || !r->skin_descriptor_set ||
         !vertex_count || bind_word_count!=(uint64_t)vertex_count*22 ||
         !palette_word_count ||
         !bind_words || !palette_words) return -1;
@@ -1088,7 +1100,7 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource)
 {
     struct rf_gpu_graphics_resource **link;
-    if (!g || !resource || resource->owner != g) return -1;
+    if (!g || g->scene_in_flight || !resource || resource->owner != g) return -1;
     /* Successful submissions already waited. A failed wait may leave work. */
     if (g->poisoned) g->owner->api.queue_wait_idle(g->owner->queue);
     for (link = &g->resources; *link != resource; link = &(*link)->next)
@@ -1330,7 +1342,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t pixel_capacity,int load,
     struct rf_gpu_vulkan_raster *r,
-    const struct rf_gpu_graphics_batch_item *items)
+    const struct rf_gpu_graphics_batch_item *items, int scene)
 {
     struct rf_gpu_vulkan_impl *impl;
     VkClearValue clear[2];
@@ -1343,7 +1355,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     void *mapped = NULL;
     if (!g || g->poisoned || (!items && (!g->resource || !g->resource->index_count)) || !g->target.framebuffer ||
         (!draws && !items) || !count || count > 65536 ||
-        (!r && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
+        (!r && !scene && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     {
         struct rf_gpu_graphics_resource *saved = g->resource;
         int valid = 1;
@@ -1401,7 +1413,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
          * Draw and bridge share one queue submit and fence. */
         if(gfx_bridge(g,r,2,1,1)<0){g->poisoned=1;return -1;}
         r->segment_valid=1;
-    } else {
+    } else if (!scene) {
         struct rf_vk_buffer_copy color_readback={0},depth_readback={0};
         uint32_t params[3]={g->target.width,g->target.height,0};
         gfx_bridge_bind(g,bytes*2);
@@ -1449,12 +1461,12 @@ static int gfx_render(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0,NULL,NULL); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,0,NULL,NULL,0); }
 
 int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draws,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t pixel_capacity)
-{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1,NULL,NULL); }
+{ return gfx_render(g,draws,count,rgba,depth,pixel_capacity,1,NULL,NULL,0); }
 
 int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     const struct rf_gpu_graphics_draw *draws, uint32_t count)
@@ -1463,7 +1475,7 @@ int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
     int result;
     if(!raster || rf_gpu_graphics_share_color(g,raster)<0)return -1;
     saved=g->cmd;g->cmd=((struct rf_gpu_vulkan_raster *)raster)->command_buffer;
-    result=gfx_render(g,draws,count,NULL,NULL,0,1,raster,NULL);
+    result=gfx_render(g,draws,count,NULL,NULL,0,1,raster,NULL,0);
     g->cmd=saved;
     return result;
 }
@@ -1475,18 +1487,18 @@ int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
     int result;
     if (!raster || !items || rf_gpu_graphics_share_color(g,raster)<0) return -1;
     saved=g->cmd;g->cmd=((struct rf_gpu_vulkan_raster *)raster)->command_buffer;
-    result=gfx_render(g,NULL,count,NULL,NULL,0,1,raster,items);
+    result=gfx_render(g,NULL,count,NULL,NULL,0,1,raster,items,0);
     g->cmd=saved;
     return result;
 }
 
 int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
-    uint32_t *argb,int32_t *inverse_depth,uint32_t pixel_capacity)
+    uint32_t *rgba,int32_t *inverse_depth,uint32_t pixel_capacity)
 {
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     void *mapped=NULL;
-    if(!g || g->poisoned || !g->target.valid || !g->target.bridge_valid || !argb || !inverse_depth ||
+    if(!g || g->poisoned || !g->target.valid || !g->target.bridge_valid || !rgba || !inverse_depth ||
         (uint64_t)g->target.width*g->target.height>pixel_capacity)return -1;
     uint64_t bytes=(uint64_t)g->target.width*g->target.height*4;
     struct rf_gpu_vulkan_impl *impl=g->owner;
@@ -1503,7 +1515,7 @@ int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
     if(gfx_submit(g,1,RF_GPU_SUBMIT_READBACK)<0 || impl->api.map_memory(impl->device,g->target.readback.memory,0,
         g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS)return -1;
     int result=raster_invalidate(impl,&g->target.readback);
-    if(result==0){memcpy(argb,mapped,(size_t)bytes);memcpy(inverse_depth,(unsigned char *)mapped+bytes,(size_t)bytes);}
+    if(result==0){memcpy(rgba,mapped,(size_t)bytes);memcpy(inverse_depth,(unsigned char *)mapped+bytes,(size_t)bytes);}
     impl->api.unmap_memory(impl->device,g->target.readback.memory);
     return result;
 }
@@ -1513,3 +1525,160 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
     if (g && stats) *stats = g->stats;
 }
 #undef RF_GFX_FUNCTIONS
+
+/* Scene owns its command/fence/acquire semaphore. The backend still owns the
+ * unique swapchain and image-indexed present semaphores. */
+int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
+{
+    double start;
+    if (!g) return -1;
+    if (!g->scene_in_flight) return g->poisoned ? -1 : 0;
+    start=now_ms();
+    if (g->owner->api.wait_for_fences(g->owner->device,1,&g->fence,
+            RF_VK_TRUE,UINT64_MAX)!=RF_VK_SUCCESS) { g->poisoned=1; return -1; }
+    g->stats.fence_waits++;
+    g->stats.fence_wait_wall_ms+=now_ms()-start;
+    g->scene_in_flight=0;
+    return 0;
+}
+
+int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count)
+{
+    struct rf_gpu_vulkan_impl *impl;
+    struct rf_vk_semaphore_create_info sem={0};
+    struct rf_vk_image_memory_barrier barrier={0};
+    struct rf_vk_submit_info submit={0};
+    struct rf_vk_present_info present={0};
+    rf_scene_blit blit={0};
+    static const rf_vk_flags wait_stage=RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    uint32_t index=0;
+    int result, acquired=0;
+    double start;
+    VkFormatProperties src,dst;
+    if (!g || g->poisoned || g->scene_in_flight || !items || !count) return -1;
+    impl=g->owner;
+    if (!impl->native_presentation_supported || impl->presenter_poisoned) return -1;
+    /* Vulkan 1.0 blit performs RGBA -> BGRA conversion without a bridge. */
+    g->api.GetPhysicalDeviceFormatProperties(impl->physical_device,VK_FORMAT_R8G8B8A8_UNORM,&src);
+    g->api.GetPhysicalDeviceFormatProperties(impl->physical_device,RF_VK_FORMAT_B8G8R8A8_UNORM,&dst);
+    if (!(src.optimalTilingFeatures&0x400) || !(dst.optimalTilingFeatures&0x800)) return -1;
+    if (!impl->swapchain || impl->swapchain_width!=g->target.width ||
+            impl->swapchain_height!=g->target.height)
+        if (presenter_swapchain_create(impl,g->target.width,g->target.height)<0) return -1;
+    if (!g->scene_acquire) {
+        sem.s_type=RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+        if (impl->api.create_semaphore(impl->device,&sem,NULL,&g->scene_acquire)!=RF_VK_SUCCESS) return -1;
+    }
+    /* gfx_render validates the entire batch before beginning any recording. */
+    if (gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) return -1;
+    impl->present_attempt++;
+    if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_ACQUIRE_OUT_OF_DATE)) {
+        if (presenter_swapchain_create(impl,g->target.width,g->target.height)<0) goto failed;
+    }
+    result=impl->api.acquire_next_image(impl->device,impl->swapchain,UINT64_MAX,
+        g->scene_acquire,NULL,&index);
+    if (result==RF_VK_ERROR_OUT_OF_DATE_KHR) {
+        if (presenter_swapchain_create(impl,g->target.width,g->target.height)<0) goto failed;
+        result=impl->api.acquire_next_image(impl->device,impl->swapchain,UINT64_MAX,
+            g->scene_acquire,NULL,&index);
+    }
+    if (result!=RF_VK_SUCCESS && result!=RF_VK_SUBOPTIMAL_KHR) goto failed;
+    acquired=1;
+    if (index>=impl->swapchain_image_count ||
+        impl->present_images[index].generation!=impl->presenter_generation) goto failed;
+    /* Reacquiring this image proves completion of its previous present wait. */
+    if (impl->present_images[index].state==RF_GPU_PRESENT_AUDIT_PENDING && impl->outstanding_presents)
+        impl->outstanding_presents--;
+    impl->present_images[index].state=RF_GPU_PRESENT_AUDIT_REUSABLE;
+    impl->present_images[index].render_finished_state=RF_GPU_PRESENT_AUDIT_REUSABLE;
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.old_layout=RF_VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.new_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.dst_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.src_queue_family_index=barrier.dst_queue_family_index=UINT32_MAX;
+    barrier.image=impl->swapchain_images[index];
+    barrier.subresource_range.aspect_mask=RF_VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresource_range.level_count=barrier.subresource_range.layer_count=1;
+    impl->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    blit.src.aspectMask=blit.dst.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.src.layerCount=blit.dst.layerCount=1;
+    blit.src_offsets[1].x=g->target.width; blit.src_offsets[1].y=g->target.height;
+    blit.dst_offsets[1].x=impl->swapchain_width; blit.dst_offsets[1].y=impl->swapchain_height;
+    blit.src_offsets[1].z=blit.dst_offsets[1].z=1;
+    g->api.CmdBlitImage(g->cmd,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        impl->swapchain_images[index],RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,0);
+    barrier.src_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT; barrier.dst_access_mask=0;
+    barrier.old_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.new_layout=RF_VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    impl->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+        RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_RECORD_FAILURE) ||
+        impl->api.end_command_buffer(g->cmd)!=RF_VK_SUCCESS ||
+        impl->api.reset_fences(impl->device,1,&g->fence)!=RF_VK_SUCCESS) goto failed;
+    submit.s_type=RF_VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submit.wait_semaphore_count=submit.signal_semaphore_count=submit.command_buffer_count=1;
+    submit.wait_semaphores=&g->scene_acquire; submit.wait_dst_stage_mask=&wait_stage;
+    submit.signal_semaphores=&impl->present_images[index].render_finished;
+    submit.command_buffers=&g->cmd;
+    start=now_ms();
+    if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_SUBMIT_FAILURE) ||
+        impl->api.queue_submit(impl->queue,1,&submit,g->fence)!=RF_VK_SUCCESS) goto failed;
+    g->scene_in_flight=1;
+    g->stats.queue_submits++; g->stats.submits_by_kind[RF_GPU_SUBMIT_DRAW]++;
+    g->stats.submit_wall_ms+=now_ms()-start;
+    present.s_type=RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+    present.wait_semaphore_count=present.swapchain_count=1;
+    present.wait_semaphores=submit.signal_semaphores; present.swapchains=&impl->swapchain;
+    present.image_indices=&index;
+    if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_PRESENT_OUT_OF_DATE)) result=RF_VK_ERROR_OUT_OF_DATE_KHR;
+    else result=impl->api.queue_present(impl->queue,&present);
+    if (result==RF_VK_SUCCESS && present_fault_take(impl,RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL))
+        result=RF_VK_SUBOPTIMAL_KHR;
+    if (result==RF_VK_SUCCESS || result==RF_VK_SUBOPTIMAL_KHR) {
+        impl->present_images[index].state=RF_GPU_PRESENT_AUDIT_PENDING;
+        impl->present_images[index].render_finished_state=RF_GPU_PRESENT_AUDIT_PENDING;
+        impl->outstanding_presents++;
+    }
+    if (result==RF_VK_ERROR_OUT_OF_DATE_KHR || result==RF_VK_SUBOPTIMAL_KHR) {
+        if (rf_gpu_graphics_scene_retire(g)<0 ||
+            presenter_swapchain_create(impl,g->target.width,g->target.height)<0) goto failed;
+    } else if (result!=RF_VK_SUCCESS) goto failed;
+    return 0;
+failed:
+    g->poisoned=1;
+    if (acquired) impl->presenter_poisoned=1;
+    return -1;
+}
+
+int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,
+    uint32_t *rgba,float *depth,uint32_t capacity)
+{
+    VkBufferImageCopy copy={0};
+    struct rf_vk_memory_barrier barrier={0};
+    void *mapped=NULL;
+    uint64_t bytes;
+    if (!g || !rgba || !depth || (uint64_t)g->target.width*g->target.height>capacity ||
+        gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) return -1;
+    bytes=(uint64_t)g->target.width*g->target.height*4;
+    copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;copy.imageSubresource.layerCount=1;
+    copy.imageExtent.width=g->target.width;copy.imageExtent.height=g->target.height;copy.imageExtent.depth=1;
+    g->api.CmdCopyImageToBuffer(g->cmd,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        g->target.readback.buffer,1,&copy);
+    copy.bufferOffset=bytes;copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
+    g->api.CmdCopyImageToBuffer(g->cmd,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        g->target.readback.buffer,1,&copy);
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
+        0,1,&barrier,0,NULL,0,NULL);
+    if (gfx_submit(g,1,RF_GPU_SUBMIT_READBACK)<0 ||
+        g->owner->api.map_memory(g->owner->device,g->target.readback.memory,0,
+            g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
+    int result=raster_invalidate(g->owner,&g->target.readback);
+    if (!result) { memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes); }
+    g->owner->api.unmap_memory(g->owner->device,g->target.readback.memory);
+    return result;
+}

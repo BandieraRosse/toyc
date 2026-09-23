@@ -30,7 +30,8 @@ fixture，输入结构、actor/instance ID、材质参数、变换、三角形�
 变化像素数与占比、RGB 每通道绝对差的 median/P95/P99/max、边缘带内外差异、深度遮挡
 不一致数。边缘带从 reference 几何/深度 discontinuity 生成，不能事后按差图扩大以掩盖错误。
 
-数值容差需在首份新路径候选**运行前**随固定 capture 审批，按材质族与画面区域分别给出上限；
+输入、语义和统计方法先冻结；数值容差在首份新路径候选**正式验收前**随固定 capture 审批，按材质族与画面区域给出上限；
+允许隔离原型运行并提供原始差异证据，用于确定容差；不能扩大边缘带或阈值掩盖语义错误。
 当前不凭空填写统一 RGB/深度阈值。未批准阈值时，差分只能报告原始统计，不能标记 PASS。
 显著轮廓位移、消失/新增物体、透明顺序改变、错误的近裁剪或附件 placement，即使整体
 像素差占比很小，也判失败。
@@ -42,6 +43,7 @@ fixture，输入结构、actor/instance ID、材质参数、变换、三角形�
 | near 0/30/60、Campaign 目标帧 | 正常帧层序、密度、effect 与 overlay | GPU normal fixed tick + `--gpu-frame-capture`、frame audit；CPU/reference 对应固定输入 |
 | mid、thin-far | 远近可见性、LOD、细几何/边缘 | GPU Full/normal scene capture |
 | 地图透明与 air gate | 平台/box alpha、depth-write、条件开关 | `rasterfall_render_map_transparency_logic_test` 与固定地图 capture |
+| 专用渲染地图 | opaque、LABEL/SIGN、air gate、近处 box 与远处薄墙 | [fixture 工作流](../guides/gpu-scene-fixture.md)；多镜头与开关状态分别冻结 |
 | 角色 world near/mid/far、edge-entry、near-crossing | 角色材质、pose、附件、近裁剪 | `--character-world-capture` 与角色 vertex diff |
 | 敌人 0/30/60、普通/特殊家族、死亡 effect | body/gear/weapon、透明碎片与尘埃 | normal enemy workload、`--enemy-visual-capture` |
 | VIEWMODEL、HUD、world text/status | 独立 depth/coverage、文字位置、UI 合成 | normal native capture、相关 fixture 与 frame audit |
@@ -51,5 +53,5 @@ reference/candidate 原图路径、差图和统计、批准的逐项阈值、人
 原图和日志保存在 `tmp/` 的独立证据目录，不提交生成物；合同中记录其 manifest 身份和
 可重跑命令。缺失私有资源必须标记 SKIP，不能换资产仍宣称同一 capture 通过。
 
-当前尚无新 GPU Scene 候选，因此没有新基线审批记录。首次提交候选前须完成上表的输入
+当前尚无新 GPU Scene 候选，因此没有新基线审批记录。正式候选验收前须完成上表的输入
 冻结和逐项容差审批；阶段 2/3 的差分按已批准版本执行，修改合同需明确记录原因与重新审批。

@@ -21,6 +21,7 @@ int main(void)
     actors[4].active = 1;
     actors[4].source = RF_GPU_SCENE_ACTOR_GAME;
     actors[4].source_id = 7;
+    actors[4].source_epoch = 1;
     actor_ordinals[4] = 20;
     actor_ordinals[9] = 20;
     strcpy(world[0].id, "wall-b");

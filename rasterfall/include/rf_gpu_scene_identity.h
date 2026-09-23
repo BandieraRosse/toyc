@@ -23,6 +23,7 @@ struct rf_gpu_scene_actor_identity {
 
 struct rf_gpu_scene_actor_identity_slot {
     uint32_t source, source_id, generation;
+    uint64_t source_epoch;
     unsigned char active;
 };
 
@@ -36,6 +37,9 @@ struct rf_gpu_scene_identity_tracker {
  * Inactive entries are required so disappearance advances identity state. */
 struct rf_gpu_scene_actor_input_v1 {
     uint32_t source, source_id;
+    /* Nonzero source-owned lifecycle token. Change it whenever this source ID
+     * begins a new actor lifetime, even between presentation snapshots. */
+    uint64_t source_epoch;
     int active, visible;
     int x, y, z, sy, cy;
     int animation_id, animation_time_ms, weapon;
@@ -69,8 +73,10 @@ struct rf_gpu_scene_snapshot_v1 {
 /* Transactional: failure changes neither tracker nor output. Actors retain
  * source slot order. Supply every slot, including inactive ones. A source
  * identity present in consecutive frames retains its generation across slot
- * moves; disappearance or a new world allocates a fresh generation. Zero-init
- * the tracker once. The same frame_id cannot be frozen twice. */
+ * moves while source_epoch is unchanged. A changed epoch, disappearance or a
+ * new world allocates a fresh generation. Every active input must have a
+ * nonzero epoch. Zero-init the tracker once. The same frame_id cannot be
+ * frozen twice. The epoch is input only; snapshot V1 layout is unchanged. */
 int rf_gpu_scene_snapshot_build_v1(
     struct rf_gpu_scene_identity_tracker *tracker,
     const struct rf_gpu_scene_actor_input_v1 input[TOY_GAME_MAX_ACTORS],

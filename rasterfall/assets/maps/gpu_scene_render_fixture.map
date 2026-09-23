@@ -1,0 +1,25 @@
+# GPU Scene rendering fixture. Use with --map and a fixed --gpu-normal-scene view.
+# No identity: keep the Campaign content policy while replacing its spatial map.
+map version=1 units=rfu
+world min_x=-7000 max_x=7000 min_z=-2000 max_z=9000 room_limit=10000
+
+surface id=fixture_floor kind=ground min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 material=294B45 attr.collision_id=fixture_floor_collision
+surface id=air_gate_top kind=platform min_x=-650 max_x=650 min_z=6300 max_z=6650 height=1800 material=525F65 attr.collision_id=air_gate_top_collision attr.role=air_gate_fixture_top
+region id=fixture_safe kind=safe min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 attr.legacy_index=0
+region id=player_start kind=start min_x=0 max_x=0 min_z=0 max_z=0 attr.sy=0 attr.cy=1024
+
+collision id=fixture_floor_collision shape=flat min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=0
+collision id=air_gate_box_collision shape=box min_x=-650 max_x=650 min_z=6450 max_z=6650 height=1800 collision=true visible=true walkable=true role=air_gate_fixture color=48C8E0 attr.legacy_index=1
+collision id=air_gate_top_collision shape=flat min_x=-650 max_x=650 min_z=6300 max_z=6650 height=1800 collision=true visible=false walkable=true role=air_gate_fixture_top color=525F65 attr.legacy_index=2
+
+render id=fixture_ground kind=ground min_x=-6500 max_x=6500 min_z=-1500 max_z=8500 height=0 color=294B45 attr.legacy_index=0
+render id=fixture_wall kind=wall min_x=-4200 max_x=-1400 min_z=4200 max_z=4200 height=2700 color=6B7880 attr.legacy_index=1
+render id=fixture_ramp kind=ramp min_x=-900 max_x=900 min_z=3200 max_z=5600 height=0 color=596775 attr.height2=1400 attr.style=3 attr.axis=z attr.legacy_index=2
+render id=fixture_platform kind=platform min_x=1800 max_x=4600 min_z=3900 max_z=5900 height=1200 color=525F65 attr.style=2 attr.legacy_index=3
+render id=opaque_box kind=box min_x=-4900 max_x=-3900 min_z=2400 max_z=3300 height=1450 color=B66A35 attr.legacy_index=4
+render id=near_edge_box kind=box min_x=300 max_x=680 min_z=180 max_z=460 height=2300 color=D8B45A attr.legacy_index=5
+render id=thin_far_wall kind=wall min_x=3100 max_x=3120 min_z=6800 max_z=7850 height=2100 color=D0D9DF attr.legacy_index=6
+render id=air_gate_box kind=box min_x=-650 max_x=650 min_z=6450 max_z=6650 height=1800 color=48C8E0 attr.role=air_gate_fixture attr.legacy_index=7
+render id=air_gate_platform kind=platform min_x=-650 max_x=650 min_z=6300 max_z=6650 height=1800 color=525F65 attr.style=1 attr.role=air_gate_fixture_top attr.legacy_index=8
+render id=fixture_label kind=label min_x=-1800 max_x=-700 min_z=1650 max_z=1850 height=600 color=9FE8C8 attr.text=WORLD_LABEL attr.legacy_index=9
+render id=fixture_sign kind=sign min_x=1000 max_x=2300 min_z=6100 max_z=6250 height=700 color=765A3A attr.height2=1450 attr.text=WORLD_SIGN attr.legacy_index=10

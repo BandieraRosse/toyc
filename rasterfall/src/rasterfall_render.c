@@ -3962,7 +3962,7 @@ static int persistent_map_mesh_add_box(struct persistent_map_mesh_build *build,
     }
 #define PERSISTENT_MAP_QUAD(a,b,c,d,co) do { q[0]=v[a]; q[1]=v[b]; q[2]=v[c]; q[3]=v[d]; if (persistent_map_mesh_add_quad(build,q,co)<0) return -1; } while (0)
     PERSISTENT_MAP_QUAD(0,1,3,2,color); PERSISTENT_MAP_QUAD(4,6,7,5,color);
-    PERSISTENT_MAP_QUAD(0,2,6,4,color-0x080808); PERSISTENT_MAP_QUAD(1,5,7,3,color+0x080808);
+    PERSISTENT_MAP_QUAD(0,2,6,4,color+0x080808); PERSISTENT_MAP_QUAD(1,5,7,3,color+0x080808);
     PERSISTENT_MAP_QUAD(2,3,7,6,color+0x181818);
     if (include_bottom) PERSISTENT_MAP_QUAD(0,4,5,1,color-0x080808);
 #undef PERSISTENT_MAP_QUAD
@@ -4499,6 +4499,17 @@ static int persistent_map_build_boundary(struct persistent_map_mesh_build *build
     return 0;
 }
 
+/* Map meshes store absolute world Y; regular model Draw uses a foot origin. */
+static void persistent_map_instance(const struct rasterfall_model_asset *model,
+    struct rasterfall_resource_handle handle, struct rasterfall_draw_instance *instance)
+{
+    memset(instance, 0, sizeof(*instance));
+    instance->mesh = model; instance->mesh_handle = handle;
+    instance->scale_milli = 1000; instance->y = model->min_y;
+    instance->yaw_cos_q10 = 1024; instance->scene_light_q8 = 256;
+    instance->vertex_light_q8 = 1;
+}
+
 static int persistent_map_submit_class(struct toy_renderer *renderer,
     const struct camera *camera, int kind)
 {
@@ -4524,8 +4535,7 @@ static int persistent_map_submit_class(struct toy_renderer *renderer,
     memset(&view,0,sizeof(view));memset(&instance,0,sizeof(instance));
     view.camera=*camera;view.width=renderer->surface.width;view.height=renderer->surface.height;
     view.focal=view.width*3/4;view.near_z=NEAR_Z;
-    instance.mesh=model;instance.mesh_handle=*handle;instance.scale_milli=1000;
-    instance.yaw_cos_q10=1024;instance.scene_light_q8=256;instance.vertex_light_q8=1;
+    persistent_map_instance(model, *handle, &instance);
     if(rf_core_mixed_require_draws(render_ctx->mixed_frame,model->primitive_count)<0)return -1;
     if(renderer->cmd_count>0&&toy_renderer_flush(renderer)<0)return -1;
     for(i=0;i<model->primitive_count;++i){struct rasterfall_draw_item item;
@@ -4556,6 +4566,20 @@ static void draw_world_label(struct toy_renderer *renderer,
         screen.y < 0 || screen.y + FB_FONT_H >= renderer->surface.height) return;
     fb_draw_string((unsigned char *)renderer->surface.pixels,
                    screen.x, screen.y, label, color, renderer->surface.stride);
+}
+
+void rasterfall_render_map_labels(struct toy_renderer *renderer,
+                                  const struct camera *camera)
+{
+    /* LABEL is a screen annotation: no depth test/write. Emit into the Core
+     * overlay surface, where native coverage captures direct font pixels. */
+    for (int i=0; i<level_map.draw_count; ++i) {
+        const struct toy_map_draw *x = &level_map.draw[i];
+        if (x->type == TOY_MAP_DRAW_LABEL) {
+            struct toy_game_box zone = {x->a,x->b,x->c,x->d,0,0};
+            draw_world_label(renderer,camera,&zone,x->text,x->color);
+        }
+    }
 }
 
 static void draw_coordinate_label(struct toy_surface *surface,
@@ -5780,7 +5804,7 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
                 pixels += draw_box(renderer,camera,&obstacle);
             }
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
-            struct toy_game_box zone={x->a,x->b,x->c,x->d,0,0}; draw_world_label(renderer,camera,&zone,x->text,x->color);
+            /* Screen labels are emitted after the world/viewmodel flush. */
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
             pixels += render_world_sign(renderer, camera, x);
         }
@@ -7738,6 +7762,8 @@ fail:
     rasterfall_model_resource_unload(&runtime->body);
     return -1;
 }
+
+#include "render/rf_gpu_scene_pose.inc"
 
 struct modular_equipment_submission {
     const struct toy_game_actor *actor;
@@ -9831,3 +9857,4 @@ int rasterfall_render_overlays(struct toy_renderer *renderer)
 #include "dev-tests/rasterfall_world_benchmark.inc"
 
 #include "dev-tests/rasterfall_draw_reference_test.inc"
+#include "dev-tests/rf_gpu_scene_pose_test.inc"

@@ -1,4 +1,5 @@
 #include "rasterfall_enemy_visual.h"
+#include "rf_gpu_scene_pose.h"
 #include <limits.h>
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
@@ -2939,6 +2940,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     surface = rf_core_begin_screen_overlay(runtime->core);
     if (!surface) return -1;
 
+    rasterfall_render_map_labels(renderer, render_camera);
     if (runtime->coordinate_axes)
         rasterfall_render_coordinate_labels(surface, render_camera);
 #if TOY_CONFIG_SHOW_MODEL_PATHS
@@ -3440,8 +3442,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (!textures_enabled) {
         __printf("rasterfall: textures disabled, using pure colors\n");
     }
-    if (logic_test) {
-        int result = run_logic_test();
+    if (logic_test || options.gpu_scene_pose_test || options.gpu_scene_native_fixture) {
+        int result = options.gpu_scene_native_fixture ? rf_gpu_scene_native_fixture(
+            frame_limit, options.gpu_present_fault, options.gpu_present_fault_frame) :
+            options.gpu_scene_pose_test ? rf_gpu_scene_pose_logic_test() : run_logic_test();
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rf_game_shutdown(&game_runtime);
         rf_core_shutdown(&core);
@@ -3557,6 +3561,19 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "map-platform")) {
             camera.sy = 384; camera.cy = 949;
+        } else if (!strcmp(options.gpu_normal_view, "map-label")) {
+            camera.x = -1250; camera.z = -1000; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "map-sign")) {
+            camera.x = 1650; camera.z = -1000; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "map-gate-on") ||
+                   !strcmp(options.gpu_normal_view, "map-gate-off")) {
+            camera.z = -1000; camera.cy = 1024;
+            rasterfall_map_set_air_walls(&session.map_ops,
+                !strcmp(options.gpu_normal_view, "map-gate-on"));
+        } else if (!strcmp(options.gpu_normal_view, "map-near")) {
+            camera.x = 280; camera.z = 170; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "map-thin")) {
+            camera.x = 2900; camera.z = -1500; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "whu-a18")) {
             camera.x = session.level.start_x; camera.z = session.level.start_z;
             camera.sy = session.level.start_sy; camera.cy = session.level.start_cy;
@@ -4580,6 +4597,24 @@ startup_again:
             }
             /* Explicit audit must include fast frames too: sampled logs cannot
              * establish a complete strict run or an unbiased timing baseline. */
+            if (options.frame_audit && net.mode != RASTERFALL_NET_CLIENT) {
+                struct rf_gpu_scene_local_frame source_frame;
+                struct rf_gpu_scene_frozen_v1 source_scene;
+                if (rf_gpu_scene_local_freeze(&session.scene_local,&game,&game_runtime.render_camera,
+                        renderer.surface.width,renderer.surface.height,air_wall_enabled,&source_frame)<0 ||
+                    rf_gpu_scene_extract_v1(&source_frame.snapshot,&source_scene)<0) {
+                    __fprintf(2,"SCENE-LOCAL freeze failed\n");
+                    return 1;
+                }
+                __printf("SCENE-LOCAL frame=%llu world=%llu epoch=%llu generation=%u slot=%u items=%u character=%d animation=%d time=%d weapon=%d y=%d\n",
+                    (unsigned long long)source_frame.snapshot.frame_id,
+                    (unsigned long long)source_frame.snapshot.world_generation,
+                    (unsigned long long)session.scene_local.epoch,
+                    source_frame.snapshot.actors[0].identity.generation,source_frame.snapshot.actors[0].source_slot,source_scene.item_count,
+                    source_frame.presentation.character_id,source_frame.snapshot.actors[0].animation_id,
+                    source_frame.snapshot.actors[0].animation_time_ms,source_frame.snapshot.actors[0].weapon,
+                    source_frame.snapshot.actors[0].y);
+            }
             if (options.frame_audit) {
                 struct rf_core_gpu_frame_stats gpu_audit;
                 struct rf_render_frame_v1 frame_audit;

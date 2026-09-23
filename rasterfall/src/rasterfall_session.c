@@ -381,7 +381,11 @@ int rasterfall_session_load(struct rasterfall_session *session,
     /* A session owns level.blob through map_ops.  Release it before resetting
      * the containing object so load -> load cannot orphan the old map. */
     rasterfall_session_unload(session);
-    memset(session, 0, sizeof(struct rasterfall_session));
+    {
+        struct rf_gpu_scene_local_source source = session->scene_local;
+        memset(session, 0, sizeof(struct rasterfall_session));
+        session->scene_local = source;
+    }
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
     rasterfall_map_bind(&session->map_ops, &session->level,
@@ -415,7 +419,11 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
 {
     if (!session) return -1;
     rasterfall_session_unload(session);
-    memset(session, 0, sizeof(struct rasterfall_session));
+    {
+        struct rf_gpu_scene_local_source source = session->scene_local;
+        memset(session, 0, sizeof(struct rasterfall_session));
+        session->scene_local = source;
+    }
     session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
     if (rasterfall_world_content_load(&session->content, session->world_id,
                                       rasterfall_world_content_path(session->world_id)) < 0)
@@ -443,6 +451,7 @@ const struct toy_game_actor *rasterfall_session_local_player_const(
 void rasterfall_session_unload(struct rasterfall_session *session)
 {
     if (!session) return;
+    rf_gpu_scene_local_world(&session->scene_local);
     rasterfall_world_content_clear(&session->content);
     rasterfall_map_unload(&session->map_ops);
 }
@@ -768,6 +777,17 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
     session_add_content_terminals(session);
+    /* This roster actor is never removed by the hired-AI path. Its lifetime
+     * ends at the next session reset/unload, including same-ID replacement. */
+    rf_gpu_scene_local_world(&session->scene_local);
+    for (i=1;i<TOY_GAME_REMOTE_ACTOR_BASE;++i) {
+        const struct toy_game_actor *a=&session->game_state.actors[i];
+        if (a->active && a->character_id==RASTERFALL_CHARACTER_RF_RIFLEMAN && !a->hired) {
+            if (rf_gpu_scene_local_created(&session->scene_local,a)<0)
+                session->scene_local.failed=1;
+            break;
+        }
+    }
 }
 
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch)

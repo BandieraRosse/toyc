@@ -10,6 +10,8 @@
 
 [下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
+冻结三件套已接入独立 Scene native 提交、pin/退休和生命周期专项；RTX 3050 validation/sync 已通过，Intel 最小 native 门禁仍缺设备证据。先完成 Intel 门禁，再复用 CPU pose/upload backing、补 Scene GPU 时间戳，随后扩 WORLD opaque。正常帧仍走旧路径，完整帧性能 A/B 从阶段 3 开始。
+
 计划中的当前切片、前置条件、完成门槛和下一决策点以该文档顶部为准。已完成 checkpoint、撤销实验和
 单次设备测量进入 [`../archive/`](../archive/)，不得继续充当优先级来源。
 

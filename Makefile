@@ -809,7 +809,7 @@ WIN_APP_NAMES := $(sort $(basename $(notdir $(shell find app/portable app/window
 RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
-APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_gpu.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_render_resources.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_world_light.o
+APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_local.o $(BUILD)/rf_gpu_scene_identity.o $(BUILD)/rf_gpu_scene_frame.o $(BUILD)/rf_gpu_scene_extract.o $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_gpu.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_render_resources.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_world_light.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_raster_pack_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_viewmodel_contract.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
@@ -889,7 +889,7 @@ $(BUILD)/rf-gpu-scene-identity-test: tools/rf_gpu_scene_identity_test.c rasterfa
 
 .PHONY: gpu-scene-frame-test
 gpu-scene-frame-test: $(BUILD)/rf-gpu-scene-frame-test
-$(BUILD)/rf-gpu-scene-frame-test: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h | $(BUILD)
+$(BUILD)/rf-gpu-scene-frame-test: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
 
 $(BUILD)/rf_viewmodel_contract.o: rasterfall/src/rf_viewmodel_contract.c \
@@ -1112,6 +1112,9 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_INC)/rasterfall_draw.h \
     $(RASTERFALL_SRC)/render/rasterfall_draw_reference.inc \
     $(RASTERFALL_SRC)/dev-tests/rasterfall_draw_reference_test.inc \
+    $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
+    $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
+    $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \
     $(RASTERFALL_INC)/rasterfall_map_components.h \
                               $(RASTERFALL_INC)/rasterfall_render.h \
@@ -1674,7 +1677,7 @@ SELF_APP_SRCS    := $(APP_SOURCE_SRCS)
 SELF_APP_NAMES   := $(sort $(basename $(notdir $(SELF_APP_SRCS))))
 SELF_APP_OBJS    := $(foreach src,$(SELF_APP_SRCS),$(BUILD)/self/$(src:.c=_self.o))
 SELF_APP_TARGETS := $(foreach name,$(SELF_APP_NAMES),$(BUILD)/$(name)_self)
-SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_components_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_render_resources_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o $(BUILD)/rasterfall_world_light_self.o
+SELF_APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_gpu_scene_native_self.o $(BUILD)/rf_gpu_scene_local_self.o $(BUILD)/rf_gpu_scene_identity_self.o $(BUILD)/rf_gpu_scene_frame_self.o $(BUILD)/rf_gpu_scene_extract_self.o $(BUILD)/rasterfall_game_self.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_map_engine_self.o $(BUILD)/rasterfall_map_parser_self.o $(BUILD)/rasterfall_map_runtime_self.o $(BUILD)/rasterfall_map_components_self.o $(BUILD)/rasterfall_map_self.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rasterfall_ai_self.o $(BUILD)/rasterfall_net_self.o $(BUILD)/rasterfall_net_transport_self.o $(BUILD)/rasterfall_net_discovery_self.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_audio_self.o $(BUILD)/rasterfall_effects_self.o $(BUILD)/rasterfall_perf_self.o $(BUILD)/rasterfall_sky_self.o $(BUILD)/rasterfall_viewmodel_self.o $(BUILD)/rasterfall_options_self.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rasterfall_render_frontend_self.o $(BUILD)/rasterfall_render_resources_self.o $(BUILD)/rasterfall_model_self.o $(BUILD)/rasterfall_humanoid_basis_self.o $(BUILD)/rasterfall_humanoid_retarget_self.o $(BUILD)/rasterfall_world_light_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
@@ -1831,6 +1834,9 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_INC)/rasterfall_draw.h \
     $(RASTERFALL_SRC)/render/rasterfall_draw_reference.inc \
     $(RASTERFALL_SRC)/dev-tests/rasterfall_draw_reference_test.inc \
+    $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
+    $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
+    $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \
                                    $(RASTERFALL_INC)/rasterfall_render.h \
                                    $(RASTERFALL_INC)/toy_game.h \
@@ -2118,3 +2124,9 @@ export-qwen2-tokenizer:
 	        $(QWEN2_MODEL_DIR) $(QWEN2_MODEL_DIR)/tokenizer.bin
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
+
+$(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rf_gpu_scene_%_self.o: rasterfall/src/rf_gpu_scene_%.c $(SELF_CC) | $(BUILD)
+	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

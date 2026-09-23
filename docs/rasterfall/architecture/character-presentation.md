@@ -65,6 +65,22 @@ asset identity 与 transform；registry/cache 共享模型，碰撞由 map profi
 
 ## 开发 fixture
 
+GPU Scene 的 rifleman 数据 fixture 由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
+`rf_gpu_scene_pose_extract`。它只读 `rf_gpu_scene_local_frame`，复用共享 body/gear resource、
+RFANIM composition、左手 attachment IK 和 finalized socket 求值，输出值类型的 body palette、
+body-to-world、finalized pose 的 bind-normal 策略、被动 rigid gear 及主动武器的 model-to-world。武器变换包含 authored centering、
+basis 和 PRIMARY_GRIP 对齐；consumer 不得再次补偿。资源标识是 character/weapon catalog ID，
+尚非 GPU handle；consumer 必须解析、pin 后才能提交。独立 Scene fixture 的解析及 slot 所有权见
+[GPU 渲染架构](gpu-rendering-architecture.md)。passive gear 的变换仍需要资源 `position_scale` 的 RFU
+换算；主动武器输出已包含 authored geometry scale，不得重复使用 passive gear 的换算。
+
+local source 在成功 freeze 时累计 lower-body 展示时间，并把该时间复制进 sidecar；MOVE 回卷只累加
+delta，FIRE 保留 lower phase。来源销毁、world 切换及角色配置变化重置时间，slot 移动保留同一来源
+时间。提取不推进时钟，不读 session/game，不使用旧 renderer 的 slot pose cache；当前为隔离诊断
+每次创建独立 instance，以确保历史输入可重复求值，尚非正常帧分配策略。输出成功后才整体替换，
+空 actor 产生空 payload，unsupported/downed 或缺失资源显式失败，不做 procedural fallback。
+定向资源验证入口见 [GPU Scene fixture](../guides/gpu-scene-fixture.md)。
+
 Character Test Strip、action debug station、MODEL_DISPLAY 和 lineup 都是 renderer-only fixture，不进入
 actor、AI、碰撞或网络。正常 world 是否显示这些内容由 World Content policy 控制；Campaign fixture
 不得泄漏到 Outpost。诊断 CLI 可以使用隔离 fixture，但必须复用正常 renderer、pose 和 attachment 路径。
