@@ -12,5 +12,6 @@
 - [Hardware Graphics 2026-09](hardware-graphics-2026-09/README.md)：HG-0 至 HG-5 的历史阶段记录。
 - [Runtime V0/V1 设计](runtime-design-v0/README.md)：Core 查询面、Desktop、GUI、Application 与 Projection 的原型设计。
 - [网络代码导航旧稿](networking-code-navigation-20260912.md)：早期文件职责与排查笔记。
+- [环境资产 V2 试点](environment-art-v2-pilot.md)：十件工业组件的视觉与成本试点及逐件落地记录。
 
 恢复历史工作时，先从当前入口确认所有权和接口，再把仍有效的事实重新通过源码、脚本或 CLI 验证。

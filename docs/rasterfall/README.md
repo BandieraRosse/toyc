@@ -31,6 +31,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |
 | 联机协议、快照、预测与测试 | [联机架构](network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
+| 环境资产美术约束与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件](industrial-props.md) | 调色、轮廓、预算及组件规格与生成入口 |
 | 武大资料、真实空间依据 | [reference/return-to-whu-core/](reference/return-to-whu-core/) | 来源台账、调查报告、白盒计划 |
 | 已完成或撤销的现场 | [archive/](archive/) | 只作历史证据，不作当前设计依据 |
 

@@ -1,18 +1,17 @@
 # 环境资产艺术约束
 
-> 文档更新：2026-09-13
-> 源码核对基线补充：Architectural Environment V1 冻结厚梁、薄墙壳、服务带与低对比墙地表面；新件采用两种 flat 材质。
-> 源码核对基线补充：正式地图压力测试新增动力机组、开放门架、控制柜；沿用 V2 Hybrid 低饱和主体、暗框、局部功能色和 32×32 编号，规格见 industrial-props.md。
-> 源码核对基线：工作区（整套十件 V2 Hybrid：geometry + flat materials + 局部 32×32 sign；runtime/地图/registry 不变）
+> 状态：当前
+> 所有者：环境资产美术合同
+> 最近核对：2026-09-13
 
 本文是首批十件工业 / 军事 static prop 的 **V2 light upgrade** 生产规范。目标是在不重做资产的
 前提下，把双色纯色 blockout 提升到可用于正式场景的简洁低模资产。组件清单、尺寸与碰撞建议见
-[industrial-props.md](industrial-props.md)，技术导入流程见 [资产导入与诊断](guides/asset-pipeline.md)。
+[industrial-props.md](../industrial-props.md)，技术导入流程见 [资产导入与诊断](../guides/asset-pipeline.md)。
 
 ## 整体约束
 
 建筑、连接和墙地大面的生产规范补充于
-[Architectural Environment V1](architectural-environment-v1.md)。它沿用本文 palette/轮廓语言，
+[Architectural Environment V1](../architectural-environment-v1.md)。它沿用本文 palette/轮廓语言，
 但建筑件允许低于旧道具的三角形下限；禁止为填预算增加细节。墙地不沿用道具的全表面纹理候选。
 
 - 风格为 **stylized industrial / military**：形体结实、分区清楚、略带使用痕迹。环境负责建立场所
@@ -73,24 +72,13 @@ V2 必须保持源文件真实米制、Blender Z-up / -Y-forward、导出 GLB Y-
 视觉凹槽、栏杆空隙和台下空间不改变现有碰撞预期。V2 只更新源几何、材质与 albedo 内容，不修改
 manifest schema、RMESH/TTEX 格式、importer、runtime 或地图语义。
 
-## 验收与当前生产策略
+## 验收标准
 
 V2 通过验收需同时满足：整体观感不再是双色纯色 blockout；近中距离能读出至少一层中尺度结构
 和明确表面分区；十件资产共享色彩与标识语言但不会只靠相同军绿和黄边区分；远距离 silhouette、
 角色/敌人/交互提示和战斗反馈可读性不明显下降；尺寸、pivot、朝向、碰撞及导入检查保持通过；
 同等场景中的帧时间、primitive 数、纹理占用和过度绘制无明显退化。
 
-此前按以下顺序完成视觉与成本试点：
-
-1. `rf_crate`：最小且重复率高，用于确定 128×128 albedo、编号、磨损尺度和 S 级成本基线。
-2. `rf_workbench`：开放轮廓与多功能面并存，用于验证中尺度几何、面板分区和 M 级预算。
-3. `rf_vent_unit`：大正面百叶与侧面检修区明显，用于验证纹理方向、设备层次和 L 级上限。
-
-试点已确认 V2 形体与色彩方向、Hybrid 局部采样策略；整套资产由此统一为低成本 Hybrid。
-游戏内验收继续使用相同光照、近中远距离及多实例条件；离屏取景不替代地图视距验证。
-
-整套生成/安装命令及材质所有者见 [industrial-props.md](industrial-props.md)。货箱保留已确认
-Hybrid；工作台和通风机保留 V2 几何并转 flat/局部编号。路障增加换装板/肩护角并用方向箭头；
-短墙增加双面板和端盖；栏杆增加端帽/套筒与危险标牌；灯柱增加台阶/检修盒/遮檐与电气符号；
-弹药箱增加提手座和红封签；支柱增加承压板与不同宽度套环；管组增加歧管/检修盖与流向箭头。
-编号和功能符号各自只占一块小标牌正面。它们不改变用途、可交互性、灯光或碰撞预期。
+游戏内验收使用相同光照、近中远距离及多实例条件；离屏取景不替代地图视距验证。
+整套生成与安装流程见 [industrial-props.md](../industrial-props.md)。已完成的试点和逐件落地记录见
+[环境资产 V2 试点归档](../archive/environment-art-v2-pilot.md)。
