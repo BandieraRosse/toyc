@@ -42,6 +42,9 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 - `src/rasterfall_gui.c`、`include/rasterfall_gui.h`：保留的 Desktop 原型、icon hit testing、window state 与文本 presentation；当前边界见 [Application Runtime](application-runtime.md)。
 - `src/rasterfall_app.c`、`include/rasterfall_app.h`：Application Runtime 的注册、open/close、update/render 与默认 application。
 - `src/rf_application_projection.c`、`include/rf_application_projection.h`：Application Projection 的只读 Core/Game 查询与 personnel snapshot。
+- `src/rf_gpu_scene_identity.c`、`include/rf_gpu_scene_identity.h`：GPU Scene 迁移中的隔离 presentation 身份状态；
+  按来源身份和 world generation 跟踪 actor 生命周期，允许连续存活的 actor 更换输入 slot；
+  从调用者给出的展示值构建只读 snapshot，尚未接入正常帧或修改玩法/网络状态。
 - `src/rasterfall_session.c`、`include/rasterfall_session.h`：session-owned level/map 生命周期及 Map Runtime adapter 接入。
 - `src/rasterfall_logic_test.inc`：由主编译单元包含的聚合逻辑测试入口。
 

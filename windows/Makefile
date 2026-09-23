@@ -189,6 +189,11 @@ $(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
 -include $(BUILD)/win/tools/rasterfall_gpu_cache_test.d $(BUILD)/win/gpu/src/rf_gpu_resource_cache.d
 
+.PHONY: gpu-scene-identity-test
+gpu-scene-identity-test: $(BUILD)/rf-gpu-scene-identity-test.exe
+$(BUILD)/rf-gpu-scene-identity-test.exe: tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_identity.c -o $@
+
 # GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
     gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c

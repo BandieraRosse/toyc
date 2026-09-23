@@ -6,7 +6,7 @@
 
 > 归档：2026-09-22
 > 本文保留签收前的现场、数字与当时阻塞条件，不定义当前推进状态。
-> 当前状态见 [Raster / Bridge 计划](../plans/gpu-raster-bridge.md)。
+> 当时状态见 [Raster / Bridge 旧计划](gpu-raster-bridge-20260923.md)；当前主线见[活动计划](../plans/README.md)。
 
 后续状态见 [RB-0 专项续接](gpu-2026-09-22/gpu-rb0-special-20260922.md)；
 修复前失败保留在 [RB-0 修复与续接](gpu-2026-09-22/gpu-rb0-repair-20260922.md)。应先补齐画面及设备签收缺口，

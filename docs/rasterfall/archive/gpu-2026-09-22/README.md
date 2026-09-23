@@ -4,7 +4,7 @@
 > 归档：2026-09-23
 > 当前架构：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 > 当前验收：[GPU 验收与诊断](../../guides/gpu-validation.md)
-> 当前计划：[GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)
+> 当前计划：[下一代统一 GPU 渲染器计划](../../plans/gpu-scene-renderer.md)
 
 本目录保留 2026-09-22 前后的单次设备现场、调查、修复、候选否决和阶段执行证据。它们不再拥有当前
 状态、验收流程或实施顺序；文件中的“当前”“下一步”和顶层相对链接均按历史现场理解。

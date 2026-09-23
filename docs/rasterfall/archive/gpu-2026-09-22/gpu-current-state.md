@@ -8,7 +8,7 @@
 > 源码核对基线：Mixed M1、metrics schema 6、RTX 3050 M2 preflight 三轮审计与双档性能标准
 
 本文只记录当前支持范围、回滚边界、已知限制和可执行验证入口。下一轮实施顺序见
-[GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)，阶段过程与历史性能数字见
+[GPU Raster / Bridge 旧计划](../gpu-raster-bridge-20260923.md)，阶段过程与历史性能数字见
 [Hardware Graphics 归档](../hardware-graphics-2026-09/README.md)。
 
 ## 当前开发阶段
@@ -123,7 +123,7 @@ RB-1 前的两轮 Full 确认，60 敌人场景中 Draw 已不是主要成本；
 M1 segment 遍历已收敛；M2 preflight 子阶段已经在 RTX 3050 实机细分。当前唯一未完成前置是补同一
 package 的低扰动 `-NoAudit` 五轮 baseline；完成后才按
 [Mixed 优化执行计划](gpu-mixed-optimization-20260922.md) 实现 frame-slot 动态资源复用并进行 A/B。
-producer 迁移等待 M2 后重新归因；届时仍按 [GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)
+producer 迁移等待 M2 后重新归因；届时仍按 [GPU Raster / Bridge 旧计划](../gpu-raster-bridge-20260923.md)
 执行 gear/weapon RB-2 候选门禁。透明、粒子、overlay、复杂 VFX 和新材质体系不顺带进入。
 
 RTX 3050 当前三轮 audit whole-loop 中位轮为 near 0/30/60/Campaign 的
@@ -195,7 +195,7 @@ fault injection、10,000 帧 soak、跨厂商完整 Full 和完整角色 CPU/nat
 
 ## 当前计划入口
 
-当前阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md) 的 RB-0 至
+当时阶段不新增 HG-6 编号，使用 [GPU Raster / Bridge 旧计划](../gpu-raster-bridge-20260923.md) 的 RB-0 至
 RB-3 checkpoint。RTX 3050 承担性能候选与 60 FPS 主签收，Intel 承担普通标准复核：
 
 - RTX 3050 使用固定 workload 做低扰动五轮 A/B；Intel 使用同一 package 跑适用 Full 与普通性能门。

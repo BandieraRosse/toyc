@@ -8,7 +8,7 @@
 
 ## Active plan（当前唯一活动计划）
 
-[GPU Raster / Bridge 收敛计划](gpu-raster-bridge.md)
+[下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
 计划中的当前切片、前置条件、完成门槛和下一决策点以该文档顶部为准。已完成 checkpoint、撤销实验和
 单次设备测量进入 [`../archive/`](../archive/)，不得继续充当优先级来源。

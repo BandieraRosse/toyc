@@ -33,6 +33,23 @@ if (Get-Process -Name @('rasterfall', [IO.Path]::GetFileNameWithoutExtension($Ex
 $ToolPath = $env:Path
 [Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
 [Environment]::SetEnvironmentVariable('Path', $ToolPath, 'Process')
+function Get-PackageIdentity {
+    $Files = @(Get-ChildItem -LiteralPath $Package -Recurse -File |
+        Where-Object { $_.FullName -ne $RuntimeLog } |
+        ForEach-Object {
+            [pscustomobject]@{
+                path = $_.FullName.Substring($Package.Length + 1).Replace('\', '/')
+                length = $_.Length
+                sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+            }
+        } | Sort-Object path)
+    $Lines = ($Files | ForEach-Object { '{0}|{1}|{2}' -f $_.path, $_.length, $_.sha256 }) -join "`n"
+    $Hasher = [Security.Cryptography.SHA256]::Create()
+    try {
+        $Digest = [BitConverter]::ToString($Hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes($Lines))).Replace('-', '')
+    } finally { $Hasher.Dispose() }
+    return [ordered]@{ file_count = $Files.Count; sha256 = $Digest; excludes = @('rasterfall.log') }
+}
 New-Item -ItemType Directory -Path $OutputDirectory | Out-Null
 $Runs = [Collections.Generic.List[object]]::new()
 $Mode = if ($NoAudit) { 'no-audit' } else { 'audit' }
@@ -52,6 +69,7 @@ $Manifest = [ordered]@{
         last_write_time = (Get-Item -LiteralPath $Exe).LastWriteTime.ToString('o')
         sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $Exe).Hash
     }
+    package_contents = Get-PackageIdentity
     power_source = 'unknown'
     runs = $Runs
     result = 'FAIL'
@@ -264,6 +282,7 @@ try {
         Run-Sample $Round 'campaign-320' $CampaignArguments 320 -Campaign
     }
     if ((Get-FileHash -LiteralPath $Exe).Hash -ne $Manifest.package_exe.sha256) { throw 'Package changed during sampling.' }
+    if ((Get-PackageIdentity).sha256 -ne $Manifest.package_contents.sha256) { throw 'Package contents changed during sampling.' }
     if ((powercfg /getactivescheme | Out-String).Trim() -ne $Manifest.active_power_scheme -or
         (Read-Power) -ne $Manifest.ac_line_status) { throw 'Power scheme or AC state changed during sampling.' }
     $Manifest.result = 'PASS'

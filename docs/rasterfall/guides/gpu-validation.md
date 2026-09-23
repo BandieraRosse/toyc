@@ -93,6 +93,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_rb0_sampling.ps1 -
 
 默认组用于 workload 与边界归因；`-NoAudit` 组用于低扰动性能。未显式指定 `-Rounds` 时只跑一轮，
 适合结构诊断，不能支持正式收益结论。
+采样 manifest 记录 package 文件数与内容哈希（排除运行时会增长的 `rasterfall.log`），并在采样结束时
+复核；比较两次采样时同时核对该哈希和 executable 哈希。运行时日志仍单独保存在采样目录。
 
 候选比较统一使用 AB/BA runner：
 

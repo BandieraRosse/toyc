@@ -882,6 +882,11 @@ $(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/src/rf_core_mi
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
+.PHONY: gpu-scene-identity-test
+gpu-scene-identity-test: $(BUILD)/rf-gpu-scene-identity-test
+$(BUILD)/rf-gpu-scene-identity-test: tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I rasterfall/include tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c -o $@
+
 $(BUILD)/rf_viewmodel_contract.o: rasterfall/src/rf_viewmodel_contract.c \
                                   rasterfall/include/rf_viewmodel_contract.h \
                                   include/toy_renderer.h | $(BUILD)

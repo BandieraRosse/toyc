@@ -9,6 +9,7 @@
 
 - [GPU 2026-09-22 阶段记录](gpu-2026-09-22/README.md)：原 GPU 综合状态、M1/M2 执行、RB-0 修复链、
   RB-2 候选和 RTX 3050 swapchain 兼容现场。
+- [GPU Raster / Bridge 收敛旧计划](gpu-raster-bridge-20260923.md)：M2 五轮基线、bridge 归因和被替代的逐切片执行链；当前主线见[统一 GPU 渲染器计划](../plans/gpu-scene-renderer.md)。
 - [Hardware Graphics 2026-09](hardware-graphics-2026-09/README.md)：HG-0 至 HG-5 的历史阶段记录。
 - [Runtime V0/V1 设计](runtime-design-v0/README.md)：Core 查询面、Desktop、GUI、Application 与 Projection 的原型设计。
 - [网络代码导航旧稿](networking-code-navigation-20260912.md)：早期文件职责与排查笔记。

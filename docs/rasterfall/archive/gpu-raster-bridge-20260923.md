@@ -1,14 +1,17 @@
 # GPU Raster / Bridge 收敛计划
 
-> 状态：当前唯一活动计划
+> 状态：历史；2026-09-23 被下一代统一 GPU 渲染器计划替代
 > 所有者：Rasterfall GPU 性能主线
 > 最近核对：2026-09-23
-> 当前切片：M2 动态资源复用候选复核；RTX 3050 五轮 AB/BA 已完成，待 Intel 与 validation/sync 门禁
+> 当前替代入口：[下一代统一 GPU 渲染器计划](../plans/gpu-scene-renderer.md)
+
+以下执行顺序和“当前切片”仅代表归档时的旧方案。M2 测量仍可作迁移基线，未完成的 Intel 与
+validation/sync 门禁已转入新活动计划；本页不再决定实施优先级。
 
 本文只记录尚未完成的执行顺序和决策门。稳定数据流见
 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)，验收工作流见
 [GPU 验收与诊断](../guides/gpu-validation.md)，目标与冻结基线见
-[GPU 性能标准](../reference/gpu-performance-standards.md)，审计基线见[阶段记录](../archive/gpu-2026-09-22/gpu-performance-baseline.md)。RB-0/RB-1、M1、失败候选和单次测量证据已经归档，
+[GPU 性能标准](../reference/gpu-performance-standards.md)，审计基线见[阶段记录](gpu-2026-09-22/gpu-performance-baseline.md)。RB-0/RB-1、M1、失败候选和单次测量证据已经归档，
 不得作为并行活动计划恢复。
 
 ## 当前目标
@@ -25,7 +28,8 @@
 
 ## 唯一执行链
 
-前一项没有满足退出条件时，不并行实施后一项。
+先在 RTX 3050 上完成高性能开发与逐切片五轮 AB/BA，再补 Intel Iris Xe 普通档及 validation/sync 门禁。
+3050 阶段结论只用于选择和推进高性能切片，不宣称 M2 已跨设备最终签收。
 
 ### 1. M2 baseline 前置（已完成）
 
@@ -48,7 +52,8 @@ sequence hash、bridge 次数与字节数一致。此前冻结的三轮审计仍
 
 表中各值均为五个单轮结果的中位数，不是逐帧合并的分位数。候选已通过 Windows build/test/gpu-test、
 GPU Quick/Full、五类 fault 与 10,000 帧 soak。当前机器缺少 validation layer，且只有 RTX 3050 与 AMD
-Vulkan ICD，validation/sync 和 Intel 普通档复核尚未完成；因此 M2 仍是当前切片，不能视为最终签收。
+Vulkan ICD，validation/sync 和 Intel 普通档复核尚未完成；M2 已满足 3050 高性能开发的继续条件，
+但不能视为跨设备最终签收。异机复核须使用与本轮候选一致的 executable 和 package，核对 hash 后再采样。
 当前候选复用 normal skinning 的 Draw resource 与 descriptor；CPU skinning 回滚路径仍沿用每帧创建，
 上传 staging 仍为临时 buffer。后续是否继续收敛这两处成本，须先看剩余固定成本归因。
 
@@ -61,8 +66,8 @@ skinning submit/wait。baseline 与 candidate 必须是独立 executable，并�
 
 - frame audit 证明动态资源 generation、slot recycle、world retirement 和 resize 生命周期正确；
 - RTX 3050 的 whole-loop 与相关 CPU/GPU 细项有可重复改善，P95/P99 无反向异常；
-- Intel 通过适用 Full、普通性能下限和零 fallback/readback/copy 门禁；
-- validation/sync、fault 和 soak 按资源生命周期变更风险补齐。
+- Intel 通过适用 Full、普通性能下限和零 fallback/readback/copy 门禁（3050 高性能切片完成后补签）；
+- validation/sync、fault 和 soak 按资源生命周期变更风险补齐；其中 validation/sync 在具备 layer 的环境补签。
 
 ### 3. M2 后重新归因
 
@@ -71,6 +76,15 @@ slot recycle、present 或其他 fence。否则比较 depth bridge 与 gear/weap
 
 退出条件：以 RTX 3050 低扰动五轮数据确定下一切片，并在本计划顶部更新“当前切片”；不能根据单轮、
 audit 墙钟或 RasterCmd 数量直接选择。
+
+2026-09-23 在同一 M2 candidate executable（SHA-256 `13AD1BC57012FE6AEF4A9E345DF9E1999D3E777A91CE3FA802D91EA6003F87A6`）
+上完成四场景五轮审计，结果 PASS，原始证据在 `tmp/amd3050-m2-reattribution-20260923/`。各场景的
+workload sequence hash 跨轮一致；near 0/30/60 均为每帧 4 次、29,491,200 字节 bridge，Campaign
+为 10 次、73,728,000 字节。near 60 五轮 graphics wait 单轮 median 范围为 1.179–1.249 ms，
+动态资源阶段为 2.232–2.409 ms。四次 near bridge 均只传 depth；低扰动五轮 candidate 的 near 60
+GPU bridge median 为 4.253 ms。gear 边界关联最后一次 export，weapon 未关联 bridge；只迁移
+gear/weapon 尚无减少真实 bridge 的证据。因此下一切片先做 depth bridge 的结构与数值预检，
+通过后才做独立实现和五轮 AB/BA；审计墙钟不作为收益预测。
 
 ### 4. Mixed 固定成本后续
 
@@ -89,6 +103,13 @@ GPU 固定成本收敛后，依次评估 visibility/LOD、presentation snapshot�
 与重复扫描/分配。只有 CPU producer 仍持续超过约 4 ms，才评估多线程。
 
 退出条件：固定 workload 下 CPU producer/pack 的 P95/P99 可重复改善，画面、命令序列和玩法状态不变。
+
+### 6. 跨设备补签
+
+3050 高性能切片完成后，在 Intel Iris Xe 上使用同候选 package 完成适用 Full、普通档性能下限、
+相对冻结基线退化复核、零 fallback/readback/copy 与生命周期检查；在具备
+`VK_LAYER_KHRONOS_validation` 的环境完成 validation/sync，并保留 layer 实际加载与 Synchronization
+Validation 启用的日志。按受影响资源生命周期补齐专项，不用 3050 结果代替 Intel 结论。
 
 ## 每个候选的通用门禁
 
