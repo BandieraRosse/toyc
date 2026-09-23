@@ -5,6 +5,6 @@
 - 应用构建目标和仓库布局：[../../README.md](../../README.md)
 - 现有工具清单：[../../tools/README.md](../../tools/README.md)
 - Rasterfall 资产工具链：[资产导入与诊断](../rasterfall/guides/asset-pipeline.md)
-- Rasterfall 地图格式与工具：[../rasterfall/map-format.md](../rasterfall/map-format.md)
+- Rasterfall 地图格式与工具：[../rasterfall/map-format.md](../rasterfall/reference/map-format.md)
 
 修改 portable 应用时同时检查 Linux `app-*`、Windows `win-app-*` 和各自平台库；修改 Rasterfall 工具时以其 reference 契约和 guide 工作流为准。

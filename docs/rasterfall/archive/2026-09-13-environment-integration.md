@@ -5,7 +5,7 @@
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
 日期：2026-09-13。这是本轮现场验收记录；当前入口见[工业组件资产规格](../reference/industrial-props.md)、
-[地图格式](../map-format.md)、[渲染架构](../rendering-architecture.md)和[视觉验收](../guides/visual-validation.md)。
+[地图格式](../reference/map-format.md)、[渲染架构](../rendering-architecture.md)和[视觉验收](../guides/visual-validation.md)。
 
 ## 地图成果
 

@@ -2,7 +2,7 @@
 
 Reference 保存需要精确查询的格式、合同、来源和固定标准，不承担当前工作排期。
 
-- [地图格式](../map-format.md)
+- [地图格式](map-format.md)
 - [角色、附件与蒙皮合同](character-assets.md)
 - [敌人视觉资产与姿态合同](enemy-visuals.md)
 - [环境资产艺术约束](environment-art.md)

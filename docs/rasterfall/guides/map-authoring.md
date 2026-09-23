@@ -5,7 +5,12 @@
 > 事实入口：`Makefile`、`tools/map_layout_export.py`、`tools/map_layout_query.py`
 > 最近核对：2026-09-23
 
-空间地图的字段与约束见 [地图格式](../map-format.md)；Runtime Map、World Content 和投影所有权见 [地图与世界内容](../architecture/maps-and-world-content.md)。
+空间地图的字段与约束见 [地图格式](../reference/map-format.md)；Runtime Map、World Content 和投影所有权见 [地图与世界内容](../architecture/maps-and-world-content.md)。
+
+V1 语法可用 `build/map-inspect <map-v1-file>` 检查，`make test-map-parser` 验证错误输入和容量边界。
+组件碰撞用 `build/map-inspect --collision-json <map>` 查看 owner、bounds、高度和 flags；
+`make map-layout` 会自动构建检查器。修改组件投影时再运行 `make test-map-components test-map-runtime` 和
+`build/rasterfall --logic-test`，结合正式画面检查可见与碰撞结果。
 
 用 `build/rasterfall --map path/to/experiment.map` 只覆盖本次进程的启动地图。修改 V1 输入链路时运行
 `make test-map-runtime`，覆盖 runtime 加载、稳定 ID 查询和 action registry；也可直接运行

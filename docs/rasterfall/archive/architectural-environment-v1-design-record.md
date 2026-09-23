@@ -199,4 +199,4 @@ Sol 的优先接入顺序：先选择一个现有设施岛，把机组/柜/vent 
 原十件 arch 资产保持不变；新 `boundary_wall` 是 Map RFU contract 的参数化代码组件，
 不增加 Blender/RMESH 库存。Campaign 长墙与地面已接入统一分带/同色大板，旧视觉墙记录
 被替换，组件碰撞由 `attr.collision` 显式启用；原文的“正式碰撞待接入”描述属于此前冻结边界。
-门洞、支架、管件使用 multipart 模板，梁/线槽保留架空高度；详细契约见 ../map-format.md。
+门洞、支架、管件使用 multipart 模板，梁/线槽保留架空高度；详细契约见 ../reference/map-format.md。

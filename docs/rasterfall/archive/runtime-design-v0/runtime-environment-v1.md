@@ -111,7 +111,7 @@ Game Runtime 可以编排 session，但不复制地图真值；GUI、Application
 `.map` 语法或地图数据。
 
 入口：`rasterfall_session`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`；地图契约见
-[`map-format.md`](../../map-format.md)。
+[`map-format.md`](../../reference/map-format.md)。
 
 ## 当前明确不包含
 

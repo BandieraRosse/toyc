@@ -107,7 +107,7 @@ active、未被携带且位于区域内；assigned count 沿用普通旗帜语�
 
 V1 `object` 环境组合投影到静态实例；显式 component collision 在 Runtime Map 展开为独立 collision，
 与既有 collision records 一起投影到玩法。
-Legacy `prop` 文本的 profile 默认碰撞规则不等于 V1 object 规则，详见 map-format.md。
+Legacy `prop` 文本的 profile 默认碰撞规则不等于 V1 object 规则，详见 reference/map-format.md。
 
 - `include/toy_map.h`：磁盘地图解析后的通用结构。
 - `lib/map.c`：文本 `.map` 解析器；新增语法或字段从这里开始。

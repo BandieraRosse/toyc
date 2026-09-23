@@ -1,7 +1,7 @@
 # 《重返武汉大学》信息学部核心区 V0 来源与测量台账
 
 > 文档更新：2026-09-13
-> 源码核对基线：只读核对 `docs/rasterfall/map-format.md`、`tools/map_layout_export.py` 与现有 `outpost.map`；未修改运行时、格式或正式地图。
+> 源码核对基线：只读核对 `docs/rasterfall/reference/map-format.md`、`tools/map_layout_export.py` 与现有 `outpost.map`；未修改运行时、格式或正式地图。
 > 调查日期：2026-09-13。本文、JSON 和派生 SVG/PNG 为同一调查批次。**这是有缺口的比例参考，不能作为已完成的竖向工程底图。**
 
 ## 使用规则

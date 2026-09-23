@@ -5,6 +5,8 @@
 > 事实入口：`rasterfall/lib/rasterfall_map_parser.c`、`rasterfall/include/rasterfall_map_parser.h`
 > 最近核对：2026-09-21
 
+本页维护空间地图的语法、字段与碰撞合同。地图运行所有权见[地图与世界内容架构](../architecture/maps-and-world-content.md)，编辑与验证见[地图指南](../guides/map-authoring.md)，开发地图的阶段布置见[历史记录](../archive/map-content-fixtures-2026-09.md)。
+
 ## World Definition V1
 
 `.map` 只描述空间地图的空间事实；`assets/worlds/*.content` 由
@@ -20,8 +22,7 @@ Map Compiler V1 是新的 World Description Language 和运行时无关 Map IR �
 数组、`toy_map` primitive/draw records；renderer 保持原有输入结构，`rasterfall_legacy.map` 仅作为明确的
 fallback 输入。
 
-入口为 `build/map-inspect <map-v1-file>`，实现位于
-`rasterfall/lib/rasterfall_map_parser.c` 与 `rasterfall/include/rasterfall_map_parser.h`。
+实现位于 `rasterfall/lib/rasterfall_map_parser.c` 与 `rasterfall/include/rasterfall_map_parser.h`；检查命令见[地图指南](../guides/map-authoring.md)。
 语法使用单行 `key=value` record、全局唯一稳定 `id`，记录顺序没有语义。未知 record、未知字段、
 重复 ID、非法数字、越界坐标和容量超限都会带源文件行号失败；`attr.<name>=<value>` 是为后续
 扩展保留的显式属性命名空间。
@@ -39,8 +40,7 @@ interaction id=wave_skip action=wave_skip x=0 y=0 z=-400
 ```
 
 Map IR 包含 world、regions、collisions、surfaces、renders、interactions、actor_spawn、pickup 和 object，
-不引用 `toy_game` 或 `rasterfall_session`。`build/map-inspect` 输出 world bounds、各类数量和稳定 ID；
-`make test-map-parser` 覆盖成功解析、未知 record/字段、非法数字、重复 ID、缺字段、世界越界和容量上限。
+不引用 `toy_game` 或 `rasterfall_session`。检查器输出 world bounds、各类数量和稳定 ID；parser 测试覆盖成功解析、未知 record/字段、非法数字、重复 ID、缺字段、世界越界和容量上限。
 
 ## Surface V1
 
@@ -54,7 +54,7 @@ collision record 的碰撞标志和路径。例如 `attr.collision_id=ground_wor
 正式地图的 surface/render 记录均由 V1 Runtime adapter
 写入现有 primitive/draw 兼容结构；具体数量以 `map-inspect` 和 `map-runtime-test` 的当前输出为准。
 
-Map IR、Runtime Map、玩法投影与 World Content 的所有权见 [地图与世界内容](architecture/maps-and-world-content.md)。
+Map IR、Runtime Map、玩法投影与 World Content 的所有权见 [地图与世界内容](../architecture/maps-and-world-content.md)。
 
 ## 几何与碰撞
 
@@ -109,19 +109,9 @@ ai_spawn name base_id level1|level2|level3 x z downed
 - `base` 声明带稳定 ID 的据点区域。
 - `ai_spawn` 声明 AI 名称、所属据点、等级、位置和初始倒地状态。
 
-墙上按钮使用 `button_<用途> x z y` 记录并绑定到对应玩法交互；例如
-`button_west_corridor_no_tank -23940 2100 200` 会在西侧走廊出口旁的墙面放置一个按钮，
-一次生成 16 个随机敌人但排除 Tank。
-
-`button_humanoid_actions x z y` 是出生点附近的 RF Humanoid V2 动作调试按钮。它只驱动
-session 的 presentation 状态，不创建 gameplay actor；当前地图将按钮放在
-`(-12600,-12800)`，对应的 V2 Rifleman 由 renderer 固定展示在 `(-11800,-10200)`。
-按钮按 `IDLE → WALK → RIFLE AIM → AIM + RECOIL` 循环。
-
-`button_enemy_death_test 14000 -10500 -250` 位于开发者区东南空地。交互后在其正前方
-`z=-13500` 生成一排六个真实 gameplay enemy（Common/Fast/Heavy 各两个），随即通过正式
-`toy_game_apply_reported_hit()` 入口施加等于当前生命值的伤害。它不维护独立假人或动画时钟；击杀
-统计、死亡状态、effects 同步、网络已有 enemy 状态和最终清槽均沿用正式链路。
+墙上按钮使用 `button_<用途> x z y` 记录并绑定到对应玩法交互。动作调试按钮只驱动 session
+presentation 状态，不创建 gameplay actor；敌人死亡测试按钮通过正式 gameplay 命中入口驱动真实敌人。
+具体开发地图坐标和当前按钮配置见[历史记录](../archive/map-content-fixtures-2026-09.md)。
 
 静态环境组件使用 registry 中的稳定名称或 ID，不直接引用模型路径：
 
@@ -130,20 +120,15 @@ prop asset x z yaw scale
 prop crate -14500 -17000 0 1000
 ```
 
-当前开发地图的 `z=-17000` 陈列带使用同一 `prop` 记录接入十件工业组件；实例中心沿 X 轴每
-1500 RFU 排列，renderer 与 gameplay primitive 共用各资产 profile 的尺寸契约，避免展示和
-默认碰撞盒重叠。
-
 模型陈列台的 `model` 记录只属于 renderer 展示，不创建玩法实体或碰撞。现有 style 1--5 是旧
 敌人/特感展示；style 6--8、9--11、12--14 分别按 COMMON、FAST、HEAVY 展示
-LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED，沿同一 `z=-8700` 展示线向右排列。
+LEGACY / BLOCK_INFECTED / HUMANOID_INFECTED。
 布局导出器会输出 `type=model`，保留 style、颜色、高度和源行号，供
 `map_layout_query.py ... type model` 复核。
 
-Character Test Strip 是渲染器拥有的 presentation-only 开发测试带，固定在 `z=-20000`、
-工业 prop 陈列带后方。地图只声明可见 label；旧 procedural 与 RF Humanoid 的位置、姿态和
+Character Test Strip 是渲染器拥有的 presentation-only 开发测试带。地图只声明可见 label；旧 procedural 与 RF Humanoid 的位置、姿态和
 AK attachment 由 `render_character_test_strip()` 固定配置，避免把测试角色写入 `toy_game_actor`
-或地图碰撞。`--character-world-capture` 使用该地图和正常 world render path 生成真实场景截图。
+或地图碰撞。截图命令见[视觉验收指南](../guides/visual-validation.md)。
 
 ## V1 render 记录
 
@@ -178,23 +163,15 @@ prop lamp_post 0 -17000 0 1000 collision=none
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
 
-当前 Hurd control region 按 V1 要求不扩展 `.map` 格式，而由 session 固定配置。地图只提供北侧空间：
-北门和外侧防区为 `x=-6000..6000, z=24000..33000`，其墙体与 `blocks_airborne` 碰撞同步扩宽；控制区
-内缩为 `x=-5000..5000, z=25500..31500`，避免旗帜靠墙仍判定部署。原北侧中央刷怪区被拆为
-`x=-20000..-9000` 与 `x=9000..20000` 两翼，二者均为 `z=14000..22000`，不会与据点或入口重叠。
-Hurd 旗帜和四名固定 actor 由 session 生成，不是地图记录；原 Maid 四人及其位于 `(-12000, 0)` 的
-flag 1 也继续由 session 生成，Hurd 因此使用 flag 2。若以后正式数据化这些内容，再同时扩展 parser、
-绑定、布局导出和 query schema。
+Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。阶段地图中的 control region 和刷怪区坐标见[历史记录](../archive/map-content-fixtures-2026-09.md)；若以后正式数据化这些内容，需同时扩展 parser、绑定、布局导出和 query schema。
 
-地图修改、布局导出与精确查询流程见 [地图编辑与查询](guides/map-authoring.md)。
+地图修改、布局导出与精确查询流程见 [地图编辑与查询](../guides/map-authoring.md)。
 
 ## Continuous Wall / Floor 与 Component Collision
 
 Campaign 长墙使用 `object kind=boundary_wall`，高度 2150 RFU（约 4.2 m）、厚度
 124 RFU，墙脚/主体/压顶相邻分区，扶壁约每 4096 RFU 一处。长度按墙段生成，
-只支持 cardinal yaw 与 scale=1000；不新增 RMESH 或纹理资产。原 12.3 m 可见长墙已替换，
-开发坡道和可站立 air gate 保留。旧南侧背景墙从世界外 z=-45000 移到 z=-33000，
-world bounds 留出墙厚，外墙显式阻止 airborne 越界。
+只支持 cardinal yaw 与 scale=1000；不新增 RMESH 或纹理资产。旧墙替换和位置调整见[历史记录](../archive/map-content-fixtures-2026-09.md)。
 
 ```text
 object id=yard_wall kind=boundary_wall x=0 y=0 z=6000 yaw=0 scale=1000 attr.length=8192 attr.collision=boundary
@@ -218,7 +195,6 @@ Runtime 允许独立未绑定 Surface；当前 Gameplay Projection 要求每个 
 地面继续由 surface 与 floor paint 提供，非 authored-ground 世界使用约 4 m 同色大板和
 很浅接缝，直接在同一平面分区，不增加 floor RMESH 或叠层。WHU 保留已有 authored paint。
 
-`build/map-inspect --collision-json <map>` 输出 Runtime Map 实际碰撞，包括 owner、bounds、
-base_y、height 和 flags。组件地图的 layout exporter 调用它，JSON 保留生成碰撞与组件
-collision_bounds，source_file 增加 SHA256；`make map-layout` 自动构建 inspector。
-验证入口为 `make test-map-components`、`make test-map-runtime` 与 `--logic-test`。
+碰撞 JSON 输出 Runtime Map 实际碰撞，包括 owner、bounds、base_y、height 和 flags。
+组件地图的 layout exporter 调用检查器，JSON 保留生成碰撞与组件 collision_bounds，
+source_file 增加 SHA256；命令和验证入口见[地图指南](../guides/map-authoring.md)。

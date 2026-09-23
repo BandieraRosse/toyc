@@ -17,5 +17,6 @@
 - [临时校园套件 V0](temporary-campus-kit-v0.md)：库存清点、合成街角观察与阶段交接。
 - [Enemy Visual V1/V2 实施记录](enemy-visuals-v1.md)：普通感染体和刚性特感的实施基线及阶段验收。
 - [Static World Lighting V2 冻结记录](static-world-lighting-v2-freeze.md)：源码核对基线与当时的平台验证范围。
+- [开发地图与展示 fixture](map-content-fixtures-2026-09.md)：按钮、陈列带、Hurd 与墙体调整的阶段坐标。
 
 恢复历史工作时，先从当前入口确认所有权和接口，再把仍有效的事实重新通过源码、脚本或 CLI 验证。
