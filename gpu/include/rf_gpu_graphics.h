@@ -73,6 +73,12 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_skinned_resource_create(
     const uint32_t *bind_words, uint32_t bind_word_count,
     const uint32_t *palette_words, uint32_t palette_word_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
+/* Reuse a completed frame-slot skin resource when the new input fits.
+ * Returns 0 on success, 1 when capacity must grow, and -1 on failure. */
+int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource, uint32_t vertex_count,
+    const uint32_t *bind_words, uint32_t bind_word_count,
+    const uint32_t *palette_words, uint32_t palette_word_count);
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
 int rf_gpu_graphics_resource_set_frame_dynamic(

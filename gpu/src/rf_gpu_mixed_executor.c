@@ -236,9 +236,12 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->completed_timing.frame_number=e->submitted_frame[e->active_frame];
         e->submitted_frame[e->active_frame]=0;
     }
-    phase_start=mixed_now_ms();
-    mixed_release_dynamic(e,e->active_frame);
-    e->stats.dynamic_release_ms+=mixed_now_ms()-phase_start;
+    /* The completed slot keeps its dynamic resource until capacity grows. */
+    if (!e->output.character_skinning) {
+        phase_start=mixed_now_ms();
+        mixed_release_dynamic(e,e->active_frame);
+        e->stats.dynamic_release_ms+=mixed_now_ms()-phase_start;
+    }
     rf_gpu_vulkan_measure_frame(e->context,e->next_frame_number+1);
     phase_start=mixed_now_ms();
     if (reserve((void **)&e->pins[e->active_frame],
@@ -311,14 +314,26 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
             }
             e->stats.dynamic_pack_ms+=mixed_now_ms()-phase_start;
             phase_start=mixed_now_ms();
-            e->dynamic[e->active_frame][0]=rf_gpu_graphics_skinned_resource_create(
-                mixed_graphics(e),e->output.character_vertex_diff ?
-                    (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices : NULL,
-                (uint32_t)f->dynamic_vertex_count,indices,(uint32_t)f->dynamic_vertex_count,
-                bind_words,(uint32_t)f->dynamic_vertex_count*22,palette_words,
-                (uint32_t)f->skin_palette_count*15,&white,1,1);
+            int reused=1;
+            if (e->dynamic_count[e->active_frame])
+                reused=rf_gpu_graphics_skinned_resource_update(mixed_graphics(e),
+                    e->dynamic[e->active_frame][0],(uint32_t)f->dynamic_vertex_count,
+                    bind_words,(uint32_t)f->dynamic_vertex_count*22,palette_words,
+                    (uint32_t)f->skin_palette_count*15);
+            if (reused==1) {
+                double release_start=mixed_now_ms();
+                mixed_release_dynamic(e,e->active_frame);
+                e->stats.dynamic_release_ms+=mixed_now_ms()-release_start;
+                e->dynamic[e->active_frame][0]=rf_gpu_graphics_skinned_resource_create(
+                    mixed_graphics(e),e->output.character_vertex_diff ?
+                        (const struct rf_gpu_graphics_vertex *)f->dynamic_vertices : NULL,
+                    (uint32_t)f->dynamic_vertex_count,indices,(uint32_t)f->dynamic_vertex_count,
+                    bind_words,(uint32_t)f->dynamic_vertex_count*22,palette_words,
+                    (uint32_t)f->skin_palette_count*15,&white,1,1);
+            }
             e->stats.dynamic_resource_ms+=mixed_now_ms()-phase_start;
             free(bind_words); free(palette_words);
+            if (reused<0) { free(indices); return -1; }
         } else {
             if (f->reference_vertex_count!=f->dynamic_vertex_count) {
                 free(indices); return -1;

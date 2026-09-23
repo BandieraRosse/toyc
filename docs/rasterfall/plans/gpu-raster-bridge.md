@@ -3,7 +3,7 @@
 > 状态：当前唯一活动计划
 > 所有者：Rasterfall GPU 性能主线
 > 最近核对：2026-09-23
-> 当前切片：M2 动态资源复用；前置为 RTX 3050 低扰动五轮 baseline
+> 当前切片：M2 动态资源复用候选复核；RTX 3050 五轮 AB/BA 已完成，待 Intel 与 validation/sync 门禁
 
 本文只记录尚未完成的执行顺序和决策门。稳定数据流见
 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)，验收工作流见
@@ -27,13 +27,30 @@
 
 前一项没有满足退出条件时，不并行实施后一项。
 
-### 1. M2 baseline 前置（当前）
+### 1. M2 baseline 前置（已完成）
 
 用 RTX 3050 冻结审计基线对应的 baseline executable，完成 near 0、near 30、near 60、Campaign 的
 `-NoAudit` 五轮低扰动采样。要求交流电、固定电源方案、固定 tick、相同 package hash，且每个场景的
 workload sequence hash 跨轮一致。
 
 退出条件：五轮全部有效，保存单轮范围和中位轮；没有 audit 墙钟混入低扰动 FPS 结论。
+
+2026-09-23 已用同 package 的独立 baseline/candidate exe 完成四场景五轮 AB/BA；两组低扰动运行均 PASS，
+对应单轮与中位数据保存在 `tmp/amd3050-m2-abba-20260923/`。同 package audit 配对的四场景 workload
+sequence hash、bridge 次数与字节数一致。此前冻结的三轮审计仍只用于成本归因，不充当 FPS 基线。
+
+| 场景 | baseline whole median | candidate whole median | baseline P95/P99 | candidate P95/P99 |
+| --- | ---: | ---: | ---: | ---: |
+| near 0 | 23.323 ms | 16.424 ms | 27.227 / 31.055 ms | 18.270 / 26.810 ms |
+| near 30 | 33.925 ms | 26.037 ms | 41.105 / 45.842 ms | 31.235 / 36.821 ms |
+| near 60 | 51.621 ms | 42.092 ms | 61.154 / 67.785 ms | 51.101 / 57.947 ms |
+| Campaign | 27.180 ms | 17.502 ms | 31.916 / 35.547 ms | 21.354 / 26.501 ms |
+
+表中各值均为五个单轮结果的中位数，不是逐帧合并的分位数。候选已通过 Windows build/test/gpu-test、
+GPU Quick/Full、五类 fault 与 10,000 帧 soak。当前机器缺少 validation layer，且只有 RTX 3050 与 AMD
+Vulkan ICD，validation/sync 和 Intel 普通档复核尚未完成；因此 M2 仍是当前切片，不能视为最终签收。
+当前候选复用 normal skinning 的 Draw resource 与 descriptor；CPU skinning 回滚路径仍沿用每帧创建，
+上传 staging 仍为临时 buffer。后续是否继续收敛这两处成本，须先看剩余固定成本归因。
 
 ### 2. M2 动态资源复用
 

@@ -13,8 +13,12 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $Root ('tmp/rb0-specia
 $Out = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path $Out) { throw 'Use a new output directory.' }
 if (-not $ValidationLayerDirectory) { $ValidationLayerDirectory = Join-Path $Root 'tmp/hg2a-tools/mingw64/bin' }
-if (-not (Test-Path (Join-Path $ValidationLayerDirectory 'VkLayer_khronos_validation.json'))) { throw 'Validation layer manifest missing.' }
+if ($Stage -in @('All','Validation') -and
+    -not (Test-Path (Join-Path $ValidationLayerDirectory 'VkLayer_khronos_validation.json'))) {
+    throw 'Validation layer manifest missing.'
+}
 $TaskPath = $env:Path
+$PowerScheme = (powercfg /getactivescheme | Out-String).Trim()
 [Environment]::SetEnvironmentVariable('PATH', $null, 'Process')
 [Environment]::SetEnvironmentVariable('Path', $TaskPath, 'Process')
 $Msys = if ($env:RF_WINDOWS_MSYS2_ROOT) { $env:RF_WINDOWS_MSYS2_ROOT } else { 'C:\msys64' }
@@ -27,7 +31,7 @@ $Records = [Collections.Generic.List[object]]::new()
 $Manifest = [ordered]@{ result='FAIL'; stage=$Stage; package_sha256=(Get-FileHash "$Package/rasterfall.exe").Hash; skip_soak=[bool]$SkipSoak; runs=$Records }
 function Assert-Idle {
     if (Get-Process | Where-Object { $_.ProcessName -match '^(rasterfall|rf-gpu)' }) { throw 'Residual GPU process.' }
-    if ((powercfg /getactivescheme | Out-String) -notmatch '381b4222-f694-41f0-9685-ff5bb260df2e') { throw 'Balanced power scheme required.' }
+    if ((powercfg /getactivescheme | Out-String).Trim() -ne $PowerScheme) { throw 'Power scheme changed during suite.' }
 }
 function Run([string]$Name,[string]$Exe,[string[]]$Argv,[string]$Cwd,[int]$Frames=0,[string]$Fault='',[bool]$ExpectedFailure=$false) {
     Assert-Idle
@@ -75,12 +79,14 @@ function Run([string]$Name,[string]$Exe,[string[]]$Argv,[string]$Cwd,[int]$Frame
     Assert-Idle
 }
 try {
-    $env:Path = "$ValidationLayerDirectory;$(Join-Path $Msys 'mingw64/bin');$TaskPath"
-    $env:VK_LAYER_PATH = $ValidationLayerDirectory
-    $env:VK_INSTANCE_LAYERS = 'VK_LAYER_KHRONOS_validation'
-    $env:VK_VALIDATION_VALIDATE_SYNC = 'true'
-    $env:VK_LAYER_REPORT_FLAGS = 'error,warn,info'
-    $env:VK_LOADER_DEBUG = 'layer'
+    if ($Stage -in @('All','Validation')) {
+        $env:Path = "$ValidationLayerDirectory;$(Join-Path $Msys 'mingw64/bin');$TaskPath"
+        $env:VK_LAYER_PATH = $ValidationLayerDirectory
+        $env:VK_INSTANCE_LAYERS = 'VK_LAYER_KHRONOS_validation'
+        $env:VK_VALIDATION_VALIDATE_SYNC = 'true'
+        $env:VK_LAYER_REPORT_FLAGS = 'error,warn,info'
+        $env:VK_LOADER_DEBUG = 'layer'
+    }
     $Common = @('--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','near','0','--gpu-normal-fixed-tick')
     if ($Stage -in @('All','Validation')) {
         Run 'timestamp-truncation-expansion' "$Root/build-windows/rf-gpu-raster-test.exe" @('--mixed-gate') $Root

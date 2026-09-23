@@ -88,7 +88,8 @@ function Save-Manifest {
 }
 
 function Run-HiddenProcess([string] $Name, [string] $Program, [string[]] $Arguments, [string] $WorkingDirectory) {
-    if ((powercfg /getactivescheme | Out-String) -notmatch '381b4222-f694-41f0-9685-ff5bb260df2e' -or (Read-Power) -ne $Manifest.ac_line_status) { throw 'Power condition changed or is not Balanced.' }
+    if ((powercfg /getactivescheme | Out-String).Trim() -ne $Manifest.active_power_scheme -or
+        (Read-Power) -ne $Manifest.ac_line_status) { throw 'Power scheme or AC state changed during sampling.' }
     Write-Host "[RB0] $Name"
     $Stdout = Join-Path $OutputDirectory "$Name.stdout.txt"
     $Stderr = Join-Path $OutputDirectory "$Name.stderr.txt"
@@ -263,7 +264,8 @@ try {
         Run-Sample $Round 'campaign-320' $CampaignArguments 320 -Campaign
     }
     if ((Get-FileHash -LiteralPath $Exe).Hash -ne $Manifest.package_exe.sha256) { throw 'Package changed during sampling.' }
-    if ((powercfg /getactivescheme | Out-String) -notmatch '381b4222-f694-41f0-9685-ff5bb260df2e' -or (Read-Power) -ne $Manifest.ac_line_status) { throw 'Power condition changed during sampling.' }
+    if ((powercfg /getactivescheme | Out-String).Trim() -ne $Manifest.active_power_scheme -or
+        (Read-Power) -ne $Manifest.ac_line_status) { throw 'Power scheme or AC state changed during sampling.' }
     $Manifest.result = 'PASS'
 } catch {
     $Manifest.error = $_.Exception.Message

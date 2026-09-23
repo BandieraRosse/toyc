@@ -71,6 +71,8 @@ graphics submit/wait 是队列关系证据，不等于某个 producer 的 GPU �
   后才能回收。
 - 双帧 slot 分别持有 extent target、command/fence/query 和动态 Draw backing；不可变 mesh/texture cache
   由 executor/device 统一持有。
+- 已完成的 frame slot 复用角色 skinning 的动态 Draw resource、顶点/索引 buffer 和 descriptor；bind/palette
+  每帧更新并执行 skinning。输入超过既有容量时，在 slot recycle 后销毁旧 generation 再创建更大资源。
 - raw Raster 分段重传必须保留先前录制引用的 backing，直到相关录制完成或销毁。
 - resize 只重建 extent 相关 target、slot binding 与 swapchain，不得重复上传稳定 world mesh/texture。
 - swapchain 由 backend 唯一拥有；acquire、render fence 与 present completion 分开跟踪。正常热路径禁止

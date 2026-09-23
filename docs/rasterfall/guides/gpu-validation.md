@@ -60,7 +60,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_rb0_special.ps1
 
 脚本要求可用的 `VK_LAYER_KHRONOS_validation` manifest，默认查找
 `tmp/hg2a-tools/mingw64/bin`，也可通过 `-ValidationLayerDirectory` 指定。可用 `-Stage Validation`、
-`-Stage Faults` 或 `-Stage Soak` 只跑相关阶段；`-SkipSoak` 只适合明确不需要长时门禁的中间诊断。
+`-Stage Faults` 或 `-Stage Soak` 只跑相关阶段；单独运行 Faults/Soak 不要求 validation layer。
+`-SkipSoak` 只适合明确不需要长时门禁的中间诊断。采样锁定启动时的电源方案和供电状态，
+专项锁定启动时的电源方案，
+不要求电源方案使用 Windows 默认“均衡”GUID。
 
 必须从输出同时证明 layer 实际加载和 Synchronization Validation 启用；只设置环境变量不算通过。
 fault 的预期失败退出码、poisoned generation 退休、recreate 边界和 soak 完整帧数由脚本断言。
