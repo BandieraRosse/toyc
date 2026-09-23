@@ -11,7 +11,7 @@
 ## 整体约束
 
 建筑、连接和墙地大面的生产规范补充于
-[Architectural Environment V1](../architectural-environment-v1.md)。它沿用本文 palette/轮廓语言，
+[Architectural Environment V1](architectural-environment-v1.md)。它沿用本文 palette/轮廓语言，
 但建筑件允许低于旧道具的三角形下限；禁止为填预算增加细节。墙地不沿用道具的全表面纹理候选。
 
 - 风格为 **stylized industrial / military**：形体结实、分区清楚、略带使用痕迹。环境负责建立场所

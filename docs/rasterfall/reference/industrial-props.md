@@ -16,7 +16,7 @@
 
 门架 profile 的外包围盒只是尺寸元数据，不能作为整块通道碰撞；正式地图使用独立碰撞真值。
 
-管线直段、弯头和 T 接头的拼接契约见 [Architectural Environment V1](../architectural-environment-v1.md)；
+管线直段、弯头和 T 接头的拼接契约见 [Architectural Environment V1](architectural-environment-v1.md)；
 `pipe_module` 是双立管设备，并非可延长直段。
 
 ## 米制轴向

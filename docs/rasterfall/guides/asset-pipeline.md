@@ -95,7 +95,8 @@ Temporary Campus Kit V0安装到公开`props/campus/`；IDs 24–35的零碰撞�
 
 建筑套件 `rf_arch_*` 同样安装到公开 industrial 目录并追加稳定 ID；两种 flat 材质、零纹理。
 使用 `python3 tools/architecture_round.py --generate --capture --deterministic` 重现资产与两个隔离原型；
-套件、源保留、端口和 Surface V1 交接见 [architectural-environment-v1.md](../architectural-environment-v1.md)。
+套件、源保留、端口和 Surface V1 规范见[建筑套件合同](../reference/architectural-environment-v1.md)；
+生成与截图步骤见[建筑套件指南](architectural-environment-v1.md)。
 脚本先构建转换器一次，再调用 importer `--no-build`，避免重复构建；不改 importer 格式。
 
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。

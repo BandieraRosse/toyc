@@ -1,3 +1,9 @@
+# Architectural Environment V1 原型设计记录
+
+> 状态：历史
+> 归档原因：原型设计、已完成验收与旧接力事项已由当前合同及指南取代
+> 当前入口：[建筑套件合同](../reference/architectural-environment-v1.md)
+
 # Architectural Environment V1
 
 > 文档更新：2026-09-14
@@ -7,7 +13,7 @@
 **Visual design = VISUALLY FROZEN。Engineering checkpoint = pending Sol。**
 最终 service panel / floor hatch 已完成 runtime 视觉签收；保留原十件 CANONICAL，不再扩展或打磨。
 恢复验收未修改 geometry、placement 或 renderer。证据及工程接力清单见
-[最终视觉签收记录](archive/architectural-v1-final-visual-signoff-2026-09-13.md)。
+[最终视觉签收记录](architectural-v1-final-visual-signoff-2026-09-13.md)。
 签收限于固定离屏视觉场景，不代表碰撞、导航、动态镜头或 Campaign 性能验收。
 
 ## 冻结范围与设计判断
@@ -193,4 +199,4 @@ Sol 的优先接入顺序：先选择一个现有设施岛，把机组/柜/vent 
 原十件 arch 资产保持不变；新 `boundary_wall` 是 Map RFU contract 的参数化代码组件，
 不增加 Blender/RMESH 库存。Campaign 长墙与地面已接入统一分带/同色大板，旧视觉墙记录
 被替换，组件碰撞由 `attr.collision` 显式启用；原文的“正式碰撞待接入”描述属于此前冻结边界。
-门洞、支架、管件使用 multipart 模板，梁/线槽保留架空高度；详细契约见 map-format.md。
+门洞、支架、管件使用 multipart 模板，梁/线槽保留架空高度；详细契约见 ../map-format.md。

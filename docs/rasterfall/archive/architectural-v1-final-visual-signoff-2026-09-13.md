@@ -5,7 +5,7 @@
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
 日期：2026-09-13。Visual design = **VISUALLY FROZEN**；Engineering checkpoint = **pending Sol**。
-当前规范仍以 [Architectural Environment V1](../architectural-environment-v1.md) 为准。
+当前规范以 [Architectural Environment V1](../reference/architectural-environment-v1.md) 为准。
 
 ## 恢复与结果
 
