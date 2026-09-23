@@ -1,44 +1,21 @@
-# Rasterfall 资产转换与诊断
+# Rasterfall 资产导入与诊断
 
-> 文档更新：2026-09-15
-> 源码核对补充：资产转换 app 当前位于 `app/linux/`；Windows/portable 入口目录已预留，尚未迁移工具实现。
-> 源码核对基线补充：Eula Gameplay Hybrid 已接入正常 world/展示：near/mid 使用 `eula_lod3.rmesh`，FAR（4096 RFU 起）才使用 compact `eula_lod2.rmesh`。
-> 源码核对基线补充：新增 Eula 4×11 动画 comparison sheet 与统一 character performance suite；不改变 simplifier、资产格式或正常 gameplay LOD 选择。
-> 源码核对基线补充：Anime Gameplay Hybrid LOD V1 Eula pilot 在既有聚类简化器上增加离线 region descriptor、humanoid bone influence、按相邻骨长缩放的 joint zone，以及 dominant bone + 完整 BDEF2 pair + weight bucket 约束；输出仍为普通 compact RFM2。
-> 源码核对基线补充：True Vertex-Reduced Character LOD 在索引简化后压缩实际引用的 vertex 与对应 SKN1 权重；骨架、IK、CHR1、材质和 primitive 语义保持不变。
-> 源码核对基线补充：Maid 正常 world/展示仍优先 LOD2；Eula 使用按距离选择的 Hybrid/compact LOD2。Campaign Maid 四人内容武器为 AK。
-> 源码核对基线补充：Temporary Campus Kit V0复用Builder/GLB/importer，campus IDs 24–35无默认碰撞；tools/campus_kit_round.py提供米制完整性、确定性和独立组图。
-> 源码核对基线补充：tools/architecture_round.py 编排同一 Builder、industrial manifest 和 importer；rf_arch_* 为零纹理双材质公开 RMESH，GLB/截图确定性比较。
-> 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。
-> 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
+> 状态：当前操作指南
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界与动画求值见
-[动画架构](animation-architecture.md)，资源是否允许发布见[资源来源台账](reference/asset-sources.md)。
-
-## Runtime filesystem boundary
-
-运行时 Core 提供 `rf_core_filesystem`，只把 logical path 解析为 owned byte blob；embedded 资源查找、
-磁盘 fallback、平台相对路径和文件大小限制沿用 `toy_asset_load_file()`。Core 不解析资源格式，也不
-维护 asset manager、cache、stream、package 或 mod 层。`.map`、RFM2/RFCHAR、RFANIM、VMD、TTEX、
-TSND 和字体格式仍由各自现有 loader 负责；它们未来可以增加 blob/input-stream 入口，但本轮不改变
-现有 loader、资源格式或旁车纹理路径规则。
-
-人形角色的 canonical skeleton、GLB、attachment 与 skinning 输入门见
-[`character-assets.md`](reference/character-assets.md)。该契约优先于本页记录的历史 character/PMX 路径。
+[动画架构](../animation-architecture.md)，Core 资源读取边界见[运行时架构](../runtime.md)，
+资源是否允许发布见[资源来源台账](../reference/asset-sources.md)。
 
 ## Enemy Visual V2
 
 六份公开 infected RFM2 使用现有 character manifest → RFCHAR importer → runtime 门禁；
 `tools/enemy_visual_round.py --generate --capture --deterministic` 复用 Blender V2 导出，生成并验证
 Block/Humanoid 的 Common/Fast/Heavy。公开产物不依赖私有模型；重建命令、来源、预算与
-真实 enemy renderer 截图入口见 [enemy-visuals.md](enemy-visuals.md)。
+真实 enemy renderer 截图入口见 [enemy-visuals.md](../enemy-visuals.md)。
 
 ## RFANIM V1
 
-公开动作位于 `rasterfall/assets/actions/`。文本格式以 `RFANIM 1` 开头，依次声明 `action`、
-毫秒 `duration`、`skeleton RF_HUMANOID_V1`、`loop`，每个 `track` 使用小写 stable humanoid role
-和 `step|linear`，`key` 为 `time-ms rotation-x rotation-y rotation-z`。解析器拒绝未知动作、role、
-插值、逆序/越界关键帧和超出固定容量的数据。源格式骨名只能在离线导入时解析，不得写入 RFANIM。
+动作文本字段和验证规则见 [RFANIM V1 格式](../reference/rfanim-format.md)。
 
 当前 fixture 为 `rifle_idle.rfanim`。用 `build/rf_anim_info` 检查结构，用 Rasterfall 的
 `--action-preview` 固定输出 BMP；相同模型、动作与毫秒输入必须逐字节一致。
@@ -64,20 +41,13 @@ foo.textures/texture_001.ttex
 foo_lod1.rmesh                 # manifest 要求时
 ```
 
-asset ID 只允许小写 ASCII 字母开头以及小写字母、数字、下划线，且发布后不复用。纹理表索引直接
-决定三位十进制文件名；LOD 使用正整数层级。临时目录建立在输出根内，以保证最终 rename 不跨文件
+输出命名和 asset ID 规则见 [asset manifest 契约](../reference/asset-manifest.md)。临时目录建立在输出根内，以保证最终 rename 不跨文件
 系统。转换、TTEX 验证、RMESH 布局/纹理引用和全部 LOD 验证成功后才安装；`--force` 替换时先把旧
 asset family 移到同文件系统备份，安装失败会回滚。不要把 `build/`、`tmp/` 或 importer 临时目录提交。
 
 ## Manifest
 
-`tools/assets/manifest.example.json` 是 schema 1 示例。必填字段只有 `schema`、`id`、`type`、`source`；
-`source` 相对 manifest 定位。可选 `lods` 保存该资产的简化策略，static prop 可记录自身
-`dimensions_m`，weapon 可记录自身 `attachments`。输出根、输出路径、RMESH 的 232 units/m 等全局
-可推导规则不写进 manifest，未知字段会被拒绝。
-
-manifest 仅供离线导入、完整性验证，以及后续生成/校验 `rasterfall_prop` 或 asset registry；游戏
-runtime 不解析 JSON。当前 importer 不生成 runtime registry，避免在契约稳定前制造第二套主数据。
+[Asset manifest schema 1](../reference/asset-manifest.md) 拥有字段和验证规则。
 
 ## 空间规范与 Blender 边界
 
@@ -95,11 +65,11 @@ Blender 只负责 FBX、复杂场景和源坐标的预处理，按上述类型�
 ## GLB 转 RMESH 与纹理
 
 首批十件工业/军事环境组件使用 `tools/blender/generate_rasterfall_props.py` 生成，
-完整规格与 CLI 见 [industrial-props.md](industrial-props.md)。默认产物在 `tmp/`，
+完整规格与 CLI 见 [industrial-props.md](../industrial-props.md)。默认产物在 `tmp/`，
 不自动加入公开资源、内嵌依赖或 Windows package。
 其 V2 light upgrade 的几何、albedo、palette、预算与验收约束见
-[environment-art.md](environment-art.md)；艺术升级不改变下述导入和运行时契约。
-整套 V2 Hybrid 的选择生成与安装命令见 [industrial-props.md](industrial-props.md)。每件局部标识内嵌 PNG
+[environment-art.md](../environment-art.md)；艺术升级不改变下述导入和运行时契约。
+整套 V2 Hybrid 的选择生成与安装命令见 [industrial-props.md](../industrial-props.md)。每件局部标识内嵌 PNG
 导入为 `<id>.textures/texture_000.ttex`；根 Makefile 递归资产依赖和 Windows package
 递归复制包含这些纹理。manifest、registry、展示比例与地图均沿用既有定义。
 
@@ -121,11 +91,11 @@ TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX�
 Temporary Campus Kit V0安装到公开`props/campus/`；IDs 24–35的零碰撞尺寸明确拒绝
 隐式gameplay AABB。`tools/campus_kit_round.py --generate --capture --deterministic --audit`
 复用importer与Visual CLI完成完整性、已有库存和独立校园组图；
-见[audit、连接契约与边界](temporary-campus-kit-v0.md)。
+见[audit、连接契约与边界](../temporary-campus-kit-v0.md)。
 
 建筑套件 `rf_arch_*` 同样安装到公开 industrial 目录并追加稳定 ID；两种 flat 材质、零纹理。
 使用 `python3 tools/architecture_round.py --generate --capture --deterministic` 重现资产与两个隔离原型；
-套件、源保留、端口和 Surface V1 交接见 [architectural-environment-v1.md](architectural-environment-v1.md)。
+套件、源保留、端口和 Surface V1 交接见 [architectural-environment-v1.md](../architectural-environment-v1.md)。
 脚本先构建转换器一次，再调用 importer `--no-build`，避免重复构建；不改 importer 格式。
 
 `include/rasterfall_prop.h` / `src/rasterfall_prop.c` 保存静态组件的 presentation 资产 profile。

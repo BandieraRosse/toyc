@@ -7,7 +7,7 @@
 
 本文是首批十件工业 / 军事 static prop 的 **V2 light upgrade** 生产规范。目标是在不重做资产的
 前提下，把双色纯色 blockout 提升到可用于正式场景的简洁低模资产。组件清单、尺寸与碰撞建议见
-[industrial-props.md](industrial-props.md)，技术导入契约见 [asset-pipeline.md](asset-pipeline.md)。
+[industrial-props.md](industrial-props.md)，技术导入流程见 [资产导入与诊断](guides/asset-pipeline.md)。
 
 ## 整体约束
 
