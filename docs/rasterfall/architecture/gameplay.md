@@ -1,13 +1,10 @@
 # 玩法、会话、地图与 AI
 
-> 文档更新：2026-09-14
-> 源码核对基线补充：动漫角色正常 world/展示渲染统一优先 LOD2，缺失时按 LOD1 → 原模型回退；距离仅控制可见性与姿态更新。Campaign Maid 四人内容武器为 AK。
-> 源码核对基线补充：Surface 以 `attr.collision_id` 绑定 Runtime collision 稳定 ID；加载检查引用与唯一绑定，Gameplay Projection 按 ID 合并几何，不再使用 surface legacy_index。
-> 源码核对基线补充：Campaign Continuous Wall / Floor 与 Component Collision：`boundary_wall` 为长度参数化 RFU 墙体；`attr.collision=component|boundary|none` 在 Runtime Map 展开独立碰撞，保留 object owner ID；布局导出调用 C inspector 获取实际碰撞。
-> 源码核对基线补充：环境整合期间恢复旧开发坡道与墙顶平台的高端重叠连续性；坡面出生与 Tank impact 的逻辑 fixture 修正；地图权威碰撞、AI、波次和 spawn 配置不变。
-> 源码核对基线：工作区（普通敌人新模型混合比例 V1；Charger 新冲锋碰撞代理；敌人 dying slot 生命周期 1000ms；Jesus 使用稳定 RF Rifleman identity；两个正式四人 squad roster 已分别编入中央/东部旗帜；model resource/instance/gear/palette 仍只属于 presentation；其余玩法真值不变）
+> 状态：当前
 
-> 源码核对补充：正式 Hurd 四人使用专用 character IDs；原 Maid 四人旗卫在 flag 1 原位恢复并使用 Maid character/profession；普通 player、Eula、佣兵为 NONE；固定角色索引、HURD 旗帜 assignment 与派生 control status。
+> 所有者：Rasterfall 玩法、session 与 AI
+
+本文记录玩法真值及 session 的所有权。地图格式与碰撞来源见[地图与世界内容](maps-and-world-content.md)，角色资源与 LOD 选择见[角色表现](character-presentation.md)。
 
 ## World Content V1
 

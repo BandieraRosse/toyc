@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：V0.2 迁移计划已完成或被当前架构取代
-> 当前入口：[运行时与主循环](../../runtime.md)
+> 当前入口：[运行时与主循环](../../architecture/runtime.md)
 
 > 文档更新：2026-09-17
 > 源码核对基线：Core status/query ownership；GPU service policy、capability snapshot 与 normal renderer status。

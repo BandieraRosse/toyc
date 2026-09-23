@@ -14,9 +14,9 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 ## 当前 Windows GPU 验收状态
 
-Intel Iris Xe 已通过 strict native present、正式地图 320 帧 zero-fallback audit 和窗口拉伸；历史 Fog/Post smoke 只证明保留的底层 ABI，当前 runtime 不接入 fog。当前 GPU 复核流程见 [GPU 验收与诊断](guides/gpu-validation.md)。
+Intel Iris Xe 已通过 strict native present、正式地图 320 帧 zero-fallback audit 和窗口拉伸；历史 Fog/Post smoke 只证明保留的底层 ABI，当前 runtime 不接入 fog。当前 GPU 复核流程见 [GPU 验收与诊断](gpu-validation.md)。
 RTX 3050 上曾在 `vkCreateSwapchainKHR` 首次调用时访问冲突；native Vulkan 窗口改用 SDL software renderer 后，strict native mixed 帧已通过 10 帧 smoke。该软件 renderer 只负责窗口侧 SDL 兼容，world 与最终帧仍由 GPU mixed 和 Vulkan present 完成。
-复现过程、排除项和修复现场见 [RTX 3050 swapchain 兼容修复归档](archive/gpu-2026-09-22/gpu-nvidia-swapchain-compat.md)；当前窗口与 presenter 边界见 [GPU 渲染架构](architecture/gpu-rendering-architecture.md)。
+复现过程、排除项和修复现场见 [RTX 3050 swapchain 兼容修复归档](../archive/gpu-2026-09-22/gpu-nvidia-swapchain-compat.md)；当前窗口与 presenter 边界见 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
 
 ## Linux
 
@@ -53,7 +53,7 @@ Windows Native Codex 的统一入口是 `windows/NativeCodex.ps1`。它固定将
 `windows/Makefile` 和静态 SDL2，不引入新的构建系统。Windows 对象、exe 和
 package 默认位于 `build-windows/`，Linux `build/` 保持独立；`package` 后的真实
 运行 root 是 `build-windows/rasterfall-windows`，日常闭环与 WIN-DEV-1 标准见
-[Windows Native](guides/windows-native.md)。
+[Windows Native](windows-native.md)。
 
 除 Rasterfall 专用构建外，`windows/Makefile` 还提供通用应用验证链路。`app/windows`
 与 `app/portable` 中的应用链接 `lib/windows` 与 `lib/portable`；根目标
@@ -185,13 +185,13 @@ execution-wait 与 readback。结果是 partial selected stream，不与完整 C
 
 Enemy Visual V2 的六份公开 RFM2 自动进入现有递归 embedded 依赖及 Windows assets 复制；
 其 renderer `.inc` 已加入 Linux/self 显式依赖，Windows 使用 `-MMD` 跟踪，不新增平台编译单元。
-详见 [enemy-visuals.md](guides/enemy-visuals.md)。
+详见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## 最小验证矩阵
 
 - 纯玩法/session/map：`make rasterfall`，再运行 `build/rasterfall --logic-test`。
 - 渲染或模型：构建 + logic test，并使用相关 dump/benchmark/诊断参数；涉及画面时做实际启动检查。
-- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 [网络测试与排查](guides/network-testing.md) 做所需人工拓扑。
+- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 [网络测试与排查](network-testing.md) 做所需人工拓扑。
 - Linux 平台：实际 Wayland/ALSA 启动；无图形/音频环境时明确报告未覆盖项。
 - Windows 平台或共享平台契约：依赖已准备时运行 `make win-rasterfall`；打包变化再跑 package。
 

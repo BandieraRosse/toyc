@@ -3,7 +3,7 @@
 > 状态：当前操作指南
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界与动画求值见
-[动画架构](../architecture/animation-architecture.md)，Core 资源读取边界见[运行时架构](../runtime.md)，
+[动画架构](../architecture/animation-architecture.md)，Core 资源读取边界见[运行时架构](../architecture/runtime.md)，
 资源是否允许发布见[资源来源台账](../reference/asset-sources.md)。
 
 ## 模型与动画求值回归

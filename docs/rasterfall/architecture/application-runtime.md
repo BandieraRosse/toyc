@@ -5,7 +5,7 @@
 > 事实入口：`rasterfall/include/rasterfall_feature_freeze.h`、`rasterfall/src/rf_game_lifecycle.c`、`rasterfall/src/rf_application_projection.c`
 > 最近核对：2026-09-23
 
-本页描述保留在源码中的 Desktop、Application 与 Projection 边界，以及正常运行路径的冻结状态。进程、Core 和固定步长调度见 [运行时与主循环](../runtime.md)；隔离验收见[视觉验收指南](../guides/visual-validation.md)。
+本页描述保留在源码中的 Desktop、Application 与 Projection 边界，以及正常运行路径的冻结状态。进程、Core 和固定步长调度见 [运行时与主循环](runtime.md)；隔离验收见[视觉验收指南](../guides/visual-validation.md)。
 
 ## 当前运行边界
 

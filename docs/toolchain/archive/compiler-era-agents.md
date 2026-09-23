@@ -1,5 +1,7 @@
 # Toyc 编译器时期的 AGENTS.md（历史保留）
 
+> 状态：归档；当前维护入口见 [Toyc 与 Tinylibc](../README.md)。
+
 > 本文件保存仓库开发重心转向 Rasterfall 前，根 `AGENTS.md` 中关于 Toyc 编译器、工具链、
 > 自举和测试的协作约定。它不作为当前根级代理指令；维护编译器时可作为参考，最终以当前
 > Makefile、脚本、README 和实际测试行为为准。
@@ -63,4 +65,3 @@ make test-all
 - 不把 `compiler-tests/pending/` 的复现用例当作已支持特性。
 - 更新构建目标或测试集合时同步检查 `README.md`、`README_en.md` 和 Makefile 顶部注释。
 - `toyc-c-features.md` 负责 C 特性；`bootstrap/README.md` 负责种子和自举流程。
-

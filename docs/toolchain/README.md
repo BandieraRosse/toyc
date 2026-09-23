@@ -9,7 +9,6 @@ Toyc 是面向 Linux x86_64 的自托管 C 工具链，`lib/` 与 `include/` 同
 - 自举种子：[../../bootstrap/README.md](../../bootstrap/README.md)
 - Windows 平台迁移计划：[../windows-platform-plan.md](../windows-platform-plan.md)
 - 历史与考古：[../archaeology/README.md](../archaeology/README.md)
-- 编译器时期协作说明：[../AGENTS-toyc-history.md](../AGENTS-toyc-history.md)
+- 编译器时期协作说明：[archive/compiler-era-agents.md](archive/compiler-era-agents.md)
 
 考证 SC7、Tinylibc、ToyCCompiler 或 Toyc 的传承时，先读考古入口，再从其问题索引进入证据；不要仅凭当前目录结构、单条提交说明或事后 README 推断历史结论。
-
