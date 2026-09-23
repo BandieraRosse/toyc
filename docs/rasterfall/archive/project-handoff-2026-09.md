@@ -14,7 +14,7 @@
 本文是 Rasterfall 暂停开发时留下的现场记录。它不代表产品路线图，也不承诺继续维护；
 目的是让未来的自己或接手者不必重新猜测当前边界、资源来源、转换流程和动画问题。
 面向用户的构建方法以仓库根目录 README 和 `rasterfall/README.md` 为准，模型与动画当前
-内部边界以 [`../animation-architecture.md`](../animation-architecture.md) 为准。
+内部边界以 [`../architecture/animation-architecture.md`](../architecture/animation-architecture.md) 为准。
 
 ## 当前结论
 

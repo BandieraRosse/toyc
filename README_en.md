@@ -51,7 +51,7 @@ The shared C sources and freestanding Linux path remain, but WSL is now an auxil
 legacy-compatibility environment: it is not guaranteed to stay current, build successfully,
 or produce correct runtime results, and it cannot replace Windows native-present evidence.
 
-See [`docs/rasterfall/animation-architecture.md`](docs/rasterfall/animation-architecture.md)
+See [`docs/rasterfall/animation-architecture.md`](docs/rasterfall/architecture/animation-architecture.md)
 for the model, animation-format, retargeting, and IK module boundaries.
 
 Recommended native Windows development loop:

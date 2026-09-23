@@ -87,7 +87,7 @@ importer 会完整求值 node hierarchy，绝不沿用旧 `glb2rmesh` 的“只�
 材质限定为 metallic-roughness 的 `baseColorFactor` 与一个 `baseColorTexture`（PNG/JPEG，UV0）；alpha
 第一版仅允许 OPAQUE 或 MASK。不接受 KHR 材质扩展、运行时 shader graph、嵌套外部 URI 或依赖
 Blender scene/camera/light。动画可与角色同包，但 skeletal importer 第一阶段可明确忽略；动画进入
-格式无关 `rasterfall_animation_clip` 的规则仍见 [animation architecture](../animation-architecture.md)。
+格式无关 `rasterfall_animation_clip` 的规则仍见 [animation architecture](../architecture/animation-architecture.md)。
 
 ## Attachment Contract V1
 

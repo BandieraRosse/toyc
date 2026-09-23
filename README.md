@@ -50,7 +50,7 @@ Rasterfall 的用户构建和启动入口见 [`rasterfall/README.md`](rasterfall
 模块边界见 [`docs/rasterfall/README.md`](docs/rasterfall/README.md)。
 
 模型、动画格式、重定向与 IK 的模块边界见
-[`docs/rasterfall/animation-architecture.md`](docs/rasterfall/animation-architecture.md)。
+[`docs/rasterfall/animation-architecture.md`](docs/rasterfall/architecture/animation-architecture.md)。
 
 当前推荐的 Windows 原生开发闭环：
 

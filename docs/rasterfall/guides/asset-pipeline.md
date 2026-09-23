@@ -3,8 +3,23 @@
 > 状态：当前操作指南
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界与动画求值见
-[动画架构](../animation-architecture.md)，Core 资源读取边界见[运行时架构](../runtime.md)，
+[动画架构](../architecture/animation-architecture.md)，Core 资源读取边界见[运行时架构](../runtime.md)，
 资源是否允许发布见[资源来源台账](../reference/asset-sources.md)。
+
+## 模型与动画求值回归
+
+涉及 resource/instance、动作组合、IK 或重定向时运行：
+
+```sh
+build/rfchar_runtime_test <rfchar.rmesh>
+build/rasterfall --character-acceptance <rfchar.rmesh> <output>
+build/rasterfall --action-composition-capture <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <output.bmp>
+make app-vmd-inspect app-glb-inspect rasterfall
+build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
+build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
+```
+
+检查一 resource / 两 instance 的隔离，以及完整 walk 连续性。修改 RFM2 格式、公共重定向数学或构建目标时，再覆盖相关转换工具、Windows 构建和自托管应用构建。实际参数以各程序 `--help` 为准。
 
 ## Enemy Visual V2
 

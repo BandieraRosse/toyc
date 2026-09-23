@@ -1,14 +1,14 @@
 # Rasterfall 模型与动画架构
 
-> 文档更新：2026-09-21
-> 源码核对基线：2026-09-21 GPU skinning executor 只把 finalized palette 与 bind influence 交给 GPU compute 求 body position/normal；composition、grant、IK、socket、attachment 与 weapon placement truth 仍由 CPU presentation 链路拥有。
-> 源码核对补充：GLB 动画 library carrier 位于 `app/linux/glb_inspect.c`，不改变运行时接口或复用关系。
+> 状态：当前
+> 所有者：Rasterfall 模型与动画求值
+> 最近核对：2026-09-21
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
 
 新角色骨架、rest pose、attachment 和 skinning 的离线输入规范由
-[`character-assets.md`](reference/character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
+[`character-assets.md`](../reference/character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
 
 ## 数据流
 
@@ -162,7 +162,7 @@ RF Humanoid modular actor 同样遵守该规则：其 RFANIM WALK 使用逐 acto
   理想布局更大。冷 diagnostics observer 与独立 Pose Buffer 属于后续优化，不在 V1 ownership 中完成。
 - inspector 的详细 IK trace 仍存放在模型结构中。新增诊断应优先放入可选 observer/
   snapshot，避免继续扩大运行时热数据。
-- glTF 动画库实现仍由 `app/glb_inspect.c` 以 library 模式编译。若继续扩展 glTF channel，
+- glTF 动画库实现仍由 `app/linux/glb_inspect.c` 以 library 模式编译。若继续扩展 glTF channel，
   应把解析与采样移入 `rasterfall/src/`，CLI 只保留输出和测试。
 - 当前 runtime clip 以骨骼局部旋转为主；加入通用骨骼平移、缩放或动画混合时，应增加
   独立 pose buffer 和 channel mask，不要继续增加 VMD 专用旁路状态。
@@ -170,22 +170,4 @@ RF Humanoid modular actor 同样遵守该规则：其 RFANIM WALK 使用逐 acto
   additive 仅进行局部四元数 delta 叠加，没有权重混合、animator graph、IK target 求解或 root motion。
   `weapon_target` 等非骨骼 semantic channel 应在扩展格式时增加显式 channel kind，不能伪装成骨名。
 
-## 回归要求
-
-涉及上述边界的修改至少验证：
-
-```sh
-build/rfchar_runtime_test <rfchar.rmesh> # 含一 resource / 两 instance isolation
-build/rasterfall --character-acceptance <rfchar.rmesh> <output>
-build/rasterfall --action-composition-capture <model.rmesh> <lower.rfanim> <lower-ms> <upper.rfanim> <upper-ms> <additive.rfanim> <additive-ms> <output.bmp>
-make app-vmd-inspect app-glb-inspect rasterfall
-build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-leg-trace
-build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
-```
-
-`rasterfall` 内置的 `--vmd-*` 参数属于旧 PMX/VMD 兼容诊断，不是新 RFCHAR
-角色的默认开发者预览路径；正常启动不会显示 Eula/VMD 私有预览，但正式 Eula
-gameplay actor 存在时仍会按 profile 懒加载 walk clip，保证其 MOVE 展示有动作来源。
-
-如果修改 RFM2 格式、公共重定向数学或构建目标，还需扩大到相关转换工具、Windows 构建
-以及自托管应用构建。
+回归命令和矩阵见[资产导入与诊断指南](../guides/asset-pipeline.md)。`rasterfall` 的 `--vmd-*` 参数属于旧 PMX/VMD 兼容诊断，不是新 RFCHAR 角色的默认开发者预览路径；正常启动不显示 Eula/VMD 私有预览，正式 Eula gameplay actor 存在时仍按 profile 懒加载 walk clip。
