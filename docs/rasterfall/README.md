@@ -18,7 +18,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 启动、参数、主循环、Core Host | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
-| 地图格式、Runtime Map、World Content | [map-format.md](map-format.md)、[gameplay.md](gameplay.md) | map parser/runtime、projection adapter、布局工具 |
+| 地图格式、Runtime Map、World Content | [地图与世界内容](maps-and-world-content.md)、[地图格式](map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
 | 角色、敌人与附件表现 | [角色表现](character-presentation.md) | character/enemy presentation adapters |
 | HUD、Viewmodel 与特效 | [HUD 与特效](hud-effects.md) | `rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c` |

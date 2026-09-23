@@ -12,6 +12,6 @@
 - GPU Draw/Raster/present：[../gpu-rendering-architecture.md](../gpu-rendering-architecture.md)
 - 模型与动画：[../animation-architecture.md](../animation-architecture.md)
 - 联机：[../network-architecture.md](../network-architecture.md)
-- 地图与 World Content：[../map-format.md](../map-format.md)
+- 地图与 World Content：[../maps-and-world-content.md](../maps-and-world-content.md)
 
 专题正文完成去除阶段状态和操作步骤后，再机械迁入本目录；在此之前不得创建同主题的第二份架构说明。

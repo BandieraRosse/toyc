@@ -8,6 +8,6 @@
 - [资产转换与诊断](../asset-pipeline.md)
 - [视觉验收](visual-validation.md)
 - [渲染性能诊断](rendering-performance.md)
-- [地图布局与查询](../map-format.md#俯视布局导出)
+- [地图编辑、布局与查询](map-authoring.md)
 
 当前指南仍引用部分兼具架构内容的旧专题；拆分时以 [文档治理规则](../../repository/documentation.md) 为准。
