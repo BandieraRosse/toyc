@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 后续专项根因、修复与实机验证见 [RB-0 专项续接](gpu-rb0-special-20260922.md)。本页保留 11:30 交接现场。
 

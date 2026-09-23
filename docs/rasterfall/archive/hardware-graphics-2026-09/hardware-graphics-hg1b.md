@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 HG-2B 在 registry 增加单调 `frame_epoch`；每次成功 `frame_begin` 递增，上限拒绝回绕。混合帧保存 epoch，跨帧重 pin 同一 generation 不能恢复旧计划的执行资格。正常 pin/退休/释放规则不变，详见 [Core 帧计划](hardware-graphics-hg2b.md#core-混合帧计划基础)。

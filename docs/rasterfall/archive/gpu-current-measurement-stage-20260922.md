@@ -6,7 +6,7 @@
 
 > 归档：2026-09-22
 > 以下为修复前后阶段记录，阻塞条件只代表当时现场。
-> 当前入口见 [GPU 渲染架构](../gpu-rendering-architecture.md)与 [GPU 验收与诊断](../guides/gpu-validation.md)。
+> 当前入口见 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)与 [GPU 验收与诊断](../guides/gpu-validation.md)。
 
 2026-09-22 的当前 Intel package 已完成两组各五轮。审计组确认 near 0/30/60 的 bridge 固定为 12 次、
 88,473,600 bytes，Campaign 为 14/16 次、103,219,200/117,964,800 bytes；无审计组单独保存最终 stats。

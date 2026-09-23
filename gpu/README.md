@@ -1,7 +1,7 @@
 # Rasterfall GPU 目录
 
 > 文档更新：2026-09-19
-> 源码核对基线：`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_raster_pack.c`、`gpu/src/rf_gpu_raster_bin.c`、`rasterfall/src/rf_core_host.c`；当前实现边界见 [GPU 渲染架构](../docs/rasterfall/gpu-rendering-architecture.md)。
+> 源码核对基线：`gpu/src/rf_gpu_vulkan_backend.c`、`gpu/src/rf_gpu_raster_pack.c`、`gpu/src/rf_gpu_raster_bin.c`、`rasterfall/src/rf_core_host.c`；当前实现边界见 [GPU 渲染架构](../docs/rasterfall/architecture/gpu-rendering-architecture.md)。
 
 本目录保存 Rasterfall 共享 Vulkan backend、Raster ABI pack/binning、compute shader、hosted 诊断前端和
 参考性外部代码。本目录说明代码所有权和已实现的技术边界；实机验证与性能快照以

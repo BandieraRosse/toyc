@@ -5,7 +5,7 @@
 > 最近核对：2026-09-23
 
 本文定义 CPU/GPU 共用的场景提交、帧分层和所有权。GPU executor、资源与 presenter 合同见
-[GPU 渲染架构](gpu-rendering-architecture.md)；角色表现见 [角色表现](architecture/character-presentation.md)；HUD、
+[GPU 渲染架构](architecture/gpu-rendering-architecture.md)；角色表现见 [角色表现](architecture/character-presentation.md)；HUD、
 特效和 viewmodel 见 [HUD 与特效](architecture/hud-effects.md)。
 
 ## 所有权

@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-21
 > 源码核对基线：`208532c`
@@ -30,7 +30,7 @@
 
 ## 当前事实入口
 
-- [GPU 渲染架构](../../gpu-rendering-architecture.md)
+- [GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 - [GPU 验收与诊断](../../guides/gpu-validation.md)
 - [渲染架构](../../rendering-architecture.md)
 - [构建与平台](../../build-platforms.md)

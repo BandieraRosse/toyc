@@ -16,7 +16,7 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 Intel Iris Xe 已通过 strict native present、正式地图 320 帧 zero-fallback audit 和窗口拉伸；历史 Fog/Post smoke 只证明保留的底层 ABI，当前 runtime 不接入 fog。当前 GPU 复核流程见 [GPU 验收与诊断](guides/gpu-validation.md)。
 RTX 3050 上曾在 `vkCreateSwapchainKHR` 首次调用时访问冲突；native Vulkan 窗口改用 SDL software renderer 后，strict native mixed 帧已通过 10 帧 smoke。该软件 renderer 只负责窗口侧 SDL 兼容，world 与最终帧仍由 GPU mixed 和 Vulkan present 完成。
-复现过程、排除项和修复现场见 [RTX 3050 swapchain 兼容修复归档](archive/gpu-2026-09-22/gpu-nvidia-swapchain-compat.md)；当前窗口与 presenter 边界见 [GPU 渲染架构](gpu-rendering-architecture.md)。
+复现过程、排除项和修复现场见 [RTX 3050 swapchain 兼容修复归档](archive/gpu-2026-09-22/gpu-nvidia-swapchain-compat.md)；当前窗口与 presenter 边界见 [GPU 渲染架构](architecture/gpu-rendering-architecture.md)。
 
 ## Linux
 

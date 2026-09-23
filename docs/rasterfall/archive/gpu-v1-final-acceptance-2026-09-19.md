@@ -4,7 +4,7 @@
 > 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
-> 历史归档：2026-09-19 功能阶段结束后的验收现场；当前边界以 [GPU 渲染架构](../gpu-rendering-architecture.md) 和 [GPU 验收与诊断](../guides/gpu-validation.md) 为准。
+> 历史归档：2026-09-19 功能阶段结束后的验收现场；当前边界以 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md) 和 [GPU 验收与诊断](../guides/gpu-validation.md) 为准。
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。

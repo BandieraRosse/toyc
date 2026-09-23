@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 后续工作已正式进入 [HG-2C](hardware-graphics-hg2c.md)；首步 mixed CPU 分项审计已接入，GPU timestamp 与共享 target 尚待实现。

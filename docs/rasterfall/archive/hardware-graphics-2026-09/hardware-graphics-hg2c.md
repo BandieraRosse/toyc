@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-20
 > 源码核对基线补充：2026-09-20 [HG-2C5](hardware-graphics-hg2c5.md) 已按 Windows Native present 基线重新立项；先以 Phase 0 审计当前 queue-idle 路径，再迁移 image-owned render-finished semaphore，最后以 image reacquire 证明移除 hot wait。厂商扩展不属于正确性依赖。

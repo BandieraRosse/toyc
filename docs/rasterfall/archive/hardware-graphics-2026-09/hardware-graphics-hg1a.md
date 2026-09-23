@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-19
 > 后续源码核对：2026-09-19 [HG-1B](hardware-graphics-hg1b.md) 已替换正常 static prop 的借用资源适配器；下文保留 HG-1A checkpoint 当时的实现与证据。

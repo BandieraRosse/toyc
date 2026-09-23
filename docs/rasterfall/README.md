@@ -25,7 +25,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
 | HUD、Viewmodel 与特效 | [HUD 与特效](architecture/hud-effects.md) | `rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c` |
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |
-| GPU Draw/Raster/present 架构 | [GPU 渲染架构](gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
+| GPU Draw/Raster/present 架构 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
 | GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[GPU 性能标准](reference/gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
 | 模型、蒙皮、动画求值 | [动画架构](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |

@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-19
 > 源码核对基线：2026-09-19 工作区；`windows/src/window_sdl.c`、`include/toy_window.h`、`lib/platform/window_wayland.c`、`rasterfall/src/rf_core_host.c`、`tools/rasterfall_gpu_mixed_test.c`；Windows RTX 3050 Laptop GPU 实机复测。

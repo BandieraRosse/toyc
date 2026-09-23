@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-21
 > 源码核对基线：2026-09-21 当前工作区；HG-4A Ground 与 HG-4B map/boundary 均已按 Windows Intel 签收。五类几何已接入持久 Draw/GPU geometry；专用 runtime fixture、五类 CPU/native 对照、Fog/四 extent resize、Outpost/Campaign/WHU/Campaign world-cycle、Windows package 与完整逻辑回归通过。HG-4 完成。

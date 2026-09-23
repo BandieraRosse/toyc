@@ -6,7 +6,7 @@
 > 当前切片：M2 动态资源复用；前置为 RTX 3050 低扰动五轮 baseline
 
 本文只记录尚未完成的执行顺序和决策门。稳定数据流见
-[GPU 渲染架构](../gpu-rendering-architecture.md)，验收工作流见
+[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)，验收工作流见
 [GPU 验收与诊断](../guides/gpu-validation.md)，目标与冻结基线见
 [GPU 性能标准](../reference/gpu-performance-standards.md)，审计基线见[阶段记录](../archive/gpu-2026-09-22/gpu-performance-baseline.md)。RB-0/RB-1、M1、失败候选和单次测量证据已经归档，
 不得作为并行活动计划恢复。

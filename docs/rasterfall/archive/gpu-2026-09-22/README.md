@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档：2026-09-23
-> 当前架构：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前架构：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 > 当前验收：[GPU 验收与诊断](../../guides/gpu-validation.md)
 > 当前计划：[GPU Raster / Bridge 收敛计划](../../plans/gpu-raster-bridge.md)
 

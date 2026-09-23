@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：阶段完成或已由当前文档取代
-> 当前入口：[GPU 渲染架构](../../gpu-rendering-architecture.md)
+> 当前入口：[GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：2026-09-19 [HG-2B](hardware-graphics-hg2b.md) 已新增整数兼容 pipeline、固定裁剪 index slots 与 GPU target 往返/LOAD。本文保留 HG-2A 原数值合同和当时证据；原 shader 继续作为对照，上传字节统计已包含新增 index buffer。

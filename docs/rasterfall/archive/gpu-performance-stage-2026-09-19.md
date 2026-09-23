@@ -4,7 +4,7 @@
 > 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
-> 历史归档：此处保留 2026-09-19 上一轮性能工作顺序，不再作为当前开发任务或验收门槛。当前实现见 [GPU 渲染架构](../gpu-rendering-architecture.md)，实测流程见 [GPU 验收与诊断](../guides/gpu-validation.md)。
+> 历史归档：此处保留 2026-09-19 上一轮性能工作顺序，不再作为当前开发任务或验收门槛。当前实现见 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)，实测流程见 [GPU 验收与诊断](../guides/gpu-validation.md)。
 
 > 文档更新：2026-09-19
 > 源码核对基线补充：逐帧审计已区分 `native_present_ms`（`vkQueuePresentKHR` 调用）与 `native_present_queue_idle_ms`（随后 `vkQueueWaitIdle`）；同时输出 classification、texture measure、binning 及各上传阶段。两者均为 CPU 墙钟计时，尚未提供 GPU timestamp。

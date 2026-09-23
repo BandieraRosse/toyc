@@ -6,7 +6,7 @@
 > 事实入口：`windows/NativeCodex.ps1`、`tools/gpu_acceptance.ps1`、`tools/gpu_metrics.ps1`
 
 本文拥有 GPU 构建后验收、诊断和性能采样流程。GPU 数据流与失败语义见
-[GPU 渲染架构](../gpu-rendering-architecture.md)，性能判定见
+[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)，性能判定见
 [GPU 性能标准](../reference/gpu-performance-standards.md)。物理 GPU 结论必须来自 Windows native package；
 WSL、llvmpipe 或 hosted Vulkan 不能替代 native present、驱动和窗口生命周期证据。
 
