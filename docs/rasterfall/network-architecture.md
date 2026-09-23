@@ -1,11 +1,11 @@
 # Rasterfall 联机架构与扩展边界
 
-> 文档更新：2026-09-12
-> 源码核对补充：公共房间协调服务端当前位于 `app/linux/net/rasterfall_punch_server.c`，尚未建立 Windows/portable 版本。
-> 源码核对基线补充：协议 43 为 Enemy Visual V1 补传既有权威命中 mask；pose、rig profile 和 VFX 不进入协议。
-> 源码核对基线：工作区（客户端权威移动为长期协议模型；客户端按可信端处理；输入条目只保留 command、sequence/tick、选中槽位意图、airborne prediction report 和 fire validation rays；协议版本 42；独立玩家快照已删除；输入历史、actor snapshot 和远端命令执行直接绑定 actor；`actor = gameplay truth`；`remote presentation cache = derived render state`，插值缓存只保存位置、朝向、高度和时间戳；本地主体仍有未确认输入时，reconcile 不覆盖其 airborne/knockback motion；主机普通枪械、斧头/药丸及炸弹/Molotov 客户端输入直接应用到远端 actor；投射物/燃烧区携带 owner；本地预测位置派生 camera）
+> 状态：当前
+> 所有者：Rasterfall 联机状态与协议边界
+> 事实入口：`rasterfall/src/rasterfall_net.c`、`rasterfall/include/rasterfall_public_protocol.h`
+> 最近核对：2026-09-12
 
-本文记录联机实现必须保持的内部边界。产品入口和平台范围见 `../README.md`。
+本文记录联机实现必须保持的内部边界。验证和故障定位见 [网络测试与排查](guides/network-testing.md)，产品入口和平台范围见 [`../../rasterfall/README.md`](../../rasterfall/README.md)。
 
 ## 模块职责
 
@@ -77,14 +77,3 @@ snapshot 布局和输入条目布局在协议版本 42 中生效。
 gameplay 位置是 body state 的来源，camera 位置由 session 派生；camera 只保留方向和展示数据。
 `remote_samples` 与 `remote_render_*` 是接收端的纯展示缓存，只保存插值所需的位置、朝向、
 高度和时间戳；HP、武器、reload、统计和控制状态必须继续从 `game_state.actors[]` 读取。
-
-## 人工联机验收
-
-Enemy Visual V1：相同最新构建的 host + guest，Campaign 中观察 Charger windup/charge、
-Tank sweep 并分别让 host/guest 被击中。确认双方低伏/挥击随快照 timer 变化、命中粒子只在
-实际命中时出现、本地受伤 shake 与 gameplay 击飞一致；重复快照不得重复产生粒子。
-新增 mask 使用普通 snapshot，不是 reliable visual event；高延迟/丢包时表现跟随可见快照到达，
-不能把客户端表现帧当作主机伤害结算时间。纯 codec 回归不代替 Windows 双机观察。
-
-网络修改完成后向维护者列出：运行平台与角色、房间号、操作顺序、预期 UI/日志、应观察的玩家
-或世界状态。最终正确性由 Windows 为主的真实联机验证确认；局部自动检查不替代该结论。

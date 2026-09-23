@@ -1,5 +1,9 @@
 # 网络代码导航
 
+> 状态：历史
+> 归档原因：代码导航和排查步骤已由当前网络架构与测试指南取代
+> 当前入口：[联机架构](../network-architecture.md)、[网络测试](../guides/network-testing.md)
+
 > 文档更新：2026-09-12
 > 源码核对补充：公共房间协调服务端 app 位于 `app/linux/net/`；Windows/portable app 目录目前只作为后续迁移入口。
 > 源码核对基线补充：协议 43；enemy 条目 55 字节，末尾显式编码既有 `charge_hit_actor_mask` 的低/高 32 位，decode/apply 保留真值，供 Enemy Procedural Rig / hit VFX 消费。
@@ -16,7 +20,7 @@
 - `rasterfall_session.c`：权威 step、客户端 step/replay，以及网络命令最终落到玩法的边界。
 
 联机状态分类、房间生命周期和人工验收清单见
-[`network-architecture.md`](network-architecture.md)。
+[`network-architecture.md`](../network-architecture.md)。
 
 ## 排查顺序
 

@@ -3,7 +3,7 @@
 > 状态：当前
 > 所有者：Rasterfall 空间地图格式
 > 事实入口：`rasterfall/lib/rasterfall_map_parser.c`、`rasterfall/include/rasterfall_map_parser.h`
-> 最近核对：2026-09-23
+> 最近核对：2026-09-21
 
 ## World Definition V1
 

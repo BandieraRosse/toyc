@@ -191,7 +191,7 @@ Enemy Visual V2 的六份公开 RFM2 自动进入现有递归 embedded 依赖及
 
 - 纯玩法/session/map：`make rasterfall`，再运行 `build/rasterfall --logic-test`。
 - 渲染或模型：构建 + logic test，并使用相关 dump/benchmark/诊断参数；涉及画面时做实际启动检查。
-- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 `network-architecture.md` 做所需人工拓扑。
+- 网络：先跑 logic test 中的 packet/pipeline 用例，再按 [网络测试与排查](guides/network-testing.md) 做所需人工拓扑。
 - Linux 平台：实际 Wayland/ALSA 启动；无图形/音频环境时明确报告未覆盖项。
 - Windows 平台或共享平台契约：依赖已准备时运行 `make win-rasterfall`；打包变化再跑 package。
 

@@ -3,7 +3,7 @@
 > 状态：当前
 > 所有者：Rasterfall Map Runtime 与 session 世界生命周期
 > 事实入口：`rasterfall/lib/rasterfall_map_parser.c`、`rasterfall/lib/rasterfall_map_runtime.c`、`rasterfall/src/rasterfall_map.c`、`rasterfall/src/rasterfall_session.c`
-> 最近核对：2026-09-23
+> 最近核对：2026-09-21
 
 空间地图 `.map` 与 Game-owned `assets/worlds/*.content` 分别保存空间事实和 actor、terminal、flag、formation 等世界内容。静态 world identity 将两者绑定；内容地图不进入 Runtime Map。字段契约见 [地图格式](map-format.md)，修改和查询流程见 [地图编辑与查询](guides/map-authoring.md)。
 
