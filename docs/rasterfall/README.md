@@ -31,7 +31,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |
-| 联机协议、快照、预测与测试 | [联机架构](network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
+| 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 环境资产美术约束与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、预算、规格与生成入口 |
 | 建筑套件、管线端口和墙地表面 | [建筑套件规范](reference/architectural-environment-v1.md)、[生成指南](guides/architectural-environment-v1.md) | 建筑资产、连接合同与复现入口 |

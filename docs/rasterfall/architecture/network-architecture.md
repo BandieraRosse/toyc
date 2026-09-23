@@ -2,14 +2,14 @@
 
 > 状态：当前
 > 所有者：Rasterfall 联机状态与协议边界
-> 事实入口：`rasterfall/src/rasterfall_net.c`、`rasterfall/include/rasterfall_public_protocol.h`
-> 最近核对：2026-09-12
+> 事实入口：`rasterfall/src/rasterfall_net.c`、`rasterfall/include/rasterfall_net.h`、`include/rasterfall_public_protocol.h`
+> 最近核对：2026-09-23
 
-本文记录联机实现必须保持的内部边界。验证和故障定位见 [网络测试与排查](guides/network-testing.md)，产品入口和平台范围见 [`../../rasterfall/README.md`](../../rasterfall/README.md)。
+本文记录联机实现必须保持的内部边界。验证和故障定位见 [网络测试与排查](../guides/network-testing.md)，产品入口和平台范围见 [`../../../rasterfall/README.md`](../../../rasterfall/README.md)。
 
 ## 模块职责
 
-- `include/rasterfall_public_protocol.h`：游戏和公网协调服务共享的房间范围、传输模式、消息类型、
+- 根目录 `include/rasterfall_public_protocol.h`：游戏和公网协调服务共享的房间范围、传输模式、消息类型、
   角色和错误码。房间号是打洞或 relay 模式的唯一事实来源。
 - `src/rasterfall_net_transport.c`：Linux/Windows UDP socket 的打开、关闭、收发和单调时钟；
   不解释公网协议或 gameplay 数据。
@@ -68,7 +68,7 @@ weapon timers/inventory 都只写入和读取对应 `game_state.actors[]`。airb
 所需的运动 metadata，主机只将其作为远端 actor 运动输入；`current_slot` 是装备选择意图，主机按
 actor 自有 inventory 通过 actor weapon rules 解析。reload 与普通枪械 fire cadence 同样在主机 actor
 上推进；`fire_seq`/`rays` 是开火验证与去重 metadata，不是持久玩法状态。actor
-snapshot 布局和输入条目布局在协议版本 42 中生效。
+snapshot 布局和输入条目布局在协议版本 42 中生效；当前协议版本由 `rasterfall/include/rasterfall_net.h` 定义，不以本页中的历史版本号代替当前常量。
 
 炸弹和 Molotov 已通过 `toy_game_actor_throwable()` 直接作用于远端 actor；投射物和燃烧区的
 `owner_actor_id` 使用稳定 actor ID，不能保存指针或依赖 C 结构布局。斧头和药丸通过

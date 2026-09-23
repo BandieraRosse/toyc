@@ -5,7 +5,7 @@
 > 事实入口：`rasterfall/src/rasterfall_logic_test.inc`、`rasterfall/src/rasterfall_net.c`、`rasterfall/include/rasterfall_public_protocol.h`
 > 最近核对：2026-09-12
 
-联机权威、输入、快照和展示状态的所有权见 [联机架构](../network-architecture.md)。验证先运行 `build/rasterfall --logic-test` 中的 packet/pipeline 用例，再根据改动范围做 Windows native 的真实拓扑测试。纯 codec 成功只证明编码、解码和本地逻辑，不能代替 host/guest 窗口观察。
+联机权威、输入、快照和展示状态的所有权见 [联机架构](../architecture/network-architecture.md)。验证先运行 `build/rasterfall --logic-test` 中的 packet/pipeline 用例，再根据改动范围做 Windows native 的真实拓扑测试。纯 codec 成功只证明编码、解码和本地逻辑，不能代替 host/guest 窗口观察。
 
 ## 选择排查入口
 
