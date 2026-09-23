@@ -1,7 +1,6 @@
 # Rasterfall 当前架构
 
-本目录收纳稳定的所有权、数据流、不变量和扩展边界。迁移期间，已核对的专题正文仍位于上一层；本页是
-分类索引，不复制正文。
+本目录收纳稳定的所有权、数据流、不变量和扩展边界。本页是分类索引，不复制专题正文。
 
 - Runtime 与主循环：[runtime.md](runtime.md)
 - Application、GUI 与查询投影：[application-runtime.md](application-runtime.md)
@@ -14,5 +13,3 @@
 - 模型与动画：[animation-architecture.md](animation-architecture.md)
 - 联机：[network-architecture.md](network-architecture.md)
 - 地图与 World Content：[maps-and-world-content.md](maps-and-world-content.md)
-
-专题正文完成去除阶段状态和操作步骤后，再机械迁入本目录；在此之前不得创建同主题的第二份架构说明。

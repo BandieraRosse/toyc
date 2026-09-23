@@ -132,7 +132,7 @@ make test-toyld-archive # 归档链接测试
 make test-toyld-self    # toyld 两阶段字节一致性
 make test-llm           # GPT-2 数值/前向传播测试
 make test-llm-qwen2     # Qwen2 算子、checkpoint 和单 token 前向测试
-make test-all           # 核心聚合目标；不包含 test-toyld 和 test-llm
+make test-all           # 核心聚合目标；不包含 test-toyld、test-toyld-multifile、test-self-app 和独立 LLM 测试
 ```
 
 Qwen2.5 推理器可直接读取 Hugging Face 的单文件 `model.safetensors`，支持 BF16

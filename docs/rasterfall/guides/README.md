@@ -16,4 +16,4 @@
 - [地图编辑、布局与查询](map-authoring.md)
 - [网络测试与排查](network-testing.md)
 
-当前指南仍引用部分兼具架构内容的旧专题；拆分时以 [文档治理规则](../../repository/documentation.md) 为准。
+指南记录可复核的操作步骤；所有权和数据流以[架构索引](../architecture/README.md)为准，固定格式与合同以[参考索引](../reference/README.md)为准。

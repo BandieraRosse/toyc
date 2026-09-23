@@ -1,11 +1,3 @@
-Windows platform implementation units belong here. Keep the public game
-interfaces in `include/` stable and implement them here instead of spreading
-Windows conditionals through Rasterfall gameplay code.
+# Windows 平台实现
 
-Planned units:
-
-* `window_sdl.c` — window, software surface, keyboard and relative mouse
-* `audio_sdl.c` — PCM callback and audio queue
-* `socket_winsock.c` — Winsock startup and error translation
-* `time_win32.c` — monotonic clock and sleep
-* `assets_embedded.c` — generated single-file asset table
+本目录包含 Rasterfall 的 Windows 入口、窗口与输入、音频、socket、线程和运行时适配实现。模块所有权及跨平台边界见[运行时架构](../../docs/rasterfall/architecture/runtime.md)和[构建与平台](../../docs/rasterfall/guides/build-platforms.md)；实际编译单元以 [`windows/Makefile`](../Makefile) 为准。

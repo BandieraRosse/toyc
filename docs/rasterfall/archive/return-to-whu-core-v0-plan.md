@@ -1,11 +1,15 @@
 # 《重返武汉大学》— 信息学部核心区 V0 计划
 
+> 状态：历史；2026-09-13 的调查与白盒前置计划，不是当前活动计划
+> 当前入口：[Rasterfall 活动计划](../plans/README.md)；事实层见[核心区参考资料](../reference/return-to-whu-core/)
+> 归档原因：阶段性调查方案，保留当时的资料缺口和取证顺序
+
 > 文档更新：2026-09-13
 > 源码核对基线：只读核对维护者总索引、map-format及现有地图/布局工具的RFU契约；本阶段未改变任何运行时或正式地图。
 
 ## 项目目标与本阶段状态
 
-建立可追溯的真实地点事实层，让未来白盒能够按真实比例组织建筑、道路和地形。当前交付为[参考图 SVG](whu-info-core-reference.svg)、[PNG](whu-info-core-reference.png)、[机器数据](whu-info-core-reference.json)与[来源台账](sources.md)。它已能支持平面布局讨论，**尚不足以冻结真实地形白盒**：道路宽度、相对高程、坡度与footprint现场精度仍未核实。不要把未填高程理解为平地。
+建立可追溯的真实地点事实层，让未来白盒能够按真实比例组织建筑、道路和地形。当时交付为[参考图 SVG](../reference/return-to-whu-core/whu-info-core-reference.svg)、[PNG](../reference/return-to-whu-core/whu-info-core-reference.png)、[机器数据](../reference/return-to-whu-core/whu-info-core-reference.json)与[来源台账](../reference/return-to-whu-core/sources.md)。它已能支持平面布局讨论，**尚不足以冻结真实地形白盒**：道路宽度、相对高程、坡度与footprint现场精度仍未核实。不要把未填高程理解为平地。
 
 ## V0 核心范围
 

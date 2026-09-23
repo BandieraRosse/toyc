@@ -1,51 +1,31 @@
-# 自举种子（Bootstrap Seeds）
+# 自举种子
 
-本目录包含 toyc 项目的自举种子二进制：
+本目录保存版本控制内的工具链种子二进制：`toyc`、`toyas`、`toyld` 和
+`toyar`。它们用于自举收敛检查，不参与默认构建。
 
-- `toyc` — C 编译器（git 追踪）
-- `toyas` — x86_64 汇编器（git 追踪）
-- `toyld` — x86_64 静态链接器（git 追踪）
-- `toyar` — ar 归档器（git 追踪）
+## 默认构建
 
-## 用途
+根 `Makefile` 默认使用 GCC 和 GNU binutils 构建工具链；`self-*` 目标再使用
+`build/toyc` 编译 Tinylibc 或应用。日常构建和测试不需要更新本目录中的种子。
 
-`bootstrap/{toyc,toyas,toyld,toyar}` 是 Makefile 的默认工具链，
-`make` 即用它们全链自编译，唯一外部依赖是 `make` 本身。
-
-## 构建
+## 自举检查
 
 ```sh
-make                              # 自举构建
-make update-bootstrap             # 用 build/ 产物更新种子
-make clean                        # 清除 build/
+make test-toyld-self       # 检查 toyld 自链接的两阶段字节一致性
+./bootstrap-selfhost.sh   # 用种子构建 stage 2，并运行自包含测试
+./bootstrap-to-10.sh      # 检查 stage 2 到 stage 10 的字节级收敛
 ```
 
-## 测试
+这些检查用于验证种子和自举链，不代替常规编译器测试。聚合测试入口及其覆盖范围见根
+[README 的测试章节](../README.md#测试)。
+
+## 更新种子
+
+只有在有意更新已跟踪的种子时才运行：
 
 ```sh
-make test                         # 常规测试
-make test-selfhost                # 自包含测试
-make test-toyld                   # toyld 链接测试
-make test-error                   # 错误报告测试
-make test-lib                     # Tinylibc 库完整测试
-make test-toyld-self              # toyld 自举验证（字节级收敛）
-make test-all                     # 全部测试套件
+make update-bootstrap
 ```
 
-## 自举收敛验证
-
-```sh
-make test-toyld-self              # toyld 自链接 stage-1→stage-2 字节级收敛
-./bootstrap-selfhost.sh           # seed → stage-2 → 全部 selfhost 测试
-./bootstrap-to-10.sh              # stage-2→10 字节级收敛验证
-```
-
-> **阶段性检查**：自举收敛验证仅在种子更新时（`make update-bootstrap`）执行，
-> 不要求每次代码改动后通过。种子可能滞后于最新代码（旧种子编译新源码
-> 可能崩溃或失败）——此时先 `make update-bootstrap` 更新种子再验证。
-
-## 历史
-
-种子最初由宿主机 C 编译器 + ld 编译生成。自 toyld 加入后，
-工具链从"零 gcc"演进到"零外部依赖"：`make` 即自举。
-字节级收敛证明种子与自编译版本完全等价，项目已彻底自举。
+该目标先由 GCC 构建工具链，再覆盖本目录中的四个二进制。更新后应检查二进制差异，并运行
+自举检查；普通源码修改不需要更新种子。

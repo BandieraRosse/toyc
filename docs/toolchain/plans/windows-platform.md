@@ -95,8 +95,8 @@ app/portable/coreutils/cat.c -> build/windows/app/portable/coreutils/cat.o
 
 ### 未解决风险与明确后续
 
-- Windows common header 的 MinGW include 顺序仍需在后续 metadata/目录接口阶段继续收敛；
-  CP1/CP2 已保证 contract header 与 userland app 的编译选择明确。
+- Windows common header 的 MinGW include 顺序问题已在后续阶段收敛；CP4 的 portable app
+  clean cross build 与 PE audit 有记录，详见 CP4 实施结果。
 - self-app 链接已改为按需扫描归档，使 cat 不被无关 Rasterfall renderer 拖入；其他已有
   self-app 的兼容性仍应在后续批量验证中单独检查。
 - CP1 基线时 `lib/portable` 为空；CP3 已迁移 string/ctype/math/snprintf 等实现，详见下方记录。

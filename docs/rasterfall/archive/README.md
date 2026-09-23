@@ -19,5 +19,8 @@
 - [Static World Lighting V2 冻结记录](static-world-lighting-v2-freeze.md)：源码核对基线与当时的平台验证范围。
 - [开发地图与展示 fixture](map-content-fixtures-2026-09.md)：按钮、陈列带、Hurd 与墙体调整的阶段坐标。
 - [Camera Recoil 调参参考](hud-recoil-tuning-2026-09.md)：200% 射速下的展示估算值。
+- [Return to WHU 核心区 V0 调查计划](return-to-whu-core-v0-plan.md)：当时的取证顺序与白盒前置条件。
+- [Return to WHU 训练关卡构想](return-to-whu-training-ground-v0.md)：未实施的玩法阶段草案。
+- [Return to WHU 游戏空间 V0](return-to-whu-game-space-v0.md)：白盒路线、覆盖层和实现顺序的设计推演。
 
 恢复历史工作时，先从当前入口确认所有权和接口，再把仍有效的事实重新通过源码、脚本或 CLI 验证。

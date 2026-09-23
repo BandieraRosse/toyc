@@ -1,8 +1,12 @@
 # 《重返武汉大学》信息学部核心区：游戏空间 V0
 
+> 状态：历史；2026-09-13 的白盒设计推演，不是当前活动计划
+> 当前入口：[Rasterfall 活动计划](../plans/README.md)；地理事实见[核心区参考资料](../reference/return-to-whu-core/)
+> 归档原因：实现顺序与关卡建议属于阶段提案，不再充当当前工作顺序
+
 > 设计日期：2026-09-13  
-> 依据：`whu-info-core-reference.json`、`return-to-whu-core-v0-plan.md`、`investigation-report.md`、[临时校园套件阶段记录](../../archive/temporary-campus-kit-v0.md)
-> 状态：**可做平面体量白盒，不可冻结真实地形或正式地图**
+> 依据：[whu-info-core-reference.json](../reference/return-to-whu-core/whu-info-core-reference.json)、[核心区 V0 历史计划](return-to-whu-core-v0-plan.md)、[investigation-report.md](../reference/return-to-whu-core/investigation-report.md)、[临时校园套件阶段记录](temporary-campus-kit-v0.md)
+> 当时结论：**可做平面体量白盒，不可冻结真实地形或正式地图**
 
 配套示意图：[return-to-whu-game-space-v0.svg](return-to-whu-game-space-v0.svg)
 

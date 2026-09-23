@@ -23,9 +23,8 @@ build/device_snapshot > compiler-tests/device-tables/$(hostname).txt
 在其他机器上运行：
 
 ```sh
-git clone <repo> && cd toyc
-make lib && make app-audio/device_snapshot 2>/dev/null
-# 注意：build/device_snapshot 需要运行
+make lib
+make app-device_snapshot
 build/device_snapshot > device-$(hostname).txt
 ```
 

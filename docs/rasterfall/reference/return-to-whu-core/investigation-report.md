@@ -5,7 +5,7 @@
 
 本次建立了可追溯的核心区平面比例参考、机器数据和白盒前置计划。**相对高程与道路百分比坡度未恢复，任务的完整竖向工程参考目标仍有缺口，不能宣称已完成地形底图。**
 
-直接查看[参考PNG](whu-info-core-reference.png)或[可缩放SVG](whu-info-core-reference.svg)，事实出处见[sources.md](sources.md)，下一阶段约束见[计划](return-to-whu-core-v0-plan.md)。JSON保存建筑原始折线的派生坐标、道路中心线/节点连接、38个测量目标及道路分段；未知高度、宽度、坡度均使用null。
+直接查看[参考PNG](whu-info-core-reference.png)或[可缩放SVG](whu-info-core-reference.svg)，事实出处见[sources.md](sources.md)，调查时拟定的后续约束见[历史计划](../../archive/return-to-whu-core-v0-plan.md)。JSON保存建筑原始折线的派生坐标、道路中心线/节点连接、38个测量目标及道路分段；未知高度、宽度、坡度均使用null。
 
 ## 已核实的 HIGH 数据
 

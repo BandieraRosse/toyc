@@ -1,4 +1,8 @@
-Return to WHU — Information Campus Training Ground V0
+# Return to WHU — Information Campus Training Ground V0
+
+> 状态：历史；未实施的训练关卡构想，不是当前活动计划
+> 当前入口：[Rasterfall 活动计划](../plans/README.md)；空间依据见[核心区参考资料](../reference/return-to-whu-core/)
+> 归档原因：从仓库根目录归位，保留原构想供将来重新评审
 目标不是做完整剧情章节，而是做出一局可以反复玩的 10–20 分钟训练营：
 18舍单人出发 → 自由决定是否强化 → 操场挑战强化 Tank → 通关。
 

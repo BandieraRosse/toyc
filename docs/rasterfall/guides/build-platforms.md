@@ -7,9 +7,7 @@
 
 Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell 是主要开发、构建编排、物理 GPU
 验证和签收环境；`windows/NativeCodex.ps1`、package root、帧审计和实际适配器输出构成当前事实入口。
-共享源码和 freestanding Linux 路径继续保留。WSL 仅承诺 CPU renderer 的最小可玩闭环：
-`make rasterfall`、`build/rasterfall --logic-test` 与 CPU 模式实际启动保持可用；WSL GPU、音频后端、
-窗口集成细节和性能不属于该承诺。WSL/llvmpipe/hosted Vulkan 结果不能替代 Windows native present、
+共享源码和 freestanding Linux 路径继续保留。WSL 可用于辅助诊断；其构建、CPU 启动、GPU、音频和窗口集成不作为当前签收保证。WSL/llvmpipe/hosted Vulkan 结果不能替代 Windows native present、
 驱动、窗口生命周期和性能验收。
 
 ## 当前 Windows GPU 验收状态
@@ -34,9 +32,7 @@ Windows 与 freestanding Linux/WSL 均保持 1280×720 默认窗口。WSL CPU �
 资源的懒加载预热；该 world 首次成功 present 后恢复正常的 200 ms 交互帧 watchdog。该预热不改变地图、
 玩法、相机 FOV 或 Windows GPU 验收工作负载。
 
-Linux 原生或 freestanding 修改仍应保持上述 WSL CPU 最小闭环；但不要把 WSL 当作 Rasterfall 当前
-主要开发环境。Wayland/WSLg 可用时应补一次 CPU 实际启动冒烟；无图形环境时至少完成构建与
-`--logic-test`，并明确窗口未覆盖。若 WSL GPU、音频或额外窗口集成路径落后，应记录为未维护/未覆盖，
+Linux 原生或 freestanding 修改应验证受影响的 Linux 路径。Wayland/WSLg 可用时补一次 CPU 实际启动冒烟；无图形环境时至少完成构建与 `--logic-test`，并明确窗口未覆盖。若 WSL GPU、音频或额外窗口集成路径落后，应记录为未维护/未覆盖，
 而不是据此否定 Windows 主线结果，也不要求 GPU 功能开发等待 WSL 修复。
 
 平台相关实现主要是：
