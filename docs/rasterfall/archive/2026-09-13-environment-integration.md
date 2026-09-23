@@ -4,8 +4,8 @@
 > 归档原因：阶段记录，当前设计与执行顺序已转入维护入口
 > 当前入口：[Rasterfall 维护者入口](../README.md)
 
-日期：2026-09-13。这是本轮现场验收记录；当前入口见 ../industrial-props.md、
-../map-format.md、../rendering-architecture.md 和 ../guides/visual-validation.md。
+日期：2026-09-13。这是本轮现场验收记录；当前入口见[工业组件资产规格](../reference/industrial-props.md)、
+[地图格式](../map-format.md)、[渲染架构](../rendering-architecture.md)和[视觉验收](../guides/visual-validation.md)。
 
 ## 地图成果
 

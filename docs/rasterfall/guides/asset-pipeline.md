@@ -65,11 +65,11 @@ Blender 只负责 FBX、复杂场景和源坐标的预处理，按上述类型�
 ## GLB 转 RMESH 与纹理
 
 首批十件工业/军事环境组件使用 `tools/blender/generate_rasterfall_props.py` 生成，
-完整规格与 CLI 见 [industrial-props.md](../industrial-props.md)。默认产物在 `tmp/`，
+完整规格见[工业组件资产规格](../reference/industrial-props.md)，CLI 见[工业组件指南](industrial-props.md)。默认产物在 `tmp/`，
 不自动加入公开资源、内嵌依赖或 Windows package。
 其 V2 light upgrade 的几何、albedo、palette、预算与验收约束见
 [环境资产艺术约束](../reference/environment-art.md)；艺术升级不改变下述导入和运行时契约。
-整套 V2 Hybrid 的选择生成与安装命令见 [industrial-props.md](../industrial-props.md)。每件局部标识内嵌 PNG
+整套 V2 Hybrid 的选择生成与安装命令见[工业组件指南](industrial-props.md)。每件局部标识内嵌 PNG
 导入为 `<id>.textures/texture_000.ttex`；根 Makefile 递归资产依赖和 Windows package
 递归复制包含这些纹理。manifest、registry、展示比例与地图均沿用既有定义。
 
