@@ -59,6 +59,8 @@ skinning / rendering
   特判。当前 Akari、Mio、Ren、Yuki 使用程序化低模，后续可逐项替换为 RFM2 模型。
 - `rasterfall_animation.h`：格式无关的 clip、track、player 和四元数采样。不得依赖游戏
   状态、某个角色名称或文件格式。
+- `rasterfall_action.*`：RFANIM 的动作资源与 LOWER_BODY、UPPER_BODY、ADDITIVE 组合入口。
+  它把 stable humanoid role track 写入逐实例局部姿态；最终 pose 仍归 `rasterfall_model_instance`。
 - `rasterfall_actor_animation.h`：当前游戏角色的程序化表现层。它可以逐步被正式动作
   clip 替换，但不应进入通用骨骼动画层。
 - `rasterfall_vmd.*`：VMD 解码和 VMD 语义分类。通过骨骼 resolver 映射目标模型，
@@ -66,6 +68,11 @@ skinning / rendering
 - `rasterfall_glb_animation.h`：glTF 动画输入和 humanoid 源姿态。
 - `rasterfall_humanoid*`：格式无关的解剖角色、静止基向量和重定向。
 - `rasterfall_model.*`：RFM2 resource、逐角色 model instance、姿态求值、IK、grant、骨骼更新和蒙皮。
+
+正式 RFCHAR 的 resource 独占 backing、纹理、mesh、静态 skeleton/IK/grant 与 CHR1 定义；
+instance 独占局部姿态、全局变换、root motion、solver history/cache 和 attachment IK pole 状态。
+不得对 resource definition 调用 pose/IK API；resource 必须晚于全部 instance 释放。
+CPU skinning 与 stable socket 都从 instance API 查询。
 
 正式 RFCHAR 数据流为：
 

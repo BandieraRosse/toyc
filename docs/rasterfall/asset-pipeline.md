@@ -12,8 +12,8 @@
 > 源码核对基线补充：power_unit / gate_frame / control_cabinet 沿用工业 Builder、GLB、manifest、统一 import、公开 RMESH/TTEX 和 registry；递归 embedded/package 规则涵盖新资源。
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
 
-本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
-见 `animation-architecture.md`，资源是否允许发布见[资源来源台账](reference/asset-sources.md)。
+本文记录可执行的模型、纹理和动画工具链。运行时模块边界与动画求值见
+[动画架构](animation-architecture.md)，资源是否允许发布见[资源来源台账](reference/asset-sources.md)。
 
 ## Runtime filesystem boundary
 
@@ -201,6 +201,10 @@ build/vmd_inspect motion.vmd model.rmesh
 `glb_inspect` 检查 node、skin、accessor、animation 和 humanoid/rest basis，不生成运行时模型。
 `vmd_inspect` 检查骨骼名、映射、关键帧、IK 和运动诊断。游戏运行时的 VMD/GLB 诊断参数以
 `build/rasterfall --help` 为准。
+
+RFANIM 调试使用 `build/rf_anim_info` 查看 action、role track 与关键帧；游戏的 action preview、
+pose debug、composition capture 和 runtime debug 可观察 finalized pose、stable socket、武器握点与
+叠加结果。完整参数以 `build/rasterfall --help` 为准；这些诊断只观察姿态，不改变求值所有权。
 
 ## 离屏与性能回归
 

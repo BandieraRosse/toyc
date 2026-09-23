@@ -25,7 +25,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |
 | GPU Draw/Raster/present 架构 | [GPU 渲染架构](gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
 | GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[GPU 性能标准](gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
-| 模型、蒙皮、动画求值 | [assets-animation.md](assets-animation.md)、[animation-architecture.md](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
+| 模型、蒙皮、动画求值 | [动画架构](animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |

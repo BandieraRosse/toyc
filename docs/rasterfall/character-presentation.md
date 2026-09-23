@@ -5,7 +5,7 @@
 > 最近核对：2026-09-23
 
 本文描述玩法 actor 到可见角色的渲染侧适配。模型格式、bind pose、动画求值和 attachment 格式分别由
-[资源与动画](assets-animation.md)、[动画架构](animation-architecture.md)和
+[动画架构](animation-architecture.md)和
 [角色资产合同](reference/character-assets.md)拥有；固定截图流程见 [视觉验收](guides/visual-validation.md)。
 
 ## 所有权边界
