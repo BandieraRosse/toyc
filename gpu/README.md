@@ -95,6 +95,6 @@ WSL llvmpipe 只是 correctness 环境，不提供物理 GPU 性能结论。性�
 - 新增 shader 时，同步检查 SPIR-V 生成物、Makefile 依赖、Linux hosted 与 Windows 交叉构建。
 - 不将 Vulkan handle/type 暴露给 Game、session、console 或 status snapshot。
 - 不将 hosted readback timing 或 llvmpipe timing 宣称为 normal native GPU frame 性能。
-- 实现边界变化时更新 `docs/rasterfall/gpu-rendering-architecture.md`；验证流程变化时更新
-  `docs/rasterfall/guides/gpu-validation.md`，并同步检查受影响的 `rendering-architecture.md`、`runtime.md` 和
+- 实现边界变化时更新 `docs/rasterfall/architecture/gpu-rendering-architecture.md`；验证流程变化时更新
+  `docs/rasterfall/guides/gpu-validation.md`，并同步检查受影响的 `architecture/rendering-architecture.md`、`runtime.md` 和
   `build-platforms.md`。

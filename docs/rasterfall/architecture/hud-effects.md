@@ -5,7 +5,7 @@
 > 最近核对：2026-09-23
 
 本文定义 HUD、第一人称 viewmodel 和短生命周期特效的所有权与层序。帧 barrier 和 target 语义见
-[渲染架构](../rendering-architecture.md)，玩法事件与网络真值由 gameplay/session/network 层拥有。
+[渲染架构](rendering-architecture.md)，玩法事件与网络真值由 gameplay/session/network 层拥有。
 
 ## 模块与层
 

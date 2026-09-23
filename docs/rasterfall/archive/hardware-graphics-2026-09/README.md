@@ -32,7 +32,7 @@
 
 - [GPU 渲染架构](../../architecture/gpu-rendering-architecture.md)
 - [GPU 验收与诊断](../../guides/gpu-validation.md)
-- [渲染架构](../../rendering-architecture.md)
+- [渲染架构](../../architecture/rendering-architecture.md)
 - [构建与平台](../../build-platforms.md)
 - `rasterfall.exe --help`
 - `tools/gpu_acceptance.ps1 -Quick` / `-Full`

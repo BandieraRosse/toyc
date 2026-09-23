@@ -5,8 +5,8 @@
 > 最近核对：2026-09-23
 
 本文定义 CPU/GPU 共用的场景提交、帧分层和所有权。GPU executor、资源与 presenter 合同见
-[GPU 渲染架构](architecture/gpu-rendering-architecture.md)；角色表现见 [角色表现](architecture/character-presentation.md)；HUD、
-特效和 viewmodel 见 [HUD 与特效](architecture/hud-effects.md)。
+[GPU 渲染架构](gpu-rendering-architecture.md)；角色表现见 [角色表现](character-presentation.md)；HUD、
+特效和 viewmodel 见 [HUD 与特效](hud-effects.md)。
 
 ## 所有权
 
@@ -73,7 +73,7 @@ ramp/platform 和 static RMESH 在各自 record 入口做保守 frustum/AABB 剔
 
 Static World Lighting V2 是 normal runtime 唯一 world-light 来源。renderer 只消费其 Q8 查询结果，按
 `world light × form lighting × material policy` 形成最终提交颜色；normal runtime 的 fog 输入固定为 0。
-field bake、固定参数和诊断例外由 [Static World Lighting V2](architecture/static-world-lighting.md) 拥有。
+field bake、固定参数和诊断例外由 [Static World Lighting V2](static-world-lighting.md) 拥有。
 
 static RMESH 使用实例 world origin 查询一次 scene light，再通过既有 override 传给模型提交；不在逐顶点
 热循环重复查询。角色材质的 FACE/SKIN/EYES/HAIR visibility floor 属于 character render policy，非角色
@@ -87,7 +87,7 @@ normal runtime 保持 Post disabled，presentation color 直接选择 raster col
 
 CPU renderer 是独立完整 reference。GPU partial replay、world stream capture 或 readback 只用于诊断，
 不能宣称为完整 normal frame 或性能结果。可执行验证入口见
-[视觉验收](guides/visual-validation.md)和[渲染性能诊断](guides/rendering-performance.md)。
+[视觉验收](../guides/visual-validation.md)和[渲染性能诊断](../guides/rendering-performance.md)。
 
 ## 修改落点
 
