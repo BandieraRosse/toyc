@@ -11,6 +11,7 @@
 - [建筑套件生成与截图](architectural-environment-v1.md)
 - [临时校园套件生成与验收](temporary-campus-kit-v0.md)
 - [视觉验收](visual-validation.md)
+- [静态世界光照验证](static-world-lighting.md)
 - [渲染性能诊断](rendering-performance.md)
 - [地图编辑、布局与查询](map-authoring.md)
 - [网络测试与排查](network-testing.md)

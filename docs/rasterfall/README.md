@@ -20,6 +20,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 玩法、session、AI、战斗 | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](maps-and-world-content.md)、[地图格式](map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
+| 静态世界光照与诊断 | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | world-light bake、normal consumer 与诊断 scope |
 | 角色、敌人与附件表现 | [角色表现](character-presentation.md) | character/enemy presentation adapters |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
 | HUD、Viewmodel 与特效 | [HUD 与特效](hud-effects.md) | `rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c` |

@@ -4,7 +4,7 @@
 > 当前入口：[角色表现架构](../character-presentation.md)、[敌人资产合同](../reference/enemy-visuals.md)、[生成与验收指南](../guides/enemy-visuals.md)。
 
 > 文档更新：2026-09-21
-> 源码核对基线补充：正常 enemy 主体在 `render_enemies()` 按 gameplay root 单点消费 V2；infected RFCHAR、rigid specials 与 procedural fallback 共用 scene scope，tongue/VFX 和独立固定验收保留专用策略。见 [static-world-lighting.md](../static-world-lighting.md)。
+> 源码核对基线补充：正常 enemy 主体在 `render_enemies()` 按 gameplay root 单点消费 V2；infected RFCHAR、rigid specials 与 procedural fallback 共用 scene scope，tongue/VFX 和独立固定验收保留专用策略。见 [static-world-lighting.md](../architecture/static-world-lighting.md)。
 > 源码核对基线：工作区（普通感染体新模型混合比例 V1；Smoker / Charger / Tank rigid profiles、truth adapter、procedural pose 与 generic prism renderer；Charger 新冲锋包围盒判定；固定关键帧/轮廓/world capture；协议 43 显式命中 mask；保留六份普通感染体 RFM2）
 
 ## Enemy visual pipeline 与所有权

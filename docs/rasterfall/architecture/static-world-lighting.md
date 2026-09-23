@@ -1,11 +1,10 @@
-# Static World Lighting V2
+# Static World Lighting V2 架构
 
-> 文档更新：2026-09-21
-> 源码核对基线：`208532c`；核对 `rasterfall_world_light.h/.c`、Runtime Map 输入、normal renderer consumer、诊断 scope 与 Linux/Windows 构建边界。
-> 当前状态：**FROZEN**。V2 是正常 runtime 的唯一世界光照源；V1 仅供显式诊断和回归使用。
+> 状态：当前
+> 所有者：Static World Lighting
+> 最近核对：2026-09-21
 
-本文记录 Static World Lighting 的当前稳定契约。旧 Phase A/B/C1/C2/C3/D 文档已经收敛到本页；
-阶段过程不再作为维护入口，后续修改应直接更新本页与受影响的 rendering、map、runtime、platform 文档。
+V2 是正常 runtime 的唯一世界光照源；V1 仅供显式诊断和回归使用。可执行验证见[指南](../guides/static-world-lighting.md)，冻结现场见[历史记录](../archive/static-world-lighting-v2-freeze.md)。
 
 ## 所有权与生命周期
 
@@ -32,8 +31,8 @@ V1 32×24 cache 属于独立 diagnostic owner，只能在显式诊断 scope 中�
 | normal source | V2 only |
 | diagnostic source | 独立 V1 或显式 fixed lighting |
 
-512 RFU = 1 m。当前 Campaign world 约为 153.125 m × 129.6875 m；64×48 field 对应约
-2.43 m × 2.76 m 的实际 sample 间隔。该 field 用于低频静态世界光照，不是 shadow map 或三维 probe volume。
+512 RFU = 1 m。field 用于低频静态世界光照，不是 shadow map 或三维 probe volume；
+实际 sample 间隔随 Runtime Map 的 world bounds 变化。
 
 ## Bake 与查询
 
@@ -81,25 +80,6 @@ viewmodel 192..256 可读性 clamp、无雾 floor policy、emissive 与专用 VF
 
 Character world capture 的正常环境使用 V2，测试带可保留固定诊断光照。VFX、blob shadow、muzzle flash
 拥有自己的效果语义，不形成第二份 world-light truth。
-
-## 验证与平台边界
-
-相关修改至少验证：
-
-```sh
-make app-rasterfall
-build/rasterfall --logic-test
-make test-map-parser test-map-runtime test-map-components
-make win-rasterfall
-```
-
-视觉检查使用正常 world render 的 `--environment-capture`、Character world capture、enemy capture 和
-lighting-props fixture。world-light logic 应覆盖 bilinear、bounds clamp、三维遮挡、高位梁、surface 高度、
-scene×form/material policy 以及 V2-default/V1-diagnostic source ownership。
-
-当前冻结证据覆盖 Linux headless capture、Linux GCC freestanding build 和 Windows MinGW build；Windows
-runtime、native-present、真实窗口移动中的 flicker/grid snapping 仍需在对应平台任务中单独验收。
-无窗口结果不能替代物理 Windows GPU/runtime 结论。
 
 ## 明确不包含
 
