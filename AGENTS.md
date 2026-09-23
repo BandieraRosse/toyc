@@ -42,6 +42,16 @@ Rasterfall 的主要闭环是：
 
 Windows GUI 进程、GPU 验收、package 和故障注入的具体等待及日志规则见 `docs/rasterfall/guides/windows-native.md`，不要仅凭 PowerShell 表面返回或单张截图下结论。
 
+## Windows / PowerShell 文本编辑
+
+- 本仓库主要在原生 Windows / PowerShell 下开发；源码、Markdown、JSON、TOML 和其他文本文件统一按 UTF-8 处理，不依赖 Windows PowerShell 5.1 的默认编码。
+- 使用 `Get-Content`、`Set-Content`、`Out-File` 等命令处理可能含非 ASCII 字符的文本时，必须显式指定 UTF-8；禁止用默认编码的重定向写入仓库文本。注意 PowerShell 5.1 的 `-Encoding UTF8` 会写入 BOM，写回时必须保留原文件的 BOM 状态，必要时使用显式配置编码的 .NET 或 Python 文件 API。
+- 禁止将含中文或其他非 ASCII 字符的 PowerShell here-string 通过管道传给 `python -` 等原生程序；原生进程标准输入编码与文件编码是不同边界，仅在 Python 中指定文件编码不能避免管道中的字符损坏。需要此类脚本时，使用补丁工具创建 UTF-8 脚本文件后执行。
+- 优先使用 `apply_patch` 做小范围、可核对的编辑；脚本化修改优先使用结构化定位或短 ASCII 锚点，禁止通过 PowerShell 对长中文或非 ASCII 段落做整段精确替换。
+- Python 读写文本必须显式指定 `encoding="utf-8"`，已有 BOM 时显式使用 `utf-8-sig`。写入前检查并保留原文件的换行符（CRLF/LF）和 BOM，避免文本 API 的默认换行转换；未经任务要求，不做全文件重写或编码、换行规范化。
+- 精确匹配或补丁失败后，先以明确的 UTF-8 编码重新读取磁盘上的相关区域，核对当前内容和编码后再修改；不得猜测原文或反复重试过期文本。发现乱码或问号替换时立即停止写入，先修正传输或解码方式。
+- 修改文本后必须查看 `git diff` 并运行 `git diff --check`，确认中文可读、改动范围正确，没有意外 BOM、换行变化或无关重写；文档改动另运行适用的文档检查。
+
 ## 修改与文档
 
 - 保留用户已有工作区修改，不格式化或改写无关文件。

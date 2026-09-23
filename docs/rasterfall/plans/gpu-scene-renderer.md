@@ -6,7 +6,7 @@
 >
 > 制定：2026-09-23
 >
-> 当前切片：1B 三件套 RTX 3050 validation/sync 已签收；本机 Vulkan 无 Intel，Intel native 门禁未完成；正常帧仍走旧路径
+> 当前切片：1B 三件套 RTX 3050 validation/sync 已签收；下一步复用 CPU pose/upload backing 并补 Scene GPU 时间戳；正常帧仍走旧路径
 
 本计划取代[旧 GPU Raster / Bridge 收敛计划](../archive/gpu-raster-bridge-20260923.md)。现行所有权和实现以
 [渲染架构](../architecture/rendering-architecture.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)
@@ -20,9 +20,8 @@
 Raster/Draw 交替执行及全屏深度 bridge 退出正常帧。旧 mixed renderer 保留为迁移期间的独立对照路径；
 CPU renderer 保留为离线 reference 和非 GPU 模式，不承担 GPU 帧的部分回放。
 
-RTX 3050 是高性能设计和性能取舍设备；Intel Iris Xe 在最小场景贯通时先做定向 native 验证，架构闭合后承担完整正确性、
-生命周期、普通 30 FPS 下限及相对基线退化复核。当前 M2 的 Intel 与 validation/sync 未完成状态随
-本计划保留，不将旧路径的 3050 结果冒充跨设备最终签收。
+RTX 3050 是本计划的开发、正确性、生命周期、性能取舍与最终签收设备。其他设备适配作为未来独立工作，
+不进入本计划的执行链、阶段门禁或完成定义。
 
 本计划针对 1280×720 下常规场景 60 FPS 与 near 60 压力场景的[既定门槛](../reference/gpu-performance-standards.md)。
 旧 M2 candidate 的低扰动五轮 whole-loop median 为 near 0 16.424、near 30 26.037、near 60 42.092、
@@ -65,7 +64,7 @@ Game/session truth + presentation cache
 
 第一版只用单 graphics queue 和显式有序 pass。upload、skinning 与 draw 由同一帧依赖链排序；
 只有跨队列收益得到证实时才引入异步 compute。Vulkan dynamic rendering、synchronization2、
-descriptor indexing 等能力须在 RTX 3050 和 Intel 实际枚举后选定共同基线或明确兼容实现；
+descriptor indexing 等能力须在 RTX 3050 实际枚举后选定 Vulkan 基线；
 不把某一扩展默认为所有设备可用。GPU-driven culling、multi-draw indirect 和新材质体系不是首版前置。
 
 ## 执行链与退出门槛
@@ -84,13 +83,13 @@ descriptor indexing 等能力须在 RTX 3050 和 Intel 实际枚举后选定共�
 | 0C | 专用渲染地图、固定输入与统计方法；隔离原型提供容差证据 | 定向 capture；正式候选验收前批准容差 |
 | 0D | 以同一 package 完成阶段 0 基线，保存 package 内容哈希、executable 哈希、设备/驱动、workload 与电源信息 | 仅此时运行需要的结构审计和低扰动五轮；缺失设备证据如实标记，不反复探测 |
 | 1A | 收敛身份、确定性 extraction 和真实来源 adapter，停止扩展无消费者字段 | 相关逻辑用例与构建 |
-| 1B | 静态地图、蒙皮角色、rigid 附件贯通 Scene、pin、draw、native present 与退休 | 定向资源/离屏、validation/sync；可用 Intel 最小 native 验证；阶段末生命周期验收 |
+| 1B | 静态地图、蒙皮角色、rigid 附件贯通 Scene、pin、draw、native present 与退休 | 定向资源/离屏、validation/sync；阶段末生命周期验收 |
 | 2 | 接齐 WORLD opaque 的地图、角色与附件，共享 color/depth | 离屏差分与分段成本；不做产品 whole-loop A/B |
 | 3 | 接透明、effects、独立 VIEWMODEL、OVERLAY 和 native present | 每层定向差分；完整正常帧接齐后跑阶段 3 全套生命周期与性能门禁 |
-| 4–5 | 根据完整帧归因改 CPU producer，随后完成跨设备签收 | 每项优化定向回归；阶段末和最终候选才重复正式测量 |
+| 4–5 | 根据完整帧归因改 CPU producer，随后完成主设备签收 | 每项优化定向回归；阶段末和最终候选才重复正式测量 |
 
 日常改动只运行受影响模块的构建、逻辑或离屏用例；失败时只补定位该失败所需的诊断。
-Quick/Full、长时 soak、validation/sync、跨设备验证按阶段退出条件运行，不因文档修改或每个小补丁重跑。
+Quick/Full、长时 soak、validation/sync 按阶段退出条件运行，不因文档修改或每个小补丁重跑。
 正式五轮脚本不用于日常调试；阶段 0/1 允许定向计时建立预算，不能冒充收益。阶段退出候选若被修改，先完成相关正确性回归，
 仅在修复影响性能结论时重测该阶段。所有测量保留原始日志与身份，不能用短 smoke 充当性能基线。
 
@@ -116,11 +115,10 @@ gear/weapon placement；lower-body 展示时钟由来源冻结，不借用旧 sl
 不得从 executor 回读 actor。
 该三件套现已通过显式 fixture 接入独立 Scene target/submit/retire，资源解析、palette 与材质 preflight、
 pin、GPU skinning、共享 WORLD depth、直接 swapchain blit 已贯通。Windows 生命周期专项覆盖增长、resize、
-world 失效及故障退出；入口见 [fixture 指南](../guides/gpu-scene-fixture.md)。下一执行切片先补
-Intel 最小 native 证据；RTX 3050 已证明 Khronos layer 实际加载、同步验证开启，并完成三件套、增长、resize、world 退休和五类故障。
-本机 Vulkan 只枚举 NVIDIA/AMD，显式要求 Intel 时拒绝设备替换；现场见
-[同步与绕序修复记录](../archive/gpu-scene-sync-culling-20260924.md)。Intel 门禁缺失时不宣称阶段 1B 完成。
-两项门禁通过后，先保留独立 instance 求值语义、仅在 slot 退休后复用 CPU pose/upload backing，并补 Scene GPU 分段时间戳；
+world 失效及故障退出；入口见 [fixture 指南](../guides/gpu-scene-fixture.md)。RTX 3050 已证明 Khronos layer
+实际加载、同步验证开启，并完成三件套、增长、resize、world 退休和五类故障；现场见
+[同步与绕序修复记录](../archive/gpu-scene-sync-culling-20260924.md)。
+下一执行切片保留独立 instance 求值语义，仅在 slot 退休后复用 CPU pose/upload backing，并补 Scene GPU 分段时间戳；
 随后进入阶段 2，暂不扩角色或材质。完整透明、effects、VIEWMODEL、HUD/OVERLAY 接齐后才做正式性能 A/B。
 
 阶段 0/1 建立预算表：fixed tick 更新、snapshot、pose/IK/socket、extraction、上传/提交、GPU pass、
@@ -159,8 +157,8 @@ fixture 入口贯通 native present；它不构成完整正常帧。
 
 先核对并复用现有 registry/cache、GPU skinning、slot backing 和 Windows presenter；列出复用接口、
 所有者和缺口。Scene 解析、pass 编排和资源引用由新入口拥有，不将 mixed frame 或 RasterCmd 作为 Scene 主格式。
-新 upload/skinning/draw 依赖链首次运行即做定向 validation/sync；Intel 可用时验证最小 native 场景。
-缺少设备或 layer 时记录未完成门禁，不反复探测，也不宣称通过。
+新 upload/skinning/draw 依赖链首次运行即在主设备做定向 validation/sync。
+缺少 layer 时记录未完成门禁，不宣称通过。
 
 1B 复用与缺口（源码核对 2026-09-23）：
 
@@ -171,7 +169,7 @@ fixture 入口贯通 native present；它不构成完整正常帧。
 | 蒙皮 | `rf_gpu_graphics.h` 的 skinned create/update/bind | 三件套已消费 finalized palette 与法线策略，输出归独立 slot；更多角色仍待接入 |
 | slot | mixed executor 的已完成 slot 容量复用模式 | fixture 已有单个独立 slot；多帧流水与 CPU pose/upload backing 复用仍待实现 |
 | graphics 提交 | 底层 graphics 资源与编码逻辑 | `rf_gpu_graphics_scene_present/retire` 已独立持有 command/fence，不借用 Raster |
-| native present | Vulkan backend 内部 swapchain、审计和退休逻辑 | Scene color 直接 blit 到唯一 swapchain；RTX 3050 validation/sync、专项故障、退休已验证；Intel 待补 |
+| native present | Vulkan backend 内部 swapchain、审计和退休逻辑 | Scene color 直接 blit 到唯一 swapchain；RTX 3050 validation/sync、专项故障、退休已验证 |
 
 资源缓存不能替代材质支持判定；每项新材质仍须全帧 preflight。不能仅包装现有 Raster present 接口，
 就宣称 graphics-only Scene 已贯通；首个最小场景须证明没有 RasterCmd 回放及深度 bridge。
@@ -212,14 +210,14 @@ LOD 必须以冻结的距离/投影规则和视觉合同证明可见内容符合
 退出条件：固定 workload 下 CPU extraction/pack 的 P95/P99 可重复改善，画面与 gameplay 状态不变；
 RTX 3050 低扰动五轮 whole-loop 的变化和范围足以支持保留该阶段结果。
 
-### 阶段 5：性能签收与跨设备补齐
+### 阶段 5：性能与最终签收
 
 RTX 3050 按[性能标准](../reference/gpu-performance-standards.md)完成 near 0/30/60、Campaign 的
 median/P95/P99 阶段或最终门槛；保留 GPU pass 和 CPU producer 的可归因数据，不能把分位数相加。
 若目标未达，先定位新架构中最大的完整帧瓶颈，再决定单独的后续计划，不退回逐个 bridge 补丁链。
 
-之后在 Intel Iris Xe 上用同一候选 package 完成 required-native、适用 Full、普通 30 FPS 下限、
-相对冻结基线退化、resize/world-cycle/thin-far 和零 fallback/readback/copy；在装有
+在 RTX 3050 上用同一候选 package 完成 required-native、适用 Full、
+resize/world-cycle/thin-far 和零 fallback/readback/copy；在装有
 `VK_LAYER_KHRONOS_validation` 的环境完成 validation/sync，并证明 layer 实际加载与同步验证启用。
 受影响的 fault 和 soak 结果一并保留。缺少设备或 layer 时只标记该门禁未完成，不宣称最终签收。
 
@@ -241,13 +239,12 @@ median/P95/P99 阶段或最终门槛；保留 GPU pass 和 CPU producer 的可�
 首版不引入新 PBR 材质、OIT、全局 GPU-driven pipeline、光追、跨平台 presenter 重构或新的玩法字段。
 若 shader/material 覆盖矩阵证明其中一项不可避免，先在本计划记录阻断原因、成本与替代方案，再决策。
 
-三项结果独立记录，归因不能代替达标：
+两项结果独立记录，归因不能代替达标：
 
 | 结果 | 完成条件 |
 | --- | --- |
 | 架构迁移 | 完整 Scene 正常帧、零 bridge、画面合同、Windows native 生命周期与 validation/sync 通过 |
 | RTX 3050 性能 | 固定场景达到性能标准的最终 median/P95/P99 门槛 |
-| 跨设备签收 | Intel required-native、正确性、生命周期与普通档性能门槛通过 |
 
-整体完成要求三项均通过。架构完成而性能未达时保留未完成状态与归因；若转入后续计划，明确以
+整体完成要求两项均通过。架构完成而性能未达时保留未完成状态与归因；若转入后续计划，明确以
 “被替代、性能未达标”归档，不能记为性能完成。活动入口始终只指向一个计划。

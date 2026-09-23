@@ -78,15 +78,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_native.ps1 -
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_native.ps1 -OutputDirectory tmp/scene-sync-nvidia -ValidationLayerDirectory C:/path/to/layer/bin -DeviceVendor 10de
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_native.ps1 -OutputDirectory tmp/scene-sync-intel -ValidationLayerDirectory C:/path/to/layer/bin -DeviceVendor 8086
 ```
 
 `-DeviceVendor` 设置进程级 `RF_GPU_VULKAN_VENDOR_ID`（十六进制），并校验实际 Scene adapter；
 找不到指定 vendor 的可用 queue 时失败，不替换设备。backend 记录全部 Vulkan 设备及原始 driver/API 版本。
-只有 Intel 实测通过才记录 `intel_native=PASS`；其他设备的 `PASS - available gates` 不代表阶段 1B 全通过。
+`PASS - available gates` 表示本次脚本覆盖的检查通过；阶段 1B 的其余退出条件以活动计划为准。
+manifest 中保留的历史设备专项字段不参与当前主线签收。
 脚本兼容 Khronos 新旧启用日志，但始终同时要求 loader 插入 layer 和明确的 Synchronization 启用证据；
 manifest 保留 layer DLL/JSON 与 executable 哈希。只看到 manifest、环境变量或零错误文本均不算通过。
-本机配置及未完成的 Intel 门禁见[同步与绕序记录](../archive/gpu-scene-sync-culling-20260924.md)。
+本轮主设备配置与验证证据见[同步与绕序记录](../archive/gpu-scene-sync-culling-20260924.md)。
 
 直接入口为 `rasterfall.exe --gpu-scene-native-fixture --frames 120`，无需选择 normal renderer。
 它固定使用地图 fixture 中 `opaque_box` 的冻结坐标及正式 mesh builder、一个 rifleman、一个 HEAD 附件；

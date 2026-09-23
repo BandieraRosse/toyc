@@ -127,5 +127,5 @@ Core 保持旧 mixed 与新 Scene 的**整帧启动选择**，不能按 producer
    generation 的 adapter 规则也见上文。实现时需覆盖 slot 复用、断线重连与 world 切换。
 2. normal frame 中直接像素的 world label/status、effects overlay、HUD 如何变为有序 GPU payload；
    保持[覆盖矩阵](gpu-scene-coverage.md)中的可见内容与遮挡语义。
-3. RTX 3050/Intel 实际能力枚举后，确定共同 Vulkan feature baseline 与兼容实现；不能在 V1
+3. RTX 3050 实际能力枚举后，确定 Vulkan feature baseline；不能在 V1
    结构中预设 descriptor indexing、dynamic rendering 或 synchronization2 一定可用。

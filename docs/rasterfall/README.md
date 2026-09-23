@@ -27,7 +27,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |
 | GPU Draw/Raster/present 架构 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
 | GPU Scene 迁移与只读 snapshot | [活动计划](plans/README.md)、[迁移接口](plans/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md)、[GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；冻结 pose 与三件套独立 Scene slot；正常帧仍走 mixed |
-| GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[Scene 同步与设备门禁](guides/gpu-scene-fixture.md)、[GPU 性能标准](reference/gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
+| GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[Scene 同步与生命周期验证](guides/gpu-scene-fixture.md)、[GPU 性能标准](reference/gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
