@@ -6,6 +6,7 @@
 - [GPU 验收与诊断](gpu-validation.md)
 - [构建、平台和验证矩阵](../build-platforms.md)
 - [资产转换与诊断](asset-pipeline.md)
+- [敌人视觉生成与验收](enemy-visuals.md)
 - [工业组件生成与导入](industrial-props.md)
 - [建筑套件生成与截图](architectural-environment-v1.md)
 - [临时校园套件生成与验收](temporary-campus-kit-v0.md)

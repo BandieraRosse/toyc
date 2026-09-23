@@ -20,7 +20,7 @@ animation 与稳定枚举，不认识 GLB node name。
 Enemy Visual V2 的两套三类型 carrier 使用同一 RFCHAR V1 / RFM2 v14 契约。Humanoid 复用
 V2 身体，Block 使用方块身体；源比例修改同时作用于 mesh、rest skeleton 和八个 attachment。
 基础感染姿态按 stable roles 在独立 instance 中求值，不更改 character recipe 或 humanoid
-contract。公开资源与完整生成/验收入口见 [enemy-visuals.md](../enemy-visuals.md)。
+contract。公开资源与完整生成/验收入口见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## RF Humanoid V1
 

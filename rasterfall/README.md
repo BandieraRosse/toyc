@@ -84,4 +84,4 @@ build/rfchar_runtime_test <model.rmesh>
 普通感染敌人默认按 enemy type 混合 LEGACY、BLOCK_INFECTED、HUMANOID_INFECTED；可使用
 `--enemy-visual-family legacy|block-infected|humanoid-infected` 强制单一家族进行截图、性能和资产验证。
 六份模型为公开资源。Smoker、Charger、Tank 使用独立程序化刚性模型与攻击姿态；
-重建、关键帧、轮廓和实景验收见 [Enemy Visual / Procedural Animation](../docs/rasterfall/enemy-visuals.md)。
+重建、关键帧、轮廓和实景验收见 [Enemy Visual / Procedural Animation](../docs/rasterfall/guides/enemy-visuals.md)。

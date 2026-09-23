@@ -4,6 +4,7 @@ Reference 保存需要精确查询的格式、合同、来源和固定标准，�
 
 - [地图格式](../map-format.md)
 - [角色、附件与蒙皮合同](character-assets.md)
+- [敌人视觉资产与姿态合同](enemy-visuals.md)
 - [环境资产艺术约束](environment-art.md)
 - [工业组件资产规格](industrial-props.md)
 - [建筑套件、端口与表面规范](architectural-environment-v1.md)

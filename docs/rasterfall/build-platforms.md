@@ -185,7 +185,7 @@ execution-wait 与 readback。结果是 partial selected stream，不与完整 C
 
 Enemy Visual V2 的六份公开 RFM2 自动进入现有递归 embedded 依赖及 Windows assets 复制；
 其 renderer `.inc` 已加入 Linux/self 显式依赖，Windows 使用 `-MMD` 跟踪，不新增平台编译单元。
-详见 [enemy-visuals.md](enemy-visuals.md)。
+详见 [enemy-visuals.md](guides/enemy-visuals.md)。
 
 ## 最小验证矩阵
 

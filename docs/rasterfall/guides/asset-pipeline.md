@@ -11,7 +11,7 @@
 六份公开 infected RFM2 使用现有 character manifest → RFCHAR importer → runtime 门禁；
 `tools/enemy_visual_round.py --generate --capture --deterministic` 复用 Blender V2 导出，生成并验证
 Block/Humanoid 的 Common/Fast/Heavy。公开产物不依赖私有模型；重建命令、来源、预算与
-真实 enemy renderer 截图入口见 [enemy-visuals.md](../enemy-visuals.md)。
+真实 enemy renderer 截图入口见 [enemy-visuals.md](enemy-visuals.md)。
 
 ## RFANIM V1
 

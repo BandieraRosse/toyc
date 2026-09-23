@@ -51,7 +51,7 @@ Gunsmith、Logistics、Medic、Guard 的颜色和附件由 presentation-only pro
 truth adapter、pose 和 generic renderer 均属于 renderer presentation。玩法只提供 enemy 类型、状态、
 命中与攻击真值；尺寸、轮廓、固定关键帧、renderer scratch pose 和资源选择不进入 snapshot。
 
-具体家族比例、特殊敌人适配、预算和扩展流程由 [Enemy Visual](enemy-visuals.md) 拥有。死亡飞起、渐隐、
+具体家族比例、特殊敌人适配、预算和扩展流程由 [Enemy Visual](reference/enemy-visuals.md) 拥有。死亡飞起、渐隐、
 fragment/dust 和 knockback trail 是 presentation-only；slot 清空后仍可短时存活，但不得替代 enemy 真值。
 
 ## Rigid attachment 与 static prop
