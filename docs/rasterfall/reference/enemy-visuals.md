@@ -3,7 +3,7 @@
 > 状态：当前
 > 所有者：感染体资源选择、刚性轮廓与展示数据
 
-玩法和 renderer 的所有权见[角色表现架构](../character-presentation.md)，生成与截图见[指南](../guides/enemy-visuals.md)，V1/V2 实施与验收现场见[历史记录](../archive/enemy-visuals-v1.md)。
+玩法和 renderer 的所有权见[角色表现架构](../architecture/character-presentation.md)，生成与截图见[指南](../guides/enemy-visuals.md)，V1/V2 实施与验收现场见[历史记录](../archive/enemy-visuals-v1.md)。
 
 ## 普通感染体
 

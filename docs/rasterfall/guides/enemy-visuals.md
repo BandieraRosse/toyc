@@ -2,7 +2,7 @@
 
 > 状态：当前操作指南
 
-资源、预算和姿态合同见[敌人视觉参考](../reference/enemy-visuals.md)；玩法与 renderer 边界见[角色表现](../character-presentation.md)。
+资源、预算和姿态合同见[敌人视觉参考](../reference/enemy-visuals.md)；玩法与 renderer 边界见[角色表现](../architecture/character-presentation.md)。
 
 ```sh
 make rasterfall app-glb-inspect build/rfchar_runtime_test

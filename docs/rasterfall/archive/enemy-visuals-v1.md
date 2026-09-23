@@ -1,7 +1,7 @@
 # Enemy Visual / Procedural Animation Framework V1
 
 > 状态：历史；保留 Enemy Visual V1/V2 实施基线、固定验收和阶段观察。
-> 当前入口：[角色表现架构](../character-presentation.md)、[敌人资产合同](../reference/enemy-visuals.md)、[生成与验收指南](../guides/enemy-visuals.md)。
+> 当前入口：[角色表现架构](../architecture/character-presentation.md)、[敌人资产合同](../reference/enemy-visuals.md)、[生成与验收指南](../guides/enemy-visuals.md)。
 
 > 文档更新：2026-09-21
 > 源码核对基线补充：正常 enemy 主体在 `render_enemies()` 按 gameplay root 单点消费 V2；infected RFCHAR、rigid specials 与 procedural fallback 共用 scene scope，tongue/VFX 和独立固定验收保留专用策略。见 [static-world-lighting.md](../architecture/static-world-lighting.md)。

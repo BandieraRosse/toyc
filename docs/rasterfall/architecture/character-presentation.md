@@ -5,8 +5,8 @@
 > 最近核对：2026-09-23
 
 本文描述玩法 actor 到可见角色的渲染侧适配。模型格式、bind pose、动画求值和 attachment 格式分别由
-[动画架构](animation-architecture.md)和
-[角色资产合同](reference/character-assets.md)拥有；固定截图流程见 [视觉验收](guides/visual-validation.md)。
+[动画架构](../animation-architecture.md)和
+[角色资产合同](../reference/character-assets.md)拥有；固定截图流程见 [视觉验收](../guides/visual-validation.md)。
 
 ## 所有权边界
 
@@ -51,7 +51,7 @@ Gunsmith、Logistics、Medic、Guard 的颜色和附件由 presentation-only pro
 truth adapter、pose 和 generic renderer 均属于 renderer presentation。玩法只提供 enemy 类型、状态、
 命中与攻击真值；尺寸、轮廓、固定关键帧、renderer scratch pose 和资源选择不进入 snapshot。
 
-具体家族比例、特殊敌人适配、预算和扩展流程由 [Enemy Visual](reference/enemy-visuals.md) 拥有。死亡飞起、渐隐、
+具体家族比例、特殊敌人适配、预算和扩展流程由 [Enemy Visual](../reference/enemy-visuals.md) 拥有。死亡飞起、渐隐、
 fragment/dust 和 knockback trail 是 presentation-only；slot 清空后仍可短时存活，但不得替代 enemy 真值。
 
 ## Rigid attachment 与 static prop
@@ -69,5 +69,4 @@ Character Test Strip、action debug station、MODEL_DISPLAY 和 lineup 都是 re
 actor、AI、碰撞或网络。正常 world 是否显示这些内容由 World Content policy 控制；Campaign fixture
 不得泄漏到 Outpost。诊断 CLI 可以使用隔离 fixture，但必须复用正常 renderer、pose 和 attachment 路径。
 
-修改角色可见结果时，至少覆盖相关的 bind/action、多视角、near/mid/far、edge-entry/near-crossing 和
-instance isolation；具体命令与输出由视觉验收指南维护。
+相关的固定截图矩阵与输出由[视觉验收指南](../guides/visual-validation.md)维护。
