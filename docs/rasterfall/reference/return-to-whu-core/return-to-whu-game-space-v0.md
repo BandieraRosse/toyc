@@ -1,7 +1,7 @@
 # 《重返武汉大学》信息学部核心区：游戏空间 V0
 
 > 设计日期：2026-09-13  
-> 依据：`whu-info-core-reference.json`、`return-to-whu-core-v0-plan.md`、`investigation-report.md`、`temporary-campus-kit-v0.md`  
+> 依据：`whu-info-core-reference.json`、`return-to-whu-core-v0-plan.md`、`investigation-report.md`、[临时校园套件阶段记录](../../archive/temporary-campus-kit-v0.md)
 > 状态：**可做平面体量白盒，不可冻结真实地形或正式地图**
 
 配套示意图：[return-to-whu-game-space-v0.svg](return-to-whu-game-space-v0.svg)

@@ -7,6 +7,7 @@ Reference 保存需要精确查询的格式、合同、来源和固定标准，�
 - [环境资产艺术约束](environment-art.md)
 - [工业组件资产规格](industrial-props.md)
 - [建筑套件、端口与表面规范](architectural-environment-v1.md)
+- [临时校园套件资产与拼接规格](temporary-campus-kit-v0.md)
 - [资产导入 manifest](asset-manifest.md)
 - [RFANIM V1 文本格式](rfanim-format.md)
 - [资源来源与发布限制](asset-sources.md)

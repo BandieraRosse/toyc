@@ -91,7 +91,7 @@ TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX�
 Temporary Campus Kit V0安装到公开`props/campus/`；IDs 24–35的零碰撞尺寸明确拒绝
 隐式gameplay AABB。`tools/campus_kit_round.py --generate --capture --deterministic --audit`
 复用importer与Visual CLI完成完整性、已有库存和独立校园组图；
-见[audit、连接契约与边界](../temporary-campus-kit-v0.md)。
+见[校园套件资产与拼接规格](../reference/temporary-campus-kit-v0.md)；原始 audit 见[阶段记录](../archive/temporary-campus-kit-v0.md)。
 
 建筑套件 `rf_arch_*` 同样安装到公开 industrial 目录并追加稳定 ID；两种 flat 材质、零纹理。
 使用 `python3 tools/architecture_round.py --generate --capture --deterministic` 重现资产与两个隔离原型；

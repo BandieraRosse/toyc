@@ -14,5 +14,6 @@
 - [网络代码导航旧稿](networking-code-navigation-20260912.md)：早期文件职责与排查笔记。
 - [环境资产 V2 试点](environment-art-v2-pilot.md)：十件工业组件的视觉与成本试点及逐件落地记录。
 - [建筑套件 V1 原型设计](architectural-environment-v1-design-record.md)：冻结过程、原型和旧接力事项。
+- [临时校园套件 V0](temporary-campus-kit-v0.md)：库存清点、合成街角观察与阶段交接。
 
 恢复历史工作时，先从当前入口确认所有权和接口，再把仍有效的事实重新通过源码、脚本或 CLI 验证。

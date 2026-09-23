@@ -33,6 +33,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 环境资产美术约束与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、预算、规格与生成入口 |
 | 建筑套件、管线端口和墙地表面 | [建筑套件规范](reference/architectural-environment-v1.md)、[生成指南](guides/architectural-environment-v1.md) | 建筑资产、连接合同与复现入口 |
+| 临时校园套件与合成场景 | [校园套件规格](reference/temporary-campus-kit-v0.md)、[生成验收](guides/temporary-campus-kit-v0.md) | 视觉资产、拼接与离屏复现；历史审阅见 [阶段记录](archive/temporary-campus-kit-v0.md) |
 | 武大资料、真实空间依据 | [reference/return-to-whu-core/](reference/return-to-whu-core/) | 来源台账、调查报告、白盒计划 |
 | 已完成或撤销的现场 | [archive/](archive/) | 只作历史证据，不作当前设计依据 |
 

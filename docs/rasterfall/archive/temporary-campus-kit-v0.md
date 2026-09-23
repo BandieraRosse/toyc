@@ -1,5 +1,8 @@
 # Return to WHU — Asset Audit & Temporary Campus Kit V0
 
+> 状态：历史；记录 2026-09-13 临时校园套件的清点、生成和合成场景验收。
+> 当前入口：[资产规格](../reference/temporary-campus-kit-v0.md)、[生成与验收指南](../guides/temporary-campus-kit-v0.md)。
+
 > 文档更新：2026-09-13
 > 源码核对基线：2026-09-13 registry、工业/Architectural manifests、Builder、importer、static RFM2 v2 writer、Visual CLI 和 campus 独立 fixture。
 
