@@ -9,7 +9,7 @@
 - 场景渲染与帧分层：[../rendering-architecture.md](../rendering-architecture.md)
 - 静态世界光照：[static-world-lighting.md](static-world-lighting.md)
 - 角色表现：[../character-presentation.md](character-presentation.md)
-- HUD、Viewmodel 与特效：[../hud-effects.md](../hud-effects.md)
+- HUD、Viewmodel 与特效：[../hud-effects.md](hud-effects.md)
 - GPU Draw/Raster/present：[../gpu-rendering-architecture.md](../gpu-rendering-architecture.md)
 - 模型与动画：[../animation-architecture.md](../animation-architecture.md)
 - 联机：[../network-architecture.md](network-architecture.md)

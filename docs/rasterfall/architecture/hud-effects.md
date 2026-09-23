@@ -5,7 +5,7 @@
 > 最近核对：2026-09-23
 
 本文定义 HUD、第一人称 viewmodel 和短生命周期特效的所有权与层序。帧 barrier 和 target 语义见
-[渲染架构](rendering-architecture.md)，玩法事件与网络真值由 gameplay/session/network 层拥有。
+[渲染架构](../rendering-architecture.md)，玩法事件与网络真值由 gameplay/session/network 层拥有。
 
 ## 模块与层
 
@@ -48,17 +48,7 @@ camera shake 只作用于渲染阶段复制的 `render_camera`。多个组件按
 由 LOCAL_VIEW 标志隔离，AI/远端事件不得改变本地镜头。受击 shake 使用独立 preset 和最短接受间隔，
 reset 必须清除未完成方向。
 
-当前玩家射速倍率为 200% 时的 camera recoil 展示参考如下；这是表现调参，不改变 weapon cooldown：
-
-| 武器 | 实际间隔 | 衰减 | 垂直单发振幅 | 连续峰值参考 | 垂直上限 |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| 手枪 | 100 ms | 110 ms | 8 | 约 9 | 18 |
-| SMG | 50 ms | 150 ms | 8 | 约 16 | 20 |
-| AK | 90 ms | 240 ms | 18 | 约 32 | 32 |
-| 霰弹枪 | 400 ms | 170 ms | 16 | 约 16 | 28 |
-| AWP | 600 ms | 110 ms | 5 | 约 5 | 10 |
-
-连续峰值按同向叠加与线性衰减估算；实际输出还经过平滑和确定性噪声。
+早期 200% 射速下的 camera recoil 调参表见[历史记录](../archive/hud-recoil-tuning-2026-09.md)；当前数值以 `rasterfall_effects.c` 与相关配置常量为准。
 
 `DAMAGE_FLASH` 在 overlay 绘制低透明红边和方向箭头。方向可由展示层估计最近存活敌人并量化为八方向，
 但该估计不能进入 `toy_game` 或 snapshot。enemy material hit feedback 与 screen damage overlay 是不同组件。
@@ -76,9 +66,4 @@ HUD 与 viewmodel 从 player actor 及 session/network presentation state 读取
 内嵌 8×16 VGA ASCII 与 16×16 GB2312 字形由项目资产提供；运行时不依赖 FreeType、系统 CJK 字体或
 宿主编码转换。地图排布导出可以读取同一字形资产，但不拥有 HUD runtime。
 
-## 验证要求
-
-改变 effect 事件映射或 pool 时运行逻辑回归，并覆盖容量覆盖、reset、固定步生命周期和 local/remote
-隔离。改变层或透明语义时增加 CPU/GPU differential、VIEWMODEL coverage、overlay composite 与固定
-视觉 capture。具体流程见 [视觉验收](guides/visual-validation.md)和
-[GPU 验收与诊断](guides/gpu-validation.md)。
+验证矩阵见 [视觉验收](../guides/visual-validation.md)和[GPU 验收与诊断](../guides/gpu-validation.md)。

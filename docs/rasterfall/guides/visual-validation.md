@@ -42,6 +42,8 @@ Desktop/Application 原型只在隔离 fixture 中验收；先运行 `build/rast
 
 ## 角色验收
 
+修改 effect 事件映射或 instance/emitter pool 时运行逻辑回归，检查容量覆盖、reset、固定步生命周期和 local/remote 隔离。修改层序或透明语义时增加 CPU/GPU differential、VIEWMODEL coverage、overlay composite 与固定视觉 capture。所有权和层序见 [HUD 与特效架构](../architecture/hud-effects.md)，GPU 专项按 [GPU 验收指南](gpu-validation.md)执行。
+
 ```text
 --character-acceptance <model> <output-dir>
 --character-world-capture <output-dir> [--character-world-model <model>]
