@@ -5,7 +5,7 @@
 > 事实入口：`rasterfall/lib/rasterfall_map_parser.c`、`rasterfall/lib/rasterfall_map_runtime.c`、`rasterfall/src/rasterfall_map.c`、`rasterfall/src/rasterfall_session.c`
 > 最近核对：2026-09-21
 
-空间地图 `.map` 与 Game-owned `assets/worlds/*.content` 分别保存空间事实和 actor、terminal、flag、formation 等世界内容。静态 world identity 将两者绑定；内容地图不进入 Runtime Map。字段契约见 [地图格式](map-format.md)，修改和查询流程见 [地图编辑与查询](guides/map-authoring.md)。
+空间地图 `.map` 与 Game-owned `assets/worlds/*.content` 分别保存空间事实和 actor、terminal、flag、formation 等世界内容。静态 world identity 将两者绑定；内容地图不进入 Runtime Map。字段契约见 [地图格式](../map-format.md)，修改和查询流程见 [地图编辑与查询](../guides/map-authoring.md)。
 
 ## 所有权和依赖方向
 
@@ -34,16 +34,13 @@ AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world 
 默认流程只加载 V1 Runtime Map。
 `legacy_index` 只用于兼容数组的稳定排列，不是 V1 record 的顺序语义。
 
-`build/map-runtime-test` 与 `make test-map-runtime` 覆盖 V1 runtime 加载、稳定 ID 查询和 action registry。
-
 正式地图源位于 `rasterfall/assets/maps/rasterfall.map`；旧兼容源为同目录的
 `rasterfall_legacy.map`。旧源的磁盘结构定义在 `include/toy_map.h`，文本解析在 `lib/map.c`，仅供显式 fallback/reference
 使用。`--legacy-map` 和 `rasterfall_session_load_legacy()` 是当前保留的 legacy compatibility entry。V1 的 parser、IR、
 Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须同时检查 parser、runtime、玩法绑定、
 碰撞/导航、渲染和逻辑测试。
 
-本地实验布局可通过 `build/rasterfall --map path/to/experiment.map` 启动。该参数只覆盖本次进程
-的启动地图；地图显式 `attr.identity` 决定本次 session 的既有 world/content policy，无 identity 时沿用 Campaign policy。
+显式启动地图只覆盖本次进程；地图 `attr.identity` 决定本次 session 的既有 world/content policy，无 identity 时沿用 Campaign policy。实验命令见[地图编辑指南](../guides/map-authoring.md)。
 
 Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`。`station_terminal`、
 `operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别

@@ -54,7 +54,7 @@ collision record 的碰撞标志和路径。例如 `attr.collision_id=ground_wor
 正式地图的 surface/render 记录均由 V1 Runtime adapter
 写入现有 primitive/draw 兼容结构；具体数量以 `map-inspect` 和 `map-runtime-test` 的当前输出为准。
 
-Map IR、Runtime Map、玩法投影与 World Content 的所有权见 [地图与世界内容](maps-and-world-content.md)。
+Map IR、Runtime Map、玩法投影与 World Content 的所有权见 [地图与世界内容](architecture/maps-and-world-content.md)。
 
 ## 几何与碰撞
 

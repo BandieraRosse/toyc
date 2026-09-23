@@ -5,7 +5,11 @@
 > 事实入口：`Makefile`、`tools/map_layout_export.py`、`tools/map_layout_query.py`
 > 最近核对：2026-09-23
 
-空间地图的字段与约束见 [地图格式](../map-format.md)；Runtime Map、World Content 和投影所有权见 [地图与世界内容](../maps-and-world-content.md)。
+空间地图的字段与约束见 [地图格式](../map-format.md)；Runtime Map、World Content 和投影所有权见 [地图与世界内容](../architecture/maps-and-world-content.md)。
+
+用 `build/rasterfall --map path/to/experiment.map` 只覆盖本次进程的启动地图。修改 V1 输入链路时运行
+`make test-map-runtime`，覆盖 runtime 加载、稳定 ID 查询和 action registry；也可直接运行
+`build/map-runtime-test`。`--legacy-map` 仅用于显式兼容检查，实际参数以程序 `--help` 为准。
 
 ## 修改地图排布的必经流程
 
