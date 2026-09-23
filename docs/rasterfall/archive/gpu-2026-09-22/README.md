@@ -11,6 +11,7 @@
 
 - `gpu-current-state.md`：原综合状态页，稳定边界已分别并入当前架构和验收指南。
 - `gpu-mixed-optimization-20260922.md`：M1/M2 阶段执行与测量记录。
+- `gpu-performance-baseline.md`：RTX 3050 M2 三轮逐帧审计基线。
 - `gpu-rb0-investigation-20260922.md`、`gpu-rb0-repair-20260922.md`、
   `gpu-rb0-special-20260922.md`：RB-0 调查、修复和签收链。
 - `gpu-rb2-candidate-review-20260922.md`：候选盘点与已撤销 ablation。

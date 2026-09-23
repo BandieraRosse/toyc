@@ -11,7 +11,7 @@
 
 保留当前 producer、光照、color/depth、层序与 required native 合同，逐项减少 mixed 路径的重复工作。
 Windows 原生 RTX 3050 现为性能开发与 A/B 主设备，Intel Iris Xe 为普通正确性和性能下限设备；具体目标、
-冻结基线和采样口径见 [GPU 性能标准与冻结基线](../../gpu-performance-standards.md)。各阶段独立 ablation，
+冻结基线见[审计记录](gpu-performance-baseline.md)，采样口径见[GPU 验收指南](../../guides/gpu-validation.md)。各阶段独立 ablation，
 不把多个改动的收益混为一个结论；用户已有工作区修改保留。
 
 | 阶段 | 实现与所有者 | 进入下一步的依据 |
@@ -156,7 +156,7 @@ target setup 各场景中位均约 0.002 ms，未单列。子项合计已将 pre
 重建消失且 workload、bridge、画面和生命周期门禁不变，再决定是否进入 M3。
 
 本组 audit 的 whole-loop 数字及 package/hash 已冻结在
-[GPU 性能标准与冻结基线](../../gpu-performance-standards.md)。audit 日志会扰动帧墙钟，因此不得把本组
+[冻结审计基线](gpu-performance-baseline.md)。audit 日志会扰动帧墙钟，因此不得把本组
 whole-loop 直接当作 60 FPS 基线；正式性能基线与收益使用 `-NoAudit` 五轮 AB/BA。
 
 ## 后续阶段的重新归因

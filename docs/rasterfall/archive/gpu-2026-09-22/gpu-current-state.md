@@ -19,7 +19,7 @@ producer 或光照语义；后续资源与同步改动各自单独验证。阶�
 
 自 M2 起，RTX 3050 是高性能开发、正式 A/B 与初期稳定 60 FPS 签收主设备；Intel Iris Xe 是普通正确性、
 完整功能与 30 FPS 下限设备。当前只设置这两档，不要求两个设备达到相同帧率。目标、冻结数字和采样口径
-见 [GPU 性能标准与冻结基线](../../gpu-performance-standards.md)。
+见 [GPU 性能标准](../../reference/gpu-performance-standards.md)与[冻结审计基线](gpu-performance-baseline.md)。
 
 最新专项状态以 [RB-0 专项续接](gpu-rb0-special-20260922.md) 为准；其中记录 raw 输入覆盖和
 resize 附件生命周期修复，以及真实启用 validation/sync 的证据。下方旧结果不能替代新 package 验收。

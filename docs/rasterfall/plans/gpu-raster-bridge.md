@@ -8,7 +8,7 @@
 本文只记录尚未完成的执行顺序和决策门。稳定数据流见
 [GPU 渲染架构](../gpu-rendering-architecture.md)，验收工作流见
 [GPU 验收与诊断](../guides/gpu-validation.md)，目标与冻结基线见
-[GPU 性能标准](../gpu-performance-standards.md)。RB-0/RB-1、M1、失败候选和单次测量证据已经归档，
+[GPU 性能标准](../reference/gpu-performance-standards.md)，审计基线见[阶段记录](../archive/gpu-2026-09-22/gpu-performance-baseline.md)。RB-0/RB-1、M1、失败候选和单次测量证据已经归档，
 不得作为并行活动计划恢复。
 
 ## 当前目标
@@ -86,6 +86,6 @@ GPU 固定成本收敛后，依次评估 visibility/LOD、presentation snapshot�
 
 ## 完成条件
 
-达到 [GPU 性能标准](../gpu-performance-standards.md) 的目标，或者可靠归因证明剩余瓶颈属于新的独立问题域。
+达到 [GPU 性能标准](../reference/gpu-performance-standards.md) 的目标，或者可靠归因证明剩余瓶颈属于新的独立问题域。
 若需开启透明/VFX、厂商驱动专项或新的 Graphics 类型，先归档本计划，再由 `plans/README.md` 指向新的
 唯一活动计划。

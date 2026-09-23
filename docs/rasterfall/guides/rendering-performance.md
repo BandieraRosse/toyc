@@ -7,7 +7,7 @@
 
 本文用于区分 world producer、角色模型提交、CPU raster 和完整窗口阶段成本。GPU native whole-loop、
 bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
-[GPU 性能标准](../gpu-performance-standards.md)拥有。
+[GPU 性能标准](../reference/gpu-performance-standards.md)拥有。
 
 ## 先选正确入口
 

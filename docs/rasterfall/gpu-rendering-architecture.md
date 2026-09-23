@@ -6,7 +6,7 @@
 
 本文只定义 GPU 渲染的稳定所有权、数据流和失败边界。验收命令见
 [GPU 验收与诊断](guides/gpu-validation.md)，设备档位和性能门槛见
-[GPU 性能标准](gpu-performance-standards.md)，尚未完成的工作只见
+[GPU 性能标准](reference/gpu-performance-standards.md)，尚未完成的工作只见
 [当前活动计划](plans/README.md)。阶段调查、单次设备现场和已撤销实验位于
 [GPU 2026-09-22 归档](archive/gpu-2026-09-22/README.md)。
 
