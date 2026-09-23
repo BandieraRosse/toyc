@@ -29,7 +29,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 资产导入、LOD、检查器 | [asset-pipeline.md](asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 联机协议、快照、预测与测试 | [联机架构](network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
-| 资源来源、许可、发布 | [asset-sources.md](asset-sources.md) | 资源台账和发布前检查 |
+| 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 武大资料、真实空间依据 | [reference/return-to-whu-core/](reference/return-to-whu-core/) | 来源台账、调查报告、白盒计划 |
 | 已完成或撤销的现场 | [archive/](archive/) | 只作历史证据，不作当前设计依据 |
 

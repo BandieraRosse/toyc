@@ -13,7 +13,7 @@
 > 源码核对基线：工作区（Enemy Visual V2 六份公开 RFM2 / renderer-only family；RFANIM V1 inspection；RFCHAR V1 → RFM2 v14；V2.1 modular body；Core filesystem service V0）
 
 本文记录可执行的模型、纹理和动画工具链。运行时模块边界见 `assets-animation.md`，动画求值契约
-见 `animation-architecture.md`，资源是否允许发布见 `asset-sources.md`。
+见 `animation-architecture.md`，资源是否允许发布见[资源来源台账](reference/asset-sources.md)。
 
 ## Runtime filesystem boundary
 

@@ -103,7 +103,7 @@ resource。新 runtime 不得对 resource definition 调用 pose/IK API，且 re
   `app/rfchar_runtime_test.c`；新资产使用 stable role/attachment API，历史资产才按骨名推断。
 - LOD：统一入口编排 `tools/rmesh_lod.py`；索引简化后同步 compact vertex/SKN1 BDEF 表，
   skeleton、IK 和 CHR1 保持原样；Makefile 的既有 `lod-*` 目标继续可用。
-- 资源许可与发布边界：`asset-sources.md`；历史实验现场仅在 `archive/` 中追溯。
+- 资源许可与发布边界：[资源来源台账](reference/asset-sources.md)；历史实验现场仅在 `archive/` 中追溯。
 
 ## 修改提示
 

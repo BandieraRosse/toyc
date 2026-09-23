@@ -77,7 +77,7 @@ build/rfchar_runtime_test <model.rmesh>
 - [`../docs/rasterfall/README.md`](../docs/rasterfall/README.md)：维护者导航总入口。
 - [`../docs/rasterfall/animation-architecture.md`](../docs/rasterfall/animation-architecture.md)：模型与动画架构契约。
 - [`../docs/rasterfall/network-architecture.md`](../docs/rasterfall/network-architecture.md)：联机架构与扩展边界。
-- [`../docs/rasterfall/asset-sources.md`](../docs/rasterfall/asset-sources.md)：资源来源、许可和发布检查。
+- [`../docs/rasterfall/reference/asset-sources.md`](../docs/rasterfall/reference/asset-sources.md)：资源来源、许可和发布检查。
 - [`../docs/rasterfall/archive/project-handoff-2026-09.md`](../docs/rasterfall/archive/project-handoff-2026-09.md)：历史现场记录，
   不代表当前实现。
 
