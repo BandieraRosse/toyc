@@ -23,6 +23,9 @@ renderer 只读玩法或派生展示状态，不修改 `toy_game`。客户端位
 但 HP、武器、downed、动画和统计仍从 actor 真值投影；HUD、第一人称武器和受击效果不得回读旧的顶层
 玩家副本。
 
+GPU Scene 迁移中的 `rf_gpu_scene_extract.c` 只从冻结的 V2 snapshot 生成有序 Scene 元数据；
+它不拥有资源、pose、pass 或正常帧提交。现行渲染仍由下述 mixed frame 数据流负责。
+
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用
 `toy_renderer.recording_context` 隔离 frontend state。

@@ -1,6 +1,6 @@
 # GPU Scene 阶段 0：迁移接口合同
 
-> 状态：设计合同；actor 身份和只读 snapshot 已隔离实现，其余接口尚未实现；版本草案 V1
+> 状态：设计合同；actor 身份、V1/V2 值 snapshot 与有序 Scene 元数据已隔离实现
 >
 > 核对日期：2026-09-23
 
@@ -9,9 +9,10 @@
 [`rasterfall_render_resources.h`](../../../rasterfall/include/rasterfall_render_resources.h)、
 [`rf_core_mixed_frame.h`](../../../rasterfall/include/rf_core_mixed_frame.h) 与
 [`rf_gpu_mixed_executor.c`](../../../gpu/src/rf_gpu_mixed_executor.c)。
-隔离的 actor generation tracker 与只读 actor snapshot 构建已由 `rf_gpu_scene_identity.h/.c`
-实现并有独立逻辑用例。当前 snapshot 只含 camera、extent、frame/world identity 与 actor 展示值；
-world/transient/UI 输入、GPU Scene extraction、资源表和正常帧接线仍未实现。
+隔离的 actor generation tracker 与只读 actor snapshot 构建由 `rf_gpu_scene_identity.h/.c`
+实现；`rf_gpu_scene_frame.h/.c` 扩为 V2 值 snapshot，含 world/transient 输入、map generation 与展示开关。
+`rf_gpu_scene_extract.h/.c` 已实现首批有序 Scene 元数据，两类构建均有独立逻辑用例。
+数据源 adapter、UI 输入、完整资源/材质/pose 提取、资源表和正常帧接线仍未实现。
 
 ## 帧身份与状态
 
@@ -45,6 +46,13 @@ Snapshot 不持有跨帧裸指针。无法在一帧内拷贝的只读 world 数�
 当前 `rf_gpu_scene_snapshot_build_v1` 消费完整 actor slot 输入，输出按 slot 顺序压紧的值数组；
 inactive slot 也必须提交，以便身份状态识别消失和复用。重复来源身份、逆序 frame/world、无效
 extent 或输入错误会拒绝整次构建，tracker 与输出保持原值。该数据模块尚不读取 `toy_game`。
+V2 调用 V1 的 actor 身份事务，再复制最多 128 条 world 值与 2048 条 transient 值。world 的
+`id` 必须是 Runtime Map 的 authored render ID，并沿投影顺序输入；`kind`、位置、alpha 和可见开关
+仅是首批展示值，不能当作完整地图几何/材质。transient 的 `(source, local_id)` 在本帧唯一；
+一次性效果可用本帧局部序号。重复 ID、无效值或超容量均拒绝构建，tracker 与输出不变。
+调用者还须提供 actor、world、transient 的跨类别 `submission_ordinal`。首批 Scene 提取按此序号
+生成只读元数据项，序号冲突拒绝整次提取；它保留 actor 来源与 generation、world authored ID 和
+transient 本帧 ID，但没有资源、pose、材质和 pass 分类，不能提交到 GPU。
 
 源码核对：本地 AI 的 `actor_id` 通常由可重用 slot `+1` 生成；清除 hired AI 后同一 ID 可分配给
 新 actor。remote player 使用 `100 + player_id`，断线后也可复用；客户端 snapshot 投影又按
@@ -93,8 +101,8 @@ ID 字典序重排透明项。world generation 变化后才允许同一 authored
 | native acquire/present | Windows presenter/backend | 同 device/queue 的最终 target → swapchain generation；present 完成与 render fence 分开跟踪 |
 
 Core 保持旧 mixed 与新 Scene 的**整帧启动选择**，不能按 producer 或 pass 在两者间切换。
-新接口落地时再为结构定义 `sizeof`/布局静态断言与独立逻辑用例；此文中的接口名是职责名，
-不是已导出的 C 符号。
+可执行 Scene 与 GPU 资源接口落地时再定义各自的 `sizeof`/布局静态断言和逻辑用例；
+除已实现的 snapshot 与元数据提取函数外，此文中的接口名是职责名，不是已导出的 C 符号。
 
 ## 冻结前仍须决策
 

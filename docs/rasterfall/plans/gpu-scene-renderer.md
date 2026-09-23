@@ -6,7 +6,7 @@
 >
 > 制定：2026-09-23
 >
-> 当前切片：阶段 1A 的隔离基础设施；actor identity 与只读 actor snapshot 已落地，下一步是 world/transient 输入和 frozen Scene；正常帧仍走旧路径
+> 当前切片：阶段 1A 的隔离基础设施；actor identity、actor/world/transient 值 snapshot 与有序 Scene 元数据已落地，下一步是数据源 adapter、完整资源/材质/pose 提取；正常帧仍走旧路径
 
 本计划取代[旧 GPU Raster / Bridge 收敛计划](../archive/gpu-raster-bridge-20260923.md)。现行所有权和实现以
 [渲染架构](../architecture/rendering-architecture.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)

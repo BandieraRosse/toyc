@@ -194,6 +194,11 @@ gpu-scene-identity-test: $(BUILD)/rf-gpu-scene-identity-test.exe
 $(BUILD)/rf-gpu-scene-identity-test.exe: tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_identity.c -o $@
 
+.PHONY: gpu-scene-frame-test
+gpu-scene-frame-test: $(BUILD)/rf-gpu-scene-frame-test.exe
+$(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
+
 # GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
     gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c

@@ -45,6 +45,8 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 - `src/rf_gpu_scene_identity.c`、`include/rf_gpu_scene_identity.h`：GPU Scene 迁移中的隔离 presentation 身份状态；
   按来源身份和 world generation 跟踪 actor 生命周期，允许连续存活的 actor 更换输入 slot；
   从调用者给出的展示值构建只读 snapshot，尚未接入正常帧或修改玩法/网络状态。
+- `src/rf_gpu_scene_frame.c`、`include/rf_gpu_scene_frame.h`：隔离的 V2 snapshot 构建，冻结 world authored ID、
+  本帧 transient 来源 ID、map generation 与展示开关；输入值由后续 adapter 提供。
 - `src/rasterfall_session.c`、`include/rasterfall_session.h`：session-owned level/map 生命周期及 Map Runtime adapter 接入。
 - `src/rasterfall_logic_test.inc`：由主编译单元包含的聚合逻辑测试入口。
 

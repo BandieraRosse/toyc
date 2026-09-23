@@ -887,6 +887,11 @@ gpu-scene-identity-test: $(BUILD)/rf-gpu-scene-identity-test
 $(BUILD)/rf-gpu-scene-identity-test: tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I rasterfall/include tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c -o $@
 
+.PHONY: gpu-scene-frame-test
+gpu-scene-frame-test: $(BUILD)/rf-gpu-scene-frame-test
+$(BUILD)/rf-gpu-scene-frame-test: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h | $(BUILD)
+	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
+
 $(BUILD)/rf_viewmodel_contract.o: rasterfall/src/rf_viewmodel_contract.c \
                                   rasterfall/include/rf_viewmodel_contract.h \
                                   include/toy_renderer.h | $(BUILD)
