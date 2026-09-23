@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：V0 原型设计已由当前 Application Runtime 文档取代
-> 当前入口：[Application Runtime](../../application-runtime.md)
+> 当前入口：[Application Runtime](../../architecture/application-runtime.md)
 
 > 文档更新：2026-09-11
 > 源码核对基线：Application Query Boundary V0；Core/Game query context 已建立，Application API 不暴露 `toy_game`；Application API Stabilization V0 Phase 3 projection boundary audit

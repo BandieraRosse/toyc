@@ -16,7 +16,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 当前优先级、GPU 实施顺序 | [活动计划](plans/README.md) | 计划指向的单一执行文档 |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
 | 启动、参数、主循环、Core Host | [runtime.md](runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
-| Desktop、Application、GUI 与只读投影 | [Application Runtime](application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
+| Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [gameplay.md](gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](maps-and-world-content.md)、[地图格式](map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |

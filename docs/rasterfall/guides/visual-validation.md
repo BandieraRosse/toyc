@@ -24,6 +24,10 @@ GPU 指南验收。capture 应写入新建的 `tmp/` 子目录；生成物不提
 
 ## 通用与环境场景
 
+Desktop/Application 原型只在隔离 fixture 中验收；先运行 `build/rasterfall --logic-test`，再用
+`build/rasterfall --visual-capture desktop-v1 --visual-output <bmp>` 检查固定画面。
+正常运行的 feature gate 与数据所有权见 [Application Runtime](../architecture/application-runtime.md)。
+
 ```text
 --visual-capture <scene> --visual-output <bmp>
 --environment-capture <output-dir> --textures

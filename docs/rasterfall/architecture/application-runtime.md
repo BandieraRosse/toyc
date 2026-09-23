@@ -5,7 +5,7 @@
 > 事实入口：`rasterfall/include/rasterfall_feature_freeze.h`、`rasterfall/src/rf_game_lifecycle.c`、`rasterfall/src/rf_application_projection.c`
 > 最近核对：2026-09-23
 
-本页描述保留在源码中的 Desktop、Application 与 Projection 边界，以及正常运行路径的冻结状态。进程、Core 和固定步长调度见 [运行时与主循环](runtime.md)。
+本页描述保留在源码中的 Desktop、Application 与 Projection 边界，以及正常运行路径的冻结状态。进程、Core 和固定步长调度见 [运行时与主循环](../runtime.md)；隔离验收见[视觉验收指南](../guides/visual-validation.md)。
 
 ## 当前运行边界
 
@@ -25,8 +25,8 @@ GUI 的 icon 操作交给 app manager；窗口仍由 GUI 管理，内容通过 a
 
 `rf_application_query_context` 只临时借用 Core/Game Runtime。projection 每次清零并重建调用方提供的 snapshot，不暴露或缓存 `toy_game`、actor、session、Core service 或 Command Runtime 指针。PERSONNEL 从 session roster/actor/squad 关系生成只读人员 value；GUI 和 Terminal 共享这条投影链。命令执行仍归 Command Runtime，application projection 不执行 mutation。
 
-## 扩展边界与验证
+## 扩展边界
 
 启用 Desktop 前需重新核对 feature gate、暂停和 pointer lock、窗口生命周期、application dispatch、projection 数据来源与 normal frame 视觉语义。不得仅解除宏开关就把隔离原型视为已验收功能。
 
-现有隔离用例由 `build/rasterfall --logic-test` 聚合；`--visual-capture desktop-v1 --visual-output <path>` 验证固定视觉场景。实际参数以 `build/rasterfall --help` 为准。原型形成过程见 [Runtime 历史设计](archive/runtime-design-v0/README.md)。
+原型形成过程见 [Runtime 历史设计](../archive/runtime-design-v0/README.md)。

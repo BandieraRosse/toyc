@@ -2,7 +2,7 @@
 
 > 状态：历史
 > 归档原因：V0 原型设计已由当前 Application Runtime 文档取代
-> 当前入口：[Application Runtime](../../application-runtime.md)
+> 当前入口：[Application Runtime](../../architecture/application-runtime.md)
 
 > 文档更新：2026-09-12
 > 源码核对基线：Desktop V1 window state/z-order/chrome；F12 与前哨站共用双应用桌面；GUI icon hit testing、连续拖动、window drag/close/text presentation

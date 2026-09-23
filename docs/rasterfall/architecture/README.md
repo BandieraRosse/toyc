@@ -4,7 +4,7 @@
 分类索引，不复制正文。
 
 - Runtime 与主循环：[../runtime.md](../runtime.md)
-- Application、GUI 与查询投影：[../application-runtime.md](../application-runtime.md)
+- Application、GUI 与查询投影：[../application-runtime.md](application-runtime.md)
 - 玩法、session 与 AI：[../gameplay.md](../gameplay.md)
 - 场景渲染与帧分层：[../rendering-architecture.md](../rendering-architecture.md)
 - 静态世界光照：[static-world-lighting.md](static-world-lighting.md)
