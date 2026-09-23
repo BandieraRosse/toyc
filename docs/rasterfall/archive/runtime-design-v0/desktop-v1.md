@@ -1,5 +1,9 @@
 # RF Desktop V1
 
+> 状态：历史
+> 归档原因：Desktop normal runtime 已冻结，保留原型设计供追溯
+> 当前入口：[Application Runtime](../../application-runtime.md)
+
 > 文档更新：2026-09-18
 > 源码核对基线：Desktop V1 normal runtime 已冻结；实现、逻辑测试和 `desktop-v1` 视觉 fixture 保留隔离，正常启动不初始化 GUI/app manager。
 

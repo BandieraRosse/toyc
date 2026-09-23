@@ -1,5 +1,9 @@
 # RF Runtime Environment V1
 
+> 状态：历史
+> 归档原因：V1 checkpoint 已由当前运行时与 Application 架构取代
+> 当前入口：[运行时与主循环](../../runtime.md)、[Application Runtime](../../application-runtime.md)
+
 > 文档更新：2026-09-12
 > 源码核对基线：工作区（RF Core Runtime V0.2、Game Runtime Authority、Command Runtime V0、GUI Runtime Prototype V0、Application Runtime V0、Application Projection Layer V0、Map Runtime Rewrite Integration）
 
@@ -107,7 +111,7 @@ Game Runtime 可以编排 session，但不复制地图真值；GUI、Application
 `.map` 语法或地图数据。
 
 入口：`rasterfall_session`、`lib/rasterfall_map_runtime.c`、`src/rasterfall_map.c`；地图契约见
-[`map-format.md`](map-format.md)。
+[`map-format.md`](../../map-format.md)。
 
 ## 当前明确不包含
 

@@ -1,13 +1,11 @@
 # 运行时与主循环
 
-> 文档更新：2026-09-22
-> 源码核对基线：RB-0 最终签收后的 runtime fog-free 策略工作区
-> 源码核对补充：公共 Tinylibc 平台实现位于 `lib/linux/`；Windows/portable 库目录是跨平台迁移入口，Windows 专用实现仍由 `windows/src/` 提供。
+> 状态：当前
+> 所有者：Rasterfall Game Runtime 与 Core Host 生命周期
+> 事实入口：`rasterfall/src/rf_game_runtime.c`、`rasterfall/src/rf_core_host.c`
+> 最近核对：2026-09-23
 
-## 当前 GPU 验收阻塞
-
-Windows Intel strict native smoke 已通过；历史 Fog/Post smoke 只保留为底层 ABI 证据，当前 runtime
-不再提供 fog 开关。原闪退已修复为 retained command 跨帧容量失配；完整窗口生命周期仍按验收矩阵独立签收。
+GPU 的当前验收与生命周期门槛见 [GPU 验收与诊断](guides/gpu-validation.md)；Desktop/Application 的当前冻结边界见 [Application Runtime](application-runtime.md)。
 
 ## 状态所有者
 
@@ -26,7 +24,7 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 
 当前 normal runtime 的 Desktop/Console feature gate 为关闭：Game 初始化不创建 GUI/app manager，主循环不打开、更新或渲染它们。保留的 console/gui/app/projection 源码与逻辑测试仅用于隔离诊断，不属于 normal GPU frame 的语义集合；F12、反引号和 station terminal 交互统一通过现有 HUD banner 报告暂时不可用。
 
-完整的 V1 运行时边界、排除项和验证入口见 [runtime-environment-v1.md](runtime-environment-v1.md)。
+V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](archive/runtime-design-v0/README.md)，不作为当前执行顺序。
 
 关键配套文件：
 
@@ -41,7 +39,7 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 - `include/rasterfall_camera.h`：共享摄像机数据结构。
 - `include/rasterfall_units.h`：网络和玩法共用的单位换算。
 - `src/rasterfall_console.c`、`include/rasterfall_console.h`、`src/rasterfall_calibration.c`：RF Terminal session、Developer Console frontend、RF Command Runtime V0.1 output/metadata/permission 与持枪姿态校准。
-- `src/rasterfall_gui.c`、`include/rasterfall_gui.h`：RF GUI Runtime Prototype V0 desktop、icon hit testing、window state 与文本 presentation；详见 [gui-runtime-v0.md](gui-runtime-v0.md)。
+- `src/rasterfall_gui.c`、`include/rasterfall_gui.h`：保留的 Desktop 原型、icon hit testing、window state 与文本 presentation；当前边界见 [Application Runtime](application-runtime.md)。
 - `src/rasterfall_app.c`、`include/rasterfall_app.h`：Application Runtime 的注册、open/close、update/render 与默认 application。
 - `src/rf_application_projection.c`、`include/rf_application_projection.h`：Application Projection 的只读 Core/Game 查询与 personnel snapshot。
 - `src/rasterfall_session.c`、`include/rasterfall_session.h`：session-owned level/map 生命周期及 Map Runtime adapter 接入。
@@ -182,7 +180,7 @@ Game Runtime 不直接包含或调用 toy window implementation，也不直接�
 在 Core Host 初始化前运行，因此使用同一 Core clock service 的无实例入口
 `rf_core_clock_now_us()`；资源格式 loader 仍保留现有兼容路径，未在本阶段迁移。
 
-未来前哨站 / Terminal 的查询基础见 [core-runtime-v0.2.md](core-runtime-v0.2.md)。Core 与 Game
+Core 与 Game
 Runtime 分别提供独立快照；查询调用方不取得生命周期所有权，也不应维护第二份玩法状态。
 
 Input Boundary V0 由 `rf_core_get_input_frame()` 提供。Core 在每次成功事件轮询后生成可复制的

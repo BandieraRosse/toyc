@@ -1,5 +1,9 @@
 # RF Application Runtime V0
 
+> 状态：历史
+> 归档原因：V0 原型设计已由当前 Application Runtime 文档取代
+> 当前入口：[Application Runtime](../../application-runtime.md)
+
 > 文档更新：2026-09-12
 > 源码核对基线：工作区（`rf_app` / `rf_app_manager` registration、open/close/update/render；Desktop V1 PERSONNEL、TERMINAL single-instance policy）
 
