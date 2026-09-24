@@ -1,5 +1,21 @@
 # GPU Scene 固定渲染地图
 
+## 独立来源开发预览
+
+先完成 Windows package，再运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_preview.ps1 -Independent -OutputDirectory tmp/scene-independent -ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin
+```
+
+`-Independent` 选择 `--gpu-scene-independent-preview`，沿用 required native 与 normal-scene/wave-repro
+输入限制。无验证层时省略 `-ValidationLayerDirectory`，但不能宣称 validation/sync 通过。
+脚本检查每帧 `SCENE-SOURCE` 的连续 ID、零旧 producer/RasterCmd/mixed draw，以及 native 提交零 bridge/readback。
+此入口直接冻结地图、正式模块化队员、旗帜、投射物和交互物；敌人、程序/网络角色、downed 与
+天空、透明、特效、VIEWMODEL、HUD/OVERLAY 尚缺。`dynamic_sources_pending=1` 明示动态来源缺口。
+即使使用 30 敌人的玩法 workload，当前也没有这些敌人的完整画面，不能报告完整 WORLD 或性能收益。
+旧入口保留下面的 producer 捕获诊断；新功能按 [活动计划](../plans/README.md)接独立来源。
+
 ## 硬件 Scene WORLD 原生预览
 
 阶段 2 的整图差异按用户决定延期修复，不再阻塞该入口。先串行完成 Windows package，再运行：

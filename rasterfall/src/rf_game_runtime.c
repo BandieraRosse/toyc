@@ -2757,6 +2757,17 @@ static unsigned long rf_world_audit_command_position(
             runtime->render_context.mixed_frame->raster_count : 0UL);
 }
 
+static void rf_game_prepare_render_camera(struct rf_game_runtime *runtime)
+{
+    struct camera *render_camera = &runtime->render_camera;
+    *render_camera = runtime->camera;
+    set_network_spectator_camera(render_camera, &runtime->net);
+    if (runtime->managed_spectator)
+        set_managed_spectator_camera(render_camera, &runtime->camera,
+                                     runtime->managed_third_person);
+    rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
+}
+
 static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface,
@@ -2787,12 +2798,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     render_camera = &runtime->render_camera;
 
     /* Preserve the existing render-only camera derivation order. */
-    *render_camera = *body_camera;
-    set_network_spectator_camera(render_camera, &runtime->net);
-    if (runtime->managed_spectator)
-        set_managed_spectator_camera(render_camera, body_camera,
-                                     runtime->managed_third_person);
-    rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
+    rf_game_prepare_render_camera(runtime);
     rf_core_render_frame_begin_v1(runtime->core, render_camera->x,
         render_camera->z, render_camera->sy, render_camera->cy,
         render_camera->pitch_sy, render_camera->pitch_cy);
@@ -4490,7 +4496,8 @@ startup_again:
         if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
                 session.scene_local.world_generation);
-        ready = rf_core_begin_frame(&core, 0x151922);
+        ready = options.gpu_scene_independent_preview ?
+            rf_core_begin_scene_frame(&core) : rf_core_begin_frame(&core, 0x151922);
         surface = *rf_core_surface(&core);
         if (ready < 0) break;
         if (ready == 0) {
@@ -4584,7 +4591,11 @@ startup_again:
                 if (options.frame_audit || options.gpu_scene_world_preview)
                     toy_renderer_set_frame_budget(&renderer,0);
                 audit_prepare_us = audit_render_start - audit_loop_start;
-                if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
+                if (options.gpu_scene_independent_preview) {
+                    rf_game_prepare_render_camera(&game_runtime);
+                    game_runtime.scene_pixels = 0;
+                    game_runtime.render_context.mixed_frame = NULL;
+                } else if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
                     rf_core_mixed_fail(&core);
                     if (rf_core_runtime_failed(&core)) {
@@ -4603,7 +4614,7 @@ startup_again:
                 rendered_frames + 1 == options.gpu_capture_frame)
                 core.gpu_frame.capture_path = options.gpu_frame_capture;
             t_stage = rf_core_time_us(&core);
-            present_result = options.gpu_scene_world_preview ?
+            present_result = options.gpu_scene_independent_preview ? 0 : options.gpu_scene_world_preview ?
                 rf_core_finish_scene_recording(&core) : rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
             if (present_result < 0) {
@@ -4844,6 +4855,16 @@ startup_again:
                     }
                     if (options.gpu_scene_world_preview) {
                         scene_native_frames++;
+                        if (options.gpu_scene_independent_preview) {
+                            if (renderer.cmd_count || core.mixed_frame->raster_count ||
+                                core.mixed_frame->draw_count) {
+                                __fprintf(2,"SCENE-SOURCE unexpected legacy recording\n");
+                                rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+                                return 1;
+                            }
+                            __printf("SCENE-SOURCE frame=%d independent=1 legacy_producer=0 raster_commands=0 mixed_draws=0 dynamic_sources_pending=1\n",
+                                rendered_frames);
+                        }
                         __printf("SCENE-NATIVE frame=%d world_only=1 draws=%u bridges=%llu readback=0 mixed_execute=0\n",
                             rendered_frames,probe_stats.draws,
                             (unsigned long long)probe_stats.bridge_transfers);

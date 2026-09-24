@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param([string]$OutputDirectory='tmp/gpu-scene-preview',
       [string]$ValidationLayerDirectory='', [int]$Frames=4,
-      [string[]]$Views=@('near','mid','thin-far','campaign'), [int]$Enemies=30)
+      [string[]]$Views=@('near','mid','thin-far','campaign'), [int]$Enemies=30,
+      [switch]$Independent)
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
@@ -29,6 +30,7 @@ try {
         if (Get-Process rasterfall -ErrorAction SilentlyContinue) { throw 'Rasterfall is already running' }
         $Argv=@('--renderer','gpu-compute','--gpu-required','--gpu-native-present',
             '--gpu-scene-world-preview','--gpu-normal-fixed-tick','--frames',$Frames)
+        if ($Independent) { $Argv+='--gpu-scene-independent-preview' }
         if ($View -eq 'campaign') { $Argv+=@('--gpu-wave-repro') }
         else { $Argv+=@('--gpu-normal-scene',$View,$Enemies) }
         $Quoted=($Argv | ForEach-Object {'"'+$_+'"'}) -join ' '
@@ -45,6 +47,13 @@ try {
         if ($Log -match 'Validation Error|SYNC-HAZARD|VUID-') { throw "$View validation error" }
         $Native=[regex]::Matches($Log,'SCENE-NATIVE frame=(\d+) world_only=1 draws=\d+ bridges=0 readback=0 mixed_execute=0')
         if ($Native.Count -ne $Frames) { throw "$View missing native Scene frames" }
+        if ($Independent) {
+            $Sources=[regex]::Matches($Log,'SCENE-SOURCE frame=(\d+) independent=1 legacy_producer=0 raster_commands=0 mixed_draws=0 dynamic_sources_pending=1')
+            if ($Sources.Count -ne $Frames) { throw "$View missing independent source frames" }
+            for ($i=0;$i -lt $Frames;$i++) {
+                if ([int]$Sources[$i].Groups[1].Value -ne $i+1) { throw "$View source frame mismatch" }
+            }
+        }
         for ($i=0;$i -lt $Frames;$i++) {
             if ([int]$Native[$i].Groups[1].Value -ne $i+1) { throw "$View noncontiguous frame IDs" }
         }
@@ -52,7 +61,7 @@ try {
             $Log -notmatch 'Synchronization|VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT')) {
             throw "$View validation/sync not activated"
         }
-        Write-Host "[SCENE-PREVIEW] $View PASS frames=$Frames WORLD-only"
+        Write-Host "[SCENE-PREVIEW] $View PASS frames=$Frames WORLD-only independent=$Independent"
     }
     Get-FileHash "$Package/rasterfall.exe" | ConvertTo-Json | Set-Content -Encoding UTF8 "$Out/executable.json"
 } finally {

@@ -97,6 +97,7 @@ void rasterfall_options_usage(int fd)
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit  --gpu-rb0-stats\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-world-preview (experimental WORLD-only native Scene; other layers pending)\n"
+        "  --gpu-scene-independent-preview (direct Scene sources; enemies/procedural actors and other layers pending)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
         "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-tongue|actor-procedural|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
@@ -172,6 +173,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
         else if (!strcmp(option, "--gpu-scene-world-preview")) o->gpu_scene_world_preview = 1;
+        else if (!strcmp(option, "--gpu-scene-independent-preview")) {
+            o->gpu_scene_independent_preview = 1;
+            o->gpu_scene_world_preview = 1;
+        }
         else if (!strcmp(option, "--gpu-scene-pose-test")) o->gpu_scene_pose_test = 1;
         else if (!strcmp(option, "--logic-test") ||
                  !strcmp(option, "--net-test")) o->logic_test = 1;

@@ -6,6 +6,7 @@ struct rasterfall_options {
     const char *enemy_visual_capture_dir;
     int input_debug, logic_test, action_runtime_debug;
     int gpu_scene_pose_test, gpu_scene_native_fixture, gpu_scene_world_preview;
+    int gpu_scene_independent_preview;
     int legacy_map;
     int requested_net_mode, net_port, net_loss_percent;
     const char *net_address;

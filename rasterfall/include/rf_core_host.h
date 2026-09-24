@@ -268,6 +268,8 @@ int rf_core_runtime_failed(const struct rf_core *core);
 struct rf_core_mixed_frame *rf_core_mixed_current(struct rf_core *core);
 void rf_core_mixed_fail(struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
+/* Native Scene owns targets and resources; acquire extent without recording. */
+int rf_core_begin_scene_frame(struct rf_core *core);
 void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
                                   int camera_z, int direction_sy,
                                   int direction_cy, int pitch_sy,

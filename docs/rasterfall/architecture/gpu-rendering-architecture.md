@@ -23,6 +23,20 @@
 `rasterfall.c` 只负责进程、输入、固定步长主循环和顶层编排。renderer 读取玩法或展示投影，
 不修改 `toy_game` 的权威结果。地图文本、Runtime Map、玩法碰撞和可见几何保持分层。
 
+## 独立 Scene 开发入口
+
+`--gpu-scene-independent-preview` 在 runtime 层选择独立来源，不调用旧整帧
+`rf_game_render_profiled`。`rf_core_begin_scene_frame` 只获取窗口 surface/extent，
+不运行 CPU renderer begin/clear、不启动 mixed recording、不 pin 旧 registry。
+camera 使用共享的只读展示求值；地图、正式模块化队员、旗帜、投射物和交互物直接冻结，
+经 Scene registry/cache、pose/skinning 和独立 native owner 提交并退休。
+逐帧检查旧 RasterCmd 和 mixed draw 数为零。旧 WORLD preview 保留 producer 驱动的诊断方式。
+
+当前入口是内容不完整的开发预览：敌人、程序/补充角色、downed、网络角色与非 WORLD 层尚未接入，
+空敌人值帧不代表这些内容已经迁移。它仍共享 Scene 审计编排和 GPU 初始化设施，
+几何与光照 helper 尚位于既有 renderer 模块；独立正常帧协调器及多 slot 流水尚未实现。
+这种代码复用不能演变为调用旧 draw producer 来取得新帧输入。开发顺序只由活动计划拥有。
+
 ## 混合帧数据流
 
 ```text

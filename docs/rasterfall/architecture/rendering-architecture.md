@@ -67,6 +67,15 @@ Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 game
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用
 `toy_renderer.recording_context` 隔离 frontend state。
 
+## 独立 Scene 来源
+
+`--gpu-scene-independent-preview` 跳过本页下述旧整帧 producer 与录制流程。
+runtime 共用 camera 的展示求值顺序，随后直接调用 Scene 值冻结、pose、资源准备与 native 提交。
+Core 独立 begin 只获取窗口 extent，不创建 RasterCmd/mixed recording。
+本入口覆盖地图、正式模块化队员、旗帜、投射物和交互物；其余动态角色及非 WORLD 层仍缺失。
+旧 `--gpu-scene-world-preview` 的 producer 捕获诊断保留，不能视作新路径来源合同。
+资源和执行边界见 [GPU 架构](gpu-rendering-architecture.md)。
+
 ## 一帧的数据流
 
 `--gpu-scene-world-preview` 是单独的开发路径：复用下面的 producer 求值以冻结展示输入，

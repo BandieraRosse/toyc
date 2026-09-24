@@ -1413,6 +1413,20 @@ int rf_core_runtime_failed(const struct rf_core *core)
     return !core || core->gpu_frame.runtime_failed;
 }
 
+int rf_core_begin_scene_frame(struct rf_core *core)
+{
+    int ready;
+    if (!core || !core->window || !core->renderer || !core->mixed_executor ||
+        rf_core_runtime_failed(core)) return -1;
+    /* No toy_renderer_begin, mixed recording, legacy registry pin or CPU clear.
+     * The Scene owner handles preflight, submit, present and retirement. */
+    ready = toy_window_begin_frame(core->window, &core->surface);
+    if (ready <= 0) return ready;
+    core->renderer->surface = core->surface;
+    core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
+    return ready;
+}
+
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
 {
     int ready;

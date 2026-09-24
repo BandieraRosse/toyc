@@ -10,21 +10,11 @@
 
 [下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
-WORLD 的地图、静态实例、角色、敌人、附件、旗帜、投射物与交互物已进入独立 Scene。
-阶段 3 首个 `--gpu-scene-world-preview` 入口已把真实 WORLD 接到 native present，跳过 mixed
-执行和离屏读回；near/mid/thin-far/Campaign 各四帧通过 RTX 3050 validation/sync。
-下一步接透明、特效、独立 VIEWMODEL、HUD/OVERLAY 与天空，再形成完整正常帧候选。
-默认完整呈现仍为 mixed；WORLD preview 不作为完整画面或产品 FPS 结论。
-
-阶段 2 已补齐静态 RMESH 超出旧整数投影范围时的 Scene 硬件裁剪选择；角色镜头中的数值暂缓已清零。
-动态敌人新增 Smoker、Charger、Tank 存活身体的同帧冻结和独立 Scene WORLD 提交。
-普通感染体六种 Block/Humanoid recipe 的存活身体已接入同帧 Scene WORLD，冻结步态后独立求姿态与几何。
-程序角色、不透明死亡、legacy 敌人、blob shadow 和 Smoker 舌头已接入同帧离屏诊断。
-网络玩家按用户决定仅验证逻辑路径，实机联机问题延后到 GPU 完成后的网络专项，不阻塞当前迁移。
-2026-09-24 用户决定：阶段 2 按迁移范围收尾，整图光照/光栅差异只记录，重构后修复，
-不再以 CPU/mixed 画面一致性或数值容差审批阻塞主线。此决定不表示旧画面合同已经通过。
-当前进入阶段 3：接入硬件 Scene 正常帧；首个切片将真实 WORLD 从离屏读回改为独立 native
-提交，随后接透明、特效、VIEWMODEL、HUD/OVERLAY。未接齐的实验入口必须明确标为 WORLD preview。
+当前转向独立 GPU Scene 架构：阶段 3A 先切断旧 producer 与 mixed recording，
+再在阶段 3B 形成完整独立正常帧，随后优化资源复用和流水。复用已验证的 Vulkan、
+skinning、资源缓存、动画和 swapchain 能力；旧路径只作独立对照与必要维护。
+`--gpu-scene-independent-preview` 是首个独立来源开发切片，尚缺动态角色及完整帧各层；
+不作为完整 WORLD 或产品 FPS 结论。画面以内容、遮挡和合理表现验收，不以旧整数光栅整图匹配阻塞。
 
 计划中的当前切片、前置条件、完成门槛和下一决策点以该文档顶部为准。已完成 checkpoint、撤销实验和
 单次设备测量进入 [`../archive/`](../archive/)，不得继续充当优先级来源。
