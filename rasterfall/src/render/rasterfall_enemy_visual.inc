@@ -257,6 +257,11 @@ static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *ite
 {
     struct rasterfall_model_instance instance={0};
     struct rasterfall_model_asset *pose;
+    /* Per-extraction cache: no pose/history survives replay. Tags resolve
+     * collisions exactly, including meshes larger than the cache. */
+    struct { uint32_t tag; int p[3],n[3]; } vertices[256]={0};
+    const char *legacy=getenv("RF_GPU_SCENE_LEGACY_ENEMY_PREP");
+    int cache_enabled=!(legacy && !strcmp(legacy,"1"));
     int recipe=item->infected_recipe-1,scale,result=-1;
     if (recipe<0 || recipe>=6 || enemy_visual_recipes[recipe].type!=item->type ||
         item->infected_swing < -24 || item->infected_swing > 24 ||
@@ -297,8 +302,17 @@ static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *ite
             for (int k=0;k<3;++k) {
                 uint32_t vertex=model_u32(pose->indices+(index+k)*4);
                 int p[3],n[3],rx,rz;
-                if (vertex>=pose->vertex_count ||
-                    rasterfall_model_instance_skin_vertex(&instance,vertex,p,n)<0) goto done;
+                if (vertex>=pose->vertex_count) goto done;
+                unsigned slot=vertex%256;
+                if (cache_enabled && vertices[slot].tag==vertex+1) {
+                    memcpy(p,vertices[slot].p,sizeof(p));
+                    memcpy(n,vertices[slot].n,sizeof(n));
+                } else {
+                    if (rasterfall_model_instance_skin_vertex(&instance,vertex,p,n)<0) goto done;
+                    vertices[slot].tag=vertex+1;
+                    memcpy(vertices[slot].p,p,sizeof(p));
+                    memcpy(vertices[slot].n,n,sizeof(n));
+                }
                 rx=(int)(((long long)p[0]*item->dir_z+(long long)p[2]*item->dir_x)/1024);
                 rz=(int)(((long long)p[2]*item->dir_z-(long long)p[0]*item->dir_x)/1024);
                 q[k].x=item->x+(int)((long long)rx*scale/1000);

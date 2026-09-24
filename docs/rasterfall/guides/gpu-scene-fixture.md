@@ -29,6 +29,13 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 
 ### 动态资源运行成本
 
+敌人几何缓存使用 `tools/gpu_scene_cost.ps1 -Experiment EnemyPrep`，连续 draw 绑定复用使用
+`-Experiment DrawBind`；两项分别指定新的 `-OutputDirectory`。对应诊断开关是
+`RF_GPU_SCENE_LEGACY_ENEMY_PREP=1` 和 `RF_GPU_SCENE_LEGACY_BIND=1`，分别恢复逐角点计算及逐 draw 绑定，
+不改变几何或 draw 顺序。采样前清除其他实验开关，只改变当前对照变量。
+`SCENE-SUBMIT-COST` 分别记录 native 提交/呈现与退休墙钟，报告同时保留 GPU draw 时间；
+不能将整个 submit/present 段解释成 fence 等待。缓存正确性用同帧 capture 的 PPM 字节一致性检查。
+
 队员上传 A/B 使用 `tools/gpu_scene_cost.ps1 -Experiment ActorUpload -OutputDirectory tmp/actor-upload-ab`，
 保持动态三角形资源复用，两侧分别为临时 staging 与直接写入/保留 staging。工具仍运行三轮交替、每轮 64 帧，
 报告均值和分位数；耗时分布用各段累计时间除以累计帧墙钟，不能用中位数占比。

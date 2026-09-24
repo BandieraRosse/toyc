@@ -51,6 +51,11 @@ def main():
         metrics["upload_bytes"] = summarize([x["upload_bytes"] for x in world[warm:]])
         metrics["gpu_draw_ms"] = summarize([x["gpu_draw_ms"] for x in world[warm:]])
         extraction = rows(text, "SCENE-EXTRACT")
+        submission = rows(text, "SCENE-SUBMIT-COST")
+        if submission:
+            assert len(submission) == run["frames"], run
+            for k in ("submit_present_us", "retire_us"):
+                metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in submission[warm:]])
         assert len(extraction) == run["frames"], run
         for k in ("local_pose_us", "geometry_us"):
             metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in extraction[warm:]])

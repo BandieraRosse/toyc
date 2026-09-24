@@ -1521,6 +1521,10 @@ static int gfx_render(struct rf_gpu_graphics *g,
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
     uint32_t draw_timestamp=timestamp_begin(r,g->cmd,RF_GPU_TS_DRAW);
     int viewmodel_started=0;
+    struct rf_gpu_graphics_resource *bound_resource=NULL;
+    int bound_integer=-1,bound_pipeline=-1;
+    const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
+    int reuse_bind=!(legacy_bind && !strcmp(legacy_bind,"1"));
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
         if (scene && d->scene_layer==RF_GPU_SCENE_VIEWMODEL && !viewmodel_started) {
@@ -1533,15 +1537,22 @@ static int gfx_render(struct rf_gpu_graphics *g,
         }
         struct rf_gpu_graphics_resource *resource = items ? items[i].resource : g->resource;
         uint32_t factor = d->integer_depth ? 2 : 1;
-        g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &resource->vertices.buffer, &offset);
-        g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-        rf_vk_descriptor_set descriptor=gfx_resource_descriptor(g,resource);
-        if(!descriptor){g->poisoned=1;return -1;}
-        impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            g->layout, 0, 1, &descriptor, 0, NULL);
-        impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            g->pipelines[d->double_sided+d->integer_depth*2+
-                (d->texture[3]==2?8:(d->texture[2]?4:0))]);
+        /* State is local to this render pass/command buffer. ClearAttachments
+         * does not invalidate bindings; every draw still pushes its constants. */
+        if (!reuse_bind || bound_resource!=resource) {
+            g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &resource->vertices.buffer, &offset);
+            rf_vk_descriptor_set descriptor=gfx_resource_descriptor(g,resource);
+            if(!descriptor){g->poisoned=1;return -1;}
+            impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                g->layout, 0, 1, &descriptor, 0, NULL);
+        }
+        if (!reuse_bind || bound_resource!=resource || bound_integer!=(int)d->integer_depth)
+            g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+        int pipeline=d->double_sided+d->integer_depth*2+
+            (d->texture[3]==2?8:(d->texture[2]?4:0));
+        if (!reuse_bind || bound_pipeline!=pipeline)
+            impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);
+        bound_resource=resource;bound_integer=d->integer_depth;bound_pipeline=pipeline;
         g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }

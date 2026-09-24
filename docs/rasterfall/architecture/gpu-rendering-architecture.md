@@ -102,6 +102,10 @@ GPU timestamp 属于完成的旧 frame slot，必须按其 frame ID 回填，不
 `valid` 要求 requested 与 recorded 相等且 dropped 为零；退出时未回收的尾部样本不进入分位数。
 graphics submit/wait 是队列关系证据，不等于某个 producer 的 GPU 时间。
 
+graphics batch 在每次 render pass 内复用连续 draw 的顶点、索引、descriptor 和 pipeline 绑定。
+资源或整数索引模式变化时重新绑定，pipeline 按双面、深度与透明策略切换；每项仍独立上传 push constants
+并执行原有 draw，preflight 和层序检查不变。缓存不跨 command buffer 或 render pass。
+
 正常游戏画面使用中性 fog。RasterCmd fog 字段、CPU/GPU consumer 和底层 Post Fog 测试合同仍可保留，
 但 normal runtime 不把它们接入画面。
 
@@ -218,6 +222,10 @@ owner 跨审计帧复用，registry frame pin 在诊断
 并记录动态资源复用/创建数。`whole_loop_us` 从本轮主循环开始计至 Scene 退休后输出该记录前，包含逻辑和
 来源提取，不包含后续日志与循环尾部工作；capture 帧还包含额外离屏读回，不能用于正常帧性能比较。
 这些分段不是完整 prepare 的穷尽拆分，旗帜、拾取物和批次数组准备等仍在总 prepare 中。
+`SCENE-SUBMIT-COST` 进一步区分 native record/acquire/submit/present 墙钟与 fence 退休墙钟；
+显式 capture 的离屏读回只计入原总段，不混入这两个 native 子段。退休仍是同步的。
+敌人三角形提取按单个身体缓存已蒙皮顶点，光照按当前冻结光场和精确世界坐标缓存；碰撞键重新计算，
+缓存不跨身体或帧，保留材质、面光照、死亡变换和逐三角形顺序。
 
 ## 角色 GPU skinning
 

@@ -954,6 +954,8 @@ struct scene_enemy_mesh {
     const struct rf_gpu_scene_enemy_frame_v1 *frame;
     const struct rf_gpu_scene_enemy_item_v1 *source;
     int vertex_lighting;
+    int cache_lighting;
+    struct { int valid,x,y,z,light; } light_cache[256];
 };
 static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_point *a,
     const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color)
@@ -969,10 +971,25 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
         v->position[0]=points[k]->x-mesh->source->x;
         v->position[1]=points[k]->y-mesh->source->lift;
         v->position[2]=points[k]->z-mesh->source->z;
-        v->uv[0]=mesh->vertex_lighting ?
-            rasterfall_world_light_v2_q8(rasterfall_world_light_at(
-                &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z)) :
-            mesh->source->scene_light_q8;
+        v->uv[0]=mesh->source->scene_light_q8;
+        if (mesh->vertex_lighting) {
+            unsigned slot=((uint32_t)points[k]->x*73856093u ^
+                (uint32_t)points[k]->y*19349663u ^ (uint32_t)points[k]->z*83492791u)&255u;
+            if (mesh->cache_lighting && mesh->light_cache[slot].valid &&
+                mesh->light_cache[slot].x==points[k]->x &&
+                mesh->light_cache[slot].y==points[k]->y &&
+                mesh->light_cache[slot].z==points[k]->z)
+                v->uv[0]=mesh->light_cache[slot].light;
+            else {
+                v->uv[0]=rasterfall_world_light_v2_q8(rasterfall_world_light_at(
+                    &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z));
+                mesh->light_cache[slot].valid=1;
+                mesh->light_cache[slot].x=points[k]->x;
+                mesh->light_cache[slot].y=points[k]->y;
+                mesh->light_cache[slot].z=points[k]->z;
+                mesh->light_cache[slot].light=v->uv[0];
+            }
+        }
         if (!mesh->vertex_lighting && points[k]->light_min_q8>0) {
             int light=(int)v->uv[0]*points[k]->form_light_q8/256;
             if (light<points[k]->light_min_q8) light=points[k]->light_min_q8;
@@ -997,6 +1014,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     /* Explicit A/B oracle; never changes geometry or draw workload. */
     const char *rebuild_setting=getenv("RF_GPU_SCENE_REBUILD_DYNAMIC");
     int rebuild=rebuild_setting && !strcmp(rebuild_setting,"1");
+    const char *legacy=getenv("RF_GPU_SCENE_LEGACY_ENEMY_PREP");
     *procedural_draws=0;
     *extract_us=0;
     /* The single Scene slot has retired before prepare. These are capacity
@@ -1021,6 +1039,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             source=&procedural_source;
         }
         memset(mesh,0,sizeof(*mesh));mesh->frame=frame;mesh->source=source;
+        mesh->cache_lighting=!(legacy && !strcmp(legacy,"1"));
         mesh->vertex_lighting=actor ? actor->vertex_lighting : frame->vertex_lighting;
         int64_t start=rf_core_clock_now_us();
         int extracted=actor ? rf_gpu_scene_procedural_triangles(actor,scene_enemy_triangle,mesh) :
@@ -1257,9 +1276,13 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         if (capture_path && rf_gpu_graphics_scene_capture_at(probe->graphics,
                 items,draws,color,depth,(uint32_t)pixels,enemies->frame_id)<0)
             goto done;
+        int64_t submit_start=rf_core_clock_now_us();
         if (rf_gpu_graphics_scene_present(probe->graphics,
-                items,draws,enemies->frame_id)<0 ||
-            rf_gpu_graphics_scene_retire(probe->graphics)<0) goto done;
+                items,draws,enemies->frame_id)<0) goto done;
+        stats->submit_present_us=rf_core_clock_now_us()-submit_start;
+        int64_t retire_start=rf_core_clock_now_us();
+        if (rf_gpu_graphics_scene_retire(probe->graphics)<0) goto done;
+        stats->retire_us=rf_core_clock_now_us()-retire_start;
     } else if (rf_gpu_graphics_scene_capture_at(probe->graphics,items,draws,
             color,depth,(uint32_t)pixels,enemies->frame_id)<0) goto done;
     rf_gpu_graphics_scene_timing(probe->graphics,&timing);

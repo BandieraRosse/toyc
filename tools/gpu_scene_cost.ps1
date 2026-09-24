@@ -2,17 +2,22 @@
 param([string]$OutputDirectory='tmp/scene-cost-ab',
       [ValidateRange(16,1000)][int]$Frames=64,
       [ValidateRange(1,10)][int]$Rounds=3,
-      [ValidateSet('Dynamic','ActorUpload')][string]$Experiment='Dynamic')
+      [ValidateSet('Dynamic','ActorUpload','EnemyPrep','DrawBind')][string]$Experiment='Dynamic')
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
 if (Test-Path -LiteralPath $Out) { throw 'Use a new evidence directory' }
 New-Item -ItemType Directory -Path $Out | Out-Null
-$Variable=if ($Experiment -eq 'ActorUpload') {'RF_GPU_SKIN_LEGACY_UPLOAD'} else {'RF_GPU_SCENE_REBUILD_DYNAMIC'}
+$Variable=switch ($Experiment) {
+    'ActorUpload' {'RF_GPU_SKIN_LEGACY_UPLOAD'}
+    'EnemyPrep' {'RF_GPU_SCENE_LEGACY_ENEMY_PREP'}
+    'DrawBind' {'RF_GPU_SCENE_LEGACY_BIND'}
+    default {'RF_GPU_SCENE_REBUILD_DYNAMIC'}
+}
 $Saved=[Environment]::GetEnvironmentVariable($Variable,'Process')
 $SavedDynamic=$env:RF_GPU_SCENE_REBUILD_DYNAMIC
 $SavedStaging=$env:RF_GPU_SKIN_STAGING_UPLOAD
-$Pair=if ($Experiment -eq 'ActorUpload') {@('legacy','optimized')} else {@('rebuild','reuse')}
+$Pair=if ($Experiment -ne 'Dynamic') {@('legacy','optimized')} else {@('rebuild','reuse')}
 $Runs=[Collections.Generic.List[object]]::new()
 try {
     if ($Experiment -eq 'ActorUpload') {

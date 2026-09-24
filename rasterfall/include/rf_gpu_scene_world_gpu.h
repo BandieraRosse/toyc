@@ -80,6 +80,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint64_t uploads, hits;
     int64_t prepare_us,geometry_extract_us;
     int64_t world_prepare_us,actor_prepare_us,enemy_prepare_us,layer_prepare_us,submit_retire_us;
+    int64_t submit_present_us,retire_us;
     uint64_t upload_bytes,bridge_transfers;
     double gpu_draw_ms;
     int gpu_time_valid;

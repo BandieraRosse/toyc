@@ -4982,6 +4982,9 @@ startup_again:
                         (unsigned long long)probe_stats.upload_bytes,probe_stats.draws,
                         probe_stats.gpu_time_valid,probe_stats.gpu_draw_ms,
                         (unsigned long long)probe_stats.bridge_transfers,enemy_render.modular_count);
+                    __printf("SCENE-SUBMIT-COST frame=%llu submit_present_us=%lld retire_us=%lld\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        (long long)probe_stats.submit_present_us,(long long)probe_stats.retire_us);
                     {
                         unsigned shadows=0,tongues=0,deaths=0;
                         for (unsigned i=0;i<enemy_render.count;++i) {

@@ -69,9 +69,13 @@ Smoker、Charger、Tank 的身体 pose、受击后的世界位置、朝向、lif
 非存活、瞬移和时间回退清除旧运动，停步保留 100 ms 展示窗口。旧 draw 入口已消费该接口，
 独立 Scene owner 也消费此接口，在单次冻结后提交自己的历史，提取重放不得再次推进它。
 Scene 复用不可变资源，以独立 scratch instance 重建姿态和 CPU skinning 几何，不读取或推进旧 motion cache，
-也不复用旧 producer 的 mutable pose。颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
+也不复用旧 producer 的 mutable pose。
+单次身体提取按顶点索引缓存 skinning 结果，重复索引复用同一位置与法线；缓存仅活到本次调用返回，
+索引冲突重新求值，不跨姿态复用。
+颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
 非 V2 路径保留材质亮度范围。普通感染体、特感和显式 LEGACY 身体共用 Scene WORLD 深度。死亡缩放、旋转中心和旋转值在来源处冻结；不透明死亡身体参与 WORLD，渐隐身体单列 transparent 计数，等待有序透明层。
-旧接线仍是同步离屏审计，独立来源则可 native present；两者动态 GPU 资源仍逐帧重建，不能作为性能收益证据。
+旧接线仍是同步离屏审计，独立来源则可 native present；动态 GPU 资源在同步退休后按容量复用，
+每帧重新提取几何并更新活动顶点，生命周期合同见 GPU 架构。
 
 ### 独立动态来源
 
@@ -102,7 +106,7 @@ host/guest 的网络 adapter 先解析插值 camera、actor 状态及高度，�
 只标识该审计帧，不声称提供跨帧 actor 生命周期。普通正式队员仍使用 session epoch 的独立提取链；
 downed 队员由程序表现负责，不再要求不支持 downed 的模块化提取器处理它。
 
-旧 draw 捕获输入进入同一个同步离屏 WORLD；诊断动态资源仍按审计帧重建。独立预览由上述直接来源
+旧 draw 捕获输入进入同一个同步离屏 WORLD；诊断动态资源在退休后按容量复用。独立预览由上述直接来源
 替代捕获链，两者都不是异步多帧资源方案。复现与固定输入见 [Scene fixture](../guides/gpu-scene-fixture.md)。
 
 ## Rigid attachment 与 static prop
