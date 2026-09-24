@@ -300,6 +300,8 @@ unsigned int rf_core_render_frame_fallback_reason_v1(
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
+/* Preview producer recording only: no mixed execution/present or pin transfer. */
+int rf_core_finish_scene_recording(struct rf_core *core);
 /* Returns the normal software surface on the CPU backend, and a cleared
  * Core-owned color+coverage overlay surface on native GPU presentation. */
 struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core);

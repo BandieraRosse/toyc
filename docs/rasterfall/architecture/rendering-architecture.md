@@ -54,10 +54,10 @@ SIGN 牌柱、牌面和双面字形从同一冻结 render 值生成第八类网�
 body、被动装备及 AK 武器 pose 值接入各自独立的 Scene GPU 资源、skinning 和同一离屏 WORLD submit；
 活动投射物也按玩法 slot 冻结位置、时间、闪烁与光照，并以共享 bomb/molotov 模型资源加入该 WORLD submit。
 交互物按 session 槽位冻结类型、武器、位置、效果实例高亮与 V2 光照；冻结时沿用 PLAYING、暂停和商店的旧显隐条件。七类拾取模型与按钮、药瓶、弹药盒程序几何从该值帧进入同一离屏 Scene WORLD；静态 GPU 资源跨帧复用，特殊按钮底座按来源槽位和高度复用。交互物模型的固定采样点与 mixed 一致；程序几何当前按实例中心光照和共享形体绘制，其视觉容差仍待阶段 0 基线审批。
-其余角色类别与正常呈现仍待接入。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
+程序角色、网络玩家和补充模块化角色的同帧 WORLD 诊断见 [角色表现](character-presentation.md)；正常 Scene 呈现仍待接入。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
 position-scale 换算。
 
-动态特感身体的审计值由 `render/rasterfall_enemy_rig.inc` 在旧 producer 的姿态求值后冻结，
+动态敌人身体及其阴影、舌头、死亡变换的审计值由 `render/rasterfall_enemy_rig.inc` 在旧 producer 的姿态求值后冻结，
 Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 gameplay、observer 或时钟。
 来源、暂缓范围及诊断限制见[角色表现](character-presentation.md)。
 普通感染体在同一值帧冻结 recipe 与已采样步态，独立 instance 提取身体几何；
@@ -68,6 +68,10 @@ Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 game
 `toy_renderer.recording_context` 隔离 frontend state。
 
 ## 一帧的数据流
+
+`--gpu-scene-world-preview` 是单独的开发路径：复用下面的 producer 求值以冻结展示输入，
+Core 丢弃未提交的 mixed recording，WORLD owner 独立硬件绘制并 native present。
+它只显示不透明 WORLD，完整帧其他层按活动计划接入；不使用 mixed 补画或 CPU framebuffer copy。
 
 ```text
 Core begin / clear

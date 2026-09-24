@@ -85,6 +85,16 @@ graphics submit/wait 是队列关系证据，不等于某个 producer 的 GPU �
 
 ## 独立 Scene fixture 提交
 
+显式 `--gpu-scene-world-preview` 将真实 normal-scene/wave workload 的冻结 WORLD 提交到
+native swapchain。旧 producer 暂时仍负责展示求值与冻结；Core 的
+`rf_core_finish_scene_recording` 丢弃未执行的 mixed recording 并释放其 CPU pin，
+随后 WORLD owner 使用独立 registry、graphics/cache 和资源 pin 完成 Scene submit/retire。
+该路径不执行 mixed、不读回 WORLD color/depth，也不上传 CPU framebuffer。
+native 成功提交与退休单独计数，不能因 CPU scene pixel 为零误判无输出。
+提交/退休失败先排空 graphics owner 再释放 CPU pin；不接回 mixed。
+当前 owner 同步等待每帧退休，动态敌人仍每帧重建；这不是多帧流水性能方案。
+此显式预览仅显示 WORLD，天空、透明、特效、VIEWMODEL、OVERLAY 尚未接入；默认完整呈现仍走 mixed。
+
 `rf_gpu_scene_native.c` 拥有显式 `--gpu-scene-native-fixture` 的冻结输入、资源解析、整帧验证和单个
 Scene slot；正常帧仍由 Core mixed executor 编排。fixture 只提交 `opaque_box` 地图几何、RF rifleman
 body 和 HEAD 附件。地图沿用正式地图 mesh builder；catalog ID 解析为独立 registry 的 handle/generation。
@@ -143,7 +153,7 @@ session 旗帜的 active、位置、颜色、当前选中状态与短标签按�
 bomb/molotov 各复用一份 RMESH GPU 资源和模型纹理，闪烁时使用材质纯色，实例变换在 draw 中求值。
 其 WORLD opaque draw 与旗帜、地图和角色共用 Scene color/depth；普通帧没有投射物时不加载这两份资源。
 session 交互物按来源槽位冻结 kind、weapon、位置、效果高亮及 V2 光照，并在 PLAYING、非暂停、非商店状态下可见。Scene 将七类拾取模型按 primitive 使用常驻 GPU 资源绘制；按钮、药瓶、弹药盒使用共享形体，特殊按钮底座按来源槽位及高度缓存。两类交互物与其余 WORLD opaque 共用目标深度；程序形体仍需固定视觉基线审批。
-特感存活身体由同帧 producer 冻结 finalized pose、变换、反馈与光照输入，独立预备从这些值生成
+特感、普通感染体与 LEGACY 身体由同帧 producer 冻结 pose/步态、变换、反馈与光照输入，独立预备从这些值生成
 Smoker、Charger、Tank 的刚性网格，和地图、角色共用 Scene WORLD color/depth。
 几何枚举与 mixed 共用，连续同色三角形合并 draw，保留原始提交顺序；冻结时若采用 V2 顶点光照，
 则在复制的 light field 中采样，否则使用冻结的实例光照。diagnostic owner 持有动态资源直到同步提交完成，
@@ -153,6 +163,16 @@ owner 跨审计帧复用，registry frame pin 在诊断
 读回耗时也不在此前记录的 `FRAME-AUDIT whole_loop_ms` 内。
 固定 normal capture 请求与该审计同时启用时，诊断额外写出同帧 Scene WORLD PPM，
 供与 mixed 最终 BMP 核对世界局部画面。
+
+程序角色、host/guest 玩家与补充模块化角色也进入上述 WORLD submit，来源与身份限制由
+[角色表现](character-presentation.md)拥有。双面属性来自冻结的 producer/material，不能在 Scene 默认改为单面。
+敌人阴影、舌头和束缚圈保留原几何及深度语义；不透明死亡身体使用冻结旋转和光照，渐隐身体留给透明层。
+
+`rf_gpu_graphics_scene_capture_at` 为离屏 WORLD render pass 写入两次 GPU timestamp，并在同步 fence
+完成后按调用方 frame ID 读取；上传、skinning 和 readback 不计入 draw 时间。旧无计时 capture 保留包装入口。
+`SCENE-WORLD-COST` 报告准备墙钟、实际 mesh/texture 上传字节、draw 数及 bridge 次数；该独立 owner
+出现 bridge 即失败。`SCENE-EXTRACT` 单列本地 pose 与敌人/程序角色的 CPU 几何提取时间。
+这些是离屏诊断成本，不能替代正常帧 whole-loop 或 FPS。
 
 ## 角色 GPU skinning
 

@@ -1713,16 +1713,30 @@ failed:
     return -1;
 }
 
-int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
+int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items,uint32_t count,
-    uint32_t *rgba,float *depth,uint32_t capacity)
+    uint32_t *rgba,float *depth,uint32_t capacity,uint64_t frame_id)
 {
     VkBufferImageCopy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     void *mapped=NULL;
     uint64_t bytes;
-    if (!g || !rgba || !depth || (uint64_t)g->target.width*g->target.height>capacity ||
-        gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) return -1;
+    if (!g || !rgba || !depth || g->scene_in_flight || g->poisoned ||
+        (uint64_t)g->target.width*g->target.height>capacity) return -1;
+    memset(&g->scene_timing,0,sizeof(g->scene_timing));
+    g->scene_timing.frame_id=frame_id;
+    g->scene_timing.supported=frame_id && g->owner->timestamp_supported;
+    if (g->scene_timing.supported && !g->scene_query_pool) {
+        struct rf_vk_query_pool_create_info query={0};
+        query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=4;
+        if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
+                &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
+    }
+    g->scene_query_active=g->scene_timing.supported;
+    if (gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) {
+        g->scene_query_active=0;return -1;
+    }
     bytes=(uint64_t)g->target.width*g->target.height*4;
     copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;copy.imageSubresource.layerCount=1;
     copy.imageExtent.width=g->target.width;copy.imageExtent.height=g->target.height;copy.imageExtent.depth=1;
@@ -1739,7 +1753,28 @@ int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
         g->owner->api.map_memory(g->owner->device,g->target.readback.memory,0,
             g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
     int result=raster_invalidate(g->owner,&g->target.readback);
+    if (g->scene_query_active) {
+        uint64_t ticks[2],mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
+            ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
+        if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
+                0,2,sizeof(ticks),ticks,sizeof(ticks[0]),
+                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)
+            result=-1;
+        else {
+            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*
+                g->owner->timestamp_period/1000000.0;
+            g->scene_timing.valid=1;
+        }
+        g->scene_query_active=0;
+    }
     if (!result) { memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes); }
     g->owner->api.unmap_memory(g->owner->device,g->target.readback.memory);
     return result;
+}
+
+int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,
+    uint32_t *rgba,float *depth,uint32_t capacity)
+{
+    return rf_gpu_graphics_scene_capture_at(g,items,count,rgba,depth,capacity,0);
 }

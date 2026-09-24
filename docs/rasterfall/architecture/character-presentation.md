@@ -55,18 +55,35 @@ truth adapter、pose 和 generic renderer 均属于 renderer presentation。玩�
 fragment/dust 和 knockback trail 是 presentation-only；slot 清空后仍可短时存活，但不得替代 enemy 真值。
 
 正常帧审计通过 `rf_gpu_scene_enemy_begin` 开启单帧收集；mixed 的特感 producer 在求值后按值保存
-Smoker、Charger、Tank 的存活身体 pose、受击后的世界位置、朝向、lift、反馈颜色与实际光照模式。
+Smoker、Charger、Tank 的身体 pose、受击后的世界位置、朝向、lift、反馈颜色与实际光照模式。
 `rf_gpu_scene_enemy_freeze` 结束收集并输出只读值帧。每帧 begin 都清空旧内容，即使本帧没有 WORLD；
 提取不再推进 observer 或读取时钟。source slot 只作帧内顺序，不作为跨帧生命周期身份。
 `rf_gpu_scene_enemy_triangles` 与旧 renderer 共用刚性几何枚举，只有冻结值进入 Scene 资源预备。
-不支持的身体和远距剔除分别计数；身体计数不包括 blob shadow、舌头或其他附属表现。
+不支持的身体和远距剔除分别计数；每个敌人项同时冻结 blob shadow、舌头端点与束缚圈输入。
 这条审计链仍依赖 mixed 完成姿态求值；独立正常 Scene 来源及其生命周期身份尚未接入。
 
 普通感染体在同一值帧冻结六种 recipe ID、已采样 swing、bind 标志、变换与反馈颜色；
 Scene 复用不可变资源，以独立 scratch instance 重建姿态和 CPU skinning 几何，不读取或推进旧 motion cache，
 也不复用旧 producer 的 mutable pose。颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
-非 V2 路径保留材质亮度范围。存活身体与特感共用 Scene WORLD 深度；死亡与显式 LEGACY 仍计为暂缓。
+非 V2 路径保留材质亮度范围。普通感染体、特感和显式 LEGACY 身体共用 Scene WORLD 深度。死亡缩放、旋转中心和旋转值在来源处冻结；不透明死亡身体参与 WORLD，渐隐身体单列 transparent 计数，等待有序透明层。
 该接线仍是同步离屏审计，动态 GPU 资源逐帧重建，不能作为正常 producer 或性能收益证据。
+
+## 同帧程序角色与网络诊断
+
+程序角色在 `rasterfall_render_procedural_humanoid` 的来源边界冻结已解析的位置、朝向、高度、武器、
+职业、动画时间和四种外观颜色，同时冻结光照与双面标志；不复制 profile 的资源指针。
+`rf_gpu_scene_procedural_triangles` 用这些值复用身体、职业装备、武器和死亡/复活的几何枚举。
+串行枚举回调位于世界坐标投影之前，提取时不生成 RasterCmd，也不访问网络输入包或推进展示时钟。
+回调失败会使整个提取失败；actor 变换和全局光照开关在返回前恢复。
+
+host/guest 的网络 adapter 先解析插值 camera、actor 状态及高度，再经过同一程序角色冻结入口。
+客户端模块化 AI 和非固定 roster 的模块化角色从 finalized instance 冻结 palette、装备及武器 placement，
+与独立 local pose 提取共用 `scene_pose_from_instance`。补充项使用独立的帧内诊断命名空间，generation
+只标识该审计帧，不声称提供跨帧 actor 生命周期。普通正式队员仍使用 session epoch 的独立提取链；
+downed 队员由程序表现负责，不再要求不支持 downed 的模块化提取器处理它。
+
+这些输入进入同一个同步离屏 WORLD；诊断动态资源仍按审计帧重建。它们不能直接充当正常 Scene
+producer 或异步多帧资源方案。复现与固定输入见 [Scene fixture](../guides/gpu-scene-fixture.md)。
 
 ## Rigid attachment 与 static prop
 

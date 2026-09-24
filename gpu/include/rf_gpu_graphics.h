@@ -161,4 +161,8 @@ int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count,
     uint32_t *rgba, float *depth, uint32_t capacity);
 
+/* Draw-pass timestamps only; excludes upload/readback and uses caller frame ID. */
+int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,
+    uint32_t *rgba,float *depth,uint32_t capacity,uint64_t frame_id);
 #endif

@@ -193,8 +193,7 @@ static int render_infected_enemy(struct toy_renderer *renderer,
     if (enemy_visual_capture_pose != 0)
         enemy_visual_apply_pose(pose,enemy->type,swing);
     if (rasterfall_model_instance_update_bones(instance) < 0) return -1;
-    if (scene_enemy_capture_active && slot>=0 && source->active==1 &&
-        !active_enemy_transform && !active_enemy_dissolve && active_enemy_alpha==255) {
+    if (scene_enemy_capture_active && slot>=0 && !active_enemy_dissolve) {
         struct rf_gpu_scene_enemy_item_v1 *item;
         if (scene_enemy_capture.count>=TOY_GAME_MAX_ENEMIES) return -1;
         item=&scene_enemy_capture.items[scene_enemy_capture.count++];
@@ -207,6 +206,8 @@ static int render_infected_enemy(struct toy_renderer *renderer,
             active_scene_light_override_q8 : 256;
         item->infected_recipe=index+1;item->infected_swing=swing;
         item->infected_bind=enemy_visual_capture_pose==0;
+        scene_enemy_capture_transform(renderer,item,
+            source->active==2 && !active_enemy_transform ? death_scale : 1000);
     }
     /* Authored meters -> RFU. Heavy size is authored, never doubled by the
      * legacy 1350 multiplier. Legacy deaths retain vertical collapse only. */
@@ -281,6 +282,8 @@ static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *ite
                 rz=(int)(((long long)p[2]*item->dir_z-(long long)p[0]*item->dir_x)/1024);
                 q[k].x=item->x+(int)((long long)rx*scale/1000);
                 q[k].y=-900+item->lift+(int)((long long)(p[1]-pose->min_y)*scale/1000);
+                if (item->squash!=1000)
+                    q[k].y=-900+item->lift+(q[k].y+900-item->lift)*item->squash/1000;
                 q[k].z=item->z+(int)((long long)rz*scale/1000);
                 nx+=(short)(((long long)n[0]*item->dir_z+(long long)n[2]*item->dir_x)/1024);
                 ny+=n[1];

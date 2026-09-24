@@ -1113,6 +1113,20 @@ static void draw_startup_menu(struct toy_surface *surface, int screen,
     }
 }
 
+/* Menu-only frames still traverse the Core layer contract. This prepares the
+ * native clear target and returns the overlay/coverage surface for GUI pixels. */
+static struct toy_surface *begin_menu_overlay(struct rf_core *core)
+{
+    rf_core_render_frame_begin_v1(core,0,0,0,1024,0,1024);
+    core->render_frame.sky_enabled=0;
+    if (core->mixed_frame) core->mixed_frame->sky_enabled=0;
+    for (int layer=RF_RENDER_LAYER_WORLD;layer<=RF_RENDER_LAYER_VIEWMODEL;++layer)
+        if (rf_core_render_frame_enter_layer_v1(core,(enum rf_render_layer_v1)layer)<0)
+            return NULL;
+    if (rf_core_flush(core)<0) return NULL;
+    return rf_core_begin_screen_overlay(core);
+}
+
 static int run_startup_menu(struct rf_core *core,
                             int *net_mode, char *address, int address_size,
                             int *port, int *public_room, int *room_id,
@@ -1303,6 +1317,9 @@ static int run_startup_menu(struct rf_core *core,
         surface = *rf_core_surface(core);
         if (ready < 0) break;
         if (ready > 0) {
+            struct toy_surface *overlay=begin_menu_overlay(core);
+            if (!overlay) break;
+            surface=*overlay;
             draw_startup_menu(&surface, screen, selected, address, port_text,
                               editing_port, room_text, error, discovery);
             if (rf_core_end_frame(core) < 0) break;
@@ -1336,6 +1353,9 @@ static int wait_for_network_connection(struct rf_core *core,
         surface = *rf_core_surface(core);
         if (ready < 0) return -2;
         if (ready == 0) continue;
+        struct toy_surface *overlay=begin_menu_overlay(core);
+        if (!overlay) return -2;
+        surface=*overlay;
         fb_draw_string((unsigned char *)surface.pixels, 226, 92,
                        "CONNECTING...", RF_COLOR_UI_ACCENT, surface.stride);
         snprintf(line, sizeof(line), "%s:%d", address, port);
@@ -3024,6 +3044,7 @@ int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *rendere
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     static struct rf_gpu_scene_world_resources scene_world_resources;
+    int scene_native_frames=0;
     struct rf_core core;
     struct rf_game_runtime game_runtime;
     struct toy_window_events events;
@@ -3636,7 +3657,21 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->dir_z = -1024;
         }
         game.state = TOY_GAME_PLAYING;
-        if (!strcmp(options.gpu_normal_view,"enemy-special")) {
+        if (!strcmp(options.gpu_normal_view,"actor-procedural")) {
+            for (int profession=0;profession<4;++profession) {
+                int id=toy_game_add_ai(&game,TOY_GAME_AI_LEVEL_1,
+                    (profession-2)*1000+500,-1200,"SCENE");
+                if (id<1) return 1;
+                struct toy_game_actor *actor=&game.actors[id-1];
+                actor->character_id=RASTERFALL_CHARACTER_HURD_GUNSMITH+profession;
+                actor->sy=0;actor->cy=-1024;
+                actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
+                actor->ground_y=0;
+            }
+        }
+        if (!strcmp(options.gpu_normal_view,"enemy-special") ||
+            !strcmp(options.gpu_normal_view,"enemy-death") ||
+            !strcmp(options.gpu_normal_view,"enemy-tongue")) {
             for (int slot=0;slot<3;++slot) {
                 struct toy_game_enemy *e=&game.enemies[slot];
                 memset(e,0,sizeof(*e));e->active=1;e->hp=10000;
@@ -3644,6 +3679,15 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                     slot==1 ? TOY_GAME_ENEMY_CHARGER : TOY_GAME_ENEMY_TANK;
                 e->x=(slot-1)*1600;e->z=500;e->dir_z=-1024;
                 if (slot) { e->charge_active=1;e->ability.charge_elapsed_ms=200; }
+                if (!strcmp(options.gpu_normal_view,"enemy-death")) {
+                    e->active=2;e->dying_ms=TOY_GAME_DYING_MS-100;
+                    effects.enemy_death_style[slot]=RASTERFALL_ENEMY_DEATH_STYLE_LEGACY+1;
+                    effects.enemy_hit_dir_x[slot]=1024;
+                }
+                if (!slot && !strcmp(options.gpu_normal_view,"enemy-tongue")) {
+                    e->special_target_active=1;e->special_target_kind=0;
+                    e->special_pull_timer_ms=TOY_GAME_SMOKER_PULL_MS;
+                }
             }
         }
         if (!strcmp(options.gpu_normal_view,"projectile")) {
@@ -4443,7 +4487,7 @@ startup_again:
         }
         prev_begin = t_frame;
         t_stage = t_frame;
-        if (options.frame_audit && net.mode!=RASTERFALL_NET_CLIENT)
+        if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
                 session.scene_local.world_generation);
         ready = rf_core_begin_frame(&core, 0x151922);
@@ -4535,6 +4579,10 @@ startup_again:
 #endif
             {
                 int64_t audit_render_start = rf_core_time_us(&core);
+                /* Explicit Scene audits include cold asset/pose extraction.
+                 * Their harness owns the timeout, not the interactive budget. */
+                if (options.frame_audit || options.gpu_scene_world_preview)
+                    toy_renderer_set_frame_budget(&renderer,0);
                 audit_prepare_us = audit_render_start - audit_loop_start;
                 if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
@@ -4555,7 +4603,8 @@ startup_again:
                 rendered_frames + 1 == options.gpu_capture_frame)
                 core.gpu_frame.capture_path = options.gpu_frame_capture;
             t_stage = rf_core_time_us(&core);
-            present_result = rf_core_end_frame(&core);
+            present_result = options.gpu_scene_world_preview ?
+                rf_core_finish_scene_recording(&core) : rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
             if (present_result < 0) {
                 __fprintf(2, "rasterfall: frame presentation failed%s\n",
@@ -4645,8 +4694,19 @@ startup_again:
             }
             /* Explicit audit must include fast frames too: sampled logs cannot
              * establish a complete strict run or an unbiased timing baseline. */
-            if (options.frame_audit && net.mode != RASTERFALL_NET_CLIENT) {
+            if (options.frame_audit || options.gpu_scene_world_preview) {
                 struct rf_gpu_scene_local_frame source_frame;
+                struct rf_gpu_scene_local_source client_source;
+                struct rf_gpu_scene_local_source *audit_source=&session.scene_local;
+                /* Remote slot IDs are not local roster lifecycle identities.
+                 * The procedural capture owns resolved client presentation. */
+                if (net.mode==RASTERFALL_NET_CLIENT) {
+                    client_source=session.scene_local;
+                    client_source.active=0;client_source.actor_count=0;
+                    memset(client_source.actors,0,sizeof(client_source.actors));
+                    memset(&client_source.tracker,0,sizeof(client_source.tracker));
+                    audit_source=&client_source;
+                }
                 struct rf_gpu_scene_frozen_v1 source_scene;
                 static struct rf_gpu_scene_pose_v1 actor_pose[TOY_GAME_MAX_ACTORS];
                 struct rf_gpu_scene_world_input_v2 world[RF_GPU_SCENE_MAX_WORLD_V2];
@@ -4657,7 +4717,7 @@ startup_again:
                 struct rf_gpu_scene_projectile_frame_v1 projectile_render;
                 struct rf_gpu_scene_interactable_frame_v1 interactable_render;
                 static struct rf_gpu_scene_enemy_frame_v1 enemy_render;
-                uint32_t world_count=0;
+                uint32_t world_count=0,pose_count=0;
                 uint32_t map_primitives=0,map_resources=0;
                 if ((session.map_ops.runtime_loaded &&
                         rf_gpu_scene_world_render_freeze(&session.map_ops,air_wall_enabled,
@@ -4687,7 +4747,7 @@ startup_again:
                             !game_runtime.lifecycle_paused && !session.shop_open,
                         session.scene_local.frame_id+1,session.scene_local.world_generation,
                         &interactable_render)<0 ||
-                    rf_gpu_scene_local_freeze_world_lit(&session.scene_local,&game,&game_runtime.render_camera,
+                    rf_gpu_scene_local_freeze_world_lit(audit_source,&game,&game_runtime.render_camera,
                         renderer.surface.width,renderer.surface.height,air_wall_enabled,
                         world,world_count,&game_runtime.render_context.world_lighting,
                         &source_frame)<0 ||
@@ -4700,16 +4760,27 @@ startup_again:
 #endif
                     return 1;
                 }
+                session.scene_local.frame_id=audit_source->frame_id;
+                int64_t pose_extract_start=rf_core_clock_now_us();
                 for(uint32_t actor_index=0;
-                    actor_index<source_frame.snapshot.actor_count;++actor_index)
+                    actor_index<source_frame.snapshot.actor_count;++actor_index) {
+                    if (source_frame.presentations[actor_index].state==TOY_GAME_ACTOR_DOWNED)
+                        continue;
                     if (rf_gpu_scene_pose_extract_at(&source_frame,actor_index,
-                            &actor_pose[actor_index])<0) {
+                            &actor_pose[pose_count])<0) {
                         __fprintf(2,"SCENE-LOCAL actor pose extraction failed\n");
 #ifdef TOYC_WINDOWS
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
                         return 1;
                     }
+                    pose_count++;
+                }
+                for (unsigned i=0;i<enemy_render.modular_count;++i) {
+                    if (pose_count>=TOY_GAME_MAX_ACTORS) return 1;
+                    actor_pose[pose_count++]=enemy_render.modular[i];
+                }
+                int64_t pose_extract_us=rf_core_clock_now_us()-pose_extract_start;
                 if (session.map_ops.runtime_loaded &&
                     rf_gpu_scene_world_resources_prepare(&scene_world_resources,
                         &source_frame.snapshot,&world_render,&floor_render,&prop_render,
@@ -4756,11 +4827,12 @@ startup_again:
 #ifdef TOYC_WINDOWS
                 if (core.mixed_executor && session.map_ops.runtime_loaded) {
                     struct rf_gpu_scene_world_gpu_probe_stats probe_stats;
+                    scene_world_probe.native_present=options.gpu_scene_world_preview;
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
                             (uint32_t)renderer.surface.height,actor_pose,
-                            source_frame.snapshot.actor_count,&flag_render,
+                            pose_count,&flag_render,
                             &projectile_render,&interactable_render,&enemy_render,
                             &model_texture_view,&probe_stats,
                             options.gpu_frame_capture &&
@@ -4770,11 +4842,39 @@ startup_again:
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
                         return 1;
                     }
-                    __printf("SCENE-ENEMY frame=%llu items=%u draws=%u deferred=%u culled=%u\n",
+                    if (options.gpu_scene_world_preview) {
+                        scene_native_frames++;
+                        __printf("SCENE-NATIVE frame=%d world_only=1 draws=%u bridges=%llu readback=0 mixed_execute=0\n",
+                            rendered_frames,probe_stats.draws,
+                            (unsigned long long)probe_stats.bridge_transfers);
+                    }
+                    __printf("SCENE-PROCEDURAL frame=%llu items=%u draws=%u net_mode=%d\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        probe_stats.procedural_items,probe_stats.procedural_draws,net.mode);
+                    __printf("SCENE-EXTRACT frame=%llu local_pose_us=%lld geometry_us=%lld instances=%u\n",
+                        (unsigned long long)enemy_render.frame_id,(long long)pose_extract_us,
+                        (long long)probe_stats.geometry_extract_us,
+                        pose_count+enemy_render.count+enemy_render.procedural_count);
+                    __printf("SCENE-WORLD-COST frame=%llu prepare_us=%lld upload_bytes=%llu draws=%u gpu_valid=%d gpu_draw_ms=%.6f bridges=%llu supplemental_modular=%u\n",
+                        (unsigned long long)enemy_render.frame_id,(long long)probe_stats.prepare_us,
+                        (unsigned long long)probe_stats.upload_bytes,probe_stats.draws,
+                        probe_stats.gpu_time_valid,probe_stats.gpu_draw_ms,
+                        (unsigned long long)probe_stats.bridge_transfers,enemy_render.modular_count);
+                    {
+                        unsigned shadows=0,tongues=0,deaths=0;
+                        for (unsigned i=0;i<enemy_render.count;++i) {
+                            shadows+=enemy_render.items[i].shadow;
+                            tongues+=enemy_render.items[i].tongue;
+                            deaths+=enemy_render.items[i].transformed;
+                        }
+                        __printf("SCENE-ENEMY-EXTRAS frame=%llu shadows=%u tongues=%u deaths=%u\n",
+                            (unsigned long long)enemy_render.frame_id,shadows,tongues,deaths);
+                    }
+                    __printf("SCENE-ENEMY frame=%llu items=%u draws=%u deferred=%u culled=%u transparent=%u\n",
                         (unsigned long long)enemy_render.frame_id,
                         probe_stats.enemy_items,probe_stats.enemy_draws,
-                        probe_stats.enemy_deferred,probe_stats.enemy_culled);
-                    __printf("SCENE-WORLD-GPU frame=%llu draws=%u actor_draws=%u flag_draws=%u flag_text_draws=%u projectile_draws=%u pickup_model_draws=%u pickup_model_items=%u pickup_procedural_draws=%u pickup_procedural_items=%u pickup_procedural_deferred=%u covered=%u uploads=%llu hits=%llu prop_assets=%u prop_draws=%u prop_culled=%u prop_deferred=%u prop_numeric=%u prop_material=%u prop_transparent=%u diagnostic_readback=1\n",
+                        probe_stats.enemy_deferred,probe_stats.enemy_culled,enemy_render.transparent);
+                    __printf("SCENE-WORLD-GPU frame=%llu draws=%u actor_draws=%u flag_draws=%u flag_text_draws=%u projectile_draws=%u pickup_model_draws=%u pickup_model_items=%u pickup_procedural_draws=%u pickup_procedural_items=%u pickup_procedural_deferred=%u covered=%u uploads=%llu hits=%llu prop_assets=%u prop_draws=%u prop_culled=%u prop_deferred=%u prop_numeric=%u prop_material=%u prop_transparent=%u diagnostic_readback=%d\n",
                         (unsigned long long)source_frame.snapshot.frame_id,
                         probe_stats.draws,probe_stats.actor_draws,probe_stats.flag_draws,
                         probe_stats.flag_text_draws,probe_stats.projectile_draws,
@@ -4789,11 +4889,11 @@ startup_again:
                         probe_stats.prop_draws,probe_stats.prop_culled,probe_stats.prop_deferred,
                         probe_stats.prop_numeric_deferred,
                         probe_stats.prop_material_deferred,
-                        probe_stats.prop_transparent_deferred);
+                        probe_stats.prop_transparent_deferred,!options.gpu_scene_world_preview);
                 }
 #endif
             }
-            if (options.frame_audit) {
+            if (options.frame_audit && !options.gpu_scene_world_preview) {
                 struct rf_core_gpu_frame_stats gpu_audit;
                 struct rf_render_frame_v1 frame_audit;
                 char audit_line[768];
@@ -5211,9 +5311,10 @@ startup_again:
             !core.gpu_frame.character_vertex_diff_completed;
         /* Native GPU frames never write the CPU scene pixel counter. */
         int no_scene_output = rendered_frames > 0 && scene_pixels == 0 &&
-            core.gpu_frame.stats.gpu_frames == 0;
+            core.gpu_frame.stats.gpu_frames == 0 && scene_native_frames == 0;
         rf_core_shutdown(&core);
         if (core_runtime_failed || capture_missing || character_diff_missing) return 3;
+        if (options.gpu_scene_world_preview && scene_native_frames != rendered_frames) return 3;
         return no_scene_output ? 2 : 0;
     }
 }

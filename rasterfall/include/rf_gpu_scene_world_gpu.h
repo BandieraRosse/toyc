@@ -33,7 +33,9 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
     struct rf_gpu_graphics_batch_item *items,uint32_t capacity,uint32_t *count);
 
 struct rf_gpu_scene_world_gpu_probe {
-    struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES];
+    /* Stage 3 preview: synchronous native Scene instead of audit readback. */
+    int native_present;
+    struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
     struct rf_gpu_scene_actor_gpu *actor[TOY_GAME_MAX_ACTORS];
@@ -53,12 +55,17 @@ struct rf_gpu_scene_world_gpu_probe {
 struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t draws, actor_draws, flag_draws, flag_text_draws;
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
+    uint32_t procedural_draws, procedural_items;
     uint32_t projectile_draws, pickup_model_draws, pickup_model_items;
     uint32_t pickup_procedural_draws, pickup_procedural_items;
     uint32_t pickup_procedural_deferred, covered_pixels;
     uint32_t prop_draws, prop_deferred, prop_culled;
     uint32_t prop_numeric_deferred, prop_material_deferred, prop_transparent_deferred;
     uint64_t uploads, hits;
+    int64_t prepare_us,geometry_extract_us;
+    uint64_t upload_bytes,bridge_transfers;
+    double gpu_draw_ms;
+    int gpu_time_valid;
 };
 /* Explicit normal-frame audit only: offscreen draw plus readback, with the
  * same frozen world handles and camera as that completed normal frame. */

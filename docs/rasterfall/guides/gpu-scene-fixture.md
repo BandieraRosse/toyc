@@ -1,6 +1,45 @@
 # GPU Scene 固定渲染地图
 
-> 状态：当前输入；GPU Scene renderer 尚未接入正常呈现，正常帧审计仅离屏提交 WORLD
+## 硬件 Scene WORLD 原生预览
+
+阶段 2 的整图差异按用户决定延期修复，不再阻塞该入口。先串行完成 Windows package，再运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_preview.ps1
+```
+
+脚本默认验证 near/mid/thin-far（30 敌人）和 Campaign，各四帧；可用
+`-ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin` 启用本地 validation/sync。
+CLI 为 `--renderer gpu-compute --gpu-required --gpu-native-present --gpu-scene-world-preview`
+加 `--gpu-normal-scene near 30` 或 `--gpu-wave-repro`，可带固定 tick 和帧数。
+此入口只显示 WORLD：不透明地图、角色、敌人、附件及既有 WORLD 附属表现。
+它不显示天空、透明、特效、VIEWMODEL 或 HUD，不是完整产品候选。
+`SCENE-NATIVE` 必须逐帧连续，且 `bridges=0 readback=0 mixed_execute=0`；进程必须退出 0。
+普通 `FRAME-AUDIT`、mixed capture、vertex diff、RB0 whole-loop 统计不能冒充该路径证据。
+结构回归使用日志和真实退出码；既有 CPU/mixed 图像只用于记录差异。
+
+## 阶段 2 WORLD 整图对照
+
+先完成 Windows package，退出构建后再运行 GPU 矩阵，禁止在运行期间重建 package。
+`tools/gpu_scene_stage2.ps1 -WorldOpaque` 设置仅捕获帧生效的
+`RF_GPU_CAPTURE_WORLD_OPAQUE=1`：mixed 保留全部 WORLD opaque，黑色背景，截在透明层之前，
+并去掉屏幕覆盖。Scene 同帧 PPM 本身只包含 WORLD。此开关不启用正常 Scene 呈现。
+near、mid、thin-far 各运行 0/30/60 敌人；`-Views campaign` 使用正式 Campaign 的
+fixed-tick wave workload，运行 320 帧并捕获第 320 帧。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ./tools/gpu_scene_stage2.ps1 -WorldOpaque -OutputDirectory tmp/stage2-world -Views near,mid,thin-far,campaign"
+python tools/gpu_scene_stage2_report.py tmp/stage2-world
+```
+
+报告依赖 numpy，输出完整 reference/Scene/四倍差图、并排预览、RGB 分位数、覆盖差异及逐帧
+提取/准备/上传/draw/GPU 时间。颜色边缘带仅用于定位，不能代替几何/深度边缘或遮挡证明；
+报告明确将深度遮挡差异标为未测。脚本运行 PASS 只代表进程、捕获及审计通过，报告始终保持
+UNAPPROVED，最终批准依据[画面合同](../plans/gpu-scene-visual-contract.md)。
+`instances` 是 `SCENE-EXTRACT` 的角色/敌人提取项数量，不是完整地图实例总数。
+准备时间包含资源创建/同步等待，GPU draw 时间不含 upload、skinning 或 readback。
+
+> 状态：当前输入；显式 WORLD preview 已接入 native present，默认完整呈现仍为 mixed；正常帧审计另行离屏提交 WORLD
 >
 > 事实入口：`rasterfall/assets/maps/gpu_scene_render_fixture.map`、`rasterfall/src/rasterfall_options.c`、`rasterfall/src/rf_game_runtime.c`
 >
@@ -9,6 +48,29 @@
 这张独立 V1 空间地图供固定画面和逐帧审计使用。`--map` 只覆盖本次进程；普通启动仍加载
 `rasterfall.map`。地图没有 `attr.identity`，沿用 Campaign 的 World Content policy，因而
 正常帧仍会出现 HUD、队友、viewmodel 等非地图内容。地图本身不声明这些玩法对象。
+
+## 阶段 2 剩余 WORLD 诊断
+
+更新 Windows package 后运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_stage2.ps1 -ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin
+```
+
+前者显式选择程序角色、死亡、Smoker 舌头、near 0/30/60、mid 和 thin-far，保留同帧 mixed BMP 与
+Scene WORLD PPM、每帧 draw/上传/提取/时间戳以及 executable 哈希。`actor-procedural` 在 Campaign
+原有四名程序角色之外新增四名职业 fixture；不替换产品地图。死亡 fixture 覆盖不透明旋转，渐隐计数
+归后续透明层。`--gpu-scene-pose-test` 检查职业、动作、武器、重复提取与失败；逻辑回归检查 legacy、
+死亡变换、阴影和舌头枚举。
+
+当前网络迁移只运行 `--logic-test` 与 `--gpu-scene-pose-test`：后者直接调用 host/guest 的角色表现入口，
+覆盖倒地、排除本地玩家、断线、未激活、只读冻结和几何提取，不打开 socket 或 GPU。
+`tools/gpu_scene_network.ps1` 保留为 GPU 完成后网络专项的复现工具；其 guest 数量断言尚未通过，
+数量预期本身也需核对可见性。它不属于当前收尾门禁，见[收尾记录](../plans/gpu-scene-stage2-handoff.md)。
+
+Scene 审计仍是同步 readback 诊断；动态资源逐帧预备。GPU draw timestamp 排除 upload/skinning/readback；
+prepare 是包含资源操作的墙钟，geometry 是敌人/程序几何提取，local_pose 是正式 roster 独立 pose 提取。
+冷帧和后续帧分别保留，短诊断不作为产品 FPS、完整帧性能 A/B 或固定画面基线审批。
 
 ## 地图覆盖
 

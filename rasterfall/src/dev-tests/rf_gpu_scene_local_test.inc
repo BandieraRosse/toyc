@@ -45,7 +45,7 @@ static int scene_local_source_test(void)
         static struct rf_gpu_scene_enemy_frame_v1 frozen, saved_enemy;
         struct rf_gpu_scene_enemy_item_v1 item={0};
         const int types[3]={TOY_GAME_ENEMY_SMOKER,TOY_GAME_ENEMY_CHARGER,TOY_GAME_ENEMY_TANK};
-        item.dir_z=-1024;item.scene_light_q8=256;
+        item.dir_z=-1024;item.scene_light_q8=256;item.squash=1000;
         for (int i=0;i<3;++i) {
             struct scene_enemy_test_geometry a={0},b={0},posed={0},failure={0};
             item.type=types[i];memset(&item.pose,0,sizeof(item.pose));
@@ -60,6 +60,22 @@ static int scene_local_source_test(void)
             LOCAL_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&failure)<0);
         }
         item.type=TOY_GAME_ENEMY_PURSUIT_COMMON;
+        for (int kind=1;kind<=2;++kind) {
+            struct scene_enemy_test_geometry body={0},death={0},shadow={0},tongue={0};
+            item.legacy_kind=kind;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&body));
+            item.transformed=1;item.pivot_y=-300;item.roll_sin=1024;item.roll_cos=0;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&death));
+            LOCAL_CHECK(body.count==death.count && body.hash!=death.hash);
+            item.transparent=1;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&shadow) && !shadow.count);
+            item.shadow=1;item.shadow_rx=230;item.shadow_rz=150;item.shadow_y=-886;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&shadow) && shadow.count==2);
+            item.tongue=1;item.mouth_y=30;item.target_z=1500;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&tongue) && tongue.count>shadow.count);
+            item.transformed=0;item.transparent=0;item.shadow=0;item.tongue=0;
+        }
+        item.legacy_kind=0;
         struct scene_enemy_test_geometry rejected={0};
         LOCAL_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&rejected)<0 && !rejected.count);
         rf_gpu_scene_enemy_begin(73,4);

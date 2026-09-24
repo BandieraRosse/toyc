@@ -10,13 +10,21 @@
 
 [下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
-冻结三件套已接入独立 Scene native 提交、pin/退休和生命周期专项；RTX 3050 validation/sync 已通过。CPU upload backing 已在退休后复用，Scene WORLD draw 与 present blit 已按帧采集 GPU 时间戳。正常帧审计冻结 Runtime Map render、分区地面、object、活动旗帜、动态投射物、交互物及八名正式模块化队员各自的 pose/光照值。十一类生成地图网格（含六种导入感染体展示模型）、可见静态 RMESH、旗帜几何与双面字形、bomb/molotov 模型、全部 45 个 Campaign 交互物、八名队员的 body、被动装备和 AK 武器在同一独立 Scene WORLD color/depth 绘制并读回验证。角色 pose 与 GPU 打包按模块化配方处理 body、装备和颜色；各自的身份及展示时钟在 session 来源处冻结。V2 光照 bake 代际与模型类的冻结 V1 诊断光照进入资源复用键。下一步补齐其余 WORLD 与角色类别，再将整帧接入正常 Scene 呈现。主线开发与签收以 RTX 3050 为准。正常呈现仍走 mixed 路径，完整帧性能 A/B 从阶段 3 开始。
+WORLD 的地图、静态实例、角色、敌人、附件、旗帜、投射物与交互物已进入独立 Scene。
+阶段 3 首个 `--gpu-scene-world-preview` 入口已把真实 WORLD 接到 native present，跳过 mixed
+执行和离屏读回；near/mid/thin-far/Campaign 各四帧通过 RTX 3050 validation/sync。
+下一步接透明、特效、独立 VIEWMODEL、HUD/OVERLAY 与天空，再形成完整正常帧候选。
+默认完整呈现仍为 mixed；WORLD preview 不作为完整画面或产品 FPS 结论。
 
 阶段 2 已补齐静态 RMESH 超出旧整数投影范围时的 Scene 硬件裁剪选择；角色镜头中的数值暂缓已清零。
 动态敌人新增 Smoker、Charger、Tank 存活身体的同帧冻结和独立 Scene WORLD 提交。
 普通感染体六种 Block/Humanoid recipe 的存活身体已接入同帧 Scene WORLD，冻结步态后独立求姿态与几何。
-下一切片先补程序角色，网络玩家随后复用其表现路径；Smoker 舌头保留最小等价表现。
-死亡、阴影与其余附属表现及完整 WORLD 画面合同仍待补齐；阶段 2 尚未退出。
+程序角色、不透明死亡、legacy 敌人、blob shadow 和 Smoker 舌头已接入同帧离屏诊断。
+网络玩家按用户决定仅验证逻辑路径，实机联机问题延后到 GPU 完成后的网络专项，不阻塞当前迁移。
+2026-09-24 用户决定：阶段 2 按迁移范围收尾，整图光照/光栅差异只记录，重构后修复，
+不再以 CPU/mixed 画面一致性或数值容差审批阻塞主线。此决定不表示旧画面合同已经通过。
+当前进入阶段 3：接入硬件 Scene 正常帧；首个切片将真实 WORLD 从离屏读回改为独立 native
+提交，随后接透明、特效、VIEWMODEL、HUD/OVERLAY。未接齐的实验入口必须明确标为 WORLD preview。
 
 计划中的当前切片、前置条件、完成门槛和下一决策点以该文档顶部为准。已完成 checkpoint、撤销实验和
 单次设备测量进入 [`../archive/`](../archive/)，不得继续充当优先级来源。

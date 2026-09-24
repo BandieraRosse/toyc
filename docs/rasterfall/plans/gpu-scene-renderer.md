@@ -6,7 +6,13 @@
 >
 > 制定：2026-09-23
 >
-> 当前切片：1B 三件套、backing 和时间戳已落地；真实 Runtime Map 十一类生成网格、可见静态 RMESH、八名正式模块化队员的 body/被动装备/武器、活动旗帜几何与双面字形、动态投射物，以及全部 45 个 Campaign 交互物已由正常帧审计的独立 Scene target 绘制；正常帧呈现仍走 mixed
+> 当前切片：阶段 3，开始接入真实 WORLD 的硬件 Scene native 提交，再接齐完整帧各层；正常产品默认仍为 mixed
+
+2026-09-24 用户调整门禁：阶段 2 按迁移范围收尾；CPU/mixed 整图一致性、数值容差和新图像
+基线审批不再阻塞阶段 3。已观察的光照、轮廓与光栅差异记录后延至重构完成再修复，不伪记为
+旧画面合同 PASS。网络继续仅验证逻辑。下文原阶段退出门槛中的像素一致性要求据此延期；
+GPU 执行失败、资源生命周期、层序、零 CPU fallback/copy 和零 depth bridge 仍是结构门禁。
+首个开发入口明确为 WORLD preview，不能作为完整画面或产品性能验收。
 
 阶段 2 补充：静态 RMESH 超出旧整数光栅屏幕范围时，已按安全的整数顶点变换选择 Scene 硬件裁剪，
 `actor-standard` / `actor-rifleman` 的 8 / 4 项数值暂缓清零；近裁剪专项证明可见覆盖。
@@ -14,14 +20,16 @@
 验证记录见[静态实例裁剪现场](../archive/gpu-scene-static-prop-clipping-20260924.md)。
 动态特感切片已将 Smoker、Charger、Tank 的存活身体从同帧 finalized pose 接入独立 Scene WORLD；
 普通感染体六种 Block/Humanoid recipe 的存活身体也已接入，冻结家族、步态、变换与反馈颜色后独立提取。
-死亡表现、blob shadow、Smoker 舌头及其余角色类别仍待接入。
+程序角色、不透明死亡、legacy 敌人、blob shadow 和 Smoker 舌头已补入同帧离屏诊断；透明死亡留给透明层。
 这条诊断依赖 mixed producer 冻结姿态，动态资源按同步审计帧重建，不能作为正常 Scene producer 或性能收益。
 验证与范围见[动态特感身体现场](../archive/gpu-scene-special-enemies-20260924.md)。
 普通感染体资源、RTX 3050 同步验证及局部像素记录见[普通感染体现场](../archive/gpu-scene-ordinary-enemies-20260924.md)。
-WORLD 固定画面合同和阶段 0 门禁仍待补齐。
+WORLD 固定画面合同遗留问题按顶部用户决定延期，记录见[阶段 2 决定归档](../archive/gpu-scene-stage2-decision-20260924.md)。
 
-后续顺序：先接程序角色，再由网络来源 adapter 复用角色表现。网络 adapter 冻结已解析的展示位置、
-朝向和 actor 状态，不把输入包交给 Scene；固定输入验证先行，host/guest 实机接线验证随后进行。
+后续顺序：直接推进完整 GPU 正常帧，画面差异重构后修复。
+网络玩家按用户要求仅验证逻辑路径；实机连接、同步与可见性问题统一延后到 GPU 完成后的网络专项。
+本轮收尾范围与后续事项见[阶段 2 收尾记录](gpu-scene-stage2-handoff.md)。
+网络 adapter 冻结已解析的展示位置、朝向和 actor 状态，不把输入包交给 Scene。
 网络角色只延后开发顺序，不从完整 WORLD 合同中删除。Smoker 舌头保留现有连接带和束缚圈的最小等价表现，
 不在渲染迁移中删除束缚玩法或其可见提示。完成 WORLD 后集中推进独立来源和完整帧。
 
@@ -110,7 +118,17 @@ Quick/Full、长时 soak、validation/sync 按阶段退出条件运行，不因�
 正式五轮脚本不用于日常调试；阶段 0/1 允许定向计时建立预算，不能冒充收益。阶段退出候选若被修改，先完成相关正确性回归，
 仅在修复影响性能结论时重测该阶段。所有测量保留原始日志与身份，不能用短 smoke 充当性能基线。
 
-### 本轮切片与下一决策点
+### 阶段 3 当前切片与下一步
+
+`--gpu-scene-world-preview` 已用真实 normal-scene/wave workload 进入 native Scene WORLD。
+Core 只保留 producer 求值，丢弃未执行的 mixed recording；Scene 独立提交并同步退休，
+不执行 mixed、不读回 color/depth。near/mid/thin-far/Campaign 各四帧 RTX 3050
+validation/sync 已通过，原始日志在 `tmp/stage3-preview-final/`。
+接下来接入天空、有序透明和 effects，再接独立 VIEWMODEL 与 HUD/OVERLAY；
+完整层序接齐后切正常候选与生命周期/性能验证。现有输入仍依赖旧 producer，
+独立来源与动态资源复用继续收敛，不恢复阶段 2 像素匹配门禁。
+
+### 阶段 1–2 实现记录（历史上下文）
 
 本轮交付为来源生命周期身份修正、专用渲染地图和可重跑诊断入口；运行相关逻辑回归、Windows 构建、
 地图解析及定向 capture。地图通过显式参数选择，不替换正式地图，也不计入 near/Campaign 性能成绩。

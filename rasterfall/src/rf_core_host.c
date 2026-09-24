@@ -2033,6 +2033,17 @@ static int core_end_frame_present(struct rf_core *core)
     return result;
 }
 
+int rf_core_finish_scene_recording(struct rf_core *core)
+{
+    if (!core || !core->mixed_executor || !core->mixed_frame ||
+        rf_core_runtime_failed(core) || rf_core_flush(core)<0) return -1;
+    /* Scene has its own registry and finalized value inputs. None of these
+     * legacy recorded resources was submitted, so release its CPU pins now. */
+    rasterfall_resources_frame_complete(rasterfall_render_resources());
+    rf_core_mixed_reset(core->mixed_frame);
+    return 0;
+}
+
 int rf_core_end_frame(struct rf_core *core)
 {
     int result = core_end_frame_present(core);

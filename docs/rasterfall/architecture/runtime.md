@@ -7,6 +7,11 @@
 
 GPU 的当前验收与生命周期门槛见 [GPU 验收与诊断](../guides/gpu-validation.md)；Desktop/Application 的当前冻结边界见 [Application Runtime](application-runtime.md)。
 
+连接等待页与启动菜单也经过 Core 的逐帧层状态初始化、空 WORLD/EFFECTS/VIEWMODEL 和正式 OVERLAY，
+使 GPU-required 在联机握手期间仍能准备 native target。菜单文字写入 Core 返回的 overlay/coverage surface。
+显式 `--frame-audit` 包含冷资源和同步 Scene 提取，关闭 renderer 的交互式 200 ms watchdog；专项脚本
+负责进程超时。普通运行预算不变，审计时间不作为低扰动性能结果。
+
 ## 状态所有者
 
 `src/rasterfall.c` 是可执行程序入口，负责命令行解析并组装 `rf_game_config`；

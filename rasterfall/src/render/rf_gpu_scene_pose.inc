@@ -2,6 +2,70 @@
  * attachment evaluators. No game/session lookup or draw recording here. */
 #include "rf_gpu_scene_pose.h"
 
+static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
+    struct rasterfall_model_instance *instance,
+    const struct rasterfall_character_visual_recipe *recipe,
+    const struct rf_gpu_scene_actor_v1 *actor,
+    const struct rf_gpu_scene_local_presentation *p)
+{
+    struct rasterfall_modular_pose_cache gear;
+    if (!next || !instance || !recipe || !actor || !p ||
+        !rasterfall_model_instance_final_pose(instance) ||
+        !modular_actor_runtime.body.definition.bone_count ||
+        modular_actor_runtime.body.definition.bone_count>RF_GPU_SCENE_POSE_BONES ||
+        recipe->attachment_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS)
+        return -1;
+    next->actor_count=1; next->identity=actor->identity;
+    next->scene_light_q8=p->scene_light_q8;
+    next->bone_count=modular_actor_runtime.body.definition.bone_count;
+    next->body_resource_id=recipe->body_resource_id;
+    next->character_id=p->character_id;
+    next->shirt_color=recipe->shirt_color;
+    next->pants_color=recipe->pants_color;
+    next->bind_normals=rasterfall_model_instance_final_pose(instance)->animation.pose==RASTERFALL_MODEL_POSE_BIND;
+    if (rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
+            next->palette,next->bone_count)<0) return -1;
+    modular_rigid_identity(&next->body_to_world);
+    next->body_to_world.translation[0]=actor->x;
+    next->body_to_world.translation[1]=actor->y;
+    next->body_to_world.translation[2]=actor->z;
+    next->body_to_world.rotation[0]=next->body_to_world.rotation[8]=actor->cy/1024.0;
+    next->body_to_world.rotation[2]=actor->sy/1024.0;
+    next->body_to_world.rotation[6]=-actor->sy/1024.0;
+    next->body_to_world.scale_milli=835;
+    if (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal) {
+        struct rasterfall_modular_weapon_placement weapon;
+        double basis[9]={1,0,0,0,1,0,0,0,1}, rotation[9], offset[3], centered[3];
+        double center[3];
+        if (modular_prepare_weapon_placement(instance,actor->weapon,835,&weapon)<0) return -1;
+        if (weapon.asset->asset_basis==1) {
+            basis[0]=basis[8]=0; basis[2]=basis[6]=1;
+        } else if (weapon.asset->asset_basis==2) basis[0]=basis[8]=-1;
+        rigid_matrix_multiply(next->body_to_world.rotation,weapon.rotation,rotation);
+        rigid_matrix_multiply(rotation,basis,next->weapon_to_world.rotation);
+        rigid_matrix_vector(next->body_to_world.rotation,weapon.origin,offset);
+        center[0]=(weapon.model->min_x+weapon.model->max_x)/2;
+        center[1]=(weapon.model->min_y+weapon.model->max_y)/2;
+        center[2]=(weapon.model->min_z+weapon.model->max_z)/2;
+        rigid_matrix_vector(next->weapon_to_world.rotation,center,centered);
+        for (int i=0;i<3;++i)
+            next->weapon_to_world.translation[i]=next->body_to_world.translation[i]+
+                offset[i]*835.0/1000.0-centered[i]*weapon.geometry_scale/1000.0;
+        next->weapon_to_world.scale_milli=weapon.geometry_scale;
+        next->weapon_valid=1; next->weapon=actor->weapon;
+    }
+    memset(&gear,0,sizeof(gear));
+    if (modular_prepare_gear_transforms(instance,recipe,modular_actor_runtime.gear,&gear)<0) return -1;
+    next->attachment_count=gear.gear_count;
+    for (unsigned int i=0;i<gear.gear_count;++i) {
+        next->attachments[i].resource_id=recipe->attachments[i].gear_resource_id;
+        next->attachments[i].host_socket=recipe->attachments[i].host_socket;
+        modular_rigid_compose(&next->body_to_world,&gear.gear_local[i],
+                             &next->attachments[i].model_to_world);
+    }
+    return 0;
+}
+
 int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
     uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out)
 {
@@ -11,7 +75,6 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
     struct rf_gpu_scene_pose_v1 *next;
     struct rasterfall_model_instance *instance;
     struct rasterfall_action_composition composition;
-    struct rasterfall_modular_pose_cache gear;
     struct rf_gpu_scene_frozen_v1 *metadata;
     int result=-1;
     if (!frame || !out) return -1;
@@ -65,54 +128,7 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
         actor->weapon < -1 || actor->weapon>=TOY_GAME_WEAPON_COUNT ||
         (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal &&
          modular_solve_left_hand(instance,actor->weapon,835)<0)) goto done;
-    next->actor_count=1; next->identity=actor->identity;
-    next->scene_light_q8=p->scene_light_q8;
-    next->bone_count=modular_actor_runtime.body.definition.bone_count;
-    next->body_resource_id=recipe->body_resource_id;
-    next->character_id=p->character_id;
-    next->shirt_color=recipe->shirt_color;
-    next->pants_color=recipe->pants_color;
-    next->bind_normals=rasterfall_model_instance_final_pose(instance)->animation.pose==RASTERFALL_MODEL_POSE_BIND;
-    if (rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
-            next->palette,next->bone_count)<0) goto done;
-    modular_rigid_identity(&next->body_to_world);
-    next->body_to_world.translation[0]=actor->x;
-    next->body_to_world.translation[1]=actor->y;
-    next->body_to_world.translation[2]=actor->z;
-    next->body_to_world.rotation[0]=next->body_to_world.rotation[8]=actor->cy/1024.0;
-    next->body_to_world.rotation[2]=actor->sy/1024.0;
-    next->body_to_world.rotation[6]=-actor->sy/1024.0;
-    next->body_to_world.scale_milli=835;
-    if (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal) {
-        struct rasterfall_modular_weapon_placement weapon;
-        double basis[9]={1,0,0,0,1,0,0,0,1}, rotation[9], offset[3], centered[3];
-        double center[3];
-        if (modular_prepare_weapon_placement(instance,actor->weapon,835,&weapon)<0) goto done;
-        if (weapon.asset->asset_basis==1) {
-            basis[0]=basis[8]=0; basis[2]=basis[6]=1;
-        } else if (weapon.asset->asset_basis==2) basis[0]=basis[8]=-1;
-        rigid_matrix_multiply(next->body_to_world.rotation,weapon.rotation,rotation);
-        rigid_matrix_multiply(rotation,basis,next->weapon_to_world.rotation);
-        rigid_matrix_vector(next->body_to_world.rotation,weapon.origin,offset);
-        center[0]=(weapon.model->min_x+weapon.model->max_x)/2;
-        center[1]=(weapon.model->min_y+weapon.model->max_y)/2;
-        center[2]=(weapon.model->min_z+weapon.model->max_z)/2;
-        rigid_matrix_vector(next->weapon_to_world.rotation,center,centered);
-        for (int i=0;i<3;++i)
-            next->weapon_to_world.translation[i]=next->body_to_world.translation[i]+
-                offset[i]*835.0/1000.0-centered[i]*weapon.geometry_scale/1000.0;
-        next->weapon_to_world.scale_milli=weapon.geometry_scale;
-        next->weapon_valid=1; next->weapon=actor->weapon;
-    }
-    memset(&gear,0,sizeof(gear));
-    if (modular_prepare_gear_transforms(instance,recipe,modular_actor_runtime.gear,&gear)<0) goto done;
-    next->attachment_count=gear.gear_count;
-    for (unsigned int i=0;i<gear.gear_count;++i) {
-        next->attachments[i].resource_id=recipe->attachments[i].gear_resource_id;
-        next->attachments[i].host_socket=recipe->attachments[i].host_socket;
-        modular_rigid_compose(&next->body_to_world,&gear.gear_local[i],
-                             &next->attachments[i].model_to_world);
-    }
+    if (scene_pose_from_instance(next,instance,recipe,actor,p)<0) goto done;
     *out=*next; result=0;
 done:
     rasterfall_model_instance_unload(instance);

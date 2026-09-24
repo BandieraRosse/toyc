@@ -2,6 +2,7 @@
 #include "rf_gpu_scene_world_gpu.h"
 #include "rf_gpu_scene_actor_gpu.h"
 #include "rf_gpu_scene_pose.h"
+#include "rf_core_host.h"
 
 #ifndef TOYC_WINDOWS
 int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
@@ -952,6 +953,7 @@ struct scene_enemy_mesh {
     unsigned char double_sided[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES];
     const struct rf_gpu_scene_enemy_frame_v1 *frame;
     const struct rf_gpu_scene_enemy_item_v1 *source;
+    int vertex_lighting;
 };
 static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_point *a,
     const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color)
@@ -967,16 +969,18 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
         v->position[0]=points[k]->x-mesh->source->x;
         v->position[1]=points[k]->y-mesh->source->lift;
         v->position[2]=points[k]->z-mesh->source->z;
-        v->uv[0]=mesh->frame->vertex_lighting ?
+        v->uv[0]=mesh->vertex_lighting ?
             rasterfall_world_light_v2_q8(rasterfall_world_light_at(
                 &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z)) :
             mesh->source->scene_light_q8;
-        if (!mesh->frame->vertex_lighting && points[k]->light_min_q8>0) {
+        if (!mesh->vertex_lighting && points[k]->light_min_q8>0) {
             int light=(int)v->uv[0]*points[k]->form_light_q8/256;
             if (light<points[k]->light_min_q8) light=points[k]->light_min_q8;
             if (light>points[k]->light_max_q8) light=points[k]->light_max_q8;
             v->uv[0]=light;
         }
+        if (points[k]->light_override_plus_one)
+            v->uv[0]=points[k]->light_override_plus_one-1;
         mesh->indices[index]=index;
     }
     mesh->count++;return 0;
@@ -984,34 +988,57 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
 static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_enemy_frame_v1 *frame,const struct camera *camera,
     uint32_t width,uint32_t height,struct rf_gpu_graphics_batch_item *items,
-    uint32_t capacity,uint32_t *count)
+    uint32_t capacity,uint32_t *count,uint32_t *procedural_draws,int64_t *extract_us)
 {
     struct scene_enemy_mesh *mesh=NULL;
     uint32_t total=0,white=0xffffff;
     int result=-1;
+    *procedural_draws=0;
+    *extract_us=0;
     /* The diagnostic submits and waits synchronously. Keep resources in the
      * owner on any failure; teardown drains before releasing GPU references. */
-    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i) {
         if (probe->enemy[i] &&
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0)
             return -1;
         probe->enemy[i]=NULL;
     }
-    if (!frame->count) { *count=0;return 0; }
+    if (!frame->count && !frame->procedural_count) { *count=0;return 0; }
     mesh=calloc(1,sizeof(*mesh));
     if (!mesh) return -1;
-    for (unsigned i=0;i<frame->count;++i) {
-        const struct rf_gpu_scene_enemy_item_v1 *source=&frame->items[i];
-        if (i && source->source_slot<=frame->items[i-1].source_slot) goto done;
+    for (unsigned i=0;i<frame->count+frame->procedural_count;++i) {
+        struct rf_gpu_scene_enemy_item_v1 procedural_source={0};
+        const struct rf_gpu_scene_enemy_item_v1 *source;
+        const struct rf_gpu_scene_procedural_item_v1 *actor=NULL;
+        if (i<frame->count) {
+            source=&frame->items[i];
+            if (i && source->source_slot<=frame->items[i-1].source_slot) goto done;
+        } else {
+            actor=&frame->procedural[i-frame->count];
+            procedural_source.x=actor->state.x;procedural_source.z=actor->state.z;
+            procedural_source.lift=actor->state.lift;
+            procedural_source.scene_light_q8=actor->scene_light_q8;
+            source=&procedural_source;
+        }
         memset(mesh,0,sizeof(*mesh));mesh->frame=frame;mesh->source=source;
-        if (rf_gpu_scene_enemy_triangles(source,scene_enemy_triangle,mesh)<0 ||
-            !mesh->count || mesh->count>capacity-total) goto done;
+        mesh->vertex_lighting=actor ? actor->vertex_lighting : frame->vertex_lighting;
+        int64_t start=rf_core_clock_now_us();
+        int extracted=actor ? rf_gpu_scene_procedural_triangles(actor,scene_enemy_triangle,mesh) :
+            rf_gpu_scene_enemy_triangles(source,scene_enemy_triangle,mesh);
+        *extract_us+=rf_core_clock_now_us()-start;
+        if (extracted<0 ||
+            mesh->count>capacity-total) goto done;
+        if (!mesh->count) {
+            if (source->transparent) continue;
+            goto done;
+        }
         probe->enemy[i]=rf_gpu_graphics_resource_create(probe->graphics,
             mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
         if (!probe->enemy[i]) goto done;
         for (unsigned first=0;first<mesh->count;) {
             unsigned end=first+1;
             struct rf_gpu_graphics_batch_item *entry=&items[total++];
+            if (actor) (*procedural_draws)++;
             struct rf_gpu_graphics_draw *draw=&entry->draw;
             while (end<mesh->count && mesh->colors[end]==mesh->colors[first] &&
                 mesh->double_sided[end]==mesh->double_sided[first]) end++;
@@ -1061,8 +1088,12 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     size_t pixels=(size_t)width*height;
     uint32_t actor_prepared=0;
     int frame_active=0,result=-1;
+    struct rf_gpu_graphics_stats graphics_before,graphics_after;
+    struct rf_gpu_scene_timing timing;
+    int64_t prepare_start=rf_core_clock_now_us();
     if (!probe || !context || !owner || !camera || !flags || !projectiles ||
         !interactables || !enemies || enemies->count>TOY_GAME_MAX_ENEMIES ||
+        enemies->failed || enemies->procedural_count>TOY_GAME_MAX_ACTORS ||
         enemies->frame_id!=flags->frame_id ||
         enemies->world_generation!=owner->world_generation ||
         !stats || !width || !height ||
@@ -1094,6 +1125,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     }
     if (!probe->cache || rf_gpu_graphics_resize(probe->graphics,width,height)<0)
         return -1;
+    rf_gpu_graphics_get_stats(probe->graphics,&graphics_before);
     if (!probe->flag_pole) {
         probe->flag_pole=flag_cube_resource(probe->graphics,-16,16,-900,2700,-16,16);
         if (!probe->flag_pole) return -1;
@@ -1141,14 +1173,16 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (interactables->count>(UINT32_MAX-capacity)/RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES)
         return -1;
     capacity+=interactables->count*RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES;
-    if (enemies->count>(UINT32_MAX-capacity)/RF_GPU_SCENE_ENEMY_MAX_TRIANGLES)
+    if (enemies->count+enemies->procedural_count>(UINT32_MAX-capacity)/RF_GPU_SCENE_ENEMY_MAX_TRIANGLES)
         return -1;
-    capacity+=enemies->count*RF_GPU_SCENE_ENEMY_MAX_TRIANGLES;
+    capacity+=(enemies->count+enemies->procedural_count)*RF_GPU_SCENE_ENEMY_MAX_TRIANGLES;
     if (!capacity) return 0;
     items=calloc(capacity ? capacity : 1,sizeof(*items));
-    color=calloc(pixels,sizeof(*color));
-    depth=calloc(pixels,sizeof(*depth));
-    if (!items || !color || !depth ||
+    if (!probe->native_present) {
+        color=calloc(pixels,sizeof(*color));
+        depth=calloc(pixels,sizeof(*depth));
+    }
+    if (!items || (!probe->native_present && (!color || !depth)) ||
         rasterfall_resources_frame_begin(&owner->registry)<0) goto done;
     frame_active=1;
     if (rf_gpu_scene_world_gpu_prepare(owner,probe->cache,probe->graphics,
@@ -1181,10 +1215,24 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     draws+=pickup_procedural_draws;
     pickup_procedural_deferred=0;
     if (enemy_draws_prepare(probe,enemies,camera,width,height,
-            items+draws,capacity-draws,&enemy_draws)<0) goto done;
+            items+draws,capacity-draws,&enemy_draws,&stats->procedural_draws,
+            &stats->geometry_extract_us)<0) goto done;
     draws+=enemy_draws;
-    if (rf_gpu_graphics_scene_capture(probe->graphics,items,draws,
-            color,depth,(uint32_t)pixels)<0) goto done;
+    stats->prepare_us=rf_core_clock_now_us()-prepare_start;
+    if (probe->native_present) {
+        if (capture_path || rf_gpu_graphics_scene_present(probe->graphics,
+                items,draws,enemies->frame_id)<0 ||
+            rf_gpu_graphics_scene_retire(probe->graphics)<0) goto done;
+    } else if (rf_gpu_graphics_scene_capture_at(probe->graphics,items,draws,
+            color,depth,(uint32_t)pixels,enemies->frame_id)<0) goto done;
+    rf_gpu_graphics_scene_timing(probe->graphics,&timing);
+    if (timing.frame_id!=enemies->frame_id || (timing.supported && !timing.valid)) goto done;
+    stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
+    rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
+    stats->upload_bytes=graphics_after.mesh_upload_bytes+graphics_after.texture_upload_bytes-
+        graphics_before.mesh_upload_bytes-graphics_before.texture_upload_bytes;
+    stats->bridge_transfers=graphics_after.raster_bridge_transfers-graphics_before.raster_bridge_transfers;
+    if (stats->bridge_transfers) goto done;
     if (capture_path) {
         size_t path_size=strlen(capture_path)+sizeof(".scene.ppm");
         char *path=malloc(path_size);
@@ -1204,10 +1252,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         }
         if (fclose(file)) goto done;
     }
-    for(size_t i=0;i<pixels;++i)
+    for(size_t i=0;depth && i<pixels;++i)
         if (depth[i]>0 && color[i]) covered++;
     rf_gpu_resource_cache_get_stats(probe->cache,&after);
-    stats->enemy_draws=enemy_draws;stats->enemy_items=enemies->count;
+    stats->enemy_draws=enemy_draws-stats->procedural_draws;stats->enemy_items=enemies->count;
+    stats->procedural_items=enemies->procedural_count;
     stats->enemy_deferred=enemies->deferred;stats->enemy_culled=enemies->culled;
     stats->draws=draws;stats->actor_draws=actor_draws;
     stats->flag_draws=flag_draws;stats->flag_text_draws=flag_text_draws;
@@ -1227,6 +1276,12 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->hits=after.hits-before.hits;
     result=0;
 done:
+    if (result<0 && probe->native_present) {
+        /* Failed submit/retire can retain device references. The poisoned
+         * graphics owner drains before resource destruction and CPU unpin. */
+        rf_gpu_scene_world_gpu_probe_close(probe);
+        actor_prepared=0;
+    }
     for(uint32_t i=0;i<actor_prepared;++i)
         rf_gpu_scene_actor_gpu_finish(probe->actor[i]);
     if (frame_active) rasterfall_resources_frame_complete(&owner->registry);
@@ -1237,7 +1292,7 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
-    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES;++i)
+    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);
     if (probe->flag_pole)

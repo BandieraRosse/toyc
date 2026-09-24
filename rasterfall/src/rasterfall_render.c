@@ -297,6 +297,13 @@ typedef struct rasterfall_interactable interactable;
 #define RULER_AXIS_HALF 18
 #define RULER_TICK_HALF 28
 
+/* Serial geometry enumerator used only while extracting frozen procedural
+ * presentation. It emits world vertices before projection, never RasterCmd. */
+static rf_gpu_scene_enemy_triangle_fn scene_procedural_emit;
+static void *scene_procedural_context;
+static int scene_procedural_failed;
+static int scene_procedural_double_sided;
+
 static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct camera *camera,
                                const struct vec3 *a, const struct vec3 *b,
@@ -3440,6 +3447,17 @@ static int draw_world_triangle(struct toy_renderer *renderer,
                                const struct vec3 *a, const struct vec3 *b,
                                const struct vec3 *c, uint32_t color)
 {
+    if (scene_procedural_emit) {
+        struct rf_gpu_scene_enemy_point p[3] = {
+            {a->x,a->y,a->z,0,0,0,0,0},
+            {b->x,b->y,b->z,0,0,0,0,0},
+            {c->x,c->y,c->z,0,0,0,0,0}};
+        for (int k=0;k<3;++k) p[k].double_sided=scene_procedural_double_sided;
+        if (!scene_procedural_failed &&
+            scene_procedural_emit(scene_procedural_context,&p[0],&p[1],&p[2],color)<0)
+            scene_procedural_failed=1;
+        return scene_procedural_failed ? -1 : 0;
+    }
     if (active_enemy_transform) {
         struct vec3 v[3];
         const struct vec3 *src[3] = {a, b, c};
@@ -6238,7 +6256,8 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
                                    const struct enemy_body_part *parts,
                                    int count)
 {
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
+    if (!scene_procedural_emit &&
+        render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
         return -1;
     int pixels = 0, i;
     int charger_xy_scale = scale * 100 / 1120;
@@ -6540,6 +6559,14 @@ static int render_smoker_tongue(struct toy_renderer *renderer,
     enemy_rig_cached_pose=pose;
     enemy_rig_cached_valid=1;
     mouth=enemy_rig_final_point(profile,&enemy_rig_cached_final,ER_HEAD,mouth);
+    if (scene_enemy_capture_active) {
+        scene_enemy_aux.tongue=1;
+        scene_enemy_aux.mouth_x=e->x+(e->dir_z*mouth.x+e->dir_x*mouth.z)/1024;
+        scene_enemy_aux.mouth_y=mouth.y+active_enemy_lift;
+        scene_enemy_aux.mouth_z=e->z+(-e->dir_x*mouth.x+e->dir_z*mouth.z)/1024;
+        scene_enemy_aux.target_x=target_x;scene_enemy_aux.target_y=target_lift;
+        scene_enemy_aux.target_z=target_z;
+    }
     pixels = draw_tongue_segment(renderer, camera,
                                  e->x+(e->dir_z*mouth.x+e->dir_x*mouth.z)/1024,
                                  mouth.y+active_enemy_lift,
@@ -6593,12 +6620,73 @@ static int render_blob_shadow(struct toy_renderer *renderer,
     int y = -886 + active_enemy_lift; /* just above the queried ground */
     if (rx < 18) rx = 18;
     if (rz < 12) rz = 12;
+    if (scene_enemy_capture_active) {
+        scene_enemy_aux.shadow=1;scene_enemy_aux.shadow_y=y;
+        scene_enemy_aux.shadow_rx=rx;scene_enemy_aux.shadow_rz=rz;
+    }
     a.x = e->x - rx; a.y = y; a.z = e->z - rz;
     b.x = e->x + rx; b.y = y; b.z = e->z - rz;
     c.x = e->x + rx; c.y = y; c.z = e->z + rz;
     d.x = e->x - rx; d.y = y; d.z = e->z + rz;
     /* Two nested, opaque low-alpha-style tones approximate a soft penumbra. */
     return draw_quad(renderer, camera, &a, &b, &c, &d, 0x17151A);
+}
+
+static int scene_enemy_extras_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    struct toy_renderer renderer={0};
+    struct camera camera={0};
+    int saved_light=active_world_light_v2;
+    if (scene_procedural_emit || item->shadow_rx<0 || item->shadow_rx>1000 ||
+        item->shadow_rz<0 || item->shadow_rz>1000 ||
+        item->shadow_y < -1000000 || item->shadow_y > 1000000 ||
+        item->mouth_x < -1000000 || item->mouth_x > 1000000 ||
+        item->mouth_y < -1000000 || item->mouth_y > 1000000 ||
+        item->mouth_z < -1000000 || item->mouth_z > 1000000 ||
+        item->target_x < -1000000 || item->target_x > 1000000 ||
+        item->target_y < -1000000 || item->target_y > 1000000 ||
+        item->target_z < -1000000 || item->target_z > 1000000) return -1;
+    scene_procedural_emit=emit;scene_procedural_context=context;scene_procedural_failed=0;
+    scene_procedural_double_sided=item->double_sided;
+    active_world_light_v2=1;
+    if (item->shadow) {
+        struct vec3 a={item->x-item->shadow_rx,item->shadow_y,item->z-item->shadow_rz};
+        struct vec3 b={item->x+item->shadow_rx,item->shadow_y,item->z-item->shadow_rz};
+        struct vec3 c={item->x+item->shadow_rx,item->shadow_y,item->z+item->shadow_rz};
+        struct vec3 d={item->x-item->shadow_rx,item->shadow_y,item->z+item->shadow_rz};
+        draw_quad(&renderer,&camera,&a,&b,&c,&d,0x17151A);
+    }
+    if (item->tongue) {
+        draw_tongue_segment(&renderer,&camera,item->mouth_x,item->mouth_y,item->mouth_z,
+            item->target_x,-360+item->target_y,item->target_z);
+        draw_cylinder(&renderer,&camera,item->target_x,item->target_z,225,
+            -430+item->target_y,-395+item->target_y,0xB98B62);
+        draw_cylinder(&renderer,&camera,item->target_x,item->target_z,205,
+            -280+item->target_y,-245+item->target_y,0xB98B62);
+    }
+    scene_procedural_emit=NULL;scene_procedural_context=NULL;
+    active_world_light_v2=saved_light;
+    return scene_procedural_failed ? -1 : 0;
+}
+
+static int scene_legacy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    struct toy_renderer renderer={0};struct camera camera={0};
+    struct toy_game_enemy enemy={0};
+    int saved_lift=active_enemy_lift,saved_light=active_world_light_v2;
+    if (scene_procedural_emit || item->legacy_kind<1 || item->legacy_kind>2) return -1;
+    enemy.x=item->x;enemy.z=item->z;enemy.dir_x=item->dir_x;enemy.dir_z=item->dir_z;
+    active_enemy_lift=item->lift;active_world_light_v2=1;
+    scene_procedural_emit=emit;scene_procedural_context=context;scene_procedural_failed=0;
+    scene_procedural_double_sided=item->double_sided;
+    if (item->legacy_kind==1)
+        render_block_enemy(&renderer,&camera,&enemy,item->squash,item->feedback);
+    else render_round_enemy(&renderer,&camera,&enemy,item->squash,item->feedback);
+    scene_procedural_emit=NULL;scene_procedural_context=NULL;
+    active_enemy_lift=saved_lift;active_world_light_v2=saved_light;
+    return scene_procedural_failed ? -1 : 0;
 }
 
 #include "render/rasterfall_enemy_visual.inc"
@@ -6730,6 +6818,7 @@ static int render_enemies(struct toy_renderer *renderer,
             continue;
         }
         unsigned scene_count_before=scene_enemy_capture.count;
+        memset(&scene_enemy_aux,0,sizeof(scene_enemy_aux));
         if (e->active == 2) {
             int style = effects.enemy_death_style[i];
             if (style == RASTERFALL_ENEMY_DEATH_STYLE_LEGACY ||
@@ -6823,10 +6912,23 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += infected_pixels;
         else if (enemy_rig_profile(e->type))
             pixels += render_enemy_rig(renderer,camera,draw_enemy,scale,enemy_feedback_color(i));
-        else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY || (i & 1) == 0)
-            pixels += render_block_enemy(renderer, camera, draw_enemy, scale, color);
-        else
-            pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
+        else {
+            int block=e->type==TOY_GAME_ENEMY_PURSUIT_HEAVY || (i&1)==0;
+            if (scene_enemy_capture_active) {
+                if (scene_enemy_capture.count>=TOY_GAME_MAX_ENEMIES) return -1;
+                struct rf_gpu_scene_enemy_item_v1 *item=
+                    &scene_enemy_capture.items[scene_enemy_capture.count++];
+                item->source_slot=i;item->type=e->type;
+                item->x=draw_enemy->x;item->z=draw_enemy->z;
+                item->dir_x=draw_enemy->dir_x;item->dir_z=draw_enemy->dir_z;
+                item->lift=active_enemy_lift;item->feedback=color;
+                item->scene_light_q8=active_scene_light_override_q8>=0 ? active_scene_light_override_q8 : 256;
+                item->legacy_kind=block ? 1 : 2;
+                scene_enemy_capture_transform(renderer,item,scale);
+            }
+            pixels+=block ? render_block_enemy(renderer,camera,draw_enemy,scale,color) :
+                render_round_enemy(renderer,camera,draw_enemy,scale,color);
+        }
         if (scene_enemy_capture_active && scene_enemy_capture.count==scene_count_before)
             scene_enemy_capture.deferred++;
         active_scene_light_override_q8 = saved_scene;
@@ -8589,6 +8691,38 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         model_setup_timing.body_triangles_us - body_timing_before.body_triangles_us;
     if (pixels < 0) return -1;
     if (deferred) {
+        int registered=0;
+        if (scene_enemy_capture_active && active_session &&
+            (!active_net || active_net->mode!=RASTERFALL_NET_CLIENT))
+            for (unsigned i=0;i<active_session->scene_local.actor_count;++i)
+                if (active_session->scene_local.actors[i].actor_id==actor->actor_id)
+                    registered=1;
+        if (scene_enemy_capture_active && !registered) {
+            struct rf_gpu_scene_actor_v1 value={0};
+            struct rf_gpu_scene_local_presentation presentation={0};
+            if (scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS ||
+                scene_enemy_capture.frame_id>UINT_MAX) {
+                scene_enemy_capture.failed=1;return -1;
+            }
+            struct rf_gpu_scene_pose_v1 *frozen=
+                &scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+            memset(frozen,0,sizeof(*frozen));
+            frozen->abi_version=1;frozen->byte_size=sizeof(*frozen);
+            frozen->frame_id=scene_enemy_capture.frame_id;
+            frozen->world_generation=scene_enemy_capture.world_generation;
+            value.identity.source=RF_GPU_SCENE_ACTOR_MANAGED;
+            value.identity.source_id=0x80000000u+scene_enemy_capture.modular_count;
+            value.identity.generation=(unsigned)frozen->frame_id;
+            value.x=actor->x;value.y=-900+actor->ground_y+actor->airborne_y;
+            value.z=actor->z;value.sy=actor->sy;value.cy=actor->cy;value.weapon=weapon;
+            presentation.character_id=actor->character_id;
+            presentation.scene_light_q8=active_scene_light_override_q8>=0 ?
+                active_scene_light_override_q8 : 256;
+            if (scene_pose_from_instance(frozen,instance,recipe,&value,&presentation)<0) {
+                scene_enemy_capture.failed=1;return -1;
+            }
+            scene_enemy_capture.modular_count++;
+        }
         deferred->actor = actor;
         deferred->recipe = recipe;
         deferred->actor_to_world = actor_to_world;
@@ -9288,6 +9422,22 @@ int rasterfall_render_procedural_humanoid(
     int death_progress = 0;
     int show_fall_gear = 0;
     if (!renderer || !camera || !state || !character) return 0;
+    if (scene_enemy_capture_active && !scene_procedural_emit) {
+        if (scene_enemy_capture.procedural_count>=TOY_GAME_MAX_ACTORS) {
+            scene_enemy_capture.failed=1;
+            return -1;
+        }
+        struct rf_gpu_scene_procedural_item_v1 *item=
+            &scene_enemy_capture.procedural[scene_enemy_capture.procedural_count++];
+        item->state=*state;
+        item->body_color=character->body_color;item->leg_color=character->leg_color;
+        item->skin_color=character->skin_color;item->hair_color=character->hair_color;
+        item->scene_light_q8=active_scene_light_override_q8>=0 ?
+            active_scene_light_override_q8 : 256;
+        item->vertex_lighting=active_world_light_v2;
+        item->double_sided=active_material_double_sided;
+        if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
+    }
     x = state->x; z = state->z;
     sy = state->sy; cy = state->cy;
     weapon = state->weapon; muzzle_flash = state->muzzle_flash;
@@ -9400,6 +9550,38 @@ int rasterfall_render_procedural_humanoid(
     active_actor_roll_sin = saved_roll_sin;
     active_actor_roll_cos = saved_roll_cos;
     return pixels;
+}
+
+int rf_gpu_scene_procedural_triangles(const struct rf_gpu_scene_procedural_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    struct toy_renderer renderer={0};
+    struct camera camera={0};
+    struct rasterfall_character_profile character={0};
+    int saved_light=active_world_light_v2,result;
+    if (!item || !emit || scene_procedural_emit ||
+        item->state.x < -1000000 || item->state.x > 1000000 ||
+        item->state.z < -1000000 || item->state.z > 1000000 ||
+        item->state.lift < -1000000 || item->state.lift > 1000000 ||
+        item->state.sy < -1024 || item->state.sy > 1024 ||
+        item->state.cy < -1024 || item->state.cy > 1024 ||
+        item->state.animation_id<0 || item->state.animation_id>=TOY_GAME_ANIM_COUNT ||
+        item->state.animation_time_ms<0 || item->state.animation_time_ms>60000 ||
+        item->state.profession_id<0 || item->state.profession_id>=RASTERFALL_PROFESSION_COUNT ||
+        item->state.weapon < -1 || item->state.weapon>=TOY_GAME_WEAPON_COUNT ||
+        item->scene_light_q8<0 || item->scene_light_q8>384 ||
+        (item->vertex_lighting!=0 && item->vertex_lighting!=1)) return -1;
+    if (item->state.weapon>=0 &&
+        !gallery_model_named(rasterfall_weapon_model_path(item->state.weapon),NULL)) return -1;
+    character.body_color=item->body_color;character.leg_color=item->leg_color;
+    character.skin_color=item->skin_color;character.hair_color=item->hair_color;
+    active_world_light_v2=item->vertex_lighting;
+    scene_procedural_emit=emit;scene_procedural_context=context;scene_procedural_failed=0;
+    scene_procedural_double_sided=item->double_sided;
+    result=rasterfall_render_procedural_humanoid(&renderer,&camera,&item->state,&character);
+    scene_procedural_emit=NULL;scene_procedural_context=NULL;
+    active_world_light_v2=saved_light;
+    return result<0 || scene_procedural_failed ? -1 : 0;
 }
 
 static int render_network_teammate(struct toy_renderer *renderer,

@@ -29,10 +29,85 @@ int rf_gpu_scene_pose_logic_test(void)
     struct toy_game_actor *actor;
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
+    /* Exercise the real network presentation adapter without sockets or a GPU.
+     * Bodies behind the camera still freeze their values before raster clipping. */
+    {
+        static struct rasterfall_net net, saved_net;
+        static struct rf_gpu_scene_enemy_frame_v1 captured;
+        struct toy_renderer renderer={0};
+        struct camera viewer={0}; viewer.cy=1024;
+        for (int client=0;client<2;++client) {
+            memset(&net,0,sizeof(net));memset(&source_game,0,sizeof(source_game));
+            net.mode=client ? RASTERFALL_NET_CLIENT : RASTERFALL_NET_HOST;
+            net.local_player_id=2;
+            actor=&source_game.actors[TOY_GAME_REMOTE_ACTOR_BASE];
+            actor->active=1;actor->kind=TOY_GAME_ACTOR_PLAYER;
+            actor->character_id=RASTERFALL_CHARACTER_HURD_GUNSMITH;
+            actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
+            actor->animation.id=TOY_GAME_ANIM_MOVE;actor->animation.time_ms=123;
+            net.clients[0].active=1;net.clients[0].connected=1;net.clients[0].client_id=1;
+            net.clients[0].camera.x=321;net.clients[0].camera.z=-9000;
+            net.clients[0].camera.cy=-1024;
+            net.remote_render_camera[1]=net.clients[0].camera;
+            for (int downed=0;downed<2;++downed) {
+                actor->state=downed ? TOY_GAME_ACTOR_DOWNED : TOY_GAME_ACTOR_ALIVE;
+                before=source_game;saved_net=net;
+                rf_gpu_scene_enemy_begin(1,1);
+                render_network_teammate(&renderer,&viewer,&net,&source_game);
+                POSE_CHECK(!rf_gpu_scene_enemy_freeze(&captured));
+                POSE_CHECK(captured.procedural_count==1 && !captured.failed);
+                const struct rasterfall_procedural_humanoid_state *s=&captured.procedural[0].state;
+                POSE_CHECK(s->x==321 && s->z==-9000 && s->cy==-1024 &&
+                    s->weapon==TOY_GAME_WEAPON_AK && s->downed==downed &&
+                    s->animation_id==TOY_GAME_ANIM_MOVE && s->animation_time_ms==123);
+                struct scene_infected_test_geometry geometry={0};
+                POSE_CHECK(!rf_gpu_scene_procedural_triangles(&captured.procedural[0],
+                    scene_infected_test_triangle,&geometry) && geometry.count);
+                POSE_CHECK(!memcmp(&before,&source_game,sizeof(before)) &&
+                    !memcmp(&saved_net,&net,sizeof(net)));
+            }
+            /* Local player exclusion on guest, disconnected peer on host. */
+            if (client) net.local_player_id=1; else net.clients[0].connected=0;
+            rf_gpu_scene_enemy_begin(2,1);
+            render_network_teammate(&renderer,&viewer,&net,&source_game);
+            POSE_CHECK(!rf_gpu_scene_enemy_freeze(&captured) && !captured.procedural_count);
+            actor->active=0;net.local_player_id=2;net.clients[0].connected=1;
+            rf_gpu_scene_enemy_begin(3,1);
+            render_network_teammate(&renderer,&viewer,&net,&source_game);
+            POSE_CHECK(!rf_gpu_scene_enemy_freeze(&captured) && !captured.procedural_count);
+        }
+        __printf("scene network logic PASS host/guest/downed/local/disconnected/inactive/immutable/geometry\n");
+    }
+    for (int profession=0;profession<RASTERFALL_PROFESSION_COUNT;++profession) {
+        struct rf_gpu_scene_procedural_item_v1 item={0},original;
+        item.state.x=123;item.state.z=456;item.state.lift=90;
+        item.state.sy=384;item.state.cy=-949;
+        item.state.weapon=TOY_GAME_WEAPON_AK;
+        item.state.profession_id=profession;
+        item.body_color=0x405060;item.skin_color=0xc09070;
+        item.leg_color=0x203040;item.hair_color=0x302010;
+        item.scene_light_q8=256;item.vertex_lighting=1;
+        for (int animation=0;animation<TOY_GAME_ANIM_COUNT;++animation) {
+            struct scene_infected_test_geometry a={0},b={0},failure={0};
+            item.state.animation_id=animation;item.state.animation_time_ms=120;
+            original=item;
+            POSE_CHECK(!rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&a));
+            POSE_CHECK(a.count>0 && a.count<=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
+            POSE_CHECK(!rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&b));
+            POSE_CHECK(a.hash==b.hash && a.count==b.count && !memcmp(&item,&original,sizeof(item)));
+            failure.fail=1;
+            POSE_CHECK(rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&failure)<0);
+            item.state.sy=1025;failure.fail=0;
+            POSE_CHECK(rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&failure)<0 && !failure.count);
+            item=original;
+        }
+    }
+    __printf("scene procedural PASS professions/actions/weapon/replay/failure\n");
     for (int recipe=0;recipe<6;++recipe) {
         struct rf_gpu_scene_enemy_item_v1 item={0},saved_item;
         struct scene_infected_test_geometry a={0},b={0},motion={0},failure={0};
         item.infected_recipe=recipe+1;item.type=enemy_visual_recipes[recipe].type;
+        item.squash=1000;
         item.dir_x=384;item.dir_z=-949;item.x=120;item.z=500;item.lift=90;
         item.scene_light_q8=256;saved_item=item;
         POSE_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&a));

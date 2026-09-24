@@ -413,7 +413,7 @@ static int preflight(void *context, const struct rf_core_mixed_frame *f)
         e->stream,capacity,&e->stream_size,&e->textures,transparent,viewmodel)<0) {
         __fprintf(2,"mixed preflight: raster pack failed commands=%u transparent=%u viewmodel=%u\n",count,transparent,viewmodel); goto done;
     }
-    if (f->sky_enabled) {
+    if (f->sky_enabled && !e->output.capture_world_opaque) {
         struct rf_gpu_raster_stream_header_v1 *header=e->stream;
         struct rf_gpu_raster_cmd_v1 *commands=(void *)(header+1);
         memset(&commands[0],0,sizeof(commands[0]));
@@ -475,7 +475,7 @@ done:
 static int segment(struct rf_gpu_mixed_executor *e, const struct rf_core_mixed_frame *f, int final)
 {
     char message[RF_GPU_MESSAGE_CAPACITY];
-    uint32_t end=final ? e->command_count : e->pending_end;
+    uint32_t end=final && !e->output.capture_world_opaque ? e->command_count : e->pending_end;
     double start;
     if (e->started && e->cursor==end && !final) return 0;
     start=mixed_now_ms();
@@ -595,10 +595,24 @@ int rf_gpu_mixed_render(struct rf_gpu_mixed_executor *e,
     e->active_frame=e->next_frame;
     e->next_frame=(e->next_frame+1)%RF_GPU_MIXED_FRAMES;
     e->output=*output;
+    const char *world_capture=getenv("RF_GPU_CAPTURE_WORLD_OPAQUE");
+    unsigned char *empty_coverage=NULL;
+    if (output->capture_color && world_capture && !strcmp(world_capture,"1")) {
+        empty_coverage=calloc((size_t)f->width*f->height,1);
+        if (!empty_coverage) return -1;
+        e->output.capture_world_opaque=1;
+        e->output.clear_color=0;
+        e->output.overlay_coverage=empty_coverage;
+        e->output.coverage_stride=f->width;
+        memset(&e->output.post,0,sizeof(e->output.post));
+        __printf("WORLD-OPAQUE-CAPTURE black-background=1 suffix-excluded=1\n");
+    }
     start=mixed_now_ms();
     rf_gpu_resource_cache_collect(mixed_cache(e));
     e->stats.cache_collect_ms+=mixed_now_ms()-start;
-    return rf_core_mixed_execute(f,&executor,e);
+    int result=rf_core_mixed_execute(f,&executor,e);
+    free(empty_coverage);
+    return result;
 }
 void rf_gpu_mixed_get_stats(struct rf_gpu_mixed_executor *e, struct rf_gpu_mixed_stats *stats)
 {

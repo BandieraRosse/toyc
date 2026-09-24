@@ -20,6 +20,8 @@ struct rf_gpu_mixed_output {
     struct rf_gpu_native_present_timing *present_timing;
     /* Optional explicit diagnostic readback of final Post/overlay color. */
     unsigned int *capture_color;
+    /* Explicit capture-only WORLD opaque comparison; black background. */
+    unsigned int capture_world_opaque;
     /* Require a native GPU-only finish; reject diagnostic readback. */
     unsigned int strict_native;
     /* Opt-in HG-5A device-local dynamic vertex proof for this frame. */

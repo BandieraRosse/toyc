@@ -278,6 +278,7 @@ static struct vec3 enemy_rig_point(const struct enemy_rig_profile *p,
 }
 static struct rf_gpu_scene_enemy_frame_v1 scene_enemy_capture;
 static int scene_enemy_capture_active;
+static struct rf_gpu_scene_enemy_item_v1 scene_enemy_aux;
 void rf_gpu_scene_enemy_begin(uint64_t frame_id,uint64_t world_generation)
 {
     memset(&scene_enemy_capture,0,sizeof(scene_enemy_capture));
@@ -287,7 +288,7 @@ void rf_gpu_scene_enemy_begin(uint64_t frame_id,uint64_t world_generation)
 }
 int rf_gpu_scene_enemy_freeze(struct rf_gpu_scene_enemy_frame_v1 *out)
 {
-    if (!out || !scene_enemy_capture_active) return -1;
+    if (!out || !scene_enemy_capture_active || scene_enemy_capture.failed) return -1;
     *out=scene_enemy_capture;scene_enemy_capture_active=0;
     return 0;
 }
@@ -296,7 +297,7 @@ static int enemy_rig_emit_triangle(rf_gpu_scene_enemy_triangle_fn emit,
     unsigned color)
 {
     const struct rf_gpu_scene_enemy_point p[3]={
-        {a->x,a->y,a->z,0,0,0,0},{b->x,b->y,b->z,0,0,0,0},{c->x,c->y,c->z,0,0,0,0}};
+        {a->x,a->y,a->z,0,0,0,0,0},{b->x,b->y,b->z,0,0,0,0,0},{c->x,c->y,c->z,0,0,0,0,0}};
     return emit(context,&p[0],&p[1],&p[2],color);
 }
 static int enemy_rig_emit(const struct enemy_rig_profile *p,
@@ -344,21 +345,80 @@ static int enemy_rig_emit(const struct enemy_rig_profile *p,
 }
 static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context);
+static int scene_enemy_extras_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context);
+static int scene_legacy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context);
+struct scene_enemy_transform_context {
+    const struct rf_gpu_scene_enemy_item_v1 *item;
+    rf_gpu_scene_enemy_triangle_fn emit;
+    void *context;
+};
+static int scene_enemy_transform_triangle(void *context,
+    const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
+    const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    struct scene_enemy_transform_context *t=context;
+    const struct rf_gpu_scene_enemy_item_v1 *item=t->item;
+    struct rf_gpu_scene_enemy_point p[3]={*a,*b,*c};
+    if (!item->infected_recipe)
+        for (int k=0;k<3;++k) p[k].double_sided=item->double_sided;
+    if (item->transformed) for (int k=0;k<3;++k) {
+        long long x=(long long)p[k].x-item->pivot_x,y=(long long)p[k].y-item->pivot_y;
+        p[k].x=item->pivot_x+(int)((x*item->roll_cos-y*item->roll_sin)/1024);
+        p[k].y=item->pivot_y+(int)((x*item->roll_sin+y*item->roll_cos)/1024);
+        p[k].double_sided=1;
+        int light=item->scene_light_q8;
+        if (p[k].light_min_q8>0)
+            light=clampi(light*p[k].form_light_q8/256,p[k].light_min_q8,p[k].light_max_q8);
+        p[k].light_override_plus_one=light+1;
+    }
+    return t->emit(t->context,&p[0],&p[1],&p[2],color);
+}
+static void scene_enemy_capture_transform(struct toy_renderer *renderer,
+    struct rf_gpu_scene_enemy_item_v1 *item,int squash)
+{
+    item->squash=squash;
+    item->double_sided=active_material_double_sided;
+    item->transformed=active_enemy_transform;
+    item->pivot_x=active_enemy_pivot_x;item->pivot_y=active_enemy_pivot_y;
+    item->pivot_z=active_enemy_pivot_z;
+    item->roll_sin=active_enemy_roll_sin;item->roll_cos=active_enemy_roll_cos;
+    item->transparent=active_enemy_alpha<255;
+    if (item->transparent) scene_enemy_capture.transparent++;
+    item->shadow=scene_enemy_aux.shadow;item->shadow_y=scene_enemy_aux.shadow_y;
+    item->shadow_rx=scene_enemy_aux.shadow_rx;item->shadow_rz=scene_enemy_aux.shadow_rz;
+    item->tongue=scene_enemy_aux.tongue;
+    item->mouth_x=scene_enemy_aux.mouth_x;item->mouth_y=scene_enemy_aux.mouth_y;
+    item->mouth_z=scene_enemy_aux.mouth_z;item->target_x=scene_enemy_aux.target_x;
+    item->target_y=scene_enemy_aux.target_y;item->target_z=scene_enemy_aux.target_z;
+}
 int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context)
 {
     const struct enemy_rig_profile *p;
     struct enemy_rig_final final;
     struct toy_game_enemy e={0};
+    struct scene_enemy_transform_context transform={item,emit,context};
     if (!item || !emit || item->source_slot>=TOY_GAME_MAX_ENEMIES ||
         item->scene_light_q8<0 || item->scene_light_q8>384 ||
         item->dir_x < -1024 || item->dir_x > 1024 ||
         item->dir_z < -1024 || item->dir_z > 1024 ||
         item->x < -1000000 || item->x > 1000000 ||
         item->z < -1000000 || item->z > 1000000 ||
-        item->lift < -1000000 || item->lift > 1000000) return -1;
+        item->lift < -1000000 || item->lift > 1000000 ||
+        item->squash<0 || item->squash>2000 ||
+        item->roll_sin < -1024 || item->roll_sin>1024 ||
+        item->roll_cos < -1024 || item->roll_cos>1024 ||
+        (item->transformed &&
+            (item->pivot_x!=item->x || item->pivot_z!=item->z ||
+             item->pivot_y < -1000000 || item->pivot_y > 1000000))) return -1;
+    if (scene_enemy_extras_triangles(item,emit,context)<0) return -1;
+    if (item->transparent) return 0;
+    if (item->legacy_kind)
+        return scene_legacy_triangles(item,scene_enemy_transform_triangle,&transform);
     if (item->infected_recipe)
-        return scene_infected_triangles(item,emit,context);
+        return scene_infected_triangles(item,scene_enemy_transform_triangle,&transform);
     p=enemy_rig_profile(item->type);
     if (!p) return -1;
     for (int i=0;i<ER_COUNT;++i) {
@@ -370,7 +430,8 @@ int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     }
     enemy_rig_finalize(p,&item->pose,&final);
     e.x=item->x;e.z=item->z;e.dir_x=item->dir_x;e.dir_z=item->dir_z;
-    return enemy_rig_emit(p,&final,&e,1000,item->lift,item->feedback,0,emit,context);
+    return enemy_rig_emit(p,&final,&e,item->squash,
+        item->lift,item->feedback,0,scene_enemy_transform_triangle,&transform);
 }
 struct enemy_rig_draw_context {
     struct toy_renderer *renderer;
@@ -410,9 +471,8 @@ static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *c
     }
     /* Profile owns living dimensions, scale only carries legacy death squash. */
     int squash=e->active==2 && !active_enemy_transform ? scale:1000;
-    if (scene_enemy_capture_active && e->active==1 &&
-        enemy_rig_slot>=0 && !active_enemy_transform && !active_enemy_dissolve &&
-        active_enemy_alpha==255 && !enemy_rig_silhouette) {
+    if (scene_enemy_capture_active && enemy_rig_slot>=0 &&
+        !active_enemy_dissolve && !enemy_rig_silhouette) {
         if (scene_enemy_capture.count>=TOY_GAME_MAX_ENEMIES) return -1;
         struct rf_gpu_scene_enemy_item_v1 *item=
             &scene_enemy_capture.items[scene_enemy_capture.count++];
@@ -421,6 +481,7 @@ static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *c
         item->lift=active_enemy_lift;item->feedback=feedback;item->pose=pose;
         item->scene_light_q8=active_scene_light_override_q8>=0 ?
             active_scene_light_override_q8 : 256;
+        scene_enemy_capture_transform(renderer,item,squash);
     }
     struct enemy_rig_draw_context draw={renderer,camera,0};
     if (enemy_rig_emit(p,&final,e,squash,active_enemy_lift,feedback,
