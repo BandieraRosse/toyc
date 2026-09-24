@@ -1013,6 +1013,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         if (i<frame->count) {
             source=&frame->items[i];
             if (i && source->source_slot<=frame->items[i-1].source_slot) goto done;
+            if (source->transparent && source->alpha<=0) continue;
         } else {
             actor=&frame->procedural[i-frame->count];
             procedural_source.x=actor->state.x;procedural_source.z=actor->state.z;
@@ -1056,6 +1057,10 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             draw->material[1]=256;draw->material[3]=1;
             draw->double_sided=mesh->double_sided[first];
             draw->texture[0]=draw->texture[1]=1;
+            if (source->transparent) {
+                draw->texture[2]=source->alpha;
+                draw->scene_layer=RF_GPU_SCENE_TRANSPARENT;
+            }
             draw->first_index=first*3;draw->index_count=(end-first)*3;
             if (rf_gpu_graphics_resource_bind(probe->graphics,entry->resource)<0 ||
                 rf_gpu_graphics_validate_draw(probe->graphics,draw)<0) goto done;
@@ -1066,6 +1071,8 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
 done:
     free(mesh);return result;
 }
+
+#include "render/rf_gpu_scene_layers.inc"
 
 int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_vulkan_context *context,struct rf_gpu_scene_world_resources *owner,
@@ -1178,11 +1185,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     capacity+=(enemies->count+enemies->procedural_count)*RF_GPU_SCENE_ENEMY_MAX_TRIANGLES;
     if (!capacity) return 0;
     items=calloc(capacity ? capacity : 1,sizeof(*items));
-    if (!probe->native_present) {
+    if (!probe->native_present || capture_path) {
         color=calloc(pixels,sizeof(*color));
         depth=calloc(pixels,sizeof(*depth));
     }
-    if (!items || (!probe->native_present && (!color || !depth)) ||
+    if (!items || ((!probe->native_present || capture_path) && (!color || !depth)) ||
         rasterfall_resources_frame_begin(&owner->registry)<0) goto done;
     frame_active=1;
     if (rf_gpu_scene_world_gpu_prepare(owner,probe->cache,probe->graphics,
@@ -1218,9 +1225,16 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             items+draws,capacity-draws,&enemy_draws,&stats->procedural_draws,
             &stats->geometry_extract_us)<0) goto done;
     draws+=enemy_draws;
+    if (scene_layers_prepare(probe,camera,width,height,model_texture,&items,&draws,stats)<0)
+        goto done;
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
     if (probe->native_present) {
-        if (capture_path || rf_gpu_graphics_scene_present(probe->graphics,
+        /* Explicit diagnostic capture reads the same frozen batch before its
+         * native present. Ordinary preview frames never enter readback. */
+        if (capture_path && rf_gpu_graphics_scene_capture_at(probe->graphics,
+                items,draws,color,depth,(uint32_t)pixels,enemies->frame_id)<0)
+            goto done;
+        if (rf_gpu_graphics_scene_present(probe->graphics,
                 items,draws,enemies->frame_id)<0 ||
             rf_gpu_graphics_scene_retire(probe->graphics)<0) goto done;
     } else if (rf_gpu_graphics_scene_capture_at(probe->graphics,items,draws,
@@ -1292,6 +1306,12 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
+    for (unsigned i=0;i<2;++i) {
+        if (probe->layer_resource[i])
+            rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[i]);
+        probe->layer_resource[i]=NULL;
+    }
+    probe->layers=NULL;
     for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);
@@ -1321,6 +1341,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
         if (probe->actor[i]) rf_gpu_scene_actor_gpu_destroy(probe->actor[i]);
     if (probe->cache) rf_gpu_resource_cache_destroy(probe->cache);
     if (probe->graphics) rf_gpu_graphics_destroy(probe->graphics);
+    memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;
     probe->flag_pole=probe->flag_cloth=NULL;

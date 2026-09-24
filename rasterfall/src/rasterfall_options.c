@@ -97,10 +97,11 @@ void rasterfall_options_usage(int fd)
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit  --gpu-rb0-stats\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-world-preview (experimental WORLD-only native Scene; other layers pending)\n"
-        "  --gpu-scene-independent-preview (direct Scene sources; enemies/procedural actors and other layers pending)\n"
+        "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
+        "  --gpu-scene-play (experimental single-player independent native GPU renderer)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-tongue|actor-procedural|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -131,7 +132,8 @@ void rasterfall_options_usage(int fd)
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
         "  --gpu-normal-scene <view> <0|30|60> (normal deterministic Campaign runtime; views listed above)\n"
-        "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; with --frame-audit also writes <output.bmp>.scene.ppm; default frame 30)\n"
+        "    UI views: ui-pause|ui-scoreboard|ui-shop|ui-over|ui-won\n"
+        "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; with --frame-audit also writes <output.bmp>.scene.ppm; independent Scene preview writes only <output.bmp>.scene.ppm; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
         "  --model-bones <model> [search]  --model-humanoid <model>\n"
@@ -173,6 +175,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
         else if (!strcmp(option, "--gpu-scene-world-preview")) o->gpu_scene_world_preview = 1;
+        else if (!strcmp(option, "--gpu-scene-play")) o->gpu_scene_play = 1;
         else if (!strcmp(option, "--gpu-scene-independent-preview")) {
             o->gpu_scene_independent_preview = 1;
             o->gpu_scene_world_preview = 1;
@@ -318,6 +321,13 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"model-special") &&
                  strcmp(o->gpu_normal_view,"enemy-special") &&
                  strcmp(o->gpu_normal_view,"enemy-death") &&
+                 strcmp(o->gpu_normal_view,"enemy-fade") &&
+                 strcmp(o->gpu_normal_view,"frame-effects") &&
+                 strcmp(o->gpu_normal_view,"ui-pause") &&
+                 strcmp(o->gpu_normal_view,"ui-scoreboard") &&
+                 strcmp(o->gpu_normal_view,"ui-shop") &&
+                 strcmp(o->gpu_normal_view,"ui-over") &&
+                 strcmp(o->gpu_normal_view,"ui-won") &&
                  strcmp(o->gpu_normal_view,"enemy-tongue") &&
                  strcmp(o->gpu_normal_view,"actor-procedural") &&
                  strcmp(o->gpu_normal_view,"model-infected") &&
@@ -519,6 +529,14 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         __fprintf(2,"rasterfall: --visual-capture and --visual-output are required together\n");
         return -1;
     }
+    if (o->gpu_scene_play) {
+        if (o->requested_net_mode != RASTERFALL_NET_OFF || o->legacy_map) {
+            __fprintf(2,"rasterfall: --gpu-scene-play requires single-player Runtime Map\n");
+            return -1;
+        }
+        o->renderer_mode=1;o->gpu_required=1;o->gpu_native_present=1;
+        o->gpu_scene_independent_preview=1;o->gpu_scene_world_preview=1;
+    }
     if (o->gpu_native_present && !o->renderer_mode) {
         __fprintf(2,"rasterfall: --gpu-native-present requires --renderer gpu-compute\n");
         return -1;
@@ -528,9 +546,11 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         return -1;
     }
     if (o->gpu_scene_world_preview && (!o->renderer_mode || !o->gpu_required ||
-            !o->gpu_native_present || o->gpu_frame_capture || o->gpu_character_vertex_diff ||
-            o->gpu_rb0_stats || (!o->gpu_normal_view && !o->gpu_wave_repro))) {
-        __fprintf(2,"rasterfall: Scene WORLD preview requires required native GPU and normal-scene/wave-repro; capture, vertex diff and rb0 stats are unavailable\n");
+            !o->gpu_native_present ||
+            (o->gpu_frame_capture && !o->gpu_scene_independent_preview) ||
+            o->gpu_character_vertex_diff ||
+            o->gpu_rb0_stats || (!o->gpu_normal_view && !o->gpu_wave_repro && !o->gpu_scene_play))) {
+        __fprintf(2,"rasterfall: Scene WORLD preview requires required native GPU and normal-scene/wave-repro; capture requires independent preview, and vertex diff and rb0 stats are unavailable\n");
         return -1;
     }
     if (o->gpu_frame_capture || o->gpu_capture_frame) {

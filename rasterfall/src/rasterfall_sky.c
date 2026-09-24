@@ -1,18 +1,11 @@
+#include "rasterfall_canvas.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_colors.h"
 
-static void sky_fill_rect(struct toy_surface *surface, int x, int y,
+static void sky_fill_rect(struct rasterfall_canvas *surface, int x, int y,
                           int width, int height, uint32_t color)
 {
-    int yy, xx;
-    uint32_t *row;
-    if (!surface || !surface->pixels || width <= 0 || height <= 0) return;
-    for (yy = y; yy < y + height; yy++) {
-        if (yy < 0 || yy >= surface->height) continue;
-        row = (uint32_t *)((unsigned char *)surface->pixels + yy * surface->stride);
-        for (xx = x; xx < x + width; xx++)
-            if (xx >= 0 && xx < surface->width) row[xx] = color;
-    }
+    rasterfall_canvas_rect(surface,x,y,width,height,color,255);
 }
 
 static uint32_t sky_mix_color(uint32_t from, uint32_t to, int num, int den)
@@ -27,7 +20,7 @@ static uint32_t sky_mix_color(uint32_t from, uint32_t to, int num, int den)
 }
 
 static int project_sky_dir(const struct camera *camera,
-                           const struct toy_surface *surface,
+                           const struct rasterfall_canvas *surface,
                            int dx, int dy, int dz, int *sx, int *sy)
 {
     int vx = (dx * camera->cy - dz * camera->sy) / 1024;
@@ -41,7 +34,7 @@ static int project_sky_dir(const struct camera *camera,
     return 1;
 }
 
-static void draw_sky_cloud(struct toy_surface *surface, int x, int y, int scale)
+static void draw_sky_cloud(struct rasterfall_canvas *surface, int x, int y, int scale)
 {
     int unit = scale / 4;
     if (unit < 2) unit = 2;
@@ -54,7 +47,7 @@ static void draw_sky_cloud(struct toy_surface *surface, int x, int y, int scale)
     sky_fill_rect(surface, x + unit * 3, y - unit, unit * 2, unit, 0xFFFFFF);
 }
 
-static void draw_sky_features(struct toy_surface *surface,
+static void draw_sky_features(struct rasterfall_canvas *surface,
                               const struct camera *camera)
 {
     static const int cloud_dir[3][3] = {
@@ -70,7 +63,7 @@ static void draw_sky_features(struct toy_surface *surface,
     }
 }
 
-void rasterfall_sky_draw(struct toy_surface *surface,
+void rasterfall_sky_layout(struct rasterfall_canvas *surface,
                          const struct camera *camera)
 {
     int focal = surface->width * 3 / 4;
@@ -103,4 +96,10 @@ void rasterfall_sky_draw(struct toy_surface *surface,
         sky_fill_rect(surface, 0, ground_top, surface->width,
                       surface->height - ground_top, 0x0F1218);
     draw_sky_features(surface, camera);
+}
+
+void rasterfall_sky_draw(struct toy_surface *surface,const struct camera *camera)
+{
+    struct rasterfall_canvas canvas=rasterfall_canvas_surface(surface);
+    rasterfall_sky_layout(&canvas,camera);
 }

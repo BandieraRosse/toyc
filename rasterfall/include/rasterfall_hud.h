@@ -49,6 +49,11 @@ struct rasterfall_hud_state {
     const struct rasterfall_calibration_state *pose_editor;
 };
 
+#include "rasterfall_canvas.h"
+void rasterfall_hud_layout(struct rasterfall_canvas *,int,
+    const struct rasterfall_hud_state *);
+void rasterfall_hud_prompt_layout(struct rasterfall_canvas *,
+    const struct rasterfall_hud_state *);
 void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
                                          const struct rasterfall_hud_state *state);
 void rasterfall_hud_render(struct toy_surface *surface, int fps,

@@ -26,6 +26,10 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 .\windows\NativeCodex.ps1 acceptance
 ```
 
+实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --gpu-scene-play`。
+默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
+验证方式和支持边界见 [Scene 工作流](../docs/rasterfall/guides/gpu-scene-fixture.md)。
+
 保留的 Linux/freestanding 构建入口：
 
 ```sh

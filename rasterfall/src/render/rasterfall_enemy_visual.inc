@@ -26,9 +26,47 @@ static struct {
  * block/round renderer remains only as an explicit special-story presentation
  * choice; it is not a version-compatibility path for the new enemy models. */
 static int enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
-static struct { int valid, x, z, phase; unsigned long moved_us; } enemy_visual_motion[TOY_GAME_MAX_ENEMIES];
+static struct rasterfall_infected_motion enemy_visual_motion[TOY_GAME_MAX_ENEMIES];
 static int enemy_visual_capture_pose = -1; /* -1 runtime, 0 bind, 1 idle, 2 move */
 static int enemy_visual_submissions, enemy_visual_failures;
+
+int rasterfall_infected_sample_motion(
+    const struct rasterfall_infected_motion *previous,
+    int active, int x, int z, uint64_t now_us,
+    struct rasterfall_infected_sample *out)
+{
+    struct rasterfall_infected_sample sample = {0};
+    if (!previous || !out || active < 0 || active > 2) return -1;
+    if (active == 1) {
+        if (previous->valid && now_us >= previous->sampled_us) {
+            int64_t dx = (int64_t)x - previous->x;
+            int64_t dz = (int64_t)z - previous->z;
+            int64_t distance = (dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz);
+            sample.next = *previous;
+            if (distance >= 300) {
+                sample.next.phase = 0;
+                sample.next.moving = 0;
+                sample.next.moved_us = 0;
+            } else if (distance > 0) {
+                sample.next.phase = (previous->phase + (int)distance) % 640;
+                sample.next.moved_us = now_us;
+                sample.next.moving = 1;
+            }
+            if (sample.next.moving && now_us - sample.next.moved_us >= 100000)
+                sample.next.moving = 0;
+        }
+        sample.next.valid = 1;
+        sample.next.x = x;
+        sample.next.z = z;
+        sample.next.sampled_us = now_us;
+        if (sample.next.moving) {
+            int phase = sample.next.phase;
+            sample.swing = (phase < 320 ? phase : 640-phase) * 48 / 320 - 24;
+        }
+    }
+    *out = sample;
+    return 0;
+}
 
 void rasterfall_render_set_enemy_visual_family(int family)
 {
@@ -145,7 +183,7 @@ static int render_infected_enemy(struct toy_renderer *renderer,
     const struct toy_game_enemy *source, int slot, int death_scale,
     uint32_t feedback, int family)
 {
-    int index, moving = 0, phase, swing, scale, pixels;
+    int index, swing = 0, scale, pixels;
     struct rasterfall_model_instance *instance;
     struct rasterfall_model_asset *pose;
     for (index = 0; index < 6; index++)
@@ -160,36 +198,19 @@ static int render_infected_enemy(struct toy_renderer *renderer,
         enemy_visual_failures++;
         return -1;
     }
-    if (slot >= 0 && enemy_visual_motion[slot].valid) {
-        int dx = source->x - enemy_visual_motion[slot].x;
-        int dz = source->z - enemy_visual_motion[slot].z;
-        int distance = (dx < 0 ? -dx : dx) + (dz < 0 ? -dz : dz);
-        /* Ignore slot reuse/teleports; displacement drives presentation stride. */
-        moving = distance > 0 && distance < 300 && source->active == 1;
-        if (moving) {
-            enemy_visual_motion[slot].phase =
-                (enemy_visual_motion[slot].phase + distance) % 640;
-            enemy_visual_motion[slot].moved_us = render_monotonic_us();
-        } else if (distance >= 300) {
-            enemy_visual_motion[slot].phase = 0;
-            enemy_visual_motion[slot].moved_us = 0;
-        }
-        moving = source->active == 1 && enemy_visual_motion[slot].moved_us &&
-                 (unsigned long)render_monotonic_us() - enemy_visual_motion[slot].moved_us < 100000;
-    }
     if (slot >= 0) {
-        enemy_visual_motion[slot].valid = source->active == 1;
-        enemy_visual_motion[slot].x = source->x;
-        enemy_visual_motion[slot].z = source->z;
-        phase = enemy_visual_motion[slot].phase;
-    } else {
-        phase = 0;
+        struct rasterfall_infected_sample sample;
+        struct timespec now;
+        if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return -1;
+        if (slot >= TOY_GAME_MAX_ENEMIES || rasterfall_infected_sample_motion(
+                &enemy_visual_motion[slot], source->active, source->x, source->z,
+                (uint64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000, &sample) < 0) return -1;
+        enemy_visual_motion[slot] = sample.next;
+        swing = sample.swing;
     }
     if (enemy_visual_capture_pose >= 0) {
-        moving = enemy_visual_capture_pose == 2;
-        phase = 100;
+        swing = enemy_visual_capture_pose == 2 ? 100 * 48 / 320 - 24 : 0;
     }
-    swing = moving ? (phase < 320 ? phase : 640-phase) * 48 / 320 - 24 : 0;
     if (enemy_visual_capture_pose != 0)
         enemy_visual_apply_pose(pose,enemy->type,swing);
     if (rasterfall_model_instance_update_bones(instance) < 0) return -1;

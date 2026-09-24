@@ -673,7 +673,7 @@ static void consume_game_command_edges(struct rf_input_frame *input,
     input->key_pressed[KEY_Z] = 0;
 }
 
-static void draw_crosshair(struct toy_surface *surface,
+static void draw_crosshair(struct rasterfall_canvas *surface,
                            const struct toy_game *game_state)
 {
     int cx = surface->width / 2, cy = surface->height / 2;
@@ -683,8 +683,8 @@ static void draw_crosshair(struct toy_surface *surface,
     if (gap > 65) gap = 65;
     for (int d = -gap - length; d <= gap + length; d++) {
         if (d < -gap || d > gap) {
-            put_pixel(surface, cx + d, cy, 0xF0F0F0);
-            put_pixel(surface, cx, cy + d, 0xF0F0F0);
+            rasterfall_canvas_rect(surface, cx + d, cy, 1, 1, 0xF0F0F0, 255);
+            rasterfall_canvas_rect(surface, cx, cy + d, 1, 1, 0xF0F0F0, 255);
         }
     }
 }
@@ -726,17 +726,17 @@ static void scoreboard_sort(struct scoreboard_entry *entries, int count)
             }
 }
 
-static void draw_scoreboard_column(struct toy_surface *surface, int x, int y,
+static void draw_scoreboard_column(struct rasterfall_canvas *surface, int x, int y,
                                    const char *title,
                                    struct scoreboard_entry *entries, int count)
 {
     char line[64];
     int i;
-    fb_draw_string((unsigned char *)surface->pixels, x, y, title,
-                   RF_COLOR_UI_ACCENT, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels, x, y + 22,
+    rasterfall_canvas_text(surface, x, y, title,
+                   RF_COLOR_UI_ACCENT);
+    rasterfall_canvas_text(surface, x, y + 22,
                    "NAME         NORMAL SPECIAL TOTAL ITEM DAMAGE",
-                   RF_COLOR_UI_TEXT_MUTED, surface->stride);
+                   RF_COLOR_UI_TEXT_MUTED);
     for (i = 0; i < count && i < 12; i++) {
         int normal = entries[i].kills - entries[i].special_kills;
         if (normal < 0) normal = 0;
@@ -747,12 +747,12 @@ static void draw_scoreboard_column(struct toy_surface *surface, int x, int y,
                  entries[i].name, normal, entries[i].special_kills,
                  entries[i].kills, entries[i].throwable_damage_dealt,
                  entries[i].damage_dealt);
-        fb_draw_string((unsigned char *)surface->pixels, x, y + 44 + i * 18,
-                       line, color, surface->stride);
+        rasterfall_canvas_text(surface, x, y + 44 + i * 18,
+                       line, color);
     }
 }
 
-static void draw_scoreboard(struct toy_surface *surface,
+static void draw_scoreboard(struct rasterfall_canvas *surface,
                             const struct rasterfall_net *net)
 {
     struct scoreboard_entry players[RASTERFALL_NET_PLAYER_MAX];
@@ -810,15 +810,15 @@ static void draw_scoreboard(struct toy_surface *surface,
     }
     scoreboard_sort(players, player_count);
     scoreboard_sort(ais, ai_count);
-    fill_rect(surface, x - 3, y - 3, width + 6, 292, RF_COLOR_UI_ACCENT);
-    fill_rect(surface, x, y, width, 286, RF_COLOR_UI_BACKGROUND);
+    rasterfall_canvas_rect(surface, x - 3, y - 3, width + 6, 292, RF_COLOR_UI_ACCENT, 255);
+    rasterfall_canvas_rect(surface, x, y, width, 286, RF_COLOR_UI_BACKGROUND, 255);
     draw_scoreboard_column(surface, x + 18, y + 20, "PLAYERS",
                            players, player_count);
     draw_scoreboard_column(surface, x + width / 2 + 10, y + 20,
                            "AI TEAMMATES", ais, ai_count);
-    fb_draw_string((unsigned char *)surface->pixels, x + 18, y + 264,
+    rasterfall_canvas_text(surface, x + 18, y + 264,
                    "HOLD TAB   TAB+R CLEAR YOUR STATS",
-                   RF_COLOR_UI_TEXT_MUTED, surface->stride);
+                   RF_COLOR_UI_TEXT_MUTED);
 }
 
 static void fill_rect(struct toy_surface *surface, int x, int y,
@@ -833,7 +833,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
         for (int px = x; px < right; px++) put_pixel(surface, px, py, color);
 }
 
-static void draw_pause_overlay(struct toy_surface *surface,
+static void draw_pause_overlay(struct rasterfall_canvas *surface,
                                const struct pause_menu *menu,
                                const struct control_settings *settings,
                                int coordinate_axes)
@@ -844,16 +844,15 @@ static void draw_pause_overlay(struct toy_surface *surface,
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
     int row_y = y + 58;
-    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
-    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
-                   "PAUSED", RF_COLOR_UI_TEXT, surface->stride);
+    rasterfall_canvas_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32, 255);
+    rasterfall_canvas_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND, 255);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
+                   "PAUSED", RF_COLOR_UI_TEXT);
     for (int item = 0; item < PAUSE_ITEM_COUNT; item++) {
         uint32_t color = item == menu->selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
         if (item == menu->selected)
-            fill_rect(surface, x + 30, row_y - 3, panel_w - 60,
-                      FB_FONT_H + 6, 0x343B49);
+            rasterfall_canvas_rect(surface, x + 30, row_y - 3, panel_w - 60,
+                      FB_FONT_H + 6, 0x343B49, 255);
         if (item == PAUSE_ITEM_RESUME)
             snprintf(line, sizeof(line), "%c RESUME", item == menu->selected ? '>' : ' ');
         else if (item == PAUSE_ITEM_MOUSE)
@@ -871,15 +870,14 @@ static void draw_pause_overlay(struct toy_surface *surface,
         else
             snprintf(line, sizeof(line), "%c EXIT GAME",
                      item == menu->selected ? '>' : ' ');
-        fb_draw_string((unsigned char *)surface->pixels, x + 42, row_y,
-                       line, color, surface->stride);
+        rasterfall_canvas_text(surface, x + 42, row_y,
+                       line, color);
         row_y += 30;
     }
-    fb_draw_string((unsigned char *)surface->pixels, x + 42, y + panel_h - 62,
-                   "UP DOWN SELECT  LEFT RIGHT CHANGE", 0xAEB6C2,
-                   surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels, x + 42, y + panel_h - 38,
-                   "ENTER CONFIRM  ESC RESUME", 0xD88A32, surface->stride);
+    rasterfall_canvas_text(surface, x + 42, y + panel_h - 62,
+                   "UP DOWN SELECT  LEFT RIGHT CHANGE", 0xAEB6C2);
+    rasterfall_canvas_text(surface, x + 42, y + panel_h - 38,
+                   "ENTER CONFIRM  ESC RESUME", 0xD88A32);
 }
 
 static void draw_managed_terminal(struct toy_surface *surface,
@@ -1629,7 +1627,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
 
 /* 一个带最终边界检查的 Bresenham。投影裁剪是为了避免远处端点导致
  * 巨量迭代，像素检查则是最后一道防线：fb_draw_line 不检查坐标。 */
-static void draw_game_over_panel(struct toy_surface *surface, int network_client)
+static void draw_game_over_panel(struct rasterfall_canvas *surface, int network_client)
 {
     char line[96];
     const char *prompt = network_client ?
@@ -1639,22 +1637,19 @@ static void draw_game_over_panel(struct toy_surface *surface, int network_client
     int panel_h = surface->height / 3;
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
-    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32);
-    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 8) / 2, y + 28,
-                   "YOU DIED", RF_COLOR_UI_TEXT, surface->stride);
+    rasterfall_canvas_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32, 255);
+    rasterfall_canvas_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND, 255);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * 8) / 2, y + 28,
+                   "YOU DIED", RF_COLOR_UI_TEXT);
     snprintf(line, sizeof(line), "WAVE %d  KILLS %d", game.wave,
              toy_game_local_player_actor_const(&game)->kills);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
-                   line, RF_COLOR_UI_TEXT, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
-                   y + 104, prompt, 0xD88A32, surface->stride);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
+                   line, RF_COLOR_UI_TEXT);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
+                   y + 104, prompt, 0xD88A32);
 }
 
-static void draw_level_won_panel(struct toy_surface *surface, int network_client)
+static void draw_level_won_panel(struct rasterfall_canvas *surface, int network_client)
 {
     char line[96];
     const char *prompt = network_client ?
@@ -1664,19 +1659,16 @@ static void draw_level_won_panel(struct toy_surface *surface, int network_client
     int panel_h = surface->height / 3;
     int x = (surface->width - panel_w) / 2;
     int y = (surface->height - panel_h) / 2;
-    fill_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0x56B878);
-    fill_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * 17) / 2, y + 28,
-                   "SAFE ROOM REACHED", RF_COLOR_UI_AI, surface->stride);
+    rasterfall_canvas_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0x56B878, 255);
+    rasterfall_canvas_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND, 255);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * 17) / 2, y + 28,
+                   "SAFE ROOM REACHED", RF_COLOR_UI_AI);
     snprintf(line, sizeof(line), "KILLS %d",
              toy_game_local_player_actor_const(&game)->kills);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
-                   line, RF_COLOR_UI_TEXT, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels,
-                   x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
-                   y + 104, prompt, 0xD88A32, surface->stride);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * (int)strlen(line)) / 2, y + 60,
+                   line, RF_COLOR_UI_TEXT);
+    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * (int)strlen(prompt)) / 2,
+                   y + 104, prompt, 0xD88A32);
 }
 
 static void draw_input_debug(struct toy_surface *surface,
@@ -2768,6 +2760,32 @@ static void rf_game_prepare_render_camera(struct rf_game_runtime *runtime)
     rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
 }
 
+/* Synchronous read-only UI extraction; the Scene owns emitted geometry. */
+static void rf_game_scene_ui(void *context, struct rasterfall_canvas *canvas)
+{
+    const struct rf_game_runtime *runtime = context;
+    const struct toy_game *state = &runtime->session->game_state;
+    struct control_settings settings = {0};
+    struct pause_menu menu = {0};
+    settings.mouse_level = runtime->mouse_level;
+    settings.keyboard_level = runtime->keyboard_level;
+    menu.selected = runtime->pause_menu_selected;
+    if (state->state == TOY_GAME_OVER)
+        draw_game_over_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    else if (state->state == TOY_GAME_WON)
+        draw_level_won_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    else if (runtime->lifecycle_paused)
+        draw_pause_overlay(canvas, &menu, &settings, runtime->coordinate_axes);
+    else {
+        if (!runtime->session->shop_open &&
+            toy_game_local_player_actor_const(state)->state != TOY_GAME_ACTOR_DOWNED)
+            draw_crosshair(canvas, state);
+        if (!runtime->session->pose_editor.active &&
+            toy_input_down(&runtime->input_frame, KEY_TAB))
+            draw_scoreboard(canvas, &runtime->net);
+    }
+}
+
 static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface,
@@ -2971,6 +2989,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     surface = rf_core_begin_screen_overlay(runtime->core);
     if (!surface) return -1;
 
+    struct rasterfall_canvas ui_canvas = rasterfall_canvas_surface(surface);
     rasterfall_render_map_labels(renderer, render_camera);
     if (runtime->coordinate_axes)
         rasterfall_render_coordinate_labels(surface, render_camera);
@@ -2986,18 +3005,18 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     strcpy(managed_terminal.line, runtime->managed_terminal_line);
     strcpy(managed_terminal.message, runtime->managed_terminal_message);
     if (game_session->game_state.state == TOY_GAME_OVER) {
-        draw_game_over_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
+        draw_game_over_panel(&ui_canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
     } else if (game_session->game_state.state == TOY_GAME_WON) {
-        draw_level_won_panel(surface, runtime->net.mode == RASTERFALL_NET_CLIENT);
+        draw_level_won_panel(&ui_canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
     } else if (runtime->console.open || runtime->gui.active) {
         /* Developer console is drawn after every other overlay. */
     } else if (managed_terminal.open) {
         draw_managed_terminal(surface, &managed_terminal);
     } else if (runtime->lifecycle_paused) {
-        draw_pause_overlay(surface, &pause_menu, &settings,
+        draw_pause_overlay(&ui_canvas, &pause_menu, &settings,
                            runtime->coordinate_axes);
     } else {
-        draw_crosshair(surface, &game_session->game_state);
+        draw_crosshair(&ui_canvas, &game_session->game_state);
         fill_hud_state(&hud, &runtime->net, runtime->host_address,
                        runtime->host_port, body_camera);
         rasterfall_hud_render(surface, runtime->display_fps, &hud);
@@ -3019,7 +3038,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
         !runtime->lifecycle_paused && !game_session->pose_editor.active &&
         toy_input_down(&runtime->input_frame, KEY_TAB))
-        draw_scoreboard(surface, &runtime->net);
+        draw_scoreboard(&ui_canvas, &runtime->net);
     if (runtime->debug_input_enabled)
         draw_input_debug(surface, &runtime->input_frame,
                          runtime->have_last_key ? runtime->last_key : 0,
@@ -3050,7 +3069,8 @@ int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *rendere
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     static struct rf_gpu_scene_world_resources scene_world_resources;
-    int scene_native_frames=0;
+    int scene_runtime_failed=0;
+    int scene_native_frames=0,scene_capture_completed=0;
     struct rf_core core;
     struct rf_game_runtime game_runtime;
     struct toy_window_events events;
@@ -3663,6 +3683,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->dir_z = -1024;
         }
         game.state = TOY_GAME_PLAYING;
+        if (!strcmp(options.gpu_normal_view,"ui-pause")) {
+            paused=1;pause_menu.selected=PAUSE_ITEM_MOUSE;
+            settings.mouse_level=7;settings.keyboard_level=8;
+        }
+        if (!strcmp(options.gpu_normal_view,"ui-shop")) session.shop_open=1;
+        if (!strcmp(options.gpu_normal_view,"ui-over")) game.state=TOY_GAME_OVER;
+        if (!strcmp(options.gpu_normal_view,"ui-won")) game.state=TOY_GAME_WON;
         if (!strcmp(options.gpu_normal_view,"actor-procedural")) {
             for (int profession=0;profession<4;++profession) {
                 int id=toy_game_add_ai(&game,TOY_GAME_AI_LEVEL_1,
@@ -3674,9 +3701,16 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
                 actor->ground_y=0;
             }
+            /* A hired modular actor is outside the session's formal roster.
+             * Exercise the supplemental runtime pose append, not just collection. */
+            int id=toy_game_add_ai(&game,TOY_GAME_AI_LEVEL_1,2400,-1200,"HIRED");
+            if (id<1) return 1;
+            game.actors[id-1].character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+            game.actors[id-1].hired=1;
         }
         if (!strcmp(options.gpu_normal_view,"enemy-special") ||
             !strcmp(options.gpu_normal_view,"enemy-death") ||
+            !strcmp(options.gpu_normal_view,"enemy-fade") ||
             !strcmp(options.gpu_normal_view,"enemy-tongue")) {
             for (int slot=0;slot<3;++slot) {
                 struct toy_game_enemy *e=&game.enemies[slot];
@@ -3685,8 +3719,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                     slot==1 ? TOY_GAME_ENEMY_CHARGER : TOY_GAME_ENEMY_TANK;
                 e->x=(slot-1)*1600;e->z=500;e->dir_z=-1024;
                 if (slot) { e->charge_active=1;e->ability.charge_elapsed_ms=200; }
-                if (!strcmp(options.gpu_normal_view,"enemy-death")) {
+                if (!strcmp(options.gpu_normal_view,"enemy-death") ||
+                    !strcmp(options.gpu_normal_view,"enemy-fade")) {
                     e->active=2;e->dying_ms=TOY_GAME_DYING_MS-100;
+                    if (!strcmp(options.gpu_normal_view,"enemy-fade")) e->dying_ms=240;
                     effects.enemy_death_style[slot]=RASTERFALL_ENEMY_DEATH_STYLE_LEGACY+1;
                     effects.enemy_hit_dir_x[slot]=1024;
                 }
@@ -3695,6 +3731,23 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                     e->special_pull_timer_ms=TOY_GAME_SMOKER_PULL_MS;
                 }
             }
+        }
+        if (!strcmp(options.gpu_normal_view,"frame-effects")) {
+            struct rasterfall_effect_event event={0};
+            local_actor->slots[local_actor->current_slot].weapon=TOY_GAME_WEAPON_AK;
+            event.type=RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+            event.flags=RASTERFALL_EFFECT_EVENT_LOCAL_VIEW;event.weapon=TOY_GAME_WEAPON_AK;
+            event.sx=camera.x;event.sy=camera.y;event.sz=camera.z+300;
+            event.dir_cy=1024;rasterfall_effects_consume(&effects,&event);
+            event.flags=0;event.sx=-500;event.sy=200;event.sz=-1800;
+            rasterfall_effects_consume(&effects,&event);
+            event.type=RASTERFALL_EFFECT_EVENT_EXPLOSION;
+            event.x=700;event.y=300;event.z=-1400;
+            rasterfall_effects_consume(&effects,&event);
+            event.type=RASTERFALL_EFFECT_EVENT_TRACER;event.life_ms=300;
+            event.sx=-900;event.sy=150;event.sz=-1500;
+            event.ex=900;event.ey=250;event.ez=-1200;
+            rasterfall_effects_consume(&effects,&event);
         }
         if (!strcmp(options.gpu_normal_view,"projectile")) {
             const int kinds[3]={TOY_GAME_WEAPON_BOMB,TOY_GAME_WEAPON_BOMB,
@@ -4565,6 +4618,8 @@ startup_again:
             strcpy(game_runtime.managed_terminal_message,
                    managed_terminal.message);
             game_runtime.input_frame = input;
+            if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"ui-scoreboard"))
+                game_runtime.input_frame.key_down[KEY_TAB]=1;
             game_runtime.host_port = net_port;
             game_runtime.last_key = last_key;
             game_runtime.last_key_pressed = last_key_pressed;
@@ -4595,6 +4650,16 @@ startup_again:
                     rf_game_prepare_render_camera(&game_runtime);
                     game_runtime.scene_pixels = 0;
                     game_runtime.render_context.mixed_frame = NULL;
+                    if (rf_gpu_scene_enemy_collect_independent(
+                            &game_runtime.render_camera,
+                            options.gpu_normal_fixed_tick ?
+                                (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us(),
+                            session.scene_local.world_generation)<0 ||
+                        rf_gpu_scene_actor_collect_independent(&game_runtime.render_camera,
+                            (unsigned)renderer.surface.width,(unsigned)renderer.surface.height)<0) {
+                        __fprintf(2,"SCENE-SOURCE independent dynamic freeze failed\n");
+                        scene_runtime_failed=1;goto scene_shutdown;
+                    }
                 } else if (rf_game_render_profiled(&game_runtime, &renderer, &surface,
                                         &stats, &stats_total) < 0) {
                     rf_core_mixed_fail(&core);
@@ -4769,7 +4834,7 @@ startup_again:
 #ifdef TOYC_WINDOWS
                     rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
-                    return 1;
+                    scene_runtime_failed=1;goto scene_shutdown;
                 }
                 session.scene_local.frame_id=audit_source->frame_id;
                 int64_t pose_extract_start=rf_core_clock_now_us();
@@ -4783,12 +4848,14 @@ startup_again:
 #ifdef TOYC_WINDOWS
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
-                        return 1;
+                        scene_runtime_failed=1;goto scene_shutdown;
                     }
                     pose_count++;
                 }
                 for (unsigned i=0;i<enemy_render.modular_count;++i) {
-                    if (pose_count>=TOY_GAME_MAX_ACTORS) return 1;
+                    if (pose_count>=TOY_GAME_MAX_ACTORS) {
+                        scene_runtime_failed=1;goto scene_shutdown;
+                    }
                     actor_pose[pose_count++]=enemy_render.modular[i];
                 }
                 int64_t pose_extract_us=rf_core_clock_now_us()-pose_extract_start;
@@ -4800,7 +4867,7 @@ startup_again:
 #ifdef TOYC_WINDOWS
                     rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
-                    return 1;
+                    scene_runtime_failed=1;goto scene_shutdown;
                 }
                 if (!session.map_ops.runtime_loaded)
                     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
@@ -4814,7 +4881,7 @@ startup_again:
 #ifdef TOYC_WINDOWS
                             rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
-                            return 1;
+                            scene_runtime_failed=1;goto scene_shutdown;
                         }
                         map_primitives+=model->primitive_count;
                         map_resources++;
@@ -4838,7 +4905,24 @@ startup_again:
 #ifdef TOYC_WINDOWS
                 if (core.mixed_executor && session.map_ops.runtime_loaded) {
                     struct rf_gpu_scene_world_gpu_probe_stats probe_stats;
+                    struct rf_gpu_scene_layers_input layers={0};
                     scene_world_probe.native_present=options.gpu_scene_world_preview;
+                    scene_world_probe.layers=NULL;
+                    if (options.gpu_scene_independent_preview && options.frame_audit)
+                        __printf("SCENE-UI frame=%d extent=%dx%d state=%d paused=%d selected=%d mouse=%d keyboard=%d shop=%d tab=%d\n",
+                            rendered_frames,renderer.surface.width,renderer.surface.height,
+                            game.state,paused,pause_menu.selected,settings.mouse_level,
+                            settings.keyboard_level,session.shop_open,
+                            toy_input_down(&game_runtime.input_frame,KEY_TAB));
+                    if (options.gpu_scene_independent_preview) {
+                        layers.source_game=&game;layers.source_effects=&effects;
+                        layers.map=&world_render;layers.fps=display_fps;layers.paused=paused;
+                        layers.pause_selected=pause_menu.selected;layers.viewmodel_light=256;
+                        layers.ui_context=&game_runtime;layers.ui_layout=rf_game_scene_ui;
+                        fill_hud_state(&layers.hud,&net,host_address,
+                            net_port,&camera);
+                        scene_world_probe.layers=&layers;
+                    }
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
@@ -4851,23 +4935,33 @@ startup_again:
                                 options.gpu_frame_capture : NULL)<0) {
                         __fprintf(2,"SCENE-WORLD-GPU normal audit failed\n");
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
-                        return 1;
+                        scene_runtime_failed=1;goto scene_shutdown;
                     }
+                    scene_world_probe.layers=NULL;
+                    if (options.gpu_scene_independent_preview)
+                        __printf("SCENE-LAYERS sky=%u world=%u transparent=%u effects=%u viewmodel=%u overlay=%u post=identity\n",
+                            probe_stats.layer_draws[1],probe_stats.layer_draws[0],
+                            probe_stats.layer_draws[2],probe_stats.layer_draws[3],
+                            probe_stats.layer_draws[4],probe_stats.layer_draws[5]);
                     if (options.gpu_scene_world_preview) {
                         scene_native_frames++;
+                        int scene_capture=options.gpu_frame_capture &&
+                            rendered_frames==options.gpu_capture_frame;
+                        if (scene_capture) scene_capture_completed=1;
                         if (options.gpu_scene_independent_preview) {
                             if (renderer.cmd_count || core.mixed_frame->raster_count ||
                                 core.mixed_frame->draw_count) {
                                 __fprintf(2,"SCENE-SOURCE unexpected legacy recording\n");
                                 rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
-                                return 1;
+                                scene_runtime_failed=1;goto scene_shutdown;
                             }
-                            __printf("SCENE-SOURCE frame=%d independent=1 legacy_producer=0 raster_commands=0 mixed_draws=0 dynamic_sources_pending=1\n",
-                                rendered_frames);
+                            __printf("SCENE-SOURCE frame=%d independent=1 legacy_producer=0 raster_commands=0 mixed_draws=0 dynamic_sources_pending=0 enemies=%u enemy_culled=%u procedural=%u supplemental_modular=%u\n",
+                                rendered_frames,enemy_render.count,enemy_render.culled,
+                                enemy_render.procedural_count,enemy_render.modular_count);
                         }
-                        __printf("SCENE-NATIVE frame=%d world_only=1 draws=%u bridges=%llu readback=0 mixed_execute=0\n",
-                            rendered_frames,probe_stats.draws,
-                            (unsigned long long)probe_stats.bridge_transfers);
+                        __printf("SCENE-NATIVE frame=%d world_only=%d draws=%u bridges=%llu readback=%d mixed_execute=0\n",
+                            rendered_frames,!options.gpu_scene_independent_preview,probe_stats.draws,
+                            (unsigned long long)probe_stats.bridge_transfers,scene_capture);
                     }
                     __printf("SCENE-PROCEDURAL frame=%llu items=%u draws=%u net_mode=%d\n",
                         (unsigned long long)enemy_render.frame_id,
@@ -5263,6 +5357,7 @@ startup_again:
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
         }
     }
+scene_shutdown:
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");
     if (options.gpu_rb0_stats) rf_rb0_dump(&rb0_stats);
@@ -5327,13 +5422,15 @@ startup_again:
     {
         int core_runtime_failed = rf_core_runtime_failed(&core);
         int capture_missing = options.gpu_frame_capture &&
-            !core.gpu_frame.capture_completed;
+            !(options.gpu_scene_independent_preview ? scene_capture_completed :
+              core.gpu_frame.capture_completed);
         int character_diff_missing = options.gpu_character_vertex_diff &&
             !core.gpu_frame.character_vertex_diff_completed;
         /* Native GPU frames never write the CPU scene pixel counter. */
         int no_scene_output = rendered_frames > 0 && scene_pixels == 0 &&
             core.gpu_frame.stats.gpu_frames == 0 && scene_native_frames == 0;
         rf_core_shutdown(&core);
+        if (scene_runtime_failed) return 1;
         if (core_runtime_failed || capture_missing || character_diff_missing) return 3;
         if (options.gpu_scene_world_preview && scene_native_frames != rendered_frames) return 3;
         return no_scene_output ? 2 : 0;

@@ -489,6 +489,60 @@ static int compat_suite(struct rf_gpu_graphics *g)
     return failed?-1:0;
 }
 
+static int scene_layers_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *resource=NULL;
+    struct rf_gpu_graphics_vertex v[24]={0};
+    uint32_t ix[36],white=0xffffff;
+    struct rf_gpu_graphics_batch_item items[6]={0};
+    const int invz[6]={1,8192,4096,12288,1024,1};
+    const unsigned layers[6]={RF_GPU_SCENE_SKY,RF_GPU_SCENE_WORLD,
+        RF_GPU_SCENE_TRANSPARENT,RF_GPU_SCENE_EFFECTS,RF_GPU_SCENE_VIEWMODEL,RF_GPU_SCENE_OVERLAY};
+    const unsigned colors[6]={0x0000ff,0xff0000,0x00ff00,0xffff00,0xff00ff,0x00ffff};
+    int result=-1;
+    CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    for (unsigned i=0;i<6;++i) {
+        int x0=i==0?0:32,x1=i==0?128:96,y0=i==0?0:16,y1=i==0?96:80;
+        for (unsigned k=0;k<4;++k) {
+            v[i*4+k].position[0]=(k==1 || k==2)?x1:x0;
+            v[i*4+k].position[1]=k>=2?y1:y0;v[i*4+k].position[2]=invz[i];
+        }
+        const unsigned face[6]={0,1,2,0,2,3};
+        for (unsigned k=0;k<6;++k) ix[i*6+k]=i*4+face[k];
+    }
+    resource=rf_gpu_graphics_resource_create(g,v,24,ix,36,&white,1,1);
+    CHECK(resource!=NULL);
+    for (unsigned i=0;i<6;++i) {
+        items[i].resource=resource;items[i].draw=draw(128,96);
+        items[i].draw.texture[0]=items[i].draw.texture[1]=1;
+        items[i].draw.texture[3]=(i==0 || i==5)?2:1;
+        items[i].draw.texture[2]=(i==2 || i==3)?128:(i==0 || i==5)?255:0;
+        items[i].draw.material[0]=colors[i];items[i].draw.scene_layer=layers[i];
+        items[i].draw.first_index=i*6;
+    }
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[0]==rgba(0x0000ff) && depths[0]==0);
+    CHECK(pixels[48*128+64]==rgba(0xff0000) && depths[48*128+64]==0.5f);
+    CHECK(rf_gpu_graphics_scene_capture(g,items,3,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(0xff0000) && depths[48*128+64]==0.5f);
+    CHECK(rf_gpu_graphics_scene_capture(g,items,4,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(0xff8000) && depths[48*128+64]==0.5f);
+    CHECK(rf_gpu_graphics_scene_capture(g,items,5,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(0xff00ff) && depths[48*128+64]==0.0625f);
+    CHECK(rf_gpu_graphics_scene_capture(g,items,6,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(0x00ffff) && depths[48*128+64]==0.0625f);
+    struct rf_gpu_graphics_stats before,after;
+    rf_gpu_graphics_get_stats(g,&before);
+    items[5].draw.scene_layer=RF_GPU_SCENE_WORLD;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,6,pixels,depths,MAX_PIXELS)<0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(before.frames==after.frames);
+    printf("SCENE layered depth/blend/preflight PASS\n");result=0;
+done:
+    rf_gpu_graphics_destroy(g);return result;
+}
+
 int main(int argc,char **argv)
 {
     struct rf_gpu gpu;
@@ -633,6 +687,7 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_graphics_resource_bind(other,extra)==0);
     CHECK(rf_gpu_graphics_resource_destroy(other,extra)==0);extra=NULL;
     CHECK(rf_gpu_graphics_render(other,&d,1,pixels,depths,MAX_PIXELS)<0);
+    CHECK(scene_layers_test(&context)==0);
     result=0;
 done:
     rf_gpu_graphics_destroy(other);

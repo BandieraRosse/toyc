@@ -60,13 +60,33 @@ Smoker、Charger、Tank 的身体 pose、受击后的世界位置、朝向、lif
 提取不再推进 observer 或读取时钟。source slot 只作帧内顺序，不作为跨帧生命周期身份。
 `rf_gpu_scene_enemy_triangles` 与旧 renderer 共用刚性几何枚举，只有冻结值进入 Scene 资源预备。
 不支持的身体和远距剔除分别计数；每个敌人项同时冻结 blob shadow、舌头端点与束缚圈输入。
-这条审计链仍依赖 mixed 完成姿态求值；独立正常 Scene 来源及其生命周期身份尚未接入。
+这条审计链仍依赖 mixed 完成姿态求值；独立预览使用下述独立来源，不经过该 draw 收集链。
 
 普通感染体在同一值帧冻结六种 recipe ID、已采样 swing、bind 标志、变换与反馈颜色；
+步态由 `rasterfall_infected_sample_motion` 单独求值：调用者传入只读历史、active、位置和
+64 位微秒时间，返回下一历史与 swing；函数不读取时钟、玩法数组或 mutable pose，也不生成绘制命令。
+历史归 presentation owner，在来源或 world 替换时清零；slot 不是生命周期身份。
+非存活、瞬移和时间回退清除旧运动，停步保留 100 ms 展示窗口。旧 draw 入口已消费该接口，
+独立 Scene owner 也消费此接口，在单次冻结后提交自己的历史，提取重放不得再次推进它。
 Scene 复用不可变资源，以独立 scratch instance 重建姿态和 CPU skinning 几何，不读取或推进旧 motion cache，
 也不复用旧 producer 的 mutable pose。颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
 非 V2 路径保留材质亮度范围。普通感染体、特感和显式 LEGACY 身体共用 Scene WORLD 深度。死亡缩放、旋转中心和旋转值在来源处冻结；不透明死亡身体参与 WORLD，渐隐身体单列 transparent 计数，等待有序透明层。
-该接线仍是同步离屏审计，动态 GPU 资源逐帧重建，不能作为正常 producer 或性能收益证据。
+旧接线仍是同步离屏审计，独立来源则可 native present；两者动态 GPU 资源仍逐帧重建，不能作为性能收益证据。
+
+### 独立动态来源
+
+`render/rf_gpu_scene_enemy_source.inc` 拥有独立敌人展示历史，在显式帧时间求普通感染体步态和
+特感姿态，并冻结反馈位置、死亡旋转/缩放、阴影及舌头端点。world generation 或外观策略变化
+清空该历史；同一帧禁止重复采样。输入只读，不调用旧 draw 入口，不共享旧 observer 或 mutable pose。
+敌人 source slot 仍只表示帧内顺序，当前没有跨帧异步敌人资源身份；渐隐身体仅标记 transparent，
+待有序透明层消费。
+
+`render/rf_gpu_scene_actor_source.inc` 直接遍历只读 AI 和网络展示值，冻结程序身体及 downed 状态。
+正常正式 roster 继续由 session local source 处理，adapter 按 actor ID 排除重复身体；client 的
+模块化 AI 和补充模块化 AI 通过独立 local 值帧及 pose 提取器求值。补充项只使用帧内身份，
+保留的 lower-body 时间是展示历史，不能作为 actor 生命周期证据。网络玩家复用只读插值 camera
+及高度求值，host 排除断线项，client 排除本地玩家，均不打开 socket 或改写网络/玩法状态。
+各 adapter 与地图、旗帜等共用冻结帧 ID，GPU 提取只消费冻结值；未覆盖展示站/编辑器专用角色。
 
 ## 同帧程序角色与网络诊断
 
@@ -82,8 +102,8 @@ host/guest 的网络 adapter 先解析插值 camera、actor 状态及高度，�
 只标识该审计帧，不声称提供跨帧 actor 生命周期。普通正式队员仍使用 session epoch 的独立提取链；
 downed 队员由程序表现负责，不再要求不支持 downed 的模块化提取器处理它。
 
-这些输入进入同一个同步离屏 WORLD；诊断动态资源仍按审计帧重建。它们不能直接充当正常 Scene
-producer 或异步多帧资源方案。复现与固定输入见 [Scene fixture](../guides/gpu-scene-fixture.md)。
+旧 draw 捕获输入进入同一个同步离屏 WORLD；诊断动态资源仍按审计帧重建。独立预览由上述直接来源
+替代捕获链，两者都不是异步多帧资源方案。复现与固定输入见 [Scene fixture](../guides/gpu-scene-fixture.md)。
 
 ## Rigid attachment 与 static prop
 

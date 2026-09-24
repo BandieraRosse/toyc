@@ -5,21 +5,13 @@
 
 #define special_target_active ability.special_target_active
 
-static void hud_fill_rect(struct toy_surface *surface, int x, int y,
+static void hud_fill_rect(struct rasterfall_canvas *surface, int x, int y,
                           int width, int height, uint32_t color)
 {
-    int yy, xx;
-    if (!surface || !surface->pixels || width <= 0 || height <= 0) return;
-    for (yy = y; yy < y + height; yy++) {
-        if (yy < 0 || yy >= surface->height) continue;
-        for (xx = x; xx < x + width; xx++)
-            if (xx >= 0 && xx < surface->width)
-                fb_put_pixel((unsigned char *)surface->pixels, xx, yy, color,
-                             surface->stride);
-    }
+    rasterfall_canvas_rect(surface,x,y,width,height,color,255);
 }
 
-static void draw_weapon_silhouette(struct toy_surface *surface, int weapon,
+static void draw_weapon_silhouette(struct rasterfall_canvas *surface, int weapon,
                                    int cx, int y, uint32_t color)
 {
     /* Small, deliberately abstract silhouettes: they remain recognizable at
@@ -57,19 +49,19 @@ static void draw_weapon_silhouette(struct toy_surface *surface, int weapon,
 
 static int hud_value_y = 8;
 
-static int draw_hud_value(struct toy_surface *surface, int x,
+static int draw_hud_value(struct rasterfall_canvas *surface, int x,
                           const char *label, const char *value,
                           uint32_t color)
 {
     int label_w = (int)strlen(label) * FB_FONT_W;
     int value_w = (int)strlen(value) * FB_FONT_W;
-    fb_draw_string((unsigned char *)surface->pixels, x, hud_value_y,
-                   label, 0xAAB4C0, surface->stride);
+    rasterfall_canvas_text(surface, x, hud_value_y,
+                   label, 0xAAB4C0);
     x += label_w;
     hud_fill_rect(surface, x - 1, hud_value_y - 2, value_w + 2, FB_FONT_H + 4,
                   0x26384C);
-    fb_draw_string((unsigned char *)surface->pixels, x, hud_value_y,
-                   value, color, surface->stride);
+    rasterfall_canvas_text(surface, x, hud_value_y,
+                   value, color);
     return x + value_w + FB_FONT_W * 2;
 }
 
@@ -80,7 +72,7 @@ static const char *weapon_abbreviation(int weapon)
     return info ? info->short_name : "--";
 }
 
-static void render_weapon_card(struct toy_surface *surface, int x, int y,
+static void render_weapon_card(struct rasterfall_canvas *surface, int x, int y,
                                int slot_index, const struct toy_game_slot *slot,
                                int selected)
 {
@@ -95,8 +87,8 @@ static void render_weapon_card(struct toy_surface *surface, int x, int y,
     hud_fill_rect(surface, x + 71, y, 3, 70, border);
     snprintf(line, sizeof(line), "%d  %s", slot_index + 1,
              weapon_abbreviation(slot->weapon));
-    fb_draw_string((unsigned char *)surface->pixels, x + 7, y + 6,
-                   line, text, surface->stride);
+    rasterfall_canvas_text(surface, x + 7, y + 6,
+                   line, text);
     draw_weapon_silhouette(surface, slot->weapon, cx, y + 16,
                            selected ? 0xE4B84E : 0x8A98A8);
     if (slot->weapon < 0)
@@ -105,11 +97,11 @@ static void render_weapon_card(struct toy_surface *surface, int x, int y,
         snprintf(line, sizeof(line), "%d / INF", slot->mag);
     else
         snprintf(line, sizeof(line), "%d / %d", slot->mag, slot->reserve);
-    fb_draw_string((unsigned char *)surface->pixels, x + 7, y + 52,
-                   line, slot->mag <= 0 ? RF_COLOR_UI_DANGER : text, surface->stride);
+    rasterfall_canvas_text(surface, x + 7, y + 52,
+                   line, slot->mag <= 0 ? RF_COLOR_UI_DANGER : text);
 }
 
-static void render_weapon_hud(struct toy_surface *surface,
+static void render_weapon_hud(struct rasterfall_canvas *surface,
                               const struct toy_game *game)
 {
     const struct toy_game_actor *player =
@@ -125,18 +117,18 @@ static void render_weapon_hud(struct toy_surface *surface,
                        player->current_slot == 2);
 }
 
-static void render_money(struct toy_surface *surface, const struct toy_game *game)
+static void render_money(struct rasterfall_canvas *surface, const struct toy_game *game)
 {
     char line[24];
     int x = surface->width - 150, y = surface->height / 2 - 112;
     snprintf(line, sizeof(line), "$ %d", game->money);
     hud_fill_rect(surface, x, y, 134, 28, 0x26384C);
     hud_fill_rect(surface, x, y, 3, 28, RF_COLOR_UI_ACCENT);
-    fb_draw_string((unsigned char *)surface->pixels, x + 10, y + 6,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+    rasterfall_canvas_text(surface, x + 10, y + 6,
+                   line, RF_COLOR_UI_ACCENT_BRIGHT);
 }
 
-static void render_shop(struct toy_surface *surface,
+static void render_shop(struct rasterfall_canvas *surface,
                         const struct rasterfall_hud_state *state)
 {
     static const int weapons[] = { TOY_GAME_WEAPON_SMG,
@@ -153,67 +145,66 @@ static void render_shop(struct toy_surface *surface,
     int i, x = surface->width / 2 - 260, y = surface->height / 2 - 150;
     hud_fill_rect(surface, 0, 0, surface->width, surface->height, 0xD010151D);
     hud_fill_rect(surface, x, y, 520, 42, RF_COLOR_UI_PANEL_DARK);
-    fb_draw_string((unsigned char *)surface->pixels, x + 18, y + 13,
-                   "ARMORY", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+    rasterfall_canvas_text(surface, x + 18, y + 13,
+                   "ARMORY", RF_COLOR_UI_ACCENT_BRIGHT);
     snprintf(line, sizeof(line), "$ %d", state->game->money);
-    fb_draw_string((unsigned char *)surface->pixels, x + 400, y + 13,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+    rasterfall_canvas_text(surface, x + 400, y + 13,
+                   line, RF_COLOR_UI_ACCENT_BRIGHT);
     if (!state->shop_page) {
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 78,
+        rasterfall_canvas_text(surface, x + 20, y + 78,
                        state->shop_nav_selected == 0 ? "> PLAYER WEAPONS" : "  PLAYER WEAPONS",
-                       state->shop_nav_selected == 0 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 102,
+                       state->shop_nav_selected == 0 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 102,
                        state->shop_nav_selected == 1 ? "> HIRE AI TEAMMATE" : "  HIRE AI TEAMMATE",
-                       state->shop_nav_selected == 1 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 126,
+                       state->shop_nav_selected == 1 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 126,
                        state->shop_nav_selected == 2 ? "> BUY FLAGS" : "  BUY FLAGS",
-                       state->shop_nav_selected == 2 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 150,
+                       state->shop_nav_selected == 2 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 150,
                        state->shop_nav_selected == 3 ? "> ASSIGN AI" : "  ASSIGN AI",
-                       state->shop_nav_selected == 3 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 174,
+                       state->shop_nav_selected == 3 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 174,
                        state->shop_nav_selected == 4 ? "> UPGRADE AI" : "  UPGRADE AI",
-                       state->shop_nav_selected == 4 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 198,
+                       state->shop_nav_selected == 4 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 198,
                        state->shop_nav_selected == 5 ? "> CHANGE AI WEAPON" : "  CHANGE AI WEAPON",
-                       state->shop_nav_selected == 5 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 222,
+                       state->shop_nav_selected == 5 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 20, y + 222,
                        state->shop_nav_selected == 6 ? "> BASE COMBAT POWER" : "  BASE COMBAT POWER",
-                       state->shop_nav_selected == 6 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT, surface->stride);
+                       state->shop_nav_selected == 6 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 3) {
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 70,
-                       "BUY A NEW FLAG", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 104,
-                       "ENTER  PURCHASE       $250", RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "ENTER BUY  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 70,
+                       "BUY A NEW FLAG", RF_COLOR_UI_ACCENT_BRIGHT);
+        rasterfall_canvas_text(surface, x + 20, y + 104,
+                       "ENTER  PURCHASE       $250", RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "ENTER BUY  ESC NAVIGATION", RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 4) {
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
-                       "SELECT FLAG TO ASSIGN", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 58,
+                       "SELECT FLAG TO ASSIGN", RF_COLOR_UI_ACCENT_BRIGHT);
         for (i = 0; i < state->flag_count && i < 8; i++) {
             snprintf(line, sizeof(line), "%sFLAG %d  ENTER SELECT",
                      i == state->shop_selected ? "> " : "  ", i + 1);
-            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 88 + i * 28,
+            rasterfall_canvas_text(surface, x + 24, y + 88 + i * 28,
                            line, i == state->shop_selected ?
-                           RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                           surface->stride);
+                           RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
         }
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "UP/DOWN SELECT  ENTER OPEN  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER OPEN  ESC NAVIGATION", RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 5) {
         char assigned[256];
         int assigned_count = 0, pass, n = 0;
         assigned[0] = 0;
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 48,
-                       "ASSIGNED TO THIS FLAG", RF_COLOR_UI_SUCCESS, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 48,
+                       "ASSIGNED TO THIS FLAG", RF_COLOR_UI_SUCCESS);
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
             const struct toy_game_actor *a = &state->game->actors[i];
             if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
@@ -222,11 +213,11 @@ static void render_shop(struct toy_surface *surface,
             strcat(assigned, a->name);
             assigned_count++;
         }
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 70,
+        rasterfall_canvas_text(surface, x + 20, y + 70,
                        assigned_count ? assigned : "NONE",
-                       RF_COLOR_UI_SUCCESS, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 104,
-                       "ENTER ON ASSIGNED AI TO REMOVE", RF_COLOR_UI_TEXT, surface->stride);
+                       RF_COLOR_UI_SUCCESS);
+        rasterfall_canvas_text(surface, x + 20, y + 104,
+                       "ENTER ON ASSIGNED AI TO REMOVE", RF_COLOR_UI_TEXT);
         for (pass = 0; pass < 2; pass++) {
             for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
                 const struct toy_game_actor *a = &state->game->actors[i];
@@ -246,30 +237,29 @@ static void render_shop(struct toy_surface *surface,
                     snprintf(line, sizeof(line), "%s  %s", a->name,
                              assigned ? "ASSIGNED" : "AVAILABLE");
                     if (n == state->shop_selected)
-                        fb_draw_string((unsigned char *)surface->pixels, x + 24,
-                                       y + 132 + row * 24, ">", 0xFFFFFF, surface->stride);
-                    fb_draw_string((unsigned char *)surface->pixels, x + 40,
+                        rasterfall_canvas_text(surface, x + 24,
+                                       y + 132 + row * 24, ">", 0xFFFFFF);
+                    rasterfall_canvas_text(surface, x + 40,
                                    y + 132 + row * 24, line,
-                                   assigned ? RF_COLOR_UI_SUCCESS : 0xD0A05A,
-                                   surface->stride);
-                    fb_draw_string((unsigned char *)surface->pixels, x + 220,
+                                   assigned ? RF_COLOR_UI_SUCCESS : 0xD0A05A);
+                    rasterfall_canvas_text(surface, x + 220,
                                    y + 132 + row * 24, level,
-                                   0x76B7FF, surface->stride);
-                    fb_draw_string((unsigned char *)surface->pixels, x + 270,
+                                   0x76B7FF);
+                    rasterfall_canvas_text(surface, x + 270,
                                    y + 132 + row * 24, weapon,
-                                   0xF0C674, surface->stride);
+                                   0xF0C674);
                 }
                 n++;
             }
         }
         if (state->shop_scroll > 0)
-            fb_draw_string((unsigned char *)surface->pixels, x + 490, y + 132,
-                           "^", RF_COLOR_UI_TEXT, surface->stride);
+            rasterfall_canvas_text(surface, x + 490, y + 132,
+                           "^", RF_COLOR_UI_TEXT);
         if (n > state->shop_scroll + 6)
-            fb_draw_string((unsigned char *)surface->pixels, x + 490, y + 264,
-                           "v", RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "UP/DOWN SELECT  ENTER TOGGLE  ESC FLAGS", RF_COLOR_UI_TEXT, surface->stride);
+            rasterfall_canvas_text(surface, x + 490, y + 264,
+                           "v", RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "UP/DOWN SELECT  ENTER TOGGLE  ESC FLAGS", RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 2) {
@@ -285,23 +275,22 @@ static void render_shop(struct toy_surface *surface,
             snprintf(line, sizeof(line), "%sLV1  %s  $%d",
                      i == state->shop_selected ? "> " : "  ",
                      hire_names[i], price);
-            fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 10,
-                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                           surface->stride);
+            rasterfall_canvas_text(surface, x + 30, cy + 10,
+                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
         }
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "MONEY", RF_COLOR_UI_ACCENT, surface->stride);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "MONEY", RF_COLOR_UI_ACCENT);
         snprintf(line, sizeof(line), "$ %d", state->game->money);
-        fb_draw_string((unsigned char *)surface->pixels, x + 68, y + 286,
-                       line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 160, y + 286,
-                       "UP/DOWN SELECT  ENTER HIRE  ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        rasterfall_canvas_text(surface, x + 68, y + 286,
+                       line, RF_COLOR_UI_ACCENT_BRIGHT);
+        rasterfall_canvas_text(surface, x + 160, y + 286,
+                       "UP/DOWN SELECT  ENTER HIRE  ESC NAVIGATION", RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 6) {
         int n = 0;
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
-                       "UPGRADE HIRED AI", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 58,
+                       "UPGRADE HIRED AI", RF_COLOR_UI_ACCENT_BRIGHT);
         for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
             const struct toy_game_actor *a = &state->game->actors[i];
             int price, selected;
@@ -312,27 +301,26 @@ static void render_shop(struct toy_surface *surface,
             snprintf(line, sizeof(line), "%s%s  LV%d  %s",
                      selected ? "> " : "  ", a->name, a->class_id + 1,
                      price ? "UPGRADE" : "MAX LEVEL");
-            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 90 + n * 28,
-                           line, selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                           surface->stride);
+            rasterfall_canvas_text(surface, x + 24, y + 90 + n * 28,
+                           line, selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
             if (price) {
                 snprintf(line, sizeof(line), "$%d", price);
-                fb_draw_string((unsigned char *)surface->pixels, x + 390,
-                               y + 90 + n * 28, line, RF_COLOR_UI_ACCENT, surface->stride);
+                rasterfall_canvas_text(surface, x + 390,
+                               y + 90 + n * 28, line, RF_COLOR_UI_ACCENT);
             }
             n++;
         }
-        if (!n) fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
-                               "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+        if (!n) rasterfall_canvas_text(surface, x + 24, y + 96,
+                               "NO HIRED AI", RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
                        "UP/DOWN SELECT  ENTER UPGRADE  ESC NAVIGATION",
-                       RF_COLOR_UI_TEXT, surface->stride);
+                       RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 7) {
         int n = 0;
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
-                       "SELECT AI", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 58,
+                       "SELECT AI", RF_COLOR_UI_ACCENT_BRIGHT);
         for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
             const struct toy_game_actor *a = &state->game->actors[i];
             const char *weapon;
@@ -344,17 +332,16 @@ static void render_shop(struct toy_surface *surface,
             snprintf(line, sizeof(line), "%s%s  LV%d  %s",
                      n == state->shop_selected ? "> " : "  ", a->name,
                      a->class_id + 1, weapon);
-            fb_draw_string((unsigned char *)surface->pixels, x + 24,
+            rasterfall_canvas_text(surface, x + 24,
                            y + 90 + n * 28, line,
-                           n == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                           surface->stride);
+                           n == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
             n++;
         }
-        if (!n) fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
-                               "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+        if (!n) rasterfall_canvas_text(surface, x + 24, y + 96,
+                               "NO HIRED AI", RF_COLOR_UI_TEXT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
                        "UP/DOWN SELECT  ENTER WEAPONS  ESC NAVIGATION",
-                       RF_COLOR_UI_TEXT, surface->stride);
+                       RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 8) {
@@ -371,19 +358,18 @@ static void render_shop(struct toy_surface *surface,
                           i == state->shop_selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
             snprintf(line, sizeof(line), "%s%s  $%d", i == state->shop_selected ? "> " : "  ",
                      ai_weapon_names[i], price);
-            fb_draw_string((unsigned char *)surface->pixels, x + 30, cy + 10,
-                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                           surface->stride);
+            rasterfall_canvas_text(surface, x + 30, cy + 10,
+                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
         }
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
+        rasterfall_canvas_text(surface, x + 16, y + 286,
                        "UP/DOWN SELECT  ENTER CHANGE  ESC AI LIST",
-                       RF_COLOR_UI_TEXT, surface->stride);
+                       RF_COLOR_UI_TEXT);
         return;
     }
     if (state->shop_page == 9) {
         int total_power = 0, n = 0;
-        fb_draw_string((unsigned char *)surface->pixels, x + 20, y + 58,
-                       "BASE COMBAT POWER", RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
+        rasterfall_canvas_text(surface, x + 20, y + 58,
+                       "BASE COMBAT POWER", RF_COLOR_UI_ACCENT_BRIGHT);
         for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
             const struct toy_game_actor *a = &state->game->actors[i];
             const char *weapon = "NONE";
@@ -400,20 +386,20 @@ static void render_shop(struct toy_surface *surface,
             if (n < 6) {
                 snprintf(line, sizeof(line), "%s  %s  %s  CP %d",
                          a->name, level, weapon, power);
-                fb_draw_string((unsigned char *)surface->pixels, x + 24,
+                rasterfall_canvas_text(surface, x + 24,
                                y + 92 + n * 28, line,
-                               RF_COLOR_UI_TEXT, surface->stride);
+                               RF_COLOR_UI_TEXT);
             }
             n++;
         }
         if (!n)
-            fb_draw_string((unsigned char *)surface->pixels, x + 24, y + 96,
-                           "NO HIRED AI", RF_COLOR_UI_TEXT, surface->stride);
+            rasterfall_canvas_text(surface, x + 24, y + 96,
+                           "NO HIRED AI", RF_COLOR_UI_TEXT);
         snprintf(line, sizeof(line), "TOTAL CP  %d", total_power);
-        fb_draw_string((unsigned char *)surface->pixels, x + 300, y + 258,
-                       line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
-        fb_draw_string((unsigned char *)surface->pixels, x + 16, y + 286,
-                       "ESC NAVIGATION", RF_COLOR_UI_TEXT, surface->stride);
+        rasterfall_canvas_text(surface, x + 300, y + 258,
+                       line, RF_COLOR_UI_ACCENT_BRIGHT);
+        rasterfall_canvas_text(surface, x + 16, y + 286,
+                       "ESC NAVIGATION", RF_COLOR_UI_TEXT);
         return;
     }
     for (i = 0; i < 8; i++) {
@@ -436,9 +422,8 @@ static void render_shop(struct toy_surface *surface,
         }
         hud_fill_rect(surface, cx, cy, 488, 24,
                       selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
-        fb_draw_string((unsigned char *)surface->pixels, cx + 10, cy + 6,
-                       player_names[i], selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT,
-                       surface->stride);
+        rasterfall_canvas_text(surface, cx + 10, cy + 6,
+                       player_names[i], selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
         if (quantity >= 0 && unlocked)
             snprintf(line, sizeof(line), "%d/%d  BUY $%d", quantity,
                      quantity_max, toy_game_weapon_price(weapons[i]));
@@ -447,18 +432,16 @@ static void render_shop(struct toy_surface *surface,
         else
             snprintf(line, sizeof(line), "LOCKED  BUY $%d",
                      toy_game_weapon_price(weapons[i]));
-        fb_draw_string((unsigned char *)surface->pixels, cx + 170, cy + 6,
-                       line, unlocked ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER,
-                       surface->stride);
+        rasterfall_canvas_text(surface, cx + 170, cy + 6,
+                       line, unlocked ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER);
     }
-    fb_draw_string((unsigned char *)surface->pixels, x + 16,
-                   y + 286, "MONEY", RF_COLOR_UI_ACCENT, surface->stride);
+    rasterfall_canvas_text(surface, x + 16,
+                   y + 286, "MONEY", RF_COLOR_UI_ACCENT);
     snprintf(line, sizeof(line), "$ %d", state->game->money);
-    fb_draw_string((unsigned char *)surface->pixels, x + 68, y + 286,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels, x + 160, y + 286,
-                   "UP/DOWN SELECT  ENTER BUY/EQUIP  ESC CLOSE", RF_COLOR_UI_TEXT,
-                   surface->stride);
+    rasterfall_canvas_text(surface, x + 68, y + 286,
+                   line, RF_COLOR_UI_ACCENT_BRIGHT);
+    rasterfall_canvas_text(surface, x + 160, y + 286,
+                   "UP/DOWN SELECT  ENTER BUY/EQUIP  ESC CLOSE", RF_COLOR_UI_TEXT);
 }
 
 static char hud_upper_ascii(char c)
@@ -466,7 +449,7 @@ static char hud_upper_ascii(char c)
     return c >= 'a' && c <= 'z' ? (char)(c - 'a' + 'A') : c;
 }
 
-static void render_player_hud(struct toy_surface *surface,
+static void render_player_hud(struct rasterfall_canvas *surface,
                               const struct toy_game *game,
                               const char *player_name)
 {
@@ -487,29 +470,29 @@ static void render_player_hud(struct toy_surface *surface,
     hud_fill_rect(surface, x + 3, y + 3, 36, 36, 0x304354);
     line[0] = name[0] ? name[0] : 'P';
     line[1] = 0;
-    fb_draw_string((unsigned char *)surface->pixels, x + 14, y + 11,
-                   line, 0xF0F4F8, surface->stride);
-    fb_draw_string((unsigned char *)surface->pixels, bar_x, y + 5,
-                   name, RF_COLOR_UI_TEXT, surface->stride);
+    rasterfall_canvas_text(surface, x + 14, y + 11,
+                   line, 0xF0F4F8);
+    rasterfall_canvas_text(surface, bar_x, y + 5,
+                   name, RF_COLOR_UI_TEXT);
     hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, RF_COLOR_UI_PANEL);
     hud_fill_rect(surface, bar_x, bar_y,
                   hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
     snprintf(line, sizeof(line), "%d / %d", hp, TOY_GAME_PLAYER_HP);
-    fb_draw_string((unsigned char *)surface->pixels, bar_x + bar_w -
+    rasterfall_canvas_text(surface, bar_x + bar_w -
                    (int)strlen(line) * FB_FONT_W, bar_y + 12,
-                   line, hp_color, surface->stride);
+                   line, hp_color);
     if (player && player->slots[3].weapon == TOY_GAME_WEAPON_PILL) {
         int px = bar_x + bar_w + 18, py = bar_y - 2;
         hud_fill_rect(surface, px, py, 30, 24, 0xE8EEE8);
         hud_fill_rect(surface, px + 12, py + 4, 6, 16, 0x20B84B);
         hud_fill_rect(surface, px + 7, py + 9, 16, 6, 0x20B84B);
         snprintf(line, sizeof(line), "%d", player->slots[3].mag);
-        fb_draw_string((unsigned char *)surface->pixels, px + 35, py + 5,
-                       line, 0x70E090, surface->stride);
+        rasterfall_canvas_text(surface, px + 35, py + 5,
+                       line, 0x70E090);
     }
 }
 
-static void render_revive_prompt(struct toy_surface *surface,
+static void render_revive_prompt(struct rasterfall_canvas *surface,
                                  const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
@@ -543,8 +526,8 @@ static void render_revive_prompt(struct toy_surface *surface,
     x = (surface->width - width) / 2;
     hud_fill_rect(surface, x - 8, y - 5, width + 16, FB_FONT_H + 10,
                   RF_COLOR_UI_BACKGROUND);
-    fb_draw_string((unsigned char *)surface->pixels, x, y, line,
-                   RF_COLOR_UI_PLAYER, surface->stride);
+    rasterfall_canvas_text(surface, x, y, line,
+                   RF_COLOR_UI_PLAYER);
     if (state->player_revive_active || state->ai_revive_active) {
         int bar_x = surface->width / 2 - 64;
         int progress = state->player_revive_active ?
@@ -556,7 +539,7 @@ static void render_revive_prompt(struct toy_surface *surface,
     }
 }
 
-static void render_network_hud(struct toy_surface *surface,
+static void render_network_hud(struct rasterfall_canvas *surface,
                                const struct rasterfall_net *net,
                                const char *host_address, int host_port)
 {
@@ -584,8 +567,7 @@ static void render_network_hud(struct toy_surface *surface,
     x = surface->width - width - 10;
     if (x < 8) x = 8;
     hud_fill_rect(surface, x - 4, y - 2, width + 8, FB_FONT_H + 4, 0x182634);
-    fb_draw_string((unsigned char *)surface->pixels, x, y, line, color,
-                   surface->stride);
+    rasterfall_canvas_text(surface, x, y, line, color);
     if (net->mode == RASTERFALL_NET_HOST && host_address && host_address[0]) {
         snprintf(line, sizeof(line), "JOIN %s:%d", host_address, host_port);
         width = (int)strlen(line) * FB_FONT_W;
@@ -593,8 +575,8 @@ static void render_network_hud(struct toy_surface *surface,
         if (x < 8) x = 8;
         hud_fill_rect(surface, x - 4, y + FB_FONT_H,
                       width + 8, FB_FONT_H + 4, 0x182634);
-        fb_draw_string((unsigned char *)surface->pixels, x, y + FB_FONT_H,
-                       line, RF_COLOR_UI_ACCENT, surface->stride);
+        rasterfall_canvas_text(surface, x, y + FB_FONT_H,
+                       line, RF_COLOR_UI_ACCENT);
     }
     if (net->mode == RASTERFALL_NET_HOST) {
         int line_y = y + FB_FONT_H * 2;
@@ -615,8 +597,8 @@ static void render_network_hud(struct toy_surface *surface,
         if (x < 8) x = 8;
         hud_fill_rect(surface, x - 4, line_y - 2, width + 8,
                       FB_FONT_H + 4, 0x182634);
-        fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
-                       RF_COLOR_UI_SECONDARY, surface->stride);
+        rasterfall_canvas_text(surface, x, line_y, line,
+                       RF_COLOR_UI_SECONDARY);
     }
     {
         int line_y = y + FB_FONT_H *
@@ -639,8 +621,8 @@ static void render_network_hud(struct toy_surface *surface,
         if (x < 8) x = 8;
         hud_fill_rect(surface, x - 4, line_y - 2, width + 8,
                       FB_FONT_H + 4, 0x182634);
-        fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
-                       RF_COLOR_UI_SECONDARY, surface->stride);
+        rasterfall_canvas_text(surface, x, line_y, line,
+                       RF_COLOR_UI_SECONDARY);
         line_y += FB_FONT_H;
         snprintf(line, sizeof(line), "E/W %lu/%lu INPUT REC %lu DUP %lu",
                  net->entity_snapshots_received,
@@ -651,12 +633,12 @@ static void render_network_hud(struct toy_surface *surface,
         if (x < 8) x = 8;
         hud_fill_rect(surface, x - 4, line_y - 2, width + 8,
                       FB_FONT_H + 4, 0x182634);
-        fb_draw_string((unsigned char *)surface->pixels, x, line_y, line,
-                       RF_COLOR_UI_SECONDARY, surface->stride);
+        rasterfall_canvas_text(surface, x, line_y, line,
+                       RF_COLOR_UI_SECONDARY);
     }
 }
 
-static void render_wave_hud(struct toy_surface *surface,
+static void render_wave_hud(struct rasterfall_canvas *surface,
                             const struct toy_game *game, int fps)
 {
     char value[32];
@@ -713,7 +695,7 @@ static void render_wave_hud(struct toy_surface *surface,
     hud_value_y = 8;
 }
 
-void rasterfall_hud_render(struct toy_surface *surface, int fps,
+void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
     const struct toy_game *game = state->game;
@@ -730,45 +712,44 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
         char line[180]; int i, y=54; const struct rasterfall_calibration_state *e=state->pose_editor;
         hud_fill_rect(surface,8,50,410,250,0x182634);
         snprintf(line,sizeof(line),"RIFLE POSE EDITOR   CHARACTER EULA   WEAPON AK");
-        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0x80D8FF,surface->stride); y+=FB_FONT_H+2;
+        rasterfall_canvas_text(surface,14,y,line,0x80D8FF); y+=FB_FONT_H+2;
         snprintf(line,sizeof(line),"PAGE %s   EDIT AXIS %c   %s   %s   LEFT IK %s",pages[e->page],"XYZ"[e->selected_axis],e->axes?"AXES ON":"AXES OFF",e->anchors?"ANCHORS ON":"ANCHORS OFF",e->left_ik?"ON":"OFF");
-        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0xFFD070,surface->stride); y+=FB_FONT_H+4;
+        rasterfall_canvas_text(surface,14,y,line,0xFFD070); y+=FB_FONT_H+4;
         if(e->page==RASTERFALL_POSE_PAGE_BODY) {
-            for(i=0;i<RASTERFALL_POSE_BODY_CHANNEL_COUNT;i++){snprintf(line,sizeof(line),"%c %-16s X %4d Y %4d Z %4d",i==e->selection?'>':' ',rasterfall_rifle_pose_bone_display_names[i],e->pose.body_pose[i][0],e->pose.body_pose[i][1],e->pose.body_pose[i][2]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+            for(i=0;i<RASTERFALL_POSE_BODY_CHANNEL_COUNT;i++){snprintf(line,sizeof(line),"%c %-16s X %4d Y %4d Z %4d",i==e->selection?'>':' ',rasterfall_rifle_pose_bone_display_names[i],e->pose.body_pose[i][0],e->pose.body_pose[i][1],e->pose.body_pose[i][2]);rasterfall_canvas_text(surface,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0);y+=FB_FONT_H;}
         } else if(e->page==RASTERFALL_POSE_PAGE_WEAPON) {
             const char *names[]={"SCALE","OFFSET X","OFFSET Y","OFFSET Z","PITCH","YAW","ROLL"}; int v[7]={e->pose.scale_milli,e->pose.offset.x,e->pose.offset.y,e->pose.offset.z,e->pose.pitch_offset,e->pose.yaw_offset,e->pose.roll_offset};
-            for(i=0;i<7;i++){snprintf(line,sizeof(line),"%c %-12s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+            for(i=0;i<7;i++){snprintf(line,sizeof(line),"%c %-12s %5d",i==e->selection?'>':' ',names[i],v[i]);rasterfall_canvas_text(surface,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0);y+=FB_FONT_H;}
         } else if(e->page==RASTERFALL_POSE_PAGE_ANCHORS) {
             const char *names[]={"RIGHT GRIP X","RIGHT GRIP Y","RIGHT GRIP Z","FOREGRIP X","FOREGRIP Y","FOREGRIP Z","MUZZLE X","MUZZLE Y","MUZZLE Z"}; int v[9]={e->pose.grip.x,e->pose.grip.y,e->pose.grip.z,e->pose.foregrip.x,e->pose.foregrip.y,e->pose.foregrip.z,e->pose.muzzle.x,e->pose.muzzle.y,e->pose.muzzle.z};
-            for(i=0;i<9;i++){snprintf(line,sizeof(line),"%c %-14s %5d",i==e->selection?'>':' ',names[i],v[i]);fb_draw_string((unsigned char*)surface->pixels,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0,surface->stride);y+=FB_FONT_H;}
+            for(i=0;i<9;i++){snprintf(line,sizeof(line),"%c %-14s %5d",i==e->selection?'>':' ',names[i],v[i]);rasterfall_canvas_text(surface,14,y,line,i==e->selection?0xFFFFFF:0xA8C0D0);y+=FB_FONT_H;}
         } else {
             const char *base[] = {"IDLE", "WALK"};
             const char *overlay[] = {"NONE", "FIRE", "HIT"};
             snprintf(line,sizeof(line),"%c BASE       %s",e->selection==0?'>':' ',base[e->animation_base]);
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==0?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            rasterfall_canvas_text(surface,14,y,line,e->selection==0?0xFFFFFF:0xA8C0D0); y+=FB_FONT_H;
             snprintf(line,sizeof(line),"%c OVERLAY    %s",e->selection==1?'>':' ',overlay[e->animation_overlay]);
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==1?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            rasterfall_canvas_text(surface,14,y,line,e->selection==1?0xFFFFFF:0xA8C0D0); y+=FB_FONT_H;
             snprintf(line,sizeof(line),"%c TIME       %5d ms",e->selection==2?'>':' ',e->animation_time_ms);
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==2?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            rasterfall_canvas_text(surface,14,y,line,e->selection==2?0xFFFFFF:0xA8C0D0); y+=FB_FONT_H;
             snprintf(line,sizeof(line),"%c PLAY       %s",e->selection==3?'>':' ',e->animation_playing?"ON":"OFF");
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==3?0xFFFFFF:0xA8C0D0,surface->stride); y+=FB_FONT_H;
+            rasterfall_canvas_text(surface,14,y,line,e->selection==3?0xFFFFFF:0xA8C0D0); y+=FB_FONT_H;
             snprintf(line,sizeof(line),"%c UPPER LOCK %s",e->selection==4?'>':' ',e->upper_body_lock?"ON":"OFF");
-            fb_draw_string((unsigned char*)surface->pixels,14,y,line,e->selection==4?0xFFFFFF:0xA8C0D0,surface->stride);
+            rasterfall_canvas_text(surface,14,y,line,e->selection==4?0xFFFFFF:0xA8C0D0);
         }
         y=306;
         snprintf(line,sizeof(line),"TAB PAGE  ,/. SELECT  X/Y/Z AXIS  J/L EDIT  SHIFT J/L +/-5");
-        fb_draw_string((unsigned char*)surface->pixels,14,y,line,0x90F090,surface->stride);
+        rasterfall_canvas_text(surface,14,y,line,0x90F090);
         snprintf(line,sizeof(line),"U AXES  O ANCHORS  I IK  V PLAY  R RESET  P EXPORT  ESC EXIT%s",e->dirty?"  * DIRTY":"");
-        fb_draw_string((unsigned char*)surface->pixels,14,y+FB_FONT_H,line,0x90F090,surface->stride);
+        rasterfall_canvas_text(surface,14,y+FB_FONT_H,line,0x90F090);
     }
     if (state->shop_open) render_shop(surface, state);
     if (state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
-        fb_draw_string((unsigned char *)surface->pixels,
+        rasterfall_canvas_text(surface,
                        (surface->width - (int)strlen(state->interaction_banner) * FB_FONT_W) / 2,
                        banner_y, state->interaction_banner,
-                       state->interaction_banner_success ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER,
-                       surface->stride);
+                       state->interaction_banner_success ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER);
     }
     {
         int smoker_pull = player && player->special_source >= 0;
@@ -779,15 +760,14 @@ void rasterfall_hud_render(struct toy_surface *surface, int fps,
                 smoker_pull = 1;
         if (player && player->control_disabled && smoker_pull) {
         const char *warning = "WARNING: SMOKER PULLING YOU";
-        fb_draw_string((unsigned char *)surface->pixels,
+        rasterfall_canvas_text(surface,
                        (surface->width - (int)strlen(warning) * FB_FONT_W) / 2,
-                       surface->height / 2 - 48, warning, 0xFF5040,
-                       surface->stride);
+                       surface->height / 2 - 48, warning, 0xFF5040);
         }
     }
 }
 
-void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
+void rasterfall_hud_prompt_layout(struct rasterfall_canvas *surface,
                                          const struct rasterfall_hud_state *state)
 {
     const struct rasterfall_interactable *it;
@@ -797,12 +777,12 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "F %s FLAG",
                  state->flag_carried ? "PLANT" : "CARRY");
         text_w = (int)strlen(label) * FB_FONT_W;
-        x = (renderer->surface.width - text_w) / 2;
-        y = renderer->surface.height - FB_FONT_H - 18;
-        hud_fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10,
+        x = (surface->width - text_w) / 2;
+        y = surface->height - FB_FONT_H - 18;
+        hud_fill_rect(surface, x - 5, y - 3, text_w + 10,
                       FB_FONT_H + 6, RF_COLOR_UI_BACKGROUND);
-        fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
-                       label, RF_COLOR_UI_ACCENT, renderer->surface.stride);
+        rasterfall_canvas_text(surface, x, y,
+                       label, RF_COLOR_UI_ACCENT);
         return;
     }
     if (state->highlighted < 0 || state->highlighted >= state->interactable_count)
@@ -890,14 +870,26 @@ void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
         snprintf(label, sizeof(label), "E INTERACT");
     }
     text_w = (int)strlen(label) * FB_FONT_W;
-    x = (renderer->surface.width - text_w) / 2;
-    y = renderer->surface.height - FB_FONT_H - 18;
-    hud_fill_rect(&renderer->surface, x - 5, y - 3, text_w + 10, FB_FONT_H + 6,
+    x = (surface->width - text_w) / 2;
+    y = surface->height - FB_FONT_H - 18;
+    hud_fill_rect(surface, x - 5, y - 3, text_w + 10, FB_FONT_H + 6,
                   RF_COLOR_UI_BACKGROUND);
-    fb_draw_string((unsigned char *)renderer->surface.pixels, x, y,
-                   label, RF_COLOR_UI_ACCENT, renderer->surface.stride);
+    rasterfall_canvas_text(surface, x, y,
+                   label, RF_COLOR_UI_ACCENT);
 }
 
+void rasterfall_hud_render(struct toy_surface *surface,int fps,
+    const struct rasterfall_hud_state *state)
+{
+    struct rasterfall_canvas canvas=rasterfall_canvas_surface(surface);
+    rasterfall_hud_layout(&canvas,fps,state);
+}
+void rasterfall_hud_draw_interact_prompt(struct toy_renderer *renderer,
+    const struct rasterfall_hud_state *state)
+{
+    struct rasterfall_canvas canvas=rasterfall_canvas_surface(&renderer->surface);
+    rasterfall_hud_prompt_layout(&canvas,state);
+}
 int rasterfall_hud_dump_frame(const char *path, const struct toy_surface *surface)
 {
     char header[48];

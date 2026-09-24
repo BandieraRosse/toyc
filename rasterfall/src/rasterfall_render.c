@@ -6943,6 +6943,8 @@ static int render_enemies(struct toy_renderer *renderer,
     return pixels;
 }
 
+#include "render/rf_gpu_scene_enemy_source.inc"
+
 static void render_actor_name(struct toy_renderer *renderer,
                               const struct camera *camera, int x, int z,
                               int y, const char *name, uint32_t color)
@@ -9662,6 +9664,8 @@ static int render_network_teammate(struct toy_renderer *renderer,
     return pixels;
 }
 
+#include "render/rf_gpu_scene_actor_source.inc"
+
 static void render_network_teammate_status(struct toy_renderer *renderer,
                                            const struct camera *camera,
                                            const struct rasterfall_net *net,
@@ -10609,4 +10613,5 @@ int rasterfall_render_overlays(struct toy_renderer *renderer)
 #include "dev-tests/rasterfall_world_benchmark.inc"
 
 #include "dev-tests/rasterfall_draw_reference_test.inc"
+#include "dev-tests/rf_gpu_scene_enemy_source_test.inc"
 #include "dev-tests/rf_gpu_scene_pose_test.inc"

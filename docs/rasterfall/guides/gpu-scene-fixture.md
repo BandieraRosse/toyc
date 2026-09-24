@@ -1,5 +1,30 @@
 # GPU Scene 固定渲染地图
 
+## 实验性单人入口
+
+构建 package 后可从原生入口启动：
+
+```powershell
+.\windows\NativeCodex.ps1 run --gpu-scene-play
+```
+
+它自动启用 required native GPU 与独立 Scene，默认进入前哨站，使用正常游戏输入和时钟。
+可通过 `--map` 选择 Runtime Map；目前只允许单人。资源复用和性能优化尚未完成，
+此入口不代表产品帧率或完整架构签收。Console/GUI 仍受正常运行 feature gate 限制。
+
+`tools/gpu_scene_play.ps1` 检查真实单人启动、窗口输入与 resize、世界切换、连续战役帧和五类
+present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDirectory` 加载验证层；
+日志必须证明 validation/sync 已启用。固定 UI capture 可选择 `ui-pause`、`ui-scoreboard`、
+`ui-shop`、`ui-over`、`ui-won`，这些只证明内容布局，窗口交互由上述专项单独检查。
+可用 `-Stage Interactive/World/Combat/Faults` 定向复跑；默认 `All`。Combat 必须在日志中看到
+真实波次的存活敌人，单纯达到帧数不能通过该项。
+
+独立预览还检查每帧 `SCENE-LAYERS`，native 日志应为 `world_only=0`；旧 WORLD 对照仍为 1。
+`-Capture` 捕获同一分层批次，包含天空、世界、透明、特效、武器和 HUD。新增 `enemy-fade`
+与 `frame-effects` 镜头分别检查死亡渐隐及远端/本地枪口、射线和爆炸输入；其余固定镜头沿用原语义。
+层序/透明遮挡/武器独立深度/overlay 无深度/错误层序原子拒绝还由 `gpu-graphics-test`
+中的 `SCENE layered depth/blend/preflight` 用例覆盖。该测试是离屏正确性证据，不代替 native 生命周期。
+
 ## 独立来源开发预览
 
 先完成 Windows package，再运行：
@@ -11,9 +36,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_preview.ps1 
 `-Independent` 选择 `--gpu-scene-independent-preview`，沿用 required native 与 normal-scene/wave-repro
 输入限制。无验证层时省略 `-ValidationLayerDirectory`，但不能宣称 validation/sync 通过。
 脚本检查每帧 `SCENE-SOURCE` 的连续 ID、零旧 producer/RasterCmd/mixed draw，以及 native 提交零 bridge/readback。
-此入口直接冻结地图、正式模块化队员、旗帜、投射物和交互物；敌人、程序/网络角色、downed 与
-天空、透明、特效、VIEWMODEL、HUD/OVERLAY 尚缺。`dynamic_sources_pending=1` 明示动态来源缺口。
-即使使用 30 敌人的玩法 workload，当前也没有这些敌人的完整画面，不能报告完整 WORLD 或性能收益。
+此入口直接冻结地图、正式模块化队员、旗帜、投射物和交互物，以及敌人、程序/网络角色、downed
+和补充模块化角色。`dynamic_sources_pending=0` 仅表示动态来源接通；首版分层与完整性边界见
+[活动计划](../plans/README.md)，不能报告完整可玩帧或性能收益。
+默认独立矩阵另覆盖特感、死亡、舌头和程序角色，逐帧核对来源数、实际 draw 和冻结帧 ID。
+加 `-Capture` 会在每个用例首帧用同一冻结 Scene 批次额外读回 `<view>.capture.scene.ppm`，
+再进行 native present；该帧报告 `readback=1`，其他帧仍须为零。此图证明 Scene 批次内容，
+不作为 swapchain 自身颜色或完整帧性能证据；未加 `-Capture` 的运行仍逐帧要求零读回。
 旧入口保留下面的 producer 捕获诊断；新功能按 [活动计划](../plans/README.md)接独立来源。
 
 ## 硬件 Scene WORLD 原生预览

@@ -211,74 +211,33 @@ void rasterfall_viewmodel_actor_muzzle(int x, int z, int sy, int cy,
 /* Triangle commands are winding-normalized here.  The common raster
  * consumer accepts only one screen-space orientation, while imported meshes
  * and procedural hands do not share authored winding. */
-static int viewmodel_submit_flat(struct toy_renderer *renderer,
-                                 struct toy_screen_vertex *a,
-                                 struct toy_screen_vertex *b,
-                                 struct toy_screen_vertex *c,
-                                 uint32_t color)
+static int viewmodel_emit(struct rasterfall_viewmodel_geometry *renderer,
+    const struct toy_screen_vertex *a,const struct toy_screen_vertex *b,
+    const struct toy_screen_vertex *c,uint32_t color,int alpha,
+    const struct toy_texture_view *texture)
 {
-    long long area;
-    struct toy_screen_vertex va, vb, vc, tmp;
-    if (!renderer || !a || !b || !c) return 0;
-    va = *a; vb = *b; vc = *c;
-    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
-           (long long)(vb.y - va.y) * (vc.x - va.x);
-    if (!area) return 0;
-    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
-    return toy_renderer_triangle_lit(renderer, &va, &vb, &vc, color,
-                                     viewmodel_scene_light_q8, 0);
-}
-
-static int viewmodel_submit_flat_alpha(struct toy_renderer *renderer,
-                                       struct toy_screen_vertex *a,
-                                       struct toy_screen_vertex *b,
-                                       struct toy_screen_vertex *c,
-                                       uint32_t color, int alpha)
-{
-    long long area;
-    struct toy_screen_vertex va, vb, vc, tmp;
-    int begin, i;
-    if (!renderer || !a || !b || !c) return 0;
-    va = *a; vb = *b; vc = *c;
-    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
-           (long long)(vb.y - va.y) * (vc.x - va.x);
-    if (!area) return 0;
-    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
-    begin = renderer->cmd_count;
-    toy_renderer_triangle_lit_alpha(renderer, &va, &vb, &vc, color,
-                                    viewmodel_scene_light_q8, 0, alpha);
-    /* A muzzle child is a transparent span even at the final alpha=255:
-     * preserve its no-depth-write contract instead of silently turning the
-     * fade endpoint into an opaque viewmodel command. */
-    for (i = begin; i < renderer->cmd_count; ++i) {
-        renderer->cmds[i].transparent = 1;
-        renderer->cmds[i].transparent_no_depth_write = 1;
-    }
+    if (renderer->failed) return -1;
+    if (renderer->triangle(renderer->context,a,b,c,color,viewmodel_scene_light_q8,
+            alpha,texture)<0) { renderer->failed=1;return -1; }
     return 0;
 }
-
-static int viewmodel_submit_textured(
-    struct toy_renderer *renderer, struct toy_screen_vertex *a,
-    struct toy_screen_vertex *b, struct toy_screen_vertex *c,
-    const struct toy_texture_view *texture, uint32_t fallback)
-{
-    long long area;
-    struct toy_screen_vertex va, vb, vc, tmp;
-    if (!renderer || !a || !b || !c || !texture) return 0;
-    va = *a; vb = *b; vc = *c;
-    area = (long long)(vb.x - va.x) * (vc.y - va.y) -
-           (long long)(vb.y - va.y) * (vc.x - va.x);
-    if (!area) return 0;
-    if (area < 0) { tmp = vb; vb = vc; vc = tmp; }
-    return toy_renderer_triangle_textured_lit(
-        renderer, &va, &vb, &vc, texture, 1, fallback,
-        viewmodel_scene_light_q8, 0);
-}
+static int viewmodel_submit_flat(struct rasterfall_viewmodel_geometry *renderer,
+    struct toy_screen_vertex *a,struct toy_screen_vertex *b,
+    struct toy_screen_vertex *c,uint32_t color)
+{ return viewmodel_emit(renderer,a,b,c,color,0,NULL); }
+static int viewmodel_submit_flat_alpha(struct rasterfall_viewmodel_geometry *renderer,
+    struct toy_screen_vertex *a,struct toy_screen_vertex *b,
+    struct toy_screen_vertex *c,uint32_t color,int alpha)
+{ return alpha>0 ? viewmodel_emit(renderer,a,b,c,color,alpha,NULL) : 0; }
+static int viewmodel_submit_textured(struct rasterfall_viewmodel_geometry *renderer,
+    struct toy_screen_vertex *a,struct toy_screen_vertex *b,
+    struct toy_screen_vertex *c,const struct toy_texture_view *texture,uint32_t color)
+{ return viewmodel_emit(renderer,a,b,c,color,0,texture); }
 
 /* Pill is screen-projected by contract, but still participates in VM-local
  * depth.  A constant inverse-Z makes its occlusion policy explicit without
  * pretending it has world-space scale. */
-static int viewmodel_submit_screen_quad(struct toy_renderer *renderer,
+static int viewmodel_submit_screen_quad(struct rasterfall_viewmodel_geometry *renderer,
                                         int x, int y, int width, int height,
                                         uint32_t color, long inv_z)
 {
@@ -298,7 +257,7 @@ static int viewmodel_submit_screen_quad(struct toy_renderer *renderer,
 }
 
 static int viewmodel_submit_screen_quad_alpha(
-    struct toy_renderer *renderer, int x, int y, int width, int height,
+    struct rasterfall_viewmodel_geometry *renderer, int x, int y, int width, int height,
     uint32_t color, long inv_z, int alpha)
 {
     struct toy_screen_vertex a, b, c, d;
@@ -337,7 +296,7 @@ static uint32_t viewmodel_mix_color(uint32_t from, uint32_t to,
     return (uint32_t)r << 16 | (uint32_t)g << 8 | (uint32_t)b;
 }
 
-static int render_local_muzzle_core(struct toy_renderer *renderer,
+static int render_local_muzzle_core(struct rasterfall_viewmodel_geometry *renderer,
                                     const struct rasterfall_effects *effects)
 {
     int i;
@@ -357,13 +316,13 @@ static int render_local_muzzle_core(struct toy_renderer *renderer,
         view.light = viewmodel_scene_light_q8;
         view.fog = 0;
         if (rf_viewmodel_project_vertex_v1(
-                &view, renderer->surface.width, renderer->surface.height,
+                &view, renderer->width, renderer->height,
                 &screen) < 0)
             continue;
         size = f->size > 0 ? f->size :
                (f->weapon == TOY_GAME_WEAPON_SHOTGUN ? 7 : 5);
-        if (screen.x < -size || screen.x >= renderer->surface.width + size ||
-            screen.y < -size || screen.y >= renderer->surface.height + size)
+        if (screen.x < -size || screen.x >= renderer->width + size ||
+            screen.y < -size || screen.y >= renderer->height + size)
             continue;
         viewmodel_submit_screen_quad(
             renderer, screen.x - size / 2, screen.y - size, size, size * 2,
@@ -375,7 +334,7 @@ static int render_local_muzzle_core(struct toy_renderer *renderer,
 }
 
 static int render_local_muzzle_transparent_children(
-    struct toy_renderer *renderer, const struct rasterfall_effects *effects)
+    struct rasterfall_viewmodel_geometry *renderer, const struct rasterfall_effects *effects)
 {
     int i;
     if (!renderer || !effects) return 0;
@@ -408,11 +367,11 @@ static int render_local_muzzle_transparent_children(
         view.light = viewmodel_scene_light_q8;
         view.fog = 0;
         if (rf_viewmodel_project_vertex_v1(
-                &view, renderer->surface.width, renderer->surface.height,
+                &view, renderer->width, renderer->height,
                 &screen) < 0)
             continue;
-        if (screen.x < -size || screen.x >= renderer->surface.width + size ||
-            screen.y < -size || screen.y >= renderer->surface.height + size)
+        if (screen.x < -size || screen.x >= renderer->width + size ||
+            screen.y < -size || screen.y >= renderer->height + size)
             continue;
         viewmodel_submit_screen_quad_alpha(
             renderer, screen.x - size / 2, screen.y - size, size, size * 2,
@@ -428,7 +387,7 @@ static int render_local_muzzle_transparent_children(
  * limbs as small rigid pieces gives us useful hand/weapon motion without
  * committing RFM2 to bones or skinning.  Coordinates are view-space: X is
  * right, Y is up and Z points away from the camera. */
-static int draw_view_limb(struct toy_renderer *renderer,
+static int draw_view_limb(struct rasterfall_viewmodel_geometry *renderer,
                           int x0, int y0, int z0,
                           int x1, int y1, int z1,
                           int radius, uint32_t color)
@@ -478,8 +437,8 @@ static int draw_view_limb(struct toy_renderer *renderer,
         clipped_count = rf_viewmodel_clip_triangle_v1(input, clipped);
         for (j = 0; j < clipped_count; ++j)
             rf_viewmodel_project_vertex_v1(&clipped[j],
-                                           renderer->surface.width,
-                                           renderer->surface.height,
+                                           renderer->width,
+                                           renderer->height,
                                            &projected[j]);
         if (clipped_count >= 3) {
             int face = i / 6;
@@ -492,7 +451,7 @@ static int draw_view_limb(struct toy_renderer *renderer,
     return 0;
 }
 
-static int render_viewmodel_hands(struct toy_renderer *renderer,
+static int render_viewmodel_hands(struct rasterfall_viewmodel_geometry *renderer,
                                   const struct toy_game *game,
                                   int kick)
 {
@@ -630,10 +589,10 @@ static int render_viewmodel_hands(struct toy_renderer *renderer,
         fill_rect(surface, sx - 2, sy - 2, 5, 5, 0x40FFFF);
     }
 #endif
-    return drawn;
+    return renderer->failed ? -1 : drawn;
 }
 
-static int render_model_weapon(struct toy_renderer *renderer,
+static int render_model_weapon(struct rasterfall_viewmodel_geometry *renderer,
                                const struct rasterfall_model_asset *model,
                                int weapon, int kick,
                                int animation_id, int animation_time_ms,
@@ -778,8 +737,8 @@ static int render_model_weapon(struct toy_renderer *renderer,
                 clipped_count = rf_viewmodel_clip_triangle_v1(input, clipped);
                 for (j = 0; j < clipped_count; ++j)
                     rf_viewmodel_project_vertex_v1(
-                        &clipped[j], renderer->surface.width,
-                        renderer->surface.height, &sv[j]);
+                        &clipped[j], renderer->width,
+                        renderer->height, &sv[j]);
                 /* Axe, bomb, and molotov use the shared extracted model
                  * palette (model_diffuse.ttex). Material presence no longer
                  * changes depth policy: both paths are opaque VM commands. */
@@ -796,22 +755,22 @@ static int render_model_weapon(struct toy_renderer *renderer,
             }
         }
     }
-    return drawn;
+    return renderer->failed ? -1 : drawn;
 }
 
 /* The pill is intentionally procedural: it remains readable even without an
  * extra raster asset, with a white cylinder silhouette and a green medical
  * cross facing the player. */
-static int render_pill_viewmodel(struct toy_renderer *renderer, int bob_x,
+static int render_pill_viewmodel(struct rasterfall_viewmodel_geometry *renderer, int bob_x,
                                  int bob_y, int kick)
 {
     /* The procedural pill is screen-space art, unlike the imported weapon
      * meshes. Scale it with the 450px reference height so it remains the same
      * apparent size at the new 720p default without changing world/FOV math. */
-    int ui_scale = renderer->surface.height >= 675 ? 2 : 1;
-    int x = renderer->surface.width - 190 * ui_scale + bob_x * ui_scale +
+    int ui_scale = renderer->height >= 675 ? 2 : 1;
+    int x = renderer->width - 190 * ui_scale + bob_x * ui_scale +
             kick * ui_scale / 3;
-    int y = renderer->surface.height - 185 * ui_scale + bob_y * ui_scale -
+    int y = renderer->height - 185 * ui_scale + bob_y * ui_scale -
             kick * ui_scale / 2;
     int w = 105 * ui_scale, h = 72 * ui_scale;
     /* 4096 is 1/256 in the renderer's Q20 inverse-Z domain.  It is a
@@ -836,7 +795,7 @@ static int render_pill_viewmodel(struct toy_renderer *renderer, int bob_x,
     return 0;
 }
 
-int rasterfall_viewmodel_render(struct toy_renderer *renderer,
+int rasterfall_viewmodel_geometry(struct rasterfall_viewmodel_geometry *renderer,
                                 const struct toy_game *game,
                                 const struct rasterfall_effects *effects, int scene_light_q8)
 {
@@ -870,5 +829,34 @@ int rasterfall_viewmodel_render(struct toy_renderer *renderer,
     }
     drawn += render_local_muzzle_core(renderer, effects);
     drawn += render_local_muzzle_transparent_children(renderer, effects);
-    return drawn;
+    return renderer->failed ? -1 : drawn;
+}
+
+static int viewmodel_raster_triangle(void *context,const struct toy_screen_vertex *a,
+    const struct toy_screen_vertex *b,const struct toy_screen_vertex *c,
+    uint32_t color,int light,int alpha,const struct toy_texture_view *texture)
+{
+    struct toy_renderer *renderer=context;
+    struct toy_screen_vertex va=*a,vb=*b,vc=*c,tmp;
+    long long area=(long long)(vb.x-va.x)*(vc.y-va.y)-(long long)(vb.y-va.y)*(vc.x-va.x);
+    if (!area) return 0;
+    if (area<0) { tmp=vb;vb=vc;vc=tmp; }
+    if (texture) return toy_renderer_triangle_textured_lit(renderer,&va,&vb,&vc,texture,1,color,light,0);
+    if (alpha) {
+        int begin=renderer->cmd_count;
+        int result=toy_renderer_triangle_lit_alpha(renderer,&va,&vb,&vc,color,light,0,alpha);
+        for (int i=begin;i<renderer->cmd_count;++i) {
+            renderer->cmds[i].transparent=1;
+            renderer->cmds[i].transparent_no_depth_write=1;
+        }
+        return result;
+    }
+    return toy_renderer_triangle_lit(renderer,&va,&vb,&vc,color,light,0);
+}
+int rasterfall_viewmodel_render(struct toy_renderer *renderer,const struct toy_game *game,
+    const struct rasterfall_effects *effects,int light)
+{
+    struct rasterfall_viewmodel_geometry geometry={renderer->surface.width,
+        renderer->surface.height,0,renderer,viewmodel_raster_triangle};
+    return rasterfall_viewmodel_geometry(&geometry,game,effects,light);
 }

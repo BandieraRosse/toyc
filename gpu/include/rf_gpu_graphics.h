@@ -23,9 +23,16 @@ struct rf_gpu_graphics_draw {
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
     uint32_t material[4]; /* RGB, scene Q8, textured, reserved */
-    int32_t texture[4]; /* width,height, material alpha (0=opaque),reserved */
+    int32_t texture[4]; /* width,height, alpha (0=opaque), screen mode (0/1/2) */
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
+    /* Scene-only ordered pass. Zero preserves existing WORLD callers. */
+    uint32_t scene_layer;
+};
+enum rf_gpu_graphics_scene_layer {
+    RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,
+    RF_GPU_SCENE_EFFECTS, RF_GPU_SCENE_VIEWMODEL, RF_GPU_SCENE_OVERLAY,
+    RF_GPU_SCENE_LAYER_COUNT
 };
 enum rf_gpu_graphics_submit_kind {
     RF_GPU_SUBMIT_UPLOAD, RF_GPU_SUBMIT_VERTEX_DIFF, RF_GPU_SUBMIT_SKIN_INPUT,

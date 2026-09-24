@@ -54,14 +54,14 @@ SIGN 牌柱、牌面和双面字形从同一冻结 render 值生成第八类网�
 body、被动装备及 AK 武器 pose 值接入各自独立的 Scene GPU 资源、skinning 和同一离屏 WORLD submit；
 活动投射物也按玩法 slot 冻结位置、时间、闪烁与光照，并以共享 bomb/molotov 模型资源加入该 WORLD submit。
 交互物按 session 槽位冻结类型、武器、位置、效果实例高亮与 V2 光照；冻结时沿用 PLAYING、暂停和商店的旧显隐条件。七类拾取模型与按钮、药瓶、弹药盒程序几何从该值帧进入同一离屏 Scene WORLD；静态 GPU 资源跨帧复用，特殊按钮底座按来源槽位和高度复用。交互物模型的固定采样点与 mixed 一致；程序几何当前按实例中心光照和共享形体绘制，其视觉容差仍待阶段 0 基线审批。
-程序角色、网络玩家和补充模块化角色的同帧 WORLD 诊断见 [角色表现](character-presentation.md)；正常 Scene 呈现仍待接入。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
+程序角色、网络玩家和补充模块化角色的同帧 WORLD 诊断及独立来源见 [角色表现](character-presentation.md)。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
 position-scale 换算。
 
 动态敌人身体及其阴影、舌头、死亡变换的审计值由 `render/rasterfall_enemy_rig.inc` 在旧 producer 的姿态求值后冻结，
 Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 gameplay、observer 或时钟。
 来源、暂缓范围及诊断限制见[角色表现](character-presentation.md)。
 普通感染体在同一值帧冻结 recipe 与已采样步态，独立 instance 提取身体几何；
-材质双面标志与光照参数随三角形进入同一 WORLD 深度域。独立正常来源与动态资源复用仍待接入。
+材质双面标志与光照参数随三角形进入同一 WORLD 深度域。独立预览另走直接来源；动态资源复用仍待优化。
 
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用
@@ -72,7 +72,10 @@ Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 game
 `--gpu-scene-independent-preview` 跳过本页下述旧整帧 producer 与录制流程。
 runtime 共用 camera 的展示求值顺序，随后直接调用 Scene 值冻结、pose、资源准备与 native 提交。
 Core 独立 begin 只获取窗口 extent，不创建 RasterCmd/mixed recording。
-本入口覆盖地图、正式模块化队员、旗帜、投射物和交互物；其余动态角色及非 WORLD 层仍缺失。
+本入口覆盖地图、正式模块化队员、旗帜、投射物和交互物；敌人及其余玩法角色由独立只读 adapter
+在同一冻结边界收集，所有权见[角色表现](character-presentation.md)。独立非 WORLD 来源由
+`render/rf_gpu_scene_layers.inc` 提取，地图透明与死亡 alpha 进入有序透明段；天空、特效、
+第一人称和 HUD 共享一次目标提交。完整性边界见活动计划，分层合同见 GPU 架构。
 旧 `--gpu-scene-world-preview` 的 producer 捕获诊断保留，不能视作新路径来源合同。
 资源和执行边界见 [GPU 架构](gpu-rendering-architecture.md)。
 

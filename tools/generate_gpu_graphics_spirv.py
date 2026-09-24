@@ -20,4 +20,6 @@ with tempfile.TemporaryDirectory() as directory:
         output.extend('    ' + ', '.join(f'0x{v:08x}U' for v in words[i:i+8]) + ','
                       for i in range(0, len(words), 8))
         output.append('};')
-pathlib.Path('gpu/src/rf_gpu_graphics_spirv.inc').write_text('\n'.join(output)+'\n')
+target = pathlib.Path('gpu/src/rf_gpu_graphics_spirv.inc')
+newline = '\r\n' if b'\r\n' in target.read_bytes() else '\n'
+target.write_bytes((newline.join(output)+newline).encode('utf-8'))

@@ -28,7 +28,7 @@ struct rf_gpu_scene_enemy_item_v1 {
      * Freeze the sampled stride, never query motion history during extraction. */
     int infected_recipe, infected_swing, infected_bind;
     int squash, transformed, pivot_x, pivot_y, pivot_z, roll_sin, roll_cos;
-    int transparent;
+    int transparent, alpha;
     int legacy_kind;
     int double_sided;
     int shadow, shadow_y, shadow_rx, shadow_rz;
@@ -50,6 +50,12 @@ struct rf_gpu_scene_enemy_frame_v1 {
 /* Capture the actual sampled living enemy body pose during normal render;
  * begin clears even frames where WORLD is not rendered. Freeze ends capture. */
 void rf_gpu_scene_enemy_begin(uint64_t frame_id, uint64_t world_generation);
+/* Called after begin with a bound renderer context. Samples gameplay/effects
+ * without issuing draw commands; commits presentation history once per frame. */
+int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
+    uint64_t now_us, uint64_t world_generation);
+int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
+    unsigned width,unsigned height);
 int rf_gpu_scene_enemy_freeze(struct rf_gpu_scene_enemy_frame_v1 *out);
 typedef int (*rf_gpu_scene_enemy_triangle_fn)(void *context,
     const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color);

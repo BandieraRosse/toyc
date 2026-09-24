@@ -4,6 +4,18 @@
 #include "rf_gpu_scene_world.h"
 #include "rf_gpu_scene_enemy.h"
 #include "rasterfall_camera.h"
+#include "rasterfall_hud.h"
+struct rasterfall_effects;
+/* Consumed synchronously into immutable geometry before GPU target writes. */
+struct rf_gpu_scene_layers_input {
+    const struct toy_game *source_game;
+    const struct rasterfall_effects *source_effects;
+    const struct rf_gpu_scene_world_render_frame_v1 *map;
+    struct rasterfall_hud_state hud;
+    int fps,paused,pause_selected,viewmodel_light;
+    void *ui_context;
+    void (*ui_layout)(void *, struct rasterfall_canvas *);
+};
 
 struct rf_gpu_resource_cache;
 struct rf_gpu_graphics;
@@ -35,6 +47,8 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
 struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
+    const struct rf_gpu_scene_layers_input *layers;
+    struct rf_gpu_graphics_resource *layer_resource[2];
     struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
@@ -54,6 +68,7 @@ struct rf_gpu_scene_world_gpu_probe {
 };
 struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t draws, actor_draws, flag_draws, flag_text_draws;
+    uint32_t layer_draws[6];
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
     uint32_t procedural_draws, procedural_items;
     uint32_t projectile_draws, pickup_model_draws, pickup_model_items;

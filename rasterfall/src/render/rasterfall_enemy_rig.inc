@@ -385,6 +385,7 @@ static void scene_enemy_capture_transform(struct toy_renderer *renderer,
     item->pivot_z=active_enemy_pivot_z;
     item->roll_sin=active_enemy_roll_sin;item->roll_cos=active_enemy_roll_cos;
     item->transparent=active_enemy_alpha<255;
+    item->alpha=active_enemy_alpha;
     if (item->transparent) scene_enemy_capture.transparent++;
     item->shadow=scene_enemy_aux.shadow;item->shadow_y=scene_enemy_aux.shadow_y;
     item->shadow_rx=scene_enemy_aux.shadow_rx;item->shadow_rz=scene_enemy_aux.shadow_rz;
@@ -408,13 +409,14 @@ int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
         item->z < -1000000 || item->z > 1000000 ||
         item->lift < -1000000 || item->lift > 1000000 ||
         item->squash<0 || item->squash>2000 ||
+        item->alpha<0 || item->alpha>255 ||
         item->roll_sin < -1024 || item->roll_sin>1024 ||
         item->roll_cos < -1024 || item->roll_cos>1024 ||
         (item->transformed &&
             (item->pivot_x!=item->x || item->pivot_z!=item->z ||
              item->pivot_y < -1000000 || item->pivot_y > 1000000))) return -1;
     if (scene_enemy_extras_triangles(item,emit,context)<0) return -1;
-    if (item->transparent) return 0;
+    if (item->transparent && item->alpha<=0) return 0;
     if (item->legacy_kind)
         return scene_legacy_triangles(item,scene_enemy_transform_triangle,&transform);
     if (item->infected_recipe)

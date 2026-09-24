@@ -1,5 +1,6 @@
 /* Real Game actor constructors and updates feed the adapter. No fabricated
  * rf_gpu_scene_actor_input arrays participate in this regression. */
+#include "rasterfall_enemy_visual.h"
 struct scene_enemy_test_geometry {
     uint64_t hash;
     unsigned count;
@@ -42,6 +43,51 @@ static int scene_local_source_test(void)
 #define LOCAL_CHECK(x) do { if (!(x)) { __printf("scene local source failed line %d\n",__LINE__); return 1; } } while (0)
     camera.cy=camera.pitch_cy=1024;
     {
+        struct rasterfall_infected_motion history={0}, saved_history;
+        struct rasterfall_infected_sample a, b, saved_sample;
+        uint64_t start=0x100000000ULL;
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,0,0,start,&a));
+        LOCAL_CHECK(a.next.valid && !a.next.moving && !a.swing);
+        history=a.next;memcpy(&saved_history,&history,sizeof(history));
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,100,0,start+1,&a));
+        LOCAL_CHECK(a.next.phase==100 && a.next.moving && a.swing==-9);
+        LOCAL_CHECK(!memcmp(&history,&saved_history,sizeof(history)));
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,100,0,start+1,&b));
+        LOCAL_CHECK(a.swing==b.swing && a.next.valid==b.next.valid &&
+            a.next.x==b.next.x && a.next.z==b.next.z && a.next.phase==b.next.phase &&
+            a.next.moving==b.next.moving && a.next.moved_us==b.next.moved_us &&
+            a.next.sampled_us==b.next.sampled_us);
+        history=a.next;
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,100,0,start+100000,&a));
+        LOCAL_CHECK(a.next.moving && a.swing==-9);
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,100,0,start+100001,&a));
+        LOCAL_CHECK(!a.next.moving && !a.swing);
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,320,0,start+2,&a));
+        LOCAL_CHECK(a.next.phase==320 && a.swing==24);
+        history=a.next;
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,619,0,start+3,&a));
+        history=a.next;
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,640,0,start+4,&a));
+        LOCAL_CHECK(!a.next.phase && a.swing==-24);
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,919,0,start+4,&a));
+        LOCAL_CHECK(!a.next.phase && !a.next.moving && !a.swing);
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,619,0,0,&a));
+        LOCAL_CHECK(a.next.valid && !a.next.phase && !a.next.moving);
+        for (int active=0;active<=2;active+=2) {
+            LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,active,619,0,start+4,&a));
+            LOCAL_CHECK(!a.next.valid && !a.next.phase && !a.swing);
+        }
+        /* Extreme coordinates must be treated as teleports without int overflow. */
+        history.x=(-2147483647-1);history.z=2147483647;
+        LOCAL_CHECK(!rasterfall_infected_sample_motion(&history,1,2147483647,(-2147483647-1),start+4,&a));
+        LOCAL_CHECK(!a.next.phase && !a.next.moving);
+        memcpy(&saved_sample,&a,sizeof(a));
+        LOCAL_CHECK(rasterfall_infected_sample_motion(&history,3,0,0,0,&a)<0);
+        LOCAL_CHECK(rasterfall_infected_sample_motion(NULL,1,0,0,0,&a)<0);
+        LOCAL_CHECK(!memcmp(&a,&saved_sample,sizeof(a)));
+        LOCAL_CHECK(rasterfall_infected_sample_motion(&history,1,0,0,0,NULL)<0);
+    }
+    {
         static struct rf_gpu_scene_enemy_frame_v1 frozen, saved_enemy;
         struct rf_gpu_scene_enemy_item_v1 item={0};
         const int types[3]={TOY_GAME_ENEMY_SMOKER,TOY_GAME_ENEMY_CHARGER,TOY_GAME_ENEMY_TANK};
@@ -68,6 +114,10 @@ static int scene_local_source_test(void)
             LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&death));
             LOCAL_CHECK(body.count==death.count && body.hash!=death.hash);
             item.transparent=1;
+            item.alpha=128;
+            struct scene_enemy_test_geometry faded={0};
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&faded) && faded.count==death.count);
+            item.alpha=0;
             LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&shadow) && !shadow.count);
             item.shadow=1;item.shadow_rx=230;item.shadow_rz=150;item.shadow_y=-886;
             LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&shadow) && shadow.count==2);

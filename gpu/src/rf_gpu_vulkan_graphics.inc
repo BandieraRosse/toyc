@@ -12,7 +12,7 @@
     X(CreateFramebuffer) X(DestroyFramebuffer) X(CreateGraphicsPipelines) \
     X(CmdBeginRenderPass) X(CmdEndRenderPass) X(CmdBindVertexBuffers) \
     X(CmdBindIndexBuffer) X(CmdDrawIndexed) X(CmdSetViewport) X(CmdSetScissor) \
-    X(CmdPushConstants) X(CmdCopyImageToBuffer) X(CmdBlitImage)
+    X(CmdPushConstants) X(CmdCopyImageToBuffer) X(CmdBlitImage) X(CmdClearAttachments)
 
 typedef struct rf_scene_blit {
     VkImageSubresourceLayers src; VkOffset3D src_offsets[2];
@@ -20,6 +20,16 @@ typedef struct rf_scene_blit {
 } rf_scene_blit;
 typedef void (RF_VK_CALL *rf_gfx_CmdBlitImage_fn)(VkCommandBuffer, VkImage,
     VkImageLayout, VkImage, VkImageLayout, uint32_t, const rf_scene_blit *, uint32_t);
+typedef struct rf_scene_clear_attachment {
+    uint32_t aspectMask, colorAttachment;
+    VkClearValue clearValue;
+} rf_scene_clear_attachment;
+typedef struct rf_scene_clear_rect {
+    VkRect2D rect;
+    uint32_t baseArrayLayer, layerCount;
+} rf_scene_clear_rect;
+typedef void (RF_VK_CALL *rf_gfx_CmdClearAttachments_fn)(VkCommandBuffer,
+    uint32_t,const rf_scene_clear_attachment *,uint32_t,const rf_scene_clear_rect *);
 
 struct rf_graphics_api {
 #define RF_GFX_FIELD(n) rf_gfx_##n##_fn n;
@@ -68,7 +78,7 @@ struct rf_gpu_graphics {
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
-    rf_vk_pipeline pipelines[8];
+    rf_vk_pipeline pipelines[12];
     VkRenderPass render_pass;
     VkRenderPass load_pass;
     rf_vk_descriptor_set_layout bridge_set_layout;
@@ -262,7 +272,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     gfx_target_destroy(g, &g->target);
     if (g->pool) impl->api.destroy_command_pool(impl->device, g->pool, NULL);
     if (g->fence) impl->api.destroy_fence(impl->device, g->fence, NULL);
-    for (unsigned i = 0; i < 8; ++i)
+    for (unsigned i = 0; i < 12; ++i)
         if (g->pipelines[i]) impl->api.destroy_pipeline(impl->device, g->pipelines[i], NULL);
     if (g->render_pass) g->api.DestroyRenderPass(impl->device, g->render_pass, NULL);
     if (g->load_pass) g->api.DestroyRenderPass(impl->device, g->load_pass, NULL);
@@ -506,7 +516,8 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     pipeline.pDepthStencilState = &depth_state; pipeline.pColorBlendState = &blend;
     pipeline.pDynamicState = &dynamic; pipeline.layout = g->layout; pipeline.renderPass = g->render_pass;
     pipeline.basePipelineIndex = -1;
-    for (unsigned alpha=0;alpha<2;++alpha) {
+    for (unsigned alpha=0;alpha<(compatible ? 2u : 3u);++alpha) {
+        depth_state.depthTestEnable=alpha==2 ? 0 : RF_VK_TRUE;
         depth_state.depthWriteEnable=alpha ? 0 : RF_VK_TRUE;
         blend_attachment.blendEnable=alpha ? RF_VK_TRUE : 0;
         blend_attachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
@@ -1158,8 +1169,11 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 ||
         d->material[2] > 1 || d->material[3] > 1 ||
-        d->camera[3] || d->texture[2]<0 || d->texture[2]>254 ||
-        (d->texture[2] && d->integer_depth) || d->texture[3] ||
+        d->camera[3] || d->texture[2]<0 || d->texture[2]>255 ||
+        (d->texture[2] && d->integer_depth) ||
+        d->texture[3]<0 || d->texture[3]>2 ||
+        (d->texture[3] && d->integer_depth) ||
+        d->scene_layer>=RF_GPU_SCENE_LAYER_COUNT ||
         d->translation_scale[3] < 1 || d->translation_scale[3] > 8000 ||
         d->rotation[2] < -32767 || d->rotation[2] > 32767 ||
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
@@ -1374,15 +1388,23 @@ static int gfx_render(struct rf_gpu_graphics *g,
         (!r && !scene && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     {
         struct rf_gpu_graphics_resource *saved = g->resource;
-        int valid = 1,transparent_started=0;
+        int valid = 1,transparent_started=0,last_layer=-1;
         for (uint32_t i = 0; i < count; ++i) {
             const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
+            int layer=d->scene_layer==RF_GPU_SCENE_SKY ? 0 :
+                d->scene_layer==RF_GPU_SCENE_WORLD ? 1 : (int)d->scene_layer;
+            if (scene && layer!=last_layer) transparent_started=0;
             if (items) g->resource = items[i].resource;
             if (!gfx_resource_compatible(g,g->resource) ||
                 !gfx_draw_valid(g, d, !g->resource->frame_dynamic) ||
                 (r && !d->integer_depth) ||
-                (scene && transparent_started && !d->texture[2])) { valid = 0; break; }
+                (scene && (layer<last_layer ||
+                    (transparent_started && !d->texture[2]) ||
+                    ((d->scene_layer==RF_GPU_SCENE_SKY ||
+                      d->scene_layer==RF_GPU_SCENE_OVERLAY) && d->texture[3]!=2) ||
+                    (d->scene_layer==RF_GPU_SCENE_TRANSPARENT && !d->texture[2])))) { valid = 0; break; }
             if (scene && d->texture[2]) transparent_started=1;
+            last_layer=layer;
         }
         g->resource = saved;
         if (!valid) return -1;
@@ -1413,8 +1435,17 @@ static int gfx_render(struct rf_gpu_graphics *g,
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
     uint32_t draw_timestamp=timestamp_begin(r,g->cmd,RF_GPU_TS_DRAW);
+    int viewmodel_started=0;
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
+        if (scene && d->scene_layer==RF_GPU_SCENE_VIEWMODEL && !viewmodel_started) {
+            rf_scene_clear_attachment attachment={0};
+            rf_scene_clear_rect rect={0};
+            attachment.aspectMask=VK_IMAGE_ASPECT_DEPTH_BIT;
+            rect.rect.extent=begin.renderArea.extent;rect.layerCount=1;
+            g->api.CmdClearAttachments(g->cmd,1,&attachment,1,&rect);
+            viewmodel_started=1;
+        }
         struct rf_gpu_graphics_resource *resource = items ? items[i].resource : g->resource;
         uint32_t factor = d->integer_depth ? 2 : 1;
         g->api.CmdBindVertexBuffers(g->cmd, 0, 1, &resource->vertices.buffer, &offset);
@@ -1424,7 +1455,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
         impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             g->layout, 0, 1, &descriptor, 0, NULL);
         impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            g->pipelines[d->double_sided+d->integer_depth*2+(d->texture[2]?4:0)]);
+            g->pipelines[d->double_sided+d->integer_depth*2+
+                (d->texture[3]==2?8:(d->texture[2]?4:0))]);
         g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }

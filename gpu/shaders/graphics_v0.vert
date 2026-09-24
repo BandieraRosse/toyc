@@ -20,6 +20,17 @@ ivec3 rotate_normal(ivec3 n) {
     return (r << 16) >> 16;
 }
 void main() {
+    if (d.texture_info.w != 0) {
+        float w = 1048576.0 / float(max(position.z,1));
+        gl_Position = vec4((2.0*float(position.x)/float(d.projection.x)-1.0)*w,
+                          (2.0*float(position.y)/float(d.projection.y)-1.0)*w,
+                          0.5*w,w);
+        inverse_z = float(position.z);
+        texcoord = vec2(uv)/65536.0;
+        vertex_light = 256.0;
+        form_light = 256u;
+        return;
+    }
     ivec3 p = ivec3((position.x*d.rotation.y+position.z*d.rotation.x)/1024,
                    position.y-d.rotation.z,
                    (position.z*d.rotation.y-position.x*d.rotation.x)/1024);

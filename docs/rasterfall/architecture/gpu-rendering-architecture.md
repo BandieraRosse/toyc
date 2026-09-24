@@ -25,17 +25,37 @@
 
 ## 独立 Scene 开发入口
 
+`--gpu-scene-play` 是显式实验性单人入口，自动选择 required native GPU 和独立 Scene。
+不要求固定镜头或固定 tick，默认落地前哨站，继续使用正常输入、session 和 world 切换。
+拒绝网络模式与 legacy map；性能与完整内容签收仍由活动计划跟踪。Scene 提取、准备或提交失败
+进入 runtime 统一关闭路径，清理音频、Scene 资源、Game 和 Core 后非零退出。
+
 `--gpu-scene-independent-preview` 在 runtime 层选择独立来源，不调用旧整帧
 `rf_game_render_profiled`。`rf_core_begin_scene_frame` 只获取窗口 surface/extent，
 不运行 CPU renderer begin/clear、不启动 mixed recording、不 pin 旧 registry。
 camera 使用共享的只读展示求值；地图、正式模块化队员、旗帜、投射物和交互物直接冻结，
+敌人和其余角色从 `rf_gpu_scene_enemy_collect_independent`、`rf_gpu_scene_actor_collect_independent`
+冻结身体姿态、死亡、附属表现、程序/倒地角色、补充模块化角色及网络展示输入，
 经 Scene registry/cache、pose/skinning 和独立 native owner 提交并退休。
 逐帧检查旧 RasterCmd 和 mixed draw 数为零。旧 WORLD preview 保留 producer 驱动的诊断方式。
 
-当前入口是内容不完整的开发预览：敌人、程序/补充角色、downed、网络角色与非 WORLD 层尚未接入，
-空敌人值帧不代表这些内容已经迁移。它仍共享 Scene 审计编排和 GPU 初始化设施，
+独立入口通过 `render/rf_gpu_scene_layers.inc` 在目标写入前提取天空、地图透明、特效、
+第一人称和 HUD 布局；敌人冻结值携带死亡 alpha。有序批次按 SKY、WORLD、TRANSPARENT、
+EFFECTS、VIEWMODEL、OVERLAY 稳定分层，层内不透明在前，透明保持来源顺序。
+透明 source-over、depth-test/no-depth-write；SKY/OVERLAY 不测试或写入深度。
+首次 VIEWMODEL draw 在同一 render pass 内清空深度附件，保留已经完成的世界颜色，
+以独立的逻辑深度域直接合成武器和透明枪口；未覆盖的像素保留世界颜色，无 framebuffer copy。
+POST 沿用正常帧 identity 策略。整批验证包括层序，失败不提交部分目标。
+
+当前入口仍是内容不完整的开发预览；细节与可玩门槛由活动计划拥有。
+动态来源数量逐帧输出，不能以 `dynamic_sources_pending=0` 代替完整帧验收。它仍共享 Scene 审计编排和 GPU 初始化设施，
 几何与光照 helper 尚位于既有 renderer 模块；独立正常帧协调器及多 slot 流水尚未实现。
 这种代码复用不能演变为调用旧 draw producer 来取得新帧输入。开发顺序只由活动计划拥有。
+
+显式独立预览 capture 用同一冻结批次先提交离屏 Scene color/depth 读回，再 native present；
+只将指定帧标为 `readback=1`，未请求捕获的帧保持零读回。该图用于内容检查，不证明 swapchain
+自身的呈现颜色，也不参与产品性能结论；捕获失败仍整帧失败，不回放 mixed。
+分层几何与两种纹理 backing 由 Scene owner 持有到同步退休；后续帧重建，尚未做资源复用优化。
 
 ## 混合帧数据流
 
@@ -180,7 +200,7 @@ owner 跨审计帧复用，registry frame pin 在诊断
 
 程序角色、host/guest 玩家与补充模块化角色也进入上述 WORLD submit，来源与身份限制由
 [角色表现](character-presentation.md)拥有。双面属性来自冻结的 producer/material，不能在 Scene 默认改为单面。
-敌人阴影、舌头和束缚圈保留原几何及深度语义；不透明死亡身体使用冻结旋转和光照，渐隐身体留给透明层。
+敌人阴影、舌头和束缚圈保留原几何及深度语义；死亡身体使用冻结旋转、光照与 alpha，渐隐身体进入有序透明层。
 
 `rf_gpu_graphics_scene_capture_at` 为离屏 WORLD render pass 写入两次 GPU timestamp，并在同步 fence
 完成后按调用方 frame ID 读取；上传、skinning 和 readback 不计入 draw 时间。旧无计时 capture 保留包装入口。

@@ -9,6 +9,26 @@
 
 ## 模块与层
 
+独立 Scene 路径不调用旧整帧 producer。`rasterfall_canvas` 将布局变成裁剪后的矩形与
+UTF-8 点阵字形 run；`rasterfall_sky_layout`、`rasterfall_hud_layout` 和 prompt layout
+不持有 surface。旧入口使用 surface adapter，新入口直接生成 SKY/OVERLAY GPU 三角形，
+不存在 CPU HUD 图片上传或 mixed recording。
+
+暂停设置、结算、武器散布准星和 Tab 计分板也使用同一 canvas 布局。runtime 通过
+同步 `ui_layout` 回调提供只读菜单状态，Scene 在资源准备前将其冻结为 OVERLAY 几何；
+回调不保存到异步 GPU slot。AI 名字、血量和倒地/救援进度由 Scene 从当前 actor 展示值生成。
+正常运行的 Desktop/Console 仍遵守 [Application Runtime](application-runtime.md) 的关闭 gate。
+
+`rasterfall_viewmodel_geometry` 共享手臂、武器、换弹、摆动与 local muzzle 的几何求值，
+通过显式 callback 输出投影顶点、材质 alpha、光照及纹理。旧 renderer adapter 和 Scene
+adapter 分别消费，几何入口不创建 RasterCmd。Scene 屏幕顶点保留 inverse-Z 与透视 UV，
+VIEWMODEL 深度域及覆盖合成由 [GPU 架构](gpu-rendering-architecture.md)拥有。
+
+独立特效 adapter 只读固定容量 instance 池，在提交前生成 EFFECTS 几何；本地枪口留在
+VIEWMODEL，screen overlay 留在 OVERLAY。首版表现的未完成项由活动计划跟踪。
+Scene 射线使用世界空间 ribbon，由硬件执行近裁剪与透视；死亡碎片使用三维盒体，
+受击箭头消费 effect instance 中已经量化的方向，不重新计算玩法伤害。
+
 - `rasterfall_hud.c`：玩家、网络、波次、商店、交互提示、菜单以及 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器、摆动/后座和 local muzzle placement。
 - `rasterfall_effects.c`：消费 effect event，更新固定容量 runtime instance/emitter 池并提交可见组件。

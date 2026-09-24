@@ -914,7 +914,7 @@ $(BUILD)/rf_gpu_raster_pack_app.o: gpu/src/rf_gpu_raster_pack.c \
                                   include/toy_renderer.h | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -include tlibc_compat.h -c $< -o $@
 
-$(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h | $(BUILD)
+$(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1132,6 +1132,9 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                              $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
+                              $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
+                              $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \
                               $(RASTERFALL_INC)/rasterfall_enemy_rig.h \
                               $(RASTERFALL_INC)/rasterfall_enemy_visual.h \
@@ -1855,6 +1858,9 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                                   $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
+                                   $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
+                                   $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_rig.inc \
                                    $(RASTERFALL_INC)/rasterfall_enemy_rig.h \
                                    $(RASTERFALL_INC)/rasterfall_enemy_visual.h \
@@ -2131,6 +2137,8 @@ export-qwen2-tokenizer:
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
+$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_INC)/rasterfall_canvas.h
+$(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

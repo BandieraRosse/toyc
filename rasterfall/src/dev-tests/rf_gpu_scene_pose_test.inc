@@ -29,6 +29,7 @@ int rf_gpu_scene_pose_logic_test(void)
     struct toy_game_actor *actor;
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
+    POSE_CHECK(!scene_independent_enemy_source_test());
     /* Exercise the real network presentation adapter without sockets or a GPU.
      * Bodies behind the camera still freeze their values before raster clipping. */
     {
@@ -65,6 +66,28 @@ int rf_gpu_scene_pose_logic_test(void)
                     scene_infected_test_triangle,&geometry) && geometry.count);
                 POSE_CHECK(!memcmp(&before,&source_game,sizeof(before)) &&
                     !memcmp(&saved_net,&net,sizeof(net)));
+                /* The independent adapter must resolve the same network input
+                 * without invoking render_network_teammate or recording draws. */
+                {
+                    static struct rasterfall_session owner;
+                    struct rasterfall_session *saved_session=active_session;
+                    const struct rasterfall_net *saved_active_net=active_net;
+                    struct rasterfall_world_lighting *saved_light=active_world_lighting;
+                    memset(&owner,0,sizeof(owner));owner.game_state=source_game;
+                    active_session=&owner;active_net=&net;active_world_lighting=NULL;
+                    rf_gpu_scene_enemy_begin(10+downed,1);
+                    int result=rf_gpu_scene_actor_collect_independent(&viewer,1280,720);
+                    active_session=saved_session;active_net=saved_active_net;
+                    active_world_lighting=saved_light;
+                    POSE_CHECK(!result && !rf_gpu_scene_enemy_freeze(&captured));
+                    POSE_CHECK(captured.procedural_count==1 && !captured.modular_count);
+                    s=&captured.procedural[0].state;
+                    POSE_CHECK(s->x==321 && s->z==-9000 && s->cy==-1024 &&
+                        s->weapon==TOY_GAME_WEAPON_AK && s->downed==downed &&
+                        s->animation_time_ms==123);
+                    POSE_CHECK(!memcmp(&owner.game_state,&before,sizeof(before)) &&
+                        !memcmp(&saved_net,&net,sizeof(net)) && !renderer.cmd_count);
+                }
             }
             /* Local player exclusion on guest, disconnected peer on host. */
             if (client) net.local_player_id=1; else net.clients[0].connected=0;
@@ -129,6 +152,33 @@ int rf_gpu_scene_pose_logic_test(void)
     }
     __printf("scene infected PASS six-recipes/stride/replay/scratch-isolation/failure\n");
     camera.cy=camera.pitch_cy=1024;
+    {
+        static struct rasterfall_session owner;
+        static struct rf_gpu_scene_enemy_frame_v1 captured;
+        struct rasterfall_session *saved_session=active_session;
+        const struct rasterfall_net *saved_net=active_net;
+        struct rasterfall_world_lighting *saved_light=active_world_lighting;
+        memset(&owner,0,sizeof(owner));toy_game_init(&owner.game_state,1);
+        id=toy_game_add_ai(&owner.game_state,TOY_GAME_AI_LEVEL_1,120,240,"INDEPENDENT");
+        POSE_CHECK(id>0);actor=&owner.game_state.actors[id-1];
+        actor->character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+        actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
+        active_session=&owner;active_net=NULL;active_world_lighting=NULL;
+        for (int downed=0;downed<2;++downed) {
+            actor->state=downed ? TOY_GAME_ACTOR_DOWNED : TOY_GAME_ACTOR_ALIVE;
+            before=owner.game_state;
+            rf_gpu_scene_enemy_begin(100+downed,77);
+            int result=rf_gpu_scene_actor_collect_independent(&camera,1280,720);
+            POSE_CHECK(!result && !rf_gpu_scene_enemy_freeze(&captured));
+            POSE_CHECK(captured.modular_count==(unsigned)!downed &&
+                captured.procedural_count==(unsigned)downed);
+            if (downed) POSE_CHECK(captured.procedural[0].state.downed);
+            else POSE_CHECK(captured.modular[0].bone_count && captured.modular[0].weapon_valid);
+            POSE_CHECK(!memcmp(&owner.game_state,&before,sizeof(before)));
+        }
+        active_session=saved_session;active_net=saved_net;active_world_lighting=saved_light;
+        __printf("scene independent actors PASS supplemental/downed/immutable/network\n");
+    }
     toy_game_init(&source_game,1);
     id=toy_game_add_ai(&source_game,TOY_GAME_AI_LEVEL_1,120,240,"POSE");
     POSE_CHECK(id>0); slot=id-1; actor=&source_game.actors[slot];
