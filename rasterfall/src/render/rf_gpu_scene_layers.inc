@@ -10,7 +10,7 @@ struct scene_layer_triangle {
 struct scene_layer_mesh {
     struct scene_layer_triangle *triangles;
     uint32_t count,capacity;
-    int layer,failed;
+    int layer,failed,width,height;
 };
 static int scene_layer_emit(struct scene_layer_mesh *m,
     const struct rf_gpu_graphics_vertex *a,const struct rf_gpu_graphics_vertex *b,
@@ -41,6 +41,16 @@ static int scene_layer_rect_depth(struct scene_layer_mesh *m,int x,int y,int w,i
     uint32_t color,int alpha,int inverse_z,int screen)
 {
     struct rf_gpu_graphics_vertex v[4]={0};
+    /* Screen-space particles/labels can project far beyond int16 geometry.
+     * Clip the constant-depth rectangle before upload, preserving its visible
+     * intersection instead of rejecting the entire Scene frame. */
+    int64_t right=(int64_t)x+w,bottom=(int64_t)y+h;
+    if (w<=0 || h<=0 || right<=0 || bottom<=0 || x>=m->width || y>=m->height) return 0;
+    if (x<0) x=0;
+    if (y<0) y=0;
+    if (right>m->width) right=m->width;
+    if (bottom>m->height) bottom=m->height;
+    w=(int)(right-x);h=(int)(bottom-y);
     for (int i=0;i<4;++i) {
         v[i].position[0]=x+((i==1 || i==2)?w:0);
         v[i].position[1]=y+(i>=2?h:0);v[i].position[2]=inverse_z;
@@ -158,6 +168,7 @@ static void scene_layer_box(struct scene_layer_mesh *mesh,int x0,int x1,int y0,i
 static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct rf_gpu_scene_layers_input *input,const struct camera *camera,int width,int height)
 {
+    mesh->width=width;mesh->height=height;
     struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect};
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
     mesh->layer=RF_GPU_SCENE_SKY;rasterfall_sky_layout(&canvas,camera);
@@ -276,7 +287,17 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             if (i && !textured) continue;
             probe->layer_resource[i]=rf_gpu_graphics_resource_create(probe->graphics,vertices,mesh.count*3,
                 indices,mesh.count*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
-            if (!probe->layer_resource[i]) goto done;
+            if (!probe->layer_resource[i]) {
+                fprintf(stderr,"SCENE layer upload failed triangles=%u textured=%d\n",mesh.count,i);
+                for (unsigned v=0;v<mesh.count*3;++v)
+                    for (unsigned k=0;k<3;++k)
+                        if (vertices[v].position[k]<-32767 || vertices[v].position[k]>32767) {
+                            fprintf(stderr,"SCENE layer vertex=%u axis=%u position=%d layer=%d screen=%d\n",
+                                v,k,vertices[v].position[k],mesh.triangles[v/3].layer,mesh.triangles[v/3].screen);
+                            goto done;
+                        }
+                goto done;
+            }
         }
         void *next=realloc(*batch,((size_t)*count+mesh.count)*sizeof(**batch));
         if (!next) goto done;

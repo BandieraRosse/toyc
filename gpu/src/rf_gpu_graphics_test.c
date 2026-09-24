@@ -489,6 +489,50 @@ static int compat_suite(struct rf_gpu_graphics *g)
     return failed?-1:0;
 }
 
+static int triangle_reuse_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *resource=NULL,*reference=NULL;
+    struct rf_gpu_graphics_vertex v[9];
+    struct rf_gpu_graphics_stats before,after;
+    struct rf_gpu_graphics_draw d=draw(128,96);
+    uint32_t ix[9]={0,1,2,3,4,5,6,7,8};
+    uint64_t positions,normals,uvs;
+    uint32_t position_delta,normal_delta;
+    int result=-1;
+    for (unsigned i=0;i<9;++i) v[i]=vertices[indices[i%6]];
+    CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    resource=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
+    CHECK(resource!=NULL);
+    rf_gpu_graphics_get_stats(g,&before);
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,resource,v,9)==1);
+    v[0].position[0]=32768;
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,resource,v,6)<0);
+    v[0]=vertices[indices[0]];
+    for (unsigned i=0;i<6;++i) v[i].position[0]+=12;
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,resource,v,3)==0);
+    CHECK(rf_gpu_graphics_resource_bind(g,resource)==0);
+    CHECK(rf_gpu_graphics_validate_draw(g,&d)<0); /* Active range shrank. */
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,resource,v,6)==0);
+    CHECK(rf_gpu_graphics_resource_diff_vertices(g,resource,v,6,&positions,&normals,&uvs,
+        &position_delta,&normal_delta)==0);
+    CHECK(!positions && !normals && !uvs);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.texture_upload_bytes==before.texture_upload_bytes);
+    CHECK(after.mesh_upload_bytes-before.mesh_upload_bytes==9*sizeof(*v));
+    CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
+    memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
+    reference=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
+    CHECK(reference && rf_gpu_graphics_resource_bind(g,reference)==0);
+    CHECK(rf_gpu_graphics_render(g,&d,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
+    result=0;
+done:
+    rf_gpu_graphics_destroy(g);
+    printf("SCENE triangle reuse/grow/reject/pixels: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
 static int scene_layers_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
@@ -688,6 +732,7 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_graphics_resource_destroy(other,extra)==0);extra=NULL;
     CHECK(rf_gpu_graphics_render(other,&d,1,pixels,depths,MAX_PIXELS)<0);
     CHECK(scene_layers_test(&context)==0);
+    CHECK(triangle_reuse_test(&context)==0);
     result=0;
 done:
     rf_gpu_graphics_destroy(other);

@@ -338,18 +338,26 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     uint32_t width,uint32_t height,
     struct rf_gpu_graphics_batch_item *items,uint32_t capacity,uint32_t *count)
 {
+    int64_t t0,t1,t2,t3;
     if (!actor || !pose || !camera || !items || !count || actor->frame_active ||
         !width || !height || width>INT_MAX || height>INT_MAX) return -1;
     *count=0;
-    if (scene_load(&actor->slot,pose,0)<0 ||
-        scene_pack(&actor->slot,pose,camera,(int)width,(int)height,0)<0 ||
+    t0=rf_core_clock_now_us();
+    if (scene_load(&actor->slot,pose,0)<0) return -1;
+    t1=rf_core_clock_now_us();
+    if (scene_pack(&actor->slot,pose,camera,(int)width,(int)height,0)<0 ||
         actor->slot.draw_count>capacity) return -1;
+    t2=rf_core_clock_now_us();
     if (scene_prepare(&actor->slot,actor->graphics,0)<0) {
         rasterfall_resources_frame_complete(&actor->slot.registry);
         actor->slot.pinned=0;
         return -1;
     }
     actor->frame_active=1;
+    t3=rf_core_clock_now_us();
+    __printf("SCENE-ACTOR-COST frame=%llu load_us=%lld pack_us=%lld upload_skin_wait_us=%lld meshes=%u\n",
+        (unsigned long long)pose->frame_id,(long long)(t1-t0),(long long)(t2-t1),
+        (long long)(t3-t2),actor->slot.mesh_count-1);
     memcpy(items,actor->slot.draws,
         actor->slot.draw_count*sizeof(*items));
     *count=actor->slot.draw_count;

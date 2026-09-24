@@ -27,6 +27,28 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 
 ## 独立来源开发预览
 
+### 动态资源运行成本
+
+队员上传 A/B 使用 `tools/gpu_scene_cost.ps1 -Experiment ActorUpload -OutputDirectory tmp/actor-upload-ab`，
+保持动态三角形资源复用，两侧分别为临时 staging 与直接写入/保留 staging。工具仍运行三轮交替、每轮 64 帧，
+报告均值和分位数；耗时分布用各段累计时间除以累计帧墙钟，不能用中位数占比。
+`RF_GPU_SKIN_LEGACY_UPLOAD=1` 恢复旧上传分支；`RF_GPU_SKIN_STAGING_UPLOAD=1` 强制走保留 staging 的备用分支，
+用于设备可直接写入时验证备用路径。二者只作诊断，性能采样不要启用强制 staging。
+`SCENE-ACTOR-COST` 按 actor 输出 load、CPU pack、upload/skin/wait 墙钟；最后一项仍包含驱动及同步等待，
+不是纯 GPU skin 时间。它也会记录补充模块化角色，汇总时应按所属来源解释。
+
+完成 package 后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_cost.ps1
+-OutputDirectory tmp/scene-cost-ab`（命令写在同一行）。工具在同一包、固定 tick、near 0/30/60 下交替运行
+重建/复用，各三轮 64 帧，排除前 8 帧，保留日志、exe 哈希及 `report.json`；逐帧 draw 和来源数量必须一致。
+`RF_GPU_SCENE_REBUILD_DYNAMIC=1` 是显式诊断对照，仅强制重建敌人/程序角色资源，不改变几何；正常运行不设置。
+脚本自动恢复此环境变量。`SCENE-FRAME-COST` 的计时边界见 [GPU 架构](../architecture/gpu-rendering-architecture.md)。
+该采样有逐帧日志，属于优化归因，不替代阶段 5 的低扰动五轮 FPS 签收。
+
+`gpu_scene_preview.ps1 -Independent -Capture -CaptureFrame 4 -Frames 4` 可捕获复用多帧后的同批次画面；
+默认仍捕获首帧。分别在重建与复用模式运行相同固定镜头，可以比较 PPM 像素并验证资源更新后的实际内容。
+
+### 来源与分层验证
+
 先完成 Windows package，再运行：
 
 ```powershell
@@ -113,7 +135,7 @@ Scene WORLD PPM、每帧 draw/上传/提取/时间戳以及 executable 哈希。
 `tools/gpu_scene_network.ps1` 保留为 GPU 完成后网络专项的复现工具；其 guest 数量断言尚未通过，
 数量预期本身也需核对可见性。它不属于当前收尾门禁，见[收尾记录](../plans/gpu-scene-stage2-handoff.md)。
 
-Scene 审计仍是同步 readback 诊断；动态资源逐帧预备。GPU draw timestamp 排除 upload/skinning/readback；
+Scene 审计仍是同步 readback 诊断；动态资源逐帧预备，敌人/程序角色资源已按退休后的容量复用。GPU draw timestamp 排除 upload/skinning/readback；
 prepare 是包含资源操作的墙钟，geometry 是敌人/程序几何提取，local_pose 是正式 roster 独立 pose 提取。
 冷帧和后续帧分别保留，短诊断不作为产品 FPS、完整帧性能 A/B 或固定画面基线审批。
 
@@ -271,7 +293,7 @@ native present 和同帧 mixed BMP / Scene PPM，并调用 `tools/gpu_scene_enem
 三个特感和六种普通感染体的存活身体进入 WORLD；阴影、舌头、死亡和显式 LEGACY 尚未覆盖，不能对完整画面要求逐像素相等。
 源码中的逻辑回归另检查三类刚性几何的确定性、pose 变化、失败传播和单帧冻结边界。
 `--gpu-scene-pose-test` 另检查六种感染体资源、步态变化、冻结重放、旧 scratch pose 隔离与失败传播。
-普通感染体每帧仍有诊断资源重建和读回，因此专项只取两帧，不用于 whole-loop 性能或长时运行结论。
+普通感染体仍逐帧提取并更新动态顶点，诊断包含同步读回，因此该专项不用于 whole-loop 性能或长时运行结论。
 
 更新 package 后，从 package root 运行 `rasterfall.exe --gpu-scene-pose-test`，或使用
 `powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-pose-test`。

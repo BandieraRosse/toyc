@@ -46,6 +46,8 @@ EFFECTS、VIEWMODEL、OVERLAY 稳定分层，层内不透明在前，透明保�
 首次 VIEWMODEL draw 在同一 render pass 内清空深度附件，保留已经完成的世界颜色，
 以独立的逻辑深度域直接合成武器和透明枪口；未覆盖的像素保留世界颜色，无 framebuffer copy。
 POST 沿用正常帧 identity 策略。整批验证包括层序，失败不提交部分目标。
+等深度屏幕矩形（粒子、文字和 canvas 面板）在上传前裁剪到视口，避免屏幕外投影坐标超过 GPU
+几何范围而拒绝整帧；裁剪保持可见区域的颜色、深度和透明度。
 
 当前入口仍是内容不完整的开发预览；细节与可玩门槛由活动计划拥有。
 动态来源数量逐帧输出，不能以 `dynamic_sources_pending=0` 代替完整帧验收。它仍共享 Scene 审计编排和 GPU 初始化设施，
@@ -126,7 +128,7 @@ native swapchain。旧 producer 暂时仍负责展示求值与冻结；Core 的
 该路径不执行 mixed、不读回 WORLD color/depth，也不上传 CPU framebuffer。
 native 成功提交与退休单独计数，不能因 CPU scene pixel 为零误判无输出。
 提交/退休失败先排空 graphics owner 再释放 CPU pin；不接回 mixed。
-当前 owner 同步等待每帧退休，动态敌人仍每帧重建；这不是多帧流水性能方案。
+当前 owner 同步等待每帧退休，动态敌人/程序角色按槽复用资源容量；这不是多帧流水性能方案。
 此显式预览仅显示 WORLD，天空、透明、特效、VIEWMODEL、OVERLAY 尚未接入；默认完整呈现仍走 mixed。
 
 `rf_gpu_scene_native.c` 拥有显式 `--gpu-scene-native-fixture` 的冻结输入、资源解析、整帧验证和单个
@@ -190,8 +192,12 @@ session 交互物按来源槽位冻结 kind、weapon、位置、效果高亮及 
 特感、普通感染体与 LEGACY 身体由同帧 producer 冻结 pose/步态、变换、反馈与光照输入，独立预备从这些值生成
 Smoker、Charger、Tank 的刚性网格，和地图、角色共用 Scene WORLD color/depth。
 几何枚举与 mixed 共用，连续同色三角形合并 draw，保留原始提交顺序；冻结时若采用 V2 顶点光照，
-则在复制的 light field 中采样，否则使用冻结的实例光照。diagnostic owner 持有动态资源直到同步提交完成，
-下帧预备重建，失败时由 owner teardown 回收。这不是正常帧的资源复用或性能方案。
+则在复制的 light field 中采样，否则使用冻结的实例光照。Scene owner 在同步提交退休后复用敌人与程序角色
+的动态三角形资源槽；槽只代表容量，不代表角色身份，每帧重新提取并写入全部活动顶点和 draw 材质。
+顺序索引、白色纹理、buffer 与 descriptor 保留；容量不足时替换资源，暂时不活动的槽保留到 owner 关闭。
+更新同步刷新活动索引范围和位置边界；共享、skinned 或尚未退休的资源拒绝更新。host-visible 顶点 buffer
+直接写入并按需 flush，其他内存使用资源持有的 staging buffer 和同步 transfer；失败由 owner teardown 回收。
+世界切换随 Scene owner 关闭释放资源。该策略仍是单 slot 同步退休，不表示多帧流水已经实现。
 owner 跨审计帧复用，registry frame pin 在诊断
 提交完成后退休，cache 随 generation collect。该诊断不替换 Core mixed executor 的正常提交；
 读回耗时也不在此前记录的 `FRAME-AUDIT whole_loop_ms` 内。
@@ -208,7 +214,17 @@ owner 跨审计帧复用，registry frame pin 在诊断
 出现 bridge 即失败。`SCENE-EXTRACT` 单列本地 pose 与敌人/程序角色的 CPU 几何提取时间。
 这些是离屏诊断成本，不能替代正常帧 whole-loop 或 FPS。
 
+独立 native 路径另输出 `SCENE-FRAME-COST`：world、正式角色、敌人/程序角色、分层准备及提交/退休墙钟，
+并记录动态资源复用/创建数。`whole_loop_us` 从本轮主循环开始计至 Scene 退休后输出该记录前，包含逻辑和
+来源提取，不包含后续日志与循环尾部工作；capture 帧还包含额外离屏读回，不能用于正常帧性能比较。
+这些分段不是完整 prepare 的穷尽拆分，旗帜、拾取物和批次数组准备等仍在总 prepare 中。
+
 ## 角色 GPU skinning
+
+同步 graphics skin update 在上一提交及 Scene 使用退休后写入输入：目标支持 host-visible 时直接 map/flush，
+否则按资源容量保留 staging buffer，随资源销毁。bind 与 palette 仍每帧完整更新，compute 仍逐资源提交并等待；
+没有跨帧流水或减少蒙皮工作。非 coherent 内存刷新完整映射分配，transfer 分支保留 transfer→compute barrier，
+compute→vertex/transfer barrier 保持不变。host 写入经后续 queue submit 对设备可见。
 
 CPU 继续拥有 pose、IK、socket、gear 和 weapon placement。mixed frame 冻结 finalized palette、bind
 position/normal、BDEF influence 和索引；compute skinning 输出写入 frame-slot device-local vertex buffer，

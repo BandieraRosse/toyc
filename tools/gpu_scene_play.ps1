@@ -51,7 +51,9 @@ function Run([string]$Name,[string[]]$Argv,[int]$Expected=0,[int]$Count=4) {
     $Handle=$p.Handle
     $Phase=0;$KeyUp=0;$Window=[IntPtr]::Zero
     $Deadline=[DateTime]::UtcNow.AddMinutes(8)
-    while (-not $p.WaitForExit(1000)) {
+    # Faster frames must still leave time to drive the input sequence.
+    $PollMs=if ($Name -eq 'interaction-resize') {100} else {1000}
+    while (-not $p.WaitForExit($PollMs)) {
         if ([DateTime]::UtcNow -gt $Deadline) { Stop-Process -Id $p.Id -Force;throw "$Name timeout" }
         if ($Name -eq 'interaction-resize') {
             $Window=[ScenePlayWindow]::Find($p.Id)

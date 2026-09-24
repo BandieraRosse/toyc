@@ -62,11 +62,14 @@ struct rf_gpu_graphics_resource {
         rf_vk_descriptor_set set;
     } shared_binding;
     struct rf_gpu_vulkan_raster_buffer skin_bind, skin_palette;
+    struct rf_gpu_vulkan_raster_buffer skin_staging[2];
     uint32_t vertex_capacity, palette_word_capacity;
     rf_vk_descriptor_pool skin_descriptor_pool;
     rf_vk_descriptor_set skin_descriptor_set;
     int position_bound[3];
     int frame_dynamic;
+    int sequential_triangles;
+    struct rf_gpu_vulkan_raster_buffer triangle_staging;
 };
 struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
@@ -811,6 +814,9 @@ upload_done:
     }
     resource->index_count = index_count; resource->texture_width = texture_width; resource->texture_height = texture_height;
     resource->vertex_capacity = vertex_count;
+    resource->sequential_triangles = index_count==vertex_count;
+    for (uint32_t i=0;resource->sequential_triangles && i<index_count;++i)
+        if (indices[i]!=i) resource->sequential_triangles=0;
     for (uint32_t i = 0; vertices && i < vertex_count; ++i)
         for (unsigned j = 0; j < 3; ++j)
             if (abs(vertices[i].position[j]) > resource->position_bound[j])
@@ -925,6 +931,72 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
 descriptor_failed:
     rf_gpu_graphics_resource_destroy(g, resource);
     return NULL;
+}
+
+int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *r,
+    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count)
+{
+    struct rf_gpu_vulkan_impl *impl;
+    struct rf_gpu_vulkan_raster_buffer *upload;
+    struct rf_vk_mapped_memory_range range={0};
+    struct rf_vk_buffer_copy copy={0};
+    struct rf_vk_memory_barrier barrier={0};
+    int bounds[3]={0};
+    void *mapped=NULL;
+    uint64_t bytes=(uint64_t)vertex_count*sizeof(*vertices);
+    if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g ||
+        r->shared_binding.owner || r->skin_descriptor_set || !r->sequential_triangles ||
+        !vertices || !vertex_count || vertex_count>65536 || vertex_count%3) return -1;
+    for (uint32_t i=0;i<vertex_count;++i) {
+        for (unsigned k=0;k<3;++k) {
+            int p=vertices[i].position[k];
+            if (p < -32767 || p > 32767) return -1;
+            if (abs(p)>bounds[k]) bounds[k]=abs(p);
+        }
+        for (unsigned k=0;k<9;++k)
+            if (vertices[i].normals[k]<-32767 || vertices[i].normals[k]>32767) return -1;
+        for (unsigned k=0;k<2;++k)
+            if (vertices[i].uv[k]<0 || vertices[i].uv[k]>65535) return -1;
+        if (i%3 && memcmp(vertices[i].normals,vertices[i-i%3].normals,
+                sizeof(vertices[i].normals))) return -1;
+    }
+    if (vertex_count>r->vertex_capacity) return 1;
+    impl=g->owner;
+    upload=&r->vertices;
+    if (!(upload->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
+        upload=&r->triangle_staging;
+        if (!upload->buffer && raster_buffer_create(impl,r->vertices.size,
+                RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
+                RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,upload)<0) return -1;
+    }
+    if (impl->api.map_memory(impl->device,upload->memory,0,upload->allocation_size,0,&mapped)!=RF_VK_SUCCESS)
+        return -1;
+    memcpy(mapped,vertices,(size_t)bytes);
+    if (!(upload->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+        range.memory=upload->memory;range.size=upload->allocation_size;
+        if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS) {
+            impl->api.unmap_memory(impl->device,upload->memory);g->poisoned=1;return -1;
+        }
+    }
+    impl->api.unmap_memory(impl->device,upload->memory);
+    if (upload!=&r->vertices) {
+        if (gfx_begin(g)<0) return -1;
+        copy.size=bytes;
+        impl->api.cmd_copy_buffer(g->cmd,upload->buffer,r->vertices.buffer,1,&copy);
+        barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dst_access_mask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT|VK_ACCESS_SHADER_READ_BIT;
+        impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_VERTEX_INPUT_BIT|VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+            0,1,&barrier,0,NULL,0,NULL);
+        if (gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0) return -1;
+    }
+    r->index_count=vertex_count;
+    memcpy(r->position_bound,bounds,sizeof(bounds));
+    g->stats.mesh_upload_bytes+=bytes;
+    return 0;
 }
 
 static int gfx_upload_skin_input(struct rf_gpu_graphics *g,
@@ -1043,6 +1115,7 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
 {
     struct rf_gpu_vulkan_impl *impl;
     struct rf_gpu_vulkan_raster_buffer staging[2]={{0}};
+    struct rf_gpu_vulkan_raster_buffer *upload[2]={NULL,NULL};
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     const uint32_t *data[2]={bind_words,palette_words};
@@ -1051,6 +1124,10 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     void *mapped=NULL;
     unsigned mapped_index=0;
     int result=-1;
+    const char *legacy_env=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
+    int legacy=legacy_env && legacy_env[0]=='1';
+    const char *staging_env=getenv("RF_GPU_SKIN_STAGING_UPLOAD");
+    int force_staging=staging_env && staging_env[0]=='1';
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g || !r->skin_descriptor_set ||
         !vertex_count || bind_word_count!=(uint64_t)vertex_count*22 ||
         !palette_word_count ||
@@ -1061,24 +1138,30 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     target[0]=&r->skin_bind; target[1]=&r->skin_palette;
     bytes[0]=(uint64_t)bind_word_count*4; bytes[1]=(uint64_t)palette_word_count*4;
     for (unsigned i=0;i<2;++i) {
-        if (raster_buffer_create(impl,bytes[i],RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+        /* Previous skin dispatch and Scene use have retired before host writes.
+         * Prefer the host-visible device allocation; retain fallback staging. */
+        upload[i]=!legacy && !force_staging && (target[i]->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ?
+            target[i] : legacy ? &staging[i] : &r->skin_staging[i];
+        if (!upload[i]->memory && raster_buffer_create(impl,target[i]->size,RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                &staging[i])<0 || impl->api.map_memory(impl->device,staging[i].memory,0,
-                staging[i].allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto done;
+                upload[i])<0) goto done;
+        if (impl->api.map_memory(impl->device,upload[i]->memory,0,
+                upload[i]->allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto done;
         mapped_index=i;
         memcpy(mapped,data[i],(size_t)bytes[i]);
-        if (!(staging[i].memory_flags&RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        if (!(upload[i]->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
             struct rf_vk_mapped_memory_range range={0};
             range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-            range.memory=staging[i].memory; range.size=staging[i].allocation_size;
+            range.memory=upload[i]->memory; range.size=upload[i]->allocation_size;
             if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS) goto done;
         }
-        impl->api.unmap_memory(impl->device,staging[i].memory); mapped=NULL;
+        impl->api.unmap_memory(impl->device,upload[i]->memory); mapped=NULL;
     }
     if (gfx_begin(g)<0) goto done;
     for (unsigned i=0;i<2;++i) {
+        if (upload[i]==target[i]) continue;
         copy.size=bytes[i];
-        impl->api.cmd_copy_buffer(g->cmd,staging[i].buffer,target[i]->buffer,1,&copy);
+        impl->api.cmd_copy_buffer(g->cmd,upload[i]->buffer,target[i]->buffer,1,&copy);
     }
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1099,7 +1182,7 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     g->stats.mesh_upload_bytes+=bytes[0]+bytes[1];
     result=0;
 done:
-    if (mapped) impl->api.unmap_memory(impl->device,staging[mapped_index].memory);
+    if (mapped) impl->api.unmap_memory(impl->device,upload[mapped_index]->memory);
     for (unsigned i=0;i<2;++i) raster_buffer_destroy(impl,&staging[i]);
     return result;
 }
@@ -1142,6 +1225,8 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
         g->owner->api.destroy_descriptor_pool(g->owner->device,resource->skin_descriptor_pool,NULL);
     raster_buffer_destroy(g->owner,&resource->skin_bind);
     raster_buffer_destroy(g->owner,&resource->skin_palette);
+    for (unsigned i=0;i<2;++i) raster_buffer_destroy(g->owner,&resource->skin_staging[i]);
+    raster_buffer_destroy(g->owner,&resource->triangle_staging);
     raster_buffer_destroy(g->owner, &resource->vertices);
     raster_buffer_destroy(g->owner, &resource->indices);
     raster_buffer_destroy(g->owner, &resource->compat_indices);

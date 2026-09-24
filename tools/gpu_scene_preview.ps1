@@ -2,9 +2,10 @@
 param([string]$OutputDirectory='tmp/gpu-scene-preview',
       [string]$ValidationLayerDirectory='', [int]$Frames=4,
       [string[]]$Views=@('near','mid','thin-far','campaign'), [int]$Enemies=30,
-      [switch]$Independent, [switch]$Capture)
+      [switch]$Independent, [switch]$Capture, [int]$CaptureFrame=1)
 $ErrorActionPreference='Stop'
 if ($Capture -and -not $Independent) { throw '-Capture requires -Independent' }
+if ($Capture -and ($CaptureFrame -lt 1 -or $CaptureFrame -gt $Frames)) { throw 'Invalid -CaptureFrame' }
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
 $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
@@ -36,7 +37,7 @@ try {
             '--gpu-scene-world-preview','--gpu-normal-fixed-tick','--frames',$Frames)
         if ($Independent) { $Argv+='--gpu-scene-independent-preview' }
         $CapturePath=Join-Path $Out "$View.capture"
-        if ($Capture) { $Argv+=@('--gpu-frame-capture',$CapturePath,'--gpu-capture-frame',1) }
+        if ($Capture) { $Argv+=@('--gpu-frame-capture',$CapturePath,'--gpu-capture-frame',$CaptureFrame) }
         if ($View -eq 'campaign') { $Argv+=@('--gpu-wave-repro') }
         else {
             $ViewEnemies=$Enemies
@@ -82,8 +83,16 @@ try {
                 if ($View -in @('enemy-special','enemy-death','enemy-fade','enemy-tongue')) { $ExpectedEnemies=3 }
                 if ($ExpectedEnemies -gt 0) {
                     $SourceEnemies=[int]$Sources[$i].Groups[2].Value + [int]$Sources[$i].Groups[3].Value
-                    if ($SourceEnemies -ne $ExpectedEnemies -or
-                        [int]$EnemySamples[$i].Groups[3].Value -le 0 -or
+                    $PopulationMismatch=$SourceEnemies -ne $ExpectedEnemies
+                    if ($View -in @('near','mid','thin-far')) {
+                        # Fixed ticks still advance combat: expired corpses leave
+                        # the source frame during longer performance samples.
+                        $PopulationMismatch=($i -eq 0 -and $SourceEnemies -ne $ExpectedEnemies) -or $SourceEnemies -gt $ExpectedEnemies
+                    }
+                    if ($PopulationMismatch -or
+                        [int]$EnemySamples[$i].Groups[2].Value -ne [int]$Sources[$i].Groups[2].Value -or
+                        [int]$EnemySamples[$i].Groups[5].Value -ne [int]$Sources[$i].Groups[3].Value -or
+                        ([int]$Sources[$i].Groups[2].Value -gt 0 -and [int]$EnemySamples[$i].Groups[3].Value -le 0) -or
                         [int]$EnemySamples[$i].Groups[4].Value -ne 0) {
                         throw "$View missing independent enemy bodies at frame $($i+1)"
                     }
@@ -115,7 +124,7 @@ try {
         for ($i=0;$i -lt $Frames;$i++) {
             if ([int]$Native[$i].Groups[1].Value -ne $i+1) { throw "$View noncontiguous frame IDs" }
             $ExpectedReadback=0
-            if ($Capture -and $i -eq 0) { $ExpectedReadback=1 }
+            if ($Capture -and $i+1 -eq $CaptureFrame) { $ExpectedReadback=1 }
             if ([int]$Native[$i].Groups[2].Value -ne $ExpectedReadback) {
                 throw "$View unexpected Scene readback at frame $($i+1)"
             }

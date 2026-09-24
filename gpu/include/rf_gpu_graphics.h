@@ -75,6 +75,13 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
+/* Update a private, retired triangle-list resource created with sequential
+ * indices (0,1,...). Retains texture, indices and descriptors. Returns 1 if
+ * capacity must grow, 0 on success, -1 on invalid input/failure. Caller must
+ * retire every submission before updating; shared/skinned resources reject. */
+int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count);
 /* HG-5B: create the ordinary indexed resource, then fill its vertex buffer
  * from packed bind/palette words. Reference may be NULL on normal frames;
  * explicit diff supplies it as a CPU oracle. */

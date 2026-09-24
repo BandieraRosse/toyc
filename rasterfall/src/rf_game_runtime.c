@@ -4970,6 +4970,13 @@ startup_again:
                         (unsigned long long)enemy_render.frame_id,(long long)pose_extract_us,
                         (long long)probe_stats.geometry_extract_us,
                         pose_count+enemy_render.count+enemy_render.procedural_count);
+                    __printf("SCENE-FRAME-COST frame=%llu world_us=%lld actors_us=%lld enemies_us=%lld layers_us=%lld submit_retire_us=%lld whole_loop_us=%lld dynamic_reused=%u dynamic_created=%u\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        (long long)probe_stats.world_prepare_us,(long long)probe_stats.actor_prepare_us,
+                        (long long)probe_stats.enemy_prepare_us,(long long)probe_stats.layer_prepare_us,
+                        (long long)probe_stats.submit_retire_us,
+                        (long long)(rf_core_time_us(&core)-audit_loop_start),
+                        probe_stats.dynamic_reused,probe_stats.dynamic_created);
                     __printf("SCENE-WORLD-COST frame=%llu prepare_us=%lld upload_bytes=%llu draws=%u gpu_valid=%d gpu_draw_ms=%.6f bridges=%llu supplemental_modular=%u\n",
                         (unsigned long long)enemy_render.frame_id,(long long)probe_stats.prepare_us,
                         (unsigned long long)probe_stats.upload_bytes,probe_stats.draws,

@@ -988,21 +988,20 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
 static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_enemy_frame_v1 *frame,const struct camera *camera,
     uint32_t width,uint32_t height,struct rf_gpu_graphics_batch_item *items,
-    uint32_t capacity,uint32_t *count,uint32_t *procedural_draws,int64_t *extract_us)
+    uint32_t capacity,uint32_t *count,uint32_t *procedural_draws,int64_t *extract_us,
+    uint32_t *reused,uint32_t *created)
 {
     struct scene_enemy_mesh *mesh=NULL;
     uint32_t total=0,white=0xffffff;
     int result=-1;
+    /* Explicit A/B oracle; never changes geometry or draw workload. */
+    const char *rebuild_setting=getenv("RF_GPU_SCENE_REBUILD_DYNAMIC");
+    int rebuild=rebuild_setting && !strcmp(rebuild_setting,"1");
     *procedural_draws=0;
     *extract_us=0;
-    /* The diagnostic submits and waits synchronously. Keep resources in the
-     * owner on any failure; teardown drains before releasing GPU references. */
-    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i) {
-        if (probe->enemy[i] &&
-            rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0)
-            return -1;
-        probe->enemy[i]=NULL;
-    }
+    /* The single Scene slot has retired before prepare. These are capacity
+     * slots, not actor identities: all active vertices/materials are replaced.
+     * Keep inactive capacity until owner close/world change. */
     if (!frame->count && !frame->procedural_count) { *count=0;return 0; }
     mesh=calloc(1,sizeof(*mesh));
     if (!mesh) return -1;
@@ -1033,9 +1032,18 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             if (source->transparent) continue;
             goto done;
         }
-        probe->enemy[i]=rf_gpu_graphics_resource_create(probe->graphics,
-            mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
-        if (!probe->enemy[i]) goto done;
+        int updated=probe->enemy[i] && !rebuild ? rf_gpu_graphics_triangle_resource_update(
+            probe->graphics,probe->enemy[i],mesh->vertices,mesh->count*3) : 1;
+        if (updated<0) goto done;
+        if (updated) {
+            struct rf_gpu_graphics_resource *next=rf_gpu_graphics_resource_create(probe->graphics,
+                mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
+            if (!next) goto done;
+            if (probe->enemy[i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0) {
+                rf_gpu_graphics_resource_destroy(probe->graphics,next);goto done;
+            }
+            probe->enemy[i]=next;(*created)++;
+        } else (*reused)++;
         for (unsigned first=0;first<mesh->count;) {
             unsigned end=first+1;
             struct rf_gpu_graphics_batch_item *entry=&items[total++];
@@ -1095,6 +1103,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     size_t pixels=(size_t)width*height;
     uint32_t actor_prepared=0;
     int frame_active=0,result=-1;
+    const char *stage="world";
     struct rf_gpu_graphics_stats graphics_before,graphics_after;
     struct rf_gpu_scene_timing timing;
     int64_t prepare_start=rf_core_clock_now_us();
@@ -1192,8 +1201,12 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (!items || ((!probe->native_present || capture_path) && (!color || !depth)) ||
         rasterfall_resources_frame_begin(&owner->registry)<0) goto done;
     frame_active=1;
+    int64_t section_start=rf_core_clock_now_us();
     if (rf_gpu_scene_world_gpu_prepare(owner,probe->cache,probe->graphics,
             camera,width,height,items,capacity,&draws)<0) goto done;
+    stats->world_prepare_us=rf_core_clock_now_us()-section_start;
+    section_start=rf_core_clock_now_us();
+    stage="actors";
     for(uint32_t i=0;i<pose_count;++i) {
         uint32_t count=0;
         if (rf_gpu_scene_actor_gpu_prepare(probe->actor[i],&poses[i],camera,width,height,
@@ -1201,6 +1214,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         actor_prepared++;
         draws+=count;actor_draws+=count;
     }
+    stats->actor_prepare_us=rf_core_clock_now_us()-section_start;
+    stage="flags/projectiles/pickups";
     if (flag_draws_prepare(probe,flags,camera,width,height,items+draws,
             capacity-draws,&flag_draws,&flag_text_draws)<0) {
         fprintf(stderr,"SCENE flag preparation failed count=%u\n",flags->count);
@@ -1221,13 +1236,21 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         pickup_procedural_items!=pickup_procedural_deferred) goto done;
     draws+=pickup_procedural_draws;
     pickup_procedural_deferred=0;
+    stage="enemies";
+    section_start=rf_core_clock_now_us();
     if (enemy_draws_prepare(probe,enemies,camera,width,height,
             items+draws,capacity-draws,&enemy_draws,&stats->procedural_draws,
-            &stats->geometry_extract_us)<0) goto done;
+            &stats->geometry_extract_us,&stats->dynamic_reused,&stats->dynamic_created)<0) goto done;
     draws+=enemy_draws;
+    stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
+    stage="layers";
+    section_start=rf_core_clock_now_us();
     if (scene_layers_prepare(probe,camera,width,height,model_texture,&items,&draws,stats)<0)
         goto done;
+    stats->layer_prepare_us=rf_core_clock_now_us()-section_start;
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
+    stage="submit/retire";
+    section_start=rf_core_clock_now_us();
     if (probe->native_present) {
         /* Explicit diagnostic capture reads the same frozen batch before its
          * native present. Ordinary preview frames never enter readback. */
@@ -1240,6 +1263,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     } else if (rf_gpu_graphics_scene_capture_at(probe->graphics,items,draws,
             color,depth,(uint32_t)pixels,enemies->frame_id)<0) goto done;
     rf_gpu_graphics_scene_timing(probe->graphics,&timing);
+    stats->submit_retire_us=rf_core_clock_now_us()-section_start;
     if (timing.frame_id!=enemies->frame_id || (timing.supported && !timing.valid)) goto done;
     stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
@@ -1291,6 +1315,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     result=0;
 done:
     if (result<0 && probe->native_present) {
+        fprintf(stderr,"SCENE preparation/submit failed stage=%s frame=%llu\n",
+            stage,(unsigned long long)enemies->frame_id);
         /* Failed submit/retire can retain device references. The poisoned
          * graphics owner drains before resource destruction and CPU unpin. */
         rf_gpu_scene_world_gpu_probe_close(probe);
