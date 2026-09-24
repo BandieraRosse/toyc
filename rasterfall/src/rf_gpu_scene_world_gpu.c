@@ -1353,7 +1353,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     result=0;
 done:
     if (items) probe->batch=items;
-    if (result<0) rf_gpu_graphics_skin_batch_cancel(probe->graphics);
+    if (result<0) {
+        rf_gpu_graphics_skin_batch_cancel(probe->graphics);
+        for(uint32_t i=0;i<actor_prepared;++i)
+            rf_gpu_scene_actor_gpu_invalidate_bind(probe->actor[i]);
+    }
     if (result<0 && probe->native_present) {
         fprintf(stderr,"SCENE preparation/submit failed stage=%s frame=%llu\n",
             stage,(unsigned long long)enemies->frame_id);

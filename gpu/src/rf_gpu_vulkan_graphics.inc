@@ -1126,7 +1126,7 @@ static void gfx_skin_record(struct rf_gpu_graphics *g,
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     for (unsigned i=0;i<2;++i) {
-        if (upload[i]==target[i]) continue;
+        if (!upload[i] || upload[i]==target[i]) continue;
         copy.size=bytes[i];
         impl->api.cmd_copy_buffer(g->cmd,upload[i]->buffer,target[i]->buffer,1,&copy);
     }
@@ -1195,9 +1195,9 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     const char *staging_env=getenv("RF_GPU_SKIN_STAGING_UPLOAD");
     int force_staging=staging_env && staging_env[0]=='1';
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g || !r->skin_descriptor_set ||
-        !vertex_count || bind_word_count!=(uint64_t)vertex_count*22 ||
+        !vertex_count || (bind_words ? bind_word_count!=(uint64_t)vertex_count*22 : bind_word_count!=0) ||
         !palette_word_count ||
-        !bind_words || !palette_words || r->skin_pending_vertices ||
+        !palette_words || r->skin_pending_vertices ||
         (g->skin_batch && (legacy || r->shared_binding.owner))) return -1;
     if (vertex_count>r->vertex_capacity ||
         palette_word_count>r->palette_word_capacity) return 1;
@@ -1205,6 +1205,7 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     target[0]=&r->skin_bind; target[1]=&r->skin_palette;
     bytes[0]=(uint64_t)bind_word_count*4; bytes[1]=(uint64_t)palette_word_count*4;
     for (unsigned i=0;i<2;++i) {
+        if (!data[i]) continue;
         /* Previous skin dispatch and Scene use have retired before host writes.
          * Prefer the host-visible device allocation; retain fallback staging. */
         upload[i]=!legacy && !force_staging && (target[i]->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) ?

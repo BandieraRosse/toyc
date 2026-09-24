@@ -237,7 +237,11 @@ owner 跨审计帧复用，registry frame pin 在诊断
 transfer/compute 并提交、等待一次；冷资源创建保持同步。排队资源禁止重复更新或销毁，批次结束前禁止
 绘制和顶点读回。cancel 只丢弃未提交 dispatch，重新消费前须再次更新；失败提交仍由 owner teardown
 排空后回收。mixed 和显式旧上传诊断保留逐资源同步路径。
-没有跨帧流水或减少蒙皮工作。非 coherent 内存刷新完整映射分配，transfer 分支保留 transfer→compute barrier，
+Scene actor 以资源 handle/generation、顶点数和 body bind-normal policy 判断 bind 是否不变；命中时只更新
+palette，沿用已上传的 bind buffer，仍执行本帧蒙皮。资源新建、容量增长或上述身份变化必须上传完整 bind。
+取消批量蒙皮或准备失败时使该缓存失效，下一帧完整上传。
+`RF_GPU_SCENE_LEGACY_BIND_UPLOAD=1` 可恢复逐帧完整上传作同包对照。没有跨帧流水或减少蒙皮工作。
+非 coherent 内存刷新完整映射分配，transfer 分支保留 transfer→compute barrier，
 compute→vertex/transfer barrier 保持不变。host 写入经后续 queue submit 对设备可见。
 
 独立 Scene 的分层 workspace 拥有几何、顶点、顺序索引、纹理快照及稳定排序工作区；WORLD 批次数组

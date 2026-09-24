@@ -29,6 +29,16 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 
 ### 动态资源运行成本
 
+正式队员不变 bind 上传的同包 A/B 使用 `tools/gpu_scene_cost.ps1 -Experiment BindUpload
+-DenseComponents -Frames 32 -Rounds 5 -OutputDirectory tmp/scene-bind-upload-ab`（实际命令写在同一行）。
+`RF_GPU_SCENE_LEGACY_BIND_UPLOAD=1` 恢复逐帧 bind 上传。`-DenseComponents` 从正式
+Campaign 地图生成测试用副本，保留 134 个 object（其中 113 个组件）的种类、数量和非组件记录，
+仅将组件排入 near 战斗镜头周围；输出地图和原始日志保存在本次新证据目录。报告逐帧要求 134 个
+object 来源、至少 100 个实际组件 draw，并核对两侧敌人、draw 和组件提交序列一致。
+60 敌人档使用 `near-heavy` 固定镜头，其中六个 Tank、六个 Charger 与其余敌人同帧出现；
+报告核对这一组成。该镜头与局部组件密度共同构成高负载压力场景，不替代正式地图的自然分布或
+低扰动 FPS 签收。
+
 P1 使用 `tools/gpu_scene_cost.ps1 -Experiment P1 -OutputDirectory tmp/scene-p1-ab`，同包交替切换
 角色蒙皮批量提交和分层 GPU 资源复用；CPU 工作区复用在两侧均保留。单项归因分别使用
 `-Experiment SkinBatch` 和 `-Experiment LayerReuse`，每次选择新的输出目录。

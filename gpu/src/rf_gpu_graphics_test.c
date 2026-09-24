@@ -577,6 +577,14 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
         CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[i],expected,3,&pm,&nm,&um,&pd,&nd)==0);
         CHECK(!pm && !nm && !um);
     }
+    rf_gpu_graphics_get_stats(g,&before);
+    CHECK(rf_gpu_graphics_skin_batch_begin(g)==0);
+    CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,NULL,0,palette,15)==0);
+    CHECK(rf_gpu_graphics_skin_batch_end(g)==0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.mesh_upload_bytes-before.mesh_upload_bytes==sizeof(palette));
+    CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[0],expected,3,&pm,&nm,&um,&pd,&nd)==0);
+    CHECK(!pm && !nm && !um);
     CHECK(rf_gpu_graphics_skin_batch_begin(g)==0);
     CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,bind,66,palette,15)==0);
     rf_gpu_graphics_skin_batch_cancel(g);

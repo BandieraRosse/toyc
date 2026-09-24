@@ -34,14 +34,25 @@ def main():
     for run in runs:
         path = root / run["name"]
         hashes.add(json.loads((path / "executable.json").read_text(encoding="utf-8-sig"))["Hash"])
-        text = (path / "near.out").read_text(encoding="utf-8")
+        text = (path / (run.get("view", "near") + ".out")).read_text(encoding="utf-8")
         cost = rows(text, "SCENE-FRAME-COST")
         world = rows(text, "SCENE-WORLD-COST")
         source = rows(text, "SCENE-SOURCE")
+        local = rows(text, "SCENE-LOCAL")
+        submitted = rows(text, "SCENE-WORLD-GPU")
         assert len(cost) == len(world) == len(source) == run["frames"], run
+        assert len(local) == len(submitted) == run["frames"], run
+        if run.get("dense_components"):
+            assert all(x["prop_payload"] == 134 for x in local), "Component source missing"
+            assert all(x["prop_draws"] >= 100 for x in submitted), "Dense component draws missing"
+            if run["enemies"] == 60:
+                assert run.get("view") == "near-heavy" and \
+                    "SCENE-WORKLOAD tanks=6 chargers=6 components=explicit-map" in text, \
+                    "Heavy enemies missing"
         assert [x["frame"] for x in cost] == list(range(1, run["frames"]+1)), run
         signature = [(w["draws"], s["enemies"], s["enemy_culled"], s["procedural"],
-                      s["supplemental_modular"]) for w, s in zip(world, source)]
+                      s["supplemental_modular"], m["prop_payload"], d["prop_draws"])
+                     for w, s, m, d in zip(world, source, local, submitted)]
         key = run["enemies"]
         assert workload.setdefault(key, signature) == signature, "Workload changed"
         warm = 8
@@ -49,6 +60,8 @@ def main():
                    for k in ("whole_loop_us", "world_us", "actors_us", "enemies_us",
                              "layers_us", "submit_retire_us")}
         metrics["upload_bytes"] = summarize([x["upload_bytes"] for x in world[warm:]])
+        metrics["prop_opaque"] = summarize([x["prop_opaque"] for x in local[warm:]])
+        metrics["prop_draws"] = summarize([x["prop_draws"] for x in submitted[warm:]])
         metrics["gpu_draw_ms"] = summarize([x["gpu_draw_ms"] for x in world[warm:]])
         extraction = rows(text, "SCENE-EXTRACT")
         submission = rows(text, "SCENE-SUBMIT-COST")

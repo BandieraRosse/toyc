@@ -2,7 +2,8 @@
 param([string]$OutputDirectory='tmp/gpu-scene-preview',
       [string]$ValidationLayerDirectory='', [int]$Frames=4,
       [string[]]$Views=@('near','mid','thin-far','campaign'), [int]$Enemies=30,
-      [switch]$Independent, [switch]$Capture, [int]$CaptureFrame=1)
+      [switch]$Independent, [switch]$Capture, [int]$CaptureFrame=1,
+      [string]$MapPath='')
 $ErrorActionPreference='Stop'
 if ($Capture -and -not $Independent) { throw '-Capture requires -Independent' }
 if ($Capture -and ($CaptureFrame -lt 1 -or $CaptureFrame -gt $Frames)) { throw 'Invalid -CaptureFrame' }
@@ -35,6 +36,7 @@ try {
         if (Get-Process rasterfall -ErrorAction SilentlyContinue) { throw 'Rasterfall is already running' }
         $Argv=@('--renderer','gpu-compute','--gpu-required','--gpu-native-present',
             '--gpu-scene-world-preview','--gpu-normal-fixed-tick','--frames',$Frames)
+        if ($MapPath) { $Argv+=@('--map',([IO.Path]::GetFullPath($MapPath))) }
         if ($Independent) { $Argv+='--gpu-scene-independent-preview' }
         $CapturePath=Join-Path $Out "$View.capture"
         if ($Capture) { $Argv+=@('--gpu-frame-capture',$CapturePath,'--gpu-capture-frame',$CaptureFrame) }
@@ -79,12 +81,12 @@ try {
                     throw "$View dynamic frame mismatch"
                 }
                 $ExpectedEnemies=0
-                if ($View -in @('near','mid','thin-far')) { $ExpectedEnemies=$Enemies }
+                if ($View -in @('near','near-heavy','mid','thin-far')) { $ExpectedEnemies=$Enemies }
                 if ($View -in @('enemy-special','enemy-death','enemy-fade','enemy-tongue')) { $ExpectedEnemies=3 }
                 if ($ExpectedEnemies -gt 0) {
                     $SourceEnemies=[int]$Sources[$i].Groups[2].Value + [int]$Sources[$i].Groups[3].Value
                     $PopulationMismatch=$SourceEnemies -ne $ExpectedEnemies
-                    if ($View -in @('near','mid','thin-far')) {
+                    if ($View -in @('near','near-heavy','mid','thin-far')) {
                         # Fixed ticks still advance combat: expired corpses leave
                         # the source frame during longer performance samples.
                         $PopulationMismatch=($i -eq 0 -and $SourceEnemies -ne $ExpectedEnemies) -or $SourceEnemies -gt $ExpectedEnemies

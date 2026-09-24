@@ -3555,6 +3555,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
         rf_game_shutdown(&game_runtime);
@@ -3677,11 +3678,18 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->type = enemy % 10 == 8 ? TOY_GAME_ENEMY_PURSUIT_FAST :
                 enemy % 10 == 9 ? TOY_GAME_ENEMY_PURSUIT_HEAVY :
                                    TOY_GAME_ENEMY_PURSUIT_COMMON;
+            if (!strcmp(options.gpu_normal_view,"near-heavy")) {
+                if (enemy % 10 == 0) fixture->type=TOY_GAME_ENEMY_TANK;
+                if (enemy % 10 == 1) fixture->type=TOY_GAME_ENEMY_CHARGER;
+            }
             fixture->x = (enemy % 10 - 5) * 600 + 300;
             fixture->z = -1800 + (enemy / 10) * 800;
             fixture->ground_y = 0;
             fixture->dir_z = -1024;
         }
+        if (!strcmp(options.gpu_normal_view,"near-heavy"))
+            __printf("SCENE-WORKLOAD tanks=%d chargers=%d components=explicit-map\n",
+                     options.gpu_normal_enemies/10,options.gpu_normal_enemies/10);
         game.state = TOY_GAME_PLAYING;
         if (!strcmp(options.gpu_normal_view,"ui-pause")) {
             paused=1;pause_menu.selected=PAUSE_ITEM_MOUSE;

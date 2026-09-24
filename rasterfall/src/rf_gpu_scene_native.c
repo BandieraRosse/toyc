@@ -20,6 +20,8 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
 }
 void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor)
 { (void)actor; }
+void rf_gpu_scene_actor_gpu_invalidate_bind(struct rf_gpu_scene_actor_gpu *actor)
+{ (void)actor; }
 void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
 { (void)actor; }
 #else
@@ -43,9 +45,12 @@ __declspec(dllimport) int __stdcall SetWindowPos(void *, void *, int, int, int, 
 static int scene_round(double v) { return (int)(v<0 ? v-0.5 : v+0.5); }
 struct scene_mesh {
     struct rasterfall_resource_handle handle;
+    struct rasterfall_resource_handle uploaded_bind_handle;
     uint32_t *bind, *palette, *indices;
     struct rf_gpu_graphics_vertex *vertices;
     uint32_t count, palette_count, vertex_capacity, palette_capacity;
+    uint32_t uploaded_bind_count;
+    int uploaded_bind_normals;
     struct rf_gpu_graphics_resource *gpu;
 };
 struct scene_slot {
@@ -53,7 +58,7 @@ struct scene_slot {
     struct scene_mesh mesh[3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
     struct rf_gpu_graphics_batch_item draws[SCENE_DRAWS];
     uint32_t draw_count, mesh_count;
-    int pinned, submitted;
+    int pinned, submitted, bind_normals;
 };
 struct rf_gpu_scene_actor_gpu {
     struct scene_slot slot;
@@ -178,6 +183,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         !pose->frame_id || !pose->world_generation || !pose->bone_count ||
         pose->bone_count>RF_GPU_SCENE_POSE_BONES || pose->bind_normals>1 ||
         pose->scene_light_q8<0 || pose->scene_light_q8>384) return -1;
+    slot->bind_normals=pose->bind_normals;
     slot->draw_count=0;
     for (uint32_t object=include_map ? 0 : 1;object<slot->mesh_count;++object) {
         struct scene_mesh *out=&slot->mesh[object];
@@ -303,8 +309,15 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
         struct scene_mesh *m=&slot->mesh[i];
         const struct rasterfall_model_asset *asset=rasterfall_resources_resolve(&slot->registry,m->handle);
         if (i) {
+            const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND_UPLOAD");
+            int reuse_bind=m->gpu && !(legacy_bind && legacy_bind[0]=='1') &&
+                m->uploaded_bind_handle.slot==m->handle.slot &&
+                m->uploaded_bind_handle.generation==m->handle.generation &&
+                m->uploaded_bind_count==m->count &&
+                m->uploaded_bind_normals==(i==1 ? slot->bind_normals : 0);
             int grow=m->gpu ? rf_gpu_graphics_skinned_resource_update(g,m->gpu,m->count,
-                m->bind,m->count*22,m->palette,m->palette_count) : 1;
+                reuse_bind ? NULL : m->bind,reuse_bind ? 0 : m->count*22,
+                m->palette,m->palette_count) : 1;
             if (grow<0) return -1;
             if (grow) {
                 if (m->gpu) {
@@ -313,6 +326,11 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
                 }
                 m->gpu=rf_gpu_graphics_skinned_resource_create(g,NULL,m->count,m->indices,m->count,
                     m->bind,m->count*22,m->palette,m->palette_count,&white,1,1);
+            }
+            if (m->gpu) {
+                m->uploaded_bind_handle=m->handle;
+                m->uploaded_bind_count=m->count;
+                m->uploaded_bind_normals=i==1 ? slot->bind_normals : 0;
             }
         } else if (!m->gpu) m->gpu=rf_gpu_graphics_resource_create(g,m->vertices,m->count,m->indices,m->count,&white,1,1);
         if (!m->gpu || !asset || rf_gpu_graphics_resource_bind(g,m->gpu)<0) return -1;
@@ -323,6 +341,11 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
         }
     }
     return 0;
+}
+static void scene_bind_cache_invalidate(struct scene_slot *slot)
+{
+    for(uint32_t i=0;i<slot->mesh_count;++i)
+        slot->mesh[i].uploaded_bind_handle.generation=0;
 }
 struct rf_gpu_scene_actor_gpu *rf_gpu_scene_actor_gpu_create(
     struct rf_gpu_graphics *graphics)
@@ -349,6 +372,7 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
         actor->slot.draw_count>capacity) return -1;
     t2=rf_core_clock_now_us();
     if (scene_prepare(&actor->slot,actor->graphics,0)<0) {
+        scene_bind_cache_invalidate(&actor->slot);
         rasterfall_resources_frame_complete(&actor->slot.registry);
         actor->slot.pinned=0;
         return -1;
@@ -369,6 +393,10 @@ void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor)
         rasterfall_resources_frame_complete(&actor->slot.registry);
         actor->slot.pinned=actor->frame_active=0;
     }
+}
+void rf_gpu_scene_actor_gpu_invalidate_bind(struct rf_gpu_scene_actor_gpu *actor)
+{
+    if (actor) scene_bind_cache_invalidate(&actor->slot);
 }
 void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
 {
