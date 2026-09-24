@@ -33,6 +33,8 @@ LDLIBS := -L$(SDL_PREFIX)/lib -lSDL2 -lws2_32 -lwinmm \
 GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rf_gpu_scene_native.c \
              rasterfall/src/rf_gpu_scene_local.c \
+             rasterfall/src/rf_gpu_scene_world.c \
+             rasterfall/src/rf_gpu_scene_world_gpu.c \
              rasterfall/src/rf_gpu_scene_identity.c \
              rasterfall/src/rf_gpu_scene_frame.c \
              rasterfall/src/rf_gpu_scene_extract.c \

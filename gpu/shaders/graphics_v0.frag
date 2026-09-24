@@ -20,10 +20,11 @@ void main() {
         c = rgb(t)*light/256u;
     } else {
         // Flat path performs two separate truncations, form then scene.
-        uint light = d.material.w != 0u ? uint(clamp(vertex_light,0.0,256.0)) : form_light;
+        uint light = d.material.w != 0u ? uint(clamp(vertex_light,0.0,384.0)) : form_light;
         c = (rgb(d.material.x)*light/256u)*d.material.y/256u;
     }
-    color = vec4(vec3(min(c,uvec3(255)))/255.0,1.0);
+    color = vec4(vec3(min(c,uvec3(255)))/255.0,
+                 d.texture_info.z == 0 ? 1.0 : float(d.texture_info.z)/255.0);
     // D32 hardware compare/write owns occlusion; power-of-two mapping is exact.
     // Near-crossing equivalence with CPU clipping is an HG-2B gate.
     gl_FragDepth = clamp(floor(inverse_z)/16384.0,0.0,1.0);

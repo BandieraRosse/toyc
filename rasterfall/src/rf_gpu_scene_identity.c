@@ -1,5 +1,6 @@
 #include "rf_gpu_scene_identity.h"
 #include <string.h>
+#include "tlibc_everything.h"
 
 int rf_gpu_scene_snapshot_build_v1(
     struct rf_gpu_scene_identity_tracker *tracker,

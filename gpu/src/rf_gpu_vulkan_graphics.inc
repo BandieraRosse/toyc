@@ -68,7 +68,7 @@ struct rf_gpu_graphics {
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
-    rf_vk_pipeline pipelines[4];
+    rf_vk_pipeline pipelines[8];
     VkRenderPass render_pass;
     VkRenderPass load_pass;
     rf_vk_descriptor_set_layout bridge_set_layout;
@@ -86,6 +86,9 @@ struct rf_gpu_graphics {
     rf_vk_fence fence;
     int poisoned, scene_in_flight;
     rf_vk_semaphore scene_acquire;
+    rf_vk_query_pool scene_query_pool;
+    int scene_query_active;
+    struct rf_gpu_scene_timing scene_timing;
     struct rf_gpu_graphics_stats stats;
 };
 
@@ -253,12 +256,13 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     impl->api.queue_wait_idle(impl->queue);
     g->scene_in_flight=0;
     if (g->scene_acquire) impl->api.destroy_semaphore(impl->device,g->scene_acquire,NULL);
+    if (g->scene_query_pool) impl->api.destroy_query_pool(impl->device,g->scene_query_pool,NULL);
     gfx_rasters_invalidate(g);
     while (g->shared_rasters) gfx_raster_unshare(g->shared_rasters);
     gfx_target_destroy(g, &g->target);
     if (g->pool) impl->api.destroy_command_pool(impl->device, g->pool, NULL);
     if (g->fence) impl->api.destroy_fence(impl->device, g->fence, NULL);
-    for (unsigned i = 0; i < 4; ++i)
+    for (unsigned i = 0; i < 8; ++i)
         if (g->pipelines[i]) impl->api.destroy_pipeline(impl->device, g->pipelines[i], NULL);
     if (g->render_pass) g->api.DestroyRenderPass(impl->device, g->render_pass, NULL);
     if (g->load_pass) g->api.DestroyRenderPass(impl->device, g->load_pass, NULL);
@@ -502,9 +506,20 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     pipeline.pDepthStencilState = &depth_state; pipeline.pColorBlendState = &blend;
     pipeline.pDynamicState = &dynamic; pipeline.layout = g->layout; pipeline.renderPass = g->render_pass;
     pipeline.basePipelineIndex = -1;
-    for (unsigned i = 0; i < 2; ++i) {
-        raster.cullMode = i ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-        if (g->api.CreateGraphicsPipelines(impl->device, NULL, 1, &pipeline, NULL, &g->pipelines[i+compatible*2]) != RF_VK_SUCCESS) goto done;
+    for (unsigned alpha=0;alpha<2;++alpha) {
+        depth_state.depthWriteEnable=alpha ? 0 : RF_VK_TRUE;
+        blend_attachment.blendEnable=alpha ? RF_VK_TRUE : 0;
+        blend_attachment.srcColorBlendFactor=VK_BLEND_FACTOR_SRC_ALPHA;
+        blend_attachment.dstColorBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_attachment.colorBlendOp=VK_BLEND_OP_ADD;
+        blend_attachment.srcAlphaBlendFactor=VK_BLEND_FACTOR_ONE;
+        blend_attachment.dstAlphaBlendFactor=VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        blend_attachment.alphaBlendOp=VK_BLEND_OP_ADD;
+        for (unsigned i=0;i<2;++i) {
+            raster.cullMode=i ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+            if (g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
+                    &g->pipelines[i+compatible*2+alpha*4])!=RF_VK_SUCCESS) goto done;
+        }
     }
     result = 0;
 done:
@@ -1143,7 +1158,8 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 ||
         d->material[2] > 1 || d->material[3] > 1 ||
-        d->camera[3] || d->texture[2] || d->texture[3] ||
+        d->camera[3] || d->texture[2]<0 || d->texture[2]>254 ||
+        (d->texture[2] && d->integer_depth) || d->texture[3] ||
         d->translation_scale[3] < 1 || d->translation_scale[3] > 8000 ||
         d->rotation[2] < -32767 || d->rotation[2] > 32767 ||
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
@@ -1358,13 +1374,15 @@ static int gfx_render(struct rf_gpu_graphics *g,
         (!r && !scene && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     {
         struct rf_gpu_graphics_resource *saved = g->resource;
-        int valid = 1;
+        int valid = 1,transparent_started=0;
         for (uint32_t i = 0; i < count; ++i) {
             const struct rf_gpu_graphics_draw *d = items ? &items[i].draw : &draws[i];
             if (items) g->resource = items[i].resource;
             if (!gfx_resource_compatible(g,g->resource) ||
                 !gfx_draw_valid(g, d, !g->resource->frame_dynamic) ||
-                (r && !d->integer_depth)) { valid = 0; break; }
+                (r && !d->integer_depth) ||
+                (scene && transparent_started && !d->texture[2])) { valid = 0; break; }
+            if (scene && d->texture[2]) transparent_started=1;
         }
         g->resource = saved;
         if (!valid) return -1;
@@ -1381,6 +1399,10 @@ static int gfx_render(struct rf_gpu_graphics *g,
     g->target.valid=0;
     memset(clear, 0, sizeof(clear));
     if (!r && gfx_begin(g) < 0) { g->poisoned=1; return -1; }
+    if (scene && g->scene_query_active) {
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,4);
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
+    }
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = load?g->load_pass:g->render_pass; begin.framebuffer = g->target.framebuffer;
@@ -1401,11 +1423,14 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if(!descriptor){g->poisoned=1;return -1;}
         impl->api.cmd_bind_descriptor_sets(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
             g->layout, 0, 1, &descriptor, 0, NULL);
-        impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, g->pipelines[d->double_sided+d->integer_depth*2]);
+        impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            g->pipelines[d->double_sided+d->integer_depth*2+(d->texture[2]?4:0)]);
         g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
+    if (scene && g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,1);
     timestamp_end(r,g->cmd,draw_timestamp);
     if(r) {
         /* The render pass ends in TRANSFER_SRC with an external transfer
@@ -1531,6 +1556,7 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
 {
     double start;
+    uint64_t ticks[4],mask;
     if (!g) return -1;
     if (!g->scene_in_flight) return g->poisoned ? -1 : 0;
     start=now_ms();
@@ -1539,11 +1565,32 @@ int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
     g->stats.fence_waits++;
     g->stats.fence_wait_wall_ms+=now_ms()-start;
     g->scene_in_flight=0;
+    if (g->scene_query_active) {
+        if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
+                0,4,sizeof(ticks),ticks,sizeof(ticks[0]),
+                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)==RF_VK_SUCCESS) {
+            mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
+                ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
+            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
+            g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*g->owner->timestamp_period/1000000.0;
+            g->scene_timing.valid=1;
+        }
+        g->scene_query_active=0;
+    }
     return 0;
 }
 
+void rf_gpu_graphics_scene_timing(const struct rf_gpu_graphics *g,
+    struct rf_gpu_scene_timing *timing)
+{
+    if (timing) {
+        memset(timing,0,sizeof(*timing));
+        if (g) *timing=g->scene_timing;
+    }
+}
+
 int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_batch_item *items,uint32_t count)
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,uint64_t frame_id)
 {
     struct rf_gpu_vulkan_impl *impl;
     struct rf_vk_semaphore_create_info sem={0};
@@ -1556,7 +1603,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     int result, acquired=0;
     double start;
     VkFormatProperties src,dst;
-    if (!g || g->poisoned || g->scene_in_flight || !items || !count) return -1;
+    if (!g || g->poisoned || g->scene_in_flight || !items || !count || !frame_id) return -1;
     impl=g->owner;
     if (!impl->native_presentation_supported || impl->presenter_poisoned) return -1;
     /* Vulkan 1.0 blit performs RGBA -> BGRA conversion without a bridge. */
@@ -1570,6 +1617,16 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
         sem.s_type=RF_VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
         if (impl->api.create_semaphore(impl->device,&sem,NULL,&g->scene_acquire)!=RF_VK_SUCCESS) return -1;
     }
+    if (impl->timestamp_supported && !g->scene_query_pool) {
+        struct rf_vk_query_pool_create_info query={0};
+        query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=4;
+        if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
+    }
+    memset(&g->scene_timing,0,sizeof(g->scene_timing));
+    g->scene_timing.frame_id=frame_id;
+    g->scene_timing.supported=impl->timestamp_supported;
+    g->scene_query_active=g->scene_query_pool!=NULL;
     /* gfx_render validates the entire batch before beginning any recording. */
     if (gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) return -1;
     impl->present_attempt++;
@@ -1602,6 +1659,8 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     barrier.subresource_range.level_count=barrier.subresource_range.layer_count=1;
     impl->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if (g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,2);
     blit.src.aspectMask=blit.dst.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
     blit.src.layerCount=blit.dst.layerCount=1;
     blit.src_offsets[1].x=g->target.width; blit.src_offsets[1].y=g->target.height;
@@ -1614,6 +1673,8 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     barrier.new_layout=RF_VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     impl->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
         RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,0,0,NULL,0,NULL,1,&barrier);
+    if (g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,3);
     if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_RECORD_FAILURE) ||
         impl->api.end_command_buffer(g->cmd)!=RF_VK_SUCCESS ||
         impl->api.reset_fences(impl->device,1,&g->fence)!=RF_VK_SUCCESS) goto failed;

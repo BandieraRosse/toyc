@@ -27,13 +27,34 @@ GPU Scene 迁移中的 `rf_gpu_scene_extract.c` 只从冻结的 V2 snapshot 生�
 它不拥有资源、pose、pass 或正常帧提交。现行渲染仍由下述 mixed frame 数据流负责。
 隔离 snapshot 的 actor 输入由调用者提供非零来源生命周期 `source_epoch`；身份 tracker 将来源 ID
 与 epoch 共同用于 generation 延续判断，避免两次冻结之间 ID 复用被当成同一对象。epoch 不进入
-玩法或网络真值，也不进入当前 snapshot 输出。`rf_gpu_scene_local.c` 适配 session 创建的首位非 hired
-RF rifleman：reset 完成时登记创建，reset/unload 结束其来源生命周期；计数器在 session load 清空
+玩法或网络真值，也不进入当前 snapshot 输出。`rf_gpu_scene_local.c` 适配 session 创建的八名非 hired
+正式模块化队员：reset 完成时逐名登记创建，reset/unload 结束各自来源生命周期；计数器在 session load 清空
 其他状态时保留。freeze 按来源 ID 查找当前 slot，仅复制展示值。非 client 的 `--frame-audit`
-将其送入 snapshot 和 Scene 元数据提取；正常提交仍走 mixed。local presentation sidecar 冻结
-角色配置、动作时间、武器、状态、地面/腾空高度及来源独立的 lower-body 展示时钟。
-隔离的 `rf_gpu_scene_pose_extract` 已从这些冻结值生成 finalized palette 与 gear/weapon placement；
-其所有权和限制见[角色表现](character-presentation.md)。此值 payload 尚未接 GPU 资源表或 Scene submit。
+将其送入 snapshot 和 Scene 元数据提取；正常提交仍走 mixed。逐 actor local presentation sidecar 冻结
+角色配置、动作时间、武器、状态、地面/腾空高度及各自的 lower-body 展示时钟。
+`rf_gpu_scene_world.c` 通过 Runtime Map 的 authored render ID 和与 `level_map.draw` 共用的投影顺序，
+在正常帧审计时冻结 world 元数据。air gate 开关与 platform 的可见性、alpha 在来源处求值；
+snapshot 不持有 Runtime Map 指针。当前 V2 world 值仍只有身份、位置、alpha 和可见性；配套的
+版本化 world render 值帧按值冻结 `toy_map_draw` 并与 V2 核对，首批 wall/box/ramp/style 2 platform
+不透明网格的几何从该值帧提取，顶点光照仍查询当前 world-light 状态。独立 Scene world registry
+按 world/map、V2 light bake 代际、完整冻结绘制值、地面输入与 object 值持有十一类网格，同代复用 handle；变化时重建，
+已 pin 的旧代在帧退休后释放。静态 RMESH 按冻结 object 值和实例 V2 光照加载资产 profile，
+复用 mixed 的模型可见性、数值及材质判定，再由 Scene GPU cache 编码可见实例。
+独立正常帧审计已接 GPU cache 与离屏 Scene WORLD，
+正常呈现仍为 mixed；地图 LABEL 与透明项尚未接入 Scene。
+普通地图 `MODEL` 盒体的旧绘制使用独立 V1 诊断光照；Scene floor 值帧冻结该场，
+第七类模型盒体网格按旧四边形/三角形结构采样它。其余 normal WORLD 仍以 V2 为光照来源。
+SIGN 牌柱、牌面和双面字形从同一冻结 render 值生成第八类网格，按旧路径逐三角形中心采样 V2。
+展示模型 style 1、2、6、9、12 共用旧方块人/圆柱人形体目录，生成第九类网格；
+特殊感染体 style 3–5 按旧 rig 的静态姿态、变换和面光照生成第十类网格。导入感染体展示模型 style 7–8、10–11、13–14 按旧 idle rig 姿态、CPU skinning、材质与逐三角形面光照生成第十一类网格。
+三类展示模型逐三角形采样 V1 光照，与普通盒体共用冻结场。
+隔离的 `rf_gpu_scene_pose_extract` 已从这些冻结值按角色配方生成 finalized palette、衣裤颜色与 gear/weapon placement；
+其所有权和限制见[角色表现](character-presentation.md)。正常帧审计已将八名正式模块化队员的
+body、被动装备及 AK 武器 pose 值接入各自独立的 Scene GPU 资源、skinning 和同一离屏 WORLD submit；
+活动投射物也按玩法 slot 冻结位置、时间、闪烁与光照，并以共享 bomb/molotov 模型资源加入该 WORLD submit。
+交互物按 session 槽位冻结类型、武器、位置、效果实例高亮与 V2 光照；冻结时沿用 PLAYING、暂停和商店的旧显隐条件。七类拾取模型与按钮、药瓶、弹药盒程序几何从该值帧进入同一离屏 Scene WORLD；静态 GPU 资源跨帧复用，特殊按钮底座按来源槽位和高度复用。交互物模型的固定采样点与 mixed 一致；程序几何当前按实例中心光照和共享形体绘制，其视觉容差仍待阶段 0 基线审批。
+其余角色类别与正常呈现仍待接入。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
+position-scale 换算。
 
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用
@@ -89,6 +110,8 @@ field bake、固定参数和诊断例外由 [Static World Lighting V2](static-wo
 
 持久地图 mesh 的顶点 Y 已是世界高度，`persistent_map_instance` 以 `min_y` 为实例 Y，抵消通用
 模型 Draw 的 foot-origin 归一化；floor mesh 的局部原点合同另行保留，不改通用 shader。
+Scene 地面资源从冻结的地图范围、出生区和 map render 值重建分区地面，调用与 mixed
+相同的分区、颜色覆盖及 1024 RFU 光照细分算法；审计路径目前只向独立 Scene target 绘制。
 
 地图 LABEL 是无深度屏幕注记，`rasterfall_render_map_labels` 在 Core 进入 OVERLAY 后、HUD 前
 输出到 overlay color/coverage；不再在未 flush 的 WORLD 表面直接写字。SIGN 牌面与文字仍是

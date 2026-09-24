@@ -40,6 +40,12 @@ int rasterfall_map_load_runtime_overlay(struct rasterfall_map_state *map,
 /* Runtime Map projection layer.  Runtime Map is authoritative world data;
  * this creates the current gameplay-facing view.  It is not a legacy loader. */
 int rasterfall_map_project_runtime(struct rasterfall_map_state *map);
+/* The same authored-ID projection order used to fill level->draw. */
+const struct rf_map_runtime_render *rasterfall_map_render_projection_at(
+    const struct rasterfall_map_state *map, int index);
+/* The same authored-ID projection order used to fill level->props. */
+const struct rf_map_runtime_object *rasterfall_map_object_projection_at(
+    const struct rasterfall_map_state *map, int index);
 /* Count-only migration guard; does not inspect gameplay behavior. */
 int rasterfall_map_projection_counts_match(
     const struct rasterfall_map_state *map);

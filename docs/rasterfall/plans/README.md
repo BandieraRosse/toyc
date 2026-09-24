@@ -10,7 +10,7 @@
 
 [下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
-冻结三件套已接入独立 Scene native 提交、pin/退休和生命周期专项；RTX 3050 validation/sync 已通过。下一步复用 CPU pose/upload backing、补 Scene GPU 时间戳，随后扩 WORLD opaque。主线开发与签收以 RTX 3050 为准。正常帧仍走旧路径，完整帧性能 A/B 从阶段 3 开始。
+冻结三件套已接入独立 Scene native 提交、pin/退休和生命周期专项；RTX 3050 validation/sync 已通过。CPU upload backing 已在退休后复用，Scene WORLD draw 与 present blit 已按帧采集 GPU 时间戳。正常帧审计冻结 Runtime Map render、分区地面、object、活动旗帜、动态投射物、交互物及八名正式模块化队员各自的 pose/光照值。十一类生成地图网格（含六种导入感染体展示模型）、可见静态 RMESH、旗帜几何与双面字形、bomb/molotov 模型、全部 45 个 Campaign 交互物、八名队员的 body、被动装备和 AK 武器在同一独立 Scene WORLD color/depth 绘制并读回验证。角色 pose 与 GPU 打包按模块化配方处理 body、装备和颜色；各自的身份及展示时钟在 session 来源处冻结。V2 光照 bake 代际与模型类的冻结 V1 诊断光照进入资源复用键。下一步补齐其余 WORLD 与角色类别，再将整帧接入正常 Scene 呈现。主线开发与签收以 RTX 3050 为准。正常呈现仍走 mixed 路径，完整帧性能 A/B 从阶段 3 开始。
 
 计划中的当前切片、前置条件、完成门槛和下一决策点以该文档顶部为准。已完成 checkpoint、撤销实验和
 单次设备测量进入 [`../archive/`](../archive/)，不得继续充当优先级来源。

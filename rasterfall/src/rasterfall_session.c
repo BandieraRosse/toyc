@@ -777,15 +777,15 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
     session_add_content_terminals(session);
-    /* This roster actor is never removed by the hired-AI path. Its lifetime
-     * ends at the next session reset/unload, including same-ID replacement. */
+    /* Formal modular roster members are session-owned and are not removed by
+     * the hired-AI path. Their lifetimes end at reset/unload. */
     rf_gpu_scene_local_world(&session->scene_local);
     for (i=1;i<TOY_GAME_REMOTE_ACTOR_BASE;++i) {
         const struct toy_game_actor *a=&session->game_state.actors[i];
-        if (a->active && a->character_id==RASTERFALL_CHARACTER_RF_RIFLEMAN && !a->hired) {
+        if (a->active && !a->hired &&
+            rasterfall_character_visual_recipe_for_character(a->character_id)) {
             if (rf_gpu_scene_local_created(&session->scene_local,a)<0)
                 session->scene_local.failed=1;
-            break;
         }
     }
 }

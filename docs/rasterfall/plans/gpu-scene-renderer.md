@@ -6,7 +6,7 @@
 >
 > 制定：2026-09-23
 >
-> 当前切片：1B 三件套 RTX 3050 validation/sync 已签收；下一步复用 CPU pose/upload backing 并补 Scene GPU 时间戳；正常帧仍走旧路径
+> 当前切片：1B 三件套、backing 和时间戳已落地；真实 Runtime Map 十一类生成网格、可见静态 RMESH、八名正式模块化队员的 body/被动装备/武器、活动旗帜几何与双面字形、动态投射物，以及全部 45 个 Campaign 交互物已由正常帧审计的独立 Scene target 绘制；正常帧呈现仍走 mixed
 
 本计划取代[旧 GPU Raster / Bridge 收敛计划](../archive/gpu-raster-bridge-20260923.md)。现行所有权和实现以
 [渲染架构](../architecture/rendering-architecture.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)
@@ -106,20 +106,76 @@ Quick/Full、长时 soak、validation/sync 按阶段退出条件运行，不因�
 单物体缩减入口见[fixture 指南](../guides/gpu-scene-fixture.md)；本次证据见
 [几何与来源记录](../archive/gpu-scene-geometry-20260923.md)。这些是可信对照输入，不是新 Scene 基线审批。
 
-本地来源 adapter 使用 session 创建的首位非 hired RF rifleman，创建/reset/unload 事件提供 epoch，
+本地来源 adapter 使用 session 创建的八名非 hired 正式模块化队员，创建/reset/unload 事件分别提供 epoch，
 复制真实动作、位置、角色与附件所需语义，并通过现有 snapshot → Scene 元数据链。
 这些冻结值已通过隔离 pose extractor 复用现有 RFANIM、IK、socket 求值，输出 body palette 和
-gear/weapon placement；lower-body 展示时钟由来源冻结，不借用旧 slot pose cache。定向资源回归见
-[fixture 指南](../guides/gpu-scene-fixture.md)。当前每次提取创建独立 instance，只证明数据边界与
-可复现性；尚需资源 handle/generation 解析及退休后可复用的动态 backing，不得将该分配方式接正常热路径。
+gear/weapon placement；每名 actor 的 lower-body 展示时钟由来源分别冻结，不借用旧 slot pose cache。定向资源回归见
+[fixture 指南](../guides/gpu-scene-fixture.md)。提取仍每次创建独立 instance；fixture 和正常帧审计
+已使用资源 handle/generation、退休后可复用的动态 backing。其余角色类别及正常呈现的资源生命周期仍待接入。
 不得从 executor 回读 actor。
 该三件套现已通过显式 fixture 接入独立 Scene target/submit/retire，资源解析、palette 与材质 preflight、
 pin、GPU skinning、共享 WORLD depth、直接 swapchain blit 已贯通。Windows 生命周期专项覆盖增长、resize、
 world 失效及故障退出；入口见 [fixture 指南](../guides/gpu-scene-fixture.md)。RTX 3050 已证明 Khronos layer
 实际加载、同步验证开启，并完成三件套、增长、resize、world 退休和五类故障；现场见
 [同步与绕序修复记录](../archive/gpu-scene-sync-culling-20260924.md)。
-下一执行切片保留独立 instance 求值语义，仅在 slot 退休后复用 CPU pose/upload backing，并补 Scene GPU 分段时间戳；
-随后进入阶段 2，暂不扩角色或材质。完整透明、effects、VIEWMODEL、HUD/OVERLAY 接齐后才做正式性能 A/B。
+CPU pose 保留独立 instance 求值；Scene slot 的 CPU pack/upload 数组在退休后按容量复用，world generation 退休不释放这些数组。
+独立 Scene 提交的 WORLD draw 与 swapchain blit 已使用同一 query pool，fence 退休后按 frame ID 读取 GPU 时间；
+它不包括先前同步提交的 upload/skinning，也不代表完整产品帧。下一步进入阶段 2，扩 WORLD opaque，
+角色接入范围继续扩大。完整透明、effects、VIEWMODEL、HUD/OVERLAY 接齐后才做正式性能 A/B。
+本轮 RTX 3050 同步验证和可复核输出见[backing 与时间戳现场](../archive/gpu-scene-backing-timestamps-20260924.md)。
+正常帧 `--frame-audit` 已将 Runtime Map authored render ID、投影顺序、air gate/platform 展示值
+送入 V2 snapshot 与有序 Scene 元数据；定向 near 0 输入记录 83 条 world 项、1 条 local actor 项。
+独立 V1 world render 值帧按同一 frame/world/map generation 冻结完整 `toy_map_draw`，并与 V2 snapshot
+逐项核对 authored ID、顺序、可见性与 alpha。现有 persistent map 的 wall、box、ramp、style 2 platform
+网格几何已能消费该冻结值；地面范围、出生区与 authored ground 策略另按值冻结，分区地面复用
+mixed 的颜色分区与 V2 顶点采样算法。静态 object 另按 authored ID、投影顺序与完整 prop 值冻结，
+其中 boundary wall 复用 mixed 几何算法，成为第六类网格。普通地图 `MODEL` 盒体沿用现有
+V1 诊断光照与单四边形划分，且每个三角形单独持有中心光照，作为第七类网格。
+SIGN 牌柱、牌面和双面字形按旧世界坐标及字体 run 生成第八类网格，保留 V2 逐三角形中心光照。
+style 1、2、6、9、12 的 legacy 方块人/圆柱人展示模型共用形体目录，生成第九类网格；
+style 3–5 特殊感染体按旧 rig 静态姿态、面光照和世界变换生成第十类网格。
+style 7–8、10–11、13–14 的六种导入感染体展示模型复用旧 idle rig 姿态、CPU skinning、材质及逐三角形冻结 V1 光照，生成第十一类网格。
+正常帧审计 near 0 的 83 条 world 项中，
+60 条进入地图网格或地面分区，15 条 LABEL 暂缓、4 条为透明项；另有 134 条 object 投影中的 21 条
+boundary wall 进入 Scene。十一类网格已按 world/map generation、V2 light bake
+generation、完整冻结绘制值、地面、V1 诊断光照场与 object 输入进入独立 Scene world registry；任一内容变化触发重建，
+逐帧 frame ID 变化不重建；旧代 pinned 资源在帧退休后释放。
+独立 Scene 原生入口已在三件套提交之后，用真实渲染地图 fixture 的 11 条 world 项生成
+6 个模型、28 个 GPU cache draw，并在离屏 Scene WORLD color/depth 中验证覆盖；同代 cache hit 与
+已 pin 旧代在退休后释放也已验证。该诊断不进入正常帧，
+地图 pin、材质检查、GPU cache 准备和 draw 编码已抽为可由正常 Scene 执行器调用的
+`rf_gpu_scene_world_gpu_prepare`；
+正常帧审计现已在 mixed present 后用同帧冻结 handle、camera 和独立 graphics/cache owner
+提交离屏 Scene WORLD，map-wall 镜头验证了有效深度覆盖。Campaign near 0 的 134 条
+object 投影中，21 条 boundary wall 进入生成网格；其余 113 条 RMESH 实例中 98 条被相同的模型
+AABB 规则剔除，可见的 15 条产生 57 个 draw，数值/材质/透明暂缓均为零。23 个不同 RMESH 资产
+在 Scene registry 复用；离屏 WORLD 合计 979 个 draw、524,824 个有效像素，次帧 979 次 cache hit。
+此路径有显式 readback，不作为正常呈现或性能收益证据。正常帧审计还从真实 session 冻结八名正式模块化队员各自的 finalized body palette、被动装备、AK 武器变换和 V2 actor 光照值，复用 fixture 的
+GPU skinning、资源 pin/backing 与 draw preflight，在同一 Scene WORLD color/depth 提交 120 个角色 draw。
+Campaign near 0 总计 1099 draw，其中地图与静态实例为 979 draw；`actor-rifleman 0`、`actor-standard 0` 和 `actor-assault 0` 镜头可检查
+角色、装备、武器与地图遮挡。旧镜头胸口 RGB 差异来自缺少 CHEST 装备；补入后目标像素与 mixed 一致。
+武器的 RMESH 原始坐标按冻结的 geometry scale 变换，不复用被动装备的 position-scale 换算。
+正常呈现还未选择 Scene WORLD draw；非正式角色、敌人和其他动态 WORLD 内容也未覆盖。完整角色画面合同仍需验证。
+角色 pose 与 Scene GPU 打包按角色配方选择 body、装备资源、socket 和衣裤颜色；八种模块化角色配方通过逻辑回归，原生生命周期在第 101 帧由 rifleman 切换到 Medic 后仍完成绘制与退休。session reset 现在为八名正式队员分别登记身份，冻结时分别推进动作时钟，并按 source slot 顺序提取 pose 与 GPU draw；两组定向镜头的六个无遮挡角色像素与 mixed RGB 一致。
+光照 bake 代际已进入资源复用键并通过逻辑与原生回归；这仍不能作为阶段 2 退出证据。
+来源接线见[Runtime Map 来源现场](../archive/gpu-scene-world-source-20260924.md)；值帧、网格提取及
+normal-native 审计见[地图渲染值现场](../archive/gpu-scene-world-render-values-20260924.md)。
+Scene world handle、复用和 pinned 退休见[地图资源代际现场](../archive/gpu-scene-world-registry-20260924.md)。
+RTX 3050 GPU cache、离屏 WORLD 与同步验证见[真实地图 GPU 现场](../archive/gpu-scene-world-gpu-cache-20260924.md)。
+正常帧审计的同帧 draw、缓存复用和 validation/sync 见[正常帧地图 Scene 诊断现场](../archive/gpu-scene-normal-world-probe-20260924.md)。
+光照代际回归见[地图光照代际现场](../archive/gpu-scene-world-light-generation-20260924.md)。
+冻结地面来源、共用分区算法及 RTX 3050 同步验证见[分区地面现场](../archive/gpu-scene-floor-world-20260924.md)。
+静态 object 值帧、boundary wall 网格及 RTX 3050 同步验证见[边界墙现场](../archive/gpu-scene-boundary-world-20260924.md)。
+静态 RMESH 资产/实例、可见性及 RTX 3050 同步验证见[RMESH 现场](../archive/gpu-scene-static-rmesh-20260924.md)。
+普通地图 `MODEL` 盒体、冻结 V1 诊断光照及 RTX 3050 同步验证见[模型盒体现场](../archive/gpu-scene-model-box-world-20260924.md)。
+SIGN 牌体、双面文字、fixture 画面核对及 RTX 3050 同步验证见[SIGN 现场](../archive/gpu-scene-sign-world-20260924.md)。
+legacy 展示形体、顶点光照修正、可见画面核对及 RTX 3050 同步验证见[展示模型现场](../archive/gpu-scene-legacy-display-world-20260924.md)。
+特殊感染体静态 rig 展示、可见画面核对及 RTX 3050 同步验证见[特殊模型现场](../archive/gpu-scene-special-display-world-20260924.md)。
+六种导入感染体静态展示、Scene 像素及缓存复用见[导入感染体展示现场](../archive/gpu-scene-infected-display-world-20260924.md)。
+正常 session 角色 body/HEAD、冻结光照及 RTX 3050 同步验证见[正常角色现场](../archive/gpu-scene-normal-actor-world-20260924.md)。
+被动装备、AK 武器坐标与正常帧审计回归见[角色装备现场](../archive/gpu-scene-normal-actor-gear-weapon-20260924.md)。
+模块化角色配方、Medic 原生切换与单 actor 限制见[角色配方现场](../archive/gpu-scene-modular-recipe-20260924.md)。
+两支正式小队的八名 actor 来源、逐人 pose、Scene 同帧提交与像素对照见[正式小队现场](../archive/gpu-scene-formal-squads-world-20260924.md)。
 
 阶段 0/1 建立预算表：fixed tick 更新、snapshot、pose/IK/socket、extraction、上传/提交、GPU pass、
 等待/present 分开记录；注明计时边界、frame ID、旧工作是否消失或保留，以及尚缺的计数器。
@@ -167,7 +223,7 @@ fixture 入口贯通 native present；它不构成完整正常帧。
 | 资源身份与 pin | `rasterfall_render_resources.h` 的 frame/pin/submitted/complete | 三件套已接入独立 registry；完整 Scene 表待扩展 |
 | 不可变 mesh/texture | `rf_gpu_resource_cache_prepare/bind/resource` | preflight 先 pin/prepare，执行只 lookup；保留 generation 检查 |
 | 蒙皮 | `rf_gpu_graphics.h` 的 skinned create/update/bind | 三件套已消费 finalized palette 与法线策略，输出归独立 slot；更多角色仍待接入 |
-| slot | mixed executor 的已完成 slot 容量复用模式 | fixture 已有单个独立 slot；多帧流水与 CPU pose/upload backing 复用仍待实现 |
+| slot | mixed executor 的已完成 slot 容量复用模式 | fixture 已有单个独立 slot，CPU pack/upload backing 已在退休后复用；多帧流水仍待实现 |
 | graphics 提交 | 底层 graphics 资源与编码逻辑 | `rf_gpu_graphics_scene_present/retire` 已独立持有 command/fence，不借用 Raster |
 | native present | Vulkan backend 内部 swapchain、审计和退休逻辑 | Scene color 直接 blit 到唯一 swapchain；RTX 3050 validation/sync、专项故障、退休已验证 |
 

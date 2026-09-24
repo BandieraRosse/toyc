@@ -2,8 +2,8 @@
  * attachment evaluators. No game/session lookup or draw recording here. */
 #include "rf_gpu_scene_pose.h"
 
-int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
-                             struct rf_gpu_scene_pose_v1 *out)
+int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
+    uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out)
 {
     const struct rf_gpu_scene_actor_v1 *actor;
     const struct rf_gpu_scene_local_presentation *p;
@@ -19,7 +19,8 @@ int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
     if (!metadata) return -1;
     result=rf_gpu_scene_extract_v1(&frame->snapshot,metadata);
     tlibc_free(metadata);
-    if (result<0 || frame->snapshot.actor_count>1) return -1;
+    if (result<0 || (actor_index>=frame->snapshot.actor_count &&
+        (frame->snapshot.actor_count || actor_index))) return -1;
     next=tlibc_malloc(sizeof(*next));
     if (!next) return -1;
     memset(next,0,sizeof(*next));
@@ -27,10 +28,12 @@ int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
     next->frame_id=frame->snapshot.frame_id;
     next->world_generation=frame->snapshot.world_generation;
     if (!frame->snapshot.actor_count) { *out=*next; tlibc_free(next); return 0; }
-    actor=&frame->snapshot.actors[0]; p=&frame->presentation;
+    actor=&frame->snapshot.actors[actor_index];
+    p=actor_index ? &frame->presentations[actor_index] : &frame->presentation;
     recipe=rasterfall_character_visual_recipe_for_character(p->character_id);
     if (memcmp(&p->identity,&actor->identity,sizeof(p->identity)) ||
-        p->character_id!=RASTERFALL_CHARACTER_RF_RIFLEMAN || !recipe ||
+        !recipe || !recipe->attachment_count ||
+        p->scene_light_q8<0 || p->scene_light_q8>384 ||
         p->state==TOY_GAME_ACTOR_DOWNED ||
         (p->lower_walk!=0 && p->lower_walk!=1) ||
         actor->animation_time_ms<0 || modular_actor_resources_init()<0 ||
@@ -63,8 +66,12 @@ int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
         (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal &&
          modular_solve_left_hand(instance,actor->weapon,835)<0)) goto done;
     next->actor_count=1; next->identity=actor->identity;
+    next->scene_light_q8=p->scene_light_q8;
     next->bone_count=modular_actor_runtime.body.definition.bone_count;
     next->body_resource_id=recipe->body_resource_id;
+    next->character_id=p->character_id;
+    next->shirt_color=recipe->shirt_color;
+    next->pants_color=recipe->pants_color;
     next->bind_normals=rasterfall_model_instance_final_pose(instance)->animation.pose==RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
             next->palette,next->bone_count)<0) goto done;
@@ -111,6 +118,12 @@ done:
     rasterfall_model_instance_unload(instance);
     tlibc_free(instance); tlibc_free(next);
     return result;
+}
+
+int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
+                             struct rf_gpu_scene_pose_v1 *out)
+{
+    return rf_gpu_scene_pose_extract_at(frame,0,out);
 }
 
 /* Frozen opaque_box from gpu_scene_render_fixture.map. Reuses the normal

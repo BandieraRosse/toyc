@@ -24,7 +24,7 @@ registry handle/generation，整帧 preflight 后统一 pin，并绑定 Scene sl
 通用 V1 Scene 接口完成。当前所有权见 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
 pose 同时冻结 finalized instance 的 bind-normal 策略，避免 GPU consumer 改变现有法线语义。
 adapter 仅覆盖生命周期由 session reset/unload
-控制的首位非 hired RF rifleman，不能扩用到 hired、remote 或任意直接重写的 actor。
+控制的八名非 hired 正式模块化队员，不能扩用到 hired、remote 或任意直接重写的 actor。
 
 ## 帧身份与状态
 
@@ -61,6 +61,20 @@ extent 或输入错误会拒绝整次构建，tracker 与输出保持原值。�
 V2 调用 V1 的 actor 身份事务，再复制最多 128 条 world 值与 2048 条 transient 值。world 的
 `id` 必须是 Runtime Map 的 authored render ID，并沿投影顺序输入；`kind`、位置、alpha 和可见开关
 仅是首批展示值，不能当作完整地图几何/材质。transient 的 `(source, local_id)` 在本帧唯一；
+正常帧审计现通过 `rf_gpu_scene_world_capture` 从实际 Runtime Map 取得这批 world 值，并使用
+`rasterfall_map_render_projection_at` 保持与兼容 `toy_map_draw` 相同的投影顺序。air gate 与 platform
+状态由冻结时的开关及投影值确定。V2 snapshot 仍只保存轻量 world 元数据；独立版本化
+`rf_gpu_scene_world_render_frame_v1` 在同一冻结边界按值复制完整 `toy_map_draw`，以 frame/world/map
+generation 和逐项 authored ID、ordinal、可见性、alpha 与 V2 核对。地图范围、出生区及
+authored ground 策略与普通地图 `MODEL` 盒体所用的 V1 诊断光照场另由 floor 值帧冻结。
+静态 object 按 authored ID 和投影顺序冻结完整 prop 值。
+现有 persistent map 的四类不透明网格从 render 值帧提取，分区地面从两份冻结值共用现行网格算法，
+boundary wall 从 object 值帧共用 mixed 几何算法；静态 RMESH 由 object 值和资产 profile 组成实例，
+其 V2 实例光照在冻结边界写入 object 值帧。顶点光照查询构建时的 V2 field，其 bake 代际进入
+资源复用键；完整绘制值、地面与 object 输入变化也触发重建，逐帧 frame ID 不影响同代复用。
+未覆盖的可见项和透明项分别计数。十一类生成网格与静态 RMESH 资产由独立 Scene world registry 以
+generation handle 持有，同代复用并遵守 pinned 旧代退休；正常帧审计已接离屏 GPU cache
+与 Scene WORLD 提交，正常呈现仍为 mixed。
 一次性效果可用本帧局部序号。重复 ID、无效值或超容量均拒绝构建，tracker 与输出不变。
 调用者还须提供 actor、world、transient 的跨类别 `submission_ordinal`。首批 Scene 提取按此序号
 生成只读元数据项，序号冲突拒绝整次提取；它保留 actor 来源与 generation、world authored ID 和
@@ -103,8 +117,9 @@ attachment_slot)` 派生，静态 map/prop 使用 authored/runtime stable ID；�
 地图来源核对：Runtime Map 的 `rf_map_runtime_render.id` 是 authored stable ID；当前
 `rasterfall_map.c` 在投影时按 `legacy_index` 恢复旧提交顺序，并把记录拷贝进不含 ID 的
 `toy_map_draw`。V1 extraction 应从冻结的 Runtime Map 按同一投影顺序取得 `id` 与 payload，
-分别填 `instance_id` 和 `submission_ordinal`；不能用 `toy_map_draw` 下标作跨帧身份，也不能按
-ID 字典序重排透明项。world generation 变化后才允许同一 authored ID 代表新世界资源。
+分别填 `instance_id` 和 `submission_ordinal`；object 值帧从 Runtime Map object authored ID 与
+`level->props` 投影顺序冻结，不能用数组下标作跨帧身份。不能按 ID 字典序重排透明项。
+world generation 变化后才允许同一 authored ID 代表新世界资源。
 
 ## 接口所有者与调用边界
 

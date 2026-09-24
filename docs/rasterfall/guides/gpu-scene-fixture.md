@@ -1,6 +1,6 @@
 # GPU Scene 固定渲染地图
 
-> 状态：当前输入；GPU Scene renderer 尚未接入正常帧
+> 状态：当前输入；GPU Scene renderer 尚未接入正常呈现，正常帧审计仅离屏提交 WORLD
 >
 > 事实入口：`rasterfall/assets/maps/gpu_scene_render_fixture.map`、`rasterfall/src/rasterfall_options.c`、`rasterfall/src/rf_game_runtime.c`
 >
@@ -40,6 +40,19 @@
 | map-near | 280/170；0/1024 | 近 box 穿过 near=64，仍有连续可见面并遮住后方；不得反转或产生巨大错误三角形 |
 | map-thin | 2900/-1500；0/1024 | 远墙形成窄线/窄楔；平台遮住交叉部分，墙不得整体消失 |
 
+`model-legacy` 镜头使用 Campaign `rasterfall.map`，相机在 -2600/-9900、朝向 0/1024，
+对准 style 1 方块人展示模型；它不属于上表的渲染 fixture。
+`model-special` 镜头使用同一地图，相机在 4900/-10100、朝向 0/1024，
+对准 style 3–5 特殊感染体展示模型；它也不属于渲染 fixture。
+`model-infected` 镜头在 9500/-10100、朝向 0/1024，对准 style 7/8 的导入感染体展示模型；
+同地图的 style 10/11、13/14 也进入同一 Scene world 资源。
+`actor-standard` 和 `actor-assault` 镜头分别在 0/5200 与 14000/-2200、朝向 0/1024，
+对准 Campaign 两支正式模块化小队的四名队员；两镜头均使用完整 Campaign 地图。
+`projectile` 镜头在 0/-3400、朝向 0/1024，固定提交有纹理 bomb、闪烁纯色 bomb 与 molotov；
+两帧均走正常玩法更新，随后冻结当帧投射物值供 Scene 审计。
+`pickup` 镜头在 300/-10300、朝向 0/1024，观察 Campaign 武器桌上的模型拾取物及程序几何；
+正常帧值帧包含 45 个交互物，Scene 绘制 7 个模型项和 38 个程序项。
+
 ## 批量与单物体对照
 
 ```powershell
@@ -70,7 +83,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_native.ps1 -
 ```
 
 脚本等待每个 GUI 进程结束，检查真实退出码、资源退休、零 bridge、两种 extent、增长和五种 present
-故障，并运行 pose、逻辑与旧 normal-native 回归。输出目录必须是新目录。提供
+故障，并运行 pose、逻辑、Campaign normal-native、显式加载渲染 fixture 的 normal-map-wall
+和 normal-map-sign，以及 Campaign normal-model-legacy、normal-model-special、normal-model-infected、normal-actor-rifleman、normal-actor-standard、normal-actor-assault、normal-projectile、normal-pickup 回归。
+这些镜头的 `SCENE-WORLD-GPU` 日志检查首次地图上传、次帧 cache hit 与 120 个角色 draw；定向镜头还检查
+非零离屏覆盖。两个小队、投射物和拾取物镜头另保存 mixed BMP 与 Scene PPM，检查无遮挡角色、旗帜、投射物和模型拾取物内部采样点的 RGB 精确一致。正常呈现
+仍走 mixed，审计额外提交的 Scene target 有显式诊断 readback。输出目录必须是新目录。提供
 `-ValidationLayerDirectory <包含 VkLayer_khronos_validation.json 的目录>` 时，还要求日志证明 layer
 实际加载及 Synchronization 开启；未提供时 manifest 明确记录 validation/sync 未运行，不能作为最终签收。
 
@@ -82,6 +99,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_native.ps1 -
 
 `-DeviceVendor` 设置进程级 `RF_GPU_VULKAN_VENDOR_ID`（十六进制），并校验实际 Scene adapter；
 找不到指定 vendor 的可用 queue 时失败，不替换设备。backend 记录全部 Vulkan 设备及原始 driver/API 版本。
+`-ValidationLayerDirectory` 可以使用相对仓库工作目录的路径；脚本在启动 package 进程前解析为绝对路径。
 `PASS - available gates` 表示本次脚本覆盖的检查通过；阶段 1B 的其余退出条件以活动计划为准。
 manifest 中保留的历史设备专项字段不参与当前主线签收。
 脚本兼容 Khronos 新旧启用日志，但始终同时要求 loader 插入 layer 和明确的 Synchronization 启用证据；
@@ -99,10 +117,33 @@ camera 固定为 `(-3850,-420,1800)` 朝 +Z，actor 固定为 `(-3840,-900,3300)
 存在交叠，完整 composite 必须逐像素选择相应最近深度与颜色。诊断有显式 readback；后续 native 帧不做
 readback 或 CPU framebuffer copy，也没有 Raster bridge。
 
+首帧还用独立的三层三角形验证透明管线：先绘制不透明蓝色底层，再按提交顺序叠加
+半透明红色和绿色；中心像素检查 source-over 结果，透明绘制前后的深度必须相同。
+这是 Scene 离屏管线验证，地图平台和 air gate 尚未提交到透明 WORLD pass。
+
 固定专项在第 21 帧加入不被 draw 引用的额外 skin vertices，验证 backing 增长；第 41/61 帧调整原生窗口
 大小；第 81 帧在 submit 后 invalidate world 资源，检查 GPU 完成前仍有三份 pin、完成后才释放，再加载新
 generation。需要至少 82 帧覆盖完整生命周期，脚本使用 120 帧。pose 仍每次独立求值，CPU upload/pack backing
-尚未池化。分段微秒日志仅用于预算，不代表完整产品帧，也不运行正式性能 A/B。
+在 slot 退休后按容量复用；脚本检查增长及 world 退休后的复用。`SCENE gpu-time` 按冻结 frame ID 记录
+WORLD draw 和 present blit 的 GPU 毫秒数；脚本要求 119 个有效样本。此前独立提交的 upload/skinning 不在
+这两个区间内。分段日志仅用于预算，不代表完整产品帧，也不运行正式性能 A/B。
+
+生命周期入口在三件套帧结束后额外运行真实 Runtime Map 网格的离屏 GPU 检查。它加载
+`gpu_scene_render_fixture.map`，冻结 11 条 world 值及地面范围/出生区，把六类不透明模型经独立 registry 的 pin 和
+GPU resource cache 上传为 28 个 draw，再检查 WORLD color/depth 非空覆盖。重复 prepare 必须命中
+cache；旧代失效时 pinned device resource 保留，帧退休后 cache collect 释放。
+fixture 无 boundary wall、普通 `MODEL` 盒体或展示模型，因此十一类资源中的非空模型为六类，其中包含 SIGN；
+Campaign 正常帧审计另冻结 object 值，并将 boundary wall 和普通 `MODEL` 盒体提交到离屏 Scene WORLD。
+正常 Campaign 审计还将可见静态 RMESH 从冻结 object 值和资产 profile 编码到同一 WORLD；
+日志分别报告资产数、RMESH draw、镜头外剔除和预检暂缓。fixture 的 28 draw 数值不含 RMESH。
+`SCENE world-gpu=PASS` 包含 upload、hit、retirement 计数；此项有显式诊断 readback，
+并不接入正常帧 Scene 呈现。
+
+对单个固定镜头同时给出 `--frame-audit --gpu-frame-capture <output.bmp>
+--gpu-capture-frame 1` 时，现行 mixed 画面写入 `<output.bmp>`，同帧离屏 Scene WORLD
+读回写入 `<output.bmp>.scene.ppm`，供局部画面差分。`--gpu-normal-scene actor-rifleman 0`
+将镜头置于真实 session rifleman 前方；Scene PPM 包含地图与该角色 body、三件被动装备及 AK 武器，
+不含天空、其他角色、viewmodel 或 HUD。局部像素核对不能替代完整视觉合同。
 
 本轮设备与结果见 [1B 现场记录](../archive/gpu-scene-native-20260923.md)。
 

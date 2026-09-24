@@ -286,6 +286,14 @@ static const struct rf_map_runtime_object *runtime_object_projection_at(
     return NULL;
 }
 
+const struct rf_map_runtime_object *rasterfall_map_object_projection_at(
+    const struct rasterfall_map_state *map,int index)
+{
+    if (!map || !map->runtime_loaded || index<0 ||
+        index>=rf_map_runtime_object_count(&map->runtime)) return NULL;
+    return runtime_object_projection_at(&map->runtime,index);
+}
+
 static const struct rf_map_runtime_collision *runtime_collision_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
@@ -332,6 +340,13 @@ static const struct rf_map_runtime_render *runtime_render_projection_at(
         if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
     }
     return NULL;
+}
+const struct rf_map_runtime_render *rasterfall_map_render_projection_at(
+    const struct rasterfall_map_state *map, int index)
+{
+    if (!map || !map->runtime_loaded || index<0 ||
+        index>=rf_map_runtime_render_count(&map->runtime)) return NULL;
+    return runtime_render_projection_at(&map->runtime,index);
 }
 
 static int runtime_render_int(const struct rf_map_runtime_render *render,

@@ -20,6 +20,7 @@
 #include "rasterfall_draw.h"
 #include "rf_core_mixed_frame.h"
 #include "rf_gpu_raster_pack.h"
+#include "rf_gpu_scene_world.h"
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
@@ -2076,6 +2077,40 @@ static int render_gallery_model(struct toy_renderer *renderer,
 
 #include "render/rasterfall_draw_reference.inc"
 
+int rasterfall_render_scene_static_prop_visible(
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance)
+{
+    struct toy_surface surface;
+    if (!view || !instance || !instance->mesh ||
+        view->width<=0 || view->height<=0) return 0;
+    memset(&surface,0,sizeof(surface));
+    surface.width=view->width;surface.height=view->height;
+    return gallery_model_visible(&surface,&view->camera,instance->mesh,
+        instance->x,instance->y,instance->z,instance->scale_milli,1,
+        instance->yaw_sin_q10,instance->yaw_cos_q10);
+}
+
+int rasterfall_render_scene_static_prop_eligible(
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance)
+{
+    const struct rasterfall_model_asset *model=instance ? instance->mesh : NULL;
+    return model && !model->skinning_enabled && !model->bone_count &&
+        !model->has_character_contract &&
+        character_perceptual_model(model)==CHARACTER_PERCEPTUAL_NONE &&
+        static_prop_draw_numeric_eligible(view,instance);
+}
+
+enum rasterfall_draw_reject rasterfall_render_scene_static_prop_resolve(
+    const struct rasterfall_draw_instance *instance,unsigned int primitive,
+    struct rasterfall_draw_item *draw)
+{
+    if (!instance || !instance->mesh || !draw ||
+        primitive>=instance->mesh->primitive_count) return RASTERFALL_DRAW_RANGE;
+    return static_prop_draw_resolve(instance,primitive,draw);
+}
+
 static const struct rasterfall_model_asset *static_prop_model(int asset_id,
     struct rasterfall_resource_handle *handle)
 {
@@ -3898,6 +3933,8 @@ struct persistent_map_quad_patch {
 struct persistent_map_mesh_build {
     struct persistent_map_quad_patch *patches;
     unsigned long count, capacity;
+    const struct rasterfall_diagnostic_world_lighting_v1 *light_v1;
+    int flat_v2, baked_triangle_light;
 };
 
 static struct rasterfall_resource_handle persistent_map_map_handles[PERSISTENT_MAP_MAP_CLASS_COUNT];
@@ -3924,8 +3961,12 @@ static int persistent_map_mesh_push(struct persistent_map_mesh_build *build,
     patch->color = color;
     for (i = 0; i < 4; ++i) {
         patch->v[i] = v[i];
-        patch->light[i] = (unsigned short)world_brightness_at(
-            v[i].x, v[i].y, v[i].z);
+        patch->light[i] = (unsigned short)(build->baked_triangle_light ? 256 :
+            build->light_v1 ?
+            rasterfall_diagnostic_world_light_q8(
+                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
+                    v[i].x,v[i].y,v[i].z)) :
+            world_brightness_at(v[i].x, v[i].y, v[i].z));
     }
     return 0;
 }
@@ -3936,6 +3977,7 @@ static int persistent_map_mesh_add_quad(struct persistent_map_mesh_build *build,
     int du = abs(v[1].x-v[0].x) + abs(v[1].y-v[0].y) + abs(v[1].z-v[0].z);
     int dv = abs(v[3].x-v[0].x) + abs(v[3].y-v[0].y) + abs(v[3].z-v[0].z);
     int nu = (du + 1023) / 1024, nv = (dv + 1023) / 1024, u, w;
+    if (build->light_v1 || build->flat_v2) nu=nv=1;
     if (nu < 1) nu = 1;
     if (nv < 1) nv = 1;
     for (w = 0; w < nv; ++w) for (u = 0; u < nu; ++u) {
@@ -3969,11 +4011,74 @@ static int persistent_map_mesh_add_box(struct persistent_map_mesh_build *build,
     return 0;
 }
 
+static int persistent_map_mesh_add_world_text(struct persistent_map_mesh_build *build,
+    int x,int y,int z,int width,int height,const char *value,int mirror)
+{
+    int chars,cell,start_x,start_y,total_px;
+    if (!value || !value[0]) return 0;
+    chars=(int)strlen(value);
+    if (chars<=0 || width<=0 || height<=0) return 0;
+    cell=width/(chars*FB_FONT_W);
+    if (height/FB_FONT_H<cell) cell=height/FB_FONT_H;
+    if (cell<1) return 0;
+    start_x=x+(width-chars*FB_FONT_W*cell)/2;
+    start_y=y-(height-FB_FONT_H*cell)/2;
+    total_px=chars*FB_FONT_W;
+    for(int i=0;i<chars;++i) {
+        unsigned char ch=(unsigned char)value[i];
+        for(int row=0;row<FB_FONT_H;++row) {
+            unsigned char bits=fb_font_glyph_row(ch,row);
+            for(int col=0;col<FB_FONT_W;++col) {
+                int run=col,px;
+                struct vec3 q[4];
+                if (!(bits & (unsigned char)(0x80 >> col))) continue;
+                while (run+1<FB_FONT_W &&
+                    (bits & (unsigned char)(0x80 >> (run+1)))) run++;
+                px=mirror ? total_px-(i*FB_FONT_W+run+1) : i*FB_FONT_W+col;
+                q[0]=(struct vec3){start_x+px*cell,start_y-row*cell,z};
+                q[1]=(struct vec3){mirror ?
+                    start_x+(total_px-(i*FB_FONT_W+col))*cell :
+                    start_x+(i*FB_FONT_W+run+1)*cell,q[0].y,z};
+                q[2]=(struct vec3){q[1].x,q[1].y-cell,z};
+                q[3]=(struct vec3){q[0].x,q[2].y,z};
+                if (persistent_map_mesh_add_quad(build,q,0xFFF0C0)<0) return -1;
+                col=run;
+            }
+        }
+    }
+    return 0;
+}
+
+static int persistent_map_mesh_add_sign(struct persistent_map_mesh_build *build,
+    const struct toy_map_draw *sign)
+{
+    int x=(sign->a+sign->b)/2,z=(sign->c+sign->d)/2;
+    int width=sign->b-sign->a-80,height=sign->f-sign->e-48;
+    if (persistent_map_mesh_add_box(build,x-18,x+18,sign->e-220,sign->e,
+            z-18,z+18,0x4B3526,0)<0 ||
+        persistent_map_mesh_add_box(build,sign->a,sign->b,sign->e,sign->f,
+            sign->c,sign->d,sign->color,0)<0 ||
+        persistent_map_mesh_add_world_text(build,sign->a+40,sign->f-24,
+            sign->d+24,width,height,sign->text,1)<0 ||
+        persistent_map_mesh_add_world_text(build,sign->a+40,sign->f-24,
+            sign->c-24,width,height,sign->text,0)<0) return -1;
+    return 0;
+}
+
+static int persistent_map_mesh_add_legacy_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw);
+static int persistent_map_mesh_add_special_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw);
+static int persistent_map_mesh_add_infected_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw);
+
 static struct rasterfall_model_asset *persistent_map_mesh_finish(
     const struct persistent_map_mesh_build *build)
 {
     struct rasterfall_model_asset *model;
     unsigned long pb, mb, vb, ib, total, i;
+    unsigned int vertices_per_patch=(build->light_v1 || build->flat_v2 ||
+        build->baked_triangle_light) ? 6 : 4;
     uint32_t *colors;
     int *origin_x, *origin_z;
     unsigned int *groups, *counts, *offsets, group_count=0;
@@ -3996,7 +4101,9 @@ static struct rasterfall_model_asset *persistent_map_mesh_finish(
     }
     pb = group_count * RASTERFALL_MODEL_PRIMITIVE_BYTES;
     mb = group_count * RASTERFALL_MODEL_MATERIAL_BYTES;
-    vb = build->count * 4 * RASTERFALL_MODEL_VERTEX_BYTES;
+    if (build->count > ULONG_MAX /
+        (vertices_per_patch * RASTERFALL_MODEL_VERTEX_BYTES)) goto failed_arrays;
+    vb = build->count * vertices_per_patch * RASTERFALL_MODEL_VERTEX_BYTES;
     ib = build->count * 6 * 4;
     if (pb > ULONG_MAX-mb || pb+mb > ULONG_MAX-vb || pb+mb+vb > ULONG_MAX-ib)
         goto failed_arrays;
@@ -4006,7 +4113,7 @@ static struct rasterfall_model_asset *persistent_map_mesh_finish(
     memset(model,0,sizeof(*model)); memset(data,0,total);
     model->data=data; model->data_size=(int)total; model->format_version=9;
     model->primitive_count=model->material_count=group_count;
-    model->vertex_count=(unsigned int)build->count*4;
+    model->vertex_count=(unsigned int)build->count*vertices_per_patch;
     model->index_count=(unsigned int)build->count*6;
     model->material_bytes=RASTERFALL_MODEL_MATERIAL_BYTES;
     model->vertex_bytes=RASTERFALL_MODEL_VERTEX_BYTES; model->position_scale=1000;
@@ -4020,25 +4127,41 @@ static struct rasterfall_model_asset *persistent_map_mesh_finish(
         floor_store_u32(material+24,(unsigned int)origin_x[g]);floor_store_u32(material+28,(unsigned int)origin_z[g]);offsets[g]=first;first+=counts[g]*6;}}
     for (i=0;i<build->count;++i) {
         const struct persistent_map_quad_patch *p=build->patches+i;
-        unsigned char *vertex=data+pb+mb+i*4*RASTERFALL_MODEL_VERTEX_BYTES;
+        unsigned char *vertex=data+pb+mb+i*vertices_per_patch*RASTERFALL_MODEL_VERTEX_BYTES;
         unsigned char *index=data+pb+mb+vb+offsets[groups[i]]*4;
         int ox=origin_x[groups[i]], oz=origin_z[groups[i]], k;
         static const unsigned int order[6]={0,1,2,0,2,3};
-        for(k=0;k<4;++k) {
-            unsigned char *dst=vertex+k*RASTERFALL_MODEL_VERTEX_BYTES;
-            floor_store_u32(dst,(unsigned int)(p->v[k].x-ox));
-            floor_store_u32(dst+4,(unsigned int)p->v[k].y);
-            floor_store_u32(dst+8,(unsigned int)(p->v[k].z-oz));
-            floor_store_u16(dst+12,0); floor_store_u16(dst+14,32767); floor_store_u16(dst+16,0);
-            floor_store_u16(dst+18,p->light[k]); floor_store_u16(dst+20,0);
-            if(p->v[k].x<model->min_x)model->min_x=p->v[k].x;
-            if(p->v[k].x>model->max_x)model->max_x=p->v[k].x;
-            if(p->v[k].y<model->min_y)model->min_y=p->v[k].y;
-            if(p->v[k].y>model->max_y)model->max_y=p->v[k].y;
-            if(p->v[k].z<model->min_z)model->min_z=p->v[k].z;
-            if(p->v[k].z>model->max_z)model->max_z=p->v[k].z;
+        int triangle_light[2]={0,0};
+        if (build->light_v1 || build->flat_v2 || build->baked_triangle_light)
+            for(k=0;k<2;++k) {
+            const struct vec3 *a=&p->v[order[k*3]],
+                *b=&p->v[order[k*3+1]],*c=&p->v[order[k*3+2]];
+            triangle_light[k]=build->baked_triangle_light ? p->light[0] :
+                build->light_v1 ? rasterfall_diagnostic_world_light_q8(
+                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
+                    (a->x+b->x+c->x)/3,(a->y+b->y+c->y)/3,
+                    (a->z+b->z+c->z)/3)) :
+                world_brightness_at((a->x+b->x+c->x)/3,
+                    (a->y+b->y+c->y)/3,(a->z+b->z+c->z)/3);
         }
-        for(k=0;k<6;++k)floor_store_u32(index+k*4,(unsigned int)i*4+order[k]);
+        for(k=0;k<(int)vertices_per_patch;++k) {
+            unsigned char *dst=vertex+k*RASTERFALL_MODEL_VERTEX_BYTES;
+            const struct vec3 *point=&p->v[vertices_per_patch==6 ? order[k] : (unsigned int)k];
+            floor_store_u32(dst,(unsigned int)(point->x-ox));
+            floor_store_u32(dst+4,(unsigned int)point->y);
+            floor_store_u32(dst+8,(unsigned int)(point->z-oz));
+            floor_store_u16(dst+12,0); floor_store_u16(dst+14,32767); floor_store_u16(dst+16,0);
+            floor_store_u16(dst+18,vertices_per_patch==6 ? triangle_light[k/3] : p->light[k]);
+            floor_store_u16(dst+20,0);
+            if(point->x<model->min_x)model->min_x=point->x;
+            if(point->x>model->max_x)model->max_x=point->x;
+            if(point->y<model->min_y)model->min_y=point->y;
+            if(point->y>model->max_y)model->max_y=point->y;
+            if(point->z<model->min_z)model->min_z=point->z;
+            if(point->z>model->max_z)model->max_z=point->z;
+        }
+        for(k=0;k<6;++k)floor_store_u32(index+k*4,
+            (unsigned int)i*vertices_per_patch+(vertices_per_patch==6 ? (unsigned int)k : order[k]));
         offsets[groups[i]]+=6;
     }
     tlibc_free(colors);tlibc_free(origin_x);tlibc_free(origin_z);tlibc_free(groups);tlibc_free(counts);tlibc_free(offsets);
@@ -4093,7 +4216,7 @@ static int floor_mesh_add_patch(struct floor_mesh_build *build,
 }
 
 static struct rasterfall_model_asset *floor_mesh_finish(
-    const struct floor_mesh_build *build)
+    const struct floor_mesh_build *build,const struct toy_map *map)
 {
     struct rasterfall_model_asset *model;
     unsigned long primitive_bytes, material_bytes, vertex_bytes, index_bytes, total;
@@ -4155,9 +4278,9 @@ static struct rasterfall_model_asset *floor_mesh_finish(
     model->materials = data + primitive_bytes;
     model->vertices = model->materials + material_bytes;
     model->indices = model->vertices + vertex_bytes;
-    model->min_x = level_map.minx; model->max_x = level_map.maxx;
+    model->min_x = map->minx; model->max_x = map->maxx;
     model->min_y = model->max_y = -900;
-    model->min_z = level_map.minz; model->max_z = level_map.maxz;
+    model->min_z = map->minz; model->max_z = map->maxz;
     {
         unsigned int g, first = 0;
         for (g = 0; g < group_count; ++g) {
@@ -4242,11 +4365,11 @@ static int floor_draw_contains(const struct toy_map_draw *draw, int x, int z)
            z < draw->c + draw->e || z >= draw->d - draw->e;
 }
 
-static int map_has_floor_ground(int x, int z)
+static int map_has_floor_ground(const struct toy_map *map,int x, int z)
 {
     int i;
-    for (i = 0; i < level_map.draw_count; i++) {
-        const struct toy_map_draw *draw = &level_map.draw[i];
+    for (i = 0; i < map->draw_count; i++) {
+        const struct toy_map_draw *draw = &map->draw[i];
         if (draw->type == TOY_MAP_DRAW_FLOOR &&
             x >= draw->a && x < draw->b &&
             z >= draw->c && z < draw->d) return 1;
@@ -4287,28 +4410,27 @@ static int draw_floor_mesh_mixed(struct toy_renderer *renderer,
  * plane.  A colour region changes the colour of the affected sub-rectangles;
  * it never creates a second, nearly coplanar surface. */
 static int draw_partitioned_floor(struct toy_renderer *renderer,
-                                  const struct camera *camera)
+    const struct camera *camera,const struct toy_map *map,int authored_ground,
+    struct rasterfall_model_asset **scene_model)
 {
     int base_x, base_z, i, j, k, pixels = 0;
     struct floor_mesh_build build;
     const struct rasterfall_model_asset *cached = NULL;
-    int hardware_floor = render_ctx && render_ctx->mixed_frame &&
-        active_world_light_v2 && !diagnostic_flat_planar;
-    int authored_ground = active_session &&
-        rasterfall_world_uses_authored_ground(active_session->world_id);
+    int hardware_floor = scene_model != NULL || (render_ctx && render_ctx->mixed_frame &&
+        active_world_light_v2 && !diagnostic_flat_planar);
     int slab = 2048, joint = authored_ground ? 0 : 10;
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
     memset(&build, 0, sizeof(build));
-    if (hardware_floor) {
+    if (hardware_floor && !scene_model) {
         cached = rasterfall_resources_resolve_active(
             rasterfall_render_resources(), floor_mesh_handle);
         if (cached) return draw_floor_mesh_mixed(renderer, camera, cached,
                                                  floor_mesh_handle);
     }
-    for (base_z = level_map.minz; base_z < level_map.maxz; base_z += slab) {
-        for (base_x = level_map.minx; base_x < level_map.maxx; base_x += slab) {
-            int tile_max_x = base_x + slab < level_map.maxx ? base_x + slab : level_map.maxx;
-            int tile_max_z = base_z + slab < level_map.maxz ? base_z + slab : level_map.maxz;
+    for (base_z = map->minz; base_z < map->maxz; base_z += slab) {
+        for (base_x = map->minx; base_x < map->maxx; base_x += slab) {
+            int tile_max_x = base_x + slab < map->maxx ? base_x + slab : map->maxx;
+            int tile_max_z = base_z + slab < map->maxz ? base_z + slab : map->maxz;
             int x_count = 0, z_count = 0;
             if (!hardware_floor && !world_box_visible(&renderer->surface, camera,
                                    base_x, tile_max_x, -900, -900,
@@ -4322,8 +4444,8 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                 floor_split_add(xs, &x_count, base_x + joint, base_x, tile_max_x);
                 floor_split_add(zs, &z_count, base_z + joint, base_z, tile_max_z);
             }
-            for (i = 0; i < level_map.draw_count; i++) {
-                struct toy_map_draw *draw = &level_map.draw[i];
+            for (i = 0; i < map->draw_count; i++) {
+                const struct toy_map_draw *draw = &map->draw[i];
                 if (draw->type != TOY_MAP_DRAW_FLOOR &&
                     draw->type != TOY_MAP_DRAW_BORDER) continue;
                 if (draw->b <= base_x || draw->a >= tile_max_x ||
@@ -4343,8 +4465,8 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                     base_z, tile_max_z);
                 }
             }
-            for (i = 0; i < level_map.spawn_count; i++) {
-                struct toy_game_box *spawn = &level_map.spawn_zones[i].box;
+            for (i = 0; i < map->spawn_count; i++) {
+                const struct toy_game_box *spawn = &map->spawn_zones[i].box;
                 if (spawn->maxx <= base_x || spawn->minx >= tile_max_x ||
                     spawn->maxz <= base_z || spawn->minz >= tile_max_z) continue;
                 floor_split_add(xs, &x_count, spawn->minx, base_x, tile_max_x);
@@ -4365,10 +4487,10 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                     uint32_t color = base_color;
                     /* The world rectangle is only an extent.  Do not paint
                      * its uncovered cells as a default floor. */
-                    if (!map_has_floor_ground(center_x, center_z)) continue;
+                    if (!map_has_floor_ground(map,center_x, center_z)) continue;
                     /* Spawn zones are the strongest authored region. */
-                    for (k = 0; k < level_map.spawn_count; k++) {
-                        struct toy_map_zone *spawn = &level_map.spawn_zones[k];
+                    for (k = 0; k < map->spawn_count; k++) {
+                        const struct toy_map_zone *spawn = &map->spawn_zones[k];
                         if (floor_contains(&spawn->box, center_x, center_z)) {
                             color = spawn->color;
                             has_spawn = 1;
@@ -4376,8 +4498,8 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                         }
                     }
                     if (!has_spawn) {
-                        for (k = 0; k < level_map.draw_count; k++) {
-                            struct toy_map_draw *draw = &level_map.draw[k];
+                        for (k = 0; k < map->draw_count; k++) {
+                            const struct toy_map_draw *draw = &map->draw[k];
                             if (draw->type != TOY_MAP_DRAW_FLOOR &&
                                 draw->type != TOY_MAP_DRAW_BORDER) continue;
                             /* Legacy ground supplies coverage only; WHU ground
@@ -4417,8 +4539,9 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
         }
     }
     if (hardware_floor) {
-        struct rasterfall_model_asset *model = floor_mesh_finish(&build);
+        struct rasterfall_model_asset *model = build.count ? floor_mesh_finish(&build,map) : NULL;
         tlibc_free(build.patches);
+        if (scene_model) { *scene_model=model; return build.count && !model ? -1 : 0; }
         if (!model || rasterfall_resources_adopt(rasterfall_render_resources(),
                 "@world/partitioned-floor", model, &floor_mesh_handle) < 0) {
             if (model) { rasterfall_model_unload(model); tlibc_free(model); }
@@ -4429,6 +4552,42 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
     }
     scene_stats.ground_legacy_commands = renderer->cmd_count;
     return pixels;
+}
+
+int rf_gpu_scene_world_floor_mesh_build(
+    const struct rf_gpu_scene_world_render_frame_v1 *render,
+    const struct rf_gpu_scene_world_floor_frame_v1 *floor,
+    struct rasterfall_model_asset **model)
+{
+    struct toy_map *map;
+    int result;
+    if (!render || !floor || !model || render->count>TOY_MAP_MAX_DRAW ||
+        !render->frame_id || render->frame_id!=floor->frame_id ||
+        render->world_generation!=floor->world_generation ||
+        render->map_generation!=floor->map_generation ||
+        floor->spawn_count>TOY_MAP_MAX_ZONES ||
+        floor->minx>=floor->maxx || floor->minz>=floor->maxz ||
+        (floor->authored_ground!=0 && floor->authored_ground!=1)) return -1;
+    *model=NULL;
+    map=tlibc_malloc(sizeof(*map));
+    if (!map) return -1;
+    memset(map,0,sizeof(*map));
+    map->minx=floor->minx;map->maxx=floor->maxx;
+    map->minz=floor->minz;map->maxz=floor->maxz;
+    map->spawn_count=(int)floor->spawn_count;
+    memcpy(map->spawn_zones,floor->spawn_zones,
+        floor->spawn_count*sizeof(map->spawn_zones[0]));
+    map->draw_count=(int)render->count;
+    for(uint32_t i=0;i<render->count;++i) {
+        map->draw[i]=render->items[i].draw;
+        if (!render->items[i].visible &&
+            (map->draw[i].type==TOY_MAP_DRAW_FLOOR ||
+             map->draw[i].type==TOY_MAP_DRAW_BORDER))
+            map->draw[i].type=TOY_MAP_DRAW_LABEL;
+    }
+    result=draw_partitioned_floor(NULL,NULL,map,floor->authored_ground,model);
+    tlibc_free(map);
+    return result;
 }
 
 static int persistent_map_map_class_for_draw(const struct toy_map_draw *draw)
@@ -4442,19 +4601,27 @@ static int persistent_map_map_class_for_draw(const struct toy_map_draw *draw)
     return -1;
 }
 
-static int persistent_map_build_map_class(int kind, struct persistent_map_mesh_build *build)
+static int persistent_map_build_draw(int kind,const struct toy_map_draw *x,
+    struct persistent_map_mesh_build *build)
 {
-    int i;
-    for (i=0;i<level_map.draw_count;++i) {
-        const struct toy_map_draw *x=level_map.draw+i;
-        struct vec3 v[4];
-        if (persistent_map_map_class_for_draw(x)!=kind) continue;
+    struct vec3 v[4];
         if (kind==PERSISTENT_MAP_MAP_WALL) {
             if(x->c==x->d) v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->b,-900,x->c},v[2]=(struct vec3){x->b,x->e,x->c},v[3]=(struct vec3){x->a,x->e,x->c};
             else v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->a,-900,x->d},v[2]=(struct vec3){x->a,x->e,x->d},v[3]=(struct vec3){x->a,x->e,x->c};
             if(persistent_map_mesh_add_quad(build,v,x->color)<0)return -1;
         } else if(kind==PERSISTENT_MAP_MAP_BOX) {
             if(persistent_map_mesh_add_box(build,x->a,x->b,-900,x->e-900,x->c,x->d,x->color,0)<0)return -1;
+        } else if(kind==RF_GPU_SCENE_WORLD_MODEL_BOX) {
+            if(persistent_map_mesh_add_box(build,x->a,x->b,x->e,x->f,
+                x->c,x->d,x->color,0)<0)return -1;
+        } else if(kind==RF_GPU_SCENE_WORLD_SIGN) {
+            if(persistent_map_mesh_add_sign(build,x)<0)return -1;
+        } else if(kind==RF_GPU_SCENE_WORLD_MODEL_LEGACY) {
+            if(persistent_map_mesh_add_legacy_model(build,x)<0)return -1;
+        } else if(kind==RF_GPU_SCENE_WORLD_MODEL_SPECIAL) {
+            if(persistent_map_mesh_add_special_model(build,x)<0)return -1;
+        } else if(kind==RF_GPU_SCENE_WORLD_MODEL_INFECTED) {
+            if(persistent_map_mesh_add_infected_model(build,x)<0)return -1;
         } else if(kind==PERSISTENT_MAP_MAP_PLATFORM) {
             int y=-900+x->e;
             v[0]=(struct vec3){x->a,y,x->c}; v[1]=(struct vec3){x->b,y,x->c};
@@ -4477,25 +4644,177 @@ static int persistent_map_build_map_class(int kind, struct persistent_map_mesh_b
             PERSISTENT_MAP_ADD4(bd,ba,a,d,mix_color(x->color,0x10151D,1,3));
 #undef PERSISTENT_MAP_ADD4
         }
+    return 0;
+}
+
+_Static_assert((int)PERSISTENT_MAP_MAP_WALL==(int)RF_GPU_SCENE_WORLD_WALL &&
+    (int)PERSISTENT_MAP_MAP_BOX==(int)RF_GPU_SCENE_WORLD_BOX &&
+    (int)PERSISTENT_MAP_MAP_RAMP==(int)RF_GPU_SCENE_WORLD_RAMP &&
+    (int)PERSISTENT_MAP_MAP_PLATFORM==(int)RF_GPU_SCENE_WORLD_PLATFORM,
+    "Scene world classes must match persistent map classes");
+
+static int persistent_map_build_map_class(int kind, struct persistent_map_mesh_build *build)
+{
+    for (int i=0;i<level_map.draw_count;++i) {
+        const struct toy_map_draw *x=level_map.draw+i;
+        if (persistent_map_map_class_for_draw(x)==kind &&
+            persistent_map_build_draw(kind,x,build)<0) return -1;
+    }
+    return 0;
+}
+
+int rf_gpu_scene_world_opaque_mesh_build(
+    const struct rf_gpu_scene_snapshot_v2 *snapshot,
+    const struct rf_gpu_scene_world_render_frame_v1 *render,
+    const struct rf_gpu_scene_world_floor_frame_v1 *floor,
+    const struct rf_gpu_scene_world_prop_frame_v1 *props,
+    struct rasterfall_model_asset *models[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT],
+    uint32_t *accepted,uint32_t *deferred,uint32_t *transparent,
+    uint32_t *prop_accepted)
+{
+    struct persistent_map_mesh_build builds[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT]={{0}};
+    struct rasterfall_model_asset *made[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT]={0};
+    uint32_t done=0,pending=0,blended=0,floor_sources=0,prop_done=0;
+    if (!models || !floor || !props || !accepted || !deferred ||
+        !transparent || !prop_accepted ||
+        floor->model_light_v1.minx!=floor->minx ||
+        floor->model_light_v1.maxx!=floor->maxx ||
+        floor->model_light_v1.minz!=floor->minz ||
+        floor->model_light_v1.maxz!=floor->maxz ||
+        rf_gpu_scene_world_render_validate(snapshot,render)<0) return -1;
+    builds[RF_GPU_SCENE_WORLD_MODEL_BOX].light_v1=&floor->model_light_v1;
+    builds[RF_GPU_SCENE_WORLD_SIGN].flat_v2=1;
+    builds[RF_GPU_SCENE_WORLD_MODEL_LEGACY].light_v1=&floor->model_light_v1;
+    builds[RF_GPU_SCENE_WORLD_MODEL_SPECIAL].light_v1=&floor->model_light_v1;
+    builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED].light_v1=&floor->model_light_v1;
+    builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED].baked_triangle_light=1;
+    for(uint32_t i=0;i<render->count;++i) {
+        const struct rf_gpu_scene_world_render_item_v1 *item=&render->items[i];
+        int kind;
+        if (!item->visible) continue;
+        if (item->alpha<255) { blended++;continue; }
+        if (item->draw.type==TOY_MAP_DRAW_FLOOR ||
+            item->draw.type==TOY_MAP_DRAW_BORDER) { floor_sources++;continue; }
+        kind=item->draw.type==TOY_MAP_DRAW_SIGN ? RF_GPU_SCENE_WORLD_SIGN :
+            item->draw.type==TOY_MAP_DRAW_MODEL && !item->draw.style ?
+            RF_GPU_SCENE_WORLD_MODEL_BOX :
+            item->draw.type==TOY_MAP_DRAW_MODEL &&
+                (item->draw.style==1 || item->draw.style==2 ||
+                 item->draw.style==6 || item->draw.style==9 ||
+                 item->draw.style==12) ? RF_GPU_SCENE_WORLD_MODEL_LEGACY :
+            item->draw.type==TOY_MAP_DRAW_MODEL &&
+                item->draw.style>=3 && item->draw.style<=5 ?
+                RF_GPU_SCENE_WORLD_MODEL_SPECIAL :
+            item->draw.type==TOY_MAP_DRAW_MODEL &&
+                ((item->draw.style>=7 && item->draw.style<=8) ||
+                 (item->draw.style>=10 && item->draw.style<=11) ||
+                 (item->draw.style>=13 && item->draw.style<=14)) ?
+                RF_GPU_SCENE_WORLD_MODEL_INFECTED :
+            persistent_map_map_class_for_draw(&item->draw);
+        if (kind<0 || (kind>=RF_GPU_SCENE_WORLD_FLOOR &&
+                kind!=RF_GPU_SCENE_WORLD_MODEL_BOX &&
+                kind!=RF_GPU_SCENE_WORLD_SIGN &&
+                kind!=RF_GPU_SCENE_WORLD_MODEL_LEGACY &&
+                kind!=RF_GPU_SCENE_WORLD_MODEL_SPECIAL &&
+                kind!=RF_GPU_SCENE_WORLD_MODEL_INFECTED)) {
+            pending++;continue;
+        }
+        if (persistent_map_build_draw(kind,&item->draw,&builds[kind])<0) goto failed;
+        done++;
+    }
+    for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_FLOOR;++kind) {
+        if (!builds[kind].count) continue;
+        made[kind]=persistent_map_mesh_finish(&builds[kind]);
+        if (!made[kind]) goto failed;
+    }
+    if (builds[RF_GPU_SCENE_WORLD_MODEL_BOX].count) {
+        made[RF_GPU_SCENE_WORLD_MODEL_BOX]=
+            persistent_map_mesh_finish(&builds[RF_GPU_SCENE_WORLD_MODEL_BOX]);
+        if (!made[RF_GPU_SCENE_WORLD_MODEL_BOX]) goto failed;
+    }
+    if (builds[RF_GPU_SCENE_WORLD_SIGN].count) {
+        made[RF_GPU_SCENE_WORLD_SIGN]=
+            persistent_map_mesh_finish(&builds[RF_GPU_SCENE_WORLD_SIGN]);
+        if (!made[RF_GPU_SCENE_WORLD_SIGN]) goto failed;
+    }
+    if (builds[RF_GPU_SCENE_WORLD_MODEL_LEGACY].count) {
+        made[RF_GPU_SCENE_WORLD_MODEL_LEGACY]=
+            persistent_map_mesh_finish(&builds[RF_GPU_SCENE_WORLD_MODEL_LEGACY]);
+        if (!made[RF_GPU_SCENE_WORLD_MODEL_LEGACY]) goto failed;
+    }
+    if (builds[RF_GPU_SCENE_WORLD_MODEL_SPECIAL].count) {
+        made[RF_GPU_SCENE_WORLD_MODEL_SPECIAL]=
+            persistent_map_mesh_finish(&builds[RF_GPU_SCENE_WORLD_MODEL_SPECIAL]);
+        if (!made[RF_GPU_SCENE_WORLD_MODEL_SPECIAL]) goto failed;
+    }
+    if (builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED].count) {
+        made[RF_GPU_SCENE_WORLD_MODEL_INFECTED]=
+            persistent_map_mesh_finish(&builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED]);
+        if (!made[RF_GPU_SCENE_WORLD_MODEL_INFECTED]) goto failed;
+    }
+    if (rf_gpu_scene_world_floor_mesh_build(render,floor,
+            &made[RF_GPU_SCENE_WORLD_FLOOR])<0) goto failed;
+    if (rf_gpu_scene_world_boundary_mesh_build(props,
+            &made[RF_GPU_SCENE_WORLD_BOUNDARY],&prop_done)<0) goto failed;
+    if (made[RF_GPU_SCENE_WORLD_FLOOR]) done+=floor_sources;
+    else pending+=floor_sources;
+    for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind) {
+        tlibc_free(builds[kind].patches);
+        models[kind]=made[kind];
+    }
+    *accepted=done;*deferred=pending;*transparent=blended;
+    *prop_accepted=prop_done;
+    return 0;
+failed:
+    for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind) {
+        tlibc_free(builds[kind].patches);
+        if (made[kind]) { rasterfall_model_unload(made[kind]);tlibc_free(made[kind]); }
+    }
+    return -1;
+}
+
+static int persistent_map_add_boundary_prop(struct persistent_map_mesh_build *build,
+    const struct toy_map_prop *p)
+{
+    struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
+    int count;
+    if(p->asset_id!=RASTERFALL_PROP_ASSET_BOUNDARY_WALL)return 0;
+    count=rf_map_wall_visual_boxes(p->length,parts); if(count<0)return -1;
+    for(int j=0;j<count;++j) {
+        if(rf_map_component_transform(parts+j,p->x,0,p->z,p->yaw_degrees,p->scale_milli,&b)<0)return -1;
+        if(persistent_map_mesh_add_box(build,b.min_x,b.max_x,-900+p->y+b.min_y,
+            -900+p->y+b.max_y,b.min_z,b.max_z,parts[j].color,1)<0)return -1;
     }
     return 0;
 }
 
 static int persistent_map_build_boundary(struct persistent_map_mesh_build *build)
 {
-    int i,j;
-    for(i=0;i<level_map.prop_count;++i) {
-        const struct toy_map_prop *p=level_map.props+i;
-        struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
-        int count;
-        if(p->asset_id!=RASTERFALL_PROP_ASSET_BOUNDARY_WALL)continue;
-        count=rf_map_wall_visual_boxes(p->length,parts); if(count<0)return -1;
-        for(j=0;j<count;++j) {
-            if(rf_map_component_transform(parts+j,p->x,0,p->z,p->yaw_degrees,p->scale_milli,&b)<0)return -1;
-            if(persistent_map_mesh_add_box(build,b.min_x,b.max_x,-900+p->y+b.min_y,
-                -900+p->y+b.max_y,b.min_z,b.max_z,parts[j].color,1)<0)return -1;
+    for(int i=0;i<level_map.prop_count;++i)
+        if(persistent_map_add_boundary_prop(build,&level_map.props[i])<0)return -1;
+    return 0;
+}
+
+int rf_gpu_scene_world_boundary_mesh_build(
+    const struct rf_gpu_scene_world_prop_frame_v1 *props,
+    struct rasterfall_model_asset **model,uint32_t *accepted)
+{
+    struct persistent_map_mesh_build build={0};
+    uint32_t done=0;
+    if (!props || !model || !accepted || !props->frame_id ||
+        !props->world_generation || props->count>TOY_MAP_MAX_PROPS) return -1;
+    *model=NULL;
+    for(uint32_t i=0;i<props->count;++i) {
+        if (props->items[i].prop.asset_id==RASTERFALL_PROP_ASSET_BOUNDARY_WALL)
+            done++;
+        if (persistent_map_add_boundary_prop(&build,&props->items[i].prop)<0) {
+            tlibc_free(build.patches);return -1;
         }
     }
+    if (build.count) *model=persistent_map_mesh_finish(&build);
+    tlibc_free(build.patches);
+    if (build.count && !*model) return -1;
+    *accepted=done;
     return 0;
 }
 
@@ -5707,7 +6026,8 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     rasterfall_sky_draw(&renderer->surface, camera);
     active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded;
     floor_submission = 1;
-    pixels += draw_partitioned_floor(renderer, camera);
+    pixels += draw_partitioned_floor(renderer,camera,&level_map,
+        active_session && rasterfall_world_uses_authored_ground(active_session->world_id),NULL);
     floor_submission = 0;
     if (active_coordinate_axes)
         pixels += render_coordinate_ruler(renderer, camera);
@@ -5969,12 +6289,7 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
 }
 
 /* 偶数槽位：方块人。分离的靴子、腿、躯干和头保持 Minecraft 式轮廓。 */
-static int render_block_enemy(struct toy_renderer *renderer,
-                              const struct camera *camera,
-                              const struct toy_game_enemy *e,
-                              int scale, uint32_t color)
-{
-    static const struct enemy_body_part parts[] = {
+static const struct enemy_body_part block_enemy_parts[] = {
         ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -105, -15, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
         ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 15, 105, -900, -760, -105, 105, RF_COLOR_AI_HEAVY),
         ENEMY_BOX(ENEMY_BODY_BOX_WORLD, -100, -10, -760, -450, -85, 85, -0x101008),
@@ -5986,30 +6301,35 @@ static int render_block_enemy(struct toy_renderer *renderer,
         ENEMY_FIXED_FACE(155, -82, -28, 160, 200, 0xFFF0A0),
         ENEMY_FIXED_FACE(155, 28, 82, 160, 200, 0xFFF0A0),
         ENEMY_FIXED_FACE(155, -70, 70, 80, 105, 0x4A1010)
-    };
+};
+static int render_block_enemy(struct toy_renderer *renderer,
+                              const struct camera *camera,
+                              const struct toy_game_enemy *e,
+                              int scale, uint32_t color)
+{
     return render_enemy_body_parts(renderer, camera, e, scale, color,
-                                   parts, sizeof(parts) / sizeof(parts[0]));
+        block_enemy_parts,sizeof(block_enemy_parts)/sizeof(block_enemy_parts[0]));
 }
 
 /* 奇数槽位：Madness 风格无臂人，圆柱躯干、椭圆头和厚底短靴。 */
+static const struct enemy_body_part round_enemy_parts[] = {
+    ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -145, -12, -900, -760, -180, 95, 0x202328),
+    ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 12, 145, -900, -760, -180, 95, 0x202328),
+    ENEMY_CYLINDER(180, -770, 20, 0),
+    ENEMY_ELLIPSOID(155, 205, 205, 0x181810),
+    ENEMY_FIXED_FACE(205, -25, 25, 35, 275, 0x000000),
+    ENEMY_FIXED_FACE(205, -120, 120, 135, 175, 0x000000)
+};
 static int render_round_enemy(struct toy_renderer *renderer,
                               const struct camera *camera,
                               const struct toy_game_enemy *e,
                               int scale, uint32_t color)
 {
-    static const struct enemy_body_part parts[] = {
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, -145, -12, -900, -760, -180, 95, 0x202328),
-        ENEMY_FIXED_BOX(ENEMY_BODY_BOX_WORLD, 12, 145, -900, -760, -180, 95, 0x202328),
-        ENEMY_CYLINDER(180, -770, 20, 0),
-        ENEMY_ELLIPSOID(155, 205, 205, 0x181810),
-        ENEMY_FIXED_FACE(205, -25, 25, 35, 275, 0x000000),
-        ENEMY_FIXED_FACE(205, -120, 120, 135, 175, 0x000000)
-    };
     /* The head's vertical radius used to be derived from the scaled bounds. */
-    struct enemy_body_part adjusted[sizeof(parts) / sizeof(parts[0])];
+    struct enemy_body_part adjusted[sizeof(round_enemy_parts) / sizeof(round_enemy_parts[0])];
     int i;
-    for (i = 0; i < (int)(sizeof(parts) / sizeof(parts[0])); i++) {
-        adjusted[i] = parts[i];
+    for (i = 0; i < (int)(sizeof(round_enemy_parts) / sizeof(round_enemy_parts[0])); i++) {
+        adjusted[i] = round_enemy_parts[i];
         if (adjusted[i].type == ENEMY_BODY_ELLIPSOID)
             adjusted[i].c = (enemy_y(350, scale) - enemy_y(-40, scale)) / 2;
     }
@@ -6017,7 +6337,143 @@ static int render_round_enemy(struct toy_renderer *renderer,
                                    adjusted, sizeof(adjusted) / sizeof(adjusted[0]));
 }
 
+static int persistent_map_mesh_add_legacy_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw)
+{
+    const struct enemy_body_part *parts;
+    int count,x=(draw->a+draw->b)/2,z=(draw->c+draw->d)/2,scale=1000;
+    uint32_t color=draw->color;
+    if (draw->style==1 || draw->style==6 || draw->style==12) {
+        parts=block_enemy_parts;
+        count=(int)(sizeof(block_enemy_parts)/sizeof(block_enemy_parts[0]));
+        if (draw->style==6) color=RF_COLOR_ENEMY_PURSUIT_COMMON;
+        if (draw->style==12) {
+            color=RF_COLOR_ENEMY_PURSUIT_HEAVY;scale=1350;
+        }
+    } else if (draw->style==2 || draw->style==9) {
+        parts=round_enemy_parts;
+        count=(int)(sizeof(round_enemy_parts)/sizeof(round_enemy_parts[0]));
+        if (draw->style==9) color=RF_COLOR_ENEMY_PURSUIT_FAST;
+    } else return -1;
+    for(int pindex=0;pindex<count;++pindex) {
+        const struct enemy_body_part *p=parts+pindex;
+        uint32_t part_color=p->has_fixed_color ? p->fixed_color : color+p->color_delta;
+        int y0=-900+(p->c+900)*scale/1000;
+        int y1=-900+(p->d+900)*scale/1000;
+        if (p->type==ENEMY_BODY_BOX_WORLD) {
+            if (persistent_map_mesh_add_box(build,x+p->a,x+p->b,y0,y1,
+                    z+p->e,z+p->f,part_color,0)<0) return -1;
+        } else if (p->type==ENEMY_BODY_FACE) {
+            int front=z-(p->radius+3);
+            struct vec3 q[4]={{x+p->a,y0,front},{x+p->b,y0,front},
+                {x+p->b,y1,front},{x+p->a,y1,front}};
+            if (persistent_map_mesh_add_quad(build,q,part_color)<0) return -1;
+        } else if (p->type==ENEMY_BODY_CYLINDER) {
+            struct vec3 lo[8],hi[8],cap={x,y1,z};
+            for(int i=0;i<8;++i) {
+                lo[i]=(struct vec3){x+circle_x[i]*p->radius/1024,y0,
+                    z+circle_z[i]*p->radius/1024};
+                hi[i]=(struct vec3){lo[i].x,y1,lo[i].z};
+            }
+            for(int i=0;i<8;++i) {
+                int next=(i+1)&7;
+                struct vec3 side[4]={lo[i],lo[next],hi[next],hi[i]};
+                struct vec3 top[4]={cap,hi[i],hi[next],hi[next]};
+                if (persistent_map_mesh_add_quad(build,side,
+                        part_color+((i&3)*0x030303))<0 ||
+                    persistent_map_mesh_add_quad(build,top,
+                        part_color+0x181818)<0) return -1;
+            }
+        } else if (p->type==ENEMY_BODY_ELLIPSOID) {
+            static const int ring_r[5]={0,724,1024,724,0};
+            static const int ring_y[5]={-1024,-724,0,724,1024};
+            struct vec3 ring[5][8];
+            int cy=-900+(p->a+900)*scale/1000;
+            int ry=(-900+(350+900)*scale/1000-
+                (-900+(-40+900)*scale/1000))/2;
+            for(int r=0;r<5;++r) for(int i=0;i<8;++i) {
+                ring[r][i]=(struct vec3){
+                    x+circle_x[i]*p->b*ring_r[r]/1048576,
+                    cy+ring_y[r]*ry/1024,
+                    z+circle_z[i]*p->b*ring_r[r]/1048576};
+            }
+            for(int r=0;r<4;++r) for(int i=0;i<8;++i) {
+                int next=(i+1)&7;
+                struct vec3 q[4]={ring[r][i],ring[r][next],
+                    ring[r+1][next],ring[r+1][i]};
+                if (persistent_map_mesh_add_quad(build,q,
+                        part_color+((i&3)*0x030303))<0) return -1;
+            }
+        } else return -1;
+    }
+    return 0;
+}
+
 #include "render/rasterfall_enemy_rig.inc"
+
+static int persistent_map_mesh_add_special_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw)
+{
+    static const int ring[8][2]={{-3,-4},{3,-4},{4,-3},{4,3},
+        {3,4},{-3,4},{-4,3},{-4,-3}};
+    struct toy_game_enemy enemy={0};
+    const struct enemy_rig_profile *profile;
+    struct enemy_rig_input input;
+    struct enemy_rig_pose pose;
+    struct enemy_rig_final final;
+    enemy.active=1;
+    enemy.type=draw->style==3 ? TOY_GAME_ENEMY_SMOKER :
+        draw->style==4 ? TOY_GAME_ENEMY_CHARGER :
+        draw->style==5 ? TOY_GAME_ENEMY_TANK : -1;
+    enemy.x=(draw->a+draw->b)/2;enemy.z=(draw->c+draw->d)/2;
+    enemy.dir_z=-1024;
+    profile=enemy_rig_profile(enemy.type);
+    if (!profile) return -1;
+    memset(&input,0,sizeof(input));
+    input.type=enemy.type;
+    input.attack_ms=input.recovery_ms=input.impact_age_ms=-1;
+    enemy_rig_sample(profile,&input,&pose);
+    enemy_rig_finalize(profile,&pose,&final);
+    for(int i=0;i<profile->count;++i) {
+        const struct enemy_rig_part *part=&profile->parts[i];
+        struct vec3 v[16];
+        for(int j=0;j<16;++j) {
+            struct vec3 q={part->x+ring[j%8][0]*part->hx/4,
+                part->y+(j<8?-part->hy:part->hy),
+                part->z+ring[j%8][1]*part->hz/4};
+            q=enemy_rig_final_point(profile,&final,part->channel,q);
+            v[j].x=enemy.x+(enemy.dir_z*q.x+enemy.dir_x*q.z)/1024;
+            v[j].z=enemy.z+(-enemy.dir_x*q.x+enemy.dir_z*q.z)/1024;
+            v[j].y=q.y;
+        }
+        for(int face=0;face<8;++face) {
+            int next=(face+1)%8;
+            struct vec3 u={v[face+8].x-v[face].x,
+                v[face+8].y-v[face].y,v[face+8].z-v[face].z};
+            struct vec3 w={v[next].x-v[face].x,
+                v[next].y-v[face].y,v[next].z-v[face].z};
+            long long nx=(long long)u.y*w.z-(long long)u.z*w.y;
+            long long ny=(long long)u.z*w.x-(long long)u.x*w.z;
+            long long nz=(long long)u.x*w.y-(long long)u.y*w.x;
+            int light=256,length=isqrt(nx*nx+ny*ny+nz*nz);
+            unsigned int color=part->color;
+            struct vec3 q[4]={v[face],v[face+8],v[next+8],v[next]};
+            if (length>0) light=model_form_light_q8(nx*32767/length,
+                ny*32767/length,nz*32767/length,0);
+            color=((((color>>16)&255)*light/256)<<16)|
+                ((((color>>8)&255)*light/256)<<8)|((color&255)*light/256);
+            if (persistent_map_mesh_add_quad(build,q,color)<0) return -1;
+        }
+        for(int j=1;j<7;++j) {
+            struct vec3 bottom[4]={v[0],v[j],v[j+1],v[j+1]};
+            struct vec3 top[4]={v[8],v[j+9],v[j+8],v[j+8]};
+            if (persistent_map_mesh_add_quad(build,bottom,part->color)<0 ||
+                persistent_map_mesh_add_quad(build,top,part->color)<0)
+                return -1;
+        }
+    }
+    return 0;
+}
 
 static int render_charger_enemy(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_enemy *e,
@@ -6144,6 +6600,100 @@ static int render_blob_shadow(struct toy_renderer *renderer,
 }
 
 #include "render/rasterfall_enemy_visual.inc"
+
+/* Campaign MODEL display 7/8, 10/11 and 13/14 freezes the same idle
+ * imported enemy pose as render_infected_display_model(), then emits flat
+ * triangles into a generation-owned Scene mesh. No renderer commands or
+ * mutable enemy cache survive this build. */
+static int persistent_map_mesh_add_infected_model(
+    struct persistent_map_mesh_build *build,const struct toy_map_draw *draw)
+{
+    struct rasterfall_model_resource resource={0};
+    struct rasterfall_model_instance instance={0};
+    struct rasterfall_model_asset *pose;
+    int display=draw->style-6;
+    int family=display%3==1 ? RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED :
+        RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED;
+    int type=display/3==0 ? TOY_GAME_ENEMY_PURSUIT_COMMON :
+        display/3==1 ? TOY_GAME_ENEMY_PURSUIT_FAST :
+        TOY_GAME_ENEMY_PURSUIT_HEAVY;
+    int recipe=-1,scale,x=(draw->a+draw->b)/2,z=(draw->c+draw->d)/2;
+    int result=-1;
+    if (!build || !build->light_v1 || display<1 || display>8 ||
+        (display%3!=1 && display%3!=2)) return -1;
+    for(int i=0;i<6;++i)
+        if (enemy_visual_recipes[i].family==family &&
+            enemy_visual_recipes[i].type==type) { recipe=i;break; }
+    if (recipe<0 || rasterfall_model_resource_load(&resource,
+            enemy_visual_recipes[recipe].path)<0) return -1;
+    if (rasterfall_model_instance_init(&instance,&resource)<0 ||
+        rasterfall_model_instance_reset_pose(&instance)<0) goto done;
+    pose=rasterfall_model_instance_pose(&instance);
+    if (!pose || !pose->has_character_contract || !pose->position_scale ||
+        !pose->skinning_enabled || !pose->bone_count) goto done;
+    enemy_visual_apply_pose(pose,type,0);
+    if (rasterfall_model_instance_update_bones(&instance)<0) goto done;
+    scale=512000/pose->position_scale;
+    if (scale<1 || scale>8000) goto done;
+    for(uint32_t primitive=0;primitive<pose->primitive_count;++primitive) {
+        const unsigned char *record=pose->primitives+primitive*16;
+        uint32_t first=model_u32(record),count=model_u32(record+4),material_id=model_u32(record+8);
+        const unsigned char *material;
+        struct rasterfall_character_render_policy policy;
+        enum rasterfall_character_visual_class visual;
+        uint32_t color;
+        if (material_id>=pose->material_count || first>pose->index_count ||
+            count>pose->index_count-first || count%3) goto done;
+        material=pose->materials+material_id*pose->material_bytes;
+        if (pose->format_version<9 || pose->material_bytes<40 ||
+            material[4]!=255 || material[6] || (material[7]&~1u) ||
+            model_u32(material+8)!=UINT_MAX || model_u32(material+12) ||
+            model_u32(material+16) || model_u32(material+20) ||
+            model_u32(material+24) || model_u32(material+28) ||
+            model_u32(material+32)) goto done;
+        visual=authored_visual_class(pose,material_id);
+        policy=character_render_policy(visual);
+        color=model_u32(material)&0xffffffu;
+        for(uint32_t index=first;index<first+count;index+=3) {
+            struct vec3 q[4];
+            int normals[3][3],nx,ny,nz,form,world,light;
+            for(int corner=0;corner<3;++corner) {
+                uint32_t vertex=model_u32(pose->indices+(index+corner)*4);
+                int position[3];
+                if (vertex>=pose->vertex_count ||
+                    rasterfall_model_instance_skin_vertex(&instance,vertex,
+                        position,normals[corner])<0) goto done;
+                q[corner]=(struct vec3){x-(int)((long long)position[0]*scale/1000),
+                    -900+(int)((long long)(position[1]-pose->min_y)*scale/1000),
+                    z-(int)((long long)position[2]*scale/1000)};
+                normals[corner][0]=-normals[corner][0];
+                normals[corner][2]=-normals[corner][2];
+            }
+            q[3]=q[2];
+            nx=(normals[0][0]+normals[1][0]+normals[2][0])/3;
+            ny=(normals[0][1]+normals[1][1]+normals[2][1])/3;
+            nz=(normals[0][2]+normals[1][2]+normals[2][2])/3;
+            form=model_form_light_q8(nx,ny,nz,1);
+            world=rasterfall_diagnostic_world_light_q8(
+                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
+                    (q[0].x+q[1].x+q[2].x)/3,
+                    (q[0].y+q[1].y+q[2].y)/3,
+                    (q[0].z+q[1].z+q[2].z)/3));
+            light=world*form/256;
+            if (policy.lighting_min_q8>0)
+                light=clampi(light,policy.lighting_min_q8,
+                    policy.lighting_max_q8);
+            if (persistent_map_mesh_push(build,q,color)<0) goto done;
+            for(int corner=0;corner<4;++corner)
+                build->patches[build->count-1].light[corner]=(unsigned short)light;
+        }
+    }
+    result=0;
+done:
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&resource);
+    return result;
+}
 
 static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
@@ -9713,9 +10263,16 @@ void rasterfall_render_bake_lightmap(void)
     diagnostic_world_lighting_v1_ready = 0;
     active_diagnostic_world_light_v1 = 0;
     rasterfall_world_light_bake_v2(active_world_lighting, &active_session->map_ops.runtime);
+    render_ctx->world_light_generation++;
+    if (!render_ctx->world_light_generation) render_ctx->world_light_generation=1;
     __printf("rasterfall: world-light V2 samples=%d occluders=%d ray-tests=%lld bake-us=%ld\n",
              RF_WORLD_LIGHT_W * RF_WORLD_LIGHT_H, active_world_lighting->occluder_count,
              active_world_lighting->ray_tests, render_monotonic_us() - start);
+}
+
+uint64_t rasterfall_render_world_light_generation(void)
+{
+    return render_ctx ? render_ctx->world_light_generation : 0;
 }
 
 int rasterfall_render_scene(struct toy_renderer *renderer,

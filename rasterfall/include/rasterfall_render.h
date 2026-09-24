@@ -20,6 +20,7 @@ struct rasterfall_render_context {
     struct toy_texture_view *wall_texture;
     const struct toy_texture_view *model_texture;
     struct rasterfall_world_lighting world_lighting;
+    uint64_t world_light_generation;
     int textures_enabled;
     int diagnostic_fixed_lighting; /* Fixed lighting override for isolated captures only. */
     /* Bound only while Core records an ordered mixed WORLD frame. */
@@ -77,6 +78,18 @@ struct rasterfall_model_setup_timing {
     long body_triangles_us;
     long edge_triangles_us;
 };
+
+/* Resolve an immutable static RMESH primitive for Scene with the same
+ * material and numeric policy used by the mixed static prop producer. */
+int rasterfall_render_scene_static_prop_eligible(
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance);
+int rasterfall_render_scene_static_prop_visible(
+    const struct rasterfall_draw_view *view,
+    const struct rasterfall_draw_instance *instance);
+enum rasterfall_draw_reject rasterfall_render_scene_static_prop_resolve(
+    const struct rasterfall_draw_instance *instance,unsigned int primitive,
+    struct rasterfall_draw_item *draw);
 
 struct rasterfall_scene_stats {
     unsigned long static_draw_instances, static_draw_items;
@@ -170,6 +183,7 @@ void rasterfall_render_set_vmd_legacy_root_offset(int enabled);
 void rasterfall_render_set_vmd_legacy_knee_ccd(int enabled);
 void rasterfall_render_set_vmd_skin_trace(int enabled);
 void rasterfall_render_bake_lightmap(void);
+uint64_t rasterfall_render_world_light_generation(void);
 void rasterfall_render_set_coordinate_axes(int enabled);
 void rasterfall_render_set_action_runtime_debug(int enabled);
 int rasterfall_render_model_preview(struct toy_renderer *renderer,

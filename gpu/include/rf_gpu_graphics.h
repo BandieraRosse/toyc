@@ -23,7 +23,7 @@ struct rf_gpu_graphics_draw {
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
     uint32_t material[4]; /* RGB, scene Q8, textured, reserved */
-    int32_t texture[4]; /* width,height, reserved,reserved */
+    int32_t texture[4]; /* width,height, material alpha (0=opaque),reserved */
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
 };
@@ -48,6 +48,11 @@ struct rf_gpu_graphics_resource;
 struct rf_gpu_graphics_batch_item {
     struct rf_gpu_graphics_resource *resource;
     struct rf_gpu_graphics_draw draw;
+};
+struct rf_gpu_scene_timing {
+    uint64_t frame_id;
+    int supported, valid;
+    double world_draw_ms, present_blit_ms;
 };
 
 /* Persistent immutable submesh/texture bundles, independent of target extent.
@@ -147,8 +152,10 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g);
  * retains resources until scene_retire; failure is not completion. Destroying
  * the graphics owner drains pending work before releasing device resources. */
 int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_batch_item *items, uint32_t count);
+    const struct rf_gpu_graphics_batch_item *items, uint32_t count,uint64_t frame_id);
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g);
+void rf_gpu_graphics_scene_timing(const struct rf_gpu_graphics *g,
+    struct rf_gpu_scene_timing *timing);
 /* Explicit diagnostic only: direct attachment readback, no Raster conversion. */
 int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count,

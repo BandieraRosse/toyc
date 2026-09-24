@@ -13,7 +13,10 @@ struct rf_gpu_scene_pose_v1 {
     uint64_t frame_id, world_generation;
     struct rf_gpu_scene_actor_identity identity;
     uint32_t actor_count, bone_count, body_resource_id, attachment_count;
+    int character_id;
+    uint32_t shirt_color, pants_color;
     uint32_t bind_normals; /* Frozen legacy normal policy from finalized pose. */
+    int scene_light_q8;
     struct rasterfall_rigid_transform body_to_world;
     /* Weapon catalog ID plus raw RMESH-local -> world; includes authored
      * centering/basis and PRIMARY_GRIP alignment exactly once. */
@@ -30,6 +33,8 @@ struct rf_gpu_scene_pose_v1 {
  * actors fail explicitly; no procedural fallback or GPU submission occurs. */
 int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
                              struct rf_gpu_scene_pose_v1 *out);
+int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
+    uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out);
 int rf_gpu_scene_pose_logic_test(void);
 struct rasterfall_model_asset *rf_gpu_scene_fixture_map(void);
 int rf_gpu_scene_native_fixture(int frames, int fault, int fault_frame);

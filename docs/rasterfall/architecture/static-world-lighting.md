@@ -15,6 +15,10 @@ normal render context 只持有 V2 cache。world load/switch 时 bake，正常�
 缓存保存 world bounds 快照，因此查询不依赖后续 session 状态。Game actor、网络快照、RMESH/RFCHAR
 资产均不保存光照状态。
 
+每次 V2 bake 递增 render context 的 `world_light_generation`。GPU Scene 地图网格把 V2 查询结果
+烘进顶点，因此其资源复用键同时检查 world/map generation、展示状态和 light generation；
+同一地图重新 bake 也会退休旧网格。
+
 V1 32×24 cache 属于独立 diagnostic owner，只能在显式诊断 scope 中按需 bake。正常启动不 bake V1，
 默认 sampler 不会回退到 V1。
 
@@ -75,7 +79,7 @@ viewmodel 192..256 可读性 clamp、无雾 floor policy、emissive 与专用 VF
 - model gallery、isolated model tests、actor benchmark；
 - Character Acceptance、lighting-props、procedural humanoid、architecture/campus fixture；
 - enemy acceptance 与 silhouette/distance fixture；
-- Campaign MODEL_DISPLAY、Eula、humanoid debug、Character Test Strip；
+- Campaign `TOY_MAP_DRAW_MODEL`（包括普通盒体和 MODEL_DISPLAY）、Eula、humanoid debug、Character Test Strip；
 - 固定输入的 V1/V2 source regression。
 
 Character world capture 的正常环境使用 V2，测试带可保留固定诊断光照。VFX、blob shadow、muzzle flash

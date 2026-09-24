@@ -1,11 +1,36 @@
 #include "rf_gpu_scene_frame.h"
-#include <stdlib.h>
+#include "tlibc_everything.h"
 #include <string.h>
 
-static int compare_ordinal(const void *a, const void *b)
+static int scene_has_nul(const char *value,uint32_t capacity)
 {
-    uint32_t left = *(const uint32_t *)a, right = *(const uint32_t *)b;
-    return (left > right) - (left < right);
+    for(uint32_t i=0;i<capacity;++i) if (!value[i]) return 1;
+    return 0;
+}
+
+static void scene_sift_down(uint32_t *values,uint32_t root,uint32_t end)
+{
+    while(root<end && root<=(end-1)/2) {
+        uint32_t child=root*2+1;
+        if (child<end && values[child]<values[child+1]) child++;
+        if (values[root]>=values[child]) return;
+        uint32_t swap=values[root];values[root]=values[child];values[child]=swap;
+        root=child;
+    }
+}
+
+static void scene_sort_ordinals(uint32_t *values,uint32_t count)
+{
+    /* Bounded, in-place order validation also works in the freestanding build. */
+    if (count<2) return;
+    for(uint32_t start=count/2;;--start) {
+        scene_sift_down(values,start,count-1);
+        if (!start) break;
+    }
+    for(uint32_t end=count-1;end>0;--end) {
+        uint32_t swap=values[0];values[0]=values[end];values[end]=swap;
+        scene_sift_down(values,0,end-1);
+    }
 }
 
 int rf_gpu_scene_snapshot_build_v2(
@@ -31,8 +56,8 @@ int rf_gpu_scene_snapshot_build_v2(
         (world_count && !world) || (transient_count && !transient)) return -1;
     for (i = 0; i < world_count; ++i) {
         if (!world[i].id[0] || !world[i].kind[0] ||
-            !memchr(world[i].id, 0, RF_GPU_SCENE_WORLD_ID_CAP) ||
-            !memchr(world[i].kind, 0, RF_GPU_SCENE_WORLD_KIND_CAP) ||
+            !scene_has_nul(world[i].id, RF_GPU_SCENE_WORLD_ID_CAP) ||
+            !scene_has_nul(world[i].kind, RF_GPU_SCENE_WORLD_KIND_CAP) ||
             world[i].alpha < 0 || world[i].alpha > 255)
             return -1;
         for (j = 0; j < i; ++j)
@@ -51,7 +76,7 @@ int rf_gpu_scene_snapshot_build_v2(
     for (i = 0; i < TOY_GAME_MAX_ACTORS; ++i)
         if (actors[i].active)
             ordinals[ordinal_count++] = actor_submission_ordinals[i];
-    qsort(ordinals, ordinal_count, sizeof(ordinals[0]), compare_ordinal);
+    scene_sort_ordinals(ordinals,ordinal_count);
     for (i = 1; i < ordinal_count; ++i)
         if (ordinals[i - 1] == ordinals[i]) return -1;
     next_tracker = *tracker;

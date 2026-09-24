@@ -1,5 +1,8 @@
 #include "rasterfall_enemy_visual.h"
+#include "tlibc_everything.h"
 #include "rf_gpu_scene_pose.h"
+#include "rf_gpu_scene_world.h"
+#include "rasterfall_world_content.h"
 #include <limits.h>
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
@@ -83,6 +86,7 @@
 #include "rasterfall_feature_freeze.h"
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_vulkan_backend.h"
+#include "rf_gpu_scene_world_gpu.h"
 #endif
 #include "math.h"
 
@@ -3018,6 +3022,7 @@ int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *rendere
 
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
+    static struct rf_gpu_scene_world_resources scene_world_resources;
     struct rf_core core;
     struct rf_game_runtime game_runtime;
     struct toy_window_events events;
@@ -3025,6 +3030,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct rf_input_frame input;
 #ifdef TOYC_WINDOWS
     struct rf_gpu_vulkan_context gpu_vulkan_context;
+    struct rf_gpu_scene_world_gpu_probe scene_world_probe={0};
 #endif
     struct toy_surface surface;
     struct toy_renderer renderer;
@@ -3068,6 +3074,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     char selected_address[64];
 
     if (!config || !config->options) return 2;
+    rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
     options = *config->options;
     memset(&rb0_stats, 0, sizeof(rb0_stats));
     rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
@@ -3565,6 +3572,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.x = -1250; camera.z = -1000; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "map-sign")) {
             camera.x = 1650; camera.z = -1000; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "model-legacy")) {
+            camera.x = -2600; camera.z = -9900; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "model-special")) {
+            camera.x = 4900; camera.z = -10100; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "model-infected")) {
+            camera.x = 9500; camera.z = -10100; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "actor-rifleman")) {
+            camera.x = 1000; camera.z = -1800; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "actor-standard")) {
+            camera.x = 0; camera.z = 5200; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "actor-assault")) {
+            camera.x = 14000; camera.z = -2200; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "projectile")) {
+            camera.z = -3400; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "pickup")) {
+            camera.x = 300; camera.z = -10300; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "map-gate-on") ||
                    !strcmp(options.gpu_normal_view, "map-gate-off")) {
             camera.z = -1000; camera.cy = 1024;
@@ -3612,6 +3635,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->dir_z = -1024;
         }
         game.state = TOY_GAME_PLAYING;
+        if (!strcmp(options.gpu_normal_view,"projectile")) {
+            const int kinds[3]={TOY_GAME_WEAPON_BOMB,TOY_GAME_WEAPON_BOMB,
+                TOY_GAME_WEAPON_MOLOTOV};
+            for(int slot=0;slot<3;++slot) {
+                struct toy_game_projectile *p=&game.projectiles[slot];
+                memset(p,0,sizeof(*p));
+                p->active=1;p->kind=kinds[slot];
+                p->x=(slot-1)*900;p->z=-1300;p->y=450;
+                p->age_ms=slot*175;p->flash_ms=slot==1 ? 100 : 0;
+            }
+        }
         __printf("GPU-NORMAL scene=%s enemies=%d seed=1\n",
                  options.gpu_normal_view, options.gpu_normal_enemies);
     }
@@ -4600,20 +4634,144 @@ startup_again:
             if (options.frame_audit && net.mode != RASTERFALL_NET_CLIENT) {
                 struct rf_gpu_scene_local_frame source_frame;
                 struct rf_gpu_scene_frozen_v1 source_scene;
-                if (rf_gpu_scene_local_freeze(&session.scene_local,&game,&game_runtime.render_camera,
-                        renderer.surface.width,renderer.surface.height,air_wall_enabled,&source_frame)<0 ||
-                    rf_gpu_scene_extract_v1(&source_frame.snapshot,&source_scene)<0) {
+                static struct rf_gpu_scene_pose_v1 actor_pose[TOY_GAME_MAX_ACTORS];
+                struct rf_gpu_scene_world_input_v2 world[RF_GPU_SCENE_MAX_WORLD_V2];
+                struct rf_gpu_scene_world_render_frame_v1 world_render;
+                struct rf_gpu_scene_world_floor_frame_v1 floor_render;
+                struct rf_gpu_scene_world_prop_frame_v1 prop_render;
+                struct rf_gpu_scene_flag_frame_v1 flag_render;
+                struct rf_gpu_scene_projectile_frame_v1 projectile_render;
+                struct rf_gpu_scene_interactable_frame_v1 interactable_render;
+                uint32_t world_count=0;
+                uint32_t map_primitives=0,map_resources=0;
+                if ((session.map_ops.runtime_loaded &&
+                        rf_gpu_scene_world_render_freeze(&session.map_ops,air_wall_enabled,
+                            session.scene_local.frame_id+1,session.scene_local.world_generation,
+                            world,RF_GPU_SCENE_MAX_WORLD_V2,&world_count,&world_render)<0) ||
+                    (session.map_ops.runtime_loaded &&
+                        rf_gpu_scene_world_floor_freeze(&session.map_ops,
+                            rasterfall_world_uses_authored_ground(session.world_id),
+                            session.scene_local.frame_id+1,session.scene_local.world_generation,
+                            &floor_render)<0) ||
+                    (session.map_ops.runtime_loaded &&
+                        rf_gpu_scene_world_prop_freeze(&session.map_ops,
+                            &game_runtime.render_context.world_lighting,
+                            session.scene_local.frame_id+1,session.scene_local.world_generation,
+                            &prop_render)<0) ||
+                    rf_gpu_scene_flag_freeze(&session,
+                        session.scene_local.frame_id+1,session.scene_local.world_generation,
+                        &flag_render)<0 ||
+                    rf_gpu_scene_projectile_freeze(&session.game_state,
+                        &game_runtime.render_context.world_lighting,
+                        session.scene_local.frame_id+1,session.scene_local.world_generation,
+                        &projectile_render)<0 ||
+                    rf_gpu_scene_interactable_freeze(&session,&effects,
+                        &game_runtime.render_context.world_lighting,
+                        session.game_state.state==TOY_GAME_PLAYING &&
+                            !game_runtime.lifecycle_paused && !session.shop_open,
+                        session.scene_local.frame_id+1,session.scene_local.world_generation,
+                        &interactable_render)<0 ||
+                    rf_gpu_scene_local_freeze_world_lit(&session.scene_local,&game,&game_runtime.render_camera,
+                        renderer.surface.width,renderer.surface.height,air_wall_enabled,
+                        world,world_count,&game_runtime.render_context.world_lighting,
+                        &source_frame)<0 ||
+                    rf_gpu_scene_extract_v1(&source_frame.snapshot,&source_scene)<0 ||
+                    (session.map_ops.runtime_loaded &&
+                        rf_gpu_scene_world_render_validate(&source_frame.snapshot,&world_render)<0)) {
                     __fprintf(2,"SCENE-LOCAL freeze failed\n");
+#ifdef TOYC_WINDOWS
+                    rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+#endif
                     return 1;
                 }
-                __printf("SCENE-LOCAL frame=%llu world=%llu epoch=%llu generation=%u slot=%u items=%u character=%d animation=%d time=%d weapon=%d y=%d\n",
+                for(uint32_t actor_index=0;
+                    actor_index<source_frame.snapshot.actor_count;++actor_index)
+                    if (rf_gpu_scene_pose_extract_at(&source_frame,actor_index,
+                            &actor_pose[actor_index])<0) {
+                        __fprintf(2,"SCENE-LOCAL actor pose extraction failed\n");
+#ifdef TOYC_WINDOWS
+                        rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+#endif
+                        return 1;
+                    }
+                if (session.map_ops.runtime_loaded &&
+                    rf_gpu_scene_world_resources_prepare(&scene_world_resources,
+                        &source_frame.snapshot,&world_render,&floor_render,&prop_render,
+                        rasterfall_render_world_light_generation())<0) {
+                    __fprintf(2,"SCENE-LOCAL map resource preparation failed\n");
+#ifdef TOYC_WINDOWS
+                    rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+#endif
+                    return 1;
+                }
+                if (!session.map_ops.runtime_loaded)
+                    rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
+                for(unsigned int kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
+                    if (scene_world_resources.opaque[kind].generation) {
+                        const struct rasterfall_model_asset *model=
+                            rasterfall_resources_resolve_active(&scene_world_resources.registry,
+                                scene_world_resources.opaque[kind]);
+                        if (!model) {
+                            __fprintf(2,"SCENE-LOCAL stale map resource\n");
+#ifdef TOYC_WINDOWS
+                            rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+#endif
+                            return 1;
+                        }
+                        map_primitives+=model->primitive_count;
+                        map_resources++;
+                    }
+                __printf("SCENE-LOCAL frame=%llu world=%llu epoch=%llu generation=%u slot=%u items=%u world_items=%u map_payload=%u map_resources=%u map_loads=%u map_opaque=%u map_primitives=%u map_deferred=%u map_transparent=%u prop_payload=%u prop_opaque=%u interaction_payload=%u character=%d animation=%d time=%d weapon=%d y=%d scene_light=%d\n",
                     (unsigned long long)source_frame.snapshot.frame_id,
                     (unsigned long long)source_frame.snapshot.world_generation,
                     (unsigned long long)session.scene_local.epoch,
-                    source_frame.snapshot.actors[0].identity.generation,source_frame.snapshot.actors[0].source_slot,source_scene.item_count,
+                    source_frame.snapshot.actors[0].identity.generation,source_frame.snapshot.actors[0].source_slot,source_scene.item_count,source_frame.snapshot.world_count,
+                    session.map_ops.runtime_loaded ? world_render.count : 0,
+                    map_resources,scene_world_resources.registry.loads,
+                    scene_world_resources.accepted,map_primitives,
+                    scene_world_resources.deferred,scene_world_resources.transparent,
+                    session.map_ops.runtime_loaded ? prop_render.count : 0,
+                    scene_world_resources.prop_accepted,
+                    interactable_render.count,
                     source_frame.presentation.character_id,source_frame.snapshot.actors[0].animation_id,
                     source_frame.snapshot.actors[0].animation_time_ms,source_frame.snapshot.actors[0].weapon,
-                    source_frame.snapshot.actors[0].y);
+                    source_frame.snapshot.actors[0].y,
+                    source_frame.presentation.scene_light_q8);
+#ifdef TOYC_WINDOWS
+                if (core.mixed_executor && session.map_ops.runtime_loaded) {
+                    struct rf_gpu_scene_world_gpu_probe_stats probe_stats;
+                    if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
+                            &gpu_vulkan_context,&scene_world_resources,
+                            &game_runtime.render_camera,(uint32_t)renderer.surface.width,
+                            (uint32_t)renderer.surface.height,actor_pose,
+                            source_frame.snapshot.actor_count,&flag_render,
+                            &projectile_render,&interactable_render,
+                            &model_texture_view,&probe_stats,
+                            options.gpu_frame_capture &&
+                            rendered_frames==options.gpu_capture_frame ?
+                                options.gpu_frame_capture : NULL)<0) {
+                        __fprintf(2,"SCENE-WORLD-GPU normal audit failed\n");
+                        rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+                        return 1;
+                    }
+                    __printf("SCENE-WORLD-GPU frame=%llu draws=%u actor_draws=%u flag_draws=%u flag_text_draws=%u projectile_draws=%u pickup_model_draws=%u pickup_model_items=%u pickup_procedural_draws=%u pickup_procedural_items=%u pickup_procedural_deferred=%u covered=%u uploads=%llu hits=%llu prop_assets=%u prop_draws=%u prop_culled=%u prop_deferred=%u prop_numeric=%u prop_material=%u prop_transparent=%u diagnostic_readback=1\n",
+                        (unsigned long long)source_frame.snapshot.frame_id,
+                        probe_stats.draws,probe_stats.actor_draws,probe_stats.flag_draws,
+                        probe_stats.flag_text_draws,probe_stats.projectile_draws,
+                        probe_stats.pickup_model_draws,probe_stats.pickup_model_items,
+                        probe_stats.pickup_procedural_draws,
+                        probe_stats.pickup_procedural_items,
+                        probe_stats.pickup_procedural_deferred,
+                        probe_stats.covered_pixels,
+                        (unsigned long long)probe_stats.uploads,
+                        (unsigned long long)probe_stats.hits,
+                        scene_world_resources.prop_asset_count,
+                        probe_stats.prop_draws,probe_stats.prop_culled,probe_stats.prop_deferred,
+                        probe_stats.prop_numeric_deferred,
+                        probe_stats.prop_material_deferred,
+                        probe_stats.prop_transparent_deferred);
+                }
+#endif
             }
             if (options.frame_audit) {
                 struct rf_core_gpu_frame_stats gpu_audit;
@@ -4973,6 +5131,10 @@ startup_again:
     if (model_texture.blob) toy_texture_unload(&model_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_net_close(&net);
+#ifdef TOYC_WINDOWS
+    rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+#endif
+    rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
     rf_game_shutdown(&game_runtime);
     __printf("rasterfall: %d frames, %d scene pixels, position=(%d,%d)\n",
              rendered_frames, scene_pixels, camera.x, camera.z);

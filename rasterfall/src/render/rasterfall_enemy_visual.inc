@@ -100,6 +100,27 @@ static void enemy_visual_rotate(struct rasterfall_model_asset *pose,
     pose->bones[bone].rotate_z = z;
 }
 
+static void enemy_visual_apply_pose(struct rasterfall_model_asset *pose,
+    int type,int swing)
+{
+    int fast=type==TOY_GAME_ENEMY_PURSUIT_FAST;
+    int heavy=type==TOY_GAME_ENEMY_PURSUIT_HEAVY;
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_SPINE,fast ? 23 : 8,0,0);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_HEAD,-8,0,heavy ? -5 : 6);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_LEFT_UPPER_ARM,
+        0,fast ? -36 : -12,fast ? -44 : -68);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_RIGHT_UPPER_ARM,
+        0,fast ? 42 : 8,fast ? 42 : 62);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_LEFT_FOREARM,0,-15,-14);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_RIGHT_FOREARM,0,23,18);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_LEFT_UPPER_LEG,swing,0,0);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_RIGHT_UPPER_LEG,-swing,0,0);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_LEFT_LOWER_LEG,
+        swing<0 ? -swing : 0,0,0);
+    enemy_visual_rotate(pose,RASTERFALL_HUMANOID_RIGHT_LOWER_LEG,
+        swing>0 ? swing : 0,0,0);
+}
+
 static int render_infected_enemy(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_enemy *enemy,
     const struct toy_game_enemy *source, int slot, int death_scale,
@@ -163,24 +184,8 @@ static int render_infected_enemy(struct toy_renderer *renderer,
         phase = 100;
     }
     swing = moving ? (phase < 320 ? phase : 640-phase) * 48 / 320 - 24 : 0;
-    if (enemy_visual_capture_pose != 0) {
-        int fast = enemy->type == TOY_GAME_ENEMY_PURSUIT_FAST;
-        int heavy = enemy->type == TOY_GAME_ENEMY_PURSUIT_HEAVY;
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_SPINE, fast ? 23 : 8, 0, 0);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_HEAD, -8, 0, heavy ? -5 : 6);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_LEFT_UPPER_ARM,
-                            0, fast ? -36 : -12, fast ? -44 : -68);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_RIGHT_UPPER_ARM,
-                            0, fast ? 42 : 8, fast ? 42 : 62);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_LEFT_FOREARM, 0, -15, -14);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_RIGHT_FOREARM, 0, 23, 18);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_LEFT_UPPER_LEG, swing, 0, 0);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_RIGHT_UPPER_LEG, -swing, 0, 0);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_LEFT_LOWER_LEG,
-                            swing < 0 ? -swing : 0, 0, 0);
-        enemy_visual_rotate(pose, RASTERFALL_HUMANOID_RIGHT_LOWER_LEG,
-                            swing > 0 ? swing : 0, 0, 0);
-    }
+    if (enemy_visual_capture_pose != 0)
+        enemy_visual_apply_pose(pose,enemy->type,swing);
     if (rasterfall_model_instance_update_bones(instance) < 0) return -1;
     /* Authored meters -> RFU. Heavy size is authored, never doubled by the
      * legacy 1350 multiplier. Legacy deaths retain vertical collapse only. */

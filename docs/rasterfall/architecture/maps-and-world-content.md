@@ -33,6 +33,8 @@ collision、surface 和 render 转换到 gameplay/renderer 现有数组。因此
 AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world representation，projection 只是迁移期接口，
 默认流程只加载 V1 Runtime Map。
 `legacy_index` 只用于兼容数组的稳定排列，不是 V1 record 的顺序语义。
+GPU Scene 另以同一 object 投影顺序和 Runtime Map authored ID 冻结静态 prop 值；
+boundary wall 网格从该只读值帧构建，不改变 Runtime Map、碰撞或玩法所有权。
 
 正式地图源位于 `rasterfall/assets/maps/rasterfall.map`；旧兼容源为同目录的
 `rasterfall_legacy.map`。旧源的磁盘结构定义在 `include/toy_map.h`，文本解析在 `lib/map.c`，仅供显式 fallback/reference

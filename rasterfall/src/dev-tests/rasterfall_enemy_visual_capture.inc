@@ -142,7 +142,8 @@ static int enemy_rig_acceptance(const char *output)
             active_diagnostic_fixed_lighting=active_floor_submission=!world;
             before=game;
             if (world) rasterfall_render_scene(&renderer,&camera);
-            else draw_partitioned_floor(&renderer,&camera);
+            else draw_partitioned_floor(&renderer,&camera,&level_map,
+                active_session && rasterfall_world_uses_authored_ground(active_session->world_id),NULL);
             int submissions=enemy_rig_submissions;
             render_enemies(&renderer,&camera);
             int unchanged=!memcmp(&before,&game,sizeof(game));
@@ -278,7 +279,8 @@ int rasterfall_render_enemy_visual_capture(const char *output)
              * explicitly labelled unoccluded distance check, with true scale. */
             rasterfall_sky_draw(&renderer.surface,&camera);
             active_diagnostic_fixed_lighting = active_floor_submission = 1;
-            draw_partitioned_floor(&renderer,&camera);
+            draw_partitioned_floor(&renderer,&camera,&level_map,
+                active_session && rasterfall_world_uses_authored_ground(active_session->world_id),NULL);
         }
         int submissions_before = enemy_visual_submissions;
         render_enemies(&renderer,&camera);

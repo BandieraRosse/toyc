@@ -142,12 +142,40 @@ int rf_gpu_scene_pose_logic_test(void)
         POSE_CHECK(owner.scene_local.active);
         POSE_CHECK(!rf_gpu_scene_local_freeze(&owner.scene_local,&owner.game_state,
             &camera,1280,720,1,&frame));
-        POSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&repeat) && repeat.actor_count==1);
+        POSE_CHECK(frame.snapshot.actor_count==8 &&
+            !rf_gpu_scene_pose_extract(&frame,&repeat) && repeat.actor_count==1);
+        for(uint32_t i=1;i<frame.snapshot.actor_count;++i)
+            POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,i,&moved) &&
+                moved.actor_count==1 &&
+                !memcmp(&moved.identity,&frame.snapshot.actors[i].identity,
+                    sizeof(moved.identity)) &&
+                moved.character_id==frame.presentations[i].character_id &&
+                moved.attachment_count>=3);
         rasterfall_session_unload(&owner);
         POSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&replacement) &&
             !memcmp(&repeat,&replacement,sizeof(repeat)));
     }
-    __printf("scene pose PASS bones=%u attachments=%u cpu-vertices/socket/weapon/repeat/wrap/fire/move/replace/world/resize/replay/failure/empty/session-unload\n",
+    POSE_CHECK(!rf_gpu_scene_local_created(&source,actor));
+    for(int character=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+        character<RASTERFALL_CHARACTER_COUNT;++character) {
+        const struct rasterfall_character_visual_recipe *recipe=
+            rasterfall_character_visual_recipe_for_character(character);
+        POSE_CHECK(recipe);
+        actor->character_id=character;
+        POSE_CHECK(!rf_gpu_scene_local_freeze(&source,&source_game,&camera,640,480,1,&frame));
+        POSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&repeat) &&
+            repeat.actor_count==1 && repeat.character_id==character &&
+            repeat.body_resource_id==(uint32_t)recipe->body_resource_id &&
+            repeat.attachment_count==recipe->attachment_count &&
+            repeat.shirt_color==recipe->shirt_color &&
+            repeat.pants_color==recipe->pants_color);
+        for(uint32_t attachment=0;attachment<repeat.attachment_count;++attachment)
+            POSE_CHECK(repeat.attachments[attachment].resource_id==
+                (uint32_t)recipe->attachments[attachment].gear_resource_id &&
+                repeat.attachments[attachment].host_socket==
+                (uint32_t)recipe->attachments[attachment].host_socket);
+    }
+    __printf("scene pose PASS bones=%u attachments=%u cpu-vertices/socket/weapon/repeat/wrap/fire/move/replace/world/resize/replay/failure/empty/session-unload/modular-recipes\n",
              first.bone_count,first.attachment_count);
 #undef POSE_CHECK
     return 0;
