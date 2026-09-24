@@ -29,6 +29,15 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 
 ### 动态资源运行成本
 
+P1 使用 `tools/gpu_scene_cost.ps1 -Experiment P1 -OutputDirectory tmp/scene-p1-ab`，同包交替切换
+角色蒙皮批量提交和分层 GPU 资源复用；CPU 工作区复用在两侧均保留。单项归因分别使用
+`-Experiment SkinBatch` 和 `-Experiment LayerReuse`，每次选择新的输出目录。
+`RF_GPU_SCENE_LEGACY_SKIN_BATCH=1` 恢复逐 mesh 同步蒙皮；`RF_GPU_SCENE_REBUILD_LAYERS=1`
+恢复逐帧分层 GPU 重建。工具清除其他成本实验开关，并在结束后恢复全部原值。
+`SCENE-RESOURCE-COST` 验证提交次数与资源复用；批量等待计入总 `actors_us`，逐 actor 的
+`upload_skin_wait_us` 热帧只计输入复制和排队，不能将它直接当成完整蒙皮成本。
+固定内容比较使用相同镜头及 capture frame；resize/world-cycle/fault 和 validation/sync 另行验证。
+
 敌人几何缓存使用 `tools/gpu_scene_cost.ps1 -Experiment EnemyPrep`，连续 draw 绑定复用使用
 `-Experiment DrawBind`；两项分别指定新的 `-OutputDirectory`。对应诊断开关是
 `RF_GPU_SCENE_LEGACY_ENEMY_PREP=1` 和 `RF_GPU_SCENE_LEGACY_BIND=1`，分别恢复逐角点计算及逐 draw 绑定，
@@ -37,7 +46,7 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 不能将整个 submit/present 段解释成 fence 等待。缓存正确性用同帧 capture 的 PPM 字节一致性检查。
 
 队员上传 A/B 使用 `tools/gpu_scene_cost.ps1 -Experiment ActorUpload -OutputDirectory tmp/actor-upload-ab`，
-保持动态三角形资源复用，两侧分别为临时 staging 与直接写入/保留 staging。工具仍运行三轮交替、每轮 64 帧，
+保持动态三角形资源复用，两侧均关闭蒙皮批量提交，分别为临时 staging 与直接写入/保留 staging。工具仍运行三轮交替、每轮 64 帧，
 报告均值和分位数；耗时分布用各段累计时间除以累计帧墙钟，不能用中位数占比。
 `RF_GPU_SKIN_LEGACY_UPLOAD=1` 恢复旧上传分支；`RF_GPU_SKIN_STAGING_UPLOAD=1` 强制走保留 staging 的备用分支，
 用于设备可直接写入时验证备用路径。二者只作诊断，性能采样不要启用强制 staging。

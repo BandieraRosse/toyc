@@ -533,6 +533,67 @@ done:
     return result;
 }
 
+static int skin_batch_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics *other=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *r[2]={0};
+    struct rf_gpu_graphics_vertex v[3]={0},expected[3];
+    uint32_t bind[66]={0},palette[15]={0},ix[3]={0,1,2},white=0xffffff;
+    struct rf_gpu_graphics_stats before,after;
+    uint64_t pm,nm,um;uint32_t pd,nd;
+    float one=1.0f,shift=12.0f;
+    int result=-1;
+    memcpy(&palette[0],&one,4);memcpy(&palette[4],&one,4);memcpy(&palette[8],&one,4);
+    for (unsigned i=0;i<3;++i) {
+        v[i].position[0]=(int)i*8;v[i].position[2]=128;
+        for (unsigned n=0;n<3;++n) v[i].normals[n*3+1]=32767;
+        memcpy(bind+i*22,&v[i],sizeof(v[i]));
+        for (unsigned n=0;n<4;++n) bind[i*22+15+n*2]=65535;
+    }
+    CHECK(g!=NULL && other!=NULL);
+    for (unsigned i=0;i<2;++i) {
+        r[i]=rf_gpu_graphics_skinned_resource_create(g,NULL,3,ix,3,bind,66,palette,15,&white,1,1);
+        CHECK(r[i]!=NULL);
+    }
+    memcpy(&palette[9],&shift,4);
+    memcpy(expected,v,sizeof(v));
+    for (unsigned i=0;i<3;++i) expected[i].position[0]+=12;
+    rf_gpu_graphics_get_stats(g,&before);
+    CHECK(rf_gpu_graphics_skin_batch_begin(g)==0);
+    CHECK(rf_gpu_graphics_skin_batch_begin(g)<0);
+    for (unsigned i=0;i<2;++i)
+        CHECK(rf_gpu_graphics_skinned_resource_update(g,r[i],3,bind,66,palette,15)==0);
+    CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,bind,66,palette,15)<0);
+    CHECK(rf_gpu_graphics_resource_destroy(g,r[0])<0);
+    CHECK(rf_gpu_graphics_resource_bind(other,r[0])<0);
+    CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[0],expected,3,&pm,&nm,&um,&pd,&nd)<0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.queue_submits==before.queue_submits);
+    CHECK(rf_gpu_graphics_skin_batch_end(g)==0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.queue_submits==before.queue_submits+1 && after.fence_waits==before.fence_waits+1);
+    for (unsigned i=0;i<2;++i) {
+        CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[i],expected,3,&pm,&nm,&um,&pd,&nd)==0);
+        CHECK(!pm && !nm && !um);
+    }
+    CHECK(rf_gpu_graphics_skin_batch_begin(g)==0);
+    CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,bind,66,palette,15)==0);
+    rf_gpu_graphics_skin_batch_cancel(g);
+    CHECK(rf_gpu_graphics_skin_batch_end(g)<0);
+    CHECK(rf_gpu_graphics_skin_batch_begin(g)==0);
+    CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,bind,66,palette,15)==0);
+    CHECK(rf_gpu_graphics_skin_batch_end(g)==0);
+    CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[0],expected,3,&pm,&nm,&um,&pd,&nd)==0);
+    CHECK(!pm && !nm && !um);
+    result=0;
+done:
+    rf_gpu_graphics_destroy(other);
+    rf_gpu_graphics_destroy(g);
+    printf("SCENE skin batch/duplicate/cancel/device vertices: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
 static int scene_layers_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
@@ -733,6 +794,7 @@ int main(int argc,char **argv)
     CHECK(rf_gpu_graphics_render(other,&d,1,pixels,depths,MAX_PIXELS)<0);
     CHECK(scene_layers_test(&context)==0);
     CHECK(triangle_reuse_test(&context)==0);
+    CHECK(skin_batch_test(&context)==0);
     result=0;
 done:
     rf_gpu_graphics_destroy(other);

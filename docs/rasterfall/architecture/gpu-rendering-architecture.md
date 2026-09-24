@@ -232,9 +232,24 @@ owner 跨审计帧复用，registry frame pin 在诊断
 ## 角色 GPU skinning
 
 同步 graphics skin update 在上一提交及 Scene 使用退休后写入输入：目标支持 host-visible 时直接 map/flush，
-否则按资源容量保留 staging buffer，随资源销毁。bind 与 palette 仍每帧完整更新，compute 仍逐资源提交并等待；
+否则按资源容量保留 staging buffer，随资源销毁。bind 与 palette 仍每帧完整更新。独立 Scene owner 在
+`skin_batch_begin/end` 之间收集私有、已退休资源的更新，输入立即复制到资源自有 buffer，end 统一录制
+transfer/compute 并提交、等待一次；冷资源创建保持同步。排队资源禁止重复更新或销毁，批次结束前禁止
+绘制和顶点读回。cancel 只丢弃未提交 dispatch，重新消费前须再次更新；失败提交仍由 owner teardown
+排空后回收。mixed 和显式旧上传诊断保留逐资源同步路径。
 没有跨帧流水或减少蒙皮工作。非 coherent 内存刷新完整映射分配，transfer 分支保留 transfer→compute barrier，
 compute→vertex/transfer barrier 保持不变。host 写入经后续 queue submit 对设备可见。
+
+独立 Scene 的分层 workspace 拥有几何、顶点、顺序索引、纹理快照及稳定排序工作区；WORLD 批次数组
+也由 probe 按容量保留。每帧重新提取活动内容，GPU 分层资源在退休后更新顶点及活动索引范围；容量
+不足才增长，暂时不活动的 chunk 保留到 owner 关闭。纹理尺寸、通道与源字节快照比较发现变化时只
+失效 textured chunk，不能仅以源指针判断内容未变。resize 保留这些资源，world/owner 关闭时释放。
+分层顺序、透明顺序、VIEWMODEL 深度清除和 OVERLAY 无深度语义保持不变。
+
+`SCENE-RESOURCE-COST` 报告 skin/全部提交数、fence 等待次数、分层创建/复用数和统一蒙皮批次的
+`actor_batch_us`。后者已包含在 `SCENE-FRAME-COST actors_us` 中，不能重复相加。批量模式下
+`SCENE-ACTOR-COST upload_skin_wait_us` 对热资源只包含输入复制及排队，不含稍后的统一提交等待；
+冷资源和逐资源诊断模式仍包含同步提交。
 
 CPU 继续拥有 pose、IK、socket、gear 和 weapon placement。mixed frame 冻结 finalized palette、bind
 position/normal、BDEF influence 和索引；compute skinning 输出写入 frame-slot device-local vertex buffer，

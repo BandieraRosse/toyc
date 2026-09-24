@@ -24,6 +24,7 @@ struct rf_gpu_vulkan_context;
 struct rf_gpu_scene_pose_v1;
 struct rf_gpu_scene_actor_gpu;
 struct toy_texture_view;
+struct scene_layer_workspace;
 
 #define RF_GPU_SCENE_PICKUP_MODEL_COUNT 7
 #define RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES 4
@@ -51,6 +52,9 @@ struct rf_gpu_scene_world_gpu_probe {
     int native_present;
     const struct rf_gpu_scene_layers_input *layers;
     struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];
+    struct scene_layer_workspace *layer_workspace;
+    struct rf_gpu_graphics_batch_item *batch;
+    uint32_t batch_capacity;
     struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
@@ -74,6 +78,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
     uint32_t procedural_draws, procedural_items;
     uint32_t dynamic_reused,dynamic_created;
+    uint32_t layer_reused,layer_created;
     uint32_t projectile_draws, pickup_model_draws, pickup_model_items;
     uint32_t pickup_procedural_draws, pickup_procedural_items;
     uint32_t pickup_procedural_deferred, covered_pixels;
@@ -83,6 +88,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t prepare_us,geometry_extract_us;
     int64_t world_prepare_us,actor_prepare_us,enemy_prepare_us,layer_prepare_us,submit_retire_us;
     int64_t submit_present_us,retire_us;
+    int64_t actor_batch_us;
     uint64_t upload_bytes,bridge_transfers;
     double gpu_draw_ms;
     int gpu_time_valid;

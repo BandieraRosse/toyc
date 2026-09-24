@@ -1212,7 +1212,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         return -1;
     capacity+=(enemies->count+enemies->procedural_count)*RF_GPU_SCENE_ENEMY_MAX_TRIANGLES;
     if (!capacity) return 0;
-    items=calloc(capacity ? capacity : 1,sizeof(*items));
+    if (scene_batch_reserve(&probe->batch,&probe->batch_capacity,capacity)<0) goto done;
+    items=probe->batch;
     if (!probe->native_present || capture_path) {
         color=calloc(pixels,sizeof(*color));
         depth=calloc(pixels,sizeof(*depth));
@@ -1226,6 +1227,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->world_prepare_us=rf_core_clock_now_us()-section_start;
     section_start=rf_core_clock_now_us();
     stage="actors";
+    const char *legacy_skin=getenv("RF_GPU_SCENE_LEGACY_SKIN_BATCH");
+    const char *legacy_upload=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
+    int skin_batch=!(legacy_skin && legacy_skin[0]=='1') &&
+        !(legacy_upload && legacy_upload[0]=='1');
+    if (skin_batch && rf_gpu_graphics_skin_batch_begin(probe->graphics)<0) goto done;
     for(uint32_t i=0;i<pose_count;++i) {
         uint32_t count=0;
         if (rf_gpu_scene_actor_gpu_prepare(probe->actor[i],&poses[i],camera,width,height,
@@ -1233,6 +1239,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         actor_prepared++;
         draws+=count;actor_draws+=count;
     }
+    int64_t batch_start=rf_core_clock_now_us();
+    if (skin_batch && rf_gpu_graphics_skin_batch_end(probe->graphics)<0) goto done;
+    stats->actor_batch_us=skin_batch ? rf_core_clock_now_us()-batch_start : 0;
     stats->actor_prepare_us=rf_core_clock_now_us()-section_start;
     stage="flags/projectiles/pickups";
     if (flag_draws_prepare(probe,flags,camera,width,height,items+draws,
@@ -1290,6 +1299,12 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (timing.frame_id!=enemies->frame_id || (timing.supported && !timing.valid)) goto done;
     stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
+    __printf("SCENE-RESOURCE-COST frame=%llu skin_submits=%llu queue_submits=%llu fence_waits=%llu layer_created=%u layer_reused=%u actor_batch_us=%lld\n",
+        (unsigned long long)enemies->frame_id,
+        (unsigned long long)(graphics_after.submits_by_kind[RF_GPU_SUBMIT_SKINNING]-graphics_before.submits_by_kind[RF_GPU_SUBMIT_SKINNING]),
+        (unsigned long long)(graphics_after.queue_submits-graphics_before.queue_submits),
+        (unsigned long long)(graphics_after.fence_waits-graphics_before.fence_waits),
+        stats->layer_created,stats->layer_reused,(long long)stats->actor_batch_us);
     stats->upload_bytes=graphics_after.mesh_upload_bytes+graphics_after.texture_upload_bytes-
         graphics_before.mesh_upload_bytes-graphics_before.texture_upload_bytes;
     stats->bridge_transfers=graphics_after.raster_bridge_transfers-graphics_before.raster_bridge_transfers;
@@ -1337,6 +1352,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->hits=after.hits-before.hits;
     result=0;
 done:
+    if (items) probe->batch=items;
+    if (result<0) rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     if (result<0 && probe->native_present) {
         fprintf(stderr,"SCENE preparation/submit failed stage=%s frame=%llu\n",
             stage,(unsigned long long)enemies->frame_id);
@@ -1348,13 +1365,14 @@ done:
     for(uint32_t i=0;i<actor_prepared;++i)
         rf_gpu_scene_actor_gpu_finish(probe->actor[i]);
     if (frame_active) rasterfall_resources_frame_complete(&owner->registry);
-    free(items);free(color);free(depth);
+    free(color);free(depth);
     return result;
 }
 
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
+    rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
     for (unsigned i=0;i<2;++i) {
         if (probe->layer_resource[chunk][i])
@@ -1362,6 +1380,8 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
         probe->layer_resource[chunk][i]=NULL;
     }
     probe->layers=NULL;
+    scene_layer_workspace_free(probe->layer_workspace);probe->layer_workspace=NULL;
+    free(probe->batch);probe->batch=NULL;probe->batch_capacity=0;
     for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);

@@ -13,6 +13,31 @@ struct scene_layer_mesh {
     uint32_t count,capacity;
     int layer,failed,width,height;
 };
+struct scene_layer_workspace {
+    struct scene_layer_mesh mesh;
+    struct rf_gpu_graphics_vertex *vertices;
+    uint32_t *indices,*texels;
+    unsigned char *texture_source;
+    uint32_t vertex_capacity,texture_bytes,texture_width,texture_height,texture_channels;
+    struct rf_gpu_graphics_batch_item *ordered;
+    uint32_t ordered_capacity;
+};
+static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
+    uint32_t *capacity,uint32_t needed)
+{
+    if (needed<=*capacity) return 0;
+    if (needed>UINT32_MAX/2) return -1;
+    uint32_t next_capacity=needed+needed/2;
+    void *next=realloc(*items,(size_t)next_capacity*sizeof(**items));
+    if (!next) return -1;
+    *items=next;*capacity=next_capacity;return 0;
+}
+static void scene_layer_workspace_free(struct scene_layer_workspace *w)
+{
+    if (!w) return;
+    free(w->mesh.triangles);free(w->vertices);free(w->indices);
+    free(w->texels);free(w->texture_source);free(w->ordered);free(w);
+}
 static int scene_layer_emit(struct scene_layer_mesh *m,
     const struct rf_gpu_graphics_vertex *a,const struct rf_gpu_graphics_vertex *b,
     const struct rf_gpu_graphics_vertex *c,uint32_t color,int light,int alpha,
@@ -300,15 +325,28 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct toy_texture_view *texture,struct rf_gpu_graphics_batch_item **batch,
     uint32_t *count,struct rf_gpu_scene_world_gpu_probe_stats *stats)
 {
-    struct scene_layer_mesh mesh={0};
-    struct rf_gpu_graphics_vertex *vertices=NULL;
-    uint32_t *indices=NULL,*texels=NULL,white=0xffffff;
+    if (!probe->layer_workspace) probe->layer_workspace=calloc(1,sizeof(*probe->layer_workspace));
+    struct scene_layer_workspace *w=probe->layer_workspace;
+    if (!w) return -1;
+    struct scene_layer_mesh mesh=w->mesh;
+    mesh.count=0;mesh.failed=0;
+    struct rf_gpu_graphics_vertex *vertices=w->vertices;
+    uint32_t *indices=w->indices,*texels=w->texels,white=0xffffff;
+    const char *legacy=getenv("RF_GPU_SCENE_REBUILD_LAYERS");
+    int rebuild=legacy && legacy[0]=='1';
     int result=-1,textured=0;
     if (probe->layers && scene_layers_extract(&mesh,probe->layers,camera,(int)width,(int)height)<0) goto done;
     if (mesh.count) {
-        vertices=calloc((size_t)mesh.count*3,sizeof(*vertices));
-        indices=calloc((size_t)mesh.count*3,sizeof(*indices));
-        if (!vertices || !indices) goto done;
+        if (mesh.capacity*3>w->vertex_capacity) {
+            uint32_t capacity=mesh.capacity*3;
+            struct rf_gpu_graphics_vertex *next_vertices=calloc(capacity,sizeof(*vertices));
+            uint32_t *next_indices=malloc((size_t)capacity*sizeof(*indices));
+            if (!next_vertices || !next_indices) { free(next_vertices);free(next_indices);goto done; }
+            for (unsigned i=0;i<capacity;++i) next_indices[i]=i%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
+            free(w->vertices);free(w->indices);
+            vertices=w->vertices=next_vertices;indices=w->indices=next_indices;
+            w->vertex_capacity=capacity;
+        }
         for (unsigned i=0;i<mesh.count;++i) {
             memcpy(vertices+i*3,mesh.triangles[i].vertex,3*sizeof(*vertices));
             for (unsigned k=0;k<3;++k)
@@ -318,12 +356,31 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         if (textured) {
             if (!texture || !texture->data || (texture->channels!=3 && texture->channels!=4) ||
                 (uint64_t)texture->width*texture->height*texture->channels>texture->data_size) goto done;
-            texels=calloc((size_t)texture->width*texture->height,sizeof(*texels));
-            if (!texels) goto done;
-            for (unsigned i=0;i<texture->width*texture->height;++i) {
-                const unsigned char *p=texture->data+(size_t)i*texture->channels;
-                texels[i]=((unsigned)p[0]<<16)|((unsigned)p[1]<<8)|p[2];
+            uint32_t bytes=texture->width*texture->height*texture->channels;
+            if (!w->texture_source || w->texture_bytes!=bytes ||
+                w->texture_width!=texture->width || w->texture_height!=texture->height ||
+                w->texture_channels!=texture->channels || memcmp(w->texture_source,texture->data,bytes)) {
+                unsigned char *source=malloc(bytes);
+                uint32_t *next=malloc((size_t)texture->width*texture->height*sizeof(*next));
+                if (!source || !next) { free(source);free(next);goto done; }
+                memcpy(source,texture->data,bytes);
+                for (unsigned i=0;i<texture->width*texture->height;++i) {
+                    const unsigned char *p=source+(size_t)i*texture->channels;
+                    next[i]=((unsigned)p[0]<<16)|((unsigned)p[1]<<8)|p[2];
+                }
+                for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk) {
+                    if (probe->layer_resource[chunk][1] &&
+                        rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[chunk][1])<0) {
+                        free(source);free(next);goto done;
+                    }
+                    probe->layer_resource[chunk][1]=NULL;
+                }
+                free(w->texture_source);free(w->texels);
+                w->texture_source=source;w->texels=next;w->texture_bytes=bytes;
+                w->texture_width=texture->width;w->texture_height=texture->height;
+                w->texture_channels=texture->channels;
             }
+            texels=w->texels;
         }
         for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
         for (int i=0;i<2;++i) {
@@ -331,12 +388,23 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             unsigned triangles=mesh.count>start?mesh.count-start:0;
             if (triangles>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)
                 triangles=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
-            if (probe->layer_resource[chunk][i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[chunk][i])<0) goto done;
-            probe->layer_resource[chunk][i]=NULL;
-            if (!triangles) continue;
-            if (i && !textured) continue;
-            probe->layer_resource[chunk][i]=rf_gpu_graphics_resource_create(probe->graphics,vertices+start*3,triangles*3,
-                indices+start*3,triangles*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
+            if (!triangles || (i && !textured)) continue;
+            struct rf_gpu_graphics_resource **resource=&probe->layer_resource[chunk][i];
+            int grow=*resource && !rebuild ? rf_gpu_graphics_triangle_resource_update(
+                probe->graphics,*resource,vertices+start*3,triangles*3) : 1;
+            if (grow<0) goto done;
+            if (grow) stats->layer_created++;
+            else stats->layer_reused++;
+            if (grow) {
+                unsigned allocated=mesh.capacity-start;
+                if (allocated>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) allocated=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+                if (rebuild) allocated=triangles;
+                if (*resource && rf_gpu_graphics_resource_destroy(probe->graphics,*resource)<0) goto done;
+                *resource=rf_gpu_graphics_resource_create(probe->graphics,vertices+start*3,allocated*3,
+                    indices+start*3,allocated*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
+                if (*resource && allocated!=triangles && rf_gpu_graphics_triangle_resource_update(
+                        probe->graphics,*resource,vertices+start*3,triangles*3)<0) goto done;
+            }
             if (!probe->layer_resource[chunk][i]) {
                 fprintf(stderr,"SCENE layer upload failed triangles=%u textured=%d\n",mesh.count,i);
                 for (unsigned v=0;v<mesh.count*3;++v)
@@ -349,9 +417,8 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 goto done;
             }
         }
-        void *next=realloc(*batch,((size_t)*count+mesh.count)*sizeof(**batch));
-        if (!next) goto done;
-        *batch=next;
+        if (mesh.count>UINT32_MAX-*count || scene_batch_reserve(batch,
+                &probe->batch_capacity,*count+mesh.count)<0) goto done;
         for (unsigned first=0;first<mesh.count;) {
             unsigned end=first+1;
             unsigned chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
@@ -376,8 +443,8 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         }
     }
     /* Stable pass partition; never sort transparent sources by material/depth. */
-    struct rf_gpu_graphics_batch_item *ordered=calloc(*count,sizeof(*ordered));
-    if (!ordered) goto done;
+    if (scene_batch_reserve(&w->ordered,&w->ordered_capacity,*count)<0) goto done;
+    struct rf_gpu_graphics_batch_item *ordered=w->ordered;
     unsigned n=0;
     for (int rank=0;rank<RF_GPU_SCENE_LAYER_COUNT;++rank)
         for (int alpha=0;alpha<2;++alpha)
@@ -387,8 +454,11 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                     ordered[n++]=(*batch)[i];stats->layer_draws[d->scene_layer]++;
                 }
             }
-    if (n!=*count) { free(ordered);goto done; }
-    free(*batch);*batch=ordered;result=0;
+    if (n!=*count) goto done;
+    w->ordered=*batch;*batch=ordered;
+    uint32_t old_capacity=probe->batch_capacity;
+    probe->batch_capacity=w->ordered_capacity;w->ordered_capacity=old_capacity;
+    result=0;
 done:
-    free(mesh.triangles);free(vertices);free(indices);free(texels);return result;
+    w->mesh=mesh;return result;
 }

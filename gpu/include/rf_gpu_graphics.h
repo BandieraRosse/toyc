@@ -98,6 +98,14 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource, uint32_t vertex_count,
     const uint32_t *bind_words, uint32_t bind_word_count,
     const uint32_t *palette_words, uint32_t palette_word_count);
+/* Retired private resources only. Updates copy input immediately but defer
+ * dispatch until end, which submits and waits once. Cold creates remain
+ * synchronous. No draw/readback or second update of a queued resource before
+ * end. Cancel discards unsubmitted dispatches; caller must update again before
+ * using those resources. Failed end requires owner teardown. */
+int rf_gpu_graphics_skin_batch_begin(struct rf_gpu_graphics *g);
+int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g);
+void rf_gpu_graphics_skin_batch_cancel(struct rf_gpu_graphics *g);
 int rf_gpu_graphics_resource_bind(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource);
 int rf_gpu_graphics_resource_set_frame_dynamic(
@@ -114,8 +122,9 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     uint64_t *uv_mismatches, uint32_t *max_position_delta,
     uint32_t *max_normal_delta);
 
-/* Caller shuts graphics down before its shared backend context. All calls
- * are synchronous except the explicitly retired Scene submission below.
+/* Caller shuts graphics down before its shared backend context. Calls are
+ * synchronous except updates inside an explicit skin batch (end waits), and
+ * the explicitly retired Scene submission below.
  * Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
 /* Validate the currently bound resource/draw without touching target contents. */

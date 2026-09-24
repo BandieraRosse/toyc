@@ -70,6 +70,10 @@ struct rf_gpu_graphics_resource {
     int frame_dynamic;
     int sequential_triangles;
     struct rf_gpu_vulkan_raster_buffer triangle_staging;
+    struct rf_gpu_graphics_resource *skin_pending_next;
+    struct rf_gpu_vulkan_raster_buffer *skin_pending_upload[2];
+    uint64_t skin_pending_bytes[2];
+    uint32_t skin_pending_vertices;
 };
 struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
@@ -98,6 +102,8 @@ struct rf_gpu_graphics {
     rf_vk_command_buffer cmd;
     rf_vk_fence fence;
     int poisoned, scene_in_flight;
+    int skin_batch;
+    struct rf_gpu_graphics_resource *skin_pending, *skin_pending_tail;
     rf_vk_semaphore scene_acquire;
     rf_vk_query_pool scene_query_pool;
     int scene_query_active;
@@ -159,6 +165,7 @@ static int gfx_resource_share(struct rf_gpu_graphics *g,
     struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
     struct rf_vk_write_descriptor_set write[3] = {{0}};
     if (!gfx_resource_compatible(g,resource)) return -1;
+    if (resource->skin_pending_vertices && resource->owner!=g) return -1;
     if (resource->owner==g || resource->shared_binding.owner==g) return 0;
     if (resource->shared_binding.owner) return -1;
     pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -268,6 +275,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     /* Also covers a failed submission/wait: never destroy pending resources. */
     impl->api.queue_wait_idle(impl->queue);
     g->scene_in_flight=0;
+    rf_gpu_graphics_skin_batch_cancel(g);
     if (g->scene_acquire) impl->api.destroy_semaphore(impl->device,g->scene_acquire,NULL);
     if (g->scene_query_pool) impl->api.destroy_query_pool(impl->device,g->scene_query_pool,NULL);
     gfx_rasters_invalidate(g);
@@ -842,7 +850,7 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     void *mapped=NULL;
     uint64_t bytes;
     int result=-1;
-    if (!g || g->poisoned || !resource || resource->owner!=g || !reference ||
+    if (!g || g->poisoned || g->skin_batch || !resource || resource->owner!=g || !reference ||
         !vertex_count || !position_mismatches || !normal_mismatches ||
         !uv_mismatches || !max_position_delta || !max_normal_delta) return -1;
     bytes=(uint64_t)vertex_count*sizeof(*reference);
@@ -1108,6 +1116,66 @@ fail:
     rf_gpu_graphics_resource_destroy(g,r); return NULL;
 }
 
+static void gfx_skin_record(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *r,
+    struct rf_gpu_vulkan_raster_buffer **upload,const uint64_t *bytes,
+    uint32_t vertex_count)
+{
+    struct rf_gpu_vulkan_impl *impl=g->owner;
+    struct rf_gpu_vulkan_raster_buffer *target[2]={&r->skin_bind,&r->skin_palette};
+    struct rf_vk_buffer_copy copy={0};
+    struct rf_vk_memory_barrier barrier={0};
+    for (unsigned i=0;i<2;++i) {
+        if (upload[i]==target[i]) continue;
+        copy.size=bytes[i];
+        impl->api.cmd_copy_buffer(g->cmd,upload[i]->buffer,target[i]->buffer,1,&copy);
+    }
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
+    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+    impl->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->skin_pipeline);
+    impl->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,
+        g->skin_layout,0,1,&r->skin_descriptor_set,0,NULL);
+    impl->api.cmd_push_constants(g->cmd,g->skin_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&vertex_count);
+    impl->api.cmd_dispatch(g->cmd,(vertex_count+63)/64,1,1);
+    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT;
+    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,1,&barrier,0,NULL,0,NULL);
+}
+
+int rf_gpu_graphics_skin_batch_begin(struct rf_gpu_graphics *g)
+{
+    if (!g || g->poisoned || g->scene_in_flight || g->skin_batch) return -1;
+    g->skin_batch=1;return 0;
+}
+void rf_gpu_graphics_skin_batch_cancel(struct rf_gpu_graphics *g)
+{
+    if (!g) return;
+    while (g->skin_pending) {
+        struct rf_gpu_graphics_resource *r=g->skin_pending;
+        g->skin_pending=r->skin_pending_next;
+        r->skin_pending_next=NULL;r->skin_pending_vertices=0;
+    }
+    g->skin_pending_tail=NULL;g->skin_batch=0;
+}
+int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g)
+{
+    int result=0;
+    if (!g || !g->skin_batch || g->poisoned || g->scene_in_flight) return -1;
+    if (g->skin_pending) {
+        if (gfx_begin(g)<0) { g->poisoned=1;return -1; }
+        for (struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
+            gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+        result=gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING);
+    }
+    rf_gpu_graphics_skin_batch_cancel(g);
+    return result;
+}
+
 int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *r, uint32_t vertex_count,
     const uint32_t *bind_words, uint32_t bind_word_count,
@@ -1116,8 +1184,6 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_vulkan_impl *impl;
     struct rf_gpu_vulkan_raster_buffer staging[2]={{0}};
     struct rf_gpu_vulkan_raster_buffer *upload[2]={NULL,NULL};
-    struct rf_vk_buffer_copy copy={0};
-    struct rf_vk_memory_barrier barrier={0};
     const uint32_t *data[2]={bind_words,palette_words};
     struct rf_gpu_vulkan_raster_buffer *target[2];
     uint64_t bytes[2];
@@ -1131,7 +1197,8 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g || !r->skin_descriptor_set ||
         !vertex_count || bind_word_count!=(uint64_t)vertex_count*22 ||
         !palette_word_count ||
-        !bind_words || !palette_words) return -1;
+        !bind_words || !palette_words || r->skin_pending_vertices ||
+        (g->skin_batch && (legacy || r->shared_binding.owner))) return -1;
     if (vertex_count>r->vertex_capacity ||
         palette_word_count>r->palette_word_capacity) return 1;
     impl=g->owner;
@@ -1157,28 +1224,18 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         }
         impl->api.unmap_memory(impl->device,upload[i]->memory); mapped=NULL;
     }
-    if (gfx_begin(g)<0) goto done;
-    for (unsigned i=0;i<2;++i) {
-        if (upload[i]==target[i]) continue;
-        copy.size=bytes[i];
-        impl->api.cmd_copy_buffer(g->cmd,upload[i]->buffer,target[i]->buffer,1,&copy);
+    if (g->skin_batch) {
+        r->skin_pending_vertices=vertex_count;
+        memcpy(r->skin_pending_upload,upload,sizeof(upload));
+        memcpy(r->skin_pending_bytes,bytes,sizeof(bytes));
+        if (g->skin_pending_tail) g->skin_pending_tail->skin_pending_next=r;
+        else g->skin_pending=r;
+        g->skin_pending_tail=r;
+    } else {
+        if (gfx_begin(g)<0) goto done;
+        gfx_skin_record(g,r,upload,bytes,vertex_count);
+        if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto done;
     }
-    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
-    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    impl->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->skin_pipeline);
-    impl->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,
-        g->skin_layout,0,1,&r->skin_descriptor_set,0,NULL);
-    impl->api.cmd_push_constants(g->cmd,g->skin_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&vertex_count);
-    impl->api.cmd_dispatch(g->cmd,(vertex_count+63)/64,1,1);
-    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dst_access_mask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT|VK_ACCESS_TRANSFER_READ_BIT;
-    impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,1,&barrier,0,NULL,0,NULL);
-    if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto done;
     g->stats.mesh_upload_bytes+=bytes[0]+bytes[1];
     result=0;
 done:
@@ -1209,7 +1266,8 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource)
 {
     struct rf_gpu_graphics_resource **link;
-    if (!g || g->scene_in_flight || !resource || resource->owner != g) return -1;
+    if (!g || g->scene_in_flight || !resource || resource->owner != g ||
+        resource->skin_pending_vertices) return -1;
     /* Successful submissions already waited. A failed wait may leave work. */
     if (g->poisoned) g->owner->api.queue_wait_idle(g->owner->queue);
     for (link = &g->resources; *link != resource; link = &(*link)->next)
@@ -1468,7 +1526,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     VkBufferImageCopy copy = {0};
     uint64_t offset = 0, bytes;
     void *mapped = NULL;
-    if (!g || g->poisoned || (!items && (!g->resource || !g->resource->index_count)) || !g->target.framebuffer ||
+    if (!g || g->poisoned || g->skin_batch || (!items && (!g->resource || !g->resource->index_count)) || !g->target.framebuffer ||
         (!draws && !items) || !count || count > 65536 ||
         (!r && !scene && (!rgba || !depth || (uint64_t)g->target.width*g->target.height > pixel_capacity))) return -1;
     {
@@ -1731,7 +1789,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     int result, acquired=0;
     double start;
     VkFormatProperties src,dst;
-    if (!g || g->poisoned || g->scene_in_flight || !items || !count || !frame_id) return -1;
+    if (!g || g->poisoned || g->skin_batch || g->scene_in_flight || !items || !count || !frame_id) return -1;
     impl=g->owner;
     if (!impl->native_presentation_supported || impl->presenter_poisoned) return -1;
     /* Vulkan 1.0 blit performs RGBA -> BGRA conversion without a bridge. */
@@ -1849,7 +1907,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     struct rf_vk_memory_barrier barrier={0};
     void *mapped=NULL;
     uint64_t bytes;
-    if (!g || !rgba || !depth || g->scene_in_flight || g->poisoned ||
+    if (!g || !rgba || !depth || g->skin_batch || g->scene_in_flight || g->poisoned ||
         (uint64_t)g->target.width*g->target.height>capacity) return -1;
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
     g->scene_timing.frame_id=frame_id;

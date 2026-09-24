@@ -63,6 +63,12 @@ def main():
             ("world_us", "actors_us", "enemies_us", "layers_us", "submit_retire_us")))/1000
             for x in cost[warm:]])
         actor = rows(text, "SCENE-ACTOR-COST")
+        resources = rows(text, "SCENE-RESOURCE-COST")
+        if resources:
+            assert len(resources) == run["frames"], run
+            for k in ("skin_submits", "queue_submits", "fence_waits", "layer_created", "layer_reused"):
+                metrics[k] = summarize([x[k] for x in resources[warm:]])
+            metrics["actor_batch_ms"] = summarize([x["actor_batch_us"]/1000 for x in resources[warm:]])
         if actor:
             for k in ("load_us", "pack_us", "upload_skin_wait_us"):
                 metrics["actor_"+k[:-3]+"_ms"] = summarize([
