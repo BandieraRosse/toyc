@@ -20,12 +20,13 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     const struct rf_gpu_scene_flag_frame_v1 *flags,
     const struct rf_gpu_scene_projectile_frame_v1 *projectiles,
     const struct rf_gpu_scene_interactable_frame_v1 *interactables,
+    const struct rf_gpu_scene_enemy_frame_v1 *enemies,
     const struct toy_texture_view *model_texture,
     struct rf_gpu_scene_world_gpu_probe_stats *stats,const char *capture_path)
 {
     (void)probe;(void)context;(void)owner;(void)camera;
     (void)width;(void)height;(void)poses;(void)pose_count;(void)flags;
-    (void)projectiles;(void)interactables;(void)model_texture;
+    (void)projectiles;(void)interactables;(void)model_texture;(void)enemies;
     (void)stats;(void)capture_path;
     return -1;
 }
@@ -842,7 +843,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
         struct rasterfall_resource_handle handle;
         struct rasterfall_draw_instance instance;
         struct rasterfall_draw_view view;
-        int asset=prop->prop.asset_id,scale,yaw;
+        int asset=prop->prop.asset_id,scale,yaw,integer_depth;
         if (asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
         if (asset<1 || asset>RASTERFALL_PROP_ASSET_COUNT) return -1;
         profile=rasterfall_prop_asset_profile(asset);
@@ -868,7 +869,9 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
         if (!rasterfall_render_scene_static_prop_visible(&view,&instance)) {
             owner->prop_culled++;continue;
         }
-        if (!rasterfall_render_scene_static_prop_eligible(&view,&instance)) {
+        integer_depth=rasterfall_render_scene_static_prop_eligible(&view,&instance,1);
+        if (!integer_depth &&
+            !rasterfall_render_scene_static_prop_eligible(&view,&instance,0)) {
             owner->prop_deferred++;owner->prop_numeric_deferred++;continue;
         }
         for(uint32_t p=0;p<model->primitive_count;++p) {
@@ -932,7 +935,7 @@ prop_ready:
             draw->texture[1]=info.texture_height;
             draw->index_count=info.index_count;
             draw->double_sided=resolved.material.double_sided;
-            draw->integer_depth=1;
+            draw->integer_depth=integer_depth;
             if (!entry->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
             owner->prop_draws++;
@@ -942,6 +945,91 @@ prop_ready:
     return 0;
 }
 
+struct scene_enemy_mesh {
+    struct rf_gpu_graphics_vertex vertices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
+    uint32_t indices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
+    uint32_t colors[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES], count;
+    const struct rf_gpu_scene_enemy_frame_v1 *frame;
+    const struct rf_gpu_scene_enemy_item_v1 *source;
+};
+static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_point *a,
+    const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    struct scene_enemy_mesh *mesh=context;
+    const struct rf_gpu_scene_enemy_point *points[3]={a,b,c};
+    if (mesh->count>=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES) return -1;
+    mesh->colors[mesh->count]=color;
+    for (unsigned k=0;k<3;++k) {
+        unsigned index=mesh->count*3+k;
+        struct rf_gpu_graphics_vertex *v=&mesh->vertices[index];
+        v->position[0]=points[k]->x-mesh->source->x;
+        v->position[1]=points[k]->y-mesh->source->lift;
+        v->position[2]=points[k]->z-mesh->source->z;
+        v->uv[0]=mesh->frame->vertex_lighting ?
+            rasterfall_world_light_v2_q8(rasterfall_world_light_at(
+                &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z)) :
+            mesh->source->scene_light_q8;
+        mesh->indices[index]=index;
+    }
+    mesh->count++;return 0;
+}
+static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
+    const struct rf_gpu_scene_enemy_frame_v1 *frame,const struct camera *camera,
+    uint32_t width,uint32_t height,struct rf_gpu_graphics_batch_item *items,
+    uint32_t capacity,uint32_t *count)
+{
+    struct scene_enemy_mesh *mesh=NULL;
+    uint32_t total=0,white=0xffffff;
+    int result=-1;
+    /* The diagnostic submits and waits synchronously. Keep resources in the
+     * owner on any failure; teardown drains before releasing GPU references. */
+    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+        if (probe->enemy[i] &&
+            rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0)
+            return -1;
+        probe->enemy[i]=NULL;
+    }
+    if (!frame->count) { *count=0;return 0; }
+    mesh=calloc(1,sizeof(*mesh));
+    if (!mesh) return -1;
+    for (unsigned i=0;i<frame->count;++i) {
+        const struct rf_gpu_scene_enemy_item_v1 *source=&frame->items[i];
+        if (i && source->source_slot<=frame->items[i-1].source_slot) goto done;
+        memset(mesh,0,sizeof(*mesh));mesh->frame=frame;mesh->source=source;
+        if (rf_gpu_scene_enemy_triangles(source,scene_enemy_triangle,mesh)<0 ||
+            !mesh->count || mesh->count>capacity-total) goto done;
+        probe->enemy[i]=rf_gpu_graphics_resource_create(probe->graphics,
+            mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
+        if (!probe->enemy[i]) goto done;
+        for (unsigned first=0;first<mesh->count;) {
+            unsigned end=first+1;
+            struct rf_gpu_graphics_batch_item *entry=&items[total++];
+            struct rf_gpu_graphics_draw *draw=&entry->draw;
+            while (end<mesh->count && mesh->colors[end]==mesh->colors[first]) end++;
+            memset(entry,0,sizeof(*entry));entry->resource=probe->enemy[i];
+            draw->translation_scale[0]=source->x;
+            draw->translation_scale[1]=source->lift;
+            draw->translation_scale[2]=source->z;
+            draw->translation_scale[3]=1000;draw->rotation[1]=1024;
+            draw->camera[0]=camera->x;draw->camera[1]=camera->y;draw->camera[2]=camera->z;
+            draw->view[0]=camera->sy;draw->view[1]=camera->cy;
+            draw->view[2]=camera->pitch_sy;draw->view[3]=camera->pitch_cy;
+            draw->projection[0]=(int32_t)width;draw->projection[1]=(int32_t)height;
+            draw->projection[2]=64;draw->projection[3]=(int32_t)(width*3/4);
+            draw->material[0]=mesh->colors[first];
+            draw->material[1]=256;draw->material[3]=1;
+            draw->texture[0]=draw->texture[1]=1;
+            draw->first_index=first*3;draw->index_count=(end-first)*3;
+            if (rf_gpu_graphics_resource_bind(probe->graphics,entry->resource)<0 ||
+                rf_gpu_graphics_validate_draw(probe->graphics,draw)<0) goto done;
+            first=end;
+        }
+    }
+    *count=total;result=0;
+done:
+    free(mesh);return result;
+}
+
 int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_vulkan_context *context,struct rf_gpu_scene_world_resources *owner,
     const struct camera *camera,uint32_t width,uint32_t height,
@@ -949,6 +1037,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     const struct rf_gpu_scene_flag_frame_v1 *flags,
     const struct rf_gpu_scene_projectile_frame_v1 *projectiles,
     const struct rf_gpu_scene_interactable_frame_v1 *interactables,
+    const struct rf_gpu_scene_enemy_frame_v1 *enemies,
     const struct toy_texture_view *model_texture,
     struct rf_gpu_scene_world_gpu_probe_stats *stats,const char *capture_path)
 {
@@ -957,13 +1046,15 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     uint32_t *color=NULL,capacity=0,draws=0,actor_draws=0,flag_draws=0;
     uint32_t flag_text_draws=0,projectile_draws=0,covered=0;
     uint32_t pickup_model_draws=0,pickup_model_items=0,pickup_procedural_deferred=0;
-    uint32_t pickup_procedural_draws=0,pickup_procedural_items=0;
+    uint32_t pickup_procedural_draws=0,pickup_procedural_items=0,enemy_draws=0;
     float *depth=NULL;
     size_t pixels=(size_t)width*height;
     uint32_t actor_prepared=0;
     int frame_active=0,result=-1;
     if (!probe || !context || !owner || !camera || !flags || !projectiles ||
-        !interactables ||
+        !interactables || !enemies || enemies->count>TOY_GAME_MAX_ENEMIES ||
+        enemies->frame_id!=flags->frame_id ||
+        enemies->world_generation!=owner->world_generation ||
         !stats || !width || !height ||
         pose_count>TOY_GAME_MAX_ACTORS || (pose_count && !poses) ||
         flags->count>RF_GPU_SCENE_FLAG_CAP ||
@@ -1040,6 +1131,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (interactables->count>(UINT32_MAX-capacity)/RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES)
         return -1;
     capacity+=interactables->count*RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES;
+    if (enemies->count>(UINT32_MAX-capacity)/RF_GPU_SCENE_ENEMY_MAX_TRIANGLES)
+        return -1;
+    capacity+=enemies->count*RF_GPU_SCENE_ENEMY_MAX_TRIANGLES;
     if (!capacity) return 0;
     items=calloc(capacity ? capacity : 1,sizeof(*items));
     color=calloc(pixels,sizeof(*color));
@@ -1076,6 +1170,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         pickup_procedural_items!=pickup_procedural_deferred) goto done;
     draws+=pickup_procedural_draws;
     pickup_procedural_deferred=0;
+    if (enemy_draws_prepare(probe,enemies,camera,width,height,
+            items+draws,capacity-draws,&enemy_draws)<0) goto done;
+    draws+=enemy_draws;
     if (rf_gpu_graphics_scene_capture(probe->graphics,items,draws,
             color,depth,(uint32_t)pixels)<0) goto done;
     if (capture_path) {
@@ -1100,6 +1197,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     for(size_t i=0;i<pixels;++i)
         if (depth[i]>0 && color[i]) covered++;
     rf_gpu_resource_cache_get_stats(probe->cache,&after);
+    stats->enemy_draws=enemy_draws;stats->enemy_items=enemies->count;
+    stats->enemy_deferred=enemies->deferred;stats->enemy_culled=enemies->culled;
     stats->draws=draws;stats->actor_draws=actor_draws;
     stats->flag_draws=flag_draws;stats->flag_text_draws=flag_text_draws;
     stats->projectile_draws=projectile_draws;
@@ -1128,6 +1227,9 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
+    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES;++i)
+        if (probe->enemy[i])
+            rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);
     if (probe->flag_pole)
         rf_gpu_graphics_resource_destroy(probe->graphics,probe->flag_pole);
     if (probe->flag_cloth)

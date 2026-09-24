@@ -515,6 +515,74 @@ done:
     return result;
 }
 
+/* Prove the Scene-only coordinate policy actually covers pixels, including
+ * a near crossing. The conservative real-world views can hide these props. */
+static int scene_static_prop_clip(struct rf_gpu_graphics *g,int w,int h)
+{
+    struct rf_gpu_graphics_vertex vertices[3]={
+        {{-2000,-2000,128},{0,0},{0}},{{2000,-2000,128},{0,0},{0}},
+        {{0,2000,128},{0,0},{0}}
+    };
+    const uint32_t indices[3]={0,1,2},white=0xffffff;
+    struct rasterfall_model_asset model={0};
+    struct rasterfall_draw_instance instance={0};
+    struct rasterfall_draw_view view={0};
+    struct rf_gpu_graphics_batch_item item={0};
+    struct rf_gpu_graphics_draw *draw=&item.draw;
+    size_t pixels=(size_t)w*h,center=(size_t)(h/2)*w+w/2;
+    uint32_t *color=calloc(pixels,sizeof(*color)),covered[2]={0};
+    float *depth=calloc(pixels,sizeof(*depth));
+    int result=-1;
+    if (!color || !depth || !pixels || pixels>UINT32_MAX) goto done;
+    model.min_x=model.min_y=-2000;model.max_x=model.max_y=2000;
+    model.min_z=32;model.max_z=256;
+    instance.mesh=&model;instance.y=-2000;instance.scale_milli=1000;
+    instance.yaw_cos_q10=1024;
+    view.camera.cy=view.camera.pitch_cy=1024;
+    view.width=w;view.height=h;view.near_z=64;view.focal=w*3/4;
+    if (rasterfall_render_scene_static_prop_eligible(&view,&instance,1) ||
+        !rasterfall_render_scene_static_prop_eligible(&view,&instance,0)) goto done;
+    draw->translation_scale[1]=-2000;draw->translation_scale[3]=1000;
+    draw->rotation[1]=1024;draw->rotation[2]=-2000;
+    draw->view[1]=draw->view[3]=1024;
+    draw->projection[0]=w;draw->projection[1]=h;
+    draw->projection[2]=64;draw->projection[3]=w*3/4;
+    draw->material[0]=0x204060;draw->material[1]=256;
+    draw->texture[0]=draw->texture[1]=1;
+    draw->index_count=3;draw->double_sided=1;
+    for(int crossing=0;crossing<2;++crossing) {
+        if (crossing) {
+            vertices[0].position[2]=32;
+            vertices[1].position[2]=vertices[2].position[2]=256;
+        }
+        item.resource=rf_gpu_graphics_resource_create(g,vertices,3,indices,3,&white,1,1);
+        if (!item.resource || rf_gpu_graphics_resource_bind(g,item.resource)<0)
+            goto done;
+        draw->integer_depth=1;
+        if (rf_gpu_graphics_validate_draw(g,draw)==0) goto done;
+        draw->integer_depth=0;
+        if (rf_gpu_graphics_validate_draw(g,draw)<0 ||
+            rf_gpu_graphics_scene_capture(g,&item,1,color,depth,(uint32_t)pixels)<0)
+            goto done;
+        for(size_t p=0;p<pixels;++p) if (depth[p]>0) {
+            if (color[p]!=0xff604020u || depth[p]>1 ||
+                (!crossing && depth[p]!=0.5f)) goto done;
+            covered[crossing]++;
+        }
+        if (depth[center]<=0 || !covered[crossing] ||
+            (!crossing && covered[crossing]!=pixels)) goto done;
+        if (rf_gpu_graphics_resource_destroy(g,item.resource)<0) goto done;
+        item.resource=NULL;
+    }
+    __printf("SCENE static-prop-clip=PASS wide=%u near_crossing=%u diagnostic_readback=1\n",
+        covered[0],covered[1]);
+    result=0;
+done:
+    if (item.resource) rf_gpu_graphics_resource_destroy(g,item.resource);
+    free(color);free(depth);
+    return result;
+}
+
 /* Exercise the normal Runtime Map value/registry path through the GPU cache
  * and an offscreen Scene WORLD draw before this fixture tears down graphics. */
 static int scene_world_gpu_probe(struct rf_gpu_graphics *g,int w,int h)
@@ -692,7 +760,12 @@ int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
         SCENE_CHECK(!rf_gpu_graphics_resize(g,w,h));
         SCENE_CHECK(!scene_prepare(&slot,g,1));
         t4=rf_core_clock_now_us();
-        if (!n) { SCENE_CHECK(!scene_skin_diff(&slot,g,&pose)); SCENE_CHECK(!scene_occlusion(&slot,g,w,h)); SCENE_CHECK(!scene_transparency(g,w,h)); }
+        if (!n) {
+            SCENE_CHECK(!scene_skin_diff(&slot,g,&pose));
+            SCENE_CHECK(!scene_occlusion(&slot,g,w,h));
+            SCENE_CHECK(!scene_transparency(g,w,h));
+            SCENE_CHECK(!scene_static_prop_clip(g,w,h));
+        }
         SCENE_CHECK(!rf_gpu_graphics_scene_present(g,slot.draws,slot.draw_count,pose.frame_id));
         t5=rf_core_clock_now_us();
         slot.submitted=1; rasterfall_resources_frame_submitted(&slot.registry);

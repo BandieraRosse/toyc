@@ -25,6 +25,7 @@ function Run([string]$Name,[string[]]$Argv,[int]$Expected=0,[int]$Frames=0,[stri
     $Log=(Get-Content -Encoding UTF8 "$Out/$Name.out","$Out/$Name.err" | Out-String)
     if($Log -match 'Validation Error|SYNC-HAZARD|VUID-'){throw "$Name validation error"}
     if($Name -like 'scene-*') {
+        if($Log -notmatch 'SCENE static-prop-clip=PASS wide=[1-9][0-9]* near_crossing=[1-9][0-9]*'){throw "$Name missing static prop clipping proof"}
         if($Log -notmatch 'SCENE occlusion=PASS' -or $Log -notmatch 'SCENE cleanup live=0 retired=0 pinned=0'){throw "$Name incomplete diagnostics/cleanup"}
         if($Log -notmatch "SCENE result=$Expected rendered=$Frames bridge=0 "){throw "$Name incomplete native frames"}
         if($DeviceVendor -and $Log -notmatch "SCENE adapter=.+ vendor=$DeviceVendor device="){throw "$Name wrong device"}
@@ -140,14 +141,14 @@ try {
     }
     Run 'normal-actor-rifleman' @('--map','rasterfall/assets/maps/rasterfall.map','--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','actor-rifleman','0','--gpu-normal-fixed-tick','--frame-audit','--frames','2')
     $Log=Get-Content -Encoding UTF8 "$Out/normal-actor-rifleman.out" | Out-String
-    if($Log -notmatch 'SCENE-WORLD-GPU frame=1 draws=1233 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=955 hits=16 prop_assets=23 prop_draws=49 prop_culled=96 prop_deferred=4 prop_numeric=4 prop_material=0 prop_transparent=0 diagnostic_readback=1' -or
-       $Log -notmatch 'SCENE-WORLD-GPU frame=2 draws=1233 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=0 hits=971 prop_assets=23 prop_draws=49 prop_culled=96 prop_deferred=4 prop_numeric=4 prop_material=0 prop_transparent=0 diagnostic_readback=1') {
+    if($Log -notmatch 'SCENE-WORLD-GPU frame=1 draws=1249 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=955 hits=32 prop_assets=23 prop_draws=65 prop_culled=96 prop_deferred=0 prop_numeric=0 prop_material=0 prop_transparent=0 diagnostic_readback=1' -or
+       $Log -notmatch 'SCENE-WORLD-GPU frame=2 draws=1249 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=0 hits=987 prop_assets=23 prop_draws=65 prop_culled=96 prop_deferred=0 prop_numeric=0 prop_material=0 prop_transparent=0 diagnostic_readback=1') {
         throw 'Missing visible normal actor Scene WORLD draw evidence'
     }
     Run 'normal-actor-standard' @('--map','rasterfall/assets/maps/rasterfall.map','--renderer','gpu-compute','--gpu-required','--gpu-native-present','--gpu-normal-scene','actor-standard','0','--gpu-normal-fixed-tick','--frame-audit','--frames','2','--gpu-frame-capture',"$Out/normal-actor-standard.bmp",'--gpu-capture-frame','1')
     $Log=Get-Content -Encoding UTF8 "$Out/normal-actor-standard.out" | Out-String
-    if($Log -notmatch 'SCENE-WORLD-GPU frame=1 draws=1218 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=948 hits=8 prop_assets=23 prop_draws=34 prop_culled=96 prop_deferred=8 prop_numeric=8 prop_material=0 prop_transparent=0 diagnostic_readback=1' -or
-       $Log -notmatch 'SCENE-WORLD-GPU frame=2 draws=1218 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=0 hits=956 prop_assets=23 prop_draws=34 prop_culled=96 prop_deferred=8 prop_numeric=8 prop_material=0 prop_transparent=0 diagnostic_readback=1') {
+    if($Log -notmatch 'SCENE-WORLD-GPU frame=1 draws=1240 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=960 hits=18 prop_assets=23 prop_draws=56 prop_culled=96 prop_deferred=0 prop_numeric=0 prop_material=0 prop_transparent=0 diagnostic_readback=1' -or
+       $Log -notmatch 'SCENE-WORLD-GPU frame=2 draws=1240 actor_draws=120 flag_draws=15 flag_text_draws=5 projectile_draws=0 pickup_model_draws=16 pickup_model_items=7 pickup_procedural_draws=111 pickup_procedural_items=38 pickup_procedural_deferred=0 covered=[1-9][0-9]* uploads=0 hits=978 prop_assets=23 prop_draws=56 prop_culled=96 prop_deferred=0 prop_numeric=0 prop_material=0 prop_transparent=0 diagnostic_readback=1') {
         throw 'Missing standard squad Scene WORLD draw/cache reuse evidence'
     }
     CheckActorPixels 'normal-actor-standard' @(350,540,450,350,810,520,639,100,650,275,653,263,663,264)

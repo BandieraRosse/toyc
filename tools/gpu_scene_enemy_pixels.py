@@ -1,0 +1,45 @@
+"""Check fixed interior body pixels, not the incomplete Scene composite."""
+import json
+from pathlib import Path
+import struct
+import sys
+
+
+def check(directory):
+    points = [(260, 250), (255, 365), (240, 490), (760, 430),
+              (820, 260), (1000, 300), (1100, 400)]
+    expected = {
+        "special-first": [(138, 133, 107), (55, 60, 47), (30, 32, 29),
+                          (73, 71, 56), (142, 140, 113), (92, 90, 69), (92, 90, 69)],
+        "special-motion": [(138, 133, 107), (55, 60, 47), (30, 32, 29),
+                           (65, 75, 83), (100, 98, 79), (92, 90, 69), (92, 90, 69)],
+    }
+    result = {}
+    for name, colors in expected.items():
+        path = directory / (name + ".bmp")
+        bmp = path.read_bytes()
+        offset = struct.unpack_from("<I", bmp, 10)[0]
+        width, height = struct.unpack_from("<ii", bmp, 18)
+        bits = struct.unpack_from("<H", bmp, 28)[0]
+        ppm = Path(str(path) + ".scene.ppm").read_bytes()
+        header = b"P6\n1280 720\n255\n"
+        if ((width, height, bits) != (1280, -720, 32) or
+                len(bmp) < offset + 1280 * 720 * 4 or
+                not ppm.startswith(header) or len(ppm) != len(header) + 1280 * 720 * 3):
+            raise ValueError(f"{name}: unexpected capture format")
+        rows = []
+        for (x, y), rgb in zip(points, colors):
+            index = y * width + x
+            mixed = tuple(bmp[offset + index * 4:offset + index * 4 + 3][::-1])
+            scene = tuple(ppm[len(header) + index * 3:len(header) + index * 3 + 3])
+            if mixed != rgb or scene != mixed:
+                raise ValueError(f"{name} ({x},{y}): mixed={mixed}, scene={scene}, expected={rgb}")
+            rows.append({"x": x, "y": y, "rgb": rgb})
+        result[name] = rows
+    (directory / "pixels.json").write_text(
+        json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print("SCENE-ENEMY pixels: PASS 14 fixed samples; incomplete WORLD composite")
+
+
+if __name__ == "__main__":
+    check(Path(sys.argv[1]))

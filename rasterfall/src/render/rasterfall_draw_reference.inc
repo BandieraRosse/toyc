@@ -81,9 +81,9 @@ static long long static_prop_draw_abs64(long long value)
  * remain eligible for compute RasterCmds in the same strict GPU frame. */
 static int static_prop_draw_numeric_eligible(
     const struct rasterfall_draw_view *view,
-    const struct rasterfall_draw_instance *instance)
+    const struct rasterfall_draw_instance *instance, int integer_depth)
 {
-    const struct rasterfall_model_asset *model = instance->mesh;
+    const struct rasterfall_model_asset *model = instance ? instance->mesh : NULL;
     long long bx, by, bz, rx, rz, x, y, z;
     long long cx, cy, cz, axial, depth, ar, dr, min_depth, vx, vz, vy;
     if (!view || !model || instance->scale_milli < 1 ||
@@ -108,6 +108,25 @@ static int static_prop_draw_numeric_eligible(
     x = x * instance->scale_milli / 1000;
     y = y * instance->scale_milli / 1000;
     z = z * instance->scale_milli / 1000;
+    if (!integer_depth) {
+        /* Scene hardware clipping does not use the integer rasterizer's
+         * projected-coordinate envelope. Its vertex transform still uses
+         * int32 arithmetic, so prove every camera-transform product/sum. */
+        x += static_prop_draw_abs64((long long)instance->x-view->camera.x);
+        y += static_prop_draw_abs64((long long)instance->y-view->camera.y);
+        z += static_prop_draw_abs64((long long)instance->z-view->camera.z);
+        vx = x*static_prop_draw_abs64(view->camera.cy) +
+             z*static_prop_draw_abs64(view->camera.sy);
+        vz = x*static_prop_draw_abs64(view->camera.sy) +
+             z*static_prop_draw_abs64(view->camera.cy);
+        if (vx>INT_MAX || vz>INT_MAX) return 0;
+        vz /= 1024;
+        vy = y*static_prop_draw_abs64(view->camera.pitch_cy) +
+             vz*static_prop_draw_abs64(view->camera.pitch_sy);
+        depth = y*static_prop_draw_abs64(view->camera.pitch_sy) +
+                vz*static_prop_draw_abs64(view->camera.pitch_cy);
+        return vy<=INT_MAX && depth<=INT_MAX;
+    }
     cx = (long long)instance->x - view->camera.x;
     cy = (long long)instance->y - view->camera.y;
     cz = (long long)instance->z - view->camera.z;
@@ -145,7 +164,7 @@ static enum rasterfall_draw_reject static_prop_draw_preflight(
     if (model->skinning_enabled || model->bone_count || model->has_character_contract ||
         character_perceptual_model(model) != CHARACTER_PERCEPTUAL_NONE)
         return RASTERFALL_DRAW_DEFORMATION;
-    if (!static_prop_draw_numeric_eligible(view, instance))
+    if (!static_prop_draw_numeric_eligible(view, instance, 1))
         return RASTERFALL_DRAW_NUMERIC;
     for (i = 0; i < model->primitive_count; ++i) {
         struct rasterfall_draw_item draw;

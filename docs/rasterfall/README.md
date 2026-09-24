@@ -23,11 +23,13 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 静态世界光照与诊断 | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | world-light bake、normal consumer 与诊断 scope |
 | 角色、敌人与附件表现 | [角色表现](architecture/character-presentation.md) | character/enemy presentation adapters |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
+| 动态特感 Scene 身体诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_enemy.h`、`render/rasterfall_enemy_rig.inc`、`tools/gpu_scene_enemies.ps1`；同帧姿态冻结及共享 WORLD 深度 |
 | HUD、Viewmodel 与特效 | [HUD 与特效](architecture/hud-effects.md) | `rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c` |
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |
 | GPU Draw/Raster/present 架构 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
 | GPU Scene 迁移与只读 snapshot | [活动计划](plans/README.md)、[迁移接口](plans/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md)、[GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；正常帧审计冻结 world、活动旗帜、动态投射物、交互物及八名正式模块化队员各自的 pose/光照值，持有十一类生成网格、RMESH、旗帜几何与字形、投射物和交互物模型、交互物程序几何、角色 body、被动装备与武器 GPU 资源，在独立 Scene target 验证同一 WORLD color/depth；呈现仍走 mixed |
 | GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[Scene 同步与生命周期验证](guides/gpu-scene-fixture.md)、[GPU 性能标准](reference/gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
+| Scene 静态实例数值边界与近裁剪 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rasterfall_render_scene_static_prop_eligible`、`rf_gpu_scene_world_gpu_prepare`、`scene_static_prop_clip` |
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |

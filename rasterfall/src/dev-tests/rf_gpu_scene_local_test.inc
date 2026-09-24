@@ -1,5 +1,24 @@
 /* Real Game actor constructors and updates feed the adapter. No fabricated
  * rf_gpu_scene_actor_input arrays participate in this regression. */
+struct scene_enemy_test_geometry {
+    uint64_t hash;
+    unsigned count;
+    int fail;
+};
+static int scene_enemy_test_triangle(void *context,
+    const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
+    const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    struct scene_enemy_test_geometry *g=context;
+    const struct rf_gpu_scene_enemy_point *p[3]={a,b,c};
+    if (g->fail) return -1;
+    for (int i=0;i<3;++i) {
+        g->hash=(g->hash^(unsigned)p[i]->x)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[i]->y)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[i]->z)*1099511628211ULL;
+    }
+    g->hash=(g->hash^color)*1099511628211ULL;g->count++;return 0;
+}
 static int scene_local_source_test(void)
 {
     static struct toy_game source_game, before;
@@ -22,6 +41,60 @@ static int scene_local_source_test(void)
     int id, slot;
 #define LOCAL_CHECK(x) do { if (!(x)) { __printf("scene local source failed line %d\n",__LINE__); return 1; } } while (0)
     camera.cy=camera.pitch_cy=1024;
+    {
+        static struct rf_gpu_scene_enemy_frame_v1 frozen, saved_enemy;
+        struct rf_gpu_scene_enemy_item_v1 item={0};
+        const int types[3]={TOY_GAME_ENEMY_SMOKER,TOY_GAME_ENEMY_CHARGER,TOY_GAME_ENEMY_TANK};
+        item.dir_z=-1024;item.scene_light_q8=256;
+        for (int i=0;i<3;++i) {
+            struct scene_enemy_test_geometry a={0},b={0},posed={0},failure={0};
+            item.type=types[i];memset(&item.pose,0,sizeof(item.pose));
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&a));
+            LOCAL_CHECK(a.count>0 && a.count<=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&b));
+            LOCAL_CHECK(a.hash==b.hash && a.count==b.count);
+            item.pose.channel[ER_TORSO].yaw=35;
+            LOCAL_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&posed));
+            LOCAL_CHECK(a.hash!=posed.hash && a.count==posed.count);
+            failure.fail=1;
+            LOCAL_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&failure)<0);
+        }
+        item.type=TOY_GAME_ENEMY_PURSUIT_COMMON;
+        struct scene_enemy_test_geometry rejected={0};
+        LOCAL_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_enemy_test_triangle,&rejected)<0 && !rejected.count);
+        rf_gpu_scene_enemy_begin(73,4);
+        LOCAL_CHECK(rf_gpu_scene_enemy_freeze(NULL)<0);
+        LOCAL_CHECK(!rf_gpu_scene_enemy_freeze(&frozen));
+        LOCAL_CHECK(frozen.frame_id==73 && frozen.world_generation==4 && !frozen.count);
+        saved_enemy=frozen;
+        LOCAL_CHECK(rf_gpu_scene_enemy_freeze(&frozen)<0 && !memcmp(&frozen,&saved_enemy,sizeof(frozen)));
+        rf_gpu_scene_enemy_begin(74,5);
+        LOCAL_CHECK(!rf_gpu_scene_enemy_freeze(&frozen) && frozen.frame_id==74 && !frozen.count);
+    }
+    {
+        struct rasterfall_model_asset mesh={0};
+        struct rasterfall_draw_instance instance={0};
+        struct rasterfall_draw_view view={0};
+        mesh.min_x=mesh.min_y=mesh.min_z=-2000;
+        mesh.max_x=mesh.max_y=mesh.max_z=2000;
+        instance.mesh=&mesh;instance.scale_milli=1000;
+        instance.yaw_cos_q10=1024;
+        view.camera=camera;view.width=1280;view.height=720;
+        view.near_z=64;view.focal=960;
+        /* A large near-crossing prop exceeds the old screen envelope,
+         * but hardware clipping can consume its safe vertex transform. */
+        LOCAL_CHECK(!rasterfall_render_scene_static_prop_eligible(&view,&instance,1));
+        LOCAL_CHECK(rasterfall_render_scene_static_prop_eligible(&view,&instance,0));
+        instance.z=10000;
+        LOCAL_CHECK(rasterfall_render_scene_static_prop_eligible(&view,&instance,1));
+        LOCAL_CHECK(rasterfall_render_scene_static_prop_eligible(&view,&instance,0));
+        instance.x=3000000;
+        LOCAL_CHECK(!rasterfall_render_scene_static_prop_eligible(&view,&instance,0));
+        instance.x=0;mesh.max_y=1000000;instance.scale_milli=8000;
+        LOCAL_CHECK(!rasterfall_render_scene_static_prop_eligible(&view,&instance,0));
+        mesh.max_y=2000;instance.scale_milli=1000;mesh.bone_count=1;
+        LOCAL_CHECK(!rasterfall_render_scene_static_prop_eligible(&view,&instance,0));
+    }
     toy_game_init(&source_game,1);
     id=toy_game_add_ai(&source_game,TOY_GAME_AI_LEVEL_1,120,240,"SCENE");
     LOCAL_CHECK(id>=0);

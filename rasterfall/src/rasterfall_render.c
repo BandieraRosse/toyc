@@ -21,6 +21,7 @@
 #include "rf_core_mixed_frame.h"
 #include "rf_gpu_raster_pack.h"
 #include "rf_gpu_scene_world.h"
+#include "rf_gpu_scene_enemy.h"
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
@@ -2093,13 +2094,14 @@ int rasterfall_render_scene_static_prop_visible(
 
 int rasterfall_render_scene_static_prop_eligible(
     const struct rasterfall_draw_view *view,
-    const struct rasterfall_draw_instance *instance)
+    const struct rasterfall_draw_instance *instance,int integer_depth)
 {
     const struct rasterfall_model_asset *model=instance ? instance->mesh : NULL;
     return model && !model->skinning_enabled && !model->bone_count &&
         !model->has_character_contract &&
         character_perceptual_model(model)==CHARACTER_PERCEPTUAL_NONE &&
-        static_prop_draw_numeric_eligible(view,instance);
+        (integer_depth==0 || integer_depth==1) &&
+        static_prop_draw_numeric_eligible(view,instance,integer_depth);
 }
 
 enum rasterfall_draw_reject rasterfall_render_scene_static_prop_resolve(
@@ -6699,6 +6701,11 @@ static int render_enemies(struct toy_renderer *renderer,
                           const struct camera *camera)
 {
     int pixels = 0;
+    if (scene_enemy_capture_active) {
+        scene_enemy_capture.vertex_lighting=active_world_light_v2 &&
+            !diagnostic_flat_planar && !diagnostic_constant_world;
+        if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
+    }
     int saved_scene = active_scene_light_override_q8;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         const struct toy_game_enemy *e = &game.enemies[i];
@@ -6718,7 +6725,11 @@ static int render_enemies(struct toy_renderer *renderer,
         center.z = e->z;
         world_to_view(camera, &center, &view);
         if (view.z > (visual_family != RASTERFALL_ENEMY_VISUAL_LEGACY ?
-                      56000 : ENEMY_RENDER_DISTANCE)) continue;
+                      56000 : ENEMY_RENDER_DISTANCE)) {
+            if (scene_enemy_capture_active) scene_enemy_capture.culled++;
+            continue;
+        }
+        unsigned scene_count_before=scene_enemy_capture.count;
         if (e->active == 2) {
             int style = effects.enemy_death_style[i];
             if (style == RASTERFALL_ENEMY_DEATH_STYLE_LEGACY ||
@@ -6816,6 +6827,8 @@ static int render_enemies(struct toy_renderer *renderer,
             pixels += render_block_enemy(renderer, camera, draw_enemy, scale, color);
         else
             pixels += render_round_enemy(renderer, camera, draw_enemy, scale, color);
+        if (scene_enemy_capture_active && scene_enemy_capture.count==scene_count_before)
+            scene_enemy_capture.deferred++;
         active_scene_light_override_q8 = saved_scene;
         active_enemy_lift = 0;
         active_enemy_dissolve = 0;

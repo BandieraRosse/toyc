@@ -2,6 +2,7 @@
 #define RF_GPU_SCENE_WORLD_GPU_H
 
 #include "rf_gpu_scene_world.h"
+#include "rf_gpu_scene_enemy.h"
 #include "rasterfall_camera.h"
 
 struct rf_gpu_resource_cache;
@@ -32,6 +33,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
     struct rf_gpu_graphics_batch_item *items,uint32_t capacity,uint32_t *count);
 
 struct rf_gpu_scene_world_gpu_probe {
+    struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
     struct rf_gpu_scene_actor_gpu *actor[TOY_GAME_MAX_ACTORS];
@@ -50,6 +52,7 @@ struct rf_gpu_scene_world_gpu_probe {
 };
 struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t draws, actor_draws, flag_draws, flag_text_draws;
+    uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
     uint32_t projectile_draws, pickup_model_draws, pickup_model_items;
     uint32_t pickup_procedural_draws, pickup_procedural_items;
     uint32_t pickup_procedural_deferred, covered_pixels;
@@ -66,6 +69,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     const struct rf_gpu_scene_flag_frame_v1 *flags,
     const struct rf_gpu_scene_projectile_frame_v1 *projectiles,
     const struct rf_gpu_scene_interactable_frame_v1 *interactables,
+    const struct rf_gpu_scene_enemy_frame_v1 *enemies,
     const struct toy_texture_view *model_texture,
     struct rf_gpu_scene_world_gpu_probe_stats *stats,const char *capture_path);
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe);

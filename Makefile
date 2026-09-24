@@ -914,7 +914,7 @@ $(BUILD)/rf_gpu_raster_pack_app.o: gpu/src/rf_gpu_raster_pack.c \
                                   include/toy_renderer.h | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -include tlibc_compat.h -c $< -o $@
 
-$(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h | $(BUILD)
+$(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1117,6 +1117,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
     $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
     $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
+    $(RASTERFALL_INC)/rf_gpu_scene_enemy.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \
     $(RASTERFALL_INC)/rasterfall_map_components.h \
                               $(RASTERFALL_INC)/rasterfall_render.h \
@@ -1841,6 +1842,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
     $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
     $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
+    $(RASTERFALL_INC)/rf_gpu_scene_enemy.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \
                                    $(RASTERFALL_INC)/rasterfall_render.h \
                                    $(RASTERFALL_INC)/toy_game.h \
@@ -2128,6 +2130,7 @@ export-qwen2-tokenizer:
 	        $(QWEN2_MODEL_DIR) $(QWEN2_MODEL_DIR)/tokenizer.bin
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
+$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

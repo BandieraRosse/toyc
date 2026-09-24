@@ -121,6 +121,12 @@ readback 或 CPU framebuffer copy，也没有 Raster bridge。
 半透明红色和绿色；中心像素检查 source-over 结果，透明绘制前后的深度必须相同。
 这是 Scene 离屏管线验证，地图平台和 air gate 尚未提交到透明 WORLD pass。
 
+首帧另有 `SCENE static-prop-clip=PASS`：同一大三角形分别验证恒深度全屏覆盖和穿越近裁剪面。
+输入超过整数兼容管线的保守屏幕范围；该管线必须拒绝，Scene 硬件裁剪必须保留可见像素。
+恒深度用例逐像素核对颜色和深度，近裁剪用例核对颜色、有效深度及中心覆盖。逻辑回归还拒绝
+不安全的整数变换和蒙皮模型。正常 `actor-standard`、`actor-rifleman` 镜头的静态实例暂缓项必须为零，
+次帧复用缓存；这些门槛由原生脚本检查，不代表完整 WORLD 画面合同已批准。
+
 固定专项在第 21 帧加入不被 draw 引用的额外 skin vertices，验证 backing 增长；第 41/61 帧调整原生窗口
 大小；第 81 帧在 submit 后 invalidate world 资源，检查 GPU 完成前仍有三份 pin、完成后才释放，再加载新
 generation。需要至少 82 帧覆盖完整生命周期，脚本使用 120 帧。pose 仍每次独立求值，CPU upload/pack backing
@@ -148,6 +154,15 @@ Campaign 正常帧审计另冻结 object 值，并将 boundary wall 和普通 `M
 本轮设备与结果见 [1B 现场记录](../archive/gpu-scene-native-20260923.md)。
 
 ### 冻结 actor 的 pose/附件数据回归
+
+动态特感身体专项使用 `tools/gpu_scene_enemies.ps1`。先完成 `windows/NativeCodex.ps1 package`，
+再串行运行专项；package 会替换资产目录，不能与正在运行的游戏或 GPU 验证重叠。
+`-ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin` 可启用已有本地 Khronos layer 与同步验证。
+脚本检查 `enemy-special 0` 的首帧与动作推进、`near 30` 的普通感染体显式暂缓，以及真实退出码、
+native present 和同帧 mixed BMP / Scene PPM，并调用 `tools/gpu_scene_enemy_pixels.py` 检查固定局部像素。
+像素检查器可单独接收已有输出目录重跑。`SCENE-ENEMY` 分别记录身体项、draw、暂缓与远距剔除。
+三个特感的身体进入 WORLD；阴影、舌头、死亡和普通感染体尚未覆盖，不能对完整画面要求逐像素相等。
+源码中的逻辑回归另检查三类刚性几何的确定性、pose 变化、失败传播和单帧冻结边界。
 
 更新 package 后，从 package root 运行 `rasterfall.exe --gpu-scene-pose-test`，或使用
 `powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-pose-test`。

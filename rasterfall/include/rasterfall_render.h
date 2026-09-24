@@ -79,11 +79,11 @@ struct rasterfall_model_setup_timing {
     long edge_triangles_us;
 };
 
-/* Resolve an immutable static RMESH primitive for Scene with the same
- * material and numeric policy used by the mixed static prop producer. */
+/* Scene shares mixed material policy. integer_depth additionally requires
+ * the integer rasterizer's screen envelope; hardware clipping does not. */
 int rasterfall_render_scene_static_prop_eligible(
     const struct rasterfall_draw_view *view,
-    const struct rasterfall_draw_instance *instance);
+    const struct rasterfall_draw_instance *instance,int integer_depth);
 int rasterfall_render_scene_static_prop_visible(
     const struct rasterfall_draw_view *view,
     const struct rasterfall_draw_instance *instance);

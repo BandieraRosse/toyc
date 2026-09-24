@@ -39,7 +39,8 @@ snapshot 不持有 Runtime Map 指针。当前 V2 world 值仍只有身份、位
 不透明网格的几何从该值帧提取，顶点光照仍查询当前 world-light 状态。独立 Scene world registry
 按 world/map、V2 light bake 代际、完整冻结绘制值、地面输入与 object 值持有十一类网格，同代复用 handle；变化时重建，
 已 pin 的旧代在帧退休后释放。静态 RMESH 按冻结 object 值和实例 V2 光照加载资产 profile，
-复用 mixed 的模型可见性、数值及材质判定，再由 Scene GPU cache 编码可见实例。
+复用 mixed 的模型可见性及材质判定，再由 Scene GPU cache 编码可见实例。数值预检区分整数兼容投影与
+硬件裁剪：超出旧屏幕范围的静态实例只有在顶点整数变换安全时才进入硬件裁剪管线，mixed 的数值门禁保持不变。
 独立正常帧审计已接 GPU cache 与离屏 Scene WORLD，
 正常呈现仍为 mixed；地图 LABEL 与透明项尚未接入 Scene。
 普通地图 `MODEL` 盒体的旧绘制使用独立 V1 诊断光照；Scene floor 值帧冻结该场，
@@ -55,6 +56,10 @@ body、被动装备及 AK 武器 pose 值接入各自独立的 Scene GPU 资源�
 交互物按 session 槽位冻结类型、武器、位置、效果实例高亮与 V2 光照；冻结时沿用 PLAYING、暂停和商店的旧显隐条件。七类拾取模型与按钮、药瓶、弹药盒程序几何从该值帧进入同一离屏 Scene WORLD；静态 GPU 资源跨帧复用，特殊按钮底座按来源槽位和高度复用。交互物模型的固定采样点与 mixed 一致；程序几何当前按实例中心光照和共享形体绘制，其视觉容差仍待阶段 0 基线审批。
 其余角色类别与正常呈现仍待接入。武器消费冻结的 RMESH 原始坐标到世界变换，不使用被动装备的
 position-scale 换算。
+
+动态特感身体的审计值由 `render/rasterfall_enemy_rig.inc` 在旧 producer 的姿态求值后冻结，
+Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 gameplay、observer 或时钟。
+来源、暂缓范围及诊断限制见[角色表现](character-presentation.md)。
 
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用

@@ -276,6 +276,112 @@ static struct vec3 enemy_rig_point(const struct enemy_rig_profile *p,
     enemy_rig_finalize(p,pose,&final);
     return enemy_rig_final_point(p,&final,channel,v);
 }
+static struct rf_gpu_scene_enemy_frame_v1 scene_enemy_capture;
+static int scene_enemy_capture_active;
+void rf_gpu_scene_enemy_begin(uint64_t frame_id,uint64_t world_generation)
+{
+    memset(&scene_enemy_capture,0,sizeof(scene_enemy_capture));
+    scene_enemy_capture.frame_id=frame_id;
+    scene_enemy_capture.world_generation=world_generation;
+    scene_enemy_capture_active=frame_id && world_generation;
+}
+int rf_gpu_scene_enemy_freeze(struct rf_gpu_scene_enemy_frame_v1 *out)
+{
+    if (!out || !scene_enemy_capture_active) return -1;
+    *out=scene_enemy_capture;scene_enemy_capture_active=0;
+    return 0;
+}
+static int enemy_rig_emit_triangle(rf_gpu_scene_enemy_triangle_fn emit,
+    void *context,const struct vec3 *a,const struct vec3 *b,const struct vec3 *c,
+    unsigned color)
+{
+    const struct rf_gpu_scene_enemy_point p[3]={
+        {a->x,a->y,a->z},{b->x,b->y,b->z},{c->x,c->y,c->z}};
+    return emit(context,&p[0],&p[1],&p[2],color);
+}
+static int enemy_rig_emit(const struct enemy_rig_profile *p,
+    const struct enemy_rig_final *final,const struct toy_game_enemy *e,
+    int squash,int lift,unsigned feedback,int silhouette,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    static const int ring[8][2]={{-3,-4},{3,-4},{4,-3},{4,3},
+        {3,4},{-3,4},{-4,3},{-4,-3}};
+    for (int i=0;i<p->count;i++) {
+        const struct enemy_rig_part *part=&p->parts[i];
+        struct vec3 v[16];
+        for (int j=0;j<16;j++) {
+            struct vec3 q={part->x+ring[j%8][0]*part->hx/4,
+                part->y+(j<8?-part->hy:part->hy),
+                part->z+ring[j%8][1]*part->hz/4};
+            q=enemy_rig_final_point(p,final,part->channel,q);
+            v[j].x=e->x+(e->dir_z*q.x+e->dir_x*q.z)/1024;
+            v[j].z=e->z+(-e->dir_x*q.x+e->dir_z*q.z)/1024;
+            v[j].y=-900+(q.y+900)*squash/1000+lift;
+        }
+        unsigned color=silhouette ? 0x111111 : feedback ? feedback : part->color;
+        for (int face=0;face<8;face++) {
+            int next=(face+1)%8;
+            /* Fixed world light, transformed face normal. No texture identity. */
+            struct vec3 u={v[face+8].x-v[face].x,v[face+8].y-v[face].y,v[face+8].z-v[face].z};
+            struct vec3 w={v[next].x-v[face].x,v[next].y-v[face].y,v[next].z-v[face].z};
+            long long nx=(long long)u.y*w.z-(long long)u.z*w.y;
+            long long ny=(long long)u.z*w.x-(long long)u.x*w.z;
+            long long nz=(long long)u.x*w.y-(long long)u.y*w.x;
+            int light=256, length=isqrt(nx*nx+ny*ny+nz*nz);
+            if (length>0) light=model_form_light_q8(nx*32767/length,ny*32767/length,nz*32767/length,0);
+            if (silhouette) light=256;
+            unsigned lit=((((color>>16)&255)*light/256)<<16)|
+                ((((color>>8)&255)*light/256)<<8)|((color&255)*light/256);
+            if (enemy_rig_emit_triangle(emit,context,&v[face],&v[face+8],&v[next+8],lit)<0) return -1;
+            if (enemy_rig_emit_triangle(emit,context,&v[face],&v[next+8],&v[next],lit)<0) return -1;
+        }
+        for (int j=1;j<7;j++) {
+            if (enemy_rig_emit_triangle(emit,context,&v[0],&v[j],&v[j+1],color)<0) return -1;
+            if (enemy_rig_emit_triangle(emit,context,&v[8],&v[j+9],&v[j+8],color)<0) return -1;
+        }
+    }
+    return 0;
+}
+int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    const struct enemy_rig_profile *p;
+    struct enemy_rig_final final;
+    struct toy_game_enemy e={0};
+    if (!item || !emit || item->source_slot>=TOY_GAME_MAX_ENEMIES ||
+        item->scene_light_q8<0 || item->scene_light_q8>384 ||
+        item->dir_x < -1024 || item->dir_x > 1024 ||
+        item->dir_z < -1024 || item->dir_z > 1024 ||
+        item->x < -1000000 || item->x > 1000000 ||
+        item->z < -1000000 || item->z > 1000000 ||
+        item->lift < -1000000 || item->lift > 1000000) return -1;
+    p=enemy_rig_profile(item->type);
+    if (!p) return -1;
+    for (int i=0;i<ER_COUNT;++i) {
+        const struct enemy_rig_transform *t=&item->pose.channel[i];
+        if (t->x < -10000 || t->x > 10000 || t->y < -10000 || t->y > 10000 ||
+            t->z < -10000 || t->z > 10000 || t->pitch < -3600 || t->pitch > 3600 ||
+            t->yaw < -3600 || t->yaw > 3600 || t->roll < -3600 || t->roll > 3600)
+            return -1;
+    }
+    enemy_rig_finalize(p,&item->pose,&final);
+    e.x=item->x;e.z=item->z;e.dir_x=item->dir_x;e.dir_z=item->dir_z;
+    return enemy_rig_emit(p,&final,&e,1000,item->lift,item->feedback,0,emit,context);
+}
+struct enemy_rig_draw_context {
+    struct toy_renderer *renderer;
+    const struct camera *camera;
+    int pixels;
+};
+static int enemy_rig_draw_triangle(void *context,const struct rf_gpu_scene_enemy_point *a,
+    const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    struct enemy_rig_draw_context *draw=context;
+    const struct vec3 v[3]={{a->x,a->y,a->z},{b->x,b->y,b->z},{c->x,c->y,c->z}};
+    int result=draw_world_triangle(draw->renderer,draw->camera,&v[0],&v[1],&v[2],color);
+    if (result<0) return -1;
+    draw->pixels+=result;return 0;
+}
 static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *camera,
     const struct toy_game_enemy *e,int scale,uint32_t feedback)
 {
@@ -283,8 +389,6 @@ static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *c
             RF_CORE_PRODUCER_ENEMY_RIGID_SPECIAL) < 0) return -1;
     /* An octagonal prism keeps broad low-poly planes but removes the hard
      * armor-box corner from flesh. Same primitive for every profile/part. */
-    static const int ring[8][2]={{-3,-4},{3,-4},{4,-3},{4,3},
-        {3,4},{-3,4},{-4,3},{-4,-3}};
     const struct enemy_rig_profile *p=enemy_rig_profile(e->type);
     struct enemy_rig_input in=enemy_rig_adapt(e);
     struct enemy_rig_pose pose;
@@ -302,40 +406,22 @@ static int render_enemy_rig(struct toy_renderer *renderer,const struct camera *c
     }
     /* Profile owns living dimensions, scale only carries legacy death squash. */
     int squash=e->active==2 && !active_enemy_transform ? scale:1000;
-    for (int i=0;i<p->count;i++) {
-        const struct enemy_rig_part *part=&p->parts[i];
-        struct vec3 v[16];
-        for (int j=0;j<16;j++) {
-            struct vec3 q={part->x+ring[j%8][0]*part->hx/4,
-                part->y+(j<8?-part->hy:part->hy),
-                part->z+ring[j%8][1]*part->hz/4};
-            q=enemy_rig_final_point(p,&final,part->channel,q);
-            v[j].x=e->x+(e->dir_z*q.x+e->dir_x*q.z)/1024;
-            v[j].z=e->z+(-e->dir_x*q.x+e->dir_z*q.z)/1024;
-            v[j].y=-900+(q.y+900)*squash/1000+active_enemy_lift;
-        }
-        unsigned color=enemy_rig_silhouette ? 0x111111 : feedback ? feedback : part->color;
-        for (int face=0;face<8;face++) {
-            int next=(face+1)%8;
-            /* Fixed world light, transformed face normal. No texture identity. */
-            struct vec3 u={v[face+8].x-v[face].x,v[face+8].y-v[face].y,v[face+8].z-v[face].z};
-            struct vec3 w={v[next].x-v[face].x,v[next].y-v[face].y,v[next].z-v[face].z};
-            long long nx=(long long)u.y*w.z-(long long)u.z*w.y;
-            long long ny=(long long)u.z*w.x-(long long)u.x*w.z;
-            long long nz=(long long)u.x*w.y-(long long)u.y*w.x;
-            int light=256, length=isqrt(nx*nx+ny*ny+nz*nz);
-            if (length>0) light=model_form_light_q8(nx*32767/length,ny*32767/length,nz*32767/length,0);
-            if (enemy_rig_silhouette) light=256;
-            unsigned lit=((((color>>16)&255)*light/256)<<16)|
-                ((((color>>8)&255)*light/256)<<8)|((color&255)*light/256);
-            pixels+=draw_world_triangle(renderer,camera,&v[face],&v[face+8],&v[next+8],lit);
-            pixels+=draw_world_triangle(renderer,camera,&v[face],&v[next+8],&v[next],lit);
-        }
-        for (int j=1;j<7;j++) {
-            pixels+=draw_world_triangle(renderer,camera,&v[0],&v[j],&v[j+1],color);
-            pixels+=draw_world_triangle(renderer,camera,&v[8],&v[j+9],&v[j+8],color);
-        }
+    if (scene_enemy_capture_active && e->active==1 &&
+        enemy_rig_slot>=0 && !active_enemy_transform && !active_enemy_dissolve &&
+        active_enemy_alpha==255 && !enemy_rig_silhouette) {
+        if (scene_enemy_capture.count>=TOY_GAME_MAX_ENEMIES) return -1;
+        struct rf_gpu_scene_enemy_item_v1 *item=
+            &scene_enemy_capture.items[scene_enemy_capture.count++];
+        item->source_slot=(unsigned)enemy_rig_slot;item->type=e->type;
+        item->x=e->x;item->z=e->z;item->dir_x=e->dir_x;item->dir_z=e->dir_z;
+        item->lift=active_enemy_lift;item->feedback=feedback;item->pose=pose;
+        item->scene_light_q8=active_scene_light_override_q8>=0 ?
+            active_scene_light_override_q8 : 256;
     }
+    struct enemy_rig_draw_context draw={renderer,camera,0};
+    if (enemy_rig_emit(p,&final,e,squash,active_enemy_lift,feedback,
+            enemy_rig_silhouette,enemy_rig_draw_triangle,&draw)<0) return -1;
+    pixels=draw.pixels;
     enemy_rig_submissions++;
     return pixels;
 }

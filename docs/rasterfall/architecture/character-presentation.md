@@ -54,6 +54,14 @@ truth adapter、pose 和 generic renderer 均属于 renderer presentation。玩�
 具体家族比例、特殊敌人适配、预算和扩展流程由 [Enemy Visual](../reference/enemy-visuals.md) 拥有。死亡飞起、渐隐、
 fragment/dust 和 knockback trail 是 presentation-only；slot 清空后仍可短时存活，但不得替代 enemy 真值。
 
+正常帧审计通过 `rf_gpu_scene_enemy_begin` 开启单帧收集；mixed 的特感 producer 在求值后按值保存
+Smoker、Charger、Tank 的存活身体 pose、受击后的世界位置、朝向、lift、反馈颜色与实际光照模式。
+`rf_gpu_scene_enemy_freeze` 结束收集并输出只读值帧。每帧 begin 都清空旧内容，即使本帧没有 WORLD；
+提取不再推进 observer 或读取时钟。source slot 只作帧内顺序，不作为跨帧生命周期身份。
+`rf_gpu_scene_enemy_triangles` 与旧 renderer 共用刚性几何枚举，只有冻结值进入 Scene 资源预备。
+不支持的身体和远距剔除分别计数；身体计数不包括 blob shadow、舌头或其他附属表现。
+这条审计链仍依赖 mixed 完成姿态求值；独立正常 Scene 来源及其生命周期身份尚未接入。
+
 ## Rigid attachment 与 static prop
 
 rigid attachment 的求值链为 `actor/world × finalized socket × mount correction × authored local`。完整

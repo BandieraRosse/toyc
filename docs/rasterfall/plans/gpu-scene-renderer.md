@@ -8,6 +8,16 @@
 >
 > 当前切片：1B 三件套、backing 和时间戳已落地；真实 Runtime Map 十一类生成网格、可见静态 RMESH、八名正式模块化队员的 body/被动装备/武器、活动旗帜几何与双面字形、动态投射物，以及全部 45 个 Campaign 交互物已由正常帧审计的独立 Scene target 绘制；正常帧呈现仍走 mixed
 
+阶段 2 补充：静态 RMESH 超出旧整数光栅屏幕范围时，已按安全的整数顶点变换选择 Scene 硬件裁剪，
+`actor-standard` / `actor-rifleman` 的 8 / 4 项数值暂缓清零；近裁剪专项证明可见覆盖。
+`actor-standard` 新增提交未改变固定 Scene 截图，不作为修复可见缺物或性能收益的证据。
+验证记录见[静态实例裁剪现场](../archive/gpu-scene-static-prop-clipping-20260924.md)。
+动态特感切片已将 Smoker、Charger、Tank 的存活身体从同帧 finalized pose 接入独立 Scene WORLD；
+普通感染体、死亡表现、blob shadow、Smoker 舌头及其余角色类别仍待接入。
+这条诊断依赖 mixed producer 冻结姿态，动态资源按同步审计帧重建，不能作为正常 Scene producer 或性能收益。
+验证与范围见[动态特感身体现场](../archive/gpu-scene-special-enemies-20260924.md)。
+WORLD 固定画面合同和阶段 0 门禁仍待补齐。
+
 本计划取代[旧 GPU Raster / Bridge 收敛计划](../archive/gpu-raster-bridge-20260923.md)。现行所有权和实现以
 [渲染架构](../architecture/rendering-architecture.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)
 及源码为准；本文描述目标状态和迁移顺序，不能当作已实现能力。验收工作流由

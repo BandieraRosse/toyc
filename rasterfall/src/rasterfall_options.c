@@ -98,7 +98,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -309,6 +309,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"map-sign") &&
                  strcmp(o->gpu_normal_view,"model-legacy") &&
                  strcmp(o->gpu_normal_view,"model-special") &&
+                   strcmp(o->gpu_normal_view,"enemy-special") &&
                  strcmp(o->gpu_normal_view,"model-infected") &&
                  strcmp(o->gpu_normal_view,"actor-rifleman") &&
                  strcmp(o->gpu_normal_view,"actor-standard") &&

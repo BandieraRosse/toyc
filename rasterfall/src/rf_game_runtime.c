@@ -1,6 +1,7 @@
 #include "rasterfall_enemy_visual.h"
 #include "tlibc_everything.h"
 #include "rf_gpu_scene_pose.h"
+#include "rf_gpu_scene_enemy.h"
 #include "rf_gpu_scene_world.h"
 #include "rasterfall_world_content.h"
 #include <limits.h>
@@ -3635,6 +3636,16 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->dir_z = -1024;
         }
         game.state = TOY_GAME_PLAYING;
+        if (!strcmp(options.gpu_normal_view,"enemy-special")) {
+            for (int slot=0;slot<3;++slot) {
+                struct toy_game_enemy *e=&game.enemies[slot];
+                memset(e,0,sizeof(*e));e->active=1;e->hp=10000;
+                e->type=slot==0 ? TOY_GAME_ENEMY_SMOKER :
+                    slot==1 ? TOY_GAME_ENEMY_CHARGER : TOY_GAME_ENEMY_TANK;
+                e->x=(slot-1)*1600;e->z=500;e->dir_z=-1024;
+                if (slot) { e->charge_active=1;e->ability.charge_elapsed_ms=200; }
+            }
+        }
         if (!strcmp(options.gpu_normal_view,"projectile")) {
             const int kinds[3]={TOY_GAME_WEAPON_BOMB,TOY_GAME_WEAPON_BOMB,
                 TOY_GAME_WEAPON_MOLOTOV};
@@ -4432,6 +4443,9 @@ startup_again:
         }
         prev_begin = t_frame;
         t_stage = t_frame;
+        if (options.frame_audit && net.mode!=RASTERFALL_NET_CLIENT)
+            rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
+                session.scene_local.world_generation);
         ready = rf_core_begin_frame(&core, 0x151922);
         surface = *rf_core_surface(&core);
         if (ready < 0) break;
@@ -4642,6 +4656,7 @@ startup_again:
                 struct rf_gpu_scene_flag_frame_v1 flag_render;
                 struct rf_gpu_scene_projectile_frame_v1 projectile_render;
                 struct rf_gpu_scene_interactable_frame_v1 interactable_render;
+                static struct rf_gpu_scene_enemy_frame_v1 enemy_render;
                 uint32_t world_count=0;
                 uint32_t map_primitives=0,map_resources=0;
                 if ((session.map_ops.runtime_loaded &&
@@ -4658,6 +4673,7 @@ startup_again:
                             &game_runtime.render_context.world_lighting,
                             session.scene_local.frame_id+1,session.scene_local.world_generation,
                             &prop_render)<0) ||
+                    rf_gpu_scene_enemy_freeze(&enemy_render)<0 ||
                     rf_gpu_scene_flag_freeze(&session,
                         session.scene_local.frame_id+1,session.scene_local.world_generation,
                         &flag_render)<0 ||
@@ -4745,7 +4761,7 @@ startup_again:
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
                             (uint32_t)renderer.surface.height,actor_pose,
                             source_frame.snapshot.actor_count,&flag_render,
-                            &projectile_render,&interactable_render,
+                            &projectile_render,&interactable_render,&enemy_render,
                             &model_texture_view,&probe_stats,
                             options.gpu_frame_capture &&
                             rendered_frames==options.gpu_capture_frame ?
@@ -4754,6 +4770,10 @@ startup_again:
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
                         return 1;
                     }
+                    __printf("SCENE-ENEMY frame=%llu items=%u draws=%u deferred=%u culled=%u\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        probe_stats.enemy_items,probe_stats.enemy_draws,
+                        probe_stats.enemy_deferred,probe_stats.enemy_culled);
                     __printf("SCENE-WORLD-GPU frame=%llu draws=%u actor_draws=%u flag_draws=%u flag_text_draws=%u projectile_draws=%u pickup_model_draws=%u pickup_model_items=%u pickup_procedural_draws=%u pickup_procedural_items=%u pickup_procedural_deferred=%u covered=%u uploads=%llu hits=%llu prop_assets=%u prop_draws=%u prop_culled=%u prop_deferred=%u prop_numeric=%u prop_material=%u prop_transparent=%u diagnostic_readback=1\n",
                         (unsigned long long)source_frame.snapshot.frame_id,
                         probe_stats.draws,probe_stats.actor_draws,probe_stats.flag_draws,

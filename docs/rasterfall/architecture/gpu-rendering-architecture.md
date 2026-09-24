@@ -123,7 +123,10 @@ SIGN 的牌柱、牌面及双面 bitmap 字形从同一 render 值生成第八�
 采样冻结 V1 光照。style 3–5 的特殊感染体从旧 rig 目录求静态姿态、世界变换及面光照，
 生成第十类网格并逐三角形采样冻结 V1 光照；style 7–8、10–11、13–14 的六种导入感染体展示模型复用旧 idle rig 姿态、CPU skinning 和材质，生成第十一类网格并烘焙逐三角形冻结 V1 光照。
 生成网格的离屏 Scene draw 使用读取顶点光照的 graphics 管线；静态 RMESH 保留
-整数深度兼容管线。片元顶点光照上限为 384，与旧 Raster 的范围一致。
+整数深度兼容管线；仅超出该管线保守屏幕投影范围、但整数顶点变换仍安全的实例使用 Scene 硬件裁剪管线。
+两类实例在同一 WORLD color/depth 中提交，沿用相同材质、光照、资源 pin 和缓存；不转回 RasterCmd。
+硬件裁剪分支仍检查旋转、缩放及 camera 变换的 int32 运算范围，不能把数值溢出当作可裁剪几何。
+片元顶点光照上限为 384，与旧 Raster 的范围一致。
 独立 Scene world registry 持有 generation handle，按 world/map、V2 light generation、
 冻结的完整绘制值、地面与 object 输入复用网格，
 并延迟释放已 pin 的旧代。独立 native fixture 在三件套
@@ -140,6 +143,11 @@ session 旗帜的 active、位置、颜色、当前选中状态与短标签按�
 bomb/molotov 各复用一份 RMESH GPU 资源和模型纹理，闪烁时使用材质纯色，实例变换在 draw 中求值。
 其 WORLD opaque draw 与旗帜、地图和角色共用 Scene color/depth；普通帧没有投射物时不加载这两份资源。
 session 交互物按来源槽位冻结 kind、weapon、位置、效果高亮及 V2 光照，并在 PLAYING、非暂停、非商店状态下可见。Scene 将七类拾取模型按 primitive 使用常驻 GPU 资源绘制；按钮、药瓶、弹药盒使用共享形体，特殊按钮底座按来源槽位及高度缓存。两类交互物与其余 WORLD opaque 共用目标深度；程序形体仍需固定视觉基线审批。
+特感存活身体由同帧 producer 冻结 finalized pose、变换、反馈与光照输入，独立预备从这些值生成
+Smoker、Charger、Tank 的刚性网格，和地图、角色共用 Scene WORLD color/depth。
+几何枚举与 mixed 共用，连续同色三角形合并 draw，保留原始提交顺序；冻结时若采用 V2 顶点光照，
+则在复制的 light field 中采样，否则使用冻结的实例光照。diagnostic owner 持有动态资源直到同步提交完成，
+下帧预备重建，失败时由 owner teardown 回收。这不是正常帧的资源复用或性能方案。
 owner 跨审计帧复用，registry frame pin 在诊断
 提交完成后退休，cache 随 generation collect。该诊断不替换 Core mixed executor 的正常提交；
 读回耗时也不在此前记录的 `FRAME-AUDIT whole_loop_ms` 内。
