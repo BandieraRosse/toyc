@@ -13,10 +13,17 @@
 `actor-standard` 新增提交未改变固定 Scene 截图，不作为修复可见缺物或性能收益的证据。
 验证记录见[静态实例裁剪现场](../archive/gpu-scene-static-prop-clipping-20260924.md)。
 动态特感切片已将 Smoker、Charger、Tank 的存活身体从同帧 finalized pose 接入独立 Scene WORLD；
-普通感染体、死亡表现、blob shadow、Smoker 舌头及其余角色类别仍待接入。
+普通感染体六种 Block/Humanoid recipe 的存活身体也已接入，冻结家族、步态、变换与反馈颜色后独立提取。
+死亡表现、blob shadow、Smoker 舌头及其余角色类别仍待接入。
 这条诊断依赖 mixed producer 冻结姿态，动态资源按同步审计帧重建，不能作为正常 Scene producer 或性能收益。
 验证与范围见[动态特感身体现场](../archive/gpu-scene-special-enemies-20260924.md)。
+普通感染体资源、RTX 3050 同步验证及局部像素记录见[普通感染体现场](../archive/gpu-scene-ordinary-enemies-20260924.md)。
 WORLD 固定画面合同和阶段 0 门禁仍待补齐。
+
+后续顺序：先接程序角色，再由网络来源 adapter 复用角色表现。网络 adapter 冻结已解析的展示位置、
+朝向和 actor 状态，不把输入包交给 Scene；固定输入验证先行，host/guest 实机接线验证随后进行。
+网络角色只延后开发顺序，不从完整 WORLD 合同中删除。Smoker 舌头保留现有连接带和束缚圈的最小等价表现，
+不在渲染迁移中删除束缚玩法或其可见提示。完成 WORLD 后集中推进独立来源和完整帧。
 
 本计划取代[旧 GPU Raster / Bridge 收敛计划](../archive/gpu-raster-bridge-20260923.md)。现行所有权和实现以
 [渲染架构](../architecture/rendering-architecture.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)

@@ -155,14 +155,16 @@ Campaign 正常帧审计另冻结 object 值，并将 boundary wall 和普通 `M
 
 ### 冻结 actor 的 pose/附件数据回归
 
-动态特感身体专项使用 `tools/gpu_scene_enemies.ps1`。先完成 `windows/NativeCodex.ps1 package`，
+动态敌人身体专项使用 `tools/gpu_scene_enemies.ps1`。先完成 `windows/NativeCodex.ps1 package`，
 再串行运行专项；package 会替换资产目录，不能与正在运行的游戏或 GPU 验证重叠。
 `-ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin` 可启用已有本地 Khronos layer 与同步验证。
-脚本检查 `enemy-special 0` 的首帧与动作推进、`near 30` 的普通感染体显式暂缓，以及真实退出码、
+脚本检查 `enemy-special 0` 的首帧与动作推进，以及 `near 30` 的 AUTO、Block、Humanoid 存活身体与两帧动作推进、真实退出码、
 native present 和同帧 mixed BMP / Scene PPM，并调用 `tools/gpu_scene_enemy_pixels.py` 检查固定局部像素。
 像素检查器可单独接收已有输出目录重跑。`SCENE-ENEMY` 分别记录身体项、draw、暂缓与远距剔除。
-三个特感的身体进入 WORLD；阴影、舌头、死亡和普通感染体尚未覆盖，不能对完整画面要求逐像素相等。
+三个特感和六种普通感染体的存活身体进入 WORLD；阴影、舌头、死亡和显式 LEGACY 尚未覆盖，不能对完整画面要求逐像素相等。
 源码中的逻辑回归另检查三类刚性几何的确定性、pose 变化、失败传播和单帧冻结边界。
+`--gpu-scene-pose-test` 另检查六种感染体资源、步态变化、冻结重放、旧 scratch pose 隔离与失败传播。
+普通感染体每帧仍有诊断资源重建和读回，因此专项只取两帧，不用于 whole-loop 性能或长时运行结论。
 
 更新 package 后，从 package root 运行 `rasterfall.exe --gpu-scene-pose-test`，或使用
 `powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-pose-test`。

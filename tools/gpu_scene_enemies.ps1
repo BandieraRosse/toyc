@@ -27,7 +27,10 @@ try {
     }
     foreach ($Run in @(@('special-first','enemy-special',0,2,1),
                        @('special-motion','enemy-special',0,12,12),
-                       @('ordinary-deferred','near',30,2,1))) {
+                       @('ordinary-first','near',30,2,1),
+                       @('ordinary-motion','near',30,2,2),
+                       @('ordinary-block','near',30,2,1,'block-infected'),
+                       @('ordinary-humanoid','near',30,2,1,'humanoid-infected'))) {
         if (Get-Process rasterfall -ErrorAction SilentlyContinue | Where-Object { -not $_.HasExited }) {
             throw 'Rasterfall is already running'
         }
@@ -36,6 +39,7 @@ try {
             '--gpu-normal-scene',$Run[1],$Run[2],'--gpu-normal-fixed-tick',
             '--frame-audit','--frames',$Run[3],'--gpu-frame-capture',$Capture,
             '--gpu-capture-frame',$Run[4])
+        if ($Run.Count -gt 5) { $Argv+=@('--enemy-visual-family',$Run[5]) }
         $Quoted=($Argv | ForEach-Object {'"'+$_+'"'}) -join ' '
         $p=Start-Process -FilePath "$Package/rasterfall.exe" -WorkingDirectory $Package `
             -ArgumentList $Quoted -WindowStyle Hidden -PassThru `
@@ -52,8 +56,9 @@ try {
             if ($Run[1] -eq 'enemy-special') {
                 if ($Sample.Groups[2].Value -ne '3' -or [int]$Sample.Groups[3].Value -le 0 -or
                     $Sample.Groups[4].Value -ne '0') { throw "$Name missing special bodies" }
-            } elseif ($Sample.Groups[2].Value -ne '0' -or $Sample.Groups[4].Value -ne '30') {
-                throw "$Name missing explicit ordinary enemy deferral"
+            } elseif ($Sample.Groups[2].Value -ne '30' -or
+                [int]$Sample.Groups[3].Value -le 0 -or $Sample.Groups[4].Value -ne '0') {
+                throw "$Name missing ordinary enemy bodies"
             }
         }
         if (-not (Test-Path -LiteralPath $Capture) -or

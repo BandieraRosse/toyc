@@ -62,6 +62,12 @@ Smoker、Charger、Tank 的存活身体 pose、受击后的世界位置、朝向
 不支持的身体和远距剔除分别计数；身体计数不包括 blob shadow、舌头或其他附属表现。
 这条审计链仍依赖 mixed 完成姿态求值；独立正常 Scene 来源及其生命周期身份尚未接入。
 
+普通感染体在同一值帧冻结六种 recipe ID、已采样 swing、bind 标志、变换与反馈颜色；
+Scene 复用不可变资源，以独立 scratch instance 重建姿态和 CPU skinning 几何，不读取或推进旧 motion cache，
+也不复用旧 producer 的 mutable pose。颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
+非 V2 路径保留材质亮度范围。存活身体与特感共用 Scene WORLD 深度；死亡与显式 LEGACY 仍计为暂缓。
+该接线仍是同步离屏审计，动态 GPU 资源逐帧重建，不能作为正常 producer 或性能收益证据。
+
 ## Rigid attachment 与 static prop
 
 rigid attachment 的求值链为 `actor/world × finalized socket × mount correction × authored local`。完整

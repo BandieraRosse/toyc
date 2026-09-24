@@ -121,18 +121,9 @@ static void enemy_visual_apply_pose(struct rasterfall_model_asset *pose,
         swing>0 ? swing : 0,0,0);
 }
 
-static int render_infected_enemy(struct toy_renderer *renderer,
-    const struct camera *camera, const struct toy_game_enemy *enemy,
-    const struct toy_game_enemy *source, int slot, int death_scale,
-    uint32_t feedback, int family)
+static int enemy_visual_load(int index)
 {
-    int index, moving = 0, phase, swing, scale, pixels;
-    struct rasterfall_model_instance *instance;
-    struct rasterfall_model_asset *pose;
-    for (index = 0; index < 6; index++)
-        if (enemy_visual_recipes[index].family == family &&
-            enemy_visual_recipes[index].type == enemy->type) break;
-    if (index == 6) return -1;
+    if (index<0 || index>=6) return -1;
     if (!enemy_visual_cache[index].status) {
         enemy_visual_cache[index].status = -1;
         if (rasterfall_model_resource_load(&enemy_visual_cache[index].resource,
@@ -146,7 +137,22 @@ static int render_infected_enemy(struct toy_renderer *renderer,
             __fprintf(2, "enemy visual: asset failed; legacy fallback: %s\n",
                       enemy_visual_recipes[index].path);
     }
-    if (enemy_visual_cache[index].status < 0) { enemy_visual_failures++; return -1; }
+    return enemy_visual_cache[index].status==1 ? 0 : -1;
+}
+
+static int render_infected_enemy(struct toy_renderer *renderer,
+    const struct camera *camera, const struct toy_game_enemy *enemy,
+    const struct toy_game_enemy *source, int slot, int death_scale,
+    uint32_t feedback, int family)
+{
+    int index, moving = 0, phase, swing, scale, pixels;
+    struct rasterfall_model_instance *instance;
+    struct rasterfall_model_asset *pose;
+    for (index = 0; index < 6; index++)
+        if (enemy_visual_recipes[index].family == family &&
+            enemy_visual_recipes[index].type == enemy->type) break;
+    if (index == 6) return -1;
+    if (enemy_visual_load(index)<0) { enemy_visual_failures++; return -1; }
     instance = &enemy_visual_cache[index].instance;
     if (rasterfall_model_instance_reset_pose(instance) < 0) return -1;
     pose = rasterfall_model_instance_pose(instance);
@@ -187,6 +193,21 @@ static int render_infected_enemy(struct toy_renderer *renderer,
     if (enemy_visual_capture_pose != 0)
         enemy_visual_apply_pose(pose,enemy->type,swing);
     if (rasterfall_model_instance_update_bones(instance) < 0) return -1;
+    if (scene_enemy_capture_active && slot>=0 && source->active==1 &&
+        !active_enemy_transform && !active_enemy_dissolve && active_enemy_alpha==255) {
+        struct rf_gpu_scene_enemy_item_v1 *item;
+        if (scene_enemy_capture.count>=TOY_GAME_MAX_ENEMIES) return -1;
+        item=&scene_enemy_capture.items[scene_enemy_capture.count++];
+        item->source_slot=(unsigned)slot;item->type=enemy->type;
+        item->x=enemy->x;item->z=enemy->z;
+        item->dir_x=enemy->dir_x;item->dir_z=enemy->dir_z;
+        if (!item->dir_x && !item->dir_z) item->dir_z=1024;
+        item->lift=active_enemy_lift;item->feedback=feedback;
+        item->scene_light_q8=active_scene_light_override_q8>=0 ?
+            active_scene_light_override_q8 : 256;
+        item->infected_recipe=index+1;item->infected_swing=swing;
+        item->infected_bind=enemy_visual_capture_pose==0;
+    }
     /* Authored meters -> RFU. Heavy size is authored, never doubled by the
      * legacy 1350 multiplier. Legacy deaths retain vertical collapse only. */
     scale = 512000 / pose->position_scale;
@@ -205,6 +226,83 @@ static int render_infected_enemy(struct toy_renderer *renderer,
     active_infected_tint = 0;
     enemy_visual_submissions++;
     return pixels;
+}
+
+/* Independent scratch instance: replay cannot advance motion history or mutate
+ * the mixed producer's pose. Immutable resources are shared with the catalog. */
+static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context)
+{
+    struct rasterfall_model_instance instance={0};
+    struct rasterfall_model_asset *pose;
+    int recipe=item->infected_recipe-1,scale,result=-1;
+    if (recipe<0 || recipe>=6 || enemy_visual_recipes[recipe].type!=item->type ||
+        item->infected_swing < -24 || item->infected_swing > 24 ||
+        (item->infected_bind!=0 && item->infected_bind!=1)) return -1;
+    if (enemy_visual_load(recipe)<0 ||
+        rasterfall_model_instance_init(&instance,&enemy_visual_cache[recipe].resource)<0)
+        return -1;
+    if (rasterfall_model_instance_reset_pose(&instance)<0) goto done;
+    pose=rasterfall_model_instance_pose(&instance);
+    if (!pose || !pose->has_character_contract || !pose->position_scale ||
+        !pose->skinning_enabled || !pose->bone_count || pose->format_version<9 ||
+        pose->material_bytes<40 || pose->index_count/3>RF_GPU_SCENE_ENEMY_MAX_TRIANGLES)
+        goto done;
+    if (!item->infected_bind) enemy_visual_apply_pose(pose,item->type,item->infected_swing);
+    if (rasterfall_model_instance_update_bones(&instance)<0) goto done;
+    scale=512000/pose->position_scale;
+    if (scale<1 || scale>8000) goto done;
+    for (uint32_t primitive=0;primitive<pose->primitive_count;++primitive) {
+        const unsigned char *record=pose->primitives+primitive*16;
+        uint32_t first=model_u32(record),count=model_u32(record+4),id=model_u32(record+8);
+        const unsigned char *material;
+        struct rasterfall_character_render_policy policy;
+        unsigned color;
+        if (id>=pose->material_count || first>pose->index_count ||
+            count>pose->index_count-first || count%3) goto done;
+        material=pose->materials+id*pose->material_bytes;
+        if (material[4]!=255 || material[6] || (material[7]&~1u) ||
+            model_u32(material+8)!=UINT_MAX || model_u32(material+12) ||
+            model_u32(material+16) || model_u32(material+20) ||
+            model_u32(material+24) || model_u32(material+28) || model_u32(material+32))
+            goto done;
+        policy=character_render_policy(authored_visual_class(pose,id));
+        color=item->feedback ? item->feedback : model_u32(material)&0xffffffu;
+        for (uint32_t index=first;index<first+count;index+=3) {
+            struct rf_gpu_scene_enemy_point q[3]={{0}};
+            int nx=0,ny=0,nz=0,form;
+            unsigned shaded=color;
+            for (int k=0;k<3;++k) {
+                uint32_t vertex=model_u32(pose->indices+(index+k)*4);
+                int p[3],n[3],rx,rz;
+                if (vertex>=pose->vertex_count ||
+                    rasterfall_model_instance_skin_vertex(&instance,vertex,p,n)<0) goto done;
+                rx=(int)(((long long)p[0]*item->dir_z+(long long)p[2]*item->dir_x)/1024);
+                rz=(int)(((long long)p[2]*item->dir_z-(long long)p[0]*item->dir_x)/1024);
+                q[k].x=item->x+(int)((long long)rx*scale/1000);
+                q[k].y=-900+item->lift+(int)((long long)(p[1]-pose->min_y)*scale/1000);
+                q[k].z=item->z+(int)((long long)rz*scale/1000);
+                nx+=(short)(((long long)n[0]*item->dir_z+(long long)n[2]*item->dir_x)/1024);
+                ny+=n[1];
+                nz+=(short)(((long long)n[2]*item->dir_z-(long long)n[0]*item->dir_x)/1024);
+            }
+            form=model_form_light_q8(nx/3,ny/3,nz/3,1);
+            if (!policy.lighting_min_q8)
+                shaded=((((color>>16)&255u)*form/256u)<<16) |
+                    ((((color>>8)&255u)*form/256u)<<8) | ((color&255u)*form/256u);
+            for (int k=0;k<3;++k) {
+                q[k].form_light_q8=form;
+                q[k].light_min_q8=policy.lighting_min_q8;
+                q[k].light_max_q8=policy.lighting_max_q8;
+                q[k].double_sided=material[7]&1u;
+            }
+            if (emit(context,&q[0],&q[1],&q[2],shaded)<0) goto done;
+        }
+    }
+    result=0;
+done:
+    rasterfall_model_instance_unload(&instance);
+    return result;
 }
 
 static int render_infected_display_model(struct toy_renderer *renderer,

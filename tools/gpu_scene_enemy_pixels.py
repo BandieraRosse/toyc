@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import struct
 import sys
+from gpu_scene_diff import read, png
 
 
 def check(directory):
@@ -36,9 +37,36 @@ def check(directory):
                 raise ValueError(f"{name} ({x},{y}): mixed={mixed}, scene={scene}, expected={rgb}")
             rows.append({"x": x, "y": y, "rgb": rgb})
         result[name] = rows
+    ordinary_points = [(40, 260), (800, 280), (1000, 300), (800, 490),
+                       (370, 310), (120, 460), (240, 530)]
+    ordinary_expected = {
+        "ordinary-first": [(103, 115, 98), (103, 115, 98), (127, 142, 120),
+                           (77, 93, 91), (137, 37, 37), (120, 60, 53), (131, 146, 124)],
+        "ordinary-motion": [(103, 115, 98), (103, 115, 98), (127, 142, 120),
+                            (77, 93, 91), (137, 37, 37), (120, 60, 53), (131, 146, 124)],
+        "ordinary-block": [(103, 115, 98), (103, 115, 98), (103, 115, 98),
+                           (77, 93, 91), (134, 36, 36), (120, 60, 53), (131, 146, 124)],
+        "ordinary-humanoid": [(127, 142, 120), (127, 142, 120), (127, 142, 120),
+                              (69, 83, 81), (137, 37, 37), (120, 60, 53), (97, 117, 114)],
+    }
+    for name, colors in ordinary_expected.items():
+        w, h, mixed = read(directory / (name + ".bmp"))
+        sw, sh, scene = read(directory / (name + ".bmp.scene.ppm"))
+        if (w, h, sw, sh) != (1280, 720, 1280, 720):
+            raise ValueError(f"{name}: unexpected extent")
+        rows = []
+        for (x, y), expected_rgb in zip(ordinary_points, colors):
+            at = (y*w+x)*3
+            a, b = tuple(mixed[at:at+3]), tuple(scene[at:at+3])
+            if a != expected_rgb or b != a:
+                raise ValueError(f"{name} ({x},{y}): mixed={a}, scene={b}, expected={expected_rgb}")
+            rows.append({"x": x, "y": y, "rgb": a})
+        result[name] = rows
+        png(directory / (name + "-mixed.png"), w, h, mixed)
+        png(directory / (name + "-scene.png"), w, h, scene)
     (directory / "pixels.json").write_text(
         json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print("SCENE-ENEMY pixels: PASS 14 fixed samples; incomplete WORLD composite")
+    print("SCENE-ENEMY pixels: PASS 42 fixed samples; incomplete WORLD composite")
 
 
 if __name__ == "__main__":

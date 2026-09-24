@@ -60,6 +60,8 @@ position-scale 换算。
 动态特感身体的审计值由 `render/rasterfall_enemy_rig.inc` 在旧 producer 的姿态求值后冻结，
 Scene 只消费这些值生成刚性网格；共享几何枚举不再读取 gameplay、observer 或时钟。
 来源、暂缓范围及诊断限制见[角色表现](character-presentation.md)。
+普通感染体在同一值帧冻结 recipe 与已采样步态，独立 instance 提取身体几何；
+材质双面标志与光照参数随三角形进入同一 WORLD 深度域。独立正常来源与动态资源复用仍待接入。
 
 `rasterfall_render_bind()` 是既有串行 presentation context，只向旧 helper 提供 session/effects/net、
 纹理和 world light；它不拥有 window、surface、present 或 Core 资源。并行模型录制优先使用

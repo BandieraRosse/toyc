@@ -1,3 +1,23 @@
+struct scene_infected_test_geometry { uint64_t hash; unsigned count; int fail; };
+static int scene_infected_test_triangle(void *context,
+    const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
+    const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    struct scene_infected_test_geometry *g=context;
+    const struct rf_gpu_scene_enemy_point *p[3]={a,b,c};
+    if (g->fail) return -1;
+    for (int k=0;k<3;++k) {
+        g->hash=(g->hash^(unsigned)p[k]->x)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->y)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->z)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->form_light_q8)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->light_min_q8)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->light_max_q8)*1099511628211ULL;
+        g->hash=(g->hash^(unsigned)p[k]->double_sided)*1099511628211ULL;
+    }
+    g->hash=(g->hash^color)*1099511628211ULL;g->count++;return 0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -9,6 +29,30 @@ int rf_gpu_scene_pose_logic_test(void)
     struct toy_game_actor *actor;
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
+    for (int recipe=0;recipe<6;++recipe) {
+        struct rf_gpu_scene_enemy_item_v1 item={0},saved_item;
+        struct scene_infected_test_geometry a={0},b={0},motion={0},failure={0};
+        item.infected_recipe=recipe+1;item.type=enemy_visual_recipes[recipe].type;
+        item.dir_x=384;item.dir_z=-949;item.x=120;item.z=500;item.lift=90;
+        item.scene_light_q8=256;saved_item=item;
+        POSE_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&a));
+        POSE_CHECK(a.count>0 && a.count<=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
+        item.infected_swing=24;
+        POSE_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&motion));
+        POSE_CHECK(a.hash!=motion.hash && a.count==motion.count);
+        /* Overwrite the old producer's scratch pose; replay must ignore it. */
+        enemy_visual_apply_pose(rasterfall_model_instance_pose(&enemy_visual_cache[recipe].instance),
+            item.type,-24);
+        POSE_CHECK(!rasterfall_model_instance_update_bones(&enemy_visual_cache[recipe].instance));
+        item=saved_item;
+        POSE_CHECK(!rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&b));
+        POSE_CHECK(a.hash==b.hash && a.count==b.count && !memcmp(&item,&saved_item,sizeof(item)));
+        failure.fail=1;
+        POSE_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&failure)<0);
+        item.infected_recipe=7;failure.fail=0;
+        POSE_CHECK(rf_gpu_scene_enemy_triangles(&item,scene_infected_test_triangle,&failure)<0 && !failure.count);
+    }
+    __printf("scene infected PASS six-recipes/stride/replay/scratch-isolation/failure\n");
     camera.cy=camera.pitch_cy=1024;
     toy_game_init(&source_game,1);
     id=toy_game_add_ai(&source_game,TOY_GAME_AI_LEVEL_1,120,240,"POSE");

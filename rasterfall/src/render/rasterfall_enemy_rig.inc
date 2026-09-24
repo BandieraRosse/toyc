@@ -296,7 +296,7 @@ static int enemy_rig_emit_triangle(rf_gpu_scene_enemy_triangle_fn emit,
     unsigned color)
 {
     const struct rf_gpu_scene_enemy_point p[3]={
-        {a->x,a->y,a->z},{b->x,b->y,b->z},{c->x,c->y,c->z}};
+        {a->x,a->y,a->z,0,0,0,0},{b->x,b->y,b->z,0,0,0,0},{c->x,c->y,c->z,0,0,0,0}};
     return emit(context,&p[0],&p[1],&p[2],color);
 }
 static int enemy_rig_emit(const struct enemy_rig_profile *p,
@@ -342,6 +342,8 @@ static int enemy_rig_emit(const struct enemy_rig_profile *p,
     }
     return 0;
 }
+static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
+    rf_gpu_scene_enemy_triangle_fn emit,void *context);
 int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context)
 {
@@ -355,6 +357,8 @@ int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
         item->x < -1000000 || item->x > 1000000 ||
         item->z < -1000000 || item->z > 1000000 ||
         item->lift < -1000000 || item->lift > 1000000) return -1;
+    if (item->infected_recipe)
+        return scene_infected_triangles(item,emit,context);
     p=enemy_rig_profile(item->type);
     if (!p) return -1;
     for (int i=0;i<ER_COUNT;++i) {

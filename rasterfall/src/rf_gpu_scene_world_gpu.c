@@ -949,6 +949,7 @@ struct scene_enemy_mesh {
     struct rf_gpu_graphics_vertex vertices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
     uint32_t indices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
     uint32_t colors[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES], count;
+    unsigned char double_sided[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES];
     const struct rf_gpu_scene_enemy_frame_v1 *frame;
     const struct rf_gpu_scene_enemy_item_v1 *source;
 };
@@ -959,6 +960,7 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
     const struct rf_gpu_scene_enemy_point *points[3]={a,b,c};
     if (mesh->count>=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES) return -1;
     mesh->colors[mesh->count]=color;
+    mesh->double_sided[mesh->count]=(unsigned char)a->double_sided;
     for (unsigned k=0;k<3;++k) {
         unsigned index=mesh->count*3+k;
         struct rf_gpu_graphics_vertex *v=&mesh->vertices[index];
@@ -969,6 +971,12 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
             rasterfall_world_light_v2_q8(rasterfall_world_light_at(
                 &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z)) :
             mesh->source->scene_light_q8;
+        if (!mesh->frame->vertex_lighting && points[k]->light_min_q8>0) {
+            int light=(int)v->uv[0]*points[k]->form_light_q8/256;
+            if (light<points[k]->light_min_q8) light=points[k]->light_min_q8;
+            if (light>points[k]->light_max_q8) light=points[k]->light_max_q8;
+            v->uv[0]=light;
+        }
         mesh->indices[index]=index;
     }
     mesh->count++;return 0;
@@ -1005,7 +1013,8 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             unsigned end=first+1;
             struct rf_gpu_graphics_batch_item *entry=&items[total++];
             struct rf_gpu_graphics_draw *draw=&entry->draw;
-            while (end<mesh->count && mesh->colors[end]==mesh->colors[first]) end++;
+            while (end<mesh->count && mesh->colors[end]==mesh->colors[first] &&
+                mesh->double_sided[end]==mesh->double_sided[first]) end++;
             memset(entry,0,sizeof(*entry));entry->resource=probe->enemy[i];
             draw->translation_scale[0]=source->x;
             draw->translation_scale[1]=source->lift;
@@ -1018,6 +1027,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             draw->projection[2]=64;draw->projection[3]=(int32_t)(width*3/4);
             draw->material[0]=mesh->colors[first];
             draw->material[1]=256;draw->material[3]=1;
+            draw->double_sided=mesh->double_sided[first];
             draw->texture[0]=draw->texture[1]=1;
             draw->first_index=first*3;draw->index_count=(end-first)*3;
             if (rf_gpu_graphics_resource_bind(probe->graphics,entry->resource)<0 ||
