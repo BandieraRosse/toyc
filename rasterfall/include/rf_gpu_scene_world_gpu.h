@@ -44,11 +44,13 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
     const struct camera *camera,uint32_t width,uint32_t height,
     struct rf_gpu_graphics_batch_item *items,uint32_t capacity,uint32_t *count);
 
+#define RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES 16384U
+#define RF_GPU_SCENE_LAYER_CHUNKS 16U
 struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
     const struct rf_gpu_scene_layers_input *layers;
-    struct rf_gpu_graphics_resource *layer_resource[2];
+    struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];
     struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;

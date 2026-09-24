@@ -24,7 +24,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 静态世界光照与诊断 | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | world-light bake、normal consumer 与诊断 scope |
 | 角色、敌人与附件表现 | [角色表现](architecture/character-presentation.md) | character/enemy presentation adapters |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
-| 动态敌人 Scene 身体、死亡与附属表现诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_enemy.h`、`render/rasterfall_enemy_rig.inc`、`render/rasterfall_enemy_visual.inc`、`tools/gpu_scene_enemies.ps1`；特感及六种普通感染体同帧冻结、独立提取及共享 WORLD 深度 |
+| 动态敌人 Scene 身体、死亡与附属表现诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_enemy.h`、`render/rasterfall_enemy_rig.inc`、`render/rasterfall_enemy_visual.inc`、`tools/gpu_scene_enemies.ps1`, `tools/gpu_scene_play.ps1 -Stage Combat`；特感及六种普通感染体同帧冻结、独立提取及共享 WORLD 深度 |
 | 普通感染体步态采样与来源拆分 | [角色表现](architecture/character-presentation.md)、[活动计划](plans/README.md) | `rasterfall_enemy_visual.h`、`rasterfall_infected_sample_motion`；显式历史和时间的只读采样接口 |
 | HUD、Viewmodel 与特效；独立 Scene 分层和单人入口 | [HUD 与特效](architecture/hud-effects.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-play`、`tools/gpu_scene_play.ps1`、`rasterfall_canvas.h`、`render/rf_gpu_scene_layers.inc`；共享菜单布局、独立几何与 native 生命周期 |
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark |

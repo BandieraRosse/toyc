@@ -104,6 +104,19 @@ function Run([string]$Name,[string[]]$Argv,[int]$Expected=0,[int]$Count=4) {
             if ($Log -notmatch "GPU-WORLD-CYCLE frame=$Frame ") { throw "Missing world cycle $Frame" }
         }
     }
+    if ($Name -eq 'west-death' -and
+        ($Log -notmatch 'SCENE-ENEMY-EXTRAS frame=1 shadows=0 tongues=0 deaths=16' -or
+         $Log -notmatch 'SCENE-ENEMY-EXTRAS frame=100 shadows=\d+ tongues=\d+ deaths=0')) {
+        throw 'West corridor regression did not cover death through removal'
+    }
+    if ($Name -eq 'effects-capacity') {
+        foreach ($Frame in @(1,2,3,4)) {
+            $Instances=if ($Frame % 2) {2048} else {1}
+            if ($Log -notmatch "SCENE-EFFECTS-STRESS frame=$Frame instances=$Instances") {
+                throw 'Effects capacity regression did not grow/shrink as expected'
+            }
+        }
+    }
     if ($Name -eq 'continuous' -and $Log -notmatch 'GPU-WAVE-REPRO wave=\d+ phase=\d+ alive=[1-9]') {
         throw 'Continuous run did not reach a live enemy wave; increase -Frames'
     }
@@ -138,6 +151,8 @@ try {
         Run 'world-cycle' @('--gpu-scene-play','--gpu-world-cycle-test','--frames','120') 0 120
     }
     if ($Stage -in @('All','Combat')) {
+        Run 'west-death' @('--gpu-scene-play','--map','rasterfall/assets/maps/rasterfall.map','--gpu-normal-scene','enemy-death-west','0','--gpu-normal-fixed-tick','--frames','100') 0 100
+        Run 'effects-capacity' @('--gpu-scene-play','--gpu-normal-scene','scene-effects-stress','0','--gpu-normal-fixed-tick','--frames','4') 0 4
         Run 'continuous' @('--gpu-scene-play','--map','rasterfall/assets/maps/rasterfall.map','--gpu-wave-repro','--gpu-normal-fixed-tick','--frames',"$Frames") 0 $Frames
     }
     if ($Stage -in @('All','Faults')) {

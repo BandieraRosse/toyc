@@ -1355,10 +1355,11 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
+    for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
     for (unsigned i=0;i<2;++i) {
-        if (probe->layer_resource[i])
-            rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[i]);
-        probe->layer_resource[i]=NULL;
+        if (probe->layer_resource[chunk][i])
+            rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[chunk][i]);
+        probe->layer_resource[chunk][i]=NULL;
     }
     probe->layers=NULL;
     for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i)

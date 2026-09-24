@@ -197,6 +197,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         item->dir_x=presentation.dir_x;item->dir_z=presentation.dir_z;
         if (!item->dir_x && !item->dir_z) item->dir_z=1024;
         item->lift=lift+presentation.ground_y+presentation.airborne_y;
+        if (item->transformed) item->pivot_y=-300+item->lift;
         item->feedback=enemy_feedback_color(i);
         item->scene_light_q8=rasterfall_world_light_v2_q8(
             rasterfall_world_light_at(active_world_lighting,e->x,

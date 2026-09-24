@@ -6,6 +6,7 @@ struct scene_layer_triangle {
     struct rf_gpu_graphics_vertex vertex[3];
     uint32_t color;
     int light,alpha,screen,textured,layer;
+    int origin[3];
 };
 struct scene_layer_mesh {
     struct scene_layer_triangle *triangles;
@@ -18,6 +19,44 @@ static int scene_layer_emit(struct scene_layer_mesh *m,
     int screen,int textured)
 {
     if (m->failed) return -1;
+    int origin[3]={0};
+    if (!screen) {
+        int split=0;
+        for (int k=0;k<3;++k) {
+            int lo=a->position[k],hi=lo;
+            if (b->position[k]<lo) lo=b->position[k];
+            if (c->position[k]<lo) lo=c->position[k];
+            if (b->position[k]>hi) hi=b->position[k];
+            if (c->position[k]>hi) hi=c->position[k];
+            if ((int64_t)hi-lo>65534) split=1;
+            if (lo < -32767 || hi > 32767) {
+                int center=(int)(((int64_t)lo+hi)/2);
+                /* Nearby particles share a draw origin without rounding any
+                 * vertex. Use the exact center when the grid cannot fit. */
+                origin[k]=center/16384*16384;
+                if ((int64_t)lo-origin[k]<-32767 || (int64_t)hi-origin[k]>32767)
+                    origin[k]=center;
+            }
+        }
+        /* Large untextured world surfaces need smaller triangles as well as
+         * a local origin. Preserve world units and source order. */
+        if (split) {
+            struct rf_gpu_graphics_vertex ab=*a,bc=*b,ca=*c;
+            for (int k=0;k<3;++k) {
+                ab.position[k]=(int)(((int64_t)a->position[k]+b->position[k])/2);
+                bc.position[k]=(int)(((int64_t)b->position[k]+c->position[k])/2);
+                ca.position[k]=(int)(((int64_t)c->position[k]+a->position[k])/2);
+            }
+            if (textured ||
+                scene_layer_emit(m,a,&ab,&ca,color,light,alpha,screen,textured)<0 ||
+                scene_layer_emit(m,&ab,b,&bc,color,light,alpha,screen,textured)<0 ||
+                scene_layer_emit(m,&ca,&bc,c,color,light,alpha,screen,textured)<0 ||
+                scene_layer_emit(m,&ab,&bc,&ca,color,light,alpha,screen,textured)<0) {
+                m->failed=1;return -1;
+            }
+            return 0;
+        }
+    }
     if (m->count==m->capacity) {
         uint32_t capacity=m->capacity ? m->capacity*2 : 1024;
         void *next;
@@ -28,6 +67,10 @@ static int scene_layer_emit(struct scene_layer_mesh *m,
     }
     struct scene_layer_triangle *t=&m->triangles[m->count++];
     memset(t,0,sizeof(*t));t->vertex[0]=*a;t->vertex[1]=*b;t->vertex[2]=*c;
+    for (int k=0;k<3;++k) {
+        t->origin[k]=origin[k];
+        for (int v=0;v<3;++v) t->vertex[v].position[k]-=origin[k];
+    }
     t->color=color;t->light=light;t->alpha=alpha;t->screen=screen;
     t->textured=textured;t->layer=m->layer;return 0;
 }
@@ -268,7 +311,8 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         if (!vertices || !indices) goto done;
         for (unsigned i=0;i<mesh.count;++i) {
             memcpy(vertices+i*3,mesh.triangles[i].vertex,3*sizeof(*vertices));
-            for (unsigned k=0;k<3;++k) indices[i*3+k]=i*3+k;
+            for (unsigned k=0;k<3;++k)
+                indices[i*3+k]=(i%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3+k;
             textured|=mesh.triangles[i].textured;
         }
         if (textured) {
@@ -281,13 +325,19 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 texels[i]=((unsigned)p[0]<<16)|((unsigned)p[1]<<8)|p[2];
             }
         }
+        for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
         for (int i=0;i<2;++i) {
-            if (probe->layer_resource[i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[i])<0) goto done;
-            probe->layer_resource[i]=NULL;
+            unsigned start=chunk*RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+            unsigned triangles=mesh.count>start?mesh.count-start:0;
+            if (triangles>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)
+                triangles=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+            if (probe->layer_resource[chunk][i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->layer_resource[chunk][i])<0) goto done;
+            probe->layer_resource[chunk][i]=NULL;
+            if (!triangles) continue;
             if (i && !textured) continue;
-            probe->layer_resource[i]=rf_gpu_graphics_resource_create(probe->graphics,vertices,mesh.count*3,
-                indices,mesh.count*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
-            if (!probe->layer_resource[i]) {
+            probe->layer_resource[chunk][i]=rf_gpu_graphics_resource_create(probe->graphics,vertices+start*3,triangles*3,
+                indices+start*3,triangles*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
+            if (!probe->layer_resource[chunk][i]) {
                 fprintf(stderr,"SCENE layer upload failed triangles=%u textured=%d\n",mesh.count,i);
                 for (unsigned v=0;v<mesh.count*3;++v)
                     for (unsigned k=0;k<3;++k)
@@ -304,20 +354,24 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         *batch=next;
         for (unsigned first=0;first<mesh.count;) {
             unsigned end=first+1;
+            unsigned chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
             const struct scene_layer_triangle *t=&mesh.triangles[first];
-            while (end<mesh.count && !memcmp(&mesh.triangles[end].color,&t->color,
+            while (end<mesh.count && end/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES==chunk &&
+                    !memcmp(&mesh.triangles[end].color,&t->color,
                     sizeof(*t)-offsetof(struct scene_layer_triangle,color))) ++end;
             struct rf_gpu_graphics_batch_item *entry=&(*batch)[(*count)++];
             struct rf_gpu_graphics_draw *d=&entry->draw;
-            memset(entry,0,sizeof(*entry));entry->resource=probe->layer_resource[t->textured];
+            memset(entry,0,sizeof(*entry));entry->resource=probe->layer_resource[chunk][t->textured];
             d->translation_scale[3]=1000;d->rotation[1]=1024;
+            for (int k=0;k<3;++k) d->translation_scale[k]=t->origin[k];
             d->camera[0]=camera->x;d->camera[1]=camera->y;d->camera[2]=camera->z;
             d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
             d->projection[0]=width;d->projection[1]=height;d->projection[2]=64;d->projection[3]=width*3/4;
             d->material[0]=t->color;d->material[1]=t->light;d->material[2]=t->textured;
             d->texture[0]=t->textured?texture->width:1;d->texture[1]=t->textured?texture->height:1;
             d->texture[2]=t->alpha;d->texture[3]=t->screen;
-            d->first_index=first*3;d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=t->layer;
+            d->first_index=(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;
+            d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=t->layer;
             first=end;
         }
     }

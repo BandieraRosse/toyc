@@ -101,7 +101,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-scene-play (experimental single-player independent native GPU renderer)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-scene <near|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -321,6 +321,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"model-special") &&
                  strcmp(o->gpu_normal_view,"enemy-special") &&
                  strcmp(o->gpu_normal_view,"enemy-death") &&
+                 strcmp(o->gpu_normal_view,"enemy-death-west") &&
+                 strcmp(o->gpu_normal_view,"scene-effects-stress") &&
                  strcmp(o->gpu_normal_view,"enemy-fade") &&
                  strcmp(o->gpu_normal_view,"frame-effects") &&
                  strcmp(o->gpu_normal_view,"ui-pause") &&

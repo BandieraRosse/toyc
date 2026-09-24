@@ -291,6 +291,13 @@ Campaign 正常帧审计另冻结 object 值，并将 boundary wall 和普通 `M
 
 ### 冻结 actor 的 pose/附件数据回归
 
+`tools/gpu_scene_play.ps1 -Stage Combat` 包含西侧走廊死亡和特效容量回归。
+`--gpu-normal-scene enemy-death-west 0` 在老地图 x≈−44000 放置 16 个死亡 Charger，
+运行 100 个固定 tick，覆盖碎片生成、身体渐隐和消失；旧错误会在碎片绝对坐标上传时退出。
+`--gpu-normal-scene scene-effects-stress 0` 交替提交满池死亡碎片和单条长弹道，
+覆盖资源分块、容量缩小后增长和超长世界三角形细分。两者都走真实 Scene native 提交，
+须检查实际退出码和连续帧审计；更新 package 后执行，输出目录必须新建。
+
 动态敌人身体专项使用 `tools/gpu_scene_enemies.ps1`。先完成 `windows/NativeCodex.ps1 package`，
 再串行运行专项；package 会替换资产目录，不能与正在运行的游戏或 GPU 验证重叠。
 `-ValidationLayerDirectory tmp/scene-validation-tools/mingw64/bin` 可启用已有本地 Khronos layer 与同步验证。

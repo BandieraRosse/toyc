@@ -48,11 +48,14 @@ static int scene_independent_enemy_source_test(void)
         b.items[0].x==100 && b.items[1].tongue);
     owner.game_state.enemies[0].active=2;
     owner.game_state.enemies[0].dying_ms=TOY_GAME_DYING_MS/2;
+    owner.game_state.enemies[0].ground_y=1800;
+    owner.game_state.enemies[0].airborne_y=250;
     test_effects.enemy_death_style[0]=RASTERFALL_ENEMY_DEATH_STYLE_LEGACY+1;
     rf_gpu_scene_enemy_begin(812,73);
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1020000,73));
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&b) && b.items[0].transformed &&
-        b.items[0].roll_cos!=1024 && !b.items[0].shadow);
+        b.items[0].roll_cos!=1024 && !b.items[0].shadow &&
+        b.items[0].pivot_y==b.items[0].lift-300 && b.items[0].lift==2480);
     /* The imported body gets independent stride history and freezes swing. */
     enemy_visual_family=RASTERFALL_ENEMY_VISUAL_BLOCK_INFECTED;
     owner.game_state.enemies[0].active=1;

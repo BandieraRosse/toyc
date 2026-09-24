@@ -3710,6 +3710,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         }
         if (!strcmp(options.gpu_normal_view,"enemy-special") ||
             !strcmp(options.gpu_normal_view,"enemy-death") ||
+            !strcmp(options.gpu_normal_view,"enemy-death-west") ||
             !strcmp(options.gpu_normal_view,"enemy-fade") ||
             !strcmp(options.gpu_normal_view,"enemy-tongue")) {
             for (int slot=0;slot<3;++slot) {
@@ -3720,6 +3721,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 e->x=(slot-1)*1600;e->z=500;e->dir_z=-1024;
                 if (slot) { e->charge_active=1;e->ability.charge_elapsed_ms=200; }
                 if (!strcmp(options.gpu_normal_view,"enemy-death") ||
+                    !strcmp(options.gpu_normal_view,"enemy-death-west") ||
                     !strcmp(options.gpu_normal_view,"enemy-fade")) {
                     e->active=2;e->dying_ms=TOY_GAME_DYING_MS-100;
                     if (!strcmp(options.gpu_normal_view,"enemy-fade")) e->dying_ms=240;
@@ -3730,6 +3732,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                     e->special_target_active=1;e->special_target_kind=0;
                     e->special_pull_timer_ms=TOY_GAME_SMOKER_PULL_MS;
                 }
+            }
+        }
+        if (!strcmp(options.gpu_normal_view,"enemy-death-west")) {
+            struct toy_game_enemy charger=game.enemies[1];
+            camera.x=-44000;camera.z=-3400;camera.sy=0;camera.cy=1024;
+            local_actor->x=camera.x;local_actor->z=camera.z;
+            for (int slot=0;slot<16;++slot) {
+                struct toy_game_enemy *e=&game.enemies[slot];
+                *e=charger;
+                e->x=-44000+(slot%4-2)*400;e->z=(slot/4)*400;
+                e->dying_ms=TOY_GAME_DYING_MS-slot*24;
             }
         }
         if (!strcmp(options.gpu_normal_view,"frame-effects")) {
@@ -4595,6 +4608,27 @@ startup_again:
         }
         if (ready > 0) {
             int present_result;
+            /* Capacity regression: cross a layer resource boundary, shrink,
+             * then grow again, at the west corridor's real world coordinates. */
+            if (options.gpu_normal_view &&
+                !strcmp(options.gpu_normal_view,"scene-effects-stress")) {
+                int count=(rendered_frames&1)?1:RASTERFALL_EFFECT_INSTANCE_SLOTS;
+                memset(effects.instances,0,sizeof(effects.instances));
+                for (int i=0;i<count;++i) {
+                    struct rasterfall_effect_instance *p=&effects.instances[i];
+                    p->active=1;p->type=RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+                    p->kind=RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_FRAGMENT;
+                    p->x=-44000+(i%32)*80;p->y=-500;p->z=(i/32)*80;
+                    p->size=1750;p->alpha=200;p->color=0xB06A36;
+                }
+                /* A long ribbon also exercises subdivision beyond int16 span. */
+                effects.instances[0].type=RASTERFALL_EFFECT_INSTANCE_RAY;
+                effects.instances[0].kind=0;
+                effects.instances[0].x=-120000;effects.instances[0].ex=120000;
+                effects.instances[0].ey=-500;effects.instances[0].ez=1000;
+                camera.x=-44000;camera.z=-3400;camera.sy=0;camera.cy=1024;
+                __printf("SCENE-EFFECTS-STRESS frame=%d instances=%d\n",rendered_frames+1,count);
+            }
             /* Local movement is client-authoritative; host position
              * corrections are intentionally not applied to the camera. */
             if (!logged_first_frame) {
