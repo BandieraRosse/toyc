@@ -1049,6 +1049,10 @@ struct toy_game_ground_query toy_game_query_ground(
     result.touches_current_support = 0;
     result.support_is_ramp = 0;
     if (!g || !g->primitives) return result;
+    if (g->update_profile) {
+        g->update_profile->ground_queries++;
+        g->update_profile->ground_scans += g->primitive_count;
+    }
     for (i = 0; i < g->primitive_count; i++) {
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
@@ -1056,13 +1060,16 @@ struct toy_game_ground_query toy_game_query_ground(
                        z + radius > p->minz && z - radius < p->maxz;
         int supported = x - radius >= p->minx && x + radius <= p->maxx &&
                         z - radius >= p->minz && z + radius <= p->maxz;
-        int height = primitive_surface_height(p, x, z);
+        int height;
+        if (radius == 0) overlaps = supported;
+        if (!overlaps && !supported) continue;
         /* A suspended solid's top is not the floor beneath it. It becomes
          * a candidate once the query reaches the solid's lower elevation. */
         if (p->shape == TOY_MAP_PRIMITIVE_BOX && p->base_y > 0 &&
             current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT < p->base_y)
             continue;
-        if (radius == 0) overlaps = supported;
+        if (g->update_profile) g->update_profile->ground_heights++;
+        height = primitive_surface_height(p, x, z);
         if (supported &&
             ((p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
              height <= current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT) &&
@@ -1100,6 +1107,7 @@ static int ground_has_ramp_surface_transition(
     if (!g || !ground || !surface ||
         surface->shape != TOY_MAP_PRIMITIVE_FLAT)
         return 0;
+    if (g->update_profile) g->update_profile->ramp_transition_queries++;
     for (i = 0; i < g->primitive_count; i++) {
         const struct toy_map_primitive *ramp = &g->primitives[i];
         int overlaps, supported, endpoint_delta, adjacent = 0;
@@ -1165,22 +1173,26 @@ static int ground_has_ramp_surface_transition(
                            primitive_surface_height(ramp, x, z) !=
                                ground->support_y)))
             continue;
+        if (g->update_profile) g->update_profile->ramp_transition_scans += i + 1;
         return 1;
     }
+    if (g->update_profile) g->update_profile->ramp_transition_scans += g->primitive_count;
     return 0;
 }
 
 static int point_on_walkable_ramp(const struct toy_game *g, int x, int z,
                                   int radius);
 
-static int position_blocked_at_height(const struct toy_game *g,
+static int position_blocked_at_height_ground(const struct toy_game *g,
                                       int x, int z, int radius,
                                       int ground_height,
-                                      int require_ground_support)
+                                      int require_ground_support,
+                                      struct toy_game_ground_query *out_ground)
 {
     int i, collision_height = ground_height;
     struct toy_game_ground_query ground;
     if (!g) return 1;
+    if (g->update_profile) g->update_profile->body_queries++;
     if (x - radius < -g->room_limit || x + radius > g->room_limit ||
         z - radius < -g->room_limit || z + radius > g->room_limit) return 1;
     /* Resolve the destination support before testing solid cuboids.  This
@@ -1188,6 +1200,7 @@ static int position_blocked_at_height(const struct toy_game *g,
      * platform is within the configured step height; no obstacle-specific
      * exception is needed. */
     ground = toy_game_query_ground(g, x, z, radius, ground_height);
+    if (out_ground) *out_ground = ground;
     /* A tall walkable box is a landing surface, not a way to bypass its
      * sides.  Only promote the collision height for a small step, or when
      * the caller is already at the support height; otherwise a point inside
@@ -1196,6 +1209,7 @@ static int position_blocked_at_height(const struct toy_game *g,
         ground.support_y - ground_height <= TOY_CONFIG_GROUND_STEP_HEIGHT)
         collision_height = ground.support_y;
     for (i = 0; i < g->primitive_count; i++) {
+        if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *b = &g->primitives[i];
         if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             b->shape != TOY_MAP_PRIMITIVE_BOX) continue;
@@ -1217,6 +1231,7 @@ static int position_blocked_at_height(const struct toy_game *g,
      * array (possibly with zero entries), where absence of support is solid. */
     if (require_ground_support && g->primitives && !ground.has_support) return 1;
     for (i = 0; i < g->primitive_count; i++) {
+        if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape == TOY_MAP_PRIMITIVE_BOX) continue;
@@ -1230,6 +1245,11 @@ static int position_blocked_at_height(const struct toy_game *g,
         }
         if (p->surface_y0 <= ground_height + TOY_CONFIG_GROUND_STEP_HEIGHT)
             continue;
+        /* Outside this footprint, a flat surface cannot block the body.
+         * Avoid the nested ramp scan before asking about a possible seam. */
+        if ((!g->update_profile || !g->update_profile->legacy_nav_ground) &&
+            !(x + radius > p->minx && x - radius < p->maxx &&
+              z + radius > p->minz && z - radius < p->maxz)) continue;
         /* A platform whose top meets the end of the supporting ramp is the
          * ramp's continuation, not an early vertical obstacle.  Keep walking
          * on the ramp until the destination footprint is fully supported by
@@ -1241,6 +1261,15 @@ static int position_blocked_at_height(const struct toy_game *g,
             z + radius > p->minz && z - radius < p->maxz) return 1;
     }
     return 0;
+}
+
+static int position_blocked_at_height(const struct toy_game *g,
+                                      int x, int z, int radius,
+                                      int ground_height,
+                                      int require_ground_support)
+{
+    return position_blocked_at_height_ground(g, x, z, radius, ground_height,
+                                             require_ground_support, NULL);
 }
 
 int toy_game_position_blocked_at_height(const struct toy_game *g,
@@ -3049,7 +3078,9 @@ static int actor_segment_blocked(const struct toy_game *g,
                                  int x0, int z0, int x1, int z1, int padding, int ground_y)
 {
     int i;
+    if (g->update_profile) g->update_profile->segment_queries++;
     for (i = 0; i < g->primitive_count; i++) {
+        if (g->update_profile) g->update_profile->segment_scans++;
         const struct toy_map_primitive *p = &g->primitives[i];
         struct toy_game_box box;
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -3073,14 +3104,20 @@ static int nav_segment_allowed(const struct toy_game *g,
     int steps;
     int i, previous_ramp = 0;
     if (!g || g->nav_cell_size < 2) return 1;
+    if (g->update_profile) g->update_profile->nav_segments++;
     steps = distance / (g->nav_cell_size / 2) + 1;
     for (i = 1; i <= steps; i++) {
         int x = x0 + (int)((long long)dx * i / steps);
         int z = z0 + (int)((long long)dz * i / steps);
         struct toy_game_ground_query ground;
-        if (toy_game_position_blocked_at_height(g, x, z, radius, ground_y))
-            return 0;
-        ground = toy_game_query_ground(g, x, z, radius, ground_y);
+        if (g->update_profile) g->update_profile->nav_samples++;
+        /* The successful body probe already queried this exact footprint and
+         * height. Reuse its result only within this sample; no cross-position
+         * or cross-tick cache and no navigation/terrain invalidation needed. */
+        if (position_blocked_at_height_ground(g, x, z, radius, ground_y, 1,
+                                              &ground)) return 0;
+        if (g->update_profile && g->update_profile->legacy_nav_ground)
+            ground = toy_game_query_ground(g, x, z, radius, ground_y);
         if ((ground.support_y - ground_y > TOY_CONFIG_GROUND_STEP_HEIGHT ||
              ground_y - ground.support_y > TOY_CONFIG_GROUND_STEP_HEIGHT) &&
             !previous_ramp && !ground.support_is_ramp)
@@ -3096,16 +3133,25 @@ static int nav_next_waypoint(const struct toy_game *g,
                              int radius, int ground_y,
                              int *out_x, int *out_z)
 {
+    struct toy_game_update_profile *profile = g->update_profile;
+    int64_t mark = 0;
+    unsigned int ground_before = 0;
+    int found = 0;
     int parent[TOY_GAME_NAV_MAX_CELLS];
     int queue[TOY_GAME_NAV_MAX_CELLS];
     int start = nav_cell_index(g, x, z);
     int goal = nav_cell_index(g, target_x, target_z);
     int count = g->nav_width * g->nav_height;
     int head = 0, tail = 0, i, current, cx, cz, dx, dz, next;
+    if (g->update_profile) g->update_profile->nav_queries++;
     if (!g || g->nav_cell_size <= 0 || start < 0 || goal < 0 || start == goal ||
         !g->nav_walkable[start] || !g->nav_walkable[goal] ||
         !g->nav_component[start] ||
         g->nav_component[start] != g->nav_component[goal]) return 0;
+    if (profile) {
+        profile->nav_searches++;
+        if (profile->clock_us) mark = profile->clock_us();
+    }
     for (i = 0; i < count; i++) parent[i] = -1;
     parent[start] = start;
     queue[tail++] = start;
@@ -3124,9 +3170,18 @@ static int nav_next_waypoint(const struct toy_game *g,
             }
         }
     }
+    if (profile) {
+        profile->nav_nodes += head;
+        if (profile->clock_us) profile->nav_search_us += profile->clock_us() - mark;
+    }
     if (parent[goal] < 0) return 0;
+    if (profile) {
+        ground_before = profile->ground_queries;
+        if (profile->clock_us) mark = profile->clock_us();
+    }
     current = goal;
     while (current != start) {
+        if (profile) profile->nav_candidates++;
         int waypoint_x = g->nav_origin + (current % g->nav_width) *
                          g->nav_cell_size + g->nav_cell_size / 2;
         int waypoint_z = g->nav_origin + (current / g->nav_width) *
@@ -3136,11 +3191,20 @@ static int nav_next_waypoint(const struct toy_game *g,
                                 radius, ground_y)) {
             *out_x = waypoint_x;
             *out_z = waypoint_z;
-            return 1;
+            found = 1;
+            break;
         }
         current = parent[current];
     }
-    return 0;
+    if (profile) {
+        profile->nav_ground_queries += profile->ground_queries - ground_before;
+        if (profile->clock_us) {
+            int64_t elapsed = profile->clock_us() - mark;
+            profile->nav_paths_us += elapsed;
+            if (elapsed > profile->nav_paths_max_us) profile->nav_paths_max_us = elapsed;
+        }
+    }
+    return found;
 }
 
 static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
@@ -5483,13 +5547,29 @@ void toy_game_update_held(struct toy_game *g,
 void toy_game_update_world(struct toy_game *g, int dt_ms)
 {
     int i;
+    struct toy_game_update_profile *profile;
+    int64_t start = 0, mark = 0, now;
     if (!g || g->state != TOY_GAME_PLAYING) return;
+    profile = g->update_profile;
+    if (profile && profile->clock_us) start = mark = profile->clock_us();
     toy_game_update_projectiles(g, dt_ms);
     toy_game_update_burn_zones(g, dt_ms);
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->other_us += now - mark;
+        mark = now;
+    }
     toy_game_update_ai_teammates(g, dt_ms);
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->teammate_us += now - mark;
+        mark = now;
+    }
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         if (e->active == 1) {
+            int64_t enemy_start = profile && profile->clock_us ?
+                profile->clock_us() : 0;
             if (e->airborne_ms > 0) {
                 update_enemy_airborne(g, e, dt_ms);
                 continue;
@@ -5513,16 +5593,42 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
             }
             update_enemy_ai(g, e, dt_ms);
             update_enemy_ground(g, e);
+            if (enemy_start && (unsigned)e->type < 6) {
+                profile->enemy_type_us[e->type] +=
+                    profile->clock_us() - enemy_start;
+                profile->enemy_type_calls[e->type]++;
+            }
         } else if (e->active == 2) {
             e->dying_ms -= dt_ms;
             if (e->dying_ms <= 0) e->active = 0;
         }
     }
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->enemy_us += now - mark;
+        mark = now;
+    }
     toy_game_update_actor_special_control(
         g, toy_game_local_player_actor(g), dt_ms);
     toy_game_update_actor_motion(g, TOY_GAME_PLAYER_ACTOR_INDEX, dt_ms);
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->other_us += now - mark;
+        mark = now;
+    }
     separate_enemies(g);
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->separation_us += now - mark;
+        mark = now;
+    }
     update_base_core(g, dt_ms);
     if (g->campaign_mode) update_campaign(g, dt_ms);
     else update_waves(g, dt_ms);
+    if (profile && profile->clock_us) {
+        now = profile->clock_us();
+        profile->other_us += now - mark;
+        profile->world_us += now - start;
+        profile->ticks++;
+    }
 }

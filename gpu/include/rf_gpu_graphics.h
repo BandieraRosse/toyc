@@ -51,6 +51,9 @@ struct rf_gpu_graphics_stats {
     double wait_ms_by_kind[RF_GPU_SUBMIT_KIND_COUNT];
     /* Unconfirmed predecessor at submit time, not a measured GPU duration. */
     uint64_t wait_frame, wait_predecessor_frame;
+    /* Optional RF_GPU_PROFILE_TRIANGLE_UPDATE CPU walls, successful updates only. */
+    double triangle_validate_ms, triangle_copy_ms, triangle_transfer_ms;
+    uint64_t triangle_updates, triangle_update_bytes, triangle_staging_updates;
 };
 struct rf_gpu_graphics;
 struct rf_gpu_graphics_resource;

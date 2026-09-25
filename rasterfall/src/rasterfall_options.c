@@ -101,7 +101,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-scene-play (experimental single-player independent native GPU renderer)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
-        "  --gpu-normal-scene <near|near-heavy|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|30|60>\n"
+        "  --gpu-normal-scene <near|near-heavy|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|10|20|30|60>\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -131,8 +131,9 @@ void rasterfall_options_usage(int fd)
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
-        "  --gpu-normal-scene <view> <0|30|60> (normal deterministic Campaign runtime; views listed above)\n"
+        "  --gpu-normal-scene <view> <0|10|20|30|60> (normal deterministic Campaign runtime; views listed above)\n"
         "    UI views: ui-pause|ui-scoreboard|ui-shop|ui-over|ui-won\n"
+        "    Corridor: west-empty 0; west-button|west-button-no-tank 0|16|32|64 (0 means 16; buttons at frame 61)\n"
         "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; with --frame-audit also writes <output.bmp>.scene.ppm; independent Scene preview writes only <output.bmp>.scene.ppm; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
         "  --actor-performance [iterations] [frontend-workers] [raster-workers]\n"
@@ -313,6 +314,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"base") &&
                  strcmp(o->gpu_normal_view,"spawn") &&
                  strcmp(o->gpu_normal_view,"west-facility") &&
+                 strcmp(o->gpu_normal_view,"west-empty") &&
+                 strcmp(o->gpu_normal_view,"west-button") &&
+                 strcmp(o->gpu_normal_view,"west-button-no-tank") &&
                  strcmp(o->gpu_normal_view,"map-wall") &&
                  strcmp(o->gpu_normal_view,"map-ramp") &&
                  strcmp(o->gpu_normal_view,"map-platform") &&
@@ -347,9 +351,16 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"whu-b-plaza") &&
                  strcmp(o->gpu_normal_view,"whu-library") &&
                  strcmp(o->gpu_normal_view,"whu-d-ef")) ||
-                (o->gpu_normal_enemies != 0 &&
+                ((!strcmp(o->gpu_normal_view,"west-button") ||
+                  !strcmp(o->gpu_normal_view,"west-button-no-tank")) ?
+                 (o->gpu_normal_enemies != 0 && o->gpu_normal_enemies != 16 &&
+                  o->gpu_normal_enemies != 32 && o->gpu_normal_enemies != 64) :
+                 !strcmp(o->gpu_normal_view,"west-empty") ? o->gpu_normal_enemies != 0 :
+                 (o->gpu_normal_enemies != 0 &&
+                 o->gpu_normal_enemies != 10 &&
+                 o->gpu_normal_enemies != 20 &&
                  o->gpu_normal_enemies != 30 &&
-                 o->gpu_normal_enemies != 60)) {
+                 o->gpu_normal_enemies != 60))) {
                 __fprintf(2,"rasterfall: invalid --gpu-normal-scene view or enemy count\n");
                 return -1;
             }

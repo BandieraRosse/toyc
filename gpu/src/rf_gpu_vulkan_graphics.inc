@@ -104,6 +104,7 @@ struct rf_gpu_graphics {
     rf_vk_fence fence;
     int poisoned, scene_in_flight;
     int skin_batch;
+    int profile_triangle_update;
     struct rf_gpu_graphics_resource *skin_pending, *skin_pending_tail;
     rf_vk_semaphore scene_acquire;
     rf_vk_query_pool scene_query_pool;
@@ -645,6 +646,10 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     g = calloc(1, sizeof(*g));
     if (!g) return NULL;
     g->owner = impl;
+    {
+        const char *profile=getenv("RF_GPU_PROFILE_TRIANGLE_UPDATE");
+        g->profile_triangle_update=profile && !strcmp(profile,"1");
+    }
 #define RF_GFX_LOAD(n) do { \
     void *p = load_instance(&impl->api, impl->instance, "vk" #n); \
     if (!p) goto fail; \
@@ -981,9 +986,11 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     int bounds[3]={0};
     void *mapped=NULL;
     uint64_t bytes=(uint64_t)vertex_count*sizeof(*vertices);
+    double mark=0,validated=0,copied=0;
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g ||
         r->shared_binding.owner || r->skin_descriptor_set || !r->sequential_triangles ||
         !vertices || !vertex_count || vertex_count>65536 || vertex_count%3) return -1;
+    if (g->profile_triangle_update) mark=now_ms();
     for (uint32_t i=0;i<vertex_count;++i) {
         for (unsigned k=0;k<3;++k) {
             int p=vertices[i].position[k];
@@ -1001,6 +1008,7 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
                 sizeof(vertices[i].normals))) return -1;
     }
     if (vertex_count>r->vertex_capacity) return 1;
+    if (g->profile_triangle_update) validated=now_ms();
     impl=g->owner;
     upload=&r->vertices;
     if (!(upload->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)) {
@@ -1020,6 +1028,7 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
         }
     }
     impl->api.unmap_memory(impl->device,upload->memory);
+    if (g->profile_triangle_update) copied=now_ms();
     if (upload!=&r->vertices) {
         if (gfx_begin(g)<0) return -1;
         copy.size=bytes;
@@ -1035,6 +1044,14 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     r->index_count=vertex_count;
     memcpy(r->position_bound,bounds,sizeof(bounds));
     g->stats.mesh_upload_bytes+=bytes;
+    if (g->profile_triangle_update) {
+        g->stats.triangle_validate_ms+=validated-mark;
+        g->stats.triangle_copy_ms+=copied-validated;
+        g->stats.triangle_transfer_ms+=now_ms()-copied;
+        g->stats.triangle_updates++;
+        g->stats.triangle_update_bytes+=bytes;
+        g->stats.triangle_staging_updates+=upload!=&r->vertices;
+    }
     return 0;
 }
 

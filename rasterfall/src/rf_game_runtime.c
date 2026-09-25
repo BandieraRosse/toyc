@@ -3092,6 +3092,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_active = 0;   /* 帧间隔统计 */
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
+    int64_t scene_previous_sample_us = 0;
+    int scene_corridor_button_sent = 0;
     int running = 1, pointer_lock_requested = 0, paused = 0;
     int coordinate_axes = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
@@ -3603,6 +3605,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
              * silhouette; these are the far-depth thin-structure fixture. */
             camera.x = -5000; camera.z = 5500;
             camera.sy = -1024;
+        } else if (!strcmp(options.gpu_normal_view, "west-empty") ||
+                   !strcmp(options.gpu_normal_view, "west-button") ||
+                   !strcmp(options.gpu_normal_view, "west-button-no-tank")) {
+            camera.x=-32000;camera.z=0;camera.sy=-1024;
         } else if (!strcmp(options.gpu_normal_view, "base")) {
             camera.x = 0; camera.z = -3400; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "spawn")) {
@@ -3671,7 +3677,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         local_actor->z = camera.z;
         local_actor->sy = camera.sy;
         local_actor->cy = camera.cy;
-        for (enemy = 0; enemy < options.gpu_normal_enemies; ++enemy) {
+        for (enemy = 0; enemy < options.gpu_normal_enemies &&
+             strcmp(options.gpu_normal_view,"west-button") &&
+             strcmp(options.gpu_normal_view,"west-button-no-tank"); ++enemy) {
             struct toy_game_enemy *fixture = &game.enemies[enemy];
             fixture->active = 1;
             fixture->hp = 100;
@@ -3930,6 +3938,7 @@ startup_again:
     while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
         int64_t audit_loop_start = rf_core_time_us(&core);
+        int64_t scene_dropped_us = 0;
         if (world_cycle_gate &&
             (rendered_frames == 30 || rendered_frames == 60 ||
              rendered_frames == 90)) {
@@ -3963,6 +3972,7 @@ startup_again:
         int64_t audit_update_us = 0, audit_render_us = 0;
         int64_t audit_present_us = 0, audit_interval_us = 0;
         int64_t audit_prepare_us = 0;
+        struct toy_game_update_profile game_update_profile = {0};
         int logic_steps = 0;
         int resumed = 0;
         int ready;
@@ -4294,6 +4304,27 @@ startup_again:
             shove_edge = 1;
         if (rf_core_should_exit(&core)) running = 0;
         if (!running) break;
+        /* Explicit auto diagnostic: retain the authored button's random pool,
+         * spawn region and session interaction, after cold resources warm up.
+         * The observation camera remains inside the west combat corridor. */
+        if (!scene_corridor_button_sent && rendered_frames>=60 && options.gpu_normal_view &&
+            (!strcmp(options.gpu_normal_view,"west-button") ||
+             !strcmp(options.gpu_normal_view,"west-button-no-tank"))) {
+            struct camera button_camera=camera;
+            int no_tank=!strcmp(options.gpu_normal_view,"west-button-no-tank");
+            int presses=options.gpu_normal_enemies ? options.gpu_normal_enemies/16 : 1;
+            int before=0,after=0;
+            for (int i=0;i<TOY_GAME_MAX_ENEMIES;++i) before+=game.enemies[i].active==1;
+            button_camera.x=-23300;button_camera.z=no_tank ? 2100 : -2100;
+            button_camera.sy=-1024;button_camera.cy=0;
+            for (int press=0;press<presses;++press)
+                rasterfall_session_interact_remote(&session,&button_camera,no_tank ?
+                    TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON : TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON);
+            for (int i=0;i<TOY_GAME_MAX_ENEMIES;++i) after+=game.enemies[i].active==1;
+            scene_corridor_button_sent=1;
+            __printf("SCENE-CORRIDOR-BUTTON frame=%d no_tank=%d spawned=%d presses=%d requested=%d\n",
+                rendered_frames+1,no_tank,after-before,presses,presses*16);
+        }
         /* --auto：炮弹幕压测（复现崩溃用）。瞬移到关键区域（起点室/
          * 开发者区/中心/刷怪区），快速转枪口持续轰击：弹道终点大量落
          * 在屏幕边缘/屏外（裁剪路径）、穿门洞长弹道（最大射程）、
@@ -4364,9 +4395,21 @@ startup_again:
         last_time = now;
         if (options.gpu_normal_fixed_tick) elapsed = FIXED_STEP_US;
         if (elapsed < 0) elapsed = 0;
-        if (elapsed > MAX_FRAME_US) elapsed = MAX_FRAME_US;
+        if (elapsed > MAX_FRAME_US) {
+            scene_dropped_us = elapsed - MAX_FRAME_US;
+            elapsed = MAX_FRAME_US;
+        }
         accumulator += elapsed;
         t_stage = now;
+        if (options.frame_audit && options.gpu_scene_independent_preview) {
+            game_update_profile.clock_us = rf_core_clock_now_us;
+            const char *legacy_ground = getenv("RF_GAME_LEGACY_NAV_GROUND");
+            const char *no_clock = getenv("RF_GAME_PROFILE_NO_CLOCK");
+            game_update_profile.legacy_nav_ground =
+                legacy_ground && legacy_ground[0] == '1';
+            if (no_clock && no_clock[0] == '1') game_update_profile.clock_us = NULL;
+            game.update_profile = &game_update_profile;
+        }
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             if (!paused && !managed_terminal.open) {
                 struct rasterfall_command command;
@@ -4529,6 +4572,7 @@ startup_again:
             accumulator -= FIXED_STEP_US;
             logic_steps++;
         }
+        game.update_profile = NULL;
         /* 会话事件只取出一次，再分发给音频以及未来的网络/展示消费者。
          * 音频不可用时仍清空本 tick 事件，避免单消费者队列永久塞满。 */
         game_event_count = toy_game_drain_events(&game, game_events,
@@ -4543,7 +4587,10 @@ startup_again:
             sync_fire_effects(&camera);
             sync_ai_fire_effects(&camera, &audio);
         }
-        if (accumulator >= FIXED_STEP_US) accumulator %= FIXED_STEP_US;
+        if (accumulator >= FIXED_STEP_US) {
+            scene_dropped_us += accumulator - accumulator % FIXED_STEP_US;
+            accumulator %= FIXED_STEP_US;
+        }
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
          * 一帧都没跑（accumulator 不足，长 stall 后常见）则留到下一帧，
          * 避免按键被吞。 */
@@ -5032,6 +5079,71 @@ startup_again:
                         (long long)audit_update_us,(long long)audit_render_us,(long long)scene_freeze_us,
                         (long long)pose_extract_us,(long long)scene_map_prepare_us,
                         (long long)probe_stats.misc_prepare_us);
+                    if (options.frame_audit)
+                        __printf("SCENE-LOGIC-COST frame=%llu world_us=%lld teammate_us=%lld enemy_us=%lld separation_us=%lld other_world_us=%lld session_runtime_us=%lld world_ticks=%u\n",
+                            (unsigned long long)enemy_render.frame_id,
+                            (long long)game_update_profile.world_us,
+                            (long long)game_update_profile.teammate_us,
+                            (long long)game_update_profile.enemy_us,
+                            (long long)game_update_profile.separation_us,
+                            (long long)game_update_profile.other_us,
+                            (long long)(audit_update_us > game_update_profile.world_us ?
+                                audit_update_us - game_update_profile.world_us : 0),
+                            game_update_profile.ticks);
+                    if (options.frame_audit)
+                        __printf("SCENE-LOGIC-ENEMIES frame=%llu nav_queries=%u ground_queries=%u common_us=%lld common_calls=%u heavy_us=%lld heavy_calls=%u fast_us=%lld fast_calls=%u smoker_us=%lld smoker_calls=%u charger_us=%lld charger_calls=%u tank_us=%lld tank_calls=%u\n",
+                            (unsigned long long)enemy_render.frame_id,
+                            game_update_profile.nav_queries,
+                            game_update_profile.ground_queries,
+                            (long long)game_update_profile.enemy_type_us[0],game_update_profile.enemy_type_calls[0],
+                            (long long)game_update_profile.enemy_type_us[1],game_update_profile.enemy_type_calls[1],
+                            (long long)game_update_profile.enemy_type_us[2],game_update_profile.enemy_type_calls[2],
+                            (long long)game_update_profile.enemy_type_us[3],game_update_profile.enemy_type_calls[3],
+                            (long long)game_update_profile.enemy_type_us[4],game_update_profile.enemy_type_calls[4],
+                            (long long)game_update_profile.enemy_type_us[5],game_update_profile.enemy_type_calls[5]);
+                    if (options.frame_audit)
+                        __printf("SCENE-LOGIC-NAV frame=%llu nav_search_us=%lld nav_paths_us=%lld nav_paths_max_us=%lld nav_searches=%u nav_nodes=%u nav_candidates=%u nav_segments=%u nav_samples=%u nav_ground_queries=%u ground_scans=%u ground_heights=%u body_queries=%u body_scans=%u segment_queries=%u segment_scans=%u ramp_transition_queries=%u ramp_transition_scans=%u\n",
+                            (unsigned long long)enemy_render.frame_id,
+                            (long long)game_update_profile.nav_search_us,
+                            (long long)game_update_profile.nav_paths_us,
+                            (long long)game_update_profile.nav_paths_max_us,
+                            game_update_profile.nav_searches,
+                            game_update_profile.nav_nodes,
+                            game_update_profile.nav_candidates,
+                            game_update_profile.nav_segments,
+                            game_update_profile.nav_samples,
+                            game_update_profile.nav_ground_queries,
+                            game_update_profile.ground_scans,
+                            game_update_profile.ground_heights,
+                            game_update_profile.body_queries,
+                            game_update_profile.body_scans,
+                            game_update_profile.segment_queries,
+                            game_update_profile.segment_scans,
+                            game_update_profile.ramp_transition_queries,
+                            game_update_profile.ramp_transition_scans);
+                    if (options.frame_audit) {
+                        int ai=0,alive=0,dying=0,types[6]={0};
+                        int64_t sampled_us=rf_core_time_us(&core);
+                        for (int i=0;i<TOY_GAME_MAX_ACTORS;++i)
+                            if (game.actors[i].active && game.actors[i].kind==TOY_GAME_ACTOR_AI) ai++;
+                        for (int i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+                            if (game.enemies[i].active==1) {
+                                alive++;
+                                if ((unsigned)game.enemies[i].type<6) types[game.enemies[i].type]++;
+                            }
+                            if (game.enemies[i].active==2) dying++;
+                        }
+                        __printf("SCENE-RUNTIME frame=%llu interval_us=%lld ticks=%d dropped_us=%lld fixed_tick=%d auto=%d world=%d state=%d paused=%d camera_x=%d camera_z=%d direction_sy=%d direction_cy=%d width=%d height=%d ai=%d alive=%d dying=%d common=%d heavy=%d fast=%d smoker=%d charger=%d tank=%d\n",
+                            (unsigned long long)enemy_render.frame_id,
+                            (long long)(scene_previous_sample_us ? sampled_us-scene_previous_sample_us : 0),
+                            logic_steps,(long long)scene_dropped_us,options.gpu_normal_fixed_tick,
+                            auto_mode,session.world_id,game.state,paused,camera.x,camera.z,camera.sy,camera.cy,
+                            renderer.surface.width,renderer.surface.height,ai,alive,dying,
+                            types[TOY_GAME_ENEMY_PURSUIT_COMMON],types[TOY_GAME_ENEMY_PURSUIT_HEAVY],
+                            types[TOY_GAME_ENEMY_PURSUIT_FAST],types[TOY_GAME_ENEMY_SMOKER],
+                            types[TOY_GAME_ENEMY_CHARGER],types[TOY_GAME_ENEMY_TANK]);
+                        scene_previous_sample_us=sampled_us;
+                    }
                     __printf("SCENE-WORLD-COST frame=%llu prepare_us=%lld upload_bytes=%llu draws=%u gpu_valid=%d gpu_draw_ms=%.6f bridges=%llu supplemental_modular=%u\n",
                         (unsigned long long)enemy_render.frame_id,(long long)probe_stats.prepare_us,
                         (unsigned long long)probe_stats.upload_bytes,probe_stats.draws,

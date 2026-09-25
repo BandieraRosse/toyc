@@ -22,6 +22,11 @@ normal render context 只持有 V2 cache。world load/switch 时 bake，正常�
 V1 32×24 cache 属于独立 diagnostic owner，只能在显式诊断 scope 中按需 bake。正常启动不 bake V1，
 默认 sampler 不会回退到 V1。
 
+当前独立 Scene 仍有实现偏差：`rf_gpu_scene_world_floor_freeze` 为展示模型复制 V1 field 时，
+每帧重新 bake，而非复用 diagnostic owner 的缓存；无敌人也会执行。它不改变正常 V2 sampler，
+但增加随地图 primitive 数量变化的 CPU 冻结成本，尚待按地图生命周期缓存。
+源码核对和成本边界见 [旧地图调查](../archive/old-map-lighting-investigation-20260925.md)。
+
 ## 冻结参数
 
 | 项目 | 当前值 |

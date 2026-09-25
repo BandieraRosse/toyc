@@ -848,6 +848,82 @@ static int primitive_gameplay_logic_test(void)
     return 0;
 }
 
+static int nav_ground_reuse_logic_test(void)
+{
+    static struct toy_game optimized, reference;
+    struct toy_game_update_profile fast_profile = {0}, old_profile = {0};
+    struct camera camera, button_camera;
+    unsigned int saved_queries = 0;
+    old_profile.legacy_nav_ground = 1;
+    for (int no_tank = 0; no_tank < 2; ++no_tank) {
+        rasterfall_session_reset(&session, &camera, 1);
+        toy_game_local_player_actor(&session.game_state)->x = -32000;
+        toy_game_local_player_actor(&session.game_state)->z = 0;
+        button_camera = camera;
+        button_camera.x = -23300;
+        button_camera.z = no_tank ? 2100 : -2100;
+        button_camera.sy = -1024; button_camera.cy = 0;
+        for (int press = 0; press < 4; ++press)
+            rasterfall_session_interact_remote(&session, &button_camera, no_tank ?
+                TOY_MAP_PICKUP_WEST_CORRIDOR_NO_TANK_BUTTON : TOY_MAP_PICKUP_WEST_CORRIDOR_BUTTON);
+        optimized = session.game_state;
+        reference = optimized;
+        if (optimized.enemies_alive != 64) return 1;
+        if (!no_tank) {
+            const int radii[3] = {0, TOY_GAME_PLAYER_RADIUS, TOY_GAME_CHARGER_RADIUS};
+            optimized.update_profile = &fast_profile;
+            reference.update_profile = &old_profile;
+            /* Exercise authored platform/ramp/box edges at several heights,
+             * including exact contact, instead of only flat corridor motion. */
+            for (int p = 0; p < optimized.primitive_count; ++p) {
+                const struct toy_map_primitive *surface = &optimized.primitives[p];
+                int heights[4] = {0, surface->base_y, surface->surface_y0,
+                                  surface->surface_y0 - TOY_CONFIG_GROUND_STEP_HEIGHT - 1};
+                for (int r = 0; r < 3; ++r) {
+                    int xs[5] = {(surface->minx + surface->maxx) / 2,
+                        surface->minx-radii[r], surface->minx-radii[r]+1,
+                        surface->maxx+radii[r], surface->maxx+radii[r]-1};
+                    int zs[5] = {(surface->minz + surface->maxz) / 2,
+                        surface->minz-radii[r], surface->minz-radii[r]+1,
+                        surface->maxz+radii[r], surface->maxz+radii[r]-1};
+                    for (int h = 0; h < 4; ++h)
+                        for (int point = 0; point < 5; ++point)
+                            if (toy_game_position_blocked_at_height(&optimized,
+                                    xs[point], zs[point], radii[r], heights[h]) !=
+                                toy_game_position_blocked_at_height(&reference,
+                                    xs[point], zs[point], radii[r], heights[h])) return 5;
+                }
+            }
+            optimized.update_profile = reference.update_profile = NULL;
+        }
+        for (int tick = 0; tick < 360; ++tick) {
+            optimized.update_profile = &fast_profile;
+            reference.update_profile = &old_profile;
+            toy_game_update_world(&optimized, 16);
+            toy_game_update_world(&reference, 16);
+            optimized.update_profile = reference.update_profile = NULL;
+            /* Same initialized bytes and borrowed map pointers: compare all
+             * Game state, PRNG, navigation, actors and queued events. */
+            if (memcmp(&optimized, &reference, sizeof(optimized))) {
+                __printf("nav ground state mismatch pool=%d tick=%d\n", no_tank, tick);
+                return 2;
+            }
+            if (fast_profile.nav_samples != old_profile.nav_samples ||
+                fast_profile.nav_candidates != old_profile.nav_candidates ||
+                fast_profile.body_scans != old_profile.body_scans) return 3;
+            optimized.event_count = reference.event_count = 0;
+            optimized.actor_impulse_event_count = reference.actor_impulse_event_count = 0;
+        }
+    }
+    saved_queries = old_profile.ground_queries - fast_profile.ground_queries;
+    if (old_profile.ground_queries <= fast_profile.ground_queries ||
+        !fast_profile.nav_candidates) return 4;
+    if (old_profile.ramp_transition_scans <= fast_profile.ramp_transition_scans) return 6;
+    __printf("nav ground reuse: PASS terrain edges + 720 ticks full Game/events equal, saved_queries=%u saved_ramp_scans=%u\n",
+             saved_queries, old_profile.ramp_transition_scans-fast_profile.ramp_transition_scans);
+    return 0;
+}
+
 static int run_logic_test(void)
 {
     struct camera camera;
@@ -968,6 +1044,7 @@ static int run_logic_test(void)
                                 "rasterfall/assets/maps/rasterfall.map") < 0)
         return 174;
     if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
+    if (nav_ground_reuse_logic_test()) return 259;
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_OUTPOST ||

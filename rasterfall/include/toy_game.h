@@ -584,7 +584,31 @@ struct toy_game_ai_decision {
     int shop_arg;
 };
 
+/* Optional, read-only diagnostic sink. The caller owns its lifetime and clock. */
+struct toy_game_update_profile {
+    int64_t (*clock_us)(void);
+    int64_t world_us;
+    int64_t teammate_us;
+    int64_t enemy_us;
+    int64_t separation_us;
+    int64_t other_us;
+    int64_t enemy_type_us[6];
+    unsigned int enemy_type_calls[6];
+    unsigned int nav_queries;
+    unsigned int ground_queries;
+    int64_t nav_search_us, nav_paths_us, nav_paths_max_us;
+    unsigned int nav_searches, nav_nodes, nav_candidates;
+    unsigned int nav_segments, nav_samples, nav_ground_queries;
+    unsigned int ground_scans, ground_heights;
+    unsigned int body_queries, body_scans, segment_queries, segment_scans;
+    unsigned int ramp_transition_queries, ramp_transition_scans;
+    /* Diagnostic reference path; never changes query results. */
+    int legacy_nav_ground;
+    unsigned int ticks;
+};
+
 struct toy_game {
+    struct toy_game_update_profile *update_profile;
     int state;          /* enum toy_game_state */
     struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
     struct toy_game_burn_zone burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
