@@ -59,7 +59,7 @@ POST 沿用正常帧 identity 策略。整批验证包括层序，失败不提�
 显式独立预览 capture 用同一冻结批次先提交离屏 Scene color/depth 读回，再 native present；
 只将指定帧标为 `readback=1`，未请求捕获的帧保持零读回。该图用于内容检查，不证明 swapchain
 自身的呈现颜色，也不参与产品性能结论；捕获失败仍整帧失败，不回放 mixed。
-分层几何与两种纹理 backing 由 Scene owner 持有到同步退休；后续帧重建，尚未做资源复用优化。
+分层几何与两种纹理 backing 由 Scene owner 持有到同步退休；后续帧按容量更新，纹理内容变化时失效对应资源。
 
 ## 混合帧数据流
 
@@ -227,7 +227,34 @@ owner 跨审计帧复用，registry frame pin 在诊断
 `SCENE-SUBMIT-COST` 进一步区分 native record/acquire/submit/present 墙钟与 fence 退休墙钟；
 显式 capture 的离屏读回只计入原总段，不混入这两个 native 子段。退休仍是同步的。
 敌人三角形提取按单个身体缓存已蒙皮顶点，光照按当前冻结光场和精确世界坐标缓存；碰撞键重新计算，
-缓存不跨身体或帧，保留材质、面光照、死亡变换和逐三角形顺序。
+光照缓存不跨身体或帧，保留材质、面光照、死亡变换和逐三角形顺序。六种普通感染体的 Scene 提取各自复用
+一份独立 scratch pose；已蒙皮顶点按资源、bind 模式及采样步态缓存，跨同姿态敌人和帧复用。
+缓存只依赖不可变资源和姿态，不保存敌人位置、死亡变换、反馈、世界光照或动作历史；
+遇到尚未缓存的顶点时重置独立 pose 并求值。它不与 mixed 展示实例共享可变姿态。
+`SCENE-ENEMY-COST` 将敌人准备中的资源更新/创建与 draw 构造/预检分别计时；
+两者和 `SCENE-EXTRACT geometry_us` 都包含在 `SCENE-FRAME-COST enemies_us` 中。
+
+## Scene 敌人几何与颜色合批
+
+普通感染体按资源顶点索引缓存一次身体提取中的世界位置和旋转法线。每次身体调用使用新的 stamp，
+溢出时清空 stamp 表；位置、朝向、squash、死亡及光照不能跨身体误复用。数组随不可变 recipe 缓存持有，
+不共享 mixed 可变 pose。Scene owner 另保留敌人几何工作区，每个身体重置活动计数和光照缓存，
+活动顶点、颜色、双面标志与顺序索引全部覆盖；不再逐身体清零完整顶点容量，owner 关闭释放工作区。
+
+敌人及程序角色使用显式 Scene color resource。56 字节顶点布局和蒙皮 ABI 不变，该资源将原 UV 两个
+整数解释为 `{light_q8, RGB24}`，分别校验 `[0,384]` 和 `[0,0xffffff]`；同一三角形三个角必须同色。
+仅 `material[3]=2` 的非纹理、非整数深度、非屏幕坐标、非 form-light draw 可以消费此资源。
+普通资源仍保持原 UV 范围和 shader 路径。shader 使用 flat 三角形颜色与原有插值光照、整数截断顺序。
+同资源内连续三角形只按双面策略拆批，保留原三角形顺序；透明 alpha、层序与深度策略不变。
+动态更新仍检查数值边界、容量和退休状态，失败不提交部分目标。
+
+`SCENE-ENEMY-COST triangles` 统计敌人及程序角色实际提取的三角形，用于合批前后内容核对。
+`SCENE-CPU-COST` 细分循环前段、动态来源、冻结、pose、地图资源缓存与 prepare 余项：
+`logic_us` 是既有 update 区间，包含在 `loop_prepare_us` 中；`pose_us` 与 `SCENE-EXTRACT local_pose_us`
+相同；`misc_prepare_us` 已在总 prepare 中。不得把这些子段重复相加。
+`SCENE-SUBMIT-COST` 另记录命令预检/录制、acquire、queue submit 和 present 的 CPU 墙钟。
+它们属于 `submit_present_us`，不含全部 blit/barrier 录制与重建善后；fence 仍单列 `retire_us`。
+GPU draw timestamp 仍覆盖整个 Scene render pass，不是各层 GPU 时间，也不包含蒙皮。
 
 ## 角色 GPU skinning
 

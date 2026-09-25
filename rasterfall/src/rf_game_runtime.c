@@ -4813,6 +4813,7 @@ startup_again:
             /* Explicit audit must include fast frames too: sampled logs cannot
              * establish a complete strict run or an unbiased timing baseline. */
             if (options.frame_audit || options.gpu_scene_world_preview) {
+                int64_t scene_freeze_start=rf_core_clock_now_us();
                 struct rf_gpu_scene_local_frame source_frame;
                 struct rf_gpu_scene_local_source client_source;
                 struct rf_gpu_scene_local_source *audit_source=&session.scene_local;
@@ -4879,6 +4880,7 @@ startup_again:
                     scene_runtime_failed=1;goto scene_shutdown;
                 }
                 session.scene_local.frame_id=audit_source->frame_id;
+                int64_t scene_freeze_us=rf_core_clock_now_us()-scene_freeze_start;
                 int64_t pose_extract_start=rf_core_clock_now_us();
                 for(uint32_t actor_index=0;
                     actor_index<source_frame.snapshot.actor_count;++actor_index) {
@@ -4901,6 +4903,7 @@ startup_again:
                     actor_pose[pose_count++]=enemy_render.modular[i];
                 }
                 int64_t pose_extract_us=rf_core_clock_now_us()-pose_extract_start;
+                int64_t scene_map_prepare_start=rf_core_clock_now_us();
                 if (session.map_ops.runtime_loaded &&
                     rf_gpu_scene_world_resources_prepare(&scene_world_resources,
                         &source_frame.snapshot,&world_render,&floor_render,&prop_render,
@@ -4913,6 +4916,7 @@ startup_again:
                 }
                 if (!session.map_ops.runtime_loaded)
                     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
+                int64_t scene_map_prepare_us=rf_core_clock_now_us()-scene_map_prepare_start;
                 for(unsigned int kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
                     if (scene_world_resources.opaque[kind].generation) {
                         const struct rasterfall_model_asset *model=
@@ -5019,14 +5023,25 @@ startup_again:
                         (long long)probe_stats.submit_retire_us,
                         (long long)(rf_core_time_us(&core)-audit_loop_start),
                         probe_stats.dynamic_reused,probe_stats.dynamic_created);
+                    __printf("SCENE-ENEMY-COST frame=%llu upload_us=%lld draw_prepare_us=%lld triangles=%u\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        (long long)probe_stats.enemy_upload_us,
+                        (long long)probe_stats.enemy_draw_prepare_us,probe_stats.enemy_triangles);
+                    __printf("SCENE-CPU-COST frame=%llu loop_prepare_us=%lld logic_us=%lld dynamic_source_us=%lld freeze_us=%lld pose_us=%lld map_prepare_us=%lld misc_prepare_us=%lld\n",
+                        (unsigned long long)enemy_render.frame_id,(long long)audit_prepare_us,
+                        (long long)audit_update_us,(long long)audit_render_us,(long long)scene_freeze_us,
+                        (long long)pose_extract_us,(long long)scene_map_prepare_us,
+                        (long long)probe_stats.misc_prepare_us);
                     __printf("SCENE-WORLD-COST frame=%llu prepare_us=%lld upload_bytes=%llu draws=%u gpu_valid=%d gpu_draw_ms=%.6f bridges=%llu supplemental_modular=%u\n",
                         (unsigned long long)enemy_render.frame_id,(long long)probe_stats.prepare_us,
                         (unsigned long long)probe_stats.upload_bytes,probe_stats.draws,
                         probe_stats.gpu_time_valid,probe_stats.gpu_draw_ms,
                         (unsigned long long)probe_stats.bridge_transfers,enemy_render.modular_count);
-                    __printf("SCENE-SUBMIT-COST frame=%llu submit_present_us=%lld retire_us=%lld\n",
+                    __printf("SCENE-SUBMIT-COST frame=%llu submit_present_us=%lld retire_us=%lld record_us=%lld acquire_us=%lld queue_submit_us=%lld present_us=%lld\n",
                         (unsigned long long)enemy_render.frame_id,
-                        (long long)probe_stats.submit_present_us,(long long)probe_stats.retire_us);
+                        (long long)probe_stats.submit_present_us,(long long)probe_stats.retire_us,
+                        (long long)probe_stats.record_us,(long long)probe_stats.acquire_us,
+                        (long long)probe_stats.queue_submit_us,(long long)probe_stats.present_us);
                     {
                         unsigned shadows=0,tongues=0,deaths=0;
                         for (unsigned i=0;i<enemy_render.count;++i) {

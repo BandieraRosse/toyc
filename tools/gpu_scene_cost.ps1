@@ -2,7 +2,7 @@
 param([string]$OutputDirectory='tmp/scene-cost-ab',
       [ValidateRange(16,1000)][int]$Frames=64,
       [ValidateRange(1,10)][int]$Rounds=3,
-      [ValidateSet('Dynamic','ActorUpload','EnemyPrep','BindUpload','DrawBind','SkinBatch','LayerReuse','P1')][string]$Experiment='Dynamic',
+      [ValidateSet('Dynamic','ActorUpload','EnemyPrep','BindUpload','DrawBind','SkinBatch','LayerReuse','P1','VertexTransform','ColorDraws','EnemyPipeline')][string]$Experiment='Dynamic',
       [switch]$DenseComponents)
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -12,6 +12,9 @@ New-Item -ItemType Directory -Path $Out | Out-Null
 $Variable=switch ($Experiment) {
     'ActorUpload' {'RF_GPU_SKIN_LEGACY_UPLOAD'}
     'EnemyPrep' {'RF_GPU_SCENE_LEGACY_ENEMY_PREP'}
+    'VertexTransform' {'RF_GPU_SCENE_LEGACY_VERTEX_TRANSFORM'}
+    'ColorDraws' {'RF_GPU_SCENE_LEGACY_COLOR_DRAWS'}
+    'EnemyPipeline' {'RF_GPU_SCENE_LEGACY_VERTEX_TRANSFORM'}
     'BindUpload' {'RF_GPU_SCENE_LEGACY_BIND_UPLOAD'}
     'DrawBind' {'RF_GPU_SCENE_LEGACY_BIND'}
     'SkinBatch' {'RF_GPU_SCENE_LEGACY_SKIN_BATCH'}
@@ -31,8 +34,10 @@ if ($DenseComponents) {
 $DiagnosticSaved=@{}
 foreach ($Key in @('RF_GPU_SCENE_REBUILD_DYNAMIC','RF_GPU_SKIN_LEGACY_UPLOAD',
     'RF_GPU_SKIN_STAGING_UPLOAD','RF_GPU_SCENE_LEGACY_ENEMY_PREP',
-    'RF_GPU_SCENE_LEGACY_BIND','RF_GPU_SCENE_LEGACY_SKIN_BATCH','RF_GPU_SCENE_REBUILD_LAYERS',
-    'RF_GPU_SCENE_LEGACY_BIND_UPLOAD')) {
+    'RF_GPU_SCENE_LEGACY_BIND','RF_GPU_SCENE_LEGACY_SKIN_REUSE',
+    'RF_GPU_SCENE_LEGACY_SKIN_BATCH','RF_GPU_SCENE_REBUILD_LAYERS',
+    'RF_GPU_SCENE_LEGACY_BIND_UPLOAD','RF_GPU_SCENE_LEGACY_VERTEX_TRANSFORM',
+    'RF_GPU_SCENE_LEGACY_COLOR_DRAWS')) {
     $DiagnosticSaved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')
 }
 try {
@@ -49,11 +54,12 @@ try {
                 $View=if ($DenseComponents -and $Enemies -eq 60) {'near-heavy'} else {'near'}
                 [Environment]::SetEnvironmentVariable($Variable,$(if ($Mode -eq $Pair[0]) {'1'} else {'0'}),'Process')
                 if ($Experiment -eq 'P1') { $env:RF_GPU_SCENE_REBUILD_LAYERS=[Environment]::GetEnvironmentVariable($Variable,'Process') }
+                if ($Experiment -eq 'EnemyPipeline') { $env:RF_GPU_SCENE_LEGACY_COLOR_DRAWS=[Environment]::GetEnvironmentVariable($Variable,'Process') }
                 $Name="$Enemies-$Round-$Mode"
                 & "$PSScriptRoot/gpu_scene_preview.ps1" -Independent -Views $View -Enemies $Enemies `
                     -Frames $Frames -OutputDirectory "$OutputDirectory/$Name" -MapPath $DenseMap
                 $Runs.Add(@{name=$Name;enemies=$Enemies;round=$Round;mode=$Mode;frames=$Frames;
-                    dense_components=[bool]$DenseComponents;view=$View})
+                    dense_components=[bool]$DenseComponents;view=$View;experiment=$Experiment})
                 $Runs | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "$Out/runs.json"
             }
         }

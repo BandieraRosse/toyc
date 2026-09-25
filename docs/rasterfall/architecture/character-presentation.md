@@ -70,8 +70,9 @@ Smoker、Charger、Tank 的身体 pose、受击后的世界位置、朝向、lif
 独立 Scene owner 也消费此接口，在单次冻结后提交自己的历史，提取重放不得再次推进它。
 Scene 复用不可变资源，以独立 scratch instance 重建姿态和 CPU skinning 几何，不读取或推进旧 motion cache，
 也不复用旧 producer 的 mutable pose。
-单次身体提取按顶点索引缓存 skinning 结果，重复索引复用同一位置与法线；缓存仅活到本次调用返回，
-索引冲突重新求值，不跨姿态复用。
+Scene 按 recipe、bind 模式及采样步态缓存局部 skinning 位置与法线；不可变资源可跨帧复用这些值。
+世界位置和旋转法线另按顶点索引只缓存单次身体提取，重复索引复用同一结果，新身体即使姿态相同也重新变换。
+世界光照、死亡变换、反馈和动作历史不进入局部姿态缓存。诊断开关可恢复逐身体蒙皮或逐角点变换。
 颜色保留原路径的 form-light 处理；V2 使用逐顶点世界光照，
 非 V2 路径保留材质亮度范围。普通感染体、特感和显式 LEGACY 身体共用 Scene WORLD 深度。死亡缩放、旋转中心和旋转值在来源处冻结；不透明死亡身体参与 WORLD，渐隐身体单列 transparent 计数，等待有序透明层。
 旧接线仍是同步离屏审计，独立来源则可 native present；动态 GPU 资源在同步退休后按容量复用，

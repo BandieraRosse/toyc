@@ -12,6 +12,7 @@ layout(location=0) out vec2 texcoord;
 layout(location=1) flat out uint form_light;
 layout(location=2) noperspective out float inverse_z;
 layout(location=3) noperspective out float vertex_light;
+layout(location=4) flat out uint triangle_color;
 
 ivec3 rotate_normal(ivec3 n) {
     ivec3 r = ivec3((n.x*d.rotation.y+n.z*d.rotation.x)/1024,
@@ -20,6 +21,7 @@ ivec3 rotate_normal(ivec3 n) {
     return (r << 16) >> 16;
 }
 void main() {
+    triangle_color = d.material.w == 2u ? uint(uv.y) : d.material.x;
     if (d.texture_info.w != 0) {
         float w = 1048576.0 / float(max(position.z,1));
         gl_Position = vec4((2.0*float(position.x)/float(d.projection.x)-1.0)*w,

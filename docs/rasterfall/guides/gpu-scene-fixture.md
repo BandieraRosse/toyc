@@ -29,6 +29,16 @@ present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDir
 
 ### 动态资源运行成本
 
+敌人唯一顶点变换与颜色合批使用 `tools/gpu_scene_cost.ps1 -Experiment EnemyPipeline`，
+单独归因分别使用 `-Experiment VertexTransform`、`-Experiment ColorDraws`；每次使用新证据目录。
+对应同包对照开关为 `RF_GPU_SCENE_LEGACY_VERTEX_TRANSFORM=1` 和
+`RF_GPU_SCENE_LEGACY_COLOR_DRAWS=1`。两侧均保留 CPU 工作区复用。
+颜色合批允许 draw 数下降，报告改为逐帧核对敌人/程序角色三角形、来源和地图组件 draw 序列；
+另以相同镜头、相同 capture frame 的 PPM 字节比较验证颜色、光照、遮挡和透明顺序。
+纯变换实验仍要求 draw 数相同。`SCENE-CPU-COST` 与提交细分的包含关系见 GPU 架构，
+报告保留这些字段，但不能重复累加子段。`gpu-graphics-test` 包含颜色合批、更新、近裁剪、
+透明与非法输入的 color/depth 对照。正式性能结论仍需固定电源/设备状态和低扰动采样。
+
 正式队员不变 bind 上传的同包 A/B 使用 `tools/gpu_scene_cost.ps1 -Experiment BindUpload
 -DenseComponents -Frames 32 -Rounds 5 -OutputDirectory tmp/scene-bind-upload-ab`（实际命令写在同一行）。
 `RF_GPU_SCENE_LEGACY_BIND_UPLOAD=1` 恢复逐帧 bind 上传。`-DenseComponents` 从正式
@@ -52,6 +62,9 @@ P1 使用 `tools/gpu_scene_cost.ps1 -Experiment P1 -OutputDirectory tmp/scene-p1
 `-Experiment DrawBind`；两项分别指定新的 `-OutputDirectory`。对应诊断开关是
 `RF_GPU_SCENE_LEGACY_ENEMY_PREP=1` 和 `RF_GPU_SCENE_LEGACY_BIND=1`，分别恢复逐角点计算及逐 draw 绑定，
 不改变几何或 draw 顺序。采样前清除其他实验开关，只改变当前对照变量。
+`RF_GPU_SCENE_LEGACY_SKIN_REUSE=1` 单独恢复普通感染体逐敌人蒙皮缓存，用于同包比较跨敌人姿态复用；
+它不关闭当前光照缓存。`SCENE-ENEMY-COST` 分出动态资源更新/创建及 draw 构造/预检，
+和 `SCENE-EXTRACT geometry_us` 一起解释 `SCENE-FRAME-COST enemies_us`，不要重复相加到整帧。
 `SCENE-SUBMIT-COST` 分别记录 native 提交/呈现与退休墙钟，报告同时保留 GPU draw 时间；
 不能将整个 submit/present 段解释成 fence 等待。缓存正确性用同帧 capture 的 PPM 字节一致性检查。
 

@@ -8,6 +8,8 @@
  * Corner vertices carry all three source normals to preserve integer
  * per-primitive lighting after rotation. Expansion happens once at upload. */
 struct rf_gpu_graphics_vertex {
+    /* Scene color resources interpret uv as {vertex light Q8, packed RGB24}.
+     * This explicit resource mode retains the 56-byte skin/mixed vertex ABI. */
     int32_t position[3], uv[2], normals[9];
 };
 
@@ -22,7 +24,7 @@ struct rf_gpu_graphics_draw {
     int32_t camera[4];
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
-    uint32_t material[4]; /* RGB, scene Q8, textured, reserved */
+    uint32_t material[4]; /* RGB, scene Q8, textured, light mode: 0 form, 1 vertex, 2 vertex+RGB */
     int32_t texture[4]; /* width,height, alpha (0=opaque), screen mode (0/1/2) */
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
@@ -60,6 +62,8 @@ struct rf_gpu_scene_timing {
     uint64_t frame_id;
     int supported, valid;
     double world_draw_ms, present_blit_ms;
+    /* CPU walls within native submit; separate from completed GPU queries. */
+    double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };
 
 /* Persistent immutable submesh/texture bundles, independent of target extent.
@@ -82,6 +86,13 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
 int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count);
+/* Untextured Scene-only triangle color: uv[0] is Q8 light in [0,384],
+ * uv[1] is RGB24, equal at all three indexed corners. Draw material[3]=2,
+ * no integer-depth, screen mode or form lighting. Update uses the API above. */
+struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count,
+    const uint32_t *indices,uint32_t index_count);
 /* HG-5B: create the ordinary indexed resource, then fill its vertex buffer
  * from packed bind/palette words. Reference may be NULL on normal frames;
  * explicit diff supplies it as a CPU oracle. */

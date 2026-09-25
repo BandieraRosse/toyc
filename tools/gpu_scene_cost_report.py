@@ -50,9 +50,13 @@ def main():
                     "SCENE-WORKLOAD tanks=6 chargers=6 components=explicit-map" in text, \
                     "Heavy enemies missing"
         assert [x["frame"] for x in cost] == list(range(1, run["frames"]+1)), run
-        signature = [(w["draws"], s["enemies"], s["enemy_culled"], s["procedural"],
+        enemy_cost = rows(text, "SCENE-ENEMY-COST")
+        merge = run.get("experiment") in ("ColorDraws", "EnemyPipeline")
+        if merge:
+            assert len(enemy_cost) == run["frames"], "Missing triangle workload"
+        signature = [(enemy_cost[i]["triangles"] if merge else w["draws"], s["enemies"], s["enemy_culled"], s["procedural"],
                       s["supplemental_modular"], m["prop_payload"], d["prop_draws"])
-                     for w, s, m, d in zip(world, source, local, submitted)]
+                     for i, (w, s, m, d) in enumerate(zip(world, source, local, submitted))]
         key = run["enemies"]
         assert workload.setdefault(key, signature) == signature, "Workload changed"
         warm = 8
@@ -60,6 +64,18 @@ def main():
                    for k in ("whole_loop_us", "world_us", "actors_us", "enemies_us",
                              "layers_us", "submit_retire_us")}
         metrics["upload_bytes"] = summarize([x["upload_bytes"] for x in world[warm:]])
+        metrics["draws"] = summarize([x["draws"] for x in world[warm:]])
+        if enemy_cost:
+            assert len(enemy_cost) == run["frames"], run
+            for k in ("upload_us", "draw_prepare_us"):
+                metrics["enemy_"+k[:-3]+"_ms"] = summarize([x[k]/1000 for x in enemy_cost[warm:]])
+            if "triangles" in enemy_cost[0]:
+                metrics["enemy_triangles"] = summarize([x["triangles"] for x in enemy_cost[warm:]])
+        cpu = rows(text, "SCENE-CPU-COST")
+        if cpu:
+            assert len(cpu) == run["frames"], run
+            for k in ("loop_prepare_us", "logic_us", "dynamic_source_us", "freeze_us", "pose_us", "map_prepare_us", "misc_prepare_us"):
+                metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in cpu[warm:]])
         metrics["prop_opaque"] = summarize([x["prop_opaque"] for x in local[warm:]])
         metrics["prop_draws"] = summarize([x["prop_draws"] for x in submitted[warm:]])
         metrics["gpu_draw_ms"] = summarize([x["gpu_draw_ms"] for x in world[warm:]])
@@ -69,6 +85,9 @@ def main():
             assert len(submission) == run["frames"], run
             for k in ("submit_present_us", "retire_us"):
                 metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in submission[warm:]])
+            for k in ("record_us", "acquire_us", "queue_submit_us", "present_us"):
+                if k in submission[0]:
+                    metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in submission[warm:]])
         assert len(extraction) == run["frames"], run
         for k in ("local_pose_us", "geometry_us"):
             metrics[k[:-3]+"_ms"] = summarize([x[k]/1000 for x in extraction[warm:]])

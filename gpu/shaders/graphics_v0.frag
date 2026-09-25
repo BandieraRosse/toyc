@@ -8,6 +8,7 @@ layout(location=0) in vec2 texcoord;
 layout(location=1) flat in uint form_light;
 layout(location=2) noperspective in float inverse_z;
 layout(location=3) noperspective in float vertex_light;
+layout(location=4) flat in uint triangle_color;
 layout(location=0) out vec4 color;
 uvec3 rgb(uint c) { return uvec3((c>>16)&255u,(c>>8)&255u,c&255u); }
 void main() {
@@ -21,7 +22,7 @@ void main() {
     } else {
         // Flat path performs two separate truncations, form then scene.
         uint light = d.material.w != 0u ? uint(clamp(vertex_light,0.0,384.0)) : form_light;
-        c = (rgb(d.material.x)*light/256u)*d.material.y/256u;
+        c = (rgb(triangle_color)*light/256u)*d.material.y/256u;
     }
     color = vec4(vec3(min(c,uvec3(255)))/255.0,
                  d.texture_info.z == 0 ? 1.0 : float(d.texture_info.z)/255.0);

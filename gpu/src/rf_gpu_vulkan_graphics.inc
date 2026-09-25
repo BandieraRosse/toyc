@@ -69,6 +69,7 @@ struct rf_gpu_graphics_resource {
     int position_bound[3];
     int frame_dynamic;
     int sequential_triangles;
+    int scene_vertex_color;
     struct rf_gpu_vulkan_raster_buffer triangle_staging;
     struct rf_gpu_graphics_resource *skin_pending_next;
     struct rf_gpu_vulkan_raster_buffer *skin_pending_upload[2];
@@ -720,13 +721,18 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
             if (vertices[i].position[j] < -32767 || vertices[i].position[j] > 32767) return -1;
         for (unsigned j = 0; j < 9; ++j)
             if (vertices[i].normals[j] < -32767 || vertices[i].normals[j] > 32767) return -1;
-        for (unsigned j = 0; j < 2; ++j)
-            if (vertices[i].uv[j] < 0 || vertices[i].uv[j] > 65535) return -1;
+        for (unsigned j = 0; j < 2; ++j) {
+            int limit=resource->scene_vertex_color ? (j ? 0xffffff : 384) : 65535;
+            if (vertices[i].uv[j] < 0 || vertices[i].uv[j] > limit) return -1;
+        }
     }
     /* All three corners must describe the same source primitive. */
     for (uint32_t i = 0; vertices && i < index_count; i += 3)
         if (memcmp(vertices[indices[i]].normals, vertices[indices[i+1]].normals, 36) ||
-            memcmp(vertices[indices[i]].normals, vertices[indices[i+2]].normals, 36)) return -1;
+            memcmp(vertices[indices[i]].normals, vertices[indices[i+2]].normals, 36) ||
+            (resource->scene_vertex_color &&
+             (vertices[indices[i]].uv[1]!=vertices[indices[i+1]].uv[1] ||
+              vertices[indices[i]].uv[1]!=vertices[indices[i+2]].uv[1]))) return -1;
     expanded = malloc((size_t)index_count*2*sizeof(*expanded));
     if (!expanded) return -1;
     for (uint32_t i = 0; i < index_count*2; ++i) expanded[i] = i;
@@ -892,11 +898,12 @@ done:
     return result;
 }
 
-struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
+static struct rf_gpu_graphics_resource *gfx_resource_create(
     struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
-    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
+    const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height,
+    int scene_vertex_color)
 {
     struct rf_gpu_graphics_resource *resource;
     struct rf_vk_descriptor_pool_size size = {RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
@@ -908,6 +915,7 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     resource = calloc(1, sizeof(*resource));
     if (!resource) return NULL;
     resource->owner = g;
+    resource->scene_vertex_color=scene_vertex_color;
     resource->next = g->resources;
     g->resources = resource;
     if (gfx_resource_upload(g, resource, vertices, vertex_count, indices,
@@ -941,6 +949,26 @@ descriptor_failed:
     return NULL;
 }
 
+struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count,
+    const uint32_t *indices,uint32_t index_count,
+    const uint32_t *rgb_texels,uint32_t texture_width,uint32_t texture_height)
+{
+    return gfx_resource_create(g,vertices,vertex_count,indices,index_count,
+        rgb_texels,texture_width,texture_height,0);
+}
+
+struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
+    struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count,
+    const uint32_t *indices,uint32_t index_count)
+{
+    const uint32_t white=0xffffff;
+    if (!vertices) return NULL;
+    return gfx_resource_create(g,vertices,vertex_count,indices,index_count,&white,1,1,1);
+}
+
 int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *r,
     const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count)
@@ -964,8 +992,11 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
         }
         for (unsigned k=0;k<9;++k)
             if (vertices[i].normals[k]<-32767 || vertices[i].normals[k]>32767) return -1;
-        for (unsigned k=0;k<2;++k)
-            if (vertices[i].uv[k]<0 || vertices[i].uv[k]>65535) return -1;
+        for (unsigned k=0;k<2;++k) {
+            int limit=r->scene_vertex_color ? (k ? 0xffffff : 384) : 65535;
+            if (vertices[i].uv[k]<0 || vertices[i].uv[k]>limit) return -1;
+        }
+        if (i%3 && r->scene_vertex_color && vertices[i].uv[1]!=vertices[i-i%3].uv[1]) return -1;
         if (i%3 && memcmp(vertices[i].normals,vertices[i-i%3].normals,
                 sizeof(vertices[i].normals))) return -1;
     }
@@ -1312,7 +1343,9 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
     if (!d->index_count || d->index_count % 3 || d->first_index % 3 ||
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 ||
-        d->material[2] > 1 || d->material[3] > 1 ||
+        d->material[2] > 1 || d->material[3] > 2 ||
+        ((d->material[3]==2) != g->resource->scene_vertex_color) ||
+        (d->material[3]==2 && (d->material[2] || d->integer_depth || d->texture[3] || d->rotation[3])) ||
         d->camera[3] || d->texture[2]<0 || d->texture[2]>255 ||
         (d->texture[2] && d->integer_depth) ||
         d->texture[3]<0 || d->texture[3]>2 ||
@@ -1815,7 +1848,10 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     g->scene_timing.supported=impl->timestamp_supported;
     g->scene_query_active=g->scene_query_pool!=NULL;
     /* gfx_render validates the entire batch before beginning any recording. */
+    start=now_ms();
     if (gfx_render(g,NULL,count,NULL,NULL,0,0,NULL,items,1)<0) return -1;
+    g->scene_timing.record_ms=now_ms()-start;
+    start=now_ms();
     impl->present_attempt++;
     if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_ACQUIRE_OUT_OF_DATE)) {
         if (presenter_swapchain_create(impl,g->target.width,g->target.height)<0) goto failed;
@@ -1828,6 +1864,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
             g->scene_acquire,NULL,&index);
     }
     if (result!=RF_VK_SUCCESS && result!=RF_VK_SUBOPTIMAL_KHR) goto failed;
+    g->scene_timing.acquire_ms=now_ms()-start;
     acquired=1;
     if (index>=impl->swapchain_image_count ||
         impl->present_images[index].generation!=impl->presenter_generation) goto failed;
@@ -1875,13 +1912,16 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
         impl->api.queue_submit(impl->queue,1,&submit,g->fence)!=RF_VK_SUCCESS) goto failed;
     g->scene_in_flight=1;
     g->stats.queue_submits++; g->stats.submits_by_kind[RF_GPU_SUBMIT_DRAW]++;
-    g->stats.submit_wall_ms+=now_ms()-start;
+    g->scene_timing.queue_submit_ms=now_ms()-start;
+    g->stats.submit_wall_ms+=g->scene_timing.queue_submit_ms;
     present.s_type=RF_VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present.wait_semaphore_count=present.swapchain_count=1;
     present.wait_semaphores=submit.signal_semaphores; present.swapchains=&impl->swapchain;
     present.image_indices=&index;
+    start=now_ms();
     if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_PRESENT_OUT_OF_DATE)) result=RF_VK_ERROR_OUT_OF_DATE_KHR;
     else result=impl->api.queue_present(impl->queue,&present);
+    g->scene_timing.present_ms=now_ms()-start;
     if (result==RF_VK_SUCCESS && present_fault_take(impl,RF_GPU_PRESENT_FAULT_PRESENT_SUBOPTIMAL))
         result=RF_VK_SUBOPTIMAL_KHR;
     if (result==RF_VK_SUCCESS || result==RF_VK_SUBOPTIMAL_KHR) {
