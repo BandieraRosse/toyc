@@ -8,10 +8,14 @@
  * Corner vertices carry all three source normals to preserve integer
  * per-primitive lighting after rotation. Expansion happens once at upload. */
 struct rf_gpu_graphics_vertex {
-    /* Scene color resources interpret uv as {vertex light Q8, packed RGB24}.
-     * This explicit resource mode retains the 56-byte skin/mixed vertex ABI. */
     int32_t position[3], uv[2], normals[9];
 };
+struct rf_gpu_scene_color_vertex {
+    int32_t position[3];
+    int32_t light_q8;
+    uint32_t rgb24;
+};
+_Static_assert(sizeof(struct rf_gpu_scene_color_vertex)==20,"Scene color vertex ABI");
 
 /* Seven 16-byte push-constant lanes; all transforms use C/GLSL integer
  * division (toward zero). Q10 directions, milli scale, unsigned Q16 UV.
@@ -89,13 +93,16 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
 int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count);
-/* Untextured Scene-only triangle color: uv[0] is Q8 light in [0,384],
- * uv[1] is RGB24, equal at all three indexed corners. Draw material[3]=2,
- * no integer-depth, screen mode or form lighting. Update uses the API above. */
+/* Untextured Scene-only 20-byte triangle color: Q8 light in [0,384],
+ * RGB24 equal at all three indexed corners. Draw material[3]=2;
+ * no integer-depth, screen mode or form lighting. */
 struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
     struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count,
+    const struct rf_gpu_scene_color_vertex *vertices,uint32_t vertex_count,
     const uint32_t *indices,uint32_t index_count);
+int rf_gpu_graphics_scene_color_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_scene_color_vertex *vertices,uint32_t vertex_count);
 /* HG-5B: create the ordinary indexed resource, then fill its vertex buffer
  * from packed bind/palette words. Reference may be NULL on normal frames;
  * explicit diff supplies it as a CPU oracle. */

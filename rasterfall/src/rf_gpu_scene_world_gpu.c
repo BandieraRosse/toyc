@@ -947,7 +947,10 @@ prop_ready:
 }
 
 struct scene_enemy_mesh {
-    struct rf_gpu_graphics_vertex vertices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
+    union {
+        struct rf_gpu_graphics_vertex legacy[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
+        struct rf_gpu_scene_color_vertex color[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
+    } vertices;
     uint32_t indices[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
     uint32_t colors[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES], count;
     unsigned char double_sided[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES];
@@ -968,12 +971,9 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
     mesh->double_sided[mesh->count]=(unsigned char)a->double_sided;
     for (unsigned k=0;k<3;++k) {
         unsigned index=mesh->count*3+k;
-        struct rf_gpu_graphics_vertex *v=&mesh->vertices[index];
-        v->position[0]=points[k]->x-mesh->source->x;
-        v->position[1]=points[k]->y-mesh->source->lift;
-        v->position[2]=points[k]->z-mesh->source->z;
-        v->uv[0]=mesh->source->scene_light_q8;
-        v->uv[1]=mesh->vertex_color ? (int32_t)color : 0;
+        int32_t position[3]={points[k]->x-mesh->source->x,
+            points[k]->y-mesh->source->lift,points[k]->z-mesh->source->z};
+        int light=mesh->source->scene_light_q8;
         if (mesh->vertex_lighting) {
             unsigned slot=((uint32_t)points[k]->x*73856093u ^
                 (uint32_t)points[k]->y*19349663u ^ (uint32_t)points[k]->z*83492791u)&1023u;
@@ -981,25 +981,33 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
                 mesh->light_cache[slot].x==points[k]->x &&
                 mesh->light_cache[slot].y==points[k]->y &&
                 mesh->light_cache[slot].z==points[k]->z)
-                v->uv[0]=mesh->light_cache[slot].light;
+                light=mesh->light_cache[slot].light;
             else {
-                v->uv[0]=rasterfall_world_light_v2_q8(rasterfall_world_light_at(
+                light=rasterfall_world_light_v2_q8(rasterfall_world_light_at(
                     &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z));
                 mesh->light_cache[slot].valid=1;
                 mesh->light_cache[slot].x=points[k]->x;
                 mesh->light_cache[slot].y=points[k]->y;
                 mesh->light_cache[slot].z=points[k]->z;
-                mesh->light_cache[slot].light=v->uv[0];
+                mesh->light_cache[slot].light=light;
             }
         }
         if (!mesh->vertex_lighting && points[k]->light_min_q8>0) {
-            int light=(int)v->uv[0]*points[k]->form_light_q8/256;
+            light=light*points[k]->form_light_q8/256;
             if (light<points[k]->light_min_q8) light=points[k]->light_min_q8;
             if (light>points[k]->light_max_q8) light=points[k]->light_max_q8;
-            v->uv[0]=light;
         }
         if (points[k]->light_override_plus_one)
-            v->uv[0]=points[k]->light_override_plus_one-1;
+            light=points[k]->light_override_plus_one-1;
+        if (mesh->vertex_color) {
+            struct rf_gpu_scene_color_vertex *v=&mesh->vertices.color[index];
+            memcpy(v->position,position,sizeof(position));
+            v->light_q8=light;v->rgb24=color;
+        } else {
+            struct rf_gpu_graphics_vertex *v=&mesh->vertices.legacy[index];
+            memcpy(v->position,position,sizeof(position));
+            v->uv[0]=light;v->uv[1]=0;
+        }
         mesh->indices[index]=index;
     }
     mesh->count++;return 0;
@@ -1031,6 +1039,11 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     if (!probe->enemy_workspace) probe->enemy_workspace=calloc(1,sizeof(*mesh));
     mesh=probe->enemy_workspace;
     if (!mesh) return -1;
+    if (probe->enemy_vertex_color!=vertex_color) {
+        memset(&mesh->vertices,0,sizeof(mesh->vertices));
+        rebuild=1;
+        probe->enemy_vertex_color=vertex_color;
+    }
     for (unsigned i=0;i<frame->count+frame->procedural_count;++i) {
         struct rf_gpu_scene_enemy_item_v1 procedural_source={0};
         const struct rf_gpu_scene_enemy_item_v1 *source;
@@ -1063,15 +1076,18 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         }
         *triangles+=mesh->count;
         start=rf_core_clock_now_us();
-        int updated=probe->enemy[i] && !rebuild ? rf_gpu_graphics_triangle_resource_update(
-            probe->graphics,probe->enemy[i],mesh->vertices,mesh->count*3) : 1;
+        int updated=probe->enemy[i] && !rebuild ? (vertex_color ?
+            rf_gpu_graphics_scene_color_resource_update(probe->graphics,probe->enemy[i],
+                mesh->vertices.color,mesh->count*3) :
+            rf_gpu_graphics_triangle_resource_update(probe->graphics,probe->enemy[i],
+                mesh->vertices.legacy,mesh->count*3)) : 1;
         if (updated<0) goto done;
         if (updated) {
             struct rf_gpu_graphics_resource *next=vertex_color ?
                 rf_gpu_graphics_scene_color_resource_create(probe->graphics,
-                    mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3) :
+                    mesh->vertices.color,mesh->count*3,mesh->indices,mesh->count*3) :
                 rf_gpu_graphics_resource_create(probe->graphics,
-                    mesh->vertices,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
+                    mesh->vertices.legacy,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
             if (!next) goto done;
             if (probe->enemy[i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0) {
                 rf_gpu_graphics_resource_destroy(probe->graphics,next);goto done;

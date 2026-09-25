@@ -86,7 +86,7 @@ struct rf_gpu_graphics {
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
-    rf_vk_pipeline pipelines[12];
+    rf_vk_pipeline pipelines[18];
     VkRenderPass render_pass;
     VkRenderPass load_pass;
     rf_vk_descriptor_set_layout bridge_set_layout;
@@ -423,6 +423,9 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         {0,0,VK_FORMAT_R32G32B32_SINT,0}, {1,0,VK_FORMAT_R32G32_SINT,12},
         {2,0,VK_FORMAT_R32G32B32_SINT,20}, {3,0,VK_FORMAT_R32G32B32_SINT,32},
         {4,0,VK_FORMAT_R32G32B32_SINT,44}};
+    /* Scene color feeds position and {light,RGB24} to shader locations 0/1.
+     * Its draw contract disables form light, so normal inputs are unused. */
+    if (compatible==2) binding.stride=sizeof(struct rf_gpu_scene_color_vertex);
     VkPipelineVertexInputStateCreateInfo vertex = {0};
     VkPipelineInputAssemblyStateCreateInfo assembly = {0};
     VkPipelineViewportStateCreateInfo viewport = {0};
@@ -490,7 +493,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     for (unsigned i = 0; i < 2; ++i) {
         shader_info.code_size = i ? sizeof(rf_graphics_frag_spirv) : sizeof(rf_graphics_vert_spirv);
         shader_info.code = i ? rf_graphics_frag_spirv : rf_graphics_vert_spirv;
-        if (compatible) {
+        if (compatible==1) {
             shader_info.code_size = i ? sizeof(rf_graphics_compat_frag_spirv) : sizeof(rf_graphics_compat_vert_spirv);
             shader_info.code = i ? rf_graphics_compat_frag_spirv : rf_graphics_compat_vert_spirv;
         }
@@ -500,8 +503,9 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         stages[i].module = shaders[i]; stages[i].pName = "main";
     }
     vertex.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex.vertexBindingDescriptionCount = compatible ? 0 : 1; vertex.pVertexBindingDescriptions = &binding;
-    vertex.vertexAttributeDescriptionCount = compatible ? 0 : 5; vertex.pVertexAttributeDescriptions = attrs;
+    vertex.vertexBindingDescriptionCount = compatible==1 ? 0 : 1; vertex.pVertexBindingDescriptions = &binding;
+    vertex.vertexAttributeDescriptionCount = compatible==1 ? 0 : (compatible==2 ? 2 : 5);
+    vertex.pVertexAttributeDescriptions = attrs;
     assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -529,7 +533,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     pipeline.pDepthStencilState = &depth_state; pipeline.pColorBlendState = &blend;
     pipeline.pDynamicState = &dynamic; pipeline.layout = g->layout; pipeline.renderPass = g->render_pass;
     pipeline.basePipelineIndex = -1;
-    for (unsigned alpha=0;alpha<(compatible ? 2u : 3u);++alpha) {
+    for (unsigned alpha=0;alpha<(compatible==1 ? 2u : 3u);++alpha) {
         depth_state.depthTestEnable=alpha==2 ? 0 : RF_VK_TRUE;
         depth_state.depthWriteEnable=alpha ? 0 : RF_VK_TRUE;
         blend_attachment.blendEnable=alpha ? RF_VK_TRUE : 0;
@@ -542,7 +546,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         for (unsigned i=0;i<2;++i) {
             raster.cullMode=i ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
             if (g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
-                    &g->pipelines[i+compatible*2+alpha*4])!=RF_VK_SUCCESS) goto done;
+                    &g->pipelines[i+(compatible==2 ? 12 : compatible*2)+alpha*(compatible==2 ? 2 : 4)])!=RF_VK_SUCCESS) goto done;
         }
     }
     result = 0;
@@ -677,6 +681,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     set.descriptor_pool = g->descriptor_pool; set.descriptor_set_count = 1; set.set_layouts = &g->set_layout;
     if (impl->api.allocate_descriptor_sets(impl->device, &set, &g->set) != RF_VK_SUCCESS ||
         gfx_pipeline_create(g, 0) < 0 || gfx_pipeline_create(g, 1) < 0 ||
+        gfx_pipeline_create(g, 2) < 0 ||
         gfx_bridge_create(g) < 0 || gfx_skin_create(g) < 0) goto fail;
     command_pool.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     command_pool.queue_family_index = impl->queue_family;
@@ -693,7 +698,7 @@ fail:
 }
 
 static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics_resource *resource,
-    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
+    const void *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
 {
@@ -722,27 +727,40 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
         !rgb_texels || !texture_width || !texture_height || texture_width > 1024 || texture_height > 1024) return -1;
     for (uint32_t i = 0; i < index_count; ++i) if (indices[i] >= vertex_count) return -1;
     for (uint32_t i = 0; vertices && i < vertex_count; ++i) {
-        for (unsigned j = 0; j < 3; ++j)
-            if (vertices[i].position[j] < -32767 || vertices[i].position[j] > 32767) return -1;
-        for (unsigned j = 0; j < 9; ++j)
-            if (vertices[i].normals[j] < -32767 || vertices[i].normals[j] > 32767) return -1;
-        for (unsigned j = 0; j < 2; ++j) {
-            int limit=resource->scene_vertex_color ? (j ? 0xffffff : 384) : 65535;
-            if (vertices[i].uv[j] < 0 || vertices[i].uv[j] > limit) return -1;
+        const int32_t *position=resource->scene_vertex_color ?
+            ((const struct rf_gpu_scene_color_vertex *)vertices)[i].position :
+            ((const struct rf_gpu_graphics_vertex *)vertices)[i].position;
+        for (unsigned j=0;j<3;++j)
+            if (position[j]<-32767 || position[j]>32767) return -1;
+        if (resource->scene_vertex_color) {
+            const struct rf_gpu_scene_color_vertex *v=&((const struct rf_gpu_scene_color_vertex *)vertices)[i];
+            if (v->light_q8<0 || v->light_q8>384 || v->rgb24>0xffffff) return -1;
+        } else {
+            const struct rf_gpu_graphics_vertex *v=&((const struct rf_gpu_graphics_vertex *)vertices)[i];
+            for (unsigned j=0;j<9;++j)
+                if (v->normals[j]<-32767 || v->normals[j]>32767) return -1;
+            for (unsigned j=0;j<2;++j)
+                if (v->uv[j]<0 || v->uv[j]>65535) return -1;
         }
     }
     /* All three corners must describe the same source primitive. */
-    for (uint32_t i = 0; vertices && i < index_count; i += 3)
-        if (memcmp(vertices[indices[i]].normals, vertices[indices[i+1]].normals, 36) ||
-            memcmp(vertices[indices[i]].normals, vertices[indices[i+2]].normals, 36) ||
-            (resource->scene_vertex_color &&
-             (vertices[indices[i]].uv[1]!=vertices[indices[i+1]].uv[1] ||
-              vertices[indices[i]].uv[1]!=vertices[indices[i+2]].uv[1]))) return -1;
+    for (uint32_t i=0;vertices && i<index_count;i+=3) {
+        if (resource->scene_vertex_color) {
+            const struct rf_gpu_scene_color_vertex *v=vertices;
+            if (v[indices[i]].rgb24!=v[indices[i+1]].rgb24 ||
+                v[indices[i]].rgb24!=v[indices[i+2]].rgb24) return -1;
+        } else {
+            const struct rf_gpu_graphics_vertex *v=vertices;
+            if (memcmp(v[indices[i]].normals,v[indices[i+1]].normals,36) ||
+                memcmp(v[indices[i]].normals,v[indices[i+2]].normals,36)) return -1;
+        }
+    }
     expanded = malloc((size_t)index_count*2*sizeof(*expanded));
     if (!expanded) return -1;
     for (uint32_t i = 0; i < index_count*2; ++i) expanded[i] = i;
     data[0]=vertices; data[1]=indices; data[2]=expanded; data[3]=rgb_texels;
-    bytes[0]=(uint64_t)vertex_count*sizeof(*vertices);
+    bytes[0]=(uint64_t)vertex_count*(resource->scene_vertex_color ?
+        sizeof(struct rf_gpu_scene_color_vertex) : sizeof(struct rf_gpu_graphics_vertex));
     bytes[1]=(uint64_t)index_count*4;
     bytes[2]=(uint64_t)index_count*8;
     bytes[3]=(uint64_t)texture_width*texture_height*4;
@@ -836,12 +854,16 @@ upload_done:
     resource->sequential_triangles = index_count==vertex_count;
     for (uint32_t i=0;resource->sequential_triangles && i<index_count;++i)
         if (indices[i]!=i) resource->sequential_triangles=0;
-    for (uint32_t i = 0; vertices && i < vertex_count; ++i)
-        for (unsigned j = 0; j < 3; ++j)
-            if (abs(vertices[i].position[j]) > resource->position_bound[j])
-                resource->position_bound[j] = abs(vertices[i].position[j]);
+    for (uint32_t i=0;vertices && i<vertex_count;++i) {
+        const int32_t *position=resource->scene_vertex_color ?
+            ((const struct rf_gpu_scene_color_vertex *)vertices)[i].position :
+            ((const struct rf_gpu_graphics_vertex *)vertices)[i].position;
+        for (unsigned j=0;j<3;++j)
+            if (abs(position[j])>resource->position_bound[j])
+                resource->position_bound[j]=abs(position[j]);
+    }
     g->stats.mesh_upload_bytes += (vertices ?
-        (uint64_t)vertex_count*sizeof(*vertices) : 0) + (uint64_t)index_count*12;
+        bytes[0] : 0) + (uint64_t)index_count*12;
     g->stats.texture_upload_bytes += (uint64_t)texture_width*texture_height*4;
     return 0;
 }
@@ -861,7 +883,8 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     void *mapped=NULL;
     uint64_t bytes;
     int result=-1;
-    if (!g || g->poisoned || g->skin_batch || !resource || resource->owner!=g || !reference ||
+    if (!g || g->poisoned || g->skin_batch || !resource || resource->owner!=g ||
+        resource->scene_vertex_color || !reference ||
         !vertex_count || !position_mismatches || !normal_mismatches ||
         !uv_mismatches || !max_position_delta || !max_normal_delta) return -1;
     bytes=(uint64_t)vertex_count*sizeof(*reference);
@@ -905,7 +928,7 @@ done:
 
 static struct rf_gpu_graphics_resource *gfx_resource_create(
     struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
+    const void *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height,
     int scene_vertex_color)
@@ -966,7 +989,7 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
 
 struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
     struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count,
+    const struct rf_gpu_scene_color_vertex *vertices,uint32_t vertex_count,
     const uint32_t *indices,uint32_t index_count)
 {
     const uint32_t white=0xffffff;
@@ -974,9 +997,9 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
     return gfx_resource_create(g,vertices,vertex_count,indices,index_count,&white,1,1,1);
 }
 
-int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
+static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *r,
-    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count)
+    const void *vertices,uint32_t vertex_count,int scene_color)
 {
     struct rf_gpu_vulkan_impl *impl;
     struct rf_gpu_vulkan_raster_buffer *upload;
@@ -985,27 +1008,35 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_vk_memory_barrier barrier={0};
     int bounds[3]={0};
     void *mapped=NULL;
-    uint64_t bytes=(uint64_t)vertex_count*sizeof(*vertices);
+    uint64_t bytes=(uint64_t)vertex_count*(scene_color ?
+        sizeof(struct rf_gpu_scene_color_vertex) : sizeof(struct rf_gpu_graphics_vertex));
     double mark=0,validated=0,copied=0;
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g ||
         r->shared_binding.owner || r->skin_descriptor_set || !r->sequential_triangles ||
-        !vertices || !vertex_count || vertex_count>65536 || vertex_count%3) return -1;
+        r->scene_vertex_color!=scene_color || !vertices || !vertex_count ||
+        vertex_count>65536 || vertex_count%3) return -1;
     if (g->profile_triangle_update) mark=now_ms();
     for (uint32_t i=0;i<vertex_count;++i) {
+        const int32_t *position=scene_color ?
+            ((const struct rf_gpu_scene_color_vertex *)vertices)[i].position :
+            ((const struct rf_gpu_graphics_vertex *)vertices)[i].position;
         for (unsigned k=0;k<3;++k) {
-            int p=vertices[i].position[k];
+            int p=position[k];
             if (p < -32767 || p > 32767) return -1;
             if (abs(p)>bounds[k]) bounds[k]=abs(p);
         }
-        for (unsigned k=0;k<9;++k)
-            if (vertices[i].normals[k]<-32767 || vertices[i].normals[k]>32767) return -1;
-        for (unsigned k=0;k<2;++k) {
-            int limit=r->scene_vertex_color ? (k ? 0xffffff : 384) : 65535;
-            if (vertices[i].uv[k]<0 || vertices[i].uv[k]>limit) return -1;
+        if (scene_color) {
+            const struct rf_gpu_scene_color_vertex *v=vertices;
+            if (v[i].light_q8<0 || v[i].light_q8>384 || v[i].rgb24>0xffffff ||
+                (i%3 && v[i].rgb24!=v[i-i%3].rgb24)) return -1;
+        } else {
+            const struct rf_gpu_graphics_vertex *v=vertices;
+            for (unsigned k=0;k<9;++k)
+                if (v[i].normals[k]<-32767 || v[i].normals[k]>32767) return -1;
+            for (unsigned k=0;k<2;++k)
+                if (v[i].uv[k]<0 || v[i].uv[k]>65535) return -1;
+            if (i%3 && memcmp(v[i].normals,v[i-i%3].normals,sizeof(v[i].normals))) return -1;
         }
-        if (i%3 && r->scene_vertex_color && vertices[i].uv[1]!=vertices[i-i%3].uv[1]) return -1;
-        if (i%3 && memcmp(vertices[i].normals,vertices[i-i%3].normals,
-                sizeof(vertices[i].normals))) return -1;
     }
     if (vertex_count>r->vertex_capacity) return 1;
     if (g->profile_triangle_update) validated=now_ms();
@@ -1053,6 +1084,20 @@ int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
         g->stats.triangle_staging_updates+=upload!=&r->vertices;
     }
     return 0;
+}
+
+int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *r,
+    const struct rf_gpu_graphics_vertex *vertices,uint32_t vertex_count)
+{
+    return gfx_triangle_resource_update(g,r,vertices,vertex_count,0);
+}
+
+int rf_gpu_graphics_scene_color_resource_update(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *r,
+    const struct rf_gpu_scene_color_vertex *vertices,uint32_t vertex_count)
+{
+    return gfx_triangle_resource_update(g,r,vertices,vertex_count,1);
 }
 
 static int gfx_upload_skin_input(struct rf_gpu_graphics *g,
@@ -1657,7 +1702,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
         }
         if (!reuse_bind || bound_resource!=resource || bound_integer!=(int)d->integer_depth)
             g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-        int pipeline=d->double_sided+d->integer_depth*2+
+        int pipeline=resource->scene_vertex_color ? 12+(d->texture[3]==2?4:(d->texture[2]?2:0))+
+            d->double_sided : d->double_sided+d->integer_depth*2+
             (d->texture[3]==2?8:(d->texture[2]?4:0));
         if (!reuse_bind || bound_pipeline!=pipeline)
             impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);

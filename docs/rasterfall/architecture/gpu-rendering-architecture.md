@@ -241,12 +241,14 @@ owner 跨审计帧复用，registry frame pin 在诊断
 不共享 mixed 可变 pose。Scene owner 另保留敌人几何工作区，每个身体重置活动计数和光照缓存，
 活动顶点、颜色、双面标志与顺序索引全部覆盖；不再逐身体清零完整顶点容量，owner 关闭释放工作区。
 
-敌人及程序角色使用显式 Scene color resource。56 字节顶点布局和蒙皮 ABI 不变，该资源将原 UV 两个
-整数解释为 `{light_q8, RGB24}`，分别校验 `[0,384]` 和 `[0,0xffffff]`；同一三角形三个角必须同色。
+敌人及程序角色使用显式 Scene color resource。提取回调直接生成 20 字节
+`{position[3], light_q8, rgb24}` 顶点；旧 mixed/skinning 保持 56 字节布局。
+Scene color resource 使用独立顶点 stride 与两组输入属性，分别校验光照 `[0,384]` 和颜色
+`[0,0xffffff]`；同一三角形三个角必须同色。
 仅 `material[3]=2` 的非纹理、非整数深度、非屏幕坐标、非 form-light draw 可以消费此资源。
 普通资源仍保持原 UV 范围和 shader 路径。shader 使用 flat 三角形颜色与原有插值光照、整数截断顺序。
 同资源内连续三角形只按双面策略拆批，保留原三角形顺序；透明 alpha、层序与深度策略不变。
-动态更新仍检查数值边界、容量和退休状态，失败不提交部分目标。
+动态更新仍检查坐标、光照、颜色、容量、布局、owner 和退休状态，失败不提交部分目标。
 
 `SCENE-ENEMY-COST triangles` 统计敌人及程序角色实际提取的三角形，用于合批前后内容核对。
 `SCENE-CPU-COST` 细分循环前段、动态来源、冻结、pose、地图资源缓存与 prepare 余项：

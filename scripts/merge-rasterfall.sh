@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -eu
 
-# Generate simple, reproducible Rasterfall snapshots for AI-assisted work.
-# The snapshots contain file contents and basic filesystem statistics only.
+# Generate Rasterfall working-tree snapshots for AI-assisted work.
+# Only text source and current documentation are copied; assets stay in the index.
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-OUTPUT_DIR="$ROOT/tmp"
+cd "$ROOT"
+OUTPUT_DIR=tmp
 PROJECT_OUTPUT="$OUTPUT_DIR/rasterfall-project.txt"
 SOURCE_OUTPUT="$OUTPUT_DIR/rasterfall-source.txt"
 DOC_OUTPUT="$OUTPUT_DIR/rasterfall-docs.txt"
@@ -22,10 +23,24 @@ trap cleanup EXIT HUP INT TERM
 
 # Null-delimited lists keep file collection safe for spaces in paths. Sorting
 # with the C locale makes the order independent of the machine's locale.
-find "$ROOT/rasterfall" -type f \( -name '*.c' -o -name '*.h' \) \
-    -print0 | LC_ALL=C sort -z >"$SOURCE_LIST"
-find "$ROOT/rasterfall/docs" -type f -print0 | \
-    LC_ALL=C sort -z >"$DOC_LIST"
+{
+    find "$ROOT/rasterfall/src" "$ROOT/rasterfall/include" \
+        "$ROOT/gpu/src" "$ROOT/gpu/include" "$ROOT/gpu/shaders" \
+        "$ROOT/windows/src" "$ROOT/windows/include" \
+        "$ROOT/lib" "$ROOT/include" -type f \
+        \( -name '*.c' -o -name '*.h' -o -name '*.inc' -o -name '*.vert' \
+           -o -name '*.frag' -o -name '*.comp' \) -print0
+    find "$ROOT/tools" -maxdepth 1 -type f \
+        \( -name 'gpu_*.ps1' -o -name 'gpu_*.py' -o -name 'rf_*.py' \) -print0
+    printf '%s\0' "$ROOT/Makefile" "$ROOT/windows/Makefile" \
+        "$ROOT/windows/NativeCodex.ps1" "$ROOT/scripts/merge-rasterfall.sh"
+} | LC_ALL=C sort -zu >"$SOURCE_LIST"
+{
+    find "$ROOT/docs/rasterfall" -path "$ROOT/docs/rasterfall/archive" -prune -o \
+        -type f -name '*.md' -print0
+    printf '%s\0' "$ROOT/AGENTS.md" "$ROOT/docs/README.md" \
+        "$ROOT/docs/repository/documentation.md" "$ROOT/rasterfall/README.md"
+} | LC_ALL=C sort -zu >"$DOC_LIST"
 
 source_count=0
 c_count=0
@@ -82,16 +97,17 @@ write_project_index() {
     printf 'Git commit: %s\n' "$git_hash" >>"$temporary"
     printf 'Generated at: %s\n\n' "$generated_at" >>"$temporary"
 
-    printf '%s\n' 'Rasterfall directory tree:' >>"$temporary"
-    (cd "$ROOT" && find rasterfall -print | LC_ALL=C sort) >>"$temporary"
+    printf '%s\n' 'Rasterfall source and asset tree:' >>"$temporary"
+    (cd "$ROOT" && find rasterfall gpu windows -path '*/private-assets' -prune -o \
+        -path '*/build' -prune -o -print | LC_ALL=C sort) >>"$temporary"
     printf '\nC file count: %s\n' "$c_count" >>"$temporary"
     printf 'H file count: %s\n' "$h_count" >>"$temporary"
-    printf 'C/H file count: %s\n' "$source_count" >>"$temporary"
-    printf 'Total code lines: %s\n\n' "$total_lines" >>"$temporary"
+    printf 'Source and build file count: %s\n' "$source_count" >>"$temporary"
+    printf 'Total source and build lines: %s\n\n' "$total_lines" >>"$temporary"
 
     printf '%s\n' 'Largest source files (lines, path):' >>"$temporary"
     LC_ALL=C sort -nr -k1,1 -k2,2 "$SOURCE_STATS" | head -n 10 >>"$temporary"
-    printf '\n%s\n' 'Documentation files:' >>"$temporary"
+    printf '\n%s\n' 'Current documentation files:' >>"$temporary"
     while IFS= read -r -d '' file; do
         printf '%s\n' "${file#"$ROOT/"}" >>"$temporary"
     done <"$DOC_LIST"

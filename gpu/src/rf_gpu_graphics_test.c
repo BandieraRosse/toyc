@@ -537,23 +537,25 @@ static int scene_color_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
     struct rf_gpu_graphics_resource *colored=NULL,*plain=NULL;
-    struct rf_gpu_graphics_vertex v[6],ref[6];
+    struct rf_gpu_scene_color_vertex v[6];
+    struct rf_gpu_graphics_vertex ref[6];
     struct rf_gpu_graphics_batch_item split[2]={0},merged={0};
     uint32_t ix[6]={0,1,2,3,4,5},white=0xffffff;
     const uint32_t colors[2]={0xff1234,0x1256ff};
     int result=-1;
     CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
     for (unsigned i=0;i<6;++i) {
-        v[i]=ref[i]=vertices[indices[i]];
-        v[i].uv[0]=ref[i].uv[0]=160+(i%3)*80;
-        v[i].uv[1]=(int)colors[i/3];ref[i].uv[1]=0;
+        ref[i]=vertices[indices[i]];
+        memcpy(v[i].position,ref[i].position,sizeof(v[i].position));
+        v[i].light_q8=ref[i].uv[0]=160+(i%3)*80;
+        v[i].rgb24=colors[i/3];ref[i].uv[1]=0;
     }
     colored=rf_gpu_graphics_scene_color_resource_create(g,v,6,ix,6);
     plain=rf_gpu_graphics_resource_create(g,ref,6,ix,6,&white,1,1);
     CHECK(colored && plain);
     for (unsigned trial=0;trial<3;++trial) {
-        for (unsigned i=0;i<6;++i) v[i].uv[1]=(int)colors[(i/3+trial)%2];
-        CHECK(rf_gpu_graphics_triangle_resource_update(g,colored,v,6)==0);
+        for (unsigned i=0;i<6;++i) v[i].rgb24=colors[(i/3+trial)%2];
+        CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)==0);
         for (unsigned i=0;i<2;++i) {
             split[i].resource=plain;split[i].draw=draw(128,96);
             split[i].draw.texture[0]=split[i].draw.texture[1]=1;
@@ -581,10 +583,17 @@ static int scene_color_test(struct rf_gpu_vulkan_context *context)
     CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)<0);
     merged.draw.integer_depth=0;merged.draw.material[3]=1;
     CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)<0);
-    v[1].uv[1]^=1;
-    CHECK(rf_gpu_graphics_triangle_resource_update(g,colored,v,6)<0);
-    v[1].uv[1]=v[0].uv[1];v[0].uv[0]=385;
-    CHECK(rf_gpu_graphics_triangle_resource_update(g,colored,v,6)<0);
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,colored,ref,6)<0);
+    v[1].rgb24^=1;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)<0);
+    v[1].rgb24=v[0].rgb24;v[0].light_q8=384;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)==0);
+    v[0].light_q8=385;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)<0);
+    v[0].light_q8=384;v[0].rgb24=0x1000000;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)<0);
+    v[0].rgb24=v[1].rgb24;v[0].position[0]=32768;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)<0);
     result=0;
 done:
     rf_gpu_graphics_destroy(g);

@@ -42,6 +42,17 @@ Linux 原生或 freestanding 修改应验证受影响的 Linux 路径。Wayland/
 - `lib/audio/audio.c`、`lib/audio/alsa.c`、`lib/audio/pulse_min.c`：Linux 音频抽象及 ALSA/Pulse 后端。
 - `compiler/toyc_rt.c`、`lib/`、`include/tlibc/`：freestanding 运行时和 libc。
 
+## 维护用源码快照
+
+从仓库根目录用 Git Bash 或 MSYS2 Bash 运行 `scripts/merge-rasterfall.sh`。脚本从当前工作区生成
+`tmp/rasterfall-project.txt`、`tmp/rasterfall-source.txt` 和 `tmp/rasterfall-docs.txt`。源码快照覆盖
+Rasterfall、GPU、Windows、共享 `lib/` 与 `include/` 的 C、头文件、`.inc` 和 shader，另收集 GPU
+诊断脚本及主要构建入口；文档快照从 `docs/rasterfall/` 收集当前架构、指南、参考和活动计划，
+不合并 `archive/` 的历史正文。项目索引列出目录和文件统计；二进制资源不写入源码快照。
+
+这些文件是当前工作区的辅助阅读材料，生成在 `tmp/`，不提交仓库。需要判断模块所有权或运行参数时，
+仍以本仓库的文档入口、源码和可执行命令为准。
+
 ## Windows
 
 Windows Native Codex 的统一入口是 `windows/NativeCodex.ps1`。它固定将 MSYS2
