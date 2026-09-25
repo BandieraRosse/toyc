@@ -233,24 +233,187 @@ static void view_to_world(const struct camera *camera, const struct vec3 *view,
     world->y = camera->y + wy;
 }
 
-/* Inverse of the normal perspective projection, intersected with ground y=0.
- * RTS orders use gameplay x/z only; the actor collision API resolves height. */
-static int rts_screen_ground(const struct camera *camera, int width, int height,
-                             int sx, int sy, int *x, int *z)
+/* Match the renderer's visible floor, box top, platform and ramp records.
+ * Collision primitives may be offset from, or absent under, these pixels. */
+static double rts_surface_y(const struct toy_map_draw *draw, double x, double z)
 {
-    struct vec3 view, world;
+    double span;
+    if (draw->type == TOY_MAP_DRAW_RAMP) {
+        if (draw->style == TOY_MAP_PRIMITIVE_RAMP_X) {
+            span = (double)draw->b - draw->a;
+            return -900.0 + draw->e +
+                (span > 0 ? (draw->f - draw->e) * (x - draw->a) / span : 0);
+        }
+        span = (double)draw->d - draw->c;
+        return -900.0 + draw->e +
+            (span > 0 ? (draw->f - draw->e) * (z - draw->c) / span : 0);
+    }
+    return draw->e - 900.0;
+}
+
+static int rts_draw_surface_visible(const struct toy_map_draw *draw,
+                                    int air_walls_enabled)
+{
+    return strncmp(draw->text, "air_gate_", 9) != 0 || air_walls_enabled;
+}
+
+static int rts_visual_ground_y(const struct toy_map *map,
+                                int air_walls_enabled, int x, int z)
+{
+    double top = -900.0;
+    if (!map) return -900;
+    for (int i = 0; i < map->draw_count; ++i) {
+        const struct toy_map_draw *draw = &map->draw[i];
+        double y;
+        if (draw->type != TOY_MAP_DRAW_RAMP &&
+            draw->type != TOY_MAP_DRAW_PLATFORM &&
+            draw->type != TOY_MAP_DRAW_BOX) continue;
+        if (!rts_draw_surface_visible(draw, air_walls_enabled)) continue;
+        if (x < draw->a || x > draw->b || z < draw->c || z > draw->d)
+            continue;
+        y = rts_surface_y(draw, x, z);
+        if (y > top) top = y;
+    }
+    return (int)(top + (top >= 0 ? 0.5 : -0.5));
+}
+
+static int rts_surface_pick(const struct toy_map *map,
+                            const struct camera *camera, int width, int height,
+                            int sx, int sy, int air_walls_enabled,
+                            int *x, int *y, int *z)
+{
+    double vx, vy, wz, dx, dy, dz, best, px = 0, pz = 0, py = 0;
     int focal = width * 3 / 4;
-    long long distance;
-    if (focal <= 0 || !x || !z) return 0;
-    view.x = (sx - width / 2) * 1024 / focal;
-    view.y = (height / 2 - sy) * 1024 / focal;
-    view.z = 1024;
-    view_to_world(camera, &view, &world);
-    if (world.y >= camera->y) return 0;
-    distance = (long long)camera->y * 1024 / (camera->y - world.y);
-    *x = camera->x + (int)((long long)(world.x - camera->x) * distance / 1024);
-    *z = camera->z + (int)((long long)(world.z - camera->z) * distance / 1024);
+    if (!map || !camera || !x || !y || !z || focal <= 0) return 0;
+    vx = (double)(sx - width / 2) / focal;
+    vy = (double)(height / 2 - sy) / focal;
+    dy = (vy * camera->pitch_cy + camera->pitch_sy) / 1024.0;
+    wz = (-vy * camera->pitch_sy + camera->pitch_cy) / 1024.0;
+    dx = (vx * camera->cy + wz * camera->sy) / 1024.0;
+    dz = (-vx * camera->sy + wz * camera->cy) / 1024.0;
+    if (dy >= 0) return 0;
+    best = 1.0e30;
+    /* The partitioned floor is drawn across the map bounds at Y=-900. */
+    {
+        double t = (-900.0 - camera->y) / dy;
+        double gx = camera->x + t * dx, gz = camera->z + t * dz;
+        if (t > 0 && gx >= map->minx && gx <= map->maxx &&
+            gz >= map->minz && gz <= map->maxz) {
+            best = t; px = gx; py = -900.0; pz = gz;
+        }
+    }
+    for (int i = 0; i < map->draw_count; ++i) {
+        const struct toy_map_draw *draw = &map->draw[i];
+        double slope_x = 0, slope_z = 0, base, denominator, t, gx, gz;
+        if (draw->type != TOY_MAP_DRAW_RAMP &&
+            draw->type != TOY_MAP_DRAW_PLATFORM &&
+            draw->type != TOY_MAP_DRAW_BOX) continue;
+        if (!rts_draw_surface_visible(draw, air_walls_enabled)) continue;
+        if (draw->type == TOY_MAP_DRAW_RAMP) {
+            if (draw->style == TOY_MAP_PRIMITIVE_RAMP_X && draw->b > draw->a)
+                slope_x = (double)(draw->f - draw->e) / (draw->b - draw->a);
+            else if (draw->d > draw->c)
+                slope_z = (double)(draw->f - draw->e) / (draw->d - draw->c);
+        }
+        base = -900.0 + draw->e - slope_x * draw->a - slope_z * draw->c;
+        denominator = dy - slope_x * dx - slope_z * dz;
+        if (denominator >= 0) continue;
+        t = (base + slope_x * camera->x + slope_z * camera->z -
+             camera->y) / denominator;
+        if (t <= 0 || t >= best) continue;
+        gx = camera->x + t * dx;
+        gz = camera->z + t * dz;
+        if (gx < draw->a || gx > draw->b || gz < draw->c || gz > draw->d)
+            continue;
+        best = t; px = gx; py = rts_surface_y(draw, gx, gz); pz = gz;
+    }
+    if (best == 1.0e30) return 0;
+    *x = (int)(px + (px >= 0 ? 0.5 : -0.5));
+    *y = (int)(py + (py >= 0 ? 0.5 : -0.5));
+    *z = (int)(pz + (pz >= 0 ? 0.5 : -0.5));
     return 1;
+}
+
+static int rts_world_screen(const struct camera *camera, int width, int height,
+                            int x, int y, int z, int *sx, int *sy)
+{
+    long long dx = (long long)x - camera->x;
+    long long dz = (long long)z - camera->z;
+    long long wx = (dx * camera->cy - dz * camera->sy) / 1024;
+    long long wz = (dx * camera->sy + dz * camera->cy) / 1024;
+    long long dy = (long long)y - camera->y;
+    long long vy = (dy * camera->pitch_cy - wz * camera->pitch_sy) / 1024;
+    long long vz = (dy * camera->pitch_sy + wz * camera->pitch_cy) / 1024;
+    int focal = width * 3 / 4;
+    if (vz <= 0 || focal <= 0) return 0;
+    *sx = width / 2 + (int)(wx * focal / vz);
+    *sy = height / 2 - (int)(vy * focal / vz);
+    return 1;
+}
+
+int rasterfall_rts_projection_logic_test(void)
+{
+    struct camera camera;
+    static struct toy_map map;
+    struct toy_map_draw *ground = &map.draw[0];
+    const int points[3][2] = {{640, 360}, {200, 600}, {1100, 100}};
+    memset(&camera, 0, sizeof(camera));
+    memset(&map, 0, sizeof(map));
+    camera.y = 40000;
+    camera.cy = 1024;
+    camera.pitch_sy = -1000;
+    camera.pitch_cy = 220;
+    map.minx = map.minz = -1000000;
+    map.maxx = map.maxz = 1000000;
+    for (int i = 0; i < 3; i++) {
+        int x, y, z, sx, sy;
+        if (!rts_surface_pick(&map, &camera, 1280, 720,
+                points[i][0], points[i][1], 1, &x, &y, &z) || y != -900 ||
+            !rts_world_screen(&camera, 1280, 720,
+                x, y, z, &sx, &sy) ||
+            abs(sx - points[i][0]) > 2 ||
+            abs(sy - points[i][1]) > 2) return i + 1;
+    }
+    map.draw_count = 1;
+    ground->type = TOY_MAP_DRAW_PLATFORM;
+    ground->a = ground->c = -1000000;
+    ground->b = ground->d = 1000000;
+    ground->e = 3900;
+    if (rts_visual_ground_y(&map, 1, 0, 0) != 3000) return 4;
+    for (int i = 0; i < 3; i++) {
+        int x, y, z, sx, sy;
+        if (!rts_surface_pick(&map, &camera, 1280, 720,
+                points[i][0], points[i][1], 1, &x, &y, &z) || y != 3000 ||
+            !rts_world_screen(&camera, 1280, 720,
+                x, y, z, &sx, &sy) ||
+            abs(sx - points[i][0]) > 2 ||
+            abs(sy - points[i][1]) > 2) return 5 + i;
+    }
+    strcpy(ground->text, "air_gate_test");
+    {
+        int x, y, z;
+        if (rts_visual_ground_y(&map, 0, 0, 0) != -900 ||
+            !rts_surface_pick(&map, &camera, 1280, 720,
+                640, 360, 0, &x, &y, &z) || y != -900) return 10;
+    }
+    ground->text[0] = 0;
+    ground->type = TOY_MAP_DRAW_RAMP;
+    ground->style = TOY_MAP_PRIMITIVE_RAMP_X;
+    ground->a = -10000;
+    ground->b = 10000;
+    ground->e = 0;
+    ground->f = 4000;
+    if (rts_visual_ground_y(&map, 1, 0, 0) != 1100) return 8;
+    {
+        int x, y, z, sx, sy;
+        if (!rts_surface_pick(&map, &camera, 1280, 720,
+                700, 360, 1, &x, &y, &z) ||
+            y <= -900 ||
+            !rts_world_screen(&camera, 1280, 720,
+                x, y, z, &sx, &sy) ||
+            abs(sx - 700) > 2 || abs(sy - 360) > 2) return 9;
+    }
+    return 0;
 }
 
 static void copy_vec3(struct vec3 *out, const struct vec3 *in)
@@ -2786,7 +2949,9 @@ static void rf_game_prepare_render_camera(struct rf_game_runtime *runtime)
         render_camera->pitch_sy = -1000;
         render_camera->pitch_cy = 220;
     }
-    rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
+    /* RTS picking uses this fixed camera to unproject the pointer pixel. */
+    if (!runtime->rts_active)
+        rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
 }
 
 static void draw_rts_overlay(struct rasterfall_canvas *canvas,
@@ -2795,6 +2960,7 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
     char selected[48];
     int x = runtime->input_frame.pointer_x;
     int y = runtime->input_frame.pointer_y;
+    const struct rasterfall_session *session = runtime->session;
     if (runtime->rts_selected == 0)
         strcpy(selected, "SELECTED: PLAYER");
     else if (runtime->rts_selected > 0)
@@ -2809,6 +2975,28 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
     rasterfall_canvas_text(canvas, 22, 39, "LEFT: SELECT  RIGHT: MOVE",
                            RF_COLOR_UI_TEXT);
     rasterfall_canvas_text(canvas, 22, 58, selected, RF_COLOR_UI_TEXT);
+    if (session->rts_move_active) {
+        int mx, my;
+        int ground_y = rts_visual_ground_y(&session->level,
+            session->air_walls_enabled,
+            session->rts_move_x, session->rts_move_z);
+        if (rts_world_screen(&runtime->render_camera,
+                canvas->width, canvas->height, session->rts_move_x,
+                ground_y, session->rts_move_z, &mx, &my) &&
+            mx >= 12 && mx < canvas->width - 12 &&
+            my >= 12 && my < canvas->height - 12) {
+            const uint32_t color = RF_COLOR_UI_ACCENT;
+            rasterfall_canvas_rect(canvas, mx - 12, my - 12, 8, 2, color, 255);
+            rasterfall_canvas_rect(canvas, mx - 12, my - 12, 2, 8, color, 255);
+            rasterfall_canvas_rect(canvas, mx + 5, my - 12, 8, 2, color, 255);
+            rasterfall_canvas_rect(canvas, mx + 11, my - 12, 2, 8, color, 255);
+            rasterfall_canvas_rect(canvas, mx - 12, my + 11, 8, 2, color, 255);
+            rasterfall_canvas_rect(canvas, mx - 12, my + 5, 2, 8, color, 255);
+            rasterfall_canvas_rect(canvas, mx + 5, my + 11, 8, 2, color, 255);
+            rasterfall_canvas_rect(canvas, mx + 11, my + 5, 2, 8, color, 255);
+            rasterfall_canvas_text(canvas, mx + 17, my - 7, "MOVE", color);
+        }
+    }
     rasterfall_canvas_rect(canvas, x - 5, y, 11, 1, RF_COLOR_UI_ACCENT, 255);
     rasterfall_canvas_rect(canvas, x, y - 5, 1, 11, RF_COLOR_UI_ACCENT, 255);
 }
@@ -4403,7 +4591,7 @@ startup_again:
         if (game_runtime.rts_active && !paused && !developer_console.open &&
             game.state == TOY_GAME_PLAYING) {
             struct camera rts_camera = camera;
-            int ground_x, ground_z;
+            int ground_x, ground_y, ground_z;
             int64_t pan_now = rf_core_time_us(&core);
             int64_t pan_elapsed = pan_now - game_runtime.rts_pan_last_us;
             int pan;
@@ -4421,9 +4609,11 @@ startup_again:
             rts_camera.sy = 0; rts_camera.cy = 1024;
             rts_camera.pitch_sy = -1000; rts_camera.pitch_cy = 220;
             if (events.button_pressed &&
-                rts_screen_ground(&rts_camera, renderer.surface.width,
+                rts_surface_pick(&session.level, &rts_camera,
+                    renderer.surface.width,
                     renderer.surface.height, input.pointer_x, input.pointer_y,
-                    &ground_x, &ground_z)) {
+                    session.air_walls_enabled,
+                    &ground_x, &ground_y, &ground_z)) {
                 if (events.button == BTN_LEFT) {
                     long long dx = (long long)ground_x - camera.x;
                     long long dz = (long long)ground_z - camera.z;

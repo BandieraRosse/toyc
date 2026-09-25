@@ -105,6 +105,23 @@ PLAYING 帧；初始生成 30 不能当作持续 30。CPU 核占用是同一进�
 
 ### Game 导航与扫描分段
 
+西侧坡道的逻辑地形对照可在 Windows package 根目录运行：
+
+```powershell
+$env:RF_TERRAIN_BENCH='1'
+.\rasterfall.exe --logic-test
+Remove-Item Env:RF_TERRAIN_BENCH
+```
+
+该显式诊断入口跳过普通逻辑回归，使用正式地图的玩法图元、正式西侧按钮的刷怪矩形、
+固定种子和全普通追击敌人。对照组只把西侧六段坡道／平台碰撞的高度差压为零，
+保留图元类型、数量、顺序、其他地图内容及固定目标；0、16、32、64 人各运行
+五轮交替顺序的 240 个 16ms Game tick。`TERRAIN-BENCH-TIME` 是未绑定 Game
+profile 的完整 world 更新墙钟；`TERRAIN-BENCH-NAV` 来自同初态的第二次运行，
+用于解释导航候选、采样和碰撞扫描，不与前者相加。测试要求所有敌人保持存活且
+首个敌人穿过坡道。两种地形可能选择不同路径，应先核对实际轨迹和工作量，
+不能把总耗时差解释为单次高度计算成本。此入口不测试渲染、GPU 或真实时钟帧率。
+
 独立 Scene 的 `--frame-audit` 额外输出 `SCENE-LOGIC-NAV`，报告工具将可用的
 `SCENE-LOGIC-*` 分组汇总到 `report.json` 的 `logic_profiles`；旧日志允许缺少这些组。
 `nav_search_us` 包含 BFS 初始化和搜索；`nav_paths_us` 包含沿父链尝试候选目标、

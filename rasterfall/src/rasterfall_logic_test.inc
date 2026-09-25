@@ -924,8 +924,131 @@ static int nav_ground_reuse_logic_test(void)
     return 0;
 }
 
+/* Explicit diagnostic: same authored primitive list and enemy roster, with
+ * only the six west-corridor walkable surfaces flattened in the control. */
+static int terrain_cost_benchmark(void)
+{
+    static struct toy_map_primitive flat[TOY_GAME_MAX_PRIMITIVES];
+    static struct toy_game g;
+    static const struct toy_game_box spawn = {
+        -44400, -43400, -1650, 1650, 0, 0
+    };
+    const int counts[] = {0, 16, 32, 64};
+    int flattened = 0, i, round, group, variant, tick, n;
+    if (session.level.primitive_count > TOY_GAME_MAX_PRIMITIVES) return 1;
+    memcpy(flat, session.level.primitives,
+           (size_t)session.level.primitive_count * sizeof(flat[0]));
+    for (i = 0; i < session.level.primitive_count; ++i) {
+        struct toy_map_primitive *p = &flat[i];
+        if ((p->shape != TOY_MAP_PRIMITIVE_RAMP_X &&
+             p->shape != TOY_MAP_PRIMITIVE_FLAT) ||
+            p->minx < -39000 || p->maxx > -24000 ||
+            p->minz != -2400 || p->maxz != 2400 ||
+            (p->shape == TOY_MAP_PRIMITIVE_FLAT && p->surface_y0 == 0) ||
+            !(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
+        p->base_y = p->surface_y0 = p->surface_y1 = 0;
+        ++flattened;
+    }
+    if (flattened != 6) {
+        __printf("TERRAIN-BENCH invalid west surfaces=%d\n", flattened);
+        return 2;
+    }
+    __printf("TERRAIN-BENCH primitives=%d flattened=%d ticks=240 dt_ms=16 seed=771 target=-22000,0\n",
+             session.level.primitive_count, flattened);
+    for (round = 0; round < 5; ++round) {
+        for (group = 0; group < 4; ++group) {
+            n = counts[group];
+            for (variant = 0; variant < 2; ++variant) {
+                int flat_case = (round & 1) ? !variant : variant;
+                int64_t elapsed = 0, maximum = 0;
+                struct toy_game_update_profile profile = {0};
+                struct toy_game_actor *target;
+                toy_game_init(&g, 771);
+                g.to_spawn = 0;
+                g.spawn_budget = 0;
+                g.safe_room_count = 0;
+                toy_game_set_primitives(&g,
+                    flat_case ? flat : session.level.primitives,
+                    session.level.primitive_count, session.level.room_limit);
+                target = toy_game_local_player_actor(&g);
+                target->x = -22000;
+                target->z = 0;
+                target->ground_y = 0;
+                target->hp = 1000000;
+                if (n) toy_game_spawn_horde_type(&g,
+                    TOY_GAME_ENEMY_PURSUIT_COMMON, n, n, &spawn, 1, 0);
+                if (g.enemies_alive != n) {
+                    __printf("TERRAIN-BENCH spawn failed n=%d alive=%d\n",
+                             n, g.enemies_alive);
+                    return 3;
+                }
+                /* The unprofiled pass measures the product path. */
+                for (tick = 0; tick < 240; ++tick) {
+                    int64_t start = rf_core_clock_now_us();
+                    toy_game_update_world(&g, 16);
+                    int64_t cost = rf_core_clock_now_us() - start;
+                    elapsed += cost;
+                    if (cost > maximum) maximum = cost;
+                    g.event_count = g.actor_impulse_event_count = 0;
+                }
+                if (g.enemies_alive != n ||
+                    (n && g.enemies[0].x < -30000)) {
+                    __printf("TERRAIN-BENCH invalid trajectory n=%d alive=%d x=%d\n",
+                        n, g.enemies_alive, n ? g.enemies[0].x : 0);
+                    return 4;
+                }
+                __printf("TERRAIN-BENCH-TIME round=%d enemies=%d terrain=%s total_us=%lld max_us=%lld alive=%d end_x=%d\n",
+                    round + 1, n, flat_case ? "flat" : "authored",
+                    (long long)elapsed, (long long)maximum, g.enemies_alive,
+                    n ? g.enemies[0].x : 0);
+                /* Repeat the identical deterministic run with the existing
+                 * Game profiler. Keep these clocked numbers out of TIME. */
+                toy_game_init(&g, 771);
+                g.to_spawn = 0;
+                g.spawn_budget = 0;
+                g.safe_room_count = 0;
+                toy_game_set_primitives(&g,
+                    flat_case ? flat : session.level.primitives,
+                    session.level.primitive_count, session.level.room_limit);
+                target = toy_game_local_player_actor(&g);
+                target->x = -22000;
+                target->z = 0;
+                target->ground_y = 0;
+                target->hp = 1000000;
+                if (n) toy_game_spawn_horde_type(&g,
+                    TOY_GAME_ENEMY_PURSUIT_COMMON, n, n, &spawn, 1, 0);
+                profile.clock_us = rf_core_clock_now_us;
+                g.update_profile = &profile;
+                for (tick = 0; tick < 240; ++tick) {
+                    toy_game_update_world(&g, 16);
+                    g.event_count = g.actor_impulse_event_count = 0;
+                }
+                g.update_profile = NULL;
+                __printf("TERRAIN-BENCH-NAV round=%d enemies=%d terrain=%s world_us=%lld enemy_us=%lld separation_us=%lld search_us=%lld paths_us=%lld searches=%u candidates=%u samples=%u ground_queries=%u ground_scans=%u body_scans=%u ramp_scans=%u alive=%d end_x=%d\n",
+                    round + 1, n, flat_case ? "flat" : "authored",
+                    (long long)profile.world_us, (long long)profile.enemy_us,
+                    (long long)profile.separation_us,
+                    (long long)profile.nav_search_us,
+                    (long long)profile.nav_paths_us, profile.nav_searches,
+                    profile.nav_candidates, profile.nav_samples,
+                    profile.ground_queries, profile.ground_scans,
+                    profile.body_scans, profile.ramp_transition_scans,
+                    g.enemies_alive, n ? g.enemies[0].x : 0);
+            }
+        }
+    }
+    return 0;
+}
+
 static int run_logic_test(void)
 {
+    extern int rasterfall_rts_projection_logic_test(void);
+    if (rasterfall_rts_projection_logic_test()) return 262;
+    {
+        const char *terrain_bench = getenv("RF_TERRAIN_BENCH");
+        if (terrain_bench && terrain_bench[0] == '1')
+            return terrain_cost_benchmark();
+    }
 #ifdef TOYC_WINDOWS
     extern int toy_window_windows_key_mapping_logic_test(void);
     if (toy_window_windows_key_mapping_logic_test() < 0) return 261;

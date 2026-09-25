@@ -322,6 +322,9 @@ dispatch:
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
+            events->pointer_moved = 1;
+            events->pointer_x = event.button.x;
+            events->pointer_y = event.button.y;
             if (event.button.button == SDL_BUTTON_LEFT ||
                 event.button.button == SDL_BUTTON_RIGHT) {
                 events->button = event.button.button == SDL_BUTTON_LEFT ?
