@@ -28,6 +28,9 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --gpu-scene-play`。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
+离线单人游戏默认使用 FPS；按 `M` 切换 RTS 俯视模式。RTS 中 `WASD` 平移镜头，
+左键选择玩家或旗帜，右键命令玩家移动或立即搬移所选旗帜。玩家在 RTS 中自动攻击射程内敌人；
+再按 `M` 返回 FPS。
 验证方式和支持边界见 [Scene 工作流](../docs/rasterfall/guides/gpu-scene-fixture.md)。
 
 保留的 Linux/freestanding 构建入口：

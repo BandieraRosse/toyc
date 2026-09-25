@@ -926,6 +926,10 @@ static int nav_ground_reuse_logic_test(void)
 
 static int run_logic_test(void)
 {
+#ifdef TOYC_WINDOWS
+    extern int toy_window_windows_key_mapping_logic_test(void);
+    if (toy_window_windows_key_mapping_logic_test() < 0) return 261;
+#endif
     struct camera camera;
     struct toy_input input;
     struct vec3 triangle[3], clipped[4];
@@ -1045,6 +1049,7 @@ static int run_logic_test(void)
         return 174;
     if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
     if (nav_ground_reuse_logic_test()) return 259;
+    if (rasterfall_session_rts_logic_test()) return 260;
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_OUTPOST ||

@@ -195,7 +195,9 @@ Runtime 分别提供独立快照；查询调用方不取得生命周期所有权
 
 Input Boundary V0 由 `rf_core_get_input_frame()` 提供。Core 在每次成功事件轮询后生成可复制的
 `rf_input_frame`，包含 key down、pressed/released edge、指针位置/相对移动、锁定状态和鼠标按键；
-Game Runtime 使用该 view 构造原有命令，未引入 action mapping，也未改变键位或 gameplay。
+Game Runtime 使用该 view 构造命令。离线 RTS 由 `M` 切换，runtime 保持北朝屏幕上方的独立高位
+render camera；`WASD` 平移该镜头，鼠标点击按相同透视投影反求地面坐标。选取结果仅为 runtime UI 状态，
+移动命令和旗帜位置交给 session；切回 FPS 后恢复原来的视角俯仰。
 
 `struct camera` 现以 `body` 和 `view` 两个命名空间表达该边界；旧的扁平字段暂保留为布局兼容
 别名。新代码应使用 `camera.body` 读写派生位置，使用 `camera.view` 读写方向和展示高度。

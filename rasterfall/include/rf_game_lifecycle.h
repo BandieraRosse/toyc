@@ -53,6 +53,11 @@ struct rf_game_runtime {
     struct rf_application_query_context application_query;
     struct camera camera;
     struct camera render_camera;
+    int rts_active;
+    int rts_camera_x, rts_camera_z;
+    int rts_saved_pitch_sy, rts_saved_pitch_cy;
+    int64_t rts_pan_last_us;
+    int rts_selected; /* -1 none, 0 local player, positive flag index + 1 */
     struct rasterfall_command command;
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     int pointer_turn_pending;

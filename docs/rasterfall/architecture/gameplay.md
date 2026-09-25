@@ -52,6 +52,10 @@ RMESH 或 attachment 数据。
 
 `src/rasterfall_session.c` + `include/rasterfall_session.h` 是模式编排层：加载/重置关卡，构建和执行
 玩家命令，商店与雇佣 AI，剧情阶段、托管角色，以及主机/客户端不同的 step/replay 路径。
+离线 RTS 模式也由 session 持有：玩家移动目标、自动寻敌和射击命令在固定步长中生成，
+仍通过正式 actor 移动与武器 API 更新玩法真值。旗帜的 RTS 搬移即时更新 session 位置，
+并重算该旗帜的队员部署点。镜头平移、屏幕选取和选择高亮属于 Game Runtime 展示状态，
+不进入 `toy_game`。当前 RTS 不接入联机命令协议。
 
 `src/rasterfall_ai.c` + `include/rasterfall_ai.h` 管理可插拔 AI 注册表，把 observation 交给控制器并
 将 decision 同步回游戏；具体内建战斗和移动规则大量仍在 `lib/game.c` 与 session 的托管 AI 中。

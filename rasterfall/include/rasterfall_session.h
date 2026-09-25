@@ -149,6 +149,9 @@ struct rasterfall_session {
     struct rasterfall_map_state map_ops;
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
+    int rts_active;
+    int rts_move_active;
+    int rts_move_x, rts_move_z;
     int managed_ai_route_phase;
     int managed_ai_target_index;
     int managed_ai_retarget_ms;
@@ -205,6 +208,12 @@ void rasterfall_session_reset(struct rasterfall_session *session,
 /* 单人托管玩家开关。启用后，step 会用最小托管策略生成玩家命令。 */
 int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
                                       int active);
+void rasterfall_session_set_rts(struct rasterfall_session *session, int active);
+void rasterfall_session_rts_move_player(struct rasterfall_session *session,
+                                        int x, int z);
+int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
+                                     int flag_index, int x, int z);
+int rasterfall_session_rts_logic_test(void);
 /* 旁观者的托管 AI 脱困命令：同步重置相机、逻辑位置和击飞状态。 */
 int rasterfall_session_recover_managed_actor(
     struct rasterfall_session *session, struct camera *camera);

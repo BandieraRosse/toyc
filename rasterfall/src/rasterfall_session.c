@@ -762,6 +762,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
     session->managed_ai_route_phase = 0;
+    session->rts_active = 0;
+    session->rts_move_active = 0;
     session->managed_ai_weapon_master_target = 0;
     session->managed_ai_weapon_master_route = 0;
     session->managed_ai_ammo_rest_wave = -1;
@@ -2049,6 +2051,127 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
         RASTERFALL_AI_POLICY_MANAGED_SIMPLE) >= 0;
 }
 
+static int session_managed_ai_face(struct camera *camera, int x, int z,
+                                   int dt_ms);
+
+void rasterfall_session_set_rts(struct rasterfall_session *session, int active)
+{
+    if (!session) return;
+    session->rts_active = active != 0;
+    session->rts_move_active = 0;
+}
+
+void rasterfall_session_rts_move_player(struct rasterfall_session *session,
+                                        int x, int z)
+{
+    if (!session || !session->rts_active) return;
+    session->rts_move_x = x;
+    session->rts_move_z = z;
+    session->rts_move_active = 1;
+}
+
+int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
+                                     int flag_index, int x, int z)
+{
+    struct rasterfall_flag *flag;
+    if (!session || !session->rts_active || flag_index < 0 ||
+        flag_index >= session->flag_count) return 0;
+    flag = &session->flags[flag_index];
+    if (!flag->active) return 0;
+    flag->x = x;
+    flag->z = z;
+    flag->carried = 0;
+    flag->carrier_id = -1;
+    if (session->carried_flag == flag_index) session->carried_flag = -1;
+    session_set_flag_assignments(session, flag_index);
+    return 1;
+}
+
+static void session_build_rts_command(struct rasterfall_session *session,
+                                      struct camera *camera,
+                                      struct rasterfall_command *command,
+                                      int dt_ms)
+{
+    const struct toy_game_actor *player =
+        toy_game_local_player_actor_const(&session->game_state);
+    const struct toy_game_weapon_info *weapon;
+    int range, target = -1;
+    long long best = 0;
+    int i;
+    memset(command, 0, sizeof(*command));
+    if (!player || player->state != TOY_GAME_ACTOR_ALIVE) return;
+    weapon = toy_game_weapon_info(player->slots[player->current_slot].weapon);
+    range = weapon ? weapon->range : 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        const struct toy_game_enemy *enemy = &session->game_state.enemies[i];
+        long long dx, dz, distance2;
+        if (enemy->active != 1 || enemy->hp <= 0) continue;
+        dx = (long long)enemy->x - camera->x;
+        dz = (long long)enemy->z - camera->z;
+        distance2 = dx * dx + dz * dz;
+        if (distance2 > (long long)range * range ||
+            (target >= 0 && distance2 >= best)) continue;
+        target = i;
+        best = distance2;
+    }
+    if (target >= 0) {
+        const struct toy_game_enemy *enemy =
+            &session->game_state.enemies[target];
+        if (session_managed_ai_face(camera, enemy->x, enemy->z, dt_ms)) {
+            command->buttons |= RASTERFALL_CMD_FIRE;
+            command->fire_held = 1;
+        }
+        if (player->slots[player->current_slot].mag == 0)
+            command->buttons |= RASTERFALL_CMD_RELOAD;
+    } else if (session->rts_move_active) {
+        session_managed_ai_face(camera, session->rts_move_x,
+                                session->rts_move_z, dt_ms);
+    }
+    if (session->rts_move_active) {
+        long long dx = (long long)session->rts_move_x - camera->x;
+        long long dz = (long long)session->rts_move_z - camera->z;
+        if (dx * dx + dz * dz <= 250LL * 250LL)
+            session->rts_move_active = 0;
+        else {
+            long long forward = dx * camera->sy + dz * camera->cy;
+            long long strafe = dx * camera->cy - dz * camera->sy;
+            if (forward > 160000) command->move_forward = 1;
+            else if (forward < -160000) command->move_forward = -1;
+            if (strafe > 160000) command->move_strafe = 1;
+            else if (strafe < -160000) command->move_strafe = -1;
+        }
+    }
+}
+
+int rasterfall_session_rts_logic_test(void)
+{
+    static struct rasterfall_session test;
+    struct camera camera;
+    struct rasterfall_command command;
+    memset(&test, 0, sizeof(test));
+    memset(&camera, 0, sizeof(camera));
+    toy_game_init(&test.game_state, 1);
+    camera.cy = camera.pitch_cy = 1024;
+    rasterfall_session_set_rts(&test, 1);
+    rasterfall_session_rts_move_player(&test, 3000, 0);
+    session_build_rts_command(&test, &camera, &command, 16);
+    if (!test.rts_move_active || command.move_strafe != 1) return 1;
+    test.game_state.enemies[0].active = 1;
+    test.game_state.enemies[0].hp = 100;
+    test.game_state.enemies[0].z = 1000;
+    session_build_rts_command(&test, &camera, &command, 16);
+    if (!(command.buttons & RASTERFALL_CMD_FIRE) || !command.fire_held ||
+        command.move_strafe != 1) return 2;
+    test.flag_count = 1;
+    test.flags[0].active = 1;
+    if (!rasterfall_session_rts_move_flag(&test, 0, 1200, 1300) ||
+        test.flags[0].x != 1200 || test.flags[0].z != 1300) return 3;
+    rasterfall_session_set_rts(&test, 0);
+    if (test.rts_move_active ||
+        rasterfall_session_rts_move_flag(&test, 0, 0, 0)) return 4;
+    return 0;
+}
+
 int rasterfall_session_recover_managed_actor(
     struct rasterfall_session *session, struct camera *camera)
 {
@@ -2754,7 +2877,10 @@ void rasterfall_session_step(struct rasterfall_session *session,
         else if(action==RASTERFALL_POSE_DEBUG_INCREASE)edited->rotation[session->pose_debug_bone][session->pose_debug_axis]++;
         else if(action==RASTERFALL_POSE_DEBUG_EXPORT){char out[1400];int fd,n=0,i;n+=snprintf(out+n,sizeof(out)-n,"# Eula AK humanoid poses\n");for(i=0;i<RASTERFALL_RIFLE_POSE_BONE_COUNT;i++)n+=snprintf(out+n,sizeof(out)-n,"rifle %s %d %d %d\n",rasterfall_rifle_pose_bone_names[i],session->rifle_pose.rotation[i][0],session->rifle_pose.rotation[i][1],session->rifle_pose.rotation[i][2]);for(i=0;i<RASTERFALL_RIFLE_POSE_BONE_COUNT;i++)n+=snprintf(out+n,sizeof(out)-n,"hit %s %d %d %d\n",rasterfall_rifle_pose_bone_names[i],session->hit_pose.rotation[i][0],session->hit_pose.rotation[i][1],session->hit_pose.rotation[i][2]);fd=__openat(AT_FDCWD,"tmp/eula_ak_rifle_pose.txt",O_WRONLY|O_CREAT|O_TRUNC,0644);if(fd>=0){__write(fd,out,n);__close(fd);session->banner_text="POSES EXPORTED: tmp/eula_ak_rifle_pose.txt";}else session->banner_text="POSE EXPORT FAILED";session->banner_ms=2400;}
     }
-    if (session_managed_ai_active(session)) {
+    if (session->rts_active) {
+        session_build_rts_command(session, camera, &managed_command, dt_ms);
+        command = &managed_command;
+    } else if (session_managed_ai_active(session)) {
         memset(&managed_command, 0, sizeof(managed_command));
         /* Weapon-master preparation owns the command while it is travelling
          * through the shop route.  The generic calm route must not retarget

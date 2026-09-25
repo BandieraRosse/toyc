@@ -258,7 +258,8 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     }
     scene_layer_effects(mesh,input->source_effects,camera,width,height);
     mesh->layer=RF_GPU_SCENE_VIEWMODEL;
-    if (player && player->state!=TOY_GAME_ACTOR_DOWNED) {
+    if (input->show_viewmodel && player &&
+        player->state!=TOY_GAME_ACTOR_DOWNED) {
         struct rasterfall_viewmodel_geometry geometry={width,height,0,mesh,scene_layer_viewmodel};
         if (rasterfall_viewmodel_geometry(&geometry,input->source_game,input->source_effects,input->viewmodel_light)<0) return -1;
     }

@@ -55,6 +55,15 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     next.world_generation=scene_enemy_capture.world_generation;
     next.frame_id=scene_enemy_capture.frame_id-1;
     if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
+    if (active_session->rts_active) {
+        const struct toy_game_actor *player =
+            toy_game_local_player_actor_const(&game);
+        if (player && player->active &&
+            scene_actor_procedural(player, player->x, player->z,
+                player->sy, player->cy,
+                player->ground_y + player->airborne_y,
+                RF_COLOR_UI_PLAYER, 0) < 0) goto fail;
+    }
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&game.actors[i];
         if (!actor->active || actor->kind!=TOY_GAME_ACTOR_AI) continue;

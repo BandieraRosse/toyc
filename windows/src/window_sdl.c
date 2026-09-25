@@ -27,7 +27,7 @@ enum {
     KEY_ESC = 1, KEY_1 = 2, KEY_2 = 3, KEY_3 = 4, KEY_4 = 5,
     KEY_BACKSPACE = 14, KEY_TAB = 15,
     KEY_Q = 16, KEY_W = 17, KEY_E = 18, KEY_R = 19, KEY_F = 33,
-    KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_ENTER = 28,
+    KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_M = 50, KEY_ENTER = 28,
     KEY_GRAVE = 41, KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
     KEY_SLASH = 53, KEY_SPACE = 57,
     KEY_F12 = 88, KEY_UP = 103, KEY_LEFT = 105, KEY_RIGHT = 106, KEY_DOWN = 108
@@ -77,6 +77,7 @@ static void poll_windows_keys(struct toy_window_events *events)
         {KEY_W, 'W'}, {KEY_A, 'A'}, {KEY_S, 'S'}, {KEY_D, 'D'},
         {KEY_SPACE, VK_SPACE}, {KEY_LEFTSHIFT, VK_LSHIFT},
         {KEY_TAB, VK_TAB}, {KEY_R, 'R'}, {KEY_E, 'E'}, {KEY_F, 'F'},
+        {KEY_M, 'M'},
         {KEY_1, '1'}, {KEY_2, '2'}, {KEY_3, '3'}, {KEY_4, '4'},
         {KEY_UP, VK_UP}, {KEY_DOWN, VK_DOWN},
         {KEY_LEFT, VK_LEFT}, {KEY_RIGHT, VK_RIGHT}, {KEY_SLASH, VK_OEM_2}
@@ -110,6 +111,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDLK_r: return KEY_R;
     case SDLK_e: return KEY_E;
     case SDLK_f: return KEY_F;
+    case SDLK_m: return KEY_M;
     case SDLK_TAB: return KEY_TAB;
     case SDLK_BACKSPACE: return KEY_BACKSPACE;
     case SDLK_BACKQUOTE: return KEY_GRAVE;
@@ -159,6 +161,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_R: return KEY_R;
     case SDL_SCANCODE_E: return KEY_E;
     case SDL_SCANCODE_F: return KEY_F;
+    case SDL_SCANCODE_M: return KEY_M;
     case SDL_SCANCODE_TAB: return KEY_TAB;
     case SDL_SCANCODE_BACKSPACE: return KEY_BACKSPACE;
     case SDL_SCANCODE_GRAVE: return KEY_GRAVE;
@@ -185,6 +188,12 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_KP_0: return 11;
     default: return TOY_INPUT_KEY_COUNT;
     }
+}
+
+int toy_window_windows_key_mapping_logic_test(void)
+{
+    return key_code(SDL_SCANCODE_M, SDLK_m) == KEY_M &&
+           key_code(SDL_SCANCODE_M, SDLK_UNKNOWN) == KEY_M ? 0 : -1;
 }
 
 static struct toy_window *toy_window_open_impl(const char *title, int width,

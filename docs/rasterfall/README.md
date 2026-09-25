@@ -18,6 +18,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
+| FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
 | 独立 GPU 新架构与直接来源预览 | [活动计划](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |

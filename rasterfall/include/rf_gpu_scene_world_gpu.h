@@ -12,7 +12,7 @@ struct rf_gpu_scene_layers_input {
     const struct rasterfall_effects *source_effects;
     const struct rf_gpu_scene_world_render_frame_v1 *map;
     struct rasterfall_hud_state hud;
-    int fps,paused,pause_selected,viewmodel_light;
+    int fps,paused,pause_selected,viewmodel_light,show_viewmodel;
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
 };
