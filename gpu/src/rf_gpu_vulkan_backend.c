@@ -612,6 +612,7 @@ struct rf_gpu_vulkan_impl {
     uint32_t queue_flags;
     uint32_t shader_int64_enabled;
     uint64_t max_storage_buffer_range;
+    uint64_t non_coherent_atom_size;
     float timestamp_period;
     uint32_t timestamp_valid_bits;
     int timestamp_supported;
@@ -3130,6 +3131,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         if (families) api->get_physical_device_queue_family_properties(
             selected_device,&family_count,families);
         impl->timestamp_period=properties.limits.timestamp_period;
+        impl->non_coherent_atom_size=properties.limits.non_coherent_atom_size;
         impl->timestamp_valid_bits=families && selected_family<family_count ?
             families[selected_family].timestamp_valid_bits : 0;
         impl->timestamp_supported=properties.limits.timestamp_compute_and_graphics &&

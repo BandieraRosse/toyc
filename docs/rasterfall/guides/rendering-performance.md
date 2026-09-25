@@ -137,8 +137,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_old_map_perf
 
 `-ProfileTriangleUpdate` 设置 `RF_GPU_PROFILE_TRIANGLE_UPDATE=1`，额外汇总成功的动态三角形
 资源更新：`SCENE-TRIANGLE-UPDATE` 的 `validate_us` 包括动态输入校验及 bounds 计算，
-`copy_us` 包括 staging 容量准备（如需要）、map、memcpy、flush 和 unmap，`transfer_us`
-包括可选 copy 提交/等待及更新收尾。它们是 CPU 墙钟，覆盖敌人、程序角色及分层动态资源；
+`map_us` 包括必要的 staging 容量准备及首次映射，`copy_us` 仅计连续 `memcpy`，
+`flush_us` 计非 coherent 刷新及其收尾，`transfer_us` 包括可选 copy 提交/等待及更新收尾。
+顺序三角形资源创建时会持久映射 host-visible 顶点内存；无此内存时，首次更新创建并映射保留的
+staging。映射在资源销毁时解除，热帧通常没有 map/unmap。`bytes` 是复制字节，
+`flush_bytes` 是按设备 nonCoherentAtomSize 对齐后的实际刷新字节；coherent 更新为零。
+`direct_flags` 和 `staging_flags` 是成功更新所用分配的 Vulkan memory property 位掩码累积值。
+这些字段是 CPU 墙钟，覆盖敌人、程序角色及分层动态资源；
 不含新建资源或失败更新，不能直接等同于 `enemy_upload_us`。`staging` 记录采用 transfer
 路径的更新数；为零只证明这些成功更新没有 staging 提交。字段关闭时不额外读时钟。
 报告的 `triangle_updates` 保留分段、字节数和资源数，`nav_ground_comparisons` 保留每轮配对差值。

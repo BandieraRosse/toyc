@@ -201,8 +201,10 @@ Smoker、Charger、Tank 的刚性网格，和地图、角色共用 Scene WORLD c
 则在复制的 light field 中采样，否则使用冻结的实例光照。Scene owner 在同步提交退休后复用敌人与程序角色
 的动态三角形资源槽；槽只代表容量，不代表角色身份，每帧重新提取并写入全部活动顶点和 draw 材质。
 顺序索引、白色纹理、buffer 与 descriptor 保留；容量不足时替换资源，暂时不活动的槽保留到 owner 关闭。
-更新同步刷新活动索引范围和位置边界；共享、skinned 或尚未退休的资源拒绝更新。host-visible 顶点 buffer
-直接写入并按需 flush，其他内存使用资源持有的 staging buffer 和同步 transfer；失败由 owner teardown 回收。
+更新同步刷新活动索引范围和位置边界；共享、skinned 或尚未退休的资源拒绝更新。顺序三角形资源
+创建后保持 host-visible 顶点内存映射，热帧从普通 CPU 工作区连续复制；非 coherent 分配按
+nonCoherentAtomSize 对齐并仅刷新活动字节覆盖范围。其他内存首次更新时建立持久映射的 staging
+buffer，并继续同步 transfer；资源销毁时解除映射，失败由 owner teardown 回收。
 世界切换随 Scene owner 关闭释放资源。该策略仍是单 slot 同步退休，不表示多帧流水已经实现。
 owner 跨审计帧复用，registry frame pin 在诊断
 提交完成后退休，cache 随 generation collect。该诊断不替换 Core mixed executor 的正常提交；

@@ -71,6 +71,7 @@ struct rf_gpu_graphics_resource {
     int sequential_triangles;
     int scene_vertex_color;
     struct rf_gpu_vulkan_raster_buffer triangle_staging;
+    void *triangle_mapped;
     struct rf_gpu_graphics_resource *skin_pending_next;
     struct rf_gpu_vulkan_raster_buffer *skin_pending_upload[2];
     uint64_t skin_pending_bytes[2];
@@ -951,6 +952,11 @@ static struct rf_gpu_graphics_resource *gfx_resource_create(
         rf_gpu_graphics_resource_destroy(g, resource);
         return NULL;
     }
+    if (resource->sequential_triangles &&
+        (resource->vertices.memory_flags&RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) &&
+        g->owner->api.map_memory(g->owner->device,resource->vertices.memory,0,
+            resource->vertices.allocation_size,0,&resource->triangle_mapped)!=RF_VK_SUCCESS)
+        goto descriptor_failed;
     pool.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     pool.max_sets = 1; pool.pool_size_count = 1; pool.pool_sizes = &size;
     set.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1007,10 +1013,11 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     int bounds[3]={0};
-    void *mapped=NULL;
+    void *mapped;
     uint64_t bytes=(uint64_t)vertex_count*(scene_color ?
         sizeof(struct rf_gpu_scene_color_vertex) : sizeof(struct rf_gpu_graphics_vertex));
-    double mark=0,validated=0,copied=0;
+    double mark=0,validated=0,prepared=0,copied=0,flushed=0;
+    uint64_t flush_bytes=0;
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g ||
         r->shared_binding.owner || r->skin_descriptor_set || !r->sequential_triangles ||
         r->scene_vertex_color!=scene_color || !vertices || !vertex_count ||
@@ -1048,18 +1055,26 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
                 RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                 RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,upload)<0) return -1;
     }
-    if (impl->api.map_memory(impl->device,upload->memory,0,upload->allocation_size,0,&mapped)!=RF_VK_SUCCESS)
-        return -1;
+    if (!r->triangle_mapped &&
+        impl->api.map_memory(impl->device,upload->memory,0,upload->allocation_size,0,
+            &r->triangle_mapped)!=RF_VK_SUCCESS) return -1;
+    mapped=r->triangle_mapped;
+    if (g->profile_triangle_update) prepared=now_ms();
     memcpy(mapped,vertices,(size_t)bytes);
+    if (g->profile_triangle_update) copied=now_ms();
     if (!(upload->memory_flags&RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)) {
+        uint64_t atom=impl->non_coherent_atom_size;
+        if (!atom) { g->poisoned=1; return -1; }
+        flush_bytes=bytes + (atom-1);
+        flush_bytes-=flush_bytes%atom;
+        if (flush_bytes>upload->allocation_size) flush_bytes=upload->allocation_size;
         range.s_type=RF_VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
-        range.memory=upload->memory;range.size=upload->allocation_size;
+        range.memory=upload->memory;range.size=flush_bytes;
         if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS) {
-            impl->api.unmap_memory(impl->device,upload->memory);g->poisoned=1;return -1;
+            g->poisoned=1;return -1;
         }
     }
-    impl->api.unmap_memory(impl->device,upload->memory);
-    if (g->profile_triangle_update) copied=now_ms();
+    if (g->profile_triangle_update) flushed=now_ms();
     if (upload!=&r->vertices) {
         if (gfx_begin(g)<0) return -1;
         copy.size=bytes;
@@ -1077,11 +1092,16 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     g->stats.mesh_upload_bytes+=bytes;
     if (g->profile_triangle_update) {
         g->stats.triangle_validate_ms+=validated-mark;
-        g->stats.triangle_copy_ms+=copied-validated;
-        g->stats.triangle_transfer_ms+=now_ms()-copied;
+        g->stats.triangle_map_ms+=prepared-validated;
+        g->stats.triangle_copy_ms+=copied-prepared;
+        g->stats.triangle_flush_ms+=flushed-copied;
+        g->stats.triangle_transfer_ms+=now_ms()-flushed;
         g->stats.triangle_updates++;
         g->stats.triangle_update_bytes+=bytes;
+        g->stats.triangle_flush_bytes+=flush_bytes;
         g->stats.triangle_staging_updates+=upload!=&r->vertices;
+        if (upload==&r->vertices) g->stats.triangle_direct_flags|=upload->memory_flags;
+        else g->stats.triangle_staging_flags|=upload->memory_flags;
     }
     return 0;
 }
@@ -1378,6 +1398,11 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     raster_buffer_destroy(g->owner,&resource->skin_bind);
     raster_buffer_destroy(g->owner,&resource->skin_palette);
     for (unsigned i=0;i<2;++i) raster_buffer_destroy(g->owner,&resource->skin_staging[i]);
+    if (resource->triangle_mapped) {
+        struct rf_gpu_vulkan_raster_buffer *mapped_buffer=
+            resource->triangle_staging.memory ? &resource->triangle_staging : &resource->vertices;
+        g->owner->api.unmap_memory(g->owner->device,mapped_buffer->memory);
+    }
     raster_buffer_destroy(g->owner,&resource->triangle_staging);
     raster_buffer_destroy(g->owner, &resource->vertices);
     raster_buffer_destroy(g->owner, &resource->indices);
