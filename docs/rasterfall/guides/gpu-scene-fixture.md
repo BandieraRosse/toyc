@@ -337,6 +337,15 @@ Campaign 正常帧审计另冻结 object 值，并将 boundary wall 和普通 `M
 native present 和同帧 mixed BMP / Scene PPM，并调用 `tools/gpu_scene_enemy_pixels.py` 检查固定局部像素。
 像素检查器可单独接收已有输出目录重跑。`SCENE-ENEMY` 分别记录身体项、draw、暂缓与远距剔除。
 三个特感和六种普通感染体的存活身体进入 WORLD；阴影、舌头、死亡和显式 LEGACY 尚未覆盖，不能对完整画面要求逐像素相等。
+提前准备裁剪的两份 64 敌人现场分别使用 `--gpu-normal-scene enemy-cull-out 64` 与
+`--gpu-normal-scene enemy-cull-in 64`，配合 `--gpu-scene-play --gpu-normal-fixed-tick` 和固定帧数。
+前者检查 `SCENE-ENEMY-COST prepare_culled` 与三角形、上传准备量；后者要求
+`SCENE-ENEMY draws=64`，确认 64 个敌人全部进入 WORLD。`prepare_culled` 还包括同帧程序角色，
+因此视锥内敌人场景不要求该总数为零。设置 `RF_GPU_SCENE_DISABLE_ENEMY_CULL=1`
+可用同一冻结场景重放未裁剪对照。该计数只表示提取前的准备裁剪，区别于来源阶段的 `enemy_culled`。
+`--gpu-normal-scene enemy-cull-imported-out 64` 专门覆盖六种导入感染体 recipe：首次未知姿态允许提取一次，
+随后相同姿态的镜头外来源应减少几何与上传；与关闭裁剪的同帧 Scene 捕获图应一致。
+`--gpu-normal-scene enemy-cull-imported-in 64` 保留 64 个导入感染体在视锥内，要求开启裁剪后仍提交全部身体。
 源码中的逻辑回归另检查三类刚性几何的确定性、pose 变化、失败传播和单帧冻结边界。
 `--gpu-scene-pose-test` 另检查六种感染体资源、步态变化、冻结重放、旧 scratch pose 隔离与失败传播。
 普通感染体仍逐帧提取并更新动态顶点，诊断包含同步读回，因此该专项不用于 whole-loop 性能或长时运行结论。

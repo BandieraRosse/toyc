@@ -61,6 +61,8 @@ typedef int (*rf_gpu_scene_enemy_triangle_fn)(void *context,
     const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color);
 int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context);
+/* Zero means this imported pose has no proven local skin bound yet. */
+int rf_gpu_scene_infected_body_radius(const struct rf_gpu_scene_enemy_item_v1 *item);
 int rf_gpu_scene_procedural_triangles(const struct rf_gpu_scene_procedural_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context);
 #endif

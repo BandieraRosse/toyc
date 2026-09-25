@@ -1012,12 +1012,132 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
     }
     mesh->count++;return 0;
 }
+/* Reject only when every corner of the complete presentation bound is outside
+ * one plane. Unknown imported skin extents stay on the extraction path. */
+static int scene_enemy_bound_outside(const struct camera *camera,
+    uint32_t width,uint32_t height,int64_t min_x,int64_t max_x,
+    int64_t min_y,int64_t max_y,int64_t min_z,int64_t max_z)
+{
+    int outside[5]={1,1,1,1,1};
+    int64_t focal=(int64_t)width*3/4;
+    int64_t half_width=width/2+32,half_height=height/2+32;
+    if (!width || !height || width>INT32_MAX || height>INT32_MAX) return 0;
+    for (int xi=0;xi<2;++xi) for (int yi=0;yi<2;++yi)
+        for (int zi=0;zi<2;++zi) {
+            int64_t dx=(xi?max_x:min_x)-camera->x;
+            int64_t dy=(yi?max_y:min_y)-camera->y;
+            int64_t dz=(zi?max_z:min_z)-camera->z;
+            int64_t vx=(dx*camera->cy-dz*camera->sy)/1024;
+            int64_t forward=(dx*camera->sy+dz*camera->cy)/1024;
+            int64_t vy=(dy*camera->pitch_cy-forward*camera->pitch_sy)/1024;
+            int64_t vz=(dy*camera->pitch_sy+forward*camera->pitch_cy)/1024;
+            /* A margin absorbs integer projection and view rounding. */
+            if (vz>=RASTERFALL_NEAR_Z-64) outside[0]=0;
+            if (vx*focal>=-vz*half_width-4096) outside[1]=0;
+            if (vx*focal<= vz*half_width+4096) outside[2]=0;
+            if (vy*focal<= vz*half_height+4096) outside[3]=0;
+            if (vy*focal>=-vz*half_height-4096) outside[4]=0;
+        }
+    for (int p=0;p<5;++p) if (outside[p]) return 1;
+    return 0;
+}
+static int scene_enemy_prepare_outside(const struct camera *camera,
+    uint32_t width,uint32_t height,const struct rf_gpu_scene_enemy_item_v1 *enemy,
+    const struct rf_gpu_scene_procedural_item_v1 *actor)
+{
+    int64_t x,z,lift,radius,min_x,max_x,min_y,max_y,min_z,max_z;
+    if (actor) {
+        x=actor->state.x;z=actor->state.z;lift=actor->state.lift;
+        /* Includes downed rotation and the held procedural weapon. */
+        radius=5000;
+        if (x<-1000000 || x>1000000 || z<-1000000 || z>1000000 ||
+            lift<-1000000 || lift>1000000 ||
+            actor->state.sy<-1024 || actor->state.sy>1024 ||
+            actor->state.cy<-1024 || actor->state.cy>1024 ||
+            actor->state.animation_id<0 ||
+            actor->state.animation_id>=TOY_GAME_ANIM_COUNT ||
+            actor->state.animation_time_ms<0 ||
+            actor->state.animation_time_ms>60000 ||
+            actor->state.profession_id<0 ||
+            actor->state.profession_id>=RASTERFALL_PROFESSION_COUNT ||
+            actor->state.weapon<-1 ||
+            actor->state.weapon>=TOY_GAME_WEAPON_COUNT ||
+            actor->scene_light_q8<0 || actor->scene_light_q8>384) return 0;
+    } else {
+        x=enemy->x;z=enemy->z;lift=enemy->lift;
+        if (x<-1000000 || x>1000000 || z<-1000000 || z>1000000 ||
+            lift<-1000000 || lift>1000000 || enemy->squash<0 ||
+            enemy->squash>2000 || enemy->shadow_rx<0 || enemy->shadow_rx>1000 ||
+            enemy->shadow_rz<0 || enemy->shadow_rz>1000 ||
+            enemy->alpha<0 || enemy->alpha>255 ||
+            enemy->source_slot>=TOY_GAME_MAX_ENEMIES ||
+            enemy->scene_light_q8<0 || enemy->scene_light_q8>384 ||
+            enemy->dir_x<-1024 || enemy->dir_x>1024 ||
+            enemy->dir_z<-1024 || enemy->dir_z>1024 ||
+            enemy->legacy_kind<0 || enemy->legacy_kind>2 ||
+            enemy->roll_sin<-1024 || enemy->roll_sin>1024 ||
+            enemy->roll_cos<-1024 || enemy->roll_cos>1024 ||
+            (enemy->transformed && (enemy->pivot_x!=enemy->x ||
+                enemy->pivot_z!=enemy->z ||
+                (int64_t)enemy->pivot_y!=lift-300)) ||
+            (!enemy->legacy_kind && !enemy->infected_recipe &&
+                enemy->type!=TOY_GAME_ENEMY_SMOKER &&
+                enemy->type!=TOY_GAME_ENEMY_CHARGER &&
+                enemy->type!=TOY_GAME_ENEMY_TANK)) return 0;
+        if (enemy->infected_recipe) {
+            radius=rf_gpu_scene_infected_body_radius(enemy);
+            if (!radius) return 0;
+        } else radius=6000;
+        for (int channel=0;channel<ER_COUNT && !enemy->legacy_kind &&
+                !enemy->infected_recipe;++channel) {
+            const struct enemy_rig_transform *pose=&enemy->pose.channel[channel];
+            if (pose->x < -200 || pose->x > 200 || pose->y < -200 ||
+                pose->y > 200 || pose->z < -200 || pose->z > 200 ||
+                pose->pitch<-3600 || pose->pitch>3600 ||
+                pose->yaw<-3600 || pose->yaw>3600 ||
+                pose->roll<-3600 || pose->roll>3600) return 0;
+        }
+        /* Rigid and legacy bodies use the fixed radius above. */
+    }
+    min_x=x-radius;max_x=x+radius;
+    min_y=lift-900-radius;max_y=lift-900+radius;
+    min_z=z-radius;max_z=z+radius;
+    if (!actor) {
+        if (enemy->shadow) {
+            if (enemy->shadow_y < -1000000 || enemy->shadow_y > 1000000) return 0;
+            if (x-enemy->shadow_rx<min_x) min_x=x-enemy->shadow_rx;
+            if (x+enemy->shadow_rx>max_x) max_x=x+enemy->shadow_rx;
+            if (enemy->shadow_y<min_y) min_y=enemy->shadow_y;
+            if (enemy->shadow_y>max_y) max_y=enemy->shadow_y;
+            if (z-enemy->shadow_rz<min_z) min_z=z-enemy->shadow_rz;
+            if (z+enemy->shadow_rz>max_z) max_z=z+enemy->shadow_rz;
+        }
+        if (enemy->tongue) {
+            int64_t points[2][3]={{enemy->mouth_x,enemy->mouth_y,enemy->mouth_z},
+                {enemy->target_x,(int64_t)enemy->target_y-360,enemy->target_z}};
+            for (int i=0;i<2;++i) {
+                if (points[i][0]<-1000000 || points[i][0]>1000000 ||
+                    points[i][1]<-1000000 || points[i][1]>1000000 ||
+                    points[i][2]<-1000000 || points[i][2]>1000000) return 0;
+                if (points[i][0]-1000<min_x) min_x=points[i][0]-1000;
+                if (points[i][0]+1000>max_x) max_x=points[i][0]+1000;
+                if (points[i][1]-1000<min_y) min_y=points[i][1]-1000;
+                if (points[i][1]+1000>max_y) max_y=points[i][1]+1000;
+                if (points[i][2]-1000<min_z) min_z=points[i][2]-1000;
+                if (points[i][2]+1000>max_z) max_z=points[i][2]+1000;
+            }
+        }
+    }
+    return scene_enemy_bound_outside(camera,width,height,min_x,max_x,
+        min_y,max_y,min_z,max_z);
+}
 static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_enemy_frame_v1 *frame,const struct camera *camera,
     uint32_t width,uint32_t height,struct rf_gpu_graphics_batch_item *items,
     uint32_t capacity,uint32_t *count,uint32_t *procedural_draws,int64_t *extract_us,
     int64_t *upload_us,int64_t *draw_prepare_us,
-    uint32_t *reused,uint32_t *created,uint32_t *triangles)
+    uint32_t *reused,uint32_t *created,uint32_t *triangles,
+    uint32_t *prepare_culled)
 {
     struct scene_enemy_mesh *mesh=NULL;
     uint32_t total=0,white=0xffffff;
@@ -1027,11 +1147,13 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     int rebuild=rebuild_setting && !strcmp(rebuild_setting,"1");
     const char *legacy=getenv("RF_GPU_SCENE_LEGACY_ENEMY_PREP");
     const char *legacy_color=getenv("RF_GPU_SCENE_LEGACY_COLOR_DRAWS");
+    const char *disable_cull=getenv("RF_GPU_SCENE_DISABLE_ENEMY_CULL");
     int vertex_color=!(legacy_color && legacy_color[0]=='1');
     *procedural_draws=0;
     *extract_us=0;
     *upload_us=0;
     *draw_prepare_us=0;
+    *prepare_culled=0;
     /* The single Scene slot has retired before prepare. These are capacity
      * slots, not actor identities: all active vertices/materials are replaced.
      * Keep inactive capacity until owner close/world change. */
@@ -1058,6 +1180,11 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             procedural_source.lift=actor->state.lift;
             procedural_source.scene_light_q8=actor->scene_light_q8;
             source=&procedural_source;
+        }
+        if (!(disable_cull && disable_cull[0]=='1') &&
+            scene_enemy_prepare_outside(camera,width,height,actor ? NULL : source,actor)) {
+            (*prepare_culled)++;
+            continue;
         }
         mesh->count=0;memset(mesh->light_cache,0,sizeof(mesh->light_cache));
         mesh->frame=frame;mesh->source=source;
@@ -1304,7 +1431,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             items+draws,capacity-draws,&enemy_draws,&stats->procedural_draws,
             &stats->geometry_extract_us,&stats->enemy_upload_us,
             &stats->enemy_draw_prepare_us,&stats->dynamic_reused,&stats->dynamic_created,
-            &stats->enemy_triangles)<0) goto done;
+            &stats->enemy_triangles,&stats->enemy_prepare_culled)<0) goto done;
     draws+=enemy_draws;
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
     stage="layers";

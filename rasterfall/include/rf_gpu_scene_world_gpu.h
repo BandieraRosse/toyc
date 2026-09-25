@@ -79,6 +79,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t draws, actor_draws, flag_draws, flag_text_draws;
     uint32_t layer_draws[6];
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
+    uint32_t enemy_prepare_culled;
     uint32_t procedural_draws, procedural_items;
     uint32_t dynamic_reused,dynamic_created,enemy_triangles;
     uint32_t layer_reused,layer_created;

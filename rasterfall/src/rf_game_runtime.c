@@ -3694,6 +3694,20 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             fixture->z = -1800 + (enemy / 10) * 800;
             fixture->ground_y = 0;
             fixture->dir_z = -1024;
+            if (!strcmp(options.gpu_normal_view,"enemy-cull-in") ||
+                !strcmp(options.gpu_normal_view,"enemy-cull-out")) {
+                fixture->type=TOY_GAME_ENEMY_CHARGER;
+                fixture->x=(enemy%8-4)*500;
+                fixture->z=5000+(enemy/8)*400;
+                if (!strcmp(options.gpu_normal_view,"enemy-cull-out"))
+                    fixture->x+=30000;
+            }
+            if (!strcmp(options.gpu_normal_view,"enemy-cull-imported-out"))
+                fixture->x+=30000;
+            if (!strcmp(options.gpu_normal_view,"enemy-cull-imported-in")) {
+                fixture->x=(enemy%8-4)*500;
+                fixture->z=5000+(enemy/8)*400;
+            }
         }
         if (!strcmp(options.gpu_normal_view,"near-heavy"))
             __printf("SCENE-WORKLOAD tanks=%d chargers=%d components=explicit-map\n",
@@ -5070,10 +5084,11 @@ startup_again:
                         (long long)probe_stats.submit_retire_us,
                         (long long)(rf_core_time_us(&core)-audit_loop_start),
                         probe_stats.dynamic_reused,probe_stats.dynamic_created);
-                    __printf("SCENE-ENEMY-COST frame=%llu upload_us=%lld draw_prepare_us=%lld triangles=%u\n",
+                    __printf("SCENE-ENEMY-COST frame=%llu upload_us=%lld draw_prepare_us=%lld triangles=%u prepare_culled=%u\n",
                         (unsigned long long)enemy_render.frame_id,
                         (long long)probe_stats.enemy_upload_us,
-                        (long long)probe_stats.enemy_draw_prepare_us,probe_stats.enemy_triangles);
+                        (long long)probe_stats.enemy_draw_prepare_us,probe_stats.enemy_triangles,
+                        probe_stats.enemy_prepare_culled);
                     __printf("SCENE-CPU-COST frame=%llu loop_prepare_us=%lld logic_us=%lld dynamic_source_us=%lld freeze_us=%lld pose_us=%lld map_prepare_us=%lld misc_prepare_us=%lld\n",
                         (unsigned long long)enemy_render.frame_id,(long long)audit_prepare_us,
                         (long long)audit_update_us,(long long)audit_render_us,(long long)scene_freeze_us,

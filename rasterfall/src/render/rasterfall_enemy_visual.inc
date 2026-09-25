@@ -30,9 +30,21 @@ static struct {
     struct rasterfall_model_instance scene_instance;
     int scene_status;
     struct scene_infected_skin_vertex *scene_skin[50];
+    int scene_bound_radius[50];
     struct scene_infected_world_vertex *scene_world;
     unsigned scene_world_stamp;
 } enemy_visual_cache[6];
+int rf_gpu_scene_infected_body_radius(const struct rf_gpu_scene_enemy_item_v1 *item)
+{
+    int recipe,key;
+    if (!item || item->infected_recipe<1 || item->infected_recipe>6 ||
+        item->infected_swing<-24 || item->infected_swing>24 ||
+        (item->infected_bind!=0 && item->infected_bind!=1)) return 0;
+    recipe=item->infected_recipe-1;
+    if (enemy_visual_recipes[recipe].type!=item->type) return 0;
+    key=item->infected_bind ? 49 : item->infected_swing+24;
+    return enemy_visual_cache[recipe].scene_bound_radius[key];
+}
 /* AUTO is a renderer policy. The selected family is derived per enemy and is
  * deliberately not stored in toy_game or a network snapshot. The legacy
  * block/round renderer remains only as an explicit special-story presentation
@@ -413,6 +425,26 @@ static int scene_infected_triangles(const struct rf_gpu_scene_enemy_item_v1 *ite
         }
     }
     result=0;
+    if (skin_reuse && !enemy_visual_cache[recipe].scene_bound_radius[key]) {
+        int64_t extent=0;
+        int used=0;
+        for (uint32_t vertex=0;vertex<pose->vertex_count;++vertex) {
+            int64_t x,y,z,span;
+            if (!vertices[vertex].valid) continue;
+            used=1;
+            x=vertices[vertex].p[0];y=(int64_t)vertices[vertex].p[1]-pose->min_y;
+            z=vertices[vertex].p[2];
+            span=(x<0?-x:x)+(y<0?-y:y)+(z<0?-z:z);
+            if (span>extent) extent=span;
+        }
+        /* Y may squash by 2x; death roll mixes X and Y. This L1 radius
+         * also covers yaw, the death pivot offset and integer rounding. */
+        if (used && extent<INT_MAX/16) {
+            int64_t radius=extent*scale*2/1000+2048;
+            if (radius>0 && radius<INT_MAX)
+                enemy_visual_cache[recipe].scene_bound_radius[key]=(int)radius;
+        }
+    }
 done:
     return result;
 }
