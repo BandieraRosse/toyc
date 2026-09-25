@@ -5455,7 +5455,7 @@ startup_again:
                             (long long)game_update_profile.enemy_type_us[4],game_update_profile.enemy_type_calls[4],
                             (long long)game_update_profile.enemy_type_us[5],game_update_profile.enemy_type_calls[5]);
                     if (options.frame_audit)
-                        __printf("SCENE-LOGIC-NAV frame=%llu nav_search_us=%lld nav_paths_us=%lld nav_paths_max_us=%lld nav_searches=%u nav_nodes=%u nav_candidates=%u nav_segments=%u nav_samples=%u nav_ground_queries=%u ground_scans=%u ground_heights=%u body_queries=%u body_scans=%u segment_queries=%u segment_scans=%u ramp_transition_queries=%u ramp_transition_scans=%u\n",
+                        __printf("SCENE-LOGIC-NAV frame=%llu nav_search_us=%lld nav_paths_us=%lld nav_paths_max_us=%lld nav_searches=%u nav_nodes=%u nav_candidates=%u nav_segments=%u nav_samples=%u nav_short_queries=%u nav_short_reachable=%u nav_ground_queries=%u ground_scans=%u ground_heights=%u body_queries=%u body_scans=%u segment_queries=%u segment_scans=%u ramp_transition_queries=%u ramp_transition_scans=%u\n",
                             (unsigned long long)enemy_render.frame_id,
                             (long long)game_update_profile.nav_search_us,
                             (long long)game_update_profile.nav_paths_us,
@@ -5465,6 +5465,8 @@ startup_again:
                             game_update_profile.nav_candidates,
                             game_update_profile.nav_segments,
                             game_update_profile.nav_samples,
+                            game_update_profile.nav_short_queries,
+                            game_update_profile.nav_short_reachable,
                             game_update_profile.nav_ground_queries,
                             game_update_profile.ground_scans,
                             game_update_profile.ground_heights,

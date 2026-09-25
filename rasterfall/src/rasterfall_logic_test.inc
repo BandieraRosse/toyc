@@ -848,6 +848,45 @@ static int primitive_gameplay_logic_test(void)
     return 0;
 }
 
+static int enemy_short_connection_logic_test(void)
+{
+    static struct toy_game nav_game;
+    struct toy_game_update_profile profile = {0};
+    struct toy_map_primitive world[2];
+    int start_y, end_y;
+    toy_game_init(&nav_game, 260);
+    world[0] = test_flat_primitive(-3000, 3000, -3000, 3000, 0);
+    toy_game_set_primitives(&nav_game, world, 1, 3000);
+    nav_game.update_profile = &profile;
+    if (!toy_game_short_connection(&nav_game, -700, 0, 700, 0,
+                                   TOY_GAME_ENEMY_RADIUS, 0)) return 1;
+    world[1] = test_box_primitive(-100, 100, -600, 600, 0, 1000,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&nav_game, world, 2, 3000);
+    if (toy_game_short_connection(&nav_game, -700, 0, 700, 0,
+                                  TOY_GAME_ENEMY_RADIUS, 0)) return 2;
+    world[0] = test_flat_primitive(-3000, -200, -3000, 3000, 0);
+    world[1] = test_flat_primitive(200, 3000, -3000, 3000, 0);
+    toy_game_set_primitives(&nav_game, world, 2, 3000);
+    if (toy_game_short_connection(&nav_game, -700, 0, 700, 0,
+                                  TOY_GAME_ENEMY_RADIUS, 0)) return 3;
+    world[0] = test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
+                                   -900, 900, -600, 600, 0, 450);
+    toy_game_set_primitives(&nav_game, world, 1, 3000);
+    start_y = toy_game_query_ground(&nav_game, -600, 0,
+                                    TOY_GAME_ENEMY_RADIUS, 0).support_y;
+    end_y = toy_game_query_ground(&nav_game, 600, 0,
+                                  TOY_GAME_ENEMY_RADIUS, start_y).support_y;
+    if (start_y != 75 || end_y != 375 ||
+        !toy_game_short_connection(&nav_game, -600, 0, 600, 0,
+                                   TOY_GAME_ENEMY_RADIUS, start_y)) return 4;
+    if (toy_game_short_connection(&nav_game, -600, 0, 2500, 0,
+                                  TOY_GAME_ENEMY_RADIUS, start_y)) return 5;
+    if (profile.nav_short_queries != 5 ||
+        profile.nav_short_reachable != 2) return 6;
+    return 0;
+}
+
 static int nav_ground_reuse_logic_test(void)
 {
     static struct toy_game optimized, reference;
@@ -1172,6 +1211,7 @@ static int run_logic_test(void)
         return 174;
     if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
     if (nav_ground_reuse_logic_test()) return 259;
+    if (enemy_short_connection_logic_test()) return 261;
     if (rasterfall_session_rts_logic_test()) return 260;
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||

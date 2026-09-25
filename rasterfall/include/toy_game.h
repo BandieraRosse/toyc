@@ -72,6 +72,7 @@
 #define TOY_GAME_MAX_NAME       32      /* 身份显示名（含结尾 NUL） */
 #define TOY_GAME_DETECT_RANGE   5600    /* 枪声警报基础距离 */
 #define TOY_GAME_RETARGET_MS    500     /* 多玩家目标重新评估间隔 */
+#define TOY_GAME_SHORT_CONNECTION_RANGE 2400 /* bounded physical route probe */
 #define TOY_GAME_CLOSE_DETECT_RANGE 600 /* 特感近距离技能索敌判定 */
 #define TOY_GAME_SMOKER_RANGE   13000
 #define TOY_GAME_SMOKER_PULL_MS 4000
@@ -599,6 +600,7 @@ struct toy_game_update_profile {
     int64_t nav_search_us, nav_paths_us, nav_paths_max_us;
     unsigned int nav_searches, nav_nodes, nav_candidates;
     unsigned int nav_segments, nav_samples, nav_ground_queries;
+    unsigned int nav_short_queries, nav_short_reachable;
     unsigned int ground_scans, ground_heights;
     unsigned int body_queries, body_scans, segment_queries, segment_scans;
     unsigned int ramp_transition_queries, ramp_transition_scans;
@@ -752,6 +754,10 @@ void toy_game_set_primitives(struct toy_game *g,
                              const struct toy_map_primitive *primitives,
                              int primitive_count, int room_limit);
 void toy_game_rebuild_navigation(struct toy_game *g);
+/* Returns true only for a physically traversable nearby segment. */
+int toy_game_short_connection(const struct toy_game *g,
+                              int x0, int z0, int x1, int z1,
+                              int radius, int ground_y);
 struct toy_game_ground_query toy_game_query_ground(
     const struct toy_game *g, int x, int z, int radius, int current_ground_y);
 int  toy_game_position_blocked_at_height(const struct toy_game *g,

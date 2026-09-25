@@ -2706,7 +2706,10 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
      * graph in that case so a ramp link can carry the enemy onto a platform.
      * If either endpoint is outside the nav mask, nav_next_waypoint returns
      * no route and the legacy direct movement remains the fallback. */
-    if (nav_next_waypoint(g, e->x, e->z, e->x + dx, e->z + dz,
+    if ((dist > TOY_GAME_SHORT_CONNECTION_RANGE ||
+         !toy_game_short_connection(g, e->x, e->z, e->x + dx, e->z + dz,
+                                    enemy_radius(e), e->ground_y)) &&
+        nav_next_waypoint(g, e->x, e->z, e->x + dx, e->z + dz,
                           enemy_radius(e), e->ground_y,
                           &waypoint_x, &waypoint_z)) {
         dx = waypoint_x - e->x;
@@ -3126,6 +3129,37 @@ static int nav_segment_allowed(const struct toy_game *g,
         previous_ramp = ground.support_is_ramp;
     }
     return 1;
+}
+
+int toy_game_short_connection(const struct toy_game *g,
+                              int x0, int z0, int x1, int z1,
+                              int radius, int ground_y)
+{
+    long long dx, dz, distance2;
+    int reachable = 0;
+    int i;
+    struct toy_game_ground_query ground;
+    if (!g || radius <= 0) return 0;
+    if (g->update_profile) g->update_profile->nav_short_queries++;
+    dx = (long long)x1 - x0;
+    dz = (long long)z1 - z0;
+    distance2 = dx * dx + dz * dz;
+    if (distance2 > (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
+                    TOY_GAME_SHORT_CONNECTION_RANGE) return 0;
+    if (position_blocked_at_height_ground(g, x0, z0, radius, ground_y, 1,
+                                          &ground)) return 0;
+    for (i = 0; i < g->safe_room_count; i++) {
+        struct toy_game_box box = g->safe_rooms[i];
+        box.minx -= radius; box.maxx += radius;
+        box.minz -= radius; box.maxz += radius;
+        if (segment_hits_box(x0, z0, x1, z1, &box)) return 0;
+    }
+    reachable = !actor_segment_blocked(g, x0, z0, x1, z1,
+                                       radius, ground_y) &&
+                nav_segment_allowed(g, x0, z0, x1, z1, radius, ground_y);
+    if (reachable && g->update_profile)
+        g->update_profile->nav_short_reachable++;
+    return reachable;
 }
 
 static int nav_next_waypoint(const struct toy_game *g,
