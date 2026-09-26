@@ -161,7 +161,9 @@ static void scene_layer_effects(struct scene_layer_mesh *mesh,
     for (int i=0;i<RASTERFALL_EFFECT_INSTANCE_SLOTS;++i) {
         const struct rasterfall_effect_instance *p=&effects->instances[i];
         int x,y,z,size,alpha=p->alpha>=256?255:p->alpha*255/256;
-        if (!p->active || alpha<=0) continue;
+        if (!p->active || alpha<=0 ||
+            p->kind==RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT)
+            continue;
         if (p->type==RASTERFALL_EFFECT_INSTANCE_RAY) {
             int tx=p->x,ty=p->y,tz=p->z,wx=p->ex,wy=p->ey,wz=p->ez;
             if (p->kind==RASTERFALL_EFFECT_INSTANCE_KIND_TRACER && p->lifetime_ms>0) {

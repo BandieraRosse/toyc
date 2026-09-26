@@ -1580,6 +1580,22 @@ static int run_logic_test(void)
     uint32_t *pixels;
     int count;
     long long direction_length;
+    {
+        static struct rasterfall_session interaction_fixture;
+        struct camera interaction_camera = {0};
+        interaction_fixture.item_count = 1;
+        interaction_fixture.items[0].x = 41597;
+        interaction_fixture.items[0].z = 0;
+        interaction_camera.x = -23940;
+        interaction_camera.sy = 1024;
+        if (rasterfall_session_compute_highlight(&interaction_fixture,
+                                                 &interaction_camera) != -1)
+            return 263;
+        interaction_fixture.items[0].x = -23000;
+        if (rasterfall_session_compute_highlight(&interaction_fixture,
+                                                 &interaction_camera) != 0)
+            return 263;
+    }
     if (rf_core_retained_span_logic_test_v1() < 0 ||
         rf_core_mixed_frame_logic_test() < 0) return 249;
     {

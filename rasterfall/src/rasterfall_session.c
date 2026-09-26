@@ -208,17 +208,17 @@ static int session_near_ai(const struct rasterfall_session *session,
                            const struct camera *camera, int *out_index)
 {
     int i, best = -1;
-    long best_d2 = 0;
+    long long best_d2 = 0;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *actor = &session->game_state.actors[i];
-        long dx, dz, d2;
+        long long dx, dz, d2;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->base_core ||
             actor->state != TOY_GAME_ACTOR_DOWNED) continue;
-        dx = (long)camera->x - actor->x;
-        dz = (long)camera->z - actor->z;
+        dx = (long long)camera->x - actor->x;
+        dz = (long long)camera->z - actor->z;
         d2 = dx * dx + dz * dz;
-        if (d2 > (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
+        if (d2 > (long long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
             continue;
         if (best < 0 || d2 < best_d2) { best = i; best_d2 = d2; }
     }
@@ -984,13 +984,13 @@ int rasterfall_session_revive_target(struct rasterfall_session *session,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms)
 {
-    long dx, dz;
+    long long dx, dz;
     if (!session || !rescuer || !target || !progress_ms || dt_ms <= 0)
         return -1;
-    dx = (long)rescuer->x - target->x;
-    dz = (long)rescuer->z - target->z;
+    dx = (long long)rescuer->x - target->x;
+    dz = (long long)rescuer->z - target->z;
     if (dx * dx + dz * dz >
-        (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
+        (long long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE)
         return -1;
     *progress_ms += dt_ms;
     if (*progress_ms < TOY_GAME_REVIVE_MS) return 0;
@@ -1041,16 +1041,16 @@ int rasterfall_session_compute_highlight(const struct rasterfall_session *sessio
                                          const struct camera *camera)
 {
     int i, best = -1;
-    long best_d2 = 0;
+    long long best_d2 = 0;
     for (i = 0; i < session->item_count; i++) {
         const struct rasterfall_interactable *it = &session->items[i];
-        long dx = it->x - camera->x;
-        long dz = it->z - camera->z;
-        long d2 = dx * dx + dz * dz;
-        long dist, dot;
-        if (d2 > (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE ||
+        long long dx = (long long)it->x - camera->x;
+        long long dz = (long long)it->z - camera->z;
+        long long d2 = dx * dx + dz * dz;
+        long long dist, dot;
+        if (d2 > (long long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE ||
             d2 == 0) continue;
-        dist = (long)isqrt(d2);
+        dist = isqrt(d2);
         if (dist <= 0) continue;
         dot = dx * camera->sy + dz * camera->cy;
         if (dot < dist * INTERACT_AIM_CONE) continue;
@@ -1511,14 +1511,14 @@ static int session_near_flag(const struct rasterfall_session *s,
                              const struct camera *camera)
 {
     int i, best = -1;
-    long best_d2 = 0;
+    long long best_d2 = 0;
     for (i = 0; i < s->flag_count; i++) {
-        long dx, dz, d2;
+        long long dx, dz, d2;
         if (!s->flags[i].active || s->flags[i].carried) continue;
-        dx = (long)camera->x - s->flags[i].x;
-        dz = (long)camera->z - s->flags[i].z;
+        dx = (long long)camera->x - s->flags[i].x;
+        dz = (long long)camera->z - s->flags[i].z;
         d2 = dx * dx + dz * dz;
-        if (d2 <= (long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE &&
+        if (d2 <= (long long)RASTERFALL_INTERACT_RANGE * RASTERFALL_INTERACT_RANGE &&
             (best < 0 || d2 < best_d2)) { best = i; best_d2 = d2; }
     }
     return best;
