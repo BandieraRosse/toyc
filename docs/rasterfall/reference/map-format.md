@@ -146,6 +146,8 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
 gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；collision/surface 仍必须位于 world 内。
 
+`kind=sign` 的牌面沿 X 展开，Z 是薄厚，`height` 和 `attr.height2` 分别是世界 Y 轴上的牌底、牌顶；地面世界 Y 为 -900 RFU。默认样式保留路牌支杆，`attr.style=1` 画无支杆的墙面牌。文字宽度由 X 跨度决定，墙面牌应贴在南北向墙面并给出显式 `attr.height2`。
+
 正式 `rasterfall.map` 的 render records 由 V1 source 完整提供；`rasterfall_legacy.map` 仍保留
 作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
 

@@ -1,22 +1,32 @@
-# Outpost Hall V1 与设施家具
+# Outpost V1 与设施家具
 
 > 状态：当前
 > 所有者：前哨站空间与设施家具
 > 事实入口：`assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/blender/generate_rasterfall_props.py`
 
-## 空间合同
+## 单层基地合同
+
+地图边界约 42 × 45 m，开放屋顶，所有楼层均为高度 0 的相邻 ground surface。大厅原点居中，北为正 Z；西翼 Research、东翼 Operations、北翼 Infrastructure、南侧测试场都从大厅直接到达。南门外前坪与测试场接壤；北门外原浅平台已并入基础设施地面。
+
+西、东侧门使用 `arch_doorway` 组件的两肩与架空过梁碰撞；其余翼楼外墙和设施分隔使用 `boundary_wall` 组件。北侧服务走廊通过两扇横向门进入 Power 与 Control。各房间外墙、地面和对象均为地图事实；家具不声明玩法终端。
+
+Research 只放少量维护件并标记未来空间；Operations 放工作台、箱体与储物；Infrastructure 放动力机组、控制柜、通风、线槽与检修件。测试场使用开放中轴、边界墙、门架、路障和动力机组，不声明可射击目标的玩法逻辑。
+
+各区的 `render kind=sign` 是地图绘制的实心标识牌，不是玻璃或独立模型。牌面沿 X 轴展开、Z 轴仅留薄厚；`height` 和 `attr.height2` 是世界 Y 轴上的牌底与牌顶，地面基准为 -900 RFU。`attr.style=1` 表示无支杆的墙面牌；Power、Control、Research、Operations 和入口标识均使用此样式，尺寸控制为墙面导视，不覆盖整面墙。
+
+## 大厅与家具合同
 
 大厅墙线宽 18 m、深 16 m、墙高约 4.2 m，单层、无实心屋顶。南北墙顶各一条梁线，
 每条由三段原尺寸 6 m 梁组成，梁底落在墙顶；中央指挥区上方留空。东西墙使用四块
 4 m 墙壳，南北两端使用连续墙段与中央 doorway。门洞净宽约 4.8 m、净高 3.6 m，
 碰撞使用两肩与架空过梁，不能以整块 AABB 封口。墙顶梁额外高出墙体 0.6 m。
 
-南入口外有短前坪；北出口只接封边的浅平台，预留未来 Infrastructure，不构成新房间。
+南入口外有短前坪并通向测试场；北出口直接进入 Infrastructure 服务走廊。
 Command Floor 为 8×7 m，中央桌面为 4×2.4 m；桌子至该区域边缘横向 2 m、纵向 2.3 m。
 高柜、线槽、检修面板和灯全部靠墙，北侧设备带约占墙宽一半，门洞与外围空墙保持干净。
 
 Null 工位在东侧，椅子向西看大厅，双屏向东面对操作位；Null 站在工位侧边，不穿过椅子或桌子。
-西侧两张普通工作桌沿墙错开，使用相同家具族。南侧终端偏离入口中轴，另一侧放长椅。
+西侧两张普通工作桌移到侧门两边，使用相同家具族。南侧终端偏离入口中轴，另一侧放长椅。
 地面由相邻 surface/collision 与 ground paint 分区，沿用 4 m 低对比接缝；不叠地面模型。
 
 ## 七件家具
@@ -44,7 +54,7 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 大厅中的终端和指挥桌仅作静态家具，不声明 World Content terminal 或 map interaction。
 旧 Station / Operations / Super 和武大传送点从本大厅撤下，已有动作词汇仍保留供其他内容使用。
 本阶段不提供从家具进入 Campaign、Station GUI 或 WHU 的入口；不制作三套专用终端资产。
-无动态门、研究翼、Infrastructure 房间、多层、切顶、RTS 桌面交互或 NPC 工作行为。
+研究翼和 Infrastructure 房间已有静态空间。无动态门、多层、切顶、RTS 桌面交互、设备功能、武器测试交互或 NPC 工作行为。
 
 运行时所有权沿用[地图与世界内容架构](../architecture/maps-and-world-content.md)。
 生成、Windows 工具与截图见[设施家具指南](../guides/facility-assets.md)。

@@ -44,8 +44,8 @@ Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须
 
 显式启动地图只覆盖本次进程；地图 `attr.identity` 决定本次 session 的既有 world/content policy，无 identity 时沿用 Campaign policy。实验命令见[地图编辑指南](../guides/map-authoring.md)。
 
-Outpost Hall V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`；单层开放屋顶大厅与七件家具的
-空间合同见 [Outpost Hall V1](../reference/outpost-hall-v1.md)。当前 content 只放置 Null，家具为地图
+Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`；单层开放屋顶基地、四向大厅与七件家具的
+空间合同见 [Outpost V1](../reference/outpost-hall-v1.md)。当前 content 只放置 Null，家具为地图
 object，不声明交互终端；设备视觉不改变 Game 状态。既有 `station_terminal`、
 `operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别
 映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变

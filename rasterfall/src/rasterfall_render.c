@@ -4074,8 +4074,9 @@ static int persistent_map_mesh_add_sign(struct persistent_map_mesh_build *build,
 {
     int x=(sign->a+sign->b)/2,z=(sign->c+sign->d)/2;
     int width=sign->b-sign->a-80,height=sign->f-sign->e-48;
-    if (persistent_map_mesh_add_box(build,x-18,x+18,sign->e-220,sign->e,
-            z-18,z+18,0x4B3526,0)<0 ||
+    if ((sign->style != 1 &&
+         persistent_map_mesh_add_box(build,x-18,x+18,sign->e-220,sign->e,
+            z-18,z+18,0x4B3526,0)<0) ||
         persistent_map_mesh_add_box(build,sign->a,sign->b,sign->e,sign->f,
             sign->c,sign->d,sign->color,0)<0 ||
         persistent_map_mesh_add_world_text(build,sign->a+40,sign->f-24,
@@ -4991,8 +4992,9 @@ static int render_world_sign(struct toy_renderer *renderer,
     int x = (sign->a + sign->b) / 2;
     int z = (sign->c + sign->d) / 2;
     int pixels = 0;
-    pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
-                          sign->e - 220, sign->e, z - 18, z + 18, 0x4B3526);
+    if (sign->style != 1)
+        pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
+                              sign->e - 220, sign->e, z - 18, z + 18, 0x4B3526);
     pixels += draw_cuboid(renderer, camera, sign->a, sign->b,
                           sign->e, sign->f, sign->c, sign->d, sign->color);
     /* The label is drawn after the world geometry has flushed.  Drawing it

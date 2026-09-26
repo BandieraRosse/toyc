@@ -1,8 +1,8 @@
-# 设施家具生成与大厅验证
+# 设施家具生成与前哨站验证
 
 > 状态：当前操作指南
 
-空间与资产合同见 [Outpost Hall V1](../reference/outpost-hall-v1.md)。生成器复用现有 Blender
+空间与资产合同见 [Outpost V1](../reference/outpost-hall-v1.md)。生成器复用现有 Blender
 Builder、flat 材质与 GLB 检查，不使用第二套模型格式。GLB/Blend 保留在本地私有源目录，
 公开 RMESH 与 manifest 可以由程序源重新生成。
 
@@ -24,16 +24,16 @@ Blender 路径按本机安装位置修改；脚本的 `--tool-dir` 可指定已�
 地图导出器会将输入路径解析为绝对路径，并在 Windows 使用 `build-windows/map-inspect.exe`。
 
 ```powershell
-python tools/map_layout_export.py rasterfall/assets/maps/outpost.map --output-dir tmp/outpost-hall/layout
-python tools/map_layout_query.py tmp/outpost-hall/layout/output.json summary
-powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --map rasterfall/assets/maps/outpost.map --environment-capture C:/Users/Legion/Desktop/toyc/tmp/outpost-hall/captures
+python tools/map_layout_export.py rasterfall/assets/maps/outpost.map --output-dir tmp/outpost-v1/layout
+python tools/map_layout_query.py tmp/outpost-v1/layout/output.json summary
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --map rasterfall/assets/maps/outpost.map --environment-capture C:/Users/Legion/Desktop/toyc/tmp/outpost-v1/captures
 ```
 
 布局工具需要当前 Python 环境可导入 Pillow。截图输出路径也按本机工作区修改。
-显式前哨站地图的 environment capture 保留 Outpost identity，输出 `hall-entry`、`hall-floor`、
-`hall-rts`、`hall-null` 四张 BMP，使用正常 world/actor renderer，固定 seed，不推进 simulation。
+显式前哨站地图的 environment capture 保留 Outpost identity，输出四张大厅视角及 `outpost-rts`、
+`research`、`operations`、`power`、`control`、`test-yard` 六张扩建区 BMP，使用正常 world/actor renderer，固定 seed，不推进 simulation。
 它验证构图与摆放；真实 present 另用 `--gpu-scene-play --map rasterfall/assets/maps/outpost.map`
 启动，按 Windows 指南等待真实进程退出并检查日志。
 
-逻辑回归检查两处门洞、桌周环路、Null 出生位可通行，桌子与墙壳确实阻挡，以及大厅没有可交互终端。
+逻辑回归检查大厅四处门洞、桌周环路、两间设施房和测试场可通行，桌子与外墙确实阻挡，以及基地没有可交互终端。
 修改 placement 后重新导出布局；逐件资产可以使用 `--model-static-views` 做四视图检查。

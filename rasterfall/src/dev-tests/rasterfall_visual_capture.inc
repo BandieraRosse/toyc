@@ -941,7 +941,7 @@ static int capture_map_world(const char *output_dir,
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
     int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
     int hall = environment && active_session->world_id == RASTERFALL_WORLD_OUTPOST;
-    for (i = 0; i < (hall ? 4 : whu ? 4 : environment ? 21 : 17); i++) {
+    for (i = 0; i < (hall ? 10 : whu ? 4 : environment ? 21 : 17); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -1015,7 +1015,13 @@ static int capture_map_world(const char *output_dir,
                 {"hall-entry",0,-4900,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
                 {"hall-floor",-1900,-2600,RASTERFALL_STANDING_CAMERA_Y,256,991,-100,1019},
                 {"hall-rts",0,-6100,9500,0,1024,-866,546},
-                {"hall-null",1800,-2600,RASTERFALL_STANDING_CAMERA_Y,850,571,-100,1019}
+                {"hall-null",1800,-2600,RASTERFALL_STANDING_CAMERA_Y,850,571,-100,1019},
+                {"outpost-rts",0,-8500,33000,0,1024,-1000,250},
+                {"research",-6600,0,RASTERFALL_STANDING_CAMERA_Y,-1024,0,0,1024},
+                {"operations",6600,0,RASTERFALL_STANDING_CAMERA_Y,1024,0,0,1024},
+                {"power",-3000,5400,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
+                {"control",3000,5400,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
+                {"test-yard",0,-7000,RASTERFALL_STANDING_CAMERA_Y,0,-1024,0,1024}
             };
             memset(&camera,0,sizeof(camera));
             camera.x=views[i].x; camera.z=views[i].z; camera.y=views[i].y;
