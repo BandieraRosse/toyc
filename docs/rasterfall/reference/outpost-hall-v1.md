@@ -1,0 +1,50 @@
+# Outpost Hall V1 与设施家具
+
+> 状态：当前
+> 所有者：前哨站空间与设施家具
+> 事实入口：`assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/blender/generate_rasterfall_props.py`
+
+## 空间合同
+
+大厅墙线宽 18 m、深 16 m、墙高约 4.2 m，单层、无实心屋顶。南北墙顶各一条梁线，
+每条由三段原尺寸 6 m 梁组成，梁底落在墙顶；中央指挥区上方留空。东西墙使用四块
+4 m 墙壳，南北两端使用连续墙段与中央 doorway。门洞净宽约 4.8 m、净高 3.6 m，
+碰撞使用两肩与架空过梁，不能以整块 AABB 封口。墙顶梁额外高出墙体 0.6 m。
+
+南入口外有短前坪；北出口只接封边的浅平台，预留未来 Infrastructure，不构成新房间。
+Command Floor 为 8×7 m，中央桌面为 4×2.4 m；桌子至该区域边缘横向 2 m、纵向 2.3 m。
+高柜、线槽、检修面板和灯全部靠墙，北侧设备带约占墙宽一半，门洞与外围空墙保持干净。
+
+Null 工位在东侧，椅子向西看大厅，双屏向东面对操作位；Null 站在工位侧边，不穿过椅子或桌子。
+西侧两张普通工作桌沿墙错开，使用相同家具族。南侧终端偏离入口中轴，另一侧放长椅。
+地面由相邻 surface/collision 与 ground paint 分区，沿用 4 m 低对比接缝；不叠地面模型。
+
+## 七件家具
+
+尺寸顺序为 Blender X/Y/Z 米。原点为底部中心，Blender -Y 正面转换为 GLB +Z，
+GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=1000。
+
+| 资产 | 尺寸 m | 轮廓与使用 |
+| --- | --- | --- |
+| `rf_facility_desk` | 1.8×0.75×0.75 | 薄厚明确的桌面、双侧脚架、后挡板 |
+| `rf_facility_chair` | 0.6×0.6×1.0 | 四脚、座面与低背，无坐姿或工作动画 |
+| `rf_facility_monitor` | 0.65×0.15×0.45 | 单屏与底座；桌上放置 y=384 RFU，可重复组合 |
+| `rf_facility_command_table` | 4.0×2.4×0.9 | 厚底座、凹入桌面、粗简图形，视觉核心 |
+| `rf_facility_low_cabinet` | 1.2×0.45×0.8 | 暗色门板和粗把手 |
+| `rf_facility_bench` | 1.8×0.55×0.5 | 无靠背长椅 |
+| `rf_facility_terminal` | 1.0×0.6×1.5 | 通用站立终端，固定屏幕色块 |
+
+每件三个无纹理 flat 材质：蓝灰主体、暗框、低饱和青色功能面。当前每件 48～192 个三角形，
+400 为上限；允许低于旧工业道具的最低数量，不用细节填预算。不使用额外纹理、发光或高级灯光。
+生成器、manifest 和注册表负责视觉合同；`rasterfall_map_components.c` 独立拥有简化实体碰撞。
+桌、指挥桌、矮柜和长椅可站立，椅子与终端为普通阻挡；桌上屏幕实例不生成独立碰撞。
+
+## 阶段边界
+
+大厅中的终端和指挥桌仅作静态家具，不声明 World Content terminal 或 map interaction。
+旧 Station / Operations / Super 和武大传送点从本大厅撤下，已有动作词汇仍保留供其他内容使用。
+本阶段不提供从家具进入 Campaign、Station GUI 或 WHU 的入口；不制作三套专用终端资产。
+无动态门、研究翼、Infrastructure 房间、多层、切顶、RTS 桌面交互或 NPC 工作行为。
+
+运行时所有权沿用[地图与世界内容架构](../architecture/maps-and-world-content.md)。
+生成、Windows 工具与截图见[设施家具指南](../guides/facility-assets.md)。

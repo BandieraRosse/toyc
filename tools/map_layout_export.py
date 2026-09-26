@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Export a Rasterfall .map as a compact top-down PNG and JSON sidecar."""
-import argparse, hashlib, json, math, struct, subprocess, sys
+import argparse, hashlib, json, math, os, struct, subprocess, sys
 from pathlib import Path
 
 try:
@@ -56,9 +56,9 @@ def parse_v1(path):
     # its profile table/transform algorithm into an independent Python parser.
     components=[o for o in doc["objects"] if o["type"]=="prop" and o.get("collision_mode") in {"component","boundary"}]
     if components:
-        inspector=Path(__file__).resolve().parents[1]/"build/map-inspect"
+        inspector=Path(__file__).resolve().parents[1]/("build-windows/map-inspect.exe" if os.name == "nt" else "build/map-inspect")
         if not inspector.exists(): raise ValueError("component collision export requires: make app-map-inspect")
-        result=subprocess.run([str(inspector),"--collision-json",str(path)],capture_output=True,text=True)
+        result=subprocess.run([str(inspector),"--collision-json",str(path.resolve())],capture_output=True,text=True)
         if result.returncode: raise ValueError(result.stderr.strip())
         runtime_collisions=json.loads(result.stdout)
         owners={o["source_id"]:o for o in components}

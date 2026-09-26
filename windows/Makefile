@@ -116,6 +116,16 @@ APP_LDFLAGS := -static -static-libgcc -mconsole -municode -Wl,--gc-sections
 WINDOWS_APP_SHIM_SRC := windows/src/userland_winmain.c
 WINDOWS_APP_SHIM_OBJ := $(BUILD)/windows/userland_winmain.o
 
+# Asset and map diagnostics share the native runtime; no SDL/window entry.
+NATIVE_TOOL_FLAGS := $(CPPFLAGS) $(CFLAGS) -static -mconsole -Wl,--gc-sections -Wl,--stack,16777216
+NATIVE_TOOL_RUNTIME := windows/src/runtime.c windows/src/string.c windows/src/socket_winsock.c
+.PHONY: asset-tools
+asset-tools: $(BUILD)/glb2rmesh.exe $(BUILD)/map-inspect.exe
+$(BUILD)/glb2rmesh.exe: app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
+	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) -lws2_32
+$(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
+	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) -lws2_32
+
 .PHONY: all app package clean platform-sources pe-audit $(addprefix win-app-,$(PORTABLE_APP_NAMES))
 
 # Windows 构建与 Linux 构建共用头文件和玩法/渲染源码；无条件重建对象，

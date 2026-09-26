@@ -19,6 +19,14 @@ from mathutils import Vector
 
 # name, width/depth/height in metres, recommended maximum triangles
 SPECS = [
+    ("rf_facility_desk", (1.8, 0.75, 0.75), 400),
+    ("rf_facility_chair", (0.6, 0.6, 1), 400),
+    ("rf_facility_monitor", (0.65, 0.15, 0.45), 400),
+    ("rf_facility_command_table", (4, 2.4, 0.9), 400),
+    ("rf_facility_low_cabinet", (1.2, 0.45, 0.8), 400),
+    ("rf_facility_bench", (1.8, 0.55, 0.5), 400),
+    ("rf_facility_terminal", (1, 0.6, 1.5), 400),
+
     ("rf_crate", (1.2, 1.0, 1.0), 600),
     ("rf_barrier", (2.4, .8, 1.0), 600),
     ("rf_short_wall", (2.4, .5, 1.4), 600),
@@ -323,7 +331,7 @@ class Builder:
         expected_hi = [dimensions[0]/2, dimensions[1]/2, dimensions[2]]
         assert all(abs(a-b) < 1e-5 for a, b in
                    zip(lo + hi, expected_lo + expected_hi)), (name, lo, hi)
-        assert (2 if name.startswith('rf_campus_') else 12 if name.startswith('rf_arch_') else 200) <= triangles <= budget <= 1200, (name, triangles, budget)
+        assert (2 if name.startswith('rf_campus_') else 12 if name.startswith(('rf_arch_', 'rf_facility_')) else 200) <= triangles <= budget <= 1200, (name, triangles, budget)
         assert all(p.area > 1e-10 for p in obj.data.polygons), name
         assert not obj.modifiers and not obj.animation_data
         obj['dimensions_m'] = list(dimensions)
@@ -338,7 +346,9 @@ class Builder:
 def build(name, mats):
     b = Builder(mats)
     box = b.box
-    if name.startswith('rf_arch_'):
+    if name.startswith('rf_facility_'):
+        build_facility(name, b)
+    elif name.startswith('rf_arch_'):
         build_architecture(name, b)
     elif name == 'rf_crate':
         box((0, 0, .5), (1.12, .92, .84), bevel=.07)
@@ -523,6 +533,67 @@ def build(name, mats):
     return b
 
 
+def build_facility(name, b):
+    """Low, flat-colour Operations furniture; screens are opaque geometry."""
+    def box(c, s, role=0):
+        b.box(c, s, role, bevel=0)
+    if name == 'rf_facility_desk':
+        box((0, 0, .705), (1.8, .75, .09))
+        for x in (-.76, .76):
+            box((x, 0, .33), (.12, .62, .66), 1)
+        box((0, .22, .44), (1.4, .06, .24), 1)
+        box((-.55, -.36, .64), (.3, .03, .04), 2)
+    elif name == 'rf_facility_chair':
+        for x in (-.25, .25):
+            for y in (-.25, .25):
+                box((x, y, .22), (.1, .1, .44), 1)
+        box((0, 0, .47), (.6, .6, .1))
+        box((0, .255, .76), (.6, .09, .48), 1)
+        box((0, .195, .79), (.48, .03, .32))
+        box((0, .175, .94), (.22, .01, .025), 2)
+    elif name == 'rf_facility_monitor':
+        box((0, 0, .02), (.3, .15, .04), 1)
+        box((0, .025, .105), (.08, .07, .13), 1)
+        box((0, .01, .3), (.65, .1, .3), 1)
+        box((0, -.045, .305), (.57, .01, .235), 2)
+        box((.25, -.047, .172), (.045, .014, .015))
+    elif name == 'rf_facility_command_table':
+        for x in (-1.18, 1.18):
+            box((x, 0, .08), (.98, 1.72, .16), 1)
+            box((x, 0, .435), (.72, 1.36, .55))
+            box((x, -.69, .48), (.42, .02, .16), 1)
+        box((0, 0, .74), (3.76, 2.16, .14), 1)
+        for x in (-1.91, 1.91):
+            box((x, 0, .845), (.18, 2.4, .11))
+        for y in (-1.11, 1.11):
+            box((0, y, .845), (3.64, .18, .11))
+        box((0, 0, .824), (3.64, 2.04, .028), 1)
+        # A broad inset and three coarse plan blocks read from RTS height.
+        box((0, 0, .841), (2.7, 1.5, .006), 2)
+        for x,y,w,d in ((-.8, .25, .6, .55),(.1, -.25, .65, .5),(.85,.25,.45,.65)):
+            box((x, y, .847), (w, d, .006))
+    elif name == 'rf_facility_low_cabinet':
+        box((0, 0, .055), (1.08, .39, .11), 1)
+        box((0, .02, .44), (1.2, .41, .66))
+        box((0, 0, .785), (1.2, .45, .03), 1)
+        for x in (-.295, .295):
+            box((x, -.195, .43), (.57, .04, .59), 1)
+            box((x, -.218, .64), (.22, .014, .035), 2)
+    elif name == 'rf_facility_bench':
+        for x in (-.7, .7):
+            box((x, 0, .21), (.14, .48, .42), 1)
+        box((0, 0, .46), (1.8, .55, .08))
+        box((-.68, -.26, .42), (.26, .02, .03), 2)
+    elif name == 'rf_facility_terminal':
+        box((0, 0, .06), (1, .6, .12), 1)
+        box((0, .06, .57), (.66, .42, .9))
+        box((0, 0, 1.25), (1, .26, .5), 1)
+        box((0, -.137, 1.28), (.82, .014, .33), 2)
+        box((0, -.18, .985), (.86, .24, .07))
+    else:
+        raise ValueError(name)
+
+
 def build_architecture(name, b):
     """Architectural V1, same Builder and metric contract; two flat roles.
 
@@ -633,7 +704,7 @@ def inspect_glb(path, objects):
         vertices = triangles = 0
         lows, highs = [], []
         assert len(mesh['primitives']) == len(obj.data.materials)
-        assert len(mesh['primitives']) <= (3 if obj.name.startswith('rf_campus_') else (4 if obj.get('hybrid') else (3 if obj.get('crate_material') == 'hybrid' else 2)))
+        assert len(mesh['primitives']) <= (3 if obj.name.startswith(('rf_campus_', 'rf_facility_')) else (4 if obj.get('hybrid') else (3 if obj.get('crate_material') == 'hybrid' else 2)))
         for material in obj.data.materials:
             if 'albedo_path' not in material:
                 continue
@@ -839,6 +910,14 @@ def main():
             asset_mats = [material(name+'_body', linear(rgb)),
                           material(name+'_frame', linear((80, 89, 91) if
                                    name.endswith(('wall', 'doorway')) else STRUCTURE))]
+            hybrid = False
+        if name.startswith('rf_facility_'):
+            def linear(c):
+                return tuple((v/255/12.92 if v/255 <= .04045 else
+                              ((v/255+.055)/1.055)**2.4) for v in c)
+            asset_mats = [material(name+'_body', linear((113, 132, 143))),
+                          material(name+'_frame', linear((48, 61, 69))),
+                          material(name+'_signal', linear((113, 180, 188)))]
             hybrid = False
         obj = build(name, asset_mats).finish(name, dimensions, budget)
         if hybrid:

@@ -116,6 +116,28 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
     { RASTERFALL_PROP_ASSET_BOUNDARY_WALL, "boundary_wall",
       "", RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_DESK, "facility_desk",
+      "rasterfall/assets/models/props/industrial/rf_facility_desk.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 922, 384, 384 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_CHAIR, "facility_chair",
+      "rasterfall/assets/models/props/industrial/rf_facility_chair.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 307, 512, 307 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_MONITOR, "facility_monitor",
+      "rasterfall/assets/models/props/industrial/rf_facility_monitor.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 333, 230, 77 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_COMMAND_TABLE, "facility_command_table",
+      "rasterfall/assets/models/props/industrial/rf_facility_command_table.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 2048, 461, 1229 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_LOW_CABINET, "facility_low_cabinet",
+      "rasterfall/assets/models/props/industrial/rf_facility_low_cabinet.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 614, 410, 230 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_BENCH, "facility_bench",
+      "rasterfall/assets/models/props/industrial/rf_facility_bench.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 922, 256, 282 } },
+    { RASTERFALL_PROP_ASSET_FACILITY_TERMINAL, "facility_terminal",
+      "rasterfall/assets/models/props/industrial/rf_facility_terminal.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 512, 768, 307 } },
+
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -185,10 +207,12 @@ int rasterfall_prop_asset_logic_test(void)
         const struct rasterfall_prop_asset_profile *asset = prop_assets + i;
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
-            (asset->id < RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
+            ((asset->id < RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN ||
+              asset->id > RASTERFALL_PROP_ASSET_BOUNDARY_WALL) &&
              (asset->collision_size.x <= 0 || asset->collision_size.y <= 0 ||
               asset->collision_size.z <= 0)) ||
             (asset->id >= RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
+             asset->id <= RASTERFALL_PROP_ASSET_BOUNDARY_WALL &&
              (asset->collision_size.x || asset->collision_size.y || asset->collision_size.z)))
             return 1;
     }
@@ -222,7 +246,7 @@ int rasterfall_prop_asset_logic_test(void)
     {
         struct rasterfall_prop_dimensions dimensions;
         for (i = RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN;
-             i <= RASTERFALL_PROP_ASSET_COUNT; i++) {
+             i <= RASTERFALL_PROP_ASSET_BOUNDARY_WALL; i++) {
             if (rasterfall_prop_collision_dimensions(find_id(i), 0, 1000,
                                                      &dimensions) == 0)
                 return 8;

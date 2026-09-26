@@ -9,6 +9,14 @@ struct collision_profile {
 };
 
 static const struct collision_profile solids[] = {
+    {"facility_desk", 922, 384, 384, 1},
+    {"facility_chair", 307, 512, 307, 0},
+    {"facility_monitor", 333, 230, 77, 0},
+    {"facility_command_table", 2048, 461, 1229, 1},
+    {"facility_low_cabinet", 614, 410, 230, 1},
+    {"facility_bench", 922, 256, 282, 1},
+    {"facility_terminal", 512, 768, 307, 0},
+
     {"crate", 614, 512, 512, 1},
     {"barrier", 1229, 512, 410, 1},
     /* Lamp envelope follows the grounded stem/base, not the light arm. */

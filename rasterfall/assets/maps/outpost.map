@@ -1,30 +1,80 @@
-# Rasterfall Outpost V0: compact station room and its fixed devices.
+# Outpost Hall V1. RFU = metres * 512; open roof, visual-only furniture.
 map version=1 units=rfu
-world min_x=-7000 max_x=7000 min_z=-6000 max_z=6000 room_limit=9000 attr.identity=outpost
-
-surface id=outpost_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 material=294B45 attr.collision_id=outpost_floor_collision
-region id=outpost_safe kind=safe min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 attr.legacy_index=0
-region id=player_start kind=start min_x=0 max_x=0 min_z=-3000 max_z=-3000 attr.sy=0 attr.cy=1024
-
-interaction id=return_to_whu_v0 action=return_to_whu_v0 x=3500 y=0 z=1800 attr.legacy_index=11
-
-collision id=outpost_floor_collision shape=flat min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 collision=false visible=true walkable=true color=294B45 attr.legacy_index=0
-collision id=wall_south shape=box min_x=-6000 max_x=6000 min_z=-5200 max_z=-5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=1
-collision id=wall_north shape=box min_x=-6000 max_x=6000 min_z=5000 max_z=5200 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=2
-collision id=wall_west shape=box min_x=-6200 max_x=-6000 min_z=-5000 max_z=5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=3
-collision id=wall_east shape=box min_x=6000 max_x=6200 min_z=-5000 max_z=5000 height=2600 collision=true visible=true walkable=false color=3F4F5A attr.legacy_index=4
-
-render id=room_floor kind=ground min_x=-6000 max_x=6000 min_z=-5000 max_z=5000 height=0 color=294B45 attr.legacy_index=0
-render id=room_south kind=wall min_x=-6000 max_x=6000 min_z=-5200 max_z=-5000 height=2600 color=3F4F5A attr.legacy_index=1
-render id=room_north kind=wall min_x=-6000 max_x=6000 min_z=5000 max_z=5200 height=2600 color=3F4F5A attr.legacy_index=2
-render id=room_west kind=wall min_x=-6200 max_x=-6000 min_z=-5000 max_z=5000 height=2600 color=3F4F5A attr.legacy_index=3
-render id=room_east kind=wall min_x=6000 max_x=6200 min_z=-5000 max_z=5000 height=2600 color=3F4F5A attr.legacy_index=4
-render id=station_label kind=label min_x=-5000 max_x=-2400 min_z=3600 max_z=3800 height=2100 color=F6C35B attr.text=STATION_GUI_TERMINAL attr.legacy_index=5
-render id=operations_label kind=label min_x=-1300 max_x=1300 min_z=3600 max_z=3800 height=2100 color=F6C35B attr.text=OPERATIONS_TERMINAL attr.legacy_index=6
-render id=super_label kind=label min_x=2400 max_x=5000 min_z=3600 max_z=3800 height=2100 color=FF8A80 attr.text=SUPER_TERMINAL attr.legacy_index=7
-render id=return_to_whu_label kind=label min_x=1800 max_x=5400 min_z=1400 max_z=1650 height=1800 color=9FE8C8 attr.text=RETURN_TO_WHU_V0 attr.legacy_index=11
-render id=research_door kind=sign min_x=-5400 max_x=-3000 min_z=4850 max_z=5000 height=1800 color=6E8294 attr.text=RESEARCH attr.legacy_index=8
-render id=quarters_door kind=sign min_x=3000 max_x=5400 min_z=4850 max_z=5000 height=1800 color=6E8294 attr.text=QUARTERS attr.legacy_index=9
-render id=outpost_title kind=label min_x=-2200 max_x=2200 min_z=-800 max_z=-600 height=2200 color=9FE8C8 attr.text=RASTERFALL_OUTPOST attr.legacy_index=10
-
-object id=return_to_whu_console kind=control_cabinet x=3500 y=0 z=1800 yaw=180 scale=1000 attr.legacy_index=0
+world min_x=-6000 max_x=6000 min_z=-6500 max_z=5800 room_limit=9000 attr.identity=outpost
+region id=outpost_safe kind=safe min_x=-5600 max_x=5600 min_z=-6000 max_z=5400 attr.legacy_index=0
+region id=player_start kind=start min_x=0 max_x=0 min_z=-4900 max_z=-4900 attr.sy=0 attr.cy=1024
+surface id=entry_apron kind=ground min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 material=49565F attr.collision_id=entry_apron_col
+collision id=entry_apron_col shape=flat min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 collision=false visible=true walkable=true color=49565F
+render id=entry_apron_paint kind=ground min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 color=49565F
+surface id=hall_entry kind=ground min_x=-4608 max_x=4608 min_z=-4096 max_z=-1792 height=0 material=64717A attr.collision_id=hall_entry_col
+collision id=hall_entry_col shape=flat min_x=-4608 max_x=4608 min_z=-4096 max_z=-1792 height=0 collision=false visible=true walkable=true color=64717A
+render id=hall_entry_paint kind=ground min_x=-4608 max_x=4608 min_z=-4096 max_z=-1792 height=0 color=64717A
+surface id=hall_west kind=ground min_x=-4608 max_x=-2048 min_z=-1792 max_z=1792 height=0 material=64717A attr.collision_id=hall_west_col
+collision id=hall_west_col shape=flat min_x=-4608 max_x=-2048 min_z=-1792 max_z=1792 height=0 collision=false visible=true walkable=true color=64717A
+render id=hall_west_paint kind=ground min_x=-4608 max_x=-2048 min_z=-1792 max_z=1792 height=0 color=64717A
+surface id=command_floor kind=ground min_x=-2048 max_x=2048 min_z=-1792 max_z=1792 height=0 material=75858F attr.collision_id=command_floor_col
+collision id=command_floor_col shape=flat min_x=-2048 max_x=2048 min_z=-1792 max_z=1792 height=0 collision=false visible=true walkable=true color=75858F
+render id=command_floor_paint kind=ground min_x=-2048 max_x=2048 min_z=-1792 max_z=1792 height=0 color=75858F
+surface id=hall_east kind=ground min_x=2048 max_x=4608 min_z=-1792 max_z=1792 height=0 material=64717A attr.collision_id=hall_east_col
+collision id=hall_east_col shape=flat min_x=2048 max_x=4608 min_z=-1792 max_z=1792 height=0 collision=false visible=true walkable=true color=64717A
+render id=hall_east_paint kind=ground min_x=2048 max_x=4608 min_z=-1792 max_z=1792 height=0 color=64717A
+surface id=hall_north kind=ground min_x=-4608 max_x=4608 min_z=1792 max_z=3328 height=0 material=64717A attr.collision_id=hall_north_col
+collision id=hall_north_col shape=flat min_x=-4608 max_x=4608 min_z=1792 max_z=3328 height=0 collision=false visible=true walkable=true color=64717A
+render id=hall_north_paint kind=ground min_x=-4608 max_x=4608 min_z=1792 max_z=3328 height=0 color=64717A
+surface id=service_strip kind=ground min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 material=505D66 attr.collision_id=service_strip_col
+collision id=service_strip_col shape=flat min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 collision=false visible=true walkable=true color=505D66
+render id=service_strip_paint kind=ground min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 color=505D66
+surface id=north_landing kind=ground min_x=-1536 max_x=1536 min_z=4096 max_z=5120 height=0 material=505D66 attr.collision_id=north_landing_col
+collision id=north_landing_col shape=flat min_x=-1536 max_x=1536 min_z=4096 max_z=5120 height=0 collision=false visible=true walkable=true color=505D66
+render id=north_landing_paint kind=ground min_x=-1536 max_x=1536 min_z=4096 max_z=5120 height=0 color=505D66
+object id=west_wall_0 kind=arch_wall x=-4608 y=0 z=-3072 yaw=90 scale=1000 attr.collision=component
+object id=west_wall_1 kind=arch_wall x=-4608 y=0 z=-1024 yaw=90 scale=1000 attr.collision=component
+object id=west_wall_2 kind=arch_wall x=-4608 y=0 z=1024 yaw=90 scale=1000 attr.collision=component
+object id=west_wall_3 kind=arch_wall x=-4608 y=0 z=3072 yaw=90 scale=1000 attr.collision=component
+object id=east_wall_0 kind=arch_wall x=4608 y=0 z=-3072 yaw=270 scale=1000 attr.collision=component
+object id=east_wall_1 kind=arch_wall x=4608 y=0 z=-1024 yaw=270 scale=1000 attr.collision=component
+object id=east_wall_2 kind=arch_wall x=4608 y=0 z=1024 yaw=270 scale=1000 attr.collision=component
+object id=east_wall_3 kind=arch_wall x=4608 y=0 z=3072 yaw=270 scale=1000 attr.collision=component
+object id=south_door kind=arch_doorway x=0 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component
+object id=south_left kind=boundary_wall x=-3072 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component attr.length=3072
+object id=south_right kind=boundary_wall x=3072 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component attr.length=3072
+object id=south_beam_0 kind=arch_beam x=-3072 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
+object id=south_beam_1 kind=arch_beam x=0 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
+object id=south_beam_2 kind=arch_beam x=3072 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
+object id=north_door kind=arch_doorway x=0 y=0 z=4096 yaw=180 scale=1000 attr.collision=component
+object id=north_left kind=boundary_wall x=-3072 y=0 z=4096 yaw=180 scale=1000 attr.collision=component attr.length=3072
+object id=north_right kind=boundary_wall x=3072 y=0 z=4096 yaw=180 scale=1000 attr.collision=component attr.length=3072
+object id=north_beam_0 kind=arch_beam x=-3072 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
+object id=north_beam_1 kind=arch_beam x=0 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
+object id=north_beam_2 kind=arch_beam x=3072 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
+object id=landing_back kind=boundary_wall x=0 y=0 z=5120 yaw=0 scale=1000 attr.collision=component attr.length=3072
+object id=landing_side_1536w kind=boundary_wall x=-1536 y=0 z=4608 yaw=90 scale=1000 attr.collision=component attr.length=1024
+object id=landing_side_1536e kind=boundary_wall x=1536 y=0 z=4608 yaw=90 scale=1000 attr.collision=component attr.length=1024
+object id=command_table kind=facility_command_table x=0 y=0 z=0 yaw=0 scale=1000 attr.collision=component
+object id=null_desk kind=facility_desk x=3149 y=0 z=-896 yaw=90 scale=1000 attr.collision=component
+object id=null_chair kind=facility_chair x=3610 y=0 z=-794 yaw=270 scale=1000 attr.collision=component
+object id=null_monitor_0 kind=facility_monitor x=3062 y=384 z=-1091 yaw=90 scale=1000 attr.collision=none
+object id=null_monitor_1 kind=facility_monitor x=3062 y=384 z=-701 yaw=90 scale=1000 attr.collision=none
+object id=null_storage kind=facility_low_cabinet x=4311 y=0 z=77 yaw=270 scale=1000 attr.collision=component
+object id=work_desk_0 kind=facility_desk x=-3866 y=0 z=-1331 yaw=90 scale=1000 attr.collision=component
+object id=work_chair_0 kind=facility_chair x=-3354 y=0 z=-1393 yaw=270 scale=1000 attr.collision=component
+object id=work_monitor_0 kind=facility_monitor x=-3953 y=384 z=-1331 yaw=90 scale=1000 attr.collision=none
+object id=work_desk_1 kind=facility_desk x=-3866 y=0 z=333 yaw=90 scale=1000 attr.collision=component
+object id=work_chair_1 kind=facility_chair x=-3354 y=0 z=271 yaw=270 scale=1000 attr.collision=component
+object id=work_monitor_1 kind=facility_monitor x=-3953 y=384 z=333 yaw=90 scale=1000 attr.collision=none
+object id=west_storage kind=facility_low_cabinet x=-4275 y=0 z=1741 yaw=90 scale=1000 attr.collision=component
+object id=entry_bench kind=facility_bench x=2970 y=0 z=-3763 yaw=0 scale=1000 attr.collision=component
+object id=main_terminal kind=facility_terminal x=-1946 y=0 z=-3712 yaw=0 scale=1000 attr.collision=component
+object id=service_tray_left kind=arch_cable_tray x=-2560 y=1485 z=3953 yaw=180 scale=1000 attr.collision=none
+object id=service_panel_left kind=arch_service_panel x=-2560 y=845 z=3937 yaw=180 scale=1000 attr.collision=none
+object id=service_tray_right kind=arch_cable_tray x=2560 y=1485 z=3953 yaw=180 scale=1000 attr.collision=none
+object id=service_panel_right kind=arch_service_panel x=2560 y=845 z=3937 yaw=180 scale=1000 attr.collision=none
+object id=control_left kind=control_cabinet x=-2176 y=0 z=3712 yaw=180 scale=1000 attr.collision=component
+object id=control_right kind=control_cabinet x=2893 y=0 z=3712 yaw=180 scale=1000 attr.collision=component
+object id=maintenance_hatch kind=arch_floor_hatch x=-3174 y=0 z=3405 yaw=0 scale=1000 attr.collision=none
+object id=service_pipe kind=arch_pipe_straight x=-3098 y=282 z=3840 yaw=0 scale=1000 attr.collision=none
+object id=light_west kind=lamp_post x=-4301 y=0 z=2714 yaw=90 scale=1000 attr.collision=component
+object id=light_east kind=lamp_post x=4301 y=0 z=2714 yaw=270 scale=1000 attr.collision=component
+render id=null_mark kind=sign min_x=4520 max_x=4540 min_z=-1330 max_z=-620 height=1120 color=779BAA attr.text=RF
+render id=null_status kind=sign min_x=4520 max_x=4540 min_z=-530 max_z=-460 height=960 color=81B4B5 attr.text=ON
+render id=north_identity kind=sign min_x=-850 max_x=850 min_z=3990 max_z=4020 height=1970 color=96B2BE attr.text=INFRASTRUCTURE

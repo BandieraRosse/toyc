@@ -9,6 +9,9 @@
 
 ## 角色模型
 
+设施家具 `rf_facility_*` 七件由项目内 `generate_rasterfall_props.py` 原创程序生成，无第三方几何或纹理。
+公开 RMESH 位于 `assets/models/props/industrial/`，重建与源文件边界见[设施家具指南](../guides/facility-assets.md)。
+
 | 运行时名称 | 已知原件 | 转换产物 | 当前发布结论 |
 | --- | --- | --- | --- |
 | Enemy Visual V2 六份 infected | 项目内 `generate_rasterfall_infected.py`，复用 V2 源生成器 | 公开 `assets/models/enemies/rf_infected_*.rmesh`；GLB 为可重建本地产物 | 公开运行资源，无第三方几何或纹理；生成源、材质与重建命令见 [敌人表现](enemy-visuals.md) |

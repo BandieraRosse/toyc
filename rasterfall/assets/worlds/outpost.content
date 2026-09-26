@@ -1,5 +1,2 @@
-# Rasterfall Outpost World Content V1
-actor id=null name=Null character=NULL x=0 y=0 z=1800 yaw=180
-terminal id=station kind=station x=-3500 y=0 z=3200 yaw=180
-terminal id=operations kind=operations x=0 y=0 z=3200 yaw=180
-terminal id=super kind=super x=3500 y=0 z=3200 yaw=180
+# Outpost Hall V1: Null works in the hall; terminals are map furniture.
+actor id=null name=Null character=NULL x=3686 y=0 z=-256 yaw=270

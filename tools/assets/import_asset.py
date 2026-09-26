@@ -312,8 +312,10 @@ def import_asset(args):
         else:
             targets = ["build/toyasset", "app-glb2rmesh" if source.suffix.lower() == ".glb" else "app-pmx2rmesh"]
         run([args.make, "-j"] + targets, cwd=repo)
-    toyasset = repo / "build/toyasset"
-    converter = repo / "build" / ("glb2rmesh" if source.suffix.lower() == ".glb" else "pmx2rmesh")
+    tool_dir = args.tool_dir or repo / "build"
+    suffix = ".exe" if os.name == "nt" else ""
+    toyasset = tool_dir / ("toyasset" + suffix)
+    converter = tool_dir / (("glb2rmesh" if source.suffix.lower() == ".glb" else "pmx2rmesh") + suffix)
     lod_tool = repo / "tools/rmesh_lod.py"
     asset_id = manifest["id"]
     with tempfile.TemporaryDirectory(prefix=".asset-import-%s-" % asset_id, dir=output_root) as temp:
@@ -354,6 +356,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--output-root", type=Path)
+    parser.add_argument("--tool-dir", type=Path, help="prebuilt converters directory (use with --no-build)")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--no-build", action="store_true", help="use converters already in build/")
     parser.add_argument("--validate-only", action="store_true", help="validate installed outputs")

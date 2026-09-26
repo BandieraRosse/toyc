@@ -1711,6 +1711,19 @@ static int run_logic_test(void)
     {
         int has_null = 0, has_station = 0, has_operations = 0,
             has_super = 0, i;
+        /* Hall V1: both door apertures and the loop around the table stay
+         * traversable, while the table and wall shells really block walking. */
+        static const int route[][2] = {
+            {0,-4900},{0,-4096},{0,-1800},{1800,-1800},
+            {1800,0},{1800,1800},{0,1800},{-1800,1800},
+            {-1800,0},{-1800,-1800},{0,4096},{0,4600},{3686,-256}
+        };
+        for (i=0; i<(int)(sizeof(route)/sizeof(route[0])); i++)
+            if (toy_game_position_blocked(&session.game_state,
+                    route[i][0],route[i][1],180)) return 278;
+        if (!toy_game_position_blocked(&session.game_state,0,0,180) ||
+            !toy_game_position_blocked(&session.game_state,4608,0,180) ||
+            session.item_count != 0) return 279;
         for (i = 0; i < session.item_count; i++) {
             has_station |= session.items[i].kind == TOY_MAP_PICKUP_STATION_TERMINAL;
             has_operations |= session.items[i].kind == TOY_MAP_PICKUP_OPERATIONS_TERMINAL;
@@ -1719,7 +1732,7 @@ static int run_logic_test(void)
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
             if (session.game_state.actors[i].active &&
                 !strcmp(session.game_state.actors[i].name, "Null")) has_null = 1;
-        if (!has_null || !has_station || !has_operations || !has_super ||
+        if (!has_null || has_station || has_operations || has_super ||
             session.flag_count != 0 ||
             session.content.model_gallery_enabled ||
             session.content.character_test_strip_enabled ||

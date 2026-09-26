@@ -3867,6 +3867,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
+          (options.environment_capture_dir || options.normal_frame_audit_output)) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
