@@ -27,7 +27,8 @@ def analyze(root, run):
         assert [x['frame'] for x in values] == ids, (name, prefix, 'missing frames')
     # Older evidence predates the optional Game diagnostic sink.
     logic_profiles = {}
-    for prefix in ('SCENE-LOGIC-COST', 'SCENE-LOGIC-ENEMIES', 'SCENE-LOGIC-NAV'):
+    for prefix in ('SCENE-LOGIC-COST', 'SCENE-LOGIC-ENEMIES', 'SCENE-LOGIC-NAV',
+                   'SCENE-LOGIC-FLOW'):
         values = rows(text, prefix)
         if not values:
             continue

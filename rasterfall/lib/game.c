@@ -24,6 +24,12 @@ static int enemy_target_valid(const struct toy_game *g,
                               int target_kind, int target_index,
                               int *out_x, int *out_z);
 static int ai_try_shove(struct toy_game *g, struct toy_game_actor *actor);
+static void enemy_flow_rebuild(struct toy_game *g);
+static void enemy_flow_update(struct toy_game *g);
+static int enemy_flow_direct(struct toy_game *g, struct toy_game_enemy *e,
+                              int tx, int tz);
+static int enemy_flow_waypoint(struct toy_game *g, struct toy_game_enemy *e,
+                               int tx, int tz, int *out_x, int *out_z);
 static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
                                               int index, int dx, int dz,
                                               int damage, int knockback,
@@ -595,6 +601,9 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     struct toy_game_actor *player;
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
+    g->nav_group_enabled = 1;
+    g->nav_flow_enabled = 1;
+    g->flow_repair_cell = -1;
     player = &g->actors[TOY_GAME_PLAYER_ACTOR_INDEX];
     g->base_actor_index = -1;
     g->base_regen_timer_ms = TOY_CONFIG_BASE_REGEN_MS;
@@ -1037,6 +1046,18 @@ static int primitive_surface_height(const struct toy_map_primitive *p,
                              offset / length);
 }
 
+/* A navigation sweep can freeze a conservative footprint candidate list.
+ * Keep authored order and leave ordinary movement/public queries unchanged. */
+static int ground_candidate_count(const struct toy_game *g)
+{
+    return g->flow_probe_active ? g->flow_probe_count : g->primitive_count;
+}
+
+static int ground_candidate_index(const struct toy_game *g, int candidate)
+{
+    return g->flow_probe_active ? g->flow_probe_indices[candidate] : candidate;
+}
+
 struct toy_game_ground_query toy_game_query_ground(
     const struct toy_game *g, int x, int z, int radius, int current_ground_y)
 {
@@ -1051,9 +1072,10 @@ struct toy_game_ground_query toy_game_query_ground(
     if (!g || !g->primitives) return result;
     if (g->update_profile) {
         g->update_profile->ground_queries++;
-        g->update_profile->ground_scans += g->primitive_count;
+        g->update_profile->ground_scans += ground_candidate_count(g);
     }
-    for (i = 0; i < g->primitive_count; i++) {
+    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
+        i = ground_candidate_index(g, candidate);
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
         int overlaps = x + radius > p->minx && x - radius < p->maxx &&
@@ -1208,7 +1230,8 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
     if (ground.has_support && ground.support_y > collision_height &&
         ground.support_y - ground_height <= TOY_CONFIG_GROUND_STEP_HEIGHT)
         collision_height = ground.support_y;
-    for (i = 0; i < g->primitive_count; i++) {
+    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
+        i = ground_candidate_index(g, candidate);
         if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *b = &g->primitives[i];
         if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -1230,7 +1253,8 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
      * fixture behavior.  A loaded map always supplies its ground primitive
      * array (possibly with zero entries), where absence of support is solid. */
     if (require_ground_support && g->primitives && !ground.has_support) return 1;
-    for (i = 0; i < g->primitive_count; i++) {
+    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
+        i = ground_candidate_index(g, candidate);
         if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -1632,11 +1656,26 @@ static int nav_step_allowed(const struct toy_game *g, int cx, int cz,
            TOY_GAME_NAV_LINK_BLOCKED;
 }
 
-void toy_game_rebuild_navigation(struct toy_game *g)
+static void rebuild_component_navigation(struct toy_game *g)
 {
     int i, x, z, index, component = 0, span;
     int queue[TOY_GAME_NAV_MAX_CELLS];
     int head, tail, cx, cz, nx, nz, dx, dz;
+    if (!g) return;
+    /* Routes and in-flight searches refer to the previous collision map. */
+    for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++)
+        g->nav_groups[i].active = 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
+        g->enemies[i].nav_group = -1;
+        g->enemies[i].nav_group_generation = 0;
+        g->enemies[i].nav_route_cursor = 0;
+        g->enemies[i].nav_direct_valid = 0;
+        g->enemies[i].nav_active = 0;
+    }
+    memset(g->nav_edge_cache, 0, sizeof(g->nav_edge_cache));
+    g->nav_search_group = -1;
+    g->nav_dispatch_cursor = -1;
+    g->nav_group_generation++;
     if (!g || g->room_limit <= 0) return;
     g->nav_origin = -g->room_limit;
     span = g->room_limit * 2;
@@ -1705,6 +1744,13 @@ void toy_game_rebuild_navigation(struct toy_game *g)
             }
         }
     }
+}
+
+void toy_game_rebuild_navigation(struct toy_game *g)
+{
+    if (!g) return;
+    rebuild_component_navigation(g);
+    enemy_flow_rebuild(g);
 }
 
 static int enemy_position_blocked(const struct toy_game *g,
@@ -1842,6 +1888,18 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->target_kind = -1;
     e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     e->wander_timer_ms = 0;
+    e->nav_group = -1;
+    e->nav_field = -1;
+    e->nav_flow_node = 0;
+    e->nav_target_actor = -1;
+    e->nav_flow_reject_count = 0;
+    e->nav_group_generation = 0;
+    e->nav_route_cursor = 0;
+    e->nav_stuck_ms = 0;
+    e->nav_direct_blocked_ms = 0;
+    e->nav_direct_valid = 0;
+    e->nav_active = 0;
+    e->nav_attach_retry_ms = 0;
     e->dir_x = enemy_dir_x[direction];
     e->dir_z = enemy_dir_z[direction];
 }
@@ -2691,38 +2749,159 @@ static int nav_next_waypoint(const struct toy_game *g,
                              int x, int z, int target_x, int target_z,
                              int radius, int ground_y,
                              int *out_x, int *out_z);
+static int enemy_nav_group_waypoint(struct toy_game *g,
+                                    struct toy_game_enemy *e,
+                                    int *out_x, int *out_z);
+
+static int enemy_chase_direct(struct toy_game *g, struct toy_game_enemy *e,
+                               int tx, int tz, int radius)
+{
+    struct toy_game_update_profile *p = g->update_profile;
+    int64_t start = p && p->clock_us ? p->clock_us() : 0;
+    int result = g->nav_flow_enabled ? enemy_flow_direct(g, e, tx, tz) :
+        toy_game_short_connection(g, e->x, e->z, tx, tz, radius, e->ground_y);
+    if (start) p->nav_intent_us += p->clock_us() - start;
+    return result;
+}
 
 static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
                         int dx, int dz, long long dist, int target_kind)
 {
     int nx, nz, waypoint_x, waypoint_z, old_x, old_z;
-    if (dist < TOY_GAME_ATTACK_RANGE) {
+    int direct, exploring = 0, move_radius = enemy_radius(e);
+    int same_height = 1;
+    if (g->nav_flow_enabled) move_radius = TOY_GAME_ENEMY_RADIUS;
+    if (g->nav_flow_enabled && dist < TOY_GAME_ATTACK_RANGE && e->nav_target_actor >= 0) {
+        const struct toy_game_actor *target = &g->actors[e->nav_target_actor];
+        int dy = target->ground_y - e->ground_y;
+        /* Normal actor ground is authoritative. Only resolve mismatched
+         * support for externally repositioned fixtures/actors; do not query
+         * the same flat target once per attacker per tick. */
+        if (dy > TOY_CONFIG_GROUND_STEP_HEIGHT || dy < -TOY_CONFIG_GROUND_STEP_HEIGHT) {
+            struct toy_game_ground_query ground = toy_game_query_ground(
+                g, target->x, target->z, 0, target->ground_y);
+            dy = ground.support_y - e->ground_y;
+        }
+        same_height = dy >= -TOY_CONFIG_GROUND_STEP_HEIGHT &&
+                      dy <= TOY_CONFIG_GROUND_STEP_HEIGHT;
+    }
+    if (dist < TOY_GAME_ATTACK_RANGE && same_height) {
         if (target_kind == 0 && !player_in_safe_room(g)) bite_player(g, e);
         else if (target_kind == TOY_GAME_TARGET_ACTOR) bite_ai(g, e);
         return;
     }
-    if (dist == 0) return;
-    /* A reachable target may still be behind an obstacle.  Follow the nav
-     * graph in that case so a ramp link can carry the enemy onto a platform.
-     * If either endpoint is outside the nav mask, nav_next_waypoint returns
-     * no route and the legacy direct movement remains the fallback. */
-    if ((dist > TOY_GAME_SHORT_CONNECTION_RANGE ||
-         !toy_game_short_connection(g, e->x, e->z, e->x + dx, e->z + dz,
-                                    enemy_radius(e), e->ground_y)) &&
-        nav_next_waypoint(g, e->x, e->z, e->x + dx, e->z + dz,
-                          enemy_radius(e), e->ground_y,
-                          &waypoint_x, &waypoint_z)) {
-        dx = waypoint_x - e->x;
-        dz = waypoint_z - e->z;
+    if (dist == 0 && !g->nav_flow_enabled) return;
+    direct = 0;
+    if (dist <= TOY_GAME_SHORT_CONNECTION_RANGE &&
+        (!g->nav_flow_enabled || !e->nav_active)) {
+        int tx = e->x + dx, tz = e->z + dz;
+        long long txd = (long long)tx - e->nav_direct_x;
+        long long tzd = (long long)tz - e->nav_direct_z;
+        /* Cache steering intent, never movement collision. Refresh on a
+         * staggered 256ms cadence, target displacement or a blocked step. */
+        if (!e->nav_direct_valid || g->nav_tick >= e->nav_direct_tick ||
+            e->nav_direct_radius != move_radius ||
+            (g->nav_flow_enabled &&
+             (e->nav_direct_actor != e->nav_target_actor ||
+              (e->nav_target_actor >= 0 && e->nav_direct_y !=
+               g->actors[e->nav_target_actor].ground_y))) ||
+            txd * txd + tzd * tzd > 160LL * 160) {
+            /* The shared path reserves a bounded direct-query allowance.
+             * A deferred query cannot keep a stale positive result alive. */
+            if (g->nav_flow_enabled && g->flow_local_budget < 80) {
+                e->nav_direct_valid = 0;
+                e->nav_direct_result = 0;
+            } else {
+            e->nav_direct_result = enemy_chase_direct(g, e, tx, tz, move_radius);
+            e->nav_direct_valid = 1;
+            e->nav_direct_x = tx; e->nav_direct_z = tz;
+            e->nav_direct_radius = move_radius;
+            e->nav_direct_actor = e->nav_target_actor;
+            e->nav_direct_y = e->nav_target_actor >= 0 ?
+                             g->actors[e->nav_target_actor].ground_y : 0;
+            e->nav_direct_tick = g->nav_tick + 1 +
+                (15 - ((g->nav_tick + (unsigned int)(e - g->enemies)) & 15));
+            }
+        }
+        direct = e->nav_direct_result;
+    } else e->nav_direct_valid = 0;
+    if (!direct) {
+        if (g->nav_flow_enabled) {
+            if (!enemy_flow_waypoint(g, e, e->x + dx, e->z + dz,
+                                     &waypoint_x, &waypoint_z)) {
+                if (g->update_profile) g->update_profile->flow_waiting++;
+                /* No planning result yet: keep physically exploring instead
+                 * of turning a global work budget into a movement barrier. */
+                static const int explore_x[8] = {1024,724,0,-724,-1024,-724,0,724};
+                static const int explore_z[8] = {0,724,1024,724,0,-724,-1024,-724};
+                exploring = 1;
+                if (e->nav_explore_ticks <= 0) {
+                    int k, best = 0;
+                    long long score = -9223372036854775807LL;
+                    for (k = 0; k < 8; ++k) {
+                        long long s = (long long)dx * explore_x[k] +
+                                      (long long)dz * explore_z[k];
+                        if (s > score) { score = s; best = k; }
+                    }
+                    e->nav_explore_dir = best;
+                    e->nav_explore_ticks = 24;
+                }
+                waypoint_x = e->x + explore_x[e->nav_explore_dir];
+                waypoint_z = e->z + explore_z[e->nav_explore_dir];
+            }
+            dx = waypoint_x - e->x; dz = waypoint_z - e->z;
+            dist = isqrt((long long)dx * dx + (long long)dz * dz);
+            if (!dist) return;
+        } else {
+        int route = enemy_nav_group_waypoint(g, e, &waypoint_x,
+                                              &waypoint_z);
+        if (route == 2) return;
+        if (route) move_radius = g->nav_groups[e->nav_group].radius;
+        if (route || nav_next_waypoint(g, e->x, e->z, e->x + dx, e->z + dz,
+                                       enemy_radius(e), e->ground_y,
+                                       &waypoint_x, &waypoint_z)) {
+            dx = waypoint_x - e->x;
+            dz = waypoint_z - e->z;
+            dist = isqrt((long long)dx * dx + (long long)dz * dz);
+            if (dist == 0) return;
+        }
+        }
+        e->nav_direct_blocked_ms = 0;
+    } else if (e->nav_direct_blocked_ms < 96) {
+        if (g->nav_flow_enabled) {
+            e->nav_active = 0;
+            e->nav_flow_node = 0;
+        }
+        unsigned int phase = (unsigned int)(g->nav_tick / 12) +
+                             (unsigned int)(e - g->enemies) * 29u;
+        int sign = ((phase * 1664525u + 1013904223u) >> 30) & 1 ? 1 : -1;
+        int forward_x = dx;
+        dx += sign * dz / 16;
+        dz -= sign * forward_x / 16;
         dist = isqrt((long long)dx * dx + (long long)dz * dz);
-        if (dist == 0) return;
     }
-    nx = (int)((long long)dx * e->speed / dist);
-    nz = (int)((long long)dz * e->speed / dist);
+    if (dist <= 0) return;
+    int step = dist < e->speed ? (int)dist : e->speed;
+    nx = (int)((long long)dx * step / dist);
+    nz = (int)((long long)dz * step / dist);
     old_x = e->x;
     old_z = e->z;
-    enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
-    enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
+    enemy_try_step(g, e, e->x + nx, e->z, move_radius);
+    enemy_try_step(g, e, e->x, e->z + nz, move_radius);
+    if (exploring) {
+        if (e->x == old_x && e->z == old_z) {
+            int hand = ((unsigned int)(e - g->enemies) & 1) ? 1 : 7;
+            e->nav_explore_dir = (e->nav_explore_dir + hand) & 7;
+            e->nav_explore_ticks = 24;
+        } else e->nav_explore_ticks--;
+    } else e->nav_explore_ticks = 0;
+    if (direct) {
+        if (e->x == old_x && e->z == old_z) {
+            e->nav_direct_blocked_ms += 16;
+            e->nav_direct_valid = 0;
+        } else
+            e->nav_direct_blocked_ms = 0;
+    }
     set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
 }
 
@@ -2751,14 +2930,71 @@ static int nearest_ai_position(const struct toy_game *g,
     return found;
 }
 
+/* A wall can hide the nearest candidate while another nearby target is
+ * physically reachable.  Probe only candidates closer than the best direct
+ * one, and only on the ordinary enemy's target refresh. */
+static int nearest_direct_enemy_target_impl(struct toy_game *g,
+                                       const struct toy_game_enemy *e,
+                                       int *out_kind, int *out_index)
+{
+    long long best = (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
+                     TOY_GAME_SHORT_CONNECTION_RANGE + 1;
+    int found = 0, i;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &g->actors[i];
+        long long dx, dz, distance2;
+        int kind = i == TOY_GAME_PLAYER_ACTOR_INDEX ?
+                   TOY_GAME_TARGET_HOST : TOY_GAME_TARGET_ACTOR;
+        if (!enemy_target_valid(g, e, kind, i, NULL, NULL)) continue;
+        dx = (long long)a->x - e->x;
+        dz = (long long)a->z - e->z;
+        distance2 = dx * dx + dz * dz;
+        if (distance2 >= best) continue;
+        if (g->nav_flow_enabled) {
+            if (g->flow_local_budget < 160) break;
+            g->flow_local_budget -= 80;
+        }
+        if (!toy_game_short_connection(g, e->x, e->z, a->x, a->z,
+                                       enemy_radius(e), e->ground_y)) continue;
+        best = distance2;
+        *out_kind = kind;
+        *out_index = kind == TOY_GAME_TARGET_HOST ? -1 : i;
+        found = 1;
+    }
+    return found;
+}
+
+static int nearest_direct_enemy_target(struct toy_game *g,
+                                       const struct toy_game_enemy *e,
+                                       int *out_kind, int *out_index)
+{
+    struct toy_game_update_profile *p = g->update_profile;
+    int64_t start = p && p->clock_us ? p->clock_us() : 0;
+    int result = nearest_direct_enemy_target_impl(g, e, out_kind, out_index);
+    if (start) p->nav_intent_us += p->clock_us() - start;
+    return result;
+}
+
 /* 特感在主机玩家和所有存活 actor 中选择最近目标。 */
-static int nearest_special_target(const struct toy_game *g,
-                                  const struct toy_game_enemy *e,
+static int nearest_special_target(struct toy_game *g,
+                                  struct toy_game_enemy *e,
                                   int *out_x, int *out_z,
                                   int *out_player, int *out_actor)
 {
     int found = 0, player = -1, actor = -1;
     long long best = 0, dx, dz, d2;
+    int direct_kind, direct_index;
+    if (nearest_direct_enemy_target(g, e, &direct_kind, &direct_index)) {
+        const struct toy_game_actor *target =
+            &g->actors[direct_kind == TOY_GAME_TARGET_HOST ?
+                       TOY_GAME_PLAYER_ACTOR_INDEX : direct_index];
+        *out_x = target->x;
+        *out_z = target->z;
+        e->nav_target_actor = (int)(target - g->actors);
+        if (out_player) *out_player = direct_kind;
+        if (out_actor) *out_actor = direct_index;
+        return 1;
+    }
     if (enemy_target_valid(g, e, 0, -1, NULL, NULL)) {
         const struct toy_game_actor *a =
             toy_game_local_player_actor_const(g);
@@ -2788,6 +3024,7 @@ static int nearest_special_target(const struct toy_game *g,
     }
     if (out_player) *out_player = player;
     if (out_actor) *out_actor = actor;
+    e->nav_target_actor = player == 1 ? actor : TOY_GAME_PLAYER_ACTOR_INDEX;
     return 1;
 }
 
@@ -3098,9 +3335,9 @@ static int actor_segment_blocked(const struct toy_game *g,
     return 0;
 }
 
-static int nav_segment_allowed(const struct toy_game *g,
+static int nav_segment_allowed_height(const struct toy_game *g,
                                int x0, int z0, int x1, int z1,
-                               int radius, int ground_y)
+                               int radius, int ground_y, int *end_y)
 {
     int dx = x1 - x0, dz = z1 - z0;
     int distance = isqrt((long long)dx * dx + (long long)dz * dz);
@@ -3128,12 +3365,20 @@ static int nav_segment_allowed(const struct toy_game *g,
         ground_y = ground.support_y;
         previous_ramp = ground.support_is_ramp;
     }
+    if (end_y) *end_y = ground_y;
     return 1;
 }
 
-int toy_game_short_connection(const struct toy_game *g,
+static int nav_segment_allowed(const struct toy_game *g,
+                               int x0, int z0, int x1, int z1,
+                               int radius, int ground_y)
+{
+    return nav_segment_allowed_height(g, x0, z0, x1, z1, radius, ground_y, NULL);
+}
+
+static int short_connection_height(const struct toy_game *g,
                               int x0, int z0, int x1, int z1,
-                              int radius, int ground_y)
+                              int radius, int ground_y, int *end_y)
 {
     long long dx, dz, distance2;
     int reachable = 0;
@@ -3156,10 +3401,53 @@ int toy_game_short_connection(const struct toy_game *g,
     }
     reachable = !actor_segment_blocked(g, x0, z0, x1, z1,
                                        radius, ground_y) &&
-                nav_segment_allowed(g, x0, z0, x1, z1, radius, ground_y);
+                nav_segment_allowed_height(g, x0, z0, x1, z1, radius, ground_y, end_y);
     if (reachable && g->update_profile)
         g->update_profile->nav_short_reachable++;
     return reachable;
+}
+
+int toy_game_short_connection(const struct toy_game *g,
+                              int x0, int z0, int x1, int z1,
+                              int radius, int ground_y)
+{
+    return short_connection_height(g, x0, z0, x1, z1, radius, ground_y, NULL);
+}
+
+/* A floor/ramp seam may divide one enemy footprint between two adjacent
+ * walkable surfaces. Enemy movement uses center support there, so verify the
+ * whole segment in small steps with the same collision rule. A true gap has
+ * no center support at one of those steps and remains blocked. */
+static int enemy_nav_ramp_seam_connection(const struct toy_game *g,
+                                          int x0, int z0, int x1, int z1,
+                                          int radius, int ground_y)
+{
+    struct toy_game_enemy probe = {0};
+    int dx = x1 - x0, dz = z1 - z0;
+    int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+    int steps, i, previous_x = x0, previous_z = z0;
+    if (distance > TOY_GAME_SHORT_CONNECTION_RANGE) return 0;
+    if (!point_on_walkable_ramp(g, x0, z0, radius) &&
+        !point_on_walkable_ramp(g, x1, z1, radius)) return 0;
+    steps = distance / (radius > 0 ? radius : 1) + 1;
+    for (i = 0; i <= steps; ++i) {
+        int x = x0 + (int)((long long)dx * i / steps);
+        int z = z0 + (int)((long long)dz * i / steps);
+        struct toy_game_ground_query ground =
+            toy_game_query_ground(g, x, z, 0, ground_y);
+        int delta = ground.support_y - ground_y;
+        int near_ramp = point_on_walkable_ramp(g, x, z, radius) ||
+            point_on_walkable_ramp(g, previous_x, previous_z, radius);
+        if (delta < 0) delta = -delta;
+        if (!ground.has_support ||
+            (delta > TOY_CONFIG_GROUND_STEP_HEIGHT &&
+             !near_ramp && !ground.support_is_ramp) ||
+            enemy_step_blocked(g, &probe, x, z, radius, ground.support_y,
+                               near_ramp ? 0 : 1)) return 0;
+        ground_y = ground.support_y;
+        previous_x = x; previous_z = z;
+    }
+    return 1;
 }
 
 static int nav_next_waypoint(const struct toy_game *g,
@@ -3240,6 +3528,697 @@ static int nav_next_waypoint(const struct toy_game *g,
     }
     return found;
 }
+
+static int enemy_nav_group_valid(const struct toy_game *g,
+                                 const struct toy_game_enemy *e)
+{
+    return e->nav_group >= 0 && e->nav_group < TOY_GAME_NAV_MAX_GROUPS &&
+           g->nav_groups[e->nav_group].active &&
+           g->nav_groups[e->nav_group].generation == e->nav_group_generation;
+}
+
+static const signed char nav_route_dx[12] =
+    {-1, 0, 1, -1, 1, -1, 0, 1, -2, 2, 0, 0};
+static const signed char nav_route_dz[12] =
+    {-1, -1, -1, 0, 0, 1, 1, 1, 0, 0, -2, 2};
+
+static unsigned int enemy_nav_hash(unsigned int value)
+{
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+static int enemy_nav_edge(struct toy_game *g, int from, int to,
+                           int radius, int ground_y, int *end_y)
+{
+    unsigned int hash = enemy_nav_hash((unsigned int)from * 31u ^
+        (unsigned int)to * 131u ^ (unsigned int)radius * 8191u ^
+        (unsigned int)ground_y);
+    struct toy_game_nav_edge_cache *entry =
+        &g->nav_edge_cache[hash % TOY_GAME_NAV_EDGE_CACHE_SIZE];
+    if (!entry->valid || entry->from != from || entry->to != to ||
+        entry->radius != radius || entry->ground_y != ground_y) {
+        int fx = g->nav_origin + (from % g->nav_width) *
+                 g->nav_cell_size + g->nav_cell_size / 2;
+        int fz = g->nav_origin + (from / g->nav_width) *
+                 g->nav_cell_size + g->nav_cell_size / 2;
+        int tx = g->nav_origin + (to % g->nav_width) *
+                 g->nav_cell_size + g->nav_cell_size / 2;
+        int tz = g->nav_origin + (to / g->nav_width) *
+                 g->nav_cell_size + g->nav_cell_size / 2;
+        int dx = to % g->nav_width - from % g->nav_width;
+        int dz = to / g->nav_width - from / g->nav_width;
+        int link = nav_link_slot(dx, dz);
+        entry->valid = 1; entry->from = from; entry->to = to;
+        entry->radius = radius; entry->ground_y = ground_y;
+        entry->allowed = toy_game_short_connection(
+            g, fx, fz, tx, tz, radius, ground_y) ||
+            enemy_nav_ramp_seam_connection(g, fx, fz, tx, tz,
+                                           radius, ground_y) ||
+            ((!dx || !dz) && link >= 0 &&
+             g->nav_link_type[from * TOY_GAME_NAV_LINK_DIRECTIONS + link] ==
+                TOY_GAME_NAV_LINK_RAMP);
+        entry->end_y = entry->allowed ? toy_game_query_ground(
+            g, tx, tz, radius, ground_y).support_y : ground_y;
+    }
+    *end_y = entry->end_y;
+    return entry->allowed;
+}
+
+static int enemy_nav_group_route_cell(const struct toy_game *g,
+                                      const struct toy_game_nav_group *group,
+                                      int cursor)
+{
+    int base = cursor / 32 * 32;
+    int cell = group->route_checkpoints[cursor / 32];
+    int i;
+    for (i = base; i < cursor; i++) {
+        int byte = group->route_steps[i / 2];
+        int direction = i & 1 ? byte >> 4 : byte & 15;
+        if (direction >= 12) return -1;
+        cell += nav_route_dx[direction] +
+                nav_route_dz[direction] * g->nav_width;
+    }
+    return cell;
+}
+
+static void enemy_nav_group_queue(struct toy_game *g, int slot)
+{
+    struct toy_game_nav_group *group = &g->nav_groups[slot];
+    int i;
+    if (!group->active || group->state == TOY_GAME_NAV_GROUP_QUEUED ||
+        group->state == TOY_GAME_NAV_GROUP_SEARCHING ||
+        group->state == TOY_GAME_NAV_GROUP_REBUILDING ||
+        group->state == TOY_GAME_NAV_GROUP_REVERSING ||
+        group->state == TOY_GAME_NAV_GROUP_ENCODING) return;
+    group->state = TOY_GAME_NAV_GROUP_QUEUED;
+    group->route_count = 0;
+    group->fallback_active = 0;
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+        if (enemy_nav_group_valid(g, &g->enemies[i]) &&
+            g->enemies[i].nav_group == slot) {
+            g->enemies[i].nav_route_cursor = 0;
+            g->enemies[i].nav_active = 0;
+        }
+    if (g->update_profile) g->update_profile->nav_group_repairs++;
+}
+
+static int enemy_nav_group_target(struct toy_game *g,
+                                  struct toy_game_nav_group *group)
+{
+    const struct toy_game_enemy *leader;
+    long long best = 0;
+    int i, found = 0, kind = -1, index = -1, x = 0, z = 0;
+    if (group->leader_index < 0 ||
+        group->leader_index >= TOY_GAME_MAX_ENEMIES) return 0;
+    leader = &g->enemies[group->leader_index];
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &g->actors[i];
+        int candidate_kind = i == TOY_GAME_PLAYER_ACTOR_INDEX ?
+                             TOY_GAME_TARGET_HOST : TOY_GAME_TARGET_ACTOR;
+        long long dx, dz, distance2;
+        if (!enemy_target_valid(g, leader, candidate_kind, i, NULL, NULL))
+            continue;
+        dx = (long long)a->x - leader->x;
+        dz = (long long)a->z - leader->z;
+        distance2 = dx * dx + dz * dz;
+        if (found && distance2 >= best) continue;
+        found = 1; best = distance2;
+        kind = candidate_kind;
+        index = candidate_kind == TOY_GAME_TARGET_HOST ? -1 : i;
+        x = a->x; z = a->z;
+    }
+    if (!found) return 0;
+    if (group->target_kind != kind || group->target_index != index ||
+        (long long)(x - group->target_x) * (x - group->target_x) +
+        (long long)(z - group->target_z) * (z - group->target_z) > 900LL * 900) {
+        group->target_kind = kind;
+        group->target_index = index;
+        group->target_x = x;
+        group->target_z = z;
+        if (group->state == TOY_GAME_NAV_GROUP_FOLLOWING ||
+            group->state == TOY_GAME_NAV_GROUP_UNREACHABLE)
+            enemy_nav_group_queue(g, (int)(group - g->nav_groups));
+    }
+    return 1;
+}
+
+static void enemy_nav_group_assign(struct toy_game *g, int index)
+{
+    struct toy_game_enemy *e = &g->enemies[index];
+    int slot = -1, i;
+    long long best = 0;
+    if (e->active != 1 || enemy_nav_group_valid(g, e)) return;
+    e->nav_group = -1;
+    for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++) {
+        struct toy_game_nav_group *group = &g->nav_groups[i];
+        const struct toy_game_enemy *leader;
+        long long dx, dz, distance2;
+        if (!group->active || group->state != TOY_GAME_NAV_GROUP_OPEN ||
+            group->member_count >= group->member_limit) continue;
+        leader = &g->enemies[group->leader_index];
+        dx = (long long)leader->x - e->x;
+        dz = (long long)leader->z - e->z;
+        distance2 = dx * dx + dz * dz;
+        if (distance2 > (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
+                        TOY_GAME_SHORT_CONNECTION_RANGE ||
+            (slot >= 0 && distance2 >= best)) continue;
+        if (!toy_game_short_connection(g, e->x, e->z, leader->x, leader->z,
+                                       group->radius, e->ground_y)) continue;
+        slot = i; best = distance2;
+    }
+    if (slot < 0)
+        for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++)
+            if (!g->nav_groups[i].active) { slot = i; break; }
+    if (slot < 0) return;
+    if (!g->nav_groups[slot].active) {
+        struct toy_game_nav_group *group = &g->nav_groups[slot];
+        group->active = 1;
+        group->generation = ++g->nav_group_generation;
+        group->state = TOY_GAME_NAV_GROUP_OPEN;
+        group->member_count = 0;
+        group->member_limit = TOY_GAME_NAV_GROUP_MIN_MEMBERS +
+            (int)(enemy_nav_hash((unsigned int)group->generation ^
+                  (unsigned int)g->rng) %
+                  (TOY_GAME_NAV_GROUP_MEMBERS -
+                   TOY_GAME_NAV_GROUP_MIN_MEMBERS + 1));
+        group->leader_index = index;
+        group->radius = enemy_radius(e);
+        group->age_ms = 0;
+        group->target_refresh_ms = 0;
+        group->target_kind = -1;
+        group->target_index = -1;
+        group->route_count = 0;
+        group->fallback_active = 0;
+    }
+    e->nav_group = slot;
+    e->nav_group_generation = g->nav_groups[slot].generation;
+    e->nav_route_cursor = 0;
+    e->nav_stuck_ms = 0;
+    e->nav_active = 0;
+    e->nav_attach_retry_ms = 0;
+    g->nav_groups[slot].member_count++;
+    if (g->update_profile) g->update_profile->nav_group_joins++;
+}
+
+static void enemy_nav_group_fail(struct toy_game *g, int slot);
+
+static void enemy_nav_group_begin_search(struct toy_game *g, int slot)
+{
+    struct toy_game_nav_group *group = &g->nav_groups[slot];
+    int start, goal;
+    const struct toy_game_enemy *leader = &g->enemies[group->leader_index];
+    if (!enemy_nav_group_target(g, group)) return;
+    start = nav_cell_index(g, leader->x, leader->z);
+    goal = nav_cell_index(g, group->target_x, group->target_z);
+    /* The shared component map includes a large Charger plus half-cell
+     * padding. It can omit doors that the group's actual radius can cross.
+     * Let the cached physical edge checks establish connectivity instead. */
+    if (start < 0 || goal < 0) {
+        enemy_nav_group_fail(g, slot);
+        return;
+    }
+    if (++g->nav_search_serial == 0) {
+        memset(g->nav_search_seen, 0, sizeof(g->nav_search_seen));
+        g->nav_search_serial = 1;
+    }
+    g->nav_search_group = slot;
+    g->nav_search_head = 0;
+    g->nav_search_tail = 1;
+    g->nav_search_direction = 25;
+    g->nav_search_queue[0] = (unsigned short)start;
+    g->nav_search_seen[start] = g->nav_search_serial;
+    g->nav_search_parent[start] = (unsigned short)start;
+    g->nav_search_ground_y[start] = leader->ground_y;
+    group->goal_cell = goal;
+    group->route_count = 0;
+    group->state = TOY_GAME_NAV_GROUP_SEARCHING;
+    if (g->update_profile) g->update_profile->nav_group_searches++;
+}
+
+static void enemy_nav_group_fail(struct toy_game *g, int slot)
+{
+    struct toy_game_nav_group *group = &g->nav_groups[slot];
+    group->state = TOY_GAME_NAV_GROUP_UNREACHABLE;
+}
+
+static void enemy_nav_group_work(struct toy_game *g)
+{
+    struct toy_game_nav_group *group;
+    int slot = g->nav_search_group, quota = TOY_GAME_NAV_WORK_PER_TICK;
+    int count = g->nav_width * g->nav_height;
+    if (slot < 0) {
+        int offset;
+        for (offset = 1; offset <= TOY_GAME_NAV_MAX_GROUPS; offset++) {
+            int candidate = (g->nav_dispatch_cursor + offset) %
+                            TOY_GAME_NAV_MAX_GROUPS;
+            if (g->nav_groups[candidate].active &&
+                g->nav_groups[candidate].state == TOY_GAME_NAV_GROUP_QUEUED) {
+                slot = candidate;
+                break;
+            }
+        }
+        if (slot < 0) return;
+        g->nav_dispatch_cursor = slot;
+        enemy_nav_group_begin_search(g, slot);
+        if (g->nav_search_group != slot) return;
+    }
+    group = &g->nav_groups[slot];
+    while (quota > 0 && group->state == TOY_GAME_NAV_GROUP_SEARCHING) {
+        int current, cx, cz, dx, dz;
+        if (g->nav_search_direction == 25) {
+            if (g->nav_search_head == g->nav_search_tail) {
+                enemy_nav_group_fail(g, slot);
+                g->nav_search_group = -1;
+                break;
+            }
+            g->nav_search_current =
+                g->nav_search_queue[g->nav_search_head++];
+            g->nav_search_direction = 0;
+            if (g->update_profile) g->update_profile->nav_group_nodes++;
+            if (g->nav_search_current == group->goal_cell) {
+                group->rebuild_cell = g->nav_search_current;
+                group->state = TOY_GAME_NAV_GROUP_REBUILDING;
+                break;
+            }
+        }
+        current = g->nav_search_current;
+        cx = current % g->nav_width;
+        cz = current / g->nav_width;
+        dx = g->nav_search_direction % 5 - 2;
+        dz = g->nav_search_direction / 5 - 2;
+        g->nav_search_direction++;
+        quota--;
+        {
+            int next;
+            int end_y;
+            if (!dx && !dz) continue;
+            if ((dx < -1 || dx > 1 || dz < -1 || dz > 1) && dx && dz)
+                continue;
+            if (cx + dx < 0 || cz + dz < 0 ||
+                cx + dx >= g->nav_width || cz + dz >= g->nav_height)
+                continue;
+            next = (cz + dz) * g->nav_width + cx + dx;
+            if (g->nav_search_seen[next] == g->nav_search_serial) continue;
+            if (!enemy_nav_edge(g, current, next, group->radius,
+                               g->nav_search_ground_y[current], &end_y))
+                continue;
+            g->nav_search_seen[next] = g->nav_search_serial;
+            g->nav_search_parent[next] = (unsigned short)current;
+            g->nav_search_ground_y[next] = end_y;
+            if (g->nav_search_tail < count)
+                g->nav_search_queue[g->nav_search_tail++] =
+                    (unsigned short)next;
+        }
+    }
+    while (quota-- > 0 && group->state == TOY_GAME_NAV_GROUP_REBUILDING) {
+        int current = group->rebuild_cell;
+        g->nav_search_queue[group->route_count++] =
+            (unsigned short)current;
+        if (g->nav_search_parent[current] == current) {
+            group->reverse_cursor = 0;
+            group->state = TOY_GAME_NAV_GROUP_REVERSING;
+            break;
+        }
+        group->rebuild_cell = g->nav_search_parent[current];
+    }
+    while (quota-- > 0 && group->state == TOY_GAME_NAV_GROUP_REVERSING) {
+        int a = group->reverse_cursor++;
+        int b = group->route_count - 1 - a;
+        if (a >= b) {
+            group->encode_cursor = 0;
+            group->route_checkpoints[0] = g->nav_search_queue[0];
+            group->state = TOY_GAME_NAV_GROUP_ENCODING;
+            break;
+        }
+        {
+            unsigned short cell = g->nav_search_queue[a];
+            g->nav_search_queue[a] = g->nav_search_queue[b];
+            g->nav_search_queue[b] = cell;
+        }
+    }
+    while (quota-- > 0 && group->state == TOY_GAME_NAV_GROUP_ENCODING) {
+        int i = group->encode_cursor++;
+        if (i + 1 >= group->route_count) {
+            int target_x, target_z;
+            int valid = enemy_target_valid(
+                g, &g->enemies[group->leader_index],
+                group->target_kind, group->target_index,
+                &target_x, &target_z);
+            if (!valid ||
+                (long long)(target_x - group->target_x) *
+                    (target_x - group->target_x) +
+                (long long)(target_z - group->target_z) *
+                    (target_z - group->target_z) > 900LL * 900) {
+                group->state = TOY_GAME_NAV_GROUP_QUEUED;
+                group->route_count = 0;
+            } else {
+                group->state = TOY_GAME_NAV_GROUP_FOLLOWING;
+                group->route_version++;
+                if (g->update_profile) g->update_profile->nav_group_routes++;
+            }
+            g->nav_search_group = -1;
+            break;
+        }
+        {
+            int from = g->nav_search_queue[i];
+            int to = g->nav_search_queue[i + 1];
+            int dx = to % g->nav_width - from % g->nav_width;
+            int dz = to / g->nav_width - from / g->nav_width;
+            int direction;
+            for (direction = 0; direction < 12; direction++)
+                if (nav_route_dx[direction] == dx &&
+                    nav_route_dz[direction] == dz) break;
+            if (direction == 12) {
+                enemy_nav_group_fail(g, slot);
+                g->nav_search_group = -1;
+                break;
+            }
+            if (!(i & 1))
+                group->route_steps[i / 2] = (unsigned char)direction;
+            else
+                group->route_steps[i / 2] |=
+                    (unsigned char)(direction << 4);
+            if ((i + 1) % 32 == 0)
+                group->route_checkpoints[(i + 1) / 32] =
+                    (unsigned short)to;
+        }
+    }
+}
+
+static void enemy_nav_groups_update(struct toy_game *g, int dt_ms)
+{
+    int i, j;
+    int64_t started = 0;
+    if (g->nav_flow_enabled) { enemy_flow_update(g); return; }
+    if (!g->nav_group_enabled) return;
+    if (g->update_profile && g->update_profile->clock_us)
+        started = g->update_profile->clock_us();
+    for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++) {
+        struct toy_game_nav_group *group = &g->nav_groups[i];
+        int leader = -1, count = 0;
+        if (!group->active) continue;
+        for (j = 0; j < TOY_GAME_MAX_ENEMIES; j++)
+            if (g->enemies[j].active == 1 &&
+                enemy_nav_group_valid(g, &g->enemies[j]) &&
+                g->enemies[j].nav_group == i) {
+                count++;
+                if (leader < 0) leader = j;
+            }
+        if (!count) {
+            group->active = 0;
+            if (g->nav_search_group == i) g->nav_search_group = -1;
+            continue;
+        }
+        group->member_count = count;
+        if (group->leader_index < 0 ||
+            g->enemies[group->leader_index].active != 1 ||
+            !enemy_nav_group_valid(g, &g->enemies[group->leader_index]) ||
+            g->enemies[group->leader_index].nav_group != i)
+            group->leader_index = leader;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++)
+        enemy_nav_group_assign(g, i);
+    for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++) {
+        struct toy_game_nav_group *group = &g->nav_groups[i];
+        if (!group->active) continue;
+        group->age_ms += dt_ms;
+        group->target_refresh_ms -= dt_ms;
+        if (group->state == TOY_GAME_NAV_GROUP_OPEN) {
+            if (group->member_count >= group->member_limit ||
+                group->age_ms >= TOY_GAME_NAV_GROUP_WAIT_MS)
+                group->state = TOY_GAME_NAV_GROUP_QUEUED;
+        }
+        if ((group->state == TOY_GAME_NAV_GROUP_FOLLOWING ||
+             group->state == TOY_GAME_NAV_GROUP_UNREACHABLE) &&
+            group->target_refresh_ms <= 0) {
+            enemy_nav_group_target(g, group);
+            group->target_refresh_ms = TOY_GAME_RETARGET_MS;
+        }
+        if (group->state == TOY_GAME_NAV_GROUP_UNREACHABLE) {
+            struct toy_game_enemy *leader =
+                &g->enemies[group->leader_index];
+            int dx = group->fallback_x - leader->x;
+            int dz = group->fallback_z - leader->z;
+            long long distance2 = (long long)dx * dx + (long long)dz * dz;
+            if (distance2 + (long long)leader->speed * leader->speed * 4 <
+                group->fallback_best_distance2) {
+                group->fallback_best_distance2 = distance2;
+                group->fallback_stuck_ms = 0;
+            } else
+                group->fallback_stuck_ms += dt_ms;
+            if (group->fallback_active &&
+                (distance2 <
+                     (long long)(leader->speed + 90) *
+                     (leader->speed + 90) ||
+                 group->fallback_stuck_ms >= 800))
+                group->fallback_active = 0;
+            if (!group->fallback_active) {
+                if (toy_game_short_connection(g, leader->x, leader->z,
+                                              group->target_x,
+                                              group->target_z,
+                                              group->radius,
+                                              leader->ground_y)) {
+                    group->fallback_x = group->target_x;
+                    group->fallback_z = group->target_z;
+                } else if (!nav_next_waypoint(g, leader->x, leader->z,
+                                       group->target_x, group->target_z,
+                                       group->radius, leader->ground_y,
+                                       &group->fallback_x,
+                                       &group->fallback_z)) {
+                    group->fallback_x = group->target_x;
+                    group->fallback_z = group->target_z;
+                }
+                group->fallback_active = 1;
+                group->fallback_stuck_ms = 0;
+                dx = group->fallback_x - leader->x;
+                dz = group->fallback_z - leader->z;
+                group->fallback_best_distance2 =
+                    (long long)dx * dx + (long long)dz * dz;
+            }
+        }
+        if (g->update_profile && group->state != TOY_GAME_NAV_GROUP_FOLLOWING)
+            g->update_profile->nav_group_waiting += group->member_count;
+    }
+    enemy_nav_group_work(g);
+    if (started) {
+        int64_t elapsed = g->update_profile->clock_us() - started;
+        g->update_profile->nav_group_us += elapsed;
+        if (elapsed > g->update_profile->nav_group_max_us)
+            g->update_profile->nav_group_max_us = elapsed;
+    }
+}
+
+static int enemy_nav_retained_waypoint(struct toy_game_enemy *e,
+                                        int *out_x, int *out_z)
+{
+    if (e->nav_attach_retry_ms > 0) e->nav_attach_retry_ms -= 16;
+    if (e->nav_active) {
+        long long dx = (long long)e->nav_x - e->x;
+        long long dz = (long long)e->nav_z - e->z;
+        long long remaining = dx * dx + dz * dz;
+        if (remaining + 24LL * 24 < e->nav_best_distance2) {
+            e->nav_best_distance2 = remaining;
+            e->nav_stuck_ms = 0;
+        } else e->nav_stuck_ms += 16;
+        if (remaining > 8LL * 8 &&
+            e->nav_stuck_ms < 800) {
+            *out_x = e->nav_x; *out_z = e->nav_z;
+            return 1;
+        }
+        e->nav_active = 0;
+    }
+    return 0;
+}
+
+/* A new leader route can start beyond a doorway that a lagging member has
+ * not crossed. Repair from that member's own position using the same physical
+ * graph; a departed member never pays another eight-second gathering wait. */
+static void enemy_nav_member_repair(struct toy_game *g,
+                                    struct toy_game_enemy *e)
+{
+    const struct toy_game_nav_group *old = &g->nav_groups[e->nav_group];
+    int slot;
+    e->nav_attach_retry_ms = 512;
+    if (old->member_count <= 1) {
+        enemy_nav_group_queue(g, e->nav_group);
+        return;
+    }
+    for (slot = 0; slot < TOY_GAME_NAV_MAX_GROUPS; ++slot)
+        if (!g->nav_groups[slot].active) {
+            struct toy_game_nav_group *repair = &g->nav_groups[slot];
+            memset(repair, 0, sizeof(*repair));
+            repair->active = 1;
+            repair->generation = ++g->nav_group_generation;
+            repair->state = TOY_GAME_NAV_GROUP_QUEUED;
+            repair->member_count = 1;
+            repair->member_limit = old->member_limit;
+            repair->leader_index = (int)(e - g->enemies);
+            repair->radius = old->radius;
+            repair->age_ms = TOY_GAME_NAV_GROUP_WAIT_MS;
+            repair->target_kind = -1;
+            repair->target_index = -1;
+            e->nav_group = slot;
+            e->nav_group_generation = repair->generation;
+            e->nav_route_cursor = 0;
+            e->nav_active = 0;
+            e->nav_stuck_ms = 0;
+            if (g->update_profile) g->update_profile->nav_group_repairs++;
+            return;
+        }
+}
+
+/* 0: ungrouped, 1: route waypoint, 2: wait for the retained task. */
+static int enemy_nav_group_waypoint_impl(struct toy_game *g,
+                                    struct toy_game_enemy *e,
+                                    int *out_x, int *out_z)
+{
+    struct toy_game_nav_group *group;
+    int cursor, cell, x, z;
+    long long dx, dz;
+    if (!g->nav_group_enabled) return 0;
+    if (!enemy_nav_group_valid(g, e)) return 0;
+    group = &g->nav_groups[e->nav_group];
+    if (group->state == TOY_GAME_NAV_GROUP_OPEN) {
+        return 2;
+    }
+    if (group->state == TOY_GAME_NAV_GROUP_UNREACHABLE) {
+        if (!group->fallback_active) return 2;
+        if (enemy_nav_retained_waypoint(e, out_x, out_z)) return 1;
+        if (e->nav_attach_retry_ms > 0) return 2;
+        x = group->fallback_x; z = group->fallback_z;
+        if ((actor_segment_blocked(g, e->x, e->z, x, z,
+                                    group->radius, e->ground_y) ||
+             !nav_segment_allowed(g, e->x, e->z, x, z,
+                                  group->radius, e->ground_y)) &&
+            !nav_next_waypoint(g, e->x, e->z, x, z, group->radius,
+                               e->ground_y, &x, &z)) {
+            enemy_nav_member_repair(g, e);
+            return 2;
+        }
+        e->nav_x = x; e->nav_z = z; e->nav_active = 1;
+        e->nav_stuck_ms = 0;
+        dx = (long long)x - e->x; dz = (long long)z - e->z;
+        e->nav_best_distance2 = dx * dx + dz * dz;
+        *out_x = x; *out_z = z;
+        return 1;
+    }
+    if (group->state != TOY_GAME_NAV_GROUP_FOLLOWING ||
+        group->route_count <= 0) return 2;
+    if (enemy_nav_retained_waypoint(e, out_x, out_z)) return 1;
+    cursor = e->nav_route_cursor;
+    if (cursor >= group->route_count) cursor = group->route_count - 1;
+    cell = enemy_nav_group_route_cell(g, group, cursor);
+    if (cell < 0) return 2;
+    x = g->nav_origin + (cell % g->nav_width) * g->nav_cell_size +
+        g->nav_cell_size / 2;
+    z = g->nav_origin + (cell / g->nav_width) * g->nav_cell_size +
+        g->nav_cell_size / 2;
+    dx = (long long)x - e->x; dz = (long long)z - e->z;
+    /* Reach the corner before advancing: a speed-sized tolerance can put
+     * the follower on the wrong side of the next segment's wall. */
+    if (dx * dx + dz * dz <= 8LL * 8 &&
+        cursor + 1 < group->route_count) {
+        cursor++;
+        e->nav_route_cursor = cursor;
+        cell = enemy_nav_group_route_cell(g, group, cursor);
+        if (cell < 0) return 2;
+        x = g->nav_origin + (cell % g->nav_width) * g->nav_cell_size +
+            g->nav_cell_size / 2;
+        z = g->nav_origin + (cell / g->nav_width) * g->nav_cell_size +
+            g->nav_cell_size / 2;
+        e->nav_active = 0;
+    }
+    if (!e->nav_active) {
+        int candidate, selected = -1;
+        int farthest = cursor + 2;
+        if (e->nav_attach_retry_ms > 0) return 2;
+        if (farthest >= group->route_count)
+            farthest = group->route_count - 1;
+        for (candidate = farthest; candidate >= cursor; candidate--) {
+            int probe = enemy_nav_group_route_cell(g, group, candidate);
+            if (probe < 0) continue;
+            int px = g->nav_origin + (probe % g->nav_width) *
+                     g->nav_cell_size + g->nav_cell_size / 2;
+            int pz = g->nav_origin + (probe / g->nav_width) *
+                     g->nav_cell_size + g->nav_cell_size / 2;
+            int ramp_link = 0;
+            if (candidate > 0 && candidate <= cursor + 1) {
+                int from = enemy_nav_group_route_cell(
+                    g, group, candidate - 1);
+                if (from < 0) continue;
+                int from_x = g->nav_origin + (from % g->nav_width) *
+                             g->nav_cell_size + g->nav_cell_size / 2;
+                int from_z = g->nav_origin + (from / g->nav_width) *
+                             g->nav_cell_size + g->nav_cell_size / 2;
+                int link = nav_link_slot(probe % g->nav_width -
+                                         from % g->nav_width,
+                                         probe / g->nav_width -
+                                         from / g->nav_width);
+                long long fx = (long long)from_x - e->x;
+                long long fz = (long long)from_z - e->z;
+                ramp_link = link >= 0 &&
+                    (from_x == px || from_z == pz) &&
+                    fx * fx + fz * fz <=
+                        (long long)(g->nav_cell_size + 120) *
+                        (g->nav_cell_size + 120) &&
+                    g->nav_link_type[from * TOY_GAME_NAV_LINK_DIRECTIONS +
+                                     link] == TOY_GAME_NAV_LINK_RAMP;
+            }
+            if (ramp_link ||
+                enemy_nav_ramp_seam_connection(g, e->x, e->z, px, pz,
+                                               group->radius, e->ground_y) ||
+                (!actor_segment_blocked(g, e->x, e->z, px, pz,
+                                        group->radius, e->ground_y) &&
+                 nav_segment_allowed(g, e->x, e->z, px, pz,
+                                     group->radius, e->ground_y))) {
+                selected = candidate;
+                x = px; z = pz;
+                break;
+            }
+        }
+        if (selected < 0) {
+            /* A follower can be behind a corner which the leader has already
+             * cleared. Retain a local connector instead of re-gathering. */
+            e->nav_attach_retry_ms = 512;
+            if (nav_next_waypoint(g, e->x, e->z, x, z, group->radius,
+                                  e->ground_y, &e->nav_x, &e->nav_z)) {
+                e->nav_active = 1;
+                e->nav_stuck_ms = 0;
+                dx = (long long)e->nav_x - e->x;
+                dz = (long long)e->nav_z - e->z;
+                e->nav_best_distance2 = dx * dx + dz * dz;
+                *out_x = e->nav_x; *out_z = e->nav_z;
+                return 1;
+            }
+            enemy_nav_member_repair(g, e);
+            return 2;
+        }
+        e->nav_route_cursor = selected;
+        e->nav_x = x; e->nav_z = z; e->nav_active = 1;
+        e->nav_stuck_ms = 0;
+        dx = (long long)x - e->x; dz = (long long)z - e->z;
+        e->nav_best_distance2 = dx * dx + dz * dz;
+    }
+    *out_x = x; *out_z = z;
+    return 1;
+}
+
+static int enemy_nav_group_waypoint(struct toy_game *g,
+                                    struct toy_game_enemy *e,
+                                    int *out_x, int *out_z)
+{
+    struct toy_game_update_profile *p = g->update_profile;
+    int64_t start = p && p->clock_us ? p->clock_us() : 0;
+    int result = enemy_nav_group_waypoint_impl(g, e, out_x, out_z);
+    if (start) p->nav_intent_us += p->clock_us() - start;
+    return result;
+}
+
+#include "game_navigation.inc"
 
 static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
                               int target_x, int target_z, int speed)
@@ -4119,14 +5098,17 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             NULL, NULL))
         e->retarget_timer_ms = 0;
     if (e->retarget_timer_ms <= 0 || e->target_kind < 0) {
-        ai_available = nearest_ai_position(g, e, &ai_x, &ai_z, &ai_dist2,
-                                           &ai_index);
-        primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
-        target_kind = primary_valid ? 0 : -1;
-        if (ai_available &&
-            (target_kind < 0 || ai_dist2 < primary_dist2)) target_kind = 1;
+        if (!nearest_direct_enemy_target(g, e, &target_kind,
+                                         &e->target_index)) {
+            ai_available = nearest_ai_position(g, e, &ai_x, &ai_z,
+                                               &ai_dist2, &ai_index);
+            primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
+            target_kind = primary_valid ? 0 : -1;
+            if (ai_available &&
+                (target_kind < 0 || ai_dist2 < primary_dist2)) target_kind = 1;
+            e->target_index = target_kind == 1 ? ai_index : -1;
+        }
         e->target_kind = target_kind;
-        e->target_index = target_kind == 1 ? ai_index : -1;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
         target_kind = e->target_kind;
@@ -4141,15 +5123,79 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
     }
     dx = target_x - e->x;
     dz = target_z - e->z;
+    e->nav_target_actor = target_kind == TOY_GAME_TARGET_HOST ?
+                         TOY_GAME_PLAYER_ACTOR_INDEX : e->target_index;
     dist = isqrt((long long)dx * dx + (long long)dz * dz);
     chase_enemy(g, e, dx, dz, dist, target_kind);
 }
 
 
 /* 敌人间分离：按两者碰撞半径留出少量余量，避免尸群挤成一团。 */
+static void separate_flow_enemies(struct toy_game *g)
+{
+    int heads[128], links[TOY_GAME_MAX_ENEMIES];
+    int bx[TOY_GAME_MAX_ENEMIES], bz[TOY_GAME_MAX_ENEMIES];
+    int pushes_x[TOY_GAME_MAX_ENEMIES] = {0};
+    int pushes_z[TOY_GAME_MAX_ENEMIES] = {0};
+    int i, dx, dz;
+    for (i = 0; i < 128; ++i) heads[i] = -1;
+    for (i = TOY_GAME_MAX_ENEMIES - 1; i >= 0; --i) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        unsigned int bucket;
+        if (e->active != 1 || e->airborne_ms > 0) continue;
+        bx[i] = (e->x + g->room_limit) / 1600;
+        bz[i] = (e->z + g->room_limit) / 1600;
+        bucket = ((unsigned int)bx[i] * 31u + (unsigned int)bz[i] * 131u) & 127;
+        links[i] = heads[bucket]; heads[bucket] = i;
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
+        struct toy_game_enemy *a = &g->enemies[i];
+        int candidates = 0;
+        if (a->active != 1 || a->airborne_ms > 0) continue;
+        for (dz = -1; dz <= 1; ++dz) for (dx = -1; dx <= 1; ++dx) {
+            unsigned int bucket = ((unsigned int)(bx[i] + dx) * 31u +
+                                   (unsigned int)(bz[i] + dz) * 131u) & 127;
+            int j;
+            for (j = heads[bucket]; j >= 0 && candidates < 32; j = links[j]) {
+                struct toy_game_enemy *b = &g->enemies[j];
+                int x, z, distance, separation, height;
+                if (j <= i || bx[j] != bx[i] + dx || bz[j] != bz[i] + dz) continue;
+                candidates++;
+                height = a->ground_y - b->ground_y;
+                if (height > TOY_CONFIG_GROUND_STEP_HEIGHT ||
+                    height < -TOY_CONFIG_GROUND_STEP_HEIGHT) continue;
+                x = b->x - a->x; z = b->z - a->z;
+                distance = isqrt((long long)x * x + (long long)z * z);
+                separation = enemy_separation_distance(a, b);
+                if (distance <= 0 || distance >= separation) continue;
+                pushes_x[i] -= x * 12 / distance; pushes_z[i] -= z * 12 / distance;
+                pushes_x[j] += x * 12 / distance; pushes_z[j] += z * 12 / distance;
+            }
+        }
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
+        struct toy_game_enemy *e = &g->enemies[i];
+        int x = pushes_x[i], z = pushes_z[i];
+        int length = isqrt((long long)x * x + (long long)z * z);
+        int maximum = e->speed > 0 ? e->speed / 4 : 12;
+        if (e->active != 1 || e->airborne_ms > 0 || !length) continue;
+        if (maximum < 1) maximum = 1;
+        if (length > maximum) { x = x * maximum / length; z = z * maximum / length; }
+        /* A separation nudge is deliberately conservative at floor seams.
+         * One body/support query suffices; ordinary locomotion owns climbing. */
+        if (!enemy_step_blocked(g, e, e->x + x, e->z + z,
+                                TOY_GAME_ENEMY_RADIUS, e->ground_y, 1)) {
+            e->x += x; e->z += z;
+        }
+    }
+}
+
 static void separate_enemies(struct toy_game *g)
 {
     int i, j;
+    int push_x[TOY_GAME_MAX_ENEMIES] = {0};
+    int push_z[TOY_GAME_MAX_ENEMIES] = {0};
+    if (g->nav_flow_enabled) { separate_flow_enemies(g); return; }
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *a = &g->enemies[i];
         if (a->active != 1) continue;
@@ -4167,18 +5213,10 @@ static void separate_enemies(struct toy_game *g)
             dist = isqrt(dist2);
             if (dist > 0) {
                 int push = 12;
-                int ax = a->x - (int)((long long)dx * push / dist);
-                int az = a->z - (int)((long long)dz * push / dist);
-                int bx = b->x + (int)((long long)dx * push / dist);
-                int bz = b->z + (int)((long long)dz * push / dist);
-                if (!enemy_position_blocked(g, ax, az, enemy_radius(a))) {
-                    a->x = ax;
-                    a->z = az;
-                }
-                if (!enemy_position_blocked(g, bx, bz, enemy_radius(b))) {
-                    b->x = bx;
-                    b->z = bz;
-                }
+                int px = (int)((long long)dx * push / dist);
+                int pz = (int)((long long)dz * push / dist);
+                push_x[i] -= px; push_z[i] -= pz;
+                push_x[j] += px; push_z[j] += pz;
             }
         }
     }
@@ -4187,6 +5225,22 @@ static void separate_enemies(struct toy_game *g)
         struct toy_game_enemy *e = &g->enemies[i];
         int limit = g->room_limit - enemy_radius(e);
         if (e->active != 1) continue;
+        /* Resolve the summed crowd force once. Bound it below forward speed
+         * so a packed doorway cannot cancel a follower's route progress. */
+        int px = push_x[i], pz = push_z[i];
+        int length = isqrt((long long)px * px + (long long)pz * pz);
+        int maximum = e->speed > 0 ? e->speed / 4 : 12;
+        int radius = enemy_nav_group_valid(g, e) ?
+                     g->nav_groups[e->nav_group].radius : enemy_radius(e);
+        if (maximum < 1) maximum = 1;
+        if (length > maximum) {
+            px = px * maximum / length;
+            pz = pz * maximum / length;
+        }
+        if ((px || pz) &&
+            !enemy_position_blocked(g, e->x + px, e->z + pz, radius)) {
+            e->x += px; e->z += pz;
+        }
         if (e->x < -limit) e->x = -limit;
         if (e->x > limit) e->x = limit;
         if (e->z < -limit) e->z = -limit;
@@ -5498,6 +6552,7 @@ void toy_game_update_held(struct toy_game *g,
     unsigned int old_fire_seq;
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
+    g->nav_tick++;
     /* The actor is already normalized by the caller and remains the sole
      * local-player gameplay state. */
     player = toy_game_local_player_actor(g);
@@ -5539,6 +6594,7 @@ void toy_game_update_held(struct toy_game *g,
     toy_game_update_projectiles(g, dt_ms);
     toy_game_update_burn_zones(g, dt_ms);
     toy_game_update_ai_teammates(g, dt_ms);
+    enemy_nav_groups_update(g, dt_ms);
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
@@ -5584,6 +6640,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
     struct toy_game_update_profile *profile;
     int64_t start = 0, mark = 0, now;
     if (!g || g->state != TOY_GAME_PLAYING) return;
+    g->nav_tick++;
     profile = g->update_profile;
     if (profile && profile->clock_us) start = mark = profile->clock_us();
     toy_game_update_projectiles(g, dt_ms);
@@ -5599,6 +6656,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
         profile->teammate_us += now - mark;
         mark = now;
     }
+    enemy_nav_groups_update(g, dt_ms);
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         if (e->active == 1) {

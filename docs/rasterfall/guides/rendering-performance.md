@@ -103,6 +103,27 @@ PLAYING 帧；初始生成 30 不能当作持续 30。CPU 核占用是同一进�
 死亡和特效演进，不能要求与 fixed tick 的逐帧 workload 相等。现场与优化建议见
 [西侧按钮调查](../archive/west-corridor-performance-20260925.md)。
 
+### 共享目标导航场诊断
+
+默认使用共享场；同一 package 的 `RF_GAME_LEGACY_FLOW_NAV=1` 选择旧集团，
+`RF_GAME_LEGACY_GROUP_NAV=1` 选择逐敌参考路径。避免同时设置对照开关。
+`RF_FLOW_TEST=1` 配合 `--logic-test` 只运行共享场行为用例及正式西侧走廊 32/64 人新旧对照。
+必须等待进程实际退出并检查 stdout、stderr 和 `rasterfall.log`，不能只读 PowerShell 的表面退出码。
+
+`FLOW-TEST` 记录到达数、建场、边验证和旧搜索次数；`FLOW-CORRIDOR` 使用固定种子、相同目标与
+图元，运行 1200 个固定逻辑步。咬击反推冷却在该专项中固定为长时，以免把到达后被击退计为未到达。
+新旧策略的集结等待、出发时间和路程不同，须同时核对全员到达及整段工作量，不能只比较某一静止阶段。
+该专项不包含 GPU 渲染，不代表帧率签收。
+
+`SCENE-LOGIC-FLOW` 的 `builds/edges/hits` 为建场次数、物理边验证和连接缓存命中，
+`samples` 是共享场/目标连接扫掠预留的有界采样工作量，直达短连接另看 `nav_short_queries/nav_samples`。
+`waiting/repairs/evictions/overflow` 分别计没有共享路点而进入局部探索的调用、共享格细分、场淘汰及
+节点容量不足。持续移动版本的 `waiting` 不代表敌人原地等待，也不等于实际停步时长。
+`work_us` 只覆盖共享任务调度/搜索/细分，不包含全部个体直达与局部移动；它嵌套于 world 更新，不能
+与 `world_us` 相加。`intent_us` 覆盖个体直达检查、近追可达候选选择和局部路点接入；共享场的
+导航计时为 `work_us + intent_us`，集团对照为 `nav_group_us + intent_us`。这些计时不包含实际
+位移碰撞、战斗和分离；读取总成本时仍须检查地面查询及完整 world 更新。
+
 ### Game 导航与扫描分段
 
 西侧坡道的逻辑地形对照可在 Windows package 根目录运行：
@@ -116,7 +137,7 @@ Remove-Item Env:RF_TERRAIN_BENCH
 该显式诊断入口跳过普通逻辑回归，使用正式地图的玩法图元、正式西侧按钮的刷怪矩形、
 固定种子和全普通追击敌人。对照组只把西侧六段坡道／平台碰撞的高度差压为零，
 保留图元类型、数量、顺序、其他地图内容及固定目标；0、16、32、64 人各运行
-五轮交替顺序的 240 个 16ms Game tick。`TERRAIN-BENCH-TIME` 是未绑定 Game
+五轮交替顺序的 960 个 16ms Game tick，覆盖默认共享场追击及后续行进。`TERRAIN-BENCH-TIME` 是未绑定 Game
 profile 的完整 world 更新墙钟；`TERRAIN-BENCH-NAV` 来自同初态的第二次运行，
 用于解释导航候选、采样和碰撞扫描，不与前者相加。测试要求所有敌人保持存活且
 首个敌人穿过坡道。两种地形可能选择不同路径，应先核对实际轨迹和工作量，

@@ -948,7 +948,7 @@ $(LIBC_OBJS) $(APP_OBJS) $(APP_EXTRA_OBJS_rasterfall) \
 $(APP_EXTRA_OBJS_vmd_inspect) $(APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
-$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1727,7 +1727,7 @@ $(SELF_LIB_A): $(SELF_LIBC_OBJS)
 
 # ─── App 编译 + 链接规则 ──────────────────────────────────────
 
-$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

@@ -18,7 +18,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
-| 敌人直接追击、集团导航与逻辑帧时间优化（实施中） | [活动计划中的导航方案](plans/gpu-scene-renderer.md#敌人直接追击与集团导航)、[玩法架构](architecture/gameplay.md) | `rasterfall/lib/game.c`、`rasterfall/include/toy_game.h`；短连接查询已接入，目标优先级、集结、共享路线、预算及脱困待验收 |
+| 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[活动计划](plans/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |
 | FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |

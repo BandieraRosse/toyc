@@ -4748,6 +4748,13 @@ startup_again:
         }
         accumulator += elapsed;
         t_stage = now;
+        {
+            const char *legacy_group = getenv("RF_GAME_LEGACY_GROUP_NAV");
+            const char *flow = getenv("RF_GAME_LEGACY_FLOW_NAV");
+            game.nav_flow_enabled = !(flow && flow[0] == '1') &&
+                                    !(legacy_group && legacy_group[0] == '1');
+            game.nav_group_enabled = !(legacy_group && legacy_group[0] == '1');
+        }
         if (options.frame_audit && options.gpu_scene_independent_preview) {
             game_update_profile.clock_us = rf_core_clock_now_us;
             const char *legacy_ground = getenv("RF_GAME_LEGACY_NAV_GROUND");
@@ -5455,7 +5462,7 @@ startup_again:
                             (long long)game_update_profile.enemy_type_us[4],game_update_profile.enemy_type_calls[4],
                             (long long)game_update_profile.enemy_type_us[5],game_update_profile.enemy_type_calls[5]);
                     if (options.frame_audit)
-                        __printf("SCENE-LOGIC-NAV frame=%llu nav_search_us=%lld nav_paths_us=%lld nav_paths_max_us=%lld nav_searches=%u nav_nodes=%u nav_candidates=%u nav_segments=%u nav_samples=%u nav_short_queries=%u nav_short_reachable=%u nav_ground_queries=%u ground_scans=%u ground_heights=%u body_queries=%u body_scans=%u segment_queries=%u segment_scans=%u ramp_transition_queries=%u ramp_transition_scans=%u\n",
+                        __printf("SCENE-LOGIC-NAV frame=%llu nav_search_us=%lld nav_paths_us=%lld nav_paths_max_us=%lld nav_searches=%u nav_nodes=%u nav_candidates=%u nav_segments=%u nav_samples=%u nav_short_queries=%u nav_short_reachable=%u nav_group_us=%lld nav_group_max_us=%lld nav_group_searches=%u nav_group_nodes=%u nav_group_routes=%u nav_group_joins=%u nav_group_repairs=%u nav_group_waiting=%u nav_ground_queries=%u ground_scans=%u ground_heights=%u body_queries=%u body_scans=%u segment_queries=%u segment_scans=%u ramp_transition_queries=%u ramp_transition_scans=%u\n",
                             (unsigned long long)enemy_render.frame_id,
                             (long long)game_update_profile.nav_search_us,
                             (long long)game_update_profile.nav_paths_us,
@@ -5467,6 +5474,14 @@ startup_again:
                             game_update_profile.nav_samples,
                             game_update_profile.nav_short_queries,
                             game_update_profile.nav_short_reachable,
+                            (long long)game_update_profile.nav_group_us,
+                            (long long)game_update_profile.nav_group_max_us,
+                            game_update_profile.nav_group_searches,
+                            game_update_profile.nav_group_nodes,
+                            game_update_profile.nav_group_routes,
+                            game_update_profile.nav_group_joins,
+                            game_update_profile.nav_group_repairs,
+                            game_update_profile.nav_group_waiting,
                             game_update_profile.nav_ground_queries,
                             game_update_profile.ground_scans,
                             game_update_profile.ground_heights,
@@ -5478,6 +5493,14 @@ startup_again:
                             game_update_profile.ramp_transition_scans);
                     if (options.frame_audit) {
                         int ai=0,alive=0,dying=0,types[6]={0};
+                        __printf("SCENE-LOGIC-FLOW frame=%llu builds=%u edges=%u samples=%u hits=%u waiting=%u repairs=%u evictions=%u overflow=%u work_us=%lld intent_us=%lld\n",
+                            (unsigned long long)enemy_render.frame_id,
+                            game_update_profile.flow_builds, game_update_profile.flow_edges,
+                            game_update_profile.flow_samples, game_update_profile.flow_hits,
+                            game_update_profile.flow_waiting, game_update_profile.flow_repairs,
+                            game_update_profile.flow_evictions, game_update_profile.flow_overflow,
+                            (long long)game_update_profile.flow_us,
+                            (long long)game_update_profile.nav_intent_us);
                         int64_t sampled_us=rf_core_time_us(&core);
                         for (int i=0;i<TOY_GAME_MAX_ACTORS;++i)
                             if (game.actors[i].active && game.actors[i].kind==TOY_GAME_ACTOR_AI) ai++;

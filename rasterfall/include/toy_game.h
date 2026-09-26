@@ -298,6 +298,79 @@ struct toy_game_ground_query {
 #define TOY_GAME_NAV_MAX_SIDE 128
 #define TOY_GAME_NAV_MAX_CELLS (TOY_GAME_NAV_MAX_SIDE * TOY_GAME_NAV_MAX_SIDE)
 #define TOY_GAME_NAV_LINK_DIRECTIONS 8
+#define TOY_GAME_NAV_MAX_GROUPS TOY_GAME_MAX_ENEMIES
+#define TOY_GAME_NAV_GROUP_MEMBERS 16
+#define TOY_GAME_NAV_GROUP_MIN_MEMBERS 8
+#define TOY_GAME_NAV_GROUP_WAIT_MS 8000
+#define TOY_GAME_NAV_EDGE_CACHE_SIZE 4096
+#define TOY_GAME_NAV_WORK_PER_TICK 512
+
+/* Shared reverse fields. Node IDs are one-based; zero means no connector.
+ * All scratch storage belongs to Game, including resumable heap operations. */
+#define TOY_GAME_FLOW_MAX_NODES 24576
+#define TOY_GAME_FLOW_FIELDS 4
+#define TOY_GAME_FLOW_EDGES_PER_TICK 512
+#define TOY_GAME_FLOW_SAMPLES_PER_TICK 2048
+#define TOY_GAME_FLOW_LOCAL_PER_TICK 512
+#define TOY_GAME_FLOW_EDGE_CACHE 8192
+#define TOY_GAME_FLOW_HINTS 256
+struct toy_game_flow_hint {
+    int cell, y;
+    unsigned short node;
+};
+struct toy_game_flow_node {
+    int x, z, y;
+    unsigned short cell, sibling;
+};
+struct toy_game_flow_edge {
+    unsigned short from, to;
+    unsigned char result;
+};
+struct toy_game_flow_field {
+    int active, generation, actor, actor_id;
+    int target_x, target_z, target_y, target_source_y, seed;
+    int clearing, heap_count, current, neighbor_cell, neighbor;
+    int complete, users, refresh_tick;
+    int guide_x, guide_z;
+    struct toy_game_flow_hint hints[TOY_GAME_FLOW_HINTS];
+    unsigned short requested[TOY_GAME_MAX_ENEMIES];
+    uint64_t used_tick, born_tick;
+    unsigned int distance[TOY_GAME_FLOW_MAX_NODES + 1];
+    unsigned short next[TOY_GAME_FLOW_MAX_NODES + 1];
+    unsigned short heap[TOY_GAME_FLOW_MAX_NODES + 1];
+    unsigned short position[TOY_GAME_FLOW_MAX_NODES + 1];
+};
+
+enum toy_game_nav_group_state {
+    TOY_GAME_NAV_GROUP_OPEN = 1,
+    TOY_GAME_NAV_GROUP_QUEUED,
+    TOY_GAME_NAV_GROUP_SEARCHING,
+    TOY_GAME_NAV_GROUP_REBUILDING,
+    TOY_GAME_NAV_GROUP_REVERSING,
+    TOY_GAME_NAV_GROUP_ENCODING,
+    TOY_GAME_NAV_GROUP_FOLLOWING,
+    TOY_GAME_NAV_GROUP_UNREACHABLE
+};
+
+struct toy_game_nav_group {
+    int active, generation, state;
+    int member_count, member_limit, leader_index;
+    int radius;
+    int age_ms, target_refresh_ms;
+    int target_kind, target_index, target_x, target_z;
+    int goal_cell, route_count, route_version;
+    int rebuild_cell, reverse_cursor, encode_cursor;
+    int fallback_x, fallback_z, fallback_active;
+    int fallback_stuck_ms;
+    long long fallback_best_distance2;
+    unsigned char route_steps[(TOY_GAME_NAV_MAX_CELLS + 1) / 2];
+    unsigned short route_checkpoints[TOY_GAME_NAV_MAX_CELLS / 32 + 1];
+};
+
+/* Exact directed grid edge results, discarded on navigation rebuild. */
+struct toy_game_nav_edge_cache {
+    int valid, from, to, radius, ground_y, end_y, allowed;
+};
 
 /* Navigation links are classified independently of gameplay movement.  A
  * ramp link is only a graph connection; collision, ground queries and player
@@ -462,6 +535,21 @@ struct toy_game_enemy {
     int knockback_x, knockback_z;
     int nav_x, nav_z;
     int nav_active;
+    int nav_group, nav_group_generation, nav_route_cursor;
+    int nav_field, nav_field_generation, nav_flow_node, nav_flow_retry;
+    int nav_target_actor;
+    int nav_depart_cell, nav_depart_y;
+    int nav_explore_dir, nav_explore_ticks;
+    unsigned short nav_flow_rejected[32];
+    int nav_flow_reject_count;
+    int nav_stuck_ms;
+    int nav_direct_blocked_ms;
+    uint64_t nav_direct_tick;
+    int nav_direct_valid, nav_direct_result;
+    int nav_direct_x, nav_direct_z, nav_direct_radius;
+    int nav_direct_actor, nav_direct_y;
+    int nav_attach_retry_ms;
+    long long nav_best_distance2;
 };
 
 /* 固定容量 actor 容器；本结构是所有可控制角色的唯一玩法状态。 */
@@ -601,11 +689,19 @@ struct toy_game_update_profile {
     unsigned int nav_searches, nav_nodes, nav_candidates;
     unsigned int nav_segments, nav_samples, nav_ground_queries;
     unsigned int nav_short_queries, nav_short_reachable;
+    unsigned int nav_group_searches, nav_group_nodes, nav_group_routes;
+    unsigned int nav_group_joins, nav_group_repairs, nav_group_waiting;
+    int64_t nav_group_us, nav_group_max_us;
+    unsigned int flow_builds, flow_edges, flow_samples, flow_hits;
+    unsigned int flow_waiting, flow_repairs, flow_evictions, flow_overflow;
+    int64_t flow_us;
+    int64_t nav_intent_us;
     unsigned int ground_scans, ground_heights;
     unsigned int body_queries, body_scans, segment_queries, segment_scans;
     unsigned int ramp_transition_queries, ramp_transition_scans;
     /* Diagnostic reference path; never changes query results. */
     int legacy_nav_ground;
+    int flow_reference_probe;
     unsigned int ticks;
 };
 
@@ -673,6 +769,29 @@ struct toy_game {
     unsigned short nav_component[TOY_GAME_NAV_MAX_CELLS];
     unsigned char nav_link_type[TOY_GAME_NAV_MAX_CELLS *
                                 TOY_GAME_NAV_LINK_DIRECTIONS];
+    struct toy_game_nav_group nav_groups[TOY_GAME_NAV_MAX_GROUPS];
+    int nav_flow_enabled, flow_count, flow_generation, flow_cursor;
+    int flow_edge_budget, flow_sample_budget, flow_local_budget;
+    int flow_repair_cell, flow_repair_cursor, flow_repair_y;
+    int flow_probe_active, flow_probe_count;
+    unsigned short flow_probe_indices[TOY_GAME_MAX_PRIMITIVES];
+    unsigned char flow_refined[TOY_GAME_NAV_MAX_CELLS];
+    unsigned short flow_cells[TOY_GAME_NAV_MAX_CELLS];
+    struct toy_game_flow_node flow_nodes[TOY_GAME_FLOW_MAX_NODES + 1];
+    struct toy_game_flow_edge flow_edges[TOY_GAME_FLOW_EDGE_CACHE];
+    struct toy_game_flow_field flow_fields[TOY_GAME_FLOW_FIELDS];
+    int nav_group_enabled;
+    int nav_group_generation;
+    uint64_t nav_tick;
+    int nav_dispatch_cursor;
+    int nav_search_group, nav_search_head, nav_search_tail;
+    int nav_search_current, nav_search_direction;
+    unsigned int nav_search_serial;
+    unsigned int nav_search_seen[TOY_GAME_NAV_MAX_CELLS];
+    unsigned short nav_search_parent[TOY_GAME_NAV_MAX_CELLS];
+    unsigned short nav_search_queue[TOY_GAME_NAV_MAX_CELLS];
+    int nav_search_ground_y[TOY_GAME_NAV_MAX_CELLS];
+    struct toy_game_nav_edge_cache nav_edge_cache[TOY_GAME_NAV_EDGE_CACHE_SIZE];
 
     int network_rescuer_available;
     int ai_context_actor_index;

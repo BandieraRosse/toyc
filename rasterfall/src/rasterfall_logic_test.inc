@@ -543,7 +543,7 @@ static struct toy_map_primitive test_box_primitive(
  * open, grounded equipment is solid, and a perimeter blocks airborne escape. */
 static int map_component_gameplay_logic_test(void)
 {
-    struct toy_game g;
+    static struct toy_game g;
     struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS], b;
     struct toy_map_primitive world[RF_MAP_COMPONENT_MAX_PARTS + 1];
     const char *kinds[] = {"gate_frame", "arch_doorway", "power_unit", "boundary_wall", "arch_beam"};
@@ -586,7 +586,7 @@ static int map_component_gameplay_logic_test(void)
 
 static int primitive_gameplay_logic_test(void)
 {
-    struct toy_game g;
+    static struct toy_game g;
     struct toy_game_actor *player = toy_game_local_player_actor(&g);
     struct toy_game_ground_query ground;
     struct toy_map_primitive world[2];
@@ -614,7 +614,7 @@ static int primitive_gameplay_logic_test(void)
     for(int x=300;x<=900;x+=100)if(!toy_game_try_move_actor(&g,player,x,0)||player->ground_y!=x*400/1200)return 4;
     for(int x=800;x>=200;x-=100)if(!toy_game_try_move_actor(&g,player,x,0)||player->ground_y!=x*400/1200)return 5;
     {
-        struct toy_game nav_game;
+        static struct toy_game nav_game;
         struct toy_map_primitive steep = test_ramp_primitive(
             TOY_MAP_PRIMITIVE_RAMP_X, -600, 600, -1200, 1200, 0, 600);
         int low = 3 * 8 + 3, high = 3 * 8 + 4;
@@ -640,14 +640,14 @@ static int primitive_gameplay_logic_test(void)
         }
     }
     {
-        struct toy_game ramp_game;
+        static struct toy_game ramp_game;
         struct toy_map_primitive ramp_world[3] = {
             test_flat_primitive(-5000,5000,-5000,5000,0),
             test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,
                                 0,2400,-1000,1000,0,600),
             test_flat_primitive(2400,4200,-1000,1000,600)
         };
-        int i, max_ground = 0;
+        int i, max_ground = 0, max_x = -500;
         struct toy_game_actor *ramp_player;
         toy_game_init(&ramp_game, 213);
         ramp_player = toy_game_local_player_actor(&ramp_game);
@@ -659,12 +659,22 @@ static int primitive_gameplay_logic_test(void)
         toy_game_set_primitives(&ramp_game, ramp_world, 3, 5000);
         toy_game_place_enemy(&ramp_game, -500, 0);
         if (!ramp_game.enemies[0].active) return 13;
-        for (i = 0; i < 360; i++) {
+        for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 360; i++) {
             toy_game_update_held(&ramp_game, NULL, 0, 0, 0, 1024, 16);
             if (ramp_game.enemies[0].ground_y > max_ground)
                 max_ground = ramp_game.enemies[0].ground_y;
+            if (ramp_game.enemies[0].x > max_x) max_x = ramp_game.enemies[0].x;
         }
-        if (max_ground < 450 || ramp_game.enemies[0].x < 1800) return 14;
+        /* Arrival can now happen early enough for combat knockback to move
+         * the participants again. Check achieved traversal, not final pose. */
+        if (max_ground < 450 || max_x < 1800) {
+            __printf("ramp group x=%d y=%d state=%d head=%d tail=%d route=%d\n",
+                     ramp_game.enemies[0].x, max_ground,
+                     ramp_game.nav_groups[0].state,
+                     ramp_game.nav_search_head, ramp_game.nav_search_tail,
+                     ramp_game.nav_groups[0].route_count);
+            return 14;
+        }
         ramp_player->x = -500;
         ramp_player->z = 0;
         ramp_player->ground_y = 0;
@@ -767,7 +777,7 @@ static int primitive_gameplay_logic_test(void)
         }
         if (!crate_box || !barrier_box) return 19;
         {
-            struct toy_game prop_game;
+            static struct toy_game prop_game;
             struct toy_map_primitive prop_world[2] = {
                 test_flat_primitive(-3000, 3000, -3000, 3000, 0),
                 test_box_primitive(-256, 256, -615, 615, 0, 410,
@@ -793,7 +803,7 @@ static int primitive_gameplay_logic_test(void)
         }
     }
     {
-        struct toy_game boundary_game;
+        static struct toy_game boundary_game;
         struct toy_game_actor *boundary_player;
         toy_game_init(&boundary_game, 216);
         boundary_player = toy_game_local_player_actor(&boundary_game);
@@ -824,7 +834,7 @@ static int primitive_gameplay_logic_test(void)
             return 23;
     }
     {
-        struct toy_game west_game;
+        static struct toy_game west_game;
         struct toy_game_actor *west_player;
         int i, max_x;
         toy_game_init(&west_game, 214);
@@ -884,6 +894,397 @@ static int enemy_short_connection_logic_test(void)
                                   TOY_GAME_ENEMY_RADIUS, start_y)) return 5;
     if (profile.nav_short_queries != 5 ||
         profile.nav_short_reachable != 2) return 6;
+    return 0;
+}
+
+static int enemy_direct_target_logic_test(void)
+{
+    static struct toy_game direct_game;
+    struct toy_game_update_profile profile = {0};
+    struct toy_map_primitive world[2];
+    toy_game_init(&direct_game, 261);
+    direct_game.to_spawn = 0;
+    direct_game.safe_room_count = 0;
+    world[0] = test_flat_primitive(-3000, 3000, -3000, 3000, 0);
+    world[1] = test_box_primitive(-300, -100, -400, 400, 0, 1000,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&direct_game, world, 2, 3000);
+    toy_game_local_player_actor(&direct_game)->x = 200;
+    toy_game_local_player_actor(&direct_game)->z = 0;
+    toy_game_set_remote_actor(&direct_game, 1, 1, -700, 1300, "PLAYER");
+    toy_game_place_enemy(&direct_game, -700, 0);
+    if (!direct_game.enemies[0].active) return 1;
+    direct_game.enemies[0].retarget_timer_ms = 0;
+    direct_game.update_profile = &profile;
+    toy_game_update_held(&direct_game, NULL, 0, 0, 0, 1024, 16);
+    if (direct_game.enemies[0].target_kind != TOY_GAME_TARGET_ACTOR ||
+        direct_game.enemies[0].target_index != TOY_GAME_REMOTE_ACTOR_BASE)
+        return 2;
+    if (profile.nav_short_queries < 2 || profile.nav_short_reachable < 1)
+        return 3;
+    /* A newly reachable, closer host wins on the next target refresh. */
+    toy_game_local_player_actor(&direct_game)->x = -700;
+    toy_game_local_player_actor(&direct_game)->z = 500;
+    direct_game.enemies[0].retarget_timer_ms = 0;
+    toy_game_update_held(&direct_game, NULL, 0, 0, 0, 1024, 16);
+    if (direct_game.enemies[0].target_kind != TOY_GAME_TARGET_HOST) return 4;
+    return 0;
+}
+
+static int enemy_group_navigation_logic_test(void)
+{
+    static struct toy_game group_game;
+    struct toy_game_update_profile profile = {0};
+    struct toy_map_primitive world[2];
+    int i, max_x = -3000, followers_past_wall = 0;
+    toy_game_init(&group_game, 262);
+    group_game.nav_flow_enabled = 0;
+    group_game.to_spawn = 0;
+    group_game.safe_room_count = 0;
+    world[0] = test_flat_primitive(-6000, 6000, -6000, 6000, 0);
+    world[1] = test_box_primitive(-300, 300, -1200, 1200, 0, 1200,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&group_game, world, 2, 6000);
+    toy_game_local_player_actor(&group_game)->x = 3000;
+    toy_game_local_player_actor(&group_game)->z = 0;
+    toy_game_local_player_actor(&group_game)->hp = 100000;
+    for (i = 0; i < 16; i++)
+        toy_game_place_enemy(&group_game, -3200 - (i / 4) * 180,
+                             (i % 4) * 220 - 330);
+    if (group_game.enemies_alive != 16) return 1;
+    group_game.update_profile = &profile;
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (!group_game.nav_groups[0].active ||
+        group_game.nav_groups[0].member_count !=
+            group_game.nav_groups[0].member_limit) {
+        __printf("group initial members=%d state=%d active=%d\n",
+                 group_game.nav_groups[0].member_count,
+                 group_game.nav_groups[0].state,
+                 group_game.nav_groups[0].active);
+        return 2;
+    }
+    for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 900; i++) {
+        int j;
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+        for (j = 0; j < 16; j++)
+            if (group_game.enemies[j].x > max_x)
+                max_x = group_game.enemies[j].x;
+    }
+    if (!profile.nav_group_routes || max_x < 1000 ||
+        toy_game_local_player_actor(&group_game)->hp >= 100000) {
+        __printf("group nav failed routes=%u searches=%u nodes=%u max_x=%d hp=%d state=%d cursor=%d\n",
+                 profile.nav_group_routes, profile.nav_group_searches,
+                 profile.nav_group_nodes, max_x,
+                 toy_game_local_player_actor(&group_game)->hp,
+                 group_game.nav_groups[0].state,
+                 group_game.enemies[0].nav_route_cursor);
+        return 3;
+    }
+    for (i = 0; i < 16; i++)
+        if (group_game.enemies[i].x > 1000) followers_past_wall++;
+    if (followers_past_wall != 16) {
+        __printf("group followers stalled past_wall=%d leader=%d\n",
+                 followers_past_wall, group_game.nav_groups[0].leader_index);
+        for (i = 0; i < 16; ++i) {
+            const struct toy_game_enemy *e = &group_game.enemies[i];
+            const struct toy_game_nav_group *ng = &group_game.nav_groups[e->nav_group];
+            __printf("follower=%d pos=%d,%d wp=%d,%d active=%d cursor=%d/%d state=%d age=%d stuck=%d retry=%d\n",
+                     i,e->x,e->z,e->nav_x,e->nav_z,e->nav_active,
+                     e->nav_route_cursor,ng->route_count,ng->state,ng->age_ms,
+                     e->nav_stuck_ms,e->nav_attach_retry_ms);
+        }
+        return 4;
+    }
+    return 0;
+}
+
+static int enemy_group_lifecycle_logic_test(void)
+{
+    static struct toy_game group_game;
+    struct toy_map_primitive world[2];
+    int i, leader, version;
+    toy_game_init(&group_game, 263);
+    group_game.nav_flow_enabled = 0;
+    group_game.to_spawn = 0;
+    group_game.safe_room_count = 0;
+    world[0] = test_flat_primitive(-6000, 6000, -6000, 6000, 0);
+    world[1] = test_box_primitive(-300, 300, -1200, 1200, 0, 1200,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&group_game, world, 2, 6000);
+    toy_game_local_player_actor(&group_game)->x = 3000;
+    toy_game_local_player_actor(&group_game)->z = 0;
+    toy_game_local_player_actor(&group_game)->hp = 100000;
+    for (i = 0; i < 8; i++)
+        toy_game_place_enemy(&group_game, -3200 - (i / 4) * 180,
+                             (i % 4) * 220 - 330);
+    group_game.enemies[1].type = TOY_GAME_ENEMY_CHARGER;
+    group_game.enemies[2].type = TOY_GAME_ENEMY_SMOKER;
+    group_game.enemies[3].type = TOY_GAME_ENEMY_TANK;
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (group_game.nav_groups[0].member_count != 8 ||
+        group_game.nav_groups[0].radius != TOY_GAME_ENEMY_RADIUS)
+        return 1;
+    for (i = 0; i < 600 &&
+                group_game.nav_groups[0].route_version == 0; i++)
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (!group_game.nav_groups[0].route_version) {
+        __printf("group lifecycle no route state=%d searches=%u\n",
+                 group_game.nav_groups[0].state,
+                 group_game.nav_search_serial);
+        return 2;
+    }
+    leader = group_game.nav_groups[0].leader_index;
+    version = group_game.nav_groups[0].route_version;
+    group_game.enemies[leader].active = 2;
+    group_game.enemies_alive--;
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (!group_game.nav_groups[0].active ||
+        group_game.nav_groups[0].leader_index == leader ||
+        group_game.nav_groups[0].route_version != version) return 3;
+    toy_game_local_player_actor(&group_game)->z = 2500;
+    for (i = 0; i < 40; i++)
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (group_game.nav_groups[0].target_z != 2500) return 4;
+    toy_game_rebuild_navigation(&group_game);
+    if (group_game.nav_groups[0].active ||
+        group_game.enemies[1].nav_group != -1) return 5;
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (!group_game.nav_groups[0].active) return 6;
+    return 0;
+}
+
+static int enemy_group_capacity_logic_test(void)
+{
+    static struct toy_game group_game;
+    struct toy_map_primitive world;
+    int i, groups = 0, limit;
+    int initial_x[3], initial_z[3];
+    toy_game_init(&group_game, 264);
+    group_game.nav_flow_enabled = 0;
+    group_game.to_spawn = 0;
+    group_game.safe_room_count = 0;
+    world = test_flat_primitive(-30000, 30000, -30000, 30000, 0);
+    toy_game_set_primitives(&group_game, &world, 1, 30000);
+    toy_game_local_player_actor(&group_game)->x = 25000;
+    toy_game_local_player_actor(&group_game)->z = 25000;
+    toy_game_local_player_actor(&group_game)->hp = 100000;
+    for (i = 0; i < 64; i++)
+        toy_game_place_enemy(&group_game,
+                             -10500 + (i % 8) * 3000,
+                             -10500 + (i / 8) * 3000);
+    if (group_game.enemies_alive != 64) return 1;
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    for (i = 0; i < 64; i++) {
+        if (group_game.enemies[i].nav_group < 0 ||
+            group_game.enemies[i].nav_group_generation !=
+            group_game.nav_groups[group_game.enemies[i].nav_group].generation)
+            return 2;
+        if (group_game.nav_groups[i].active) groups++;
+    }
+    if (groups != 64) return 3;
+    toy_game_init(&group_game, 266);
+    group_game.nav_flow_enabled = 0;
+    group_game.to_spawn = 0;
+    group_game.safe_room_count = 0;
+    toy_game_set_primitives(&group_game, &world, 1, 30000);
+    toy_game_local_player_actor(&group_game)->x = 25000;
+    toy_game_local_player_actor(&group_game)->z = 0;
+    for (i = 0; i < 3; i++)
+        toy_game_place_enemy(&group_game, -3000, (i - 1) * 600);
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    for (i = 0; i < 3; i++) {
+        initial_x[i] = group_game.enemies[i].x;
+        initial_z[i] = group_game.enemies[i].z;
+    }
+    limit = group_game.nav_groups[0].member_limit;
+    if (limit < 8 || limit > 16) return 8;
+    for (i = 1; i < 499; i++)
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (group_game.nav_groups[0].state != TOY_GAME_NAV_GROUP_OPEN) return 4;
+    if (group_game.nav_groups[0].member_limit != limit) return 9;
+    for (i = 0; i < 3; i++) {
+        if (group_game.enemies[i].x != initial_x[i] ||
+            group_game.enemies[i].z != initial_z[i]) return 5;
+    }
+    toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    if (!group_game.nav_groups[0].active ||
+        group_game.nav_groups[0].member_count != 3 ||
+        group_game.nav_groups[0].state == TOY_GAME_NAV_GROUP_OPEN)
+        return 7;
+    return 0;
+}
+
+static int enemy_group_determinism_logic_test(void)
+{
+    static struct toy_game first, second;
+    struct toy_map_primitive world;
+    int i;
+    toy_game_init(&first, 265);
+    first.nav_flow_enabled = 0;
+    first.to_spawn = 0;
+    first.safe_room_count = 0;
+    world = test_flat_primitive(-6000, 6000, -6000, 6000, 0);
+    toy_game_set_primitives(&first, &world, 1, 6000);
+    toy_game_local_player_actor(&first)->x = 3200;
+    toy_game_local_player_actor(&first)->hp = 100000;
+    for (i = 0; i < 16; i++)
+        toy_game_place_enemy(&first, -3200 - (i / 4) * 180,
+                             (i % 4) * 220 - 330);
+    second = first;
+    for (i = 0; i < 960; i++) {
+        toy_game_update_held(&first, NULL, 0, 0, 0, 1024, 16);
+        toy_game_update_held(&second, NULL, 0, 0, 0, 1024, 16);
+        if (memcmp(&first, &second, sizeof(first))) return 1;
+    }
+    return 0;
+}
+
+static int enemy_navigation_cache_logic_test(void)
+{
+    static struct toy_game cache_game;
+    struct toy_game_update_profile profile = {0};
+    struct toy_map_primitive world[2];
+    int i;
+    toy_game_init(&cache_game, 268);
+    cache_game.to_spawn = 0;
+    cache_game.safe_room_count = 0;
+    world[0] = test_flat_primitive(-5000, 5000, -5000, 5000, 0);
+    world[1] = test_box_primitive(600, 900, -3000, 3000, 0, 1200,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&cache_game, world, 1, 5000);
+    toy_game_local_player_actor(&cache_game)->x = 2000;
+    toy_game_local_player_actor(&cache_game)->z = 0;
+    toy_game_place_enemy(&cache_game, 0, 0);
+    cache_game.enemies[0].speed = 3;
+    cache_game.update_profile = &profile;
+    for (i = 0; i < 128; ++i) toy_game_update_world(&cache_game, 16);
+    cache_game.update_profile = NULL;
+    if (cache_game.enemies[0].x < 250 || profile.nav_short_queries > 24) {
+        __printf("direct cache x=%d queries=%u\n",
+                 cache_game.enemies[0].x, profile.nav_short_queries);
+        return 1;
+    }
+    /* A changed target and rebuilt collision map must not retain a positive
+     * direct result or any static edge from the previous map. */
+    toy_game_set_primitives(&cache_game, world, 2, 5000);
+    if (cache_game.enemies[0].nav_direct_valid) return 2;
+    for (i = 0; i < TOY_GAME_NAV_EDGE_CACHE_SIZE; ++i)
+        if (cache_game.nav_edge_cache[i].valid) return 3;
+    toy_game_update_world(&cache_game, 16);
+    if (cache_game.enemies[0].nav_direct_result) return 4;
+    toy_game_local_player_actor(&cache_game)->x = -1200;
+    toy_game_update_world(&cache_game, 16);
+    if (!cache_game.enemies[0].nav_direct_result) return 5;
+    return 0;
+}
+
+static int enemy_group_mixed_radius_logic_test(void)
+{
+    static struct toy_game group_game;
+    struct toy_map_primitive world[3];
+    int i, common_group, tank_group, followers_past_wall = 0;
+    toy_game_init(&group_game, 267);
+    group_game.nav_flow_enabled = 0;
+    group_game.to_spawn = 0;
+    group_game.safe_room_count = 0;
+    world[0] = test_flat_primitive(-5000, 5000, -5000, 5000, 0);
+    world[1] = test_box_primitive(-200, 200, -5000, -500, 0, 1200,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    world[2] = test_box_primitive(-200, 200, 500, 5000, 0, 1200,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&group_game, world, 3, 5000);
+    toy_game_local_player_actor(&group_game)->x = 3000;
+    toy_game_local_player_actor(&group_game)->z = 0;
+    toy_game_local_player_actor(&group_game)->hp = 100000;
+    for (i = 0; i < 8; i++)
+        toy_game_place_enemy(&group_game, -3000 - (i / 4) * 120,
+                             (i % 4) * 180 - 270);
+    group_game.enemies[7].type = TOY_GAME_ENEMY_TANK;
+    for (i = 0; i < 60; i++)
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    common_group = group_game.enemies[0].nav_group;
+    tank_group = group_game.enemies[7].nav_group;
+    if (common_group < 0 || tank_group < 0 ||
+        common_group != tank_group ||
+        group_game.nav_groups[common_group].radius != TOY_GAME_ENEMY_RADIUS) {
+        __printf("mixed group mismatch common=%d tank=%d radius=%d state=%d\n",
+                 common_group, tank_group,
+                 common_group >= 0 ? group_game.nav_groups[common_group].radius : -1,
+                 common_group >= 0 ? group_game.nav_groups[common_group].state : -1);
+        return 1;
+    }
+    for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 600; i++)
+        toy_game_update_held(&group_game, NULL, 0, 0, 0, 1024, 16);
+    for (i = 0; i < 8; i++)
+        if (group_game.enemies[i].x > 500) followers_past_wall++;
+    if (toy_game_local_player_actor(&group_game)->hp >= 100000 ||
+        followers_past_wall != 8) {
+        __printf("mixed followers stalled count=%d hp=%d tank_x=%d state=%d\n",
+                 followers_past_wall,
+                 toy_game_local_player_actor(&group_game)->hp,
+                 group_game.enemies[7].x,
+                 group_game.nav_groups[common_group].state);
+        for (i = 0; i < 8; ++i)
+            __printf("mixed member=%d x=%d z=%d route=%d active=%d waypoint=%d,%d stuck=%d group=%d\n",
+                     i, group_game.enemies[i].x, group_game.enemies[i].z,
+                     group_game.enemies[i].nav_route_cursor,
+                     group_game.enemies[i].nav_active,
+                     group_game.enemies[i].nav_x, group_game.enemies[i].nav_z,
+                     group_game.enemies[i].nav_stuck_ms,
+                     group_game.enemies[i].nav_group);
+        return 2;
+    }
+    return 0;
+}
+
+static int enemy_group_west_corridor_logic_test(void)
+{
+    static struct toy_game corridor_game;
+    static const struct toy_game_box spawn = {
+        -44400, -43400, -1650, 1650, 0, 0
+    };
+    struct toy_game_update_profile profile = {0};
+    struct toy_game_actor *target;
+    int tick;
+    toy_game_init(&corridor_game, 771);
+    corridor_game.nav_flow_enabled = 0;
+    corridor_game.to_spawn = 0;
+    corridor_game.spawn_budget = 0;
+    corridor_game.safe_room_count = 0;
+    toy_game_set_primitives(&corridor_game,
+        session.level.primitives, session.level.primitive_count,
+        session.level.room_limit);
+    target = toy_game_local_player_actor(&corridor_game);
+    target->x = -22000;
+    target->z = 0;
+    target->ground_y = 0;
+    target->hp = 1000000;
+    toy_game_spawn_horde_type(&corridor_game,
+        TOY_GAME_ENEMY_PURSUIT_COMMON, 64, 64, &spawn, 1, 0);
+    if (corridor_game.enemies_alive != 64) return 1;
+    corridor_game.update_profile = &profile;
+    for (tick = 0; tick < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 600; ++tick) {
+        toy_game_update_world(&corridor_game, 16);
+        corridor_game.event_count = 0;
+        corridor_game.actor_impulse_event_count = 0;
+    }
+    corridor_game.update_profile = NULL;
+    if (profile.nav_group_routes < 1 ||
+        profile.nav_searches > 10 || target->hp >= 1000000) {
+        __printf("west group failed routes=%u group_searches=%u repairs=%u old_searches=%u hp=%d x=%d state=%d\n",
+                 profile.nav_group_routes, profile.nav_group_searches,
+                 profile.nav_group_repairs, profile.nav_searches,
+                 target->hp, corridor_game.enemies[0].x,
+                 corridor_game.nav_groups[corridor_game.enemies[0].nav_group].state);
+        return 2;
+    }
+    for (tick = 0; tick < 64; ++tick)
+        if (corridor_game.enemies[tick].x < -24000) {
+            __printf("west follower stalled index=%d x=%d cursor=%d\n",
+                     tick, corridor_game.enemies[tick].x,
+                     corridor_game.enemies[tick].nav_route_cursor);
+            return 3;
+        }
     return 0;
 }
 
@@ -949,15 +1350,30 @@ static int nav_ground_reuse_logic_test(void)
             }
             if (fast_profile.nav_samples != old_profile.nav_samples ||
                 fast_profile.nav_candidates != old_profile.nav_candidates ||
-                fast_profile.body_scans != old_profile.body_scans) return 3;
+                fast_profile.body_scans != old_profile.body_scans) {
+                __printf("nav ground profile mismatch tick=%d samples=%u/%u candidates=%u/%u body=%u/%u\n",
+                         tick, fast_profile.nav_samples, old_profile.nav_samples,
+                         fast_profile.nav_candidates, old_profile.nav_candidates,
+                         fast_profile.body_scans, old_profile.body_scans);
+                return 3;
+            }
             optimized.event_count = reference.event_count = 0;
             optimized.actor_impulse_event_count = reference.actor_impulse_event_count = 0;
         }
     }
     saved_queries = old_profile.ground_queries - fast_profile.ground_queries;
-    if (old_profile.ground_queries <= fast_profile.ground_queries ||
-        !fast_profile.nav_candidates) return 4;
-    if (old_profile.ramp_transition_scans <= fast_profile.ramp_transition_scans) return 6;
+    if (old_profile.ground_queries <= fast_profile.ground_queries) {
+        __printf("nav ground reduction missing queries=%u/%u candidates=%u\n",
+                 fast_profile.ground_queries, old_profile.ground_queries,
+                 fast_profile.nav_candidates);
+        return 4;
+    }
+    if (old_profile.ramp_transition_scans <= fast_profile.ramp_transition_scans) {
+        __printf("nav ramp reduction missing scans=%u/%u\n",
+                 fast_profile.ramp_transition_scans,
+                 old_profile.ramp_transition_scans);
+        return 6;
+    }
     __printf("nav ground reuse: PASS terrain edges + 720 ticks full Game/events equal, saved_queries=%u saved_ramp_scans=%u\n",
              saved_queries, old_profile.ramp_transition_scans-fast_profile.ramp_transition_scans);
     return 0;
@@ -992,7 +1408,7 @@ static int terrain_cost_benchmark(void)
         __printf("TERRAIN-BENCH invalid west surfaces=%d\n", flattened);
         return 2;
     }
-    __printf("TERRAIN-BENCH primitives=%d flattened=%d ticks=240 dt_ms=16 seed=771 target=-22000,0\n",
+    __printf("TERRAIN-BENCH primitives=%d flattened=%d ticks=960 dt_ms=16 seed=771 target=-22000,0\n",
              session.level.primitive_count, flattened);
     for (round = 0; round < 5; ++round) {
         for (group = 0; group < 4; ++group) {
@@ -1022,7 +1438,7 @@ static int terrain_cost_benchmark(void)
                     return 3;
                 }
                 /* The unprofiled pass measures the product path. */
-                for (tick = 0; tick < 240; ++tick) {
+                for (tick = 0; tick < 960; ++tick) {
                     int64_t start = rf_core_clock_now_us();
                     toy_game_update_world(&g, 16);
                     int64_t cost = rf_core_clock_now_us() - start;
@@ -1032,8 +1448,15 @@ static int terrain_cost_benchmark(void)
                 }
                 if (g.enemies_alive != n ||
                     (n && g.enemies[0].x < -30000)) {
-                    __printf("TERRAIN-BENCH invalid trajectory n=%d alive=%d x=%d\n",
-                        n, g.enemies_alive, n ? g.enemies[0].x : 0);
+                    int slot = n ? g.enemies[0].nav_group : -1;
+                    __printf("TERRAIN-BENCH invalid trajectory n=%d alive=%d x=%d group=%d state=%d members=%d route=%d cursor=%d fallback=(%d,%d)\n",
+                        n, g.enemies_alive, n ? g.enemies[0].x : 0,
+                        slot, slot >= 0 ? g.nav_groups[slot].state : -1,
+                        slot >= 0 ? g.nav_groups[slot].member_count : 0,
+                        slot >= 0 ? g.nav_groups[slot].route_count : 0,
+                        n ? g.enemies[0].nav_route_cursor : -1,
+                        slot >= 0 ? g.nav_groups[slot].fallback_x : 0,
+                        slot >= 0 ? g.nav_groups[slot].fallback_z : 0);
                     return 4;
                 }
                 __printf("TERRAIN-BENCH-TIME round=%d enemies=%d terrain=%s total_us=%lld max_us=%lld alive=%d end_x=%d\n",
@@ -1058,18 +1481,22 @@ static int terrain_cost_benchmark(void)
                     TOY_GAME_ENEMY_PURSUIT_COMMON, n, n, &spawn, 1, 0);
                 profile.clock_us = rf_core_clock_now_us;
                 g.update_profile = &profile;
-                for (tick = 0; tick < 240; ++tick) {
+                for (tick = 0; tick < 960; ++tick) {
                     toy_game_update_world(&g, 16);
                     g.event_count = g.actor_impulse_event_count = 0;
                 }
                 g.update_profile = NULL;
-                __printf("TERRAIN-BENCH-NAV round=%d enemies=%d terrain=%s world_us=%lld enemy_us=%lld separation_us=%lld search_us=%lld paths_us=%lld searches=%u candidates=%u samples=%u ground_queries=%u ground_scans=%u body_scans=%u ramp_scans=%u alive=%d end_x=%d\n",
+                __printf("TERRAIN-BENCH-NAV round=%d enemies=%d terrain=%s world_us=%lld enemy_us=%lld separation_us=%lld search_us=%lld paths_us=%lld searches=%u candidates=%u samples=%u group_us=%lld group_max_us=%lld group_searches=%u group_routes=%u group_repairs=%u ground_queries=%u ground_scans=%u body_scans=%u ramp_scans=%u alive=%d end_x=%d\n",
                     round + 1, n, flat_case ? "flat" : "authored",
                     (long long)profile.world_us, (long long)profile.enemy_us,
                     (long long)profile.separation_us,
                     (long long)profile.nav_search_us,
                     (long long)profile.nav_paths_us, profile.nav_searches,
                     profile.nav_candidates, profile.nav_samples,
+                    (long long)profile.nav_group_us,
+                    (long long)profile.nav_group_max_us,
+                    profile.nav_group_searches, profile.nav_group_routes,
+                    profile.nav_group_repairs,
                     profile.ground_queries, profile.ground_scans,
                     profile.body_scans, profile.ramp_transition_scans,
                     g.enemies_alive, n ? g.enemies[0].x : 0);
@@ -1079,8 +1506,60 @@ static int terrain_cost_benchmark(void)
     return 0;
 }
 
+#include "dev-tests/game_navigation_test.inc"
+
+static int enemy_flow_corridor_logic_test(void)
+{
+    static struct toy_game g;
+    static const struct toy_game_box spawn = {-44400,-43400,-1650,1650,0,0};
+    struct toy_game_update_profile profile;
+    int mode, count, tick, i, arrived;
+    for (mode = 0; mode < 2; ++mode) for (count = 32; count <= 64; count += 32) {
+        toy_game_init(&g, 771);
+        g.nav_flow_enabled = mode == 0;
+        g.to_spawn = 0; g.spawn_budget = 0; g.safe_room_count = 0;
+        toy_game_set_primitives(&g, session.level.primitives,
+                                session.level.primitive_count, session.level.room_limit);
+        g.actors[0].x = -22000; g.actors[0].z = 0; g.actors[0].ground_y = 0;
+        g.actors[0].hp = 1000000; g.actors[0].knockback_cooldown_ms = 1000000;
+        toy_game_spawn_horde_type(&g, TOY_GAME_ENEMY_PURSUIT_COMMON,
+                                   count, count, &spawn, 1, 0);
+        if (g.enemies_alive != count) return 1;
+        memset(&profile, 0, sizeof(profile));
+        profile.clock_us = rf_core_clock_now_us;
+        g.update_profile = &profile;
+        for (tick = 0; tick < 1200; ++tick) {
+            toy_game_update_world(&g, 16);
+            g.event_count = 0; g.actor_impulse_event_count = 0;
+        }
+        g.update_profile = NULL;
+        arrived = 0;
+        for (i = 0; i < count; ++i) if (g.enemies[i].x > -24000) arrived++;
+        __printf("FLOW-CORRIDOR mode=%s enemies=%d arrived=%d builds=%u edges=%u samples=%u legacy=%u groups=%u repairs=%u world_us=%lld flow_us=%lld ground=%u hp=%d group_us=%lld nav_samples=%u intent_us=%lld\n",
+            mode ? "group" : "flow",count,arrived,profile.flow_builds,profile.flow_edges,
+            profile.flow_samples,profile.nav_searches,profile.nav_group_searches,
+            profile.flow_repairs,(long long)profile.world_us,(long long)profile.flow_us,
+            profile.ground_queries,g.actors[0].hp,(long long)profile.nav_group_us,
+            profile.nav_samples,(long long)profile.nav_intent_us);
+        if (!mode && (arrived != count || profile.nav_searches ||
+                      profile.nav_group_searches || g.actors[0].hp == 1000000)) {
+            for(i=0;i<count;i++) if(g.enemies[i].x < -24000)
+                __printf("FLOW-CORRIDOR stalled enemy=%d x=%d z=%d y=%d field=%d node=%d retry=%d active=%d\n",i,g.enemies[i].x,g.enemies[i].z,g.enemies[i].ground_y,g.enemies[i].nav_field,g.enemies[i].nav_flow_node,g.enemies[i].nav_flow_retry,g.enemies[i].nav_active);
+            return 2;
+        }
+    }
+    return 0;
+}
+
 static int run_logic_test(void)
 {
+    if (getenv("RF_FLOW_TEST")) {
+        int result = enemy_flow_logic_test();
+        if (result) return result;
+        if (rasterfall_session_load(&session, "rasterfall/assets/maps/rasterfall.map") < 0)
+            return 50;
+        return enemy_flow_corridor_logic_test();
+    }
     extern int rasterfall_rts_projection_logic_test(void);
     if (rasterfall_rts_projection_logic_test()) return 262;
     {
@@ -1212,6 +1691,16 @@ static int run_logic_test(void)
     if (!rasterfall_map_projection_counts_match(&session.map_ops)) return 233;
     if (nav_ground_reuse_logic_test()) return 259;
     if (enemy_short_connection_logic_test()) return 261;
+    if (enemy_direct_target_logic_test()) return 268;
+    if (enemy_group_navigation_logic_test()) return 269;
+    if (enemy_group_lifecycle_logic_test()) return 270;
+    if (enemy_group_capacity_logic_test()) return 271;
+    if (enemy_group_determinism_logic_test()) return 272;
+    if (enemy_group_mixed_radius_logic_test()) return 273;
+    if (enemy_group_west_corridor_logic_test()) return 274;
+    if (enemy_navigation_cache_logic_test()) return 275;
+    if (enemy_flow_logic_test()) return 276;
+    if (enemy_flow_corridor_logic_test()) return 277;
     if (rasterfall_session_rts_logic_test()) return 260;
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||
@@ -1482,7 +1971,7 @@ static int run_logic_test(void)
         if (!found_companion) return 178;
     }
     {
-        struct toy_game air_game;
+        static struct toy_game air_game;
         struct toy_game_actor *air_player;
         int i;
         toy_game_init(&air_game, 179);
@@ -1543,7 +2032,7 @@ static int run_logic_test(void)
         static const int platform_ends[2] = {-35000, -27000};
         int case_index;
         for (case_index = 0; case_index < 2; case_index++) {
-            struct toy_game charger_game;
+            static struct toy_game charger_game;
             struct toy_game_enemy *charger;
             struct toy_game_actor *target;
             int i;
@@ -1562,15 +2051,25 @@ static int run_logic_test(void)
             charger->type = TOY_GAME_ENEMY_CHARGER;
             charger->ground_y = toy_game_query_ground(
                 &charger_game, charger->x, charger->z, 0, 0).support_y;
-            for (i = 0; i < 220 && charger->x < platform_ends[case_index];
+            for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 240 &&
+                        charger->x < platform_ends[case_index];
                  i++)
                 toy_game_update_world(&charger_game, 16);
             if (charger->x < platform_ends[case_index] ||
-                charger->ground_y < 800)
+                charger->ground_y < 800) {
+                __printf("ramp pursuit failed case=%d x=%d y=%d group=%d state=%d route=%d cursor=%d\n",
+                    case_index, charger->x, charger->ground_y,
+                    charger->nav_group,
+                    charger->nav_group >= 0 ?
+                        charger_game.nav_groups[charger->nav_group].state : -1,
+                    charger->nav_group >= 0 ?
+                        charger_game.nav_groups[charger->nav_group].route_count : -1,
+                    charger->nav_route_cursor);
                 return 213 + case_index;
+            }
         }
         for (case_index = 0; case_index < 2; case_index++) {
-            struct toy_game charger_game;
+            static struct toy_game charger_game;
             struct toy_game_enemy *charger;
             struct toy_game_actor *target;
             int i;
@@ -1605,7 +2104,7 @@ static int run_logic_test(void)
     /* A real discontinuity with the same ramp height must remain blocked: a
      * 1200-high platform is not a continuation of the 900-high ramp. */
     {
-        struct toy_game discontinuous_game;
+        static struct toy_game discontinuous_game;
         struct toy_game_enemy *charger;
         struct toy_game_actor *target;
         struct toy_map_primitive terrain[3] = {
@@ -1776,7 +2275,7 @@ static int run_logic_test(void)
             return 169;
     }
     {
-        struct toy_game anime_follow;
+        static struct toy_game anime_follow;
         int id,maid_id,before;
         toy_game_init(&anime_follow,77);
         id=toy_game_add_anime_actor(&anime_follow,0,0,0,"EULA_TEST");
@@ -1870,9 +2369,9 @@ static int run_logic_test(void)
         rasterfall_session_reset(&session, &camera, 1);
     }
     {
-        struct toy_game actor_test;
-        struct toy_game ai_reload_test;
-        struct toy_game throwable_test;
+        static struct toy_game actor_test;
+        static struct toy_game ai_reload_test;
+        static struct toy_game throwable_test;
         int i;
         int ai_id;
         int jesus_index = -1, guard_index = -1, elite_index = -1;
@@ -1894,7 +2393,7 @@ static int run_logic_test(void)
             toy_game_enemy_info(TOY_GAME_ENEMY_TANK);
         struct toy_game_ai_observation ai_observation;
         struct toy_game_ai_decision ai_decision;
-        struct toy_game ai_observe_test;
+        static struct toy_game ai_observe_test;
         struct rasterfall_ai_registry ai_registry;
         const struct toy_game_weapon_info *smg =
             toy_game_weapon_info(TOY_GAME_WEAPON_SMG);
@@ -2162,7 +2661,7 @@ static int run_logic_test(void)
         /* The controller boundary must be usable without the local-player
          * helper: actor intent is executed first, then the world advances. */
         {
-            struct toy_game api_test;
+            static struct toy_game api_test;
             struct toy_game_actor_command actor_command;
             struct toy_game_actor *api_actor;
             int projectile_index;
@@ -3091,7 +3590,7 @@ death_fixture_done:
 
     /* 游戏规则冒烟：同 seed 推进 500 步，两遍运行状态一致 */
     {
-        struct toy_game smoke;
+        static struct toy_game smoke;
         int pass, i;
         int first_wave = 0, first_kills = 0, first_hp = 0;
         for (pass = 0; pass < 2; pass++) {
@@ -3251,7 +3750,7 @@ death_fixture_done:
         game.actors[0].flag_index != 0)
         return 32;
     {
-        struct toy_game base_test;
+        static struct toy_game base_test;
         int base_id;
         toy_game_init(&base_test, 91);
         base_id = toy_game_add_ai(&base_test, TOY_GAME_AI_LEVEL_1,
@@ -3335,7 +3834,7 @@ death_fixture_done:
     }
     /* 敌人槽位复用不能继承上一只敌人的推开僵直。 */
     {
-        struct toy_game reuse_test;
+        static struct toy_game reuse_test;
         struct toy_game_box point = {0, 0, 300, 300, 0, 0};
         toy_game_init(&reuse_test, 47);
         reuse_test.primitive_count = 0;
@@ -3668,7 +4167,7 @@ death_fixture_done:
                 game.nav_component[nav_a] != game.nav_component[nav_b])
                 return 178;
             {
-                struct toy_game nav_game;
+                static struct toy_game nav_game;
                 struct toy_map_primitive steep=test_ramp_primitive(
                     TOY_MAP_PRIMITIVE_RAMP_X,-600,600,-1200,1200,0,600);
                 int low_cell, high_cell;
@@ -4092,10 +4591,14 @@ death_fixture_done:
         if (game.enemies_alive != 1) return 97;
         toy_game_local_player_actor(&game)->x = 800;
         toy_game_local_player_actor(&game)->z = 0;
-        for (int i = 0; i < 100; i++)
+        for (int i = 0; i < 100; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
-        if (game.enemies[0].x + TOY_GAME_ENEMY_RADIUS > terrain[1].minx)
-            return 98;
+            /* Navigation may now go around the platform within this window.
+             * Assert the collision contract, not remaining on its west side. */
+            if (toy_game_position_blocked_at_height(&game,
+                    game.enemies[0].x, game.enemies[0].z,
+                    TOY_GAME_ENEMY_RADIUS, game.enemies[0].ground_y)) return 98;
+        }
         actor_x = game.actors[0].x;
         if (toy_game_move_ai_actor(&game, 0, 0, 0) ||
             game.actors[0].x != actor_x) return 99;
@@ -4437,7 +4940,7 @@ death_fixture_done:
     }
     /* 空中强制位移使用确定性分段扫掠，并逐轴报告碰撞。 */
     {
-        struct toy_game swept_game;
+        static struct toy_game swept_game;
         struct toy_game_actor *actor;
         struct toy_map_primitive swept_world[2] = {
             test_flat_primitive(-5000, 5000, -5000, 5000, 0),
@@ -4582,7 +5085,7 @@ death_fixture_done:
     }
     /* 敌人高速击飞同样分段扫掠，撞墙后保留切向速度。 */
     {
-        struct toy_game swept_game;
+        static struct toy_game swept_game;
         struct toy_game_enemy *enemy;
         struct toy_map_primitive swept_world[2] = {
             test_flat_primitive(-5000, 5000, -5000, 5000, 0),
@@ -4722,7 +5225,7 @@ death_fixture_done:
         toy_game_place_enemy(&game, -500, 0);
         if (!game.enemies[0].active) return 180;
         game.enemies[0].type = TOY_GAME_ENEMY_PURSUIT_COMMON;
-        for (i = 0; i < 360; i++) {
+        for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 360; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
             if (game.enemies[0].ground_y > max_ground)
                 max_ground = game.enemies[0].ground_y;
@@ -4749,7 +5252,7 @@ death_fixture_done:
         game.enemies[0].retarget_timer_ms = 0;
         game.enemies_alive = 1;
         min_ground = game.enemies[0].ground_y;
-        for (i = 0; i < 360; i++) {
+        for (i = 0; i < TOY_GAME_NAV_GROUP_WAIT_MS / 16 + 360; i++) {
             toy_game_update_held(&game, NULL, 0, 0, 0, 1024, 16);
             if (game.enemies[0].ground_y < min_ground)
                 min_ground = game.enemies[0].ground_y;
