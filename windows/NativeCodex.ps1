@@ -134,13 +134,13 @@ switch ($Command) {
     'test' { Ensure-Package; Invoke-Packaged @('--logic-test') }
     'gpu-test' {
         Ensure-Package
-        $gpuArgs = @('--renderer', 'gpu-compute', '--gpu-required', '--gpu-native-present', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120') + $ExtraArgs
+        $gpuArgs = @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120') + $ExtraArgs
         Invoke-Packaged $gpuArgs
     }
     'run' { Ensure-Package; Invoke-Packaged $ExtraArgs }
     'acceptance' {
         Ensure-Package
-        Invoke-Packaged @('--renderer', 'gpu-compute', '--gpu-required', '--gpu-native-present', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120')
+        Invoke-Packaged @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120')
         Invoke-Packaged @('--normal-frame-audit', '0', '0', '0', '1', '0', '1', '1280', '720', 'windows-native-normal.bmp')
         Invoke-Packaged @('--visual-capture', 'procedural-humanoid', '--visual-output', 'windows-native-procedural-humanoid.bmp')
     }

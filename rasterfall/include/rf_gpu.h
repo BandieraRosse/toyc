@@ -81,28 +81,7 @@ struct rf_gpu_capabilities {
 struct rf_gpu_renderer_capabilities {
     unsigned int compute;
     unsigned int framebuffer;
-    unsigned int raster_v1;
     unsigned int native_presentation_v1;
-    unsigned int post_raster_v1;
-    unsigned int raster_work_group_x;
-    unsigned int raster_work_group_y;
-};
-
-enum rf_gpu_post_mode {
-    RF_GPU_POST_DISABLED = 0,
-    RF_GPU_POST_IDENTITY = 1,
-    RF_GPU_POST_DEPTH_FOG_V0 = 2
-};
-
-/* Depth values are Raster V1 signed Q20 inverse camera-space Z: 1048576/z.
- * Fog thresholds therefore use this exact encoding and are ordered
- * far_inv_z < near_inv_z.  Color is canonical 0xffRRGGBB. */
-struct rf_gpu_post_params_v1 {
-    unsigned int mode;
-    int fog_far_inv_z;
-    int fog_near_inv_z;
-    unsigned int fog_color;
-    unsigned int max_density_q8;
 };
 
 struct rf_gpu_native_window {
@@ -112,8 +91,8 @@ struct rf_gpu_native_window {
 };
 
 struct rf_gpu_native_present_timing {
-    double acquire_ms, gpu_raster_ms, buffer_to_swapchain_ms;
-    double post_raster_ms, overlay_upload_ms, overlay_composite_ms;
+    double acquire_ms, buffer_to_swapchain_ms;
+    double overlay_upload_ms, overlay_composite_ms;
     double submit_ms, present_ms, present_queue_idle_ms, total_ms;
     unsigned int color_readback_bytes, cpu_framebuffer_copy_bytes;
     unsigned int overlay_upload_bytes;
@@ -155,27 +134,6 @@ struct rf_gpu_backend_info {
     struct rf_gpu_capabilities capabilities;
 };
 
-/* Hosted differential diagnostics only.  These are wall-clock segments;
- * execution_wait_ms includes GPU execution plus the blocking fence wait. */
-struct rf_gpu_raster_timing {
-    double pack_validation_ms;
-    double cpu_binning_ms;
-    double tile_upload_ms;
-    double command_upload_ms;
-    double texture_upload_ms;
-    double upload_ms;
-    double submit_ms;
-    double execution_wait_ms;
-    double readback_ms;
-    double total_ms;
-    unsigned int command_count;
-    unsigned int tile_count;
-    unsigned long long total_refs;
-    unsigned int max_refs_per_tile;
-    unsigned int texture_count;
-    unsigned long long texture_bytes;
-};
-
 /* Backend return values distinguish ordinary absence from a backend that was
  * found but failed during initialization. */
 #define RF_GPU_BACKEND_READY 0
@@ -194,50 +152,8 @@ struct rf_gpu_backend {
                               unsigned int *pixels, unsigned int width,
                               unsigned int height, unsigned int stride,
                               char *message, unsigned long message_capacity);
-    int (*raster_create)(void *context, unsigned int width,
-                         unsigned int height, unsigned int work_group_x,
-                         unsigned int work_group_y, void **raster,
-                         char *message, unsigned long message_capacity);
-    void (*raster_destroy)(void *context, void *raster);
-    int (*raster_render)(void *context, void *raster,
-                         const void *stream, unsigned long stream_size,
-                         const void *texture_descs, unsigned int texture_count,
-                         const void *texture_texels, unsigned long texture_bytes,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride,
-                         unsigned int depth_stride,
-                         struct rf_gpu_raster_timing *timing,
-                         char *message, unsigned long message_capacity);
-    void (*raster_set_full_scan_diagnostic)(void *context, void *raster,
-                                             int enabled);
     int (*set_native_window)(void *context,
                              const struct rf_gpu_native_window *window);
-    int (*raster_present)(void *context, void *raster,
-                         const void *stream, unsigned long stream_size,
-                         const void *texture_descs, unsigned int texture_count,
-                         const void *texture_texels, unsigned long texture_bytes,
-                         const unsigned int *overlay_color,
-                         const unsigned char *overlay_coverage,
-                         unsigned int overlay_stride,
-                         unsigned int coverage_stride,
-                         unsigned int width, unsigned int height,
-                         struct rf_gpu_raster_timing *raster_timing,
-                         struct rf_gpu_native_present_timing *present_timing,
-                         char *message, unsigned long message_capacity);
-    int (*raster_composite_diagnostic)(void *context, void *raster,
-                         const void *stream, unsigned long stream_size,
-                         const unsigned int *overlay_color,
-                         const unsigned char *overlay_coverage,
-                         unsigned int overlay_stride,
-                         unsigned int coverage_stride,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride,
-                         unsigned int depth_stride,
-                         char *message, unsigned long message_capacity);
-    int (*raster_set_post)(void *context, void *raster,
-                          const struct rf_gpu_post_params_v1 *params);
 };
 
 struct rf_gpu_framebuffer {
@@ -248,17 +164,6 @@ struct rf_gpu_framebuffer {
     unsigned int width;
     unsigned int height;
     unsigned int stride;
-};
-
-struct rf_gpu_raster {
-    const struct rf_gpu_backend *backend;
-    void *backend_context;
-    void *implementation;
-    unsigned int format;
-    unsigned int width;
-    unsigned int height;
-    unsigned int work_group_x;
-    unsigned int work_group_y;
 };
 
 struct rf_gpu {
@@ -301,61 +206,6 @@ int rf_gpu_framebuffer_render(struct rf_gpu *gpu,
                               unsigned int *pixels, unsigned int width,
                               unsigned int height, unsigned int stride);
 void rf_gpu_framebuffer_shutdown(struct rf_gpu_framebuffer *framebuffer);
-int rf_gpu_raster_init(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                       unsigned int width, unsigned int height);
-int rf_gpu_raster_resize(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         unsigned int width, unsigned int height);
-int rf_gpu_raster_render(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         const void *stream, unsigned long stream_size,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride,
-                         unsigned int depth_stride);
-int rf_gpu_raster_render_timed(struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         const void *stream, unsigned long stream_size,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride,
-                         unsigned int depth_stride,
-                         struct rf_gpu_raster_timing *timing);
-int rf_gpu_raster_render_textured_timed(
-                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         const void *stream, unsigned long stream_size,
-                         const void *texture_descs, unsigned int texture_count,
-                         const void *texture_texels, unsigned long texture_bytes,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride, unsigned int depth_stride,
-                         struct rf_gpu_raster_timing *timing);
-int rf_gpu_raster_set_full_scan_diagnostic(struct rf_gpu_raster *raster,
-                                            int enabled);
-int rf_gpu_raster_set_post(struct rf_gpu_raster *raster,
-                           const struct rf_gpu_post_params_v1 *params);
-void rf_gpu_raster_shutdown(struct rf_gpu_raster *raster);
-int rf_gpu_raster_present_textured_timed(
-                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         const void *stream, unsigned long stream_size,
-                         const void *texture_descs, unsigned int texture_count,
-                         const void *texture_texels, unsigned long texture_bytes,
-                         const unsigned int *overlay_color,
-                         const unsigned char *overlay_coverage,
-                         unsigned int overlay_stride,
-                         unsigned int coverage_stride,
-                         unsigned int width, unsigned int height,
-                         struct rf_gpu_raster_timing *raster_timing,
-                         struct rf_gpu_native_present_timing *present_timing);
-/* Explicit test-only readback oracle.  Native presentation never calls this. */
-int rf_gpu_raster_composite_diagnostic(
-                         struct rf_gpu *gpu, struct rf_gpu_raster *raster,
-                         const void *stream, unsigned long stream_size,
-                         const unsigned int *overlay_color,
-                         const unsigned char *overlay_coverage,
-                         unsigned int overlay_stride,
-                         unsigned int coverage_stride,
-                         unsigned int *color, int *depth,
-                         unsigned int width, unsigned int height,
-                         unsigned int color_stride,
-                         unsigned int depth_stride);
 int rf_gpu_overlay_composite_reference(unsigned int *world,
                          unsigned int world_stride,
                          const unsigned int *overlay_color,

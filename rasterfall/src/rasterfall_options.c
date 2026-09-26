@@ -89,16 +89,16 @@ void rasterfall_options_usage(int fd)
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
-        "  --renderer <cpu|gpu-compute> [--gpu-required] [--gpu-native-present]\n"
+        "  --renderer <cpu|gpu-scene> [--gpu-required] [--gpu-native-present]\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
-        "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit  --gpu-rb0-stats\n"
+        "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
-        "  --gpu-scene-world-preview (experimental WORLD-only native Scene; other layers pending)\n"
+        "  --gpu-scene-world-preview (diagnostic WORLD-only native Scene)\n"
         "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
-        "  --gpu-scene-play (experimental single-player independent native GPU renderer)\n"
+        "  --gpu-scene-play (single-player native Scene renderer)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
         "  --gpu-normal-scene <near|near-heavy|enemy-cull-in|enemy-cull-out|enemy-cull-imported-in|enemy-cull-imported-out|mid|interior|thin-far|base|spawn|west-facility|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|10|20|30|60|64>\n"
@@ -130,7 +130,6 @@ void rasterfall_options_usage(int fd)
         "  --character-performance <model> [warmup] [frames] [repeats] [workers]\n"
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
-        "  --gpu-world-raster-test <near|mid> <0|30> <commands.bin>\n"
         "  --gpu-normal-scene <view> <0|10|20|30|60> (normal deterministic Campaign runtime; views listed above)\n"
         "    UI views: ui-pause|ui-scoreboard|ui-shop|ui-over|ui-won\n"
         "    Corridor: west-empty 0; west-button|west-button-no-tank 0|16|32|64 (0 means 16; buttons at frame 61)\n"
@@ -172,7 +171,6 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         }
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
-        else if (!strcmp(option, "--gpu-rb0-stats")) o->gpu_rb0_stats = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
         else if (!strcmp(option, "--gpu-scene-world-preview")) o->gpu_scene_world_preview = 1;
@@ -207,8 +205,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,1,option)<0)return -1;
             arg++;
             if(!strcmp(argv[arg],"cpu"))o->renderer_mode=0;
-            else if(!strcmp(argv[arg],"gpu-compute"))o->renderer_mode=1;
-            else {__fprintf(2,"rasterfall: renderer must be cpu or gpu-compute\n");return -1;}
+            else if(!strcmp(argv[arg],"gpu-scene"))o->gpu_scene_play=1;
+            else {__fprintf(2,"rasterfall: renderer must be cpu or gpu-scene\n");return -1;}
         }
         else if (!strcmp(option,"--gpu-required")) o->gpu_required=1;
         else if (!strcmp(option,"--gpu-native-present")) o->gpu_native_present=1;
@@ -290,18 +288,6 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         } else if (!strcmp(option,"--render-performance")) {
             o->render_performance=1;
             if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
-        } else if (!strcmp(option,"--gpu-world-raster-test")) {
-            if(require_arguments(argc,argv,arg,3,option)<0)return -1;
-            o->gpu_world_raster_view=argv[++arg];
-            o->gpu_world_raster_enemies=atoi(argv[++arg]);
-            o->gpu_world_raster_output=argv[++arg];
-            if ((strcmp(o->gpu_world_raster_view,"near") &&
-                 strcmp(o->gpu_world_raster_view,"mid")) ||
-                (o->gpu_world_raster_enemies != 0 &&
-                 o->gpu_world_raster_enemies != 30)) {
-                __fprintf(2,"rasterfall: --gpu-world-raster-test expects near|mid and 0|30\n");
-                return -1;
-            }
         } else if (!strcmp(option,"--gpu-normal-scene")) {
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->gpu_normal_view=argv[++arg];
@@ -561,25 +547,25 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         o->gpu_scene_independent_preview=1;o->gpu_scene_world_preview=1;
     }
     if (o->gpu_native_present && !o->renderer_mode) {
-        __fprintf(2,"rasterfall: --gpu-native-present requires --renderer gpu-compute\n");
+        __fprintf(2,"rasterfall: --gpu-native-present requires --renderer gpu-scene\n");
         return -1;
     }
     if (o->gpu_required && !o->gpu_native_present) {
-        __fprintf(2,"rasterfall: --gpu-required requires --renderer gpu-compute --gpu-native-present\n");
+        __fprintf(2,"rasterfall: --gpu-required requires --renderer gpu-scene --gpu-native-present\n");
         return -1;
     }
     if (o->gpu_scene_world_preview && (!o->renderer_mode || !o->gpu_required ||
             !o->gpu_native_present ||
             (o->gpu_frame_capture && !o->gpu_scene_independent_preview) ||
             o->gpu_character_vertex_diff ||
-            o->gpu_rb0_stats || (!o->gpu_normal_view && !o->gpu_wave_repro && !o->gpu_scene_play))) {
+            (!o->gpu_normal_view && !o->gpu_wave_repro && !o->gpu_scene_play))) {
         __fprintf(2,"rasterfall: Scene WORLD preview requires required native GPU and normal-scene/wave-repro; capture requires independent preview, and vertex diff and rb0 stats are unavailable\n");
         return -1;
     }
     if (o->gpu_frame_capture || o->gpu_capture_frame) {
         if (!o->gpu_frame_capture || (!o->gpu_normal_view && !o->gpu_wave_repro) || !o->renderer_mode ||
             !o->gpu_native_present || !o->gpu_required) {
-            __fprintf(2,"rasterfall: GPU frame capture requires --gpu-normal-scene or --gpu-wave-repro, --renderer gpu-compute, --gpu-native-present and --gpu-required\n");
+            __fprintf(2,"rasterfall: GPU frame capture requires --gpu-normal-scene or --gpu-wave-repro and --renderer gpu-scene\n");
             return -1;
         }
         if (!o->gpu_capture_frame) o->gpu_capture_frame=30;

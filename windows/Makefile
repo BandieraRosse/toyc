@@ -69,16 +69,15 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_world_content.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
-GAME_SRCS += gpu/src/rf_gpu_raster_pack.c
 GAME_SRCS += rasterfall/src/rf_viewmodel_contract.c
-GAME_SRCS += gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_vulkan_backend.c \
-             gpu/src/rf_gpu_mixed_executor.c gpu/src/rf_gpu_resource_cache.c
+GAME_SRCS += gpu/src/rf_gpu_vulkan_backend.c \
+             gpu/src/rf_gpu_resource_cache.c
 ANIMATION_SRCS := app/linux/glb_inspect.c rasterfall/src/rasterfall_vmd.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
                  rasterfall/lib/rasterfall_map_parser.c \
                  rasterfall/lib/rasterfall_map_runtime.c \
                  rasterfall/lib/rasterfall_map_components.c
-PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c rasterfall/src/rf_core_host.c gpu/src/rf_gpu_raster_cpu_ref.c rasterfall/src/rf_game_lifecycle.c windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
+PLATFORM_SRCS := rasterfall/src/rf_core_filesystem.c rasterfall/src/rf_gpu.c rasterfall/src/rf_core_host.c rasterfall/src/rf_game_lifecycle.c windows/src/runtime.c windows/src/socket_winsock.c windows/src/window_sdl.c \
                  windows/src/audio_sdl.c windows/src/pthread_win32.c windows/src/winmain.c \
                  windows/src/env.c windows/src/string.c windows/src/platform.c
 LIB_SRCS := lib/linux/assets.c lib/linux/graphics/fb_draw.c lib/linux/graphics/fb_font.c \
@@ -195,11 +194,6 @@ $(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_te
 -include $(BUILD)/win/tools/rasterfall_resource_test.d
 
 .PHONY: gpu-resource-cache-test
-.PHONY: gpu-mixed-executor-test
-gpu-mixed-executor-test: $(BUILD)/rasterfall-gpu-mixed-test.exe
-$(BUILD)/rasterfall-gpu-mixed-test.exe: $(BUILD)/win/tools/rasterfall_gpu_mixed_test.o $(RESOURCE_TEST_OBJS)
-	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
--include $(BUILD)/win/tools/rasterfall_gpu_mixed_test.d $(BUILD)/win/gpu/src/rf_gpu_mixed_executor.d
 
 gpu-resource-cache-test: $(BUILD)/rasterfall-gpu-cache-test.exe
 $(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_test.o $(RESOURCE_TEST_OBJS)
@@ -217,20 +211,13 @@ $(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
 
 # GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.
-GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c \
-    gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c
+GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc) \
     gpu/src/rf_gpu_vulkan_graphics.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
-    gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_bridge.comp \
+    gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp \
     $(wildcard rasterfall/include/rf_gpu*.h) include/toy_renderer.h
 .PHONY: gpu-graphics-test
 gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
-.PHONY: gpu-raster-test
-gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
-$(BUILD)/rf-gpu-raster-test.exe: gpu/src/rf_gpu_raster_test.c $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $(BUILD)
-	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
-	    -I include -I include/tlibc -I rasterfall/include gpu/src/rf_gpu_raster_test.c \
-	    $(filter-out gpu/src/rf_gpu_graphics_test.c,$(GPU_GRAPHICS_SRCS)) -o $@
 $(BUILD)/rf-gpu-graphics-test.exe: $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
 	    -I include -I include/tlibc -I rasterfall/include $(GPU_GRAPHICS_SRCS) -o $@

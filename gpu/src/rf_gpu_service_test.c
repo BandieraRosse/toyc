@@ -8,9 +8,9 @@ struct fake_backend {
     int init_count;
     int shutdown_count;
     unsigned int adapter_type;
-    int raster_create_count;
-    int raster_destroy_count;
-    int raster_fail;
+    int framebuffer_create_count;
+    int framebuffer_destroy_count;
+    int framebuffer_fail;
 };
 
 static int fake_init(void *context, struct rf_gpu_backend_info *info,
@@ -55,45 +55,35 @@ static void fake_shutdown(void *context)
     ++fake->shutdown_count;
 }
 
-static int fake_raster_create(void *context, unsigned int width,
-                              unsigned int height, unsigned int work_group_x,
-                              unsigned int work_group_y, void **raster,
+static int fake_framebuffer_create(void *context, unsigned int width,
+                              unsigned int height, void **framebuffer,
                               char *message, unsigned long message_capacity)
 {
     struct fake_backend *fake = context;
-    (void)width; (void)height; (void)work_group_x; (void)work_group_y;
+    (void)width; (void)height;
     (void)message; (void)message_capacity;
-    ++fake->raster_create_count;
-    if (fake->raster_fail) return -1;
-    *raster = fake;
+    ++fake->framebuffer_create_count;
+    if (fake->framebuffer_fail) return -1;
+    *framebuffer = fake;
     return 0;
 }
 
-static void fake_raster_destroy(void *context, void *raster)
+static void fake_framebuffer_destroy(void *context, void *framebuffer)
 {
     struct fake_backend *fake = context;
-    (void)raster;
-    ++fake->raster_destroy_count;
+    (void)framebuffer;
+    ++fake->framebuffer_destroy_count;
 }
 
-static int fake_raster_render(void *context, void *raster,
-                              const void *stream, unsigned long stream_size,
-                              const void *texture_descs,
-                              unsigned int texture_count,
-                              const void *texture_texels,
-                              unsigned long texture_bytes,
-                              unsigned int *color, int *depth,
+static int fake_framebuffer_render(void *context, void *framebuffer,
+                              unsigned int *color,
                               unsigned int width, unsigned int height,
                               unsigned int color_stride,
-                              unsigned int depth_stride,
-                              struct rf_gpu_raster_timing *timing,
                               char *message, unsigned long message_capacity)
 {
-    (void)context; (void)raster; (void)stream; (void)stream_size;
-    (void)texture_descs; (void)texture_count;
-    (void)texture_texels; (void)texture_bytes;
-    (void)color; (void)depth; (void)width; (void)height;
-    (void)color_stride; (void)depth_stride; (void)timing; (void)message;
+    (void)context; (void)framebuffer;
+    (void)color; (void)width; (void)height;
+    (void)color_stride; (void)message;
     (void)message_capacity;
     return 0;
 }
@@ -101,9 +91,9 @@ static int fake_raster_render(void *context, void *raster,
 static const struct rf_gpu_backend backend = {
     .init = fake_init,
     .shutdown = fake_shutdown,
-    .raster_create = fake_raster_create,
-    .raster_destroy = fake_raster_destroy,
-    .raster_render = fake_raster_render
+    .framebuffer_create = fake_framebuffer_create,
+    .framebuffer_destroy = fake_framebuffer_destroy,
+    .framebuffer_render = fake_framebuffer_render
 };
 
 #define CHECK(condition) do {                                                \
@@ -154,37 +144,28 @@ int main(void)
     CHECK(status.ready && status.info.adapter_type == RF_GPU_ADAPTER_DISCRETE);
     CHECK(strcmp(status.info.adapter_name, "fake discrete") == 0);
     CHECK(status.renderer.compute && status.renderer.framebuffer);
-    CHECK(status.renderer.raster_v1);
-    CHECK(status.renderer.raster_work_group_x == 16 &&
-          status.renderer.raster_work_group_y == 16);
     {
-        struct rf_gpu_raster raster;
+        struct rf_gpu_framebuffer framebuffer;
         void *old_implementation;
-        CHECK(rf_gpu_raster_init(&gpu, &raster, 16, 16) == 0);
-        old_implementation = raster.implementation;
-        fake.raster_fail = 1;
-        CHECK(rf_gpu_raster_resize(&gpu, &raster, 32, 24) < 0);
-        CHECK(raster.implementation == old_implementation &&
-              raster.width == 16 && raster.height == 16 &&
-              fake.raster_destroy_count == 0);
-        rf_gpu_raster_shutdown(&raster);
-        CHECK(fake.raster_destroy_count == 1);
+        CHECK(rf_gpu_framebuffer_init(&gpu, &framebuffer, 16, 16) == 0);
+        old_implementation = framebuffer.implementation;
+        fake.framebuffer_fail = 1;
+        CHECK(rf_gpu_framebuffer_resize(&gpu, &framebuffer, 32, 24) < 0);
+        CHECK(framebuffer.implementation == old_implementation &&
+              framebuffer.width == 16 && framebuffer.height == 16 &&
+              fake.framebuffer_destroy_count == 0);
+        rf_gpu_framebuffer_shutdown(&framebuffer);
+        CHECK(fake.framebuffer_destroy_count == 1);
     }
     rf_gpu_shutdown(&gpu);
     CHECK(fake.shutdown_count == 1);
 
-    /* READY service and framebuffer remain usable when Raster V1's exact
-     * integer contract cannot be met. This is the CPU fallback boundary. */
+    /* Framebuffer smoke remains available without integer shader support. */
     memset(&fake, 0, sizeof(fake));
     CHECK(rf_gpu_init(&gpu, RF_GPU_POLICY_REQUIRED, &backend, &fake) == 0);
     gpu.info.capabilities.shader_int64 = 0;
     CHECK(rf_gpu_get_status(&gpu, &status) == 0);
     CHECK(status.ready && status.renderer.compute && status.renderer.framebuffer);
-    CHECK(!status.renderer.raster_v1);
-    {
-        struct rf_gpu_raster raster;
-        CHECK(rf_gpu_raster_init(&gpu, &raster, 16, 16) < 0);
-    }
     rf_gpu_shutdown(&gpu);
 
     memset(&caps, 0, sizeof(caps));
@@ -198,12 +179,10 @@ int main(void)
     caps.max_compute_work_group_size[0] = 8;
     caps.max_compute_work_group_size[1] = 8;
     rf_gpu_evaluate_capabilities(&caps, &renderer);
-    CHECK(renderer.framebuffer && renderer.raster_v1);
-    CHECK(renderer.raster_work_group_x == 8 &&
-          renderer.raster_work_group_y == 8);
+    CHECK(renderer.framebuffer);
     caps.max_compute_work_group_invocations = 32;
     rf_gpu_evaluate_capabilities(&caps, &renderer);
-    CHECK(renderer.framebuffer && !renderer.raster_v1);
+    CHECK(renderer.framebuffer);
 
     /* Snapshot storage is fixed-width data only: exercise representative
      * integrated, discrete and CPU/software classifications without backend

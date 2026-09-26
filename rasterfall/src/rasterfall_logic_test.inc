@@ -197,11 +197,6 @@ static int rfm2_material_alpha_producer_logic_test(void)
     {
         goto done;
     }
-    if (rf_core_transparent_command_logic_test_v1(renderer.cmds,
-                                                   renderer.cmd_count) < 0)
-    {
-        goto done;
-    }
     renderer.cmd_count = 0;
     if (rasterfall_render_rigid_resource(&renderer, &camera, &resource,
                                          &transform) < 0 ||
@@ -448,8 +443,6 @@ static int rfm2_texel_alpha_producer_logic_test(void)
     toy_renderer_destroy(&reference_renderer);
     toy_renderer_destroy(&renderer);
     renderers_destroyed = 1;
-    if (rf_core_transparent_command_logic_test_v1(commands, COMMANDS) < 0)
-        goto done;
     result = 0;
 done:
     texels[0][3] = 0; texels[1][3] = 255; texels[2][3] = 128;
@@ -1596,8 +1589,6 @@ static int run_logic_test(void)
                                                  &interaction_camera) != 0)
             return 263;
     }
-    if (rf_core_retained_span_logic_test_v1() < 0 ||
-        rf_core_mixed_frame_logic_test() < 0) return 249;
     {
         struct rf_core exit_core;
         memset(&exit_core, 0, sizeof(exit_core));
@@ -2917,9 +2908,6 @@ static int run_logic_test(void)
         if (!fade_reference) goto death_fixture_fail;
         memcpy(fade_reference, renderer.cmds,
                (size_t)fade_count * sizeof(*fade_reference));
-        if (rf_core_transparent_command_logic_test_v1(renderer.cmds,
-                                                       fade_count) < 0)
-            goto death_fixture_fail;
 
         /* A second render at the same fade instant must keep the original
          * body-part submission order and geometry/color identifiers. */
@@ -3097,9 +3085,6 @@ death_fixture_done:
                 return 261;
             reference[i] = *cmd;
         }
-        if (rf_core_transparent_command_logic_test_v1(
-                renderer.cmds + command_begin, 6) < 0)
-            return 262;
 
         /* Identical presentation state must preserve fragment-before-dust
          * geometry, color and triangle order. */
@@ -3129,8 +3114,6 @@ death_fixture_done:
                 !renderer.cmds[i].transparent_no_depth_write ||
                 renderer.cmds[i].material_alpha != (i < 4 ? 127 : 90))
                 return 266;
-        if (rf_core_transparent_command_logic_test_v1(renderer.cmds, 6) < 0)
-            return 267;
         toy_renderer_flush(&renderer);
         rasterfall_effects_init(&effects);
     }

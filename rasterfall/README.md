@@ -26,7 +26,7 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --gpu-scene-play`。
+实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --renderer gpu-scene`（`--gpu-scene-play` 为等价入口）。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
 离线单人游戏默认使用 FPS；按 `M` 切换 RTS 俯视模式。RTS 中 `WASD` 平移镜头，
 滚动鼠标滚轮调节俯视高度，向上放大细节、向下缩小至可查看完整旧地图；

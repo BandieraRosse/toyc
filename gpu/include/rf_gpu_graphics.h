@@ -42,7 +42,7 @@ enum rf_gpu_graphics_scene_layer {
 };
 enum rf_gpu_graphics_submit_kind {
     RF_GPU_SUBMIT_UPLOAD, RF_GPU_SUBMIT_VERTEX_DIFF, RF_GPU_SUBMIT_SKIN_INPUT,
-    RF_GPU_SUBMIT_SKINNING, RF_GPU_SUBMIT_BRIDGE, RF_GPU_SUBMIT_DRAW,
+    RF_GPU_SUBMIT_SKINNING, RF_GPU_SUBMIT_DRAW,
     RF_GPU_SUBMIT_READBACK, RF_GPU_SUBMIT_KIND_COUNT
 };
 struct rf_gpu_graphics_stats {
@@ -162,35 +162,6 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height);
-/* Bind the normal mixed Raster target to this graphics owner's color image.
- * Resize discards unfinished borrower recordings and rebinds matching extents;
- * a new CLEAR is required. Destruction detaches borrowers. Submitted borrowers
- * must complete before the old attachment is released. */
-int rf_gpu_graphics_share_color(struct rf_gpu_graphics *g, void *raster);
-int rf_gpu_graphics_render(struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_draw *draws, uint32_t count,
-    uint32_t *rgba, float *depth, uint32_t pixel_capacity);
-/* Diagnostic target interop: GPU export RGBA8/D32 -> RGBA8/inverse-Z
- * buffers -> GPU import, then attachment LOAD and later indexed draws.
- * No host framebuffer upload; final readback is diagnostic only. Requires
- * a successfully rendered target at this extent; resize invalidates it.
- * This is not yet the normal Raster ABI segmented-frame consumer. */
-int rf_gpu_graphics_continue(struct rf_gpu_graphics *g,
-    const struct rf_gpu_graphics_draw *draws, uint32_t count,
-    uint32_t *rgba, float *depth, uint32_t pixel_capacity);
-/* HG-2B hosted interop: import an unfinished Raster ABI target, LOAD indexed
- * draws, export back to that target. GPU-only; no Post/present/readback.
- * Same device/extent, integer_depth draws, and WORLD depths in [0,16384]
- * required. Preflight rejection preserves raster continuation; execution
- * failure invalidates it. Caller owns frame ordering and lifetime. */
-int rf_gpu_graphics_raster_draw(struct rf_gpu_graphics *g, void *raster,
-    const struct rf_gpu_graphics_draw *draws, uint32_t count);
-int rf_gpu_graphics_raster_batch(struct rf_gpu_graphics *g, void *raster,
-    const struct rf_gpu_graphics_batch_item *items, uint32_t count);
-/* Inspect the last diagnostic bridge's exported compute encoding, never used as input
- * to drawing/import. Diagnostic readback validates the conversion itself. */
-int rf_gpu_graphics_read_bridge(struct rf_gpu_graphics *g,
-    uint32_t *rgba, int32_t *inverse_depth, uint32_t pixel_capacity);
 void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_stats *stats);
 void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g);

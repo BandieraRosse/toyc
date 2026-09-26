@@ -1,6 +1,6 @@
 # Outpost V1 扩建
 
-> 状态：活动
+> 状态：延期；当前优先级见 [计划入口](README.md)
 > 所有者：前哨站地图
 > 执行入口：`rasterfall/assets/maps/outpost.map`
 

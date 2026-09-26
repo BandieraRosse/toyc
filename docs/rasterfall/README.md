@@ -13,7 +13,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 | 任务 | 先读 | 主要代码或工具入口 |
 | --- | --- | --- |
-| 当前优先级、Scene 收尾与延期项 | [计划入口](plans/README.md) | 当前决策与归档计划 |
+| 当前优先级与延期项 | [计划入口](plans/README.md) | 当前决策与活动计划；退役历史见[归档](archive/gpu-compute-retirement/README.md) |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](guides/build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
@@ -30,7 +30,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 普通感染体步态采样与来源拆分 | [角色表现](architecture/character-presentation.md)、[活动计划](plans/README.md) | `rasterfall_enemy_visual.h`、`rasterfall_infected_sample_motion`；显式历史和时间的只读采样接口 |
 | HUD、Viewmodel 与特效；独立 Scene 分层和单人入口 | [HUD 与特效](architecture/hud-effects.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-play`、`tools/gpu_scene_play.ps1`、`rasterfall_canvas.h`、`render/rf_gpu_scene_layers.inc`；共享菜单布局、独立几何与 native 生命周期 |
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark、`tools/gpu_scene_old_map_perf.ps1 -Stage Corridor` 旧地图按钮整波与真实时钟诊断 |
-| GPU Draw/Raster/present 架构 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
+| GPU Scene/present 架构与退役边界 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[活动计划](plans/README.md) | `gpu/`、Scene graphics、Core Host |
 | GPU Scene 只读 snapshot | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[历史迁移接口](archive/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；独立 Scene 冻结 world、角色与动态来源；旧正常帧审计记录见历史迁移接口 |
 | 硬件 Scene WORLD 原生预览 | [Scene 工作流](guides/gpu-scene-fixture.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-scene-world-preview`、`tools/gpu_scene_preview.ps1`；真实 WORLD 独立 native 提交，供定向诊断 |
 | 程序角色、网络玩家与阶段 2 WORLD 诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_procedural_triangles`、`tools/gpu_scene_stage2.ps1`、`tools/gpu_scene_network.ps1`；共享 WORLD 深度、双面材质及帧内网络表现 |
@@ -61,7 +61,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 - Visual capture、model views、character acceptance 和 world capture：角色、模型及真实 world render。
 - `build/glb-inspect ... contract`、`build/rfchar_runtime_test <model.rmesh>`：资产与 runtime 契约。
 - `make map-layout`、`tools/map_layout_query.py`：地图布局导出和精确空间查询。
-- `tools/gpu_acceptance.ps1`、`tools/gpu_metrics.ps1`：GPU 正确性、生命周期和性能证据。
+- `windows/NativeCodex.ps1 gpu-test`、`tools/gpu_scene_play.ps1`、`tools/gpu_metrics.ps1`：Scene 正确性、生命周期和性能证据。
 
 退出码、标准输出、日志和生成物属于可复核事实。文档与实际行为不一致时，先检查 Makefile、脚本、参数
 解析和调用入口，再修正文档。

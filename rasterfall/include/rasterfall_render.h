@@ -24,7 +24,6 @@ struct rasterfall_render_context {
     int textures_enabled;
     int diagnostic_fixed_lighting; /* Fixed lighting override for isolated captures only. */
     /* Bound only while Core records an ordered mixed WORLD frame. */
-    struct rf_core_mixed_frame *mixed_frame;
     /* HG-5B frame policy. GPU skinning keeps only bind/palette by default;
      * rollback and explicit vertex diff request the CPU oracle stream. */
     int character_gpu_skinning;
@@ -32,7 +31,6 @@ struct rasterfall_render_context {
 };
 
 struct rasterfall_character_profile;
-struct rf_core_mixed_frame;
 
 /* Presentation snapshot, borrowed for one draw; no actor ownership or culling.
  * x/z and lift use RFU; lift = ground_y + airborne_y (feet at -900 + lift).

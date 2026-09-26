@@ -81,11 +81,6 @@ int main(void)
                status.info.capabilities.memory_types[i].heap_index,
                status.info.capabilities.memory_types[i].property_flags);
     printf("framebuffer: %s\n", support_name(status.renderer.framebuffer));
-    printf("raster_v1: %s", support_name(status.renderer.raster_v1));
-    if (status.renderer.raster_v1)
-        printf(" (workgroup=%ux%u)", status.renderer.raster_work_group_x,
-               status.renderer.raster_work_group_y);
-    putchar('\n');
     puts("compute: PASS (1 2 3 4 -> 4 7 10 13)");
     rf_gpu_shutdown(&gpu);
     if (context.implementation) {

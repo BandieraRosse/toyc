@@ -7,8 +7,7 @@
 本文定义[活动计划](gpu-scene-renderer.md)第二步的最小接口。它只约束数据和所有权，
 不改变现行 mixed renderer。现行资源身份和 slot 行为见
 [`rasterfall_render_resources.h`](../../../rasterfall/include/rasterfall_render_resources.h)、
-[`rf_core_mixed_frame.h`](../../../rasterfall/include/rf_core_mixed_frame.h) 与
-[`rf_gpu_mixed_executor.c`](../../../gpu/src/rf_gpu_mixed_executor.c)。
+`rf_core_mixed_frame.h` 与 `rf_gpu_mixed_executor.c`（均已退役，源码见 Git 历史）。
 隔离的 actor generation tracker 与只读 actor snapshot 构建由 `rf_gpu_scene_identity.h/.c`
 实现；`rf_gpu_scene_frame.h/.c` 扩为 V2 值 snapshot，含 world/transient 输入、map generation 与展示开关。
 `rf_gpu_scene_extract.h/.c` 已实现首批有序 Scene 元数据，两类构建均有独立逻辑用例。

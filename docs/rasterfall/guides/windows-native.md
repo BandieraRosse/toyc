@@ -1,11 +1,8 @@
 # Windows Native Codex
 
-> 文档更新：2026-09-22
-> 源码核对基线补充：RB-0 最终签收后的 runtime fog-free 策略与已移除 `--gpu-post-fog` 接入。
-> 源码核对基线补充：`tools/gpu_rb0_special.ps1` 的 layer 依赖 PATH、加载证明与分阶段专项。
-> 源码核对基线补充：Windows Intel strict native、正式地图 320 帧零回退波次与窗口拉伸已确认；历史 Fog smoke 仅证明保留的底层 ABI，当前 runtime 不接入 fog；GPU 专项流程见 [GPU 验收与诊断](gpu-validation.md)。
-> 源码核对基线补充：2026-09-19 `rf_core_host.c` retained WORLD partition 同步实际分配容量；跨帧缩小/增长回归覆盖缓存复用。
-> 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_acceptance.ps1`、当前 `rasterfall_options.c`
+> 状态：当前
+> 文档更新：2026-09-27
+> 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_scene_play.ps1`、当前 `rasterfall_options.c`
 
 这是 Rasterfall 当前主要且优先的开发、构建编排、GPU 实机验证和签收 lane。唯一入口是
 `windows/NativeCodex.ps1`；它固定使用 MSYS2 `mingw64` + `usr/bin`，将对象、exe
@@ -38,9 +35,9 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-`gpu-test` 使用 `--gpu-required --gpu-native-present`，因此 CPU fallback、software
-present、readback/copy 或 native GPU 初始化失败都会得到非零退出码；`--frame-audit`
-和 `rasterfall.log` 是诊断证据。所有运行都从 package root 进行，避免裸 exe 误把
+`gpu-test` 使用 `--renderer gpu-scene`，该入口自动要求 native GPU；Scene 初始化或提交失败会得到
+非零退出码。逐帧 `SCENE-SOURCE` 与 `SCENE-NATIVE` 应报告零旧命令、零 mixed draw、零 bridge 和零常规读回；
+`--frame-audit` 和 `rasterfall.log` 是诊断证据。所有运行都从 package root 进行，避免裸 exe 误把
 缺失资产误判为 GPU 问题。`run` 可携带任意当前 CLI 参数，例如：
 
 ```powershell
@@ -59,17 +56,15 @@ retained command 跨帧容量失配；完整生命周期组合仍无同一份实
 16 MiB，聚合逻辑测试在正式链接配置下通过。
 
 在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 检查依赖；`package` 包含 exe、
-公开资产及本地私有资产（若存在）；`test` 运行逻辑回归；`gpu-test` 要求 audit 为
-`gpu-native` 且无 CPU fallback/readback/copy；`acceptance` 生成 normal-frame audit BMP、
+公开资产及本地私有资产（若存在）；`test` 运行逻辑回归；`gpu-test` 要求连续独立 Scene native 提交，
+且无旧命令、mixed draw、bridge 或常规读回；`acceptance` 生成 normal-frame audit BMP、
 visual capture BMP 和 package 内 `rasterfall.log`。这些命令的当前退出码和生成物才是本次
 验证结果；Linux `build/` 不应因 Windows 构建产生或复用对象。
 
 ## 专项验证
 
-RB-0 专项使用 `tools/gpu_rb0_special.ps1`，可选 `-Stage Validation/Faults/Soak`。
-只有设置 `VK_INSTANCE_LAYERS` 不足以证明验证层已加载：本地 MinGW layer DLL 还需要其目录与
-MinGW runtime DLL 目录进入 PATH。脚本要求 loader 插入 Khronos layer，且信息日志明确列出
-Synchronization；缺少任一证明即失败。当前流程见 [GPU 验收与诊断](gpu-validation.md)，历史证据见 [RB-0 专项续接归档](../archive/gpu-2026-09-22/gpu-rb0-special-20260922.md)。
+Scene 互动、world cycle、combat、resize、故障注入和连续运行使用 `tools/gpu_scene_play.ps1 -Stage All`。
+开启 Vulkan validation 时，除 `VK_INSTANCE_LAYERS` 外还需把本地 MinGW layer DLL 及运行时目录放入 PATH，并核对 loader 与 Synchronization 日志。当前流程见 [GPU 验收与诊断](gpu-validation.md)；RB-0 旧流程见[退役归档](../archive/gpu-compute-retirement/README.md)。
 
 ## 留到后续
 

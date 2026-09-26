@@ -18,8 +18,6 @@
 #include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
 #include "rasterfall_draw.h"
-#include "rf_core_mixed_frame.h"
-#include "rf_gpu_raster_pack.h"
 #include "rf_gpu_scene_world.h"
 #include "rf_gpu_scene_enemy.h"
 #include "render/rasterfall_text_panel.h"
@@ -74,13 +72,6 @@ struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
 
-static int render_set_mixed_producer(struct toy_renderer *renderer,
-                                     unsigned int producer)
-{
-    if (!render_ctx || !render_ctx->mixed_frame) return 0;
-    return rf_core_mixed_set_producer(render_ctx->mixed_frame, renderer,
-                                      producer);
-}
 static struct rasterfall_action_clip humanoid_actions[RASTERFALL_ACTION_COUNT];
 static unsigned int humanoid_action_ready_mask;
 static int humanoid_actions_load_attempted;
@@ -1637,143 +1628,6 @@ static int lower_gallery_triangles(struct toy_renderer *renderer,
     return drawn;
 }
 
-static int character_dynamic_draw_submit(struct toy_renderer *renderer,
-    const struct camera *camera, const struct rasterfall_model_asset *model,
-    int center_x, int base_y, int center_z, int scale, unsigned int primitive,
-    const unsigned char *indices, unsigned int index_begin,
-    unsigned int index_end, uint32_t color, unsigned int *skin_instance)
-{
-    struct rasterfall_dynamic_draw_vertex *vertices;
-    struct rasterfall_skinned_draw_vertex *bind_vertices;
-    const struct rasterfall_model_skin_palette_bone *palette;
-    struct rasterfall_model_skin_palette_bone *new_palette=NULL;
-    struct rasterfall_draw_view view;
-    struct rasterfall_draw_instance instance;
-    struct rasterfall_draw_item item;
-    unsigned int count=index_end-index_begin, out=0;
-    int added_skin_instance=0;
-    long phase;
-    if (!render_ctx || !render_ctx->mixed_frame || !count || count%3 ||
-        count>65536 || active_rigid_transform_enabled || active_infected_model ||
-        renderer->recording_edge || active_texture_view || active_sphere_texture ||
-        active_toon_texture || active_toon_shared>=0 || active_material_alpha!=255 ||
-        active_material_ambient || active_material_specular) return 0;
-    vertices=render_ctx->character_cpu_reference ?
-        tlibc_malloc((size_t)count*sizeof(*vertices)) : NULL;
-    bind_vertices=tlibc_malloc((size_t)count*sizeof(*bind_vertices));
-    if ((render_ctx->character_cpu_reference && !vertices) || !bind_vertices) {
-        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-    }
-    if (*skin_instance==UINT_MAX) {
-        new_palette=tlibc_malloc((size_t)model->bone_count*sizeof(*new_palette));
-        if (!new_palette || rasterfall_model_build_skin_palette(model,new_palette,
-                model->bone_count)<0 ||
-            rf_core_mixed_skin_instance(render_ctx->mixed_frame,new_palette,
-                model->bone_count,skin_instance)<0) {
-            tlibc_free(new_palette); tlibc_free(vertices); tlibc_free(bind_vertices);
-            return -1;
-        }
-        added_skin_instance=1;
-    }
-    {
-        const struct rf_core_mixed_skin_instance *stored=
-            &render_ctx->mixed_frame->skin_instances[*skin_instance];
-        palette=render_ctx->mixed_frame->skin_palette+stored->first_palette_bone;
-    }
-    tlibc_free(new_palette);
-    for (unsigned int j=index_begin;j<index_end;j+=3) {
-        unsigned int id[3];
-        for (unsigned int n=0;n<3;++n) {
-            id[n]=model_u32(indices+(j+n)*4);
-            if (id[n]>=model->vertex_count) {
-                tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-            }
-        }
-        for (unsigned int n=0;n<3;++n) {
-            struct rasterfall_dynamic_draw_vertex *v=vertices ? &vertices[out] : NULL;
-            struct rasterfall_skinned_draw_vertex *bind=&bind_vertices[out++];
-            const unsigned char *raw=model->vertices+(size_t)id[n]*model->vertex_bytes;
-            const unsigned char *skin=model->skin_vertices+
-                (size_t)id[n]*RASTERFALL_MODEL_SKIN_VERTEX_BYTES;
-            bind->uv[0]=raw[18]|(uint32_t)raw[19]<<8;
-            bind->uv[1]=raw[20]|(uint32_t)raw[21]<<8;
-            if (v) {
-                if (rasterfall_model_skin_vertex_palette(model,palette,
-                        model->bone_count,id[n],v->position,v->normals)<0) {
-                    tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-                }
-                memcpy(v->uv,bind->uv,sizeof(v->uv));
-            }
-            memcpy(bind->position,raw,sizeof(bind->position));
-            bind->influences[0].bone0=(uint16_t)(skin[0]|skin[1]<<8);
-            bind->influences[0].bone1=(uint16_t)(skin[2]|skin[3]<<8);
-            bind->influences[0].weight=(uint16_t)(skin[4]|skin[5]<<8);
-            bind->influences[0].type=skin[6]; bind->influences[0].reserved=0;
-            for (unsigned int corner=0;corner<3;++corner) {
-                const unsigned char *corner_raw=model->vertices+
-                    (size_t)id[corner]*model->vertex_bytes;
-                const unsigned char *corner_skin=model->skin_vertices+
-                    (size_t)id[corner]*RASTERFALL_MODEL_SKIN_VERTEX_BYTES;
-                for (int axis=2;axis>=0;--axis)
-                    bind->normals[corner*3+axis]=
-                        (int16_t)(uint16_t)(corner_raw[12+axis*2]|
-                            corner_raw[13+axis*2]<<8);
-                bind->influences[corner+1].bone0=
-                    (uint16_t)(corner_skin[0]|corner_skin[1]<<8);
-                bind->influences[corner+1].bone1=
-                    (uint16_t)(corner_skin[2]|corner_skin[3]<<8);
-                bind->influences[corner+1].weight=
-                    (uint16_t)(corner_skin[4]|corner_skin[5]<<8);
-                bind->influences[corner+1].type=corner_skin[6];
-                bind->influences[corner+1].reserved=0;
-                if (v && corner) {
-                    int unused_position[3];
-                    if (rasterfall_model_skin_vertex_palette(model,palette,
-                            model->bone_count,id[corner],unused_position,
-                            v->normals+corner*3)<0) {
-                        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-                    }
-                }
-            }
-        }
-    }
-    memset(&view,0,sizeof(view)); memset(&instance,0,sizeof(instance));
-    memset(&item,0,sizeof(item));
-    view.camera=*camera; view.width=renderer->surface.width;
-    view.height=renderer->surface.height; view.focal=view.width*3/4; view.near_z=NEAR_Z;
-    instance.mesh=model; instance.x=center_x; instance.y=base_y; instance.z=center_z;
-    instance.scale_milli=scale; instance.yaw_sin_q10=active_gallery_sy;
-    instance.yaw_cos_q10=active_gallery_cy; instance.scene_light_q8=
-        active_scene_light_override_q8>=0?active_scene_light_override_q8:256;
-    instance.form_lighting=active_model_form_lighting;
-    item.primitive=primitive; item.index_count=count; item.material.color=color;
-    item.material.double_sided=active_material_double_sided;
-    if (rf_core_mixed_require_draws(render_ctx->mixed_frame,1)<0) {
-        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-    }
-    phase=render_monotonic_us();
-    if (renderer->cmd_count>0 && toy_renderer_flush(renderer)<0) {
-        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-    }
-    scene_stats.static_draw_flush_us+=render_monotonic_us()-phase;
-    if (rf_core_mixed_skinned_draw(render_ctx->mixed_frame,&view,&instance,&item,
-            vertices,bind_vertices,count,*skin_instance)<0) {
-        tlibc_free(vertices); tlibc_free(bind_vertices); return -1;
-    }
-    {
-        int uploaded_reference=vertices!=NULL;
-        tlibc_free(vertices); tlibc_free(bind_vertices);
-        scene_stats.character_draw_upload_vertices+=uploaded_reference ? count : 0;
-    }
-    scene_stats.character_draw_items++;
-    scene_stats.character_draw_triangles+=count/3;
-    scene_stats.character_skin_bind_vertices+=count;
-    if (added_skin_instance) {
-        scene_stats.character_skin_instances++;
-        scene_stats.character_skin_palette_bones+=model->bone_count;
-    }
-    return 1;
-}
 
 static int render_gallery_model_range(struct toy_renderer *renderer,
                                 const struct camera *camera,
@@ -1837,10 +1691,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         phase_start = render_monotonic_us();
         bone_before = model_setup_timing.bone_hierarchy_us;
         skin_before = model_setup_timing.skinning_us;
-        int need_cpu_vertices=!(character_model && model->skinning_enabled &&
-            render_ctx && render_ctx->mixed_frame &&
-            render_ctx->character_gpu_skinning &&
-            !render_ctx->character_cpu_reference);
+        int need_cpu_vertices=1;
         if (prepare_gallery_vertex_cache(renderer, model, camera, center_x, base_y,
                                          center_z, scale,need_cpu_vertices) < 0)
             return 0;
@@ -2021,23 +1872,14 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         if (!texture && shared_texture) active_texture_view = active_model_texture;
         phase_start = render_monotonic_us();
         {
-            int hardware=character_model && model->skinning_enabled ?
-                character_dynamic_draw_submit(renderer,camera,model,center_x,base_y,
-                    center_z,scale,(unsigned int)i,indices,index_begin,index_end,color,
-                    &skin_instance) : 0;
-            if (hardware<0) return 0;
-            if (!hardware) {
-                if (!vertex_cache_prepared) {
-                    if (prepare_gallery_vertex_cache(renderer,model,camera,center_x,
-                            base_y,center_z,scale,1)<0) return 0;
-                    vertex_cache_prepared=1;
-                }
-                if (character_model && render_ctx && render_ctx->mixed_frame)
-                    scene_stats.character_draw_legacy_items++;
-                drawn += lower_gallery_triangles(renderer, camera, model,
-                    center_x, base_y, center_z, scale, indices, index_begin, index_end,
-                    character_model, texture || shared_texture, color);
+            if (!vertex_cache_prepared) {
+                if (prepare_gallery_vertex_cache(renderer,model,camera,center_x,
+                        base_y,center_z,scale,1)<0) return 0;
+                vertex_cache_prepared=1;
             }
+            drawn += lower_gallery_triangles(renderer, camera, model,
+                center_x, base_y, center_z, scale, indices, index_begin, index_end,
+                character_model, texture || shared_texture, color);
         }
         body_us = render_monotonic_us() - phase_start;
         model_setup_timing.body_triangles_us += body_us;
@@ -2136,7 +1978,6 @@ static const struct rasterfall_model_asset *static_prop_model(int asset_id,
 
 static int render_boundary_wall(struct toy_renderer *, const struct camera *,
                                  const struct rasterfall_prop_instance *);
-static int persistent_map_submit_class(struct toy_renderer *, const struct camera *, int);
 
 int rasterfall_render_static_prop(
     struct toy_renderer *renderer, const struct camera *camera,
@@ -2184,19 +2025,12 @@ int rasterfall_render_static_prop(
         if (rejection == RASTERFALL_DRAW_ACCEPTED) {
             scene_stats.static_draw_instances++;
             scene_stats.static_draw_asset_mask |= 1ULL << instance->asset_id;
-            if (render_ctx && render_ctx->mixed_frame) {
-                /* Each Draw pins its immutable bundle in rf_core_mixed_draw().
-                 * Do not add another instance pin here. */
-                pixels = static_prop_draw_mixed(renderer, &view, &draw_instance,
-                    render_ctx->mixed_frame);
-            } else {
-                /* Reference RasterCmd texture pointers outlive lowering. */
-                if (rasterfall_render_resources()->frame_active &&
-                    rasterfall_resources_pin(rasterfall_render_resources(), handle) < 0)
-                    pixels = -1;
-                else
-                    pixels = static_prop_draw_reference(renderer, &view, &draw_instance);
-            }
+            /* Reference RasterCmd texture pointers outlive lowering. */
+            if (rasterfall_render_resources()->frame_active &&
+                rasterfall_resources_pin(rasterfall_render_resources(), handle) < 0)
+                pixels = -1;
+            else
+                pixels = static_prop_draw_reference(renderer, &view, &draw_instance);
         } else {
             scene_stats.static_draw_legacy_instances++;
             scene_stats.static_draw_legacy_triangles += model->index_count / 3;
@@ -2352,10 +2186,7 @@ int rasterfall_rigid_attachment_transform_logic_test(void)
 static int render_static_props(struct toy_renderer *renderer,
                                const struct camera *camera)
 {
-    int i, pixels = 0, boundary_submitted = 0;
-    int hardware_boundary = render_ctx && render_ctx->mixed_frame &&
-        !diagnostic_no_planar_v2 && !diagnostic_flat_planar &&
-        active_session->map_ops.runtime_loaded;
+    int i, pixels = 0;
     for (i = 0; i < level_map.prop_count; i++)
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
@@ -2368,16 +2199,6 @@ static int render_static_props(struct toy_renderer *renderer,
         instance.yaw_degrees = map_prop->yaw_degrees;
         instance.scale_milli = map_prop->scale_milli;
         instance.length = map_prop->length;
-        if (hardware_boundary &&
-            instance.asset_id == RASTERFALL_PROP_ASSET_BOUNDARY_WALL) {
-            if (!boundary_submitted) {
-                active_world_light_v2 = 1;
-                if (persistent_map_submit_class(renderer, camera, PERSISTENT_MAP_MAP_BOUNDARY) < 0)
-                    return -1;
-                boundary_submitted = 1;
-            }
-            continue;
-        }
         if (instance.asset_id != RASTERFALL_PROP_ASSET_BOUNDARY_WALL) {
             const struct rasterfall_prop_asset_profile *profile =
                 rasterfall_prop_asset_profile(instance.asset_id);
@@ -2411,7 +2232,7 @@ static int render_static_props(struct toy_renderer *renderer,
                     instance.x, instance.y, instance.z));
         {
             int drawn = rasterfall_render_static_prop(renderer, camera, &instance);
-            if (drawn < 0 && render_ctx && render_ctx->mixed_frame) {
+            if (drawn < 0) {
                 active_scene_light_override_q8 = previous_scene_light;
                 active_world_light_v2 = 0;
                 return -1;
@@ -4373,34 +4194,6 @@ static int map_has_floor_ground(const struct toy_map *map,int x, int z)
     return 0;
 }
 
-static int draw_floor_mesh_mixed(struct toy_renderer *renderer,
-    const struct camera *camera, const struct rasterfall_model_asset *model,
-    struct rasterfall_resource_handle handle)
-{
-    struct rasterfall_draw_view view;
-    struct rasterfall_draw_instance instance;
-    unsigned int i;
-    if (!render_ctx || !render_ctx->mixed_frame || !model) return -1;
-    memset(&view, 0, sizeof(view)); memset(&instance, 0, sizeof(instance));
-    view.camera = *camera; view.width = renderer->surface.width;
-    view.height = renderer->surface.height; view.focal = view.width * 3 / 4;
-    view.near_z = NEAR_Z;
-    instance.mesh = model; instance.mesh_handle = handle;
-    instance.y = -900; instance.scale_milli = 1000; instance.yaw_cos_q10 = 1024;
-    instance.scene_light_q8 = 256; instance.vertex_light_q8 = 1;
-    if (rf_core_mixed_require_draws(render_ctx->mixed_frame,
-            model->primitive_count) < 0) return -1;
-    if (renderer->cmd_count > 0 && toy_renderer_flush(renderer) < 0) return -1;
-    for (i = 0; i < model->primitive_count; ++i) {
-        struct rasterfall_draw_item item;
-        if (static_prop_draw_resolve(&instance, i, &item) != RASTERFALL_DRAW_ACCEPTED ||
-            rf_core_mixed_draw(render_ctx->mixed_frame, &view, &instance, &item) < 0)
-            return -1;
-        scene_stats.ground_draw_items++;
-        scene_stats.ground_draw_triangles += item.index_count / 3;
-    }
-    return 0;
-}
 
 /* Render continuous slab colours and authored floor paint as one tessellated
  * plane.  A colour region changes the colour of the affected sub-rectangles;
@@ -4412,17 +4205,10 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
     int base_x, base_z, i, j, k, pixels = 0;
     struct floor_mesh_build build;
     const struct rasterfall_model_asset *cached = NULL;
-    int hardware_floor = scene_model != NULL || (render_ctx && render_ctx->mixed_frame &&
-        active_world_light_v2 && !diagnostic_flat_planar);
+    int hardware_floor = scene_model != NULL;
     int slab = 2048, joint = authored_ground ? 0 : 10;
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
     memset(&build, 0, sizeof(build));
-    if (hardware_floor && !scene_model) {
-        cached = rasterfall_resources_resolve_active(
-            rasterfall_render_resources(), floor_mesh_handle);
-        if (cached) return draw_floor_mesh_mixed(renderer, camera, cached,
-                                                 floor_mesh_handle);
-    }
     for (base_z = map->minz; base_z < map->maxz; base_z += slab) {
         for (base_x = map->minx; base_x < map->maxx; base_x += slab) {
             int tile_max_x = base_x + slab < map->maxx ? base_x + slab : map->maxx;
@@ -4537,14 +4323,8 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
     if (hardware_floor) {
         struct rasterfall_model_asset *model = build.count ? floor_mesh_finish(&build,map) : NULL;
         tlibc_free(build.patches);
-        if (scene_model) { *scene_model=model; return build.count && !model ? -1 : 0; }
-        if (!model || rasterfall_resources_adopt(rasterfall_render_resources(),
-                "@world/partitioned-floor", model, &floor_mesh_handle) < 0) {
-            if (model) { rasterfall_model_unload(model); tlibc_free(model); }
-            return -1;
-        }
-        scene_stats.ground_mesh_builds++;
-        return draw_floor_mesh_mixed(renderer, camera, model, floor_mesh_handle);
+        *scene_model=model;
+        return build.count && !model ? -1 : 0;
     }
     scene_stats.ground_legacy_commands = renderer->cmd_count;
     return pixels;
@@ -4825,42 +4605,6 @@ static void persistent_map_instance(const struct rasterfall_model_asset *model,
     instance->vertex_light_q8 = 1;
 }
 
-static int persistent_map_submit_class(struct toy_renderer *renderer,
-    const struct camera *camera, int kind)
-{
-    struct rasterfall_resource_handle *handle=persistent_map_map_handles+kind;
-    const struct rasterfall_model_asset *model;
-    struct rasterfall_draw_view view; struct rasterfall_draw_instance instance;
-    unsigned int i;
-    model=rasterfall_resources_resolve_active(rasterfall_render_resources(),*handle);
-    if(!model) {
-        struct persistent_map_mesh_build build; struct rasterfall_model_asset *made;
-        const char *identity[PERSISTENT_MAP_MAP_CLASS_COUNT]={"@world/map-wall","@world/map-box","@world/map-ramp","@world/map-platform","@world/boundary"};
-        memset(&build,0,sizeof(build));
-        if((kind==PERSISTENT_MAP_MAP_BOUNDARY?persistent_map_build_boundary(&build):persistent_map_build_map_class(kind,&build))<0) { tlibc_free(build.patches); return -1; }
-        if(!build.count) { tlibc_free(build.patches); return 0; }
-        made=persistent_map_mesh_finish(&build); tlibc_free(build.patches);
-        if(!made || rasterfall_resources_adopt(rasterfall_render_resources(),identity[kind],made,handle)<0) {
-            if(made){rasterfall_model_unload(made);tlibc_free(made);} return -1;
-        }
-        model=made;
-        if(kind==PERSISTENT_MAP_MAP_BOUNDARY)scene_stats.boundary_mesh_builds++;
-        else scene_stats.map_mesh_builds[kind]++;
-    }
-    memset(&view,0,sizeof(view));memset(&instance,0,sizeof(instance));
-    view.camera=*camera;view.width=renderer->surface.width;view.height=renderer->surface.height;
-    view.focal=view.width*3/4;view.near_z=NEAR_Z;
-    persistent_map_instance(model, *handle, &instance);
-    if(rf_core_mixed_require_draws(render_ctx->mixed_frame,model->primitive_count)<0)return -1;
-    if(renderer->cmd_count>0&&toy_renderer_flush(renderer)<0)return -1;
-    for(i=0;i<model->primitive_count;++i){struct rasterfall_draw_item item;
-        if(static_prop_draw_resolve(&instance,i,&item)!=RASTERFALL_DRAW_ACCEPTED||
-           rf_core_mixed_draw(render_ctx->mixed_frame,&view,&instance,&item)<0)return -1;
-        if(kind==PERSISTENT_MAP_MAP_BOUNDARY){scene_stats.boundary_draw_items++;scene_stats.boundary_draw_triangles+=item.index_count/3;}
-        else {scene_stats.map_draw_items[kind]++;scene_stats.map_draw_triangles[kind]+=item.index_count/3;}
-    }
-    return 0;
-}
 
 static void draw_world_label(struct toy_renderer *renderer,
                              const struct camera *camera,
@@ -5842,8 +5586,6 @@ int rasterfall_render_map_transparency_logic_test(void)
     struct toy_map_draw platform;
     struct box gate;
     struct toy_raster_cmd *reference = NULL;
-    unsigned char *stream = NULL;
-    size_t stream_size = 0, capacity;
     int saved_world_light = active_world_light_v2;
     int platform_count, total_count, i, result = 1;
 
@@ -5884,14 +5626,6 @@ int rasterfall_render_map_transparency_logic_test(void)
     if (!reference) goto done;
     memcpy(reference, renderer.cmds,
            (size_t)total_count * sizeof(*reference));
-    capacity = rf_gpu_raster_stream_size_v1((uint32_t)total_count + 2U);
-    stream = tlibc_malloc(capacity);
-    if (!stream || rf_gpu_raster_pack_toy_v1(
-            &renderer, 0x101820, 0, stream, capacity, &stream_size) !=
-            RF_GPU_RASTER_PACK_OK || !stream_size ||
-        rf_gpu_raster_validate_v1(stream, stream_size) !=
-            RF_GPU_RASTER_PACK_OK)
-        goto done;
 
     /* Repeating the same authored records must preserve command geometry,
      * colors and platform-before-gate ordering. */
@@ -5917,7 +5651,6 @@ int rasterfall_render_map_transparency_logic_test(void)
     result = 0;
 done:
     active_world_light_v2 = saved_world_light;
-    tlibc_free(stream);
     tlibc_free(reference);
     toy_renderer_destroy(&renderer);
     return result;
@@ -5954,10 +5687,6 @@ static int map_draw_visible(const struct toy_surface *surface,
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
-    int persistent_map_submitted[4] = {0,0,0,0};
-    int hardware_map = render_ctx && render_ctx->mixed_frame &&
-        !diagnostic_no_planar_v2 && !diagnostic_flat_planar &&
-        active_session->map_ops.runtime_loaded;
     long phase_start;
     struct vec3 a, b, c, d;
     rasterfall_render_frame++;
@@ -5972,27 +5701,14 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     floor_submission = 0;
     if (active_coordinate_axes)
         pixels += render_coordinate_ruler(renderer, camera);
-    scene_stats.floor_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.floor_command_end = renderer->cmd_count;
     scene_stats.sky_floor_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
         struct toy_map_draw *x=&level_map.draw[i];
-        int persistent_map_kind = hardware_map ? persistent_map_map_class_for_draw(x) : -1;
-        scene_stats.map_command_begin[i] = renderer->cmd_count +
-            (render_ctx && render_ctx->mixed_frame ?
-                render_ctx->mixed_frame->raster_count : 0);
+        scene_stats.map_command_begin[i] = renderer->cmd_count;
         if (!map_draw_visible(&renderer->surface, camera, x))
             goto map_record_done;
-        if (persistent_map_kind >= 0) {
-            if (!persistent_map_submitted[persistent_map_kind]) {
-                active_world_light_v2 = 1;
-                if (persistent_map_submit_class(renderer, camera, persistent_map_kind) < 0) return -1;
-                persistent_map_submitted[persistent_map_kind] = 1;
-            }
-            goto map_record_done;
-        }
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
             (x->type == TOY_MAP_DRAW_WALL || x->type == TOY_MAP_DRAW_TEXTURE ||
              x->type == TOY_MAP_DRAW_RAMP || x->type == TOY_MAP_DRAW_PLATFORM ||
@@ -6070,41 +5786,31 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
             pixels += render_world_sign(renderer, camera, x);
         }
 map_record_done:
-        scene_stats.map_command_limit[i] = renderer->cmd_count +
-            (render_ctx && render_ctx->mixed_frame ?
-                render_ctx->mixed_frame->raster_count : 0);
+        scene_stats.map_command_limit[i] = renderer->cmd_count;
         scene_stats.map_command_range_count = i + 1;
     }
     active_world_light_v2 = 0;
-    scene_stats.map_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.map_command_end = renderer->cmd_count;
     scene_stats.map_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     {
         int drawn = render_static_props(renderer, camera);
-        if (drawn < 0 && render_ctx && render_ctx->mixed_frame) return -1;
+        if (drawn < 0) return -1;
         pixels += drawn;
     }
-    scene_stats.static_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.static_command_end = renderer->cmd_count;
     scene_stats.static_props_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     if (active_session->content.model_gallery_enabled)
         pixels += render_model_gallery(renderer, camera);
-    scene_stats.gallery_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.gallery_command_end = renderer->cmd_count;
     scene_stats.model_gallery_us = render_monotonic_us() - phase_start;
     scene_stats.gallery_us = scene_stats.static_props_us +
                              scene_stats.model_gallery_us;
     phase_start = render_monotonic_us();
     if (active_session->content.character_test_strip_enabled)
         pixels += render_character_test_strip(renderer, camera);
-    scene_stats.character_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.character_command_end = renderer->cmd_count;
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     /* Eula and the developer character strip are Campaign Content fixtures.
@@ -6118,15 +5824,11 @@ map_record_done:
         pixels += render_private_character(renderer, camera);
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
-    scene_stats.private_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.private_command_end = renderer->cmd_count;
     scene_stats.private_model_us += render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     pixels += render_projectiles(renderer, camera);
-    scene_stats.projectile_command_end = renderer->cmd_count +
-        (render_ctx && render_ctx->mixed_frame ?
-            render_ctx->mixed_frame->raster_count : 0);
+    scene_stats.projectile_command_end = renderer->cmd_count;
     scene_stats.projectiles_us = render_monotonic_us() - phase_start;
     return pixels;
 }
@@ -6177,9 +5879,6 @@ static int render_enemy_body_parts(struct toy_renderer *renderer,
                                    const struct enemy_body_part *parts,
                                    int count)
 {
-    if (!scene_procedural_emit &&
-        render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
-        return -1;
     int pixels = 0, i;
     int charger_xy_scale = scale * 100 / 1120;
     if (charger_xy_scale < 1) charger_xy_scale = 1;
@@ -8586,8 +8285,6 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         ai_submission_stats.bounds_cache_misses += pose_cache_hit == 0;
     }
     ai_submission_stats.pose_us += render_monotonic_us() - phase_start;
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_ENEMY_BODY) < 0)
-        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     body_timing_before = model_setup_timing;
@@ -8658,8 +8355,6 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         ai_submission_stats.modular_actors++;
         return pixels;
     }
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_GEAR) < 0)
-        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     {
@@ -8671,8 +8366,6 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     }
     ai_submission_stats.gear_commands += renderer->cmd_count - command_start;
     ai_submission_stats.gear_us += render_monotonic_us() - phase_start;
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_WEAPON) < 0)
-        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     if (have_weapon_source && weapon >= 0 &&
@@ -8706,8 +8399,6 @@ static int render_modular_ai_equipment(struct toy_renderer *renderer,
         return -1;
     actor = submission->actor;
     instance = &runtime->instances[submission->actor_index];
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_GEAR) < 0)
-        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     pixels = render_modular_cached_passive_equipment(renderer, camera,
@@ -8717,8 +8408,6 @@ static int render_modular_ai_equipment(struct toy_renderer *renderer,
     if (pixels < 0) return -1;
     ai_submission_stats.gear_commands += renderer->cmd_count - command_start;
     ai_submission_stats.gear_us += render_monotonic_us() - phase_start;
-    if (render_set_mixed_producer(renderer, RF_CORE_PRODUCER_WEAPON) < 0)
-        return -1;
     command_start = renderer->cmd_count;
     phase_start = render_monotonic_us();
     if (submission->have_weapon_source && submission->weapon >= 0 &&

@@ -810,7 +810,6 @@ RASTERFALL_ASSET_FILES := $(shell find $(RASTERFALL_DIR)/assets -type f -print)
 RASTERFALL_ASSET_SRC := $(BUILD)/rasterfall_assets.c
 RASTERFALL_ASSET_OBJ := $(BUILD)/rasterfall_assets.o
 APP_EXTRA_OBJS_rasterfall := $(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_local.o $(BUILD)/rf_gpu_scene_identity.o $(BUILD)/rf_gpu_scene_frame.o $(BUILD)/rf_gpu_scene_extract.o $(BUILD)/rf_core_filesystem.o $(BUILD)/rf_gpu.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o $(BUILD)/rasterfall_action.o $(BUILD)/rasterfall_character.o $(BUILD)/rasterfall_roster.o $(BUILD)/rasterfall_prop.o $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_map_engine.o $(BUILD)/rasterfall_map.o $(BUILD)/rasterfall_map_runtime.o $(BUILD)/rasterfall_map_components.o $(BUILD)/rasterfall_map_parser.o $(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_ai.o $(BUILD)/rasterfall_net.o $(BUILD)/rasterfall_net_transport.o $(BUILD)/rasterfall_net_discovery.o $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_effects.o $(BUILD)/rasterfall_perf.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_viewmodel.o $(BUILD)/rasterfall_calibration.o $(BUILD)/rasterfall_console.o $(BUILD)/rasterfall_options.o $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_frontend.o $(BUILD)/rasterfall_render_resources.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_world_light.o
-APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_raster_pack_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world_gpu.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_viewmodel_contract.o
@@ -880,7 +879,7 @@ $(BUILD)/rf_core_filesystem.o: rasterfall/src/rf_core_filesystem.c rasterfall/in
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/src/rf_core_mixed_frame.inc rasterfall/src/dev-tests/rf_core_mixed_frame_test.inc rasterfall/include/rf_core_mixed_frame.h rasterfall/include/rasterfall_draw.h rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
+$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/include/rasterfall_draw.h rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -907,12 +906,6 @@ $(BUILD)/rf_gpu.o: rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD
 $(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rasterfall_session.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
-
-$(BUILD)/rf_gpu_raster_pack_app.o: gpu/src/rf_gpu_raster_pack.c \
-                                  rasterfall/include/rf_gpu_raster_pack.h \
-                                  rasterfall/include/rf_gpu_raster_abi.h \
-                                  include/toy_renderer.h | $(BUILD)
-	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -include tlibc_compat.h -c $< -o $@
 
 $(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
@@ -1349,143 +1342,56 @@ rasterfall:
 rasterfall-embedded app-rasterfall-embedded: $(BUILD)/rasterfall-embedded
 wayland_fps: $(BUILD)/wayland_fps
 
-# Hosted, SDK-free Vulkan discovery tool.  This target intentionally stays
-# outside the freestanding Rasterfall link until the optional Core GPU service
-# has a stable ABI and fallback policy.
-.PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-raster-abi-test gpu-overlay-test \
-	gpu-raster-test gpu-raster-diff-test win-gpu-probe win-gpu-framebuffer-test \
-	gpu-raster-binning-test win-gpu-raster-abi-test win-gpu-raster-test win-gpu-raster-diff-test win-gpu-overlay-test
+# Hosted Vulkan discovery and independent Scene graphics diagnostics.
+.PHONY: gpu-probe gpu-service-test gpu-framebuffer-test gpu-graphics-test \
+        win-gpu-probe win-gpu-framebuffer-test win-gpu-graphics-test \
+        win-gpu-resource-cache-test
 gpu-probe: $(BUILD)/rf-gpu-probe
 gpu-service-test: $(BUILD)/rf-gpu-service-test
 gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test
-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test
-gpu-raster-test: $(BUILD)/rf-gpu-raster-test
-gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test
-gpu-raster-binning-test: $(BUILD)/rf-gpu-raster-binning-test
-gpu-overlay-test: $(BUILD)/rf-gpu-overlay-test
-win-gpu-overlay-test: $(BUILD)/rf-gpu-overlay-test.exe
+gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test
 win-gpu-probe: $(BUILD)/rf-gpu-probe.exe
 win-gpu-framebuffer-test: $(BUILD)/rf-gpu-framebuffer-test.exe
-win-gpu-raster-abi-test: $(BUILD)/rf-gpu-raster-pack-test.exe
-win-gpu-raster-test: $(BUILD)/rf-gpu-raster-test.exe
-win-gpu-raster-diff-test: $(BUILD)/rf-gpu-raster-diff-test.exe
-
-$(BUILD)/rf-gpu-raster-binning-test: gpu/src/rf_gpu_raster_bin_test.c gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_bin.h rasterfall/include/rf_gpu_raster_abi.h | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -DRF_GPU_RASTER_BIN_TESTING -I include -I include/tlibc -I rasterfall/include gpu/src/rf_gpu_raster_bin_test.c gpu/src/rf_gpu_raster_bin.c gpu/src/rf_gpu_raster_pack.c -o $@
-
-GPU_RASTER_TEST_SRCS := gpu/src/rf_gpu_raster_test.c \
-	gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c \
-	gpu/src/rf_gpu_raster_bin.c \
-	rasterfall/src/rf_gpu.c
-GPU_RASTER_TEST_DEPS := gpu/include/rf_vulkan_min.h \
-	gpu/include/rf_gpu_vulkan_backend.h gpu/src/rf_gpu_raster_v1_spirv.inc \
-	gpu/src/rf_gpu_raster_v1_full_spirv.inc gpu/src/rf_gpu_raster_v1_image_spirv.inc gpu/shaders/raster_v1.comp \
-	gpu/shaders/raster_v1_full_scan.comp gpu/src/rf_gpu_overlay_spirv.inc \
-	gpu/shaders/overlay_composite.comp rasterfall/include/rf_gpu.h \
-	gpu/src/rf_gpu_post_spirv.inc gpu/src/rf_gpu_post_image_spirv.inc gpu/shaders/post_raster_v1.comp \
-	rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h
-
-GPU_RASTER_TEST_DEPS += rasterfall/include/rf_gpu_raster_bin.h
-GPU_GRAPHICS_DEPS := gpu/include/rf_gpu_graphics.h gpu/include/rf_vulkan_graphics_min.h \
-	gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_graphics_spirv.inc \
-	gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
-	gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_bridge.comp
-GPU_RASTER_TEST_DEPS += $(GPU_GRAPHICS_DEPS)
-$(BUILD)/rf-gpu-probe $(BUILD)/rf-gpu-probe.exe \
-$(BUILD)/rf-gpu-framebuffer-test $(BUILD)/rf-gpu-framebuffer-test.exe: $(GPU_GRAPHICS_DEPS)
-
-.PHONY: gpu-graphics-test win-gpu-graphics-test
-gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test
 win-gpu-graphics-test: $(BUILD)/rf-gpu-graphics-test.exe
-
-# Registry integration uses the Windows hosted game/model runtime. It is not
-# linked into Linux freestanding/self or the normal Windows player yet.
-.PHONY: win-gpu-resource-cache-test
-.PHONY: win-gpu-mixed-executor-test
-win-gpu-mixed-executor-test:
-	$(MAKE) -f windows/Makefile gpu-mixed-executor-test
-
 win-gpu-resource-cache-test:
 	$(MAKE) -f windows/Makefile gpu-resource-cache-test
 
-$(BUILD)/rf-gpu-graphics-test: gpu/src/rf_gpu_graphics_test.c $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
+GPU_GRAPHICS_TEST_SRCS := gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
+GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_graphics_min.h \
+    gpu/include/rf_gpu_vulkan_backend.h gpu/include/rf_gpu_graphics.h \
+    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_graphics_spirv.inc \
+    gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
+    gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp
+
+$(BUILD)/rf-gpu-graphics-test: gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I include -I include/tlibc -I rasterfall/include \
-		gpu/src/rf_gpu_graphics_test.c $(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_TEST_SRCS)) -ldl -lm -o $@
+		gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
 
-$(BUILD)/rf-gpu-graphics-test.exe: gpu/src/rf_gpu_graphics_test.c $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
+$(BUILD)/rf-gpu-graphics-test.exe: gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include -I include -I include/tlibc -I rasterfall/include \
-		gpu/src/rf_gpu_graphics_test.c $(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_TEST_SRCS)) -o $@
-
-GPU_RASTER_DIFF_SRCS := gpu/src/rf_gpu_raster_diff_test.c \
-	gpu/src/rf_gpu_raster_cpu_ref.c gpu/src/rf_gpu_renderer_hosted_shim.c \
-	lib/linux/graphics/renderer.c $(GPU_RASTER_TEST_SRCS)
-GPU_RASTER_DIFF_DEPS := $(GPU_RASTER_TEST_DEPS) \
-	rasterfall/include/rf_gpu_raster_cpu_ref.h include/toy_renderer.h
-
-$(BUILD)/rf-gpu-raster-diff-test: $(GPU_RASTER_DIFF_SRCS) $(GPU_RASTER_DIFF_DEPS) | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -D_POSIX_C_SOURCE=200809L -I gpu/include -I include \
-		-I include/tlibc -I rasterfall/include \
-		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_DIFF_SRCS)) -ldl -o $@
-
-$(BUILD)/rf-gpu-raster-diff-test.exe: $(GPU_RASTER_DIFF_SRCS) $(GPU_RASTER_DIFF_DEPS) | $(BUILD)
-	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I gpu/include -I windows/include -I include -I include/tlibc \
-		-I rasterfall/include \
-		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_DIFF_SRCS)) -o $@
-
-$(BUILD)/rf-gpu-raster-test: $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
-		-I gpu/include -I rasterfall/include $(GPU_RASTER_TEST_SRCS) -ldl -o $@
-
-$(BUILD)/rf-gpu-raster-test.exe: $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
-	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I windows/include -I include -I include/tlibc -I gpu/include \
-		-I rasterfall/include $(GPU_RASTER_TEST_SRCS) -o $@
-
-$(BUILD)/rf-gpu-raster-pack-test: gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h include/toy_renderer.h | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
-		-I rasterfall/include gpu/src/rf_gpu_raster_pack_test.c \
-		gpu/src/rf_gpu_raster_pack.c -o $@
-
-$(BUILD)/rf-gpu-raster-pack-test.exe: gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c rasterfall/include/rf_gpu_raster_abi.h rasterfall/include/rf_gpu_raster_pack.h include/toy_renderer.h | $(BUILD)
-	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I windows/include -I include -I include/tlibc -I rasterfall/include \
-		gpu/src/rf_gpu_raster_pack_test.c gpu/src/rf_gpu_raster_pack.c -o $@
+		gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) -o $@
 
 $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I rasterfall/include \
 		gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gpu.c -o $@
 
-$(BUILD)/rf-gpu-overlay-test: gpu/src/rf_gpu_overlay_test.c $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
-	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc \
-		-I gpu/include -I rasterfall/include gpu/src/rf_gpu_overlay_test.c \
-		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_TEST_SRCS)) -ldl -o $@
-
-$(BUILD)/rf-gpu-overlay-test.exe: gpu/src/rf_gpu_overlay_test.c $(GPU_RASTER_TEST_SRCS) $(GPU_RASTER_TEST_DEPS) | $(BUILD)
-	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I windows/include -I include -I include/tlibc -I gpu/include \
-		-I rasterfall/include gpu/src/rf_gpu_overlay_test.c \
-		$(filter-out gpu/src/rf_gpu_raster_test.c,$(GPU_RASTER_TEST_SRCS)) -o $@
-
-$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
-		gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c \
-		gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
 
-$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_probe.c \
-		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -o $@
+		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include \
+		gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
-		gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c \
-		gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -ldl -o $@
+		gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
 
-$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c gpu/include/rf_vulkan_min.h gpu/include/rf_gpu_vulkan_backend.h rasterfall/src/rf_gpu.c rasterfall/include/rf_gpu.h | $(BUILD)
+$(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
-		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include gpu/src/rf_gpu_framebuffer_test.c \
-		gpu/src/rf_gpu_vulkan_backend.c gpu/src/rf_gpu_raster_pack.c gpu/src/rf_gpu_raster_bin.c rasterfall/src/rf_gpu.c -o $@
+		-I windows/include -I include -I include/tlibc -I gpu/include -I rasterfall/include \
+		gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) -o $@
 
 rasterfall-blender-deps:
 	python3 -m pip install --target .blender-python numpy
