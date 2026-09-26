@@ -3175,6 +3175,60 @@ death_fixture_done:
         toy_renderer_flush(&renderer);
         rasterfall_effects_init(&effects);
     }
+    /* A click after relative mouse motion must not replay stale absolute
+     * coordinates as a second turn; local fire still has camera recoil. */
+    {
+        const int weapons[] = { TOY_GAME_WEAPON_PISTOL, TOY_GAME_WEAPON_SMG,
+                                TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_SHOTGUN,
+                                TOY_GAME_WEAPON_AWP };
+        struct rasterfall_effect_event fire_event;
+        struct camera aim_camera, render_camera;
+        struct rf_input_frame look_input;
+        struct toy_window_events look_events;
+        int weapon_index, tick, recoil_seen;
+        memset(&look_input, 0, sizeof(look_input));
+        memset(&look_events, 0, sizeof(look_events));
+        look_input.pointer_moved = 1;
+        look_input.pointer_locked = 1;
+        look_events.button_pressed = 1;
+        if (use_absolute_mouse_look(1, &look_input, &look_events))
+            return 280;
+        look_input.pointer_locked = 0;
+        if (!use_absolute_mouse_look(1, &look_input, &look_events))
+            return 280;
+        look_events.relative_moved = 1;
+        if (use_absolute_mouse_look(1, &look_input, &look_events))
+            return 280;
+        memset(&fire_event, 0, sizeof(fire_event));
+        fire_event.type = RASTERFALL_EFFECT_EVENT_WEAPON_FIRE;
+        fire_event.flags = RASTERFALL_EFFECT_EVENT_LOCAL_VIEW;
+        aim_camera = camera;
+        rasterfall_camera_rotate(&aim_camera, 128, -64);
+        for (weapon_index = 0; weapon_index < 5; weapon_index++) {
+            rasterfall_effects_init(&effects);
+            fire_event.weapon = weapons[weapon_index];
+            recoil_seen = 0;
+            for (tick = 0; tick < 16; tick++) {
+                if (tick == 0 || tick == 5 || tick == 10)
+                    rasterfall_effects_consume(&effects, &fire_event);
+                rasterfall_effects_update(&effects, 16);
+                render_camera = aim_camera;
+                rasterfall_effects_apply_camera_shake(&effects, &render_camera);
+                if (render_camera.sy != aim_camera.sy ||
+                    render_camera.cy != aim_camera.cy ||
+                    render_camera.pitch_sy != aim_camera.pitch_sy ||
+                    render_camera.pitch_cy != aim_camera.pitch_cy)
+                    recoil_seen = 1;
+                if (abs((render_camera.sy * aim_camera.cy -
+                         render_camera.cy * aim_camera.sy) / 1024) > 64 ||
+                    abs((render_camera.pitch_sy * aim_camera.pitch_cy -
+                         render_camera.pitch_cy * aim_camera.pitch_sy) / 1024) > 64)
+                    return 282;
+            }
+            if (!recoil_seen) return 281;
+        }
+        rasterfall_effects_init(&effects);
+    }
     /* Molotov flames are represented by the same runtime particle pool as
      * hit sparks; the gameplay burn zone remains the source of truth. */
     {

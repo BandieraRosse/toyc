@@ -18,6 +18,7 @@ struct toy_window {
     int width;
     int height;
     int pointer_locked;
+    int reported_pointer_locked;
     int minimized;
 };
 
@@ -344,6 +345,12 @@ dispatch:
             if (buttons & SDL_BUTTON_LMASK) events->mouse_buttons |= 1;
             if (buttons & SDL_BUTTON_RMASK) events->mouse_buttons |= 2;
         }
+        window->pointer_locked = SDL_GetRelativeMouseMode() == SDL_TRUE;
+        if (window->reported_pointer_locked != window->pointer_locked) {
+            events->pointer_lock_changed = 1;
+            events->pointer_locked = window->pointer_locked;
+            window->reported_pointer_locked = window->pointer_locked;
+        }
     }
     return have_event;
 }
@@ -394,8 +401,9 @@ int toy_window_pointer_lock_supported(struct toy_window *window)
 int toy_window_set_pointer_lock(struct toy_window *window, int locked)
 {
     if (!window) return -1;
+    if (SDL_SetRelativeMouseMode(locked ? SDL_TRUE : SDL_FALSE) != 0)
+        return -1;
     window->pointer_locked = locked != 0;
-    SDL_SetRelativeMouseMode(window->pointer_locked ? SDL_TRUE : SDL_FALSE);
     SDL_SetWindowGrab(window->window, window->pointer_locked ? SDL_TRUE : SDL_FALSE);
     SDL_WarpMouseInWindow(window->window, window->width / 2, window->height / 2);
     return 1;

@@ -722,6 +722,17 @@ static void accumulate_mouse_look(int *pending_turn, int *pending_pitch,
     *pending_pitch += pitch;
 }
 
+static int use_absolute_mouse_look(int pointer_lock_requested,
+                                   const struct rf_input_frame *input,
+                                   const struct toy_window_events *events)
+{
+    /* Absolute motion is only a fallback while an asynchronous pointer lock
+     * is pending. A click also marks pointer_moved, so never use it once the
+     * platform has reported a successful relative lock. */
+    return pointer_lock_requested && !input->pointer_locked &&
+           !events->relative_moved && input->pointer_moved;
+}
+
 static void build_game_command(struct rasterfall_command *command,
                                const struct rf_input_frame *input,
                                const struct control_settings *settings,
@@ -4728,11 +4739,15 @@ startup_again:
             events.relative_moved) {
             accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
                                   input.relative_x, input.relative_y, &settings);
-        } else if (!game_runtime.rts_active && !paused && pointer_lock_requested && input.pointer_moved) {
+        } else if (!game_runtime.rts_active && !paused &&
+                   use_absolute_mouse_look(pointer_lock_requested,
+                                           &input, &events)) {
             if (have_pointer_position)
                 accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
                                       input.pointer_x - last_pointer_x,
                                       input.pointer_y - last_pointer_y, &settings);
+        }
+        if (input.pointer_moved) {
             last_pointer_x = input.pointer_x;
             last_pointer_y = input.pointer_y;
             have_pointer_position = 1;
