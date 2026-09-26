@@ -5,7 +5,7 @@
 > 最近核对：2026-09-23
 > 测量证据：[2026-09-22 冻结审计](../archive/gpu-2026-09-22/gpu-performance-baseline.md)
 
-本文定义 Rasterfall 当前主线使用的 Windows 物理 GPU 标准。目标不是当前成绩；当前执行顺序只见[活动计划](../plans/gpu-scene-renderer.md)，采样工作流见[GPU 验收指南](../guides/gpu-validation.md)。
+本文定义 Rasterfall Windows 物理 GPU 的正式测量标准。2026-09-26 用户确认旧地图实机游玩流畅、Scene 性能达到本阶段预期；该使用判断不等同于下文的低扰动五轮指标记录。当前状态见[计划入口](../plans/README.md)，采样工作流见[GPU 验收指南](../guides/gpu-validation.md)。
 
 ## 主线设备与职责
 

@@ -9,8 +9,8 @@
 ```
 
 它自动启用 required native GPU 与独立 Scene，默认进入前哨站，使用正常游戏输入和时钟。
-可通过 `--map` 选择 Runtime Map；目前只允许单人。资源复用和性能优化尚未完成，
-此入口不代表产品帧率或完整架构签收。Console/GUI 仍受正常运行 feature gate 限制。
+可通过 `--map` 选择 Runtime Map；目前只允许单人。Scene 阶段已按用户的旧地图实机流畅体验收尾；
+敌人槽位复用等冷启动优化延期，正式五轮性能指标仍以单独采样为准。Console/GUI 仍受正常运行 feature gate 限制。
 
 `tools/gpu_scene_play.ps1` 检查真实单人启动、窗口输入与 resize、世界切换、连续战役帧和五类
 present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDirectory` 加载验证层；
@@ -81,7 +81,7 @@ P1 使用 `tools/gpu_scene_cost.ps1 -Experiment P1 -OutputDirectory tmp/scene-p1
 重建/复用，各三轮 64 帧，排除前 8 帧，保留日志、exe 哈希及 `report.json`；逐帧 draw 和来源数量必须一致。
 `RF_GPU_SCENE_REBUILD_DYNAMIC=1` 是显式诊断对照，仅强制重建敌人/程序角色资源，不改变几何；正常运行不设置。
 脚本自动恢复此环境变量。`SCENE-FRAME-COST` 的计时边界见 [GPU 架构](../architecture/gpu-rendering-architecture.md)。
-该采样有逐帧日志，属于优化归因，不替代阶段 5 的低扰动五轮 FPS 签收。
+该采样有逐帧日志，属于优化归因，不替代[GPU 性能标准](../reference/gpu-performance-standards.md)规定的低扰动五轮 FPS 测量。
 
 `gpu_scene_preview.ps1 -Independent -Capture -CaptureFrame 4 -Frames 4` 可捕获复用多帧后的同批次画面；
 默认仍捕获首帧。分别在重建与复用模式运行相同固定镜头，可以比较 PPM 像素并验证资源更新后的实际内容。
@@ -98,13 +98,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_preview.ps1 
 输入限制。无验证层时省略 `-ValidationLayerDirectory`，但不能宣称 validation/sync 通过。
 脚本检查每帧 `SCENE-SOURCE` 的连续 ID、零旧 producer/RasterCmd/mixed draw，以及 native 提交零 bridge/readback。
 此入口直接冻结地图、正式模块化队员、旗帜、投射物和交互物，以及敌人、程序/网络角色、downed
-和补充模块化角色。`dynamic_sources_pending=0` 仅表示动态来源接通；首版分层与完整性边界见
-[活动计划](../plans/README.md)，不能报告完整可玩帧或性能收益。
+和补充模块化角色。`dynamic_sources_pending=0` 仅表示动态来源接通；首版分层与当时的完整性边界见
+[历史计划](../archive/gpu-scene-renderer.md)，不能单凭这个字段报告完整可玩帧或性能收益。
 默认独立矩阵另覆盖特感、死亡、舌头和程序角色，逐帧核对来源数、实际 draw 和冻结帧 ID。
 加 `-Capture` 会在每个用例首帧用同一冻结 Scene 批次额外读回 `<view>.capture.scene.ppm`，
 再进行 native present；该帧报告 `readback=1`，其他帧仍须为零。此图证明 Scene 批次内容，
 不作为 swapchain 自身颜色或完整帧性能证据；未加 `-Capture` 的运行仍逐帧要求零读回。
-旧入口保留下面的 producer 捕获诊断；新功能按 [活动计划](../plans/README.md)接独立来源。
+旧入口保留下面的 producer 捕获诊断；独立来源的当前运行边界见[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
 
 ## 硬件 Scene WORLD 原生预览
 
@@ -141,7 +141,7 @@ python tools/gpu_scene_stage2_report.py tmp/stage2-world
 报告依赖 numpy，输出完整 reference/Scene/四倍差图、并排预览、RGB 分位数、覆盖差异及逐帧
 提取/准备/上传/draw/GPU 时间。颜色边缘带仅用于定位，不能代替几何/深度边缘或遮挡证明；
 报告明确将深度遮挡差异标为未测。脚本运行 PASS 只代表进程、捕获及审计通过，报告始终保持
-UNAPPROVED，最终批准依据[画面合同](../plans/gpu-scene-visual-contract.md)。
+UNAPPROVED，最终批准依据[画面合同](../archive/gpu-scene-visual-contract.md)。
 `instances` 是 `SCENE-EXTRACT` 的角色/敌人提取项数量，不是完整地图实例总数。
 准备时间包含资源创建/同步等待，GPU draw 时间不含 upload、skinning 或 readback。
 
@@ -169,10 +169,10 @@ Scene WORLD PPM、每帧 draw/上传/提取/时间戳以及 executable 哈希。
 归后续透明层。`--gpu-scene-pose-test` 检查职业、动作、武器、重复提取与失败；逻辑回归检查 legacy、
 死亡变换、阴影和舌头枚举。
 
-当前网络迁移只运行 `--logic-test` 与 `--gpu-scene-pose-test`：后者直接调用 host/guest 的角色表现入口，
+历史阶段 2 网络迁移只运行 `--logic-test` 与 `--gpu-scene-pose-test`：后者直接调用 host/guest 的角色表现入口，
 覆盖倒地、排除本地玩家、断线、未激活、只读冻结和几何提取，不打开 socket 或 GPU。
-`tools/gpu_scene_network.ps1` 保留为 GPU 完成后网络专项的复现工具；其 guest 数量断言尚未通过，
-数量预期本身也需核对可见性。它不属于当前收尾门禁，见[收尾记录](../plans/gpu-scene-stage2-handoff.md)。
+`tools/gpu_scene_network.ps1` 保留为后续网络专项的复现工具；阶段 2 的 guest 数量断言尚未通过，
+数量预期本身也需核对可见性。该历史限制见[阶段 2 交接](../archive/gpu-scene-stage2-handoff.md)。
 
 Scene 审计仍是同步 readback 诊断；动态资源逐帧预备，敌人/程序角色资源已按退休后的容量复用。GPU draw timestamp 排除 upload/skinning/readback；
 prepare 是包含资源操作的墙钟，geometry 是敌人/程序几何提取，local_pose 是正式 roster 独立 pose 提取。
@@ -405,7 +405,6 @@ capture 帧。CPU 对照可用相同地图、镜头、tick、资源与帧数运�
 
 首轮证据、输入哈希及未解决的画面差异见[2026-09-23 现场记录](../archive/gpu-scene-fixture-20260923.md)。
 
-当前固定画面来自 mixed renderer；它可作为 GPU Scene 迁移前的输入和画面证据，不能证明
-新的 GPU Scene 光栅器存在或正确。首份候选还须按[画面差异合同](../plans/gpu-scene-visual-contract.md)
-冻结输入、记录差分和审阅逐项容差。`--normal-frame-audit` 内部会重载正式 Campaign，
+这组历史固定画面来自 mixed renderer，只用作迁移前输入和画面对照；当时的画面差异草案见
+[归档合同](../archive/gpu-scene-visual-contract.md)。`--normal-frame-audit` 内部会重载正式 Campaign，
 不能用它的输出充当这张地图的对照图。

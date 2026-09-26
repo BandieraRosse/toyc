@@ -2,7 +2,7 @@
 
 > 状态：历史现场；不代表正式 FPS 或完整生命周期签收
 > 日期：2026-09-24
-> 当前顺序：[活动计划](../plans/gpu-scene-renderer.md)
+> 当前顺序：[活动计划](gpu-scene-renderer.md)
 
 ## 范围与归因
 

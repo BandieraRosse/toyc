@@ -5,9 +5,9 @@
 > 最近核对：2026-09-23
 
 本文只定义 GPU 渲染的稳定所有权、数据流和失败边界。验收命令见
-[GPU 验收与诊断](../guides/gpu-validation.md)，设备档位和性能门槛见
-[GPU 性能标准](../reference/gpu-performance-standards.md)，尚未完成的工作只见
-[当前活动计划](../plans/README.md)。阶段调查、单次设备现场和已撤销实验位于
+[GPU 验收与诊断](../guides/gpu-validation.md)，设备档位和正式测量门槛见
+[GPU 性能标准](../reference/gpu-performance-standards.md)，Scene 收尾与延期项见
+[计划入口](../plans/README.md)。阶段调查、单次设备现场和已撤销实验位于
 [GPU 2026-09-22 归档](../archive/gpu-2026-09-22/README.md)。
 
 ## 所有权
@@ -27,7 +27,7 @@
 
 `--gpu-scene-play` 是显式实验性单人入口，自动选择 required native GPU 和独立 Scene。
 不要求固定镜头或固定 tick，默认落地前哨站，继续使用正常输入、session 和 world 切换。
-拒绝网络模式与 legacy map；性能与完整内容签收仍由活动计划跟踪。Scene 提取、准备或提交失败
+拒绝网络模式与 legacy map；旧地图实机流畅和阶段性能达到预期的用户判断见[计划入口](../plans/README.md)。Scene 提取、准备或提交失败
 进入 runtime 统一关闭路径，清理音频、Scene 资源、Game 和 Core 后非零退出。
 
 `--gpu-scene-independent-preview` 在 runtime 层选择独立来源，不调用旧整帧
@@ -51,10 +51,10 @@ POST 沿用正常帧 identity 策略。整批验证包括层序，失败不提�
 世界特效和透明地图三角形以局部坐标上传，draw 保留世界平移；超过局部跨度的无纹理面先细分。
 分层几何按顶点容量拆成资源块，批次不能跨块合并，透明来源顺序保持不变。
 
-当前入口仍是内容不完整的开发预览；细节与可玩门槛由活动计划拥有。
+当前入口保留实验性单人范围；未纳入的展示细节按后续需求处理。
 动态来源数量逐帧输出，不能以 `dynamic_sources_pending=0` 代替完整帧验收。它仍共享 Scene 审计编排和 GPU 初始化设施，
 几何与光照 helper 尚位于既有 renderer 模块；独立正常帧协调器及多 slot 流水尚未实现。
-这种代码复用不能演变为调用旧 draw producer 来取得新帧输入。开发顺序只由活动计划拥有。
+这种代码复用不能演变为调用旧 draw producer 来取得新帧输入。后续优先级见[计划入口](../plans/README.md)。
 
 显式独立预览 capture 用同一冻结批次先提交离屏 Scene color/depth 读回，再 native present；
 只将指定帧标为 `readback=1`，未请求捕获的帧保持零读回。该图用于内容检查，不证明 swapchain

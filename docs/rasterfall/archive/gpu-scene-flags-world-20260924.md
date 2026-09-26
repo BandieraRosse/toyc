@@ -2,7 +2,7 @@
 
 > 状态：历史现场归档；正常帧离屏 Scene WORLD 诊断，尚非统一正常呈现
 
-本记录保存本次切片的证据；当前架构与计划仍以 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md) 和 [活动计划](../plans/gpu-scene-renderer.md) 为准。
+本记录保存本次切片的证据；当前架构与计划仍以 [GPU 渲染架构](../architecture/gpu-rendering-architecture.md) 和 [活动计划](gpu-scene-renderer.md) 为准。
 
 正常帧审计从 session 复制五面旗帜的 active、位置、颜色与选中状态。独立 Scene target 复用两份旗杆/旗布 GPU 几何，每面活动旗帜提交两项 WORLD opaque draw。旗面文字仍由 mixed 绘制；正常呈现没有切换到 Scene。
 

@@ -1,9 +1,11 @@
 # 独立 GPU Scene 渲染架构计划
 
-> 状态：当前唯一活动计划；目标尚未全部实现
+> 状态：历史计划；2026-09-26 按用户决定收尾
 > 所有者：Rasterfall GPU 渲染与性能主线
 > 方向调整：2026-09-24
-> 当前切片：阶段 4，西侧走廊 32/64 敌人优化；共享目标导航场已接入，继续真实时钟尾延迟与整帧验收
+> 当前入口：[计划入口](../plans/README.md)、[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)
+
+本文件保留收尾前的执行顺序、测量边界和当时的未完成判断，不再是当前计划。2026-09-26 用户确认 Scene 阶段收尾：旧地图实机游玩流畅，性能达到本阶段预期；敌人槽位复用等冷启动小优化延期。该判断不追认下文尚未执行的正式五轮采样、完整生命周期或联机专项。
 
 ## 决策
 
@@ -78,10 +80,10 @@ VIEWMODEL、HUD/交互提示/地图标签和基础暂停/结算面板已进入�
 
 动态来源由独立 adapter 冻结，使用各自 presentation history；补充模块化项仍是帧内身份，
 不是跨帧异步资源方案。定向捕获可在显式帧读回同一 Scene 批次，常规 native 帧保持零读回。
-本轮来源、原生捕获与验证现场见[动态来源记录](../archive/gpu-scene-dynamic-sources-20260924.md)。
-首版分层与定向验证见[分层接线记录](../archive/gpu-scene-layers-20260924.md)。
+本轮来源、原生捕获与验证现场见[动态来源记录](gpu-scene-dynamic-sources-20260924.md)。
+首版分层与定向验证见[分层接线记录](gpu-scene-layers-20260924.md)。
 `--gpu-scene-play` 已开放显式实验性单人入口，沿用真实输入和时钟；基本窗口输入、resize、
-world-cycle、fault 和真实波次连续运行已通过，现场见[单人入口记录](../archive/gpu-scene-play-20260924.md)。
+world-cycle、fault 和真实波次连续运行已通过，现场见[单人入口记录](gpu-scene-play-20260924.md)。
 购买/重启等未完成专项、完整内容规范与展示细节不再作为阶段 4 前置；后续按核心功能缺陷及实际需求处理。
 现有预览日志 `world_only=0` 只表示含非 WORLD 层，不是完整帧签收。资源重建成本明显，尚无性能达标结论。
 禁止为补齐内容重新调用旧 producer 或给新路径加入兼容 Raster 通道。
@@ -91,20 +93,20 @@ world-cycle、fault 和真实波次连续运行已通过，现场见[单人入�
 首轮已补 Scene 准备分段、提交/退休及从循环开始到退休后的墙钟计时，配套同包固定 workload 的交替 A/B。
 测量定位到敌人/程序角色的逐帧资源重建为最大开销，现已在同步退休后按容量复用 GPU 三角形资源。
 顶点仍逐帧完整更新，索引、纹理、descriptor 与 buffer 保留；容量不足才重建，世界关闭时释放。
-固定 workload 的 draw 与来源数量不变。测量与验证现场见[首轮成本优化记录](../archive/gpu-scene-resource-reuse-20260924.md)。
+固定 workload 的 draw 与来源数量不变。测量与验证现场见[首轮成本优化记录](gpu-scene-resource-reuse-20260924.md)。
 
 1. 已拆分正式模块化队员的 `scene_load`、`scene_pack` 和 upload/skin/wait 墙钟，并消除逐次临时 staging 分配：
-   目标可直接写入时 map/flush，否则保留 staging 容量。现场见[角色上传优化记录](../archive/gpu-scene-actor-upload-20260924.md)。
+   目标可直接写入时 map/flush，否则保留 staging 容量。现场见[角色上传优化记录](gpu-scene-actor-upload-20260924.md)。
    冻结/CPU pose 与准备分别统计，GPU skinning 执行和驱动/等待尚未独立归因。
 2. 敌人 CPU 几何已加入单次蒙皮顶点和精确坐标光照缓存；连续 draw 复用绑定，提交/呈现与退休分别计时。
-   同包 A/B 与验证见[敌人几何及提交优化记录](../archive/gpu-scene-enemy-submit-20260924.md)。
+   同包 A/B 与验证见[敌人几何及提交优化记录](gpu-scene-enemy-submit-20260924.md)。
    P1 已将热帧角色蒙皮合为一次提交/等待，并按容量保留分层 GPU 资源及 CPU 工作区。
    冷资源仍同步创建；同帧单 slot 退休契约不变，不代表跨帧流水。后续评估剩余敌人提取/上传。
-   同包三轮成本、画面对照、同步及生命周期证据见 [P1 记录](../archive/gpu-scene-p1-20260924.md)；
+   同包三轮成本、画面对照、同步及生命周期证据见 [P1 记录](gpu-scene-p1-20260924.md)；
    轻负载 fence 尾延迟仍待定位，不能将准备段收益解释成所有分位数均改善。
    正式队员不变 bind 已按资源 generation 与策略复用 GPU 数据；五轮同包诊断在 Tank/Charger、
    60 敌人与密集地图组件同帧时降低角色准备及总上传，中位循环改善，但 P95 未改善。
-   证据与边界见 [bind 上传与高负载记录](../archive/gpu-scene-bind-upload-20260924.md)。
+   证据与边界见 [bind 上传与高负载记录](gpu-scene-bind-upload-20260924.md)。
    普通感染体 Scene 提取复用每种资源的独立 scratch pose，并按资源、bind 模式和采样步态
    复用已蒙皮顶点；光照精确坐标缓存扩至 1024 槽。固定老地图 30/60 敌人预览的 draw、上传
    和画面保持一致；同包交替对照显示敌人几何提取及整帧耗时下降。动态顶点更新仍逐帧完整执行。
@@ -116,10 +118,10 @@ world-cycle、fault 和真实波次连续运行已通过，现场见[单人入�
 
 2026-09-25 已完成敌人唯一顶点变换与 CPU 工作区复用、逐面颜色有序合批和剩余成本细分。
 同包对照显示普通/密集敌人负载整体改善，但轻负载退休长尾及剩余几何/上传仍未解决；
-见 [颜色合批与成本细分现场](../archive/gpu-scene-color-batching-20260925.md)。
+见 [颜色合批与成本细分现场](gpu-scene-color-batching-20260925.md)。
 下一决策点是剩余几何/光照、全量动态顶点更新与退休长尾，再评估同步流水。
 旧地图西侧按钮整波现已补真实时钟与 fixed tick 三轮对照，见
-[走廊性能调查](../archive/west-corridor-performance-20260925.md)。现有 near 初始敌人数会因战斗
+[走廊性能调查](west-corridor-performance-20260925.md)。现有 near 初始敌人数会因战斗
 迅速下降，后续优化必须同时保留走廊实际存活数分组和 26 个 AI/地图组件负载。
 32/64 敌人按钮高负载补测已复现持续低帧率，具体数据与限制见同一调查记录的高负载续查。
 下一步需要处理两个问题域：减少不可见角色准备和全量动态顶点更新；细分高负载逻辑尖峰中的
@@ -127,7 +129,7 @@ world-cycle、fault 和真实波次连续运行已通过，现场见[单人入�
 V1 重复 bake 仍可消除，但不能当作高负载主因。
 首轮逻辑分段已接入可选 Game 计时与导航/地面查询计数；固定单步 64 原按钮的后段尖峰
 集中在普通/快速敌人更新及大量地面查询。地面查询已提前排除范围外 primitive，
-单次同场景诊断和逻辑回归见[逻辑剖析记录](../archive/west-corridor-logic-profiling-20260925.md)。
+单次同场景诊断和逻辑回归见[逻辑剖析记录](west-corridor-logic-profiling-20260925.md)。
 导航路径与扫描续查已完成一轮 32/64 双随机池 fixed/realtime 诊断：64 原池 fixed 后段主要成本
 落在父链候选路径验证及其重复地面/碰撞扫描，BFS 搜索占比较小，详见同一逻辑剖析记录。
 同采样点地面复用及高台范围排除已完成完整 Game/事件对照和两组三轮同包诊断；
@@ -146,7 +148,7 @@ Scene 颜色顶点，GPU 资源使用独立 stride 和校验。顺序三角形�
 ## 西侧走廊 32/64 敌人优化方案
 
 2026-09-25 制定，以下均为待实施步骤，不代表已取得收益。实测依据见
-[高负载续查](../archive/west-corridor-performance-20260925.md)。不另建活动计划。
+[高负载续查](west-corridor-performance-20260925.md)。不另建活动计划。
 
 ### 目标与边界
 
@@ -265,9 +267,9 @@ generation 缓存，验证重新 bake、切图和光照变化；其收益上界�
 完整状态/事件与参考采样对照通过。原生 GPU 六个短场景已验证 native 提交、固定步与真实时钟、
 64 人及无 Tank 随机池。短场景不等于长时间帧率签收，后续继续目标频繁迁移、更多 authored 通道、
 地图重建尖峰和真实时钟 P95/P99；显式地图建图目前仍同步执行，不能算进日常续算预算承诺。
-性能现场见[共享导航验收记录](../archive/shared-navigation-20260926.md)。
+性能现场见[共享导航验收记录](shared-navigation-20260926.md)。
 
-旧方案移至[集团导航设计归档](../archive/group-navigation-design-20260926.md)，既有修复现场保持原样。
+旧方案移至[集团导航设计归档](group-navigation-design-20260926.md)，既有修复现场保持原样。
 
 ### 每步交付与验证
 
@@ -302,6 +304,6 @@ generation 缓存，验证重新 bake、切图和光照变化；其收益上界�
 [GPU 性能标准](../reference/gpu-performance-standards.md)的最终 median/P95/P99 通过，才算性能完成。
 任一未达不得宣布整个计划完成。无需以推倒 Vulkan、动画或资产系统换取所谓独立性。
 
-调整前计划和阶段证据索引保存在 [历史快照](../archive/gpu-scene-before-independent-20260924.md)。
+调整前计划和阶段证据索引保存在 [历史快照](gpu-scene-before-independent-20260924.md)。
 稳定所有权由 [GPU 架构](../architecture/gpu-rendering-architecture.md)拥有，
 接口增量参考 [Scene 接口](gpu-scene-interface.md)，与本次方向冲突的旧迁移前置不再适用。

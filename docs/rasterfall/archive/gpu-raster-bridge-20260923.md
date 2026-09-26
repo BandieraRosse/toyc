@@ -3,7 +3,7 @@
 > 状态：历史；2026-09-23 被下一代统一 GPU 渲染器计划替代
 > 所有者：Rasterfall GPU 性能主线
 > 最近核对：2026-09-23
-> 当前替代入口：[下一代统一 GPU 渲染器计划](../plans/gpu-scene-renderer.md)
+> 当前替代入口：[下一代统一 GPU 渲染器计划](gpu-scene-renderer.md)
 
 以下执行顺序和“当前切片”仅代表归档时的旧方案。M2 测量仍可作迁移基线，未完成的 Intel 与
 validation/sync 门禁已转入新活动计划；本页不再决定实施优先级。

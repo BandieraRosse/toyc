@@ -2,7 +2,7 @@
 
 > 状态：历史测量现场；不代表正式 FPS 或生命周期签收
 > 日期：2026-09-24
-> 当前工作：[活动计划](../plans/gpu-scene-renderer.md)
+> 当前工作：[活动计划](gpu-scene-renderer.md)
 
 正式模块化队员的模型 bind 数据随资产 generation 不变，旧路径仍每帧为 43 个 mesh 上传完整 bind。
 新路径在同一资源 handle/generation、顶点数和 bind-normal policy 下保留 GPU bind，只上传当前

@@ -2,7 +2,7 @@
 
 > 状态：历史现场归档；只读元数据，不是 WORLD opaque 执行证据
 > 日期：2026-09-24
-> 当前入口：[活动计划](../plans/README.md)、[迁移接口](../plans/gpu-scene-interface.md)
+> 当前入口：[活动计划](../plans/README.md)、[迁移接口](gpu-scene-interface.md)
 
 `rf_gpu_scene_world_capture` 从实际 Runtime Map render 取得 authored ID，并复用正式
 `level_map.draw` 的投影顺序。正常帧的非 client `--frame-audit` 将这些 world 值与 session local actor

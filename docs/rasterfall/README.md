@@ -13,16 +13,16 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 | 任务 | 先读 | 主要代码或工具入口 |
 | --- | --- | --- |
-| 当前优先级、GPU 实施顺序 | [活动计划](plans/README.md) | 计划指向的单一执行文档 |
+| 当前优先级、Scene 收尾与延期项 | [计划入口](plans/README.md) | 当前决策与归档计划 |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](guides/build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
-| 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[活动计划](plans/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |
+| 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[历史计划](archive/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |
 | FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
-| 独立 GPU 新架构与直接来源预览 | [活动计划](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
+| 独立 GPU Scene 与直接来源预览 | [计划入口](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
 | 静态世界光照与诊断 | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | world-light bake、normal consumer 与诊断 scope |
 | 角色、敌人与附件表现 | [角色表现](architecture/character-presentation.md) | character/enemy presentation adapters |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
@@ -31,11 +31,11 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | HUD、Viewmodel 与特效；独立 Scene 分层和单人入口 | [HUD 与特效](architecture/hud-effects.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-play`、`tools/gpu_scene_play.ps1`、`rasterfall_canvas.h`、`render/rf_gpu_scene_layers.inc`；共享菜单布局、独立几何与 native 生命周期 |
 | 视觉验收与渲染性能诊断 | [视觉验收](guides/visual-validation.md)、[性能诊断](guides/rendering-performance.md) | capture CLI、`rasterfall_perf`、离屏 benchmark、`tools/gpu_scene_old_map_perf.ps1 -Stage Corridor` 旧地图按钮整波与真实时钟诊断 |
 | GPU Draw/Raster/present 架构 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `gpu/`、mixed executor、Core Host |
-| GPU Scene 迁移与只读 snapshot | [活动计划](plans/README.md)、[迁移接口](plans/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md)、[GPU 渲染架构](architecture/gpu-rendering-architecture.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；正常帧审计冻结 world、活动旗帜、动态投射物、交互物及八名正式模块化队员各自的 pose/光照值，持有十一类生成网格、RMESH、旗帜几何与字形、投射物和交互物模型、交互物程序几何、角色 body、被动装备与武器 GPU 资源，在独立 Scene target 验证同一 WORLD color/depth；呈现仍走 mixed |
-| 硬件 Scene WORLD 原生预览 | [Scene 工作流](guides/gpu-scene-fixture.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-scene-world-preview`、`tools/gpu_scene_preview.ps1`；真实 WORLD 独立 native 提交，跳过 mixed 执行与读回；完整帧各层继续按活动计划接入 |
+| GPU Scene 只读 snapshot | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[历史迁移接口](archive/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；独立 Scene 冻结 world、角色与动态来源；旧正常帧审计记录见历史迁移接口 |
+| 硬件 Scene WORLD 原生预览 | [Scene 工作流](guides/gpu-scene-fixture.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-scene-world-preview`、`tools/gpu_scene_preview.ps1`；真实 WORLD 独立 native 提交，供定向诊断 |
 | 程序角色、网络玩家与阶段 2 WORLD 诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_procedural_triangles`、`tools/gpu_scene_stage2.ps1`、`tools/gpu_scene_network.ps1`；共享 WORLD 深度、双面材质及帧内网络表现 |
 | GPU 验收、诊断与性能采样 | [GPU 验收与诊断](guides/gpu-validation.md)、[Scene 同步与生命周期验证](guides/gpu-scene-fixture.md)、[GPU 性能标准](reference/gpu-performance-standards.md) | `tools/gpu_*.ps1`、Windows native package |
-| 独立 Scene 运行成本、敌人几何、颜色合批及资源复用 | [活动计划](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `tools/gpu_scene_cost.ps1`、`tools/gpu_scene_cost_report.py`、`rf_gpu_graphics_scene_color_resource_create`、`rf_gpu_graphics_scene_color_resource_update`；同包比较唯一顶点变换、20 字节颜色顶点、逐面颜色合批、上传、蒙皮与分层资源复用，拆分来源及 native 提交成本 |
+| 独立 Scene 运行成本、敌人几何、颜色合批及资源复用 | [历史计划](archive/gpu-scene-renderer.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `tools/gpu_scene_cost.ps1`、`tools/gpu_scene_cost_report.py`、`rf_gpu_graphics_scene_color_resource_create`、`rf_gpu_graphics_scene_color_resource_update`；同包比较唯一顶点变换、20 字节颜色顶点、逐面颜色合批、上传、蒙皮与分层资源复用，拆分来源及 native 提交成本 |
 | Scene 静态实例数值边界与近裁剪 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rasterfall_render_scene_static_prop_eligible`、`rf_gpu_scene_world_gpu_prepare`、`scene_static_prop_clip` |
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |

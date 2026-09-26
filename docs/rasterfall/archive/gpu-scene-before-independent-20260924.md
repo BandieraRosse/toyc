@@ -2,7 +2,7 @@
 
 > 状态：历史；已被替代；2026-09-24 独立架构方向调整前的计划快照
 >
-> 当前顺序以 [活动计划](../plans/gpu-scene-renderer.md) 为准；本文不再提供开发门禁。
+> 当前顺序以 [活动计划](gpu-scene-renderer.md) 为准；本文不再提供开发门禁。
 >
 > 所有者：Rasterfall GPU 渲染与性能主线
 >
@@ -30,7 +30,7 @@ WORLD 固定画面合同遗留问题按顶部用户决定延期，记录见[阶�
 
 后续顺序：直接推进完整 GPU 正常帧，画面差异重构后修复。
 网络玩家按用户要求仅验证逻辑路径；实机连接、同步与可见性问题统一延后到 GPU 完成后的网络专项。
-本轮收尾范围与后续事项见[阶段 2 收尾记录](../plans/gpu-scene-stage2-handoff.md)。
+本轮收尾范围与后续事项见[阶段 2 收尾记录](gpu-scene-stage2-handoff.md)。
 网络 adapter 冻结已解析的展示位置、朝向和 actor 状态，不把输入包交给 Scene。
 网络角色只延后开发顺序，不从完整 WORLD 合同中删除。Smoker 舌头保留现有连接带和束缚圈的最小等价表现，
 不在渲染迁移中删除束缚玩法或其可见提示。完成 WORLD 后集中推进独立来源和完整帧。
@@ -221,11 +221,11 @@ near 60 从既有 42.092 ms 到 16.67 ms 所需约 2.5 倍整体加速只是目�
 
 ### 阶段 0：合同、基线与迁移接口
 
-第一步的[现行画面覆盖矩阵](../plans/gpu-scene-coverage.md)记录源码可达内容及未确认的运行证据。
-第二步的[迁移接口合同](../plans/gpu-scene-interface.md)定义 snapshot、scene、稳定身份、顺序与所有权；
+第一步的[现行画面覆盖矩阵](gpu-scene-coverage.md)记录源码可达内容及未确认的运行证据。
+第二步的[迁移接口合同](gpu-scene-interface.md)定义 snapshot、scene、稳定身份、顺序与所有权；
 尚待核对来源 ID 和实际设备能力。
-第三步的[迁移基线状态](../plans/gpu-scene-baseline.md)记录已有 Windows native 结构审计和阶段退出时需补的冻结证据。
-第四步的[画面差异合同](../plans/gpu-scene-visual-contract.md)列出精确项、容差统计和固定审阅集合；
+第三步的[迁移基线状态](gpu-scene-baseline.md)记录已有 Windows native 结构审计和阶段退出时需补的冻结证据。
+第四步的[画面差异合同](gpu-scene-visual-contract.md)列出精确项、容差统计和固定审阅集合；
 阈值与新基线仍待正式候选验收前审批，隔离原型可先提供原始证据。
 
 1. 枚举现有 WORLD、transparent、effects、VIEWMODEL、OVERLAY 的 producer、材质/纹理语义、

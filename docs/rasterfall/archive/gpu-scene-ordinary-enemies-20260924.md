@@ -2,7 +2,7 @@
 
 > 状态：历史现场；阶段 2 局部接入，不是阶段退出或性能签收
 >
-> 当前入口：[活动计划](../plans/gpu-scene-renderer.md)、[角色表现](../architecture/character-presentation.md)
+> 当前入口：[活动计划](gpu-scene-renderer.md)、[角色表现](../architecture/character-presentation.md)
 
 六种 Block/Humanoid Common、Fast、Heavy 资源通过冻结 recipe、步态、变换和反馈色进入 Scene。
 提取使用独立 scratch instance，复用不可变资源和原姿态算法；不读取旧 mutable pose 或推进 motion cache。

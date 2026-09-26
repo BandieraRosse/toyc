@@ -4,7 +4,7 @@
 >
 > 日期：2026-09-23
 >
-> 当前执行入口：[活动计划](../plans/gpu-scene-renderer.md)；复现工作流：[fixture 指南](../guides/gpu-scene-fixture.md)
+> 当前执行入口：[活动计划](gpu-scene-renderer.md)；复现工作流：[fixture 指南](../guides/gpu-scene-fixture.md)
 
 ## 输入与证据
 

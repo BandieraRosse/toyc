@@ -70,13 +70,13 @@ if (-not (Test-Path -LiteralPath $planIndex)) {
 else {
     $planText = [System.IO.File]::ReadAllText($planIndex, $utf8)
     $activeCount = ([regex]::Matches($planText, '(?m)^## Active plan')).Count
-    if ($activeCount -ne 1) {
-        $errors.Add("active-plan marker count must be 1; actual: $activeCount")
+    if ($activeCount -gt 1) {
+        $errors.Add("active-plan marker count must be at most 1; actual: $activeCount")
     }
     $planLinks = [regex]::Matches($planText, '\]\((?<target>[^)#]+\.md)(?:#[^)]*)?\)') |
         Where-Object { $_.Groups['target'].Value -ne 'README.md' -and $_.Groups['target'].Value -notmatch '[/\\]' }
-    if ($planLinks.Count -ne 1) {
-        $errors.Add("active-plan document link count must be 1; actual: $($planLinks.Count)")
+    if ($planLinks.Count -ne $activeCount) {
+        $errors.Add("active-plan document link count must match marker count; markers: $activeCount, links: $($planLinks.Count)")
     }
 }
 

@@ -1,6 +1,6 @@
 # GPU Scene 阶段 0：迁移接口合同
 
-> 状态：设计合同；actor 身份、V1/V2 值 snapshot 与有序 Scene 元数据已隔离实现
+> 状态：历史设计合同；actor 身份、V1/V2 值 snapshot 与有序 Scene 元数据已隔离实现
 >
 > 核对日期：2026-09-23
 

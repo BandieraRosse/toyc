@@ -1,7 +1,7 @@
 # 西侧走廊逻辑剖析首轮
 
 > 状态：历史
-> 2026-09-25 诊断现场；当前顺序见 [活动计划](../plans/gpu-scene-renderer.md)。
+> 2026-09-25 诊断现场；当前顺序见 [活动计划](gpu-scene-renderer.md)。
 
 在 `--frame-audit --gpu-scene-play` 下，Game 的可选 profile 汇总每帧 world、队友、敌人、分离及其余更新耗时，并计数导航和地面查询。按敌人种类记录 AI 与落地更新耗时。未开启诊断时不读取时钟；计时不参与玩法分支。`session_runtime_us` 是整段逻辑时间扣除 Game world 时间的剩余值，包含 runtime、session 和诊断开销，不与嵌套的 world 分项相加。
 
