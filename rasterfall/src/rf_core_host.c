@@ -2243,6 +2243,7 @@ int rf_core_get_input_frame(const struct rf_core *core,
     frame->relative_y = core->input->relative_y;
     frame->pointer_locked = core->input->pointer_locked;
     frame->mouse_buttons = core->input->mouse_buttons;
+    frame->wheel_y = core->input->wheel_y;
     return 0;
 }
 

@@ -18,6 +18,7 @@ void toy_input_begin_frame(struct toy_input *input)
     input->pointer_moved = 0;
     input->relative_x = 0;
     input->relative_y = 0;
+    input->wheel_y = 0;
 }
 
 void toy_input_apply(struct toy_input *input,
@@ -57,6 +58,7 @@ void toy_input_apply(struct toy_input *input,
     if (events->pointer_lock_changed)
         input->pointer_locked = events->pointer_locked;
     input->mouse_buttons = events->mouse_buttons;
+    input->wheel_y += events->wheel_y;
 }
 
 int toy_input_down(const struct toy_input *input, unsigned int key)

@@ -55,6 +55,7 @@ struct rf_game_runtime {
     struct camera render_camera;
     int rts_active;
     int rts_camera_x, rts_camera_z;
+    int rts_camera_distance;
     int rts_saved_pitch_sy, rts_saved_pitch_cy;
     int64_t rts_pan_last_us;
     int rts_selected; /* -1 none, 0 local player, positive flag index + 1 */

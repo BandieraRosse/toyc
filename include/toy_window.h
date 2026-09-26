@@ -49,6 +49,7 @@ struct toy_window_events {
     unsigned int button;
     int button_pressed;
     unsigned int mouse_buttons;
+    int wheel_y; /* signed wheel steps accumulated during this poll */
     uint32_t button_serial;
     int keyboard_focus_changed;
     int keyboard_focused;

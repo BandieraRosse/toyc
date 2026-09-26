@@ -351,6 +351,45 @@ static int rts_world_screen(const struct camera *camera, int width, int height,
     return 1;
 }
 
+#define RTS_CAMERA_MIN_DISTANCE 3000
+#define RTS_CAMERA_MAX_DISTANCE 130000
+#define RTS_CAMERA_DEFAULT_DISTANCE 40000
+
+static int rts_zoom_distance(int distance, int wheel_steps)
+{
+    if (distance < RTS_CAMERA_MIN_DISTANCE ||
+        distance > RTS_CAMERA_MAX_DISTANCE)
+        distance = RTS_CAMERA_DEFAULT_DISTANCE;
+    if (wheel_steps > 32) wheel_steps = 32;
+    if (wheel_steps < -32) wheel_steps = -32;
+    while (wheel_steps > 0) {
+        distance = distance * 5 / 6;
+        if (distance < RTS_CAMERA_MIN_DISTANCE)
+            distance = RTS_CAMERA_MIN_DISTANCE;
+        wheel_steps--;
+    }
+    while (wheel_steps < 0) {
+        distance = distance >= RTS_CAMERA_MAX_DISTANCE * 5 / 6 ?
+            RTS_CAMERA_MAX_DISTANCE : distance * 6 / 5;
+        wheel_steps++;
+    }
+    return distance;
+}
+
+static void rts_setup_camera(struct camera *camera,
+                             const struct rf_game_runtime *runtime)
+{
+    camera->x = runtime->rts_camera_x;
+    camera->z = runtime->rts_camera_z;
+    camera->y = rts_visual_ground_y(&runtime->session->level,
+        runtime->session->air_walls_enabled, camera->x, camera->z) +
+        runtime->rts_camera_distance;
+    camera->sy = 0;
+    camera->cy = 1024;
+    camera->pitch_sy = -1020;
+    camera->pitch_cy = 90;
+}
+
 int rasterfall_rts_projection_logic_test(void)
 {
     struct camera camera;
@@ -359,6 +398,25 @@ int rasterfall_rts_projection_logic_test(void)
     const int points[3][2] = {{640, 360}, {200, 600}, {1100, 100}};
     memset(&camera, 0, sizeof(camera));
     memset(&map, 0, sizeof(map));
+    if (rts_zoom_distance(40000, 1) >= 40000 ||
+        rts_zoom_distance(40000, -1) <= 40000 ||
+        rts_zoom_distance(40000, 100) != RTS_CAMERA_MIN_DISTANCE ||
+        rts_zoom_distance(40000, -100) != RTS_CAMERA_MAX_DISTANCE)
+        return 11;
+    camera.y = RTS_CAMERA_MAX_DISTANCE;
+    camera.z = -9000;
+    camera.cy = 1024;
+    camera.pitch_sy = -1020;
+    camera.pitch_cy = 90;
+    for (int x = -33000; x <= 33000; x += 66000) {
+        for (int z = -33000; z <= 33000; z += 66000) {
+            int sx, sy;
+            if (!rts_world_screen(&camera, 1280, 720, x, -900, z,
+                    &sx, &sy) || sx < 0 || sx >= 1280 ||
+                sy < 0 || sy >= 720) return 12;
+        }
+    }
+    camera.z = 0;
     camera.y = 40000;
     camera.cy = 1024;
     camera.pitch_sy = -1000;
@@ -2952,13 +3010,7 @@ static void rf_game_prepare_render_camera(struct rf_game_runtime *runtime)
         set_managed_spectator_camera(render_camera, &runtime->camera,
                                      runtime->managed_third_person);
     if (runtime->rts_active) {
-        render_camera->x = runtime->rts_camera_x;
-        render_camera->z = runtime->rts_camera_z;
-        render_camera->y = 40000;
-        render_camera->sy = 0;
-        render_camera->cy = 1024;
-        render_camera->pitch_sy = -1000;
-        render_camera->pitch_cy = 220;
+        rts_setup_camera(render_camera, runtime);
     }
     /* RTS picking uses this fixed camera to unproject the pointer pixel. */
     if (!runtime->rts_active)
@@ -2979,13 +3031,14 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
                  runtime->rts_selected);
     else
         strcpy(selected, "SELECTED: NONE");
-    rasterfall_canvas_rect(canvas, 14, 14, 308, 60,
+    rasterfall_canvas_rect(canvas, 14, 14, 350, 76,
                            RF_COLOR_UI_BACKGROUND, 220);
     rasterfall_canvas_text(canvas, 22, 20, "RTS  M: FPS  WASD: PAN",
                            RF_COLOR_UI_ACCENT);
     rasterfall_canvas_text(canvas, 22, 39, "LEFT: SELECT  RIGHT: MOVE",
                            RF_COLOR_UI_TEXT);
     rasterfall_canvas_text(canvas, 22, 58, selected, RF_COLOR_UI_TEXT);
+    rasterfall_canvas_text(canvas, 22, 77, "WHEEL: ZOOM", RF_COLOR_UI_TEXT);
     if (session->rts_move_active) {
         int mx, my;
         int ground_y = rts_visual_ground_y(&session->level,
@@ -4584,6 +4637,7 @@ startup_again:
                     camera.pitch_cy = 1024;
                     game_runtime.rts_camera_x = camera.x;
                     game_runtime.rts_camera_z = camera.z - 9000;
+                    game_runtime.rts_camera_distance = RTS_CAMERA_DEFAULT_DISTANCE;
                     game_runtime.rts_pan_last_us = rf_core_time_us(&core);
                     rf_core_set_pointer_lock(&core, 0);
                     pointer_lock_requested = 0;
@@ -4614,11 +4668,9 @@ startup_again:
                 (toy_input_down(&input, KEY_D) - toy_input_down(&input, KEY_A));
             game_runtime.rts_camera_z += pan *
                 (toy_input_down(&input, KEY_W) - toy_input_down(&input, KEY_S));
-            rts_camera.x = game_runtime.rts_camera_x;
-            rts_camera.z = game_runtime.rts_camera_z;
-            rts_camera.y = 40000;
-            rts_camera.sy = 0; rts_camera.cy = 1024;
-            rts_camera.pitch_sy = -1000; rts_camera.pitch_cy = 220;
+            game_runtime.rts_camera_distance = rts_zoom_distance(
+                game_runtime.rts_camera_distance, input.wheel_y);
+            rts_setup_camera(&rts_camera, &game_runtime);
             if (events.button_pressed &&
                 rts_surface_pick(&session.level, &rts_camera,
                     renderer.surface.width,

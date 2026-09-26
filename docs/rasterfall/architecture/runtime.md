@@ -195,8 +195,10 @@ Runtime 分别提供独立快照；查询调用方不取得生命周期所有权
 
 Input Boundary V0 由 `rf_core_get_input_frame()` 提供。Core 在每次成功事件轮询后生成可复制的
 `rf_input_frame`，包含 key down、pressed/released edge、指针位置/相对移动、锁定状态和鼠标按键；
-Game Runtime 使用该 view 构造命令。离线 RTS 由 `M` 切换，runtime 保持北朝屏幕上方的独立高位
-render camera；`WASD` 平移该镜头，鼠标点击沿画面像素的透视射线与可见地面求交。选取结果仅为 runtime UI 状态，
+Game Runtime 使用该 view 构造命令。Windows SDL 将游戏使用的键、鼠标左/右/中/侧键和滚轮归一到公共输入帧；
+滚轮步数逐次轮询累加、逐帧清零。离线 RTS 由 `M` 切换，runtime 保持北朝屏幕上方的独立
+render camera；`WASD` 平移该镜头，滚轮调节相对当地可见地面的高度（3 至 130 米），
+鼠标点击沿当前镜头的画面像素透视射线与可见地面求交。选取结果仅为 runtime UI 状态，
 求交使用 renderer 所消费的地图绘制记录（基础地板、坡道、平台和盒体顶面），按最近命中点确定位置；
 不以碰撞 primitive 的玩法脚底高度替代像素里的可见表面。
 玩家移动目标由 session 持有，runtime 将其投影为随镜头移动的 `MOVE` 标记；旗帜位置也交给 session。

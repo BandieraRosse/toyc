@@ -17,6 +17,7 @@ struct rf_input_frame {
     int relative_y;
     int pointer_locked;
     unsigned int mouse_buttons;
+    int wheel_y;
 };
 
 int rf_input_down(const struct rf_input_frame *input, unsigned int key);
