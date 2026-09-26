@@ -146,7 +146,7 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
 gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；collision/surface 仍必须位于 world 内。
 
-`kind=sign` 的牌面沿 X 展开，Z 是薄厚，`height` 和 `attr.height2` 分别是世界 Y 轴上的牌底、牌顶；地面世界 Y 为 -900 RFU。默认样式保留路牌支杆，`attr.style=1` 画无支杆的墙面牌。文字宽度由 X 跨度决定，墙面牌应贴在南北向墙面并给出显式 `attr.height2`。
+`kind=sign` 的牌面沿 X 展开，Z bounds 的中心是单层牌面，`height` 和 `attr.height2` 分别是世界 Y 轴上的牌底、牌顶；地面世界 Y 为 -900 RFU。默认样式保留路牌支杆，`attr.style=1` 画无支杆的墙面牌。字体区域是牌面本身的另一种颜色，没有前后叠加的文字平面。`attr.facing=+z` 或 `attr.facing=-z` 指定观察者位于哪一侧时文字正向可读；另一侧看到自然镜像。旧记录省略时默认 `+z`。文字宽度由 X 跨度决定，墙面牌应贴在南北向墙面并给出显式 `attr.height2`。
 
 正式 `rasterfall.map` 的 render records 由 V1 source 完整提供；`rasterfall_legacy.map` 仍保留
 作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
@@ -165,7 +165,7 @@ prop lamp_post 0 -17000 0 1000 collision=none
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
 
-Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。阶段地图中的 control region 和刷怪区坐标见[历史记录](../archive/map-content-fixtures-2026-09.md)；若以后正式数据化这些内容，需同时扩展 parser、绑定、布局导出和 query schema。
+Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。内容地图的 `flag` 可使用 `facing=+z/-z` 指定单层旗布文字的正确阅读侧，省略时默认 `+z`；购买的新旗也默认 `+z`。阶段地图中的 control region 和刷怪区坐标见[历史记录](../archive/map-content-fixtures-2026-09.md)；若以后正式数据化这些内容，需同时扩展 parser、绑定、布局导出和 query schema。
 
 地图修改、布局导出与精确查询流程见 [地图编辑与查询](../guides/map-authoring.md)。
 

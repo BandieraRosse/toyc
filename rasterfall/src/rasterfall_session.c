@@ -162,7 +162,7 @@ static int session_collect_assignable(const struct rasterfall_session *s,
 static void session_init_flag(struct rasterfall_session *s, int fi, int x, int z)
 {
     struct rasterfall_flag *f = &s->flags[fi];
-    memset(f, 0, sizeof(*f)); f->active = 1; f->x = x; f->z = z;
+    memset(f, 0, sizeof(*f)); f->active = 1; f->x = x; f->z = z; f->facing = 1;
     f->color = flag_colors[fi % (int)(sizeof(flag_colors)/sizeof(flag_colors[0]))];
     f->carrier_id = -1;
     strncpy(f->label, flag_names[fi % (int)(sizeof(flag_names)/sizeof(flag_names[0]))], 4);
@@ -289,13 +289,15 @@ static int session_content_character_id(const char *name)
 }
 
 static int session_content_flag_position(
-    const struct rasterfall_session *session, const char *id, int *x, int *z)
+    const struct rasterfall_session *session, const char *id, int *x, int *z,
+    int *facing)
 {
     int i;
     for (i = 0; i < session->content.flag_definition_count; i++)
         if (!strcmp(session->content.flag_definitions[i].id, id)) {
             *x = session->content.flag_definitions[i].x;
             *z = session->content.flag_definitions[i].z;
+            *facing = session->content.flag_definitions[i].facing;
             return 1;
         }
     return 0;
@@ -642,21 +644,25 @@ void rasterfall_session_reset(struct rasterfall_session *session,
      * 500 units closer to the Eula display. */
     session_init_flag(session, 0, 0, 0);
     /* Restore the original Maid guard post and its flag index. */
-    { int fx = -12000, fz = 0;
-      session_content_flag_position(session, "maid_alpha", &fx, &fz);
-      session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, fx, fz); }
-    { int fx = HURD_FLAG_X, fz = HURD_FLAG_Z;
-      session_content_flag_position(session, "hurd", &fx, &fz);
-      session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX, fx, fz); }
-    { int fx = STANDARD_FLAG_X, fz = STANDARD_FLAG_Z;
-      session_content_flag_position(session, "standard_response", &fx, &fz);
-      session_init_flag(session, RASTERFALL_STANDARD_FLAG_INDEX, fx, fz); }
+    { int fx = -12000, fz = 0, facing = 1;
+      session_content_flag_position(session, "maid_alpha", &fx, &fz, &facing);
+      session_init_flag(session, RASTERFALL_MAID_FLAG_INDEX, fx, fz);
+      session->flags[RASTERFALL_MAID_FLAG_INDEX].facing=facing; }
+    { int fx = HURD_FLAG_X, fz = HURD_FLAG_Z, facing = 1;
+      session_content_flag_position(session, "hurd", &fx, &fz, &facing);
+      session_init_flag(session, RASTERFALL_HURD_FLAG_INDEX, fx, fz);
+      session->flags[RASTERFALL_HURD_FLAG_INDEX].facing=facing; }
+    { int fx = STANDARD_FLAG_X, fz = STANDARD_FLAG_Z, facing = 1;
+      session_content_flag_position(session, "standard_response", &fx, &fz, &facing);
+      session_init_flag(session, RASTERFALL_STANDARD_FLAG_INDEX, fx, fz);
+      session->flags[RASTERFALL_STANDARD_FLAG_INDEX].facing=facing; }
     session->flags[RASTERFALL_STANDARD_FLAG_INDEX].color = 0x2B765B;
     strncpy(session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label, "RESP", 4);
     session->flags[RASTERFALL_STANDARD_FLAG_INDEX].label[4] = 0;
-    { int fx = ASSAULT_FLAG_X, fz = ASSAULT_FLAG_Z;
-      session_content_flag_position(session, "assault", &fx, &fz);
-      session_init_flag(session, RASTERFALL_ASSAULT_FLAG_INDEX, fx, fz); }
+    { int fx = ASSAULT_FLAG_X, fz = ASSAULT_FLAG_Z, facing = 1;
+      session_content_flag_position(session, "assault", &fx, &fz, &facing);
+      session_init_flag(session, RASTERFALL_ASSAULT_FLAG_INDEX, fx, fz);
+      session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].facing=facing; }
     session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].color = 0xB75A2C;
     strncpy(session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label, "ASLT", 4);
     session->flags[RASTERFALL_ASSAULT_FLAG_INDEX].label[4] = 0;

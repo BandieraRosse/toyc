@@ -100,6 +100,7 @@ struct toy_map_draw {
     unsigned int color;
     int texture_u, texture_v;
     int style;
+    int facing; /* +1: readable from +Z; -1: readable from -Z. */
     char text[TOY_MAP_TEXT_SIZE];
 };
 

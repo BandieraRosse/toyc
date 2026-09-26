@@ -22,6 +22,7 @@
 #include "rf_gpu_raster_pack.h"
 #include "rf_gpu_scene_world.h"
 #include "rf_gpu_scene_enemy.h"
+#include "render/rasterfall_text_panel.h"
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
@@ -4031,58 +4032,32 @@ static int persistent_map_mesh_add_box(struct persistent_map_mesh_build *build,
     return 0;
 }
 
-static int persistent_map_mesh_add_world_text(struct persistent_map_mesh_build *build,
-    int x,int y,int z,int width,int height,const char *value,int mirror)
+struct persistent_text_panel_context {
+    struct persistent_map_mesh_build *build;
+    int z;
+    uint32_t background;
+};
+static int persistent_text_panel_quad(void *opaque,
+    int x0,int x1,int y0,int y1,int glyph)
 {
-    int chars,cell,start_x,start_y,total_px;
-    if (!value || !value[0]) return 0;
-    chars=(int)strlen(value);
-    if (chars<=0 || width<=0 || height<=0) return 0;
-    cell=width/(chars*FB_FONT_W);
-    if (height/FB_FONT_H<cell) cell=height/FB_FONT_H;
-    if (cell<1) return 0;
-    start_x=x+(width-chars*FB_FONT_W*cell)/2;
-    start_y=y-(height-FB_FONT_H*cell)/2;
-    total_px=chars*FB_FONT_W;
-    for(int i=0;i<chars;++i) {
-        unsigned char ch=(unsigned char)value[i];
-        for(int row=0;row<FB_FONT_H;++row) {
-            unsigned char bits=fb_font_glyph_row(ch,row);
-            for(int col=0;col<FB_FONT_W;++col) {
-                int run=col,px;
-                struct vec3 q[4];
-                if (!(bits & (unsigned char)(0x80 >> col))) continue;
-                while (run+1<FB_FONT_W &&
-                    (bits & (unsigned char)(0x80 >> (run+1)))) run++;
-                px=mirror ? total_px-(i*FB_FONT_W+run+1) : i*FB_FONT_W+col;
-                q[0]=(struct vec3){start_x+px*cell,start_y-row*cell,z};
-                q[1]=(struct vec3){mirror ?
-                    start_x+(total_px-(i*FB_FONT_W+col))*cell :
-                    start_x+(i*FB_FONT_W+run+1)*cell,q[0].y,z};
-                q[2]=(struct vec3){q[1].x,q[1].y-cell,z};
-                q[3]=(struct vec3){q[0].x,q[2].y,z};
-                if (persistent_map_mesh_add_quad(build,q,0xFFF0C0)<0) return -1;
-                col=run;
-            }
-        }
-    }
-    return 0;
+    struct persistent_text_panel_context *ctx=opaque;
+    struct vec3 q[4]={{x0,y1,ctx->z},{x1,y1,ctx->z},
+        {x1,y0,ctx->z},{x0,y0,ctx->z}};
+    return persistent_map_mesh_add_quad(ctx->build,q,
+        glyph ? 0xFFF0C0 : ctx->background);
 }
 
 static int persistent_map_mesh_add_sign(struct persistent_map_mesh_build *build,
     const struct toy_map_draw *sign)
 {
     int x=(sign->a+sign->b)/2,z=(sign->c+sign->d)/2;
-    int width=sign->b-sign->a-80,height=sign->f-sign->e-48;
+    struct persistent_text_panel_context panel={build,z,sign->color};
     if ((sign->style != 1 &&
          persistent_map_mesh_add_box(build,x-18,x+18,sign->e-220,sign->e,
             z-18,z+18,0x4B3526,0)<0) ||
-        persistent_map_mesh_add_box(build,sign->a,sign->b,sign->e,sign->f,
-            sign->c,sign->d,sign->color,0)<0 ||
-        persistent_map_mesh_add_world_text(build,sign->a+40,sign->f-24,
-            sign->d+24,width,height,sign->text,1)<0 ||
-        persistent_map_mesh_add_world_text(build,sign->a+40,sign->f-24,
-            sign->c-24,width,height,sign->text,0)<0) return -1;
+        rasterfall_text_panel_emit(sign->a,sign->b,sign->e,sign->f,
+            40,24,sign->text,sign->facing,
+            persistent_text_panel_quad,&panel)<0) return -1;
     return 0;
 }
 
@@ -4984,6 +4959,8 @@ static int draw_cuboid(struct toy_renderer *renderer,
                        const struct camera *camera,
                        int x0, int x1, int y0, int y1,
                        int z0, int z1, uint32_t color);
+static int render_text_panel(struct toy_renderer *,const struct camera *,
+    int,int,int,int,int,int,int,const char *,int,uint32_t);
 
 static int render_world_sign(struct toy_renderer *renderer,
                              const struct camera *camera,
@@ -4995,72 +4972,35 @@ static int render_world_sign(struct toy_renderer *renderer,
     if (sign->style != 1)
         pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
                               sign->e - 220, sign->e, z - 18, z + 18, 0x4B3526);
-    pixels += draw_cuboid(renderer, camera, sign->a, sign->b,
-                          sign->e, sign->f, sign->c, sign->d, sign->color);
-    /* The label is drawn after the world geometry has flushed.  Drawing it
-     * here writes directly to the framebuffer while the board is still in
-     * the command buffer, so the board overwrites the text. */
+    pixels += render_text_panel(renderer,camera,sign->a,sign->b,
+        sign->e,sign->f,z,40,24,sign->text,sign->facing,sign->color);
     return pixels;
 }
 
-/* Submit bitmap-font pixels as tiny world-space quads.  This deliberately
- * uses the existing depth-tested flat-triangle path: the text is part of the
- * board/flag plane instead of a framebuffer billboard. */
-static int render_world_text_plane(struct toy_renderer *renderer,
-                                   const struct camera *camera,
-                                   int x, int y, int z,
-                                   int width, int height,
-                                   const char *text, uint32_t color,
-                                   int mirror)
+struct render_text_panel_context {
+    struct toy_renderer *renderer;
+    const struct camera *camera;
+    int z,pixels;
+    uint32_t background;
+};
+static int render_text_panel_quad(void *opaque,
+    int x0,int x1,int y0,int y1,int glyph)
 {
-    int chars, cell, start_x, start_y, i, row, col, run, px, total_px;
-    int drawn = 0;
-    struct vec3 a, b, c, d;
-    if (!renderer || !camera || !text || !text[0]) return 0;
-    chars = (int)strlen(text);
-    if (chars <= 0) return 0;
-    cell = width / (chars * FB_FONT_W);
-    if (height / FB_FONT_H < cell) cell = height / FB_FONT_H;
-    if (cell < 1) return 0;
-    start_x = x + (width - chars * FB_FONT_W * cell) / 2;
-    start_y = y - (height - FB_FONT_H * cell) / 2;
-    total_px = chars * FB_FONT_W;
-    for (i = 0; i < chars; i++) {
-        unsigned char ch = (unsigned char)text[i];
-        for (row = 0; row < FB_FONT_H; row++) {
-            unsigned char bits = fb_font_glyph_row(ch, row);
-            for (col = 0; col < FB_FONT_W; col++) {
-                if (!(bits & (unsigned char)(0x80 >> col))) continue;
-                run = col;
-                while (run + 1 < FB_FONT_W &&
-                       (bits & (unsigned char)(0x80 >> (run + 1)))) run++;
-                /* The original screen-space implementation happened to
-                 * display these world planes with a reversed horizontal
-                 * orientation.  Keep the correction explicit here; the
-                 * reverse-side copy uses the opposite orientation naturally
-                 * when viewed from behind the plane. */
-                if (mirror)
-                    px = total_px - (i * FB_FONT_W + run + 1);
-                else
-                    px = i * FB_FONT_W + col;
-                a.x = start_x + px * cell;
-                a.y = start_y - row * cell;
-                a.z = z;
-                if (mirror)
-                    b.x = start_x +
-                          (total_px - (i * FB_FONT_W + col)) * cell;
-                else
-                    b.x = start_x + (i * FB_FONT_W + run + 1) * cell;
-                b.y = a.y; b.z = z;
-                c.x = b.x; c.y = a.y - cell; c.z = z;
-                d.x = a.x; d.y = c.y; d.z = z;
-                drawn += draw_world_triangle(renderer, camera, &a, &b, &c, color);
-                drawn += draw_world_triangle(renderer, camera, &a, &c, &d, color);
-                col = run;
-            }
-        }
-    }
-    return drawn;
+    struct render_text_panel_context *ctx=opaque;
+    struct vec3 a={x0,y1,ctx->z},b={x1,y1,ctx->z};
+    struct vec3 c={x1,y0,ctx->z},d={x0,y0,ctx->z};
+    ctx->pixels+=draw_quad(ctx->renderer,ctx->camera,&a,&b,&c,&d,
+        glyph ? 0xFFF0C0 : ctx->background);
+    return 0;
+}
+static int render_text_panel(struct toy_renderer *renderer,
+    const struct camera *camera,int x0,int x1,int y0,int y1,int z,
+    int inset_x,int inset_y,const char *text,int facing,uint32_t background)
+{
+    struct render_text_panel_context ctx={renderer,camera,z,0,background};
+    if (rasterfall_text_panel_emit(x0,x1,y0,y1,inset_x,inset_y,
+        text,facing,render_text_panel_quad,&ctx)<0) return -1;
+    return ctx.pixels;
 }
 
 static int render_block_enemy(struct toy_renderer *, const struct camera *,
@@ -5234,9 +5174,8 @@ static int render_flag_one(struct toy_renderer *renderer,
     /* 3600 world units is approximately four player heights in Rasterfall. */
     pixels += draw_cuboid(renderer, camera, flag->x - 16, flag->x + 16,
                           -900, 2700, flag->z - 16, flag->z + 16, 0x5A6470);
-    /* Keep the cloth's vertical band compact; the extra size is horizontal. */
-    pixels += draw_cuboid(renderer, camera, flag->x + 12, flag->x + 700,
-                          1950, 2450, flag->z - 10, flag->z + 10, cloth);
+    pixels += render_text_panel(renderer,camera,flag->x+12,flag->x+700,
+        1950,2450,flag->z,20,32,flag->label,flag->facing,cloth);
     return pixels;
 }
 
@@ -5250,26 +5189,6 @@ int rasterfall_render_flags(struct toy_renderer *renderer,
             pixels += render_flag_one(renderer, camera, &active_session->flags[i],
                                       i == active_session->carried_flag);
     return pixels;
-}
-
-int rasterfall_render_flag_text(struct toy_renderer *renderer,
-                                const struct camera *camera)
-{
-    int i, drawn = 0;
-    if (!renderer || !active_session) return 0;
-    for (i = 0; i < active_session->flag_count; i++) {
-        const struct rasterfall_flag *f = &active_session->flags[i];
-        if (!f->active || !f->label[0]) continue;
-        /* The flag cloth spans x+12..x+700 and y=1950..2450.  Its visible
-         * face is +Z, matching the sign convention below. */
-        drawn += render_world_text_plane(renderer, camera,
-                                          f->x + 32, 2418, f->z + 14,
-                                          640, 430, f->label, 0xFFF0C0, 1);
-        drawn += render_world_text_plane(renderer, camera,
-                                          f->x + 32, 2418, f->z - 14,
-                                          640, 430, f->label, 0xFFF0C0, 0);
-    }
-    return drawn;
 }
 
 static void oriented_world_point(int x, int z, int sy, int cy,
@@ -10490,32 +10409,6 @@ void rasterfall_render_scene_stats(struct rasterfall_scene_stats *out)
 void rasterfall_render_ai_submission_stats(struct rasterfall_ai_submission_stats *out)
 {
     if (out) memcpy(out, &ai_submission_stats, sizeof(*out));
-}
-
-int rasterfall_render_sign_text(struct toy_renderer *renderer,
-                                const struct camera *camera)
-{
-    int i, drawn = 0;
-    if (!renderer || !camera) return 0;
-    for (i = 0; i < level_map.draw_count; i++) {
-        if (level_map.draw[i].type == TOY_MAP_DRAW_SIGN) {
-            drawn += render_world_text_plane(renderer, camera,
-                level_map.draw[i].a + 40,
-                level_map.draw[i].f - 24,
-                level_map.draw[i].d + 24,
-                level_map.draw[i].b - level_map.draw[i].a - 80,
-                level_map.draw[i].f - level_map.draw[i].e - 48,
-                level_map.draw[i].text, 0xFFF0C0, 1);
-            drawn += render_world_text_plane(renderer, camera,
-                level_map.draw[i].a + 40,
-                level_map.draw[i].f - 24,
-                level_map.draw[i].c - 24,
-                level_map.draw[i].b - level_map.draw[i].a - 80,
-                level_map.draw[i].f - level_map.draw[i].e - 48,
-                level_map.draw[i].text, 0xFFF0C0, 0);
-        }
-    }
-    return drawn;
 }
 
 void rasterfall_render_gallery_selection(struct toy_surface *surface,

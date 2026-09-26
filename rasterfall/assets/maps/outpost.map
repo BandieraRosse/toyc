@@ -61,9 +61,9 @@ object id=maintenance_hatch kind=arch_floor_hatch x=-3174 y=0 z=3405 yaw=0 scale
 object id=service_pipe kind=arch_pipe_straight x=-3098 y=282 z=3840 yaw=0 scale=1000 attr.collision=none
 object id=light_west kind=lamp_post x=-4301 y=0 z=2714 yaw=90 scale=1000 attr.collision=component
 object id=light_east kind=lamp_post x=4301 y=0 z=2714 yaw=270 scale=1000 attr.collision=component
-render id=null_mark kind=sign min_x=2500 max_x=3350 min_z=-4030 max_z=-4000 height=100 color=779BAA attr.height2=410 attr.style=1 attr.text=RF
-render id=null_status kind=sign min_x=3450 max_x=4150 min_z=-4030 max_z=-4000 height=100 color=81B4B5 attr.height2=410 attr.style=1 attr.text=ON
-render id=north_identity kind=sign min_x=-1200 max_x=1200 min_z=3955 max_z=3985 height=940 color=596F7C attr.height2=1220 attr.style=1 attr.text=INFRA
+render id=null_mark kind=sign min_x=2500 max_x=3350 min_z=-4030 max_z=-4000 height=100 color=779BAA attr.height2=410 attr.style=1 attr.text=RF attr.facing=+z
+render id=null_status kind=sign min_x=3450 max_x=4150 min_z=-4030 max_z=-4000 height=100 color=81B4B5 attr.height2=410 attr.style=1 attr.text=ON attr.facing=+z
+render id=north_identity kind=sign min_x=-1200 max_x=1200 min_z=3955 max_z=3985 height=940 color=596F7C attr.height2=1220 attr.style=1 attr.text=INFRA attr.facing=-z
 
 # Outpost V1 wings and outdoor testing yard. All structural openings are component apertures.
 surface id=research_floor kind=ground min_x=-10240 max_x=-4608 min_z=-3072 max_z=3072 height=0 material=606F78 attr.collision_id=research_floor_col
@@ -97,8 +97,8 @@ object id=research_south kind=boundary_wall x=-7424 y=0 z=-3072 yaw=0 scale=1000
 object id=research_north kind=boundary_wall x=-7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=research_hatch kind=arch_floor_hatch x=-8704 y=0 z=2048 yaw=0 scale=1000 attr.collision=none
 object id=research_cabinet kind=facility_low_cabinet x=-9490 y=0 z=-2240 yaw=90 scale=1000 attr.collision=component
-render id=research_sign kind=sign min_x=-9200 max_x=-6800 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=RESEARCH
-render id=research_future_sign kind=sign min_x=-9600 max_x=-8000 min_z=-2990 max_z=-2960 height=150 color=596F7C attr.height2=470 attr.style=1 attr.text=FUTURE
+render id=research_sign kind=sign min_x=-9200 max_x=-6800 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=RESEARCH attr.facing=-z
+render id=research_future_sign kind=sign min_x=-9600 max_x=-8000 min_z=-2990 max_z=-2960 height=150 color=596F7C attr.height2=470 attr.style=1 attr.text=FUTURE attr.facing=+z
 object id=operations_outer kind=boundary_wall x=10240 y=0 z=0 yaw=90 scale=1000 attr.collision=component attr.length=6144
 object id=operations_south kind=boundary_wall x=7424 y=0 z=-3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=operations_north kind=boundary_wall x=7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
@@ -108,7 +108,7 @@ object id=operations_crate_a kind=crate x=9300 y=0 z=1800 yaw=0 scale=1000 attr.
 object id=operations_crate_b kind=crate x=9300 y=0 z=1000 yaw=0 scale=1000 attr.collision=component
 object id=operations_ammo kind=ammo_container x=7600 y=0 z=2500 yaw=0 scale=1000 attr.collision=component
 object id=operations_cabinet kind=control_cabinet x=9940 y=0 z=-1800 yaw=270 scale=1000 attr.collision=component
-render id=operations_sign kind=sign min_x=6500 max_x=9200 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=OPERATIONS
+render id=operations_sign kind=sign min_x=6500 max_x=9200 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=OPERATIONS attr.facing=-z
 object id=infrastructure_west kind=boundary_wall x=-4608 y=0 z=7168 yaw=90 scale=1000 attr.collision=component attr.length=6144
 object id=infrastructure_east kind=boundary_wall x=4608 y=0 z=7168 yaw=90 scale=1000 attr.collision=component attr.length=6144
 object id=infrastructure_north kind=boundary_wall x=0 y=0 z=10240 yaw=0 scale=1000 attr.collision=component attr.length=9216
@@ -133,8 +133,8 @@ object id=power_panel kind=arch_service_panel x=-4520 y=780 z=8350 yaw=90 scale=
 object id=power_tray kind=arch_cable_tray x=-4520 y=1500 z=8200 yaw=90 scale=1000 attr.collision=none
 object id=control_panel kind=arch_service_panel x=4520 y=780 z=8350 yaw=270 scale=1000 attr.collision=none
 object id=control_tray kind=arch_cable_tray x=4520 y=1500 z=8200 yaw=270 scale=1000 attr.collision=none
-render id=power_sign kind=sign min_x=-4050 max_x=-2350 min_z=10135 max_z=10165 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=POWER
-render id=control_sign kind=sign min_x=2350 max_x=4050 min_z=10135 max_z=10165 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=CONTROL
+render id=power_sign kind=sign min_x=-4050 max_x=-2350 min_z=10135 max_z=10165 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=POWER attr.facing=-z
+render id=control_sign kind=sign min_x=2350 max_x=4050 min_z=10135 max_z=10165 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=CONTROL attr.facing=-z
 object id=service_spine_hatch kind=arch_floor_hatch x=0 y=0 z=8300 yaw=0 scale=1000 attr.collision=none
 object id=service_spine_pillar kind=industrial_pillar x=0 y=0 z=9900 yaw=0 scale=1000 attr.collision=component
 object id=yard_west_edge kind=boundary_wall x=-4700 y=0 z=-7936 yaw=90 scale=1000 attr.collision=component attr.length=7680
@@ -149,4 +149,4 @@ object id=yard_target kind=barrier x=0 y=0 z=-10450 yaw=0 scale=1000 attr.collis
 object id=yard_power kind=power_unit x=3270 y=0 z=-10000 yaw=90 scale=1000 attr.collision=component
 object id=yard_lamp_west kind=lamp_post x=-4200 y=0 z=-5950 yaw=0 scale=1000 attr.collision=component
 object id=yard_lamp_east kind=lamp_post x=4200 y=0 z=-5950 yaw=0 scale=1000 attr.collision=component
-render id=yard_sign kind=sign min_x=-1000 max_x=1000 min_z=-11525 max_z=-11495 height=950 color=596F7C attr.height2=1200 attr.style=1 attr.text=TEST_YARD
+render id=yard_sign kind=sign min_x=-1000 max_x=1000 min_z=-11525 max_z=-11495 height=950 color=596F7C attr.height2=1200 attr.style=1 attr.text=TEST_YARD attr.facing=+z

@@ -43,6 +43,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "render/rasterfall_text_panel.h"
 
 static const uint32_t flag_cube_indices[36]={
     0,1,3,0,3,2, 4,6,7,4,7,5,
@@ -63,71 +64,53 @@ static struct rf_gpu_graphics_resource *flag_cube_resource(
     return rf_gpu_graphics_resource_create(graphics,vertices,8,
         flag_cube_indices,36,&white,1,1);
 }
-static struct rf_gpu_graphics_resource *flag_label_resource(
-    struct rf_gpu_graphics *graphics,const char label[5],uint32_t *index_count)
+struct flag_panel_build {
+    struct rf_gpu_scene_color_vertex *vertices;
+    uint32_t *indices,quads,capacity,cloth;
+};
+static int flag_panel_quad(void *opaque,int x0,int x1,int y0,int y1,int glyph)
 {
-    const uint32_t max_quads=2u*4u*FB_FONT_W*FB_FONT_H;
-    const uint32_t white=0xffffff;
-    struct rf_gpu_graphics_vertex *vertices=NULL;
-    uint32_t *indices=NULL,quads=0;
-    struct rf_gpu_graphics_resource *resource=NULL;
-    int chars=(int)strlen(label),cell,start_x,start_y,total_px;
-    *index_count=UINT32_MAX;
-    if (!graphics || chars<1 || chars>4) return NULL;
-    cell=640/(chars*FB_FONT_W);
-    if (430/FB_FONT_H<cell) cell=430/FB_FONT_H;
-    if (cell<1) return NULL;
-    start_x=32+(640-chars*FB_FONT_W*cell)/2;
-    start_y=2418-(430-FB_FONT_H*cell)/2;
-    total_px=chars*FB_FONT_W;
-    vertices=calloc(max_quads*4,sizeof(*vertices));
-    indices=calloc(max_quads*6,sizeof(*indices));
-    if (!vertices || !indices) goto done;
-    for(int side=0;side<2;++side) {
-        int mirror=!side,z=side?-14:14;
-        for(int i=0;i<chars;++i) for(int row=0;row<FB_FONT_H;++row) {
-            unsigned char bits=fb_font_glyph_row((unsigned char)label[i],row);
-            for(int col=0;col<FB_FONT_W;++col) {
-                int run=col,px,x0,x1,y0,y1;
-                uint32_t base;
-                if (!(bits & (unsigned char)(0x80>>col))) continue;
-                while(run+1<FB_FONT_W &&
-                    (bits & (unsigned char)(0x80>>(run+1)))) run++;
-                px=mirror ? total_px-(i*FB_FONT_W+run+1) : i*FB_FONT_W+col;
-                x0=start_x+px*cell;
-                x1=start_x+(mirror ? total_px-(i*FB_FONT_W+col) :
-                    i*FB_FONT_W+run+1)*cell;
-                y0=start_y-row*cell;y1=y0-cell;
-                if (quads>=max_quads) goto done;
-                base=quads*4;
-                vertices[base+0].position[0]=x0;
-                vertices[base+0].position[1]=y0;
-                vertices[base+0].position[2]=z;
-                vertices[base+1].position[0]=x1;
-                vertices[base+1].position[1]=y0;
-                vertices[base+1].position[2]=z;
-                vertices[base+2].position[0]=x1;
-                vertices[base+2].position[1]=y1;
-                vertices[base+2].position[2]=z;
-                vertices[base+3].position[0]=x0;
-                vertices[base+3].position[1]=y1;
-                vertices[base+3].position[2]=z;
-                indices[quads*6+0]=base;
-                indices[quads*6+1]=base+1;
-                indices[quads*6+2]=base+2;
-                indices[quads*6+3]=base;
-                indices[quads*6+4]=base+2;
-                indices[quads*6+5]=base+3;
-                quads++;col=run;
-            }
-        }
+    struct flag_panel_build *build=opaque;
+    uint32_t base,color=glyph ? 0xFFF0C0 : build->cloth;
+    if (build->quads>=build->capacity) return -1;
+    base=build->quads*4;
+    for(int v=0;v<4;++v) {
+        struct rf_gpu_scene_color_vertex *point=&build->vertices[base+v];
+        point->position[0]=(v==1 || v==2) ? x1 : x0;
+        point->position[1]=(v>=2) ? y0 : y1;
+        point->position[2]=0;
+        point->light_q8=256;
+        point->rgb24=color;
     }
-    if (quads)
-        resource=rf_gpu_graphics_resource_create(graphics,vertices,quads*4,
-            indices,quads*6,&white,1,1);
-    if (resource || !quads) *index_count=quads*6;
+    build->indices[build->quads*6+0]=base;
+    build->indices[build->quads*6+1]=base+1;
+    build->indices[build->quads*6+2]=base+2;
+    build->indices[build->quads*6+3]=base;
+    build->indices[build->quads*6+4]=base+2;
+    build->indices[build->quads*6+5]=base+3;
+    build->quads++;
+    return 0;
+}
+static struct rf_gpu_graphics_resource *flag_panel_resource(
+    struct rf_gpu_graphics *graphics,const char label[5],uint32_t cloth,
+    int facing,uint32_t *index_count)
+{
+    const uint32_t max_quads=4u*FB_FONT_W*FB_FONT_H+16u;
+    struct flag_panel_build build={0};
+    struct rf_gpu_graphics_resource *resource=NULL;
+    *index_count=UINT32_MAX;
+    if (!graphics || strlen(label)>4 || (facing!=1 && facing!=-1)) return NULL;
+    build.capacity=max_quads;build.cloth=cloth;
+    build.vertices=calloc(max_quads*4,sizeof(*build.vertices));
+    build.indices=calloc(max_quads*6,sizeof(*build.indices));
+    if (!build.vertices || !build.indices) goto done;
+    if (rasterfall_text_panel_emit(12,700,1950,2450,20,32,label,facing,
+        flag_panel_quad,&build)<0) goto done;
+    resource=rf_gpu_graphics_scene_color_resource_create(graphics,
+        build.vertices,build.quads*4,build.indices,build.quads*6);
+    if (resource) *index_count=build.quads*6;
 done:
-    free(vertices);free(indices);
+    free(build.vertices);free(build.indices);
     return resource;
 }
 static int flag_label_resources_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
@@ -135,8 +118,13 @@ static int flag_label_resources_prepare(struct rf_gpu_scene_world_gpu_probe *pro
 {
     for(uint32_t i=0;i<flags->count;++i) {
         const struct rf_gpu_scene_flag_item_v1 *flag=&flags->items[i];
+        if (!flag->active) continue;
         if (!memchr(flag->label,0,sizeof(flag->label))) return -1;
-        if (!memcmp(probe->flag_label_text[i],flag->label,sizeof(flag->label)))
+        uint32_t cloth=(uint32_t)flag->color+
+            (flag->selected ? 0x202020u : 0u);
+        if (!memcmp(probe->flag_label_text[i],flag->label,sizeof(flag->label)) &&
+            probe->flag_panel_color[i]==cloth &&
+            probe->flag_panel_facing[i]==flag->facing)
             continue;
         if (probe->flag_label[i]) {
             if (rf_gpu_graphics_resource_destroy(probe->graphics,
@@ -145,11 +133,11 @@ static int flag_label_resources_prepare(struct rf_gpu_scene_world_gpu_probe *pro
         }
         probe->flag_label_indices[i]=0;
         memcpy(probe->flag_label_text[i],flag->label,sizeof(flag->label));
-        if (flag->label[0]) {
-            probe->flag_label[i]=flag_label_resource(probe->graphics,
-                flag->label,&probe->flag_label_indices[i]);
-            if (probe->flag_label_indices[i]==UINT32_MAX) return -1;
-        }
+        probe->flag_panel_color[i]=cloth;
+        probe->flag_panel_facing[i]=flag->facing;
+        probe->flag_label[i]=flag_panel_resource(probe->graphics,
+            flag->label,cloth,flag->facing,&probe->flag_label_indices[i]);
+        if (probe->flag_label_indices[i]==UINT32_MAX) return -1;
     }
     return 0;
 }
@@ -170,9 +158,8 @@ static int flag_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         for(int part=0;part<2;++part) {
             struct rf_gpu_graphics_batch_item *item=&items[total++];
             struct rf_gpu_graphics_draw *draw=&item->draw;
-            uint32_t cloth=(uint32_t)flag->color;
             memset(item,0,sizeof(*item));
-            item->resource=part ? probe->flag_cloth : probe->flag_pole;
+            item->resource=part ? probe->flag_label[i] : probe->flag_pole;
             draw->translation_scale[0]=flag->x;
             draw->translation_scale[2]=flag->z;
             draw->translation_scale[3]=1000;
@@ -184,11 +171,12 @@ static int flag_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             draw->projection[0]=(int32_t)width;
             draw->projection[1]=(int32_t)height;
             draw->projection[2]=64;draw->projection[3]=(int32_t)(width*3/4);
-            if (flag->selected) cloth+=0x202020;
-            draw->material[0]=part ? cloth&0xffffffu : 0x5A6470;
+            draw->material[0]=part ? 0xffffffu : 0x5A6470;
             draw->material[1]=256;
+            draw->material[3]=part ? 2 : 0;
             draw->texture[0]=draw->texture[1]=1;
-            draw->index_count=36;draw->double_sided=1;
+            draw->index_count=part ? probe->flag_label_indices[i] : 36;
+            draw->double_sided=1;
             draw->integer_depth=0;
             if (!item->resource ||
                 rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0 ||
@@ -198,20 +186,7 @@ static int flag_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 return -1;
             }
         }
-        if (probe->flag_label_indices[i]) {
-            struct rf_gpu_graphics_batch_item *item;
-            struct rf_gpu_graphics_draw *draw;
-            if (total>=capacity || !probe->flag_label[i]) return -1;
-            item=&items[total++];
-            *item=items[total-2];
-            draw=&item->draw;
-            item->resource=probe->flag_label[i];
-            draw->material[0]=0xFFF0C0;
-            draw->index_count=probe->flag_label_indices[i];
-            if (rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0 ||
-                rf_gpu_graphics_validate_draw(probe->graphics,draw)<0) return -1;
-            text_draws++;
-        }
+        text_draws++;
     }
     *count=total;
     *text_count=text_draws;
@@ -1326,10 +1301,6 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         probe->flag_pole=flag_cube_resource(probe->graphics,-16,16,-900,2700,-16,16);
         if (!probe->flag_pole) return -1;
     }
-    if (!probe->flag_cloth) {
-        probe->flag_cloth=flag_cube_resource(probe->graphics,12,700,1950,2450,-10,10);
-        if (!probe->flag_cloth) return -1;
-    }
     if (flag_label_resources_prepare(probe,flags)<0) return -1;
     if (projectiles->count && projectile_assets_prepare(probe,model_texture)<0)
         return -1;
@@ -1575,8 +1546,6 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);
     if (probe->flag_pole)
         rf_gpu_graphics_resource_destroy(probe->graphics,probe->flag_pole);
-    if (probe->flag_cloth)
-        rf_gpu_graphics_resource_destroy(probe->graphics,probe->flag_cloth);
     for(uint32_t i=0;i<RF_GPU_SCENE_FLAG_CAP;++i)
         if (probe->flag_label[i])
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->flag_label[i]);
@@ -1602,10 +1571,12 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;
-    probe->flag_pole=probe->flag_cloth=NULL;
+    probe->flag_pole=NULL;
     memset(probe->flag_label,0,sizeof(probe->flag_label));
     memset(probe->flag_label_text,0,sizeof(probe->flag_label_text));
     memset(probe->flag_label_indices,0,sizeof(probe->flag_label_indices));
+    memset(probe->flag_panel_color,0,sizeof(probe->flag_panel_color));
+    memset(probe->flag_panel_facing,0,sizeof(probe->flag_panel_facing));
     memset(probe->projectile_asset,0,sizeof(probe->projectile_asset));
     memset(probe->projectile_indices,0,sizeof(probe->projectile_indices));
     memset(probe->projectile_color,0,sizeof(probe->projectile_color));

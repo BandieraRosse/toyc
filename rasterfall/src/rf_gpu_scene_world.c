@@ -70,6 +70,7 @@ int rf_gpu_scene_flag_freeze(const struct rasterfall_session *session,
         if (!memchr(source->label,0,sizeof(source->label))) return -1;
         item->active=source->active;item->x=source->x;item->z=source->z;
         item->color=source->color;item->selected=(int)i==session->carried_flag;
+        item->facing=source->facing;
         memcpy(item->label,source->label,sizeof(item->label));
     }
     *flags=next;

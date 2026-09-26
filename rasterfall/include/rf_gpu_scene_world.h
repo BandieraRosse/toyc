@@ -56,7 +56,7 @@ struct rf_gpu_scene_world_prop_frame_v1 {
 struct rasterfall_session;
 #define RF_GPU_SCENE_FLAG_CAP 8
 struct rf_gpu_scene_flag_item_v1 {
-    int active, x, z, color, selected;
+    int active, x, z, color, selected, facing;
     char label[5];
 };
 struct rf_gpu_scene_flag_frame_v1 {

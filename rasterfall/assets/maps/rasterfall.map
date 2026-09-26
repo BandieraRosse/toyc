@@ -113,7 +113,7 @@ render id=legacy_render_022 kind=floor min_x=-3600 max_x=-1400 min_z=-9000 max_z
 render id=legacy_render_023 kind=floor min_x=1400 max_x=17000 min_z=-9200 max_z=-7800 height=0 color=4B535D attr.legacy_index=24
 render id=legacy_render_024 kind=platform min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=500 color=525F65 attr.style=0 attr.legacy_index=25
 render id=legacy_render_025 kind=model min_x=-900 max_x=900 min_z=-10800 max_z=-9000 height=-550 color=6A5538 attr.height2=-400 attr.legacy_index=26
-render id=legacy_render_026 kind=sign min_x=1200 max_x=2800 min_z=-10070 max_z=-9980 height=-650 color=765A3A attr.height2=-250 attr.text=FROM_HARRAN_CITY attr.legacy_index=27
+render id=legacy_render_026 kind=sign min_x=1200 max_x=2800 min_z=-10070 max_z=-9980 height=-650 color=765A3A attr.height2=-250 attr.text=FROM_HARRAN_CITY attr.facing=+z attr.legacy_index=27
 render id=legacy_render_027 kind=model min_x=-3200 max_x=-2000 min_z=-8700 max_z=-8100 height=-900 color=B66A35 attr.height2=700 attr.style=1 attr.legacy_index=28
 render id=legacy_render_028 kind=model min_x=2000 max_x=3200 min_z=-8700 max_z=-8100 height=-900 color=3F8FBA attr.height2=900 attr.style=2 attr.legacy_index=29
 render id=legacy_render_029 kind=model min_x=3900 max_x=4500 min_z=-9000 max_z=-8400 height=-900 color=76513A attr.height2=650 attr.style=3 attr.legacy_index=30

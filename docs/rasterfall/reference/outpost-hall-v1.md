@@ -12,7 +12,7 @@
 
 Research 只放少量维护件并标记未来空间；Operations 放工作台、箱体与储物；Infrastructure 放动力机组、控制柜、通风、线槽与检修件。测试场使用开放中轴、边界墙、门架、路障和动力机组，不声明可射击目标的玩法逻辑。
 
-各区的 `render kind=sign` 是地图绘制的实心标识牌，不是玻璃或独立模型。牌面沿 X 轴展开、Z 轴仅留薄厚；`height` 和 `attr.height2` 是世界 Y 轴上的牌底与牌顶，地面基准为 -900 RFU。`attr.style=1` 表示无支杆的墙面牌；Power、Control、Research、Operations 和入口标识均使用此样式，尺寸控制为墙面导视，不覆盖整面墙。
+各区的 `render kind=sign` 是地图绘制的单层标识牌，不是玻璃或独立模型。牌面沿 X 轴展开，位于 Z bounds 中心；`height` 和 `attr.height2` 是世界 Y 轴上的牌底与牌顶，地面基准为 -900 RFU。字色直接嵌入牌面。`attr.facing` 指定从 `+z` 或 `-z` 一侧看文字为正向；北墙朝大厅或房间的一侧使用 `-z`，南墙朝内的一侧使用 `+z`。`attr.style=1` 表示无支杆的墙面牌；Power、Control、Research、Operations 和入口标识均使用此样式，尺寸控制为墙面导视，不覆盖整面墙。
 
 ## 大厅与家具合同
 

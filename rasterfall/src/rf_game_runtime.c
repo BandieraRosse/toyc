@@ -3196,8 +3196,6 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             RF_CORE_PRODUCER_WORLD_MAP) < 0) return -1;
     audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
-    pixels += rasterfall_render_sign_text(renderer, render_camera);
-    pixels += rasterfall_render_flag_text(renderer, render_camera);
     rf_world_submission_audit.text =
         rf_world_audit_command_position(runtime, renderer) - audit_commands;
     rf_world_submission_audit.text_ms =

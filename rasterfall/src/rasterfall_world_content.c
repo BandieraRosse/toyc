@@ -177,6 +177,10 @@ int rasterfall_world_content_load(struct rasterfall_world_content *content,
                         number(get(keys, values, count, "y"), &f->y) < 0 ||
                         number(get(keys, values, count, "z"), &f->z) < 0)
                         goto malformed;
+                    { const char *v=get(keys,values,count,"facing");
+                      f->facing=1;
+                      if (v && !strcmp(v,"-z")) f->facing=-1;
+                      else if (v && strcmp(v,"+z")) goto malformed; }
                     f->line = line_no;
                 } else if (!strcmp(record, "fixture")) {
                     struct rasterfall_content_fixture *f;

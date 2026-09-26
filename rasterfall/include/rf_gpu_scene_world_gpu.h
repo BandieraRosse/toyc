@@ -62,10 +62,12 @@ struct rf_gpu_scene_world_gpu_probe {
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
     struct rf_gpu_scene_actor_gpu *actor[TOY_GAME_MAX_ACTORS];
-    struct rf_gpu_graphics_resource *flag_pole, *flag_cloth;
+    struct rf_gpu_graphics_resource *flag_pole;
     struct rf_gpu_graphics_resource *flag_label[RF_GPU_SCENE_FLAG_CAP];
     char flag_label_text[RF_GPU_SCENE_FLAG_CAP][5];
     uint32_t flag_label_indices[RF_GPU_SCENE_FLAG_CAP];
+    uint32_t flag_panel_color[RF_GPU_SCENE_FLAG_CAP];
+    int flag_panel_facing[RF_GPU_SCENE_FLAG_CAP];
     struct rf_gpu_graphics_resource *projectile_asset[2];
     uint32_t projectile_indices[2], projectile_color[2];
     int projectile_scale[2];

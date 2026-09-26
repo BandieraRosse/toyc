@@ -489,6 +489,12 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         draw->color = render->has_color ?
             (unsigned int)strtol(render->color, NULL, 16) : 0;
         draw->style = runtime_render_int(render, "style", 0);
+        if (type == TOY_MAP_DRAW_SIGN) {
+            const char *facing = rf_map_runtime_render_attribute(render, "facing");
+            if (!facing || !strcmp(facing, "+z")) draw->facing = 1;
+            else if (!strcmp(facing, "-z")) draw->facing = -1;
+            else return -1;
+        }
         draw->texture_u = runtime_render_int(render, "texture_u", 0);
         draw->texture_v = runtime_render_int(render, "texture_v", 0);
         if (type == TOY_MAP_DRAW_BOX && runtime_render_int(render, "top", 0))

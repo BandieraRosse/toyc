@@ -897,8 +897,6 @@ int rasterfall_render_normal_frame_audit(int x, int z, int sy, int cy,
     rasterfall_render_enemies(&renderer, &camera);
     rasterfall_render_ai_teammate(&renderer, &camera);
     rasterfall_render_end_dynamic_lighting();
-    rasterfall_render_sign_text(&renderer, &camera);
-    rasterfall_render_flag_text(&renderer, &camera);
     normal_frame_coverage_trace(output_path, &renderer, &audit_stats);
     memcpy(sky_top, pixels, top_count * sizeof(*sky_top));
     raster_start = render_monotonic_us();
@@ -1179,8 +1177,6 @@ static int capture_map_world(const char *output_dir,
         rasterfall_render_ai_teammate(&renderer, &camera);
         if (c2_fixture) rasterfall_render_managed_player(&renderer,&camera,&c2_body_camera);
         if (environment) rasterfall_render_end_dynamic_lighting();
-        rasterfall_render_sign_text(&renderer, &camera);
-        rasterfall_render_flag_text(&renderer, &camera);
         if (character_bounds_fixture) {
             struct rasterfall_ai_submission_stats bounds_stats;
             rasterfall_render_ai_submission_stats(&bounds_stats);

@@ -32,6 +32,7 @@ struct rasterfall_flag {
     int carried;
     int carrier_id;
     int color;
+    int facing; /* Expected reader side: +1 for +Z, -1 for -Z. */
     char label[5];
     int slot_offsets[4][2];
 };

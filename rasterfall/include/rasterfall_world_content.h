@@ -36,6 +36,7 @@ struct rasterfall_content_terminal {
 struct rasterfall_content_flag {
     char id[RASTERFALL_CONTENT_ID_SIZE];
     int x, y, z;
+    int facing;
     int line;
 };
 
