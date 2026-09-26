@@ -58,9 +58,11 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 ## 生命周期
 
 默认 Game policy 加载 `RASTERFALL_WORLD_OUTPOST`（`assets/maps/outpost.map`），不让 Core 选择或解析
-Rasterfall world。Outpost 的 Operations Terminal 请求 `RASTERFALL_WORLD_CAMPAIGN_01`，新增 Return-to-WHU 入口请求
+Rasterfall world。Outpost 指挥桌地图屏幕可请求 `RASTERFALL_WORLD_CAMPAIGN_01` 或
 `RASTERFALL_WORLD_RETURN_TO_WHU_V0`；战役返回设备请求 Outpost；`rf_game_request_world()` 按 unload → Runtime Map load → projection → session reset → lightmap
 rebuild 顺序完成一次完整重建。普通离线启动直接落地前哨站，显式网络/诊断路径仍可使用旧启动菜单。
+
+前哨站指挥桌的离线互动由 Game Runtime 管理临时输入与展示状态：桌前 E 进入固定站位、解锁指针，Esc 恢复 FPS；地图列表以现有 world ID 为准，预览从对应 `.map` 文件的 world bounds、surface 与 collision footprint 读取并逐帧绘制。点击列表调用 `rf_game_request_world()`。离线暂停菜单的 `RETURN TO OUTPOST` 也调用同一重载链，恢复出生点、初始 seed 和新局状态；联机时避免客户端单方面重载地图。
 
 `main()` 的顺序是：解析参数并组装 `rf_game_config` → 初始化唯一 `rf_core` context（window、renderer、
 surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加载 session/map → 绑定并准备渲染资源

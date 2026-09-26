@@ -37,6 +37,7 @@ object id=north_beam_0 kind=arch_beam x=-3072 y=2150 z=4096 yaw=0 scale=1000 att
 object id=north_beam_1 kind=arch_beam x=0 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
 object id=north_beam_2 kind=arch_beam x=3072 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
 object id=command_table kind=facility_command_table x=0 y=0 z=0 yaw=0 scale=1000 attr.collision=component
+object id=command_map_screen kind=facility_monitor x=0 y=461 z=-100 yaw=180 scale=1000 attr.collision=none
 object id=null_desk kind=facility_desk x=3149 y=0 z=-896 yaw=90 scale=1000 attr.collision=component
 object id=null_chair kind=facility_chair x=3610 y=0 z=-794 yaw=270 scale=1000 attr.collision=component
 object id=null_monitor_0 kind=facility_monitor x=3062 y=384 z=-1091 yaw=90 scale=1000 attr.collision=none

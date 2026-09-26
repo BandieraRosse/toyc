@@ -51,10 +51,11 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 
 ## 阶段边界
 
-大厅中的终端和指挥桌仅作静态家具，不声明 World Content terminal 或 map interaction。
+大厅中的普通终端仍为静态家具。中央指挥桌南侧（X ±1250、Z -1900 至 -850 RFU）现提供离线 FPS 互动：靠近显示 `E USE COMMAND TABLE`，按 E 将玩家放到桌前 (0, -1160)、朝北并解锁鼠标；屏幕显示地图列表与启动时从各地图文件的 surface/collision footprint 生成的俯视预览。鼠标悬停条目切换预览，点击条目直接部署，Esc 离开互动并恢复视角控制。桌上 `command_map_screen` 为无碰撞显示器家具；地图选择 UI 是展示状态，不写入 `toy_game`。
+离线暂停菜单倒数第二项 `RETURN TO OUTPOST` 通过完整 world 重载回到前哨站出生点，并重置当前局的玩法与特效状态；联机时不执行本地单方面地图重载。
 旧 Station / Operations / Super 和武大传送点从本大厅撤下，已有动作词汇仍保留供其他内容使用。
-本阶段不提供从家具进入 Campaign、Station GUI 或 WHU 的入口；不制作三套专用终端资产。
-研究翼和 Infrastructure 房间已有静态空间。无动态门、多层、切顶、RTS 桌面交互、设备功能、武器测试交互或 NPC 工作行为。
+指挥桌地图屏幕提供 Campaign 与 WHU 部署入口；不提供 Station GUI，也不制作三套专用终端资产。
+研究翼和 Infrastructure 房间已有静态空间。无动态门、多层、切顶、RTS 桌面交互、其他设备功能、武器测试交互或 NPC 工作行为。
 
 运行时所有权沿用[地图与世界内容架构](../architecture/maps-and-world-content.md)。
 生成、Windows 工具与截图见[设施家具指南](../guides/facility-assets.md)。

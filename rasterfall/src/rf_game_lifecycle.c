@@ -16,11 +16,11 @@ int rf_game_request_world(struct rf_game_runtime *runtime,
     if (world != RASTERFALL_WORLD_OUTPOST &&
         world != RASTERFALL_WORLD_CAMPAIGN_01 &&
         world != RASTERFALL_WORLD_RETURN_TO_WHU_V0) return -1;
+    seed = runtime->session->seed;
     if (rasterfall_session_load(runtime->session, world_path(world)) < 0)
         return -1;
     rasterfall_resources_invalidate(rasterfall_render_resources());
     runtime->session->world_id = world;
-    seed = runtime->session->seed;
     rasterfall_session_reset(runtime->session, &runtime->camera,
                              seed ? seed : 1);
     rasterfall_render_bake_lightmap();

@@ -23,18 +23,22 @@ static int scene_ui_test(void)
     if (rasterfall_options_parse(&options,2,args) || !options.gpu_required ||
         !options.gpu_native_present || !options.gpu_scene_independent_preview ||
         options.gpu_normal_view || options.gpu_normal_fixed_tick) return 1;
-    draw_pause_overlay(&canvas,&menu,&settings,0);
+    draw_pause_overlay(&canvas,&menu,&settings,0,0);
     uint64_t initial=sink.hash;
     if (canvas.failed || !sink.calls) return 2;
     memset(&sink,0,sizeof(sink));settings.mouse_level=7;
-    draw_pause_overlay(&canvas,&menu,&settings,0);
+    draw_pause_overlay(&canvas,&menu,&settings,0,0);
     if (canvas.failed || sink.hash==initial) return 3;
     struct rasterfall_net net={0};
     draw_scoreboard(&canvas,&net);
     draw_game_over_panel(&canvas,0);draw_level_won_panel(&canvas,0);
     draw_crosshair(&canvas,&game);
+    for (int i=0;i<RF_TABLE_MAPS;++i) {
+        rf_table.selected=i;
+        rf_table_draw(&canvas);
+    }
     if (canvas.failed || memcmp(&before,&game,sizeof(before))) return 4;
-    sink.fail=1;draw_pause_overlay(&canvas,&menu,&settings,0);
+    sink.fail=1;draw_pause_overlay(&canvas,&menu,&settings,0,0);
     if (!canvas.failed) return 5;
     __printf("scene UI layouts: read-only, settings, scoreboard, result, failure PASS\n");
     return 0;
