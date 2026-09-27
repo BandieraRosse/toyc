@@ -12,7 +12,8 @@
 独立 Scene 路径不调用旧整帧 producer。`rasterfall_canvas` 将布局变成裁剪后的矩形与
 UTF-8 点阵字形 run；`rasterfall_sky_layout`、`rasterfall_hud_layout` 和 prompt layout
 不持有 surface。旧入口使用 surface adapter，新入口直接生成 SKY/OVERLAY GPU 三角形，
-不存在 CPU HUD 图片上传或 mixed recording。
+不存在 CPU HUD 图片上传或 mixed recording。正常帧的暂停、结算、准星、计分板和 RTS 控件由
+`rf_game_shared_ui_layout` 同步决定；CPU 用 surface canvas 消费，独立 Scene 用三角形 canvas 消费。
 
 暂停设置、结算、武器散布准星和 Tab 计分板也使用同一 canvas 布局。runtime 通过
 同步 `ui_layout` 回调提供只读菜单状态，Scene 在资源准备前将其冻结为 OVERLAY 几何；

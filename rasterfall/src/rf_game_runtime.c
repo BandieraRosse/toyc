@@ -2922,8 +2922,8 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
     rasterfall_canvas_rect(canvas, x, y - 5, 1, 11, RF_COLOR_UI_ACCENT, 255);
 }
 
-/* Synchronous read-only UI extraction; the Scene owns emitted geometry. */
-static void rf_game_scene_ui(void *context, struct rasterfall_canvas *canvas)
+/* Shared read-only UI layout. CPU draws it to a surface; Scene emits geometry. */
+static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *canvas)
 {
     const struct rf_game_runtime *runtime = context;
     const struct toy_game *state = &runtime->session->game_state;
@@ -2932,6 +2932,8 @@ static void rf_game_scene_ui(void *context, struct rasterfall_canvas *canvas)
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
     menu.selected = runtime->pause_menu_selected;
+    if (runtime->console.open || runtime->gui.active ||
+        runtime->managed_terminal_open) return;
     if (state->state == TOY_GAME_OVER)
         draw_game_over_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
     else if (state->state == TOY_GAME_WON)
@@ -2964,8 +2966,6 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     struct rasterfall_session *game_session;
     struct camera *body_camera;
     struct camera *render_camera;
-    struct control_settings settings;
-    struct pause_menu pause_menu;
     struct managed_terminal managed_terminal;
     struct rasterfall_hud_state hud;
     int pixels = 0;
@@ -3149,57 +3149,29 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     rasterfall_render_gallery_selection(surface, render_camera);
 #endif
 
-    settings.mouse_level = runtime->mouse_level;
-    settings.keyboard_level = runtime->keyboard_level;
-    pause_menu.selected = runtime->pause_menu_selected;
     memset(&managed_terminal, 0, sizeof(managed_terminal));
     managed_terminal.open = runtime->managed_terminal_open;
     strcpy(managed_terminal.line, runtime->managed_terminal_line);
     strcpy(managed_terminal.message, runtime->managed_terminal_message);
-    if (game_session->game_state.state == TOY_GAME_OVER) {
-        draw_game_over_panel(&ui_canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
-    } else if (game_session->game_state.state == TOY_GAME_WON) {
-        draw_level_won_panel(&ui_canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
-    } else if (runtime->console.open || runtime->gui.active) {
-        /* Developer console is drawn after every other overlay. */
-    } else if (managed_terminal.open) {
-        draw_managed_terminal(surface, &managed_terminal);
-    } else if (runtime->lifecycle_paused) {
-        draw_pause_overlay(&ui_canvas, &pause_menu, &settings,
-                           runtime->coordinate_axes,
-                           runtime->net.mode != RASTERFALL_NET_OFF);
-    } else if (rf_table.open) {
-        rf_table_draw(&ui_canvas);
-    } else {
-        if (!runtime->rts_active)
-            draw_crosshair(&ui_canvas, &game_session->game_state);
-        fill_hud_state(&hud, &runtime->net, runtime->host_address,
-                       runtime->host_port, body_camera);
-        rasterfall_hud_render(surface, runtime->display_fps, &hud);
-        if (runtime->rts_active) draw_rts_overlay(&ui_canvas, runtime);
-        if (rf_table.near)
-            rasterfall_canvas_text(&ui_canvas, ui_canvas.width / 2 - 155,
-                ui_canvas.height * 3 / 4, "E  USE COMMAND TABLE", 0xC7F2EE);
-    }
-    if (game_session->game_state.state == TOY_GAME_PLAYING &&
-        !runtime->lifecycle_paused && !game_session->shop_open && !rf_table.open) {
-        fill_hud_state(&hud, &runtime->net, runtime->host_address,
-                       runtime->host_port, body_camera);
-        rasterfall_hud_draw_interact_prompt(renderer, &hud);
-    }
     rasterfall_render_ai_teammate_name(renderer, render_camera);
     rasterfall_render_network_teammate_status(
         renderer, render_camera, &runtime->net, &game_session->game_state);
+    if (!runtime->lifecycle_paused &&
+        game_session->game_state.state == TOY_GAME_PLAYING) {
+        fill_hud_state(&hud, &runtime->net, runtime->host_address,
+                       runtime->host_port, body_camera);
+        rasterfall_hud_layout(&ui_canvas, runtime->display_fps, &hud);
+        if (!hud.shop_open)
+            rasterfall_hud_prompt_layout(&ui_canvas, &hud);
+    }
     flushed = rasterfall_render_overlays(renderer);
     pixels += flushed;
     overlay_pixels += (unsigned long)flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_OVERLAY,
                                    0, overlay_pixels);
-    if (game_session->game_state.state == TOY_GAME_PLAYING &&
-        !runtime->lifecycle_paused && !rf_table.open &&
-        !game_session->pose_editor.active &&
-        toy_input_down(&runtime->input_frame, KEY_TAB))
-        draw_scoreboard(&ui_canvas, &runtime->net);
+    rf_game_shared_ui_layout(runtime, &ui_canvas);
+    if (managed_terminal.open)
+        draw_managed_terminal(surface, &managed_terminal);
     if (runtime->debug_input_enabled)
         draw_input_debug(surface, &runtime->input_frame,
                          runtime->have_last_key ? runtime->last_key : 0,
@@ -5303,7 +5275,7 @@ startup_again:
                         layers.map=&world_render;layers.fps=display_fps;layers.paused=paused;
                         layers.pause_selected=pause_menu.selected;layers.viewmodel_light=256;
                         layers.show_viewmodel=!game_runtime.rts_active;
-                        layers.ui_context=&game_runtime;layers.ui_layout=rf_game_scene_ui;
+                        layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;
                         fill_hud_state(&layers.hud,&net,host_address,
                             net_port,&camera);
                         scene_world_probe.layers=&layers;
