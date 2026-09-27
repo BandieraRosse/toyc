@@ -2200,12 +2200,14 @@ static int render_static_props(struct toy_renderer *renderer,
     int i, pixels = 0;
     unsigned host_time=(unsigned)(render_monotonic_us()/1000);
     struct host_cpu_draw_context host_context={renderer,camera};
+    rasterfall_host_update(host_time);
     for (i = 0; i < level_map.prop_count; i++)
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
         struct rasterfall_prop_instance instance;
         int previous_scene_light = active_scene_light_override_q8;
         instance.asset_id = rasterfall_prop_presented_asset(map_prop->asset_id, map_prop->length);
+        if (!instance.asset_id) continue;
         instance.x = map_prop->x;
         instance.y = -900 + map_prop->y;
         instance.z = map_prop->z;

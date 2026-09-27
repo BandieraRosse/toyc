@@ -385,6 +385,7 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
     for(uint32_t i=0;i<props->count;++i) {
         int asset=props->items[i].prop.asset_id;
         const struct rasterfall_prop_asset_profile *profile;
+        if (asset==0) continue;
         if (asset<1 || asset>RASTERFALL_PROP_ASSET_COUNT) goto failed;
         if (asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
         profile=rasterfall_prop_asset_profile(asset);

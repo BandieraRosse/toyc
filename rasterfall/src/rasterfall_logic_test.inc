@@ -1709,6 +1709,7 @@ static int run_logic_test(void)
     if (enemy_flow_logic_test()) return 276;
     if (enemy_flow_corridor_logic_test()) return 277;
     if (rasterfall_session_rts_logic_test()) return 260;
+    rasterfall_host_set_active_slots(24,24);
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_OUTPOST ||
@@ -1729,17 +1730,24 @@ static int run_logic_test(void)
             {0,7168},{-1536,7168},{-2500,6000},
             {1536,7168},{2800,6000},{0,9300},
             {0,-7000},{0,-9500},{0,-11776},
-            {2700,2700},{3650,2550},{3175,3300}
+            {2700,2950},{3650,2950},{3175,2950}
+        };
+        static const int racks[][2] = {
+            {3000,3600},{2450,3600},{3000,2300},{2450,2300},
+            {4100,3600},{3550,3600},{4100,2300},{3550,2300}
         };
         for (i=0; i<(int)(sizeof(route)/sizeof(route[0])); i++)
             if (toy_game_position_blocked(&session.game_state,
                     route[i][0],route[i][1],180)) return 278;
+        for (i=0; i<(int)(sizeof(racks)/sizeof(racks[0])); i++)
+            if (!toy_game_position_blocked(&session.game_state,
+                    racks[i][0],racks[i][1],180)) return 278;
         if (!toy_game_position_blocked(&session.game_state,0,0,180) ||
             !toy_game_position_blocked(&session.game_state,4608,2816,180) ||
             !toy_game_position_blocked(&session.game_state,-10240,0,180) ||
             !toy_game_position_blocked(&session.game_state,4700,-7936,180) ||
-            !toy_game_position_blocked(&session.game_state,2700,3400,180) ||
-            !toy_game_position_blocked(&session.game_state,3650,3400,180) ||
+            !toy_game_position_blocked(&session.game_state,3000,3600,180) ||
+            !toy_game_position_blocked(&session.game_state,4100,3600,180) ||
             session.item_count != 0) return 279;
         for (i = 0; i < session.item_count; i++) {
             has_station |= session.items[i].kind == TOY_MAP_PICKUP_STATION_TERMINAL;
@@ -1771,6 +1779,7 @@ static int run_logic_test(void)
             return 236;
         }
     }
+    rasterfall_host_set_active_slots(-1,-1);
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/return_whu_planar_massing_v0.map") < 0 ||
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 ||

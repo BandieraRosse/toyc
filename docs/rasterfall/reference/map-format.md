@@ -171,8 +171,9 @@ Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。内容地�
 
 ## Continuous Wall / Floor 与 Component Collision
 
-Host 模块的 `attr.length=1..6` 专用于从底部开始的视觉槽号，展示时依据独立活动槽数选择模块或封板；
-不是空间长度，也不生成模块碰撞。合同与示例见 [Host Rack V2](host-rack-v2.md)。
+Host 候选机柜的 `attr.length` 用百位区分 CPU/Memory，十位区分柜号，个位 1–6 表示从底部开始的槽号；
+个位 0 用于机架附属件。它不是空间长度，也不生成模块碰撞；未启用柜的机架碰撞在投影时关闭。
+合同与示例见 [Host Rack V2](host-rack-v2.md)。
 
 Campaign 长墙使用 `object kind=boundary_wall`，高度 2150 RFU（约 4.2 m）、厚度
 124 RFU，墙脚/主体/压顶相邻分区，扶壁约每 4096 RFU 一处。长度按墙段生成，

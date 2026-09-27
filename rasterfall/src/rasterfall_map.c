@@ -535,6 +535,9 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
             (collision->visible ? TOY_MAP_PRIMITIVE_VISIBLE : 0) |
             (collision->walkable ? TOY_MAP_PRIMITIVE_WALKABLE : 0) |
             (collision->blocks_airborne ? TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE : 0);
+        if (collision->owner_id[0] &&
+            !rasterfall_host_object_active(collision->owner_id))
+            primitive->flags = 0;
         primitive->color = collision->has_color ?
             runtime_collision_color(collision->color) : 0;
         if (collision->has_role)

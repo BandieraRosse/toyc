@@ -62,29 +62,103 @@ render id=null_mark kind=sign min_x=2500 max_x=3350 min_z=-4030 max_z=-4000 heig
 render id=null_status kind=sign min_x=3450 max_x=4150 min_z=-4030 max_z=-4000 height=100 color=81B4B5 attr.height2=410 attr.style=1 attr.text=ON attr.facing=+z
 render id=north_identity kind=sign min_x=-1200 max_x=1200 min_z=3955 max_z=3985 height=940 color=596F7C attr.height2=1220 attr.style=1 attr.text=INFRA attr.facing=-z
 
-# Host Rack V2: six bottom-filled bays; hardware scale policy is deferred.
-object id=host_cpu_frame kind=host_rack_frame x=2700 y=0 z=3400 yaw=198 scale=1000 attr.collision=component
-object id=host_cpu_bay_1 kind=host_cpu_module x=2700 y=190 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=1
-object id=host_cpu_bay_2 kind=host_cpu_module x=2700 y=330 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=2
-object id=host_cpu_bay_3 kind=host_cpu_module x=2700 y=470 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=3
-object id=host_cpu_bay_4 kind=host_cpu_module x=2700 y=610 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=4
-object id=host_cpu_bay_5 kind=host_cpu_module x=2700 y=750 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=5
-object id=host_cpu_bay_6 kind=host_cpu_module x=2700 y=890 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=6
-object id=host_cpu_fan kind=host_rack_fan_panel x=2700 y=36 z=3400 yaw=198 scale=1000 attr.collision=none
-object id=host_cpu_header kind=host_cpu_header x=2700 y=1026 z=3400 yaw=198 scale=1000 attr.collision=none
-object id=host_cpu_power kind=host_power_bundle x=2825 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
-object id=host_cpu_data kind=host_data_bundle x=2885 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
-object id=host_memory_frame kind=host_rack_frame x=3650 y=0 z=3400 yaw=198 scale=1000 attr.collision=component
-object id=host_memory_bay_1 kind=host_memory_module x=3650 y=190 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=1
-object id=host_memory_bay_2 kind=host_memory_module x=3650 y=330 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=2
-object id=host_memory_bay_3 kind=host_memory_module x=3650 y=470 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=3
-object id=host_memory_bay_4 kind=host_memory_module x=3650 y=610 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=4
-object id=host_memory_bay_5 kind=host_memory_module x=3650 y=750 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=5
-object id=host_memory_bay_6 kind=host_memory_module x=3650 y=890 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=6
-object id=host_memory_fan kind=host_rack_fan_panel x=3650 y=36 z=3400 yaw=198 scale=1000 attr.collision=none
-object id=host_memory_header kind=host_memory_header x=3650 y=1026 z=3400 yaw=198 scale=1000 attr.collision=none
-object id=host_memory_power kind=host_power_bundle x=3775 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
-object id=host_memory_data kind=host_data_bundle x=3835 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
+# Host rack candidates: both rows face south at -Z.
+# East memory columns occupy the corner; west CPU columns face the hall.
+object id=host_memory_r1_frame kind=host_rack_frame x=4100 y=0 z=3600 yaw=180 scale=1000 attr.collision=component attr.length=200
+object id=host_memory_r1_bay_1 kind=host_memory_module x=4100 y=190 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=201
+object id=host_memory_r1_bay_2 kind=host_memory_module x=4100 y=330 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=202
+object id=host_memory_r1_bay_3 kind=host_memory_module x=4100 y=470 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=203
+object id=host_memory_r1_bay_4 kind=host_memory_module x=4100 y=610 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=204
+object id=host_memory_r1_bay_5 kind=host_memory_module x=4100 y=750 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=205
+object id=host_memory_r1_bay_6 kind=host_memory_module x=4100 y=890 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=206
+object id=host_memory_r1_fan kind=host_rack_fan_panel x=4100 y=36 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=200
+object id=host_memory_r1_header kind=host_memory_header x=4100 y=1026 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=200
+object id=host_memory_r1_power kind=host_power_bundle x=4010 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=200
+object id=host_memory_r1_data kind=host_data_bundle x=4190 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=200
+
+object id=host_memory_r2_frame kind=host_rack_frame x=3550 y=0 z=3600 yaw=180 scale=1000 attr.collision=component attr.length=210
+object id=host_memory_r2_bay_1 kind=host_memory_module x=3550 y=190 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=211
+object id=host_memory_r2_bay_2 kind=host_memory_module x=3550 y=330 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=212
+object id=host_memory_r2_bay_3 kind=host_memory_module x=3550 y=470 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=213
+object id=host_memory_r2_bay_4 kind=host_memory_module x=3550 y=610 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=214
+object id=host_memory_r2_bay_5 kind=host_memory_module x=3550 y=750 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=215
+object id=host_memory_r2_bay_6 kind=host_memory_module x=3550 y=890 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=216
+object id=host_memory_r2_fan kind=host_rack_fan_panel x=3550 y=36 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=210
+object id=host_memory_r2_header kind=host_memory_header x=3550 y=1026 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=210
+object id=host_memory_r2_power kind=host_power_bundle x=3460 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=210
+object id=host_memory_r2_data kind=host_data_bundle x=3640 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=210
+
+object id=host_memory_r3_frame kind=host_rack_frame x=4100 y=0 z=2300 yaw=180 scale=1000 attr.collision=component attr.length=220
+object id=host_memory_r3_bay_1 kind=host_memory_module x=4100 y=190 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=221
+object id=host_memory_r3_bay_2 kind=host_memory_module x=4100 y=330 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=222
+object id=host_memory_r3_bay_3 kind=host_memory_module x=4100 y=470 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=223
+object id=host_memory_r3_bay_4 kind=host_memory_module x=4100 y=610 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=224
+object id=host_memory_r3_bay_5 kind=host_memory_module x=4100 y=750 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=225
+object id=host_memory_r3_bay_6 kind=host_memory_module x=4100 y=890 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=226
+object id=host_memory_r3_fan kind=host_rack_fan_panel x=4100 y=36 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=220
+object id=host_memory_r3_header kind=host_memory_header x=4100 y=1026 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=220
+object id=host_memory_r3_power kind=host_power_bundle x=4010 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=220
+object id=host_memory_r3_data kind=host_data_bundle x=4190 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=220
+
+object id=host_memory_r4_frame kind=host_rack_frame x=3550 y=0 z=2300 yaw=180 scale=1000 attr.collision=component attr.length=230
+object id=host_memory_r4_bay_1 kind=host_memory_module x=3550 y=190 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=231
+object id=host_memory_r4_bay_2 kind=host_memory_module x=3550 y=330 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=232
+object id=host_memory_r4_bay_3 kind=host_memory_module x=3550 y=470 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=233
+object id=host_memory_r4_bay_4 kind=host_memory_module x=3550 y=610 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=234
+object id=host_memory_r4_bay_5 kind=host_memory_module x=3550 y=750 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=235
+object id=host_memory_r4_bay_6 kind=host_memory_module x=3550 y=890 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=236
+object id=host_memory_r4_fan kind=host_rack_fan_panel x=3550 y=36 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=230
+object id=host_memory_r4_header kind=host_memory_header x=3550 y=1026 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=230
+object id=host_memory_r4_power kind=host_power_bundle x=3460 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=230
+object id=host_memory_r4_data kind=host_data_bundle x=3640 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=230
+
+object id=host_cpu_r1_frame kind=host_rack_frame x=3000 y=0 z=3600 yaw=180 scale=1000 attr.collision=component attr.length=100
+object id=host_cpu_r1_bay_1 kind=host_cpu_module x=3000 y=190 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=101
+object id=host_cpu_r1_bay_2 kind=host_cpu_module x=3000 y=330 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=102
+object id=host_cpu_r1_bay_3 kind=host_cpu_module x=3000 y=470 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=103
+object id=host_cpu_r1_bay_4 kind=host_cpu_module x=3000 y=610 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=104
+object id=host_cpu_r1_bay_5 kind=host_cpu_module x=3000 y=750 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=105
+object id=host_cpu_r1_bay_6 kind=host_cpu_module x=3000 y=890 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=106
+object id=host_cpu_r1_fan kind=host_rack_fan_panel x=3000 y=36 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=100
+object id=host_cpu_r1_header kind=host_cpu_header x=3000 y=1026 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=100
+object id=host_cpu_r1_power kind=host_power_bundle x=2910 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=100
+object id=host_cpu_r1_data kind=host_data_bundle x=3090 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=100
+
+object id=host_cpu_r2_frame kind=host_rack_frame x=2450 y=0 z=3600 yaw=180 scale=1000 attr.collision=component attr.length=110
+object id=host_cpu_r2_bay_1 kind=host_cpu_module x=2450 y=190 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=111
+object id=host_cpu_r2_bay_2 kind=host_cpu_module x=2450 y=330 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=112
+object id=host_cpu_r2_bay_3 kind=host_cpu_module x=2450 y=470 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=113
+object id=host_cpu_r2_bay_4 kind=host_cpu_module x=2450 y=610 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=114
+object id=host_cpu_r2_bay_5 kind=host_cpu_module x=2450 y=750 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=115
+object id=host_cpu_r2_bay_6 kind=host_cpu_module x=2450 y=890 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=116
+object id=host_cpu_r2_fan kind=host_rack_fan_panel x=2450 y=36 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=110
+object id=host_cpu_r2_header kind=host_cpu_header x=2450 y=1026 z=3600 yaw=180 scale=1000 attr.collision=none attr.length=110
+object id=host_cpu_r2_power kind=host_power_bundle x=2360 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=110
+object id=host_cpu_r2_data kind=host_data_bundle x=2540 y=1060 z=4030 yaw=180 scale=1000 attr.collision=none attr.length=110
+
+object id=host_cpu_r3_frame kind=host_rack_frame x=3000 y=0 z=2300 yaw=180 scale=1000 attr.collision=component attr.length=120
+object id=host_cpu_r3_bay_1 kind=host_cpu_module x=3000 y=190 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=121
+object id=host_cpu_r3_bay_2 kind=host_cpu_module x=3000 y=330 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=122
+object id=host_cpu_r3_bay_3 kind=host_cpu_module x=3000 y=470 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=123
+object id=host_cpu_r3_bay_4 kind=host_cpu_module x=3000 y=610 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=124
+object id=host_cpu_r3_bay_5 kind=host_cpu_module x=3000 y=750 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=125
+object id=host_cpu_r3_bay_6 kind=host_cpu_module x=3000 y=890 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=126
+object id=host_cpu_r3_fan kind=host_rack_fan_panel x=3000 y=36 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=120
+object id=host_cpu_r3_header kind=host_cpu_header x=3000 y=1026 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=120
+object id=host_cpu_r3_power kind=host_power_bundle x=2910 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=120
+object id=host_cpu_r3_data kind=host_data_bundle x=3090 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=120
+
+object id=host_cpu_r4_frame kind=host_rack_frame x=2450 y=0 z=2300 yaw=180 scale=1000 attr.collision=component attr.length=130
+object id=host_cpu_r4_bay_1 kind=host_cpu_module x=2450 y=190 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=131
+object id=host_cpu_r4_bay_2 kind=host_cpu_module x=2450 y=330 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=132
+object id=host_cpu_r4_bay_3 kind=host_cpu_module x=2450 y=470 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=133
+object id=host_cpu_r4_bay_4 kind=host_cpu_module x=2450 y=610 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=134
+object id=host_cpu_r4_bay_5 kind=host_cpu_module x=2450 y=750 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=135
+object id=host_cpu_r4_bay_6 kind=host_cpu_module x=2450 y=890 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=136
+object id=host_cpu_r4_fan kind=host_rack_fan_panel x=2450 y=36 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=130
+object id=host_cpu_r4_header kind=host_cpu_header x=2450 y=1026 z=2300 yaw=180 scale=1000 attr.collision=none attr.length=130
+object id=host_cpu_r4_power kind=host_power_bundle x=2360 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=130
+object id=host_cpu_r4_data kind=host_data_bundle x=2540 y=1060 z=2730 yaw=180 scale=1000 attr.collision=none attr.length=130
 
 # Outpost V1 wings and outdoor testing yard. All structural openings are component apertures.
 surface id=research_floor kind=ground min_x=-10240 max_x=-4608 min_z=-3072 max_z=3072 height=0 material=606F78 attr.collision_id=research_floor_col

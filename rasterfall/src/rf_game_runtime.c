@@ -5281,6 +5281,9 @@ startup_again:
                         layers.props=&prop_render;
                         layers.host_time_ms=options.gpu_frame_capture ?
                             (unsigned)rendered_frames*16u : (unsigned)(rf_core_clock_now_us()/1000);
+                        rasterfall_host_set_capture_time(options.gpu_frame_capture ?
+                            (int)layers.host_time_ms : -1);
+                        rasterfall_host_update(layers.host_time_ms);
                         layers.map=&world_render;layers.fps=display_fps;layers.paused=paused;
                         layers.pause_selected=pause_menu.selected;layers.viewmodel_light=256;
                         layers.show_viewmodel=!game_runtime.rts_active;

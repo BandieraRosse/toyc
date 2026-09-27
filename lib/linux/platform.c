@@ -53,6 +53,35 @@ void toy_platform_hardware_query(struct toy_platform_hardware *out)
     }
 }
 
+void toy_platform_host_sample(struct toy_platform_host_sample *out)
+{
+    struct toy_platform_hardware hardware;
+    char buffer[4096];
+    int fd, n;
+    unsigned long long total = 0, available = 0;
+    memset(out, 0, sizeof(*out));
+    toy_platform_hardware_query(&hardware);
+    out->physical_cores = hardware.physical_cores;
+    fd = __openat(AT_FDCWD, "/proc/meminfo", O_RDONLY, 0);
+    if (fd < 0) return;
+    n = (int)__read(fd, buffer, sizeof(buffer)-1);
+    __close(fd);
+    if (n <= 0) return;
+    buffer[n] = 0;
+    for (char *line = buffer; line && *line; ) {
+        char *next = strchr(line, '\n');
+        if (next) *next++ = 0;
+        if (!strncmp(line, "MemTotal:", 9)) sscanf(line+9, "%llu", &total);
+        if (!strncmp(line, "MemAvailable:", 13)) sscanf(line+13, "%llu", &available);
+        line = next;
+    }
+    if (total && available <= total) {
+        out->memory_total_mib = total / 1024;
+        out->memory_used_mib = (total - available) / 1024;
+        out->memory_valid = 1;
+    }
+}
+
 static int scan_model_directory(const char *directory, const char *prefix,
                                 char paths[][TOY_PLATFORM_PATH_MAX],
                                 int max, int count)

@@ -227,9 +227,88 @@ int rasterfall_prop_collision_dimensions(
     return out->x > 0 && out->z > 0 ? 0 : -1;
 }
 
-static int host_cpu_slots = 6, host_memory_slots = 6;
+static int host_cpu_slots = -1, host_memory_slots = -1;
 static int host_capture_time = -1;
+static struct toy_platform_host_sample host_sample;
+static int host_initialized;
+static int host_live_logged;
+static unsigned host_sample_time;
 void rasterfall_host_set_capture_time(int time_ms) { host_capture_time=time_ms; }
+
+void rasterfall_host_update(unsigned time_ms)
+{
+    if (host_capture_time>=0 && host_initialized) {
+        host_sample.memory_used_mib=host_sample.memory_total_mib*9/16;
+        for (int core=0;core<host_sample.physical_cores &&
+                core<TOY_PLATFORM_HOST_CORES;++core) {
+            host_sample.core_percent[core]=(unsigned char)((34+core*17)%100);
+            host_sample.core_valid[core]=1;
+        }
+        return;
+    }
+    if (!host_initialized || (time_ms && time_ms-host_sample_time >= 1000u)) {
+        toy_platform_host_sample(&host_sample);
+        host_sample_time=time_ms;
+        host_initialized=1;
+        if (host_capture_time>=0) {
+            rasterfall_host_update(time_ms);
+            return;
+        }
+        if (!host_live_logged && host_sample.core_valid[0]) {
+            host_live_logged=1;
+            __printf("HOST-RACK live core01=%u%% memory=%llu/%llu MiB\n",
+                (unsigned)host_sample.core_percent[0],host_sample.memory_used_mib,
+                host_sample.memory_total_mib);
+        }
+    }
+}
+
+static int host_memory_slots_needed(void)
+{
+    unsigned long long total=host_sample.memory_total_mib;
+    if (!host_sample.memory_valid) return 0;
+    total=(total+RASTERFALL_HOST_MEMORY_SLOT_MIB-1)/
+        RASTERFALL_HOST_MEMORY_SLOT_MIB;
+    return total>24 ? 24 : (int)total;
+}
+
+static void host_memory_slot(unsigned long long total,unsigned long long used,
+    int index,unsigned long long *capacity,unsigned long long *occupied,int *lit)
+{
+    unsigned long long offset=(unsigned long long)index*RASTERFALL_HOST_MEMORY_SLOT_MIB;
+    *capacity=offset<total ? total-offset : 0;
+    if (*capacity>RASTERFALL_HOST_MEMORY_SLOT_MIB)
+        *capacity=RASTERFALL_HOST_MEMORY_SLOT_MIB;
+    *occupied=used>offset ? used-offset : 0;
+    if (*occupied>*capacity) *occupied=*capacity;
+    *lit=*capacity ? (int)((*occupied*8+*capacity-1)/ *capacity) : 0;
+}
+
+static int host_slots_for_asset(int asset)
+{
+    int cpu=asset==RASTERFALL_PROP_ASSET_HOST_CPU_MODULE ||
+        asset==RASTERFALL_PROP_ASSET_HOST_CPU_HEADER;
+    int count=cpu ? host_sample.physical_cores : host_memory_slots_needed();
+    if (cpu && host_cpu_slots>=0) count=host_cpu_slots;
+    if (!cpu && host_memory_slots>=0) count=host_memory_slots;
+    return count>24 ? 24 : count;
+}
+
+int rasterfall_host_object_active(const char *id)
+{
+    const char *p;
+    int cpu, rack;
+    if (!id || strncmp(id,"host_",5)) return 1;
+    p=id+5;
+    cpu=!strncmp(p,"cpu_r",5);
+    if (!cpu && strncmp(p,"memory_r",8)) return 1;
+    p+=cpu ? 5 : 8;
+    if (*p<'1' || *p>'4' || p[1]!='_') return 1;
+    rack=*p-'1';
+    rasterfall_host_update(0);
+    return host_slots_for_asset(cpu ? RASTERFALL_PROP_ASSET_HOST_CPU_MODULE :
+        RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE)>rack*6;
+}
 
 int rasterfall_host_bay_asset(int asset, int bay, int active_slots)
 {
@@ -241,24 +320,41 @@ int rasterfall_host_bay_asset(int asset, int bay, int active_slots)
 
 void rasterfall_host_set_active_slots(int cpu_slots, int memory_slots)
 {
-    host_cpu_slots = cpu_slots < 0 || cpu_slots > 6 ? 6 : cpu_slots;
-    host_memory_slots = memory_slots < 0 || memory_slots > 6 ? 6 : memory_slots;
+    host_cpu_slots = cpu_slots < 0 ? -1 : cpu_slots > 24 ? 24 : cpu_slots;
+    host_memory_slots = memory_slots < 0 ? -1 : memory_slots > 24 ? 24 : memory_slots;
 }
 
 int rasterfall_prop_presented_asset(int asset, int bay)
 {
     static int detected;
-    if (asset != RASTERFALL_PROP_ASSET_HOST_CPU_MODULE &&
-        asset != RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE) return asset;
+    int cpu, rack, slot, slots;
+    if (asset<RASTERFALL_PROP_ASSET_HOST_RACK_FRAME ||
+        asset>RASTERFALL_PROP_ASSET_HOST_MEMORY_HEADER) return asset;
+    rasterfall_host_update(0);
     if (!detected) {
-        struct toy_platform_hardware hardware;
-        toy_platform_hardware_query(&hardware);
         detected = 1;
-        __printf("HOST-RACK physical_cores=%d memory_mib=%llu bays=6 policy=design-preview\n",
-                 hardware.physical_cores, hardware.memory_mib);
+        __printf("HOST-RACK physical_cores=%d memory_mib=%llu cpu_racks=%d memory_racks=%d\n",
+            host_sample.physical_cores,host_sample.memory_total_mib,
+            (host_sample.physical_cores+5)/6,(host_memory_slots_needed()+5)/6);
     }
-    return rasterfall_host_bay_asset(asset, bay,
-        asset == RASTERFALL_PROP_ASSET_HOST_CPU_MODULE ? host_cpu_slots : host_memory_slots);
+    if (bay<100) {
+        if (asset==RASTERFALL_PROP_ASSET_HOST_CPU_MODULE ||
+            asset==RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE)
+            return rasterfall_host_bay_asset(asset,bay,host_slots_for_asset(asset));
+        return asset;
+    }
+    /* Shared frame/fan/cables carry their family in the encoded hundreds:
+     * CPU 100..139, Memory 200..239. */
+    cpu=bay>=100 && bay<200;
+    rack=(bay%100)/10;
+    slot=bay%10;
+    slots=host_slots_for_asset(cpu ? RASTERFALL_PROP_ASSET_HOST_CPU_MODULE :
+        RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE);
+    if (rack<0 || rack>=4 || rack*6>=slots) return 0;
+    if (asset==RASTERFALL_PROP_ASSET_HOST_CPU_MODULE ||
+        asset==RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE)
+        return rasterfall_host_bay_asset(asset,slot,slots-rack*6);
+    return asset;
 }
 
 /* Small presentation geometry in local RFU, +Z front, with explicit time.
@@ -284,11 +380,60 @@ static int host_front(const struct rasterfall_prop_instance *p,
     return host_quad(p,emit,context,q,color);
 }
 
+static int host_front_text(const struct rasterfall_prop_instance *p,
+    rasterfall_host_quad_fn emit,void *context,double x,double y,double w,double h,unsigned color)
+{
+    /* The model face reaches about +246 RFU. Keep the text in front of the
+     * face and its backing, with a small depth gap from the progress strip. */
+    double q[4][3]={{x,y,264},{x+w,y,264},{x+w,y+h,264},{x,y+h,264}};
+    return host_quad(p,emit,context,q,color);
+}
+
+static unsigned host_glyph_row(char c,int row)
+{
+    static const unsigned char digits[10][5]={
+        {7,5,5,5,7},{2,6,2,2,7},{7,1,7,4,7},{7,1,7,1,7},
+        {5,5,7,1,1},{7,4,7,1,7},{7,4,7,5,7},{7,1,1,1,1},
+        {7,5,7,5,7},{7,5,7,1,7}};
+    if (c>='0' && c<='9') return digits[c-'0'][row];
+    switch(c) {
+    case 'C': { static const unsigned char v[5]={7,4,4,4,7};return v[row]; }
+    case 'M': { static const unsigned char v[5]={5,7,7,5,5};return v[row]; }
+    case '/': { static const unsigned char v[5]={1,1,2,4,4};return v[row]; }
+    case '%': { static const unsigned char v[5]={5,1,2,4,5};return v[row]; }
+    case '-': return row==2 ? 7 : 0;
+    case '+': return row==2 ? 7 : row==1 || row==3 ? 2 : 0;
+    default: return 0;
+    }
+}
+
+static int host_text(const struct rasterfall_prop_instance *p,
+    rasterfall_host_quad_fn emit,void *context,const char *label,unsigned color)
+{
+    int length=(int)strlen(label);
+    double start=-length*10.0;
+    for(int i=0;i<length;++i)
+        for(int row=0;row<5;++row) {
+            unsigned bits=host_glyph_row(label[i],row);
+            for(int col=0;col<3;++col)
+                if (bits & (4u>>col))
+                    if (host_front_text(p,emit,context,start+i*20+col*5,
+                            72-row*5,4,4,color)<0) return -1;
+        }
+    return 0;
+}
+
 int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
     unsigned time_ms,rasterfall_host_quad_fn emit,void *context)
 {
     int cpu=p->asset_id==RASTERFALL_PROP_ASSET_HOST_CPU_MODULE;
     unsigned seed,t,color;
+    int rack=p->length>=100 ? (p->length%100)/10 : 0;
+    int bay=p->length>=100 ? p->length%10 : p->length;
+    int number=rack*6+bay;
+    unsigned long long used=0,capacity=0;
+    int percent=0,lit=0;
+    char label[32];
     if (!cpu && p->asset_id!=RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE) return 0;
     if (host_capture_time>=0) time_ms=(unsigned)host_capture_time;
     seed=(unsigned)p->length*173u+(unsigned)p->x*7u+(unsigned)p->z*11u;
@@ -302,14 +447,34 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
         if (host_front(p,emit,context,120+k*13,92,7,7,
                 (t+(unsigned)k*193u)%period<on ? color : 0x233039)<0) return -1;
     }
-    /* CPU smoothly changes length; RAM retains a repeated, segmented rhythm. */
-    double wave=.5+.5*sin((double)t/(240.0+seed%180u));
-    for (int k=0;k<(cpu?1:8);++k) {
-        double x=cpu ? -150 : -150+k*38;
-        double w=cpu ? 95+205*wave : 30;
-        unsigned c=cpu || k<2+(int)(wave*6) ? color : 0x183b29;
-        if (host_front(p,emit,context,x,17,w,10,c)<0) return -1;
+    if (cpu) {
+        int core=number-1;
+        if (core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core])
+            percent=host_sample.core_percent[core];
+        snprintf(label,sizeof(label),"C%02d%s %s",number,
+            number==24 && host_sample.physical_cores>24 ? "+" : "",
+            core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core]
+                ? "" : "--%");
+        if (core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core])
+            snprintf(label,sizeof(label),"C%02d%s %d%%",number,
+                number==24 && host_sample.physical_cores>24 ? "+" : "",percent);
+        if (host_front(p,emit,context,-150,17,300,10,0x183044)<0) return -1;
+        if (percent && host_front(p,emit,context,-150,17,percent*3,10,color)<0)
+            return -1;
+    } else {
+        if (host_sample.memory_valid) {
+            host_memory_slot(host_sample.memory_total_mib,host_sample.memory_used_mib,
+                number-1,&capacity,&used,&lit);
+            snprintf(label,sizeof(label),"M%02d%s %llu/%lluM",number,
+                number==24 && host_sample.memory_total_mib>24*4096ULL ? "+" : "",
+                used,capacity);
+        } else snprintf(label,sizeof(label),"M%02d --M",number);
+        for (int k=0;k<8;++k)
+            if (host_front(p,emit,context,-150+k*38,17,30,10,
+                    k<lit ? color : 0x183b29)<0) return -1;
     }
+    if (host_front(p,emit,context,-164,45,328,34,0x17232d)<0) return -1;
+    if (host_text(p,emit,context,label,0xc6e5ee)<0) return -1;
     for (int side=-1;side<=1;side+=2) {
         if (cpu) {
             for (int fan=0;fan<2;++fan) {
@@ -352,9 +517,21 @@ static int host_test_quad(void *context,const int points[4][3],unsigned color)
 int rasterfall_prop_asset_logic_test(void)
 {
     int i;
+    unsigned long long capacity,occupied;
+    int lit;
     const struct rasterfall_prop_asset_profile *crate;
     const struct rasterfall_prop_asset_profile *barrier;
     const struct rasterfall_prop_asset_profile *lamp;
+    host_memory_slot(24*4096ULL,6096,0,&capacity,&occupied,&lit);
+    if (capacity!=4096 || occupied!=4096 || lit!=8) return 24;
+    host_memory_slot(24*4096ULL,6096,1,&capacity,&occupied,&lit);
+    if (capacity!=4096 || occupied!=2000 || lit!=4) return 25;
+    host_memory_slot(18*1024ULL,1,0,&capacity,&occupied,&lit);
+    if (capacity!=4096 || occupied!=1 || lit!=1) return 26;
+    host_memory_slot(18*1024ULL,0,4,&capacity,&occupied,&lit);
+    if (capacity!=2048 || occupied!=0 || lit!=0) return 27;
+    host_memory_slot(18*1024ULL,18*1024ULL,5,&capacity,&occupied,&lit);
+    if (capacity || occupied || lit) return 28;
     for (int kind=0;kind<2;++kind) {
         struct rasterfall_prop_instance p={kind ? RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE :
             RASTERFALL_PROP_ASSET_HOST_CPU_MODULE,2700,0,3400,198,1000,1};
@@ -382,6 +559,19 @@ int rasterfall_prop_asset_logic_test(void)
         }
     if (rasterfall_host_bay_asset(RASTERFALL_PROP_ASSET_HOST_CPU_MODULE,0,0) !=
         RASTERFALL_PROP_ASSET_HOST_CPU_MODULE) return 21;
+    rasterfall_host_set_active_slots(7,13);
+    if (rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_CPU_MODULE,111)!=
+            RASTERFALL_PROP_ASSET_HOST_CPU_MODULE ||
+        rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_CPU_MODULE,112)!=
+            RASTERFALL_PROP_ASSET_HOST_BLANK_PANEL ||
+        rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_RACK_FRAME,120)!=0 ||
+        rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE,221)!=
+            RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE ||
+        rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE,222)!=
+            RASTERFALL_PROP_ASSET_HOST_BLANK_PANEL ||
+        rasterfall_prop_presented_asset(RASTERFALL_PROP_ASSET_HOST_RACK_FRAME,230)!=0)
+        return 29;
+    rasterfall_host_set_active_slots(-1,-1);
     for (i = 0; i < RASTERFALL_PROP_ASSET_COUNT; i++) {
         const struct rasterfall_prop_asset_profile *asset = prop_assets + i;
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||

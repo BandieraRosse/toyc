@@ -51,7 +51,8 @@ object，不声明交互终端；设备视觉不改变 Game 状态。既有 `sta
 映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变
 Runtime Map ownership。
 
-Host Rack 的地图模块通过 `attr.length=1..6` 标记视觉槽号。整柜碰撞固定属于机架；平台硬件查询不进入
-Runtime Map 或 gameplay projection。CPU renderer 和 GPU Scene snapshot 在展示边界通过同一 prop resolver
-选择服务器或封板，地图中的 authored identity 保持不变；本机硬件展示不参与联机权威状态。
+Host Rack 的地图候选位以 `attr.length` 编码柜号和自下而上的槽号。Runtime Map 保留八个 authored 候选；
+平台硬件数量在 projection/presentation 边界决定机柜是否启用。未启用柜的生成碰撞 flag 关闭，
+CPU renderer 与 GPU Scene snapshot 共用 prop resolver 隐藏其模型；启用柜的空槽显示封板。
+地图 identity 保持稳定，实时负载只进入只读展示，不参与联机权威状态。
 资产、容量换算及摆放见 [Host Rack V2](../reference/host-rack-v2.md)。

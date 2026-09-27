@@ -820,7 +820,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
         struct rasterfall_draw_instance instance;
         struct rasterfall_draw_view view;
         int asset=prop->prop.asset_id,scale,yaw,integer_depth;
-        if (asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
+        if (asset==0 || asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
         if (asset<1 || asset>RASTERFALL_PROP_ASSET_COUNT) return -1;
         profile=rasterfall_prop_asset_profile(asset);
         handle=owner->prop_asset[asset];
@@ -1317,7 +1317,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     for(uint32_t source=0;source<owner->prop_count;++source) {
         int asset=owner->prop_items[source].prop.asset_id;
         const struct rasterfall_model_asset *model;
-        if (asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
+        if (asset==0 || asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
         if (asset<1 || asset>RASTERFALL_PROP_ASSET_COUNT) return -1;
         model=rasterfall_resources_resolve_active(&owner->registry,owner->prop_asset[asset]);
         if (!model || model->primitive_count>UINT32_MAX-capacity) return -1;

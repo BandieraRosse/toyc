@@ -89,7 +89,7 @@ struct rasterfall_prop_instance {
     int z;
     int yaw_degrees;
     int scale_milli;
-    int length; /* boundary_wall RFU; Host modules use 1..6 as visual bay */
+    int length; /* boundary_wall RFU; Host uses 100 + rack*10 + bay */
 };
 
 const struct rasterfall_prop_asset_profile *
@@ -104,11 +104,15 @@ int rasterfall_prop_collision_dimensions(
     struct rasterfall_prop_dimensions *out);
 /* Host modules use length=1..6 as the visual bay index; zero previews the asset. */
 #define RASTERFALL_HOST_SLOT_COUNT 6
+#define RASTERFALL_HOST_RACK_COUNT 4
+#define RASTERFALL_HOST_MEMORY_SLOT_MIB 4096ULL
 int rasterfall_host_bay_asset(int asset, int bay, int active_slots);
 /* Explicit visual override, -1 restores the six-slot design preview. */
 void rasterfall_host_set_active_slots(int cpu_slots, int memory_slots);
 /* Diagnostic fixed time; -1 restores the caller's live presentation time. */
 void rasterfall_host_set_capture_time(int time_ms);
+void rasterfall_host_update(unsigned time_ms);
+int rasterfall_host_object_active(const char *id);
 typedef int (*rasterfall_host_quad_fn)(void *, const int points[4][3], unsigned color);
 int rasterfall_host_activity(const struct rasterfall_prop_instance *instance,
     unsigned time_ms, rasterfall_host_quad_fn emit, void *context);

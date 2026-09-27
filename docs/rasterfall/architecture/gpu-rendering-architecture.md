@@ -24,9 +24,9 @@ Scene world 资源由 `rasterfall/src/rf_gpu_scene_world_gpu.c` 准备，角色�
 
 ## 当前验证
 
-Host Rack V2 活动灯与风扇由 prop presentation 以显式时间生成少量 WORLD 几何，
-独立 Scene layer 消费冻结的 prop 值，CPU 使用相同采样器。动态不修改静态模型、地图或玩法状态，
-不触发整柜资源重建；接口与默认六槽预览策略见 [Host Rack V2](../reference/host-rack-v2.md)。
+Host Rack V2 的风扇、活动灯、实时负载条和槽位数字由 prop presentation 生成 WORLD 几何。
+独立 Scene layer 消费冻结的 prop 值和平台采样，CPU 使用同一槽位规则。静态模型不随指标更新，
+未启用候选柜在 Scene 资源准备时跳过；机柜数量和编号见 [Host Rack V2](../reference/host-rack-v2.md)。
 
 Windows 原生 package 是实机判断入口。`windows/NativeCodex.ps1 gpu-test` 提交 120 帧硬件 Scene 并打印 frame audit；`acceptance` 另做 normal-frame 和视觉 capture。`SCENE-SOURCE`、`SCENE-NATIVE`、`SCENE-WORLD-COST` 可检查提交来源、绘制、上传、队列同步与 present。旧命令、mixed draw、bridge 和常规 CPU framebuffer 读回应为零。离屏测试用于定位问题，不能代替实机 present、resize、窗口生命周期和长帧结论。
 

@@ -1,7 +1,98 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <pdh.h>
+#include <pdhmsg.h>
+#include <stdio.h>
 #include <string.h>
 #include "toy_platform.h"
+
+#define HOST_THREADS_PER_CORE 8
+static PDH_HQUERY host_query;
+static PDH_HCOUNTER host_counter[TOY_PLATFORM_HOST_CORES][HOST_THREADS_PER_CORE];
+static unsigned char host_counter_count[TOY_PLATFORM_HOST_CORES];
+static int host_core_count, host_query_ready, host_query_primed;
+
+static void host_query_init(void)
+{
+    DWORD bytes = 0;
+    unsigned char *buffer, *at, *end;
+    if (host_query_ready) return;
+    host_query_ready = 1;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &bytes);
+    buffer = bytes ? HeapAlloc(GetProcessHeap(), 0, bytes) : NULL;
+    if (!buffer) return;
+    if (!GetLogicalProcessorInformationEx(RelationProcessorCore,
+            (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)buffer, &bytes)) {
+        HeapFree(GetProcessHeap(), 0, buffer); return;
+    }
+    if (PdhOpenQueryA(NULL, 0, &host_query) != ERROR_SUCCESS)
+        host_query = NULL;
+    at = buffer; end = buffer + bytes;
+    while (at + sizeof(DWORD) * 2 <= end) {
+        PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX entry =
+            (PSYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX)at;
+        if (entry->Size < sizeof(DWORD) * 2 || entry->Size > (DWORD)(end-at)) break;
+        if (entry->Relationship == RelationProcessorCore) {
+            int core = host_core_count++;
+            if (host_query && core < TOY_PLATFORM_HOST_CORES) {
+                for (WORD group = 0; group < entry->Processor.GroupCount; ++group) {
+                    GROUP_AFFINITY affinity = entry->Processor.GroupMask[group];
+                    for (unsigned bit = 0; bit < sizeof(KAFFINITY)*8; ++bit) {
+                        unsigned n = host_counter_count[core];
+                        char path[96];
+                        if (!(affinity.Mask & ((KAFFINITY)1 << bit)) ||
+                            n >= HOST_THREADS_PER_CORE) continue;
+                        snprintf(path, sizeof(path),
+                            "\\Processor Information(%u,%u)\\%% Processor Time",
+                            (unsigned)affinity.Group, bit);
+                        if (PdhAddEnglishCounterA(host_query, path, 0,
+                                &host_counter[core][n]) == ERROR_SUCCESS)
+                            host_counter_count[core]++;
+                    }
+                }
+            }
+        }
+        at += entry->Size;
+    }
+    HeapFree(GetProcessHeap(), 0, buffer);
+}
+
+void toy_platform_host_sample(struct toy_platform_host_sample *out)
+{
+    MEMORYSTATUSEX memory;
+    memset(out, 0, sizeof(*out));
+    memset(&memory, 0, sizeof(memory)); memory.dwLength = sizeof(memory);
+    if (GlobalMemoryStatusEx(&memory)) {
+        out->memory_total_mib = memory.ullTotalPhys / (1024 * 1024);
+        out->memory_used_mib =
+            (memory.ullTotalPhys - memory.ullAvailPhys) / (1024 * 1024);
+        out->memory_valid = 1;
+    }
+    host_query_init();
+    out->physical_cores = host_core_count;
+    if (!host_query || PdhCollectQueryData(host_query) != ERROR_SUCCESS) return;
+    if (!host_query_primed) { host_query_primed = 1; return; }
+    for (int core = 0; core < host_core_count && core < TOY_PLATFORM_HOST_CORES; ++core) {
+        double sum = 0;
+        unsigned count = 0;
+        for (unsigned thread = 0; thread < host_counter_count[core]; ++thread) {
+            PDH_FMT_COUNTERVALUE value;
+            PDH_STATUS status=PdhGetFormattedCounterValue(host_counter[core][thread],
+                    PDH_FMT_DOUBLE,NULL,&value);
+            if (status == ERROR_SUCCESS &&
+                (value.CStatus == PDH_CSTATUS_VALID_DATA ||
+                 value.CStatus == PDH_CSTATUS_NEW_DATA) && value.doubleValue >= 0) {
+                sum += value.doubleValue; count++;
+            }
+        }
+        if (count) {
+            double percent = sum / count;
+            if (percent > 100) percent = 100;
+            out->core_percent[core] = (unsigned char)(percent + .5);
+            out->core_valid[core] = 1;
+        }
+    }
+}
 
 void toy_platform_hardware_query(struct toy_platform_hardware *out)
 {

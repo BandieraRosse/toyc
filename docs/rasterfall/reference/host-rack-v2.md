@@ -1,6 +1,6 @@
 # Host Rack V2
 
-> 状态：当前实现；视觉冻结待用户验收
+> 状态：当前实现；实时数字与布局视觉验收待确认
 > 所有者：Host 环境资产与只读展示
 > 事实入口：`tools/blender/generate_host_rack.py`、`rasterfall_prop.c`、`assets/maps/outpost.map`
 
@@ -25,34 +25,45 @@ CPU 与 Memory 共用 0.8 m 宽 × 1.06 m 深 × 2.2 m 高框架，约 410 × 54
 CPU 的散热器轮廓和 Memory 的薄板阵列负责结构区分；蓝绿只用于小面积识别和活动显示。
 资产每件限制 6000 三角形，生成器验证尺寸、原点、材质和预算。
 
-## 槽位接口与硬件边界
+## 槽位与八柜排布
 
-地图模块 `attr.length=1..6` 表示从下往上的视觉槽号；零或范围外作为独立模型显示。
-`rasterfall_host_bay_asset(asset, bay, active_slots)` 只按活动槽数选择原模块或 blank panel。
-`rasterfall_host_set_active_slots(cpu_slots, memory_slots)` 接受两个独立的 0..6 值；-1 恢复六槽展示预览。
-所有合法占用数均由逻辑回归覆盖；机架、身份区、utility 和线缆不参与计数。
+大厅东北角预置两排四列候选位：列中心 X=2450、3000、3550、4100 RFU，
+北排 Z=3600、南排 Z=2300，两排均朝南（yaw=180）。机柜均摆正，
+排间净距约 1.48 m，列间净距约 0.27 m。东两列为 Memory，东北角首先生成；
+西两列为 CPU，靠大厅外侧。每类按北到南、同排东到西编号 1–4。
+`tools/host_rack_layout.py` 生成地图候选 object。`attr.length` 在 CPU 使用
+`100+(柜号-1)*10+槽号`，Memory 使用 `200+(柜号-1)*10+槽号`；槽号 0 表示机架附属件，
+1–6 从下往上。Runtime Map 保留所有 authored 候选；展示 resolver 决定是否呈现，
+未启用机柜的生成碰撞在玩法投影中关闭。已经存在的机柜仅未安装槽位使用 blank panel。
 
-默认两柜六槽全开用于 V2 美术审阅。平台物理核心与内存查询继续保留，并首次打印到 HOST-RACK 日志，
-但不再使用 V1 的“一个核心/4 GiB 一槽”换算。真实 hardware → active slot count 的量化策略待多机测试后确定。
-本机硬件及展示覆盖不进入 `toy_game`、网络权威状态、Runtime Map 或碰撞/导航。
-CPU 和 Scene snapshot 共用 `rasterfall_prop_presented_asset()`；空槽不产生活动几何。
+一柜对应最多六个物理核心或六个 4 GiB 内存容量槽；每类最多四柜、24 槽。
+柜数分别为 `ceil(物理核心数/6)` 与 `ceil(ceil(可用物理内存 MiB/4096)/6)`，
+均截到四柜。CPU 槽 `C01..C24` 对应 Windows 按处理器组、核心顺序枚举的物理核心逻辑编号；
+同一核心的 SMT 逻辑处理器负载取平均。Memory 槽 `M01..M24` 每槽最多 4096 MiB，
+最后一槽用真实剩余容量。主机超出 24 核或 96 GiB 时，最后一槽编号附 `+`，日志报告原始总量；
+机柜只展示前 24 槽，不将超出量伪装为槽内资源。
+硬件展示不进入 `toy_game` 或网络权威状态。`rasterfall_host_set_active_slots()`
+保留诊断覆盖，-1 恢复硬件自动选择。
 
 ## 动态展示所有权
 
-`rasterfall_host_activity()` 接受展示实例、显式毫秒时间及 quad callback，生成少量世界空间几何。
+`rasterfall_host_activity()` 接受展示实例、显式毫秒时间及 quad callback，生成世界空间几何。
 CPU 在静态 prop 绘制后消费，GPU Scene 在 layer 来源提取时消费冻结的 prop 值与帧时间，均处于 WORLD 深度域。
 静态 RMESH 不因闪灯失效；GPU 活动几何复用现有 layer resource 更新路径。
 
 - Power 常亮；独立 activity 通道每次亮 100–400 ms，周期和相位由柜位置与槽号确定。
-- CPU 蓝灯条平滑改变长度，四个侧窗风扇持续旋转。
-- Memory 使用八段绿灯条及分组弱 bank 闪光。
-- 展示是合成运行状态，不声称代表实时 CPU 利用率或内存负载。
-- 正常运行采用单调展示时钟；GPU 固定 capture 使用帧号 × 16 ms，可复现不同时间的画面。
+- CPU 蓝灯条按每个物理核心的实测百分比改变长度，四个侧窗风扇持续旋转。
+- Memory 已用量从 M01 向上装填；每槽八段绿灯的亮格数为
+  `ceil(8 * 该槽已用 MiB / 该槽容量 MiB)`，零占用全灭。
+- 数字 `C01 34%` 或 `M01 2000/4096M` 位于各槽进度条正上方、静态 CPU/Memory 标志下方；
+  深色衬底和前移的世界空间字形避免与面板重叠。`M` 在此表示 MiB。
+- 数字与条使用约 1 秒一次的平台采样；活动小灯和侧窗运动仍是视觉动画。
+- 正常运行采用单调展示时钟；固定 capture 使用稳定的示例指标与帧号 × 16 ms，
+  不把截图中的示例百分比当作实机采样证据。
 
 ## 大厅与验证
 
-CPU 原点 `(2700, 0, 3400)`、Memory `(3650, 0, 3400)` RFU，保持 198° 朝向（偏转 18°），
-入口侧可同时看到正面与侧窗。模块、铭牌及线缆均无独立碰撞。
+模块、铭牌及线缆均无独立碰撞。现有八个候选位置及朝向以上述地图坐标为准。
 
 ```powershell
 python tools/host_rack_round.py --blender 'E:\Blender 5.2\blender.exe'

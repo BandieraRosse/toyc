@@ -12,4 +12,17 @@ struct toy_platform_hardware {
 };
 void toy_platform_hardware_query(struct toy_platform_hardware *out);
 
+#define TOY_PLATFORM_HOST_CORES 24
+/* System-wide presentation sample. Core indices follow the hardware query's
+ * physical-core enumeration order; a valid core load averages its SMT threads. */
+struct toy_platform_host_sample {
+    unsigned long long memory_total_mib;
+    unsigned long long memory_used_mib;
+    unsigned char core_percent[TOY_PLATFORM_HOST_CORES];
+    unsigned char core_valid[TOY_PLATFORM_HOST_CORES];
+    int physical_cores;
+    int memory_valid;
+};
+void toy_platform_host_sample(struct toy_platform_host_sample *out);
+
 #endif
