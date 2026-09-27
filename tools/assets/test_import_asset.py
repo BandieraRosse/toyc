@@ -2,6 +2,7 @@
 """Minimal regression tests for the unified Rasterfall asset contract."""
 
 import json
+import os
 import shutil
 import struct
 import subprocess
@@ -10,6 +11,8 @@ import tempfile
 import unittest
 import zlib
 from pathlib import Path
+
+from import_asset import install_atomically
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -76,6 +79,35 @@ def make_glb(path, textured=True):
 
 
 class AssetImporterTest(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows ACL regression")
+    def test_installed_files_inherit_output_acl(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stage, output = root / "stage", root / "output"
+            stage.mkdir()
+            output.mkdir()
+            mesh = stage / "sample.rmesh"
+            textures = stage / "sample.textures"
+            mesh.write_bytes(b"mesh")
+            textures.mkdir()
+            (textures / "texture_000.ttex").write_bytes(b"texture")
+            user = subprocess.check_output(["whoami"], text=True).strip()
+            for path in (mesh, textures):
+                grant = ["icacls", str(path), "/grant:r", user + ":F"]
+                if path.is_dir():
+                    grant.append("/T")
+                subprocess.run(grant, check=True, stdout=subprocess.DEVNULL)
+                command = ["icacls", str(path), "/inheritance:r"]
+                if path.is_dir():
+                    command.append("/T")
+                subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+
+            install_atomically([mesh, textures], output, "sample", False)
+            for path in (output / mesh.name, output / textures.name,
+                         output / textures.name / "texture_000.ttex"):
+                acl = subprocess.check_output(["icacls", str(path)], text=True)
+                self.assertIn("(I)", acl)
+
     def test_glb_texture_lod_and_validation(self):
         if not (REPO / "build/glb2rmesh").is_file() or not (REPO / "build/toyasset").is_file():
             self.skipTest("converter binaries were not built")

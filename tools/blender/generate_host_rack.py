@@ -23,9 +23,13 @@ SPECS = {
 def build(kind):
     # Flat materials: framed open apertures preserve hardware visibility in
     # both renderers; the static RMESH path does not implement tinted glass.
-    palette = [(37, 42, 45), (22, 26, 29), (69, 75, 79),
-               (185, 194, 198), (70, 168, 240), (77, 202, 119),
-               (16, 19, 21), (178, 122, 49)]
+    # sRGB industrial shell, recessed displays and restrained terminal ink.
+    palette = [(0x11, 0x14, 0x18), (0x1b, 0x20, 0x26),
+               (0x45, 0x51, 0x5b), (0x8f, 0xa4, 0xb5),
+               (0x36, 0xa8, 0xff), (0x4b, 0xe3, 0x8a),
+               (0x0a, 0x11, 0x16), (0xf2, 0xc1, 0x4e),
+               (0x0d, 0x15, 0x1b), (0xdc, 0xe8, 0xf2),
+               (0x1e, 0x6f, 0xaf), (0x1e, 0x8e, 0x59)]
     def linear(rgb):
         return tuple(c/255/12.92 if c <= 10 else ((c/255+.055)/1.055)**2.4 for c in rgb)
     mats = [material('host_'+str(i), linear(rgb)) for i, rgb in enumerate(palette)]
@@ -89,9 +93,9 @@ def build(kind):
             box((x, .48, .20), (.23, .09, .18), 2)
     elif kind in ('cpu_header', 'memory_header'):
         box((0, .003, .085), (.70, .994, .17), 1)
-        label('HOST', (0, -.500, .066), .060)
+        label('HOST', (0, -.500, .066), .050)
         label('CPU / COMPUTE' if kind == 'cpu_header' else 'MEMORY / BANK',
-              (0, -.500, .002), .052)
+              (0, -.500, .002), .045, 4 if kind == 'cpu_header' else 5)
     elif kind in ('cpu_module', 'memory_module', 'blank_panel'):
         box((0, 0, .009), (.57, .96, .018), 1)
         box((0, 0, .191), (.57, .96, .018), 0)
@@ -111,8 +115,11 @@ def build(kind):
         else:
             cpu = kind == 'cpu_module'
             signal = 4 if cpu else 5
+            # Recessed blue-grey display behind the world-space telemetry.
+            box((0, -.469, .105), (.52, .006, .092), 1)
+            box((0, -.473, .105), (.48, .006, .080), 6)
             # Dark strip bed; the live presentation overlays the lit portion.
-            box((0, -.470, .033), (.48, .008, .015), 6)
+            box((0, -.470, .033), (.48, .008, .015), 10 if cpu else 11)
             if cpu:
                 for row in range(4):
                     for i in range(17):
@@ -122,10 +129,10 @@ def build(kind):
                     x = -.22+i*.038+(0.012 if i >= 6 else 0)
                     box((x, -.472, .112), (.023, .008, .085), 2)
                     box((x, -.477, .112), (.009, .006, .066), 6)
-            for i, mat in enumerate((5, signal, 7)):
+            for i, mat in enumerate((5, signal, 3)):
                 box((.175+i*.026, -.474, .143), (.012, .006, .012), mat)
             box((.217, -.474, .096), (.026, .006, .018), 2)
-            label('CPU' if cpu else 'MEMORY', (-.09, -.480, .162), .029, signal)
+            label('CPU' if cpu else 'MEMORY', (-.09, -.480, .156), .042, signal)
             box((0, -.02, .030), (.48, .79, .014), 0 if not cpu else 1)
             # Side-facing fan housings; rotating blades are presentation geometry.
             for x in (-.238, .238):
@@ -166,7 +173,7 @@ def build(kind):
             box((x, -.485, .17), (.27, .010, .16), 6)
             for i in range(6):
                 box((x, -.494, .108+i*.025), (.24, .008, .008), 2)
-        label('COOLING / POWER', (0, -.500, .035), .037)
+        label('COOLING / POWER', (0, -.500, .035), .037, 3)
         box((.29, -.496, .048), (.015, .008, .012), 5)
     else:
         w = SPECS[kind][0]

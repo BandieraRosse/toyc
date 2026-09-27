@@ -391,36 +391,51 @@ static int host_front_text(const struct rasterfall_prop_instance *p,
 
 static unsigned host_glyph_row(char c,int row)
 {
-    static const unsigned char digits[10][5]={
-        {7,5,5,5,7},{2,6,2,2,7},{7,1,7,4,7},{7,1,7,1,7},
-        {5,5,7,1,1},{7,4,7,1,7},{7,4,7,5,7},{7,1,1,1,1},
-        {7,5,7,5,7},{7,5,7,1,7}};
+    /* Five columns, seven rows. Slashed zero, flagged one and open five
+     * remain distinct after low-resolution world rendering. */
+    static const unsigned char digits[10][7]={
+        {14,19,21,21,21,25,14},{4,12,4,4,4,4,14},
+        {14,17,1,2,4,8,31},{30,1,1,14,1,1,30},
+        {2,6,10,18,31,2,2},{31,16,16,30,1,1,30},
+        {14,16,16,30,17,17,14},{31,1,2,4,8,8,8},
+        {14,17,17,14,17,17,14},{14,17,17,15,1,1,14}};
     if (c>='0' && c<='9') return digits[c-'0'][row];
     switch(c) {
-    case 'C': { static const unsigned char v[5]={7,4,4,4,7};return v[row]; }
-    case 'M': { static const unsigned char v[5]={5,7,7,5,5};return v[row]; }
-    case '/': { static const unsigned char v[5]={1,1,2,4,4};return v[row]; }
-    case '%': { static const unsigned char v[5]={5,1,2,4,5};return v[row]; }
-    case '-': return row==2 ? 7 : 0;
-    case '+': return row==2 ? 7 : row==1 || row==3 ? 2 : 0;
+    case 'C': { static const unsigned char v[7]={15,16,16,16,16,16,15};return v[row]; }
+    case 'M': { static const unsigned char v[7]={17,27,21,21,17,17,17};return v[row]; }
+    case '/': { static const unsigned char v[7]={1,1,2,4,8,16,16};return v[row]; }
+    case '%': { static const unsigned char v[7]={17,2,2,4,8,8,17};return v[row]; }
+    case '-': return row==3 ? 14 : 0;
+    case '+': return row==3 ? 14 : row==2 || row==4 ? 4 : 0;
     default: return 0;
     }
 }
 
 static int host_text(const struct rasterfall_prop_instance *p,
-    rasterfall_host_quad_fn emit,void *context,const char *label,unsigned color)
+    rasterfall_host_quad_fn emit,void *context,const char *label,
+    int screen_x,int right_align,unsigned color)
 {
     int length=(int)strlen(label);
-    double start=-length*10.0;
+    int start=screen_x-(right_align ? length*18-3 : 0);
     for(int i=0;i<length;++i)
-        for(int row=0;row<5;++row) {
+        for(int row=0;row<7;++row) {
             unsigned bits=host_glyph_row(label[i],row);
-            for(int col=0;col<3;++col)
-                if (bits & (4u>>col))
-                    if (host_front_text(p,emit,context,start+i*20+col*5,
-                            72-row*5,4,4,color)<0) return -1;
+            for(int col=0;col<5;++col)
+                if (bits & (16u>>col))
+                    /* On a +Z front face, screen-right is local -X.
+                     * Mirror the placement, not the glyph bitmap. */
+                    if (host_front_text(p,emit,context,
+                            -(start+i*18+col*3+3),
+                            72-row*4,3,4,color)<0) return -1;
         }
     return 0;
+}
+
+static unsigned host_cpu_load_color(int percent)
+{
+    if (percent>=95) return 0xff5c5c;
+    if (percent>=80) return 0xf2c14e;
+    return 0x36a8ff;
 }
 
 int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
@@ -433,12 +448,12 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
     int number=rack*6+bay;
     unsigned long long used=0,capacity=0;
     int percent=0,lit=0;
-    char label[32];
+    char slot_label[8],value[24];
     if (!cpu && p->asset_id!=RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE) return 0;
     if (host_capture_time>=0) time_ms=(unsigned)host_capture_time;
     seed=(unsigned)p->length*173u+(unsigned)p->x*7u+(unsigned)p->z*11u;
     t=time_ms+seed;
-    color=cpu ? 0x48baff : 0x52eb87;
+    color=cpu ? 0x36a8ff : 0x4be38a;
     /* Power is steady. Each activity channel has a distinct 100..400 ms burst. */
     if (host_front(p,emit,context,104,92,8,8,0x9dffc1)<0) return -1;
     for (int k=0;k<3;++k) {
@@ -451,30 +466,32 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
         int core=number-1;
         if (core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core])
             percent=host_sample.core_percent[core];
-        snprintf(label,sizeof(label),"C%02d%s %s",number,
-            number==24 && host_sample.physical_cores>24 ? "+" : "",
-            core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core]
-                ? "" : "--%");
+        snprintf(slot_label,sizeof(slot_label),"C%02d%s",number,
+            number==24 && host_sample.physical_cores>24 ? "+" : "");
+        snprintf(value,sizeof(value),"--%%");
         if (core>=0 && core<TOY_PLATFORM_HOST_CORES && host_sample.core_valid[core])
-            snprintf(label,sizeof(label),"C%02d%s %d%%",number,
-                number==24 && host_sample.physical_cores>24 ? "+" : "",percent);
-        if (host_front(p,emit,context,-150,17,300,10,0x183044)<0) return -1;
-        if (percent && host_front(p,emit,context,-150,17,percent*3,10,color)<0)
+            snprintf(value,sizeof(value),"%d%%",percent);
+        if (host_front(p,emit,context,-150,17,300,10,0x1e6faf)<0) return -1;
+        if (percent && host_front(p,emit,context,-150,17,percent*3,10,
+                host_cpu_load_color(percent))<0)
             return -1;
     } else {
         if (host_sample.memory_valid) {
             host_memory_slot(host_sample.memory_total_mib,host_sample.memory_used_mib,
                 number-1,&capacity,&used,&lit);
-            snprintf(label,sizeof(label),"M%02d%s %llu/%lluM",number,
-                number==24 && host_sample.memory_total_mib>24*4096ULL ? "+" : "",
-                used,capacity);
-        } else snprintf(label,sizeof(label),"M%02d --M",number);
+            snprintf(value,sizeof(value),"%llu/%lluM",used,capacity);
+        } else snprintf(value,sizeof(value),"--M");
+        snprintf(slot_label,sizeof(slot_label),"M%02d%s",number,
+            number==24 && host_sample.memory_total_mib>24*4096ULL ? "+" : "");
         for (int k=0;k<8;++k)
             if (host_front(p,emit,context,-150+k*38,17,30,10,
-                    k<lit ? color : 0x183b29)<0) return -1;
+                    k<lit ? color : 0x1e8e59)<0) return -1;
     }
-    if (host_front(p,emit,context,-164,45,328,34,0x17232d)<0) return -1;
-    if (host_text(p,emit,context,label,0xc6e5ee)<0) return -1;
+    if (host_front(p,emit,context,-164,43,328,40,0x0d151b)<0) return -1;
+    if (host_text(p,emit,context,slot_label,-150,0,color)<0) return -1;
+    if (host_text(p,emit,context,value,150,1,
+            cpu && percent>=80 ? host_cpu_load_color(percent) : 0xdce8f2)<0)
+        return -1;
     for (int side=-1;side<=1;side+=2) {
         if (cpu) {
             for (int fan=0;fan<2;++fan) {
@@ -504,6 +521,16 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
 }
 
 struct host_test_capture { unsigned hash,count; };
+struct host_text_orientation_capture { int right_x,left_x,found_right,found_left; };
+static int host_test_text_orientation(void *context,const int points[4][3],unsigned color)
+{
+    struct host_text_orientation_capture *c=context;
+    (void)color;
+    /* Glyph '2' has a lone right pixel in row 2 and a lone left in row 5. */
+    if (points[0][1]==64) { c->right_x=points[0][0]; c->found_right++; }
+    if (points[0][1]==52) { c->left_x=points[0][0]; c->found_left++; }
+    return 0;
+}
 static int host_test_quad(void *context,const int points[4][3],unsigned color)
 {
     struct host_test_capture *c=context;
@@ -522,6 +549,19 @@ int rasterfall_prop_asset_logic_test(void)
     const struct rasterfall_prop_asset_profile *crate;
     const struct rasterfall_prop_asset_profile *barrier;
     const struct rasterfall_prop_asset_profile *lamp;
+    for (int yaw=0;yaw<=180;yaw+=180) {
+        struct rasterfall_prop_instance p={RASTERFALL_PROP_ASSET_HOST_CPU_MODULE,
+            0,0,0,yaw,1000,1};
+        struct host_text_orientation_capture glyph={0};
+        if (host_text(&p,host_test_text_orientation,&glyph,"2",-150,0,0)<0 ||
+            glyph.found_right!=1 || glyph.found_left!=1 ||
+            (yaw==0 ? glyph.right_x>=glyph.left_x :
+                glyph.right_x<=glyph.left_x)) return 29;
+    }
+    if (host_cpu_load_color(79)!=0x36a8ff ||
+        host_cpu_load_color(80)!=0xf2c14e ||
+        host_cpu_load_color(94)!=0xf2c14e ||
+        host_cpu_load_color(95)!=0xff5c5c) return 30;
     host_memory_slot(24*4096ULL,6096,0,&capacity,&occupied,&lit);
     if (capacity!=4096 || occupied!=4096 || lit!=8) return 24;
     host_memory_slot(24*4096ULL,6096,1,&capacity,&occupied,&lit);

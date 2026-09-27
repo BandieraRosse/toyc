@@ -59,6 +59,8 @@ foo_lod1.rmesh                 # manifest 要求时
 输出命名和 asset ID 规则见 [asset manifest 契约](../reference/asset-manifest.md)。临时目录建立在输出根内，以保证最终 rename 不跨文件
 系统。转换、TTEX 验证、RMESH 布局/纹理引用和全部 LOD 验证成功后才安装；`--force` 替换时先把旧
 asset family 移到同文件系统备份，安装失败会回滚。不要把 `build/`、`tmp/` 或 importer 临时目录提交。
+Windows 安装时会对移入的 RMESH、LOD 和纹理目录恢复目标目录的 ACL 继承，避免隔离账号生成的临时文件
+保留仅限该账号读取的权限；导入器必须能够修改自己生成文件的 ACL，否则安装失败并回滚。
 
 ## Manifest
 

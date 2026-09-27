@@ -273,6 +273,13 @@ def install_atomically(staged, output_root, asset_id, force):
         for source, target in targets:
             os.replace(source, target)
             installed.append(target)
+            if os.name == "nt":
+                # A moved staging file keeps its ACL. Restore inheritance from
+                # the destination so the normal Windows user can read it.
+                command = ["icacls", str(target), "/inheritance:e"]
+                if target.is_dir():
+                    command.append("/T")
+                subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
     except Exception:
         for target in installed:
             if target.is_dir():
