@@ -2183,16 +2183,29 @@ int rasterfall_rigid_attachment_transform_logic_test(void)
            out[2] < -0.001 || out[2] > 0.001;
 }
 
+struct host_cpu_draw_context { struct toy_renderer *renderer; const struct camera *camera; };
+static int host_cpu_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct host_cpu_draw_context *c=context;
+    struct vec3 v[4];
+    for (int k=0;k<4;++k) { v[k].x=p[k][0];v[k].y=p[k][1];v[k].z=p[k][2]; }
+    draw_world_triangle(c->renderer,c->camera,&v[0],&v[1],&v[2],color);
+    draw_world_triangle(c->renderer,c->camera,&v[0],&v[2],&v[3],color);
+    return 0;
+}
+
 static int render_static_props(struct toy_renderer *renderer,
                                const struct camera *camera)
 {
     int i, pixels = 0;
+    unsigned host_time=(unsigned)(render_monotonic_us()/1000);
+    struct host_cpu_draw_context host_context={renderer,camera};
     for (i = 0; i < level_map.prop_count; i++)
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
         struct rasterfall_prop_instance instance;
         int previous_scene_light = active_scene_light_override_q8;
-        instance.asset_id = map_prop->asset_id;
+        instance.asset_id = rasterfall_prop_presented_asset(map_prop->asset_id, map_prop->length);
         instance.x = map_prop->x;
         instance.y = -900 + map_prop->y;
         instance.z = map_prop->z;
@@ -2239,6 +2252,8 @@ static int render_static_props(struct toy_renderer *renderer,
             }
             pixels += drawn;
         }
+        active_scene_light_override_q8 = 256;
+        rasterfall_host_activity(&instance,host_time,host_cpu_quad,&host_context);
         active_scene_light_override_q8 = previous_scene_light;
         active_world_light_v2 = 0;
     }

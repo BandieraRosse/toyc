@@ -3,6 +3,35 @@
 #include <string.h>
 #include "toy_platform.h"
 
+void toy_platform_hardware_query(struct toy_platform_hardware *out)
+{
+    DWORD bytes = 0;
+    SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *info;
+    ULONGLONG memory_kib = 0;
+    MEMORYSTATUSEX memory;
+    unsigned char *at, *end;
+    memset(out, 0, sizeof(*out));
+    GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &bytes);
+    info = bytes ? HeapAlloc(GetProcessHeap(), 0, bytes) : NULL;
+    if (info && GetLogicalProcessorInformationEx(RelationProcessorCore, info, &bytes)) {
+        at = (unsigned char *)info; end = at + bytes;
+        while (at + sizeof(DWORD) * 2 <= end) {
+            SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *entry =
+                (SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX *)at;
+            if (entry->Size < sizeof(DWORD) * 2 || entry->Size > (DWORD)(end-at)) break;
+            if (entry->Relationship == RelationProcessorCore) out->physical_cores++;
+            at += entry->Size;
+        }
+    }
+    if (info) HeapFree(GetProcessHeap(), 0, info);
+    if (GetPhysicallyInstalledSystemMemory(&memory_kib))
+        out->memory_mib = memory_kib / 1024;
+    else {
+        memset(&memory, 0, sizeof(memory)); memory.dwLength = sizeof(memory);
+        if (GlobalMemoryStatusEx(&memory)) out->memory_mib = memory.ullTotalPhys / (1024 * 1024);
+    }
+}
+
 static int scan_model_directory(const char *directory, const char *prefix,
                                 char paths[][TOY_PLATFORM_PATH_MAX],
                                 int max, int count)

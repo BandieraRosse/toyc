@@ -235,6 +235,14 @@ static void scene_layer_box(struct scene_layer_mesh *mesh,int x0,int x1,int y0,i
         scene_layer_quad(mesh,v,color,alpha,0);
     }
 }
+static int scene_host_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct rf_gpu_graphics_vertex v[4]={0};
+    for (int k=0;k<4;++k)
+        for (int axis=0;axis<3;++axis) v[k].position[axis]=p[k][axis];
+    return scene_layer_quad(context,v,color,255,0);
+}
+
 static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct rf_gpu_scene_layers_input *input,const struct camera *camera,int width,int height)
 {
@@ -242,6 +250,14 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect};
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
     mesh->layer=RF_GPU_SCENE_SKY;rasterfall_sky_layout(&canvas,camera);
+    mesh->layer=RF_GPU_SCENE_WORLD;
+    for (unsigned i=0;input->props && i<input->props->count;++i) {
+        const struct toy_map_prop *p=&input->props->items[i].prop;
+        struct rasterfall_prop_instance instance={p->asset_id,p->x,p->y-900,p->z,
+            p->yaw_degrees,p->scale_milli,p->length};
+        if (rasterfall_host_activity(&instance,input->host_time_ms,scene_host_quad,mesh)<0)
+            return -1;
+    }
     mesh->layer=RF_GPU_SCENE_TRANSPARENT;
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];

@@ -37,3 +37,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run 
 
 逻辑回归检查大厅四处门洞、桌周环路、两间设施房和测试场可通行，桌子与外墙确实阻挡，以及基地没有可交互终端。
 修改 placement 后重新导出布局；逐件资产可以使用 `--model-static-views` 做四视图检查。
+
+Host 双柜另用 `tools/host_rack_round.py` 生成，资源映射和资产合同见 [Host Rack V2](../reference/host-rack-v2.md)。
+Outpost environment capture 额外输出 `host-racks.bmp` 与 `host-side.bmp`；逻辑回归也覆盖柜前、柜间通道与机架阻挡。

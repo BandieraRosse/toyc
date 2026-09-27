@@ -1728,7 +1728,8 @@ static int run_logic_test(void)
             {4608,0},{6200,0},{8500,0},
             {0,7168},{-1536,7168},{-2500,6000},
             {1536,7168},{2800,6000},{0,9300},
-            {0,-7000},{0,-9500},{0,-11776}
+            {0,-7000},{0,-9500},{0,-11776},
+            {2700,2700},{3650,2550},{3175,3300}
         };
         for (i=0; i<(int)(sizeof(route)/sizeof(route[0])); i++)
             if (toy_game_position_blocked(&session.game_state,
@@ -1737,6 +1738,8 @@ static int run_logic_test(void)
             !toy_game_position_blocked(&session.game_state,4608,2816,180) ||
             !toy_game_position_blocked(&session.game_state,-10240,0,180) ||
             !toy_game_position_blocked(&session.game_state,4700,-7936,180) ||
+            !toy_game_position_blocked(&session.game_state,2700,3400,180) ||
+            !toy_game_position_blocked(&session.game_state,3650,3400,180) ||
             session.item_count != 0) return 279;
         for (i = 0; i < session.item_count; i++) {
             has_station |= session.items[i].kind == TOY_MAP_PICKUP_STATION_TERMINAL;

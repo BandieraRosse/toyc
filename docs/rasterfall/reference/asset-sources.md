@@ -9,6 +9,10 @@
 
 ## 角色模型
 
+Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rack.py` 程序生成，
+无外部模型或纹理；字形由生成器内的 5×7 点阵生成几何。公开运行资源位于 `assets/models/props/host/`，
+重建方式与私有源边界见 [Host Rack V2](host-rack-v2.md)。
+
 设施家具 `rf_facility_*` 七件由项目内 `generate_rasterfall_props.py` 原创程序生成，无第三方几何或纹理。
 公开 RMESH 位于 `assets/models/props/industrial/`，重建与源文件边界见[设施家具指南](../guides/facility-assets.md)。
 

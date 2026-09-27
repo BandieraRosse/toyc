@@ -939,7 +939,7 @@ static int capture_map_world(const char *output_dir,
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
     int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
     int hall = environment && active_session->world_id == RASTERFALL_WORLD_OUTPOST;
-    for (i = 0; i < (hall ? 10 : whu ? 4 : environment ? 21 : 17); i++) {
+    for (i = 0; i < (hall ? 12 : whu ? 4 : environment ? 21 : 17); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -1019,7 +1019,9 @@ static int capture_map_world(const char *output_dir,
                 {"operations",6600,0,RASTERFALL_STANDING_CAMERA_Y,1024,0,0,1024},
                 {"power",-3000,5400,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
                 {"control",3000,5400,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
-                {"test-yard",0,-7000,RASTERFALL_STANDING_CAMERA_Y,0,-1024,0,1024}
+                {"test-yard",0,-7000,RASTERFALL_STANDING_CAMERA_Y,0,-1024,0,1024},
+                {"host-racks",1600,1800,RASTERFALL_STANDING_CAMERA_Y,650,791,-140,1014},
+                {"host-side",2200,3000,-420,800,639,0,1024}
             };
             memset(&camera,0,sizeof(camera));
             camera.x=views[i].x; camera.z=views[i].z; camera.y=views[i].y;
@@ -1166,7 +1168,9 @@ static int capture_map_world(const char *output_dir,
         }
         frame_start = render_monotonic_us();
         int local_scene = environment ? rasterfall_render_begin_dynamic_lighting() : 256;
+        rasterfall_host_set_capture_time(0);
         rasterfall_render_scene(&renderer, &camera);
+        rasterfall_host_set_capture_time(-1);
         if (environment && !whu && !hall && !c2_fixture) {
             struct rasterfall_scene_stats audit_stats;
             rasterfall_render_scene_stats(&audit_stats);

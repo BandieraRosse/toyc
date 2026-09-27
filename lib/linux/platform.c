@@ -1,6 +1,58 @@
 #include "tlibc_everything.h"
 #include "toy_platform.h"
 
+void toy_platform_hardware_query(struct toy_platform_hardware *out)
+{
+    char line[256], buffer[4096], ch;
+    int fd, used = 0, package = -1, core = -1, count = 0, i;
+    int cursor = 0, available = 0, ended = 0;
+    int packages[1024], cores[1024];
+    unsigned long long kib = 0;
+    memset(out, 0, sizeof(*out));
+    fd = __openat(AT_FDCWD, "/proc/cpuinfo", O_RDONLY, 0);
+    if (fd >= 0) {
+        while (!ended) {
+            if (cursor >= available) {
+                available = (int)__read(fd, buffer, sizeof(buffer)); cursor = 0;
+                if (available <= 0) ended = 1;
+            }
+            ch = ended ? '\n' : buffer[cursor++];
+            if (ch != '\n') {
+                if (used < 255) line[used++] = ch;
+                continue;
+            }
+            line[used] = 0;
+            if (!used || ended) {
+                if (package >= 0 && core >= 0) {
+                    for (i = 0; i < count; i++)
+                        if (packages[i] == package && cores[i] == core) break;
+                    if (i == count && count < 1024) {
+                        packages[count] = package; cores[count++] = core;
+                    }
+                }
+                package = core = -1;
+            } else if (!strncmp(line, "physical id", 11)) {
+                char *p = strchr(line, ':'); if (p) package = atoi(p+1);
+            } else if (!strncmp(line, "core id", 7)) {
+                char *p = strchr(line, ':'); if (p) core = atoi(p+1);
+            }
+            used = 0;
+        }
+        __close(fd);
+    }
+    out->physical_cores = count;
+    fd = __openat(AT_FDCWD, "/proc/meminfo", O_RDONLY, 0);
+    if (fd >= 0) {
+        int n = (int)__read(fd, line, sizeof(line)-1);
+        __close(fd);
+        if (n > 0) {
+            line[n] = 0;
+            if (sscanf(line, "MemTotal: %llu kB", &kib) == 1)
+                out->memory_mib = kib / 1024;
+        }
+    }
+}
+
 static int scan_model_directory(const char *directory, const char *prefix,
                                 char paths[][TOY_PLATFORM_PATH_MAX],
                                 int max, int count)

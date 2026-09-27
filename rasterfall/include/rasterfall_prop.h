@@ -51,7 +51,16 @@ enum rasterfall_prop_asset_id {
     RASTERFALL_PROP_ASSET_FACILITY_LOW_CABINET = 41,
     RASTERFALL_PROP_ASSET_FACILITY_BENCH = 42,
     RASTERFALL_PROP_ASSET_FACILITY_TERMINAL = 43,
-    RASTERFALL_PROP_ASSET_COUNT = 43
+    RASTERFALL_PROP_ASSET_HOST_RACK_FRAME = 44,
+    RASTERFALL_PROP_ASSET_HOST_BLANK_PANEL = 45,
+    RASTERFALL_PROP_ASSET_HOST_CPU_MODULE = 46,
+    RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE = 47,
+    RASTERFALL_PROP_ASSET_HOST_RACK_FAN_PANEL = 48,
+    RASTERFALL_PROP_ASSET_HOST_POWER_BUNDLE = 49,
+    RASTERFALL_PROP_ASSET_HOST_DATA_BUNDLE = 50,
+    RASTERFALL_PROP_ASSET_HOST_CPU_HEADER = 51,
+    RASTERFALL_PROP_ASSET_HOST_MEMORY_HEADER = 52,
+    RASTERFALL_PROP_ASSET_COUNT = 52
 };
 
 struct rasterfall_prop_dimensions {
@@ -80,7 +89,7 @@ struct rasterfall_prop_instance {
     int z;
     int yaw_degrees;
     int scale_milli;
-    int length; /* RFU for procedural boundary_wall; ignored by meshes */
+    int length; /* boundary_wall RFU; Host modules use 1..6 as visual bay */
 };
 
 const struct rasterfall_prop_asset_profile *
@@ -93,6 +102,17 @@ int rasterfall_prop_collision_dimensions(
     const struct rasterfall_prop_asset_profile *profile,
     int yaw_degrees, int instance_scale_milli,
     struct rasterfall_prop_dimensions *out);
+/* Host modules use length=1..6 as the visual bay index; zero previews the asset. */
+#define RASTERFALL_HOST_SLOT_COUNT 6
+int rasterfall_host_bay_asset(int asset, int bay, int active_slots);
+/* Explicit visual override, -1 restores the six-slot design preview. */
+void rasterfall_host_set_active_slots(int cpu_slots, int memory_slots);
+/* Diagnostic fixed time; -1 restores the caller's live presentation time. */
+void rasterfall_host_set_capture_time(int time_ms);
+typedef int (*rasterfall_host_quad_fn)(void *, const int points[4][3], unsigned color);
+int rasterfall_host_activity(const struct rasterfall_prop_instance *instance,
+    unsigned time_ms, rasterfall_host_quad_fn emit, void *context);
+int rasterfall_prop_presented_asset(int asset, int bay);
 int rasterfall_prop_asset_logic_test(void);
 
 #endif

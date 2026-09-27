@@ -8,6 +8,8 @@
 struct rasterfall_effects;
 /* Consumed synchronously into immutable geometry before GPU target writes. */
 struct rf_gpu_scene_layers_input {
+    const struct rf_gpu_scene_world_prop_frame_v1 *props;
+    unsigned host_time_ms;
     const struct toy_game *source_game;
     const struct rasterfall_effects *source_effects;
     const struct rf_gpu_scene_world_render_frame_v1 *map;

@@ -276,6 +276,7 @@ int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
         next->items[i].scene_light_q8=lighting ? rasterfall_world_light_v2_q8(
             rasterfall_world_light_at(lighting,prop->x,-900+prop->y,prop->z)) : 256;
         next->items[i].prop=*prop;
+        next->items[i].prop.asset_id=rasterfall_prop_presented_asset(prop->asset_id,prop->length);
     }
     *props=*next;tlibc_free(next);
     return 0;

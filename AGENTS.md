@@ -42,6 +42,8 @@ Rasterfall 的主要闭环是：
 
 Windows GUI 进程、GPU 验收、package 和故障注入的具体等待及日志规则见 `docs/rasterfall/guides/windows-native.md`，不要仅凭 PowerShell 表面返回或单张截图下结论。
 
+- Codex 运行仓库内可信 `.ps1` 时，使用 `powershell -NoProfile -ExecutionPolicy Bypass -File <脚本路径> [参数]`，避免本机 `Restricted` 策略拦截；该选项仅作用于本次进程。若仍提示访问拒绝，检查文件或沙箱权限。
+
 ## Windows / PowerShell 文本编辑
 
 - 本仓库主要在原生 Windows / PowerShell 下开发；源码、Markdown、JSON、TOML 和其他文本文件统一按 UTF-8 处理，不依赖 Windows PowerShell 5.1 的默认编码。
@@ -61,4 +63,3 @@ Windows GUI 进程、GPU 验收、package 和故障注入的具体等待及日�
 - 稳定契约、操作指南、当前计划和历史现场必须分开；归档不能作为当前设计依据。完整规则见 `docs/repository/documentation.md`。
 - 易变参数以程序 `--help` 和脚本实际输出为准。文档与代码不一致时，核对构建入口和实际行为，并在同一改动中修正文档。
 - 提交信息优先使用简洁中文标题；多段正文使用多个 `git commit -m` 参数或真正换行。
-

@@ -42,7 +42,6 @@ object id=null_desk kind=facility_desk x=3149 y=0 z=-896 yaw=90 scale=1000 attr.
 object id=null_chair kind=facility_chair x=3610 y=0 z=-794 yaw=270 scale=1000 attr.collision=component
 object id=null_monitor_0 kind=facility_monitor x=3062 y=384 z=-1091 yaw=90 scale=1000 attr.collision=none
 object id=null_monitor_1 kind=facility_monitor x=3062 y=384 z=-701 yaw=90 scale=1000 attr.collision=none
-object id=null_storage kind=facility_low_cabinet x=4311 y=0 z=2800 yaw=270 scale=1000 attr.collision=component
 object id=work_desk_0 kind=facility_desk x=-3866 y=0 z=-2560 yaw=90 scale=1000 attr.collision=component
 object id=work_chair_0 kind=facility_chair x=-3354 y=0 z=-2622 yaw=270 scale=1000 attr.collision=component
 object id=work_monitor_0 kind=facility_monitor x=-3953 y=384 z=-2560 yaw=90 scale=1000 attr.collision=none
@@ -54,17 +53,38 @@ object id=entry_bench kind=facility_bench x=2970 y=0 z=-3763 yaw=0 scale=1000 at
 object id=main_terminal kind=facility_terminal x=-1946 y=0 z=-3712 yaw=0 scale=1000 attr.collision=component
 object id=service_tray_left kind=arch_cable_tray x=-2560 y=1485 z=3953 yaw=180 scale=1000 attr.collision=none
 object id=service_panel_left kind=arch_service_panel x=-2560 y=845 z=3937 yaw=180 scale=1000 attr.collision=none
-object id=service_tray_right kind=arch_cable_tray x=2560 y=1485 z=3953 yaw=180 scale=1000 attr.collision=none
-object id=service_panel_right kind=arch_service_panel x=2560 y=845 z=3937 yaw=180 scale=1000 attr.collision=none
+object id=service_tray_right kind=arch_cable_tray x=3200 y=1485 z=3953 yaw=180 scale=1000 attr.collision=none
 object id=control_left kind=control_cabinet x=-2176 y=0 z=3712 yaw=180 scale=1000 attr.collision=component
-object id=control_right kind=control_cabinet x=2893 y=0 z=3712 yaw=180 scale=1000 attr.collision=component
 object id=maintenance_hatch kind=arch_floor_hatch x=-3174 y=0 z=3405 yaw=0 scale=1000 attr.collision=none
 object id=service_pipe kind=arch_pipe_straight x=-3098 y=282 z=3840 yaw=0 scale=1000 attr.collision=none
 object id=light_west kind=lamp_post x=-4301 y=0 z=2714 yaw=90 scale=1000 attr.collision=component
-object id=light_east kind=lamp_post x=4301 y=0 z=2714 yaw=270 scale=1000 attr.collision=component
 render id=null_mark kind=sign min_x=2500 max_x=3350 min_z=-4030 max_z=-4000 height=100 color=779BAA attr.height2=410 attr.style=1 attr.text=RF attr.facing=+z
 render id=null_status kind=sign min_x=3450 max_x=4150 min_z=-4030 max_z=-4000 height=100 color=81B4B5 attr.height2=410 attr.style=1 attr.text=ON attr.facing=+z
 render id=north_identity kind=sign min_x=-1200 max_x=1200 min_z=3955 max_z=3985 height=940 color=596F7C attr.height2=1220 attr.style=1 attr.text=INFRA attr.facing=-z
+
+# Host Rack V2: six bottom-filled bays; hardware scale policy is deferred.
+object id=host_cpu_frame kind=host_rack_frame x=2700 y=0 z=3400 yaw=198 scale=1000 attr.collision=component
+object id=host_cpu_bay_1 kind=host_cpu_module x=2700 y=190 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=1
+object id=host_cpu_bay_2 kind=host_cpu_module x=2700 y=330 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=2
+object id=host_cpu_bay_3 kind=host_cpu_module x=2700 y=470 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=3
+object id=host_cpu_bay_4 kind=host_cpu_module x=2700 y=610 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=4
+object id=host_cpu_bay_5 kind=host_cpu_module x=2700 y=750 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=5
+object id=host_cpu_bay_6 kind=host_cpu_module x=2700 y=890 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=6
+object id=host_cpu_fan kind=host_rack_fan_panel x=2700 y=36 z=3400 yaw=198 scale=1000 attr.collision=none
+object id=host_cpu_header kind=host_cpu_header x=2700 y=1026 z=3400 yaw=198 scale=1000 attr.collision=none
+object id=host_cpu_power kind=host_power_bundle x=2825 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
+object id=host_cpu_data kind=host_data_bundle x=2885 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
+object id=host_memory_frame kind=host_rack_frame x=3650 y=0 z=3400 yaw=198 scale=1000 attr.collision=component
+object id=host_memory_bay_1 kind=host_memory_module x=3650 y=190 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=1
+object id=host_memory_bay_2 kind=host_memory_module x=3650 y=330 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=2
+object id=host_memory_bay_3 kind=host_memory_module x=3650 y=470 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=3
+object id=host_memory_bay_4 kind=host_memory_module x=3650 y=610 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=4
+object id=host_memory_bay_5 kind=host_memory_module x=3650 y=750 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=5
+object id=host_memory_bay_6 kind=host_memory_module x=3650 y=890 z=3400 yaw=198 scale=1000 attr.collision=none attr.length=6
+object id=host_memory_fan kind=host_rack_fan_panel x=3650 y=36 z=3400 yaw=198 scale=1000 attr.collision=none
+object id=host_memory_header kind=host_memory_header x=3650 y=1026 z=3400 yaw=198 scale=1000 attr.collision=none
+object id=host_memory_power kind=host_power_bundle x=3775 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
+object id=host_memory_data kind=host_data_bundle x=3835 y=1060 z=3830 yaw=198 scale=1000 attr.collision=none
 
 # Outpost V1 wings and outdoor testing yard. All structural openings are component apertures.
 surface id=research_floor kind=ground min_x=-10240 max_x=-4608 min_z=-3072 max_z=3072 height=0 material=606F78 attr.collision_id=research_floor_col

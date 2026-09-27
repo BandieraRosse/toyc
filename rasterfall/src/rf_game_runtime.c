@@ -3706,7 +3706,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
-          (options.environment_capture_dir || options.normal_frame_audit_output)) &&
+          (options.environment_capture_dir || options.normal_frame_audit_output ||
+           (options.gpu_normal_view && !strncmp(options.gpu_normal_view,"host-",5)))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -3759,6 +3760,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.x = 0; camera.z = -3400; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "spawn")) {
             camera.x = 0; camera.z = -4850; camera.cy = 1024;
+        } else if (!strcmp(options.gpu_normal_view, "host-racks")) {
+            camera.x=1600;camera.z=1800;camera.sy=650;camera.cy=791;
+            camera.pitch_sy=-140;camera.pitch_cy=1014;
+        } else if (!strcmp(options.gpu_normal_view, "host-side")) {
+            camera.x=2200;camera.z=3000;camera.y=-420;camera.sy=800;camera.cy=639;
         } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
             camera.x = -10500; camera.z = 2000;
             camera.sy = -819; camera.cy = 614;
@@ -5272,6 +5278,9 @@ startup_again:
                             toy_input_down(&game_runtime.input_frame,KEY_TAB));
                     if (options.gpu_scene_independent_preview) {
                         layers.source_game=&game;layers.source_effects=&effects;
+                        layers.props=&prop_render;
+                        layers.host_time_ms=options.gpu_frame_capture ?
+                            (unsigned)rendered_frames*16u : (unsigned)(rf_core_clock_now_us()/1000);
                         layers.map=&world_render;layers.fps=display_fps;layers.paused=paused;
                         layers.pause_selected=pause_menu.selected;layers.viewmodel_light=256;
                         layers.show_viewmodel=!game_runtime.rts_active;
