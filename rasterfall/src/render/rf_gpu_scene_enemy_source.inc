@@ -129,7 +129,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         world_to_view(camera,&center,&view);
         if (view.z>(family!=RASTERFALL_ENEMY_VISUAL_LEGACY ?
                     56000:ENEMY_RENDER_DISTANCE)) { frame.culled++;continue; }
-        if (frame.count>=TOY_GAME_MAX_ENEMIES) return -1;
+        if (frame.count>=RF_GPU_SCENE_ENEMY_CAPACITY) return -1;
         item=&frame.items[frame.count];
         memset(item,0,sizeof(*item));
         presentation=*e;
@@ -259,6 +259,55 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             item->squash=scale;
         }
         frame.count++;
+    }
+    if (outpost_showcase_visible &&
+        active_session->world_id==RASTERFALL_WORLD_OUTPOST) {
+        for (int i=0;i<RASTERFALL_OUTPOST_SHOWCASE_COUNT;++i) {
+            const struct outpost_showcase_entry *entry=&outpost_showcase[i];
+            struct rf_gpu_scene_enemy_item_v1 *item;
+            if (frame.count>=RF_GPU_SCENE_ENEMY_CAPACITY) return -1;
+            item=&frame.items[frame.count++];
+            memset(item,0,sizeof(*item));
+            item->source_slot=TOY_GAME_MAX_ENEMIES+(unsigned)i;
+            item->type=entry->type;
+            item->x=entry->x;item->z=entry->z;item->dir_z=1024;
+            item->scene_light_q8=rasterfall_world_light_v2_q8(
+                rasterfall_world_light_at(active_world_lighting,entry->x,-900,entry->z));
+            item->double_sided=1;item->alpha=255;
+            item->squash=1000;
+            for (int j=0;j<6;++j)
+                if (enemy_visual_recipes[j].family==entry->family &&
+                    enemy_visual_recipes[j].type==entry->type) {
+                    item->infected_recipe=j+1;break;
+                }
+            item->infected_swing=outpost_showcase_motion[i].swing;
+        }
+    }
+    if (outpost_walk_visible &&
+        active_session->world_id==RASTERFALL_WORLD_OUTPOST) {
+        for (int i=0;i<RASTERFALL_OUTPOST_WALK_COUNT;++i) {
+            const struct outpost_walk_entry *entry=&outpost_walk[i];
+            struct rf_gpu_scene_enemy_item_v1 *item;
+            if (frame.count>=RF_GPU_SCENE_ENEMY_CAPACITY) return -1;
+            item=&frame.items[frame.count++];
+            memset(item,0,sizeof(*item));
+            item->source_slot=TOY_GAME_MAX_ENEMIES+
+                RASTERFALL_OUTPOST_SHOWCASE_COUNT+(unsigned)i;
+            item->type=entry->type;
+            item->x=entry->x;item->z=entry->z;
+            item->dir_z=entry->direction*1024;
+            item->scene_light_q8=rasterfall_world_light_v2_q8(
+                rasterfall_world_light_at(active_world_lighting,entry->x,-900,entry->z));
+            item->double_sided=1;item->alpha=255;
+            item->squash=1000;
+            for (int j=0;j<6;++j)
+                if (enemy_visual_recipes[j].family==
+                        RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED &&
+                    enemy_visual_recipes[j].type==entry->type) {
+                    item->infected_recipe=j+1;break;
+                }
+            item->infected_swing=entry->motion.swing;
+        }
     }
     scene_enemy_capture=frame;
     memcpy(scene_independent_enemy_history,next,sizeof(next));

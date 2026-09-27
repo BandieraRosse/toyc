@@ -6327,6 +6327,7 @@ static int scene_legacy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
 }
 
 #include "render/rasterfall_enemy_visual.inc"
+#include "render/rf_outpost_showcase.inc"
 
 /* Campaign MODEL display 7/8, 10/11 and 13/14 freezes the same idle
  * imported enemy pose as render_infected_display_model(), then emits flat
@@ -6544,7 +6545,7 @@ static int render_enemies(struct toy_renderer *renderer,
             dynamic_scene_light(e->x, e->ground_y, e->z) : saved_scene;
         int infected_pixels = visual_family != RASTERFALL_ENEMY_VISUAL_LEGACY ?
             render_infected_enemy(renderer, camera, draw_enemy, e, i, scale,
-                                  enemy_feedback_color(i), visual_family) : -1;
+                                  enemy_feedback_color(i), visual_family, NULL) : -1;
         if (infected_pixels >= 0)
             pixels += infected_pixels;
         else if (enemy_rig_profile(e->type))
@@ -6575,6 +6576,14 @@ static int render_enemies(struct toy_renderer *renderer,
         active_enemy_transform = 0;
         active_enemy_roll_sin = 0;
         active_enemy_roll_cos = 1024;
+    }
+    if (outpost_showcase_visible && active_session &&
+        active_session->world_id==RASTERFALL_WORLD_OUTPOST) {
+        pixels+=render_outpost_showcase(renderer,camera);
+    }
+    if (outpost_walk_visible && active_session &&
+        active_session->world_id==RASTERFALL_WORLD_OUTPOST) {
+        pixels+=render_outpost_walk(renderer,camera);
     }
     enemy_rig_slot=-1;
     return pixels;

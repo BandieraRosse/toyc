@@ -1125,6 +1125,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                              $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
                               $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \
@@ -1764,6 +1765,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_world_benchmark.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
+                                   $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \

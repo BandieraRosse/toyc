@@ -205,7 +205,8 @@ static int enemy_visual_load(int index)
 static int render_infected_enemy(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_enemy *enemy,
     const struct toy_game_enemy *source, int slot, int death_scale,
-    uint32_t feedback, int family)
+    uint32_t feedback, int family,
+    const struct rasterfall_infected_sample *presentation_sample)
 {
     int index, swing = 0, scale, pixels;
     struct rasterfall_model_instance *instance;
@@ -232,10 +233,12 @@ static int render_infected_enemy(struct toy_renderer *renderer,
         enemy_visual_motion[slot] = sample.next;
         swing = sample.swing;
     }
-    if (enemy_visual_capture_pose >= 0) {
-        swing = enemy_visual_capture_pose == 2 ? 100 * 48 / 320 - 24 : 0;
+    if (presentation_sample) swing=presentation_sample->swing;
+    else if (enemy_visual_capture_pose >= 0) {
+        swing = enemy_visual_capture_pose == 2 ?
+            (100 * 48 / 320 - 24) : 0;
     }
-    if (enemy_visual_capture_pose != 0)
+    if (presentation_sample || enemy_visual_capture_pose != 0)
         enemy_visual_apply_pose(pose,enemy->type,swing);
     if (rasterfall_model_instance_update_bones(instance) < 0) return -1;
     if (scene_enemy_capture_active && slot>=0 && !active_enemy_dissolve) {
@@ -467,5 +470,5 @@ static int render_infected_display_model(struct toy_renderer *renderer,
                 type == TOY_GAME_ENEMY_PURSUIT_HEAVY ? 1350 : 1000, color);
     }
     return render_infected_enemy(renderer, camera, &model, &model, -1,
-                                 1000, 0, family);
+                                 1000, 0, family, NULL);
 }

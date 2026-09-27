@@ -6,11 +6,27 @@
 
 ## 单层基地合同
 
-地图边界约 42 × 45 m，开放屋顶，所有楼层均为高度 0 的相邻 ground surface。大厅原点居中，北为正 Z；西翼 Research、东翼 Operations、北翼 Infrastructure、南侧测试场都从大厅直接到达。南门外前坪与测试场接壤；北门外原浅平台已并入基础设施地面。
+地图边界约 42 × 93 m，开放屋顶，所有楼层均为高度 0 的相邻 ground surface。大厅原点居中，北为正 Z；西翼 Research、东翼 Operations、北翼 Infrastructure、南侧测试场都从大厅直接到达。南门外前坪与测试场接壤；测试场南门经东西向通路到达露天角色实验场，再由南侧通路到达步行实验区；北门外原浅平台已并入基础设施地面。
 
 西、东侧门使用 `arch_doorway` 组件的两肩与架空过梁碰撞；其余翼楼外墙和设施分隔使用 `boundary_wall` 组件。北侧服务走廊通过两扇横向门进入 Power 与 Control。各房间外墙、地面和对象均为地图事实；家具不声明玩法终端。
 
 Research 只放少量维护件并标记未来空间；Operations 放工作台、箱体与储物；Infrastructure 放动力机组、控制柜、通风、线槽与检修件。测试场使用开放中轴、边界墙、门架、路障和动力机组，不声明可射击目标的玩法逻辑。
+
+标准实验区为 20 × 18 m 矩形：X ±5120、Z -24064 至 -14848 RFU，四边用 64 RFU 宽的地面标线界定，无墙、围栏或门。北侧 Z -14848 至 -11776 留出 6 m 宽的东西向通路，通路延伸到地图东西边缘，供后续相邻实验区接入。地面标线与内部地面绘制范围互不重叠。一个区域使用一个开关；当前东北侧 `lab_showcase_button` 位于 (4000, -15400)，靠近后按 E 显示或隐藏全部测试角色，初始及离开前哨站后为隐藏。按钮不创建玩法 actor，不影响联机权威状态。
+
+当前包含 Block 与 Humanoid 两个感染体家族，每族 Common、Fast、Heavy 三种，共六列；每列北排 idle、南排 move，共 12 台。西三列为 Block，东三列为 Humanoid。移动台原地展示，以各类型实际速度范围的中值、16 ms 步长产生虚拟位移，调用实机 `rasterfall_infected_sample_motion`；静止台使用同一采样器的零位移输入。两种渲染器消费同一份已采样结果，并复用实机六份不可变 RFCHAR 资源及 `enemy_visual_apply_pose`，不维护实验场专用步态公式。展示属于外观和动画检视，不模拟追击、碰撞或攻击行为。
+
+原实验区南侧通过 6 m 通路连接第二个同规格的 20 × 18 m 无围栏实验区（X ±5120、Z -36352 至 -27136）。这里的三条纵向直线分别展示 Humanoid Common、Fast、Heavy；角色在 Z -28700 至 -34700 间往返，端点折返并转身。每种类型按实机速度范围中值和 16 ms 步长推进世界位置，同时把真实位移送入共享步态采样器。第二个区域的东北侧有独立按钮，初始及离开前哨站后隐藏；两个区域各自开关，不创建玩法 actor。地面、64 RFU 边线、标牌和按钮沿用第一个区域的设置。
+
+GPU 实机复现可运行 `powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --map rasterfall/assets/maps/outpost.map --renderer gpu-scene --gpu-normal-scene character-lab 0 --frames 5 --frame-audit`；此显式诊断镜头预先显示 12 台角色，正常进入地图仍默认隐藏。
+
+第二个区域使用同一命令并将 `character-lab` 改为 `walk-lab`；该镜头预先显示三名往返行走者。
+
+### 后续动漫角色的 GPU 接入门槛
+
+动漫角色先按 [角色资产合同](character-assets.md)导入、验证骨架与材质，并提供可循环的独立 authored clip；展示时间与玩法动作时钟分离。当前感染体只有静态 idle 和程序步行，不构成动漫动作集。旧 PMX/VMD 正常帧开关处于关闭状态，不能仅打开旧宏复用为独立 Scene 角色。
+
+Scene 当前的感染体动态源由 CPU 计算姿态和蒙皮几何，再按帧更新 GPU 资源，且单体提取上限为 2048 三角形。高面数动漫角色若直接走此路径，CPU 蒙皮、三角形提取及每帧上传会随展示实例数增长，也可能触及上限。正式接入应走角色专用来源，复用不可变 mesh/材质/纹理，按角色实例上传骨骼 palette 并在 GPU 蒙皮；展示站增加独立的资源身份、容量上限与退休规则。当前 RFCHAR 合同每顶点最多两个非零骨骼权重，不支持 morph target；需要更多权重或面部表情时先扩展资产、导入和 GPU skinning 合同。透明头发和衣物需明确有序透明、深度写入和双面材质策略；描边、toon 光照与阴影属于可选高级画质，不能借用 CPU `--edge-pass` 声称 Scene 已支持。先用一名角色的 idle/walk 在 CPU 与 Scene 同输入镜头核对遮挡、层序、姿态、附件和帧成本，再扩大角色或动作数量。正式资源还需核对来源和发布许可。
 
 各区的 `render kind=sign` 是地图绘制的单层标识牌，不是玻璃或独立模型。牌面沿 X 轴展开，位于 Z bounds 中心；`height` 和 `attr.height2` 是世界 Y 轴上的牌底与牌顶，地面基准为 -900 RFU。字色直接嵌入牌面。`attr.facing` 指定从 `+z` 或 `-z` 一侧看文字为正向；北墙朝大厅或房间的一侧使用 `-z`，南墙朝内的一侧使用 `+z`。`attr.style=1` 表示无支杆的墙面牌；Power、Control、Research、Operations 和入口标识均使用此样式，尺寸控制为墙面导视，不覆盖整面墙。
 

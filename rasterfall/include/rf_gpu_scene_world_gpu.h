@@ -60,7 +60,7 @@ struct rf_gpu_scene_world_gpu_probe {
     int enemy_vertex_color;
     struct rf_gpu_graphics_batch_item *batch;
     uint32_t batch_capacity;
-    struct rf_gpu_graphics_resource *enemy[TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS];
+    struct rf_gpu_graphics_resource *enemy[RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS];
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
     struct rf_gpu_scene_actor_gpu *actor[TOY_GAME_MAX_ACTORS];

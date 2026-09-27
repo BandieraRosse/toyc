@@ -1045,7 +1045,7 @@ static int scene_enemy_prepare_outside(const struct camera *camera,
             enemy->squash>2000 || enemy->shadow_rx<0 || enemy->shadow_rx>1000 ||
             enemy->shadow_rz<0 || enemy->shadow_rz>1000 ||
             enemy->alpha<0 || enemy->alpha>255 ||
-            enemy->source_slot>=TOY_GAME_MAX_ENEMIES ||
+            enemy->source_slot>=RF_GPU_SCENE_ENEMY_CAPACITY ||
             enemy->scene_light_q8<0 || enemy->scene_light_q8>384 ||
             enemy->dir_x<-1024 || enemy->dir_x>1024 ||
             enemy->dir_z<-1024 || enemy->dir_z>1024 ||
@@ -1263,7 +1263,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     struct rf_gpu_scene_timing timing;
     int64_t prepare_start=rf_core_clock_now_us();
     if (!probe || !context || !owner || !camera || !flags || !projectiles ||
-        !interactables || !enemies || enemies->count>TOY_GAME_MAX_ENEMIES ||
+        !interactables || !enemies || enemies->count>RF_GPU_SCENE_ENEMY_CAPACITY ||
         enemies->failed || enemies->procedural_count>TOY_GAME_MAX_ACTORS ||
         enemies->frame_id!=flags->frame_id ||
         enemies->world_generation!=owner->world_generation ||
@@ -1541,7 +1541,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     scene_layer_workspace_free(probe->layer_workspace);probe->layer_workspace=NULL;
     free(probe->enemy_workspace);probe->enemy_workspace=NULL;
     free(probe->batch);probe->batch=NULL;probe->batch_capacity=0;
-    for (unsigned i=0;i<TOY_GAME_MAX_ENEMIES+TOY_GAME_MAX_ACTORS;++i)
+    for (unsigned i=0;i<RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])
             rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i]);
     if (probe->flag_pole)

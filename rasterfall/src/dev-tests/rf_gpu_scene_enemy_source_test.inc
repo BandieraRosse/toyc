@@ -1,5 +1,14 @@
 /* Renderer translation-unit regression: independent enemy source is read-only,
  * samples once per frame, and resets presentation history with the world. */
+static int scene_showcase_test_triangle(void *context,
+    const struct rf_gpu_scene_enemy_point *a,
+    const struct rf_gpu_scene_enemy_point *b,
+    const struct rf_gpu_scene_enemy_point *c,unsigned color)
+{
+    (void)a;(void)b;(void)c;(void)color;
+    ++*(int *)context;
+    return 0;
+}
 static int scene_independent_enemy_source_test(void)
 {
     static struct rasterfall_session owner;
@@ -12,6 +21,9 @@ static int scene_independent_enemy_source_test(void)
     struct rasterfall_world_lighting *saved_lighting=active_world_lighting;
     const struct rasterfall_net *saved_net=active_net;
     int saved_family=enemy_visual_family;
+    int saved_showcase=outpost_showcase_visible;
+    int showcase_triangles=0;
+    uint64_t saved_showcase_time=outpost_showcase_time_us;
     struct camera camera={0};
 #define ENEMY_SOURCE_CHECK(x) do { if (!(x)) { \
     __printf("scene independent enemy source failed line %d\n",__LINE__); \
@@ -73,9 +85,55 @@ static int scene_independent_enemy_source_test(void)
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1050000,75));
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&b) &&
         b.items[0].infected_swing==0 && b.world_generation==75);
+    owner.world_id=RASTERFALL_WORLD_OUTPOST;
+    rasterfall_render_set_outpost_showcase(0,1000000);
+    rasterfall_render_set_outpost_showcase(1,1000000);
+    rasterfall_render_set_outpost_showcase(1,1016000);
+    untouched=owner.game_state;
+    rf_gpu_scene_enemy_begin(816,75);
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1016000,75));
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&a) &&
+        a.count==2+RASTERFALL_OUTPOST_SHOWCASE_COUNT &&
+        !memcmp(&untouched,&owner.game_state,sizeof(untouched)));
+    for (int i=0;i<RASTERFALL_OUTPOST_SHOWCASE_COUNT;++i) {
+        const struct rf_gpu_scene_enemy_item_v1 *item=&a.items[2+i];
+        const struct toy_game_enemy_info *info=toy_game_enemy_info(item->type);
+        struct rasterfall_infected_motion previous={0};
+        struct rasterfall_infected_sample first,expected;
+        rasterfall_infected_sample_motion(&previous,1,0,0,1000000,&first);
+        rasterfall_infected_sample_motion(&first.next,1,
+            i%2 ? (info->speed_min+info->speed_max)/2 : 0,0,1016000,&expected);
+        ENEMY_SOURCE_CHECK(item->source_slot==TOY_GAME_MAX_ENEMIES+(unsigned)i &&
+            item->infected_recipe==i/2+1 &&
+            item->type==enemy_visual_recipes[i/2].type &&
+            item->infected_swing==expected.swing &&
+            item->dir_z==1024 && item->x>=-5120 && item->x<=5120 &&
+            item->z>=-24064 && item->z<=-14848);
+        showcase_triangles=0;
+        ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_triangles(item,
+            scene_showcase_test_triangle,&showcase_triangles) && showcase_triangles>0);
+    }
+    /* Neither repeat submission nor extraction advances the display motion. */
+    rasterfall_render_set_outpost_showcase(1,1016000);
+    rf_gpu_scene_enemy_begin(817,75);
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1020000,75));
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&b) && b.count==a.count &&
+        !memcmp(&a.items[2],&b.items[2],
+            RASTERFALL_OUTPOST_SHOWCASE_COUNT*sizeof(a.items[0])));
+    rasterfall_render_set_outpost_showcase(0,1020000);
+    rf_gpu_scene_enemy_begin(818,75);
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1020000,75));
+    ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&b) && b.count==2);
+    rasterfall_render_set_outpost_showcase(1,1030000);
+    ENEMY_SOURCE_CHECK(outpost_showcase_motion[1].swing==0);
+    rasterfall_render_set_outpost_showcase(1,1046000);
+    ENEMY_SOURCE_CHECK(outpost_showcase_motion[1].swing!=0);
+    rasterfall_render_set_outpost_showcase(1,1000000);
+    ENEMY_SOURCE_CHECK(outpost_showcase_motion[1].swing==0);
     active_session=saved_session;active_effects=saved_effects;
     active_world_lighting=saved_lighting;active_net=saved_net;
     enemy_visual_family=saved_family;
+    rasterfall_render_set_outpost_showcase(saved_showcase,saved_showcase_time);
 #undef ENEMY_SOURCE_CHECK
     return 0;
 }

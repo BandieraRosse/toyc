@@ -401,7 +401,7 @@ int rf_gpu_scene_enemy_triangles(const struct rf_gpu_scene_enemy_item_v1 *item,
     struct enemy_rig_final final;
     struct toy_game_enemy e={0};
     struct scene_enemy_transform_context transform={item,emit,context};
-    if (!item || !emit || item->source_slot>=TOY_GAME_MAX_ENEMIES ||
+    if (!item || !emit || item->source_slot>=RF_GPU_SCENE_ENEMY_CAPACITY ||
         item->scene_light_q8<0 || item->scene_light_q8>384 ||
         item->dir_x < -1024 || item->dir_x > 1024 ||
         item->dir_z < -1024 || item->dir_z > 1024 ||

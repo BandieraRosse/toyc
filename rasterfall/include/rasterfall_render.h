@@ -170,6 +170,10 @@ struct rasterfall_rigid_attachment_desc {
 };
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
+#define RASTERFALL_OUTPOST_SHOWCASE_COUNT 12
+#define RASTERFALL_OUTPOST_WALK_COUNT 3
+void rasterfall_render_set_outpost_showcase(int visible,uint64_t time_us);
+void rasterfall_render_set_outpost_walk(int visible,uint64_t time_us);
 void rasterfall_render_set_edge_pass(int enabled);
 /* Presentation/diagnostic switch. Runtime default is Lighting V1 enabled. */
 void rasterfall_render_set_model_lighting(int enabled);

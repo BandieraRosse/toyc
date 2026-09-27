@@ -16,6 +16,8 @@ struct rf_gpu_scene_enemy_point {
     int light_override_plus_one;
 };
 #define RF_GPU_SCENE_ENEMY_MAX_TRIANGLES 2048U
+#define RF_GPU_SCENE_SHOWCASE_COUNT (RASTERFALL_OUTPOST_SHOWCASE_COUNT+RASTERFALL_OUTPOST_WALK_COUNT)
+#define RF_GPU_SCENE_ENEMY_CAPACITY (TOY_GAME_MAX_ENEMIES+RF_GPU_SCENE_SHOWCASE_COUNT)
 
 /* Diagnostic presentation values, scoped to one frame. A source slot is an
  * ordinal, not a persistent enemy identity. No gameplay/cache pointers escape. */
@@ -39,7 +41,7 @@ struct rf_gpu_scene_enemy_frame_v1 {
     unsigned count, deferred, culled, transparent;
     int vertex_lighting;
     struct rasterfall_world_lighting lighting;
-    struct rf_gpu_scene_enemy_item_v1 items[TOY_GAME_MAX_ENEMIES];
+    struct rf_gpu_scene_enemy_item_v1 items[RF_GPU_SCENE_ENEMY_CAPACITY];
     unsigned procedural_count, failed;
     struct rf_gpu_scene_procedural_item_v1 procedural[TOY_GAME_MAX_ACTORS];
     /* Supplemental modular draws have frame-local diagnostic identities.
