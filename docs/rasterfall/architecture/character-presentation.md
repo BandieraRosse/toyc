@@ -123,7 +123,12 @@ asset identity 与 transform；registry/cache 共享模型，碰撞由 map profi
 
 前哨站南侧两个角色实验场使用只读展示状态。各区按钮由单人 runtime 消费 E 输入并独立控制可见性；`render/rf_outpost_showcase.inc` 拥有六类普通感染体的 12 个静止/原地移动台位，以及三个 Humanoid 往返步行实例、展示时钟和运动历史。台位与步行实例都通过实机 `rasterfall_infected_sample_motion` 采样；原地移动台按类型速度中值产生虚拟位移，步行实例按相同速度实际沿线段移动并在端点折返。隐藏、重新显示、时间回退或超过一秒的采样间隔重置历史；同一时间重复提交不推进动画。
 
-CPU 入口显式接收已采样结果，独立 Scene 来源冻结同一结果；两者复用实机资源与 `enemy_visual_apply_pose`，不通过 capture 全局覆盖量切换实验场姿态。GPU 几何提取只读冻结值，不推进展示时钟。台位不占玩法敌人槽，不进入 gameplay snapshot 或网络；Scene 值帧与动态资源池通过统一容量声明预留额外 12 个 source slot，静态断言核对台位数。场地、道路、标线和终端属于 `.map`，台位属于展示模块。当前仍是固定感染体展示布局；后续多区域或不同角色来源需要独立区域身份与展示描述，不能把 gameplay 槽位当作展示身份。
+CPU 入口显式接收已采样结果，独立 Scene 来源冻结同一结果；两者复用实机资源与 `enemy_visual_apply_pose`，不通过 capture 全局覆盖量切换实验场姿态。GPU 几何提取只读冻结值，不推进展示时钟。台位不占玩法敌人槽，不进入 gameplay snapshot 或网络；Scene 值帧与动态资源池通过统一容量声明预留额外 12 个 source slot，静态断言核对台位数。场地、道路、标线和终端属于 `.map`，台位属于展示模块。
+
+东侧两个队友实验区用独立开关和展示描述提供 Block 全动作固定台位、Humanoid 已有动作固定台位与
+两种外观乘三级 AI 的六条往返线。CPU 在角色展示阶段消费临时 actor 值；独立 Scene 把程序角色冻结为
+procedural item，并在只读的 game 副本上用现有 local pose 提取模块角色。真实 `game` 不增加展示 actor，
+展示身份不占 gameplay 槽位。不同区域的可见性和时钟由各自的 presentation owner 管理。
 
 GPU Scene 的模块化队员 pose 求值由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
 `rf_gpu_scene_pose_extract_at`（单 actor fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、

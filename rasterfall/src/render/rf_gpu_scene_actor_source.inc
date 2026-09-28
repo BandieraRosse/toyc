@@ -2,6 +2,24 @@
  * captured values later; this adapter never enters a draw producer. */
 static struct rf_gpu_scene_local_source scene_actor_history;
 static const struct rasterfall_session *scene_actor_session;
+static struct toy_game scene_actor_fixture_game;
+
+static void scene_actor_restore_fixture_history(struct rf_gpu_scene_local_source *next,
+    int actor_id)
+{
+    if (scene_actor_session!=active_session ||
+        scene_actor_history.world_generation!=next->world_generation ||
+        scene_actor_history.frame_id>=scene_enemy_capture.frame_id) return;
+    for (unsigned j=0;j<scene_actor_history.actor_count;++j)
+        if (scene_actor_history.actors[j].actor_id==actor_id) {
+            struct rf_gpu_scene_local_actor_source *entry=
+                &next->actors[next->actor_count-1];
+            uint64_t epoch=entry->epoch;
+            *entry=scene_actor_history.actors[j];
+            entry->epoch=epoch;
+            return;
+        }
+}
 
 static int scene_actor_registered(int actor_id)
 {
@@ -93,7 +111,63 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                     actor->ground_y+actor->airborne_y,tint,1)<0) goto fail;
         }
     }
-    if (rf_gpu_scene_local_freeze_world_lit(&next,&game,camera,width,height,
+    /* The fixtures occupy free slots in a presentation-only copy.  This
+     * preserves the normal local pose extractor without changing game truth. */
+    const struct toy_game *pose_game=&game;
+    if (active_session->world_id==RASTERFALL_WORLD_OUTPOST &&
+        (outpost_actor_actions_visible || outpost_actor_walk_visible)) {
+        memcpy(&scene_actor_fixture_game,&game,sizeof(game));
+        pose_game=&scene_actor_fixture_game;
+        for (int family=0;family<2;++family) {
+            if (!outpost_actor_actions_visible) break;
+            for (int i=0;i<OUTPOST_ACTOR_ACTION_COUNT;++i) {
+                struct toy_game_actor actor;
+                int x=12100+(i%6)*1650;
+                int z=-16300-(i/6)*2100-family*4200;
+                if (family && i>=3) continue;
+                outpost_actor_fixture(&actor,family,1,outpost_actor_actions[i],
+                    x,z,1,outpost_actor_actions_time_us,family*32+i);
+                if (family) {
+                    int slot=TOY_GAME_MAX_ACTORS-1;
+                    while (slot>=0 && scene_actor_fixture_game.actors[slot].active)
+                        --slot;
+                    if (slot<0) goto fail;
+                    scene_actor_fixture_game.actors[slot]=actor;
+                    if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
+                    scene_actor_restore_fixture_history(&next,actor.actor_id);
+                } else {
+                    if (scene_actor_procedural(&actor,x,z,0,1024,0,
+                            RF_COLOR_AI_RIFLE,1)<0) goto fail;
+                    if (actor.animation.id==TOY_GAME_ANIM_DOWNED)
+                        scene_enemy_capture.procedural[
+                            scene_enemy_capture.procedural_count-1].state.downed=1;
+                }
+            }
+        }
+        if (outpost_actor_walk_visible)
+            for (int i=0;i<OUTPOST_ACTOR_WALK_COUNT;++i) {
+                const struct outpost_actor_walker *entry=&outpost_actor_walkers[i];
+                struct toy_game_actor actor;
+                outpost_actor_fixture(&actor,entry->family,entry->level,
+                    TOY_GAME_ANIM_MOVE,entry->x,entry->z,entry->direction,
+                    outpost_actor_walk_step_us,64+i);
+                if (entry->family) {
+                    int slot=TOY_GAME_MAX_ACTORS-1;
+                    while (slot>=0 && scene_actor_fixture_game.actors[slot].active)
+                        --slot;
+                    if (slot<0) goto fail;
+                    scene_actor_fixture_game.actors[slot]=actor;
+                    if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
+                    scene_actor_restore_fixture_history(&next,actor.actor_id);
+                } else {
+                    unsigned tint=entry->level==2 ? RF_COLOR_AI_HEAVY :
+                        entry->level==1 ? RF_COLOR_AI_RIFLE : RF_COLOR_AI_BASIC;
+                    if (scene_actor_procedural(&actor,actor.x,actor.z,
+                            actor.sy,actor.cy,0,tint,1)<0) goto fail;
+                }
+            }
+    }
+    if (rf_gpu_scene_local_freeze_world_lit(&next,pose_game,camera,width,height,
             0,NULL,0,active_world_lighting,&frame)<0) goto fail;
     for (unsigned i=0;i<frame.snapshot.actor_count;++i) {
         struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];

@@ -1,7 +1,7 @@
 # Outpost V1. RFU = metres * 512; single floor, open roof, static furniture.
 map version=1 units=rfu
-world min_x=-10752 max_x=10752 min_z=-36864 max_z=10752 room_limit=36864 attr.identity=outpost
-region id=outpost_safe kind=safe min_x=-10496 max_x=10496 min_z=-36608 max_z=10496 attr.legacy_index=0
+world min_x=-10752 max_x=34816 min_z=-36864 max_z=10752 room_limit=36864 attr.identity=outpost
+region id=outpost_safe kind=safe min_x=-10496 max_x=34560 min_z=-36608 max_z=10496 attr.legacy_index=0
 region id=player_start kind=start min_x=0 max_x=0 min_z=-4900 max_z=-4900 attr.sy=0 attr.cy=1024
 surface id=entry_apron kind=ground min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 material=49565F attr.collision_id=entry_apron_col
 collision id=entry_apron_col shape=flat min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 collision=false visible=true walkable=true color=49565F
@@ -255,9 +255,9 @@ render id=yard_sign kind=sign min_x=-1000 max_x=1000 min_z=-11525 max_z=-11495 h
 
 # Standard open experiment plot: 20 x 18 m; 6 m cross-road to the north.
 # One terminal toggles all twelve presentation-only infected stations.
-surface id=lab_access_road kind=ground min_x=-10752 max_x=10752 min_z=-14848 max_z=-11776 height=0 material=485860 attr.collision_id=lab_access_road_col
-collision id=lab_access_road_col shape=flat min_x=-10752 max_x=10752 min_z=-14848 max_z=-11776 height=0 collision=false visible=true walkable=true color=485860
-render id=lab_access_road_paint kind=floor min_x=-10752 max_x=10752 min_z=-14848 max_z=-11776 height=0 color=485860
+surface id=lab_access_road kind=ground min_x=-10752 max_x=34816 min_z=-14848 max_z=-11776 height=0 material=485860 attr.collision_id=lab_access_road_col
+collision id=lab_access_road_col shape=flat min_x=-10752 max_x=34816 min_z=-14848 max_z=-11776 height=0 collision=false visible=true walkable=true color=485860
+render id=lab_access_road_paint kind=floor min_x=-10752 max_x=34816 min_z=-14848 max_z=-11776 height=0 color=485860
 surface id=character_lab kind=ground min_x=-5120 max_x=5120 min_z=-24064 max_z=-14848 height=0 material=52616A attr.collision_id=character_lab_col
 collision id=character_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-24064 max_z=-14848 height=0 collision=false visible=true walkable=true color=52616A
 render id=character_lab_paint kind=floor min_x=-5056 max_x=5056 min_z=-24000 max_z=-14912 height=0 color=52616A
@@ -296,3 +296,51 @@ render id=walk_lab_title kind=sign min_x=-2300 max_x=2300 min_z=-35950 max_z=-35
 render id=walk_lab_common kind=sign min_x=-3850 max_x=-2550 min_z=-28240 max_z=-28220 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_COMMON attr.facing=+z
 render id=walk_lab_fast kind=sign min_x=-650 max_x=650 min_z=-28240 max_z=-28220 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_FAST attr.facing=+z
 render id=walk_lab_heavy kind=sign min_x=2550 max_x=3850 min_z=-28240 max_z=-28220 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_HEAVY attr.facing=+z
+
+# Two east-side presentation plots; all actors are renderer-only.
+surface id=actor_actions_lab kind=ground min_x=11264 max_x=21504 min_z=-24064 max_z=-14848 height=0 material=52616A attr.collision_id=actor_actions_lab_col
+collision id=actor_actions_lab_col shape=flat min_x=11264 max_x=21504 min_z=-24064 max_z=-14848 height=0 collision=false visible=true walkable=true color=52616A
+render id=actor_actions_paint kind=floor min_x=11328 max_x=21440 min_z=-24000 max_z=-14912 height=0 color=52616A
+render id=actor_actions_north_line kind=floor min_x=11264 max_x=21504 min_z=-14912 max_z=-14848 height=0 color=9FE8C8
+render id=actor_actions_south_line kind=floor min_x=11264 max_x=21504 min_z=-24064 max_z=-24000 height=0 color=9FE8C8
+render id=actor_actions_west_line kind=floor min_x=11264 max_x=11328 min_z=-24000 max_z=-14912 height=0 color=9FE8C8
+render id=actor_actions_east_line kind=floor min_x=21440 max_x=21504 min_z=-24000 max_z=-14912 height=0 color=9FE8C8
+object id=actor_actions_button kind=facility_terminal x=20400 y=0 z=-15400 yaw=0 scale=1000 attr.collision=component
+render id=actor_actions_title kind=sign min_x=14400 max_x=18400 min_z=-23700 max_z=-23670 height=500 color=81B4B5 attr.height2=800 attr.text=AI_ACTION_LAB attr.facing=+z
+surface id=actor_walk_lab kind=ground min_x=23552 max_x=33792 min_z=-24064 max_z=-14848 height=0 material=52616A attr.collision_id=actor_walk_lab_col
+collision id=actor_walk_lab_col shape=flat min_x=23552 max_x=33792 min_z=-24064 max_z=-14848 height=0 collision=false visible=true walkable=true color=52616A
+render id=actor_walk_paint kind=floor min_x=23616 max_x=33728 min_z=-24000 max_z=-14912 height=0 color=52616A
+render id=actor_walk_north_line kind=floor min_x=23552 max_x=33792 min_z=-14912 max_z=-14848 height=0 color=9FE8C8
+render id=actor_walk_south_line kind=floor min_x=23552 max_x=33792 min_z=-24064 max_z=-24000 height=0 color=9FE8C8
+render id=actor_walk_west_line kind=floor min_x=23552 max_x=23616 min_z=-24000 max_z=-14912 height=0 color=9FE8C8
+render id=actor_walk_east_line kind=floor min_x=33728 max_x=33792 min_z=-24000 max_z=-14912 height=0 color=9FE8C8
+object id=actor_walk_button kind=facility_terminal x=32700 y=0 z=-15400 yaw=0 scale=1000 attr.collision=component
+render id=actor_walk_title kind=sign min_x=26700 max_x=30700 min_z=-23700 max_z=-23670 height=500 color=81B4B5 attr.height2=800 attr.text=AI_WALK_LAB attr.facing=+z
+render id=actor_block_idle kind=sign min_x=11410 max_x=12790 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_IDLE attr.facing=+z
+render id=actor_humanoid_idle kind=sign min_x=11410 max_x=12790 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_IDLE attr.facing=+z
+render id=actor_block_move kind=sign min_x=13060 max_x=14440 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_MOVE attr.facing=+z
+render id=actor_humanoid_move kind=sign min_x=13060 max_x=14440 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_MOVE attr.facing=+z
+render id=actor_block_fire kind=sign min_x=14710 max_x=16090 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_FIRE attr.facing=+z
+render id=actor_humanoid_fire kind=sign min_x=14710 max_x=16090 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_FIRE attr.facing=+z
+render id=actor_block_reload kind=sign min_x=16360 max_x=17740 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_RELOAD attr.facing=+z
+render id=actor_humanoid_reload kind=sign min_x=16360 max_x=17740 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_downed kind=sign min_x=18010 max_x=19390 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_DOWNED attr.facing=+z
+render id=actor_humanoid_downed kind=sign min_x=18010 max_x=19390 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_hit kind=sign min_x=19660 max_x=21040 min_z=-15780 max_z=-15760 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_HIT attr.facing=+z
+render id=actor_humanoid_hit kind=sign min_x=19660 max_x=21040 min_z=-19980 max_z=-19960 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_death kind=sign min_x=11410 max_x=12790 min_z=-17880 max_z=-17860 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_DEATH attr.facing=+z
+render id=actor_humanoid_death kind=sign min_x=11410 max_x=12790 min_z=-22080 max_z=-22060 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_revive kind=sign min_x=13060 max_x=14440 min_z=-17880 max_z=-17860 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_REVIVE attr.facing=+z
+render id=actor_humanoid_revive kind=sign min_x=13060 max_x=14440 min_z=-22080 max_z=-22060 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_shove kind=sign min_x=14710 max_x=16090 min_z=-17880 max_z=-17860 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_SHOVE attr.facing=+z
+render id=actor_humanoid_shove kind=sign min_x=14710 max_x=16090 min_z=-22080 max_z=-22060 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_melee kind=sign min_x=16360 max_x=17740 min_z=-17880 max_z=-17860 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_MELEE attr.facing=+z
+render id=actor_humanoid_melee kind=sign min_x=16360 max_x=17740 min_z=-22080 max_z=-22060 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_block_throw kind=sign min_x=18010 max_x=19390 min_z=-17880 max_z=-17860 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_THROW attr.facing=+z
+render id=actor_humanoid_throw kind=sign min_x=18010 max_x=19390 min_z=-22080 max_z=-22060 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_EMPTY attr.facing=+z
+render id=actor_walk_block_l1 kind=sign min_x=23910 max_x=25290 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_AI_1 attr.facing=+z
+render id=actor_walk_block_l2 kind=sign min_x=25410 max_x=26790 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_AI_2 attr.facing=+z
+render id=actor_walk_block_l3 kind=sign min_x=26910 max_x=28290 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=BLOCK_AI_3 attr.facing=+z
+render id=actor_walk_humanoid_l1 kind=sign min_x=28410 max_x=29790 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_1 attr.facing=+z
+render id=actor_walk_humanoid_l2 kind=sign min_x=29910 max_x=31290 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_2 attr.facing=+z
+render id=actor_walk_humanoid_l3 kind=sign min_x=31410 max_x=32790 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_3 attr.facing=+z

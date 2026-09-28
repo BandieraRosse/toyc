@@ -8090,6 +8090,7 @@ struct modular_equipment_submission {
     int valid;
 };
 
+static int outpost_actor_locomotion_time(int actor_id);
 static int render_modular_ai_teammate(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_actor *actor,
     int actor_index, struct modular_equipment_submission *deferred)
@@ -8108,7 +8109,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     unsigned long command_start;
     long phase_start = render_monotonic_us();
     struct rasterfall_model_setup_timing body_timing_before;
-    debug_actor = actor_index == TOY_GAME_MAX_ACTORS;
+    debug_actor = actor_index == TOY_GAME_MAX_ACTORS && actor &&
+        actor->actor_id == -1;
     profile = actor ? rasterfall_character_profile(actor->character_id) : NULL;
     recipe = actor ? rasterfall_character_visual_recipe_for_character(
         actor->character_id) : NULL;
@@ -8165,6 +8167,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
             RASTERFALL_ACTION_RIFLE_AIM : RASTERFALL_ACTION_RIFLE_IDLE;
         lower_time_ms = modular_locomotion_time(actor_index, actor,
             humanoid_action(lower));
+        if (actor->actor_id>=10000 && actor->actor_id<10100)
+            lower_time_ms=outpost_actor_locomotion_time(actor->actor_id);
         actor_action_layers[actor_index].lower = lower;
         upper_time_ms = actor->animation.time_ms;
         additive_time_ms = actor->animation.time_ms;
@@ -8625,6 +8629,8 @@ static int ai_actor_outside_screen(const struct toy_renderer *renderer,
                    vertical_radius * (focal + half_height);
 }
 
+static int render_outpost_actor_lab(struct toy_renderer *renderer,
+    const struct camera *camera);
 static int render_ai_teammate(struct toy_renderer *renderer,
                               const struct camera *camera)
 {
@@ -8912,9 +8918,12 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         pixels += render_humanoid_debug(renderer, camera);
         active_diagnostic_world_light_v1 = saved_diagnostic;
     }
+    pixels += render_outpost_actor_lab(renderer,camera);
     ai_submission_scope = 0;
     return pixels;
 }
+
+#include "render/rf_outpost_actor_showcase.inc"
 
 static int render_player_avatar(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
