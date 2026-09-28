@@ -51,6 +51,10 @@ object，不声明交互终端；设备视觉不改变 Game 状态。既有 `sta
 映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变
 Runtime Map ownership。
 
+Research BX18 使用同一 object → registry → static RMESH 路径；六个设备的粗盒由独立 component
+模板生成，壁挂件无碰撞，物理终端不声明 interaction。资产、摆放和预算见
+[Research V1](../reference/research-renovation-v1.md)。CPU 与 GPU Scene 都消费已有静态实例来源。
+
 Host Rack 的地图候选位以 `attr.length` 编码柜号和自下而上的槽号。Runtime Map 保留八个 authored 候选；
 平台硬件数量在 projection/presentation 边界决定机柜是否启用。未启用柜的生成碰撞 flag 关闭，
 CPU renderer 与 GPU Scene snapshot 共用 prop resolver 隐藏其模型；启用柜的空槽显示封板。

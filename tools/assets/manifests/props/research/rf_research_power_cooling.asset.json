@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "rf_research_power_cooling",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/research/rf_research_power_cooling.glb",
+  "dimensions_m": [
+    0.65,
+    0.9,
+    1.85
+  ]
+}

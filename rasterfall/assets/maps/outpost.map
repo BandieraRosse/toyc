@@ -191,9 +191,16 @@ object id=research_outer kind=boundary_wall x=-10240 y=0 z=0 yaw=90 scale=1000 a
 object id=research_south kind=boundary_wall x=-7424 y=0 z=-3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=research_north kind=boundary_wall x=-7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=research_hatch kind=arch_floor_hatch x=-8704 y=0 z=2048 yaw=0 scale=1000 attr.collision=none
-object id=research_cabinet kind=facility_low_cabinet x=-9490 y=0 z=-2240 yaw=90 scale=1000 attr.collision=component
-render id=research_sign kind=sign min_x=-9200 max_x=-6800 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=RESEARCH attr.facing=-z
-render id=research_future_sign kind=sign min_x=-9600 max_x=-8000 min_z=-2990 max_z=-2960 height=150 color=596F7C attr.height2=470 attr.style=1 attr.text=FUTURE attr.facing=+z
+# Research V1: east entry / open center / west analysis / north compute / south prototype.
+object id=research_bx18_compute kind=research_compute_rack x=-9250 y=0 z=2520 yaw=180 scale=1000 attr.collision=component
+object id=research_bx18_build kind=research_build_rack x=-8520 y=0 z=2520 yaw=180 scale=1000 attr.collision=component
+object id=research_bx18_power kind=research_power_cooling x=-7880 y=0 z=2520 yaw=180 scale=1000 attr.collision=component
+object id=research_bx18_core kind=core_analysis_station x=-9400 y=0 z=0 yaw=90 scale=1000 attr.collision=component
+object id=research_bx18_prototype kind=research_prototype_bench x=-8200 y=0 z=-2500 yaw=0 scale=1000 attr.collision=component
+object id=research_bx18_terminal kind=research_terminal x=-5330 y=0 z=-2170 yaw=270 scale=1000 attr.collision=component
+object id=research_bx18_status kind=research_status_panel x=-4766 y=650 z=2320 yaw=270 scale=1000 attr.collision=none
+object id=research_bx18_service_prototype kind=research_wall_service x=-8200 y=960 z=-2904 yaw=0 scale=1000 attr.collision=none
+object id=research_bx18_service_cluster kind=research_wall_service x=-9120 y=1230 z=2950 yaw=180 scale=1000 attr.collision=none
 object id=operations_outer kind=boundary_wall x=10240 y=0 z=0 yaw=90 scale=1000 attr.collision=component attr.length=6144
 object id=operations_south kind=boundary_wall x=7424 y=0 z=-3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=operations_north kind=boundary_wall x=7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632

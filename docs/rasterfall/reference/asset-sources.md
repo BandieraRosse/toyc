@@ -43,6 +43,10 @@ Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rac
 
 ## 公开模型与其他资源
 
+Research V1 八件由 `tools/blender/generate_research.py` 原创程序生成，无第三方模型或纹理。
+3×5 粗字模也由生成器定义，合并到共享 flat 材质；公开 RMESH 位于
+`assets/models/props/research/`。本地 Blend/GLB 可重建且不提交，见 [Research V1](research-renovation-v1.md)。
+
 `rf_power_unit`、`rf_gate_frame`、`rf_control_cabinet` 是项目内程序化环境组件，源定义位于
 `tools/blender/generate_rasterfall_props.py`；GLB 与编号 PNG 完全由 Builder / palette / sign
 生成，不引入第三方资产。公开 RMESH/TTEX 经对应 industrial manifest 和统一 importer 安装；

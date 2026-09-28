@@ -46,6 +46,16 @@
 色块，控制 primitive/material 数；不要为每个标识拆材质。Rasterfall 使用 CPU 软件光栅化，评估时
 同时关注可见实例数、屏幕覆盖、过度绘制、材质/primitive 数和纹理采样，不能只看三角形数量。
 
+## Research V1 detail tier
+
+[Research Renovation V1](research-renovation-v1.md) 允许独立的冷灰、蓝灰、深灰设备族与少量青白
+标识，保持 geometry + flat materials + limited decal；不使用霓虹、大面积发光或复杂 PBR。
+常规设备建议 400–1200 tris；Terminal、Core Analysis Station、Prototype Bench 三件 hero
+建议 1200–1800 tris，只有中尺度结构确有需要时允许接近 2200。预算不是下限：形体已成立时
+允许更少，壁挂状态与 service 组件尤其不为填预算增加细节。每件 3–4 个 material/primitive。
+局部 decal 优先 32×32 / 64×64；也可使用合并到共享 ink 材质的粗几何标识，不按字拆材质。
+hero 更高纹理分辨率需要实际画面价值；米制、pivot 和展示换算沿用当前资产合同。
+
 ## 十件组件的 V2 light-upgrade
 
 下表保留候选设计方向，每项不要求全部做到。若现有轮廓已足够，应优先完成

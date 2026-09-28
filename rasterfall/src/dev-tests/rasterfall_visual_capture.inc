@@ -939,7 +939,7 @@ static int capture_map_world(const char *output_dir,
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
     int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
     int hall = environment && active_session->world_id == RASTERFALL_WORLD_OUTPOST;
-    for (i = 0; i < (hall ? 12 : whu ? 4 : environment ? 21 : 17); i++) {
+    for (i = 0; i < (hall ? 18 : whu ? 4 : environment ? 21 : 17); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -1021,7 +1021,13 @@ static int capture_map_world(const char *output_dir,
                 {"control",3000,5400,RASTERFALL_STANDING_CAMERA_Y,0,1024,0,1024},
                 {"test-yard",0,-7000,RASTERFALL_STANDING_CAMERA_Y,0,-1024,0,1024},
                 {"host-racks",1600,1800,RASTERFALL_STANDING_CAMERA_Y,650,791,-140,1014},
-                {"host-side",2200,3000,-420,800,639,0,1024}
+                {"host-side",2200,3000,-420,800,639,0,1024},
+                {"research-bx18-entry",-4900,0,RASTERFALL_STANDING_CAMERA_Y,-1024,0,-75,1021},
+                {"research-bx18-center",-7000,-700,RASTERFALL_STANDING_CAMERA_Y,-965,343,-100,1019},
+                {"research-bx18-cluster",-8530,900,RASTERFALL_STANDING_CAMERA_Y,0,1024,-100,1019},
+                {"research-bx18-core",-7500,0,RASTERFALL_STANDING_CAMERA_Y,-1024,0,-100,1019},
+                {"research-bx18-prototype",-8200,-800,RASTERFALL_STANDING_CAMERA_Y,0,-1024,-175,1009},
+                {"research-bx18-rts",-7424,-1600,7000,0,1024,-1000,220}
             };
             memset(&camera,0,sizeof(camera));
             camera.x=views[i].x; camera.z=views[i].z; camera.y=views[i].y;

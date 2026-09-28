@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "rf_research_terminal",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/research/rf_research_terminal.glb",
+  "dimensions_m": [
+    1.15,
+    0.85,
+    1.8
+  ]
+}

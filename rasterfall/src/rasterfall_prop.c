@@ -168,6 +168,31 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       "rasterfall/assets/models/props/host/rf_host_memory_header.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 358, 87, 512 } },
 
+    { RASTERFALL_PROP_ASSET_RESEARCH_COMPUTE_RACK, "research_compute_rack",
+      "rasterfall/assets/models/props/research/rf_research_compute_rack.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 512, 1075, 461 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_BUILD_RACK, "research_build_rack",
+      "rasterfall/assets/models/props/research/rf_research_build_rack.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 512, 1075, 461 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_POWER_COOLING, "research_power_cooling",
+      "rasterfall/assets/models/props/research/rf_research_power_cooling.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 333, 947, 461 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_TERMINAL, "research_terminal",
+      "rasterfall/assets/models/props/research/rf_research_terminal.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 589, 922, 435 } },
+    { RASTERFALL_PROP_ASSET_CORE_ANALYSIS_STATION, "core_analysis_station",
+      "rasterfall/assets/models/props/research/rf_core_analysis_station.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1229, 998, 589 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_PROTOTYPE_BENCH, "research_prototype_bench",
+      "rasterfall/assets/models/props/research/rf_research_prototype_bench.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 1075, 819, 512 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_STATUS_PANEL, "research_status_panel",
+      "rasterfall/assets/models/props/research/rf_research_status_panel.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 640, 410, 92 } },
+    { RASTERFALL_PROP_ASSET_RESEARCH_WALL_SERVICE, "research_wall_service",
+      "rasterfall/assets/models/props/research/rf_research_wall_service.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 922, 333, 113 } },
+
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)

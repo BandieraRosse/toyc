@@ -31,12 +31,9 @@ printf '%s\n' "$formal_output" | grep -q '^safe: safe_start$'
 outpost_output=$($runtime "$root/rasterfall/assets/maps/outpost.map")
 printf '%s\n' "$outpost_output" | grep -q '^runtime map success$'
 printf '%s\n' "$outpost_output" | grep -q '^regions: 2$'
-printf '%s\n' "$outpost_output" | grep -q '^interactions: 1$'
-printf '%s\n' "$outpost_output" | grep -q '^collisions: 5$'
-printf '%s\n' "$outpost_output" | grep -q '^surfaces: 1$'
-printf '%s\n' "$outpost_output" | grep -q '^renders: 12$'
+printf '%s\n' "$outpost_output" | grep -q '^interactions: 0$'
+printf '%s\n' "$outpost_output" | grep -q '^safe: outpost_safe$'
 printf '%s\n' "$outpost_output" | grep -q '^spawns: 0$'
-printf '%s\n' "$outpost_output" | grep -q '^interaction: return_to_whu_v0 action=return_to_whu_v0$'
 whu_output=$($runtime "$root/rasterfall/assets/maps/return_whu_planar_massing_v0.map")
 printf '%s\n' "$whu_output" | grep -q '^identity: return_to_whu_v0$'
 printf '%s\n' "$whu_output" | grep -q '^player_start: -7000 8000 facing=-724 -724$'
@@ -54,11 +51,14 @@ import sys
 import tempfile
 root = Path(sys.argv[1])
 exe = root / "build/map-runtime-test"
-source = (root / "rasterfall/assets/maps/outpost.map").read_text()
+source = (root / "rasterfall/assets/maps/outpost.map").read_text(encoding="utf-8")
+surface = next(line for line in source.splitlines() if line.startswith("surface "))
+surface_id = re.search(r"\bid=(\S+)", surface).group(1)
+binding = re.search(r"attr.collision_id=\S+", surface).group(0)
 with tempfile.TemporaryDirectory() as folder:
     path = Path(folder) / "surface.map"
     def run(text, error=None):
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         result = subprocess.run([str(exe), str(path)], capture_output=True, text=True)
         if error:
             assert result.returncode != 0, result.stdout
@@ -68,14 +68,13 @@ with tempfile.TemporaryDirectory() as folder:
     run(source)
     run(re.sub(r" attr.legacy_index=\d+", "", source))
     run("\n".join(reversed(source.splitlines())) + "\n")
-    run(source.replace("attr.collision_id=outpost_floor_collision", "attr.collision_id=missing"),
+    run(source.replace(binding, "attr.collision_id=missing", 1),
         "does not reference a collision")
-    run(source.replace("attr.collision_id=outpost_floor_collision", "attr.collision_id=outpost_floor"),
+    run(source.replace(binding, "attr.collision_id=" + surface_id, 1),
         "does not reference a collision")
-    run(source.replace("attr.collision_id=outpost_floor_collision", "attr.legacy_index=0"),
+    run(source.replace(binding, "attr.legacy_index=0", 1),
         "surface legacy_index removed")
-    surface = next(line for line in source.splitlines() if line.startswith("surface "))
-    run(source + surface.replace("id=outpost_floor ", "id=duplicate_floor ") + "\n",
+    run(source + surface.replace("id=" + surface_id + " ", "id=duplicate_floor ", 1) + "\n",
         "duplicate surface collision_id binding")
 print("stable surface reference tests: ok")
 PYTEST

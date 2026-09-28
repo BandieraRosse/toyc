@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "rf_research_compute_rack",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/research/rf_research_compute_rack.glb",
+  "dimensions_m": [
+    1.0,
+    0.9,
+    2.1
+  ]
+}

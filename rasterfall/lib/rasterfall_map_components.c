@@ -9,6 +9,13 @@ struct collision_profile {
 };
 
 static const struct collision_profile solids[] = {
+    {"research_compute_rack", 512, 1075, 461, 0},
+    {"research_build_rack", 512, 1075, 461, 0},
+    {"research_power_cooling", 333, 947, 461, 0},
+    {"research_terminal", 589, 922, 435, 0},
+    {"core_analysis_station", 1229, 998, 589, 0},
+    {"research_prototype_bench", 1075, 819, 512, 0},
+
     {"host_rack_frame", 410, 1126, 543, 0},
     {"facility_desk", 922, 384, 384, 1},
     {"facility_chair", 307, 512, 307, 0},

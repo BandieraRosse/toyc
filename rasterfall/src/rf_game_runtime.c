@@ -3714,6 +3714,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
           (options.environment_capture_dir || options.normal_frame_audit_output ||
            (options.gpu_normal_view && (!strncmp(options.gpu_normal_view,"host-",5) ||
+               !strcmp(options.gpu_normal_view,"research-bx18") ||
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab"))))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
@@ -3785,6 +3786,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "map-wall")) {
             /* Stable V1 runtime fixture, aimed at its left wall panel. */
             camera.sy = -384; camera.cy = 949;
+        } else if (!strcmp(options.gpu_normal_view, "research-bx18")) {
+            camera.x=-6100; camera.z=0; camera.sy=-1024; camera.cy=0;
+            camera.pitch_sy=-75; camera.pitch_cy=1021;
         } else if (!strcmp(options.gpu_normal_view, "map-ramp")) {
             camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "map-platform")) {
