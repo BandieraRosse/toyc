@@ -64,6 +64,8 @@ rebuild 顺序完成一次完整重建。普通离线启动直接落地前哨站
 
 前哨站指挥桌的离线互动由 Game Runtime 管理临时输入与展示状态：桌前 E 进入固定站位、解锁指针，Esc 恢复 FPS；地图列表以现有 world ID 为准，预览从对应 `.map` 文件的 world bounds、surface 与 collision footprint 读取并逐帧绘制。点击列表调用 `rf_game_request_world()`。离线暂停菜单的 `RETURN TO OUTPOST` 也调用同一重载链，恢复出生点、初始 seed 和新局状态；联机时避免客户端单方面重载地图。
 
+大厅南入口西侧 `main_terminal` 的离线 FPS 互动也由 Game Runtime 持有临时 UI 状态：按 E 打开、释放指针并暂停玩法命令，Esc 关闭并恢复视角。`rf_render_terminal.inc` 持有 baseline 展示清单、按后端查询的高级功能支持状态和统一的请求入口；当前只有 CPU 模型边线可切换，设置仅作用于 presentation。终端不创建玩法交互物，也不修改 `toy_game`。
+
 `main()` 的顺序是：解析参数并组装 `rf_game_config` → 初始化唯一 `rf_core` context（window、renderer、
 surface、filesystem、audio、input、clock）→ `rf_game_init(core, ...)` 加载 session/map → 绑定并准备渲染资源
 → 可选逻辑测试 → 启动菜单/建房连接 → 音频 presentation 启动 → 主循环 → 释放资源。

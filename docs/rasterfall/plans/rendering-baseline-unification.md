@@ -19,6 +19,7 @@
 
 - 已有共享 canvas 的 SKY/HUD、viewmodel 几何入口、程序角色/部分敌人几何及 map/world 冻结值；仍存在独立来源与提交逻辑。
 - 正常 CPU 与 Scene 的 UI 状态决策已开始共用 `rf_game_shared_ui_layout`；这只覆盖一部分，尚无完整画面等价签收。
+- CPU 专有模型边线已从默认档位移出；大厅南入口西侧终端展示共同 baseline 与高级能力，CPU 模型边线作为首个实验开关。此项不代表其他高级效果已实现。
 - Scene 只支持单人 Runtime Map；联机 CPU 画面不在本轮共同 baseline。
 - 旧动漫渲染由 `RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED=0` 关闭；恢复需要资产与双后端合同。
 

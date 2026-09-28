@@ -1086,6 +1086,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 }
 
 #include "rf_outpost_table.inc"
+#include "rf_render_terminal.inc"
 
 static void draw_pause_overlay(struct rasterfall_canvas *surface,
                                const struct pause_menu *menu,
@@ -2941,9 +2942,14 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     else if (runtime->lifecycle_paused)
         draw_pause_overlay(canvas, &menu, &settings, runtime->coordinate_axes,
                            runtime->net.mode != RASTERFALL_NET_OFF);
+    else if (rf_render_terminal.open)
+        rf_render_terminal_draw(canvas);
     else if (rf_table.open)
         rf_table_draw(canvas);
     else {
+        if (rf_render_terminal.near)
+            rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
+                canvas->height * 3 / 4, "E  使用渲染终端", 0xC7F2EE);
         if (rf_table.near)
             rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
                 canvas->height * 3 / 4, "E  USE COMMAND TABLE", 0xC7F2EE);
@@ -3634,6 +3640,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         __printf("rasterfall: textures disabled, using pure colors\n");
     }
     rf_table_init();
+    rf_render_terminal_init(options.gpu_scene_play, edge_pass_enabled);
     if (logic_test || options.gpu_scene_pose_test || options.gpu_scene_native_fixture) {
         int result = options.gpu_scene_native_fixture ? rf_gpu_scene_native_fixture(
             frame_limit, options.gpu_present_fault, options.gpu_present_fault_frame) :
@@ -4452,6 +4459,7 @@ startup_again:
                             rasterfall_effects_init(&effects);
                             game_runtime.rts_active = 0;
                             rf_table.open = rf_table.near = 0;
+                            rf_render_terminal.open = rf_render_terminal.near = 0;
                             resume_requested = 1;
                         } else {
                             session.banner_text = "OUTPOST LOAD FAILED";
@@ -4485,7 +4493,8 @@ startup_again:
                      pointer_lock_requested ? "requested" : "unavailable");
             }
         }
-        rf_table.near = !rf_table.open && !paused && !game_runtime.rts_active &&
+        rf_table.near = !rf_table.open && !rf_render_terminal.open &&
+            !paused && !game_runtime.rts_active &&
             net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING &&
@@ -4494,12 +4503,56 @@ startup_again:
         if (session.world_id!=RASTERFALL_WORLD_OUTPOST)
             rf_showcase_visible=rf_walk_visible=0;
         rf_showcase_near = 0;
-        if (!rf_table.open && !paused && !game_runtime.rts_active &&
+        rf_render_terminal.near = 0;
+        if (!rf_table.open && !rf_render_terminal.open && !paused &&
+            !game_runtime.rts_active && net.mode == RASTERFALL_NET_OFF &&
+            session.world_id == RASTERFALL_WORLD_OUTPOST &&
+            game.state == TOY_GAME_PLAYING)
+            rf_render_terminal.near = rf_render_terminal_near(
+                &session, camera.x, camera.z);
+        if (!rf_table.open && !rf_render_terminal.open && !paused &&
+            !game_runtime.rts_active &&
             net.mode==RASTERFALL_NET_OFF &&
             session.world_id==RASTERFALL_WORLD_OUTPOST &&
             game.state==TOY_GAME_PLAYING)
             rf_showcase_near=rf_showcase_button_near(&session,camera.x,camera.z);
-        if (rf_table.open) {
+        if (rf_render_terminal.open) {
+            int panel_x = (renderer.surface.width - 820) / 2;
+            int panel_y = (renderer.surface.height - 500) / 2;
+            rf_render_terminal.pointer_x = input.pointer_x;
+            rf_render_terminal.pointer_y = input.pointer_y;
+            if (pending_key_edges[KEY_ESC]) {
+                pending_key_edges[KEY_ESC] = 0;
+                rf_render_terminal.open = 0;
+                memset(pending_key_edges, 0, sizeof(pending_key_edges));
+                fire_edge = shove_edge = 0;
+                pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
+                pointer_turn_pending = pointer_pitch_pending = 0;
+                resumed = 1;
+            } else {
+                if (pending_key_edges[KEY_1] || pending_key_edges[KEY_2]) {
+                    rf_render_terminal.page = pending_key_edges[KEY_2] ? 1 : 0;
+                    pending_key_edges[KEY_1] = pending_key_edges[KEY_2] = 0;
+                }
+                if (events.button_pressed && events.button == BTN_LEFT) {
+                    int px = input.pointer_x, py = input.pointer_y;
+                    if (px >= panel_x + 25 && px < panel_x + 795 &&
+                        py >= panel_y + 78 && py < panel_y + 114)
+                        rf_render_terminal.page = px >= panel_x + 405;
+                    else if (rf_render_terminal.page == 1 &&
+                             px >= panel_x + 25 && px < panel_x + 795 &&
+                             py >= panel_y + 129 &&
+                             py < panel_y + 129 + RF_RENDER_FEATURE_COUNT * 67 &&
+                             (py - panel_y - 129) % 67 < 61)
+                        rf_render_terminal_request((py - panel_y - 129) / 67);
+                }
+                if (pending_key_edges[KEY_ENTER]) {
+                    pending_key_edges[KEY_ENTER] = 0;
+                    if (rf_render_terminal.page == 1)
+                        rf_render_terminal_request(rf_render_terminal.selected);
+                }
+            }
+        } else if (rf_table.open) {
             int hit;
             rf_table.pointer_x = input.pointer_x;
             rf_table.pointer_y = input.pointer_y;
@@ -4525,6 +4578,19 @@ startup_again:
                     resumed = 1;
                 }
             }
+        } else if (rf_render_terminal.near && pending_key_edges[KEY_E]) {
+            pending_key_edges[KEY_E] = 0;
+            input.key_pressed[KEY_E] = 0;
+            rf_render_terminal.open = 1;
+            rf_render_terminal.near = 0;
+            rf_render_terminal.page = 0;
+            fire_edge = shove_edge = 0;
+            rf_render_terminal.pointer_x = renderer.surface.width / 2;
+            rf_render_terminal.pointer_y = renderer.surface.height / 2;
+            rf_core_set_pointer_lock(&core, 0);
+            pointer_lock_requested = 0;
+            pointer_turn_pending = pointer_pitch_pending = 0;
+            resumed = 1;
         } else if (rf_showcase_near && pending_key_edges[KEY_E]) {
             pending_key_edges[KEY_E]=0;
             input.key_pressed[KEY_E]=0;
@@ -4564,9 +4630,11 @@ startup_again:
                 __printf("rasterfall: paused, pointer released\n");
             }
         }
-        if (paused || developer_console.open || session.shop_open)
+        if (paused || developer_console.open || session.shop_open ||
+            rf_render_terminal.open)
             pending_key_edges[KEY_M] = 0;
         if (!paused && !developer_console.open && !session.shop_open &&
+            !rf_render_terminal.open &&
             game.state == TOY_GAME_PLAYING && pending_key_edges[KEY_M]) {
             pending_key_edges[KEY_M] = 0;
             if (net.mode == RASTERFALL_NET_OFF) {
@@ -4648,12 +4716,17 @@ startup_again:
             }
         }
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
-        if (!game_runtime.rts_active && !paused && !resumed && events.button_pressed && events.button == BTN_LEFT)
+        if (!game_runtime.rts_active && !paused && !rf_table.open &&
+            !rf_render_terminal.open && !resumed &&
+            events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
-        if (!paused && !rf_table.open && !resumed && toy_input_pressed(&input, KEY_ENTER))
+        if (!paused && !rf_table.open && !rf_render_terminal.open &&
+            !resumed && toy_input_pressed(&input, KEY_ENTER))
             fire_edge = 1;
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
-        if (!game_runtime.rts_active && !paused && !resumed && events.button_pressed && events.button == BTN_RIGHT)
+        if (!game_runtime.rts_active && !paused && !rf_table.open &&
+            !rf_render_terminal.open && !resumed &&
+            events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;
         if (rf_core_should_exit(&core)) running = 0;
         if (!running) break;
@@ -4731,11 +4804,13 @@ startup_again:
         /* Some compositors acknowledge locked asynchronously. Relative
          * events received after our accepted request are already valid. */
         if (!game_runtime.rts_active && !paused && !rf_table.open &&
+            !rf_render_terminal.open &&
             (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
             accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
                                   input.relative_x, input.relative_y, &settings);
         } else if (!game_runtime.rts_active && !paused && !rf_table.open &&
+                   !rf_render_terminal.open &&
                    use_absolute_mouse_look(pointer_lock_requested,
                                            &input, &events)) {
             if (have_pointer_position)
@@ -4776,7 +4851,8 @@ startup_again:
             game.update_profile = &game_update_profile;
         }
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
-            if (!paused && !managed_terminal.open && !rf_table.open) {
+            if (!paused && !managed_terminal.open && !rf_table.open &&
+                !rf_render_terminal.open) {
                 struct rasterfall_command command;
                 if (game_runtime.rts_active && !session.rts_active)
                     rasterfall_session_set_rts(&session, 1);

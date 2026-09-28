@@ -70,7 +70,7 @@ void rasterfall_options_init(struct rasterfall_options *o,
     o->net_port = RASTERFALL_NET_DEFAULT_PORT;
     o->textures_enabled = textures_enabled;
     o->enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
-    o->edge_pass_enabled = 1;
+    o->edge_pass_enabled = 0;
     o->stats_enabled = 1;
     o->model_views_supersample = 1;
     o->model_skinning = -1;
@@ -88,7 +88,7 @@ void rasterfall_options_usage(int fd)
     __fprintf(fd,
         "usage: rasterfall [runtime options]\n"
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
-        "  --textures | --no-textures  --no-edge-pass  --no-stats\n"
+        "  --textures | --no-textures  --edge-pass | --no-edge-pass  --no-stats\n"
         "  --renderer <cpu|gpu-scene> [--gpu-required] [--gpu-native-present]\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
