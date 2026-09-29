@@ -4,7 +4,7 @@
 > 所有者：Rasterfall presentation
 > 最近核对：2026-09-27
 
-本文清点正常游玩帧在 CPU 软件渲染与独立 GPU Scene 中都已接入的内容，并定义默认功能的**对外描述**。表中“已接入”不表示实现方式相同，也不表示整体观感已经逐项核对；统一工作和验收门槛见[活动计划](../plans/rendering-baseline-unification.md)。后端与执行方式见[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
+本文清点正常游玩帧在 CPU 软件渲染与独立 GPU Scene 中都已接入的内容，并定义默认功能的**对外描述**。表中“已接入”不表示实现方式相同，也不表示整体观感已经逐项核对；原统一工作与验收门槛见[归档计划](../archive/rendering-baseline-unification-20260927.md)。当前执行顺序见[活动计划](../plans/README.md)，后端与执行方式见[GPU 渲染架构](../architecture/gpu-rendering-architecture.md)。
 
 ## 共同功能
 
@@ -28,7 +28,7 @@
 | 项目 | 当前状态 | 后续处理 |
 | --- | --- | --- |
 | 联机画面 | CPU runtime 支持 host/client；`--renderer gpu-scene` 参数检查限定单人 Runtime Map。 | Scene 联机覆盖完成前，不宣称跨后端共同功能。 |
-| 旧动漫高模、PMX/VMD 正常帧表现 | `RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED=0`；CPU 旧实现和离屏诊断仍在，Scene 独立来源将无模块化 recipe 的 AI 当程序角色。 | 如恢复，作为显式可选角色表现，先明确资产来源、pose/动画/武器/LOD 与两后端的输出合同，再纳入共同功能。不能仅打开旧宏。 |
+| 旧动漫高模、PMX/VMD 正常帧表现 | `RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED=0`；CPU 旧实现和离屏诊断仍在，Scene 独立来源将无模块化 recipe 的 AI 当程序角色。 | 旧路径保持遗产状态。当前[活动计划](../plans/private-anime-character-gpu.md)创作原创 RF 骨架角色，只接入单人 GPU Scene，不以两后端共同功能验收。 |
 | Desktop/Console | `RASTERFALL_DESKTOP_RUNTIME_ENABLED=0`；正常帧只显示暂不可用提示。 | 与渲染 baseline 分开恢复。 |
 | 额外画质 | 实时阴影、PBR、GI、SSAO、normal map、toon/anime outline 等不属于当前 Static World Lighting V2。 | 逐项定义可选能力、默认值与后端支持；缺失能力不得静默改变 baseline。 |
 | 开发入口 | WORLD-only preview、frame audit、模型/角色验收与离屏 fixture 有专用来源或画面范围。 | 只用来验证明确的局部合同，不当作正常帧功能清单。 |
@@ -62,10 +62,10 @@
 | `--enemy-visual-family` | 显式覆盖敌人外观家族；CPU 与 Scene 独立敌人来源都读取该策略。 | 内容/外观策略，不等于画质等级；若进入终端，需单独描述视觉和资源变化，不修改玩法敌人身份。 |
 | `--gpu-character-skinning-off`、`--gpu-character-vertex-diff`、`--frame-audit` | GPU 回退/差分/审计入口。 | 诊断或实现选择，不作为玩家可见的高级功能。 |
 | `--input-test`、`--no-stats`、坐标轴/FPS 调试显示 | 输入、性能或开发者观察入口；坐标轴当前在 CPU 旧画面层单独绘制。 | 调试功能，排除在默认画质和高级画质清单之外；未来若要跨后端显示需另定合同。 |
-| PMX/VMD、完整 toon/anime outline、实时阴影、PBR、GI 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 候选项，逐项实现和验收后才登记为可选高级功能。 |
+| PMX/VMD、完整 toon/anime outline、实时阴影、PBR、GI 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 私有原创 RF 角色的 GPU toon、边线与 sphere 材质能力按[活动计划](../plans/private-anime-character-gpu.md)单独实现和验收；PMX/VMD 恢复与其他效果不在该计划内。 |
 
 ## 选择与验收
 
-当前无参数启动选择 CPU；`--renderer gpu-scene`（或 `--gpu-scene-play`）选择独立单人 Scene 并要求 GPU 原生呈现。两后端默认关闭 CPU 专有模型边线；共同内容和观感仍按活动计划验收。Scene 初始化或提交失败应报错，不能把半帧当作成功呈现。
+当前无参数启动选择 CPU；`--renderer gpu-scene`（或 `--gpu-scene-play`）选择独立单人 Scene 并要求 GPU 原生呈现。两后端默认关闭 CPU 专有模型边线；共同内容和观感尚未整体签收，原双后端计划已归档。Scene 初始化或提交失败应报错，不能把半帧当作成功呈现。
 
 冻结后的改动按风险抽查：相同 world、相机、游戏状态和资源下，两条正常路径的内容有无、遮挡/层序、透明、角色动作、HUD 与世界切换；先运行最近的验证，涉及 native 提交时按[Windows Native](../guides/windows-native.md)检查窗口及 present。像素差分只用于定位具体缺陷。

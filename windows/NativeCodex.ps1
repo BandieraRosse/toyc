@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('doctor', 'build', 'package', 'test', 'gpu-test', 'run', 'acceptance', 'help')]
+    [ValidateSet('doctor', 'build', 'asset-tools', 'package', 'test', 'gpu-test', 'run', 'acceptance', 'help')]
     [string] $Command = 'help',
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs = @()
@@ -108,6 +108,7 @@ if ($Command -eq 'help') {
 Windows Native Codex
   doctor      Check the fixed MSYS2/MinGW lane, SDL2, Vulkan, package and GPU.
   build       Build the Windows executable into build-windows/.
+  asset-tools Build native GLB, RFCHAR, RFANIM and map diagnostics.
   package     Build the executable and complete package.
   test        Run package/rasterfall.exe --logic-test.
   gpu-test    Run required native-present GPU smoke with frame audit.
@@ -129,6 +130,11 @@ switch ($Command) {
         $sdl = Get-SdlPrefix
         if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
         Invoke-Make @('-f', 'windows/Makefile', 'all', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
+    }
+    'asset-tools' {
+        $sdl = Get-SdlPrefix
+        if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
+        Invoke-Make @('-f', 'windows/Makefile', 'asset-tools', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
     }
     'package' { Ensure-Package }
     'test' { Ensure-Package; Invoke-Packaged @('--logic-test') }

@@ -1,8 +1,9 @@
 # CPU 与 GPU Scene 默认渲染统一
 
-> 状态：活动
+> 状态：历史；2026-09-28 被 RF 私有动漫角色与 GPU Scene 接入计划替代，未完成事项不自动成为当前门槛
 > 所有者：Rasterfall renderer presentation
 > 开始：2026-09-27
+> 当前顺序：[活动计划](../plans/README.md)
 
 ## 目标
 

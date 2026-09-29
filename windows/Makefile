@@ -119,7 +119,9 @@ WINDOWS_APP_SHIM_OBJ := $(BUILD)/windows/userland_winmain.o
 NATIVE_TOOL_FLAGS := $(CPPFLAGS) $(CFLAGS) -static -mconsole -Wl,--gc-sections -Wl,--stack,16777216
 NATIVE_TOOL_RUNTIME := windows/src/runtime.c windows/src/string.c windows/src/socket_winsock.c
 .PHONY: asset-tools
-asset-tools: $(BUILD)/glb2rmesh.exe $(BUILD)/map-inspect.exe
+asset-tools: $(BUILD)/glb2rmesh.exe $(BUILD)/map-inspect.exe $(BUILD)/glb-inspect.exe $(BUILD)/rfchar-runtime-test.exe $(BUILD)/rf-anim-info.exe
+$(BUILD)/glb-inspect.exe: app/linux/glb_inspect.c rasterfall/src/rasterfall_humanoid_basis.c rasterfall/src/rasterfall_humanoid_retarget.c lib/linux/assets.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
+	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb_inspect.c rasterfall/src/rasterfall_humanoid_basis.c rasterfall/src/rasterfall_humanoid_retarget.c lib/linux/assets.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 $(BUILD)/glb2rmesh.exe: app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 $(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
@@ -189,6 +191,11 @@ $(TARGET): $(OBJS) | $(BUILD)
 
 # Hosted resource lifecycle integration, excluded from the player package.
 RESOURCE_TEST_OBJS := $(filter-out $(BUILD)/win/rasterfall/src/rasterfall.o $(BUILD)/win/windows/src/winmain.o,$(OBJS))
+$(BUILD)/rfchar-runtime-test.exe: $(BUILD)/win/app/linux/rfchar_runtime_test.o $(RESOURCE_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
+$(BUILD)/rf-anim-info.exe: $(BUILD)/win/app/linux/rf_anim_info.o $(RESOURCE_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
+-include $(BUILD)/win/app/linux/rfchar_runtime_test.d $(BUILD)/win/app/linux/rf_anim_info.d
 $(BUILD)/rasterfall-resource-test.exe: $(BUILD)/win/tools/rasterfall_resource_test.o $(RESOURCE_TEST_OBJS)
 	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -Wl,--stack,16777216 -o $@ $^ $(LDLIBS)
 -include $(BUILD)/win/tools/rasterfall_resource_test.d

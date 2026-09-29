@@ -69,6 +69,9 @@ visual capture BMP 和 package 内 `rasterfall.log`。这些命令的当前退�
 
 ## 专项验证
 
+角色资产的 GLB contract、RFM2 实例与 RFANIM 检查使用 `NativeCodex.ps1 asset-tools` 构建
+原生 CLI；文件路径及调用边界见[资产导入与诊断](asset-pipeline.md#glb-与-vmd-检查)。
+
 Scene 互动、world cycle、combat、resize、故障注入和连续运行使用 `tools/gpu_scene_play.ps1 -Stage All`。
 开启 Vulkan validation 时，除 `VK_INSTANCE_LAYERS` 外还需把本地 MinGW layer DLL 及运行时目录放入 PATH，并核对 loader 与 Synchronization 日志。当前流程见 [GPU 验收与诊断](gpu-validation.md)；RB-0 旧流程见[退役归档](../archive/gpu-compute-retirement/README.md)。
 

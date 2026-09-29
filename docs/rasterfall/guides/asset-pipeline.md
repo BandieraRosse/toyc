@@ -37,6 +37,9 @@ Block/Humanoid 的 Common/Fast/Heavy。公开产物不依赖私有模型；重�
 
 ## 统一导入入口与最终契约
 
+私有 RF-C01 在 GLB 之前使用[分部件创作工作流](character-parts.md)：独立保存脸、眼口、头发、身体，
+按冻结清单组装，并只在导出副本中合批；不改变下述 importer 和 RFCHAR 运行时合同。
+
 新资产从 manifest 经统一入口导入。入口只负责编排，不把 GLB/PMX 解析合并成通用 Asset IR：
 
 ```sh
@@ -175,6 +178,15 @@ profile 位于 `tools/assets/lod_profiles/eula_gameplay.json`，输出 `eula_lod
 Hybrid 缺失时回退完整模型。该路径不接入 Maid，也不修改动画求值或 CPU skinning。
 
 ## GLB 与 VMD 检查
+
+Windows 原生角色诊断先运行
+`powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools`。
+该入口在 `build-windows/` 生成 `glb-inspect.exe`、`rfchar-runtime-test.exe` 和
+`rf-anim-info.exe`，并保留既有静态资产与地图工具。runtime 诊断复用原生 resource 测试的
+链接集合，需要与游戏构建相同的 SDL2 依赖，但运行这些 CLI 不打开游戏窗口。
+Windows runtime 的相对读取路径以 exe 所在目录为基准；从仓库根诊断私有文件时传绝对路径。
+`rfchar_import.py` 用 `--validator <绝对路径>/build-windows/glb-inspect.exe` 选择此 lane，
+源 GLB 与输出 RFM2 也显式传绝对路径。诊断不安装资产或更新单人默认 renderer。
 
 ```sh
 make app-glb-inspect app-vmd-inspect

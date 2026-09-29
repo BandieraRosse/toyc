@@ -344,3 +344,17 @@ render id=actor_walk_block_l3 kind=sign min_x=26910 max_x=28290 min_z=-16040 max
 render id=actor_walk_humanoid_l1 kind=sign min_x=28410 max_x=29790 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_1 attr.facing=+z
 render id=actor_walk_humanoid_l2 kind=sign min_x=29910 max_x=31290 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_2 attr.facing=+z
 render id=actor_walk_humanoid_l3 kind=sign min_x=31410 max_x=32790 min_z=-16040 max_z=-16020 height=-760 color=9FE8C8 attr.height2=-590 attr.text=HUMANOID_AI_3 attr.facing=+z
+
+# Original RF character observation area; models join through Scene presentation.
+surface id=rf_model_lab_access kind=ground min_x=5120 max_x=21504 min_z=-27136 max_z=-24064 height=0 material=485860 attr.collision_id=rf_model_lab_access_col
+collision id=rf_model_lab_access_col shape=flat min_x=5120 max_x=21504 min_z=-27136 max_z=-24064 height=0 collision=false visible=true walkable=true color=485860
+render id=rf_model_lab_access_paint kind=floor min_x=5120 max_x=21504 min_z=-27136 max_z=-24064 height=0 color=485860
+surface id=rf_model_lab kind=ground min_x=11264 max_x=21504 min_z=-36352 max_z=-27136 height=0 material=52616A attr.collision_id=rf_model_lab_col
+collision id=rf_model_lab_col shape=flat min_x=11264 max_x=21504 min_z=-36352 max_z=-27136 height=0 collision=false visible=true walkable=true color=52616A
+render id=rf_model_lab_paint kind=floor min_x=11328 max_x=21440 min_z=-36288 max_z=-27200 height=0 color=52616A
+render id=rf_model_lab_north_line kind=floor min_x=11264 max_x=21504 min_z=-27200 max_z=-27136 height=0 color=9FE8C8
+render id=rf_model_lab_south_line kind=floor min_x=11264 max_x=21504 min_z=-36352 max_z=-36288 height=0 color=9FE8C8
+render id=rf_model_lab_west_line kind=floor min_x=11264 max_x=11328 min_z=-36288 max_z=-27200 height=0 color=9FE8C8
+render id=rf_model_lab_east_line kind=floor min_x=21440 max_x=21504 min_z=-36288 max_z=-27200 height=0 color=9FE8C8
+render id=rf_model_lab_title kind=sign min_x=14384 max_x=18384 min_z=-35950 max_z=-35920 height=500 color=81B4B5 attr.height2=800 attr.text=RF_MODEL_LAB attr.facing=+z
+render id=rf_model_lab_status kind=sign min_x=14784 max_x=17984 min_z=-28100 max_z=-28070 height=-300 color=81B4B5 attr.height2=0 attr.text=MODEL_PENDING attr.facing=+z
