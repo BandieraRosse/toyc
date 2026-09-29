@@ -43,7 +43,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |
-| 私有角色脸部、头发的独立创作与组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有 `authoring/assembly.json`、部件修订、表情中间态与固定场景审阅 |
+| 私有角色脸部、头发的独立创作与组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、枕部与头颈接口迁移、局部拓扑、表情往返与固定几何转光审阅 |
 | 私有原创动漫角色、GPU 材质与单人默认入口 | [活动计划](plans/private-anime-character-gpu.md)、[RF-C01 设计稿](reference/rf-c01-design-study.md)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | Blender/GLB → RFCHAR/RFM2、RFANIM、Scene actor source 与 GPU 蒙皮/材质；旧 CPU 动漫入口不纳入正式接入 |
 | 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |

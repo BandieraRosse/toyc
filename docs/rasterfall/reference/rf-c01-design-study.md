@@ -4,13 +4,13 @@
 > 所有者：Rasterfall character art
 > 日期：2026-09-28
 
-> 最近候选：2026-09-29，V08 离线表情与明暗
+> 最近候选：2026-09-29，V11 侧面体积、枕部与头颈关系（v011c）
 
-本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V08 离线表情与明暗候选；尚未完成计划中的游戏步行与持枪竖切样本。
+本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V11 侧面体积与头颈候选；尚未完成计划中的游戏步行与持枪竖切样本。
 
 ## 查看成果
 
-当前候选见下方 [V08 表情与明暗](#v08表情与明暗)；以下 V01 文件表保留为最初概念与体块入口。
+当前候选见下方 [V11 侧面体积与头颈关系](#v11侧面体积与头颈关系)；以下 V01 文件表保留为最初概念与体块入口。
 
 私有成果保存在仓库本地 `rasterfall/private-assets/source/characters/rf_c01/design-v01/`，遵守现有 private-assets 边界，不加入 Git 或公开资源包。此文档可随代码仓库提交；私有审阅包独立交付，未执行 Git 提交。
 
@@ -61,6 +61,122 @@
 ```
 
 ## 审阅重点与下一步
+
+### V11：侧面体积与头颈关系
+
+当前候选为 `authoring/assembly-hair_back-v011c.json`，成果位于 `authoring/build/v011c/`。
+从 V10 v010d 修订，保留 v011a/v011b 中间候选；用户反馈侧视有所好转但后脑仍扁后，v011c
+再同步补充枕部与后发体积。初始组装、V10 和更早源保持，不替换默认运行时角色。
+
+本轮强化侧颊、颏部与颌底的前后关系，调整上颈位置与下颌角过渡；鼻梁到鼻侧补充连续体积。
+减轻唇色边界、增加下唇外侧厚度，并让张口形变依据真实唇缝曲线，修正初稿中央折口。
+口腔仍为三环简化内壁，没有牙齿、舌头或夸张张口。头发以四组主束带动较浅次级束，
+减少顶部凸起，错开发宽、长度及发尾方向；宽主束仍有片状感，极近景唇色边界仍可继续软化。
+
+枕部新增约 11 mm 后向体积，后发同步跟随，并向头顶与后颈渐退。该变化显式保存为
+`interfaces-v011c.json`，记录旧接口哈希和受影响部件；眼位、前脸与领口连接保持。
+`assembly-v011c-interface-baseline.json` 仅为共享接口迁移的验证基线，不是另一个几何源。
+`interface-validation.json` 逐点核对声明的变换，以及拓扑、UV、材质、权重、前脸和下颈保持。
+
+| 文件 | 用途 |
+| --- | --- |
+| `rf_c01-v011.blend`、`rf_c01-v011.glb`、`rf_c01-v011.rmesh` | 可编辑中性源、无 morph 的绑定导出及原生导入 |
+| `review.html`、`profile-comparison.png`、`occiput-comparison.png` | V10/V11 侧视、隐藏头发结构、头肩关系，以及 v011b/v011c 枕部对照 |
+| `face-comparison.png`、`hair-comparison.png`、`lip-comparison.png` | 同相机、同灯光和同采样的前脸、顶部、侧后发与小幅说话 |
+| `blink-review.png`、`normal-comparison.png`、`light-review.png` | 闭眼复核及普通／编辑法线的固定几何转光；正面、侧面、三分之四各 25 档 |
+| `validation.json`、`interface-validation.json`、`expression-validation.json`、`native-validation.json` | 部件隔离、接口迁移、表情往返、源保护及原生资产验证 |
+
+保存重开后网格检查与四组表情各 17 档正反向采样通过；372 个既有 Blender/JSON 源文件哈希保持。
+普通／编辑法线试样保持几何、UV、权重与表情一致。两档明暗采用离线方向光 N·L，不含投影阴影；
+鼻部在部分正面光向仍较含蓄，不以此宣称所有光向已通过美术验收。
+Windows 原生 RFCHAR contract 零错误零警告，RFM2 双实例隔离通过；导出为 47,644 顶点、
+66,356 三角形、49 骨骼、8 附件。以上不代表任意表情组合无穿插或正常游戏 GPU 验收。
+
+复现入口位于 `authoring/scripts/`：`build_v011b.py -- v011b`、`build_occiput_v011.py`，
+以及 `probe_v011.py -- v011c`、`review_v011c.py -- expressions`／`-- shading`、
+`validate_v011c.py`、`validate_occiput_v011.py`、`native_validate_v011c.py` 和 `package_v011c.py`。
+发布拒绝覆盖已有版本，重建需独立基线副本；冻结 `.blend` 可直接打开。
+独立审阅包为角色根目录的 `rf-c01-v011-review.zip`，私有资产不加入 Git。
+造型继续待美术审阅，阶段 1、持枪、RFANIM 与游戏 GPU 材质仍未完成。
+
+### V10：局部修形与整体头发
+
+当前候选为 `authoring/assembly-hair_back-v010d.json`，成果位于 `authoring/build/v010d/`。
+它显式继承 V09 的 v009c；v010/v010a/v010b/v010c 是本轮诊断中间产物，初始组装、V09 和更早源仍保留。
+本轮修订 `head`、`eyes`、`mouth`、`hair_base`、`hair_front`、`hair_back`；身体、骨架、动作、
+空间接口与固定审阅场景保持。头部仍为 6,872 顶点、6,740 面，没有继续加密眼区。
+
+眼角调整支撑行间距、内缘厚度和闭眼的位移衰减，固定眼孔与厚度行后平滑眼角支撑区位移，减轻全闭眼的竖向折痕；闭合线采用连续弧线，眼线与眼睑共用眼孔参考。
+鼻梁与鼻侧增加宽缓的几何支撑，局部放松下颌到侧颈；另以固定几何的连续法线场审阅转光，
+不增加鼻部描边。嘴部保留下唇外侧体积，扩大嘴角位移场，将口腔入口靠近唇缘并区分浅层内壁与深处暗面；
+内壁张开幅度向深处递减，显露浅层入口；仍无牙齿、舌头或夸张张口。
+
+头发共用顶部隆起与侧后流向，主次发束提前从底层显露，刘海的既有控制行沿头壳向顶部延伸，
+保留薄壳厚度。正面、侧面、三分之四沿用固定相机；补充俯视、背面和后侧诊断，不写回公共审阅场景。
+整体感仍需美术审阅，尤其是顶部发束汇合处与两档明暗下的分束节奏；没有据此冻结造型。
+
+| 文件 | 用途 |
+| --- | --- |
+| `rf_c01-v010.blend` | 中性可编辑模型，离线表情归零 |
+| `review.html`、`hair-comparison.png` | 闭眼往返、两视角转光，以及 V09/V10 头发与顶部、后侧审阅 |
+| `blink-progression.png`、`mouth-review.png`、`eye-detail-comparison.png`、`lip-detail-comparison.png` | 50%、75%、全闭眼及微笑、小幅说话的三视角和局部近景 |
+| `normal-comparison.png`、`light-review.png`、`rf_c01-v010-toon-*.blend` | 普通／编辑法线的固定几何转光，正面和三分之四各 25 档 |
+| `validation.json`、`expression-validation.json`、`shading-validation.json` | 部件隔离、头发及脸部网格、表情往返与明暗几何保持证据 |
+
+保存重开后，头脸、口腔和头发通过退化面、孤立顶点及超过两面共边检查；四组表情各 17 档正反向、
+共 136 次采样有限且往返一致。293 个既有源文件的哈希保持，身体、骨架、动作和审阅场景隔离检查通过。
+普通／编辑法线源的几何、UV、权重与表情保持。Windows 原生 RFCHAR contract 零错误零警告，
+RFM2 双实例隔离通过；中性导出为 47,644 顶点、66,356 三角形、49 骨骼、8 附件。
+这些检查不证明任意表情组合无穿插，也不是 GPU 性能结论。独立审阅包为角色根目录的
+`rf-c01-v010-review.zip`，附文件 SHA-256 与 ZIP CRC 校验。
+
+复现脚本位于 `authoring/scripts/`：`build_v010.py -- v010d`、`geometry_v010.py`、
+`expressions_v010.py`、`hair_v010.py`、`normals_v010.py`，以及 `review_v010.py -- expressions`、
+`-- shading`、`details_v010.py`、`validate_v010.py`、`native_validate_v010.py`、`package_v010.py`。
+修订发布仍拒绝覆盖已有版本；重建需独立基线副本。冻结组装可直接打开，不需要执行历史生成器。
+这轮仅为离线造型候选，不代表 RFANIM、游戏 GPU 材质或正常单人展示已完成。
+
+### V09：局部拓扑与脸部体积
+
+2026-09-29 的审阅候选位于 `authoring/build/v009c/`，清单为
+`authoring/assembly-mouth-v009c.json`。v009/v009a/v009b 保留为本轮诊断中间产物，不是交付入口。
+最终 `head`、`eyes`、`mouth` 修订通过部件发布与重新组装；旧版源、头发、身体、骨架、动作、
+空间接口和固定审阅场景保持，初始 `assembly.json` 未替换。
+
+眼孔径向边局部细分，插入四边形支撑环并放松眼角邻域间距，增加 0.65 mm 内缘厚度。
+头部为 6,872 顶点、6,740 面，比 V08 增加 240 顶点与 240 面；没有重建整头。
+闭眼读取实际眼孔上下边界，支撑行随边缘移动；独立眼线读取相同边界，保留 `BlinkMid` 分段采样。
+正面终点图已消除首轮候选的虹膜残缝，仍需审阅眼角短折线和眼下局部过渡。
+
+单侧微笑增加较宽的脸颊位移场，张口保留下唇向外的体积；口腔由单张暗面改成 132 顶点、
+89 面、约 9 mm 深的三环内壁与背面。它仍是简化口腔，没有牙齿、舌头或夸张表情合同。
+额头、眼下、鼻侧、下颌、颈部分区连续混合法线，曲面目标保留侧脸体积；抑制鼻部孤立暗斑，
+鼻部提示仍较含蓄，侧颈阴影边界仍需结合转光序列审阅。
+
+| 文件 | 用途 |
+| --- | --- |
+| `rf_c01-v009.blend` | 可编辑普通材质源，五个离线表情 key 默认归零 |
+| `review.html` | 闭眼往返、普通／编辑法线 25 档转光、原尺寸小图和组图入口 |
+| `blink-progression.png`、`mouth-review.png`、`before-after.png` | 中间态、三视角嘴角与小幅说话、同设置 V08/V09 对照 |
+| `normal-comparison.png`、`rf_c01-v009-toon-*.blend` | 固定几何的分区法线两档明暗实验 |
+| `outline-comparison.png`、`plain-small-*.png`、`outline-small-*.png` | 临时反壳局部描边与 96/192 像素宽全身渲染，眼鼻内部不加额外边线 |
+| `rf_c01-v009.glb`、`rf_c01-v009.rmesh` | 中性脸普通材质导出，不带 morph 或实验 toon |
+| `validation.json`、`expression-validation.json`、`shading-validation.json` | 部件隔离、网格、往返与明暗几何保持证据 |
+
+保存重开检查通过非流形边、孤立顶点、退化面与两权重检查；四组表情各 17 档正反向、共 136 次
+采样坐标有限且往返一致。普通／编辑法线源重开后的几何、UV、权重和表情保持。
+Windows 原生 RFCHAR contract 零错误零警告，RFM2 双实例隔离通过；中性导出为 47,600 顶点、
+66,356 三角形、49 骨骼、8 附件。这些数值不是 GPU 预算或性能结论。
+
+复现脚本位于 `authoring/scripts/`：`build_v009.py`、`geometry_v009.py`、`expressions_v009.py`，
+`review_v009.py -- expressions`、`-- shading`、`-- baseline`，以及 `details_v009.py`、
+`validate_v009.py`、`package_v009.py`。先构建并生成表情、明暗与旧版对照，再生成细节图、重开验证、
+按分部件工作流导入 RFM2，最后打包。使用已发布源时无需再次构建；重建同名修订需要独立基线副本。
+单独重建眼部表情时，私有配方 `eyelids_v009.json` 提供本版冻结眼孔边界；再次修改眼孔需显式修订该配方。
+独立包为角色根目录的 `rf-c01-v009-review.zip`，带文件 SHA-256 与 ZIP CRC 校验。
+
+离线位置往返不证明任意组合无穿插；小图不是实际 RTS 镜头，解析转光不含真实投影。
+本轮未推进持枪、动作、GPU 材质接入或随视角修脸，阶段 1 保持未完成，优先审阅上述三项目标。
 
 ### V08：表情与明暗
 
