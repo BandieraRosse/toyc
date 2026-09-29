@@ -9,8 +9,8 @@
 当前唯一活动计划为[RF 私有动漫角色与 GPU Scene 接入](private-anime-character-gpu.md)。目标是创作原创 RF 骨架角色，在 Windows 单人 Scene 完成 GPU 材质、蒙皮、LOD 与正常帧接入，验收后将 GPU Scene 设为单人默认入口。旧 CPU 动漫渲染和联机 Scene 暂不进入本计划。
 
 角色路线已选择以 A 为起点的成熟动漫方向；先联合审阅头部形体与简单离线材质，再推进绑定和动作。
-当前先审阅 V11 侧面体积、枕部与头颈关系候选，同时检查主次发束、唇缘、小幅说话和固定几何转光；候选与限制见活动计划及其链接的 RF-C01 设计稿，不以离线样本代表阶段完成。
-后续造型迭代显式选择 V11 的 v011c 候选清单及其枕部接口，按[分部件工作流](../guides/character-parts.md)限定修改范围；V07 初始组装与 V08–V10 对照保留。持枪、动作、游戏 GPU 材质与随视角修脸继续延期。
+当前先审阅 V15 收敛后的后脑与侧后体积，重点检查 3/4 视角隆起、顶弧延续、裸头／底发／全发九方向剪影及固定几何转光；候选与限制见活动计划及其链接的 RF-C01 设计稿，不以离线样本代表阶段完成。
+后续造型迭代显式选择 v015 候选清单及其 v015 头皮接口，按[分部件工作流](../guides/character-parts.md)限定修改范围；V07 初始组装与 V08–V14 对照保留。持枪、动作、游戏 GPU 材质与随视角修脸继续延期。
 
 原[CPU 与 GPU Scene 默认渲染统一计划](../archive/rendering-baseline-unification-20260927.md)已归档；其未完成的双后端画面对照不是当前角色接入门槛。共同功能清点仍由[渲染 baseline](../reference/rendering-baseline.md)保存，不自动成为本计划待办。GPU Compute Raster 退役记录见[归档](../archive/gpu-compute-retirement/README.md)。
 

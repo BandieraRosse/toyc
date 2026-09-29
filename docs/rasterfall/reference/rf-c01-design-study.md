@@ -4,13 +4,15 @@
 > 所有者：Rasterfall character art
 > 日期：2026-09-28
 
-> 最近候选：2026-09-29，V11 侧面体积、枕部与头颈关系（v011c）
+> 最近候选：2026-09-29，V15 后脑体积收敛（v015）
 
-本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V11 侧面体积与头颈候选；尚未完成计划中的游戏步行与持枪竖切样本。
+本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V15 后脑体积收敛候选；尚未完成计划中的游戏步行与持枪竖切样本。
 
 ## 查看成果
 
-当前候选见下方 [V11 侧面体积与头颈关系](#v11侧面体积与头颈关系)；以下 V01 文件表保留为最初概念与体块入口。
+头型与短发的下一轮结构依据见[参考研究](rf-c01-head-hair-references.md)：四组来源、核验范围与分区修形建议；不代表已实施或已验收。
+
+当前候选见下方 [V15 后脑体积收敛](#v15后脑体积收敛)；以下 V01 文件表保留为最初概念与体块入口。
 
 私有成果保存在仓库本地 `rasterfall/private-assets/source/characters/rf_c01/design-v01/`，遵守现有 private-assets 边界，不加入 Git 或公开资源包。此文档可随代码仓库提交；私有审阅包独立交付，未执行 Git 提交。
 
@@ -62,9 +64,113 @@
 
 ## 审阅重点与下一步
 
+### V15：后脑体积收敛
+
+针对用户指出的 3/4 视角后脑过度隆起，从 v014c 收回中段枕部深度及侧后宽度。
+当前清单为 `authoring/assembly-hair_back-v015.json`，审阅入口为 `authoring/build/v015/review.html`；
+同目录提供 `rf_c01-v015.blend`、GLB、RFM2 和同相机对照图（上排 V14c，下排 V15）。
+
+裸头最后缘由 Y=0.11951 m 收至 0.10626 m，收回约 13.25 mm；侧后宽度同步渐退。
+Z≥1.632 m 的顶区与 Z≤1.470 m 的下颈保持，最高点仍为 1.64800 m。
+`interfaces-v015.json` 显式锁定空间修订；底发、后发同映射收拢，前发几何不变。
+五官、表情增量、拓扑、UV、权重、材质、身体、骨架及审阅场景保持。
+
+九方向裸头／底发／全发、原材质与固定几何转光用于对照；保存重开、接口隔离、四组表情往返、
+RFCHAR 导入与原生实例隔离通过。证据在同目录各项 `*-validation.json` 和 `validation.json`。
+旧候选保留，造型仍待用户审阅；本轮没有游戏 GPU 签收，阶段 1 继续未完成。
+
+### V14：顶弧与侧后过渡
+
+前轮候选为 `authoring/assembly-hair_back-v014c.json`，审阅入口为
+`authoring/build/v014c/review.html`；同目录提供 `rf_c01-v014c.blend`、GLB 和 RFM2。
+从用户已认可后脑体积的 v013b 修订，保留旧版与本轮试样。对照图上排 V13b、下排 V14c，
+包括裸头、底发、全发九方向灰模与剪影、原材质正侧和三分之四、固定几何区域光旋转及表情。
+
+本轮将上半颅体渐变到较宽缓的顶弧，前额采用单独渐退范围，避免压顶产生肩部折点或额部外鼓。
+裸头最高点由 1.65644 m 降至 1.64800 m，最大位移约 8.44 mm；最大横向宽度与最后缘保持。
+Z≤1.585 m 的几何保持，保留中段枕部、五官和下颈。`interfaces-v014c.json` 显式锁定空间修订；
+依赖头发按冻结 v013b 头壳上的径向对应位移同步迁移，沿用原有发束组织和后颈贴合。
+
+`shape-comparison.png` 与 `hair-comparison.png` 是本轮主要审阅图。逐对象核对拓扑、UV、权重、材质
+及表情增量保持；眼部、口腔、身体、骨架和审阅场景保持。保存重开、四组表情各 17 档正反向采样、
+RFCHAR 导入与原生实例隔离通过，证据分别见 `validation.json`、`interface-validation.json`、
+`expression-validation.json` 和 `native-validation.json`。本轮只调整离线头型，未执行游戏 GPU 签收；
+宽发束分区仍可继续审阅，造型未冻结，阶段 1 仍未完成。
+
+### V13：裸头枕部与后颈发层
+
+前轮候选为 `authoring/assembly-hair_back-v013b.json`，成果在 `authoring/build/v013b/`。
+从 v012b 建立 V13 裸头与发束试样，再只修订底发、后发形成 v013b；旧候选和初始组装保留。
+
+按用户反馈直接增加裸头中段枕部及侧后体积，不以头发替代头壳。`interfaces-v013.json` 锁定
+增量空间映射、配方哈希和前版接口；头部与依赖头发共同迁移。裸头水平截面显示，Z=1.55/1.57 m
+的最后缘分别后移约 14.4/15.8 mm，侧后宽度也小幅增加；顶区和枕下渐退，前脸、眼位、下颈保持。
+头部最大顶点位移约 16.3 mm，既有表情增量保持。数值来自裸头网格截面，不含头发。
+
+侧后发压低次级束鼓包、延长耳上过渡、减弱主束隆起并错开搭接。v013b 的头发参数显式锁定
+`parts/head/v013.blend`，后颈底发和发束只读采样真实头壳，使下层逐渐贴合后颈，减轻悬空硬边。
+前脸、唇缘、眼部与口腔沿用 v012b；本轮没有继续修改口周或重建表情。
+
+| 文件 | 用途 |
+| --- | --- |
+| `review.html` | 本轮审阅入口，上排 V12b、下排 V13b；含裸头／底发／全发九方向原图 |
+| `shape-comparison.png`、`hair-comparison.png`、`silhouette-comparison.png` | 同相机裸头体积、侧后发和黑色剪影对照 |
+| `face-comparison.png`、`light-comparison.png` | 正侧与三分之四、固定几何的实际区域光旋转 |
+| `mouth-comparison.png`、`blink-comparison.png` | 小幅张口及半闭眼／闭眼复核 |
+| `rf_c01-v013b.blend`、`rf_c01-v013b.glb`、`rf_c01-v013b.rmesh` | 组装源、中性导出和原生导入产物 |
+| `validation.json`、`interface-validation.json`、`expression-validation.json`、`native-validation.json` | 发层隔离、继承的裸头迁移与截面、表情往返和原生合同证据 |
+
+最终候选保存重开、拓扑与四组表情各 17 档正反向采样通过；561 个先前源文件哈希保持。
+身体、眼部、口腔、骨架动作和固定审阅场景保持。Windows 原生 RFCHAR 零错误零警告，
+RFM2 双实例隔离通过；导出仍为 47,644 顶点、66,356 三角形、49 骨骼、8 附件。
+
+对照可见裸头枕部更饱满、耳上凸起减弱、后颈底层硬边收敛；部分宽主束仍有封闭叶片边界，
+长尖末端与束间遮挡仍待美术审阅。有限视角和表情往返不证明任意组合无穿插，造型仍未冻结，
+未接入游戏、未替换默认角色，阶段 1 保持未完成。
+
+私有复现入口为 `scripts/build_v013.py` → `interface_validate_v013.py` → `build_v013b.py`；
+新修订只可在独立副本或未占用路径生成。最终审阅执行 `run_v013b.py diagnostic`、`studio`、
+`validate`，再运行 `native_validate_v013b.py`、`finalize_v013b.py` 和 `package_v013b.py`。
+Blender 脚本按[分部件工作流](../guides/character-parts.md)后台执行；`run_` 脚本用 Python 调度并保存退出码和 UTF-8 日志。
+
+### V12：顶后弧、分层短发与唇缘
+
+当前审阅候选为 `authoring/assembly-hair_back-v012b.json`，成果在 `authoring/build/v012b/`。
+从 v011c 显式修订；v012 为首轮试样，旧版文件与初始组装保留。依据
+[头型与短发参考](rf-c01-head-hair-references.md)调整裸头和依赖头发，不只加厚后发。
+
+顶区向前后及两侧展开，最高区略降，后上部体积向侧后延展；枕下和领口接口保持。
+`interfaces-v012b.json` 锁定空间迁移配方及哈希；同一空间映射应用到头部、底发、前发和后发。
+后发错开起点、宽度峰值、转向和结束高度，截面采用偏心曲率；次级束收窄根部，底发延伸承接后颈。
+前侧长束保持身份长度，微调中段向后弯曲。唇部锁住真实口缝边界，局部平滑外唇卷边并减弱材质色差；
+各表情保留原形变增量，没有改眼位或重建口腔。
+
+| 文件 | 用途 |
+| --- | --- |
+| `review.html` | 本轮集中审阅入口；上排 V11c、下排 V12b |
+| `rf_c01-v012b.blend`、`rf_c01-v012b.glb`、`rf_c01-v012b.rmesh` | 可编辑源、中性绑定导出与原生导入 |
+| `shape-comparison.png`、`silhouette-comparison.png` | 裸头体积及全发黑色剪影；另有裸头／底发／全发九方向原图 |
+| `face-comparison.png`、`hair-comparison.png` | 同相机与照明的前后对照 |
+| `mouth-comparison.png`、`blink-comparison.png` | 唇缘、小幅张口、半闭眼和闭眼 |
+| `light-comparison.png`、`V12-mouth-gray-*.png` | 固定几何、普通灰材质的实际区域光旋转与唇部灰模 |
+| `validation.json`、`expression-validation.json`、`native-validation.json` | 组装隔离、保存重开／表情往返和原生合同结果 |
+
+组装、拓扑与四组表情各 17 档正反向采样通过，488 个既有源文件哈希保持；身体、眼部、口腔、
+骨架动作和固定审阅场景不变。Windows 原生 RFCHAR 为零错误零警告，RFM2 双实例隔离通过；
+导出仍为 47,644 顶点、66,356 三角形、49 骨骼、8 附件。
+
+对照可见顶后弧更宽缓、唇外缘减弱、发尾高度错开；部分宽主束仍有封闭叶片边界，耳后短束的
+凸起与搭接还需美术审阅。九方向与离线转光不证明任意角度、任意表情无穿插；未接入游戏，未替换默认角色。
+造型仍未冻结，活动计划阶段 1 保持未完成。
+
+重建入口为私有 `authoring/scripts/build_v012b.py`；诊断、摄影棚、实际转光分别使用
+`review_v012b.py -- diagnostic`、`review_v012b.py -- studio`、`light_v012b.py`，最后运行
+`validate_v012b.py`、`native_validate_v012b.py`、`package_v012b.py`。Blender 脚本遵循
+[分部件工作流](../guides/character-parts.md)的后台执行方式，已有修订不得覆盖。
+
 ### V11：侧面体积与头颈关系
 
-当前候选为 `authoring/assembly-hair_back-v011c.json`，成果位于 `authoring/build/v011c/`。
+V11 候选为 `authoring/assembly-hair_back-v011c.json`，成果位于 `authoring/build/v011c/`。
 从 V10 v010d 修订，保留 v011a/v011b 中间候选；用户反馈侧视有所好转但后脑仍扁后，v011c
 再同步补充枕部与后发体积。初始组装、V10 和更早源保持，不替换默认运行时角色。
 
