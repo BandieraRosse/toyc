@@ -63,7 +63,11 @@ $partsTool = 'tools/blender/rf_character_parts.py'
 & $blenderExe --background --python-exit-code 1 --python $partsTool -- render --blend "$partsRoot/build/hair-v002.blend" --output "$partsRoot/build/hair-v002-review"
 ```
 
-`render --structure` 隐藏头发；`--expression Blink` 或 `MouthOpen` 检查表情。渲染操作不保存回源文件。
+`render --structure` 隐藏头发；`--expression Blink --expression-value 0.5` 检查半闭眼。
+表情名取自所选源的 shape key，也可检查 `MouthOpen`、`BrowDown`、`SmileL` 等已创作采样。
+强度范围为 0–1；未知名称和非法强度会拒绝。若存在同名加 `Mid` 的 key，强度 0.5 对应该中间姿态，
+前后两段分别插值；没有中间 key 的旧源保持线性插值。每次采样先清空其他表情，渲染不保存回源文件。
+在 Blender 手工审阅带中间 key 的闭眼时，不能只拉动 `Blink` 代替该分段采样。
 相机/灯光固定，但更改发型引起的真实投影或遮挡变化仍需人工判断。
 
 ## 导出与回归

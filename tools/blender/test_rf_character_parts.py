@@ -80,6 +80,21 @@ def run(manifest_path, output):
         candidate = revise(baseline, part, 'expressions', 'expressions')
         assert read(candidate)['parts'][part]['records'] == manifest['parts'][part]['records'], part + ' expressions differ'
     report['expression_noop_exact'] = True
+    # Authored middle poses must be sampled, and switching expressions clears
+    # all previous keys. Legacy files without a midpoint keep linear sampling.
+    bpy.ops.wm.open_mainfile(filepath=str(output / 'baseline.blend'))
+    head = next(o for o in bpy.context.scene.objects if o.get('expression_role') == 'head')
+    mid = head.shape_key_add(name='BlinkMid')
+    mid.data[0].co.x += .01
+    pipeline.set_expression(bpy.context.scene.objects, 'Blink', .5)
+    assert mid.value == 1 and head.data.shape_keys.key_blocks['Blink'].value == 0
+    pipeline.set_expression(bpy.context.scene.objects, 'MouthOpen', .25)
+    assert mid.value == 0 and head.data.shape_keys.key_blocks['Blink'].value == 0
+    assert head.data.shape_keys.key_blocks['MouthOpen'].value == .25
+    for value in (-.1, 1.1, float('nan')):
+        rejected(lambda: pipeline.set_expression(bpy.context.scene.objects, 'Blink', value), 'finite')
+    rejected(lambda: pipeline.set_expression(bpy.context.scene.objects, 'Missing'), 'Unknown')
+    report['expression_midpoint_reset_and_validation'] = True
     mat = bpy.data.materials.new('Fingerprint test')
     mat.use_nodes = True
     mat['export_id'] = 'same-identity'

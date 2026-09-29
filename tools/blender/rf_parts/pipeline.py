@@ -175,19 +175,33 @@ def export(blend, output):
     return {'primitives': primitives, 'morphs': False, 'skins': len(doc['skins'])}
 
 
-def render(blend, output, views, structure=False, expression=None):
+def set_expression(objects, expression, value=1.0):
+    """Sample an optional authored midpoint instead of cutting through the eyeball."""
+    if not math.isfinite(value) or not 0 <= value <= 1:
+        raise ValueError('Expression value must be finite and between zero and one')
+    meshes = [o for o in objects if o.type == 'MESH' and o.data.shape_keys]
+    if expression and not any(expression in o.data.shape_keys.key_blocks for o in meshes):
+        raise ValueError('Unknown expression: ' + expression)
+    for obj in meshes:
+        keys = obj.data.shape_keys.key_blocks
+        for key in keys:
+            if key.name != 'Basis':
+                key.value = 0
+        if expression and expression in keys:
+            mid = keys.get(expression + 'Mid')
+            keys[expression].value = max(0, value * 2 - 1) if mid else value
+            if mid:
+                mid.value = 1 - abs(value * 2 - 1)
+
+
+def render(blend, output, views, structure=False, expression=None, expression_value=1.0):
     bpy.ops.wm.open_mainfile(filepath=str(Path(blend).resolve()))
     scene = bpy.context.scene
     if structure:
         for obj in scene.objects:
             if obj.get('part_id', '').startswith('hair_'):
                 obj.hide_render = True
-    if expression:
-        for obj in scene.objects:
-            if obj.type == 'MESH' and obj.data.shape_keys:
-                key = obj.data.shape_keys.key_blocks.get(expression)
-                if key:
-                    key.value = 1
+    set_expression(scene.objects, expression, expression_value)
     Path(output).mkdir(parents=True, exist_ok=True)
     for view in views:
         scene.camera = bpy.data.objects['Compare / ' + view]

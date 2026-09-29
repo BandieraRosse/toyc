@@ -30,7 +30,8 @@ def main():
     p.add_argument('--output', required=True)
     p.add_argument('--views', nargs='+', default=['front', 'three-quarter', 'profile', 'back', 'full'])
     p.add_argument('--structure', action='store_true')
-    p.add_argument('--expression', choices=['Blink', 'MouthOpen'])
+    p.add_argument('--expression', help='Shape key name; optional <name>Mid samples the half pose')
+    p.add_argument('--expression-value', type=float, default=1.0)
     for command in ('publish', 'rebuild', 'expressions'):
         p = sub.add_parser(command, help='Create one part revision and a candidate manifest')
         p.add_argument('--manifest', required=True)
@@ -49,7 +50,8 @@ def main():
     elif args.command == 'export':
         result = pipeline.export(args.blend, args.output)
     elif args.command == 'render':
-        result = pipeline.render(args.blend, args.output, args.views, args.structure, args.expression)
+        result = pipeline.render(args.blend, args.output, args.views, args.structure,
+                                 args.expression, args.expression_value)
     else:
         result = revise(args.manifest, args.part, args.revision, args.command,
                         getattr(args, 'source', None), getattr(args, 'parameters', None))

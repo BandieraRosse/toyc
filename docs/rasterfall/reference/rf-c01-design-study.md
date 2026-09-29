@@ -4,13 +4,13 @@
 > 所有者：Rasterfall character art
 > 日期：2026-09-28
 
-> 最近候选：2026-09-29，V07
+> 最近候选：2026-09-29，V08 离线表情与明暗
 
-本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V07 短发候选；尚未完成计划中的游戏步行与持枪竖切样本。
+本稿服务于[私有原创角色活动计划](../plans/private-anime-character-gpu.md)的造型与基模审阅。临时代号 `RF-C01`，角色身份、配色和外观尚可调整。当前成果包括原创多视角设计、各版 Blender 原型及 V08 离线表情与明暗候选；尚未完成计划中的游戏步行与持枪竖切样本。
 
 ## 查看成果
 
-当前候选见下方 [V07 短发衔接](#v07短发衔接)；以下 V01 文件表保留为最初概念与体块入口。
+当前候选见下方 [V08 表情与明暗](#v08表情与明暗)；以下 V01 文件表保留为最初概念与体块入口。
 
 私有成果保存在仓库本地 `rasterfall/private-assets/source/characters/rf_c01/design-v01/`，遵守现有 private-assets 边界，不加入 Git 或公开资源包。此文档可随代码仓库提交；私有审阅包独立交付，未执行 Git 提交。
 
@@ -61,6 +61,40 @@
 ```
 
 ## 审阅重点与下一步
+
+### V08：表情与明暗
+
+2026-09-29 候选位于 `authoring/build/v008/`，组装清单为
+`authoring/assembly-mouth-v008.json`，串联 `head`、`eyes`、`mouth` 三个 v008 修订。
+沿用 V07 中性几何、现有眼口环线、头发、身体、UV、权重和骨架动作；本轮没有重新布线或增加环线，
+重点是已有环线上的连续变形、独立半闭眼采样与固定几何明暗实验。
+
+| 文件 | 用途 |
+| --- | --- |
+| `rf_c01-v008.blend` | 普通材质、默认归零的 `Blink`、`BlinkMid`、`BrowDown`、`SmileL`、`MouthOpen` 离线表情 |
+| `expression-review.png`、`blink-progression.png`、`before-after.png` | 正面与三分之四表情、中间态及同设置 V07/V08 对照 |
+| `structure-review.png` | 隐藏头发检查眉皮协同、眼睑与口周 |
+| `rf_c01-v008-toon-smooth.blend`、`rf_c01-v008-toon-edited.blend` | 同几何、同配色的普通平滑法线与脸部编辑法线对照；仅离线审阅 |
+| `normal-comparison.png`、`light-sweep.html` | 前侧与全身对照、可暂停和拖动的 25 档转光序列 |
+| `rf_c01-v008.glb`、`rf_c01-v008.rmesh` | 普通材质中性脸导出，无 morph，不包含试验 toon 材质 |
+| `validation.json`、`expression-validation.json`、`shading-validation.json` | 隔离、连续强度采样、明暗几何保持证据 |
+
+半闭眼沿眼球表面独立求值，审阅器经 `BlinkMid` 分段插值；压眉对皮肤和眉毛应用同一平滑位移场。
+单侧嘴角上提带动邻近唇颊，张口使用连续上下唇位移和圆滑嘴角衰减。与旧端点比较，小幅张口更窄，
+完整张口从近矩形变为弧形。眼角仍有凹折，口腔只有暗面；不是完整口腔或任意表情组合验收。
+
+两档明暗分别设置暖肤色阴影、深青头发暗部、灰蓝衣服阴影，脸部边界比头发柔和。
+编辑法线减少眼下、鼻侧和嘴角的碎块，保留较小鼻部提示；侧颈边界仍偏硬，脸部体积仍需审阅。
+转光使用解析方向光 N·L 隔离法线因素，不包含投影、自阴影、额外轮廓线或游戏 GPU consumer。
+全身图只供缩小尺寸辨识，不代表真实 RTS 相机验收。随视角修脸与分部位轮廓线仍延期。
+
+复现脚本位于 `authoring/scripts/`：`build_v008.py` 建立不可覆盖的新修订，
+`review_v008.py -- expressions` 与 `-- toon` 生成真实 Blender 渲染，`validate_v008.py` 重开核对，
+`package_v008.py` 调用 `sheets_v008.ps1` 组图并校验 ZIP CRC/SHA-256。
+Blender 脚本使用工作流中的 `--background --python-exit-code 1 --python` 调用。
+打开最终 blend 不依赖历史目录；重新建立同名候选需使用独立基线副本，工具拒绝覆盖已发布修订。
+独立包为角色根目录的 `rf-c01-v008-review.zip`。原生 RFCHAR contract、bind、两权重导入和
+RFM2 双实例隔离通过；表情与 toon 仍未接入运行时，活动计划阶段 1 未完成。
 
 ### V07 分部件创作基线
 
