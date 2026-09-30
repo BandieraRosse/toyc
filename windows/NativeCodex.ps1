@@ -53,8 +53,8 @@ function Get-PythonForMake {
     if (-not $python) { Fail 'python3/python not found.' }
     return (Convert-ToMsysPath $python)
 }
-function Invoke-Packaged([string[]] $ProgramArguments) {
-    if (-not (Test-Path -LiteralPath $Exe)) { Fail "package executable missing: $Exe (run package first)" }
+function Invoke-Staged([string[]] $ProgramArguments) {
+    if (-not (Test-Path -LiteralPath $Exe)) { Fail "staged executable missing: $Exe" }
     Push-Location $PackageRoot
     try {
         & '.\rasterfall.exe' @ProgramArguments
@@ -62,10 +62,12 @@ function Invoke-Packaged([string[]] $ProgramArguments) {
     } finally { Pop-Location }
     if ($code -ne 0) { exit $code }
 }
-function Ensure-Package {
+function Ensure-Staged([string] $Target = 'stage') {
     $sdl = Get-SdlPrefix
     if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
-    Invoke-Make @('-f', 'windows/Makefile', 'package', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake", "PYTHON=$(Get-PythonForMake)")
+    $makeArgs = @('-f', 'windows/Makefile', $Target, "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
+    if ($Target -eq 'package') { $makeArgs += "PYTHON=$(Get-PythonForMake)" }
+    Invoke-Make $makeArgs
 }
 
 function Doctor {
@@ -109,10 +111,10 @@ Windows Native Codex
   doctor      Check the fixed MSYS2/MinGW lane, SDL2, Vulkan, package and GPU.
   build       Build the Windows executable into build-windows/.
   asset-tools Build native GLB, RFCHAR, RFANIM and map diagnostics.
-  package     Build the executable and complete package.
-  test        Run package/rasterfall.exe --logic-test.
+  package     Build the executable, stage assets, and create a ZIP archive.
+  test        Run staged rasterfall.exe --logic-test.
   gpu-test    Run required native-present GPU smoke with frame audit.
-  run         Run from the package root; remaining arguments go to rasterfall.
+  run         Build and stage without ZIP; remaining arguments go to rasterfall.
   acceptance  GPU smoke, normal-frame audit, and a deterministic visual capture.
 '@ | Write-Host
     exit 0
@@ -136,18 +138,18 @@ switch ($Command) {
         if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
         Invoke-Make @('-f', 'windows/Makefile', 'asset-tools', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
     }
-    'package' { Ensure-Package }
-    'test' { Ensure-Package; Invoke-Packaged @('--logic-test') }
+    'package' { Ensure-Staged 'package' }
+    'test' { Ensure-Staged; Invoke-Staged @('--logic-test') }
     'gpu-test' {
-        Ensure-Package
+        Ensure-Staged
         $gpuArgs = @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120') + $ExtraArgs
-        Invoke-Packaged $gpuArgs
+        Invoke-Staged $gpuArgs
     }
-    'run' { Ensure-Package; Invoke-Packaged $ExtraArgs }
+    'run' { Ensure-Staged; Invoke-Staged $ExtraArgs }
     'acceptance' {
-        Ensure-Package
-        Invoke-Packaged @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120')
-        Invoke-Packaged @('--normal-frame-audit', '0', '0', '0', '1', '0', '1', '1280', '720', 'windows-native-normal.bmp')
-        Invoke-Packaged @('--visual-capture', 'procedural-humanoid', '--visual-output', 'windows-native-procedural-humanoid.bmp')
+        Ensure-Staged
+        Invoke-Staged @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120')
+        Invoke-Staged @('--normal-frame-audit', '0', '0', '0', '1', '0', '1', '1280', '720', 'windows-native-normal.bmp')
+        Invoke-Staged @('--visual-capture', 'procedural-humanoid', '--visual-output', 'windows-native-procedural-humanoid.bmp')
     }
 }

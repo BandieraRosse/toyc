@@ -127,7 +127,7 @@ $(BUILD)/glb2rmesh.exe: app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) windows/Mak
 $(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 
-.PHONY: all app package clean platform-sources pe-audit $(addprefix win-app-,$(PORTABLE_APP_NAMES))
+.PHONY: all app stage package clean platform-sources pe-audit $(addprefix win-app-,$(PORTABLE_APP_NAMES))
 
 # Windows 构建与 Linux 构建共用头文件和玩法/渲染源码；无条件重建对象，
 # 防止依赖文件缺失或切换工作区状态时复用与头文件不一致的旧对象。
@@ -229,12 +229,14 @@ $(BUILD)/rf-gpu-graphics-test.exe: $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
 	    -I include -I include/tlibc -I rasterfall/include $(GPU_GRAPHICS_SRCS) -o $@
 
-package: $(TARGET)
+stage: $(TARGET)
 	@rm -rf "$(PACKAGE_DIR)"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
 	@if [ -d rasterfall/private-assets ]; then cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"; fi
+
+package: stage
 	@rm -f "$(PACKAGE)"
 	@cd "$(PACKAGE_DIR)" && $(PYTHON) -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"

@@ -10,6 +10,6 @@
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-Windows 构建与 package 位于 `build-windows/`。环境安装、命令参数、进程等待、日志和物理 GPU 验收流程见[Windows Native 指南](../docs/rasterfall/guides/windows-native.md)；跨平台构建边界见[构建与平台](../docs/rasterfall/guides/build-platforms.md)。项目用户入口见[Rasterfall README](../rasterfall/README.md)。
+Windows 构建与运行目录位于 `build-windows/`。`build` 和 `run` 不创建压缩包；需要 `build-windows/rasterfall-windows.zip` 时显式运行 `.\windows\NativeCodex.ps1 package`。环境安装、命令参数、进程等待、日志和物理 GPU 验收流程见[Windows Native 指南](../docs/rasterfall/guides/windows-native.md)；跨平台构建边界见[构建与平台](../docs/rasterfall/guides/build-platforms.md)。项目用户入口见[Rasterfall README](../rasterfall/README.md)。
 
 本目录保存 Windows 平台实现、`NativeCodex.ps1` 和 `windows/Makefile`。平台状态与接口所有权见[运行时架构](../docs/rasterfall/architecture/runtime.md)和[GPU 渲染架构](../docs/rasterfall/architecture/gpu-rendering-architecture.md)。

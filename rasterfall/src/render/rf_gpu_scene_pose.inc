@@ -10,7 +10,7 @@ void rf_gpu_scene_pose_body_release(void)
 }
 
 int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
-    uint64_t time_ms,int walk,int x,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
+    uint64_t time_ms,int walk,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
 {
     struct rasterfall_model_resource *resource;
     struct rasterfall_model_instance *instance;
@@ -42,7 +42,8 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     out->bone_count=resource->definition.bone_count;out->scene_light_q8=256;
     out->body_to_world.rotation[0]=out->body_to_world.rotation[8]=cy/1024.0;
     out->body_to_world.rotation[4]=1;
-    out->body_to_world.translation[0]=x;out->body_to_world.translation[2]=z;
+    out->body_to_world.translation[0]=x;out->body_to_world.translation[1]=y;
+    out->body_to_world.translation[2]=z;
     out->body_to_world.scale_milli=1000;
     result=rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
         out->palette,out->bone_count);

@@ -6,7 +6,7 @@
 
 这是 Rasterfall 当前主要且优先的开发、构建编排、GPU 实机验证和签收 lane。唯一入口是
 `windows/NativeCodex.ps1`；它固定使用 MSYS2 `mingw64` + `usr/bin`，将对象、exe
-和 package 放入 `build-windows/`，并且始终从 `build-windows/rasterfall-windows`
+和运行目录放入 `build-windows/`，并且始终从 `build-windows/rasterfall-windows`
 运行真实 `rasterfall.exe`。
 
 共享 C 源码与 freestanding Linux 路径继续保留，但 WSL 现在只属于辅助/历史兼容环境，不保证同步更新、
@@ -34,6 +34,11 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 .\windows\NativeCodex.ps1 gpu-test
 .\windows\NativeCodex.ps1 acceptance
 ```
+
+`build` 只构建 `build-windows/rasterfall.exe`。`run`、`test`、`gpu-test` 和
+`acceptance` 会更新 `build-windows/rasterfall-windows/` 中的 exe 与资源，但不生成压缩包。
+需要交付压缩包时，显式运行 `.\windows\NativeCodex.ps1 package`，生成
+`build-windows/rasterfall-windows.zip`。
 
 ### 验证裁量
 

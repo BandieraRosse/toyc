@@ -39,7 +39,7 @@ int rf_gpu_scene_pose_logic_test(void);
 void rf_gpu_scene_pose_body_release(void);
 /* Catalog body preview: independent instance, authored colors, no gameplay ID. */
 int rf_gpu_scene_pose_body(int body_id, uint64_t frame, uint64_t world,
-    uint64_t time_ms, int walk, int x, int z, int cy,
+    uint64_t time_ms, int walk, int x, int y, int z, int cy,
     struct rf_gpu_scene_pose_v1 *out);
 struct rasterfall_model_asset *rf_gpu_scene_fixture_map(void);
 int rf_gpu_scene_native_fixture(int frames, int fault, int fault_frame);
