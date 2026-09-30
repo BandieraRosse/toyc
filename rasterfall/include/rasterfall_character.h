@@ -72,6 +72,7 @@ enum rasterfall_modular_profession_id {
 
 enum rasterfall_character_body_resource_id {
     RASTERFALL_BODY_RF_HUMANOID_V2,
+    RASTERFALL_BODY_RF_C01_V22H,
     RASTERFALL_BODY_RESOURCE_COUNT
 };
 

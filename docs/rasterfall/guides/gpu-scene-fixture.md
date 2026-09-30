@@ -1,5 +1,22 @@
 # GPU Scene 固定渲染地图
 
+## RF_MODEL_LAB 角色预览
+
+本地安装 `rasterfall/private-assets/models/rf_c01_v022h.rmesh` 后构建 package。
+该资源从锁定的 `authoring/build/v022h/rf_c01-v022h.glb` 通过现有 `rfchar_import.py`
+和 Windows `glb-inspect.exe` 生成，不覆盖私有创作候选。当前支持不透明分色和双面材质。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene model-lab 0
+```
+
+此入口直接定位并显示两个模型，仍可移动观察。普通前哨站入口初始隐藏，在场地东北侧终端按 E
+显示/隐藏。切离前哨站后隐藏；CPU 入口不绘制该预览。固定复现可追加
+`--gpu-normal-fixed-tick --frames 120 --frame-audit --gpu-frame-capture <绝对路径.bmp>`，
+截图产物为 `<绝对路径.bmp>.scene.ppm`；显式 readback 只用于捕获帧。
+目前复用已有静止与步行、上身 rifle-idle 采样，没有持枪适配、贴图、描边或 LOD 签收。
+缺失资源在画面与日志中显示错误，重新安装后关闭再开启展示。
+
 ## 实验性单人入口
 
 构建 package 后可从原生入口启动：

@@ -3,6 +3,9 @@
 > 状态：当前
 > 所有者：离线资产导入 manifest
 
+下一代角色包的 schema 2 字段与内容哈希规则见[角色包合同草案](character-package-v1.md)。
+当前统一 importer 仍只接受本页 schema 1；不得提前在生产 manifest 中混入未实现字段。
+
 `tools/assets/manifest.example.json` 是 schema 1 示例。必填字段只有 `schema`、`id`、`type`、`source`；
 `source` 相对 manifest 定位。可选 `lods` 保存该资产的简化策略，static prop 可记录自身
 `dimensions_m`，weapon 可记录自身 `attachments`。输出根、输出路径、RMESH 的 232 units/m 等全局

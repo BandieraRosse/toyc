@@ -42,21 +42,27 @@ void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
 
 __declspec(dllimport) int __stdcall SetWindowPos(void *, void *, int, int, int, int, unsigned int);
 #define SCENE_DRAWS RF_GPU_SCENE_ACTOR_MAX_DRAWS
+#define SCENE_CHUNK_VERTICES 65535u
+#define SCENE_CHUNKS 16u
 static int scene_round(double v) { return (int)(v<0 ? v-0.5 : v+0.5); }
 struct scene_mesh {
     struct rasterfall_resource_handle handle;
     struct rasterfall_resource_handle uploaded_bind_handle;
+    struct rasterfall_resource_handle packed_handle;
+    int packed_normals;
     uint32_t *bind, *palette, *indices;
     struct rf_gpu_graphics_vertex *vertices;
     uint32_t count, palette_count, vertex_capacity, palette_capacity;
     uint32_t uploaded_bind_count;
     int uploaded_bind_normals;
     struct rf_gpu_graphics_resource *gpu;
+    struct rf_gpu_graphics_resource *chunks[SCENE_CHUNKS];
 };
 struct scene_slot {
     struct rasterfall_resource_registry registry;
     struct scene_mesh mesh[3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
     struct rf_gpu_graphics_batch_item draws[SCENE_DRAWS];
+    uint32_t draw_object[SCENE_DRAWS], draw_chunk[SCENE_DRAWS];
     uint32_t draw_count, mesh_count;
     int pinned, submitted, bind_normals;
 };
@@ -112,8 +118,11 @@ static int scene_backing_reserve(struct scene_mesh *m,uint32_t count,uint32_t pa
 }
 static void scene_device_free(struct scene_slot *slot,struct rf_gpu_graphics *g)
 {
-    for (uint32_t i=0;i<slot->mesh_count;++i) {
-        if (slot->mesh[i].gpu) rf_gpu_graphics_resource_destroy(g,slot->mesh[i].gpu);
+    for (uint32_t i=0;i<3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS;++i) {
+        for (unsigned c=0;c<SCENE_CHUNKS;++c) {
+            if (slot->mesh[i].chunks[c]) rf_gpu_graphics_resource_destroy(g,slot->mesh[i].chunks[c]);
+            slot->mesh[i].chunks[c]=NULL;
+        }
         slot->mesh[i].gpu=NULL;
     }
 }
@@ -126,12 +135,15 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     const char *name;
     const struct rasterfall_character_visual_recipe *recipe=
         rasterfall_character_visual_recipe_for_character(pose->character_id);
-    if (pose->body_resource_id!=RASTERFALL_BODY_RF_HUMANOID_V2 || !gear_count ||
+    int body_only=pose->character_id==RASTERFALL_CHARACTER_NONE;
+    if (!rasterfall_character_body_resource_name(pose->body_resource_id) ||
         gear_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS ||
-        !recipe || (!include_map && gear_count!=recipe->attachment_count) ||
+        (body_only ? (gear_count || pose->weapon_valid || include_map) :
+        (!recipe || (!include_map && gear_count!=recipe->attachment_count) ||
         pose->shirt_color!=recipe->shirt_color ||
         pose->pants_color!=recipe->pants_color ||
-        pose->attachments[0].resource_id!=(uint32_t)recipe->attachments[0].gear_resource_id) return -1;
+        pose->body_resource_id!=(uint32_t)recipe->body_resource_id ||
+        pose->attachments[0].resource_id!=(uint32_t)recipe->attachments[0].gear_resource_id))) return -1;
     if (!include_map)
         for(uint32_t i=0;i<gear_count;++i)
             if (pose->attachments[i].resource_id!=(uint32_t)recipe->attachments[i].gear_resource_id ||
@@ -193,7 +205,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             object==1 ? &pose->body_to_world :
             weapon_object ? &pose->weapon_to_world :
             &pose->attachments[object-2].model_to_world;
-        if (!m || !m->index_count || m->index_count>65536 || m->index_count%3 || m->vertex_bytes<24 ||
+        if (!m || !m->index_count || m->index_count>SCENE_CHUNK_VERTICES*SCENE_CHUNKS || m->index_count%3 || m->vertex_bytes<24 ||
             !scene_range(m,m->vertices,(uint64_t)m->vertex_count*m->vertex_bytes) ||
             !scene_range(m,m->indices,(uint64_t)m->index_count*4) ||
             !scene_range(m,m->primitives,(uint64_t)m->primitive_count*16) ||
@@ -226,7 +238,10 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             }
         } else if (scene_backing_reserve(out,m->index_count,0,0)<0) return -1;
         out->count=m->index_count;
-        for(uint32_t v=0;v<out->count;++v) {
+        int repack=out->packed_handle.slot!=out->handle.slot ||
+            out->packed_handle.generation!=out->handle.generation ||
+            out->packed_normals!=(object==1 ? (int)pose->bind_normals : 0);
+        for(uint32_t v=0;repack && v<out->count;++v) {
             struct rf_gpu_graphics_vertex *dst=&out->vertices[v];
             uint32_t id=scene_u32(m->indices+v*4);
             if (id>=m->vertex_count) return -1;
@@ -257,6 +272,8 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                 }
             }
         }
+        out->packed_handle=out->handle;
+        out->packed_normals=object==1 ? (int)pose->bind_normals : 0;
         for(uint32_t primitive=0;primitive<m->primitive_count;++primitive) {
             const unsigned char *p=m->primitives+primitive*16;
             uint32_t first=scene_u32(p),count=scene_u32(p+4),mi=scene_u32(p+8);
@@ -286,12 +303,28 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             d->projection[0]=w;d->projection[1]=h;d->projection[2]=64;d->projection[3]=w*3/4;
             d->material[0]=scene_u32(material)&0xffffff;
             d->material[1]=object ? (uint32_t)pose->scene_light_q8 : 256;
-            if (object==1) {
+            if (object==1 && pose->character_id!=RASTERFALL_CHARACTER_NONE) {
                 if (mi==0) d->material[0]=pose->pants_color;
                 if (mi==1) d->material[0]=pose->shirt_color;
             }
             d->rotation[3]=object!=0; d->texture[0]=d->texture[1]=1;
             d->first_index=first;d->index_count=count; d->double_sided=m->format_version>=7 ? material[7]&1u : 1u;
+            slot->draw_object[slot->draw_count-1]=object;
+            slot->draw_chunk[slot->draw_count-1]=first/SCENE_CHUNK_VERTICES;
+            d->first_index=first%SCENE_CHUNK_VERTICES;
+            if (d->index_count>SCENE_CHUNK_VERTICES-d->first_index)
+                d->index_count=SCENE_CHUNK_VERTICES-d->first_index;
+            first+=d->index_count;count-=d->index_count;
+            while (count) {
+                if (slot->draw_count>=SCENE_DRAWS) return -1;
+                struct rf_gpu_graphics_batch_item *part=&slot->draws[slot->draw_count];
+                *part=*item;
+                slot->draw_object[slot->draw_count]=object;
+                slot->draw_chunk[slot->draw_count++]=first/SCENE_CHUNK_VERTICES;
+                part->draw.first_index=0;
+                part->draw.index_count=count>SCENE_CHUNK_VERTICES ? SCENE_CHUNK_VERTICES : count;
+                first+=part->draw.index_count;count-=part->draw.index_count;
+            }
             /* Until device preparation, resource index is held by draw grouping. */
         }
     }
@@ -300,7 +333,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
 static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
     int include_map)
 {
-    uint32_t white=0xffffff,draw=0;
+    uint32_t white=0xffffff;
     if (rasterfall_resources_frame_begin(&slot->registry)<0) return -1;
     slot->pinned=1;
     for(uint32_t i=include_map ? 0 : 1;i<slot->mesh_count;++i)
@@ -315,29 +348,38 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
                 m->uploaded_bind_handle.generation==m->handle.generation &&
                 m->uploaded_bind_count==m->count &&
                 m->uploaded_bind_normals==(i==1 ? slot->bind_normals : 0);
-            int grow=m->gpu ? rf_gpu_graphics_skinned_resource_update(g,m->gpu,m->count,
-                reuse_bind ? NULL : m->bind,reuse_bind ? 0 : m->count*22,
+            for (uint32_t c=0,base=0;base<m->count;++c,base+=SCENE_CHUNK_VERTICES) {
+            uint32_t count=m->count-base;
+            if (count>SCENE_CHUNK_VERTICES) count=SCENE_CHUNK_VERTICES;
+            struct rf_gpu_graphics_resource **gpu=&m->chunks[c];
+            int grow=*gpu ? rf_gpu_graphics_skinned_resource_update(g,*gpu,count,
+                reuse_bind ? NULL : m->bind+base*22,reuse_bind ? 0 : count*22,
                 m->palette,m->palette_count) : 1;
             if (grow<0) return -1;
             if (grow) {
-                if (m->gpu) {
-                    if (rf_gpu_graphics_resource_destroy(g,m->gpu)<0) return -1;
+                if (*gpu) {
+                    if (rf_gpu_graphics_resource_destroy(g,*gpu)<0) return -1;
+                    *gpu=NULL;
                     __printf("SCENE resource-growth object=%d vertices=%u retired_before_replace=1\n",i,m->count);
                 }
-                m->gpu=rf_gpu_graphics_skinned_resource_create(g,NULL,m->count,m->indices,m->count,
-                    m->bind,m->count*22,m->palette,m->palette_count,&white,1,1);
+                *gpu=rf_gpu_graphics_skinned_resource_create(g,NULL,count,m->indices,count,
+                    m->bind+base*22,count*22,m->palette,m->palette_count,&white,1,1);
             }
+            if (!*gpu) return -1;
+            }
+            m->gpu=m->chunks[0];
             if (m->gpu) {
                 m->uploaded_bind_handle=m->handle;
                 m->uploaded_bind_count=m->count;
                 m->uploaded_bind_normals=i==1 ? slot->bind_normals : 0;
             }
-        } else if (!m->gpu) m->gpu=rf_gpu_graphics_resource_create(g,m->vertices,m->count,m->indices,m->count,&white,1,1);
+        } else if (!m->gpu) m->chunks[0]=m->gpu=rf_gpu_graphics_resource_create(g,m->vertices,m->count,m->indices,m->count,&white,1,1);
         if (!m->gpu || !asset || rf_gpu_graphics_resource_bind(g,m->gpu)<0) return -1;
-        for(uint32_t p=0;p<asset->primitive_count;++p) {
-            slot->draws[draw].resource=m->gpu;
+        for(uint32_t draw=0;draw<slot->draw_count;++draw) {
+            if (slot->draw_object[draw]!=i) continue;
+            slot->draws[draw].resource=m->chunks[slot->draw_chunk[draw]];
+            if (rf_gpu_graphics_resource_bind(g,slot->draws[draw].resource)<0) return -1;
             if (rf_gpu_graphics_validate_draw(g,&slot->draws[draw].draw)<0) return -1;
-            draw++;
         }
     }
     return 0;

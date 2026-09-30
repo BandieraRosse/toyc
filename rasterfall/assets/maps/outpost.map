@@ -357,4 +357,5 @@ render id=rf_model_lab_south_line kind=floor min_x=11264 max_x=21504 min_z=-3635
 render id=rf_model_lab_west_line kind=floor min_x=11264 max_x=11328 min_z=-36288 max_z=-27200 height=0 color=9FE8C8
 render id=rf_model_lab_east_line kind=floor min_x=21440 max_x=21504 min_z=-36288 max_z=-27200 height=0 color=9FE8C8
 render id=rf_model_lab_title kind=sign min_x=14384 max_x=18384 min_z=-35950 max_z=-35920 height=500 color=81B4B5 attr.height2=800 attr.text=RF_MODEL_LAB attr.facing=+z
-render id=rf_model_lab_status kind=sign min_x=14784 max_x=17984 min_z=-28100 max_z=-28070 height=-300 color=81B4B5 attr.height2=0 attr.text=MODEL_PENDING attr.facing=+z
+render id=rf_model_lab_status kind=sign min_x=14784 max_x=17984 min_z=-28100 max_z=-28070 height=-300 color=81B4B5 attr.height2=0 attr.text=GPU_MODEL_LAB attr.facing=+z
+object id=rf_model_lab_button kind=facility_terminal x=20400 y=0 z=-28000 yaw=0 scale=1000 attr.collision=component

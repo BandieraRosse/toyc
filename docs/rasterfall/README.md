@@ -42,9 +42,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
+| 新角色包合同、材质能力与接入缺口审计 | [合同草案](reference/character-package-v1.md)、[资产工作流](guides/asset-pipeline.md#新角色接入前的能力清点) | `tools/assets/rfchar_audit.py`、`tools/assets/rfchar_material_contract.py`；源清点与材质元数据校验，不替代完整资产合同或游戏验收 |
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |
-| 私有角色脸部、头发的独立创作与组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、裸头枕部接口迁移、头发对真实头壳的只读贴合、局部拓扑、表情往返与固定几何转光审阅 |
-| 私有原创动漫角色、GPU 材质与单人默认入口 | [活动计划](plans/private-anime-character-gpu.md)、[RF-C01 设计稿](reference/rf-c01-design-study.md)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | Blender/GLB → RFCHAR/RFM2、RFANIM、Scene actor source 与 GPU 蒙皮/材质；旧 CPU 动漫入口不纳入正式接入 |
+| 私有角色脸部、头发的独立创作与组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md)、[发束边界与底发参考](reference/rf-c01-hair-surface-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、裸头枕部接口迁移、共同头壳包络与底发对已锁定侧后束的只读贴合、局部拓扑、表情往返与固定几何转光审阅 |
+| 新一代角色体系、私有动漫内容与 GPU 实验场接入 | [活动计划](plans/private-anime-character-gpu.md)、[实验场预览](guides/gpu-scene-fixture.md#rf_model_lab-角色预览)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-normal-scene model-lab 0`、目录 body pose 与分块 GPU 蒙皮；RF_MODEL_LAB 分色动作预览已接通，版本化角色包、纹理、完整动作与 LOD 继续按活动计划推进 |
 | 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 环境资产美术约束与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、预算、规格与生成入口 |

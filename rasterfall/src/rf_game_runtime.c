@@ -2959,9 +2959,12 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
                 (rf_showcase_near==1 ? rf_showcase_visible :
                  rf_showcase_near==2 ? rf_walk_visible :
                  rf_showcase_near==3 ? rf_actor_actions_visible :
-                 rf_actor_walk_visible) ?
+                 rf_showcase_near==4 ? rf_actor_walk_visible : rf_model_lab_visible) ?
                     "E  HIDE TEST CHARACTERS" :
                     "E  SHOW TEST CHARACTERS", 0xC7F2EE);
+        if (rf_model_lab_visible && rasterfall_render_outpost_model_lab_status()<0)
+            rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
+                "MODEL UNAVAILABLE - CHECK ASSET INSTALL",0xFFAA66);
         if (!runtime->rts_active && !runtime->session->shop_open &&
             toy_game_local_player_actor_const(state)->state != TOY_GAME_ACTOR_DOWNED)
             draw_crosshair(canvas, state);
@@ -3728,7 +3731,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab") ||
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
-               !strcmp(options.gpu_normal_view,"actor-walk-lab"))))) &&
+               !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
+               !strcmp(options.gpu_normal_view,"model-lab"))))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -3795,6 +3799,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "actor-actions-lab")) {
             camera.x=16384;camera.z=-9500;camera.cy=-1024;
             rf_actor_actions_visible=1;
+        } else if (!strcmp(options.gpu_normal_view, "model-lab")) {
+            camera.x=16600;camera.z=-29000;camera.y=650;camera.cy=-1024;
+            rf_model_lab_visible=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-walk-lab")) {
             camera.x=28672;camera.z=-9500;camera.cy=-1024;
             rf_actor_walk_visible=1;
@@ -4513,8 +4520,10 @@ startup_again:
             camera.z >= -1900 && camera.z <= -850;
         if (session.world_id!=RASTERFALL_WORLD_OUTPOST)
             rf_showcase_visible=rf_walk_visible=0;
-        if (session.world_id!=RASTERFALL_WORLD_OUTPOST)
+        if (session.world_id!=RASTERFALL_WORLD_OUTPOST) {
             rf_actor_actions_visible=rf_actor_walk_visible=0;
+            rf_model_lab_visible=0;
+        }
         rf_showcase_near = 0;
         rf_render_terminal.near = 0;
         if (!rf_table.open && !rf_render_terminal.open && !paused &&
@@ -4611,6 +4620,7 @@ startup_again:
             else if (rf_showcase_near==2) rf_walk_visible=!rf_walk_visible;
             else if (rf_showcase_near==3) rf_actor_actions_visible=!rf_actor_actions_visible;
             else if (rf_showcase_near==4) rf_actor_walk_visible=!rf_actor_walk_visible;
+            else if (rf_showcase_near==5) rf_model_lab_visible=!rf_model_lab_visible;
         } else if (rf_table.near && pending_key_edges[KEY_E] &&
                    net.mode == RASTERFALL_NET_OFF) {
             struct toy_game_actor *player = toy_game_local_player_actor(&game);
@@ -5164,6 +5174,12 @@ startup_again:
                 game_runtime.camera.pitch_sy=-772;
                 game_runtime.camera.pitch_cy=672;
             }
+            if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab") &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
+                game_runtime.camera.x=16600;game_runtime.camera.z=-29000;
+                game_runtime.camera.y=650;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
+                game_runtime.camera.pitch_sy=-64;game_runtime.camera.pitch_cy=1022;
+            }
             game_runtime.lifecycle_paused = paused;
             game_runtime.managed_spectator = managed_spectator;
             game_runtime.managed_third_person = managed_third_person;
@@ -5202,6 +5218,10 @@ startup_again:
                     (uint64_t)rf_core_clock_now_us());
             rasterfall_render_set_outpost_actor_walk(
                 rf_actor_walk_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
+                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
+                    (uint64_t)rf_core_clock_now_us());
+            rasterfall_render_set_outpost_model_lab(
+                rf_model_lab_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
                 options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
                     (uint64_t)rf_core_clock_now_us());
             game_runtime.render_context.character_cpu_reference =
@@ -5440,7 +5460,8 @@ startup_again:
                               (!strcmp(options.gpu_normal_view,"character-lab") ||
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
-                               !strcmp(options.gpu_normal_view,"actor-walk-lab")));
+                               !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
+                               !strcmp(options.gpu_normal_view,"model-lab")));
                         layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;
                         fill_hud_state(&layers.hud,&net,host_address,
                             net_port,&camera);

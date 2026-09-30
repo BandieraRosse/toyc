@@ -176,6 +176,26 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         pose->identity.generation=(unsigned)scene_enemy_capture.frame_id;
         scene_enemy_capture.modular_count++;
     }
+    if (active_session->world_id==RASTERFALL_WORLD_OUTPOST && outpost_model_lab_visible &&
+        outpost_model_lab_status>=0) {
+        unsigned begin=scene_enemy_capture.modular_count;
+        for (unsigned i=0;i<2;++i) {
+            if (scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS) goto fail;
+            struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+            if (rf_gpu_scene_pose_body(RASTERFALL_BODY_RF_C01_V22H,
+                    scene_enemy_capture.frame_id,scene_enemy_capture.world_generation,
+                    outpost_model_lab_time_us/1000,i,16000+(int)i*1200,-31400,1024,pose)<0) {
+                __printf("RF-MODEL-LAB resource unavailable or incompatible; body=%d\n",RASTERFALL_BODY_RF_C01_V22H);
+                scene_enemy_capture.modular_count=begin;
+                outpost_model_lab_status=-1;
+                break;
+            }
+            pose->identity.source_id=0x90000000u+i;
+            pose->identity.generation=1;
+            scene_enemy_capture.modular_count++;
+        }
+        if (outpost_model_lab_status>=0) outpost_model_lab_status=1;
+    }
     if (net && net->mode==RASTERFALL_NET_CLIENT) {
         for (int i=0;i<RASTERFALL_NET_PLAYER_MAX;++i) {
             int slot=TOY_GAME_REMOTE_ACTOR_BASE+i-1,airborne=0;

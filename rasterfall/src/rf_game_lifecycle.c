@@ -96,6 +96,7 @@ int rf_game_runtime_get_status(const struct rf_game_runtime *runtime,
 void rf_game_shutdown(struct rf_game_runtime *runtime)
 {
     if (!runtime || !runtime->initialized) return;
+    rasterfall_render_set_outpost_model_lab(0,0);
     rasterfall_net_discovery_close(&runtime->discovery);
     rasterfall_net_close(&runtime->net);
     rasterfall_resources_invalidate(rasterfall_render_resources());

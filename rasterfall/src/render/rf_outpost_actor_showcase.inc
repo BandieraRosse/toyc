@@ -17,6 +17,22 @@ struct outpost_actor_walker {
 static struct outpost_actor_walker outpost_actor_walkers[OUTPOST_ACTOR_WALK_COUNT];
 static int outpost_actor_actions_visible, outpost_actor_walk_visible;
 static uint64_t outpost_actor_actions_time_us;
+static int outpost_model_lab_visible;
+static int outpost_model_lab_status;
+static uint64_t outpost_model_lab_time_us, outpost_model_lab_start_us;
+
+void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us)
+{
+    if (!visible && outpost_model_lab_visible) rf_gpu_scene_pose_body_release();
+    if (!visible || !outpost_model_lab_visible) outpost_model_lab_status=0;
+    if (!outpost_model_lab_visible || time_us<outpost_model_lab_start_us)
+        outpost_model_lab_start_us=time_us;
+    outpost_model_lab_visible=visible;
+    outpost_model_lab_time_us=time_us-outpost_model_lab_start_us;
+}
+
+int rasterfall_render_outpost_model_lab_status(void)
+{ return outpost_model_lab_status; }
 static uint64_t outpost_actor_walk_time_us, outpost_actor_walk_step_us;
 
 static int outpost_actor_locomotion_time(int actor_id)

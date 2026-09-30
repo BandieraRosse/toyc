@@ -1,6 +1,55 @@
 /* Included by the character producer to reuse its resource, action, IK and
  * attachment evaluators. No game/session lookup or draw recording here. */
 #include "rf_gpu_scene_pose.h"
+static struct rasterfall_model_resource scene_body_resources[RASTERFALL_BODY_RESOURCE_COUNT];
+
+void rf_gpu_scene_pose_body_release(void)
+{
+    for (int i=0;i<RASTERFALL_BODY_RESOURCE_COUNT;++i)
+        rasterfall_model_resource_unload(&scene_body_resources[i]);
+}
+
+int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
+    uint64_t time_ms,int walk,int x,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
+{
+    struct rasterfall_model_resource *resource;
+    struct rasterfall_model_instance *instance;
+    struct rasterfall_action_composition composition={0};
+    const char *name=rasterfall_character_body_resource_name(body_id);
+    char path[256];
+    int result=-1;
+    if (!out || !name || snprintf(path,sizeof(path),
+        "rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+    resource=&scene_body_resources[body_id];
+    instance=tlibc_malloc(sizeof(*instance));
+    if (!instance) return -1;
+    memset(instance,0,sizeof(*instance));
+    if ((!resource->definition.bone_count && rasterfall_model_resource_load(resource,path)<0) ||
+        !resource->definition.bone_count ||
+        resource->definition.bone_count>RF_GPU_SCENE_POSE_BONES ||
+        rasterfall_model_instance_init(instance,resource)<0) goto done;
+    composition.layers[0].clip=humanoid_action(walk ?
+        RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
+    composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
+    if (!composition.layers[0].clip || !composition.layers[1].clip) goto done;
+    composition.layers[0].time_ms=(int)(time_ms%composition.layers[0].clip->duration_ms);
+    composition.layers[1].time_ms=(int)(time_ms%composition.layers[1].clip->duration_ms);
+    if (rasterfall_action_compose(instance,&composition)<0) goto done;
+    memset(out,0,sizeof(*out));
+    out->abi_version=1;out->byte_size=sizeof(*out);
+    out->frame_id=frame;out->world_generation=world;out->actor_count=1;
+    out->character_id=RASTERFALL_CHARACTER_NONE;out->body_resource_id=body_id;
+    out->bone_count=resource->definition.bone_count;out->scene_light_q8=256;
+    out->body_to_world.rotation[0]=out->body_to_world.rotation[8]=cy/1024.0;
+    out->body_to_world.rotation[4]=1;
+    out->body_to_world.translation[0]=x;out->body_to_world.translation[2]=z;
+    out->body_to_world.scale_milli=1000;
+    result=rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
+        out->palette,out->bone_count);
+done:
+    rasterfall_model_instance_unload(instance);
+    tlibc_free(instance);return result;
+}
 
 static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
     struct rasterfall_model_instance *instance,

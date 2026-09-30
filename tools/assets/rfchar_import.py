@@ -71,7 +71,33 @@ def q16(x): return max(0,min(65535,int(x*65535+0.5)))
 def s16(x): return max(-32767,min(32767,int(x*32767+(0.5 if x>=0 else -0.5))))
 def i32(x): return int(x*512+(0.5 if x>=0 else -0.5))
 
+def material_record(material):
+    """Encode only semantics supported by the v14 RFCHAR material path."""
+    mode = material.get("alphaMode", "OPAQUE")
+    if mode != "OPAQUE":
+        raise ValueError(f"RFCHAR V1 ERROR MATERIAL_CAPABILITY: alphaMode={mode} requires a new material consumer")
+    if "rf_material" in material.get("extras", {}):
+        raise ValueError("RFCHAR V1 ERROR MATERIAL_CAPABILITY: rf_material metadata is not supported by RFM2 v14 importer")
+    if type(material.get("doubleSided", False)) is not bool:
+        raise ValueError("RFCHAR V1 ERROR MATERIAL_FIELD: doubleSided must be boolean")
+    pbr = material.get("pbrMetallicRoughness", {})
+    color = pbr.get("baseColorFactor", [1, 1, 1, 1])
+    if (not isinstance(color, list) or len(color) != 4 or
+            any(type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1 for v in color)):
+        raise ValueError("RFCHAR V1 ERROR MATERIAL_FIELD: baseColorFactor must contain four finite values in [0,1]")
+    record = bytearray(40)
+    struct.pack_into("<I", record, 0, (srgb(color[0]) << 16) | (srgb(color[1]) << 8) | srgb(color[2]))
+    # RFM2 byte 4 is alpha; byte 5 is the legacy toon index, not alpha high bits.
+    # glTF OPAQUE ignores factor alpha. MASK needs cutoff/depth support first.
+    record[4] = 255
+    record[5] = 255
+    record[7] = int(material.get("doubleSided", False))
+    struct.pack_into("<I", record, 8, pbr.get("baseColorTexture", {}).get("index", 0xffffffff))
+    record[36] = MATERIAL_ROLES.get(material.get("name", ""), 0)
+    return record
+
 def convert(source,output,validator):
+    source=source.resolve();output=output.resolve();validator=validator.resolve()
     subprocess.run([str(validator),str(source),"contract"],check=True)
     d,b=glb(source); nodes=d["nodes"]; parent=[-1]*len(nodes)
     for i,n in enumerate(nodes):
@@ -83,6 +109,7 @@ def convert(source,output,validator):
     names={n.get("name",""):i for i,n in enumerate(nodes)}; skin=d["skins"][0]; joints=skin["joints"]
     joint_runtime={node:i for i,node in enumerate(joints)}
     vertices=[];weights=[];indices=[];primitives=[]
+    materials=list(d.get("materials", [])); source_material_count=len(materials); default_material=None
     for ni,n in enumerate(nodes):
         if "mesh" not in n:continue
         for p in d["meshes"][n["mesh"]]["primitives"]:
@@ -96,15 +123,19 @@ def convert(source,output,validator):
                 else:
                     total=active[0][1]+active[1][1];weights.append((active[0][0],active[1][0],q16(active[0][1]/total),1))
             first=len(indices);indices += [base+x for x in accessor(d,b,p["indices"])]
-            primitives.append((first,len(indices)-first,p.get("material",0)))
-    materials=d.get("materials",[]) or [{}]
+            material=p.get("material")
+            if material is None:
+                if default_material is None:
+                    default_material=len(materials);materials.append({})
+                material=default_material
+            elif type(material) is not int or not 0 <= material < source_material_count:
+                raise ValueError("RFCHAR V1 ERROR MATERIAL_INDEX: invalid primitive material")
+            primitives.append((first,len(indices)-first,material))
     out=bytearray(64);out[:4]=b"RFM2";struct.pack_into("<IIII",out,4,14,len(vertices),len(indices),512)
     mins=[min(v[i] for v in vertices) for i in range(3)];maxs=[max(v[i] for v in vertices) for i in range(3)]
     struct.pack_into("<6i",out,20,*mins,*maxs);struct.pack_into("<IIIII",out,44,len(primitives),len(materials),64,64+16*len(primitives),0)
     for first,count,mat in primitives: out+=struct.pack("<IIII",first,count,mat,0)
-    for m in materials:
-        p=m.get("pbrMetallicRoughness",{});c=p.get("baseColorFactor",[1,1,1,1]);color=(srgb(c[0])<<16)|(srgb(c[1])<<8)|srgb(c[2]);tex=p.get("baseColorTexture",{}).get("index",0xffffffff)
-        rec=bytearray(40);struct.pack_into("<I",rec,0,color);struct.pack_into("<H",rec,4,q16(c[3]));struct.pack_into("<I",rec,8,tex);rec[36]=MATERIAL_ROLES.get(m.get("name",""),0);out+=rec
+    for m in materials: out+=material_record(m)
     for v in vertices: out+=struct.pack("<iii3hHH",*v)+bytes(14)
     out+=struct.pack("<"+"I"*len(indices),*indices)
     struct.pack_into("<I",out,60,len(out)); names_blob=bytearray();offsets=[]

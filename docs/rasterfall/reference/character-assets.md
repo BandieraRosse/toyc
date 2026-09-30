@@ -11,6 +11,10 @@ Blender source → Character GLB Contract V1 → offline importer/validator
                → RFM2（或后续 runtime character format）→ humanoid animation/rendering
 ```
 
+新角色包、材质载体、能力矩阵与版本迁移设计见[角色包与材质 V1 草案](character-package-v1.md)。
+草案尚未实现，不扩大本文 V1 的已支持范围。当前 RFCHAR converter 保存双面标志，
+对 MASK 和未实现的 RF 材质元数据明确报错；Scene 角色纹理材质仍未接通，接入前先运行能力审计。
+
 Blender 是离线创作与生成环境，GLB 是主要交换格式，RFM2 是当前运行时格式。runtime 不依赖
 Blender；PMX/VMD 仅是兼容输入，不定义 canonical 名称、空间或附件。玩法只认识 actor、character、
 animation 与稳定枚举，不认识 GLB node name。
@@ -88,6 +92,13 @@ importer 会完整求值 node hierarchy，绝不沿用旧 `glb2rmesh` 的“只�
 第一版仅允许 OPAQUE 或 MASK。不接受 KHR 材质扩展、运行时 shader graph、嵌套外部 URI 或依赖
 Blender scene/camera/light。动画可与角色同包，但 skeletal importer 第一阶段可明确忽略；动画进入
 格式无关 `rasterfall_animation_clip` 的规则仍见 [animation architecture](../architecture/animation-architecture.md)。
+
+输入门与产物能力分开：当前 RFM2 v14 RFCHAR converter 只导入 OPAQUE，按其语义忽略
+baseColorFactor alpha，写 byte 4=255；byte 5 为旧 toon index，不能写成 16 位 alpha 的高字节。
+`doubleSided` 写入 byte 7 的 bit 0；无材质引用的 primitive 使用独立默认白材质，不借用材质 0。
+MASK/BLEND 和 `extras.rf_material` 在写产物前以 `MATERIAL_CAPABILITY` 拒绝，直到新格式和消费者
+实现，不能再静默丢掉 cutoff 或 RF 参数。无效颜色/布尔值报 `MATERIAL_FIELD`，无效索引报
+`MATERIAL_INDEX`；验证失败保留已有输出。已导入的历史产物不会自动修正，需要重新构建。
 
 ## Attachment Contract V1
 

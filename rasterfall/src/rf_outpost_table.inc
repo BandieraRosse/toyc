@@ -16,12 +16,13 @@ struct rf_table_ui {
 static struct rf_table_ui rf_table;
 static int rf_showcase_visible, rf_walk_visible;
 static int rf_actor_actions_visible, rf_actor_walk_visible, rf_showcase_near;
+static int rf_model_lab_visible;
 
 static int rf_showcase_button_near(const struct rasterfall_session *session,int x,int z)
 {
     const char *ids[]={"lab_showcase_button","walk_lab_showcase_button",
-        "actor_actions_button","actor_walk_button"};
-    for (int i=0;i<4;++i) {
+        "actor_actions_button","actor_walk_button","rf_model_lab_button"};
+    for (int i=0;i<5;++i) {
         const struct rf_map_runtime_object *button=rf_map_runtime_find_object(
             &session->map_ops.runtime,ids[i]);
         if (button && x>=button->x-750 && x<=button->x+750 &&

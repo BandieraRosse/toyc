@@ -193,7 +193,8 @@ rasterfall_character_visual_recipe(int id)
 
 const char *rasterfall_character_body_resource_name(int id)
 {
-    return id == RASTERFALL_BODY_RF_HUMANOID_V2 ? "rf_humanoid_v2" : NULL;
+    static const char *names[]={"rf_humanoid_v2", "rf_c01_v022h"};
+    return id>=0 && id<RASTERFALL_BODY_RESOURCE_COUNT ? names[id] : NULL;
 }
 
 const char *rasterfall_character_gear_resource_name(int id)

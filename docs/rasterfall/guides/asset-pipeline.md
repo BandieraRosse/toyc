@@ -69,6 +69,55 @@ Windows 安装时会对移入的 RMESH、LOD 和纹理目录恢复目标目录�
 
 [Asset manifest schema 1](../reference/asset-manifest.md) 拥有字段和验证规则。
 
+## 新角色接入前的能力清点
+
+```powershell
+python tools/assets/rfchar_audit.py path/to/character.glb
+python tools/assets/test_rfchar_audit.py
+```
+
+审计只读输出 JSON，记录源 SHA-256、mesh node 实际引用数量对应的顶点/索引总量、
+权重数量、材质与当前 importer/Scene 的已知缺口。退出 0 只代表清点成功；非零表示输入无法清点。
+它不是 GLB 合同验证器，缺口列表为空也不代表能渲染；仍需原生 glb-inspect contract、
+runtime 与材质/变形验收。公开回归探针不依赖私有内容，也不代表完整变形小样。
+新字段、能力矩阵及待决策项见[角色包与材质草案](../reference/character-package-v1.md)。
+
+新材质元数据的独立校验与公开回归：
+
+```powershell
+python tools/assets/rfchar_material_contract.py path/to/character.glb
+python tools/assets/test_rfchar_material_contract.py
+```
+
+此入口要求每个材质显式携带 `extras.rf_material`，输出展开默认值后的材质表及实际所需能力。
+它仅核对材质元数据、纹理/图片引用声明和 sampler profile，不检查 UV、图片字节、骨架或
+依赖路径，不安装资产。当前 v14 importer 仍拒绝新 RF extras；不可将此 JSON 当成运行时包。
+
+公开原创材质小样复用 canonical fixture 骨架，并加入 UV0、内嵌 RGBA PNG、OPAQUE/MASK、
+单双面及 toon/outline/face_light 元数据：
+
+```powershell
+& 'E:/Blender 5.2/blender.exe' --background --factory-startup --python-exit-code 1 --python tools/blender/generate_rfchar_material_fixture.py -- --output tmp/rfchar-material/fixture.glb --preview tmp/rfchar-material/blender-reference.png
+python tools/assets/rfchar_material_contract.py tmp/rfchar-material/fixture.glb
+```
+
+Blender 路径按本机安装选择；GLB 和 PNG 均留在 tmp，不加入资源目录或安装到实验场。
+预览使用固定相机与灯光，只供几何、基础色与遮罩参考；自定义 toon、描边和脸部光照只写入
+GLB extras，Blender 预览未实现这些 RF 着色语义，不作为游戏 GPU 或专用头发高光取舍的证据。
+
+材质导入边界的公开原生回归（先生成 fixture，所有生成物保留在 tmp）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools
+New-Item -ItemType Directory -Force tmp/rfchar-p0 | Out-Null
+& 'E:/Blender 5.2/blender.exe' --background --factory-startup --python-exit-code 1 --python tools/blender/generate_rfchar_fixture.py -- --output tmp/rfchar-p0/fixture.glb
+python tools/assets/test_rfchar_materials.py tmp/rfchar-p0/fixture.glb --validator build-windows/glb-inspect.exe --runtime build-windows/rfchar-runtime-test.exe
+```
+
+Blender 路径按本机安装选择。该回归覆盖 OPAQUE alpha、单/双面、默认白材质、无效字段和
+不支持能力的拒绝、失败保留旧产物及原生实例隔离。它不进行 shader 视觉验收。
+RFCHAR importer 在调用原生 validator 前解析源、产物和工具的绝对路径，避免原生工具工作目录影响。
+
 ## 空间规范与 Blender 边界
 
 - `static_prop`：Blender 源场景为真实米制、Z-up、-Y forward；标准化 GLB 为 Y-up、+Z forward，
