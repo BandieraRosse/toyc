@@ -819,6 +819,8 @@ APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_application_projection.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_boot_ui.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_boot_files.o
 APP_EXTRA_OBJS_vmd_inspect := $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o \
 	$(BUILD)/rasterfall_humanoid_retarget.o

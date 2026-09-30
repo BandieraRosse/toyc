@@ -28,6 +28,10 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --renderer gpu-scene`（`--gpu-scene-play` 为等价入口）。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
+普通离线启动先进入 RF INIT：默认选择 Terminal Environment，可用方向键和 Enter 切换到 Graphical Boot；
+终端输入 `help` 查看只读 `/assets` 文件命令，输入 `boot` 选择 CPU/GPU。图形引导支持鼠标选择和返回。
+游戏中可在暂停菜单切换渲染器，当前 session 保留；GPU 初始化失败会恢复 CPU。`--skip-boot` 直接按
+命令行渲染设置进入游戏，显式诊断和自动化入口也默认跳过交互。
 离线单人游戏默认使用 FPS；按 `M` 切换 RTS 俯视模式。RTS 中 `WASD` 平移镜头，
 滚动鼠标滚轮调节俯视高度，向上放大细节、向下缩小至可查看完整旧地图；
 左键选择玩家或旗帜，右键命令玩家移动或立即搬移所选旗帜。玩家在 RTS 中自动攻击射程内敌人；

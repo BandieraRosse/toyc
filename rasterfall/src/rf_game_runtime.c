@@ -57,6 +57,7 @@
 #include "string.h"
 #include "tlibc_everything.h"
 #include "toy_renderer.h"
+#include "rf_boot_ui.h"
 #include "toy_assets.h"
 #include "toy_input.h"
 #include "toy_game.h"
@@ -239,8 +240,9 @@ static void rf_windows_log(const char *message) { (void)message; }
 #define PAUSE_ITEM_COORDS   2
 #define PAUSE_ITEM_KEYBOARD 3
 #define PAUSE_ITEM_OUTPOST 4
-#define PAUSE_ITEM_EXIT    5
-#define PAUSE_ITEM_COUNT   6
+#define PAUSE_ITEM_RENDERER 5
+#define PAUSE_ITEM_EXIT    6
+#define PAUSE_ITEM_COUNT   7
 
 enum rasterfall_startup_screen {
     RASTERFALL_STARTUP_MAIN,
@@ -1195,6 +1197,10 @@ static void draw_pause_overlay(struct rasterfall_canvas *surface,
                      sensitivity_percent(settings->keyboard_level));
         else if (item == PAUSE_ITEM_OUTPOST)
             snprintf(line, sizeof(line), "%c RETURN TO OUTPOST%s",
+                     item == menu->selected ? '>' : ' ',
+                     online ? " (OFFLINE ONLY)" : "");
+        else if (item == PAUSE_ITEM_RENDERER)
+            snprintf(line, sizeof(line), "%c SWITCH CPU / GPU SCENE%s",
                      item == menu->selected ? '>' : ' ',
                      online ? " (OFFLINE ONLY)" : "");
         else
@@ -3366,6 +3372,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     char host_address[16];
     uint64_t seed;
     struct rasterfall_options options;
+    struct rf_boot_journal boot_journal;
+    struct rf_core_config boot_cpu_config;
+    int interactive_boot;
+    int renderer_switch_request = -1;
+    int renderer_switch_count = 0;
+    int boot_graphical = 0;
+    int64_t boot_task_started = 0;
     int public_room = 0, public_room_id = 0;
     int managed_spectator = 0, managed_third_person = 0;
     const char *startup_error = NULL;
@@ -3375,6 +3388,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     ensure_game_bindings();
     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
     options = *config->options;
+    memset(&boot_journal, 0, sizeof(boot_journal));
+    interactive_boot = !options.skip_boot && !logic_test &&
+        !options.render_performance && !options.environment_capture_dir &&
+        !options.normal_frame_audit_output && !options.character_world_capture_dir &&
+        !options.renderer_mode && !options.gpu_scene_play &&
+        (options.force_boot || (!auto_mode &&
+        !options.gpu_scene_play && !options.gpu_scene_world_preview &&
+        !options.gpu_scene_pose_test && !options.gpu_scene_native_fixture &&
+        !options.map_path && !options.legacy_map && !frame_limit &&
+        !options.gpu_normal_view && !options.gpu_wave_repro &&
+        requested_net_mode == RASTERFALL_NET_OFF));
     rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
     if (options.enemy_visual_capture_dir)
         return rasterfall_render_enemy_visual_capture(options.enemy_visual_capture_dir);
@@ -3635,6 +3659,14 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.gpu_backend = NULL;
         core_config.gpu_backend_context = NULL;
         core_config.native_present = options.gpu_native_present;
+        core_config.init_event = interactive_boot ? rf_boot_record_event : NULL;
+        core_config.init_event_context = &boot_journal;
+        boot_cpu_config = core_config;
+        boot_cpu_config.renderer_mode = RF_CORE_RENDERER_CPU;
+        boot_cpu_config.gpu_policy = RF_GPU_POLICY_DISABLED;
+        boot_cpu_config.gpu_backend = NULL;
+        boot_cpu_config.gpu_backend_context = NULL;
+        boot_cpu_config.native_present = 0;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
         gpu_vulkan_context.present_fault =
@@ -3675,9 +3707,62 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         }
 #endif
     }
+    if (interactive_boot) {
+        struct rf_boot_result choice;
+        const char *boot_error = NULL;
+        for (;;) {
+            int boot_result = rf_boot_run(&core, &choice, &boot_journal,
+                                          boot_error);
+            if (boot_result <= 0) {
+                rf_core_shutdown(&core);
+                return boot_result == 0 ? 0 : 1;
+            }
+            boot_graphical = choice.graphical;
+            if (choice.renderer == RF_CORE_RENDERER_CPU) break;
+#ifdef TOYC_WINDOWS
+            struct rf_core_config gpu_config;
+            memset(&gpu_config, 0, sizeof(gpu_config));
+            gpu_config.title = "Rasterfall";
+            gpu_config.width = RASTERFALL_DEFAULT_WIDTH;
+            gpu_config.height = RASTERFALL_DEFAULT_HEIGHT;
+            gpu_config.input = &platform_input;
+            gpu_config.renderer = &renderer;
+            gpu_config.renderer_mode = RF_CORE_RENDERER_GPU_SCENE;
+            gpu_config.gpu_policy = RF_GPU_POLICY_REQUIRED;
+            gpu_config.gpu_backend = &rf_gpu_vulkan_backend;
+            gpu_config.gpu_backend_context = &gpu_vulkan_context;
+            gpu_config.native_present = 1;
+            gpu_config.init_event = rf_boot_record_event;
+            gpu_config.init_event_context = &boot_journal;
+            rf_core_shutdown(&core);
+            if (rf_core_init_config(&core, &gpu_config) < 0) {
+                memset(&boot_journal, 0, sizeof(boot_journal));
+                if (rf_core_init_config(&core, &boot_cpu_config) < 0)
+                    return 1;
+                boot_error = "GPU Scene unavailable; choose CPU or retry";
+                continue;
+            }
+            options.gpu_scene_play = 1;
+            options.gpu_scene_independent_preview = 1;
+            options.gpu_scene_world_preview = 1;
+            options.renderer_mode = 1;
+            options.gpu_required = 1;
+            options.gpu_native_present = 1;
+            break;
+#else
+            boot_error = "GPU Scene unavailable on this platform";
+#endif
+        }
+        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
+                             "Loading Outpost map", 0, 4) < 0) {
+            rf_core_shutdown(&core);
+            return 1;
+        }
+    }
     rf_windows_log("startup: loading map");
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
+    boot_task_started = rf_core_clock_now_us();
     if (rf_game_init(&game_runtime, &core, &session,
                      config->options && config->options->legacy_map ?
                      "rasterfall/assets/maps/rasterfall_legacy.map" :
@@ -3687,9 +3772,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                      config->options->map_path :
                      config->map_path ? config->map_path :
                      "rasterfall/assets/maps/rasterfall.map") < 0) {
+        if (interactive_boot)
+            rf_boot_record_event(&boot_journal, "session-map-load", -1,
+                rf_core_clock_now_us() - boot_task_started);
         __fprintf(2, "rasterfall: cannot load map rasterfall/assets/maps/rasterfall.map\n");
         rf_core_shutdown(&core);
         return 1;
+    }
+    if (interactive_boot) {
+        rf_boot_record_event(&boot_journal, "session-map-load", 0,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
+                             "Baking world lightmap", 1, 4) < 0) {
+            rf_game_shutdown(&game_runtime);
+            rf_core_shutdown(&core);
+            return 1;
+        }
     }
     /* The effects macro names the active pool for the helper functions below;
      * temporarily suspend it while naming the facade member itself. */
@@ -3727,12 +3825,24 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_render_set_vmd_legacy_root_offset(vmd_legacy_root_offset);
     rasterfall_render_set_vmd_legacy_knee_ccd(vmd_legacy_knee_ccd);
     rasterfall_render_set_vmd_skin_trace(vmd_skin_trace);
+    boot_task_started = rf_core_clock_now_us();
     rasterfall_render_bake_lightmap();
+    if (interactive_boot) {
+        rf_boot_record_event(&boot_journal, "world-lightmap-bake", 0,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
+                             "Loading optional model texture", 2, 4) < 0) {
+            rf_game_shutdown(&game_runtime);
+            rf_core_shutdown(&core);
+            return 1;
+        }
+    }
     rf_windows_log("startup: lightmap baked");
     rasterfall_effects_init(&effects);
     __printf("rasterfall: baked lightmap %dx%d\n", RF_WORLD_LIGHT_W, RF_WORLD_LIGHT_H);
     memset(&model_texture, 0, sizeof(model_texture));
     memset(&model_texture_view, 0, sizeof(model_texture_view));
+    boot_task_started = rf_core_clock_now_us();
     if (toy_texture_load("rasterfall/assets/textures/model_diffuse.ttex",
                          &model_texture) == 0) {
         model_texture_view.data = model_texture.data;
@@ -3743,6 +3853,18 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         model_texture_view.has_transparency = model_texture.has_transparency;
         __printf("rasterfall: model texture loaded (%u x %u)\n",
                  model_texture.width, model_texture.height);
+    }
+    if (interactive_boot) {
+        rf_boot_record_event(&boot_journal, "optional-model-texture",
+            model_texture.blob ? 0 : 1,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
+                             "Preparing Outpost session", 3, 4) < 0) {
+            if (model_texture.blob) toy_texture_unload(&model_texture);
+            rf_game_shutdown(&game_runtime);
+            rf_core_shutdown(&core);
+            return 1;
+        }
     }
     if (!textures_enabled) {
         __printf("rasterfall: textures disabled, using pure colors\n");
@@ -3811,7 +3933,19 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
+    boot_task_started = rf_core_clock_now_us();
     rasterfall_session_reset(&session, &camera, seed);
+    if (interactive_boot) {
+        rf_boot_record_event(&boot_journal, "outpost-session-reset", 0,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
+                             "Entering Outpost", 4, 4) < 0) {
+            if (model_texture.blob) toy_texture_unload(&model_texture);
+            rf_game_shutdown(&game_runtime);
+            rf_core_shutdown(&core);
+            return 1;
+        }
+    }
     rf_windows_log("startup: session reset");
     if (options.gpu_wave_repro) {
         game.state = TOY_GAME_PLAYING;
@@ -4251,6 +4385,77 @@ startup_again:
         int64_t now, elapsed, t_frame, t_stage;
         int64_t audit_loop_start = rf_core_time_us(&core);
         int64_t scene_dropped_us = 0;
+#ifdef TOYC_WINDOWS
+        if (renderer_switch_request >= 0) {
+            struct rf_core_config next_config = boot_cpu_config;
+            int target = renderer_switch_request;
+            int initialized;
+            int restored_cpu = 0;
+            renderer_switch_request = -1;
+            rasterfall_audio_stop(&audio);
+            rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+            rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
+            rasterfall_resources_invalidate(rasterfall_render_resources());
+            rf_core_shutdown(&core);
+            if (target == RF_CORE_RENDERER_GPU_SCENE) {
+                memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
+                next_config.renderer_mode = RF_CORE_RENDERER_GPU_SCENE;
+                next_config.gpu_policy = RF_GPU_POLICY_REQUIRED;
+                next_config.gpu_backend = &rf_gpu_vulkan_backend;
+                next_config.gpu_backend_context = &gpu_vulkan_context;
+                next_config.native_present = 1;
+            }
+            initialized = rf_core_init_config(&core, &next_config) == 0;
+            if (!initialized && target == RF_CORE_RENDERER_GPU_SCENE) {
+                initialized = rf_core_init_config(&core,
+                                                   &boot_cpu_config) == 0;
+                session.banner_text = "GPU UNAVAILABLE; CPU RESTORED";
+                session.banner_ms = 3000;
+                target = RF_CORE_RENDERER_CPU;
+                restored_cpu = 1;
+            }
+            if (!initialized) {
+                __fprintf(2, "rasterfall: renderer switch recovery failed\n");
+                running = 0;
+                break;
+            }
+            renderer_switch_count++;
+            options.renderer_mode = target == RF_CORE_RENDERER_GPU_SCENE;
+            options.gpu_required = options.renderer_mode;
+            options.gpu_native_present = options.renderer_mode;
+            options.gpu_scene_play = options.renderer_mode;
+            options.gpu_scene_independent_preview = options.renderer_mode;
+            options.gpu_scene_world_preview = options.renderer_mode;
+            rf_render_terminal_init(options.gpu_scene_play,
+                                    edge_pass_enabled);
+            if (rf_core_audio_ready(&core))
+                rasterfall_audio_start(&audio, rf_core_audio(&core));
+            pointer_lock_requested = 0;
+            rf_core_set_pointer_lock(&core, 0);
+            accumulator = 0;
+            last_time = rf_core_begin_tick(&core);
+            fps_window_start = last_time;
+            fps_window_frames = 0;
+            memset(pending_key_edges, 0, sizeof(pending_key_edges));
+            memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
+            session.banner_text = restored_cpu ?
+                "GPU UNAVAILABLE; CPU RESTORED" :
+                target == RF_CORE_RENDERER_GPU_SCENE ?
+                "GPU SCENE ACTIVE" : "CPU RENDERER ACTIVE";
+            session.banner_ms = 2500;
+            {
+                char switch_line[192];
+                snprintf(switch_line, sizeof(switch_line),
+                    "RF-BOOT stage=runtime-switch status=%s backend=%s world=%d seed=%llu",
+                    restored_cpu ? "fallback" : "ok",
+                    rf_core_renderer_name(target), session.world_id,
+                    (unsigned long long)session.seed);
+                __printf("%s\n", switch_line);
+                rf_windows_log(switch_line);
+            }
+            continue;
+        }
+#endif
         if (world_cycle_gate &&
             (rendered_frames == 30 || rendered_frames == 60 ||
              rendered_frames == 90)) {
@@ -4552,6 +4757,13 @@ startup_again:
                             pause_menu.selected -= PAUSE_ITEM_COUNT;
                     }
                     menu_nav_ready_us = menu_now + 180000;
+                    if (interactive_boot) {
+                        char nav_line[96];
+                        snprintf(nav_line, sizeof(nav_line),
+                            "RF-BOOT pause-selection item=%d",
+                            pause_menu.selected);
+                        rf_windows_log(nav_line);
+                    }
                 }
                 pending_key_edges[KEY_UP] = 0;
                 pending_key_edges[KEY_DOWN] = 0;
@@ -4579,6 +4791,13 @@ startup_again:
                 }
             }
             if (action_pressed(&input, RF_ACTION_CONFIRM)) {
+                if (interactive_boot) {
+                    char select_line[96];
+                    snprintf(select_line, sizeof(select_line),
+                        "RF-BOOT pause-confirm item=%d",
+                        pause_menu.selected);
+                    rf_windows_log(select_line);
+                }
                 action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
                 pending_key_edges[KEY_ENTER] = 0;
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
@@ -4605,6 +4824,21 @@ startup_again:
                             session.banner_text = "OUTPOST LOAD FAILED";
                             session.banner_ms = 2200;
                         }
+                    }
+                }
+                else if (pause_menu.selected == PAUSE_ITEM_RENDERER) {
+                    if (net.mode != RASTERFALL_NET_OFF) {
+                        session.banner_text = "RENDERER SWITCH AVAILABLE OFFLINE";
+                        session.banner_ms = 2200;
+                    } else {
+#ifdef TOYC_WINDOWS
+                        renderer_switch_request = core.gpu_frame.renderer ==
+                            RF_CORE_RENDERER_GPU_SCENE ?
+                            RF_CORE_RENDERER_CPU : RF_CORE_RENDERER_GPU_SCENE;
+#else
+                        session.banner_text = "RENDERER SWITCH UNAVAILABLE";
+                        session.banner_ms = 2200;
+#endif
                     }
                 }
                 else if (pause_menu.selected == PAUSE_ITEM_EXIT) {
@@ -6153,7 +6387,9 @@ scene_shutdown:
         rf_core_shutdown(&core);
         if (scene_runtime_failed) return 1;
         if (core_runtime_failed || capture_missing || character_diff_missing) return 3;
-        if (options.gpu_scene_world_preview && scene_native_frames != rendered_frames) return 3;
+        if (options.gpu_scene_world_preview && !interactive_boot &&
+            !renderer_switch_count &&
+            scene_native_frames != rendered_frames) return 3;
         return no_scene_output ? 2 : 0;
     }
 }

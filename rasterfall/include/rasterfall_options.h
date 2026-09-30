@@ -12,6 +12,7 @@ struct rasterfall_options {
     int requested_net_mode, net_port, net_loss_percent;
     const char *net_address;
     int auto_mode, textures_enabled, edge_pass_enabled;
+    int skip_boot, force_boot;
     int renderer_mode, gpu_required, gpu_native_present;
     int gpu_present_fault, gpu_present_fault_frame;
     const char *map_path;

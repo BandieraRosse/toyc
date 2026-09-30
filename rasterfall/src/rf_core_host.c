@@ -19,25 +19,51 @@ const char *rf_core_renderer_name(int renderer)
 
 static int rf_core_init_window(struct rf_core *core, const char *title,
                               int width, int height, struct toy_input *input,
-                              struct toy_renderer *renderer, int native_present)
+                              struct toy_renderer *renderer, int native_present,
+                              const struct rf_core_config *config)
 {
+    int64_t started;
+    int result;
     if (!core || !input || !renderer) return -1;
     memset(core, 0, sizeof(*core));
-    if (rf_core_filesystem_init(&core->filesystem) < 0) return -1;
+    started = rf_core_clock_now_us();
+    result = rf_core_filesystem_init(&core->filesystem);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "filesystem", result,
+                           rf_core_clock_now_us() - started);
+    if (result < 0) return -1;
     core->input = input;
     core->renderer = renderer;
+    started = rf_core_clock_now_us();
     toy_input_init(core->input);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "input", 0,
+                           rf_core_clock_now_us() - started);
+    started = rf_core_clock_now_us();
     toy_renderer_init(core->renderer);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "software-renderer", 0,
+                           rf_core_clock_now_us() - started);
+    started = rf_core_clock_now_us();
     core->window = native_present ? toy_window_open_native(title, width, height) :
         toy_window_open(title, width, height);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "window",
+                           core->window ? 0 : -1,
+                           rf_core_clock_now_us() - started);
     if (!core->window) {
         toy_renderer_destroy(core->renderer);
         rf_core_filesystem_shutdown(&core->filesystem);
         return -1;
     }
     /* Audio is optional, matching the existing Rasterfall startup policy. */
+    started = rf_core_clock_now_us();
     if (toy_audio_open(&core->audio, 48000, 2) == 0)
         core->audio_ready = 1;
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "audio",
+                           core->audio_ready ? 0 : 1,
+                           rf_core_clock_now_us() - started);
     core->initialized = 1;
     return 0;
 }
@@ -45,7 +71,8 @@ static int rf_core_init_window(struct rf_core *core, const char *title,
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,
                  struct toy_input *input, struct toy_renderer *renderer)
 {
-    return rf_core_init_window(core, title, width, height, input, renderer, 0);
+    return rf_core_init_window(core, title, width, height, input, renderer, 0,
+                               NULL);
 }
 
 int rf_core_init_config(struct rf_core *core,
@@ -56,7 +83,7 @@ int rf_core_init_config(struct rf_core *core,
                     config->renderer_mode != RF_CORE_RENDERER_GPU_SCENE)) return -1;
     result = rf_core_init_window(core, config->title, config->width, config->height,
                                  config->input, config->renderer,
-                                 config->native_present != 0);
+                                 config->native_present != 0, config);
     if (result < 0) return result;
     if (config->native_present && config->gpu_backend) {
         struct toy_native_window_handle native;
@@ -76,8 +103,19 @@ int rf_core_init_config(struct rf_core *core,
             }
         }
     }
-    if (rf_gpu_init(&core->gpu, config->gpu_policy, config->gpu_backend,
-                    config->gpu_backend_context) < 0) {
+    {
+    int64_t started = rf_core_clock_now_us();
+    result = rf_gpu_init(&core->gpu, config->gpu_policy, config->gpu_backend,
+                         config->gpu_backend_context);
+    if (config->init_event)
+        config->init_event(config->init_event_context,
+                           config->gpu_policy == RF_GPU_POLICY_DISABLED ?
+                           "gpu-backend-disabled" : "gpu-backend",
+                           config->gpu_policy == RF_GPU_POLICY_DISABLED ?
+                           1 : result,
+                           rf_core_clock_now_us() - started);
+    }
+    if (result < 0) {
         rf_core_shutdown(core);
         return -1;
     }
@@ -113,6 +151,18 @@ int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
     toy_renderer_init(core->renderer);
     core->initialized = 1;
     return 0;
+}
+
+int rf_core_present_boot_frame(struct rf_core *core)
+{
+    int result;
+    if (!core || !core->window || !core->renderer ||
+        core->render_frame.current_layer != RF_RENDER_LAYER_OVERLAY ||
+        core->gpu_frame.stats.frames_attempted) return -1;
+    result = toy_renderer_flush(core->renderer);
+    if (result >= 0) result = toy_window_present(core->window);
+    rasterfall_resources_frame_complete(rasterfall_render_resources());
+    return result;
 }
 
 int rf_core_poll_events(struct rf_core *core)

@@ -164,6 +164,10 @@ struct rf_core_config {
     const struct rf_gpu_backend *gpu_backend;
     void *gpu_backend_context;
     int native_present;
+    /* Optional observer for measured Core service initialization. */
+    void (*init_event)(void *context, const char *service, int result,
+                       int64_t elapsed_us);
+    void *init_event_context;
 };
 
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,
@@ -172,6 +176,8 @@ int rf_core_init_config(struct rf_core *core,
                         const struct rf_core_config *config);
 int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
                           struct toy_renderer *renderer);
+/* Startup presentation before Game owns a frame, including a native window. */
+int rf_core_present_boot_frame(struct rf_core *core);
 int rf_core_poll_events(struct rf_core *core);
 int rf_core_poll_events_timeout(struct rf_core *core, int timeout_ms);
 int64_t rf_core_begin_tick(struct rf_core *core);

@@ -16,6 +16,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 当前优先级与延期项 | [计划入口](plans/README.md) | 当前决策与活动计划；退役历史见[归档](archive/gpu-compute-retirement/README.md) |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](guides/build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
+| RF INIT、启动终端与图形引导 | [启动界面合同](reference/boot-interface.md)、[运行时架构](architecture/runtime.md) | Core 初始化事件、启动环境与渲染器选择；实际耗时和资源状态，不使用模拟加载 |
 | 物理键、动作默认绑定与输入边沿 | [运行时架构](architecture/runtime.md#物理键与动作绑定) | `include/rf_input_bindings.h`、`src/rf_input_bindings.c`、`windows/src/window_sdl.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |

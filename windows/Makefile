@@ -39,6 +39,8 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rf_gpu_scene_frame.c \
              rasterfall/src/rf_gpu_scene_extract.c \
              rasterfall/src/rf_game_runtime.c \
+             rasterfall/src/rf_boot_ui.c \
+             rasterfall/src/rf_boot_files.c \
              rasterfall/src/rf_input_bindings.c \
              rasterfall/src/rasterfall_gui.c \
              rasterfall/src/rasterfall_app.c \

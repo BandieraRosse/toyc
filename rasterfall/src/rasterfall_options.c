@@ -90,6 +90,7 @@ void rasterfall_options_usage(int fd)
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --edge-pass | --no-edge-pass  --no-stats\n"
         "  --renderer <cpu|gpu-scene> [--gpu-required] [--gpu-native-present]\n"
+        "  --boot (show RF INIT with --frames)  --skip-boot\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
@@ -177,6 +178,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
         else if (!strcmp(option, "--gpu-scene-world-preview")) o->gpu_scene_world_preview = 1;
         else if (!strcmp(option, "--gpu-scene-play")) o->gpu_scene_play = 1;
+        else if (!strcmp(option, "--skip-boot")) o->skip_boot = 1;
+        else if (!strcmp(option, "--boot")) o->force_boot = 1;
         else if (!strcmp(option, "--gpu-scene-independent-preview")) {
             o->gpu_scene_independent_preview = 1;
             o->gpu_scene_world_preview = 1;
