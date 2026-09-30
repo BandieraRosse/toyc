@@ -18,6 +18,7 @@ struct rf_boot_event {
 struct rf_boot_journal {
     struct rf_boot_event events[RF_BOOT_MAX_EVENTS];
     int count;
+    int64_t started_us, completed_us;
 };
 
 void rf_boot_record_event(void *context, const char *service, int result,

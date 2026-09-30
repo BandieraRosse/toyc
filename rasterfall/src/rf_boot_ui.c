@@ -18,7 +18,8 @@
 #define BOOT_AMBER 0xD9A955u
 #define FIRMWARE_GREEN 0x8DDBA4u
 #define FIRMWARE_BLUE 0x8EBCE8u
-#define FIRMWARE_VIOLET 0xC7A6E8u
+#define FIRMWARE_FIRST_ROW_Y 201
+#define FIRMWARE_ROW_STEP 50
 #define BOOT_KEY_ESC 1
 #define BOOT_KEY_1 2
 #define BOOT_KEY_2 3
@@ -46,6 +47,8 @@ void rf_boot_record_event(void *context, const char *service, int result,
                           int64_t elapsed_us)
 {
     struct rf_boot_journal *journal = (struct rf_boot_journal *)context;
+    if (journal && !journal->started_us && !strcmp(service, "window"))
+        journal->started_us = rf_core_clock_now_us() - elapsed_us;
     if (journal && journal->count < RF_BOOT_MAX_EVENTS) {
         struct rf_boot_event *event = &journal->events[journal->count++];
         event->service = service;
@@ -555,18 +558,6 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
     }
 }
 
-static uint32_t firmware_service_color(const char *service)
-{
-    if (!service) return BOOT_TEXT;
-    if (!strcmp(service, "window")) return BOOT_CYAN;
-    if (!strcmp(service, "filesystem")) return FIRMWARE_GREEN;
-    if (!strcmp(service, "input")) return BOOT_AMBER;
-    if (!strcmp(service, "software-renderer")) return FIRMWARE_VIOLET;
-    if (!strcmp(service, "audio")) return FIRMWARE_BLUE;
-    if (!strncmp(service, "gpu-", 4)) return BOOT_CYAN;
-    return BOOT_TEXT;
-}
-
 /* Draw directly into the window before the Core renderer is available. */
 static int firmware_draw(struct rf_core *core,
                          const struct rf_boot_journal *journal,
@@ -583,33 +574,53 @@ static int firmware_draw(struct rf_core *core,
                      surface.width, surface.height, BOOT_BG, surface.stride);
         boot_type(&surface, 48, 48, "RF PLATFORM FIRMWARE", BOOT_TEXT, 2, 24);
         boot_type(&surface, 48, 102, "Initializing platform services...", BOOT_DIM, 1, 50);
-        boot_type(&surface, 48, 151, "STATUS", BOOT_DIM, 1, 8);
-        boot_type(&surface, 200, 151, "MODULE", BOOT_DIM, 1, 12);
-        boot_type(&surface, 1020, 151, "TIME", BOOT_DIM, 1, 8);
+        boot_type(&surface, 48, 167, "STATUS", BOOT_DIM, 1, 8);
+        boot_type(&surface, 200, 167, "MODULE", BOOT_TEXT, 1, 12);
+        boot_type(&surface, 1020, 167, "TIME", BOOT_DIM, 1, 8);
         if (journal) {
-            int start = journal->count > 7 ? journal->count - 7 : 0;
-            for (int i = start; i < journal->count; ++i) {
+            int row = 0;
+            for (int i = 0; i < journal->count; ++i) {
                 const struct rf_boot_event *event = &journal->events[i];
-                int y = 187 + (i - start) * 50;
-                uint32_t color = firmware_service_color(event->service);
+                int y;
+                if (!strncmp(event->service, "gpu-", 4)) continue;
+                y = FIRMWARE_FIRST_ROW_Y + row++ * FIRMWARE_ROW_STEP;
                 boot_type(&surface, 48, y, event->result < 0 ? "[FAIL]" :
                           event->result ? "[ N/A]" : "[ OK ]",
-                          event->result ? BOOT_AMBER : color, 2, 6);
-                boot_type(&surface, 200, y, event->service, color, 2, 32);
-                snprintf(line, sizeof(line), "%7.2fms",
+                          event->result ? BOOT_AMBER : FIRMWARE_GREEN, 2, 6);
+                boot_type(&surface, 200, y, event->service, BOOT_TEXT, 2, 32);
+                snprintf(line, sizeof(line), "%9.2fms",
                          (double)event->elapsed_us / 1000.0);
                 boot_type(&surface, 1016, y, line, BOOT_DIM, 2, 13);
             }
         }
+        if (journal && journal->started_us && journal->completed_us) {
+            int64_t total_us = journal->completed_us - journal->started_us;
+            /* The rule and summary appear only after every Core service finishes. */
+            boot_rule(&surface, 48,
+                      FIRMWARE_FIRST_ROW_Y + 5 * FIRMWARE_ROW_STEP + 15,
+                      1184, BOOT_EDGE);
+            boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 6 * FIRMWARE_ROW_STEP,
+                      "[TOTAL]", FIRMWARE_BLUE, 2, 7);
+            boot_type(&surface, 200, FIRMWARE_FIRST_ROW_Y + 6 * FIRMWARE_ROW_STEP,
+                      "CORE INITIALIZATION",
+                      FIRMWARE_BLUE, 2, 32);
+            snprintf(line, sizeof(line), "%9.2fms",
+                     (double)total_us / 1000.0);
+            boot_type(&surface, 1016, FIRMWARE_FIRST_ROW_Y + 6 * FIRMWARE_ROW_STEP,
+                      line, FIRMWARE_BLUE, 2, 13);
+        }
         if (current_task) {
             snprintf(line, sizeof(line), "[ WORK ] %s", current_task);
-            boot_type(&surface, 48, 580, line, BOOT_AMBER, 2, 70);
+            boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 7 * FIRMWARE_ROW_STEP,
+                      line, BOOT_TEXT, 2, 70);
         } else {
-            boot_type(&surface, 48, 565, "[ OK ] CORE INITIALIZATION COMPLETE",
+            boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 7 * FIRMWARE_ROW_STEP,
+                      "[ OK ] CORE INITIALIZATION COMPLETE",
                       FIRMWARE_GREEN, 2, 40);
             snprintf(line, sizeof(line), "RF INIT IN %d SECOND%s  |  ENTER TO CONTINUE NOW",
                      seconds_left, seconds_left == 1 ? "" : "S");
-            boot_type(&surface, 48, 622, line, BOOT_CYAN, 2, 72);
+            boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 8 * FIRMWARE_ROW_STEP,
+                      line, BOOT_CYAN, 2, 72);
         }
         if (toy_window_present(core->window) < 0) return -1;
     }
@@ -620,8 +631,12 @@ int rf_boot_init_display(void *context, struct rf_core *core,
                          const char *current_task)
 {
     struct toy_window_events events;
-    if (firmware_draw(core, (const struct rf_boot_journal *)context,
-                      current_task, 3) < 0) return -1;
+    struct rf_boot_journal *journal = (struct rf_boot_journal *)context;
+    if (!current_task && journal && !journal->completed_us)
+        journal->completed_us = rf_core_clock_now_us();
+    /* Renderer choice happens after firmware; keep GPU work out of this view. */
+    if (!(current_task && !strncmp(current_task, "gpu-", 4)) &&
+        firmware_draw(core, journal, current_task, 3) < 0) return -1;
     if (toy_window_poll(core->window, &events, 0) < 0) return -1;
     if (events.close_requested) return -1;
     if (!current_task) boot_marker("RF-BOOT stage=core status=ready");

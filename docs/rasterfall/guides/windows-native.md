@@ -35,7 +35,7 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-`build` 只构建 `build-windows/rasterfall.exe`。`run`、`test`、`gpu-test` 和
+`build` 构建 `build-windows/rasterfall.exe`，已有运行目录时同步其中的 `rasterfall.exe`；首次创建运行目录仍用 `run` 或其他暂存命令。`run`、`test`、`gpu-test` 和
 `acceptance` 会更新 `build-windows/rasterfall-windows/` 中的 exe 与资源，但不生成压缩包。
 需要交付压缩包时，显式运行 `.\windows\NativeCodex.ps1 package`，生成
 `build-windows/rasterfall-windows.zip`。

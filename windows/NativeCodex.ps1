@@ -109,7 +109,7 @@ if ($Command -eq 'help') {
     @'
 Windows Native Codex
   doctor      Check the fixed MSYS2/MinGW lane, SDL2, Vulkan, package and GPU.
-  build       Build the Windows executable into build-windows/.
+  build       Build into build-windows/ and refresh an existing staged executable.
   asset-tools Build native GLB, RFCHAR, RFANIM and map diagnostics.
   package     Build the executable, stage assets, and create a ZIP archive.
   test        Run staged rasterfall.exe --logic-test.
@@ -132,6 +132,10 @@ switch ($Command) {
         $sdl = Get-SdlPrefix
         if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
         Invoke-Make @('-f', 'windows/Makefile', 'all', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
+        if (Test-Path -LiteralPath $Exe) {
+            Copy-Item -LiteralPath (Join-Path $Build 'rasterfall.exe') -Destination $Exe -Force
+            Say "staged executable refreshed: $Exe"
+        }
     }
     'asset-tools' {
         $sdl = Get-SdlPrefix
