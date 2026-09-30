@@ -16,6 +16,9 @@
 #define BOOT_CYAN 0x81E5D3u
 #define BOOT_EDGE 0x293C49u
 #define BOOT_AMBER 0xD9A955u
+#define FIRMWARE_GREEN 0x8DDBA4u
+#define FIRMWARE_BLUE 0x8EBCE8u
+#define FIRMWARE_VIOLET 0xC7A6E8u
 #define BOOT_KEY_ESC 1
 #define BOOT_KEY_1 2
 #define BOOT_KEY_2 3
@@ -465,14 +468,14 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
             boot_box(s, 240, y, 800, 52, active ? BOOT_TEXT : BOOT_BG,
                      active ? BOOT_TEXT : BOOT_BG);
             snprintf(line, sizeof(line), "%s  0%d    %s", active ? ">" : " ",
-                     i + 1, i ? "Graphical Boot" : "Terminal Environment");
+                     i + 1, i ? "Terminal Environment" : "Graphical Boot");
             boot_text(s, 260, y + 18, line, active ? BOOT_BG : BOOT_TEXT);
-            boot_text(s, 912, y + 18, i ? "VISUAL" : "SHELL", active ? BOOT_BG : BOOT_DIM);
+            boot_text(s, 912, y + 18, i ? "SHELL" : "VISUAL", active ? BOOT_BG : BOOT_DIM);
         }
-        boot_text(s, 248, 493, ui->selected ? "02 / GRAPHICAL BOOT" : "01 / TERMINAL ENVIRONMENT", BOOT_CYAN);
+        boot_text(s, 248, 493, ui->selected ? "02 / TERMINAL ENVIRONMENT" : "01 / GRAPHICAL BOOT", BOOT_CYAN);
         boot_text(s, 248, 522, ui->selected ?
-                  "Choose a renderer with the mouse, then launch Outpost." :
-                  "Explore package files, inspect devices and boot from a shell.", BOOT_TEXT);
+                  "Explore package files, inspect devices and boot from a shell." :
+                  "Choose a renderer with the mouse, then launch Outpost.", BOOT_TEXT);
         boot_text(s, 248, 572, "UP / DOWN  Select       ENTER  Open environment", BOOT_DIM);
         boot_text(s, 904, 673, "MANUAL SELECTION / NO TIMER", BOOT_DIM);
     } else if (ui->screen == 1 || ui->screen == 3) {
@@ -552,27 +555,105 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
     }
 }
 
+static uint32_t firmware_service_color(const char *service)
+{
+    if (!service) return BOOT_TEXT;
+    if (!strcmp(service, "window")) return BOOT_CYAN;
+    if (!strcmp(service, "filesystem")) return FIRMWARE_GREEN;
+    if (!strcmp(service, "input")) return BOOT_AMBER;
+    if (!strcmp(service, "software-renderer")) return FIRMWARE_VIOLET;
+    if (!strcmp(service, "audio")) return FIRMWARE_BLUE;
+    if (!strncmp(service, "gpu-", 4)) return BOOT_CYAN;
+    return BOOT_TEXT;
+}
+
+/* Draw directly into the window before the Core renderer is available. */
+static int firmware_draw(struct rf_core *core,
+                         const struct rf_boot_journal *journal,
+                         const char *current_task, int seconds_left)
+{
+    struct toy_surface surface;
+    char line[160];
+    int ready;
+    if (!core || !core->window) return -1;
+    ready = toy_window_begin_frame(core->window, &surface);
+    if (ready < 0) return -1;
+    if (ready > 0) {
+        fb_fill_rect((unsigned char *)surface.pixels, 0, 0,
+                     surface.width, surface.height, BOOT_BG, surface.stride);
+        boot_type(&surface, 48, 48, "RF PLATFORM FIRMWARE", BOOT_TEXT, 2, 24);
+        boot_type(&surface, 48, 102, "Initializing platform services...", BOOT_DIM, 1, 50);
+        boot_type(&surface, 48, 151, "STATUS", BOOT_DIM, 1, 8);
+        boot_type(&surface, 200, 151, "MODULE", BOOT_DIM, 1, 12);
+        boot_type(&surface, 1020, 151, "TIME", BOOT_DIM, 1, 8);
+        if (journal) {
+            int start = journal->count > 7 ? journal->count - 7 : 0;
+            for (int i = start; i < journal->count; ++i) {
+                const struct rf_boot_event *event = &journal->events[i];
+                int y = 187 + (i - start) * 50;
+                uint32_t color = firmware_service_color(event->service);
+                boot_type(&surface, 48, y, event->result < 0 ? "[FAIL]" :
+                          event->result ? "[ N/A]" : "[ OK ]",
+                          event->result ? BOOT_AMBER : color, 2, 6);
+                boot_type(&surface, 200, y, event->service, color, 2, 32);
+                snprintf(line, sizeof(line), "%7.2fms",
+                         (double)event->elapsed_us / 1000.0);
+                boot_type(&surface, 1016, y, line, BOOT_DIM, 2, 13);
+            }
+        }
+        if (current_task) {
+            snprintf(line, sizeof(line), "[ WORK ] %s", current_task);
+            boot_type(&surface, 48, 580, line, BOOT_AMBER, 2, 70);
+        } else {
+            boot_type(&surface, 48, 565, "[ OK ] CORE INITIALIZATION COMPLETE",
+                      FIRMWARE_GREEN, 2, 40);
+            snprintf(line, sizeof(line), "RF INIT IN %d SECOND%s  |  ENTER TO CONTINUE NOW",
+                     seconds_left, seconds_left == 1 ? "" : "S");
+            boot_type(&surface, 48, 622, line, BOOT_CYAN, 2, 72);
+        }
+        if (toy_window_present(core->window) < 0) return -1;
+    }
+    return 0;
+}
+
+int rf_boot_init_display(void *context, struct rf_core *core,
+                         const char *current_task)
+{
+    struct toy_window_events events;
+    if (firmware_draw(core, (const struct rf_boot_journal *)context,
+                      current_task, 3) < 0) return -1;
+    if (toy_window_poll(core->window, &events, 0) < 0) return -1;
+    if (events.close_requested) return -1;
+    if (!current_task) boot_marker("RF-BOOT stage=core status=ready");
+    return 0;
+}
+
 int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
                 const struct rf_boot_journal *journal, const char *error)
 {
     struct boot_ui ui;
     int ready;
+    int64_t completed_at;
     char line[176];
     if (!core || !result) return -1;
     memset(&ui, 0, sizeof(ui));
     ui.hover = -1;
     if (error) snprintf(ui.error, sizeof(ui.error), "%s", error);
-    /* The first present reflects measured work; no clock-driven playback. */
-    ready = rf_core_begin_frame(core, BOOT_BG);
-    if (ready > 0) {
-        struct toy_surface *s = boot_overlay(core);
-        if (!s) return -1;
-        boot_chrome(s, "CORE INITIALIZATION", "MEASURED EVENTS");
-        boot_type(s, 48, 112, "RF CORE", BOOT_TEXT, 3, 7);
-        boot_text(s, 48, 176, "BASE SERVICES / INITIALIZATION RESULTS", BOOT_CYAN);
-        boot_journal_draw(s, journal, 56, 222, 15);
-        boot_text(s, 848, 673, "ELAPSED / MONOTONIC CLOCK", BOOT_DIM);
-        if (rf_core_present_boot_frame(core) < 0) return -1;
+    /* The measured completion screen counts down; Enter skips the wait. */
+    if (!error) {
+        int shown_seconds = 3;
+        completed_at = rf_core_time_us(core);
+        while (rf_core_time_us(core) - completed_at < 3000000) {
+            int seconds_left;
+            if (rf_core_poll_events_timeout(core, 16) < 0) return -1;
+            if (rf_core_should_exit(core)) return 0;
+            if (boot_key(rf_core_events(core), BOOT_KEY_ENTER)) break;
+            seconds_left = 3 - (int)((rf_core_time_us(core) - completed_at) / 1000000);
+            if (seconds_left > 0 && seconds_left != shown_seconds) {
+                if (firmware_draw(core, journal, NULL, seconds_left) < 0) return -1;
+                shown_seconds = seconds_left;
+            }
+        }
     }
     boot_marker("RF-BOOT stage=menu status=ready");
     for (;;) {
@@ -587,7 +668,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
             if (boot_key(events, BOOT_KEY_UP) || boot_key(events, BOOT_KEY_DOWN))
                 ui.selected = !ui.selected;
             if (boot_key(events, BOOT_KEY_ENTER)) {
-                ui.screen = ui.selected ? 2 : 1;
+                ui.screen = ui.selected ? 1 : 2;
                 ui.selected = 0;
                 if (ui.screen == 1) {
                     boot_line(&ui, "[ OK ] RF Terminal command environment ready");
@@ -604,7 +685,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
                     if (boot_command(&ui, core)) goto selected;
                 } else if (key == BOOT_KEY_BACKSPACE) {
                     if (ui.command_length) ui.command[--ui.command_length] = 0;
-                } else if (key == BOOT_KEY_ESC) { ui.screen = 0; ui.selected = 0; }
+                } else if (key == BOOT_KEY_ESC) { ui.screen = 0; ui.selected = 1; }
                 else {
                     c = boot_character(key);
                     if (c && ui.command_length + 1 < (int)sizeof(ui.command)) {
@@ -627,7 +708,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
             ui.hover = boot_hit(&core->surface, events->pointer_x, events->pointer_y);
             if (boot_key(events, BOOT_KEY_ESC) ||
                 (click && ui.hover == 3)) {
-                ui.screen = 0; ui.selected = 1;
+                ui.screen = 0; ui.selected = 0;
             } else {
                 if (boot_key(events, BOOT_KEY_UP)) ui.selected = 0;
                 if (boot_key(events, BOOT_KEY_DOWN)) ui.selected = 1;

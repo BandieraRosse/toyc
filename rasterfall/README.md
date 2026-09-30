@@ -28,7 +28,7 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 
 实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --renderer gpu-scene`（`--gpu-scene-play` 为等价入口）。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
-普通离线启动先进入 RF INIT：默认选择 Terminal Environment，可用方向键和 Enter 切换到 Graphical Boot；
+普通离线启动先进入 RF INIT：选项 1 Graphical Boot 为默认选择，选项 2 为 Terminal Environment；方向键选择、Enter 确认。
 终端输入 `help` 查看只读 `/assets` 文件命令，输入 `boot` 选择 CPU/GPU。图形引导支持鼠标选择和返回。
 游戏中可在暂停菜单切换渲染器，当前 session 保留；GPU 初始化失败会恢复 CPU。`--skip-boot` 直接按
 命令行渲染设置进入游戏，显式诊断和自动化入口也默认跳过交互。

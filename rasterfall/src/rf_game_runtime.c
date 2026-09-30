@@ -3661,7 +3661,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         core_config.native_present = options.gpu_native_present;
         core_config.init_event = interactive_boot ? rf_boot_record_event : NULL;
         core_config.init_event_context = &boot_journal;
+        core_config.init_display = interactive_boot ? rf_boot_init_display : NULL;
         boot_cpu_config = core_config;
+        boot_cpu_config.init_display = NULL;
         boot_cpu_config.renderer_mode = RF_CORE_RENDERER_CPU;
         boot_cpu_config.gpu_policy = RF_GPU_POLICY_DISABLED;
         boot_cpu_config.gpu_backend = NULL;

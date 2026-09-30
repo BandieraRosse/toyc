@@ -168,6 +168,9 @@ struct rf_core_config {
     void (*init_event)(void *context, const char *service, int result,
                        int64_t elapsed_us);
     void *init_event_context;
+    /* Optional raw window presentation while Core services are still starting. */
+    int (*init_display)(void *context, struct rf_core *core,
+                        const char *current_task);
 };
 
 int rf_core_init(struct rf_core *core, const char *title, int width, int height,

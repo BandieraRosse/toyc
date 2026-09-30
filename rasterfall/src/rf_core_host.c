@@ -26,24 +26,8 @@ static int rf_core_init_window(struct rf_core *core, const char *title,
     int result;
     if (!core || !input || !renderer) return -1;
     memset(core, 0, sizeof(*core));
-    started = rf_core_clock_now_us();
-    result = rf_core_filesystem_init(&core->filesystem);
-    if (config && config->init_event)
-        config->init_event(config->init_event_context, "filesystem", result,
-                           rf_core_clock_now_us() - started);
-    if (result < 0) return -1;
     core->input = input;
     core->renderer = renderer;
-    started = rf_core_clock_now_us();
-    toy_input_init(core->input);
-    if (config && config->init_event)
-        config->init_event(config->init_event_context, "input", 0,
-                           rf_core_clock_now_us() - started);
-    started = rf_core_clock_now_us();
-    toy_renderer_init(core->renderer);
-    if (config && config->init_event)
-        config->init_event(config->init_event_context, "software-renderer", 0,
-                           rf_core_clock_now_us() - started);
     started = rf_core_clock_now_us();
     core->window = native_present ? toy_window_open_native(title, width, height) :
         toy_window_open(title, width, height);
@@ -51,9 +35,53 @@ static int rf_core_init_window(struct rf_core *core, const char *title,
         config->init_event(config->init_event_context, "window",
                            core->window ? 0 : -1,
                            rf_core_clock_now_us() - started);
-    if (!core->window) {
+    if (!core->window) return -1;
+    if (config && config->init_display &&
+        config->init_display(config->init_event_context, core, "filesystem") < 0) {
+        toy_window_close(core->window);
+        core->window = NULL;
+        return -1;
+    }
+    started = rf_core_clock_now_us();
+    result = rf_core_filesystem_init(&core->filesystem);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "filesystem", result,
+                           rf_core_clock_now_us() - started);
+    if (result < 0) {
+        toy_window_close(core->window);
+        core->window = NULL;
+        return -1;
+    }
+    if (config && config->init_display &&
+        config->init_display(config->init_event_context, core, "input") < 0) {
+        rf_core_filesystem_shutdown(&core->filesystem);
+        toy_window_close(core->window);
+        core->window = NULL;
+        return -1;
+    }
+    started = rf_core_clock_now_us();
+    toy_input_init(core->input);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "input", 0,
+                           rf_core_clock_now_us() - started);
+    if (config && config->init_display &&
+        config->init_display(config->init_event_context, core, "software-renderer") < 0) {
+        rf_core_filesystem_shutdown(&core->filesystem);
+        toy_window_close(core->window);
+        core->window = NULL;
+        return -1;
+    }
+    started = rf_core_clock_now_us();
+    toy_renderer_init(core->renderer);
+    if (config && config->init_event)
+        config->init_event(config->init_event_context, "software-renderer", 0,
+                           rf_core_clock_now_us() - started);
+    if (config && config->init_display &&
+        config->init_display(config->init_event_context, core, "audio") < 0) {
         toy_renderer_destroy(core->renderer);
         rf_core_filesystem_shutdown(&core->filesystem);
+        toy_window_close(core->window);
+        core->window = NULL;
         return -1;
     }
     /* Audio is optional, matching the existing Rasterfall startup policy. */
@@ -64,6 +92,15 @@ static int rf_core_init_window(struct rf_core *core, const char *title,
         config->init_event(config->init_event_context, "audio",
                            core->audio_ready ? 0 : 1,
                            rf_core_clock_now_us() - started);
+    if (config && config->init_display &&
+        config->init_display(config->init_event_context, core, "gpu-backend") < 0) {
+        if (core->audio_ready) toy_audio_close(&core->audio);
+        toy_renderer_destroy(core->renderer);
+        rf_core_filesystem_shutdown(&core->filesystem);
+        toy_window_close(core->window);
+        core->window = NULL;
+        return -1;
+    }
     core->initialized = 1;
     return 0;
 }
@@ -135,6 +172,11 @@ int rf_core_init_config(struct rf_core *core,
             __printf("GPU native presentation V1 unsupported; using software-present fallback\n");
             core->gpu_frame.native_present = 0;
         }
+    }
+    if (config->init_display &&
+        config->init_display(config->init_event_context, core, NULL) < 0) {
+        rf_core_shutdown(core);
+        return -1;
     }
     return 0;
 }

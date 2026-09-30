@@ -22,6 +22,8 @@ struct rf_boot_journal {
 
 void rf_boot_record_event(void *context, const char *service, int result,
                           int64_t elapsed_us);
+int rf_boot_init_display(void *context, struct rf_core *core,
+                         const char *current_task);
 
 /* Returns 1 to start the game, 0 on user exit, negative on display failure. */
 int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,

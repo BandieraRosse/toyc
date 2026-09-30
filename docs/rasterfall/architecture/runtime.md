@@ -71,7 +71,8 @@ surface、filesystem、audio、input、clock）→ 普通离线启动进入 RF I
 → `rf_game_init(core, ...)` 加载 session/map → 绑定并准备渲染资源
 → 可选逻辑测试 → 启动菜单/建房连接 → 音频 presentation 启动 → 主循环 → 释放资源。
 启动环境由 `rf_boot_ui` 持有临时输入、命令和展示状态，不创建 Game/session。Core 初始化在各服务真实调用处
-报告结果及单调时钟耗时；Game 地图、光照、可选纹理和 session reset 在所有者调用后报告实际耗时。
+报告结果及单调时钟耗时；窗口先于其他可见服务创建，Core 使用早期软件画布实时显示服务日志，
+完成画面以 3、2、1 秒倒计时进入 RF INIT，Enter 可立即继续。Game 地图、光照、可选纹理和 session reset 在所有者调用后报告实际耗时。
 启动阶段进度表示已完成的任务数，不代表文件字节或 GPU 上传百分比。显式诊断、网络与自动化默认跳过交互；
 `--skip-boot` 强制跳过，`--boot --frames N` 供有限帧窗口验证。GPU Scene 选择后 Core 以 native present
 重建窗口，失败时重开 CPU 引导界面。启动期软件画面由 Core 专门呈现，不计入 GPU 游戏帧契约。
