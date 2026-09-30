@@ -20,6 +20,10 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     int result=-1;
     if (!out || !name || snprintf(path,sizeof(path),
         "rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+    const char *diagnostic_model=getenv("RF_GPU_CHARACTER_MODEL");
+    if (diagnostic_model && diagnostic_model[0]) {
+        if (snprintf(path,sizeof(path),"%s",diagnostic_model)>=(int)sizeof(path)) return -1;
+    }
     resource=&scene_body_resources[body_id];
     instance=tlibc_malloc(sizeof(*instance));
     if (!instance) return -1;
@@ -34,7 +38,8 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     if (!composition.layers[0].clip || !composition.layers[1].clip) goto done;
     composition.layers[0].time_ms=(int)(time_ms%composition.layers[0].clip->duration_ms);
     composition.layers[1].time_ms=(int)(time_ms%composition.layers[1].clip->duration_ms);
-    if (rasterfall_action_compose(instance,&composition)<0) goto done;
+    const char *freeze=getenv("RF_GPU_CHARACTER_FREEZE");
+    if (!(freeze && freeze[0]=='1') && rasterfall_action_compose(instance,&composition)<0) goto done;
     memset(out,0,sizeof(*out));
     out->abi_version=1;out->byte_size=sizeof(*out);
     out->frame_id=frame;out->world_generation=world;out->actor_count=1;

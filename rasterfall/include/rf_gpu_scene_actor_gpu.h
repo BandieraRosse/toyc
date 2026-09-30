@@ -10,6 +10,11 @@ struct rf_gpu_graphics;
 struct rf_gpu_graphics_batch_item;
 struct rf_gpu_scene_pose_v1;
 struct rf_gpu_scene_actor_gpu;
+/* Presentation-only controls, applied at the next Scene preparation. */
+int rf_gpu_scene_character_material_enabled(void);
+void rf_gpu_scene_character_material_set(int enabled);
+int rf_gpu_scene_linear_filter_enabled(void);
+void rf_gpu_scene_linear_filter_set(int enabled);
 
 /* Prepare one frozen rifleman body, passive gear and active weapon for a Scene WORLD batch.
  * The caller retires the synchronous diagnostic draw before finish. */

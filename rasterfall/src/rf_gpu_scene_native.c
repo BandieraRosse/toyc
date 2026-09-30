@@ -4,6 +4,29 @@
 #include "rf_gpu_scene_actor_gpu.h"
 #include "rf_gpu_scene_world.h"
 #include "rf_gpu_scene_world_gpu.h"
+static int scene_material_override=-1, scene_filter_override=-1;
+void rf_gpu_scene_character_material_set(int enabled) { scene_material_override=enabled!=0; }
+void rf_gpu_scene_linear_filter_set(int enabled) { scene_filter_override=enabled!=0; }
+int rf_gpu_scene_character_material_enabled(void)
+{
+    if (scene_material_override>=0) return scene_material_override;
+#ifdef TOYC_WINDOWS
+    const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
+    return mode && !strcmp(mode,"material");
+#else
+    return 0;
+#endif
+}
+int rf_gpu_scene_linear_filter_enabled(void)
+{
+    if (scene_filter_override>=0) return scene_filter_override;
+#ifdef TOYC_WINDOWS
+    const char *filter=getenv("RF_GPU_TEXTURE_FILTER");
+    return filter && !strcmp(filter,"linear");
+#else
+    return 0;
+#endif
+}
 #ifndef TOYC_WINDOWS
 int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
 { (void)frames; (void)fault; (void)fault_frame; return 3; }
@@ -169,8 +192,12 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         }
         name=i==1 ? rasterfall_character_body_resource_name(pose->body_resource_id) :
             rasterfall_character_gear_resource_name(pose->attachments[i-2].resource_id);
-        if (!name || snprintf(path,sizeof(path),"rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path) ||
-            rasterfall_resources_load(&slot->registry,path,&slot->mesh[i].handle)<0) return -1;
+        if (!name || snprintf(path,sizeof(path),"rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+        const char *diagnostic_model=getenv("RF_GPU_CHARACTER_MODEL");
+        if (i==1 && pose->character_id==RASTERFALL_CHARACTER_NONE && diagnostic_model && diagnostic_model[0]) {
+            if (snprintf(path,sizeof(path),"%s",diagnostic_model)>=(int)sizeof(path)) return -1;
+        }
+        if (rasterfall_resources_load(&slot->registry,path,&slot->mesh[i].handle)<0) return -1;
     }
     return 0;
 }
@@ -308,6 +335,33 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                 if (mi==1) d->material[0]=pose->shirt_color;
             }
             d->rotation[3]=object!=0; d->texture[0]=d->texture[1]=1;
+            if (object==1) {
+                const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
+                if (scene_material_override>=0) mode=scene_material_override ? "material" : "lit";
+                const char *depth=getenv("RF_GPU_CHARACTER_DEPTH");
+                d->quality[1]=(int)m->position_scale;
+                if (depth && !strcmp(depth,"quantized")) d->quality[0]=1;
+                if (depth && !strcmp(depth,"legacy") && m->position_scale==512) d->quality[0]=3;
+                if (mode && (!strcmp(mode,"unlit") || !strcmp(mode,"parts"))) {
+                    d->quality[2]=3; d->material[1]=256;
+                    if (!strcmp(mode,"parts")) {
+                        static const uint32_t colors[]={0xe6194b,0x3cb44b,0xffe119,0x4363d8,
+                            0xf58231,0x911eb4,0x42d4f4,0xf032e6,0xbfeF45,0xfabed4,
+                            0x469990,0xdcbeff,0x9a6324,0xfffac8,0x800000,0xaaffc3,
+                            0x808000,0xffd8b1,0x000075};
+                        d->material[0]=colors[mi%(sizeof(colors)/sizeof(colors[0]))];
+                    }
+                } else if (mode && !strcmp(mode,"smooth")) d->quality[2]=1;
+                else if (mode && !strcmp(mode,"soft")) d->quality[2]=2;
+                else if (mode && !strcmp(mode,"material")) {
+                    unsigned role=m->material_bytes>RASTERFALL_MODEL_MATERIAL_ROLE_OFFSET ?
+                        material[RASTERFALL_MODEL_MATERIAL_ROLE_OFFSET] : 0;
+                    d->quality[2]=role==RASTERFALL_MODEL_MATERIAL_ROLE_EYES ? 3 :
+                        role==RASTERFALL_MODEL_MATERIAL_ROLE_FACE ||
+                        role==RASTERFALL_MODEL_MATERIAL_ROLE_SKIN ? 2 : 1;
+                    if (d->quality[2]==3) d->material[1]=256;
+                }
+            }
             d->first_index=first;d->index_count=count; d->double_sided=m->format_version>=7 ? material[7]&1u : 1u;
             slot->draw_object[slot->draw_count-1]=object;
             slot->draw_chunk[slot->draw_count-1]=first/SCENE_CHUNK_VERTICES;
@@ -426,6 +480,14 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
         (long long)(t3-t2),actor->slot.mesh_count-1);
     memcpy(items,actor->slot.draws,
         actor->slot.draw_count*sizeof(*items));
+    const char *reverse=getenv("RF_GPU_CHARACTER_REVERSE");
+    if (reverse && reverse[0]=='1') {
+        for (uint32_t i=0;i<actor->slot.draw_count/2;++i) {
+            struct rf_gpu_graphics_batch_item swap=items[i];
+            items[i]=items[actor->slot.draw_count-1-i];
+            items[actor->slot.draw_count-1-i]=swap;
+        }
+    }
     *count=actor->slot.draw_count;
     return 0;
 }

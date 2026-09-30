@@ -67,7 +67,7 @@ retained command 跨帧容量失配；完整生命周期组合仍无同一份实
 16 MiB，聚合逻辑测试在正式链接配置下通过。
 
 在真实 Windows 物理 GPU（目标为 Intel）机器上，`doctor` 检查依赖；`package` 包含 exe、
-公开资产及本地私有资产（若存在）；`test` 运行逻辑回归；`gpu-test` 要求连续独立 Scene native 提交，
+公开资产及本地私有运行资源（若存在，排除 `private-assets/source` 创作源和历史审阅）；`test` 运行逻辑回归；`gpu-test` 要求连续独立 Scene native 提交，
 且无旧命令、mixed draw、bridge 或常规读回；`acceptance` 生成 normal-frame audit BMP、
 visual capture BMP 和 package 内 `rasterfall.log`。这些命令的当前退出码和生成物才是本次
 验证结果；Linux `build/` 不应因 Windows 构建产生或复用对象。

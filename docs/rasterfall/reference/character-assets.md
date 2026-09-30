@@ -54,7 +54,9 @@ toe、finger、face、hair 和 cloth bones 可存在，但不是 humanoid role�
 ### 空间与静止姿态
 
 - Blender 源为米制（Unit Scale 1.0）、右手系、Z-up、-Y forward；GLB 按 glTF 标准导出为米制、
-  Y-up、+Z forward。Rasterfall importer 在离线边界换算到 `512 RFU = 1 m`，源资产不写 RFU。
+  Y-up、+Z forward。玩法单位为 `512 RFU = 1 m`，源资产不写 RFU；RFM2 局部存储单位由
+  `position_scale` 定义，RFCHAR importer 默认 512，可显式选 8192/65536。高精度 Scene body
+  在投影前换到 RFU，顶点、骨骼 rest 和 socket 平移必须使用同一局部单位，见[保真诊断](../guides/character-fidelity.md)。
 - canonical rest pose 为直立 T-pose：头顶 +Y，面朝 +Z；左右从角色自身视角定义，左侧位于 +X，
   右侧位于 -X。手臂水平展开，掌心朝 -Y，手指指向外侧；双腿伸直，脚尖朝 +Z。
 - `RF_ROOT` 位于两脚接触平面的中心 `(0,0,0)`，无父节点；`RF_HIPS` 位于骨盆中心。mesh 最低

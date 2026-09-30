@@ -66,7 +66,10 @@ def accessor(doc,blob,index):
         out.append(values[0] if comps==1 else values)
     return out
 
-def srgb(x): return max(0,min(255,int(math.sqrt(max(0,min(1,x))*65025))))
+def srgb(x):
+    x=max(0,min(1,x))
+    encoded=12.92*x if x<=0.0031308 else 1.055*x**(1/2.4)-0.055
+    return max(0,min(255,int(encoded*255+0.5)))
 def q16(x): return max(0,min(65535,int(x*65535+0.5)))
 def s16(x): return max(-32767,min(32767,int(x*32767+(0.5 if x>=0 else -0.5))))
 def i32(x): return int(x*512+(0.5 if x>=0 else -0.5))
@@ -96,7 +99,14 @@ def material_record(material):
     record[36] = MATERIAL_ROLES.get(material.get("name", ""), 0)
     return record
 
-def convert(source,output,validator):
+def convert(source,output,validator,position_scale=512,material_roles=None):
+    if position_scale not in (512, 8192, 65536):
+        raise ValueError("RFCHAR position scale must be 512, 8192 or 65536 units/metre")
+    def i32(x):
+        value=int(x*position_scale+(0.5 if x>=0 else -0.5))
+        if not -2147483648 <= value <= 2147483647:
+            raise ValueError("RFCHAR coordinate outside signed 32-bit storage")
+        return value
     source=source.resolve();output=output.resolve();validator=validator.resolve()
     subprocess.run([str(validator),str(source),"contract"],check=True)
     d,b=glb(source); nodes=d["nodes"]; parent=[-1]*len(nodes)
@@ -110,6 +120,12 @@ def convert(source,output,validator):
     joint_runtime={node:i for i,node in enumerate(joints)}
     vertices=[];weights=[];indices=[];primitives=[]
     materials=list(d.get("materials", [])); source_material_count=len(materials); default_material=None
+    roles={"none":0,"face":1,"eyes":2,"hair":3,"skin":4,"clothing":5,"equipment":6}
+    material_roles={} if material_roles is None else material_roles
+    if (not isinstance(material_roles,dict) or
+        any(name not in {m.get("name","") for m in materials} or type(role) is not str or role not in roles
+            for name,role in material_roles.items())):
+        raise ValueError("RFCHAR material roles must map exact source names to known visual roles")
     for ni,n in enumerate(nodes):
         if "mesh" not in n:continue
         for p in d["meshes"][n["mesh"]]["primitives"]:
@@ -131,11 +147,14 @@ def convert(source,output,validator):
             elif type(material) is not int or not 0 <= material < source_material_count:
                 raise ValueError("RFCHAR V1 ERROR MATERIAL_INDEX: invalid primitive material")
             primitives.append((first,len(indices)-first,material))
-    out=bytearray(64);out[:4]=b"RFM2";struct.pack_into("<IIII",out,4,14,len(vertices),len(indices),512)
+    out=bytearray(64);out[:4]=b"RFM2";struct.pack_into("<IIII",out,4,14,len(vertices),len(indices),position_scale)
     mins=[min(v[i] for v in vertices) for i in range(3)];maxs=[max(v[i] for v in vertices) for i in range(3)]
     struct.pack_into("<6i",out,20,*mins,*maxs);struct.pack_into("<IIIII",out,44,len(primitives),len(materials),64,64+16*len(primitives),0)
     for first,count,mat in primitives: out+=struct.pack("<IIII",first,count,mat,0)
-    for m in materials: out+=material_record(m)
+    for m in materials:
+        record=material_record(m)
+        if m.get("name","") in material_roles: record[36]=roles[material_roles[m["name"]]]
+        out+=record
     for v in vertices: out+=struct.pack("<iii3hHH",*v)+bytes(14)
     out+=struct.pack("<"+"I"*len(indices),*indices)
     struct.pack_into("<I",out,60,len(out)); names_blob=bytearray();offsets=[]
@@ -162,7 +181,13 @@ def convert(source,output,validator):
     print(f"rfchar-import: {source} -> {output} ({len(vertices)} vertices, {len(indices)//3} triangles, {len(joints)} bones, {len(attachments)} attachments, RFM2 v14)")
 
 def main():
-    p=argparse.ArgumentParser();p.add_argument("input",type=Path);p.add_argument("output",type=Path);p.add_argument("--validator",type=Path,default=Path("build/glb-inspect"));a=p.parse_args()
-    try:convert(a.input,a.output,a.validator)
+    p=argparse.ArgumentParser();p.add_argument("input",type=Path);p.add_argument("output",type=Path);p.add_argument("--validator",type=Path,default=Path("build/glb-inspect"))
+    p.add_argument("--position-scale",type=int,choices=(512,8192,65536),default=512,
+                   help="local units/metre; 65536 preserves facial gaps for GPU Scene")
+    p.add_argument("--material-roles",type=Path,
+                   help="explicit name-to-visual-role JSON for existing RFM2 role byte (no shader metadata)")
+    a=p.parse_args()
+    try:convert(a.input,a.output,a.validator,a.position_scale,
+                json.loads(a.material_roles.read_text(encoding="utf-8-sig")) if a.material_roles else None)
     except (ValueError,OSError,subprocess.CalledProcessError) as e:p.exit(1,f"rfchar-import: {e}\n")
 if __name__=="__main__":main()

@@ -1,4 +1,5 @@
-/* Outpost rendering terminal: presentation-only feature catalog and state. */
+/* Rendering terminal: presentation-only feature catalog and state. */
+#include "rf_gpu_scene_actor_gpu.h"
 enum rf_render_support {
     RF_RENDER_FORMAL,
     RF_RENDER_EXPERIMENTAL,
@@ -32,10 +33,15 @@ static const struct rf_render_feature rf_render_features[] = {
     {"物理材质", "基于物理的材质响应",
      RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED},
     {"全局光照 / 环境遮蔽", "间接光照与屏幕空间遮蔽",
-     RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED}
+     RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED},
+    {"角色柔和材质", "平滑身体与头发、柔和皮肤、明亮眼部",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL},
+    {"纹理线性过滤", "静态场景纹理；角色贴图接入另行验收",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL}
 };
 
 #define RF_RENDER_FEATURE_COUNT ((int)(sizeof(rf_render_features) / sizeof(rf_render_features[0])))
+#define RF_RENDER_FEATURE_ROW_HEIGHT 46
 #define RF_RENDER_BASELINE_COUNT ((int)(sizeof(rf_render_baseline) / sizeof(rf_render_baseline[0])))
 
 struct rf_render_terminal_ui {
@@ -101,6 +107,14 @@ static void rf_render_terminal_request(int index)
         rf_render_terminal.edge_effective = rf_render_terminal.edge_requested;
         rf_render_terminal.message = rf_render_terminal.edge_effective ?
             "已开启实验性模型边线" : "已关闭模型边线";
+    } else if (index == 4) {
+        rf_gpu_scene_character_material_set(!rf_gpu_scene_character_material_enabled());
+        rf_render_terminal.message = rf_gpu_scene_character_material_enabled() ?
+            "角色柔和材质已开启" : "已恢复角色原光照";
+    } else if (index == 5) {
+        rf_gpu_scene_linear_filter_set(!rf_gpu_scene_linear_filter_enabled());
+        rf_render_terminal.message = rf_gpu_scene_linear_filter_enabled() ?
+            "场景纹理线性过滤已开启" : "已恢复最近邻过滤";
     }
 }
 
@@ -111,7 +125,7 @@ static void rf_render_terminal_draw(struct rasterfall_canvas *canvas)
     rasterfall_canvas_rect(canvas, x - 4, y - 4, 828, 508, 0x4AC8CC, 255);
     rasterfall_canvas_rect(canvas, x, y, 820, 500, 0x101C2C, 255);
     rasterfall_canvas_text(canvas, x + 28, y + 25,
-                           "前哨站 / 渲染控制", 0xD6F3F3);
+                           "渲染控制终端", 0xD6F3F3);
     snprintf(line, sizeof(line), "当前渲染器：%s",
              rf_render_terminal.scene_backend ? "GPU 场景" : "CPU 软件渲染");
     rasterfall_canvas_text(canvas, x + 28, y + 49, line, 0x88B9C3);
@@ -131,29 +145,32 @@ static void rf_render_terminal_draw(struct rasterfall_canvas *canvas)
             "两种渲染器的观感一致性仍在验收", 0xDDA88E);
     } else {
         for (int i = 0; i < RF_RENDER_FEATURE_COUNT; ++i) {
-            int row = y + 129 + i * 67;
+            int row = y + 129 + i * RF_RENDER_FEATURE_ROW_HEIGHT;
             enum rf_render_support support = rf_render_feature_support(i);
-            rasterfall_canvas_rect(canvas, x + 25, row, 770, 61,
+            rasterfall_canvas_rect(canvas, x + 25, row, 770, RF_RENDER_FEATURE_ROW_HEIGHT-4,
                 i == rf_render_terminal.selected ? 0x2A5663 : 0x203543, 255);
             snprintf(line, sizeof(line), "%s  /  %s",
                      rf_render_features[i].name, rf_render_support_name(support));
-            rasterfall_canvas_text(canvas, x + 42, row + 10, line,
+            rasterfall_canvas_text(canvas, x + 42, row + 5, line,
                 support >= RF_RENDER_UNSUPPORTED ? 0xDDA88E : 0xE3F8F4);
-            rasterfall_canvas_text(canvas, x + 42, row + 34,
+            rasterfall_canvas_text(canvas, x + 42, row + 24,
                                    rf_render_features[i].detail, 0x88B9C3);
             if (i == 0 && support < RF_RENDER_UNSUPPORTED) {
                 snprintf(line, sizeof(line), "请求：%s / 生效：%s",
                     rf_render_terminal.edge_requested ? "开" : "关",
                     rf_render_terminal.edge_effective ? "开" : "关");
+            } else if ((i == 4 || i == 5) && support < RF_RENDER_UNSUPPORTED) {
+                int enabled=i==4 ? rf_gpu_scene_character_material_enabled() : rf_gpu_scene_linear_filter_enabled();
+                snprintf(line,sizeof(line),"请求：%s / 生效：%s",enabled ? "开" : "关",enabled ? "开" : "关");
             } else
                 snprintf(line, sizeof(line), "请求：关 / 生效：关");
-            rasterfall_canvas_text(canvas, x + 490, row + 34, line, 0x9FE8C8);
+            rasterfall_canvas_text(canvas, x + 490, row + 24, line, 0x9FE8C8);
         }
         rasterfall_canvas_text(canvas, x + 32, y + 414,
                                rf_render_terminal.message, 0xDDA88E);
     }
     rasterfall_canvas_text(canvas, x + 28, y + 456,
-        "点击标签或功能    1/2 切页    回车切换    Esc 退出",
+        "点击标签或功能    1/2 切页    回车切换    F1/Esc 退出",
         0xA7DDE0);
     rasterfall_canvas_rect(canvas, rf_render_terminal.pointer_x - 5,
         rf_render_terminal.pointer_y, 11, 1, 0xFFFFFF, 255);

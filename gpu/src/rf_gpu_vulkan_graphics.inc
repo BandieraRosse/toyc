@@ -161,7 +161,7 @@ failed:
 
 _Static_assert(sizeof(struct rf_gpu_graphics_vertex) == 56, "HG vertex ABI");
 _Static_assert(sizeof(void *) == 8, "HG-2A supports the existing 64-bit Vulkan ABI");
-_Static_assert(offsetof(struct rf_gpu_graphics_draw, first_index) == 112,
+_Static_assert(offsetof(struct rf_gpu_graphics_draw, first_index) == 128,
                "HG push-constant ABI");
 
 static int gfx_begin(struct rf_gpu_graphics *g)
@@ -323,7 +323,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     VkSubpassDependency deps[2] = {{0}};
     VkRenderPassCreateInfo pass = {0};
     struct rf_vk_pipeline_layout_create_info layout = {0};
-    VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112};
+    VkPushConstantRange push = {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128};
     struct rf_vk_shader_module_create_info shader_info = {0};
     rf_vk_shader_module shaders[2] = {0};
     VkPipelineShaderStageCreateInfo stages[2] = {{0}};
@@ -1283,6 +1283,13 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->material[2] > 1 || d->material[3] > 2 ||
         ((d->material[3]==2) != g->resource->scene_vertex_color) ||
         (d->material[3]==2 && (d->material[2] || d->integer_depth || d->texture[3] || d->rotation[3])) ||
+        d->quality[0]<0 || d->quality[0]>3 ||
+        (d->quality[1]!=0 && (d->quality[1]<512 || d->quality[1]>65536)) ||
+        (d->quality[1]>512 && (d->quality[0]&2)) ||
+        d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>1 ||
+        (d->integer_depth && (d->quality[0] || d->quality[1] || d->quality[2] || d->quality[3])) ||
+        (d->quality[2] && d->material[3]) ||
+        ((d->quality[2]==1 || d->quality[2]==2) && !g->resource->sequential_triangles) ||
         d->camera[3] || d->texture[2]<0 || d->texture[2]>255 ||
         (d->texture[2] && d->integer_depth) ||
         d->texture[3]<0 || d->texture[3]>2 ||
@@ -1447,13 +1454,13 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if (!reuse_bind || bound_pipeline!=pipeline)
             impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);
         bound_resource=resource;bound_integer=d->integer_depth;bound_pipeline=pipeline;
-        g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112, d);
+        g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128, d);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,1);
-    g->stats.instance_upload_bytes += (uint64_t)count*112;
+    g->stats.instance_upload_bytes += (uint64_t)count*128;
     g->stats.indexed_draws += count; g->stats.frames++;
     g->target.valid=1;
     return 0;

@@ -234,7 +234,12 @@ stage: $(TARGET)
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
-	@if [ -d rasterfall/private-assets ]; then cp -R rasterfall/private-assets "$(PACKAGE_DIR)/rasterfall/private-assets"; fi
+	@mkdir -p "$(PACKAGE_DIR)/rasterfall/private-assets"
+	@for entry in rasterfall/private-assets/*; do \
+	    [ -e "$$entry" ] || continue; \
+	    [ "$$entry" = "rasterfall/private-assets/source" ] && continue; \
+	    cp -R "$$entry" "$(PACKAGE_DIR)/rasterfall/private-assets/" || exit 1; \
+	done
 
 package: stage
 	@rm -f "$(PACKAGE)"

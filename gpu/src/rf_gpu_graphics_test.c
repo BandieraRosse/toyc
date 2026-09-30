@@ -273,6 +273,67 @@ done:
     rf_gpu_graphics_destroy(g);return result;
 }
 
+static int precision_material_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *r=NULL;
+    struct rf_gpu_graphics_vertex v[6];
+    uint32_t ix[6]={0,1,2,3,4,5};
+    struct rf_gpu_graphics_batch_item items[2]={0};
+    int result=-1;
+    CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    for (unsigned i=0;i<6;++i) v[i]=vertices[indices[i]];
+    r=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
+    CHECK(r!=NULL);
+    for (unsigned i=0;i<2;++i) {
+        items[i].resource=r;items[i].draw=draw(128,96);
+        items[i].draw.translation_scale[2]=4000+i;
+        items[i].draw.material[0]=i?0x00ff00:0xff0000;
+    }
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(0xff0000));
+    memcpy(saved,pixels,128*96*4);
+    struct rf_gpu_graphics_batch_item swap=items[0];items[0]=items[1];items[1]=swap;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
+    CHECK(!memcmp(saved,pixels,128*96*4));
+    /* The old reciprocal-depth bucket cannot distinguish these surfaces. */
+    for (unsigned i=0;i<2;++i) items[i].draw.quality[0]=1;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
+    uint32_t first=pixels[48*128+64];
+    swap=items[0];items[0]=items[1];items[1]=swap;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
+    CHECK(first!=pixels[48*128+64]);
+    items[0].draw=draw(128,96);items[0].draw.material[2]=1;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    memcpy(saved,pixels,128*96*4);
+    items[0].draw.quality[3]=1;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(memcmp(saved,pixels,128*96*4));
+    items[0].draw.material[2]=0;items[0].draw.quality[3]=0;
+    items[0].draw.rotation[3]=1;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    memcpy(saved,pixels,128*96*4);
+    items[0].draw.quality[2]=1;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(memcmp(saved,pixels,128*96*4));
+    items[0].draw.quality[2]=3;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(pixels[48*128+64]==rgba(items[0].draw.material[0]));
+    memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
+    for (unsigned i=0;i<6;++i)
+        for (unsigned k=0;k<3;++k) v[i].position[k]*=128;
+    r=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
+    CHECK(r!=NULL);
+    items[0].resource=r;items[0].draw.quality[1]=65536;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
+    result=0;
+done:
+    rf_gpu_graphics_destroy(g);
+    printf("SCENE float depth/order, bilinear, smooth/unlit: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
 int main(void)
 {
     struct rf_gpu gpu;
@@ -295,6 +356,7 @@ int main(void)
     CHECK(triangle_reuse_test(&context)==0);
     CHECK(scene_color_test(&context)==0);
     CHECK(skin_batch_test(&context)==0);
+    CHECK(precision_material_test(&context)==0);
     result=0;
 done:
     rf_gpu_shutdown(&gpu);

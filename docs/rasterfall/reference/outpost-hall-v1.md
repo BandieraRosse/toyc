@@ -90,7 +90,7 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 
 ## 阶段边界
 
-大厅南入口西侧的 `main_terminal`（-1946, -3712 RFU）提供离线 FPS 渲染控制：靠近按 E 打开，鼠标或 1/2 切换 baseline 与高级功能页，点击功能或按 Enter 请求切换，Esc 退出。baseline 页说明 CPU/Scene 共同默认功能；高级页显示当前后端、支持状态及 CPU 模型边线的请求/生效值。尚未实现或当前后端不支持的功能会说明原因并保留配置。终端只修改 presentation 状态，不写入 `toy_game`。
+大厅南入口西侧的 `main_terminal`（-1946, -3712 RFU）提供离线渲染控制：FPS 靠近时按 E 打开，离线游玩时也可从任意位置按 F1 打开；再次按 F1 或按 Esc 退出。鼠标或 1/2 切换 baseline 与高级功能页，点击功能或按 Enter 请求切换。baseline 页说明 CPU/Scene 共同默认功能；高级页显示当前后端、支持状态及各可用开关的请求/生效值。尚未实现或当前后端不支持的功能会说明原因并保留配置。终端只修改 presentation 状态，不写入 `toy_game`。
 
 中央指挥桌南侧（X ±1250、Z -1900 至 -850 RFU）现提供离线 FPS 互动：靠近显示 `E USE COMMAND TABLE`，按 E 将玩家放到桌前 (0, -1160)、朝北并解锁鼠标；屏幕显示地图列表与启动时从各地图文件的 surface/collision footprint 生成的俯视预览。鼠标悬停条目切换预览，点击条目直接部署，Esc 离开互动并恢复视角控制。桌上 `command_map_screen` 为无碰撞显示器家具；地图选择 UI 是展示状态，不写入 `toy_game`。
 离线暂停菜单倒数第二项 `RETURN TO OUTPOST` 通过完整 world 重载回到前哨站出生点，并重置当前局的玩法与特效状态；联机时不执行本地单方面地图重载。

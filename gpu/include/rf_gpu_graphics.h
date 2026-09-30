@@ -17,8 +17,9 @@ struct rf_gpu_scene_color_vertex {
 };
 _Static_assert(sizeof(struct rf_gpu_scene_color_vertex)==20,"Scene color vertex ABI");
 
-/* Seven 16-byte push-constant lanes; all transforms use C/GLSL integer
- * division (toward zero). Q10 directions, milli scale, unsigned Q16 UV.
+/* Eight 16-byte push-constant lanes. Scene converts fixed storage to float
+ * before transforms; the compatibility path uses truncating integer division.
+ * Q10 directions, milli scale, unsigned Q16 UV.
  * Deliberately bounded proof contract; not a replacement for Draw V0.
  * integer_depth requires shaderInt64 and rejects conservative projected
  * mesh bounds outside [-16384,16384] before submitting any draw. */
@@ -30,6 +31,11 @@ struct rf_gpu_graphics_draw {
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
     uint32_t material[4]; /* RGB, scene Q8, textured, light mode: 0 form, 1 vertex, 2 vertex+RGB */
     int32_t texture[4]; /* width,height, alpha (0=opaque), screen mode (0/1/2) */
+    /* Scene precision/material controls. Zero keeps ordinary defaults.
+     * flags: bit 0 quantized depth, bit 1 integer transform (diagnostic only).
+     * units: local units/metre (0=512); shading: 0 flat, 1 smooth, 2 soft,
+     * 3 unlit; filter: 0 nearest, 1 bilinear/repeat. */
+    int32_t quality[4];
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
     /* Scene-only ordered pass. Zero preserves existing WORLD callers. */

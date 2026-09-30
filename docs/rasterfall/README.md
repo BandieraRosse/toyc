@@ -41,6 +41,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
+| Blender/RF 角色保真、眼部遮挡与高级材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、渲染终端角色材质/过滤开关 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 新角色包合同、材质能力与接入缺口审计 | [合同草案](reference/character-package-v1.md)、[资产工作流](guides/asset-pipeline.md#新角色接入前的能力清点) | `tools/assets/rfchar_audit.py`、`tools/assets/rfchar_material_contract.py`；源清点与材质元数据校验，不替代完整资产合同或游戏验收 |
 | 人形美术生成与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图 |

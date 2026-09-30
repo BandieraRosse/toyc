@@ -31,6 +31,17 @@ WORLD 深度、GPU skinning 和退休链。三角形展开数据以 65,535 个�
 同内容跨实例的 GPU buffer 共享仍未实现；逐帧只重新打包 palette 和 draw，资源 generation
 或 bind-normal 策略变化才重建静态顶点。角色材质仍只支持不透明分色，纹理/MASK/toon 扩展待实施。
 
+Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD 使用 D32 原生 reversed Z（64/z），
+不再对倒数深度取整。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
+在 graphics 顶点阶段换为 RFU；compute skinning 仍在局部存储格上舍入。屏幕空间层和旧 integer-depth
+兼容诊断独立保留。graphics draw 增加第八个 16 字节 push-constant lane，保持 Vulkan 的 128 字节最低保证。
+
+可选角色材质从已导出的 visual role 选择平滑、柔和或无光照，透视插值逐顶点法线；只允许顺序展开
+三角形资源使用该法线读取约定。无材质角色时使用普通平滑漫反射，不按私有角色名猜测。
+渲染终端拥有用户请求，Scene preparation 在下一帧消费 presentation-only 设置；原光照始终可恢复。
+静态纹理另有可选 bilinear/repeat，与角色材质开关独立。固定相机、分色、旧量化及绘制顺序诊断见
+[角色保真](../guides/character-fidelity.md)。
+
 Host Rack V2 的风扇、活动灯、实时负载条和槽位数字由 prop presentation 生成 WORLD 几何。
 独立 Scene layer 消费冻结的 prop 值和平台采样，CPU 使用同一槽位规则。静态模型不随指标更新，
 未启用候选柜在 Scene 资源准备时跳过；机柜数量和编号见 [Host Rack V2](../reference/host-rack-v2.md)。

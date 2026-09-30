@@ -13,7 +13,7 @@
 角色路线已选择以 A 为起点的成熟动漫方向；内容造型审阅与通用基础设施推进可以并行。
 用户随后要求优先看到实验场 GPU 模型，已将现有 v14 的目录 body 预览与通用分块提交提前落地；
 这是实验场中间交付，不代表 P0–P5 完成。复现与限制见 [Scene 工作流](../guides/gpu-scene-fixture.md#rf_model_lab-角色预览)。
-当前先审阅 V22h 的底发与侧后发连续塑形；两侧灰模、剪影和原材质对照检查叶状边界、底发下缘及整体发量。候选与限制见活动计划及其链接的 RF-C01 设计稿，不以离线样本代表阶段完成。
+当前按用户要求冻结 V22h 头部及同一 GLB，先完成 Blender → RF 保真、坐标/深度精度与三视图对照，暂停新增眼部薄片和头发细节；同步开始独立可开关的角色柔和材质与纹理过滤。入口见[保真诊断](../guides/character-fidelity.md)。保真闭环之后再推进侧面/45°脸型、头发大体积和眼部纹理，不以离线样本代表整阶段完成。
 后续造型迭代显式选择 v022h 候选清单，继续使用 V20c 锁定的空间接口，按[分部件工作流](../guides/character-parts.md)限定修改范围；V07 初始组装与 V08–V21 对照保留。持枪、动作与游戏 GPU 材质进入本计划交付范围；随视角修脸继续延期。
 
 原[CPU 与 GPU Scene 默认渲染统一计划](../archive/rendering-baseline-unification-20260927.md)已归档；其未完成的双后端画面对照不是当前角色接入门槛。共同功能清点仍由[渲染 baseline](../reference/rendering-baseline.md)保存，不自动成为本计划待办。GPU Compute Raster 退役记录见[归档](../archive/gpu-compute-retirement/README.md)。

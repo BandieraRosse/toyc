@@ -912,6 +912,7 @@ prop_ready:
             draw->index_count=info.index_count;
             draw->double_sided=resolved.material.double_sided;
             draw->integer_depth=integer_depth;
+            if (!integer_depth && rf_gpu_scene_linear_filter_enabled()) draw->quality[3]=1;
             if (!entry->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
             owner->prop_draws++;

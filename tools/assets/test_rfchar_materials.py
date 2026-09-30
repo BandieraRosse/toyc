@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from rfchar_import import convert, glb
+from rfchar_import import convert, glb, srgb
 
 
 def write_glb(path, document, binary):
@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--runtime", type=Path, required=True)
     args = parser.parse_args()
     original, binary = glb(args.fixture)
+    assert [srgb(x) for x in (0,0.0031308,0.25,0.5,1)] == [0,10,137,188,255]
     passed = 0
     with tempfile.TemporaryDirectory(prefix="rfchar-material-") as root:
         source = Path(root) / "fixture.glb"
@@ -64,6 +65,22 @@ def main():
             raise AssertionError(result.stdout + result.stderr)
         print(result.stdout.strip())
         assert raw == run(document), "non-deterministic material import"
+        passed += 1
+        convert(source, output, args.validator.resolve(), 65536)
+        precise = output.read_bytes()
+        assert struct.unpack_from('<I', precise, 16)[0] == 65536
+        assert struct.unpack_from('<II', precise, 8) == struct.unpack_from('<II', raw, 8)
+        vertex_offset = offset + 40*len(document['materials'])
+        for i in range(struct.unpack_from('<I', raw, 8)[0]):
+            a = struct.unpack_from('<iii', raw, vertex_offset+i*36)
+            b = struct.unpack_from('<iii', precise, vertex_offset+i*36)
+            assert all(abs(x/512-y/65536) <= 0.5/512+0.5/65536 for x,y in zip(a,b))
+        result = subprocess.run([str(args.runtime.resolve()), str(output)], capture_output=True, text=True)
+        assert result.returncode == 0, result.stdout+result.stderr
+        passed += 1
+        role_name=document['materials'][0]['name']
+        convert(source, output, args.validator.resolve(), 65536, {role_name:'eyes'})
+        assert output.read_bytes()[offset+36] == 2
         passed += 1
 
         # An unassigned primitive must get glTF white, not the first colored material.

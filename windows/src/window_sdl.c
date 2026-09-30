@@ -35,7 +35,7 @@ enum {
     KEY_A = 30, KEY_S = 31, KEY_D = 32, KEY_M = 50, KEY_ENTER = 28,
     KEY_GRAVE = 41, KEY_LEFTSHIFT = 42, KEY_COMMA = 51, KEY_DOT = 52,
     KEY_SLASH = 53, KEY_SPACE = 57,
-    KEY_MINUS = 12, KEY_EQUAL = 13, KEY_F2 = 60,
+    KEY_MINUS = 12, KEY_EQUAL = 13, KEY_F1 = 59, KEY_F2 = 60,
     KEY_F12 = 88, KEY_UP = 103, KEY_LEFT = 105, KEY_RIGHT = 106, KEY_DOWN = 108
 };
 
@@ -89,7 +89,7 @@ static void poll_windows_keys(struct toy_window_events *events, int focused)
         {KEY_1, '1'}, {KEY_2, '2'}, {KEY_3, '3'}, {KEY_4, '4'},
         {6, '5'}, {7, '6'}, {8, '7'}, {9, '8'}, {10, '9'}, {11, '0'},
         {KEY_MINUS, VK_OEM_MINUS}, {KEY_EQUAL, VK_OEM_PLUS},
-        {KEY_F2, VK_F2}, {KEY_F12, VK_F12},
+        {KEY_F1, VK_F1}, {KEY_F2, VK_F2}, {KEY_F12, VK_F12},
         {KEY_ESC, VK_ESCAPE}, {KEY_ENTER, VK_RETURN},
         {KEY_BACKSPACE, VK_BACK}, {KEY_GRAVE, VK_OEM_3},
         {KEY_COMMA, VK_OEM_COMMA}, {KEY_DOT, VK_OEM_PERIOD},
@@ -135,6 +135,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDLK_n: return KEY_N;
     case SDLK_MINUS: return KEY_MINUS;
     case SDLK_EQUALS: return KEY_EQUAL;
+    case SDLK_F1: return KEY_F1;
     case SDLK_F2: return KEY_F2;
     case SDLK_KP_MINUS: return KEY_MINUS;
     case SDLK_KP_PLUS: return KEY_EQUAL;
@@ -209,6 +210,7 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
     case SDL_SCANCODE_N: return KEY_N;
     case SDL_SCANCODE_MINUS: return KEY_MINUS;
     case SDL_SCANCODE_EQUALS: return KEY_EQUAL;
+    case SDL_SCANCODE_F1: return KEY_F1;
     case SDL_SCANCODE_F2: return KEY_F2;
     case SDL_SCANCODE_KP_MINUS: return KEY_MINUS;
     case SDL_SCANCODE_KP_PLUS: return KEY_EQUAL;
@@ -262,6 +264,8 @@ int toy_window_windows_key_mapping_logic_test(void)
     return key_code(SDL_SCANCODE_M, SDLK_m) == KEY_M &&
            key_code(SDL_SCANCODE_M, SDLK_UNKNOWN) == KEY_M &&
            key_code(SDL_SCANCODE_J, SDLK_j) == KEY_J &&
+           key_code(SDL_SCANCODE_F1, SDLK_F1) == KEY_F1 &&
+           key_code(SDL_SCANCODE_F1, SDLK_UNKNOWN) == KEY_F1 &&
            key_code(SDL_SCANCODE_F2, SDLK_UNKNOWN) == KEY_F2 &&
            key_code(SDL_SCANCODE_MINUS, SDLK_MINUS) == KEY_MINUS &&
            key_code(SDL_SCANCODE_0, SDLK_0) == 11 ? 0 : -1;

@@ -132,6 +132,7 @@
 #define KEY_DOT   52
 #define KEY_SLASH 53
 #define KEY_BACKSPACE 14
+#define KEY_F1      59
 #define KEY_F2      60
 #define KEY_F12     88
 #define KEY_UP    103
@@ -4543,12 +4544,14 @@ startup_again:
             int panel_y = (renderer.surface.height - 500) / 2;
             rf_render_terminal.pointer_x = input.pointer_x;
             rf_render_terminal.pointer_y = input.pointer_y;
-            if (pending_key_edges[KEY_ESC]) {
+            if (pending_key_edges[KEY_ESC] || pending_key_edges[KEY_F1]) {
                 pending_key_edges[KEY_ESC] = 0;
+                pending_key_edges[KEY_F1] = 0;
                 rf_render_terminal.open = 0;
                 memset(pending_key_edges, 0, sizeof(pending_key_edges));
                 fire_edge = shove_edge = 0;
-                pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
+                pointer_lock_requested = game_runtime.rts_active ? 0 :
+                    rf_core_set_pointer_lock(&core, 1) > 0;
                 pointer_turn_pending = pointer_pitch_pending = 0;
                 resumed = 1;
             } else {
@@ -4564,9 +4567,9 @@ startup_again:
                     else if (rf_render_terminal.page == 1 &&
                              px >= panel_x + 25 && px < panel_x + 795 &&
                              py >= panel_y + 129 &&
-                             py < panel_y + 129 + RF_RENDER_FEATURE_COUNT * 67 &&
-                             (py - panel_y - 129) % 67 < 61)
-                        rf_render_terminal_request((py - panel_y - 129) / 67);
+                             py < panel_y + 129 + RF_RENDER_FEATURE_COUNT * RF_RENDER_FEATURE_ROW_HEIGHT &&
+                             (py - panel_y - 129) % RF_RENDER_FEATURE_ROW_HEIGHT < RF_RENDER_FEATURE_ROW_HEIGHT-4)
+                        rf_render_terminal_request((py - panel_y - 129) / RF_RENDER_FEATURE_ROW_HEIGHT);
                 }
                 if (pending_key_edges[KEY_ENTER]) {
                     pending_key_edges[KEY_ENTER] = 0;
@@ -4600,8 +4603,14 @@ startup_again:
                     resumed = 1;
                 }
             }
-        } else if (rf_render_terminal.near && pending_key_edges[KEY_E]) {
+        } else if ((rf_render_terminal.near && pending_key_edges[KEY_E]) ||
+                   (pending_key_edges[KEY_F1] && !rf_table.open && !paused &&
+                    !developer_console.open && !managed_terminal.open &&
+                    !game_runtime.gui.active && !session.shop_open &&
+                    net.mode == RASTERFALL_NET_OFF &&
+                    game.state == TOY_GAME_PLAYING)) {
             pending_key_edges[KEY_E] = 0;
+            pending_key_edges[KEY_F1] = 0;
             input.key_pressed[KEY_E] = 0;
             rf_render_terminal.open = 1;
             rf_render_terminal.near = 0;
@@ -5179,6 +5188,28 @@ startup_again:
                 game_runtime.camera.x=16600;game_runtime.camera.z=-29000;
                 game_runtime.camera.y=650;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
                 game_runtime.camera.pitch_sy=-64;game_runtime.camera.pitch_cy=1022;
+            }
+            if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab")) {
+                const char *view=getenv("RF_GPU_CHARACTER_VIEW");
+                if (view && view[0]) {
+                    const char *distance=getenv("RF_GPU_CHARACTER_DISTANCE");
+                    double angle=!strcmp(view,"side") ? 1.5707963267948966 :
+                        !strcmp(view,"quarter") ? 0.7853981633974483 : 0.0;
+                    int radius=distance ? atoi(distance) : 384;
+                    if (radius<128) radius=128;
+                    if (radius>4096) radius=4096;
+                    if (!strcmp(view,"orbit")) {
+                        angle=rendered_frames*0.003;
+                        radius+=(int)(rendered_frames*0.5);
+                        if (radius>4096) radius=4096;
+                    }
+                    game_runtime.camera.x=16000+(int)(sin(angle)*radius);
+                    game_runtime.camera.z=-31400+(int)(cos(angle)*radius);
+                    game_runtime.camera.y=-114;
+                    game_runtime.camera.sy=(int)(-sin(angle)*1024);
+                    game_runtime.camera.cy=(int)(-cos(angle)*1024);
+                    game_runtime.camera.pitch_sy=0;game_runtime.camera.pitch_cy=1024;
+                }
             }
             game_runtime.lifecycle_paused = paused;
             game_runtime.managed_spectator = managed_spectator;
