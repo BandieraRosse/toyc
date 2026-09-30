@@ -27,9 +27,11 @@ struct toy_surface {
 
 #define TOY_WINDOW_MAX_KEY_EVENTS 64
 #define TOY_INPUT_KEY_COUNT 256
+#define TOY_PHYSICAL_KEY_COUNT 512
 
 struct toy_key_event {
     unsigned int key;
+    unsigned int physical_key;
     int pressed;
 };
 

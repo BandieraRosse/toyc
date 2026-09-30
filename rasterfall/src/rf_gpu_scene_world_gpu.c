@@ -54,7 +54,7 @@ static struct rf_gpu_graphics_resource *flag_cube_resource(
     struct rf_gpu_graphics *graphics,int minx,int maxx,int miny,int maxy,
     int minz,int maxz)
 {
-    struct rf_gpu_graphics_vertex vertices[8]={{0}};
+    struct rf_gpu_graphics_vertex vertices[8]={0};
     const uint32_t white=0xffffff;
     for(int i=0;i<8;++i) {
         vertices[i].position[0]=(i&1)?maxx:minx;
@@ -560,7 +560,7 @@ static struct rf_gpu_graphics_resource *pickup_cylinder_resource(
 {
     static const int cx[8]={1024,724,0,-724,-1024,-724,0,724};
     static const int cz[8]={0,724,1024,724,0,-724,-1024,-724};
-    struct rf_gpu_graphics_vertex vertices[17]={{0}};
+    struct rf_gpu_graphics_vertex vertices[17]={0};
     uint32_t indices[72],count=0;
     const uint32_t white=0xffffff;
     for(uint32_t i=0;i<8;++i) {

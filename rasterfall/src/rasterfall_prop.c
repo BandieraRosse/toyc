@@ -473,7 +473,7 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
     int number=rack*6+bay;
     unsigned long long used=0,capacity=0;
     int percent=0,lit=0;
-    char slot_label[8],value[24];
+    char slot_label[24],value[24];
     if (!cpu && p->asset_id!=RASTERFALL_PROP_ASSET_HOST_MEMORY_MODULE) return 0;
     if (host_capture_time>=0) time_ms=(unsigned)host_capture_time;
     seed=(unsigned)p->length*173u+(unsigned)p->x*7u+(unsigned)p->z*11u;

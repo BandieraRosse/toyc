@@ -6,6 +6,30 @@
 #define special_pull_timer_ms ability.special_pull_timer_ms
 #define charge_active ability.charge_active
 
+static int physical_input_boundary_logic_test(void)
+{
+    struct toy_input input;
+    struct toy_window_events events = {0};
+    toy_input_init(&input);
+    events.key_event_count = 1;
+    events.key_events[0].key = TOY_INPUT_KEY_COUNT;
+    events.key_events[0].physical_key = TOY_PHYSICAL_KEY_COUNT - 1;
+    events.key_events[0].pressed = 1;
+    toy_input_apply(&input, &events);
+    if (!input.physical_down[TOY_PHYSICAL_KEY_COUNT - 1] ||
+        !input.physical_pressed[TOY_PHYSICAL_KEY_COUNT - 1]) return -1;
+    toy_input_begin_frame(&input);
+    if (!input.physical_down[TOY_PHYSICAL_KEY_COUNT - 1] ||
+        input.physical_pressed[TOY_PHYSICAL_KEY_COUNT - 1]) return -2;
+    events.key_event_count = 0;
+    events.keyboard_focus_changed = 1;
+    events.keyboard_focused = 0;
+    toy_input_apply(&input, &events);
+    if (input.physical_down[TOY_PHYSICAL_KEY_COUNT - 1] ||
+        !input.physical_released[TOY_PHYSICAL_KEY_COUNT - 1]) return -3;
+    return 0;
+}
+
 static int death_command_geometry_equal(const struct toy_raster_cmd *a,
                                         const struct toy_raster_cmd *b)
 {
@@ -1564,6 +1588,8 @@ static int run_logic_test(void)
     extern int toy_window_windows_key_mapping_logic_test(void);
     if (toy_window_windows_key_mapping_logic_test() < 0) return 261;
 #endif
+    if (physical_input_boundary_logic_test() != 0) return 278;
+    if (rf_input_bindings_logic_test() != 0) return 277;
     struct camera camera;
     struct toy_input input;
     struct vec3 triangle[3], clipped[4];

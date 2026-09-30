@@ -91,20 +91,23 @@ static int copy_text(char *out, int capacity, const char *value)
 
 static int int_value(const char *s, int *out)
 {
-    long value = 0;
+    unsigned int value = 0;
+    unsigned int limit;
     int sign = 1, i = 0;
     if (!s || !s[0]) return -1;
     if (s[0] == '-') { sign = -1; i++; }
     else if (s[0] == '+') i++;
     if (!s[i]) return -1;
+    limit = sign < 0 ? 2147483648U : 2147483647U;
     for (; s[i]; i++) {
+        unsigned int digit;
         if (s[i] < '0' || s[i] > '9') return -1;
-        value = value * 10 + s[i] - '0';
-        if (value > 2147483648L) return -1;
+        digit = (unsigned int)(s[i] - '0');
+        if (value > (limit - digit) / 10U) return -1;
+        value = value * 10U + digit;
     }
-    value *= sign;
-    if (value < -2147483648L || value > 2147483647L) return -1;
-    *out = (int)value;
+    *out = sign < 0 ? (value == 2147483648U ? (-2147483647 - 1) :
+                       -(int)value) : (int)value;
     return 0;
 }
 

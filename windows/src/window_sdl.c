@@ -40,6 +40,7 @@ enum {
 };
 
 void toy_window_close(struct toy_window *window);
+static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym);
 
 static void clear_events(struct toy_window_events *events)
 {
@@ -62,7 +63,8 @@ static int has_key_event(const struct toy_window_events *events,
  * fallback for Windows focus/message-queue paths, without turning held keys
  * into repeated presses. */
 static void poll_windows_key_edge(struct toy_window_events *events,
-                                  unsigned int key, int vk, int *previous)
+                                  unsigned int key, unsigned int physical,
+                                  int vk, int *previous)
 {
     int pressed = (GetAsyncKeyState(vk) & 0x8000) != 0;
     if (pressed == *previous) return;
@@ -71,30 +73,46 @@ static void poll_windows_key_edge(struct toy_window_events *events,
         events->key_event_count >= TOY_WINDOW_MAX_KEY_EVENTS)
         return;
     events->key_events[events->key_event_count].key = key;
+    events->key_events[events->key_event_count].physical_key = physical;
     events->key_events[events->key_event_count].pressed = pressed;
     events->key_event_count++;
 }
 
 static void poll_windows_keys(struct toy_window_events *events, int focused)
 {
-    static const struct { unsigned int key; int vk; } keys[] = {
-        {KEY_W, 'W'}, {KEY_A, 'A'}, {KEY_S, 'S'}, {KEY_D, 'D'},
-        {KEY_SPACE, VK_SPACE}, {KEY_LEFTSHIFT, VK_SHIFT},
-        {KEY_TAB, VK_TAB}, {KEY_R, 'R'}, {KEY_E, 'E'}, {KEY_F, 'F'},
-        {KEY_Q, 'Q'}, {KEY_T, 'T'}, {KEY_Y, 'Y'}, {KEY_U, 'U'},
-        {KEY_I, 'I'}, {KEY_O, 'O'}, {KEY_P, 'P'}, {KEY_G, 'G'},
-        {KEY_H, 'H'}, {KEY_J, 'J'}, {KEY_K, 'K'}, {KEY_L, 'L'},
-        {KEY_Z, 'Z'}, {KEY_X, 'X'}, {KEY_C, 'C'}, {KEY_V, 'V'},
-        {KEY_B, 'B'}, {KEY_N, 'N'}, {KEY_M, 'M'},
-        {KEY_1, '1'}, {KEY_2, '2'}, {KEY_3, '3'}, {KEY_4, '4'},
-        {6, '5'}, {7, '6'}, {8, '7'}, {9, '8'}, {10, '9'}, {11, '0'},
-        {KEY_MINUS, VK_OEM_MINUS}, {KEY_EQUAL, VK_OEM_PLUS},
-        {KEY_F1, VK_F1}, {KEY_F2, VK_F2}, {KEY_F12, VK_F12},
-        {KEY_ESC, VK_ESCAPE}, {KEY_ENTER, VK_RETURN},
-        {KEY_BACKSPACE, VK_BACK}, {KEY_GRAVE, VK_OEM_3},
-        {KEY_COMMA, VK_OEM_COMMA}, {KEY_DOT, VK_OEM_PERIOD},
-        {KEY_UP, VK_UP}, {KEY_DOWN, VK_DOWN},
-        {KEY_LEFT, VK_LEFT}, {KEY_RIGHT, VK_RIGHT}, {KEY_SLASH, VK_OEM_2}
+    static const struct { unsigned int key, physical; int vk; } keys[] = {
+#define POLL(key, scan, vk) {key, SDL_SCANCODE_##scan, vk}
+        POLL(KEY_W,W,'W'), POLL(KEY_A,A,'A'),
+        POLL(KEY_S,S,'S'), POLL(KEY_D,D,'D'),
+        POLL(KEY_SPACE,SPACE,VK_SPACE), POLL(KEY_LEFTSHIFT,LSHIFT,VK_LSHIFT),
+        POLL(KEY_TAB,TAB,VK_TAB), POLL(KEY_R,R,'R'),
+        POLL(KEY_E,E,'E'), POLL(KEY_F,F,'F'),
+        POLL(KEY_Q,Q,'Q'), POLL(KEY_T,T,'T'),
+        POLL(KEY_Y,Y,'Y'), POLL(KEY_U,U,'U'),
+        POLL(KEY_I,I,'I'), POLL(KEY_O,O,'O'),
+        POLL(KEY_P,P,'P'), POLL(KEY_G,G,'G'),
+        POLL(KEY_H,H,'H'), POLL(KEY_J,J,'J'),
+        POLL(KEY_K,K,'K'), POLL(KEY_L,L,'L'),
+        POLL(KEY_Z,Z,'Z'), POLL(KEY_X,X,'X'),
+        POLL(KEY_C,C,'C'), POLL(KEY_V,V,'V'),
+        POLL(KEY_B,B,'B'), POLL(KEY_N,N,'N'), POLL(KEY_M,M,'M'),
+        POLL(KEY_1,1,'1'), POLL(KEY_2,2,'2'),
+        POLL(KEY_3,3,'3'), POLL(KEY_4,4,'4'),
+        POLL(6,5,'5'), POLL(7,6,'6'), POLL(8,7,'7'),
+        POLL(9,8,'8'), POLL(10,9,'9'), POLL(11,0,'0'),
+        POLL(KEY_MINUS,MINUS,VK_OEM_MINUS),
+        POLL(KEY_EQUAL,EQUALS,VK_OEM_PLUS),
+        POLL(KEY_F1,F1,VK_F1), POLL(KEY_F2,F2,VK_F2),
+        POLL(KEY_F12,F12,VK_F12), POLL(KEY_ESC,ESCAPE,VK_ESCAPE),
+        POLL(KEY_ENTER,RETURN,VK_RETURN),
+        POLL(KEY_BACKSPACE,BACKSPACE,VK_BACK),
+        POLL(KEY_GRAVE,GRAVE,VK_OEM_3),
+        POLL(KEY_COMMA,COMMA,VK_OEM_COMMA),
+        POLL(KEY_DOT,PERIOD,VK_OEM_PERIOD),
+        POLL(KEY_UP,UP,VK_UP), POLL(KEY_DOWN,DOWN,VK_DOWN),
+        POLL(KEY_LEFT,LEFT,VK_LEFT), POLL(KEY_RIGHT,RIGHT,VK_RIGHT),
+        POLL(KEY_SLASH,SLASH,VK_OEM_2)
+#undef POLL
     };
     static int previous[sizeof(keys) / sizeof(keys[0])];
     if (!focused) {
@@ -102,14 +120,26 @@ static void poll_windows_keys(struct toy_window_events *events, int focused)
             previous[i] = 0;
         return;
     }
-    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++)
-        poll_windows_key_edge(events, keys[i].key, keys[i].vk, &previous[i]);
+    for (unsigned int i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        int vk = keys[i].vk;
+        SDL_Keycode symbol = SDL_GetKeyFromScancode(
+            (SDL_Scancode)keys[i].physical);
+        unsigned int legacy_key = key_code(SDL_SCANCODE_UNKNOWN, symbol);
+        if (legacy_key >= TOY_INPUT_KEY_COUNT) legacy_key = keys[i].key;
+        if (symbol > 0 && symbol <= 0xffff) {
+            SHORT layout_vk = VkKeyScanExW((WCHAR)symbol,
+                                            GetKeyboardLayout(0));
+            if (layout_vk != -1) vk = layout_vk & 0xff;
+        }
+        poll_windows_key_edge(events, legacy_key, keys[i].physical,
+                              vk, &previous[i]);
+    }
 }
 
 static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
 {
-    /* Prefer SDL keycodes: these are layout-aware on Windows and avoid
-     * exposing SDL's physical scancode values to the game. */
+    /* Legacy text keys follow the keyboard layout. The separate physical_key
+     * field always carries the actual SDL scancode for action bindings. */
     switch (sym) {
     case SDLK_w: return KEY_W;
     case SDLK_a: return KEY_A;
@@ -261,7 +291,8 @@ static unsigned int key_code(SDL_Scancode code, SDL_Keycode sym)
 
 int toy_window_windows_key_mapping_logic_test(void)
 {
-    return key_code(SDL_SCANCODE_M, SDLK_m) == KEY_M &&
+    return key_code(SDL_SCANCODE_A, SDLK_q) == KEY_Q &&
+           key_code(SDL_SCANCODE_M, SDLK_m) == KEY_M &&
            key_code(SDL_SCANCODE_M, SDLK_UNKNOWN) == KEY_M &&
            key_code(SDL_SCANCODE_J, SDLK_j) == KEY_J &&
            key_code(SDL_SCANCODE_F1, SDLK_F1) == KEY_F1 &&
@@ -377,9 +408,12 @@ dispatch:
             unsigned int key = key_code(event.key.keysym.scancode,
                                         event.key.keysym.sym);
             if (event.key.repeat) break;
-            if (key < TOY_INPUT_KEY_COUNT &&
+            if ((key < TOY_INPUT_KEY_COUNT ||
+                 (unsigned int)event.key.keysym.scancode < TOY_PHYSICAL_KEY_COUNT) &&
                 events->key_event_count < TOY_WINDOW_MAX_KEY_EVENTS) {
                 events->key_events[events->key_event_count].key = key;
+                events->key_events[events->key_event_count].physical_key =
+                    (unsigned int)event.key.keysym.scancode;
                 events->key_events[events->key_event_count].pressed =
                     event.type == SDL_KEYDOWN;
                 events->key_event_count++;

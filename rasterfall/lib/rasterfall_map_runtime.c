@@ -105,8 +105,13 @@ const char *rf_map_runtime_action_name(int action_id)
 
 static void copy_string(char *dst, int capacity, const char *src)
 {
-    strncpy(dst, src, capacity - 1);
-    dst[capacity - 1] = '\0';
+    int i = 0;
+    while (i < capacity - 1 && src[i]) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = '\0';
+    while (++i < capacity) dst[i] = '\0';
 }
 
 static const char *extension_text(const struct rasterfall_map_ir_attribute *a,

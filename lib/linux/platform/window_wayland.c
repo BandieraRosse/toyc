@@ -57,6 +57,7 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
         events->key_event_count = input.key_event_count;
         for (int i = 0; i < input.key_event_count; i++) {
             events->key_events[i].key = input.key_events[i].key;
+            events->key_events[i].physical_key = input.key_events[i].key;
             events->key_events[i].pressed = input.key_events[i].pressed;
         }
     }

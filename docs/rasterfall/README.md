@@ -16,6 +16,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 当前优先级与延期项 | [计划入口](plans/README.md) | 当前决策与活动计划；退役历史见[归档](archive/gpu-compute-retirement/README.md) |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](guides/build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
 | 启动、参数、主循环、Core Host | [运行时架构](architecture/runtime.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
+| 物理键、动作默认绑定与输入边沿 | [运行时架构](architecture/runtime.md#物理键与动作绑定) | `include/rf_input_bindings.h`、`src/rf_input_bindings.c`、`windows/src/window_sdl.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
 | 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[历史计划](archive/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |

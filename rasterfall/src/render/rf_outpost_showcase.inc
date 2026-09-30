@@ -27,9 +27,12 @@ struct outpost_walk_entry {
     struct rasterfall_infected_sample motion;
 };
 static struct outpost_walk_entry outpost_walk[] = {
-    {TOY_GAME_ENEMY_PURSUIT_COMMON,-3200,OUTPOST_WALK_NORTH_Z,-1},
-    {TOY_GAME_ENEMY_PURSUIT_FAST,0,OUTPOST_WALK_NORTH_Z,-1},
-    {TOY_GAME_ENEMY_PURSUIT_HEAVY,3200,OUTPOST_WALK_NORTH_Z,-1}
+    {.type=TOY_GAME_ENEMY_PURSUIT_COMMON,.x=-3200,
+     .z=OUTPOST_WALK_NORTH_Z,.direction=-1},
+    {.type=TOY_GAME_ENEMY_PURSUIT_FAST,.x=0,
+     .z=OUTPOST_WALK_NORTH_Z,.direction=-1},
+    {.type=TOY_GAME_ENEMY_PURSUIT_HEAVY,.x=3200,
+     .z=OUTPOST_WALK_NORTH_Z,.direction=-1}
 };
 static int outpost_walk_visible;
 static uint64_t outpost_walk_time_us, outpost_walk_step_us;

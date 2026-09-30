@@ -81,6 +81,7 @@
 #include "rasterfall_action.h"
 #include "rasterfall_options.h"
 #include "rf_core_host.h"
+#include "rf_input_bindings.h"
 #include "rf_game_lifecycle.h"
 #include "rf_application_projection.h"
 #include "rasterfall_feature_freeze.h"
@@ -142,6 +143,72 @@
 #define KEY_GRAVE 41
 #define BTN_LEFT 0x110
 #define BTN_RIGHT 0x111
+
+static struct rf_input_bindings game_bindings;
+static int game_bindings_ready;
+
+static void ensure_game_bindings(void)
+{
+    if (game_bindings_ready) return;
+    rf_input_bindings_defaults(&game_bindings);
+    game_bindings_ready = 1;
+}
+
+int rf_game_bind_action(enum rf_input_action action, unsigned int physical)
+{
+    ensure_game_bindings();
+    return rf_input_bind(&game_bindings, action, physical);
+}
+
+static int action_down(const struct rf_input_frame *input,
+                       enum rf_input_action action)
+{
+    ensure_game_bindings();
+    return rf_action_down(&game_bindings, input, action);
+}
+
+static int action_pressed(const struct rf_input_frame *input,
+                          enum rf_input_action action)
+{
+    ensure_game_bindings();
+    return rf_action_pressed(&game_bindings, input, NULL, action);
+}
+
+static void action_consume(struct rf_input_frame *input,
+                           unsigned char *pending_physical,
+                           enum rf_input_action action)
+{
+    ensure_game_bindings();
+    rf_action_consume(&game_bindings, input, pending_physical, action);
+}
+
+static int event_is_action(const struct toy_key_event *event,
+                           enum rf_input_action action)
+{
+    ensure_game_bindings();
+    return event->physical_key != 0 &&
+           (event->physical_key == rf_input_binding(&game_bindings, action) ||
+            event->physical_key == game_bindings.secondary[action]);
+}
+
+static int action_pending(const unsigned char *pending,
+                          enum rf_input_action action)
+{
+    unsigned int primary, secondary;
+    ensure_game_bindings();
+    primary = game_bindings.physical[action];
+    secondary = game_bindings.secondary[action];
+    return pending[primary] || (secondary && pending[secondary]);
+}
+
+static void clear_action_pending(unsigned char *pending,
+                                 enum rf_input_action action)
+{
+    ensure_game_bindings();
+    pending[game_bindings.physical[action]] = 0;
+    if (game_bindings.secondary[action])
+        pending[game_bindings.secondary[action]] = 0;
+}
 
 #define FIXED_STEP_US 16667
 #define MAX_FRAME_US 250000
@@ -795,81 +862,80 @@ static int use_absolute_mouse_look(int pointer_lock_requested,
 static void build_game_command(struct rasterfall_command *command,
                                const struct rf_input_frame *input,
                                const struct control_settings *settings,
-                               const unsigned char *pending_key_edges,
                                int fire_edge, int shove_edge,
                                int pointer_turn,
                                int pointer_pitch)
 {
     int percent = sensitivity_percent(settings->keyboard_level);
     memset(command, 0, sizeof(struct rasterfall_command));
-    command->move_forward = toy_input_down(input, KEY_W) -
-                            toy_input_down(input, KEY_S);
-    command->move_strafe = toy_input_down(input, KEY_D) -
-                           toy_input_down(input, KEY_A);
+    command->move_forward = action_down(input, RF_ACTION_FORWARD) -
+                            action_down(input, RF_ACTION_BACK);
+    command->move_strafe = action_down(input, RF_ACTION_STRAFE_RIGHT) -
+                           action_down(input, RF_ACTION_STRAFE_LEFT);
     command->turn = pointer_turn +
-                    (toy_input_down(input, KEY_RIGHT) -
-                     toy_input_down(input, KEY_LEFT)) * 16 * percent / 100;
+                    (action_down(input, RF_ACTION_LOOK_RIGHT) -
+                     action_down(input, RF_ACTION_LOOK_LEFT)) * 16 * percent / 100;
     command->pitch = pointer_pitch +
-                     (toy_input_down(input, KEY_UP) -
-                      toy_input_down(input, KEY_DOWN)) * 16 * percent / 100;
-    command->fire_held = toy_input_down(input, KEY_ENTER) ||
+                     (action_down(input, RF_ACTION_LOOK_UP) -
+                      action_down(input, RF_ACTION_LOOK_DOWN)) * 16 * percent / 100;
+    command->fire_held = action_down(input, RF_ACTION_FIRE_KEY) ||
                          (input->mouse_buttons & 1) != 0;
     if (fire_edge) command->buttons |= RASTERFALL_CMD_FIRE;
     if (shove_edge) command->buttons |= RASTERFALL_CMD_SHOVE;
-    if (toy_input_pressed(input, KEY_SPACE) || pending_key_edges[KEY_SPACE])
+    if (action_pressed(input, RF_ACTION_JUMP))
         command->buttons |= RASTERFALL_CMD_JUMP;
-    if (toy_input_pressed(input, KEY_SLASH))
+    if (action_pressed(input, RF_ACTION_SHOVE_KEY))
         command->buttons |= RASTERFALL_CMD_SHOVE;
-    if (toy_input_pressed(input, KEY_R)) command->buttons |= RASTERFALL_CMD_RELOAD;
+    if (action_pressed(input, RF_ACTION_RELOAD)) command->buttons |= RASTERFALL_CMD_RELOAD;
     /* A key edge may arrive between fixed ticks (or while the renderer is
      * waiting for a present buffer). Use the retained edge queue so movement
      * cannot make a number press disappear. */
-    if (toy_input_pressed(input, KEY_1) || pending_key_edges[KEY_1])
+    if (action_pressed(input, RF_ACTION_SLOT_1))
         command->buttons |= RASTERFALL_CMD_SLOT_1;
-    if (toy_input_pressed(input, KEY_2) || pending_key_edges[KEY_2])
+    if (action_pressed(input, RF_ACTION_SLOT_2))
         command->buttons |= RASTERFALL_CMD_SLOT_2;
-    if (toy_input_pressed(input, KEY_3) || pending_key_edges[KEY_3])
+    if (action_pressed(input, RF_ACTION_SLOT_3))
         command->buttons |= RASTERFALL_CMD_SLOT_3;
-    if (toy_input_pressed(input, KEY_4) || pending_key_edges[KEY_4])
+    if (action_pressed(input, RF_ACTION_SLOT_4))
         command->buttons |= RASTERFALL_CMD_SLOT_4;
-    if (toy_input_pressed(input, KEY_E) || pending_key_edges[KEY_E])
+    if (action_pressed(input, RF_ACTION_INTERACT))
         command->buttons |= RASTERFALL_CMD_INTERACT;
-    if (toy_input_pressed(input, KEY_F)) command->buttons |= RASTERFALL_CMD_FLAG;
+    if (action_pressed(input, RF_ACTION_FLAG)) command->buttons |= RASTERFALL_CMD_FLAG;
     if (session.pose_debug_active && session.pose_editor.active) {
         /* Keep movement, mouse look, and arrow-key look in the ordinary
          * command.  Only gameplay actions are consumed by the editor. */
         command->fire_held = 0;
         command->buttons = 0;
-        if (toy_input_pressed(input, KEY_TAB))
-            command->pose_editor_action = toy_input_down(input, KEY_LEFTSHIFT) ?
+        if (action_pressed(input, RF_ACTION_POSE_PAGE))
+            command->pose_editor_action = action_down(input, RF_ACTION_MODIFIER) ?
                 RASTERFALL_POSE_EDITOR_PREV_PAGE : RASTERFALL_POSE_EDITOR_NEXT_PAGE;
         /* Pose editing deliberately avoids WASD and the arrow keys: movement
          * and camera look remain available while the editor is open. */
-        if (toy_input_pressed(input, KEY_COMMA)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_PREV_FIELD;
-        if (toy_input_pressed(input, KEY_DOT)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_NEXT_FIELD;
-        if (toy_input_pressed(input, KEY_J)) command->pose_editor_action=toy_input_down(input, KEY_LEFTSHIFT)?RASTERFALL_POSE_EDITOR_DECREASE_LARGE:RASTERFALL_POSE_EDITOR_DECREASE;
-        if (toy_input_pressed(input, KEY_L)) command->pose_editor_action=toy_input_down(input, KEY_LEFTSHIFT)?RASTERFALL_POSE_EDITOR_INCREASE_LARGE:RASTERFALL_POSE_EDITOR_INCREASE;
-        if (toy_input_pressed(input, KEY_R)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_RESET;
-        if (toy_input_pressed(input, KEY_P)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXPORT;
-        if (toy_input_pressed(input, KEY_ESC)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXIT;
-        if (toy_input_pressed(input, KEY_U)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_AXES;
-        if (toy_input_pressed(input, KEY_O)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS;
-        if (toy_input_pressed(input, KEY_I)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_IK;
-        if (toy_input_pressed(input, KEY_V)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANIMATION_PLAY;
-        if (toy_input_pressed(input, KEY_X)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_X;
-        if (toy_input_pressed(input, KEY_Y)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Y;
-        if (toy_input_pressed(input, KEY_Z)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Z;
+        if (action_pressed(input, RF_ACTION_POSE_PREV_FIELD)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_PREV_FIELD;
+        if (action_pressed(input, RF_ACTION_POSE_NEXT_FIELD)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_NEXT_FIELD;
+        if (action_pressed(input, RF_ACTION_POSE_DECREASE)) command->pose_editor_action=action_down(input, RF_ACTION_MODIFIER)?RASTERFALL_POSE_EDITOR_DECREASE_LARGE:RASTERFALL_POSE_EDITOR_DECREASE;
+        if (action_pressed(input, RF_ACTION_POSE_INCREASE)) command->pose_editor_action=action_down(input, RF_ACTION_MODIFIER)?RASTERFALL_POSE_EDITOR_INCREASE_LARGE:RASTERFALL_POSE_EDITOR_INCREASE;
+        if (action_pressed(input, RF_ACTION_POSE_RESET)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_RESET;
+        if (action_pressed(input, RF_ACTION_POSE_EXPORT)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXPORT;
+        if (action_pressed(input, RF_ACTION_POSE_EXIT)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_EXIT;
+        if (action_pressed(input, RF_ACTION_POSE_AXES)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_AXES;
+        if (action_pressed(input, RF_ACTION_POSE_ANCHORS)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANCHORS;
+        if (action_pressed(input, RF_ACTION_POSE_IK)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_IK;
+        if (action_pressed(input, RF_ACTION_POSE_ANIMATION)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_TOGGLE_ANIMATION_PLAY;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_X)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_X;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_Y)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Y;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_Z)) command->pose_editor_action=RASTERFALL_POSE_EDITOR_AXIS_Z;
         return;
     }
     if (session.pose_debug_active) {
-        if (toy_input_pressed(input, KEY_N)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_PREV_BONE;
-        if (toy_input_pressed(input, KEY_B)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_NEXT_BONE;
-        if (toy_input_pressed(input, KEY_X)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_X;
-        if (toy_input_pressed(input, KEY_Y)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Y;
-        if (toy_input_pressed(input, KEY_Z)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Z;
-        if (toy_input_pressed(input, KEY_MINUS)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_DECREASE;
-        if (toy_input_pressed(input, KEY_EQUAL)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_INCREASE;
-        if (toy_input_pressed(input, KEY_P)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_EXPORT;
+        if (action_pressed(input, RF_ACTION_POSE_PREV_BONE)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_PREV_BONE;
+        if (action_pressed(input, RF_ACTION_POSE_NEXT_BONE)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_NEXT_BONE;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_X)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_X;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_Y)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Y;
+        if (action_pressed(input, RF_ACTION_POSE_AXIS_Z)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_AXIS_Z;
+        if (action_pressed(input, RF_ACTION_POSE_FINE_DECREASE)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_DECREASE;
+        if (action_pressed(input, RF_ACTION_POSE_FINE_INCREASE)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_INCREASE;
+        if (action_pressed(input, RF_ACTION_POSE_EXPORT)) command->pose_debug_action=RASTERFALL_POSE_DEBUG_EXPORT;
     }
 }
 
@@ -890,8 +956,12 @@ static void capture_jump_vector(struct rasterfall_command *command,
 }
 
 static void consume_game_command_edges(struct rf_input_frame *input,
-                                       unsigned char *pending_key_edges)
+                                       unsigned char *pending_key_edges,
+                                       unsigned char *pending_physical_edges)
 {
+    for (int action = 0; action < RF_ACTION_COUNT; action++)
+        action_consume(input, pending_physical_edges,
+                       (enum rf_input_action)action);
     input->key_pressed[KEY_R] = 0;
     input->key_pressed[KEY_1] = 0;
     input->key_pressed[KEY_2] = 0;
@@ -1401,21 +1471,30 @@ static int run_startup_menu(struct rf_core *core,
     char room_text[8];
     int64_t nav_ready = 0;
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
+    unsigned char pending_physical_edges[RF_INPUT_PHYSICAL_KEY_COUNT];
+    ensure_game_bindings();
     strcpy(address, "127.0.0.1");
     strcpy(port_text, "28460");
     room_text[0] = 0;
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
+    memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
     while (running) {
         struct toy_surface surface;
         int64_t now = rf_core_time_us(core);
         if (rf_core_poll_events(core) < 0) break;
         if (rf_core_get_input_frame(core, input) < 0) break;
-        if (events->keyboard_focus_changed && !events->keyboard_focused)
+        if (events->keyboard_focus_changed && !events->keyboard_focused) {
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
+            memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
+        }
         for (int i = 0; i < events->key_event_count; i++) {
             unsigned int key = events->key_events[i].key;
+            unsigned int physical = events->key_events[i].physical_key;
             if (events->key_events[i].pressed && key < TOY_INPUT_KEY_COUNT)
                 pending_key_edges[key] = 1;
+            if (events->key_events[i].pressed && physical > 0 &&
+                physical < RF_INPUT_PHYSICAL_KEY_COUNT)
+                pending_physical_edges[physical] = 1;
         }
         /* Wayland 的 xdg_toplevel.move 必须使用鼠标按下事件的 serial。
          * 菜单顶部保留为可拖拽区域，不影响下方按钮操作。 */
@@ -1428,12 +1507,18 @@ static int run_startup_menu(struct rf_core *core,
         if (screen == RASTERFALL_STARTUP_PUBLIC_ROOM) {
             for (int i = 0; i < events->key_event_count; i++) {
                 unsigned int key = events->key_events[i].key;
+                unsigned int physical = events->key_events[i].physical_key;
                 if (!events->key_events[i].pressed) continue;
-                if (key == KEY_ESC) { screen = RASTERFALL_STARTUP_MAIN; selected = 0; }
-                else if (key == KEY_BACKSPACE) {
+                if (physical < RF_INPUT_PHYSICAL_KEY_COUNT)
+                    pending_physical_edges[physical] = 0;
+                if (event_is_action(&events->key_events[i], RF_ACTION_CANCEL)) {
+                    screen = RASTERFALL_STARTUP_MAIN;
+                    selected = 0;
+                }
+                else if (event_is_action(&events->key_events[i], RF_ACTION_BACKSPACE)) {
                     int length = (int)strlen(room_text);
                     if (length > 0) room_text[length - 1] = 0;
-                } else if (key == KEY_ENTER) {
+                } else if (event_is_action(&events->key_events[i], RF_ACTION_CONFIRM)) {
                     if (strlen(room_text) == 4) {
                         *room_id = atoi(room_text); *public_room = 1;
                         /* Keep the public-room role selected on the main menu:
@@ -1453,15 +1538,18 @@ static int run_startup_menu(struct rf_core *core,
             int room_count = discovery ? discovery->room_count : 0;
             int room_index = 0;
             for (int i = 0; i < events->key_event_count; i++) {
-                unsigned int key = events->key_events[i].key;
+                unsigned int physical = events->key_events[i].physical_key;
                 int active_count = discovery ? discovery->room_count : 0;
                 if (!events->key_events[i].pressed) continue;
-                if (key == KEY_ESC) {
+                if (physical < RF_INPUT_PHYSICAL_KEY_COUNT)
+                    pending_physical_edges[physical] = 0;
+                if (event_is_action(&events->key_events[i], RF_ACTION_CANCEL)) {
                     rasterfall_net_discovery_close(discovery);
                     discovery_active = 0;
                     screen = RASTERFALL_STARTUP_MAIN;
                     selected = 4;
-                } else if (key == KEY_ENTER && active_count > 0) {
+                } else if (event_is_action(&events->key_events[i],
+                                           RF_ACTION_CONFIRM) && active_count > 0) {
                     for (int room_slot = 0;
                          room_slot < RASTERFALL_NET_DISCOVERY_MAX_ROOMS;
                          room_slot++) {
@@ -1479,8 +1567,11 @@ static int run_startup_menu(struct rf_core *core,
                             return 1;
                         }
                     }
-                } else if ((key == KEY_UP || key == KEY_DOWN) && room_count > 0) {
-                    selected += key == KEY_DOWN ? 1 : -1;
+                } else if ((event_is_action(&events->key_events[i], RF_ACTION_UI_UP) ||
+                            event_is_action(&events->key_events[i], RF_ACTION_UI_DOWN)) &&
+                           room_count > 0) {
+                    selected += event_is_action(&events->key_events[i],
+                                                RF_ACTION_UI_DOWN) ? 1 : -1;
                     if (selected < 0) selected = room_count - 1;
                     if (selected >= room_count) selected = 0;
                 }
@@ -1488,21 +1579,25 @@ static int run_startup_menu(struct rf_core *core,
         } else if (screen == RASTERFALL_STARTUP_MANUAL_IP) {
             for (int i = 0; i < events->key_event_count; i++) {
                 unsigned int key = events->key_events[i].key;
+                unsigned int physical = events->key_events[i].physical_key;
                 if (!events->key_events[i].pressed) continue;
-                if (key == KEY_ESC) {
+                if (physical < RF_INPUT_PHYSICAL_KEY_COUNT)
+                    pending_physical_edges[physical] = 0;
+                if (event_is_action(&events->key_events[i], RF_ACTION_CANCEL)) {
                     screen = RASTERFALL_STARTUP_MAIN;
                     selected = 5;
                     editing_port = 0;
-                } else if (key == KEY_TAB) {
+                } else if (event_is_action(&events->key_events[i],
+                                           RF_ACTION_TEXT_NEXT_FIELD)) {
                     editing_port = !editing_port;
-                } else if (key == KEY_BACKSPACE) {
+                } else if (event_is_action(&events->key_events[i], RF_ACTION_BACKSPACE)) {
                     char *text = editing_port ? port_text : address;
                     int length = (int)strlen(text);
                     if (length > 0) text[length - 1] = 0;
                 } else if (key == KEY_DOT) {
                     int length = (int)strlen(address);
                     if (!editing_port && length + 1 < address_size) strcat(address, ".");
-                } else if (key == KEY_ENTER) {
+                } else if (event_is_action(&events->key_events[i], RF_ACTION_CONFIRM)) {
                     int selected_port = parse_positive_int(port_text, 0);
                     if (!editing_port && inet_addr(address) != 0xffffffffU &&
                         selected_port > 0) {
@@ -1522,8 +1617,8 @@ static int run_startup_menu(struct rf_core *core,
                 }
             }
         } else {
-            int up = pending_key_edges[KEY_UP];
-            int down = pending_key_edges[KEY_DOWN];
+            int up = action_pending(pending_physical_edges, RF_ACTION_UI_UP);
+            int down = action_pending(pending_physical_edges, RF_ACTION_UI_DOWN);
             if ((up || down) && now >= nav_ready) {
                 int limit = 7;
                 selected += down ? 1 : -1;
@@ -1536,12 +1631,16 @@ static int run_startup_menu(struct rf_core *core,
              * single physical press can move again after the key is up. */
             pending_key_edges[KEY_UP] = 0;
             pending_key_edges[KEY_DOWN] = 0;
-            if (pending_key_edges[KEY_ESC]) {
+            clear_action_pending(pending_physical_edges, RF_ACTION_UI_UP);
+            clear_action_pending(pending_physical_edges, RF_ACTION_UI_DOWN);
+            if (action_pending(pending_physical_edges, RF_ACTION_CANCEL)) {
+                clear_action_pending(pending_physical_edges, RF_ACTION_CANCEL);
                 pending_key_edges[KEY_ESC] = 0;
                 if (screen == RASTERFALL_STARTUP_MAIN) break;
                 screen = RASTERFALL_STARTUP_MAIN;
                 selected = 1;
-            } else if (pending_key_edges[KEY_ENTER]) {
+            } else if (action_pending(pending_physical_edges, RF_ACTION_CONFIRM)) {
+                clear_action_pending(pending_physical_edges, RF_ACTION_CONFIRM);
                 pending_key_edges[KEY_ENTER] = 0;
                 if (screen == RASTERFALL_STARTUP_MAIN) {
                     if (selected == 0) {
@@ -1600,7 +1699,7 @@ static int wait_for_network_connection(struct rf_core *core,
         int ready;
         if (rf_core_poll_events(core) < 0) return -2;
         if (rf_core_get_input_frame(core, input) < 0) return -2;
-        if (rf_core_should_exit(core) || toy_input_pressed(input, KEY_ESC))
+        if (rf_core_should_exit(core) || action_pressed(input, RF_ACTION_CANCEL))
             return -2;
         rasterfall_net_poll(net);
         rasterfall_net_update_connection(net);
@@ -2970,7 +3069,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             toy_game_local_player_actor_const(state)->state != TOY_GAME_ACTOR_DOWNED)
             draw_crosshair(canvas, state);
         if (!runtime->session->pose_editor.active &&
-            toy_input_down(&runtime->input_frame, KEY_TAB))
+            action_down(&runtime->input_frame, RF_ACTION_SCOREBOARD))
             draw_scoreboard(canvas, &runtime->net);
         if (runtime->rts_active) draw_rts_overlay(canvas, runtime);
     }
@@ -3254,6 +3353,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int fire_edge = 0, shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
+    unsigned char pending_physical_edges[RF_INPUT_PHYSICAL_KEY_COUNT];
     int input_event_count = 0, have_last_key = 0;
     struct rasterfall_perf_stats stats, stats_total;
     unsigned int last_key = 0;
@@ -3272,6 +3372,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     char selected_address[64];
 
     if (!config || !config->options) return 2;
+    ensure_game_bindings();
     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
     options = *config->options;
     rasterfall_render_set_enemy_visual_family(options.enemy_visual_family);
@@ -3697,6 +3798,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                                RASTERFALL_CONSOLE_WARNING,
                                "textures disabled; using pure colors");
     memset(pending_key_edges, 0, sizeof(pending_key_edges));
+    memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
     rasterfall_viewmodel_set_texture(&model_texture_view);
     settings.mouse_level = 3;
     settings.keyboard_level = 5;
@@ -4261,8 +4363,14 @@ startup_again:
             if (input.key_pressed[k]) pending_key_edges[k] = 1;
             if (pending_key_edges[k]) input.key_pressed[k] = 1;
         }
-        if (events.keyboard_focus_changed && !events.keyboard_focused)
+        for (int k = 0; k < RF_INPUT_PHYSICAL_KEY_COUNT; k++) {
+            if (input.physical_pressed[k]) pending_physical_edges[k] = 1;
+            if (pending_physical_edges[k]) input.physical_pressed[k] = 1;
+        }
+        if (events.keyboard_focus_changed && !events.keyboard_focused) {
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
+            memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
+        }
         if (events.key_event_count > 0) {
             int at = events.key_event_count - 1;
             last_key = events.key_events[at].key;
@@ -4278,7 +4386,8 @@ startup_again:
                 pointer_lock_requested = 0;
             }
         }
-        if (!developer_console.open && pending_key_edges[KEY_F12]) {
+        if (!developer_console.open && action_pressed(&input, RF_ACTION_DESKTOP)) {
+            action_consume(&input, pending_physical_edges, RF_ACTION_DESKTOP);
             pending_key_edges[KEY_F12] = 0;
 #if RASTERFALL_DESKTOP_RUNTIME_ENABLED
             if (!game_runtime.gui.active) {
@@ -4294,7 +4403,8 @@ startup_again:
 #endif
         }
         if (!developer_console.open && game_runtime.gui.active &&
-            pending_key_edges[KEY_ESC]) {
+            action_pressed(&input, RF_ACTION_CANCEL)) {
+            action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
             pending_key_edges[KEY_ESC] = 0;
             rf_gui_close_all_windows(&game_runtime.gui);
             rf_gui_set_active(&game_runtime.gui, 0);
@@ -4311,7 +4421,8 @@ startup_again:
                                 events.button_pressed, events.button);
         if (game_runtime.gui.active && !developer_console.open)
             rf_app_manager_update(&game_runtime.app_manager, &input, 16);
-        if (!developer_console.open && pending_key_edges[KEY_GRAVE]) {
+        if (!developer_console.open && action_pressed(&input, RF_ACTION_CONSOLE)) {
+            action_consume(&input, pending_physical_edges, RF_ACTION_CONSOLE);
             pending_key_edges[KEY_GRAVE] = 0;
 #if RASTERFALL_DESKTOP_RUNTIME_ENABLED
             developer_console.open = 1;
@@ -4394,7 +4505,10 @@ startup_again:
         }
         if (managed_spectator && !developer_console.open &&
             !managed_terminal.open && !paused &&
-            managed_terminal_take_key(&input, pending_key_edges, KEY_F2)) {
+            action_pressed(&input, RF_ACTION_MANAGED_TERMINAL)) {
+            action_consume(&input, pending_physical_edges,
+                           RF_ACTION_MANAGED_TERMINAL);
+            pending_key_edges[KEY_F2] = 0;
             managed_terminal.open = 1;
             managed_terminal.line[0] = 0;
             strcpy(managed_terminal.message, "TYPE HELP");
@@ -4423,8 +4537,8 @@ startup_again:
             int resume_requested = 0;
             /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
              * 送来多次边沿，不能让选项随帧率飞快滚动。 */
-            int up = pending_key_edges[KEY_UP];
-            int down = pending_key_edges[KEY_DOWN];
+            int up = action_pressed(&input, RF_ACTION_UI_UP);
+            int down = action_pressed(&input, RF_ACTION_UI_DOWN);
             if (up > 0 || down > 0) {
                 int64_t menu_now = rf_core_time_us(&core);
                 if (menu_now >= menu_nav_ready_us) {
@@ -4441,10 +4555,12 @@ startup_again:
                 }
                 pending_key_edges[KEY_UP] = 0;
                 pending_key_edges[KEY_DOWN] = 0;
+                action_consume(&input, pending_physical_edges, RF_ACTION_UI_UP);
+                action_consume(&input, pending_physical_edges, RF_ACTION_UI_DOWN);
             }
             {
-                int change = pending_key_edges[KEY_RIGHT] -
-                             pending_key_edges[KEY_LEFT];
+                int change = action_pressed(&input, RF_ACTION_UI_RIGHT) -
+                             action_pressed(&input, RF_ACTION_UI_LEFT);
                 if (change != 0) {
                     if (pause_menu.selected == PAUSE_ITEM_MOUSE)
                         settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
@@ -4456,9 +4572,14 @@ startup_again:
                         settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
                     pending_key_edges[KEY_RIGHT] = 0;
                     pending_key_edges[KEY_LEFT] = 0;
+                    action_consume(&input, pending_physical_edges,
+                                   RF_ACTION_UI_RIGHT);
+                    action_consume(&input, pending_physical_edges,
+                                   RF_ACTION_UI_LEFT);
                 }
             }
-            if (pending_key_edges[KEY_ENTER]) {
+            if (action_pressed(&input, RF_ACTION_CONFIRM)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
                 pending_key_edges[KEY_ENTER] = 0;
                 if (pause_menu.selected == PAUSE_ITEM_RESUME)
                     resume_requested = 1;
@@ -4493,7 +4614,8 @@ startup_again:
                     running = 0;
                 }
             }
-            if (pending_key_edges[KEY_ESC]) {
+            if (action_pressed(&input, RF_ACTION_CANCEL)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 pending_key_edges[KEY_ESC] = 0;
                 resume_requested = 1;
             }
@@ -4544,19 +4666,27 @@ startup_again:
             int panel_y = (renderer.surface.height - 500) / 2;
             rf_render_terminal.pointer_x = input.pointer_x;
             rf_render_terminal.pointer_y = input.pointer_y;
-            if (pending_key_edges[KEY_ESC] || pending_key_edges[KEY_F1]) {
+            if (action_pressed(&input, RF_ACTION_CANCEL) ||
+                action_pressed(&input, RF_ACTION_TERMINAL)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
+                action_consume(&input, pending_physical_edges, RF_ACTION_TERMINAL);
                 pending_key_edges[KEY_ESC] = 0;
                 pending_key_edges[KEY_F1] = 0;
                 rf_render_terminal.open = 0;
                 memset(pending_key_edges, 0, sizeof(pending_key_edges));
+                memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
                 fire_edge = shove_edge = 0;
                 pointer_lock_requested = game_runtime.rts_active ? 0 :
                     rf_core_set_pointer_lock(&core, 1) > 0;
                 pointer_turn_pending = pointer_pitch_pending = 0;
                 resumed = 1;
             } else {
-                if (pending_key_edges[KEY_1] || pending_key_edges[KEY_2]) {
-                    rf_render_terminal.page = pending_key_edges[KEY_2] ? 1 : 0;
+                if (action_pressed(&input, RF_ACTION_SLOT_1) ||
+                    action_pressed(&input, RF_ACTION_SLOT_2)) {
+                    rf_render_terminal.page =
+                        action_pressed(&input, RF_ACTION_SLOT_2) ? 1 : 0;
+                    action_consume(&input, pending_physical_edges, RF_ACTION_SLOT_1);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_SLOT_2);
                     pending_key_edges[KEY_1] = pending_key_edges[KEY_2] = 0;
                 }
                 if (events.button_pressed && events.button == BTN_LEFT) {
@@ -4571,7 +4701,8 @@ startup_again:
                              (py - panel_y - 129) % RF_RENDER_FEATURE_ROW_HEIGHT < RF_RENDER_FEATURE_ROW_HEIGHT-4)
                         rf_render_terminal_request((py - panel_y - 129) / RF_RENDER_FEATURE_ROW_HEIGHT);
                 }
-                if (pending_key_edges[KEY_ENTER]) {
+                if (action_pressed(&input, RF_ACTION_CONFIRM)) {
+                    action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
                     pending_key_edges[KEY_ENTER] = 0;
                     if (rf_render_terminal.page == 1)
                         rf_render_terminal_request(rf_render_terminal.selected);
@@ -4584,7 +4715,8 @@ startup_again:
             hit = rf_table_hit(renderer.surface.width, renderer.surface.height,
                                input.pointer_x, input.pointer_y);
             if (hit >= 0) rf_table.selected = hit;
-            if (pending_key_edges[KEY_ESC]) {
+            if (action_pressed(&input, RF_ACTION_CANCEL)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 pending_key_edges[KEY_ESC] = 0;
                 rf_table.open = 0;
                 pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
@@ -4603,8 +4735,10 @@ startup_again:
                     resumed = 1;
                 }
             }
-        } else if ((rf_render_terminal.near && pending_key_edges[KEY_E]) ||
-                   (pending_key_edges[KEY_F1] && !rf_table.open && !paused &&
+        } else if ((rf_render_terminal.near &&
+                    action_pressed(&input, RF_ACTION_INTERACT)) ||
+                   (action_pressed(&input, RF_ACTION_TERMINAL) &&
+                    !rf_table.open && !paused &&
                     !developer_console.open && !managed_terminal.open &&
                     !game_runtime.gui.active && !session.shop_open &&
                     net.mode == RASTERFALL_NET_OFF &&
@@ -4612,6 +4746,8 @@ startup_again:
             pending_key_edges[KEY_E] = 0;
             pending_key_edges[KEY_F1] = 0;
             input.key_pressed[KEY_E] = 0;
+            action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
+            action_consume(&input, pending_physical_edges, RF_ACTION_TERMINAL);
             rf_render_terminal.open = 1;
             rf_render_terminal.near = 0;
             rf_render_terminal.page = 0;
@@ -4622,18 +4758,22 @@ startup_again:
             pointer_lock_requested = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
             resumed = 1;
-        } else if (rf_showcase_near && pending_key_edges[KEY_E]) {
+        } else if (rf_showcase_near &&
+                   action_pressed(&input, RF_ACTION_INTERACT)) {
             pending_key_edges[KEY_E]=0;
             input.key_pressed[KEY_E]=0;
+            action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             if (rf_showcase_near==1) rf_showcase_visible=!rf_showcase_visible;
             else if (rf_showcase_near==2) rf_walk_visible=!rf_walk_visible;
             else if (rf_showcase_near==3) rf_actor_actions_visible=!rf_actor_actions_visible;
             else if (rf_showcase_near==4) rf_actor_walk_visible=!rf_actor_walk_visible;
             else if (rf_showcase_near==5) rf_model_lab_visible=!rf_model_lab_visible;
-        } else if (rf_table.near && pending_key_edges[KEY_E] &&
+        } else if (rf_table.near &&
+                   action_pressed(&input, RF_ACTION_INTERACT) &&
                    net.mode == RASTERFALL_NET_OFF) {
             struct toy_game_actor *player = toy_game_local_player_actor(&game);
             pending_key_edges[KEY_E] = 0;
+            action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             camera.x = 0; camera.z = -1160;
             camera.sy = 0; camera.cy = 1024;
             camera.pitch_sy = 0; camera.pitch_cy = 1024;
@@ -4650,7 +4790,7 @@ startup_again:
             resumed = 1;
         }
         if (!paused && !resumed && !session.shop_open &&
-            toy_input_pressed(&input, KEY_ESC)) {
+            action_pressed(&input, RF_ACTION_CANCEL)) {
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
             else {
@@ -4661,16 +4801,22 @@ startup_again:
                 pointer_pitch_pending = 0;
                 pause_menu.selected = PAUSE_ITEM_RESUME;
                 pending_key_edges[KEY_ESC] = 0;
+                action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 __printf("rasterfall: paused, pointer released\n");
             }
         }
         if (paused || developer_console.open || session.shop_open ||
             rf_render_terminal.open)
             pending_key_edges[KEY_M] = 0;
+        if (paused || developer_console.open || session.shop_open ||
+            rf_render_terminal.open)
+            action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
         if (!paused && !developer_console.open && !session.shop_open &&
             !rf_render_terminal.open &&
-            game.state == TOY_GAME_PLAYING && pending_key_edges[KEY_M]) {
+            game.state == TOY_GAME_PLAYING &&
+            action_pressed(&input, RF_ACTION_COMMAND_MODE)) {
             pending_key_edges[KEY_M] = 0;
+            action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
             if (net.mode == RASTERFALL_NET_OFF) {
                 game_runtime.rts_active = !game_runtime.rts_active;
                 rasterfall_session_set_rts(&session, game_runtime.rts_active);
@@ -4710,9 +4856,11 @@ startup_again:
             if (pan_elapsed > 50000) pan_elapsed = 50000;
             pan = (int)(pan_elapsed * 12000 / 1000000);
             game_runtime.rts_camera_x += pan *
-                (toy_input_down(&input, KEY_D) - toy_input_down(&input, KEY_A));
+                (action_down(&input, RF_ACTION_STRAFE_RIGHT) -
+                 action_down(&input, RF_ACTION_STRAFE_LEFT));
             game_runtime.rts_camera_z += pan *
-                (toy_input_down(&input, KEY_W) - toy_input_down(&input, KEY_S));
+                (action_down(&input, RF_ACTION_FORWARD) -
+                 action_down(&input, RF_ACTION_BACK));
             game_runtime.rts_camera_distance = rts_zoom_distance(
                 game_runtime.rts_camera_distance, input.wheel_y);
             rts_setup_camera(&rts_camera, &game_runtime);
@@ -4755,7 +4903,7 @@ startup_again:
             events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
         if (!paused && !rf_table.open && !rf_render_terminal.open &&
-            !resumed && toy_input_pressed(&input, KEY_ENTER))
+            !resumed && action_pressed(&input, RF_ACTION_FIRE_KEY))
             fire_edge = 1;
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!game_runtime.rts_active && !paused && !rf_table.open &&
@@ -4802,8 +4950,11 @@ startup_again:
                 __printf("rasterfall: auto barrage started\n");
             }
             if (rendered_frames > 60) {
-                if (game.state != TOY_GAME_PLAYING)
+                if (game.state != TOY_GAME_PLAYING) {
                     input.key_pressed[KEY_R] = 1;   /* 死亡重开 */
+                    input.physical_pressed[rf_input_binding(
+                        &game_bindings, RF_ACTION_RESTART)] = 1;
+                }
                 fire_edge = 1;
                 /* Long-running GPU/presenter soak also needs authoritative
                  * gameplay motion instead of a stationary firing camera.
@@ -4813,8 +4964,19 @@ startup_again:
                 input.key_down[KEY_S] = !input.key_down[KEY_W];
                 input.key_down[KEY_A] = ((rendered_frames / 60) & 1) == 0;
                 input.key_down[KEY_D] = !input.key_down[KEY_A];
-                if (rendered_frames % 90 == 0)
+                input.physical_down[rf_input_binding(&game_bindings,
+                    RF_ACTION_FORWARD)] = input.key_down[KEY_W];
+                input.physical_down[rf_input_binding(&game_bindings,
+                    RF_ACTION_BACK)] = input.key_down[KEY_S];
+                input.physical_down[rf_input_binding(&game_bindings,
+                    RF_ACTION_STRAFE_LEFT)] = input.key_down[KEY_A];
+                input.physical_down[rf_input_binding(&game_bindings,
+                    RF_ACTION_STRAFE_RIGHT)] = input.key_down[KEY_D];
+                if (rendered_frames % 90 == 0) {
                     input.key_pressed[KEY_SPACE] = 1;
+                    input.physical_pressed[rf_input_binding(
+                        &game_bindings, RF_ACTION_JUMP)] = 1;
+                }
                 /* 只在水平面扫射：向上俯仰会让大部分几何体离开视锥，
                  * 帧数虚高，无法反映真实渲染负载。 */
                 rasterfall_camera_rotate(&camera, 37, 0);
@@ -4891,19 +5053,25 @@ startup_again:
                 if (game_runtime.rts_active && !session.rts_active)
                     rasterfall_session_set_rts(&session, 1);
                 int shop_input = session.shop_open;
-                int shop_enter = toy_input_pressed(&input, KEY_ENTER);
+                int shop_enter = action_pressed(&input, RF_ACTION_CONFIRM);
                 int shop_page_before = session.shop_page;
                 int shop_selected_before = session.shop_selected;
                 session.shop_request_only = net.mode == RASTERFALL_NET_CLIENT;
                 if (shop_input) {
                     rasterfall_session_shop_input(
                         &session,
-                        toy_input_pressed(&input, KEY_UP),
-                        toy_input_pressed(&input, KEY_DOWN),
-                        toy_input_pressed(&input, KEY_LEFT),
-                        toy_input_pressed(&input, KEY_RIGHT),
-                        toy_input_pressed(&input, KEY_ENTER),
-                        toy_input_pressed(&input, KEY_ESC));
+                        action_pressed(&input, RF_ACTION_UI_UP),
+                        action_pressed(&input, RF_ACTION_UI_DOWN),
+                        action_pressed(&input, RF_ACTION_UI_LEFT),
+                        action_pressed(&input, RF_ACTION_UI_RIGHT),
+                        action_pressed(&input, RF_ACTION_CONFIRM),
+                        action_pressed(&input, RF_ACTION_CANCEL));
+                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_UP);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_DOWN);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_LEFT);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_RIGHT);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
+                    action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                     input.key_pressed[KEY_UP] = 0;
                     input.key_pressed[KEY_DOWN] = 0;
                     input.key_pressed[KEY_ENTER] = 0;
@@ -4936,7 +5104,6 @@ startup_again:
                             memset(&command, 0, sizeof(command));
                         else
                             build_game_command(&command, &input, &settings,
-                                               pending_key_edges,
                                                fire_edge, shove_edge,
                                                pointer_turn_pending,
                                                pointer_pitch_pending);
@@ -4989,8 +5156,8 @@ startup_again:
                             command.shop_arg = ai_weapons[shop_selected_before];
                         }
                     }
-                    if (toy_input_down(&input, KEY_TAB) &&
-                        toy_input_pressed(&input, KEY_R)) {
+                    if (action_down(&input, RF_ACTION_POSE_PAGE) &&
+                        action_pressed(&input, RF_ACTION_RELOAD)) {
                         command.buttons &= ~RASTERFALL_CMD_RELOAD;
                         command.buttons |= RASTERFALL_CMD_CLEAR_STATS;
                         if (net.mode != RASTERFALL_NET_CLIENT) {
@@ -5027,12 +5194,13 @@ startup_again:
                         rf_core_set_pointer_lock(&core, 0);
                         pointer_lock_requested = 0;
                     }
-                    consume_game_command_edges(&input, pending_key_edges);
+                    consume_game_command_edges(&input, pending_key_edges,
+                                               pending_physical_edges);
                     pointer_turn_pending = 0;
                     pointer_pitch_pending = 0;
                     fire_edge = 0;
                     shove_edge = 0;
-                } else if (toy_input_pressed(&input, KEY_R)) {
+                } else if (action_pressed(&input, RF_ACTION_RESTART)) {
                     /* 死亡或通关结算：R 重开 */
                     memset(&command, 0, sizeof(command));
                     command.buttons = RASTERFALL_CMD_RESET;
@@ -5044,6 +5212,8 @@ startup_again:
                                    FIXED_STEP_US / 1000);
                     camera = game_runtime.camera;
                     input.key_pressed[KEY_R] = 0;
+                    action_consume(&input, pending_physical_edges,
+                                   RF_ACTION_RESTART);
                     fire_edge = 0;
                     shove_edge = 0;
                 }
@@ -5073,8 +5243,10 @@ startup_again:
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
          * 一帧都没跑（accumulator 不足，长 stall 后常见）则留到下一帧，
          * 避免按键被吞。 */
-        if (logic_steps > 0)
+        if (logic_steps > 0) {
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
+            memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
+        }
         rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_LOGIC, &t_stage, 0, 0);
         audit_update_us = rf_core_time_us(&core) - now;
         /* 帧渲染计时从申请缓冲开始；双缓冲占用时的等待计入 stall。
@@ -5124,13 +5296,20 @@ startup_again:
              * key_down，不会粘键。BTN_LEFT 不在按键表里，仍需单独
              * 锁存 fire_edge。 */
             if (stall_events.keyboard_focus_changed &&
-                !stall_events.keyboard_focused)
+                !stall_events.keyboard_focused) {
                 memset(pending_key_edges, 0, sizeof(pending_key_edges));
+                memset(pending_physical_edges, 0,
+                       sizeof(pending_physical_edges));
+            }
             for (int i = 0; i < stall_events.key_event_count; i++) {
                 unsigned int k = stall_events.key_events[i].key;
+                unsigned int physical = stall_events.key_events[i].physical_key;
                 if (stall_events.key_events[i].pressed &&
                     k < TOY_INPUT_KEY_COUNT)
                     pending_key_edges[k] = 1;
+                if (stall_events.key_events[i].pressed && physical > 0 &&
+                    physical < RF_INPUT_PHYSICAL_KEY_COUNT)
+                    pending_physical_edges[physical] = 1;
             }
             if (!paused && !resumed && stall_events.button_pressed &&
                 stall_events.button == BTN_LEFT)

@@ -473,6 +473,12 @@ int rf_core_get_input_frame(const struct rf_core *core,
            sizeof(frame->key_pressed));
     memcpy(frame->key_released, core->input->key_released,
            sizeof(frame->key_released));
+    memcpy(frame->physical_down, core->input->physical_down,
+           sizeof(frame->physical_down));
+    memcpy(frame->physical_pressed, core->input->physical_pressed,
+           sizeof(frame->physical_pressed));
+    memcpy(frame->physical_released, core->input->physical_released,
+           sizeof(frame->physical_released));
     frame->keyboard_focused = core->input->keyboard_focused;
     frame->pointer_x = core->input->pointer_x;
     frame->pointer_y = core->input->pointer_y;

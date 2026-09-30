@@ -2,6 +2,18 @@
 #include "rasterfall_map.h"
 #include "rasterfall_prop.h"
 
+static void map_copy_text(char *dst, unsigned int capacity, const char *src)
+{
+    unsigned int i = 0;
+    if (!capacity) return;
+    while (i + 1 < capacity && src[i]) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = 0;
+    while (++i < capacity) dst[i] = 0;
+}
+
 void rasterfall_map_bind(struct rasterfall_map_state *map,
                          struct toy_map *level,
                          struct toy_game_box *safe_rooms,
@@ -501,7 +513,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
             draw->e = runtime_render_int(render, "top", draw->e);
         text = rf_map_runtime_render_attribute(render, "text");
         if (!text) text = rf_map_runtime_render_attribute(render, "role");
-        if (text) strncpy(draw->text, text, sizeof(draw->text) - 1);
+        if (text) map_copy_text(draw->text, sizeof(draw->text), text);
         if (type == TOY_MAP_DRAW_FLOOR && !strcmp(render->kind, "ground"))
             draw->style = TOY_MAP_FLOOR_GROUND;
     }
@@ -541,7 +553,8 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         primitive->color = collision->has_color ?
             runtime_collision_color(collision->color) : 0;
         if (collision->has_role)
-            strncpy(primitive->role, collision->role, sizeof(primitive->role) - 1);
+            map_copy_text(primitive->role, sizeof(primitive->role),
+                          collision->role);
         /* Surface geometry is now authored by the V1 surface record.  The
          * collision record still owns collision flags and blocking policy;
          * this adapter only feeds the old primitive/world data structure. */
@@ -663,7 +676,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         if (!spawn) continue;
         old = &map->level->ai_spawns[map->level->ai_spawn_count++];
         __memset(old, 0, sizeof(*old));
-        strncpy(old->name, spawn->id, sizeof(old->name) - 1);
+        map_copy_text(old->name, sizeof(old->name), spawn->id);
         old->base_id = spawn->base_id;
         old->class_id = runtime_ai_class(spawn->class_name);
         old->x = spawn->x;

@@ -2,6 +2,7 @@
 #define RASTERFALL_RF_CORE_INPUT_H
 
 #define RF_INPUT_KEY_COUNT 256
+#define RF_INPUT_PHYSICAL_KEY_COUNT 512
 
 /* Frame-owned input view.  It contains sampled values only; it has no
  * platform handles and can be copied or retained by Game for one frame. */
@@ -9,6 +10,9 @@ struct rf_input_frame {
     unsigned char key_down[RF_INPUT_KEY_COUNT];
     unsigned char key_pressed[RF_INPUT_KEY_COUNT];
     unsigned char key_released[RF_INPUT_KEY_COUNT];
+    unsigned char physical_down[RF_INPUT_PHYSICAL_KEY_COUNT];
+    unsigned char physical_pressed[RF_INPUT_PHYSICAL_KEY_COUNT];
+    unsigned char physical_released[RF_INPUT_PHYSICAL_KEY_COUNT];
     int keyboard_focused;
     int pointer_x;
     int pointer_y;

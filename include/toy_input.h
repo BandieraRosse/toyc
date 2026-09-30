@@ -7,6 +7,9 @@ struct toy_input {
     unsigned char key_down[TOY_INPUT_KEY_COUNT];
     unsigned char key_pressed[TOY_INPUT_KEY_COUNT];
     unsigned char key_released[TOY_INPUT_KEY_COUNT];
+    unsigned char physical_down[TOY_PHYSICAL_KEY_COUNT];
+    unsigned char physical_pressed[TOY_PHYSICAL_KEY_COUNT];
+    unsigned char physical_released[TOY_PHYSICAL_KEY_COUNT];
     int keyboard_focused;
     int pointer_x;
     int pointer_y;

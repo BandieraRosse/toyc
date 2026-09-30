@@ -1659,7 +1659,6 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
     int drawn = 0, i;
     int command_overflow_before = renderer->cmd_overflow;
     unsigned long character_draw_before = scene_stats.character_draw_items;
-    unsigned int skin_instance=UINT_MAX;
     int vertex_cache_prepared=0;
     const struct toy_texture_view *previous_texture = active_texture_view;
     const struct toy_texture_view *previous_sphere = active_sphere_texture;
@@ -3777,7 +3776,6 @@ struct floor_mesh_build {
     unsigned long count, capacity;
 };
 
-static struct rasterfall_resource_handle floor_mesh_handle;
 
 static void floor_store_u16(unsigned char *, unsigned int);
 static void floor_store_u32(unsigned char *, unsigned int);
@@ -3796,7 +3794,6 @@ struct persistent_map_mesh_build {
     int flat_v2, baked_triangle_light;
 };
 
-static struct rasterfall_resource_handle persistent_map_map_handles[PERSISTENT_MAP_MAP_CLASS_COUNT];
 
 static int persistent_map_mesh_push(struct persistent_map_mesh_build *build,
                          const struct vec3 v[4], uint32_t color)
@@ -4221,7 +4218,6 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
 {
     int base_x, base_z, i, j, k, pixels = 0;
     struct floor_mesh_build build;
-    const struct rasterfall_model_asset *cached = NULL;
     int hardware_floor = scene_model != NULL;
     int slab = 2048, joint = authored_ground ? 0 : 10;
     int xs[FLOOR_SPLIT_MAX], zs[FLOOR_SPLIT_MAX];
@@ -4446,16 +4442,6 @@ _Static_assert((int)PERSISTENT_MAP_MAP_WALL==(int)RF_GPU_SCENE_WORLD_WALL &&
     (int)PERSISTENT_MAP_MAP_PLATFORM==(int)RF_GPU_SCENE_WORLD_PLATFORM,
     "Scene world classes must match persistent map classes");
 
-static int persistent_map_build_map_class(int kind, struct persistent_map_mesh_build *build)
-{
-    for (int i=0;i<level_map.draw_count;++i) {
-        const struct toy_map_draw *x=level_map.draw+i;
-        if (persistent_map_map_class_for_draw(x)==kind &&
-            persistent_map_build_draw(kind,x,build)<0) return -1;
-    }
-    return 0;
-}
-
 int rf_gpu_scene_world_opaque_mesh_build(
     const struct rf_gpu_scene_snapshot_v2 *snapshot,
     const struct rf_gpu_scene_world_render_frame_v1 *render,
@@ -4578,13 +4564,6 @@ static int persistent_map_add_boundary_prop(struct persistent_map_mesh_build *bu
         if(persistent_map_mesh_add_box(build,b.min_x,b.max_x,-900+p->y+b.min_y,
             -900+p->y+b.max_y,b.min_z,b.max_z,parts[j].color,1)<0)return -1;
     }
-    return 0;
-}
-
-static int persistent_map_build_boundary(struct persistent_map_mesh_build *build)
-{
-    for(int i=0;i<level_map.prop_count;++i)
-        if(persistent_map_add_boundary_prop(build,&level_map.props[i])<0)return -1;
     return 0;
 }
 

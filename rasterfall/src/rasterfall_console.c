@@ -17,6 +17,19 @@
 #define KEY_EQUAL 13
 #define KEY_SPACE 57
 
+static void console_copy_text(char *dst, unsigned int capacity,
+                              const char *src)
+{
+    unsigned int i = 0;
+    if (!capacity) return;
+    while (i + 1 < capacity && src[i]) {
+        dst[i] = src[i];
+        i++;
+    }
+    dst[i] = 0;
+    while (++i < capacity) dst[i] = 0;
+}
+
 static int take(struct rf_input_frame *in, unsigned char *pending, unsigned int k)
 { int v = pending[k] || toy_input_pressed(in, k); if (v) { pending[k] = 0; in->key_pressed[k] = 0; } return v; }
 static int chr(unsigned int k)
@@ -38,8 +51,7 @@ void rasterfall_console_log(struct rasterfall_console *c,
     if (c->output_count < 64) c->output_count++;
     for (i = c->output_count - 1; i > 0; i--)
         memcpy(&c->output[i], &c->output[i - 1], sizeof(c->output[i]));
-    strncpy(c->output[0].text, s, sizeof(c->output[0].text) - 1);
-    c->output[0].text[sizeof(c->output[0].text) - 1] = 0;
+    console_copy_text(c->output[0].text, sizeof(c->output[0].text), s);
     c->output[0].color = log_color(level);
     __printf("console: %s\n", s);
 }
@@ -52,16 +64,14 @@ void rf_command_output_write(struct rf_command_output *output,
 { struct rf_command_output_line *line;
   if (!output || !text || output->count >= RF_COMMAND_OUTPUT_MAX_LINES) return;
   line = &output->lines[output->count++]; line->level = level;
-  strncpy(line->text, text, sizeof(line->text) - 1);
-  line->text[sizeof(line->text) - 1] = 0;
+  console_copy_text(line->text, sizeof(line->text), text);
 }
 void rf_terminal_session_init(struct rf_terminal_session *session)
 { if (!session) return; memset(session, 0, sizeof(*session)); }
 int rf_terminal_session_set_input(struct rf_terminal_session *session,
                                    const char *input)
 { if (!session || !input) return -1;
-  strncpy(session->input, input, sizeof(session->input) - 1);
-  session->input[sizeof(session->input) - 1] = 0;
+  console_copy_text(session->input, sizeof(session->input), input);
   return 0;
 }
 void rf_terminal_session_push_history(struct rf_terminal_session *session)

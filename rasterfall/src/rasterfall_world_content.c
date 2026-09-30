@@ -53,11 +53,22 @@ static int field(char **p, char *key, int key_size, char *value, int value_size)
 
 static int number(const char *s, int *out)
 {
-    char *e; long v;
+    unsigned int value = 0, limit;
+    int negative = 0;
     if (!s || !*s) return -1;
-    v = strtol(s, &e, 10);
-    if (*e || v < -2147483648L || v > 2147483647L) return -1;
-    *out = (int)v; return 0;
+    while (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r' ||
+           *s == '\f' || *s == '\v') s++;
+    if (*s == '-' || *s == '+') negative = *s++ == '-';
+    limit = negative ? 2147483648U : 2147483647U;
+    while (*s >= '0' && *s <= '9') {
+        unsigned int digit = (unsigned int)(*s++ - '0');
+        if (value > (limit - digit) / 10U) return -1;
+        value = value * 10U + digit;
+    }
+    if (*s) return -1;
+    *out = negative ? (value == 2147483648U ? (-2147483647 - 1) :
+                       -(int)value) : (int)value;
+    return 0;
 }
 
 static const char *get(char keys[][RASTERFALL_CONTENT_KIND_SIZE],
