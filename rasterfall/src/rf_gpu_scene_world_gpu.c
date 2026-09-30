@@ -819,7 +819,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
         struct rasterfall_resource_handle handle;
         struct rasterfall_draw_instance instance;
         struct rasterfall_draw_view view;
-        int asset=prop->prop.asset_id,scale,yaw,integer_depth;
+        int asset=prop->prop.asset_id,scale,yaw;
         if (asset==0 || asset==RASTERFALL_PROP_ASSET_BOUNDARY_WALL) continue;
         if (asset<1 || asset>RASTERFALL_PROP_ASSET_COUNT) return -1;
         profile=rasterfall_prop_asset_profile(asset);
@@ -845,9 +845,10 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
         if (!rasterfall_render_scene_static_prop_visible(&view,&instance)) {
             owner->prop_culled++;continue;
         }
-        integer_depth=rasterfall_render_scene_static_prop_eligible(&view,&instance,1);
-        if (!integer_depth &&
-            !rasterfall_render_scene_static_prop_eligible(&view,&instance,0)) {
+        /* WORLD shares one native reversed-Z depth convention. The integer
+         * compatibility path quantizes nearby surfaces into the same bucket
+         * and can overwrite map geometry according to draw order. */
+        if (!rasterfall_render_scene_static_prop_eligible(&view,&instance,0)) {
             owner->prop_deferred++;owner->prop_numeric_deferred++;continue;
         }
         for(uint32_t p=0;p<model->primitive_count;++p) {
@@ -911,8 +912,8 @@ prop_ready:
             draw->texture[1]=info.texture_height;
             draw->index_count=info.index_count;
             draw->double_sided=resolved.material.double_sided;
-            draw->integer_depth=integer_depth;
-            if (!integer_depth && rf_gpu_scene_linear_filter_enabled()) draw->quality[3]=1;
+            draw->integer_depth=0;
+            if (rf_gpu_scene_linear_filter_enabled()) draw->quality[3]=1;
             if (!entry->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
             owner->prop_draws++;

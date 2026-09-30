@@ -31,8 +31,8 @@ WORLD 深度、GPU skinning 和退休链。三角形展开数据以 65,535 个�
 同内容跨实例的 GPU buffer 共享仍未实现；逐帧只重新打包 palette 和 draw，资源 generation
 或 bind-normal 策略变化才重建静态顶点。角色材质仍只支持不透明分色，纹理/MASK/toon 扩展待实施。
 
-Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD 使用 D32 原生 reversed Z（64/z），
-不再对倒数深度取整。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
+Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD（包括静态建筑模型）统一使用 D32 原生 reversed Z（64/z），
+不再对倒数深度取整；整数兼容深度仅供专项诊断。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
 在 graphics 顶点阶段换为 RFU；compute skinning 仍在局部存储格上舍入。屏幕空间层和旧 integer-depth
 兼容诊断独立保留。graphics draw 增加第八个 16 字节 push-constant lane，保持 Vulkan 的 128 字节最低保证。
 

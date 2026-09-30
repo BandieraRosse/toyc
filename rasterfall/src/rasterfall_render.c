@@ -5102,14 +5102,14 @@ static int draw_actor_ellipsoid_head(struct toy_renderer *renderer,
 
 static int draw_actor_face_rect(struct toy_renderer *renderer,
                                 const struct camera *camera, int x, int z,
-                                int sy, int cy, int radius, int h0, int h1,
+                                int sy, int cy, int face_z, int h0, int h1,
                                 int y0, int y1, uint32_t color)
 {
     struct vec3 a, b, c, d;
-    actor_world_point(x, z, sy, cy, -h0, y0, radius + 3, &a);
-    actor_world_point(x, z, sy, cy, -h1, y0, radius + 3, &b);
-    actor_world_point(x, z, sy, cy, -h1, y1, radius + 3, &c);
-    actor_world_point(x, z, sy, cy, -h0, y1, radius + 3, &d);
+    actor_world_point(x, z, sy, cy, -h0, y0, face_z, &a);
+    actor_world_point(x, z, sy, cy, -h1, y0, face_z, &b);
+    actor_world_point(x, z, sy, cy, -h1, y1, face_z, &c);
+    actor_world_point(x, z, sy, cy, -h0, y1, face_z, &d);
     return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
@@ -9143,12 +9143,14 @@ int rasterfall_render_procedural_humanoid(
                                       weapon, muzzle_flash, animation_id,
                                       animation_time_ms, body_color);
     }
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+    /* Give the backing and both strokes separate surfaces. They previously
+     * shared z=148, so equal-depth triangles fought over the cross. */
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 148,
                              -72, 72, face_y0, face_y1, character->hair_color);
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 152,
                              -16, 16, face_y0 + 40,
                              face_y1 - 40, character->skin_color);
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 145,
+    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 156,
                              -72, 72, face_y0 + 90,
                              face_y0 + 115, character->skin_color);
     if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
