@@ -77,6 +77,12 @@ surface、filesystem、audio、input、clock）→ 普通离线启动进入 RF B
 `--skip-boot` 强制跳过，`--boot --frames N` 供有限帧窗口验证。GPU Scene 选择后 Core 以 native present
 重建窗口；手动 GPU 选择失败时重开 CPU Workbench，自动选择失败时直接用 CPU 继续。启动期软件画面由 Core 专门呈现，不计入 GPU 游戏帧契约。
 终端的 `/assets` 是 package 中 `rasterfall/assets` 的只读视图，路径与链接检查在 `rf_boot_files` 服务内完成。
+启动绘图元素统一由 `rf_boot_canvas` 提供：共享调色、等比画布、位图文字、矩形、分隔线和热区换算。
+`rf_boot_ui` 持有页面、操作及布局，并在交互引导期间拥有一个临时 canvas；canvas 只保存上次目标画面、
+已显示画面和扫描源像素，不拥有窗口、Core 或 Game 状态。页面绘制后声明可扫描区域，再以 Core 单调时钟
+合成整屏切换或局部内容更新，最后仍由原有窗口/Core 呈现入口提交。引导返回的所有路径释放像素历史，
+窗口重建与同步装载不延续旧窗口扫描。扩展页面复用绘图元素，在连续帧路径声明区域即可接入扫描；
+交互、错误与同步任务边界的即时显示规则见[启动界面合同](../reference/boot-interface.md#光栅刷新)。
 暂停菜单离线切换 CPU/GPU 时保留 Game/session，先停止音频并退休 Scene/渲染资源，再重建 Core、恢复音频、
 清除输入边沿并重置帧时钟；GPU 初始化失败则尝试恢复 CPU。联机期间不允许切换。
 

@@ -820,6 +820,7 @@ APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_application_projection.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_boot_ui.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_boot_canvas.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_boot_files.o
 APP_EXTRA_OBJS_vmd_inspect := $(BUILD)/rasterfall_vmd.o $(BUILD)/rasterfall_model.o $(BUILD)/rasterfall_humanoid_basis.o $(BUILD)/rasterfall_humanoid_retarget.o $(BUILD)/rasterfall_glb_animation.o $(BUILD)/rasterfall_game.o
 APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis.o \
@@ -878,6 +879,9 @@ test-rfchar-pipeline:
 # 编译选项不是 make 的隐式依赖。记录当前 Rasterfall 优化级别，避免在
 # `RASTERFALL_OPT=-O0` 与默认 `-O2` 间切换时错误复用旧目标文件。
 # RF Core host lifecycle is kept as a separate internal compilation unit.
+$(BUILD)/rf_boot_ui.o $(BUILD)/rf_boot_canvas.o $(BUILD)/rf_boot_files.o: $(BUILD)/%.o: $(RASTERFALL_SRC)/%.c $(RASTERFALL_INC)/rf_boot_canvas.h $(RASTERFALL_INC)/rf_boot_ui.h $(RASTERFALL_INC)/rf_boot_files.h | $(BUILD)
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
 $(BUILD)/rf_core_filesystem.o: rasterfall/src/rf_core_filesystem.c rasterfall/include/rf_core_filesystem.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

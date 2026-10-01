@@ -7,18 +7,9 @@
 #include "rf_gpu_vulkan_backend.h"
 #endif
 #include "fb_draw.h"
-#include "fb_font.h"
+#include "rf_boot_canvas.h"
 #include <stdio.h>
 
-#define BOOT_BG 0x080D12u
-#define BOOT_PANEL 0x101C26u
-#define BOOT_TEXT 0xDFE9EDu
-#define BOOT_DIM 0x8296A5u
-#define BOOT_CYAN 0x81E5D3u
-#define BOOT_EDGE 0x293C49u
-#define BOOT_AMBER 0xD9A955u
-#define FIRMWARE_GREEN 0x8DDBA4u
-#define FIRMWARE_BLUE 0x8EBCE8u
 #define FIRMWARE_FIRST_ROW_Y 201
 #define FIRMWARE_ROW_STEP 50
 #define BOOT_KEY_ESC 1
@@ -36,7 +27,7 @@
 #define BOOT_AUTO_US 5000000
 
 enum boot_screen { BOOT_MANAGER, BOOT_SHELL, BOOT_WORKBENCH,
-                   BOOT_SHELL_RENDERER, BOOT_DIAGNOSTICS };
+                   BOOT_SHELL_RENDERER, BOOT_DIAGNOSTICS, BOOT_FIRMWARE };
 
 struct boot_ui {
     int screen;
@@ -55,6 +46,7 @@ struct boot_ui {
     int gpu_ready;
     int automatic;
     int auto_seconds;
+    int urgent_output;
 };
 
 void rf_boot_record_event(void *context, const char *service, int result,
@@ -112,100 +104,10 @@ static void boot_line(struct boot_ui *ui, const char *line)
              "%.*s", (int)sizeof(ui->lines[0]) - 1, line);
 }
 
-/* One aspect-preserving canvas for geometry, glyphs and pointer hit tests. */
-static void boot_view(const struct toy_surface *s, int *w, int *h, int *x, int *y)
+static void boot_error_line(struct boot_ui *ui, const char *line)
 {
-    *w = s->width;
-    *h = *w * 720 / 1280;
-    if (*h > s->height) { *h = s->height; *w = *h * 1280 / 720; }
-    *x = (s->width - *w) / 2;
-    *y = (s->height - *h) / 2;
-}
-
-static void boot_box(struct toy_surface *s, int x, int y, int w, int h,
-                     uint32_t fill, uint32_t edge)
-{
-    int vw, vh, ox, oy, right, bottom;
-    if (!s || !s->pixels || w <= 0 || h <= 0) return;
-    boot_view(s, &vw, &vh, &ox, &oy);
-    right = ox + (x + w) * vw / 1280;
-    bottom = oy + (y + h) * vh / 720;
-    x = ox + x * vw / 1280;
-    y = oy + y * vh / 720;
-    /* Keep single-pixel rules and glyph strokes visible below native size. */
-    if (right == x) ++right;
-    if (bottom == y) ++bottom;
-    w = right - x; h = bottom - y;
-    if (x < 0 || y < 0 || w <= 0 || h <= 0 ||
-        right > s->width || bottom > s->height) return;
-    fb_fill_rect((unsigned char *)s->pixels, x, y, w, h, fill, s->stride);
-    if (edge != fill)
-        fb_draw_rect((unsigned char *)s->pixels, x, y, w, h, edge, s->stride);
-}
-
-static void boot_type(struct toy_surface *s, int x, int y, const char *value,
-                      uint32_t color, int scale, int max_cells)
-{
-    if (!s || !s->pixels || !value) return;
-    /* Run-length glyph rows preserve the native bitmap face at every size. */
-    for (int i = 0; value[i] && i < max_cells; ++i) {
-        for (int row = 0; row < FB_FONT_H; ++row) {
-            unsigned char bits = fb_font_glyph_row((unsigned char)value[i], row);
-            for (int col = 0; col < FB_FONT_W;) {
-                int first = col;
-                if (!(bits & (128 >> col))) { ++col; continue; }
-                while (col < FB_FONT_W && (bits & (128 >> col))) ++col;
-                boot_box(s, x + (i * FB_FONT_W + first) * scale,
-                         y + row * scale, (col - first) * scale, scale, color, color);
-            }
-        }
-    }
-}
-
-static void boot_text(struct toy_surface *s, int x, int y,
-                      const char *value, uint32_t color)
-{
-    boot_type(s, x, y, value, color, 1, (1232 - x) / FB_FONT_W);
-}
-
-static void boot_rule(struct toy_surface *s, int x, int y, int w, uint32_t color)
-{
-    boot_box(s, x, y, w, 1, color, color);
-}
-
-static void boot_chrome(struct toy_surface *s, const char *section, const char *input)
-{
-    boot_box(s, 48, 32, 30, 24, BOOT_CYAN, BOOT_CYAN);
-    boot_text(s, 55, 36, "RF", BOOT_BG);
-    boot_text(s, 94, 36, "RASTERFALL", BOOT_TEXT);
-    boot_text(s, 254, 36, section, BOOT_DIM);
-    boot_text(s, 1016, 36, input, BOOT_DIM);
-    boot_rule(s, 48, 76, 1184, BOOT_EDGE);
-    boot_rule(s, 48, 650, 1184, BOOT_EDGE);
-    boot_text(s, 48, 673, "RF CORE  /  BOOT ENVIRONMENT", BOOT_DIM);
-}
-
-/* Static circuit illustration: a renderer symbol, never a device telemetry view. */
-static void boot_chip(struct toy_surface *s, int x, int y, int gpu)
-{
-    for (int i = 0; i < 7; ++i) {
-        int n = 16 + i * 20;
-        boot_box(s, x - 20, y + n, 20, 4, BOOT_EDGE, BOOT_EDGE);
-        boot_box(s, x + 160, y + n, 20, 4, BOOT_EDGE, BOOT_EDGE);
-        boot_box(s, x + n, y - 20, 4, 20, BOOT_EDGE, BOOT_EDGE);
-        boot_box(s, x + n, y + 160, 4, 20, BOOT_EDGE, BOOT_EDGE);
-    }
-    boot_box(s, x, y, 160, 160, BOOT_BG, BOOT_CYAN);
-    boot_box(s, x + 12, y + 12, 136, 136, BOOT_PANEL, BOOT_EDGE);
-    if (gpu) {
-        for (int row = 0; row < 3; ++row)
-            for (int col = 0; col < 4; ++col)
-                boot_box(s, x + 28 + col * 28, y + 30 + row * 32,
-                         20, 24, 0x21463Fu, BOOT_CYAN);
-    } else {
-        boot_box(s, x + 38, y + 38, 84, 84, BOOT_BG, BOOT_CYAN);
-        boot_type(s, x + 56, y + 64, "CPU", BOOT_TEXT, 2, 3);
-    }
+    ui->urgent_output = 1;
+    boot_line(ui, line);
 }
 
 static void boot_journal_draw(struct toy_surface *s,
@@ -363,10 +265,10 @@ static void boot_ls(struct boot_ui *ui, const char *argument)
     char entries[RF_BOOT_LIST_LIMIT][176];
     int count, more;
     if (boot_path(ui, argument, relative, sizeof(relative)) < 0) {
-        boot_line(ui, "ls: path outside /assets"); return;
+        boot_error_line(ui, "ls: path outside /assets"); return;
     }
     if (rf_boot_files_list(relative, entries, &count, &more) < 0) {
-        boot_line(ui, "ls: directory unavailable"); return;
+        boot_error_line(ui, "ls: directory unavailable"); return;
     }
     if (!count) boot_line(ui, "(empty)");
     for (int i = 0; i < count; ++i) boot_line(ui, entries[i]);
@@ -381,13 +283,13 @@ static void boot_cat(struct boot_ui *ui, const char *argument)
     int more, count = 0, n = 0;
     if (!argument || !*argument ||
         boot_path(ui, argument, relative, sizeof(relative)) < 0 ||
-        !*relative) { boot_line(ui, "cat: valid file path required"); return; }
+        !*relative) { boot_error_line(ui, "cat: valid file path required"); return; }
     if (rf_boot_files_read(relative, bytes, sizeof(bytes), &size, &more) < 0) {
-        boot_line(ui, "cat: file unavailable"); return;
+        boot_error_line(ui, "cat: file unavailable"); return;
     }
     while (at < size && count < 10) {
         unsigned char c = bytes[at++];
-        if (!c) { boot_line(ui, "cat: binary file"); return; }
+        if (!c) { boot_error_line(ui, "cat: binary file"); return; }
         if (c == '\n' || n == 90) {
             line[n] = 0; boot_line(ui, line); n = 0; ++count;
             if (c == '\n') continue;
@@ -432,15 +334,16 @@ static int boot_command(struct boot_ui *ui, struct rf_core *core)
         char relative[192];
         int directory = 0;
         if (boot_path(ui, arg ? arg : "/", relative, sizeof(relative)) < 0)
-            boot_line(ui, "cd: path outside /assets");
+            boot_error_line(ui, "cd: path outside /assets");
         else {
             if (rf_boot_files_stat(relative, &directory) == 0 && directory)
                 snprintf(ui->cwd, sizeof(ui->cwd), "%s", relative);
-            else boot_line(ui, "cd: directory unavailable");
+            else boot_error_line(ui, "cd: directory unavailable");
         }
     } else if (!strcmp(command, "clear")) ui->line_count = 0;
     else if (!strcmp(command, "devices")) {
         struct rf_core_status status;
+        ui->urgent_output = 1; /* Measured status is immediately readable. */
         if (rf_core_get_status(core, &status) == 0) {
             boot_line(ui, status.renderer_ready ?
                       "CPU software renderer: initialized" :
@@ -487,14 +390,13 @@ static int boot_command(struct boot_ui *ui, struct rf_core *core)
         ui->screen = BOOT_SHELL_RENDERER; ui->selected = 0;
     } else {
         snprintf(line, sizeof(line), "Unknown command: %.120s", command);
-        boot_line(ui, line);
+        boot_error_line(ui, line);
         boot_line(ui, "Type help to list commands, or boot to start Outpost.");
     }
     return 0;
 }
 
 /* Graphical controls share rectangles with their pointer hit tests. */
-struct boot_rect { int x, y, w, h; };
 static const struct boot_rect boot_controls[] = {
     {568, 206, 616, 126}, {568, 350, 616, 126},
     {880, 554, 304, 56}, {568, 554, 264, 56}
@@ -502,20 +404,13 @@ static const struct boot_rect boot_controls[] = {
 
 static int boot_hit(const struct toy_surface *s, int px, int py)
 {
-    int vw, vh, ox, oy;
-    boot_view(s, &vw, &vh, &ox, &oy);
-    if (vw <= 0 || vh <= 0 || px < ox || py < oy ||
-        px >= ox + vw || py >= oy + vh) return -1;
-    px = (px - ox) * 1280 / vw; py = (py - oy) * 720 / vh;
-    for (int i = 0; i < 4; ++i) {
-        const struct boot_rect *r = &boot_controls[i];
-        if (px >= r->x && px < r->x + r->w &&
-            py >= r->y && py < r->y + r->h) return i;
-    }
+    for (int i = 0; i < 4; ++i)
+        if (boot_hit_rect(s, &boot_controls[i], px, py)) return i;
     return -1;
 }
 
-static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
+static void boot_draw(struct toy_surface *s, const struct boot_ui *ui,
+                       struct rf_boot_canvas *canvas)
 {
     char line[416];
     if (ui->screen == BOOT_MANAGER) {
@@ -567,6 +462,9 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
             const char *value = ui->lines[i];
             uint32_t color = !strncmp(value, "rf:", 3) ? BOOT_CYAN : BOOT_TEXT;
             boot_type(s, 56, 195 + (i - start) * 22, value, color, 1, 144);
+            /* Command echo and editable input always appear immediately. */
+            if (strncmp(value, "rf:", 3))
+                rf_boot_canvas_region(canvas, 56, 195 + (i - start) * 22, 1152, 16);
         }
         if (ui->screen == BOOT_SHELL_RENDERER) {
             boot_rule(s, 48, 499, 1184, BOOT_EDGE);
@@ -632,6 +530,7 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
                   ui->core_status.filesystem_ready ? FIRMWARE_GREEN : BOOT_AMBER);
         boot_text(s, 96, 619, "ESC  Return to RF Boot Manager", BOOT_CYAN);
     } else {
+        rf_boot_canvas_region(canvas, 48, 260, 432, 345);
         boot_chrome(s, "RF WORKBENCH / GRAPHICAL ENVIRONMENT", "MOUSE + KEYBOARD");
         boot_text(s, 48, 111, "DESTINATION / 01", BOOT_CYAN);
         boot_type(s, 48, 146, "OUTPOST", BOOT_TEXT, 3, 7);
@@ -678,7 +577,8 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
 /* Draw directly into the window before the Core renderer is available. */
 static int firmware_draw(struct rf_core *core,
                          const struct rf_boot_journal *journal,
-                         const char *current_task, int seconds_left)
+                         const char *current_task, int seconds_left,
+                         struct rf_boot_canvas *canvas)
 {
     struct toy_surface surface;
     char line[160];
@@ -687,6 +587,7 @@ static int firmware_draw(struct rf_core *core,
     ready = toy_window_begin_frame(core->window, &surface);
     if (ready < 0) return -1;
     if (ready > 0) {
+        rf_boot_canvas_begin(canvas);
         fb_fill_rect((unsigned char *)surface.pixels, 0, 0,
                      surface.width, surface.height, BOOT_BG, surface.stride);
         boot_type(&surface, 48, 48, "RF PLATFORM FIRMWARE", BOOT_TEXT, 2, 24);
@@ -701,6 +602,8 @@ static int firmware_draw(struct rf_core *core,
                 int y;
                 if (!strncmp(event->service, "gpu-", 4)) continue;
                 y = FIRMWARE_FIRST_ROW_Y + row++ * FIRMWARE_ROW_STEP;
+                if (event->result >= 0)
+                    rf_boot_canvas_region(canvas, 48, y, 1184, 32);
                 boot_type(&surface, 48, y, event->result < 0 ? "[FAIL]" :
                           event->result ? "[ N/A]" : "[ OK ]",
                           event->result ? BOOT_AMBER : FIRMWARE_GREEN, 2, 6);
@@ -739,6 +642,8 @@ static int firmware_draw(struct rf_core *core,
             boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 8 * FIRMWARE_ROW_STEP,
                       line, BOOT_CYAN, 2, 72);
         }
+        rf_boot_canvas_compose(canvas, &surface, BOOT_FIRMWARE,
+                               rf_core_time_us(core), 0);
         if (toy_window_present(core->window) < 0) return -1;
     }
     return 0;
@@ -753,15 +658,16 @@ int rf_boot_init_display(void *context, struct rf_core *core,
         journal->completed_us = rf_core_clock_now_us();
     /* Renderer choice happens after firmware; keep GPU work out of this view. */
     if (!(current_task && !strncmp(current_task, "gpu-", 4)) &&
-        firmware_draw(core, journal, current_task, 3) < 0) return -1;
+        firmware_draw(core, journal, current_task, 3, NULL) < 0) return -1;
     if (toy_window_poll(core->window, &events, 0) < 0) return -1;
     if (events.close_requested) return -1;
     if (!current_task) boot_marker("RF-BOOT stage=core status=ready");
     return 0;
 }
 
-int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
-                const struct rf_boot_journal *journal, const char *error)
+static int boot_run(struct rf_core *core, struct rf_boot_result *result,
+                     const struct rf_boot_journal *journal, const char *error,
+                     struct rf_boot_canvas *canvas)
 {
     struct boot_ui ui;
     int ready;
@@ -773,30 +679,32 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
     if (error) snprintf(ui.error, sizeof(ui.error), "%s", error);
     /* The measured completion screen counts down; Enter skips the wait. */
     if (!error) {
-        int shown_seconds = 3;
         completed_at = rf_core_time_us(core);
+        if (firmware_draw(core, journal, NULL, 3, canvas) < 0) return -1;
         while (rf_core_time_us(core) - completed_at < 3000000) {
             int seconds_left;
             if (rf_core_poll_events_timeout(core, 16) < 0) return -1;
             if (rf_core_should_exit(core)) return 0;
             if (boot_key(rf_core_events(core), BOOT_KEY_ENTER)) break;
             seconds_left = 3 - (int)((rf_core_time_us(core) - completed_at) / 1000000);
-            if (seconds_left > 0 && seconds_left != shown_seconds) {
-                if (firmware_draw(core, journal, NULL, seconds_left) < 0) return -1;
-                shown_seconds = seconds_left;
-            }
+            if (seconds_left > 0 &&
+                firmware_draw(core, journal, NULL, seconds_left, canvas) < 0) return -1;
         }
     }
     auto_until = error ? 0 : rf_core_time_us(core) + BOOT_AUTO_US;
     boot_marker("RF-BOOT stage=menu status=ready");
     for (;;) {
         struct toy_window_events *events = rf_core_events(core);
+        int previous_screen = ui.screen;
+        int finish_scan;
+        ui.urgent_output = 0;
         if (rf_core_poll_events_timeout(core, 16) < 0) {
             __fprintf(2, "RF-BOOT menu event poll failed\n"); return -1;
         }
         if (rf_core_should_exit(core)) {
             boot_marker("RF-BOOT stage=menu status=closed"); return 0;
         }
+        finish_scan = canvas->sweeping && (boot_any_key(events) || events->button_pressed);
         if (ui.screen == BOOT_MANAGER) {
             int activate = boot_key(events, BOOT_KEY_ENTER);
             if (auto_until && (boot_any_key(events) || events->button_pressed))
@@ -896,7 +804,11 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
             if (!s) {
                 __fprintf(2, "RF-BOOT menu overlay failed\n"); return -1;
             }
-            boot_draw(s, &ui);
+            rf_boot_canvas_begin(canvas);
+            boot_draw(s, &ui, canvas);
+            rf_boot_canvas_compose(canvas, s, ui.screen, rf_core_time_us(core),
+                                   *ui.error || ui.urgent_output ||
+                                   (finish_scan && previous_screen == ui.screen));
             if (rf_core_present_boot_frame(core) < 0) {
                 __fprintf(2, "RF-BOOT menu present failed\n"); return -1;
             }
@@ -911,6 +823,17 @@ selected:
              ui.renderer ? "gpu-scene" : "cpu");
     boot_marker(line);
     return 1;
+}
+
+int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
+                const struct rf_boot_journal *journal, const char *error)
+{
+    struct rf_boot_canvas canvas;
+    int status;
+    memset(&canvas, 0, sizeof(canvas));
+    status = boot_run(core, result, journal, error, &canvas);
+    rf_boot_canvas_destroy(&canvas);
+    return status;
 }
 
 int rf_boot_progress(struct rf_core *core, int graphical,

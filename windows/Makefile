@@ -40,6 +40,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rf_gpu_scene_extract.c \
              rasterfall/src/rf_game_runtime.c \
              rasterfall/src/rf_boot_ui.c \
+             rasterfall/src/rf_boot_canvas.c \
              rasterfall/src/rf_boot_files.c \
              rasterfall/src/rf_input_bindings.c \
              rasterfall/src/rasterfall_gui.c \
@@ -211,6 +212,13 @@ $(BUILD)/rasterfall-gpu-cache-test.exe: $(BUILD)/win/tools/rasterfall_gpu_cache_
 -include $(BUILD)/win/tools/rasterfall_gpu_cache_test.d $(BUILD)/win/gpu/src/rf_gpu_resource_cache.d
 
 .PHONY: gpu-scene-identity-test
+.PHONY: boot-canvas-test
+BOOT_CANVAS_TEST_OBJS := $(addprefix $(BUILD)/win/,rasterfall/src/rf_boot_canvas.o windows/src/runtime.o windows/src/socket_winsock.o lib/linux/assets.o lib/linux/graphics/fb_draw.o lib/linux/graphics/fb_font.o)
+boot-canvas-test: $(BUILD)/rf-boot-canvas-test.exe
+	./$(BUILD)/rf-boot-canvas-test.exe
+$(BUILD)/rf-boot-canvas-test.exe: $(BUILD)/win/tools/rf_boot_canvas_test.o $(BOOT_CANVAS_TEST_OBJS)
+	$(WIN_CC) -static -static-libgcc -Wl,--gc-sections -o $@ $^ -lws2_32
+
 gpu-scene-identity-test: $(BUILD)/rf-gpu-scene-identity-test.exe
 $(BUILD)/rf-gpu-scene-identity-test.exe: tools/rf_gpu_scene_identity_test.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I windows/include -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_identity.c -o $@
