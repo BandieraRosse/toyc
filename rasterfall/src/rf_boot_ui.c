@@ -2,6 +2,7 @@
 #include "tlibc_everything.h"
 #include "rf_boot_ui.h"
 #include "rf_boot_files.h"
+#include "toy_platform.h"
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_vulkan_backend.h"
 #endif
@@ -23,15 +24,22 @@
 #define BOOT_KEY_ESC 1
 #define BOOT_KEY_1 2
 #define BOOT_KEY_2 3
+#define BOOT_KEY_3 4
+#define BOOT_KEY_4 5
+#define BOOT_KEY_5 6
 #define BOOT_KEY_BACKSPACE 14
 #define BOOT_KEY_ENTER 28
 #define BOOT_KEY_UP 103
 #define BOOT_KEY_DOWN 108
 #define BOOT_BUTTON_LEFT 0x110
 #define BOOT_LINES 18
+#define BOOT_AUTO_US 5000000
+
+enum boot_screen { BOOT_MANAGER, BOOT_SHELL, BOOT_WORKBENCH,
+                   BOOT_SHELL_RENDERER, BOOT_DIAGNOSTICS };
 
 struct boot_ui {
-    int screen; /* 0 init, 1 terminal, 2 graphical, 3 renderer prompt */
+    int screen;
     int selected;
     int renderer;
     int hover; /* graphical control under the pointer, independent of selection */
@@ -41,6 +49,12 @@ struct boot_ui {
     char lines[BOOT_LINES][176];
     int line_count;
     char error[160];
+    struct toy_platform_hardware hardware;
+    struct rf_core_status core_status;
+    struct rf_gpu_status gpu_status;
+    int gpu_ready;
+    int automatic;
+    int auto_seconds;
 };
 
 void rf_boot_record_event(void *context, const char *service, int result,
@@ -236,6 +250,52 @@ static int boot_key(const struct toy_window_events *events, unsigned int key)
     return 0;
 }
 
+static int boot_any_key(const struct toy_window_events *events)
+{
+    for (int i = 0; i < events->key_event_count; ++i)
+        if (events->key_events[i].pressed) return 1;
+    return 0;
+}
+
+static void boot_probe_hardware(struct boot_ui *ui, struct rf_core *core)
+{
+    toy_platform_hardware_query(&ui->hardware);
+    rf_core_get_status(core, &ui->core_status);
+    memset(&ui->gpu_status, 0, sizeof(ui->gpu_status));
+    ui->gpu_ready = 0;
+#ifdef TOYC_WINDOWS
+    {
+        struct rf_gpu_vulkan_context context;
+        struct rf_gpu probe;
+        struct toy_native_window_handle native;
+        struct rf_gpu_native_window gpu_native;
+        int64_t started = rf_core_clock_now_us();
+        memset(&context, 0, sizeof(context));
+        memset(&probe, 0, sizeof(probe));
+        memset(&gpu_native, 0, sizeof(gpu_native));
+        context.require_graphics = 1;
+        if (toy_window_get_native_handle(core->window, &native) > 0) {
+            gpu_native.type = native.type;
+            gpu_native.window = native.window;
+            gpu_native.instance = native.instance;
+        }
+        if (gpu_native.window &&
+            rf_gpu_set_native_window(&rf_gpu_vulkan_backend,
+                                     &context, &gpu_native) == 0 &&
+            rf_gpu_init(&probe, RF_GPU_POLICY_OPTIONAL,
+                        &rf_gpu_vulkan_backend, &context) == 0 &&
+            rf_gpu_get_status(&probe, &ui->gpu_status) == 0 &&
+            ui->gpu_status.state == RF_GPU_STATE_READY &&
+            ui->gpu_status.renderer.native_presentation_v1)
+            ui->gpu_ready = 1;
+        rf_gpu_shutdown(&probe);
+        rf_boot_log_task("boot-manager", "graphics-adapter-probe",
+                         ui->gpu_ready ? 0 : 1,
+                         rf_core_clock_now_us() - started);
+    }
+#endif
+}
+
 static char boot_character(unsigned int key)
 {
     static const struct { unsigned int key; char c; } map[] = {
@@ -360,7 +420,7 @@ static int boot_command(struct boot_ui *ui, struct rf_core *core)
         boot_line(ui, "clear               Clear terminal output");
         boot_line(ui, "devices             Inspect CPU, audio and Vulkan adapter");
         boot_line(ui, "boot [cpu|gpu]      Select a renderer or launch it directly");
-        boot_line(ui, "exit                Return to RF INIT");
+        boot_line(ui, "exit                Return to RF Boot Manager");
         boot_line(ui, "");
         boot_line(ui, "FILESYSTEM  Read-only package assets. Paths are relative to /assets.");
         boot_line(ui, "EXAMPLE     ls maps   /   cd maps   /   cat outpost.map");
@@ -416,7 +476,7 @@ static int boot_command(struct boot_ui *ui, struct rf_core *core)
         boot_line(ui, "GPU Scene: unavailable on this platform");
 #endif
         boot_line(ui, "GPU upload: not started; allocation/budget: not queryable");
-    } else if (!strcmp(command, "exit")) { ui->screen = 0; ui->selected = 0; }
+    } else if (!strcmp(command, "exit")) { ui->screen = BOOT_MANAGER; ui->selected = 2; }
     else if (!strcmp(command, "boot")) {
         if (arg && (!strcmp(arg, "cpu") || !strcmp(arg, "--renderer cpu"))) {
             ui->renderer = RF_CORE_RENDERER_CPU; return 1;
@@ -424,7 +484,7 @@ static int boot_command(struct boot_ui *ui, struct rf_core *core)
         if (arg && (!strcmp(arg, "gpu") || !strcmp(arg, "--renderer gpu"))) {
             ui->renderer = RF_CORE_RENDERER_GPU_SCENE; return 1;
         }
-        ui->screen = 3; ui->selected = 0;
+        ui->screen = BOOT_SHELL_RENDERER; ui->selected = 0;
     } else {
         snprintf(line, sizeof(line), "Unknown command: %.120s", command);
         boot_line(ui, line);
@@ -458,43 +518,57 @@ static int boot_hit(const struct toy_surface *s, int px, int py)
 static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
 {
     char line[416];
-    if (ui->screen == 0) {
-        boot_chrome(s, "INITIALIZATION MANAGER", "KEYBOARD ONLY");
-        boot_text(s, 556, 121, "SYSTEM ENTRY / RF INIT", BOOT_CYAN);
-        boot_type(s, 556, 156, "RF INIT", BOOT_TEXT, 3, 7);
-        boot_text(s, 508, 218, "Select an environment to continue.", BOOT_DIM);
-        boot_box(s, 224, 270, 832, 192, BOOT_BG, BOOT_EDGE);
-        boot_text(s, 248, 285, "BOOT ENVIRONMENTS", BOOT_DIM);
-        for (int i = 0; i < 2; ++i) {
-            int y = 322 + i * 64;
+    if (ui->screen == BOOT_MANAGER) {
+        static const char *names[5] = {
+            "START RASTERFALL", "RF WORKBENCH", "RF SHELL",
+            "DIAGNOSTICS", "POWER OFF"
+        };
+        static const char *tags[5] = {
+            "AUTO", "GRAPHICAL", "TERMINAL", "SYSTEM", "EXIT"
+        };
+        static const char *details[5] = {
+            "Find the best graphics adapter; use CPU if unavailable.",
+            "Graphical environment  /  choose CPU or GPU Scene.",
+            "Terminal environment  /  inspect files and launch manually.",
+            "Inspect hardware and RF service readiness.",
+            "Close Rasterfall and return to the operating system."
+        };
+        boot_chrome(s, "RF BOOT MANAGER", "KEYBOARD ONLY");
+        boot_text(s, 192, 113, "SYSTEM ENTRY  /  01", BOOT_CYAN);
+        boot_type(s, 192, 143, "RF BOOT MANAGER", BOOT_TEXT, 2, 15);
+        boot_text(s, 192, 192, "Select an environment or start Rasterfall.", BOOT_DIM);
+        boot_rule(s, 192, 220, 896, BOOT_EDGE);
+        for (int i = 0; i < 5; ++i) {
+            int y = 238 + i * 67;
             int active = i == ui->selected;
-            boot_box(s, 240, y, 800, 52, active ? BOOT_TEXT : BOOT_BG,
-                     active ? BOOT_TEXT : BOOT_BG);
-            snprintf(line, sizeof(line), "%s  0%d    %s", active ? ">" : " ",
-                     i + 1, i ? "Terminal Environment" : "Graphical Boot");
-            boot_text(s, 260, y + 18, line, active ? BOOT_BG : BOOT_TEXT);
-            boot_text(s, 912, y + 18, i ? "SHELL" : "VISUAL", active ? BOOT_BG : BOOT_DIM);
+            boot_box(s, 192, y, 896, 58,
+                     active ? BOOT_TEXT : BOOT_PANEL,
+                     active ? BOOT_TEXT : BOOT_EDGE);
+            if (!active) boot_box(s, 192, y, 4, 58, BOOT_CYAN, BOOT_CYAN);
+            snprintf(line, sizeof(line), "%02d", i + 1);
+            boot_type(s, 214, y + 17, line, active ? BOOT_BG : BOOT_CYAN, 2, 2);
+            boot_type(s, 276, y + 18, names[i], active ? BOOT_BG : BOOT_TEXT, 2, 18);
+            boot_text(s, 966, y + 21, tags[i], active ? BOOT_BG : BOOT_DIM);
         }
-        boot_text(s, 248, 493, ui->selected ? "02 / TERMINAL ENVIRONMENT" : "01 / GRAPHICAL BOOT", BOOT_CYAN);
-        boot_text(s, 248, 522, ui->selected ?
-                  "Explore package files, inspect devices and boot from a shell." :
-                  "Choose a renderer with the mouse, then launch Outpost.", BOOT_TEXT);
-        boot_text(s, 248, 572, "UP / DOWN  Select       ENTER  Open environment", BOOT_DIM);
-        boot_text(s, 904, 673, "MANUAL SELECTION / NO TIMER", BOOT_DIM);
-    } else if (ui->screen == 1 || ui->screen == 3) {
-        boot_chrome(s, "TERMINAL ENVIRONMENT", "KEYBOARD ONLY");
-        boot_type(s, 48, 100, "RF TERMINAL", BOOT_TEXT, 2, 11);
+        boot_text(s, 192, 593, details[ui->selected], BOOT_TEXT);
+        if (ui->auto_seconds > 0)
+            snprintf(line, sizeof(line), "AUTO START IN %d  /  ANY KEY TO HOLD", ui->auto_seconds);
+        else snprintf(line, sizeof(line), "UP / DOWN  SELECT    ENTER  OPEN    1-5  DIRECT");
+        boot_text(s, 192, 620, line, BOOT_CYAN);
+    } else if (ui->screen == BOOT_SHELL || ui->screen == BOOT_SHELL_RENDERER) {
+        boot_chrome(s, "RF SHELL / TERMINAL ENVIRONMENT", "KEYBOARD ONLY");
+        boot_type(s, 48, 100, "RF SHELL", BOOT_TEXT, 2, 8);
         boot_text(s, 48, 146, "FILESYSTEM  /assets   [READ ONLY]", BOOT_DIM);
         boot_text(s, 728, 146, "help  Commands     boot  Start Outpost", BOOT_CYAN);
         boot_rule(s, 48, 178, 1184, BOOT_EDGE);
-        int visible = ui->screen == 3 ? 13 : BOOT_LINES;
+        int visible = ui->screen == BOOT_SHELL_RENDERER ? 13 : BOOT_LINES;
         int start = ui->line_count > visible ? ui->line_count - visible : 0;
         for (int i = start; i < ui->line_count; ++i) {
             const char *value = ui->lines[i];
             uint32_t color = !strncmp(value, "rf:", 3) ? BOOT_CYAN : BOOT_TEXT;
             boot_type(s, 56, 195 + (i - start) * 22, value, color, 1, 144);
         }
-        if (ui->screen == 3) {
+        if (ui->screen == BOOT_SHELL_RENDERER) {
             boot_rule(s, 48, 499, 1184, BOOT_EDGE);
             boot_text(s, 56, 516, "BOOT / OUTPOST     Select renderer", BOOT_CYAN);
             boot_text(s, 56, 550, ui->selected ? "  [1] CPU Software" : "> [1] CPU Software", BOOT_TEXT);
@@ -511,11 +585,54 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
             boot_type(s, 80, 612, tail, BOOT_CYAN, 1, 139);
             boot_box(s, 80 + (int)strlen(tail) * 8, 612, 8, 16, BOOT_CYAN, BOOT_CYAN);
         }
-        boot_text(s, 744, 673, ui->screen == 3 ?
+        boot_text(s, 744, 673, ui->screen == BOOT_SHELL_RENDERER ?
                   "1 / 2  Select   ENTER  Boot   ESC  Shell" :
-                  "ENTER  Run command    ESC  Back to RF INIT", BOOT_DIM);
+                  "ENTER  Run command    ESC  Boot Manager", BOOT_DIM);
+    } else if (ui->screen == BOOT_DIAGNOSTICS) {
+        const struct rf_gpu_backend_info *gpu = &ui->gpu_status.info;
+        boot_chrome(s, "DIAGNOSTICS", "KEYBOARD ONLY");
+        boot_text(s, 96, 114, "SYSTEM / HARDWARE REPORT", BOOT_CYAN);
+        boot_type(s, 96, 149, "DIAGNOSTICS", BOOT_TEXT, 2, 11);
+        boot_text(s, 96, 205, "HOST", BOOT_CYAN);
+        boot_rule(s, 96, 232, 1088, BOOT_EDGE);
+        if (ui->hardware.physical_cores)
+            snprintf(line, sizeof(line), "PHYSICAL CPU CORES    %d",
+                     ui->hardware.physical_cores);
+        else snprintf(line, sizeof(line), "PHYSICAL CPU CORES    NOT QUERYABLE");
+        boot_text(s, 96, 253, line, ui->hardware.physical_cores ? BOOT_TEXT : BOOT_AMBER);
+        if (ui->hardware.memory_mib)
+            snprintf(line, sizeof(line), "INSTALLED MEMORY      %llu MiB",
+                     ui->hardware.memory_mib);
+        else snprintf(line, sizeof(line), "INSTALLED MEMORY      NOT QUERYABLE");
+        boot_text(s, 96, 281, line, ui->hardware.memory_mib ? BOOT_TEXT : BOOT_AMBER);
+        boot_text(s, 96, 329, "GRAPHICS", BOOT_CYAN);
+        boot_rule(s, 96, 356, 1088, BOOT_EDGE);
+        boot_text(s, 96, 377, ui->gpu_ready ?
+                  "GPU SCENE             AVAILABLE" :
+                  "GPU SCENE             UNAVAILABLE / CPU FALLBACK",
+                  ui->gpu_ready ? FIRMWARE_GREEN : BOOT_AMBER);
+        snprintf(line, sizeof(line), "VULKAN ADAPTER        %.96s",
+                 ui->gpu_status.state == RF_GPU_STATE_READY ? gpu->adapter_name : "unavailable");
+        boot_text(s, 96, 405, line, ui->gpu_ready ? BOOT_TEXT : BOOT_AMBER);
+        if (ui->gpu_status.state == RF_GPU_STATE_READY) {
+            snprintf(line, sizeof(line), "DEVICE ID             %04X:%04X  /  ADAPTER %u",
+                     gpu->vendor_id, gpu->device_id, gpu->capabilities.adapter_index);
+            boot_text(s, 96, 433, line, BOOT_DIM);
+        }
+        boot_text(s, 96, 481, "RF SERVICES", BOOT_CYAN);
+        boot_rule(s, 96, 508, 1088, BOOT_EDGE);
+        boot_text(s, 96, 529, ui->core_status.renderer_ready ?
+                  "CPU RENDERER          READY" : "CPU RENDERER          UNAVAILABLE",
+                  ui->core_status.renderer_ready ? FIRMWARE_GREEN : BOOT_AMBER);
+        boot_text(s, 96, 557, ui->core_status.audio_ready ?
+                  "AUDIO                 READY" : "AUDIO                 UNAVAILABLE (OPTIONAL)",
+                  ui->core_status.audio_ready ? FIRMWARE_GREEN : BOOT_AMBER);
+        boot_text(s, 96, 585, ui->core_status.filesystem_ready ?
+                  "FILESYSTEM            READY" : "FILESYSTEM            UNAVAILABLE",
+                  ui->core_status.filesystem_ready ? FIRMWARE_GREEN : BOOT_AMBER);
+        boot_text(s, 96, 619, "ESC  Return to RF Boot Manager", BOOT_CYAN);
     } else {
-        boot_chrome(s, "GRAPHICAL BOOT", "MOUSE + KEYBOARD");
+        boot_chrome(s, "RF WORKBENCH / GRAPHICAL ENVIRONMENT", "MOUSE + KEYBOARD");
         boot_text(s, 48, 111, "DESTINATION / 01", BOOT_CYAN);
         boot_type(s, 48, 146, "OUTPOST", BOOT_TEXT, 3, 7);
         boot_text(s, 48, 207, "Choose how your world is rendered.", BOOT_DIM);
@@ -546,7 +663,7 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui)
             uint32_t fill = i == 2 ? (ui->hover == i ? BOOT_TEXT : BOOT_CYAN) : BOOT_BG;
             boot_box(s, r->x, r->y, r->w, r->h, fill,
                      i == 2 || ui->hover == i ? BOOT_CYAN : BOOT_EDGE);
-            boot_text(s, r->x + 32, r->y + 20, i == 2 ? "START OUTPOST    >" : "<  BACK TO RF INIT",
+            boot_text(s, r->x + 32, r->y + 20, i == 2 ? "START OUTPOST    >" : "<  BOOT MANAGER",
                       i == 2 ? BOOT_BG : BOOT_TEXT);
         }
         boot_text(s, 936, 673, "SELECT / CONFIRM / LAUNCH", BOOT_DIM);
@@ -617,7 +734,7 @@ static int firmware_draw(struct rf_core *core,
             boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 7 * FIRMWARE_ROW_STEP,
                       "[ OK ] CORE INITIALIZATION COMPLETE",
                       FIRMWARE_GREEN, 2, 40);
-            snprintf(line, sizeof(line), "RF INIT IN %d SECOND%s  |  ENTER TO CONTINUE NOW",
+            snprintf(line, sizeof(line), "BOOT MANAGER IN %d SECOND%s  |  ENTER TO CONTINUE NOW",
                      seconds_left, seconds_left == 1 ? "" : "S");
             boot_type(&surface, 48, FIRMWARE_FIRST_ROW_Y + 8 * FIRMWARE_ROW_STEP,
                       line, BOOT_CYAN, 2, 72);
@@ -648,7 +765,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
 {
     struct boot_ui ui;
     int ready;
-    int64_t completed_at;
+    int64_t completed_at, auto_until;
     char line[176];
     if (!core || !result) return -1;
     memset(&ui, 0, sizeof(ui));
@@ -670,6 +787,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
             }
         }
     }
+    auto_until = error ? 0 : rf_core_time_us(core) + BOOT_AUTO_US;
     boot_marker("RF-BOOT stage=menu status=ready");
     for (;;) {
         struct toy_window_events *events = rf_core_events(core);
@@ -679,19 +797,50 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
         if (rf_core_should_exit(core)) {
             boot_marker("RF-BOOT stage=menu status=closed"); return 0;
         }
-        if (ui.screen == 0) {
-            if (boot_key(events, BOOT_KEY_UP) || boot_key(events, BOOT_KEY_DOWN))
-                ui.selected = !ui.selected;
-            if (boot_key(events, BOOT_KEY_ENTER)) {
-                ui.screen = ui.selected ? 1 : 2;
-                ui.selected = 0;
-                if (ui.screen == 1) {
-                    boot_line(&ui, "[ OK ] RF Terminal command environment ready");
+        if (ui.screen == BOOT_MANAGER) {
+            int activate = boot_key(events, BOOT_KEY_ENTER);
+            if (auto_until && (boot_any_key(events) || events->button_pressed))
+                auto_until = 0;
+            if (boot_key(events, BOOT_KEY_UP))
+                ui.selected = (ui.selected + 4) % 5;
+            if (boot_key(events, BOOT_KEY_DOWN))
+                ui.selected = (ui.selected + 1) % 5;
+            if (boot_key(events, BOOT_KEY_1)) { ui.selected = 0; activate = 1; }
+            if (boot_key(events, BOOT_KEY_2)) { ui.selected = 1; activate = 1; }
+            if (boot_key(events, BOOT_KEY_3)) { ui.selected = 2; activate = 1; }
+            if (boot_key(events, BOOT_KEY_4)) { ui.selected = 3; activate = 1; }
+            if (boot_key(events, BOOT_KEY_5)) { ui.selected = 4; activate = 1; }
+            if (auto_until) {
+                int64_t left = auto_until - rf_core_time_us(core);
+                ui.auto_seconds = left > 0 ? (int)((left + 999999) / 1000000) : 0;
+                if (left <= 0) { ui.selected = 0; activate = 1; auto_until = 0; }
+            } else ui.auto_seconds = 0;
+            if (activate) {
+                if (ui.selected == 0) {
+                    boot_probe_hardware(&ui, core);
+                    ui.renderer = ui.gpu_ready ? RF_CORE_RENDERER_GPU_SCENE : RF_CORE_RENDERER_CPU;
+                    ui.automatic = 1;
+                    ui.screen = BOOT_WORKBENCH; /* Shared graphical progress. */
+                    goto selected;
+                }
+                if (ui.selected == 1) {
+                    ui.screen = BOOT_WORKBENCH; ui.selected = 0;
+                    boot_marker("RF-BOOT stage=workbench status=ready");
+                } else if (ui.selected == 2) {
+                    ui.screen = BOOT_SHELL; ui.selected = 0;
+                    boot_line(&ui, "[ OK ] RF Shell terminal environment ready");
                     boot_line(&ui, "Type help for commands; boot enters Outpost.");
-                    boot_marker("RF-BOOT stage=terminal status=ready");
-                } else boot_marker("RF-BOOT stage=graphical status=ready");
+                    boot_marker("RF-BOOT stage=shell status=ready");
+                } else if (ui.selected == 3) {
+                    boot_probe_hardware(&ui, core);
+                    ui.screen = BOOT_DIAGNOSTICS;
+                    boot_marker("RF-BOOT stage=diagnostics status=ready");
+                } else {
+                    boot_marker("RF-BOOT stage=power-off status=selected");
+                    return 0;
+                }
             }
-        } else if (ui.screen == 1) {
+        } else if (ui.screen == BOOT_SHELL) {
             for (int i = 0; i < events->key_event_count; i++) {
                 unsigned int key = events->key_events[i].key;
                 char c = 0;
@@ -700,7 +849,7 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
                     if (boot_command(&ui, core)) goto selected;
                 } else if (key == BOOT_KEY_BACKSPACE) {
                     if (ui.command_length) ui.command[--ui.command_length] = 0;
-                } else if (key == BOOT_KEY_ESC) { ui.screen = 0; ui.selected = 1; }
+                } else if (key == BOOT_KEY_ESC) { ui.screen = BOOT_MANAGER; ui.selected = 2; }
                 else {
                     c = boot_character(key);
                     if (c && ui.command_length + 1 < (int)sizeof(ui.command)) {
@@ -709,8 +858,8 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
                     }
                 }
             }
-        } else if (ui.screen == 3) {
-            if (boot_key(events, BOOT_KEY_ESC)) ui.screen = 1;
+        } else if (ui.screen == BOOT_SHELL_RENDERER) {
+            if (boot_key(events, BOOT_KEY_ESC)) ui.screen = BOOT_SHELL;
             if (boot_key(events, BOOT_KEY_UP) || boot_key(events, BOOT_KEY_DOWN))
                 ui.selected = !ui.selected;
             if (boot_key(events, BOOT_KEY_1)) ui.selected = 0;
@@ -718,12 +867,16 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
             if (boot_key(events, BOOT_KEY_ENTER)) {
                 ui.renderer = ui.selected; goto selected;
             }
+        } else if (ui.screen == BOOT_DIAGNOSTICS) {
+            if (boot_key(events, BOOT_KEY_ESC)) {
+                ui.screen = BOOT_MANAGER; ui.selected = 3;
+            }
         } else {
             int click = events->button_pressed && events->button == BOOT_BUTTON_LEFT;
             ui.hover = boot_hit(&core->surface, events->pointer_x, events->pointer_y);
             if (boot_key(events, BOOT_KEY_ESC) ||
                 (click && ui.hover == 3)) {
-                ui.screen = 0; ui.selected = 0;
+                ui.screen = BOOT_MANAGER; ui.selected = 1;
             } else {
                 if (boot_key(events, BOOT_KEY_UP)) ui.selected = 0;
                 if (boot_key(events, BOOT_KEY_DOWN)) ui.selected = 1;
@@ -751,7 +904,8 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
     }
 selected:
     result->renderer = ui.renderer;
-    result->graphical = ui.screen == 2;
+    result->graphical = ui.screen == BOOT_WORKBENCH;
+    result->automatic = ui.automatic;
     snprintf(line, sizeof(line),
              "RF-BOOT stage=renderer status=selected backend=%s",
              ui.renderer ? "gpu-scene" : "cpu");
@@ -774,7 +928,7 @@ int rf_boot_progress(struct rf_core *core, int graphical,
     if (!s) return -1;
     if (completed < 0) completed = 0;
     if (completed > total) completed = total;
-    boot_chrome(s, graphical ? "GRAPHICAL BOOT / LOADING" : "TERMINAL / BOOT",
+    boot_chrome(s, graphical ? "RF WORKBENCH / STARTUP" : "RF SHELL / STARTUP",
                 "LIVE TASK STATUS");
     boot_text(s, 48, 110, "DESTINATION / OUTPOST", BOOT_CYAN);
     boot_type(s, 48, 145, "WORLD STARTUP", BOOT_TEXT, 2, 13);

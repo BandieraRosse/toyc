@@ -7,6 +7,7 @@
 struct rf_boot_result {
     int renderer; /* RF_CORE_RENDERER_* */
     int graphical;
+    int automatic; /* Start Rasterfall: fall back to CPU on GPU init failure */
 };
 
 #define RF_BOOT_MAX_EVENTS 16

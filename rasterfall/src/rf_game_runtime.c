@@ -3741,6 +3741,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 memset(&boot_journal, 0, sizeof(boot_journal));
                 if (rf_core_init_config(&core, &boot_cpu_config) < 0)
                     return 1;
+                if (choice.automatic) {
+                    rf_boot_log_task("boot-manager", "gpu-fallback-cpu", 0, 0);
+                    break;
+                }
                 boot_error = "GPU Scene unavailable; choose CPU or retry";
                 continue;
             }

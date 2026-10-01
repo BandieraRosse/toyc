@@ -90,7 +90,7 @@ void rasterfall_options_usage(int fd)
         "  --host | --connect <ip> [--port <port>] [--net-loss <percent>]\n"
         "  --textures | --no-textures  --edge-pass | --no-edge-pass  --no-stats\n"
         "  --renderer <cpu|gpu-scene> [--gpu-required] [--gpu-native-present]\n"
-        "  --boot (show RF INIT with --frames)  --skip-boot\n"
+        "  --boot (show RF Boot Manager with --frames)  --skip-boot\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
