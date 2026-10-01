@@ -1,7 +1,7 @@
 # 渲染性能诊断
 
 > 状态：当前
-> 所有者：Rasterfall CPU renderer 与 world producer 性能诊断
+> 所有者：Rasterfall CPU renderer、GPU Scene 与 world producer 性能诊断
 > 最近核对：2026-09-23
 > 事实入口：`build/rasterfall --help`、`rasterfall_perf.c`、`src/dev-tests/rasterfall_world_benchmark.inc`
 
@@ -19,8 +19,15 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 | Campaign world 与敌人数扩展 | `--render-performance` | world producer + raster 离屏基准 |
 | 正常窗口阶段 | runtime `rasterfall_perf` 输出 | begin/scene/enemies/raster/overlay/present |
 | GPU native 整帧与 bridge | GPU sampling/metrics 工具 | 物理 GPU whole-loop |
+| 前哨站游戏内单轮实测 | 控制终端与结果终端 | 固定视角、真实窗口和玩法负载 |
 
 不要把不同入口的累计计时、wall time 或分位数相加。
+
+## 前哨站游戏内性能实验场
+
+在 Windows 原生 GPU Scene 单人前哨站，前往光照实验区东侧连接路。靠近控制终端按 E，按 1 至 4 选择低压力、64 敌人、多组件或敌人与组件复合场景，Enter 开始。选择界面随即关闭；玩家固定在对应场地西侧道路的站立点并朝东观察。测试固定 10 秒，只运行一轮，前 2 秒预热。计时结束后测试敌人立即清零，恢复原位置和视角。到旁边的结果终端按 E 查看汇总，Esc 关闭。每次启动会先清空上一份结果；如果采样期间敌人数量下降，结果标为无效。
+
+面板显示采样帧数、平均 FPS、帧间隔均值/中位/P95/P99、敌人准备、几何提取、敌人上传、世界准备、提交/等待、GPU 绘制时间、平均 draw 数和敌人存活范围。阶段数字用于找瓶颈，GPU 时间与 CPU 时间重叠。用于本机自动验收时可设置 `RF_PERF_LAB_AUTORUN=1..4`，分别运行四种场景；程序进入前哨站约 30 帧后启动同一流程，结束时输出 `PERF-LAB result` 并退出。比较不同版本时固定窗口、分辨率、设备、驱动和图形选项。
 
 ## 角色微基准
 

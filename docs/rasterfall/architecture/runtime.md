@@ -250,6 +250,8 @@ X/Y/Z 和骨骼调试的 N/B、减号/等号保留原有功能。具体默认物
 
 ## 常见任务落点
 
+前哨站性能实验场由 `rf_game_runtime.c` 中的 `rf_performance_lab.inc` 持有一次测试的状态、固定视角、采样和单面板结果。开始时清空上一结果、固定随机种子和玩家站位，关闭选择菜单；10 秒墙钟测试的前 2 秒预热，不计入结果。运行期间继续推进固定步长玩法，但忽略玩家操作并将玩家固定在观察道路上；结束时清除全部测试敌人，恢复玩家和相机并解除控制锁。地图仅提供终端、地面、矮墙和静态组件；结果是运行时展示状态，不进入 `toy_game`、session 权威状态或网络快照。测试只允许前哨站离线单人且当前没有敌人。采样字段来自 GPU Scene 正常帧 probe，GPU 绘制时间与 CPU 阶段重叠，不能相加。
+
 - 新增启动参数：options 头文件字段、`rasterfall_options_init/parse/usage`，在 `main()` 解析后
   通过 `rf_game_config` 传给 runtime。
 - 改键位或鼠标：`build_game_command()`、`consume_game_command_edges()` 及主循环的菜单/控制台分流。

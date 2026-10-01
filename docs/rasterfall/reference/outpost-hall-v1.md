@@ -100,3 +100,7 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 
 运行时所有权沿用[地图与世界内容架构](../architecture/maps-and-world-content.md)。
 生成、Windows 工具与截图见[设施家具指南](../guides/facility-assets.md)。
+
+## 性能实验场
+
+光照实验区东侧的连接地面通向四个并列测试场，按南至北依次为多敌人、多组件、复合、低压力。每个测试场由 650 RFU 高的四面实体矮墙围住，固定观察道路在西侧。场地使用与相邻实验区一致的可见地板、青色边线和场景标题牌；可行走 surface/collision 与这些绘制记录分别声明。控制终端和结果终端放在场地西侧走道，分别使用地图对象 `perf_control_terminal` 与 `perf_result_terminal`；它们的功能由 Game Runtime 根据对象 ID 绑定。多组件和复合场景各放置 24 个静态 crate；敌人在测试开始时才生成。地图只定义地形、碰撞和静态物件，不保存测试结果。

@@ -54,6 +54,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
 struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
+    int quiet;
     struct rf_gpu_graphics_resource *lighting_lab_sphere;
     const struct rf_gpu_scene_layers_input *layers;
     struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];

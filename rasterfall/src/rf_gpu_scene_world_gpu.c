@@ -1418,7 +1418,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->queue_submit_us=(int64_t)(timing.queue_submit_ms*1000);
     stats->present_us=(int64_t)(timing.present_ms*1000);
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
-    if (graphics_after.triangle_updates!=graphics_before.triangle_updates)
+    if (!probe->quiet && graphics_after.triangle_updates!=graphics_before.triangle_updates)
         __printf("SCENE-TRIANGLE-UPDATE frame=%llu validate_us=%lld map_us=%lld copy_us=%lld flush_us=%lld transfer_us=%lld updates=%llu bytes=%llu flush_bytes=%llu staging=%llu direct_flags=%llu staging_flags=%llu\n",
             (unsigned long long)enemies->frame_id,
             (long long)((graphics_after.triangle_validate_ms-graphics_before.triangle_validate_ms)*1000),
@@ -1432,6 +1432,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             (unsigned long long)(graphics_after.triangle_staging_updates-graphics_before.triangle_staging_updates),
             (unsigned long long)graphics_after.triangle_direct_flags,
             (unsigned long long)graphics_after.triangle_staging_flags);
+    if (!probe->quiet)
     __printf("SCENE-RESOURCE-COST frame=%llu skin_submits=%llu queue_submits=%llu fence_waits=%llu layer_created=%u layer_reused=%u actor_batch_us=%lld\n",
         (unsigned long long)enemies->frame_id,
         (unsigned long long)(graphics_after.submits_by_kind[RF_GPU_SUBMIT_SKINNING]-graphics_before.submits_by_kind[RF_GPU_SUBMIT_SKINNING]),

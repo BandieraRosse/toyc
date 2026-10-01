@@ -1,6 +1,6 @@
 # Outpost V1. RFU = metres * 512; single floor, open roof, static furniture.
 map version=1 units=rfu
-world min_x=-10752 max_x=34816 min_z=-36864 max_z=10752 room_limit=36864 attr.identity=outpost
+world min_x=-10752 max_x=50000 min_z=-36864 max_z=10752 room_limit=52000 attr.identity=outpost
 region id=outpost_safe kind=safe min_x=-10496 max_x=34560 min_z=-36608 max_z=10496 attr.legacy_index=0
 region id=player_start kind=start min_x=0 max_x=0 min_z=-4900 max_z=-4900 attr.sy=0 attr.cy=1024
 surface id=entry_apron kind=ground min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 material=49565F attr.collision_id=entry_apron_col
@@ -392,3 +392,112 @@ render id=rf_light_base_2_3 kind=box min_x=31600 max_x=33100 min_z=-35550 max_z=
 render id=rf_light_label_2_3 kind=sign min_x=31400 max_x=33300 min_z=-34020 max_z=-34000 height=-700 color=A6C4D1 attr.height2=-450 attr.text=STYLIZED_12 attr.facing=+z
 render id=rf_light_occluder_0 kind=box min_x=23780 max_x=24220 min_z=-33400 max_z=-32960 height=2600 color=D4C4A1
 render id=rf_light_occluder_1 kind=box min_x=32980 max_x=33420 min_z=-33400 max_z=-32960 height=2600 color=D4C4A1
+
+## Performance lab: four bounded bays east of the lighting exhibit.
+surface id=perf_control_walk kind=ground min_x=30000 max_x=34560 min_z=-26700 max_z=-24064 height=0 material=485860 attr.collision_id=perf_control_walk_col
+collision id=perf_control_walk_col shape=flat min_x=30000 max_x=34560 min_z=-26700 max_z=-24064 height=0 collision=false visible=true walkable=true color=485860
+surface id=perf_access kind=ground min_x=33792 max_x=35500 min_z=-36352 max_z=5600 height=0 material=485860 attr.collision_id=perf_access_col
+collision id=perf_access_col shape=flat min_x=33792 max_x=35500 min_z=-36352 max_z=5600 height=0 collision=false visible=true walkable=true color=485860
+object id=perf_control_terminal kind=facility_terminal x=34400 y=0 z=-26300 yaw=90 scale=1000 attr.collision=component
+object id=perf_result_terminal kind=facility_terminal x=34400 y=0 z=-24100 yaw=90 scale=1000 attr.collision=component
+render id=perf_control_walk_paint kind=floor min_x=30064 max_x=34496 min_z=-26636 max_z=-24128 height=0 color=485860
+render id=perf_access_paint kind=floor min_x=33856 max_x=35436 min_z=-36288 max_z=5536 height=0 color=485860
+render id=perf_access_west_line kind=floor min_x=33792 max_x=33856 min_z=-36352 max_z=5600 height=0 color=9FE8C8
+render id=perf_access_east_line kind=floor min_x=35436 max_x=35500 min_z=-36352 max_z=5600 height=0 color=9FE8C8
+render id=perf_control_sign kind=sign min_x=30700 max_x=33400 min_z=-26620 max_z=-26590 height=500 color=81B4B5 attr.height2=800 attr.text=PERFORMANCE_LAB attr.facing=+z
+surface id=perf_enemy_ground kind=ground min_x=35500 max_x=49000 min_z=-36000 max_z=-27000 height=0 material=52616A attr.collision_id=perf_enemy_ground_col
+collision id=perf_enemy_ground_col shape=flat min_x=35500 max_x=49000 min_z=-36000 max_z=-27000 height=0 collision=false visible=true walkable=true color=52616A
+render id=perf_enemy_paint kind=floor min_x=35564 max_x=48936 min_z=-35936 max_z=-27064 height=0 color=52616A
+render id=perf_enemy_north_line kind=floor min_x=35500 max_x=49000 min_z=-27064 max_z=-27000 height=0 color=9FE8C8
+render id=perf_enemy_south_line kind=floor min_x=35500 max_x=49000 min_z=-36000 max_z=-35936 height=0 color=9FE8C8
+render id=perf_enemy_west_line kind=floor min_x=35500 max_x=35564 min_z=-35936 max_z=-27064 height=0 color=9FE8C8
+render id=perf_enemy_east_line kind=floor min_x=48936 max_x=49000 min_z=-35936 max_z=-27064 height=0 color=9FE8C8
+render id=perf_enemy_title kind=sign min_x=39700 max_x=44800 min_z=-35600 max_z=-35570 height=500 color=81B4B5 attr.height2=800 attr.text=64_ENEMIES attr.facing=+z
+collision id=perf_enemy_west shape=box min_x=35500 max_x=35700 min_z=-36000 max_z=-27000 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_enemy_east shape=box min_x=48800 max_x=49000 min_z=-36000 max_z=-27000 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_enemy_north shape=box min_x=35700 max_x=48800 min_z=-27200 max_z=-27000 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_enemy_south shape=box min_x=35700 max_x=48800 min_z=-36000 max_z=-35800 height=650 collision=true visible=true walkable=false color=6B8E92
+surface id=perf_components_ground kind=ground min_x=35500 max_x=49000 min_z=-25200 max_z=-16200 height=0 material=52616A attr.collision_id=perf_components_ground_col
+collision id=perf_components_ground_col shape=flat min_x=35500 max_x=49000 min_z=-25200 max_z=-16200 height=0 collision=false visible=true walkable=true color=52616A
+render id=perf_components_paint kind=floor min_x=35564 max_x=48936 min_z=-25136 max_z=-16264 height=0 color=52616A
+render id=perf_components_north_line kind=floor min_x=35500 max_x=49000 min_z=-16264 max_z=-16200 height=0 color=9FE8C8
+render id=perf_components_south_line kind=floor min_x=35500 max_x=49000 min_z=-25200 max_z=-25136 height=0 color=9FE8C8
+render id=perf_components_west_line kind=floor min_x=35500 max_x=35564 min_z=-25136 max_z=-16264 height=0 color=9FE8C8
+render id=perf_components_east_line kind=floor min_x=48936 max_x=49000 min_z=-25136 max_z=-16264 height=0 color=9FE8C8
+render id=perf_components_title kind=sign min_x=38800 max_x=45700 min_z=-24800 max_z=-24770 height=500 color=81B4B5 attr.height2=800 attr.text=DENSE_COMPONENTS attr.facing=+z
+collision id=perf_components_west shape=box min_x=35500 max_x=35700 min_z=-25200 max_z=-16200 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_components_east shape=box min_x=48800 max_x=49000 min_z=-25200 max_z=-16200 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_components_north shape=box min_x=35700 max_x=48800 min_z=-16400 max_z=-16200 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_components_south shape=box min_x=35700 max_x=48800 min_z=-25200 max_z=-25000 height=650 collision=true visible=true walkable=false color=6B8E92
+surface id=perf_mixed_ground kind=ground min_x=35500 max_x=49000 min_z=-14400 max_z=-5400 height=0 material=52616A attr.collision_id=perf_mixed_ground_col
+collision id=perf_mixed_ground_col shape=flat min_x=35500 max_x=49000 min_z=-14400 max_z=-5400 height=0 collision=false visible=true walkable=true color=52616A
+render id=perf_mixed_paint kind=floor min_x=35564 max_x=48936 min_z=-14336 max_z=-5464 height=0 color=52616A
+render id=perf_mixed_north_line kind=floor min_x=35500 max_x=49000 min_z=-5464 max_z=-5400 height=0 color=9FE8C8
+render id=perf_mixed_south_line kind=floor min_x=35500 max_x=49000 min_z=-14400 max_z=-14336 height=0 color=9FE8C8
+render id=perf_mixed_west_line kind=floor min_x=35500 max_x=35564 min_z=-14336 max_z=-5464 height=0 color=9FE8C8
+render id=perf_mixed_east_line kind=floor min_x=48936 max_x=49000 min_z=-14336 max_z=-5464 height=0 color=9FE8C8
+render id=perf_mixed_title kind=sign min_x=38200 max_x=46300 min_z=-14000 max_z=-13970 height=500 color=81B4B5 attr.height2=800 attr.text=ENEMIES_AND_COMPONENTS attr.facing=+z
+collision id=perf_mixed_west shape=box min_x=35500 max_x=35700 min_z=-14400 max_z=-5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_mixed_east shape=box min_x=48800 max_x=49000 min_z=-14400 max_z=-5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_mixed_north shape=box min_x=35700 max_x=48800 min_z=-5600 max_z=-5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_mixed_south shape=box min_x=35700 max_x=48800 min_z=-14400 max_z=-14200 height=650 collision=true visible=true walkable=false color=6B8E92
+surface id=perf_low_ground kind=ground min_x=35500 max_x=49000 min_z=-3600 max_z=5400 height=0 material=52616A attr.collision_id=perf_low_ground_col
+collision id=perf_low_ground_col shape=flat min_x=35500 max_x=49000 min_z=-3600 max_z=5400 height=0 collision=false visible=true walkable=true color=52616A
+render id=perf_low_paint kind=floor min_x=35564 max_x=48936 min_z=-3536 max_z=5336 height=0 color=52616A
+render id=perf_low_north_line kind=floor min_x=35500 max_x=49000 min_z=5336 max_z=5400 height=0 color=9FE8C8
+render id=perf_low_south_line kind=floor min_x=35500 max_x=49000 min_z=-3600 max_z=-3536 height=0 color=9FE8C8
+render id=perf_low_west_line kind=floor min_x=35500 max_x=35564 min_z=-3536 max_z=5336 height=0 color=9FE8C8
+render id=perf_low_east_line kind=floor min_x=48936 max_x=49000 min_z=-3536 max_z=5336 height=0 color=9FE8C8
+render id=perf_low_title kind=sign min_x=39400 max_x=45100 min_z=-3200 max_z=-3170 height=500 color=81B4B5 attr.height2=800 attr.text=LOW_PRESSURE attr.facing=+z
+collision id=perf_low_west shape=box min_x=35500 max_x=35700 min_z=-3600 max_z=5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_low_east shape=box min_x=48800 max_x=49000 min_z=-3600 max_z=5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_low_north shape=box min_x=35700 max_x=48800 min_z=5200 max_z=5400 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_low_south shape=box min_x=35700 max_x=48800 min_z=-3600 max_z=-3400 height=650 collision=true visible=true walkable=false color=6B8E92
+object id=perf_components_0_0 kind=crate x=37000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_0_1 kind=crate x=39000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_0_2 kind=crate x=41000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_0_3 kind=crate x=43000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_0_4 kind=crate x=45000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_0_5 kind=crate x=47000 y=0 z=-23800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_0 kind=crate x=37000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_1 kind=crate x=39000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_2 kind=crate x=41000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_3 kind=crate x=43000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_4 kind=crate x=45000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_1_5 kind=crate x=47000 y=0 z=-21800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_0 kind=crate x=37000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_1 kind=crate x=39000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_2 kind=crate x=41000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_3 kind=crate x=43000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_4 kind=crate x=45000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_2_5 kind=crate x=47000 y=0 z=-19800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_0 kind=crate x=37000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_1 kind=crate x=39000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_2 kind=crate x=41000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_3 kind=crate x=43000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_4 kind=crate x=45000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_components_3_5 kind=crate x=47000 y=0 z=-17800 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_0 kind=crate x=37000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_1 kind=crate x=39000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_2 kind=crate x=41000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_3 kind=crate x=43000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_4 kind=crate x=45000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_0_5 kind=crate x=47000 y=0 z=-13000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_0 kind=crate x=37000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_1 kind=crate x=39000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_2 kind=crate x=41000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_3 kind=crate x=43000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_4 kind=crate x=45000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_1_5 kind=crate x=47000 y=0 z=-11000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_0 kind=crate x=37000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_1 kind=crate x=39000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_2 kind=crate x=41000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_3 kind=crate x=43000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_4 kind=crate x=45000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_2_5 kind=crate x=47000 y=0 z=-9000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_0 kind=crate x=37000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_1 kind=crate x=39000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_2 kind=crate x=41000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_3 kind=crate x=43000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_4 kind=crate x=45000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
+object id=perf_mixed_3_5 kind=crate x=47000 y=0 z=-7000 yaw=0 scale=1000 attr.collision=component
