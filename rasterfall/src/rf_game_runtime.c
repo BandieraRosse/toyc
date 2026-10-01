@@ -3736,11 +3736,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             gpu_config.native_present = 1;
             gpu_config.init_event = rf_boot_record_event;
             gpu_config.init_event_context = &boot_journal;
-            rf_core_shutdown(&core);
-            if (rf_core_init_config(&core, &gpu_config) < 0) {
-                memset(&boot_journal, 0, sizeof(boot_journal));
-                if (rf_core_init_config(&core, &boot_cpu_config) < 0)
-                    return 1;
+            if (rf_core_switch_renderer(&core, &gpu_config) < 0) {
                 if (choice.automatic) {
                     rf_boot_log_task("boot-manager", "gpu-fallback-cpu", 0, 0);
                     boot_renderer = RF_CORE_RENDERER_CPU;
@@ -4410,19 +4406,17 @@ startup_again:
             rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
             rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
             rasterfall_resources_invalidate(rasterfall_render_resources());
-            rf_core_shutdown(&core);
             if (target == RF_CORE_RENDERER_GPU_SCENE) {
-                memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
                 next_config.renderer_mode = RF_CORE_RENDERER_GPU_SCENE;
                 next_config.gpu_policy = RF_GPU_POLICY_REQUIRED;
                 next_config.gpu_backend = &rf_gpu_vulkan_backend;
                 next_config.gpu_backend_context = &gpu_vulkan_context;
                 next_config.native_present = 1;
             }
-            initialized = rf_core_init_config(&core, &next_config) == 0;
+            initialized = rf_core_switch_renderer(&core, &next_config) == 0;
             if (!initialized && target == RF_CORE_RENDERER_GPU_SCENE) {
-                initialized = rf_core_init_config(&core,
-                                                   &boot_cpu_config) == 0;
+                initialized = rf_core_switch_renderer(&core,
+                                                       &boot_cpu_config) == 0;
                 session.banner_text = "GPU UNAVAILABLE; CPU RESTORED";
                 session.banner_ms = 3000;
                 target = RF_CORE_RENDERER_CPU;

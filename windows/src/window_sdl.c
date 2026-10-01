@@ -20,6 +20,7 @@ struct toy_window {
     int pointer_locked;
     int reported_pointer_locked;
     int minimized;
+    int native_present;
 };
 
 /* Linux input numbers are part of the existing game-facing key contract. Keep
@@ -318,6 +319,7 @@ static struct toy_window *toy_window_open_impl(const char *title, int width,
     if (!out) return NULL;
     out->width = width;
     out->height = height;
+    out->native_present = native_present;
     out->window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED, width, height,
                                    SDL_WINDOW_RESIZABLE);
@@ -346,6 +348,32 @@ struct toy_window *toy_window_open(const char *title, int width, int height)
 struct toy_window *toy_window_open_native(const char *title, int width, int height)
 {
     return toy_window_open_impl(title, width, height, 1);
+}
+
+int toy_window_prepare_native(struct toy_window *window)
+{
+    if (!window || !window->window) return -1;
+    if (window->native_present) return 0;
+    SDL_DestroyTexture(window->texture);
+    SDL_DestroyRenderer(window->renderer);
+    window->texture = NULL;
+    window->renderer = SDL_CreateRenderer(window->window, -1,
+                                          SDL_RENDERER_SOFTWARE);
+    window->texture = window->renderer ? SDL_CreateTexture(window->renderer,
+        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+        window->width, window->height) : NULL;
+    if (!window->texture) {
+        SDL_DestroyRenderer(window->renderer);
+        window->renderer = SDL_CreateRenderer(window->window, -1,
+                                              SDL_RENDERER_PRESENTVSYNC);
+        window->texture = window->renderer ? SDL_CreateTexture(window->renderer,
+            SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+            window->width, window->height) : NULL;
+        return -1;
+    }
+    window->native_present = 1;
+    /* Repaint the last boot image before Vulkan initialization can block. */
+    return toy_window_present(window);
 }
 
 int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
@@ -486,7 +514,8 @@ int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surfac
 
 int toy_window_present(struct toy_window *window)
 {
-    if (!window) return -1;
+    if (!window || !window->renderer || !window->texture || !window->pixels)
+        return -1;
     if (SDL_UpdateTexture(window->texture, NULL, window->pixels,
                           window->width * (int)sizeof(uint32_t)) < 0) return -1;
     if (SDL_RenderClear(window->renderer) < 0) return -1;

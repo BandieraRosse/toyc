@@ -181,6 +181,56 @@ int rf_core_init_config(struct rf_core *core,
     return 0;
 }
 
+int rf_core_switch_renderer(struct rf_core *core,
+                            const struct rf_core_config *config)
+{
+    struct toy_native_window_handle native;
+    struct rf_gpu_native_window gpu_native;
+    struct rf_gpu_status status;
+    int64_t started;
+    int result;
+    if (!core || !core->initialized || !core->window || !config ||
+        (config->renderer_mode != RF_CORE_RENDERER_CPU &&
+         config->renderer_mode != RF_CORE_RENDERER_GPU_SCENE) ||
+        (config->renderer_mode == RF_CORE_RENDERER_GPU_SCENE &&
+         (!config->native_present || !config->gpu_backend))) return -1;
+    rf_gpu_shutdown(&core->gpu);
+    memset(&core->gpu_frame, 0, sizeof(core->gpu_frame));
+    core->gpu_frame.renderer = RF_CORE_RENDERER_CPU;
+    if (config->renderer_mode == RF_CORE_RENDERER_CPU) {
+        rf_gpu_init(&core->gpu, RF_GPU_POLICY_DISABLED, NULL, NULL);
+        return 0;
+    }
+    memset(&gpu_native, 0, sizeof(gpu_native));
+    result = toy_window_prepare_native(core->window);
+    if (result < 0) goto failed;
+    result = toy_window_get_native_handle(core->window, &native);
+    if (result > 0) {
+        gpu_native.type = native.type;
+        gpu_native.window = native.window;
+        gpu_native.instance = native.instance;
+    }
+    if (result <= 0 || rf_gpu_set_native_window(config->gpu_backend,
+            config->gpu_backend_context, &gpu_native) < 0) goto failed;
+    started = rf_core_clock_now_us();
+    result = rf_gpu_init(&core->gpu, config->gpu_policy,
+                         config->gpu_backend, config->gpu_backend_context);
+    if (config->init_event)
+        config->init_event(config->init_event_context, "gpu-backend", result,
+                           rf_core_clock_now_us() - started);
+    if (result < 0 || rf_gpu_get_status(&core->gpu, &status) < 0 ||
+        !status.renderer.native_presentation_v1) goto failed;
+    core->gpu_frame.renderer = RF_CORE_RENDERER_GPU_SCENE;
+    core->gpu_frame.native_present = 1;
+    core->gpu_frame.strict_gpu_only =
+        config->gpu_policy == RF_GPU_POLICY_REQUIRED;
+    return 0;
+failed:
+    rf_gpu_shutdown(&core->gpu);
+    rf_gpu_init(&core->gpu, RF_GPU_POLICY_DISABLED, NULL, NULL);
+    return -1;
+}
+
 int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
                           struct toy_renderer *renderer)
 {

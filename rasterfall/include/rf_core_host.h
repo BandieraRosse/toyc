@@ -177,6 +177,9 @@ int rf_core_init(struct rf_core *core, const char *title, int width, int height,
                  struct toy_input *input, struct toy_renderer *renderer);
 int rf_core_init_config(struct rf_core *core,
                         const struct rf_core_config *config);
+/* Switch presentation backend while preserving the existing platform window. */
+int rf_core_switch_renderer(struct rf_core *core,
+                            const struct rf_core_config *config);
 int rf_core_init_headless(struct rf_core *core, struct toy_input *input,
                           struct toy_renderer *renderer);
 /* Startup presentation before Game owns a frame, including a native window. */
