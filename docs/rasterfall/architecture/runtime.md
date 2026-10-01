@@ -72,7 +72,7 @@ surface、filesystem、audio、input、clock）→ 普通离线启动进入 RF B
 → 可选逻辑测试 → 启动菜单/建房连接 → 音频 presentation 启动 → 主循环 → 释放资源。
 启动环境由 `rf_boot_ui` 持有临时输入、命令和展示状态，不创建 Game/session。Core 初始化在各服务真实调用处
 报告结果及单调时钟耗时；窗口先于其他可见服务创建，Core 使用早期软件画布实时显示服务日志，
-完成画面以 3、2、1 秒倒计时进入 RF Boot Manager，Enter 可立即继续。Boot Manager 五秒后自动执行 Start Rasterfall，任意输入取消自动启动。自动路径探测 Vulkan 图形设备，实际 GPU Scene 初始化失败则恢复 CPU；手动 Workbench 保留 CPU/GPU Scene 选择。Start、Workbench 与 Shell 的启动命令只选择后端，最终按 CPU/GPU Scene 汇入两种共享启动页；当前窗口先呈现工作状态，保留已显示画面并扫描进入 GPU 启动页。Diagnostics 查询硬件与 Core 服务状态，Esc 返回菜单。Game 地图、光照、可选纹理和 session reset 在所有者调用后报告实际耗时。
+完成画面以 3、2、1 秒倒计时进入 RF Boot Manager，Enter 可立即继续。Boot Manager 五秒后自动执行 Start Rasterfall，任意输入取消自动启动。自动路径探测 Vulkan 图形设备，实际 GPU Scene 初始化失败则恢复 CPU；手动 Workbench 保留 CPU/GPU Scene 选择。Start、Workbench 与 Shell 的启动命令只选择后端，最终按 CPU/GPU Scene 汇入两种共享启动页；当前窗口先呈现工作状态，保留已显示画面并扫描进入所选后端的启动页。Diagnostics 查询硬件与 Core 服务状态，Esc 返回菜单。Game 地图、光照、可选纹理和 session reset 在所有者调用后报告实际耗时。
 启动阶段进度表示已完成的任务数，不代表文件字节或 GPU 上传百分比。显式诊断、网络与自动化默认跳过交互；
 `--skip-boot` 强制跳过，`--boot --frames N` 供有限帧窗口验证。GPU Scene 选择后平台层保留现有窗口句柄，将 SDL 硬件呈现器换为软件呈现器，再由 Core 在同一窗口上初始化 native present；
 手动 GPU 选择失败时保留窗口并返回 CPU Boot Manager 显示错误，自动选择失败时直接用 CPU 继续。启动期软件画面由 Core 专门呈现，不计入 GPU 游戏帧契约。

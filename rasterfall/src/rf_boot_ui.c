@@ -79,6 +79,13 @@ void rf_boot_log_task(const char *owner, const char *task, int result,
 #endif
 }
 
+static const char *boot_event_display_name(const char *service)
+{
+    if (!strcmp(service, "gpu-state-init-cpu"))
+        return "gpu-state-init (CPU mode)";
+    return service;
+}
+
 static void boot_marker(const char *line)
 {
     __printf("%s\n", line);
@@ -127,7 +134,8 @@ static void boot_journal_draw(struct toy_surface *s,
         boot_text(s, x, row, event->result < 0 ? "[FAIL]" :
                   event->result ? "[N/A ]" : "[ OK ]",
                   event->result ? BOOT_AMBER : BOOT_CYAN);
-        snprintf(line, sizeof(line), "%-34.34s %9.3f ms", event->service,
+        snprintf(line, sizeof(line), "%-34.34s %9.3f ms",
+                 boot_event_display_name(event->service),
                  (double)event->elapsed_us / 1000.0);
         boot_text(s, x + 72, row, line, BOOT_TEXT);
     }

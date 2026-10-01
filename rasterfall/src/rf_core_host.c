@@ -147,9 +147,8 @@ int rf_core_init_config(struct rf_core *core,
     if (config->init_event)
         config->init_event(config->init_event_context,
                            config->gpu_policy == RF_GPU_POLICY_DISABLED ?
-                           "gpu-backend-disabled" : "gpu-backend",
-                           config->gpu_policy == RF_GPU_POLICY_DISABLED ?
-                           1 : result,
+                           "gpu-state-init-cpu" : "gpu-backend",
+                           result,
                            rf_core_clock_now_us() - started);
     }
     if (result < 0) {
