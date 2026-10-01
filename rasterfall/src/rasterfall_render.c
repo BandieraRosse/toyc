@@ -15,6 +15,7 @@
 #include "rasterfall_net.h"
 #include "rasterfall_sky.h"
 #include "rasterfall_render.h"
+#include "rasterfall_motion_presentation.h"
 #include "rasterfall_hud.h"
 #include "rasterfall_render_frontend.h"
 #include "rasterfall_draw.h"
@@ -274,7 +275,9 @@ static struct rasterfall_model_render_stats model_render_stats;
 static int collect_model_render_stats;
 
 #define level_map active_session->level
-#define game active_session->game_state
+static struct toy_game *active_presentation_game;
+static struct toy_game presentation_game;
+#define game (*active_presentation_game)
 #define interactables active_session->items
 #define interactable_count active_session->item_count
 #define floor_submission active_floor_submission
@@ -9973,6 +9976,121 @@ static int render_effect_particles(struct toy_renderer *renderer,
 #undef textures_enabled
 #undef floor_submission
 #include "dev-tests/rasterfall_visual_capture.inc"
+static int motion_lerp(int previous, int current, unsigned fraction)
+{
+    return previous + (int)(((long long)current - previous) * fraction / 65536);
+}
+
+static long long motion_abs(long long value)
+{
+    return value < 0 ? -value : value;
+}
+
+void rasterfall_render_set_motion_presentation(
+    const struct rasterfall_motion_snapshot *previous,
+    const struct rasterfall_motion_snapshot *current, unsigned fraction)
+{
+    int i;
+    if (!active_session) return;
+    active_presentation_game = &active_session->game_state;
+    if (!previous || !current) return;
+    if (fraction > 65535) fraction = 65535;
+    /* The renderer reads these arrays and uses the authored primitives for
+     * ground queries.  Keep the large navigation caches out of each frame's
+     * presentation copy. */
+    memcpy(presentation_game.actors, active_session->game_state.actors,
+           sizeof(presentation_game.actors));
+    memcpy(presentation_game.enemies, active_session->game_state.enemies,
+           sizeof(presentation_game.enemies));
+    memcpy(presentation_game.projectiles, active_session->game_state.projectiles,
+           sizeof(presentation_game.projectiles));
+    presentation_game.primitives = active_session->game_state.primitives;
+    presentation_game.primitive_count =
+        active_session->game_state.primitive_count;
+    presentation_game.flow_probe_active = 0;
+    presentation_game.update_profile = NULL;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; ++i) {
+        const struct rasterfall_motion_point *a = &previous->actors[i];
+        const struct rasterfall_motion_point *b = &current->actors[i];
+        struct toy_game_actor *actor = &presentation_game.actors[i];
+        if (!a->active || !b->active || !actor->active ||
+            a->identity != b->identity || b->identity != actor->actor_id ||
+            motion_abs((long long)a->x - b->x) > 2000 ||
+            motion_abs((long long)a->z - b->z) > 2000)
+            continue;
+        actor->x = motion_lerp(a->x, b->x, fraction);
+        actor->z = motion_lerp(a->z, b->z, fraction);
+        actor->ground_y = motion_lerp(a->ground_y, b->ground_y, fraction);
+        actor->airborne_y = motion_lerp(a->airborne_y, b->airborne_y, fraction);
+        if (a->aux_identity == b->aux_identity &&
+            b->aux_identity == actor->animation.id &&
+            b->time_ms >= a->time_ms)
+            actor->animation.time_ms =
+                motion_lerp(a->time_ms, b->time_ms, fraction);
+        /* The game's orientation is a unit vector, not a quaternion.  A
+         * normalized blend takes the short arc without changing its format. */
+        if ((long long)a->sy * b->sy + (long long)a->cy * b->cy > 0) {
+            long long sy = motion_lerp(a->sy, b->sy, fraction);
+            long long cy = motion_lerp(a->cy, b->cy, fraction);
+            long long length = isqrt(sy * sy + cy * cy);
+            if (length) {
+                actor->sy = (int)(sy * 1024 / length);
+                actor->cy = (int)(cy * 1024 / length);
+            }
+        }
+    }
+    for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
+        const struct rasterfall_motion_point *a = &previous->enemies[i];
+        const struct rasterfall_motion_point *b = &current->enemies[i];
+        struct toy_game_enemy *enemy = &presentation_game.enemies[i];
+        if (!a->active || !b->active || !enemy->active ||
+            a->active != b->active ||
+            a->identity != b->identity || b->identity != enemy->type ||
+            /* A newly reused enemy slot must not fly in from its old body. */
+            motion_abs((long long)a->x - b->x) > 2000 ||
+            motion_abs((long long)a->z - b->z) > 2000)
+            continue;
+        enemy->x = motion_lerp(a->x, b->x, fraction);
+        enemy->z = motion_lerp(a->z, b->z, fraction);
+        enemy->ground_y = motion_lerp(a->ground_y, b->ground_y, fraction);
+        enemy->airborne_y = motion_lerp(a->airborne_y, b->airborne_y, fraction);
+        if (b->time_ms <= a->time_ms)
+            enemy->dying_ms = motion_lerp(a->time_ms, b->time_ms, fraction);
+        if ((long long)a->sy * b->sy + (long long)a->cy * b->cy > 0) {
+            long long sy = motion_lerp(a->sy, b->sy, fraction);
+            long long cy = motion_lerp(a->cy, b->cy, fraction);
+            long long length = isqrt(sy * sy + cy * cy);
+            if (length) {
+                enemy->dir_x = (int)(sy * 1024 / length);
+                enemy->dir_z = (int)(cy * 1024 / length);
+            }
+        }
+    }
+    for (i = 0; i < TOY_GAME_MAX_PROJECTILES; ++i) {
+        const struct rasterfall_motion_point *a = &previous->projectiles[i];
+        const struct rasterfall_motion_point *b = &current->projectiles[i];
+        struct toy_game_projectile *projectile = &presentation_game.projectiles[i];
+        if (!a->active || !b->active || !projectile->active ||
+            a->identity != b->identity ||
+            a->aux_identity != b->aux_identity ||
+            b->time_ms < a->time_ms ||
+            motion_abs((long long)a->x - b->x) > 2000 ||
+            motion_abs((long long)a->z - b->z) > 2000)
+            continue;
+        projectile->x = motion_lerp(a->x, b->x, fraction);
+        projectile->z = motion_lerp(a->z, b->z, fraction);
+        projectile->y = motion_lerp(a->ground_y, b->ground_y, fraction);
+        if (b->time_ms >= a->time_ms)
+            projectile->age_ms = motion_lerp(a->time_ms, b->time_ms, fraction);
+    }
+    active_presentation_game = &presentation_game;
+}
+
+const struct toy_game *rasterfall_render_presentation_game(void)
+{
+    return active_presentation_game;
+}
+
 void rasterfall_render_bind(struct rasterfall_render_context *ctx)
 {
     if (!render_ctx || active_session!=ctx->session) {
@@ -9981,6 +10099,7 @@ void rasterfall_render_bind(struct rasterfall_render_context *ctx)
     }
     render_ctx = ctx;
     active_session = ctx->session;
+    active_presentation_game = &ctx->session->game_state;
     active_effects = ctx->effects;
     active_net = ctx->net;
     active_wall_texture = ctx->wall_texture;

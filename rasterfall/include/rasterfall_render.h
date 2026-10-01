@@ -171,6 +171,11 @@ struct rasterfall_rigid_attachment_desc {
 };
 
 void rasterfall_render_bind(struct rasterfall_render_context *ctx);
+struct rasterfall_motion_snapshot;
+void rasterfall_render_set_motion_presentation(
+    const struct rasterfall_motion_snapshot *previous,
+    const struct rasterfall_motion_snapshot *current, unsigned fraction);
+const struct toy_game *rasterfall_render_presentation_game(void);
 #define RASTERFALL_OUTPOST_SHOWCASE_COUNT 12
 #define RASTERFALL_OUTPOST_WALK_COUNT 3
 void rasterfall_render_set_outpost_showcase(int visible,uint64_t time_us);

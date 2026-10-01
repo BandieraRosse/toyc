@@ -71,6 +71,7 @@
 #include "rasterfall_sky.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_render.h"
+#include "rasterfall_motion_presentation.h"
 #include "rasterfall_session.h"
 #include "rasterfall_net.h"
 #include "rasterfall_humanoid_retarget.h"
@@ -212,6 +213,7 @@ static void clear_action_pending(unsigned char *pending,
 }
 
 #define FIXED_STEP_US 16667
+#define RENDER_STEP_US 8333
 #define MAX_FRAME_US 250000
 #define MAX_LOGIC_STEPS 4
 #define NEAR_Z 192
@@ -2976,6 +2978,12 @@ static void rf_game_prepare_render_camera(struct rf_game_runtime *runtime)
     if (runtime->rts_active) {
         rts_setup_camera(render_camera, runtime);
     }
+    /* Mouse motion is sampled every render frame.  The pending delta is
+     * visual only until the next fixed step consumes it as a command. */
+    if (!runtime->rts_active && !runtime->lifecycle_paused &&
+        (runtime->pointer_turn_pending || runtime->pointer_pitch_pending))
+        rasterfall_camera_rotate(render_camera, runtime->pointer_turn_pending,
+                                 runtime->pointer_pitch_pending);
     /* RTS picking uses this fixed camera to unproject the pointer pixel. */
     if (!runtime->rts_active)
         rasterfall_effects_apply_camera_shake(&runtime->effects, render_camera);
@@ -3346,6 +3354,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_active = 0;   /* 帧间隔统计 */
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
+    int64_t last_render_start_us = 0;
+    struct rasterfall_motion_snapshot motion_previous, motion_current;
+    uint64_t motion_world_generation = 0;
     int64_t scene_previous_sample_us = 0;
     int scene_corridor_button_sent = 0;
     int running = 1, pointer_lock_requested = 0, paused = 0;
@@ -3671,6 +3682,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         boot_cpu_config.native_present = 0;
 #ifdef TOYC_WINDOWS
         memset(&gpu_vulkan_context, 0, sizeof(gpu_vulkan_context));
+        gpu_vulkan_context.prefer_high_rate_present =
+            !frame_limit && !options.gpu_normal_fixed_tick &&
+            !options.frame_audit;
         gpu_vulkan_context.present_fault =
             (unsigned int)options.gpu_present_fault;
         gpu_vulkan_context.present_fault_frame =
@@ -4396,10 +4410,27 @@ startup_again:
     pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
     last_time = rf_core_begin_tick(&core);
     fps_window_start = last_time;
+    rasterfall_motion_capture(&motion_current, &session.game_state);
+    motion_previous = motion_current;
+    motion_world_generation = session.scene_local.world_generation;
     rasterfall_perf_init(&stats);
     rasterfall_perf_init(&stats_total);
     while (running && !rf_core_should_exit(&core)) {
         int64_t now, elapsed, t_frame, t_stage;
+#ifdef TOYC_WINDOWS
+        if (!frame_limit && !options.gpu_normal_fixed_tick &&
+            last_render_start_us) {
+            int64_t deadline = last_render_start_us + RENDER_STEP_US;
+            int64_t remaining = deadline - rf_core_clock_now_us();
+            while (remaining > 500) {
+                if (__sleep_high_resolution_us(remaining - 300) < 0)
+                    break;
+                remaining = deadline - rf_core_clock_now_us();
+            }
+            while (remaining > 0)
+                remaining = deadline - rf_core_clock_now_us();
+        }
+#endif
         int64_t audit_loop_start = rf_core_time_us(&core);
         int64_t scene_dropped_us = 0;
 #ifdef TOYC_WINDOWS
@@ -4448,6 +4479,10 @@ startup_again:
             pointer_lock_requested = 0;
             rf_core_set_pointer_lock(&core, 0);
             accumulator = 0;
+            last_render_start_us = 0;
+            rasterfall_motion_capture(&motion_current, &session.game_state);
+            motion_previous = motion_current;
+            motion_world_generation = session.scene_local.world_generation;
             last_time = rf_core_begin_tick(&core);
             fps_window_start = last_time;
             fps_window_frames = 0;
@@ -5296,6 +5331,7 @@ startup_again:
             game.update_profile = &game_update_profile;
         }
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
+            rasterfall_motion_capture(&motion_previous, &session.game_state);
             if (!paused && !managed_terminal.open && !rf_table.open &&
                 !rf_render_terminal.open) {
                 struct rasterfall_command command;
@@ -5489,6 +5525,13 @@ startup_again:
             scene_dropped_us += accumulator - accumulator % FIXED_STEP_US;
             accumulator %= FIXED_STEP_US;
         }
+        if (logic_steps > 0)
+            rasterfall_motion_capture(&motion_current, &session.game_state);
+        if (motion_world_generation != session.scene_local.world_generation) {
+            rasterfall_motion_capture(&motion_current, &session.game_state);
+            motion_previous = motion_current;
+            motion_world_generation = session.scene_local.world_generation;
+        }
         /* 本帧跑过逻辑步：所有保留边沿都已暴露给消费方，可以清除；
          * 一帧都没跑（accumulator 不足，长 stall 后常见）则留到下一帧，
          * 避免按键被吞。 */
@@ -5508,6 +5551,7 @@ startup_again:
          * 到下一次 begin 的间隔）在 dump 中用 wall − 活跃帧时间推导，
          * 与各阶段统计严格对消。 */
         t_frame = rf_core_time_us(&core);
+        last_render_start_us = t_frame;
         if (prev_begin > 0) {
             audit_interval_us = t_frame - prev_begin;
             rasterfall_perf_add_interval(&stats, &stats_total, audit_interval_us);
@@ -5529,6 +5573,14 @@ startup_again:
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
             if (rf_core_poll_events_timeout(&core, 1000) < 0) break;
             stall_events = *rf_core_events(&core);
+            if (!game_runtime.rts_active && !paused && !rf_table.open &&
+                !rf_render_terminal.open &&
+                (input.pointer_locked || pointer_lock_requested) &&
+                stall_events.relative_moved)
+                accumulate_mouse_look(&pointer_turn_pending,
+                                      &pointer_pitch_pending,
+                                      stall_events.relative_x,
+                                      stall_events.relative_y, &settings);
             /* stall 从申请缓冲计到等回 buffer release（含 poll 等待），
              * 即 wait 中双缓冲背压的部分。frame callback 只作为组合器
              * 节奏提示，不再阻止 CPU 使用另一个空闲 shm buffer。 */
@@ -5659,6 +5711,14 @@ startup_again:
             strcpy(game_runtime.managed_terminal_message,
                    managed_terminal.message);
             game_runtime.input_frame = input;
+            game_runtime.pointer_turn_pending = pointer_turn_pending;
+            game_runtime.pointer_pitch_pending = pointer_pitch_pending;
+            rasterfall_render_set_motion_presentation(
+                options.gpu_normal_fixed_tick || options.frame_audit ? NULL :
+                    &motion_previous,
+                options.gpu_normal_fixed_tick || options.frame_audit ? NULL :
+                    &motion_current,
+                (unsigned)(accumulator * 65536 / FIXED_STEP_US));
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"ui-scoreboard"))
                 game_runtime.input_frame.key_down[KEY_TAB]=1;
             game_runtime.host_port = net_port;
@@ -5805,7 +5865,8 @@ startup_again:
                     rf_gpu_scene_flag_freeze(&session,
                         session.scene_local.frame_id+1,session.scene_local.world_generation,
                         &flag_render)<0 ||
-                    rf_gpu_scene_projectile_freeze(&session.game_state,
+                    rf_gpu_scene_projectile_freeze(
+                        rasterfall_render_presentation_game(),
                         session.scene_local.frame_id+1,session.scene_local.world_generation,
                         &projectile_render)<0 ||
                     rf_gpu_scene_interactable_freeze(&session,&effects,
@@ -6372,9 +6433,11 @@ startup_again:
                 rasterfall_perf_init(&stats);
             }
             if (frame_limit > 0 && rendered_frames >= frame_limit) running = 0;
+            rasterfall_render_set_motion_presentation(NULL, NULL, 0);
         }
     }
 scene_shutdown:
+    rasterfall_render_set_motion_presentation(NULL, NULL, 0);
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");
     rasterfall_audio_stop(&audio);

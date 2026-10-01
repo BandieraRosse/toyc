@@ -606,6 +606,7 @@ struct rf_gpu_vulkan_impl {
     int timestamp_supported;
     rf_vk_surface surface;
     int native_presentation_supported;
+    int prefer_high_rate_present;
     rf_vk_swapchain swapchain;
     rf_vk_image *swapchain_images;
     uint32_t swapchain_image_count, swapchain_width, swapchain_height;
@@ -1073,9 +1074,16 @@ static int presenter_swapchain_create(struct rf_gpu_vulkan_impl *impl,
     modes = calloc(mode_count, sizeof(*modes));
     if (!modes || impl->api.get_surface_present_modes(impl->physical_device,
             impl->surface, &mode_count, modes) != RF_VK_SUCCESS) goto fail;
-    /* FIFO is required by Vulkan and gives the diagnostic deterministic pacing. */
-    for (i = 0; i < mode_count; ++i)
-        if (modes[i] == RF_VK_PRESENT_MODE_FIFO_KHR) chosen_mode = modes[i];
+    /* Keep FIFO for fixed-frame diagnostics.  Interactive frames use the
+     * host's 120 Hz pacing instead of the display's 60 Hz refresh. */
+    if (impl->prefer_high_rate_present) {
+        for (i = 0; i < mode_count; ++i)
+            if (modes[i] == RF_VK_PRESENT_MODE_MAILBOX_KHR)
+                chosen_mode = modes[i];
+        for (i = 0; i < mode_count; ++i)
+            if (modes[i] == RF_VK_PRESENT_MODE_IMMEDIATE_KHR)
+                chosen_mode = modes[i];
+    }
     extent = caps.current_extent;
     if (extent.width == RF_VK_EXTENT_UNDEFINED) {
         extent.width = width < caps.min_image_extent.width ? caps.min_image_extent.width :
@@ -1311,6 +1319,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         return RF_GPU_BACKEND_FAILED;
     }
     impl->present_fault = backend_context->present_fault;
+    impl->prefer_high_rate_present =
+        backend_context->prefer_high_rate_present != 0;
     impl->present_fault_frame = backend_context->present_fault_frame ?
         backend_context->present_fault_frame : 1;
     api = &impl->api;

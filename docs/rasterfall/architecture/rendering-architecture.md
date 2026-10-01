@@ -19,9 +19,7 @@
 | normal frame 的 camera 与 presentation state | `rasterfall/src/rf_game_runtime.c` |
 | 天空、HUD、viewmodel、effects、性能统计 | 各自 `rasterfall_sky.c`、`rasterfall_hud.c`、`rasterfall_viewmodel.c`、`rasterfall_effects.c`、`rasterfall_perf.c` |
 
-renderer 只读玩法或派生展示状态，不修改 `toy_game`。客户端位置与朝向可使用 presentation cache 插值，
-但 HP、武器、downed、动画和统计仍从 actor 真值投影；HUD、第一人称武器和受击效果不得回读旧的顶层
-玩家副本。
+renderer 只读玩法或派生展示状态，不修改 `toy_game`。正常交互帧从前后两个逻辑 tick 提取 actor、enemy、projectile 的轻量运动记录，生成独立的展示数组；位置、朝向与同一动作内的动画时间可插值。HP、武器、downed、动作身份和统计仍从当前 actor 真值投影；HUD、第一人称武器和受击效果不得回读旧的顶层玩家副本。客户端已有的远端 presentation cache 继续负责网络展示插值。相机使用本帧输入，避免世界插值带来的一个 tick 视角延迟；时间节拍见[运行时架构](runtime.md)。
 
 GPU Scene 迁移中的 `rf_gpu_scene_extract.c` 只从冻结的 V2 snapshot 生成有序 Scene 元数据；
 它不拥有资源、pose、pass 或正常帧提交。现行渲染仍由下述 mixed frame 数据流负责。

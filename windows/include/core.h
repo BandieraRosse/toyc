@@ -23,6 +23,7 @@ int __clock_gettime(clockid_t id, struct timespec *ts);
 int __clock_nanosleep(clockid_t id, int flags, const struct timespec *req,
                       struct timespec *remain);
 int __nanosleep(const struct timespec *req, struct timespec *remain);
+int __sleep_high_resolution_us(int64_t duration_us);
 int __getrandom(void *buf, size_t len, unsigned int flags);
 void __exit(int status);
 void __exit_group(int status);

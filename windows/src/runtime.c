@@ -183,6 +183,26 @@ int __nanosleep(const struct timespec *req, struct timespec *remain)
     return 0;
 }
 
+int __sleep_high_resolution_us(int64_t duration_us)
+{
+    static HANDLE timer;
+    static int timer_checked;
+    LARGE_INTEGER due;
+    if (duration_us <= 0) return 0;
+    if (!timer_checked) {
+        timer = CreateWaitableTimerExW(NULL, NULL,
+            CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        timer_checked = 1;
+    }
+    if (!timer) {
+        Sleep((DWORD)(duration_us / 1000));
+        return 0;
+    }
+    due.QuadPart = -(LONGLONG)duration_us * 10;
+    if (!SetWaitableTimer(timer, &due, 0, NULL, NULL, FALSE)) return -1;
+    return WaitForSingleObject(timer, INFINITE) == WAIT_OBJECT_0 ? 0 : -1;
+}
+
 int __clock_nanosleep(clockid_t id, int flags, const struct timespec *req,
                       struct timespec *remain)
 {

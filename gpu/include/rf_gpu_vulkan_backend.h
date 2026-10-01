@@ -9,6 +9,7 @@ struct rf_gpu_vulkan_context {
     struct rf_gpu_native_window native_window;
     /* Hosted HG-2 proof requests a joint graphics/compute queue. */
     unsigned int require_graphics;
+    unsigned int prefer_high_rate_present;
     /* HG-2C5 diagnostics only.  Zero keeps the production path unchanged.
      * The selected fault is injected once on the numbered native-present
      * attempt (one-based). */

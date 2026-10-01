@@ -115,13 +115,15 @@ transform 和左右 hand target；旧单 action 四参数形式继续可用。
 主循环由 `rf_core_poll_events()` 捕获平台关闭请求；暂停菜单的 `EXIT GAME` 也通过
 `rf_core_request_exit()` 写入同一个 Core-owned exit request，最终统一以
 `rf_core_should_exit()` 形成退出边界，
-并在每轮通过 `rf_core_begin_tick()` 读取 Core 单调时钟；随后轮询网络并保留按键边沿。固定 16 ms 逻辑步中构造
+并在每轮通过 `rf_core_begin_tick()` 读取 Core 单调时钟；随后轮询网络并保留按键边沿。固定约 16.67 ms 逻辑步中构造
 `rasterfall_command`，交给 `rf_game_update()`；该 facade 按原顺序推进 session/client prediction、
 host remote apply/rescue、gameplay timers、effects sync 和 authoritative snapshot/command bookkeeping，
 之后由 `rf_game_render()` 派生 render camera，并按原顺序提交 world、entities、interactables、
 world effects、viewmodel、HUD、pause、scoreboard、debug overlay、labels 和 console；Core startup
 与 connection bootstrap UI 仍保持独立路径。排查“偶发吞键”
 时查看 `pending_key_edges`，排查帧率相关玩法差异时查看 accumulator 和逻辑步，而不是只看渲染帧。
+
+Windows 正常交互帧以 120 FPS 为提交上限，玩法仍以 16,667 微秒固定步长推进。每个渲染帧轮询并采样输入；按键边沿保留到下一逻辑步，鼠标位移在下一逻辑步进入命令，同时立即用于本帧的只读第一人称视角。渲染保存前后两个已完成逻辑状态，以 accumulator 比例对同一身份的 actor、enemy 和 projectile 的位置与高度，以及角色和敌人的朝向做展示插值；同一动作的动画时间、敌人倒地时间和弹体飞行时间也按已知状态插值。新生成、槽位复用、动作切换或大幅瞬移直接显示当前状态。插值展示约落后逻辑一个 tick，玩法、碰撞、网络权威状态不读取展示副本。相机不采用该延迟。固定帧审计保留原诊断时序，不使用交互帧节流或世界插值。HUD FPS 仍按实际完成的渲染帧计数；达到 120 取决于完整帧成本和呈现能力。
 
 正常窗口默认使用 CPU renderer，Windows 与 freestanding Linux/WSL 的默认 framebuffer 均为
 1280×720。WSL CPU 在每个 world 的首帧完成懒加载预热并成功 present 后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV

@@ -324,7 +324,7 @@ static struct toy_window *toy_window_open_impl(const char *title, int width,
                                    SDL_WINDOWPOS_CENTERED, width, height,
                                    SDL_WINDOW_RESIZABLE);
     out->renderer = out->window ? SDL_CreateRenderer(out->window, -1,
-        native_present ? SDL_RENDERER_SOFTWARE : SDL_RENDERER_PRESENTVSYNC) : NULL;
+        native_present ? SDL_RENDERER_SOFTWARE : 0) : NULL;
     out->texture = out->renderer ? SDL_CreateTexture(out->renderer,
                                                      SDL_PIXELFORMAT_ARGB8888,
                                                      SDL_TEXTUREACCESS_STREAMING,
@@ -365,7 +365,7 @@ int toy_window_prepare_native(struct toy_window *window)
     if (!window->texture) {
         SDL_DestroyRenderer(window->renderer);
         window->renderer = SDL_CreateRenderer(window->window, -1,
-                                              SDL_RENDERER_PRESENTVSYNC);
+                                              0);
         window->texture = window->renderer ? SDL_CreateTexture(window->renderer,
             SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
             window->width, window->height) : NULL;
