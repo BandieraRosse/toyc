@@ -3377,7 +3377,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int interactive_boot;
     int renderer_switch_request = -1;
     int renderer_switch_count = 0;
-    int boot_graphical = 0;
+    int boot_renderer = RF_CORE_RENDERER_CPU;
     int64_t boot_task_started = 0;
     int public_room = 0, public_room_id = 0;
     int managed_spectator = 0, managed_third_person = 0;
@@ -3719,7 +3719,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 rf_core_shutdown(&core);
                 return boot_result == 0 ? 0 : 1;
             }
-            boot_graphical = choice.graphical;
+            boot_renderer = choice.renderer;
             if (choice.renderer == RF_CORE_RENDERER_CPU) break;
 #ifdef TOYC_WINDOWS
             struct rf_core_config gpu_config;
@@ -3743,9 +3743,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                     return 1;
                 if (choice.automatic) {
                     rf_boot_log_task("boot-manager", "gpu-fallback-cpu", 0, 0);
+                    boot_renderer = RF_CORE_RENDERER_CPU;
                     break;
                 }
                 boot_error = "GPU Scene unavailable; choose CPU or retry";
+                rf_boot_result_dispose(&choice);
                 continue;
             }
             options.gpu_scene_play = 1;
@@ -3756,11 +3758,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             options.gpu_native_present = 1;
             break;
 #else
+            if (choice.automatic) {
+                boot_renderer = RF_CORE_RENDERER_CPU;
+                break;
+            }
             boot_error = "GPU Scene unavailable on this platform";
+            rf_boot_result_dispose(&choice);
+            continue;
 #endif
         }
-        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
-                             "Loading Outpost map", 0, 4) < 0) {
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                             "Loading Outpost map", 0, 4, &choice) < 0) {
             rf_core_shutdown(&core);
             return 1;
         }
@@ -3788,8 +3796,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (interactive_boot) {
         rf_boot_record_event(&boot_journal, "session-map-load", 0,
             rf_core_clock_now_us() - boot_task_started);
-        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
-                             "Baking world lightmap", 1, 4) < 0) {
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                             "Baking world lightmap", 1, 4, NULL) < 0) {
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
             return 1;
@@ -3836,8 +3844,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (interactive_boot) {
         rf_boot_record_event(&boot_journal, "world-lightmap-bake", 0,
             rf_core_clock_now_us() - boot_task_started);
-        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
-                             "Loading optional model texture", 2, 4) < 0) {
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                             "Loading optional model texture", 2, 4, NULL) < 0) {
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
             return 1;
@@ -3864,8 +3872,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_boot_record_event(&boot_journal, "optional-model-texture",
             model_texture.blob ? 0 : 1,
             rf_core_clock_now_us() - boot_task_started);
-        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
-                             "Preparing Outpost session", 3, 4) < 0) {
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                             "Preparing Outpost session", 3, 4, NULL) < 0) {
             if (model_texture.blob) toy_texture_unload(&model_texture);
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
@@ -3944,8 +3952,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (interactive_boot) {
         rf_boot_record_event(&boot_journal, "outpost-session-reset", 0,
             rf_core_clock_now_us() - boot_task_started);
-        if (rf_boot_progress(&core, boot_graphical, &boot_journal,
-                             "Entering Outpost", 4, 4) < 0) {
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                             "Entering Outpost", 4, 4, NULL) < 0) {
             if (model_texture.blob) toy_texture_unload(&model_texture);
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);

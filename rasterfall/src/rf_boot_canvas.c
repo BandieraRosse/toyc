@@ -85,6 +85,31 @@ void rf_boot_canvas_destroy(struct rf_boot_canvas *c)
     memset(c, 0, sizeof(*c));
 }
 
+int rf_boot_canvas_seed(struct rf_boot_canvas *c, const uint32_t *pixels,
+                        int width, int height, int page)
+{
+    size_t count, bytes;
+    if (!c || !pixels || width <= 0 || height <= 0 ||
+        (size_t)width > (size_t)-1 / (size_t)height) return -1;
+    count = (size_t)width * height;
+    if (count > (size_t)-1 / sizeof(uint32_t)) return -1;
+    bytes = count * sizeof(uint32_t);
+    rf_boot_canvas_destroy(c);
+    c->shown = malloc(bytes);
+    c->source = malloc(bytes);
+    c->target = malloc(bytes);
+    if (!c->shown || !c->source || !c->target) {
+        rf_boot_canvas_destroy(c);
+        return -1;
+    }
+    memcpy(c->shown, pixels, bytes);
+    c->width = width;
+    c->height = height;
+    c->page = page;
+    c->valid = 1;
+    return 0;
+}
+
 void rf_boot_canvas_begin(struct rf_boot_canvas *c)
 {
     if (c) c->region_count = 0;
@@ -261,4 +286,3 @@ void boot_chip(struct toy_surface *s, int x, int y, int gpu)
         boot_type(s, x + 56, y + 64, "CPU", BOOT_TEXT, 2, 3);
     }
 }
-

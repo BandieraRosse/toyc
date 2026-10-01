@@ -27,7 +27,8 @@
 #define BOOT_AUTO_US 5000000
 
 enum boot_screen { BOOT_MANAGER, BOOT_SHELL, BOOT_WORKBENCH,
-                   BOOT_SHELL_RENDERER, BOOT_DIAGNOSTICS, BOOT_FIRMWARE };
+                   BOOT_SHELL_RENDERER, BOOT_DIAGNOSTICS, BOOT_FIRMWARE,
+                   BOOT_PROGRESS };
 
 struct boot_ui {
     int screen;
@@ -47,6 +48,7 @@ struct boot_ui {
     int automatic;
     int auto_seconds;
     int urgent_output;
+    int launching;
 };
 
 void rf_boot_record_event(void *context, const char *service, int result,
@@ -572,6 +574,14 @@ static void boot_draw(struct toy_surface *s, const struct boot_ui *ui,
         snprintf(line, sizeof(line), "[FAIL] %s", ui->error);
         boot_type(s, 56, 671, line, BOOT_AMBER, 1, 145);
     }
+    if (ui->launching) {
+        boot_box(s, 192, 594, 896, 44, BOOT_BG, BOOT_CYAN);
+        boot_text(s, 211, 608, ui->automatic ?
+                  "[ WORK ] Detecting graphics adapter..." :
+                  ui->renderer == RF_CORE_RENDERER_GPU_SCENE ?
+                  "[ WORK ] Preparing GPU Scene..." :
+                  "[ WORK ] Preparing CPU renderer...", BOOT_CYAN);
+    }
 }
 
 /* Draw directly into the window before the Core renderer is available. */
@@ -725,10 +735,7 @@ static int boot_run(struct rf_core *core, struct rf_boot_result *result,
             } else ui.auto_seconds = 0;
             if (activate) {
                 if (ui.selected == 0) {
-                    boot_probe_hardware(&ui, core);
-                    ui.renderer = ui.gpu_ready ? RF_CORE_RENDERER_GPU_SCENE : RF_CORE_RENDERER_CPU;
                     ui.automatic = 1;
-                    ui.screen = BOOT_WORKBENCH; /* Shared graphical progress. */
                     goto selected;
                 }
                 if (ui.selected == 1) {
@@ -815,8 +822,24 @@ static int boot_run(struct rf_core *core, struct rf_boot_result *result,
         }
     }
 selected:
+    /* A real presented status frame stays visible during the synchronous GPU
+     * probe and Core rebuild. The same frame seeds the next window's scan. */
+    ui.launching = 1;
+    ready = rf_core_begin_frame(core, BOOT_BG);
+    if (ready < 0) return -1;
+    if (ready > 0) {
+        struct toy_surface *s = boot_overlay(core);
+        if (!s) return -1;
+        rf_boot_canvas_begin(canvas);
+        boot_draw(s, &ui, canvas);
+        rf_boot_canvas_compose(canvas, s, ui.screen, rf_core_time_us(core), 1);
+        if (rf_core_present_boot_frame(core) < 0) return -1;
+    }
+    if (ui.automatic) {
+        boot_probe_hardware(&ui, core);
+        ui.renderer = ui.gpu_ready ? RF_CORE_RENDERER_GPU_SCENE : RF_CORE_RENDERER_CPU;
+    }
     result->renderer = ui.renderer;
-    result->graphical = ui.screen == BOOT_WORKBENCH;
     result->automatic = ui.automatic;
     snprintf(line, sizeof(line),
              "RF-BOOT stage=renderer status=selected backend=%s",
@@ -830,53 +853,99 @@ int rf_boot_run(struct rf_core *core, struct rf_boot_result *result,
 {
     struct rf_boot_canvas canvas;
     int status;
+    if (!result) return -1;
     memset(&canvas, 0, sizeof(canvas));
+    memset(result, 0, sizeof(*result));
     status = boot_run(core, result, journal, error, &canvas);
+    if (status > 0 && canvas.valid) {
+        result->transition.pixels = canvas.shown;
+        result->transition.width = canvas.width;
+        result->transition.height = canvas.height;
+        result->transition.page = canvas.page;
+        canvas.shown = NULL;
+    }
     rf_boot_canvas_destroy(&canvas);
     return status;
 }
 
-int rf_boot_progress(struct rf_core *core, int graphical,
+void rf_boot_result_dispose(struct rf_boot_result *result)
+{
+    if (!result) return;
+    free(result->transition.pixels);
+    memset(&result->transition, 0, sizeof(result->transition));
+}
+
+int rf_boot_progress(struct rf_core *core, int renderer,
                      const struct rf_boot_journal *journal,
-                     const char *current_task, int completed, int total)
+                     const char *current_task, int completed, int total,
+                     struct rf_boot_result *transition)
 {
     struct toy_surface *s;
+    struct rf_boot_canvas canvas;
     char line[192];
-    int ready;
+    int ready, result = 0;
+    int gpu_startup = renderer == RF_CORE_RENDERER_GPU_SCENE;
+    int seeded = 0;
     if (!core || !current_task || !journal || total <= 0) return -1;
-    if (rf_core_poll_events(core) < 0 || rf_core_should_exit(core)) return -1;
-    ready = rf_core_begin_frame(core, BOOT_BG);
-    if (ready <= 0) return ready;
-    s = boot_overlay(core);
-    if (!s) return -1;
+    memset(&canvas, 0, sizeof(canvas));
     if (completed < 0) completed = 0;
     if (completed > total) completed = total;
-    boot_chrome(s, graphical ? "RF WORKBENCH / STARTUP" : "RF SHELL / STARTUP",
-                "LIVE TASK STATUS");
-    boot_text(s, 48, 110, "DESTINATION / OUTPOST", BOOT_CYAN);
-    boot_type(s, 48, 145, "WORLD STARTUP", BOOT_TEXT, 2, 13);
-    snprintf(line, sizeof(line), "%02d / %02d", completed, total);
-    boot_type(s, 48, 232, line, BOOT_TEXT, 3, 12);
-    boot_text(s, 48, 293, "STARTUP STAGES COMPLETE", BOOT_DIM);
-    boot_text(s, 48, 366, "[ WORK ] CURRENT TASK", BOOT_AMBER);
-    boot_type(s, 48, 399, current_task, BOOT_TEXT, 1, 54);
-    if (graphical) {
-        boot_box(s, 48, 328, 432, 8, BOOT_PANEL, BOOT_PANEL);
-        if (completed > 0)
-            boot_box(s, 48, 328, 432 * completed / total, 8, BOOT_CYAN, BOOT_CYAN);
-    } else {
-        char bar[40];
-        int cells = 36 * completed / total;
-        for (int i = 0; i < 36; ++i) bar[i] = i < cells ? '#' : '.';
-        bar[36] = 0;
-        snprintf(line, sizeof(line), "[%s]", bar);
-        boot_text(s, 48, 328, line, BOOT_CYAN);
+    for (;;) {
+        if (rf_core_poll_events_timeout(core, seeded ? 16 : 0) < 0 ||
+            rf_core_should_exit(core)) { result = -1; break; }
+        ready = rf_core_begin_frame(core, BOOT_BG);
+        if (ready < 0) { result = -1; break; }
+        if (!ready) {
+            if (!seeded) break;
+            continue;
+        }
+        s = boot_overlay(core);
+        if (!s) { result = -1; break; }
+        if (!seeded && transition && transition->transition.pixels &&
+            transition->transition.width == s->width &&
+            transition->transition.height == s->height)
+            rf_boot_canvas_seed(&canvas, transition->transition.pixels,
+                                s->width, s->height, transition->transition.page);
+        seeded = 1;
+        boot_chrome(s, gpu_startup ? "GPU SCENE / STARTUP" : "CPU SOFTWARE / STARTUP",
+                    "LIVE TASK STATUS");
+        boot_text(s, 48, 110, "DESTINATION / OUTPOST", BOOT_CYAN);
+        boot_type(s, 48, 145, "WORLD STARTUP", BOOT_TEXT, 2, 13);
+        snprintf(line, sizeof(line), "%02d / %02d", completed, total);
+        boot_type(s, 48, 232, line, BOOT_TEXT, 3, 12);
+        boot_text(s, 48, 293, "STARTUP STAGES COMPLETE", BOOT_DIM);
+        boot_text(s, 48, 366, "[ WORK ] CURRENT TASK", BOOT_AMBER);
+        boot_type(s, 48, 399, current_task, BOOT_TEXT, 1, 54);
+        if (gpu_startup) {
+            boot_box(s, 48, 328, 432, 8, BOOT_PANEL, BOOT_PANEL);
+            if (completed > 0)
+                boot_box(s, 48, 328, 432 * completed / total, 8, BOOT_CYAN, BOOT_CYAN);
+        } else {
+            char bar[40];
+            int cells = 36 * completed / total;
+            for (int i = 0; i < 36; ++i) bar[i] = i < cells ? '#' : '.';
+            bar[36] = 0;
+            snprintf(line, sizeof(line), "[%s]", bar);
+            boot_text(s, 48, 328, line, BOOT_CYAN);
+        }
+        boot_text(s, 48, 518, "Progress counts completed startup tasks.", BOOT_DIM);
+        if (gpu_startup) {
+            boot_text(s, 48, 546, "GPU upload / allocation / driver budget:", BOOT_DIM);
+            boot_text(s, 48, 570, "not queryable by this boot interface.", BOOT_DIM);
+        } else {
+            boot_text(s, 48, 546, "CPU SOFTWARE RENDERER", BOOT_DIM);
+            boot_text(s, 48, 570, "World frames use host software rasterization.", BOOT_DIM);
+        }
+        boot_text(s, 608, 110, "INITIALIZATION JOURNAL / LATEST EVENTS", BOOT_CYAN);
+        boot_journal_draw(s, journal, 608, 150, 16);
+        boot_text(s, 848, 673, "ELAPSED / MONOTONIC CLOCK", BOOT_DIM);
+        if (canvas.valid)
+            rf_boot_canvas_compose(&canvas, s, BOOT_PROGRESS,
+                                   rf_core_time_us(core), 0);
+        if (rf_core_present_boot_frame(core) < 0) { result = -1; break; }
+        if (!canvas.sweeping) break;
     }
-    boot_text(s, 48, 518, "Progress counts completed startup tasks.", BOOT_DIM);
-    boot_text(s, 48, 546, "GPU upload / allocation / driver budget:", BOOT_DIM);
-    boot_text(s, 48, 570, "not queryable by this boot interface.", BOOT_DIM);
-    boot_text(s, 608, 110, "INITIALIZATION JOURNAL / LATEST EVENTS", BOOT_CYAN);
-    boot_journal_draw(s, journal, 608, 150, 16);
-    boot_text(s, 848, 673, "ELAPSED / MONOTONIC CLOCK", BOOT_DIM);
-    return rf_core_present_boot_frame(core);
+    rf_boot_canvas_destroy(&canvas);
+    rf_boot_result_dispose(transition);
+    return result;
 }

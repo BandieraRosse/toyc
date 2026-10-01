@@ -48,6 +48,8 @@ void rf_boot_canvas_begin(struct rf_boot_canvas *canvas);
 void rf_boot_canvas_region(struct rf_boot_canvas *canvas, int x, int y, int w, int h);
 void rf_boot_canvas_compose(struct rf_boot_canvas *canvas, struct toy_surface *surface,
                             int page, int64_t now_us, int immediate);
+int rf_boot_canvas_seed(struct rf_boot_canvas *canvas, const uint32_t *pixels,
+                        int width, int height, int page);
 void rf_boot_canvas_destroy(struct rf_boot_canvas *canvas);
 
 #endif
