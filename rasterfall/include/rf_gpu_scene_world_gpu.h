@@ -15,6 +15,7 @@ struct rf_gpu_scene_layers_input {
     const struct rf_gpu_scene_world_render_frame_v1 *map;
     struct rasterfall_hud_state hud;
     int fps,paused,pause_selected,viewmodel_light,show_viewmodel;
+    int flashlight,lighting_lab;
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
 };
@@ -53,6 +54,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
 struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
+    struct rf_gpu_graphics_resource *lighting_lab_sphere;
     const struct rf_gpu_scene_layers_input *layers;
     struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];
     struct scene_layer_workspace *layer_workspace;

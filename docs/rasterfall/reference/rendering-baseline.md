@@ -1,6 +1,6 @@
 # 正常帧渲染 baseline 清点
 
-> 状态：当前清点；默认观感仍待统一验收
+> 状态：当前内容清点；CPU/GPU 光照独立
 > 所有者：Rasterfall presentation
 > 最近核对：2026-09-27
 
@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | 相机和层 | FPS/RTS 展示相机；天空、世界、透明、特效、第一人称、屏幕 UI 的画面层序 | CPU 由 `rf_game_render_profiled` 提交；Scene 独立冻结并提交，不录制 RasterCmd。 |
 | 地图与静态环境 | Runtime Map 的地面、墙、盒体、坡道、平台、边界墙、静态 RMESH、SIGN、MODEL 展示物及屏幕 LABEL；可见性、近裁剪和遮挡 | CPU 从 `level_map.draw` 绘制；Scene 从冻结的 map/world 值准备资源。玩法碰撞另有所有者。 |
-| 世界光照与材质 | 正常世界使用 Static World Lighting V2；常规颜色、贴图、材质亮度与深度遮挡 | `MODEL` 展示物等 V1 诊断例外按[光照架构](../architecture/static-world-lighting.md)处理。此项不承诺两个光栅器逐像素相同。 |
+| 世界光照与材质 | CPU 使用 Static World Lighting V2；GPU 使用独立实时光照、PBR 与 HDR | `MODEL` 展示物等 V1 诊断例外按[光照架构](../architecture/static-world-lighting.md)处理。此项不承诺两个光栅器逐像素相同。 |
 | 透明 | 地图透明盒体/平台、死亡渐隐和有序透明特效，保留来源顺序及相应深度规则 | 两后端各自执行透明提交；是否覆盖具体内容仍需按正常帧镜头验收。 |
 | 世界动态物 | 旗帜、投射物、可见交互物、拾取物和高亮 | Scene 使用只读冻结值；两后端各自提交几何，玩法真值仍由 Game/session 持有。 |
 | 角色 | 正式模块化队员、其他程序角色、武器及附件；第三人称/RTS 可见本地角色 | CPU 使用现有角色 producer；Scene 使用独立 actor adapter 与 pose/几何提取。GPU Scene 正常入口当前仅限单人。 |
@@ -30,7 +30,7 @@
 | 联机画面 | CPU runtime 支持 host/client；`--renderer gpu-scene` 参数检查限定单人 Runtime Map。 | Scene 联机覆盖完成前，不宣称跨后端共同功能。 |
 | 旧动漫高模、PMX/VMD 正常帧表现 | `RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED=0`；CPU 旧实现和离屏诊断仍在，Scene 独立来源将无模块化 recipe 的 AI 当程序角色。 | 旧路径保持遗产状态。当前[活动计划](../plans/private-anime-character-gpu.md)创作原创 RF 骨架角色，只接入单人 GPU Scene，不以两后端共同功能验收。 |
 | Desktop/Console | `RASTERFALL_DESKTOP_RUNTIME_ENABLED=0`；正常帧只显示暂不可用提示。 | 与渲染 baseline 分开恢复。 |
-| 额外画质 | 实时阴影、PBR、GI、SSAO、normal map、toon/anime outline 等不属于当前 Static World Lighting V2。 | 逐项定义可选能力、默认值与后端支持；缺失能力不得静默改变 baseline。 |
+| 额外画质 | GPU 已接入实时阴影、动态灯、PBR/风格化材质；GI、SSAO、normal map、完整 outline 尚未实现。 | 逐项定义可选能力、默认值与后端支持；缺失能力不得静默改变 baseline。 |
 | 开发入口 | WORLD-only preview、frame audit、模型/角色验收与离屏 fixture 有专用来源或画面范围。 | 只用来验证明确的局部合同，不当作正常帧功能清单。 |
 
 ## 当前实现关系与能力差异
@@ -46,11 +46,11 @@
 
 ## 功能分级与后端能力原则
 
-1. **基线功能**是正常游戏默认开启且 CPU、GPU Scene 都承诺提供的功能描述。两后端可以用不同绘制原语和优化方式；验收关注内容、动作、层序与整体观感大致相同，不要求同一几何实现或逐像素相等。
-2. **高级功能**逐项定义效果、默认值、资源要求和支持状态，由用户显式启用。GPU Scene 可以先完成正式支持；CPU 可选择实验支持或不支持，不因 GPU 有该功能而承担同等实现与性能保证。
-3. 支持状态至少区分 **正式支持、实验支持、不支持、尚未实现**。请求不支持或尚未实现的功能时，报告原因并保持既有配置；不得静默切换后端、替换成另一种效果，或把诊断实现当作正常功能。实验支持必须在界面/日志中可辨认。
-4. 功能选择只影响 renderer/presentation，不修改 Game/session 真值。切换时在帧边界应用；涉及资源重建的功能先准备成功，再替换活动配置。默认基线不因一次高级功能失败而变成部分帧。
-5. 大厅南入口西侧 `main_terminal` 已提供游戏内渲染控制面板。可切换 CPU 模型边线、Scene 角色柔和材质和静态纹理线性过滤；面板从一份功能表读取描述和双后端支持状态，通过同一请求函数修改展示配置。后续带资源重建的功能仍须先准备成功、再在帧边界替换活动配置；不得在终端内复制资源生命周期或玩法状态。
+1. CPU/GPU 共享玩法与展示内容语义；GPU 不承担旧颜色、深度或光照兼容。
+2. CPU 保留静态烘焙，不新增高级渲染职责。GPU 默认实时阴影、动态灯、PBR/HDR，具体预算见[实时光照](../architecture/gpu-lighting.md)。
+3. 支持状态区分正式、实验、不支持和未实现；失败不得静默切换后端。
+4. 设置只修改 presentation，在帧边界应用，不修改 Game/session 真值。
+5. 大厅终端提供 GPU 手电筒、角色风格化材质和纹理过滤。阴影/PBR 默认启用。CPU 既有边线诊断保留，不继续扩展高级能力。
 
 ### 现有开关核对
 
@@ -58,12 +58,12 @@
 | --- | --- | --- |
 | `--renderer cpu|gpu-scene`、`--gpu-scene-play` | 选择后端；Scene 限单人 Runtime Map，并自动要求原生 GPU present。 | 后端选择，不是画质功能。 |
 | `--textures` / `--no-textures` | 现有 CLI 纹理开关；Windows 默认开启，其他平台默认关闭。它主要传入旧 renderer context，不能据参数名认定 Scene 全部纹理都可按相同规则关闭。 | 先明确作用对象并验证双后端，再考虑进入终端；不能直接当作完整高级功能。 |
-| `--edge-pass` / `--no-edge-pass` | CPU 模型边线正常游玩默认关闭；Scene 正常帧没有对应能力。 | 已移出共同 baseline。终端在 CPU 模式标为实验支持并可切换；Scene 模式显示不支持且不改配置。 |
+| `--edge-pass` / `--no-edge-pass` | CPU 旧模型边线诊断保留，默认关闭；GPU 描边未实现。 | 渲染终端不再为 CPU 提供高级功能控制；GPU 描边标为未实现。 |
 | `--enemy-visual-family` | 显式覆盖敌人外观家族；CPU 与 Scene 独立敌人来源都读取该策略。 | 内容/外观策略，不等于画质等级；若进入终端，需单独描述视觉和资源变化，不修改玩法敌人身份。 |
 | `--gpu-character-skinning-off`、`--gpu-character-vertex-diff`、`--frame-audit` | GPU 回退/差分/审计入口。 | 诊断或实现选择，不作为玩家可见的高级功能。 |
 | 角色柔和材质、纹理线性过滤 | Scene 实验支持，默认关闭；前哨站渲染终端可独立切换。前者消费 body 的既有 visual role，后者作用于静态纹理。 | [保真诊断](../guides/character-fidelity.md)拥有范围；当前无角色纹理/MASK 签收，不要求 CPU 同步实现。 |
 | `--input-test`、`--no-stats`、坐标轴/FPS 调试显示 | 输入、性能或开发者观察入口；坐标轴当前在 CPU 旧画面层单独绘制。 | 调试功能，排除在默认画质和高级画质清单之外；未来若要跨后端显示需另定合同。 |
-| PMX/VMD、完整 toon/anime outline、实时阴影、PBR、GI 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 私有原创 RF 角色的 GPU toon、边线与 sphere 材质能力按[活动计划](../plans/private-anime-character-gpu.md)单独实现和验收；PMX/VMD 恢复与其他效果不在该计划内。 |
+| PMX/VMD、完整 toon/anime outline、GI 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 私有原创 RF 角色的 GPU toon、边线与 sphere 材质能力按[活动计划](../plans/private-anime-character-gpu.md)单独实现和验收；PMX/VMD 恢复与其他效果不在该计划内。 |
 
 ## 选择与验收
 

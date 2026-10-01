@@ -6,7 +6,7 @@
 
 Rasterfall 的渲染入口为 CPU 软件渲染和独立 GPU Scene。GPU Compute Raster、mixed executor 及 Draw/Raster bridge 已退役。旧实现和诊断合同见[退役归档](../archive/gpu-compute-retirement/README.md)，不能作为当前设计依据。
 
-两后端默认功能的描述、高级功能支持状态及未来游戏内控制终端的配置边界由[渲染 baseline 清点](../reference/rendering-baseline.md)定义；后端的绘制原语和资源优化可以不同。
+GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting.md)，CPU 保留静态烘焙且不承担高级功能。两后端内容与游戏内控制终端的配置边界由[渲染 baseline 清点](../reference/rendering-baseline.md)定义；后端的绘制原语和资源优化可以不同。
 
 ## 帧所有权
 
@@ -32,13 +32,12 @@ WORLD 深度、GPU skinning 和退休链。三角形展开数据以 65,535 个�
 或 bind-normal 策略变化才重建静态顶点。角色材质仍只支持不透明分色，纹理/MASK/toon 扩展待实施。
 
 Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD（包括静态建筑模型）统一使用 D32 原生 reversed Z（64/z），
-不再对倒数深度取整；整数兼容深度仅供专项诊断。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
-在 graphics 顶点阶段换为 RFU；compute skinning 仍在局部存储格上舍入。屏幕空间层和旧 integer-depth
-兼容诊断独立保留。graphics draw 增加第八个 16 字节 push-constant lane，保持 Vulkan 的 128 字节最低保证。
+不再对倒数深度取整；旧整数兼容 draw 已拒绝。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
+在 graphics 顶点阶段换为 RFU；compute skinning 仍在局部存储格上舍入。屏幕空间层保留独立深度语义。graphics draw 增加第八个 16 字节 push-constant lane，保持 Vulkan 的 128 字节最低保证。
 
 可选角色材质从已导出的 visual role 选择平滑、柔和或无光照，透视插值逐顶点法线；只允许顺序展开
-三角形资源使用该法线读取约定。无材质角色时使用普通平滑漫反射，不按私有角色名猜测。
-渲染终端拥有用户请求，Scene preparation 在下一帧消费 presentation-only 设置；原光照始终可恢复。
+三角形资源使用该法线读取约定。普通角色使用平滑 PBR，不按私有角色名猜测。
+渲染终端拥有用户请求，Scene preparation 在下一帧消费 presentation-only 设置；开关只选择新光照下的材质响应，不恢复旧烘焙。
 静态纹理另有可选 bilinear/repeat，与角色材质开关独立。固定相机、分色、旧量化及绘制顺序诊断见
 [角色保真](../guides/character-fidelity.md)。
 

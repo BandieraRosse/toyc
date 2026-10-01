@@ -804,7 +804,7 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
             draw->material[0]=world_u32(material)&0xffffffu;
             draw->material[1]=256;draw->material[3]=1;
             draw->texture[0]=draw->texture[1]=1;
-            /* Generated world meshes carry baked vertex light in UV.x. */
+            /* Base-colour geometry; lighting is evaluated per fragment. */
             draw->integer_depth=0;
             draw->index_count=info.index_count;
             draw->double_sided=material[7]&1u;
@@ -842,9 +842,6 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
             asset<=RASTERFALL_PROP_ASSET_ARCH_FLOOR_HATCH;
         view.camera=*camera;view.width=(int)width;view.height=(int)height;
         view.near_z=64;view.focal=(int)(width*3/4);
-        if (!rasterfall_render_scene_static_prop_visible(&view,&instance)) {
-            owner->prop_culled++;continue;
-        }
         /* WORLD shares one native reversed-Z depth convention. The integer
          * compatibility path quantizes nearby surfaces into the same bucket
          * and can overwrite map geometry according to draw order. */
@@ -950,32 +947,7 @@ static int scene_enemy_triangle(void *context,const struct rf_gpu_scene_enemy_po
         unsigned index=mesh->count*3+k;
         int32_t position[3]={points[k]->x-mesh->source->x,
             points[k]->y-mesh->source->lift,points[k]->z-mesh->source->z};
-        int light=mesh->source->scene_light_q8;
-        if (mesh->vertex_lighting) {
-            unsigned slot=((uint32_t)points[k]->x*73856093u ^
-                (uint32_t)points[k]->y*19349663u ^ (uint32_t)points[k]->z*83492791u)&1023u;
-            if (mesh->cache_lighting && mesh->light_cache[slot].valid &&
-                mesh->light_cache[slot].x==points[k]->x &&
-                mesh->light_cache[slot].y==points[k]->y &&
-                mesh->light_cache[slot].z==points[k]->z)
-                light=mesh->light_cache[slot].light;
-            else {
-                light=rasterfall_world_light_v2_q8(rasterfall_world_light_at(
-                    &mesh->frame->lighting,points[k]->x,points[k]->y,points[k]->z));
-                mesh->light_cache[slot].valid=1;
-                mesh->light_cache[slot].x=points[k]->x;
-                mesh->light_cache[slot].y=points[k]->y;
-                mesh->light_cache[slot].z=points[k]->z;
-                mesh->light_cache[slot].light=light;
-            }
-        }
-        if (!mesh->vertex_lighting && points[k]->light_min_q8>0) {
-            light=light*points[k]->form_light_q8/256;
-            if (light<points[k]->light_min_q8) light=points[k]->light_min_q8;
-            if (light>points[k]->light_max_q8) light=points[k]->light_max_q8;
-        }
-        if (points[k]->light_override_plus_one)
-            light=points[k]->light_override_plus_one-1;
+        int light=256;
         if (mesh->vertex_color) {
             struct rf_gpu_scene_color_vertex *v=&mesh->vertices.color[index];
             memcpy(v->position,position,sizeof(position));
@@ -1159,7 +1131,8 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             source=&procedural_source;
         }
         if (!(disable_cull && disable_cull[0]=='1') &&
-            scene_enemy_prepare_outside(camera,width,height,actor ? NULL : source,actor)) {
+            scene_enemy_prepare_outside(camera,width,height,actor ? NULL : source,actor) &&
+            (llabs((long long)source->x-camera->x)>131072 || llabs((long long)source->z-camera->z)>131072)) {
             (*prepare_culled)++;
             continue;
         }
@@ -1238,6 +1211,8 @@ done:
 }
 
 #include "render/rf_gpu_scene_layers.inc"
+#include "render/rf_gpu_lighting_lab.inc"
+#include "render/rf_gpu_scene_lighting.inc"
 
 int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_vulkan_context *context,struct rf_gpu_scene_world_resources *owner,
@@ -1407,6 +1382,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             &stats->enemy_triangles,&stats->enemy_prepare_culled)<0) goto done;
     draws+=enemy_draws;
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
+    if(scene_lighting_lab_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
     stage="layers";
     section_start=rf_core_clock_now_us();
     if (scene_layers_prepare(probe,camera,width,height,model_texture,&items,&draws,stats)<0)
@@ -1416,6 +1392,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->misc_prepare_us=stats->prepare_us-stats->world_prepare_us-stats->actor_prepare_us-
         stats->enemy_prepare_us-stats->layer_prepare_us;
     stage="submit/retire";
+    if (scene_lighting_prepare(probe,owner,camera)<0) goto done;
     section_start=rf_core_clock_now_us();
     if (probe->native_present) {
         /* Explicit diagnostic capture reads the same frozen batch before its
@@ -1533,6 +1510,8 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
 {
     if (!probe) return;
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
+    if(probe->lighting_lab_sphere) rf_gpu_graphics_resource_destroy(probe->graphics,probe->lighting_lab_sphere);
+    probe->lighting_lab_sphere=NULL;
     for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
     for (unsigned i=0;i<2;++i) {
         if (probe->layer_resource[chunk][i])

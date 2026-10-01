@@ -4,6 +4,9 @@
 #include "rf_gpu_graphics.h"
 #include "rf_gpu_graphics_spirv.inc"
 #include <limits.h>
+#include <math.h>
+#define VK_FORMAT_R16G16B16A16_SFLOAT 97
+#define VK_COMPARE_OP_LESS_OR_EQUAL 3
 
 #define RF_GFX_FUNCTIONS(X) \
     X(GetPhysicalDeviceFormatProperties) X(CreateImage) X(DestroyImage) \
@@ -42,8 +45,8 @@ struct rf_graphics_image {
     VkImageView view;
 };
 struct rf_graphics_target {
-    struct rf_graphics_image color, depth;
-    VkFramebuffer framebuffer;
+    struct rf_graphics_image color, depth, hdr;
+    VkFramebuffer framebuffer, overlay_framebuffer;
     struct rf_gpu_vulkan_buffer readback;
     uint32_t width, height;
     int valid;
@@ -51,7 +54,7 @@ struct rf_graphics_target {
 struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics *owner;
     struct rf_gpu_graphics_resource *next;
-    struct rf_gpu_vulkan_buffer vertices, indices, compat_indices, texture;
+    struct rf_gpu_vulkan_buffer vertices, indices, texture;
     uint32_t index_count, texture_width, texture_height;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set descriptor_set;
@@ -85,7 +88,18 @@ struct rf_gpu_graphics {
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
-    rf_vk_pipeline pipelines[18];
+    rf_vk_pipeline pipelines[32];
+    struct rf_gpu_lighting lighting;
+    struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer;
+    struct rf_graphics_image shadow_depth;
+    VkFramebuffer shadow_framebuffer;
+    unsigned shadow_count;
+    VkRenderPass shadow_pass,overlay_pass;
+    rf_vk_descriptor_set_layout light_layout;
+    rf_vk_descriptor_pool light_pool;
+    rf_vk_descriptor_set light_set;
+    rf_vk_pipeline_layout post_layout;
+    rf_vk_pipeline tonemap;
     VkRenderPass render_pass;
     rf_vk_descriptor_set_layout skin_set_layout;
     rf_vk_pipeline_layout skin_layout;
@@ -103,6 +117,8 @@ struct rf_gpu_graphics {
     struct rf_gpu_scene_timing scene_timing;
     struct rf_gpu_graphics_stats stats;
 };
+
+static void gfx_lighting_destroy(struct rf_gpu_graphics *g);
 
 static int gfx_resource_compatible(const struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_resource *resource)
@@ -215,6 +231,8 @@ static void gfx_image_destroy(struct rf_gpu_graphics *g, struct rf_graphics_imag
 static void gfx_target_destroy(struct rf_gpu_graphics *g, struct rf_graphics_target *t)
 {
     if (t->framebuffer) g->api.DestroyFramebuffer(g->owner->device, t->framebuffer, NULL);
+    if(t->overlay_framebuffer) g->api.DestroyFramebuffer(g->owner->device,t->overlay_framebuffer,NULL);
+    gfx_image_destroy(g, &t->hdr);
     gfx_image_destroy(g, &t->color); gfx_image_destroy(g, &t->depth);
     gpu_buffer_destroy(g->owner, &t->readback);
     memset(t, 0, sizeof(*t));
@@ -234,8 +252,9 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     gfx_target_destroy(g, &g->target);
     if (g->pool) impl->api.destroy_command_pool(impl->device, g->pool, NULL);
     if (g->fence) impl->api.destroy_fence(impl->device, g->fence, NULL);
-    for (unsigned i = 0; i < 12; ++i)
+    for (unsigned i = 0; i < 32; ++i)
         if (g->pipelines[i]) impl->api.destroy_pipeline(impl->device, g->pipelines[i], NULL);
+    gfx_lighting_destroy(g);
     if (g->render_pass) g->api.DestroyRenderPass(impl->device, g->render_pass, NULL);
     if (g->skin_pipeline) impl->api.destroy_pipeline(impl->device,g->skin_pipeline,NULL);
     if (g->skin_layout) impl->api.destroy_pipeline_layout(impl->device,g->skin_layout,NULL);
@@ -279,6 +298,8 @@ static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image 
     return g->api.CreateImageView(impl->device, &view, NULL, &out->view) == RF_VK_SUCCESS ? 0 : -1;
 }
 
+#include "rf_gpu_lighting.inc"
+
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height)
 {
     struct rf_graphics_target t = {0};
@@ -295,17 +316,22 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
         !(properties.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ||
         gfx_image_create(g, &t.color, width, height, VK_FORMAT_R8G8B8A8_UNORM,
             VK_IMAGE_ASPECT_COLOR_BIT,
-            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) < 0 ||
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT) < 0 ||
+        gfx_image_create(g,&t.hdr,width,height,VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_STORAGE_BIT)<0 ||
         gfx_image_create(g, &t.depth, width, height, VK_FORMAT_D32_SFLOAT,
             VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) < 0 ||
         gpu_buffer_create(g->owner, (uint64_t)width*height*8,
             RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT, RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
             RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &t.readback) < 0) goto fail;
-    views[0] = t.color.view; views[1] = t.depth.view;
+    views[0] = t.hdr.view; views[1] = t.depth.view;
     fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO; fb.renderPass = g->render_pass;
     fb.attachmentCount = 2; fb.pAttachments = views; fb.width = width; fb.height = height; fb.layers = 1;
     if (g->api.CreateFramebuffer(g->owner->device, &fb, NULL, &t.framebuffer) != RF_VK_SUCCESS) goto fail;
+    views[0]=t.color.view;fb.renderPass=g->overlay_pass;
+    if(g->api.CreateFramebuffer(g->owner->device,&fb,NULL,&t.overlay_framebuffer)!=RF_VK_SUCCESS) goto fail;
     gfx_target_destroy(g, &g->target); g->target = t;
+    gfx_lighting_images(g);
     g->stats.target_builds++;
     return 0;
 fail:
@@ -334,7 +360,9 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         {4,0,VK_FORMAT_R32G32B32_SINT,44}};
     /* Scene color feeds position and {light,RGB24} to shader locations 0/1.
      * Its draw contract disables form light, so normal inputs are unused. */
-    if (compatible==2) binding.stride=sizeof(struct rf_gpu_scene_color_vertex);
+    int color_vertex=compatible==2 || compatible==4 || compatible==6;
+    int overlay=compatible==3 || compatible==4, shadow=compatible>=5;
+    if (color_vertex) binding.stride=sizeof(struct rf_gpu_scene_color_vertex);
     VkPipelineVertexInputStateCreateInfo vertex = {0};
     VkPipelineInputAssemblyStateCreateInfo assembly = {0};
     VkPipelineViewportStateCreateInfo viewport = {0};
@@ -348,7 +376,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     VkGraphicsPipelineCreateInfo pipeline = {0};
     int result = -1;
     /* Scene attachments are written by the graphics pass and copied for present. */
-    attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+    attachments[0].format = overlay ? VK_FORMAT_R8G8B8A8_UNORM : VK_FORMAT_R16G16B16A16_SFLOAT;
     attachments[1].format = VK_FORMAT_D32_SFLOAT;
     for (unsigned i = 0; i < 2; ++i) {
         attachments[i].samples = VK_SAMPLE_COUNT_1_BIT;
@@ -358,6 +386,11 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         attachments[i].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         attachments[i].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         attachments[i].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    }
+    if(!overlay) attachments[0].finalLayout=VK_IMAGE_LAYOUT_GENERAL;
+    if(overlay) {
+        attachments[0].loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;attachments[0].initialLayout=VK_IMAGE_LAYOUT_GENERAL;
+        attachments[1].loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;attachments[1].initialLayout=VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
     }
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1; subpass.pColorAttachments = &color;
@@ -377,27 +410,41 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     pass.attachmentCount = 2; pass.pAttachments = attachments;
     pass.subpassCount = 1; pass.pSubpasses = &subpass;
     pass.dependencyCount = 2; pass.pDependencies = deps;
-    if (!compatible && g->api.CreateRenderPass(impl->device, &pass, NULL, &g->render_pass) != RF_VK_SUCCESS) return -1;
+    if(overlay) {
+        deps[0].srcStageMask=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+        deps[0].srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    } else if(!shadow) {
+        deps[1].dstStageMask|=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        deps[1].dstAccessMask|=VK_ACCESS_SHADER_READ_BIT;
+    }
+    if(shadow) {
+        attachments[0]=attachments[1];depth.attachment=0;
+        pass.attachmentCount=1;subpass.colorAttachmentCount=0;
+        deps[0].srcStageMask=VK_PIPELINE_STAGE_TRANSFER_BIT;
+        deps[0].srcAccessMask=VK_ACCESS_TRANSFER_READ_BIT;
+    }
+    VkRenderPass *selected=shadow?&g->shadow_pass:overlay?&g->overlay_pass:&g->render_pass;
+    if(!*selected && g->api.CreateRenderPass(impl->device,&pass,NULL,selected)!=RF_VK_SUCCESS) return -1;
     layout.s_type = RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    layout.set_layout_count = 1; layout.set_layouts = &g->set_layout;
+    rf_vk_descriptor_set_layout sets[2]={g->set_layout,g->light_layout};
+    layout.set_layout_count = 2; layout.set_layouts = sets;
     layout.push_constant_range_count = 1; layout.push_constant_ranges = &push;
     if (!compatible && impl->api.create_pipeline_layout(impl->device, &layout, NULL, &g->layout) != RF_VK_SUCCESS) return -1;
     shader_info.s_type = RF_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
     for (unsigned i = 0; i < 2; ++i) {
-        shader_info.code_size = i ? sizeof(rf_graphics_frag_spirv) : sizeof(rf_graphics_vert_spirv);
-        shader_info.code = i ? rf_graphics_frag_spirv : rf_graphics_vert_spirv;
-        if (compatible==1) {
-            shader_info.code_size = i ? sizeof(rf_graphics_compat_frag_spirv) : sizeof(rf_graphics_compat_vert_spirv);
-            shader_info.code = i ? rf_graphics_compat_frag_spirv : rf_graphics_compat_vert_spirv;
-        }
+        if(shadow && i) break;
+        shader_info.code_size=i?sizeof(rf_graphics_scene_frag_spirv):sizeof(rf_graphics_scene_vert_spirv);
+        shader_info.code=i?rf_graphics_scene_frag_spirv:rf_graphics_scene_vert_spirv;
+        if(color_vertex && !i) {shader_info.code_size=sizeof(rf_graphics_color_vert_spirv);shader_info.code=rf_graphics_color_vert_spirv;}
+        if(shadow) {shader_info.code_size=sizeof(rf_graphics_shadow_vert_spirv);shader_info.code=rf_graphics_shadow_vert_spirv;}
         if (impl->api.create_shader_module(impl->device, &shader_info, NULL, &shaders[i]) != RF_VK_SUCCESS) goto done;
         stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         stages[i].stage = i ? VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT;
         stages[i].module = shaders[i]; stages[i].pName = "main";
     }
     vertex.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertex.vertexBindingDescriptionCount = compatible==1 ? 0 : 1; vertex.pVertexBindingDescriptions = &binding;
-    vertex.vertexAttributeDescriptionCount = compatible==1 ? 0 : (compatible==2 ? 2 : 5);
+    vertex.vertexBindingDescriptionCount = 1; vertex.pVertexBindingDescriptions = &binding;
+    vertex.vertexAttributeDescriptionCount = shadow ? 1 : color_vertex ? 2 : 5;
     vertex.pVertexAttributeDescriptions = attrs;
     assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
     assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -420,13 +467,20 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     dynamic.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamic.dynamicStateCount = 2; dynamic.pDynamicStates = dynamics;
     pipeline.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipeline.stageCount = 2; pipeline.pStages = stages; pipeline.pVertexInputState = &vertex;
+    pipeline.stageCount = shadow ? 1 : 2; pipeline.pStages = stages; pipeline.pVertexInputState = &vertex;
     pipeline.pInputAssemblyState = &assembly; pipeline.pViewportState = &viewport;
     pipeline.pRasterizationState = &raster; pipeline.pMultisampleState = &multisample;
     pipeline.pDepthStencilState = &depth_state; pipeline.pColorBlendState = &blend;
-    pipeline.pDynamicState = &dynamic; pipeline.layout = g->layout; pipeline.renderPass = g->render_pass;
+    pipeline.pDynamicState = &dynamic; pipeline.layout = g->layout; pipeline.renderPass = *selected;
     pipeline.basePipelineIndex = -1;
-    for (unsigned alpha=0;alpha<(compatible==1 ? 2u : 3u);++alpha) {
+    if(shadow) {
+        raster.cullMode=VK_CULL_MODE_NONE;depth_state.depthCompareOp=VK_COMPARE_OP_LESS_OR_EQUAL;
+        raster.depthBiasEnable=1;raster.depthBiasConstantFactor=1.25f;raster.depthBiasSlopeFactor=1.75f;
+        blend.attachmentCount=0;
+        if(g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,&g->pipelines[color_vertex?31:30])!=RF_VK_SUCCESS) goto done;
+        result=0;goto done;
+    }
+    for (unsigned alpha=0;alpha<3u;++alpha) {
         depth_state.depthTestEnable=alpha==2 ? 0 : RF_VK_TRUE;
         depth_state.depthWriteEnable=alpha ? 0 : RF_VK_TRUE;
         blend_attachment.blendEnable=alpha ? RF_VK_TRUE : 0;
@@ -439,7 +493,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         for (unsigned i=0;i<2;++i) {
             raster.cullMode=i ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
             if (g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
-                    &g->pipelines[i+(compatible==2 ? 12 : compatible*2)+alpha*(compatible==2 ? 2 : 4)])!=RF_VK_SUCCESS) goto done;
+                    &g->pipelines[overlay ? 18+(color_vertex?6:0)+alpha*2+i : i+(color_vertex ? 12 : compatible*2)+alpha*(color_vertex ? 2 : 4)])!=RF_VK_SUCCESS) goto done;
         }
     }
     result = 0;
@@ -496,7 +550,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     struct rf_vk_command_pool_create_info command_pool = {0};
     struct rf_vk_command_buffer_allocate_info command = {0};
     struct rf_vk_fence_create_info fence = {0};
-    if (!impl || !impl->shader_int64_enabled || !(impl->queue_flags & VK_QUEUE_GRAPHICS_BIT) ||
+    if (!impl || !(impl->queue_flags & VK_QUEUE_GRAPHICS_BIT) ||
         !impl->api.queue_wait_idle || !impl->api.reset_fences) return NULL;
     g = calloc(1, sizeof(*g));
     if (!g) return NULL;
@@ -517,6 +571,9 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     if (!(color.optimalTilingFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ||
         !(color.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) ||
         !(depth.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) goto fail;
+    g->api.GetPhysicalDeviceFormatProperties(impl->physical_device,VK_FORMAT_R16G16B16A16_SFLOAT,&color);
+    if(!(color.optimalTilingFeatures&VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) ||
+       !(color.optimalTilingFeatures&VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) goto fail;
     for (unsigned i = 0; i < 3; ++i) {
         binding[i].binding = i; binding[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         binding[i].descriptor_count = 1;
@@ -531,9 +588,11 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     set.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     set.descriptor_pool = g->descriptor_pool; set.descriptor_set_count = 1; set.set_layouts = &g->set_layout;
     if (impl->api.allocate_descriptor_sets(impl->device, &set, &g->set) != RF_VK_SUCCESS ||
-        gfx_pipeline_create(g, 0) < 0 || gfx_pipeline_create(g, 1) < 0 ||
+        gfx_lighting_create(g)<0 || gfx_pipeline_create(g, 0) < 0 ||
         gfx_pipeline_create(g, 2) < 0 ||
-        gfx_skin_create(g) < 0) goto fail;
+        gfx_pipeline_create(g,3)<0 || gfx_pipeline_create(g,4)<0 ||
+        gfx_pipeline_create(g,5)<0 || gfx_pipeline_create(g,6)<0 ||
+        gfx_lighting_pipelines(g)<0 || gfx_skin_create(g) < 0) goto fail;
     command_pool.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     command_pool.queue_family_index = impl->queue_family;
     if (impl->api.create_command_pool(impl->device, &command_pool, NULL, &g->pool) != RF_VK_SUCCESS) goto fail;
@@ -554,24 +613,22 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height)
 {
     struct rf_gpu_vulkan_impl *impl = g->owner;
-    struct rf_gpu_vulkan_buffer staging[4] = {{0}};
-    struct rf_gpu_vulkan_buffer *target[4] = {
-        &resource->vertices, &resource->indices, &resource->compat_indices, &resource->texture
+    struct rf_gpu_vulkan_buffer staging[3] = {{0}};
+    struct rf_gpu_vulkan_buffer *target[3] = {
+        &resource->vertices, &resource->indices, &resource->texture
     };
-    const void *data[4];
-    uint64_t bytes[4];
-    uint32_t usage[4] = {
+    const void *data[3];
+    uint64_t bytes[3];
+    uint32_t usage[3] = {
         VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
             RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         VK_BUFFER_USAGE_INDEX_BUFFER_BIT | RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
         RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
     };
-    struct rf_vk_buffer_copy copy[4] = {{0}};
+    struct rf_vk_buffer_copy copy[3] = {{0}};
     struct rf_vk_memory_barrier barrier = {0};
     void *mapped = NULL;
     unsigned mapped_index = 0;
-    uint32_t *expanded;
     int upload_failed = 1;
     if (!g || g->poisoned || resource->vertices.buffer || !indices ||
         !vertex_count || vertex_count > 65536 || !index_count || index_count > 196608 || index_count % 3 ||
@@ -606,20 +663,16 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
                 memcmp(v[indices[i]].normals,v[indices[i+2]].normals,36)) return -1;
         }
     }
-    expanded = malloc((size_t)index_count*2*sizeof(*expanded));
-    if (!expanded) return -1;
-    for (uint32_t i = 0; i < index_count*2; ++i) expanded[i] = i;
-    data[0]=vertices; data[1]=indices; data[2]=expanded; data[3]=rgb_texels;
+    data[0]=vertices; data[1]=indices; data[2]=rgb_texels;
     bytes[0]=(uint64_t)vertex_count*(resource->scene_vertex_color ?
         sizeof(struct rf_gpu_scene_color_vertex) : sizeof(struct rf_gpu_graphics_vertex));
     bytes[1]=(uint64_t)index_count*4;
-    bytes[2]=(uint64_t)index_count*8;
-    bytes[3]=(uint64_t)texture_width*texture_height*4;
+    bytes[2]=(uint64_t)texture_width*texture_height*4;
     /* Integrated GPUs commonly expose device-local host-visible memory.  Use
      * it for per-frame geometry so upload does not submit behind the previous
      * frame and synchronously wait for the graphics queue.  Discrete devices
      * without that memory type retain the staging-copy path below. */
-    for (unsigned n=0;n<4;++n) {
+    for (unsigned n=0;n<3;++n) {
         if (gpu_buffer_create(impl,bytes[n],usage[n] | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
                 RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,target[n])<0) {
@@ -627,7 +680,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
             break;
         }
         if (!data[n]) {
-            if (n==3) { upload_failed=0; goto upload_done; }
+            if (n==2) { upload_failed=0; goto upload_done; }
             continue;
         }
         if (impl->api.map_memory(impl->device,target[n]->memory,0,
@@ -649,9 +702,9 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
             }
         }
         impl->api.unmap_memory(impl->device,target[n]->memory); mapped=NULL;
-        if (n==3) { upload_failed=0; goto upload_done; }
+        if (n==2) { upload_failed=0; goto upload_done; }
     }
-    for (unsigned n=0;n<4;++n) {
+    for (unsigned n=0;n<3;++n) {
         if (!data[n]) {
             if (gpu_buffer_create(impl,bytes[n],usage[n] | RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -679,7 +732,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
         copy[n].size=bytes[n];
     }
     if (gfx_begin(g)<0) goto upload_done;
-    for (unsigned n=0;n<4;++n) if (data[n])
+    for (unsigned n=0;n<3;++n) if (data[n])
         impl->api.cmd_copy_buffer(g->cmd,staging[n].buffer,target[n]->buffer,1,&copy[n]);
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -694,8 +747,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
 upload_done:
     if (mapped) impl->api.unmap_memory(impl->device,staging[mapped_index].memory);
     if (g->poisoned) impl->api.queue_wait_idle(impl->queue);
-    for (unsigned n=0;n<4;++n) gpu_buffer_destroy(impl,&staging[n]);
-    free(expanded);
+    for (unsigned n=0;n<3;++n) gpu_buffer_destroy(impl,&staging[n]);
     if (upload_failed) {
         g->poisoned = 1;
         return -1;
@@ -714,7 +766,7 @@ upload_done:
                 resource->position_bound[j]=abs(position[j]);
     }
     g->stats.mesh_upload_bytes += (vertices ?
-        bytes[0] : 0) + (uint64_t)index_count*12;
+        bytes[0] : 0) + (uint64_t)index_count*4;
     g->stats.texture_upload_bytes += (uint64_t)texture_width*texture_height*4;
     return 0;
 }
@@ -1256,7 +1308,6 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     gpu_buffer_destroy(g->owner,&resource->triangle_staging);
     gpu_buffer_destroy(g->owner, &resource->vertices);
     gpu_buffer_destroy(g->owner, &resource->indices);
-    gpu_buffer_destroy(g->owner, &resource->compat_indices);
     gpu_buffer_destroy(g->owner, &resource->texture);
     free(resource);
     return 0;
@@ -1277,13 +1328,14 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
 static int gfx_draw_valid(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *d, int validate_resource_bounds)
 {
-    if (!d->index_count || d->index_count % 3 || d->first_index % 3 ||
+    if (!__builtin_isfinite(d->roughness) || !__builtin_isfinite(d->metallic) ||
+        !__builtin_isfinite(d->emissive) || !d->index_count || d->index_count % 3 || d->first_index % 3 ||
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
-        d->integer_depth > 1 || d->double_sided > 1 || d->material[1] > 256 ||
+        d->integer_depth != 0 || d->double_sided > 1 || d->material[1] > 256 ||
         d->material[2] > 1 || d->material[3] > 2 ||
         ((d->material[3]==2) != g->resource->scene_vertex_color) ||
         (d->material[3]==2 && (d->material[2] || d->integer_depth || d->texture[3] || d->rotation[3])) ||
-        d->quality[0]<0 || d->quality[0]>3 ||
+        d->quality[0]!=0 ||
         (d->quality[1]!=0 && (d->quality[1]<512 || d->quality[1]>65536)) ||
         (d->quality[1]>512 && (d->quality[0]&2)) ||
         d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>1 ||
@@ -1311,45 +1363,7 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         if (d->rotation[i] < -1024 || d->rotation[i] > 1024) return 0;
     for (unsigned i = 0; i < 4; ++i)
         if (d->view[i] < -1024 || d->view[i] > 1024) return 0;
-    if (validate_resource_bounds && d->integer_depth && !d->material[3]) {
-        /* O(1) conservative mesh bounds, before recording any draw. With
-         * projected coordinates in [-16384,16384], edge*UV sums fit int64.
-         * Deliberately conservative hosted-proof limit, not silent clipping. */
-        int64_t rotated_x=(int64_t)g->resource->position_bound[0]*abs(d->rotation[1]) +
-            (int64_t)g->resource->position_bound[2]*abs(d->rotation[0]);
-        int64_t rotated_z=(int64_t)g->resource->position_bound[2]*abs(d->rotation[1]) +
-            (int64_t)g->resource->position_bound[0]*abs(d->rotation[0]);
-        if (rotated_x>INT_MAX || rotated_z>INT_MAX) return 0;
-        int64_t x=rotated_x/1024;
-        int64_t z=rotated_z/1024;
-        int64_t y = (int64_t)g->resource->position_bound[1]+abs(d->rotation[2]);
-        if (x*d->translation_scale[3] > INT_MAX ||
-            y*d->translation_scale[3] > INT_MAX ||
-            z*d->translation_scale[3] > INT_MAX) return 0;
-        x=x*d->translation_scale[3]/1000;
-        y=y*d->translation_scale[3]/1000;
-        z=z*d->translation_scale[3]/1000;
-        /* A distant mesh cannot reach the near plane. Bound its closest
-         * possible depth before dividing the screen bounds; retain near=64
-         * whenever the box could cross that plane. */
-        int64_t center_x=d->translation_scale[0]-d->camera[0];
-        int64_t center_y=d->translation_scale[1]-d->camera[1];
-        int64_t center_z=d->translation_scale[2]-d->camera[2];
-        int64_t axial=(center_x*d->view[0]+center_z*d->view[1])/1024;
-        int64_t depth=(center_y*d->view[2]+axial*d->view[3])/1024;
-        int64_t axial_radius=(x*abs(d->view[0])+z*abs(d->view[1])+1023)/1024;
-        int64_t depth_radius=(y*abs(d->view[2])+axial_radius*abs(d->view[3])+1023)/1024;
-        int64_t min_depth=depth-depth_radius-4;
-        if (min_depth<64) min_depth=64;
-        x+=abs(d->translation_scale[0]-d->camera[0]);
-        y+=abs(d->translation_scale[1]-d->camera[1]);
-        z+=abs(d->translation_scale[2]-d->camera[2]);
-        int64_t vx=(x*abs(d->view[1])+z*abs(d->view[0]))/1024;
-        int64_t vz=(x*abs(d->view[0])+z*abs(d->view[1]))/1024;
-        int64_t vy=(y*abs(d->view[3])+vz*abs(d->view[2]))/1024;
-        if (vx*d->projection[3]/min_depth+d->projection[0]/2 > 16384 ||
-            vy*d->projection[3]/min_depth+d->projection[1]/2 > 16384) return 0;
-    }
+    (void)validate_resource_bounds;
     return 1;
 }
 
@@ -1406,11 +1420,13 @@ static int gfx_render(struct rf_gpu_graphics *g,
     }
     impl = g->owner;
     memset(clear, 0, sizeof(clear));
+    if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
         impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,4);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
+    gfx_shadow_record(g,items,count);
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = g->render_pass; begin.framebuffer = g->target.framebuffer;
@@ -1420,13 +1436,21 @@ static int gfx_render(struct rf_gpu_graphics *g,
     viewport.width = (float)g->target.width; viewport.height = (float)g->target.height; viewport.maxDepth = 1.0f;
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
-    int viewmodel_started=0;
+    impl->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
+    int viewmodel_started=0,overlay_started=0;
     struct rf_gpu_graphics_resource *bound_resource=NULL;
     int bound_integer=-1,bound_pipeline=-1;
     const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
     int reuse_bind=!(legacy_bind && !strcmp(legacy_bind,"1"));
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = &items[i].draw;
+        if(d->scene_layer==RF_GPU_SCENE_OVERLAY && !overlay_started) {
+            g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);
+            begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
+            g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);
+            impl->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
+            bound_resource=NULL;bound_pipeline=bound_integer=-1;overlay_started=1;
+        }
         if (d->scene_layer==RF_GPU_SCENE_VIEWMODEL && !viewmodel_started) {
             rf_scene_clear_attachment attachment={0};
             rf_scene_clear_rect rect={0};
@@ -1436,7 +1460,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
             viewmodel_started=1;
         }
         struct rf_gpu_graphics_resource *resource = items[i].resource;
-        uint32_t factor = d->integer_depth ? 2 : 1;
+        uint32_t factor = 1;
         /* State is local to this render pass/command buffer. ClearAttachments
          * does not invalidate bindings; every draw still pushes its constants. */
         if (!reuse_bind || bound_resource!=resource) {
@@ -1447,17 +1471,31 @@ static int gfx_render(struct rf_gpu_graphics *g,
                 g->layout, 0, 1, &descriptor, 0, NULL);
         }
         if (!reuse_bind || bound_resource!=resource || bound_integer!=(int)d->integer_depth)
-            g->api.CmdBindIndexBuffer(g->cmd, d->integer_depth ? resource->compat_indices.buffer : resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+            g->api.CmdBindIndexBuffer(g->cmd, resource->indices.buffer, 0, VK_INDEX_TYPE_UINT32);
         int pipeline=resource->scene_vertex_color ? 12+(d->texture[3]==2?4:(d->texture[2]?2:0))+
-            d->double_sided : d->double_sided+d->integer_depth*2+
+            d->double_sided : d->double_sided+
             (d->texture[3]==2?8:(d->texture[2]?4:0));
+        if(overlay_started) pipeline=18+(resource->scene_vertex_color?6:0)+(d->texture[3]==2?4:d->texture[2]?2:0)+d->double_sided;
         if (!reuse_bind || bound_pipeline!=pipeline)
             impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);
         bound_resource=resource;bound_integer=d->integer_depth;bound_pipeline=pipeline;
-        g->api.CmdPushConstants(g->cmd, g->layout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 128, d);
+        struct rf_gpu_graphics_draw modern=*d;
+        float rough=d->roughness>0?d->roughness:0.65f;
+        float metal=d->metallic<0?0:d->metallic>1?1:d->metallic;
+        float emission=d->emissive<0?0:d->emissive>15?15:d->emissive;
+        modern.material[1]=(uint32_t)((rough>1?1:rough)*255)|((uint32_t)(metal*255)<<8)|((uint32_t)(emission*16)<<16);
+        if(resource->scene_vertex_color) modern.quality[2]=0;
+        if(d->scene_layer==RF_GPU_SCENE_EFFECTS) modern.quality[2]=3;
+        if(d->scene_layer==RF_GPU_SCENE_VIEWMODEL) modern.quality[0]|=32;
+        if(overlay_started) modern.quality[0]|=16;
+        g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&modern);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
     }
     g->api.CmdEndRenderPass(g->cmd);
+    if(!overlay_started) {
+        gfx_tonemap_record(g);begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
+        g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);g->api.CmdEndRenderPass(g->cmd);
+    }
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,1);
     g->stats.instance_upload_bytes += (uint64_t)count*128;
@@ -1706,3 +1744,5 @@ int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
 {
     return rf_gpu_graphics_scene_capture_at(g,items,count,rgba,depth,capacity,0);
 }
+
+#include "rf_gpu_lighting_test.inc"

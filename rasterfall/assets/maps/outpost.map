@@ -359,3 +359,36 @@ render id=rf_model_lab_east_line kind=floor min_x=21440 max_x=21504 min_z=-36288
 render id=rf_model_lab_title kind=sign min_x=14384 max_x=18384 min_z=-35950 max_z=-35920 height=500 color=81B4B5 attr.height2=800 attr.text=RF_MODEL_LAB attr.facing=+z
 render id=rf_model_lab_status kind=sign min_x=14784 max_x=17984 min_z=-28100 max_z=-28070 height=-300 color=81B4B5 attr.height2=0 attr.text=GPU_MODEL_LAB attr.facing=+z
 object id=rf_model_lab_button kind=facility_terminal x=20400 y=0 z=-28000 yaw=0 scale=1000 attr.collision=component
+
+# GPU lighting exhibit: east of RF_MODEL_LAB. Presentation spheres are GPU-owned.
+surface id=rf_light_lab kind=ground min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 material=68717A attr.collision_id=rf_light_lab_col
+collision id=rf_light_lab_col shape=flat min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 collision=false visible=true walkable=true color=68717A
+render id=rf_light_lab_floor kind=floor min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 color=68717A
+render id=rf_light_lab_back kind=wall min_x=24000 max_x=33792 min_z=-36300 max_z=-36300 height=4400 color=65717D
+render id=rf_light_lab_title kind=sign min_x=27000 max_x=30800 min_z=-36250 max_z=-36220 height=2700 color=B8DDEB attr.height2=3300 attr.text=RF_LIGHTING_LAB attr.facing=+z
+render id=rf_light_base_0_0 kind=box min_x=24700 max_x=26200 min_z=-30950 max_z=-29450 height=250 color=303B48
+render id=rf_light_label_0_0 kind=sign min_x=24500 max_x=26400 min_z=-29420 max_z=-29400 height=-700 color=A6C4D1 attr.height2=-450 attr.text=PBR_90 attr.facing=+z
+render id=rf_light_base_0_1 kind=box min_x=27000 max_x=28500 min_z=-30950 max_z=-29450 height=250 color=303B48
+render id=rf_light_label_0_1 kind=sign min_x=26800 max_x=28700 min_z=-29420 max_z=-29400 height=-700 color=A6C4D1 attr.height2=-450 attr.text=PBR_64 attr.facing=+z
+render id=rf_light_base_0_2 kind=box min_x=29300 max_x=30800 min_z=-30950 max_z=-29450 height=250 color=303B48
+render id=rf_light_label_0_2 kind=sign min_x=29100 max_x=31000 min_z=-29420 max_z=-29400 height=-700 color=A6C4D1 attr.height2=-450 attr.text=PBR_38 attr.facing=+z
+render id=rf_light_base_0_3 kind=box min_x=31600 max_x=33100 min_z=-30950 max_z=-29450 height=250 color=303B48
+render id=rf_light_label_0_3 kind=sign min_x=31400 max_x=33300 min_z=-29420 max_z=-29400 height=-700 color=A6C4D1 attr.height2=-450 attr.text=PBR_12 attr.facing=+z
+render id=rf_light_base_1_0 kind=box min_x=24700 max_x=26200 min_z=-33250 max_z=-31750 height=250 color=303B48
+render id=rf_light_label_1_0 kind=sign min_x=24500 max_x=26400 min_z=-31720 max_z=-31700 height=-700 color=A6C4D1 attr.height2=-450 attr.text=METAL_90 attr.facing=+z
+render id=rf_light_base_1_1 kind=box min_x=27000 max_x=28500 min_z=-33250 max_z=-31750 height=250 color=303B48
+render id=rf_light_label_1_1 kind=sign min_x=26800 max_x=28700 min_z=-31720 max_z=-31700 height=-700 color=A6C4D1 attr.height2=-450 attr.text=METAL_64 attr.facing=+z
+render id=rf_light_base_1_2 kind=box min_x=29300 max_x=30800 min_z=-33250 max_z=-31750 height=250 color=303B48
+render id=rf_light_label_1_2 kind=sign min_x=29100 max_x=31000 min_z=-31720 max_z=-31700 height=-700 color=A6C4D1 attr.height2=-450 attr.text=METAL_38 attr.facing=+z
+render id=rf_light_base_1_3 kind=box min_x=31600 max_x=33100 min_z=-33250 max_z=-31750 height=250 color=303B48
+render id=rf_light_label_1_3 kind=sign min_x=31400 max_x=33300 min_z=-31720 max_z=-31700 height=-700 color=A6C4D1 attr.height2=-450 attr.text=METAL_12 attr.facing=+z
+render id=rf_light_base_2_0 kind=box min_x=24700 max_x=26200 min_z=-35550 max_z=-34050 height=250 color=303B48
+render id=rf_light_label_2_0 kind=sign min_x=24500 max_x=26400 min_z=-34020 max_z=-34000 height=-700 color=A6C4D1 attr.height2=-450 attr.text=STYLIZED_90 attr.facing=+z
+render id=rf_light_base_2_1 kind=box min_x=27000 max_x=28500 min_z=-35550 max_z=-34050 height=250 color=303B48
+render id=rf_light_label_2_1 kind=sign min_x=26800 max_x=28700 min_z=-34020 max_z=-34000 height=-700 color=A6C4D1 attr.height2=-450 attr.text=STYLIZED_64 attr.facing=+z
+render id=rf_light_base_2_2 kind=box min_x=29300 max_x=30800 min_z=-35550 max_z=-34050 height=250 color=303B48
+render id=rf_light_label_2_2 kind=sign min_x=29100 max_x=31000 min_z=-34020 max_z=-34000 height=-700 color=A6C4D1 attr.height2=-450 attr.text=STYLIZED_38 attr.facing=+z
+render id=rf_light_base_2_3 kind=box min_x=31600 max_x=33100 min_z=-35550 max_z=-34050 height=250 color=303B48
+render id=rf_light_label_2_3 kind=sign min_x=31400 max_x=33300 min_z=-34020 max_z=-34000 height=-700 color=A6C4D1 attr.height2=-450 attr.text=STYLIZED_12 attr.facing=+z
+render id=rf_light_occluder_0 kind=box min_x=23780 max_x=24220 min_z=-33400 max_z=-32960 height=2600 color=D4C4A1
+render id=rf_light_occluder_1 kind=box min_x=32980 max_x=33420 min_z=-33400 max_z=-32960 height=2600 color=D4C4A1

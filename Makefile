@@ -1371,7 +1371,7 @@ win-gpu-resource-cache-test:
 GPU_GRAPHICS_TEST_SRCS := gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_graphics_min.h \
     gpu/include/rf_gpu_vulkan_backend.h gpu/include/rf_gpu_graphics.h \
-    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_graphics_spirv.inc \
+    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_lighting_test.inc gpu/src/rf_gpu_graphics_spirv.inc \
     gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
     gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp
 
@@ -2056,7 +2056,7 @@ export-qwen2-tokenizer:
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
-$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_INC)/rasterfall_canvas.h
+$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_SRC)/render/rf_gpu_lighting_lab.inc $(RASTERFALL_SRC)/render/rf_gpu_scene_lighting.inc $(RASTERFALL_INC)/rasterfall_canvas.h
 $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)

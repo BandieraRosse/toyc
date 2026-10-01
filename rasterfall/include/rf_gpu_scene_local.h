@@ -28,7 +28,6 @@ struct rf_gpu_scene_local_presentation {
     uint64_t lower_time_ms;
     int lower_walk, scene_light_q8;
 };
-struct rasterfall_world_lighting;
 struct rf_gpu_scene_local_frame {
     struct rf_gpu_scene_snapshot_v2 snapshot;
     struct rf_gpu_scene_local_presentation presentation;
@@ -47,10 +46,9 @@ int rf_gpu_scene_local_freeze_world(struct rf_gpu_scene_local_source *source,
     uint32_t width, uint32_t height, int air_walls_enabled,
     const struct rf_gpu_scene_world_input_v2 *world,uint32_t world_count,
     struct rf_gpu_scene_local_frame *out);
-int rf_gpu_scene_local_freeze_world_lit(struct rf_gpu_scene_local_source *source,
+int rf_gpu_scene_local_freeze_presentation(struct rf_gpu_scene_local_source *source,
     const struct toy_game *game, const struct camera *camera,
     uint32_t width, uint32_t height, int air_walls_enabled,
     const struct rf_gpu_scene_world_input_v2 *world,uint32_t world_count,
-    const struct rasterfall_world_lighting *lighting,
     struct rf_gpu_scene_local_frame *out);
 #endif

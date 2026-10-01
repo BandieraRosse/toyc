@@ -96,6 +96,7 @@ void rasterfall_options_usage(int fd)
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
+        "  --gpu-lighting-test (hardware shadow, dynamic light, material and HDR regression)\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-world-preview (diagnostic WORLD-only native Scene)\n"
         "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
@@ -104,7 +105,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
         "  --gpu-normal-scene <near|near-heavy|enemy-cull-in|enemy-cull-out|enemy-cull-imported-in|enemy-cull-imported-out|mid|interior|thin-far|base|spawn|west-facility|host-racks|host-side|character-lab|walk-lab|actor-actions-lab|actor-walk-lab|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|10|20|30|60|64>\n"
         "    research-bx18: Outpost Research room static asset fixture (use enemy count 0)\n"
-        "    model-lab: GPU character preview; use --map rasterfall/assets/maps/outpost.map and enemy count 0\n"
+        "    model-lab / lighting-lab: GPU exhibits; use --map rasterfall/assets/maps/outpost.map and enemy count 0\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -176,6 +177,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;
         else if (!strcmp(option, "--gpu-scene-native-fixture")) o->gpu_scene_native_fixture = 1;
+        else if (!strcmp(option, "--gpu-lighting-test")) { o->gpu_lighting_test=1;o->skip_boot=1; }
         else if (!strcmp(option, "--gpu-scene-world-preview")) o->gpu_scene_world_preview = 1;
         else if (!strcmp(option, "--gpu-scene-play")) o->gpu_scene_play = 1;
         else if (!strcmp(option, "--skip-boot")) o->skip_boot = 1;
@@ -317,6 +319,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"actor-actions-lab") &&
                  strcmp(o->gpu_normal_view,"actor-walk-lab") &&
                  strcmp(o->gpu_normal_view,"model-lab") &&
+                 strcmp(o->gpu_normal_view,"lighting-lab") &&
                  strcmp(o->gpu_normal_view,"west-empty") &&
                  strcmp(o->gpu_normal_view,"west-button") &&
                  strcmp(o->gpu_normal_view,"west-button-no-tank") &&

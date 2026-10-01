@@ -31,7 +31,6 @@ static int scene_local_source_test(void)
     static struct rf_gpu_scene_world_render_frame_v1 world_render;
     static struct rf_gpu_scene_world_floor_frame_v1 floor_render;
     static struct rf_gpu_scene_world_prop_frame_v1 prop_render;
-    static struct rasterfall_world_lighting actor_lighting;
     static struct rasterfall_effects pickup_effects;
     static struct rf_gpu_scene_interactable_frame_v1 pickup_frame;
     struct rf_gpu_scene_local_source source = {0}, source_before;
@@ -172,16 +171,9 @@ static int scene_local_source_test(void)
     LOCAL_CHECK(rf_gpu_scene_local_world(&source)==0);
     LOCAL_CHECK(rf_gpu_scene_local_created(&source,actor)==0);
     before=source_game;
-    actor_lighting.minx=0;actor_lighting.maxx=1000;
-    actor_lighting.minz=0;actor_lighting.maxz=1000;
-    for(int i=0;i<RF_WORLD_LIGHT_W*RF_WORLD_LIGHT_H;++i) {
-        actor_lighting.field[i].environment_q8=256;
-        actor_lighting.field[i].sun_visibility_q8=0;
-        actor_lighting.field[i].contact_q8=256;
-    }
-    LOCAL_CHECK(rf_gpu_scene_local_freeze_world_lit(&source,&source_game,
-        &camera,1280,720,1,NULL,0,&actor_lighting,&frame)==0);
-    LOCAL_CHECK(frame.presentation.scene_light_q8==192);
+    LOCAL_CHECK(rf_gpu_scene_local_freeze_presentation(&source,&source_game,
+        &camera,1280,720,1,NULL,0,&frame)==0);
+    LOCAL_CHECK(frame.presentation.scene_light_q8==256);
     LOCAL_CHECK(!memcmp(&before,&source_game,sizeof(before)));
     owner.item_count=2;
     owner.items[0].kind=TOY_MAP_PICKUP_PILL;
@@ -193,22 +185,19 @@ static int scene_local_source_test(void)
     pickup_effects.instances[2].kind=
         RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT;
     pickup_effects.instances[2].target_id=1;
-    LOCAL_CHECK(rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,
-        &actor_lighting,1,1,1,&pickup_frame)==0 && pickup_frame.count==2 &&
+    LOCAL_CHECK(rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,1,1,1,&pickup_frame)==0 && pickup_frame.count==2 &&
         pickup_frame.items[0].source_slot==0 &&
         !pickup_frame.items[0].highlight_on &&
         pickup_frame.items[1].source_slot==1 &&
         pickup_frame.items[1].highlight_on &&
         pickup_frame.items[1].weapon==TOY_GAME_WEAPON_AK &&
-        pickup_frame.items[0].scene_light_q8==192);
+        pickup_frame.items[0].scene_light_q8==256);
     owner.items[1].x=700;
     LOCAL_CHECK(pickup_frame.items[1].x==360 &&
-        rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,
-            &actor_lighting,0,2,1,&pickup_frame)==0 &&
+        rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,0,2,1,&pickup_frame)==0 &&
         !pickup_frame.count && pickup_frame.frame_id==2);
     owner.item_count=TOY_MAP_MAX_PICKUPS+1;
-    LOCAL_CHECK(rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,
-        &actor_lighting,1,3,1,&pickup_frame)<0 &&
+    LOCAL_CHECK(rf_gpu_scene_interactable_freeze(&owner,&pickup_effects,1,3,1,&pickup_frame)<0 &&
         pickup_frame.frame_id==2);
     owner.item_count=0;
     {
@@ -222,23 +211,23 @@ static int scene_local_source_test(void)
         source_game.projectiles[3].active=1;
         source_game.projectiles[3].kind=TOY_GAME_WEAPON_MOLOTOV;
         source_game.projectiles[3].x=500;
-        LOCAL_CHECK(rf_gpu_scene_projectile_freeze(&source_game,&actor_lighting,
+        LOCAL_CHECK(rf_gpu_scene_projectile_freeze(&source_game,
             1,1,&projectiles)==0 && projectiles.count==2 &&
             projectiles.items[0].source_slot==1 &&
             projectiles.items[1].source_slot==3 &&
             projectiles.items[0].x==250 &&
             projectiles.items[0].age_ms==95 &&
             projectiles.items[0].flash_ms==100 &&
-            projectiles.items[0].scene_light_q8==192);
+            projectiles.items[0].scene_light_q8==256);
         source_game.projectiles[1].x=600;
         source_game.projectiles[1].age_ms=160;
         LOCAL_CHECK(projectiles.items[0].x==250 &&
             projectiles.items[0].age_ms==95 &&
-            rf_gpu_scene_projectile_freeze(&source_game,&actor_lighting,
+            rf_gpu_scene_projectile_freeze(&source_game,
                 2,1,&projectiles)==0 && projectiles.items[0].x==600 &&
             projectiles.items[0].age_ms==160);
         source_game.projectiles[3].kind=TOY_GAME_WEAPON_PISTOL;
-        LOCAL_CHECK(rf_gpu_scene_projectile_freeze(&source_game,&actor_lighting,
+        LOCAL_CHECK(rf_gpu_scene_projectile_freeze(&source_game,
             3,1,&projectiles)<0 && projectiles.frame_id==2 &&
             projectiles.items[0].x==600);
         memset(source_game.projectiles,0,sizeof(source_game.projectiles));
@@ -385,7 +374,7 @@ static int scene_local_source_test(void)
             LOCAL_CHECK(render && !strcmp(world_on[i].id,render->id) &&
                 world_on[i].submission_ordinal==i);
         }
-        LOCAL_CHECK(rf_gpu_scene_world_prop_freeze(&owner.map_ops,NULL,
+        LOCAL_CHECK(rf_gpu_scene_world_prop_freeze(&owner.map_ops,
             owner.scene_local.frame_id+1,owner.scene_local.world_generation,
             &prop_render)==0 && prop_render.count==134);
         {
@@ -438,10 +427,7 @@ static int scene_local_source_test(void)
                     }
                 LOCAL_CHECK(first && box->vertex_count>=6 &&
                     box->vertex_count%6==0);
-                expected=rasterfall_diagnostic_world_light_q8(
-                    rasterfall_diagnostic_world_light_at_v1(&floor_render.model_light_v1,
-                        (first->a+first->b+first->b)/3,
-                        (first->e+first->e+first->f)/3,first->c));
+                expected=256;
                 for(uint32_t k=0;k<box->vertex_count;k+=6) {
                     int light0=vertices[(k+0)*box->vertex_bytes+18] |
                         vertices[(k+0)*box->vertex_bytes+19]<<8;
@@ -470,7 +456,7 @@ static int scene_local_source_test(void)
         LOCAL_CHECK(rf_gpu_scene_world_floor_freeze(&owner.map_ops,0,
             owner.scene_local.frame_id+1,owner.scene_local.world_generation,
             &floor_render)==0);
-        LOCAL_CHECK(rf_gpu_scene_world_prop_freeze(&owner.map_ops,NULL,
+        LOCAL_CHECK(rf_gpu_scene_world_prop_freeze(&owner.map_ops,
             owner.scene_local.frame_id+1,owner.scene_local.world_generation,
             &prop_render)==0 && !prop_render.count);
         LOCAL_CHECK(rf_gpu_scene_local_freeze_world(&owner.scene_local,&owner.game_state,
@@ -536,7 +522,7 @@ static int scene_local_source_test(void)
             struct rasterfall_resource_handle retired[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT];
             struct rasterfall_resource_stats stats;
             LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                &frame.snapshot,&world_render,&floor_render,&prop_render,1)==0);
+                &frame.snapshot,&world_render,&floor_render,&prop_render)==0);
             LOCAL_CHECK(resources.accepted==8 && resources.deferred==1 &&
                 resources.transparent==2);
             frame.snapshot.frame_id++;
@@ -544,15 +530,15 @@ static int scene_local_source_test(void)
             floor_render.frame_id++;
             prop_render.frame_id++;
             LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                &frame.snapshot,&world_render,&floor_render,&prop_render,1)==0);
+                &frame.snapshot,&world_render,&floor_render,&prop_render)==0);
             rasterfall_resources_stats(&resources.registry,&stats);
             LOCAL_CHECK(stats.live==6 && stats.loads==6);
             {
                 struct rasterfall_resource_handle old=resources.opaque[RF_GPU_SCENE_WORLD_WALL];
+                world_render.items[1].draw.color^=0x101010;
                 LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                    &frame.snapshot,&world_render,&floor_render,&prop_render,2)==0);
-                LOCAL_CHECK(resources.light_generation==2 &&
-                    resources.opaque[RF_GPU_SCENE_WORLD_WALL].generation!=old.generation);
+                    &frame.snapshot,&world_render,&floor_render,&prop_render)==0);
+                LOCAL_CHECK(resources.opaque[RF_GPU_SCENE_WORLD_WALL].generation!=old.generation);
                 rasterfall_resources_stats(&resources.registry,&stats);
                 LOCAL_CHECK(stats.live==6 && stats.loads==12 && stats.releases==6);
             }
@@ -560,7 +546,7 @@ static int scene_local_source_test(void)
                 struct rasterfall_resource_handle old=resources.opaque[RF_GPU_SCENE_WORLD_FLOOR];
                 world_render.items[0].draw.color^=0xffffffu;
                 LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                    &frame.snapshot,&world_render,&floor_render,&prop_render,2)==0);
+                    &frame.snapshot,&world_render,&floor_render,&prop_render)==0);
                 LOCAL_CHECK(resources.opaque[RF_GPU_SCENE_WORLD_FLOOR].generation!=old.generation);
                 rasterfall_resources_stats(&resources.registry,&stats);
                 LOCAL_CHECK(stats.live==6 && stats.loads==18 && stats.releases==12);
@@ -568,11 +554,11 @@ static int scene_local_source_test(void)
             frame.snapshot.world[gate_box_index].visible=0;
             world_render.items[gate_box_index].visible=0;
             LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                &frame.snapshot,&world_render,&floor_render,&prop_render,2)==0 && resources.transparent==1);
+                &frame.snapshot,&world_render,&floor_render,&prop_render)==0 && resources.transparent==1);
             frame.snapshot.world[gate_box_index].visible=1;
             world_render.items[gate_box_index].visible=1;
             LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                &frame.snapshot,&world_render,&floor_render,&prop_render,2)==0 && resources.transparent==2);
+                &frame.snapshot,&world_render,&floor_render,&prop_render)==0 && resources.transparent==2);
             memcpy(retired,resources.opaque,sizeof(retired));
             rasterfall_resources_stats(&resources.registry,&stats);
             LOCAL_CHECK(stats.live==6 && stats.loads==30 && stats.releases==24);
@@ -586,7 +572,7 @@ static int scene_local_source_test(void)
             floor_render.world_generation++;floor_render.map_generation++;
             prop_render.world_generation++;prop_render.map_generation++;
             LOCAL_CHECK(rf_gpu_scene_world_resources_prepare(&resources,
-                &frame.snapshot,&world_render,&floor_render,&prop_render,2)==0);
+                &frame.snapshot,&world_render,&floor_render,&prop_render)==0);
             for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
                 if (retired[kind].generation)
                     LOCAL_CHECK(rasterfall_resources_resolve(&resources.registry,retired[kind]) &&

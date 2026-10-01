@@ -43,4 +43,5 @@ int rf_gpu_scene_pose_body(int body_id, uint64_t frame, uint64_t world,
     struct rf_gpu_scene_pose_v1 *out);
 struct rasterfall_model_asset *rf_gpu_scene_fixture_map(void);
 int rf_gpu_scene_native_fixture(int frames, int fault, int fault_frame);
+int rf_gpu_scene_lighting_fixture(void);
 #endif

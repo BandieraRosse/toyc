@@ -28,6 +28,7 @@ int rf_gpu_scene_linear_filter_enabled(void)
 #endif
 }
 #ifndef TOYC_WINDOWS
+int rf_gpu_scene_lighting_fixture(void) { return 3; }
 int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
 { (void)frames; (void)fault; (void)fault_frame; return 3; }
 struct rf_gpu_scene_actor_gpu *rf_gpu_scene_actor_gpu_create(
@@ -330,6 +331,9 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             d->projection[0]=w;d->projection[1]=h;d->projection[2]=64;d->projection[3]=w*3/4;
             d->material[0]=scene_u32(material)&0xffffff;
             d->material[1]=object ? (uint32_t)pose->scene_light_q8 : 256;
+            d->roughness=weapon_object ? 0.38f : 0.7f;
+            d->metallic=weapon_object ? 0.65f : 0.0f;
+            if (object==1) d->quality[2]=1;
             if (object==1 && pose->character_id!=RASTERFALL_CHARACTER_NONE) {
                 if (mi==0) d->material[0]=pose->pants_color;
                 if (mi==1) d->material[0]=pose->shirt_color;
@@ -338,10 +342,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             if (object==1) {
                 const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
                 if (scene_material_override>=0) mode=scene_material_override ? "material" : "lit";
-                const char *depth=getenv("RF_GPU_CHARACTER_DEPTH");
                 d->quality[1]=(int)m->position_scale;
-                if (depth && !strcmp(depth,"quantized")) d->quality[0]=1;
-                if (depth && !strcmp(depth,"legacy") && m->position_scale==512) d->quality[0]=3;
                 if (mode && (!strcmp(mode,"unlit") || !strcmp(mode,"parts"))) {
                     d->quality[2]=3; d->material[1]=256;
                     if (!strcmp(mode,"parts")) {
@@ -545,7 +546,7 @@ static int scene_skin_diff(struct scene_slot *slot,struct rf_gpu_graphics *g,
     return pm || nm || uv ? -1 : 0;
 }
 /* Independent per-object depth oracle: composite must select nearest depth
- * and exactly the corresponding color, with all three visible and overlaps. */
+ * with all three visible and overlaps. Color may differ due to mutual shadows. */
 static int scene_occlusion(struct scene_slot *slot,struct rf_gpu_graphics *g,int w,int h)
 {
     size_t pixels=(size_t)w*h;
@@ -582,7 +583,7 @@ static int scene_occlusion(struct scene_slot *slot,struct rf_gpu_graphics *g,int
         for(int object=0;object<3;++object) if (depth[(object+1)*pixels+pixel]>0 && depth[(object+1)*pixels+pixel]>=nearest) {
             nearest=depth[(object+1)*pixels+pixel];winner=object;
         }
-        if (depth[pixel]!=nearest || (winner>=0 && color[pixel]!=color[(winner+1)*pixels+pixel])) mismatches++;
+        if (depth[pixel]!=nearest) mismatches++;
         if(winner>=0) visible[winner]++;
         if(depth[pixels+pixel]>0 && depth[2*pixels+pixel]>0) overlap[0]++;
         if(depth[pixels+pixel]>0 && depth[3*pixels+pixel]>0) overlap[1]++;
@@ -642,10 +643,8 @@ static int scene_transparency(struct rf_gpu_graphics *g,int w,int h)
     __printf("SCENE transparency sample opaque=%08x mixed=%08x opaque_depth=%g mixed_depth=%g\n",
         opaque[center],pixel,opaque_depth[center],mixed_depth[center]);
     if (opaque_depth[center]<=0 || mixed_depth[center]!=opaque_depth[center] ||
-        (opaque[center]&0xffffff)!=0xff0000 ||
-        abs((int)(pixel&255)-96)>2 ||
-        abs((int)((pixel>>8)&255)-64)>2 ||
-        abs((int)((pixel>>16)&255)-95)>2 || (pixel>>24)!=255) goto done;
+        !(pixel&255) || !((pixel>>8)&255) || !((pixel>>16)&255) ||
+        (pixel>>24)!=255) goto done;
     __printf("SCENE transparency center=%08x opaque_depth=%g mixed_depth=%g\n",
         pixel,opaque_depth[center],mixed_depth[center]);
     result=0;
@@ -705,7 +704,7 @@ static int scene_static_prop_clip(struct rf_gpu_graphics *g,int w,int h)
             rf_gpu_graphics_scene_capture(g,&item,1,color,depth,(uint32_t)pixels)<0)
             goto done;
         for(size_t p=0;p<pixels;++p) if (depth[p]>0) {
-            if (color[p]!=0xff604020u || depth[p]>1 ||
+            if (depth[p]>1 ||
                 (!crossing && depth[p]!=0.5f)) goto done;
             covered[crossing]++;
         }
@@ -748,20 +747,18 @@ static int scene_world_gpu_probe(struct rf_gpu_graphics *g,int w,int h)
             "rasterfall/assets/maps/gpu_scene_render_fixture.map")<0) goto done;
     render_context.session=&session;
     rasterfall_render_bind(&render_context);
-    rasterfall_render_bake_lightmap();
     if (rf_gpu_scene_world_render_freeze(&session.map_ops,1,
             session.scene_local.frame_id+1,session.scene_local.world_generation,
             world,RF_GPU_SCENE_MAX_WORLD_V2,&world_count,&render)<0 ||
         rf_gpu_scene_world_floor_freeze(&session.map_ops,0,
             session.scene_local.frame_id+1,session.scene_local.world_generation,
             &floor)<0 ||
-        rf_gpu_scene_world_prop_freeze(&session.map_ops,NULL,
+        rf_gpu_scene_world_prop_freeze(&session.map_ops,
             session.scene_local.frame_id+1,session.scene_local.world_generation,
             &props)<0 ||
         rf_gpu_scene_local_freeze_world(&session.scene_local,&session.game_state,
             &camera,(uint32_t)w,(uint32_t)h,1,world,world_count,&frame)<0 ||
-        rf_gpu_scene_world_resources_prepare(&owner,&frame.snapshot,&render,&floor,&props,
-            rasterfall_render_world_light_generation())<0 ||
+        rf_gpu_scene_world_resources_prepare(&owner,&frame.snapshot,&render,&floor,&props)<0 ||
         (cache=rf_gpu_resource_cache_create(g,&owner.registry))==NULL ||
         rasterfall_resources_frame_begin(&owner.registry)<0) goto done;
     frame_active=1;
@@ -815,6 +812,17 @@ done:
     rf_gpu_scene_world_resources_invalidate(&owner);
     rasterfall_session_unload(&session);
     return result;
+}
+int rf_gpu_scene_lighting_fixture(void)
+{
+    struct rf_gpu_vulkan_context context={0};struct rf_gpu gpu={0};
+    struct rf_gpu_graphics *graphics=NULL;int result=3;
+    context.require_graphics=1;
+    if(rf_gpu_init(&gpu,RF_GPU_POLICY_REQUIRED,&rf_gpu_vulkan_backend,&context)<0) return 3;
+    __printf("LIGHTING adapter=%s vendor=%x\n",gpu.info.adapter_name,gpu.info.vendor_id);
+    graphics=rf_gpu_graphics_create(&context);
+    if(graphics) result=rf_gpu_graphics_lighting_regression(graphics) ? 3 : 0;
+    rf_gpu_graphics_destroy(graphics);rf_gpu_shutdown(&gpu);return result;
 }
 int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
 {

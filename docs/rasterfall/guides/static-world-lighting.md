@@ -1,6 +1,8 @@
 # Static World Lighting V2 验证
 
-> 状态：当前操作指南
+> 状态：当前 CPU 操作指南
+
+GPU 使用[实时光照验证](gpu-lighting.md)，不运行本页烘焙路径。
 
 所有权、固定参数、采样与诊断例外见[世界光照架构](../architecture/static-world-lighting.md)。相关修改至少验证：
 

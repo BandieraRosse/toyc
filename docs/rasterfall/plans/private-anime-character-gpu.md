@@ -1,6 +1,6 @@
 # RF 新一代角色体系与 GPU Scene 接入
 
-> 状态：活动
+> 状态：暂停；当前优先级见[计划入口](README.md)
 >
 > 所有者：Rasterfall character art、RFCHAR 与 GPU Scene presentation
 >

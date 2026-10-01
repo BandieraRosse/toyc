@@ -1,7 +1,6 @@
 ﻿#include "rf_gpu_scene_local.h"
 #include <string.h>
 #include "tlibc_everything.h"
-#include "rasterfall_world_light.h"
 
 void rf_gpu_scene_local_destroyed(struct rf_gpu_scene_local_source *s)
 {
@@ -36,11 +35,10 @@ int rf_gpu_scene_local_created(struct rf_gpu_scene_local_source *s,
     }
     return 0;
 }
-int rf_gpu_scene_local_freeze_world_lit(struct rf_gpu_scene_local_source *s,
+int rf_gpu_scene_local_freeze_presentation(struct rf_gpu_scene_local_source *s,
     const struct toy_game *game, const struct camera *camera,
     uint32_t width, uint32_t height, int air_walls_enabled,
     const struct rf_gpu_scene_world_input_v2 *world,uint32_t world_count,
-    const struct rasterfall_world_lighting *lighting,
     struct rf_gpu_scene_local_frame *out)
 {
     struct rf_gpu_scene_actor_input_v1 input[TOY_GAME_MAX_ACTORS];
@@ -87,9 +85,7 @@ int rf_gpu_scene_local_freeze_world_lit(struct rf_gpu_scene_local_source *s,
         p->pitch_sy=a->pitch_sy; p->pitch_cy=a->pitch_cy;
         p->locomotion_blend_ms=a->locomotion_blend_ms;
         p->muzzle_flash_ms=a->muzzle_flash_ms;
-        p->scene_light_q8=lighting ?
-            rasterfall_world_light_v2_q8(rasterfall_world_light_at(lighting,
-                a->x,-900+a->ground_y,a->z)) : 256;
+        p->scene_light_q8=256;
         if (a->character_id!=state->clock_character) {
             state->lower_time_ms=0; state->lower_walk=0;
         }
@@ -141,8 +137,8 @@ int rf_gpu_scene_local_freeze_world(struct rf_gpu_scene_local_source *s,
     const struct rf_gpu_scene_world_input_v2 *world,uint32_t world_count,
     struct rf_gpu_scene_local_frame *out)
 {
-    return rf_gpu_scene_local_freeze_world_lit(s,game,camera,width,height,
-        air_walls_enabled,world,world_count,NULL,out);
+    return rf_gpu_scene_local_freeze_presentation(s,game,camera,width,height,
+        air_walls_enabled,world,world_count,out);
 }
 int rf_gpu_scene_local_freeze(struct rf_gpu_scene_local_source *s,
     const struct toy_game *game, const struct camera *camera,

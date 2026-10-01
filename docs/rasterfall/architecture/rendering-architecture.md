@@ -4,7 +4,7 @@
 > 所有者：Rasterfall renderer frontend、Core Host 分层编排
 > 最近核对：2026-09-23
 
-本文定义 CPU/GPU 共用的场景提交、帧分层和所有权。GPU executor、资源与 presenter 合同见
+本文描述 CPU frontend 以及共享展示语义和帧分层。GPU 有独立来源与提交路径，不消费 CPU 光栅命令或静态烘焙；高级光照仅由 GPU 实现，见[GPU 光照](gpu-lighting.md)。GPU 资源与 presenter 合同见
 [GPU 渲染架构](gpu-rendering-architecture.md)；角色表现见 [角色表现](character-presentation.md)；HUD、
 特效和 viewmodel 见 [HUD 与特效](hud-effects.md)。
 

@@ -3790,8 +3790,7 @@ struct persistent_map_quad_patch {
 struct persistent_map_mesh_build {
     struct persistent_map_quad_patch *patches;
     unsigned long count, capacity;
-    const struct rasterfall_diagnostic_world_lighting_v1 *light_v1;
-    int flat_v2, baked_triangle_light;
+    int expanded_triangles;
 };
 
 
@@ -3817,12 +3816,7 @@ static int persistent_map_mesh_push(struct persistent_map_mesh_build *build,
     patch->color = color;
     for (i = 0; i < 4; ++i) {
         patch->v[i] = v[i];
-        patch->light[i] = (unsigned short)(build->baked_triangle_light ? 256 :
-            build->light_v1 ?
-            rasterfall_diagnostic_world_light_q8(
-                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
-                    v[i].x,v[i].y,v[i].z)) :
-            world_brightness_at(v[i].x, v[i].y, v[i].z));
+        patch->light[i] = 256;
     }
     return 0;
 }
@@ -3832,8 +3826,8 @@ static int persistent_map_mesh_add_quad(struct persistent_map_mesh_build *build,
 {
     int du = abs(v[1].x-v[0].x) + abs(v[1].y-v[0].y) + abs(v[1].z-v[0].z);
     int dv = abs(v[3].x-v[0].x) + abs(v[3].y-v[0].y) + abs(v[3].z-v[0].z);
-    int nu = (du + 1023) / 1024, nv = (dv + 1023) / 1024, u, w;
-    if (build->light_v1 || build->flat_v2) nu=nv=1;
+    /* Split only to fit the local mesh coordinate contract, not for lighting. */
+    int nu = (du + 15999) / 16000, nv = (dv + 15999) / 16000, u, w;
     if (nu < 1) nu = 1;
     if (nv < 1) nv = 1;
     for (w = 0; w < nv; ++w) for (u = 0; u < nu; ++u) {
@@ -3860,9 +3854,9 @@ static int persistent_map_mesh_add_box(struct persistent_map_mesh_build *build,
     }
 #define PERSISTENT_MAP_QUAD(a,b,c,d,co) do { q[0]=v[a]; q[1]=v[b]; q[2]=v[c]; q[3]=v[d]; if (persistent_map_mesh_add_quad(build,q,co)<0) return -1; } while (0)
     PERSISTENT_MAP_QUAD(0,1,3,2,color); PERSISTENT_MAP_QUAD(4,6,7,5,color);
-    PERSISTENT_MAP_QUAD(0,2,6,4,color+0x080808); PERSISTENT_MAP_QUAD(1,5,7,3,color+0x080808);
-    PERSISTENT_MAP_QUAD(2,3,7,6,color+0x181818);
-    if (include_bottom) PERSISTENT_MAP_QUAD(0,4,5,1,color-0x080808);
+    PERSISTENT_MAP_QUAD(0,2,6,4,color); PERSISTENT_MAP_QUAD(1,5,7,3,color);
+    PERSISTENT_MAP_QUAD(2,3,7,6,color);
+    if (include_bottom) PERSISTENT_MAP_QUAD(0,4,5,1,color);
 #undef PERSISTENT_MAP_QUAD
     return 0;
 }
@@ -3908,8 +3902,7 @@ static struct rasterfall_model_asset *persistent_map_mesh_finish(
 {
     struct rasterfall_model_asset *model;
     unsigned long pb, mb, vb, ib, total, i;
-    unsigned int vertices_per_patch=(build->light_v1 || build->flat_v2 ||
-        build->baked_triangle_light) ? 6 : 4;
+    unsigned int vertices_per_patch=build->expanded_triangles ? 6 : 4;
     uint32_t *colors;
     int *origin_x, *origin_z;
     unsigned int *groups, *counts, *offsets, group_count=0;
@@ -3962,19 +3955,7 @@ static struct rasterfall_model_asset *persistent_map_mesh_finish(
         unsigned char *index=data+pb+mb+vb+offsets[groups[i]]*4;
         int ox=origin_x[groups[i]], oz=origin_z[groups[i]], k;
         static const unsigned int order[6]={0,1,2,0,2,3};
-        int triangle_light[2]={0,0};
-        if (build->light_v1 || build->flat_v2 || build->baked_triangle_light)
-            for(k=0;k<2;++k) {
-            const struct vec3 *a=&p->v[order[k*3]],
-                *b=&p->v[order[k*3+1]],*c=&p->v[order[k*3+2]];
-            triangle_light[k]=build->baked_triangle_light ? p->light[0] :
-                build->light_v1 ? rasterfall_diagnostic_world_light_q8(
-                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
-                    (a->x+b->x+c->x)/3,(a->y+b->y+c->y)/3,
-                    (a->z+b->z+c->z)/3)) :
-                world_brightness_at((a->x+b->x+c->x)/3,
-                    (a->y+b->y+c->y)/3,(a->z+b->z+c->z)/3);
-        }
+        int triangle_light[2]={256,256};
         for(k=0;k<(int)vertices_per_patch;++k) {
             unsigned char *dst=vertex+k*RASTERFALL_MODEL_VERTEX_BYTES;
             const struct vec3 *point=&p->v[vertices_per_patch==6 ? order[k] : (unsigned int)k];
@@ -4037,10 +4018,10 @@ static int floor_mesh_add_patch(struct floor_mesh_build *build,
     patch = &build->patches[build->count++];
     patch->minx = x; patch->maxx = x1;
     patch->minz = z; patch->maxz = z1; patch->color = color;
-    patch->light[0] = (unsigned short)world_brightness_at(x, -900, z);
-    patch->light[1] = (unsigned short)world_brightness_at(x1, -900, z);
-    patch->light[2] = (unsigned short)world_brightness_at(x1, -900, z1);
-    patch->light[3] = (unsigned short)world_brightness_at(x, -900, z1);
+    patch->light[0] = 256;
+    patch->light[1] = 256;
+    patch->light[2] = 256;
+    patch->light[3] = 256;
         }
     }
     return 0;
@@ -4456,17 +4437,9 @@ int rf_gpu_scene_world_opaque_mesh_build(
     uint32_t done=0,pending=0,blended=0,floor_sources=0,prop_done=0;
     if (!models || !floor || !props || !accepted || !deferred ||
         !transparent || !prop_accepted ||
-        floor->model_light_v1.minx!=floor->minx ||
-        floor->model_light_v1.maxx!=floor->maxx ||
-        floor->model_light_v1.minz!=floor->minz ||
-        floor->model_light_v1.maxz!=floor->maxz ||
         rf_gpu_scene_world_render_validate(snapshot,render)<0) return -1;
-    builds[RF_GPU_SCENE_WORLD_MODEL_BOX].light_v1=&floor->model_light_v1;
-    builds[RF_GPU_SCENE_WORLD_SIGN].flat_v2=1;
-    builds[RF_GPU_SCENE_WORLD_MODEL_LEGACY].light_v1=&floor->model_light_v1;
-    builds[RF_GPU_SCENE_WORLD_MODEL_SPECIAL].light_v1=&floor->model_light_v1;
-    builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED].light_v1=&floor->model_light_v1;
-    builds[RF_GPU_SCENE_WORLD_MODEL_INFECTED].baked_triangle_light=1;
+    for (unsigned kind=RF_GPU_SCENE_WORLD_MODEL_BOX;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
+        builds[kind].expanded_triangles=1;
     for(uint32_t i=0;i<render->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&render->items[i];
         int kind;
@@ -6085,20 +6058,8 @@ static int persistent_map_mesh_add_special_model(
         }
         for(int face=0;face<8;++face) {
             int next=(face+1)%8;
-            struct vec3 u={v[face+8].x-v[face].x,
-                v[face+8].y-v[face].y,v[face+8].z-v[face].z};
-            struct vec3 w={v[next].x-v[face].x,
-                v[next].y-v[face].y,v[next].z-v[face].z};
-            long long nx=(long long)u.y*w.z-(long long)u.z*w.y;
-            long long ny=(long long)u.z*w.x-(long long)u.x*w.z;
-            long long nz=(long long)u.x*w.y-(long long)u.y*w.x;
-            int light=256,length=isqrt(nx*nx+ny*ny+nz*nz);
             unsigned int color=part->color;
             struct vec3 q[4]={v[face],v[face+8],v[next+8],v[next]};
-            if (length>0) light=model_form_light_q8(nx*32767/length,
-                ny*32767/length,nz*32767/length,0);
-            color=((((color>>16)&255)*light/256)<<16)|
-                ((((color>>8)&255)*light/256)<<8)|((color&255)*light/256);
             if (persistent_map_mesh_add_quad(build,q,color)<0) return -1;
         }
         for(int j=1;j<7;++j) {
@@ -6326,7 +6287,7 @@ static int persistent_map_mesh_add_infected_model(
         TOY_GAME_ENEMY_PURSUIT_HEAVY;
     int recipe=-1,scale,x=(draw->a+draw->b)/2,z=(draw->c+draw->d)/2;
     int result=-1;
-    if (!build || !build->light_v1 || display<1 || display>8 ||
+    if (!build || display<1 || display>8 ||
         (display%3!=1 && display%3!=2)) return -1;
     for(int i=0;i<6;++i)
         if (enemy_visual_recipes[i].family==family &&
@@ -6346,8 +6307,6 @@ static int persistent_map_mesh_add_infected_model(
         const unsigned char *record=pose->primitives+primitive*16;
         uint32_t first=model_u32(record),count=model_u32(record+4),material_id=model_u32(record+8);
         const unsigned char *material;
-        struct rasterfall_character_render_policy policy;
-        enum rasterfall_character_visual_class visual;
         uint32_t color;
         if (material_id>=pose->material_count || first>pose->index_count ||
             count>pose->index_count-first || count%3) goto done;
@@ -6358,12 +6317,10 @@ static int persistent_map_mesh_add_infected_model(
             model_u32(material+16) || model_u32(material+20) ||
             model_u32(material+24) || model_u32(material+28) ||
             model_u32(material+32)) goto done;
-        visual=authored_visual_class(pose,material_id);
-        policy=character_render_policy(visual);
         color=model_u32(material)&0xffffffu;
         for(uint32_t index=first;index<first+count;index+=3) {
             struct vec3 q[4];
-            int normals[3][3],nx,ny,nz,form,world,light;
+            int normals[3][3],light;
             for(int corner=0;corner<3;++corner) {
                 uint32_t vertex=model_u32(pose->indices+(index+corner)*4);
                 int position[3];
@@ -6377,19 +6334,7 @@ static int persistent_map_mesh_add_infected_model(
                 normals[corner][2]=-normals[corner][2];
             }
             q[3]=q[2];
-            nx=(normals[0][0]+normals[1][0]+normals[2][0])/3;
-            ny=(normals[0][1]+normals[1][1]+normals[2][1])/3;
-            nz=(normals[0][2]+normals[1][2]+normals[2][2])/3;
-            form=model_form_light_q8(nx,ny,nz,1);
-            world=rasterfall_diagnostic_world_light_q8(
-                rasterfall_diagnostic_world_light_at_v1(build->light_v1,
-                    (q[0].x+q[1].x+q[2].x)/3,
-                    (q[0].y+q[1].y+q[2].y)/3,
-                    (q[0].z+q[1].z+q[2].z)/3));
-            light=world*form/256;
-            if (policy.lighting_min_q8>0)
-                light=clampi(light,policy.lighting_min_q8,
-                    policy.lighting_max_q8);
+            light=256;
             if (persistent_map_mesh_push(build,q,color)<0) goto done;
             for(int corner=0;corner<4;++corner)
                 build->patches[build->count-1].light[corner]=(unsigned short)light;
@@ -6409,7 +6354,6 @@ static int render_enemies(struct toy_renderer *renderer,
     if (scene_enemy_capture_active) {
         scene_enemy_capture.vertex_lighting=active_world_light_v2 &&
             !diagnostic_flat_planar && !diagnostic_constant_world;
-        if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
     }
     int saved_scene = active_scene_light_override_q8;
     for (int i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
@@ -9062,7 +9006,6 @@ int rasterfall_render_procedural_humanoid(
             active_scene_light_override_q8 : 256;
         item->vertex_lighting=active_world_light_v2;
         item->double_sided=active_material_double_sided;
-        if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
     }
     x = state->x; z = state->z;
     sy = state->sy; cy = state->cy;
@@ -10084,6 +10027,7 @@ static void prepare_diagnostic_world_light_v1(void)
 
 void rasterfall_render_bake_lightmap(void)
 {
+    if (render_ctx && render_ctx->gpu_scene_lighting) return;
     long start = render_monotonic_us();
     diagnostic_world_lighting_v1_ready = 0;
     active_diagnostic_world_light_v1 = 0;

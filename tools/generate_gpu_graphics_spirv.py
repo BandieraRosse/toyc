@@ -7,12 +7,14 @@ import sys
 import tempfile
 
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
-output = ['/* Generated from gpu/shaders/graphics_{v0,compat}.{vert,frag} and graphics_skin.comp. */']
+output = ['/* Generated from gpu/shaders/graphics_scene, graphics_shadow, graphics_tonemap and graphics_skin. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [(v, s) for v in ('v0', 'compat') for s in ('vert', 'frag')] + [('skin', 'comp')]:
+    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('color','vert'), ('shadow','vert'), ('tonemap','comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
-        subprocess.run([compiler, '-V', '--target-env', 'vulkan1.0', '-o', str(path),
-                        'gpu/shaders/graphics_' + variant + '.' + stage], check=True)
+        source_variant = 'scene' if variant == 'color' else variant
+        defines = ['-DRF_SCENE_COLOR=1'] if variant == 'color' else []
+        subprocess.run([compiler, '-V', '--target-env', 'vulkan1.0', '-o', str(path)] + defines +
+                       ['gpu/shaders/graphics_' + source_variant + '.' + stage], check=True)
         data = path.read_bytes()
         words = struct.unpack('<' + 'I' * (len(data)//4), data)
         name = stage if variant == 'v0' else variant + '_' + stage

@@ -50,10 +50,8 @@ static int scene_actor_procedural(const struct toy_game_actor *actor,
     item->body_color=actor->character_id<0 ? tint : profile->body_color;
     item->leg_color=actor->character_id<0 && ordinary_ai ? 0x25354A : profile->leg_color;
     item->skin_color=profile->skin_color;item->hair_color=profile->hair_color;
-    item->scene_light_q8=active_world_lighting ?
-        rasterfall_world_light_v2_q8(rasterfall_world_light_at(active_world_lighting,
-            actor->x,-900+actor->ground_y,actor->z)) : 256;
-    item->vertex_lighting=active_world_lighting!=NULL;
+    item->scene_light_q8=256;
+    item->vertex_lighting=0;
     item->double_sided=1;
     return 0;
 }
@@ -72,7 +70,6 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         scene_enemy_capture.frame_id>UINT_MAX) return -1;
     next.world_generation=scene_enemy_capture.world_generation;
     next.frame_id=scene_enemy_capture.frame_id-1;
-    if (active_world_lighting) scene_enemy_capture.lighting=*active_world_lighting;
     if (active_session->rts_active) {
         const struct toy_game_actor *player =
             toy_game_local_player_actor_const(&game);
@@ -167,8 +164,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                 }
             }
     }
-    if (rf_gpu_scene_local_freeze_world_lit(&next,pose_game,camera,width,height,
-            0,NULL,0,active_world_lighting,&frame)<0) goto fail;
+    if (rf_gpu_scene_local_freeze_presentation(&next,pose_game,camera,width,height,
+            0,NULL,0,&frame)<0) goto fail;
     for (unsigned i=0;i<frame.snapshot.actor_count;++i) {
         struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
         if (rf_gpu_scene_pose_extract_at(&frame,i,pose)<0) goto fail;

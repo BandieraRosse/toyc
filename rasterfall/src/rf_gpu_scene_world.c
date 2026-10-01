@@ -13,13 +13,12 @@ _Static_assert(RF_GPU_SCENE_PROJECTILE_CAP==TOY_GAME_MAX_PROJECTILES,
     "Scene projectile snapshot capacity must match game");
 
 int rf_gpu_scene_interactable_freeze(const struct rasterfall_session *session,
-    const struct rasterfall_effects *effects,
-    const struct rasterfall_world_lighting *lighting,int visible,
+    const struct rasterfall_effects *effects,int visible,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_interactable_frame_v1 *interactables)
 {
     struct rf_gpu_scene_interactable_frame_v1 next={0};
-    if (!session || !effects || !lighting || !interactables ||
+    if (!session || !effects || !interactables ||
         !frame_id || !world_generation || (visible!=0 && visible!=1) ||
         session->item_count<0 || session->item_count>TOY_MAP_MAX_PICKUPS)
         return -1;
@@ -39,8 +38,7 @@ int rf_gpu_scene_interactable_freeze(const struct rasterfall_session *session,
                 effect->kind==RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT &&
                 effect->target_id==i) { item->highlight_on=1;break; }
         }
-        item->scene_light_q8=rasterfall_world_light_v2_q8(
-            rasterfall_world_light_at(lighting,source->x,source->y,source->z));
+        item->scene_light_q8=256;
     }
     *interactables=next;
     return 0;
@@ -78,12 +76,11 @@ int rf_gpu_scene_flag_freeze(const struct rasterfall_session *session,
 }
 
 int rf_gpu_scene_projectile_freeze(const struct toy_game *game,
-    const struct rasterfall_world_lighting *lighting,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_projectile_frame_v1 *projectiles)
 {
     struct rf_gpu_scene_projectile_frame_v1 next={0};
-    if (!game || !lighting || !projectiles || !frame_id || !world_generation)
+    if (!game || !projectiles || !frame_id || !world_generation)
         return -1;
     next.frame_id=frame_id;next.world_generation=world_generation;
     for(uint32_t i=0;i<TOY_GAME_MAX_PROJECTILES;++i) {
@@ -99,8 +96,7 @@ int rf_gpu_scene_projectile_freeze(const struct toy_game *game,
         item->source_slot=i;item->kind=source->kind;
         item->x=source->x;item->y=source->y;item->z=source->z;
         item->age_ms=source->age_ms;item->flash_ms=source->flash_ms;
-        item->scene_light_q8=rasterfall_world_light_v2_q8(
-            rasterfall_world_light_at(lighting,source->x,-900+source->y,source->z));
+        item->scene_light_q8=256;
     }
     *projectiles=next;
     return 0;
@@ -231,12 +227,10 @@ int rf_gpu_scene_world_floor_freeze(const struct rasterfall_map_state *map,
     floor->spawn_count=(uint32_t)level->spawn_count;
     memcpy(floor->spawn_zones,level->spawn_zones,
         floor->spawn_count*sizeof(floor->spawn_zones[0]));
-    rasterfall_diagnostic_world_light_bake_v1(&floor->model_light_v1,level);
     return 0;
 }
 
 int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
-    const struct rasterfall_world_lighting *lighting,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_world_prop_frame_v1 *props)
 {
@@ -273,8 +267,7 @@ int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
             }
         memcpy(next->items[i].id,object->id,sizeof(object->id));
         next->items[i].submission_ordinal=(uint32_t)i;
-        next->items[i].scene_light_q8=lighting ? rasterfall_world_light_v2_q8(
-            rasterfall_world_light_at(lighting,prop->x,-900+prop->y,prop->z)) : 256;
+        next->items[i].scene_light_q8=256;
         next->items[i].prop=*prop;
         next->items[i].prop.asset_id=rasterfall_prop_presented_asset(prop->asset_id,prop->length);
     }
@@ -290,8 +283,6 @@ static int scene_world_floor_same(
         a->minz==b->minz && a->maxz==b->maxz &&
         a->authored_ground==b->authored_ground &&
         a->spawn_count==b->spawn_count &&
-        !memcmp(&a->model_light_v1,&b->model_light_v1,
-            sizeof(a->model_light_v1)) &&
         !memcmp(a->spawn_zones,b->spawn_zones,
             a->spawn_count*sizeof(a->spawn_zones[0]));
 }
@@ -328,8 +319,7 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
     const struct rf_gpu_scene_snapshot_v2 *snapshot,
     const struct rf_gpu_scene_world_render_frame_v1 *render,
     const struct rf_gpu_scene_world_floor_frame_v1 *floor,
-    const struct rf_gpu_scene_world_prop_frame_v1 *props,
-    uint64_t light_generation)
+    const struct rf_gpu_scene_world_prop_frame_v1 *props)
 {
     static const char *const identities[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT]={
         "@scene/world/map-wall","@scene/world/map-box",
@@ -345,7 +335,7 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
     uint32_t accepted=0,deferred=0,transparent=0,prop_accepted=0,needed=0,available=0;
     uint32_t prop_asset_count=0;
     int same_render,same_props;
-    if (!owner || !floor || !props || !light_generation ||
+    if (!owner || !floor || !props ||
         rf_gpu_scene_world_render_validate(snapshot,render)<0 ||
         floor->frame_id!=render->frame_id ||
         floor->world_generation!=render->world_generation ||
@@ -366,7 +356,7 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
             same_props=0;
     if (owner->map_generation==render->map_generation &&
         owner->world_generation==render->world_generation &&
-        owner->light_generation==light_generation && same_render && same_props &&
+        same_render && same_props &&
         scene_world_floor_same(&owner->floor,floor)) {
         for(uint32_t i=0;i<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++i)
             if (owner->opaque[i].generation &&
@@ -422,7 +412,6 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
     memcpy(owner->prop_asset,prop_handles,sizeof(prop_handles));
     owner->world_generation=render->world_generation;
     owner->map_generation=render->map_generation;
-    owner->light_generation=light_generation;
     owner->floor=*floor;
     owner->render_count=render->count;
     owner->prop_count=props->count;
@@ -445,7 +434,7 @@ void rf_gpu_scene_world_resources_invalidate(struct rf_gpu_scene_world_resources
     if (!owner) return;
     rasterfall_resources_invalidate(&owner->registry);
     memset(owner->opaque,0,sizeof(owner->opaque));
-    owner->world_generation=owner->map_generation=owner->light_generation=0;
+    owner->world_generation=owner->map_generation=0;
     memset(&owner->floor,0,sizeof(owner->floor));
     owner->render_count=0;
     owner->prop_count=0;

@@ -2,7 +2,6 @@
 #define RF_GPU_SCENE_ENEMY_H
 #include "toy_game.h"
 #include "rasterfall_enemy_rig.h"
-#include "rasterfall_world_light.h"
 #include "rasterfall_render.h"
 #include "rf_gpu_scene_pose.h"
 struct rf_gpu_scene_procedural_item_v1 {
@@ -40,7 +39,6 @@ struct rf_gpu_scene_enemy_frame_v1 {
     uint64_t frame_id, world_generation;
     unsigned count, deferred, culled, transparent;
     int vertex_lighting;
-    struct rasterfall_world_lighting lighting;
     struct rf_gpu_scene_enemy_item_v1 items[RF_GPU_SCENE_ENEMY_CAPACITY];
     unsigned procedural_count, failed;
     struct rf_gpu_scene_procedural_item_v1 procedural[TOY_GAME_MAX_ACTORS];

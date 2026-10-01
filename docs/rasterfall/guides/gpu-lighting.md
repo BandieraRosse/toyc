@@ -1,0 +1,25 @@
+# GPU 光照实验与验证
+
+> 状态：当前操作指南
+> 所有者：GPU Scene
+
+实现边界见[GPU 实时光照](../architecture/gpu-lighting.md)。先运行 Windows native build，再启动：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 build
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_lighting_lab.ps1
+```
+
+实验区位于前哨站模型实验场东侧，可从模型场地步行进入。脚本直接选择前哨站并把相机放在实验区入口；也可使用 `--renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene lighting-lab 0`。
+
+三排球体从近到远分别为 PBR 非金属、金属、风格化非金属。每排从左到右粗糙度为 0.12、0.38、0.64、0.90，底座标签数字表示百分数。两盏暖色/冷色聚光灯沿轨道移动，球体和侧边立柱提供投影遮挡。球体是 GPU 展示资源，不参与玩法碰撞；地面通过正常地图 surface/collision 声明提供行走空间。CPU 只显示地图场地。
+
+大厅渲染终端可开启 GPU 手电筒、切换角色风格化材质与纹理过滤。实时阴影和 PBR 是 GPU 默认能力；CPU 不支持这些高级选项。
+
+## 自动与实机检查
+
+`rasterfall.exe --gpu-lighting-test` 在物理 Vulkan GPU 上做离屏行为回归，检查太阳/聚光灯遮挡、移动点光源、粗糙度、风格化响应、旧烘焙乘数无效和 resize。它有显式诊断 readback，不能代替 native present。
+
+正常实验区截图可给启动参数增加 `--frames 3 --gpu-frame-capture <绝对路径> --gpu-capture-frame 2`。按 [Windows Native](windows-native.md) 等待进程句柄退出并检查日志和生成的 `.scene.ppm`。固定 capture 时使用固定展示时钟；观看灯移动时不要启用 capture。
+
+资源生命周期继续使用 `tools/gpu_scene_play.ps1 -Stage Interactive` 和 `-Stage World`。修改共享 CPU/Scene 展示来源后运行 `--logic-test`，确认 CPU 烘焙仍可用。开启 Vulkan validation 时必须检查 VUID 和同步错误；有 validation 的短帧时间不是正式性能数据。

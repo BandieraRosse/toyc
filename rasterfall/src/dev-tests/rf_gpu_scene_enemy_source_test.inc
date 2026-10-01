@@ -50,7 +50,7 @@ static int scene_independent_enemy_source_test(void)
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_collect_independent(&camera,1000000,73));
     ENEMY_SOURCE_CHECK(rf_gpu_scene_enemy_collect_independent(&camera,1000000,73)<0);
     ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&a) && a.count==2 &&
-        a.items[0].legacy_kind==1 && a.items[0].shadow &&
+        a.items[0].legacy_kind==1 && !a.items[0].shadow &&
         a.items[1].tongue && a.items[1].pose.channel[ER_TORSO].pitch==12 &&
         !memcmp(&untouched,&owner.game_state,sizeof(untouched)));
     owner.game_state.enemies[0].x=100;

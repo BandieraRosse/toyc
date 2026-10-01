@@ -1,0 +1,33 @@
+# GPU 实时光照
+
+> 状态：当前
+> 所有者：GPU Scene presentation、Vulkan graphics
+> 决策日期：2026-10-01
+
+GPU Scene 使用独立实时光照；CPU 保留 Static World Lighting V2。GPU 不采样 V1/V2，不复制烘焙场，不以 CPU 的颜色、整数深度或光照乘数作为兼容目标。CPU 不承担本页高级功能。
+
+## 数据与所有权
+
+`render/rf_gpu_scene_lighting.inc` 从只读展示状态提取灯柱聚光灯、枪口/爆炸瞬时点光源和可选手电筒。灯的位置、颜色、半径、强度与锥角进入 `rf_gpu_lighting`；最多 32 盏，按强度与相机距离排序截断。灯状态不写入 Game、地图碰撞或网络快照。
+
+`gpu/src/rf_gpu_lighting.inc` 拥有每个 graphics slot 的光照缓冲、阴影目标、GPU 深度缓冲和后处理管线。光照在提交前复制，帧执行期间不可修改。resize 重建 HDR/LDR 目标和相关描述符；关闭在 GPU 排空后释放资源。
+
+## 帧流程
+
+1. 不透明 WORLD 几何绘制阴影：太阳采用三个相机附近的稳定正交范围；最多两盏聚光灯使用透视阴影。
+2. 阴影为 1024×1024 D32，深度在 GPU 内复制到 storage buffer，片元执行 3×3 PCF。此复制不经过 CPU readback。使用实际可见模型几何，碰撞盒不参与阴影。
+3. WORLD、天空、透明、特效与 viewmodel 写入 RGBA16F 线性 HDR；世界深度为 D32 reversed Z。纹理先由 sRGB 解码，再参与过滤和着色。
+4. compute 执行曝光与 ACES fitted 色调映射，输出 RGBA8；HUD 随后合成，保持界面颜色。正常帧直接 native present。
+
+材质使用 GGX 镜面、Schlick Fresnel、粗糙度、金属度和标量自发光。平滑法线来自资源；无显式法线时用几何法线。风格化材质调整漫反射响应，仍消费同一组实时灯和阴影。当前粗糙度/金属度为 draw 标量；没有承诺 normal/ORM 纹理、IBL、GI 或完整动漫材质。
+
+## 边界与预算
+
+- 太阳三个范围半径为 6144、20480、65536 RFU，512 RFU = 1 m。级别边界未做混合。
+- 最多两个聚光灯阴影名额按灯列表顺序分配；其余聚光灯和点光源只有直接光，点光源可能穿墙。
+- 半透明、粒子和 viewmodel 不投射 WORLD 阴影；不透明角色、静态物与实验区球体参与投影。
+- 环境填充为均匀线性颜色，尚无遮蔽/反射探针；金属只反射当前直接光。
+- 旧 `light_q8` 等字段在部分几何存储中暂时保留，但 GPU shader 不消费烘焙亮度；旧整数兼容 draw 被拒绝，兼容索引上传已删除，旧 shader 不再编入 SPIR-V。
+- 暂未建立本版本正式性能基线，不据短帧诊断承诺帧率。
+
+实验区和验证入口见[光照指南](../guides/gpu-lighting.md)，当前交付顺序见[活动计划](../plans/README.md)。

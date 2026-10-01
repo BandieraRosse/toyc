@@ -5,7 +5,6 @@
 #include "rasterfall_map.h"
 #include "rasterfall_render_resources.h"
 #include "rasterfall_prop.h"
-#include "rasterfall_world_light.h"
 
 #define RF_GPU_SCENE_WORLD_RENDER_ABI_V1 1U
 enum rf_gpu_scene_world_opaque_class {
@@ -40,7 +39,6 @@ struct rf_gpu_scene_world_floor_frame_v1 {
     int minx, maxx, minz, maxz, authored_ground;
     uint32_t spawn_count;
     struct toy_map_zone spawn_zones[TOY_MAP_MAX_ZONES];
-    struct rasterfall_diagnostic_world_lighting_v1 model_light_v1;
 };
 struct rf_gpu_scene_world_prop_item_v1 {
     char id[RF_MAP_RUNTIME_ID_CAP];
@@ -80,7 +78,6 @@ struct rf_gpu_scene_projectile_frame_v1 {
 };
 struct toy_game;
 int rf_gpu_scene_projectile_freeze(const struct toy_game *game,
-    const struct rasterfall_world_lighting *lighting,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_projectile_frame_v1 *projectiles);
 
@@ -95,8 +92,7 @@ struct rf_gpu_scene_interactable_frame_v1 {
     struct rf_gpu_scene_interactable_item_v1 items[TOY_MAP_MAX_PICKUPS];
 };
 int rf_gpu_scene_interactable_freeze(const struct rasterfall_session *session,
-    const struct rasterfall_effects *effects,
-    const struct rasterfall_world_lighting *lighting,int visible,
+    const struct rasterfall_effects *effects,int visible,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_interactable_frame_v1 *interactables);
 
@@ -117,7 +113,6 @@ int rf_gpu_scene_world_floor_freeze(const struct rasterfall_map_state *map,
     int authored_ground,uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_world_floor_frame_v1 *floor);
 int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
-    const struct rasterfall_world_lighting *lighting,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_world_prop_frame_v1 *props);
 /* Builds four persistent map classes, partitioned floor, boundary walls,
@@ -148,7 +143,7 @@ struct rf_gpu_scene_world_resources {
     struct rasterfall_resource_registry registry;
     struct rasterfall_resource_handle opaque[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT];
     struct rasterfall_resource_handle prop_asset[RASTERFALL_PROP_ASSET_COUNT+1];
-    uint64_t world_generation, map_generation, light_generation;
+    uint64_t world_generation, map_generation;
     struct rf_gpu_scene_world_floor_frame_v1 floor;
     struct rf_gpu_scene_world_prop_item_v1 prop_items[TOY_MAP_MAX_PROPS];
     struct rf_gpu_scene_world_render_item_v1 render_items[RF_GPU_SCENE_MAX_WORLD_V2];
@@ -161,8 +156,7 @@ int rf_gpu_scene_world_resources_prepare(struct rf_gpu_scene_world_resources *ow
     const struct rf_gpu_scene_snapshot_v2 *snapshot,
     const struct rf_gpu_scene_world_render_frame_v1 *render,
     const struct rf_gpu_scene_world_floor_frame_v1 *floor,
-    const struct rf_gpu_scene_world_prop_frame_v1 *props,
-    uint64_t light_generation);
+    const struct rf_gpu_scene_world_prop_frame_v1 *props);
 void rf_gpu_scene_world_resources_invalidate(struct rf_gpu_scene_world_resources *owner);
 
 #endif

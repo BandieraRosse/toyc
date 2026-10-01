@@ -4,9 +4,8 @@
 #include <stdint.h>
 #include "rf_gpu_vulkan_backend.h"
 
-/* HG-2A/2B hosted diagnostic only. No normal-frame/fallback integration.
- * Corner vertices carry all three source normals to preserve integer
- * per-primitive lighting after rotation. Expansion happens once at upload. */
+/* GPU Scene geometry ABI. Corner vertices carry all three source normals
+ * for smooth interpolation after rotation. Expansion happens once at upload. */
 struct rf_gpu_graphics_vertex {
     int32_t position[3], uv[2], normals[9];
 };
@@ -18,28 +17,47 @@ struct rf_gpu_scene_color_vertex {
 _Static_assert(sizeof(struct rf_gpu_scene_color_vertex)==20,"Scene color vertex ABI");
 
 /* Eight 16-byte push-constant lanes. Scene converts fixed storage to float
- * before transforms; the compatibility path uses truncating integer division.
+ * before transforms. Legacy integer compatibility is rejected.
  * Q10 directions, milli scale, unsigned Q16 UV.
- * Deliberately bounded proof contract; not a replacement for Draw V0.
- * integer_depth requires shaderInt64 and rejects conservative projected
- * mesh bounds outside [-16384,16384] before submitting any draw. */
+ * The first eight lanes form the 128-byte shader push-constant block.
+ * integer_depth is reserved and must be zero. */
 struct rf_gpu_graphics_draw {
     int32_t translation_scale[4];
-    int32_t rotation[4]; /* sin, cos, bottom pivot y, form-light enabled */
+    int32_t rotation[4]; /* sin, cos, bottom pivot y, reserved */
     int32_t camera[4];
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
-    uint32_t material[4]; /* RGB, scene Q8, textured, light mode: 0 form, 1 vertex, 2 vertex+RGB */
+    uint32_t material[4]; /* RGB, ignored legacy multiplier, textured, vertex format (2=color) */
     int32_t texture[4]; /* width,height, alpha (0=opaque), screen mode (0/1/2) */
     /* Scene precision/material controls. Zero keeps ordinary defaults.
-     * flags: bit 0 quantized depth, bit 1 integer transform (diagnostic only).
+     * flags: public callers must pass zero; internal layer flags are owner-only.
      * units: local units/metre (0=512); shading: 0 flat, 1 smooth, 2 soft,
      * 3 unlit; filter: 0 nearest, 1 bilinear/repeat. */
     int32_t quality[4];
     uint32_t first_index, index_count, double_sided;
-    uint32_t integer_depth; /* HG-2B GPU clip/project + exact integer depth */
+    uint32_t integer_depth; /* Retired; nonzero is rejected. */
     /* Scene-only ordered pass. Zero preserves existing WORLD callers. */
     uint32_t scene_layer;
+    /* Linear-light material; zero roughness selects the neutral 0.65 default. */
+    float roughness, metallic, emissive;
+};
+
+#define RF_GPU_LIGHT_CAP 32
+#define RF_GPU_SHADOW_CASCADES 3
+#define RF_GPU_SHADOW_MAPS 5
+#define RF_GPU_SHADOW_SIZE 1024
+struct rf_gpu_light {
+    float position_radius[4]; /* RFU position and finite influence radius */
+    float color_intensity[4]; /* linear RGB, intensity at one metre */
+    float direction_outer[4]; /* spot direction and outer cosine; -1 point */
+    float inner_shadow[4]; /* inner cone cosine; shadow index assigned by GPU owner */
+};
+struct rf_gpu_lighting {
+    float sun_direction[4];
+    float sun_color[4];
+    float environment[4]; /* linear diffuse fill, exposure in w */
+    uint32_t count;
+    struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
 };
 enum rf_gpu_graphics_scene_layer {
     RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,
@@ -158,6 +176,10 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
  * the explicitly retired Scene submission below.
  * Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
+void rf_gpu_lighting_default(struct rf_gpu_lighting *lighting);
+int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,
+    const struct rf_gpu_lighting *lighting);
+int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g);
 /* Validate the currently bound resource/draw without touching target contents. */
 int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draw);

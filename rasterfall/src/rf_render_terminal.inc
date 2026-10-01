@@ -16,7 +16,7 @@ struct rf_render_feature {
 static const char *rf_render_baseline[] = {
     "相机、天空与画面层级",
     "地图与静态环境",
-    "静态世界光照与材质",
+    "光照与材质（按渲染器独立）",
     "透明物体与深度顺序",
     "动态物件与交互提示",
     "玩家、队友与武器",
@@ -26,14 +26,14 @@ static const char *rf_render_baseline[] = {
 };
 
 static const struct rf_render_feature rf_render_features[] = {
-    {"模型边线", "仅影响 CPU 模型；并非完整卡通描边",
-     RF_RENDER_EXPERIMENTAL, RF_RENDER_UNSUPPORTED},
-    {"实时阴影", "动态光源投射的阴影",
-     RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED},
-    {"物理材质", "基于物理的材质响应",
-     RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED},
-    {"全局光照 / 环境遮蔽", "间接光照与屏幕空间遮蔽",
-     RF_RENDER_UNIMPLEMENTED, RF_RENDER_UNIMPLEMENTED},
+    {"模型边线", "新 GPU 描边尚未实现；CPU 保留旧命令行诊断",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_UNIMPLEMENTED},
+    {"实时阴影", "GPU 默认太阳级联阴影",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL},
+    {"物理材质", "GPU 默认线性 HDR 与 PBR 材质",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL},
+    {"手电筒", "跟随相机的动态聚光灯",
+     RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL},
     {"角色柔和材质", "平滑身体与头发、柔和皮肤、明亮眼部",
      RF_RENDER_UNSUPPORTED, RF_RENDER_EXPERIMENTAL},
     {"纹理线性过滤", "静态场景纹理；角色贴图接入另行验收",
@@ -47,6 +47,7 @@ static const struct rf_render_feature rf_render_features[] = {
 struct rf_render_terminal_ui {
     int open, near, page, selected, pointer_x, pointer_y;
     int scene_backend, edge_requested, edge_effective;
+    int flashlight;
     const char *message;
 };
 static struct rf_render_terminal_ui rf_render_terminal;
@@ -107,10 +108,15 @@ static void rf_render_terminal_request(int index)
         rf_render_terminal.edge_effective = rf_render_terminal.edge_requested;
         rf_render_terminal.message = rf_render_terminal.edge_effective ?
             "已开启实验性模型边线" : "已关闭模型边线";
+    } else if (index == 1 || index == 2) {
+        rf_render_terminal.message = "GPU 基础光照管线，默认启用";
+    } else if (index == 3) {
+        rf_render_terminal.flashlight = !rf_render_terminal.flashlight;
+        rf_render_terminal.message = rf_render_terminal.flashlight ? "手电筒已开启" : "手电筒已关闭";
     } else if (index == 4) {
         rf_gpu_scene_character_material_set(!rf_gpu_scene_character_material_enabled());
         rf_render_terminal.message = rf_gpu_scene_character_material_enabled() ?
-            "角色柔和材质已开启" : "已恢复角色原光照";
+            "角色风格化材质已开启" : "角色已切换为 PBR 材质";
     } else if (index == 5) {
         rf_gpu_scene_linear_filter_set(!rf_gpu_scene_linear_filter_enabled());
         rf_render_terminal.message = rf_gpu_scene_linear_filter_enabled() ?
@@ -142,7 +148,7 @@ static void rf_render_terminal_draw(struct rasterfall_canvas *canvas)
             rasterfall_canvas_text(canvas, x + 44, y + 164 + i * 27,
                                    rf_render_baseline[i], 0xD6F3F3);
         rasterfall_canvas_text(canvas, x + 32, y + 421,
-            "两种渲染器的观感一致性仍在验收", 0xDDA88E);
+            "CPU 使用静态光照；GPU 使用独立实时光照", 0xDDA88E);
     } else {
         for (int i = 0; i < RF_RENDER_FEATURE_COUNT; ++i) {
             int row = y + 129 + i * RF_RENDER_FEATURE_ROW_HEIGHT;
@@ -159,6 +165,10 @@ static void rf_render_terminal_draw(struct rasterfall_canvas *canvas)
                 snprintf(line, sizeof(line), "请求：%s / 生效：%s",
                     rf_render_terminal.edge_requested ? "开" : "关",
                     rf_render_terminal.edge_effective ? "开" : "关");
+            } else if ((i == 1 || i == 2) && support < RF_RENDER_UNSUPPORTED) {
+                snprintf(line,sizeof(line),"默认启用");
+            } else if (i == 3 && support < RF_RENDER_UNSUPPORTED) {
+                snprintf(line,sizeof(line),"%s",rf_render_terminal.flashlight ? "开" : "关");
             } else if ((i == 4 || i == 5) && support < RF_RENDER_UNSUPPORTED) {
                 int enabled=i==4 ? rf_gpu_scene_character_material_enabled() : rf_gpu_scene_linear_filter_enabled();
                 snprintf(line,sizeof(line),"请求：%s / 生效：%s",enabled ? "开" : "关",enabled ? "开" : "关");

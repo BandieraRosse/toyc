@@ -96,7 +96,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
     static const int roll_cos[8]={1024,946,724,392,0,-392,-724,-946};
     struct scene_independent_enemy_history next[TOY_GAME_MAX_ENEMIES];
     static struct rf_gpu_scene_enemy_frame_v1 frame;
-    if (!camera || !active_session || !active_effects || !active_world_lighting ||
+    if (!camera || !active_session || !active_effects ||
         !scene_enemy_capture_active || !world_generation ||
         scene_enemy_capture.world_generation!=world_generation ||
         (scene_independent_enemy_frame==scene_enemy_capture.frame_id &&
@@ -108,8 +108,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         memset(next,0,sizeof(next));
     else memcpy(next,scene_independent_enemy_history,sizeof(next));
     frame=scene_enemy_capture;
-    frame.vertex_lighting=!diagnostic_flat_planar && !diagnostic_constant_world;
-    frame.lighting=*active_world_lighting;
+    frame.vertex_lighting=0;
     for (int i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
         const struct toy_game_enemy *e=&game.enemies[i];
         const struct toy_game_enemy_info *info;
@@ -199,9 +198,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         item->lift=lift+presentation.ground_y+presentation.airborne_y;
         if (item->transformed) item->pivot_y=-300+item->lift;
         item->feedback=enemy_feedback_color(i);
-        item->scene_light_q8=rasterfall_world_light_v2_q8(
-            rasterfall_world_light_at(active_world_lighting,e->x,
-                -900+e->ground_y,e->z));
+        item->scene_light_q8=256;
         item->double_sided=1;
         item->transparent=alpha<255;
         item->alpha=alpha;
@@ -211,7 +208,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             item->squash=e->active==2?scale:1000;
         /* Blob shadow uses ground lift, before airborne height is added. */
         if (!item->transformed) {
-            item->shadow=1;
+            item->shadow=0;
             item->shadow_y=-886+lift+presentation.ground_y;
             item->shadow_rx=230*scale/1000;
             item->shadow_rz=150*scale/1000;
@@ -271,8 +268,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             item->source_slot=TOY_GAME_MAX_ENEMIES+(unsigned)i;
             item->type=entry->type;
             item->x=entry->x;item->z=entry->z;item->dir_z=1024;
-            item->scene_light_q8=rasterfall_world_light_v2_q8(
-                rasterfall_world_light_at(active_world_lighting,entry->x,-900,entry->z));
+            item->scene_light_q8=256;
             item->double_sided=1;item->alpha=255;
             item->squash=1000;
             for (int j=0;j<6;++j)
@@ -296,8 +292,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             item->type=entry->type;
             item->x=entry->x;item->z=entry->z;
             item->dir_z=entry->direction*1024;
-            item->scene_light_q8=rasterfall_world_light_v2_q8(
-                rasterfall_world_light_at(active_world_lighting,entry->x,-900,entry->z));
+            item->scene_light_q8=256;
             item->double_sided=1;item->alpha=255;
             item->squash=1000;
             for (int j=0;j<6;++j)

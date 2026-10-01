@@ -19,6 +19,7 @@ struct rasterfall_render_context {
     const struct rasterfall_net *net;
     struct toy_texture_view *wall_texture;
     const struct toy_texture_view *model_texture;
+    int gpu_scene_lighting;
     struct rasterfall_world_lighting world_lighting;
     uint64_t world_light_generation;
     int textures_enabled;

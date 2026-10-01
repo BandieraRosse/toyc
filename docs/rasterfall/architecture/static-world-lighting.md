@@ -4,7 +4,7 @@
 > 所有者：Static World Lighting
 > 最近核对：2026-09-21
 
-V2 是正常 runtime 的唯一世界光照源；V1 仅供显式诊断和回归使用。可执行验证见[指南](../guides/static-world-lighting.md)，冻结现场见[历史记录](../archive/static-world-lighting-v2-freeze.md)。
+V2 是 CPU 正常 runtime 的静态世界光照源；GPU 使用[独立实时光照](gpu-lighting.md)，不 bake/sample V1/V2。V1 仅供显式诊断和回归使用。可执行验证见[指南](../guides/static-world-lighting.md)，冻结现场见[历史记录](../archive/static-world-lighting-v2-freeze.md)。
 
 ## 所有权与生命周期
 
@@ -15,17 +15,9 @@ normal render context 只持有 V2 cache。world load/switch 时 bake，正常�
 缓存保存 world bounds 快照，因此查询不依赖后续 session 状态。Game actor、网络快照、RMESH/RFCHAR
 资产均不保存光照状态。
 
-每次 V2 bake 递增 render context 的 `world_light_generation`。GPU Scene 地图网格把 V2 查询结果
-烘进顶点，因此其资源复用键同时检查 world/map generation、展示状态和 light generation；
-同一地图重新 bake 也会退休旧网格。
+每次 CPU V2 bake 递增 render context 的 `world_light_generation`。GPU 地图资源缓存不含该 generation，也不保存 V1/V2 field；其几何颜色为未照明的材质颜色。GPU runtime 在 bake 入口直接跳过 CPU 烘焙。
 
-V1 32×24 cache 属于独立 diagnostic owner，只能在显式诊断 scope 中按需 bake。正常启动不 bake V1，
-默认 sampler 不会回退到 V1。
-
-当前独立 Scene 仍有实现偏差：`rf_gpu_scene_world_floor_freeze` 为展示模型复制 V1 field 时，
-每帧重新 bake，而非复用 diagnostic owner 的缓存；无敌人也会执行。它不改变正常 V2 sampler，
-但增加随地图 primitive 数量变化的 CPU 冻结成本，尚待按地图生命周期缓存。
-源码核对和成本边界见 [旧地图调查](../archive/old-map-lighting-investigation-20260925.md)。
+V1 32×24 cache 仅保留 CPU 显式诊断用途。此前 Scene 每帧复制/bake V1 的路径已删除。
 
 ## 冻结参数
 
