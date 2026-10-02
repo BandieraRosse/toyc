@@ -272,6 +272,10 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
             p->yaw_degrees,p->scale_milli,p->length};
         if (rasterfall_host_activity(&instance,input->host_time_ms,scene_host_quad,mesh)<0)
             return -1;
+        mesh->emissive=instance.asset_id==RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE;
+        if (rasterfall_electronics_activity(&instance,&input->electronics,scene_host_quad,mesh)<0)
+            return -1;
+        mesh->emissive=0;
     }
     mesh->layer=RF_GPU_SCENE_TRANSPARENT;
     for (unsigned i=0;input->map && i<input->map->count;++i) {

@@ -1,5 +1,29 @@
 /* Contracts that are hard to observe: suspension, session return and statistics. */
 #include "../render/rasterfall_machine_screen.h"
+#include "../render/rasterfall_lab_terminal.h"
+struct rf_pane_test { int count,points[4][3]; };
+static int rf_pane_test_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct rf_pane_test *t=context;
+    (void)color;t->count++;memcpy(t->points,p,sizeof(t->points));return 0;
+}
+static int rf_pane_contract_test(void)
+{
+    struct toy_map_draw d={0};struct rf_pane_test t={0};
+    d.style=6;d.a=d.b=-40;d.c=-80;d.d=60;d.e=-90;d.f=120;
+    if (rf_lab_terminal_emit(&d,rf_pane_test_quad,&t)<0 || t.count!=1) return -1;
+    for (int i=0;i<4;++i) if (t.points[i][0]!=-40) return -2;
+    if (t.points[0][2]!=-80 || t.points[1][2]!=60 ||
+        t.points[0][1]!=120 || t.points[2][1]!=-90) return -3;
+    d.a=-20;d.b=80;d.c=d.d=50;t.count=0;
+    if (rf_lab_terminal_emit(&d,rf_pane_test_quad,&t)<0 || t.count!=1) return -4;
+    for (int i=0;i<4;++i) if (t.points[i][2]!=50) return -5;
+    d.d=60;
+    if (rf_lab_terminal_emit(&d,rf_pane_test_quad,&t)>=0) return -6;
+    d.a=d.b=0;d.c=d.d=0;
+    if (rf_lab_terminal_emit(&d,rf_pane_test_quad,&t)>=0) return -7;
+    __printf("MACHINE-PANE X/Z planes and invalid bounds passed\n");return 0;
+}
 struct rf_screen_test { unsigned pixels[64*64]; unsigned char coverage[64*64]; };
 static int rf_screen_test_span(void *context,int x0,int x1,int y0,int y1,unsigned color)
 {
@@ -86,10 +110,58 @@ static int rf_lab_composite_contract_test(void)
     __printf("EXPERIMENT-LAB composite/forward-reference/overflow/display-freeze passed\n");
     return 0;
 }
+struct rf_electronics_test_capture { unsigned hash,count; };
+static int rf_electronics_test_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct rf_electronics_test_capture *c=context;
+    c->hash=(c->hash^color)*16777619u;c->count++;
+    for (int i=0;i<4;++i) for (int k=0;k<3;++k)
+        c->hash=(c->hash^(unsigned)p[i][k])*16777619u;
+    return 0;
+}
+static int rf_electronics_contract_test(void)
+{
+    rf_labs_reset();rf_lab_control(RF_LAB_ELECTRONICS);
+    if (!rf_labs.requested[RF_LAB_ELECTRONICS] || rf_labs.fan_rpm!=600) return -1;
+    rf_labs_tick(RASTERFALL_WORLD_OUTPOST,0,1,1000);
+    rf_labs_tick(RASTERFALL_WORLD_OUTPOST,0,1,51000);
+    struct rasterfall_electronics_frame a=rasterfall_electronics_get_frame();
+    if (a.phase[7]!=30000000u || !(a.powered_mask&(1u<<7))) return -2;
+    rf_lab_control(RF_LAB_ELECTRONICS);
+    if (rf_labs.fan_rpm!=1200 || rf_labs.fan_phase[RF_LAB_ELECTRONICS]!=a.phase[7]) return -3;
+    rf_labs_tick(RASTERFALL_WORLD_OUTPOST,0,1,76000);
+    struct rasterfall_electronics_frame b=rasterfall_electronics_get_frame();
+    if (b.phase[7]!=0) return -4;
+    rf_labs_tick(RASTERFALL_WORLD_OUTPOST,1,1,101000);
+    struct rasterfall_electronics_frame paused=rasterfall_electronics_get_frame();
+    if (paused.phase[7]!=b.phase[7] || paused.time_ms[7]!=b.time_ms[7] || paused.powered_mask) return -5;
+    rf_lab_control(RF_LAB_ELECTRONICS);
+    if (rf_labs.fan_rpm!=1800) return -6;
+    rf_lab_control(RF_LAB_ELECTRONICS);
+    if (rf_labs.requested[RF_LAB_ELECTRONICS]) return -7;
+    rf_labs_tick(RASTERFALL_WORLD_OUTPOST,0,1,126000);
+    if (rasterfall_electronics_get_frame().phase[7]!=b.phase[7]) return -8;
+    struct rasterfall_prop_instance p={RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE,0,0,0,0,1000,7};
+    struct rf_electronics_test_capture x={0},y={0},z={0};
+    if (rasterfall_electronics_activity(&p,&a,rf_electronics_test_quad,&x)<0 ||
+        rasterfall_electronics_activity(&p,&b,rf_electronics_test_quad,&y)<0 ||
+        rasterfall_electronics_activity(&p,&b,rf_electronics_test_quad,&z)<0 ||
+        !x.count || x.hash==y.hash || y.hash!=z.hash) return -9;
+    p.asset_id=RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE;p.x=p.z=0;
+    a.powered_mask=1u<<7;a.time_ms[7]=0;b=a;b.time_ms[7]=400;
+    memset(&x,0,sizeof(x));memset(&y,0,sizeof(y));
+    if (rasterfall_electronics_activity(&p,&a,rf_electronics_test_quad,&x)<0 ||
+        rasterfall_electronics_activity(&p,&b,rf_electronics_test_quad,&y)<0 || x.hash==y.hash) return -10;
+    rf_labs_reset();
+    if (rasterfall_electronics_get_frame().powered_mask) return -11;
+    __printf("RF-ELECTRONICS RPM/phase-continuity/pause/power/rotors/status passed\n");return 0;
+}
 static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
 {
     if (rf_lab_composite_contract_test()<0) return -12;
     if (rf_machine_screen_contract_test()<0) return -13;
+    if (rf_pane_contract_test()<0) return -14;
+    if (rf_electronics_contract_test()<0) return -15;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;
     struct camera origin=runtime->camera;
     uint64_t seed=runtime->session->seed;

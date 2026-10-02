@@ -57,8 +57,17 @@ static int rf_lab_terminal_emit(const struct toy_map_draw *d,
     int large=d->b-d->a>=2400;
     int rail=large ? 24 : 12;
     struct rf_terminal_emit_context c={context,quad,z,d->color};
-    if (d->b<=d->a || d->f<=d->e) return -1;
-    if (d->style==6) return rf_terminal_rect(&c,d->a,d->b,d->e,d->f,d->color);
+    if (d->f<=d->e) return -1;
+    if (d->style==6) {
+        if (d->a==d->b && d->d>d->c) {
+            int p[4][3]={{x,d->f,d->c},{x,d->f,d->d},{x,d->e,d->d},{x,d->e,d->c}};
+            return quad(context,p,d->color);
+        }
+        if (d->b>d->a && d->c==d->d)
+            return rf_terminal_rect(&c,d->a,d->b,d->e,d->f,d->color);
+        return -1;
+    }
+    if (d->b<=d->a) return -1;
     if (d->style==5) {
         struct rf_machine_screen_context screen={c,d};
         if (d->texture_u<1 || d->texture_v<1 ||

@@ -8,8 +8,12 @@ import struct
 import sys
 
 ROOT=Path(__file__).resolve().parents[1]
+LAB_GROUPS={name:i+1 for i,name in enumerate(('character_lab','walk_lab','actor_actions_lab',
+    'actor_walk_lab','rf_model_lab','rf_light_lab','rf_electronics_lab'))}
 PARTS=(('', 'stand', 0, 0, 0), ('_case','case',-320,578,-30),
-       ('_board','board',-320,662,40), ('_cooling','cooling',-290,790,74),
+       ('_board','board',-240,680,-30), ('_cpu','cpu',-258,858,-52),
+       ('_memory_a','memory',-281,815,46), ('_memory_b','memory',-281,815,74),
+       ('_compute','compute',-257,757,-30), ('_cooling','cooling',-273,818,-52),
        ('_monitor','display',130,628,-64), ('_keyboard','keyboard',130,578,140))
 
 def generate(identity,x,z,channel,color,lab=None):
@@ -21,10 +25,12 @@ def generate(identity,x,z,channel,color,lab=None):
     assembly=identity+'_assembly'
     lines=[f'assembly id={assembly} x={x} y=0 z={z}'+(f' attr.lab={lab}' if lab else '')]
     for suffix,part,px,py,pz in PARTS:
-        lines.append(f'object id={identity}{suffix} kind=lab_computer_{part} x={px} y={py} z={pz} yaw=0 scale=1000 attr.assembly={assembly}'+(' attr.collision=component' if not suffix else ''))
+        scale=250 if part=='cpu' else 1000
+        group=LAB_GROUPS.get(channel,0)
+        lines.append(f'object id={identity}{suffix} kind=lab_computer_{part} x={px} y={py} z={pz} yaw=0 scale={scale} attr.assembly={assembly} attr.length={group}'+(' attr.collision=component' if not suffix else ''))
     lines.append(f'render id={identity}_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color={color} attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel={channel}_computer attr.assembly={assembly}')
-    # Independent transparent protective pane, physically forward of the internals.
-    lines.append(f'render id={identity}_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly={assembly}')
+    # Outward (-X) service pane, with a real open frame in the case asset.
+    lines.append(f'render id={identity}_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly={assembly}')
     return '\n'.join(lines)+'\n'
 
 def main():
@@ -42,7 +48,7 @@ def main():
     source=ROOT/'rasterfall/private-assets/source/props/lab'
     subprocess.run([a.blender,'-b','--python-exit-code','1','--python',str(ROOT/'tools/blender/generate_lab_computer.py'),'--','--output',str(source)],check=True)
     dest=ROOT/'rasterfall/assets/models/props/lab';dest.mkdir(parents=True,exist_ok=True)
-    for _,part,*_ in PARTS:
+    for part in dict.fromkeys(row[1] for row in PARTS):
         asset='rf_lab_computer_'+part
         manifest=ROOT/'tools/assets/manifests/props/lab'/(asset+'.asset.json')
         subprocess.run([sys.executable,str(ROOT/'tools/assets/import_asset.py'),'--no-build','--tool-dir',str(ROOT/'build-windows'),'--force','--output-root',str(dest),str(manifest)],cwd=ROOT,check=True)

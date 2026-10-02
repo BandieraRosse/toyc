@@ -74,7 +74,10 @@ enum rasterfall_prop_asset_id {
     RASTERFALL_PROP_ASSET_LAB_COMPUTER_COOLING = 64,
     RASTERFALL_PROP_ASSET_LAB_COMPUTER_DISPLAY = 65,
     RASTERFALL_PROP_ASSET_LAB_COMPUTER_KEYBOARD = 66,
-    RASTERFALL_PROP_ASSET_COUNT = 66
+    RASTERFALL_PROP_ASSET_LAB_COMPUTER_CPU = 67,
+    RASTERFALL_PROP_ASSET_LAB_COMPUTER_MEMORY = 68,
+    RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE = 69,
+    RASTERFALL_PROP_ASSET_COUNT = 69
 };
 
 struct rasterfall_prop_dimensions {
@@ -130,6 +133,19 @@ int rasterfall_host_object_active(const char *id);
 typedef int (*rasterfall_host_quad_fn)(void *, const int points[4][3], unsigned color);
 int rasterfall_host_activity(const struct rasterfall_prop_instance *instance,
     unsigned time_ms, rasterfall_host_quad_fn emit, void *context);
+/* RF product presentation groups: 1..7 are lab registry order, 0 is unpowered.
+ * Runtime integrates phase; both renderers only consume this frame value. */
+#define RASTERFALL_ELECTRONICS_GROUPS 8
+struct rasterfall_electronics_frame {
+    unsigned phase[RASTERFALL_ELECTRONICS_GROUPS]; /* RPM * microseconds mod 60M */
+    unsigned time_ms[RASTERFALL_ELECTRONICS_GROUPS];
+    unsigned powered_mask;
+    int rpm;
+};
+void rasterfall_electronics_set_frame(const struct rasterfall_electronics_frame *frame);
+struct rasterfall_electronics_frame rasterfall_electronics_get_frame(void);
+int rasterfall_electronics_activity(const struct rasterfall_prop_instance *instance,
+    const struct rasterfall_electronics_frame *frame,rasterfall_host_quad_fn emit,void *context);
 int rasterfall_prop_presented_asset(int asset, int bay);
 int rasterfall_prop_asset_logic_test(void);
 

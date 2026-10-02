@@ -2211,6 +2211,7 @@ static int render_static_props(struct toy_renderer *renderer,
 {
     int i, pixels = 0;
     unsigned host_time=(unsigned)(render_monotonic_us()/1000);
+    struct rasterfall_electronics_frame electronics=rasterfall_electronics_get_frame();
     struct host_cpu_draw_context host_context={renderer,camera};
     rasterfall_host_update(host_time);
     for (i = 0; i < level_map.prop_count; i++)
@@ -2268,6 +2269,7 @@ static int render_static_props(struct toy_renderer *renderer,
         }
         active_scene_light_override_q8 = 256;
         rasterfall_host_activity(&instance,host_time,host_cpu_quad,&host_context);
+        rasterfall_electronics_activity(&instance,&electronics,host_cpu_quad,&host_context);
         active_scene_light_override_q8 = previous_scene_light;
         active_world_light_v2 = 0;
     }

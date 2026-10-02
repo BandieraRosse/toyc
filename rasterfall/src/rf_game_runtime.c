@@ -3083,6 +3083,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
                 canvas->height * 3 / 4,
                 rf_lab_definitions[rf_showcase_near-1].gpu_only && !rf_render_terminal.scene_backend ?
                     "GPU SCENE REQUIRED" :
+                rf_showcase_near-1==RF_LAB_ELECTRONICS ? "E  OFF / 600 / 1200 / 1800 RPM" :
                 rf_labs.requested[rf_showcase_near-1] ? "E  DISABLE EXHIBIT" : "E  ENABLE EXHIBIT", 0xC7F2EE);
         if (rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0)
             rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
@@ -4031,6 +4032,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
                !strcmp(options.gpu_normal_view,"lighting-lab") ||
+               !strncmp(options.gpu_normal_view,"electronics-",12) ||
                !strncmp(options.gpu_normal_view,"lab-computer",12))))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
@@ -4090,8 +4092,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "host-side")) {
             camera.x=2200;camera.z=3000;camera.y=-420;camera.sy=800;camera.cy=639;
         } else if (!strncmp(options.gpu_normal_view, "lab-computer",12)) {
-            rf_lab_computer_camera(&session,&camera,!strcmp(options.gpu_normal_view,"lab-computer-close"));
+            rf_lab_computer_camera(&session,&camera,options.gpu_normal_view);
             rf_labs.requested[RF_LAB_INFECTED_POSES]=!strcmp(options.gpu_normal_view,"lab-computer-close");
+        } else if (!strncmp(options.gpu_normal_view,"electronics-",12)) {
+            rf_electronics_camera(&session,&camera,options.gpu_normal_view);
         } else if (!strcmp(options.gpu_normal_view, "character-lab")) {
             camera.x=0;camera.z=-9500;camera.cy=-1024;
             rf_labs.requested[RF_LAB_INFECTED_POSES]=1;
@@ -5199,7 +5203,7 @@ startup_again:
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             int lab=rf_showcase_near-1;
             if (!rf_lab_definitions[lab].gpu_only || options.gpu_scene_play)
-                rf_labs.requested[lab]=!rf_labs.requested[lab];
+                rf_lab_control(lab);
         } else if (rf_table.near &&
                    action_pressed(&input, RF_ACTION_INTERACT) &&
                    net.mode == RASTERFALL_NET_OFF) {
@@ -5831,7 +5835,10 @@ startup_again:
             }
             if (options.gpu_normal_view && !strncmp(options.gpu_normal_view,"lab-computer",12) &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
-                rf_lab_computer_camera(&session,&game_runtime.camera,!strcmp(options.gpu_normal_view,"lab-computer-close"));
+                rf_lab_computer_camera(&session,&game_runtime.camera,options.gpu_normal_view);
+            if (options.gpu_normal_view && !strncmp(options.gpu_normal_view,"electronics-",12) &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_electronics_camera(&session,&game_runtime.camera,options.gpu_normal_view);
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"lighting-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
                 game_runtime.camera.x=28900;game_runtime.camera.z=-23500;
@@ -6159,6 +6166,7 @@ startup_again:
                         layers.lighting_lab=rf_lab_effective(RF_LAB_LIGHTING,session.world_id,
                             rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play);
                         layers.props=&prop_render;
+                        layers.electronics=rasterfall_electronics_get_frame();
                         layers.host_time_ms=options.gpu_frame_capture ?
                             (unsigned)rendered_frames*16u : (unsigned)(rf_core_clock_now_us()/1000);
                         if (layers.lighting_lab)
@@ -6176,6 +6184,7 @@ startup_again:
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||
                                !strcmp(options.gpu_normal_view,"lighting-lab") ||
+                               !strncmp(options.gpu_normal_view,"electronics-",12) ||
                                !strncmp(options.gpu_normal_view,"lab-computer",12)));
                         layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;
                         fill_hud_state(&layers.hud,&net,host_address,

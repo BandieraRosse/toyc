@@ -193,6 +193,14 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 正式 `rasterfall.map` 的 render records 由 V1 source 完整提供；`rasterfall_legacy.map` 仍保留
 作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
 
+透明机器窗 `kind=sign attr.style=6` 允许两种轴向：`min_z=max_z` 且 `min_x<max_x` 为正面窗；
+`min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，
+不带文字；双水平跨度非零或同时为零均无效。其他 sign 样式继续沿 X 展开。
+
+地图 IR 与玩法绘制投影的 render 容量均为 256，object/prop 容量均为 384；GPU Scene world snapshot
+直接沿用绘制投影容量。各边界必须同步，避免新展区通过解析后在投影时截断或无法冻结。
+RF 电子组件的 `attr.length` 展示组定义见[实验区合同](experiment-labs.md#产品展区风扇与状态灯)。
+
 `x/z` 使用 RFU，实例落在地面锚点 `y=-900`；`yaw` 为绕世界 Y 轴的角度；`scale=1000`
 表示资产原始设计尺寸。默认根据资产 profile 的 RFU 碰撞盒生成普通 gameplay box；视觉网格
 与该盒体独立。仅在确有需要时可追加 `collision=none`，例如：

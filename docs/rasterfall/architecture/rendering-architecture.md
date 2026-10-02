@@ -22,6 +22,12 @@
 alpha=42/255、深度测试且不写深度。机壳、内部板卡、散热器、显示器、键盘和支架为独立静态 RMESH，
 组合与摆放由 Map Parser 降级，渲染器不解释装配文本。
 
+RF 电子产品的扇框、轴心和机壳仍为静态 RMESH；叶片与前/侧状态灯由
+`render/rf_electronics_geometry.inc` 共享几何发射器生成。Runtime 实验区控制器积分风扇相位、
+发布 `rasterfall_electronics_frame`；CPU 消费当前帧，Scene layer input 按值冻结同一帧，均进入 WORLD 深度域。
+转速切换保留相位，暂停/性能隔离冻结时钟；关闭后保留停止位置。状态灯仅为展示活动，
+不伪装为 Host 实测负载，不创建 GPU 照明灯，不改变 `toy_game` 或网络状态。动态部分不使静态网格缓存失效。
+
 | 职责 | 所有者 |
 | --- | --- |
 | world/角色/地图图元、投影、近裁剪与 draw command | `rasterfall/src/rasterfall_render.c` |

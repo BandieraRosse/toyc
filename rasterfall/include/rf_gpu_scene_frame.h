@@ -2,11 +2,12 @@
 #define RF_GPU_SCENE_FRAME_H
 
 #include "rf_gpu_scene_identity.h"
+#include "toy_map.h"
 
 #define RF_GPU_SCENE_SNAPSHOT_ABI_V2 2U
 #define RF_GPU_SCENE_WORLD_ID_CAP 64U
 #define RF_GPU_SCENE_WORLD_KIND_CAP 32U
-#define RF_GPU_SCENE_MAX_WORLD_V2 192U
+#define RF_GPU_SCENE_MAX_WORLD_V2 TOY_MAP_MAX_DRAW
 #define RF_GPU_SCENE_MAX_TRANSIENT_V2 2048U
 
 /* World inputs follow the Runtime Map projection order, including its

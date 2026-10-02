@@ -266,14 +266,18 @@ render id=lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_z=-45
 render id=lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=character_lab_area
 render id=lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=character_lab_area
 assembly id=lab_showcase_button_assembly x=4000 y=0 z=4056 attr.lab=character_lab_area
-object id=lab_showcase_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.collision=component
-object id=lab_showcase_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly
-object id=lab_showcase_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly
-object id=lab_showcase_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly
-object id=lab_showcase_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly
-object id=lab_showcase_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly
+object id=lab_showcase_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1 attr.collision=component
+object id=lab_showcase_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
+object id=lab_showcase_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=lab_showcase_button_assembly attr.length=1
 render id=lab_showcase_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=character_lab_computer attr.assembly=lab_showcase_button_assembly
-render id=lab_showcase_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=lab_showcase_button_assembly
+render id=lab_showcase_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=lab_showcase_button_assembly
 render id=lab_title kind=sign min_x=-1800 max_x=1800 min_z=-4244 max_z=-4214 height=500 color=79E8C5 attr.height2=1100 attr.text=INFECTED_LAB_01 attr.facing=+z attr.lab=character_lab_area attr.style=2 attr.texture_u=2
 render id=lab_block_common_idle kind=sign min_x=-4650 max_x=-3350 min_z=2598 max_z=2618 height=-760 color=79E8C5 attr.height2=-590 attr.text=BLOCK_COMMON_IDLE attr.facing=+z attr.lab=character_lab_area attr.style=3 attr.texture_u=2
 render id=lab_block_common_move kind=sign min_x=-4650 max_x=-3350 min_z=-986 max_z=-966 height=-760 color=79E8C5 attr.height2=-590 attr.text=BLOCK_COMMON_MOVE attr.facing=+z attr.lab=character_lab_area attr.style=3 attr.texture_u=2
@@ -300,14 +304,18 @@ render id=walk_lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_
 render id=walk_lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=walk_lab_area
 render id=walk_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=walk_lab_area
 assembly id=walk_lab_showcase_button_assembly x=4000 y=0 z=4044 attr.lab=walk_lab_area
-object id=walk_lab_showcase_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.collision=component
-object id=walk_lab_showcase_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly
-object id=walk_lab_showcase_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly
-object id=walk_lab_showcase_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly
-object id=walk_lab_showcase_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly
-object id=walk_lab_showcase_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly
+object id=walk_lab_showcase_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2 attr.collision=component
+object id=walk_lab_showcase_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
+object id=walk_lab_showcase_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=walk_lab_showcase_button_assembly attr.length=2
 render id=walk_lab_showcase_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=walk_lab_computer attr.assembly=walk_lab_showcase_button_assembly
-render id=walk_lab_showcase_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=walk_lab_showcase_button_assembly
+render id=walk_lab_showcase_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=walk_lab_showcase_button_assembly
 render id=walk_lab_title kind=sign min_x=-2300 max_x=2300 min_z=-4206 max_z=-4176 height=500 color=79E8C5 attr.height2=1100 attr.text=HUMANOID_WALK_LAB attr.facing=+z attr.lab=walk_lab_area attr.style=2 attr.texture_u=2
 render id=walk_lab_common kind=sign min_x=-3850 max_x=-2550 min_z=3504 max_z=3524 height=-760 color=79E8C5 attr.height2=-590 attr.text=HUMANOID_COMMON attr.facing=+z attr.lab=walk_lab_area attr.style=3 attr.texture_u=2
 render id=walk_lab_fast kind=sign min_x=-650 max_x=650 min_z=3504 max_z=3524 height=-760 color=79E8C5 attr.height2=-590 attr.text=HUMANOID_FAST attr.facing=+z attr.lab=walk_lab_area attr.style=3 attr.texture_u=2
@@ -322,14 +330,18 @@ render id=actor_actions_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608
 render id=actor_actions_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_actions_lab_area
 render id=actor_actions_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_actions_lab_area
 assembly id=actor_actions_button_assembly x=4016 y=0 z=4056 attr.lab=actor_actions_lab_area
-object id=actor_actions_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.collision=component
-object id=actor_actions_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly
-object id=actor_actions_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly
-object id=actor_actions_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly
-object id=actor_actions_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly
-object id=actor_actions_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly
+object id=actor_actions_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3 attr.collision=component
+object id=actor_actions_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
+object id=actor_actions_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=actor_actions_button_assembly attr.length=3
 render id=actor_actions_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=actor_actions_lab_computer attr.assembly=actor_actions_button_assembly
-render id=actor_actions_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=actor_actions_button_assembly
+render id=actor_actions_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=actor_actions_button_assembly
 render id=actor_actions_title kind=sign min_x=-1984 max_x=2016 min_z=-4244 max_z=-4214 height=500 color=79E8C5 attr.height2=1100 attr.text=AI_ACTION_LAB attr.facing=+z attr.lab=actor_actions_lab_area attr.style=2 attr.texture_u=2
 surface id=actor_walk_lab kind=ground min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=actor_walk_lab_col attr.lab=actor_walk_lab_area
 collision id=actor_walk_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=actor_walk_lab_area
@@ -339,14 +351,18 @@ render id=actor_walk_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 ma
 render id=actor_walk_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_walk_lab_area
 render id=actor_walk_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_walk_lab_area
 assembly id=actor_walk_button_assembly x=4028 y=0 z=4056 attr.lab=actor_walk_lab_area
-object id=actor_walk_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.collision=component
-object id=actor_walk_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly
-object id=actor_walk_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly
-object id=actor_walk_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly
-object id=actor_walk_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly
-object id=actor_walk_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly
+object id=actor_walk_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4 attr.collision=component
+object id=actor_walk_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
+object id=actor_walk_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=actor_walk_button_assembly attr.length=4
 render id=actor_walk_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=actor_walk_lab_computer attr.assembly=actor_walk_button_assembly
-render id=actor_walk_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=actor_walk_button_assembly
+render id=actor_walk_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=actor_walk_button_assembly
 render id=actor_walk_title kind=sign min_x=-1972 max_x=2028 min_z=-4244 max_z=-4214 height=500 color=79E8C5 attr.height2=1100 attr.text=AI_WALK_LAB attr.facing=+z attr.lab=actor_walk_lab_area attr.style=2 attr.texture_u=2
 render id=actor_block_idle kind=sign min_x=-4974 max_x=-3594 min_z=3676 max_z=3696 height=-760 color=79E8C5 attr.height2=-590 attr.text=BLOCK_IDLE attr.facing=+z attr.lab=actor_actions_lab_area attr.style=3 attr.texture_u=2
 render id=actor_humanoid_idle kind=sign min_x=-4974 max_x=-3594 min_z=-524 max_z=-504 height=-760 color=79E8C5 attr.height2=-590 attr.text=HUMANOID_IDLE attr.facing=+z attr.lab=actor_actions_lab_area attr.style=3 attr.texture_u=2
@@ -391,25 +407,33 @@ render id=rf_model_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 ma
 render id=rf_model_lab_title kind=sign min_x=-2000 max_x=2000 min_z=-4206 max_z=-4176 height=500 color=9FB4FF attr.height2=1100 attr.text=RF_MODEL_LAB attr.facing=+z attr.lab=rf_model_lab_area attr.style=2 attr.texture_u=1
 render id=rf_model_lab_status kind=sign min_x=-1600 max_x=1600 min_z=3644 max_z=3674 height=-300 color=9FB4FF attr.height2=0 attr.text=GPU_MODEL_LAB attr.facing=+z attr.lab=rf_model_lab_area attr.style=3 attr.texture_u=1
 assembly id=rf_model_lab_button_assembly x=4016 y=0 z=3744 attr.lab=rf_model_lab_area
-object id=rf_model_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.collision=component
-object id=rf_model_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly
-object id=rf_model_lab_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly
-object id=rf_model_lab_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly
-object id=rf_model_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly
-object id=rf_model_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly
+object id=rf_model_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5 attr.collision=component
+object id=rf_model_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
+object id=rf_model_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_model_lab_button_assembly attr.length=5
 render id=rf_model_lab_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=9FB4FF attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rf_model_lab_computer attr.assembly=rf_model_lab_button_assembly
-render id=rf_model_lab_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=rf_model_lab_button_assembly
+render id=rf_model_lab_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rf_model_lab_button_assembly
 
 # GPU lighting exhibit: explicit switch, same terminal contract as other exhibits.
 assembly id=rf_light_lab_button_assembly x=5052 y=0 z=3926 attr.lab=rf_light_lab_area
-object id=rf_light_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.collision=component
-object id=rf_light_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly
-object id=rf_light_lab_button_board kind=lab_computer_board x=-320 y=662 z=40 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly
-object id=rf_light_lab_button_cooling kind=lab_computer_cooling x=-290 y=790 z=74 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly
-object id=rf_light_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly
-object id=rf_light_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly
+object id=rf_light_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6 attr.collision=component
+object id=rf_light_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
+object id=rf_light_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
 render id=rf_light_lab_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=FFD283 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rf_light_lab_computer attr.assembly=rf_light_lab_button_assembly
-render id=rf_light_lab_button_glass kind=sign min_x=-408 max_x=-232 min_z=141 max_z=141 height=654 color=87BFC8 attr.height2=956 attr.style=6 attr.assembly=rf_light_lab_button_assembly
+render id=rf_light_lab_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rf_light_lab_button_assembly
 surface id=rf_light_lab kind=ground min_x=-6144 max_x=6144 min_z=-4826 max_z=4826 height=0 material=68717A attr.collision_id=rf_light_lab_col attr.lab=rf_light_lab_area
 collision id=rf_light_lab_col shape=flat min_x=-6144 max_x=6144 min_z=-4826 max_z=4826 height=0 collision=false visible=true walkable=true color=68717A attr.lab=rf_light_lab_area
 render id=rf_light_lab_floor kind=floor min_x=-6080 max_x=6080 min_z=-4762 max_z=4762 height=0 color=68717A attr.lab=rf_light_lab_area
@@ -574,3 +598,62 @@ lab id=perf_mixed_area x=42250 z=-9900 width=13500 depth=9000 category=performan
 lab id=perf_low_area x=42250 z=900 width=13500 depth=9000 category=performance enclosure=walled
 render id=performance_control_display kind=sign min_x=33800 max_x=35000 min_z=-26200 max_z=-26180 height=0 color=FFAB78 attr.height2=300 attr.style=4 attr.text=PERFORMANCE attr.facing=+z attr.texture_u=4 attr.channel=performance_control
 render id=performance_result_display kind=sign min_x=33800 max_x=35000 min_z=-24000 max_z=-23980 height=0 color=FFAB78 attr.height2=300 attr.style=4 attr.text=PERFORMANCE attr.facing=+z attr.texture_u=4 attr.channel=performance_result
+
+# RF Generation One product gallery.
+lab id=rf_electronics_lab_area x=16384 z=-7000 width=10240 depth=9216 category=model enclosure=open
+surface id=rf_electronics_lab kind=ground min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=rf_electronics_lab_col attr.lab=rf_electronics_lab_area
+collision id=rf_electronics_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_paint kind=floor min_x=-5056 max_x=5056 min_z=-4544 max_z=4544 height=0 color=52616A attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_north_line kind=floor min_x=-5120 max_x=5120 min_z=4544 max_z=4608 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_z=-4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
+assembly id=rf_electronics_lab_button_assembly x=4352 y=0 z=3840 attr.lab=rf_electronics_lab_area
+object id=rf_electronics_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7 attr.collision=component
+object id=rf_electronics_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+object id=rf_electronics_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
+render id=rf_electronics_lab_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=9FB4FF attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rf_electronics_lab_computer attr.assembly=rf_electronics_lab_button_assembly
+render id=rf_electronics_lab_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rf_electronics_lab_button_assembly
+render id=rf_electronics_lab_title kind=sign min_x=-2400 max_x=2400 min_z=-4208 max_z=-4188 height=500 color=9FB4FF attr.height2=1100 attr.style=2 attr.text=RF_ELECTRONICS_GEN_1 attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area
+render id=rf_electronics_lab_display kind=sign min_x=-2400 max_x=2400 min_z=4278 max_z=4298 height=900 color=9FB4FF attr.height2=1500 attr.style=4 attr.text=EXHIBIT_OFF attr.facing=+z attr.texture_u=1 attr.channel=rf_electronics_lab attr.lab=rf_electronics_lab_area
+# Sample origin is local (0, 0); add local records with attr.lab=rf_electronics_lab_area
+surface id=rf_electronics_access kind=ground min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 material=485860 attr.collision_id=rf_electronics_access_col
+collision id=rf_electronics_access_col shape=flat min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 collision=false visible=true walkable=true color=485860
+render id=rf_electronics_access_paint kind=floor min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 color=485860
+collision id=rf_product_cpu_base_col shape=box min_x=-3550 max_x=-2450 min_z=-1900 max_z=-1100 height=620 collision=true visible=false attr.lab=rf_electronics_lab_area
+render id=rf_product_cpu_base kind=box min_x=-3550 max_x=-2450 min_z=-1900 max_z=-1100 height=620 color=263743 attr.lab=rf_electronics_lab_area
+object id=rf_product_cpu kind=lab_computer_cpu x=-3000 y=620 z=-1500 yaw=90 scale=1500 attr.length=7 attr.lab=rf_electronics_lab_area
+render id=rf_product_cpu_label kind=sign min_x=-3600 max_x=-2400 min_z=-800 max_z=-800 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=C1_CPU_6X attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area
+collision id=rf_product_memory_base_col shape=box min_x=-1550 max_x=-450 min_z=-1900 max_z=-1100 height=620 collision=true visible=false attr.lab=rf_electronics_lab_area
+render id=rf_product_memory_base kind=box min_x=-1550 max_x=-450 min_z=-1900 max_z=-1100 height=620 color=263743 attr.lab=rf_electronics_lab_area
+object id=rf_product_memory kind=lab_computer_memory x=-1000 y=620 z=-1500 yaw=90 scale=3000 attr.length=7 attr.lab=rf_electronics_lab_area
+render id=rf_product_memory_label kind=sign min_x=-1600 max_x=-400 min_z=-800 max_z=-800 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=M1_MEMORY_3X attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area
+collision id=rf_product_board_base_col shape=box min_x=450 max_x=1550 min_z=-1900 max_z=-1100 height=620 collision=true visible=false attr.lab=rf_electronics_lab_area
+render id=rf_product_board_base kind=box min_x=450 max_x=1550 min_z=-1900 max_z=-1100 height=620 color=263743 attr.lab=rf_electronics_lab_area
+object id=rf_product_board kind=lab_computer_board x=1000 y=620 z=-1500 yaw=90 scale=2500 attr.length=7 attr.lab=rf_electronics_lab_area
+render id=rf_product_board_label kind=sign min_x=400 max_x=1600 min_z=-800 max_z=-800 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=B1_MAINBOARD_2.5X attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area
+collision id=rf_product_compute_base_col shape=box min_x=2450 max_x=3550 min_z=-1900 max_z=-1100 height=620 collision=true visible=false attr.lab=rf_electronics_lab_area
+render id=rf_product_compute_base kind=box min_x=2450 max_x=3550 min_z=-1900 max_z=-1100 height=620 color=263743 attr.lab=rf_electronics_lab_area
+object id=rf_product_compute kind=lab_computer_compute x=3000 y=620 z=-1500 yaw=90 scale=3000 attr.length=7 attr.lab=rf_electronics_lab_area
+render id=rf_product_compute_label kind=sign min_x=2400 max_x=3600 min_z=-800 max_z=-800 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=X1_COMPUTE_3X attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area
+assembly id=rf_electronics_demo_assembly x=0 y=0 z=1100 attr.lab=rf_electronics_lab_area
+object id=rf_electronics_demo kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7 attr.collision=component
+object id=rf_electronics_demo_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+render id=rf_electronics_demo_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=9FB4FF attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rf_electronics_lab_computer attr.assembly=rf_electronics_demo_assembly
+render id=rf_electronics_demo_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rf_electronics_demo_assembly
+render id=rf_product_system_label kind=sign min_x=-900 max_x=900 min_z=1800 max_z=1800 height=-650 color=C4D9F4 attr.height2=-450 attr.style=3 attr.text=RF_GEN1_WORKSTATION_1X attr.facing=+z attr.texture_u=1 attr.lab=rf_electronics_lab_area

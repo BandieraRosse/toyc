@@ -211,6 +211,15 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_LAB_COMPUTER_KEYBOARD, "lab_computer_keyboard",
       "rasterfall/assets/models/props/lab/rf_lab_computer_keyboard.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_CPU, "lab_computer_cpu",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_cpu.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_MEMORY, "lab_computer_memory",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_memory.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE, "lab_computer_compute",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_compute.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -563,6 +572,8 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *p,
     return 0;
 }
 
+#include "render/rf_electronics_geometry.inc"
+
 struct host_test_capture { unsigned hash,count; };
 struct host_text_orientation_capture { int right_x,left_x,found_right,found_left; };
 static int host_test_text_orientation(void *context,const int points[4][3],unsigned color)
@@ -660,7 +671,7 @@ int rasterfall_prop_asset_logic_test(void)
         int visual_only=(asset->id>=RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
                          asset->id<=RASTERFALL_PROP_ASSET_BOUNDARY_WALL) ||
                         (asset->id>=RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE &&
-                         asset->id<=RASTERFALL_PROP_ASSET_LAB_COMPUTER_KEYBOARD);
+                         asset->id<=RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE);
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
             (!visual_only &&

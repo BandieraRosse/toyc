@@ -57,8 +57,10 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 
 ## 实验区与性能测试
 
-Game Runtime 的 `rf_experiment_labs.inc` 统一持有六个展示请求、后端能力和独立时钟，
+Game Runtime 的 `rf_experiment_labs.inc` 统一持有七个展示请求、后端能力和独立时钟，
 从当前世界与性能独占状态派生有效开关。渲染只读这些值，不解析地图或更改玩法。
+RF 电子产品控制台复用交互边沿，按 E 循环关闭和三个转速档；控制器积分连续转子相位，
+发布只读电子设备帧，暂停/隔离冻结时间。几何与灯色由共享展示发射器消费，状态不进入 Game 或网络快照。
 `rf_performance_lab.inc` 持有单轮测试、结果和返回状态；session 仍拥有基准地图加载、投影和 reset。
 默认测试加载独立世界，结束/取消通过 `rf_game_request_world()` 返回前哨站；恢复本地玩家和展示请求，
 其余前哨站 session 内容重建。环境实测保持原 world，暂停展示和动态灯。

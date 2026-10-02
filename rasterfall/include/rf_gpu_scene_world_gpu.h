@@ -5,11 +5,13 @@
 #include "rf_gpu_scene_enemy.h"
 #include "rasterfall_camera.h"
 #include "rasterfall_hud.h"
+#include "rasterfall_prop.h"
 struct rasterfall_effects;
 /* Consumed synchronously into immutable geometry before GPU target writes. */
 struct rf_gpu_scene_layers_input {
     const struct rf_gpu_scene_world_prop_frame_v1 *props;
     unsigned host_time_ms,lighting_time_ms;
+    struct rasterfall_electronics_frame electronics;
     const struct toy_game *source_game;
     const struct rasterfall_effects *source_effects;
     const struct rf_gpu_scene_world_render_frame_v1 *map;
