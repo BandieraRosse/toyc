@@ -3,6 +3,7 @@
 import argparse
 import re
 from pathlib import Path
+from lab_computer import generate as computer
 
 PALETTE = {"model": ("9FB4FF", 1), "animation": ("79E8C5", 2),
            "lighting": ("FFD283", 3), "performance": ("FFAB78", 4)}
@@ -36,7 +37,7 @@ def generate(name, x, z, category, enclosure, width=10240, depth=9216):
     elif enclosure == "backdrop":
         add("render", "_backdrop", kind="wall", min_x=-hx+64, max_x=hx-64, min_z=-hz+64, max_z=-hz+64, height=4400, color="65717D")
     bx, bz = hx-768, hz-768
-    add("object", "_button", kind="facility_terminal", x=bx, y=0, z=bz, yaw=0, scale=1000, **{"attr.collision":"component"})
+    records.extend(computer(name+"_button",bx,bz,name,color,lab).splitlines())
     def panel(suffix, left, right, at_z, bottom, top, style, text, dynamic=False):
         attrs={"attr.height2":top,"attr.style":style,"attr.text":text,"attr.facing":"+z","attr.texture_u":icon}
         if dynamic: attrs["attr.channel"]=name
@@ -44,7 +45,6 @@ def generate(name, x, z, category, enclosure, width=10240, depth=9216):
     half=min(2400,hx-128)
     panel("_title",-half,half,-hz+400,500,1100,2,category.upper()+"_LAB")
     panel("_display",-half,half,hz-330,900,1500,4,"EXHIBIT_OFF",True)
-    panel("_control_display",bx-600,bx+600,bz+200,0,260,4,"EXHIBIT_OFF",True)
     panel("_sample_info",-min(900,hx-128),min(900,hx-128),-800,-700,-450,3,"SAMPLE_IDLE")
     records.append("# Sample origin is local (0, 0); add local records with attr.lab="+lab)
     return "\n".join(records)+"\n"

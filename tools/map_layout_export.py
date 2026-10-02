@@ -22,17 +22,32 @@ def v1_fields(fields):
 
 def parse_v1(path):
     stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
-    labs={}
+    labs={}; assemblies={}
     for line in path.read_text(encoding="utf-8").splitlines():
         words=line.split("#",1)[0].split()
         if words and words[0]=="lab":
             f=v1_fields(words[1:]); labs[f["id"]]=f
+        if words and words[0]=="assembly":
+            f=v1_fields(words[1:]); assemblies[f["id"]]=f
     doc["labs"]=[dict(f, origin={"x":int(f["x"]),"z":int(f["z"])}) for f in labs.values()]
+    for a in assemblies.values():
+        if 'attr.lab' in a:
+            lab=labs[a['attr.lab']]
+            for axis in ('x','z'): a[axis]=str(int(a[axis])+int(lab[axis]))
+    doc['assemblies']=[dict(a) for a in assemblies.values()]
     for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
         words=line.split("#",1)[0].split()
         if not words: continue
         kind, f = words[0], v1_fields(words[1:]); raw={"line":line_no,"record":kind,"fields":words[1:]}; typ=None; o=None
-        if kind=="lab": continue
+        if kind in ("lab","assembly"): continue
+        if 'attr.assembly' in f:
+            a=assemblies[f['attr.assembly']]
+            if 'attr.lab' in f: raise ValueError('component has two local frames')
+            for key,axis in (("x","x"),("min_x","x"),("max_x","x"),("z","z"),("min_z","z"),("max_z","z"),("y","y")):
+                if key in f:f[key]=str(int(f[key])+int(a[axis]))
+            if kind=='render':
+                for key in ('height','attr.height2'):
+                    if key in f:f[key]=str(int(f[key])+int(a['y'])-900)
         if "attr.lab" in f:
             lab=labs.get(f["attr.lab"])
             if lab is None: raise ValueError(f"line {line_no}: unknown lab {f['attr.lab']}")

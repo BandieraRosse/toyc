@@ -9,6 +9,10 @@
 
 ## 角色模型
 
+实验计算机 `rf_lab_computer_*` 六件由项目内 `tools/blender/generate_lab_computer.py` 原创程序生成，
+无外部几何或纹理。公开资源位于 `assets/models/props/lab/`，玻璃与屏幕为项目内参数化几何；
+重建、组合与私有创作源边界见[实验区合同](experiment-labs.md#模块化控制计算机)。字体复用已有 RF 字库。
+
 Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rack.py` 程序生成，
 无外部模型或纹理；字形由生成器内的 5×7 点阵生成几何。公开运行资源位于 `assets/models/props/host/`，
 重建方式与私有源边界见 [Host Rack V2](host-rack-v2.md)。

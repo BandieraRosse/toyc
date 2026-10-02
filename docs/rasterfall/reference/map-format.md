@@ -76,6 +76,28 @@ collision record 的碰撞标志和路径。例如 `attr.collision_id=ground_wor
 
 Map IR、Runtime Map、玩法投影与 World Content 的所有权见 [地图与世界内容](../architecture/maps-and-world-content.md)。
 
+### 机器组件组合
+
+```text
+assembly id=console x=4000 y=0 z=4000 attr.lab=sample_area
+object id=sample_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=console attr.collision=component
+object id=console_display kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=console
+render id=console_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.texture_u=256 attr.texture_v=160 attr.channel=sample_computer attr.assembly=console
+```
+
+`assembly` 是独立组件的平移坐标系，必须有 id 和 x/y/z，可由 `attr.lab` 放入实验区；
+不支持 assembly 嵌套、旋转或整体缩放。最多 64 个，原点各轴范围 ±1000000 RFU。
+子项仅支持 object 和 sign render，使用 `attr.assembly`，不能同时写 `attr.lab`。
+对象 x/y/z 加组合原点；sign 的 X/Z bounds 加原点，两个高度均为相对组合地面的高度，
+降级时加 `assembly.y - 900` 得到世界 Y，两个高度必须显式声明。未知引用、重复 ID、
+混用坐标系、溢出与不支持的子记录均报错。支持前向引用，组件 ID 不隐式加前缀。
+组合在 Parser 层降为普通记录，Runtime Map 不依赖 assembly，碰撞仍由根 object 显式声明。
+当前 IR/玩法投影物件容量同步为 320；超限拒绝加载，不截断。
+
+完整机器由 `tools/lab_computer.py` 生成，标准实验区生成器复用它。屏幕分辨率、字体控制、透明窗
+及重建命令见[实验区合同](experiment-labs.md#模块化控制计算机)。布局导出的 `assemblies` 保存组合世界原点，
+子项仍导出世界坐标，碰撞由 C Runtime Map 提供。
+
 ## 几何与碰撞
 
 地图几何的可见性和碰撞是独立属性：

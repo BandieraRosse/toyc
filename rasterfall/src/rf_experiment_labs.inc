@@ -57,6 +57,11 @@ static void rf_labs_display(enum rasterfall_world_id world,int suspended,int gpu
             rf_labs.requested[i] && suspended ? "SUSPENDED" : "OFF";
         snprintf(text,sizeof(text),"%s / %s",rf_lab_definitions[i].id,status);
         rasterfall_render_terminal_set(rf_lab_definitions[i].surface,text);
+        char channel[64];
+        snprintf(channel,sizeof(channel),"%s_computer",rf_lab_definitions[i].surface);
+        snprintf(text,sizeof(text),"\033MRF / LAB\n\033F%s\n\0332\033B\033A%s\n\0331\033N\033M[E] TOGGLE\nLOCAL CONTROL",
+            rf_lab_definitions[i].id,status);
+        rasterfall_render_terminal_set(channel,text);
     }
 }
 
@@ -65,4 +70,15 @@ static void rf_labs_diagnostic_view(const char *view)
     if (!view) return;
     for (int i=0; i<RF_LAB_COUNT; ++i)
         if (!strcmp(view,rf_lab_definitions[i].view)) rf_labs.requested[i]=1;
+}
+
+static void rf_lab_computer_camera(const struct rasterfall_session *session,
+    struct camera *camera,int close)
+{
+    const struct rf_map_runtime_object *o=rf_map_runtime_find_object(
+        &session->map_ops.runtime,"lab_showcase_button");
+    if (!o) return;
+    camera->x=o->x+(close?130:260);camera->z=o->z+(close?720:1500);
+    camera->y=close?20:240;camera->sy=close?0:-174;camera->cy=close?-1024:-1009;
+    camera->pitch_sy=close?-110:-300;camera->pitch_cy=close?1018:979;
 }

@@ -4030,7 +4030,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
-               !strcmp(options.gpu_normal_view,"lighting-lab"))))) &&
+               !strcmp(options.gpu_normal_view,"lighting-lab") ||
+               !strncmp(options.gpu_normal_view,"lab-computer",12))))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
         rf_game_request_world(&game_runtime, RASTERFALL_WORLD_CAMPAIGN_01) < 0) {
         if (model_texture.blob) toy_texture_unload(&model_texture);
@@ -4088,6 +4089,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.pitch_sy=-140;camera.pitch_cy=1014;
         } else if (!strcmp(options.gpu_normal_view, "host-side")) {
             camera.x=2200;camera.z=3000;camera.y=-420;camera.sy=800;camera.cy=639;
+        } else if (!strncmp(options.gpu_normal_view, "lab-computer",12)) {
+            rf_lab_computer_camera(&session,&camera,!strcmp(options.gpu_normal_view,"lab-computer-close"));
+            rf_labs.requested[RF_LAB_INFECTED_POSES]=!strcmp(options.gpu_normal_view,"lab-computer-close");
         } else if (!strcmp(options.gpu_normal_view, "character-lab")) {
             camera.x=0;camera.z=-9500;camera.cy=-1024;
             rf_labs.requested[RF_LAB_INFECTED_POSES]=1;
@@ -5825,6 +5829,9 @@ startup_again:
                 game_runtime.camera.pitch_sy=-772;
                 game_runtime.camera.pitch_cy=672;
             }
+            if (options.gpu_normal_view && !strncmp(options.gpu_normal_view,"lab-computer",12) &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_lab_computer_camera(&session,&game_runtime.camera,!strcmp(options.gpu_normal_view,"lab-computer-close"));
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"lighting-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
                 game_runtime.camera.x=28900;game_runtime.camera.z=-23500;
@@ -6168,7 +6175,8 @@ startup_again:
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||
-                               !strcmp(options.gpu_normal_view,"lighting-lab")));
+                               !strcmp(options.gpu_normal_view,"lighting-lab") ||
+                               !strncmp(options.gpu_normal_view,"lab-computer",12)));
                         layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;
                         fill_hud_state(&layers.hud,&net,host_address,
                             net_port,&camera);

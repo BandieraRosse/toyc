@@ -1,0 +1,3 @@
+map version=1 units=rfu
+world min_x=-10000 max_x=10000 min_z=-10000 max_z=10000
+object id=part kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=missing

@@ -31,6 +31,10 @@ parser 只解释格式并产生运行时无关的 Map IR；Runtime Map 拥有稳
 和光照试样在来源求值边界将局部坐标加上 Runtime Map 原点，随后冻结到原有只读 Scene 值帧。
 生成工具只生产地图文本，不拥有 runtime 规则；格式见[地图格式](../reference/map-format.md)。
 
+机器组件的 `assembly` 同样由 Parser 降级：可放入 lab，object 与 sign 通过 `attr.assembly`
+引用其平移原点，Y 高度在边界转换为各自既有坐标合同。它不拥有交互、材质、字体或碰撞；
+控制 ID 留在根 object，各模型通过 registry 独立加载。Runtime Map 与 gameplay 接收展开后的普通记录。
+
 `rf_map_runtime_load()` 在堆上分配容量型临时 Map IR，转换完成或失败后释放；
 Runtime Map 继续独立持有运行时数据。避免约 1 MiB 的局部 IR 占用 Windows 启动调用栈。
 

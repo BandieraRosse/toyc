@@ -193,6 +193,24 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
       "rasterfall/assets/models/props/research/rf_research_wall_service.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 922, 333, 113 } },
 
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_STAND, "lab_computer_stand",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_stand.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 920, 1040, 500 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE, "lab_computer_case",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_case.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_BOARD, "lab_computer_board",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_board.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_COOLING, "lab_computer_cooling",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_cooling.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_DISPLAY, "lab_computer_display",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_display.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LAB_COMPUTER_KEYBOARD, "lab_computer_keyboard",
+      "rasterfall/assets/models/props/lab/rf_lab_computer_keyboard.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -639,14 +657,16 @@ int rasterfall_prop_asset_logic_test(void)
     rasterfall_host_set_active_slots(-1,-1);
     for (i = 0; i < RASTERFALL_PROP_ASSET_COUNT; i++) {
         const struct rasterfall_prop_asset_profile *asset = prop_assets + i;
+        int visual_only=(asset->id>=RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
+                         asset->id<=RASTERFALL_PROP_ASSET_BOUNDARY_WALL) ||
+                        (asset->id>=RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE &&
+                         asset->id<=RASTERFALL_PROP_ASSET_LAB_COMPUTER_KEYBOARD);
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
-            ((asset->id < RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN ||
-              asset->id > RASTERFALL_PROP_ASSET_BOUNDARY_WALL) &&
+            (!visual_only &&
              (asset->collision_size.x <= 0 || asset->collision_size.y <= 0 ||
               asset->collision_size.z <= 0)) ||
-            (asset->id >= RASTERFALL_PROP_ASSET_CAMPUS_WALL_PLAIN &&
-             asset->id <= RASTERFALL_PROP_ASSET_BOUNDARY_WALL &&
+            (visual_only &&
              (asset->collision_size.x || asset->collision_size.y || asset->collision_size.z)))
             return 1;
     }

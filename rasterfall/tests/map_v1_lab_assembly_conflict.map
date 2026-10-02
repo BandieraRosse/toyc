@@ -1,0 +1,5 @@
+map version=1 units=rfu
+world min_x=-10000 max_x=10000 min_z=-10000 max_z=10000
+lab id=area x=0 z=0 width=2048 depth=2048 category=model enclosure=open
+assembly id=machine x=0 y=0 z=0 attr.lab=area
+object id=part kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=machine attr.lab=area

@@ -16,6 +16,12 @@
 忽略其文本变化。标题和试样小投影仍走静态 SIGN 网格。内容、控制 object、碰撞和 gameplay 相互
 独立；显示更新不修改地图源或玩法真值。样式、图形和默认交互见[实验区合同](../reference/experiment-labs.md)。
 
+机器屏幕 style 5 使用 `rasterfall_machine_screen.h` 的固定逻辑像素网格，共用字体、裁切和 span 发射器；
+每个 span 在屏幕同一平面分区着色，不叠加背景/字形面。文本及样式控制均在冻结值内，CPU 和 Scene
+复用相同几何。屏幕内容变化不触发静态世界重建；style 6 检修玻璃单独进入有序透明段，
+alpha=42/255、深度测试且不写深度。机壳、内部板卡、散热器、显示器、键盘和支架为独立静态 RMESH，
+组合与摆放由 Map Parser 降级，渲染器不解释装配文本。
+
 | 职责 | 所有者 |
 | --- | --- |
 | world/角色/地图图元、投影、近裁剪与 draw command | `rasterfall/src/rasterfall_render.c` |

@@ -48,9 +48,9 @@ GPU 球体保持 GPU owner 缓存，光照区关闭后不提交球体和实验�
 东北控制位、南侧标题、入口大屏和试样小屏。默认展示位置为局部 `(0,0)`；往返路径、台位偏移
 由各展示源拥有。既有光照场和性能场保留专用尺寸，避免改变观察、遮挡和测试 workload。
 
-导视和试样标签使用共享程序几何投影终端：低矮投影基座、悬浮边框、分类图形和独立字形。
+导视和试样标签使用共享程序几何投影终端：完整落地机壳、保护脚、内凹光学槽、开放角标、分类图形和独立字形。
 CPU 与 Scene 共用几何发射器；文字间隙为空，不遮住后方试样。标题大屏用于中距离辨认，
-低位小屏标注模型、动作或材质。控制终端旁的小屏与入口大屏通过同一 `channel` 显示实时状态。
+低位小屏标注模型、动作或材质。控制计算机与入口大屏消费同一展示状态，分别使用富文本与简短单行 channel。
 按 E 保持统一启停；普通入口默认关闭，暂停和性能隔离显示 `SUSPENDED`，不支持的后端显示
 `GPU REQUIRED`。性能屏显示运行状态和最近结果均值，详细结果仍在原交互页面中。
 
@@ -60,6 +60,43 @@ CPU 与 Scene 共用几何发射器；文字间隙为空，不遮住后方试样
 `rasterfall_render_terminal_set(channel,text)` 更新展示内容；每帧复制到只读绘制值。
 Scene 的可更新屏走 WORLD 动态几何，文字更新不重建整个静态世界；静态标题与标签保留网格缓存。
 这套组件当前显示 ASCII 文字和四种几何图案，不是任意纹理/视频终端。
+
+## 模块化控制计算机
+
+六处展示开关使用 `assembly` 组合：独立 `lab_computer_stand` 支架、`case` 机壳、`board` 主板、
+`cooling` 散热器、`display` 显示器和 `keyboard` 键盘，另有独立参数化透明检修窗和动态屏幕面。
+六件 RMESH 使用冷灰机壳、深色结构、青色功能件与少量铜色触点；主板和散热组件确实位于机壳内部，
+透过正面检修窗可见。支架 object 保留旧控制 ID 与交互锚点，拥有整机简化碰撞；其他部件不另加碰撞。
+组合语法与局部高度换算见[地图格式](map-format.md#机器组件组合)。
+
+`sign style=5` 是不透明机器屏幕；`texture_u/texture_v` 指定逻辑宽高（各 1–1024），
+物理宽高必须是逻辑宽高的正整数倍。当前计算机为 512×320 RFU / 256×160 像素，即每像素 2×2 RFU。
+字形是世界表面的像素分区，随距离、透视与遮挡自然变化；字符增加时只裁切，不缩小字号。
+可改用例如 1280×800 RFU / 640×400 像素的机器屏幕，无需改变字体或交互实现。
+
+内容通过 `rasterfall_render_terminal_set(channel,text)` 发布，帧冻结时复制。当前每 channel 最多 255 字节（地图静态属性最多 95 字节）；
+ASCII、换行及 ESC 指令支持大小和样式：`ESC 1/2/3` 为 1/2/3 倍字形，`ESC B/N` 为粗体/普通，
+`ESC A/M/F` 为分类色/次要色/浅色。字库沿用 RF 8×16 点阵，像素发射器位于
+`render/rasterfall_machine_screen.h`。此接口可承接输入系统提供的字符串；本次实验区仅 E 启停，未增加键盘输入模式。
+屏幕 channel 为 `<surface>_computer`，入口大屏继续用 `<surface>`。
+
+`sign style=6` 是独立的淡青透明检修面，alpha=42/255，CPU 和 Scene 均执行深度测试且不写透明深度。
+屏幕及窗面均为单层平面，机壳与边框由独立模型提供；透明窗进入 TRANSPARENT，屏幕进入动态 WORLD，
+静态部件复用原有 RMESH 缓存。投影标签保留样式 2/3/4，不套用机器屏幕的固定像素规则。
+
+重建与预览：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools
+python tools/lab_computer.py --build-assets --blender 'E:\Blender 5.2\blender.exe'
+python tools/lab_computer.py --id sample_button --x 4000 --z 4000 --lab sample_area --channel sample --output tmp/sample_computer.map
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene lab-computer 0
+```
+
+`lab-computer` 取整机关闭视角，`lab-computer-close` 取开启状态的近屏视角，均从 Runtime Map 的控制 object
+求位置。搭配 `--gpu-frame-capture <绝对路径>` 固定镜头并输出原生 GPU 的 `<路径>.scene.ppm`。普通自由游玩仍通过 E 切换。
+生成器位于 `tools/blender/generate_lab_computer.py`，组合生产者为 `tools/lab_computer.py`；
+GLB/Blend 留在私有 source，公开 RMESH 与 manifest 随仓库维护，无外部模型或纹理依赖。
 
 普通角色区使用 20×18 m 开放地面、64 RFU 地面边线、6 m 连接通路和东北侧独立终端。
 surface、collision 和可见绘制分别声明；边线与内部地面不重叠。

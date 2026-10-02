@@ -915,7 +915,8 @@ $(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/incl
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc \
-    rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc | $(BUILD)
+    rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc \
+    rasterfall/src/render/rasterfall_machine_screen.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1140,6 +1141,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                               $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h \
+                              $(RASTERFALL_SRC)/render/rasterfall_machine_screen.h \
                               $(RASTERFALL_SRC)/render/rf_lab_terminal.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
@@ -1783,6 +1785,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                                    $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h \
+                              $(RASTERFALL_SRC)/render/rasterfall_machine_screen.h \
                                    $(RASTERFALL_SRC)/render/rf_lab_terminal.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \

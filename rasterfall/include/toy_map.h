@@ -9,9 +9,9 @@
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
-#define TOY_MAP_MAX_PROPS 256
+#define TOY_MAP_MAX_PROPS 320
 #define TOY_MAP_ROLE_SIZE 32
-#define TOY_MAP_TEXT_SIZE 64
+#define TOY_MAP_TEXT_SIZE 256
 
 enum toy_map_draw_type {
     TOY_MAP_DRAW_FLOOR,

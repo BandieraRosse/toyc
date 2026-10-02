@@ -186,6 +186,7 @@ static int parse_id_bounds(struct rasterfall_map_ir *ir, int line, struct map_li
 static int id_exists(struct rasterfall_map_ir *ir, const char *id)
 {
     int i;
+    for (i = 0; i < ir->assembly_count; i++) if (!strcmp(ir->assemblies[i].id, id)) return 1;
     for (i = 0; i < ir->region_count; i++) if (!strcmp(ir->regions[i].id, id)) return 1;
     for (i = 0; i < ir->collision_count; i++) if (!strcmp(ir->collisions[i].id, id)) return 1;
     for (i = 0; i < ir->surface_count; i++) if (!strcmp(ir->surfaces[i].id, id)) return 1;
@@ -210,12 +211,14 @@ static int allowed(struct rasterfall_map_ir *ir, int line, struct map_line *fiel
 }
 
 static int parse_lab(struct rasterfall_map_ir *, int, struct map_line *);
+static int parse_assembly(struct rasterfall_map_ir *, int, struct map_line *);
 
 static int parse_record(struct rasterfall_map_ir *ir, int line, struct map_line *record)
 {
     const char *value;
     if (check_duplicate_fields(ir, line, record) < 0) return -1;
     if (!strcmp(record->record, "lab")) return parse_lab(ir, line, record);
+    if (!strcmp(record->record, "assembly")) return parse_assembly(ir, line, record);
     if (!strcmp(record->record, "map")) {
         int version;
         if (ir->has_map) return fail(ir, line, "duplicate map record");

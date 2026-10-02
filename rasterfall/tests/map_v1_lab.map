@@ -7,3 +7,6 @@ surface id=floor kind=ground min_x=-1000 max_x=1000 min_z=-1000 max_z=1000 heigh
 collision id=wall shape=box min_x=-1000 max_x=1000 min_z=-1000 max_z=-900 height=500 attr.lab=fixture
 interaction id=use action=wave_skip x=0 y=0 z=0 attr.lab=fixture
 lab id=fixture x=1000 z=2000 width=2048 depth=2048 category=model enclosure=open
+object id=assembly_part kind=lab_computer_stand x=-30 y=15 z=40 yaw=0 scale=1000 attr.assembly=machine attr.collision=component
+render id=assembly_screen kind=sign min_x=-256 max_x=256 min_z=0 max_z=0 height=500 color=79E8C5 attr.height2=820 attr.style=5 attr.texture_u=256 attr.texture_v=160 attr.channel=contract attr.assembly=machine
+assembly id=machine x=100 y=20 z=-100 attr.lab=fixture

@@ -4464,7 +4464,7 @@ int rf_gpu_scene_world_opaque_mesh_build(
         const struct rf_gpu_scene_world_render_item_v1 *item=&render->items[i];
         int kind;
         if (!item->visible) continue;
-        if (item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==4) continue;
+        if (item->draw.type==TOY_MAP_DRAW_SIGN && (item->draw.style==4 || item->draw.style==5)) continue;
         if (item->alpha<255) { blended++;continue; }
         if (item->draw.type==TOY_MAP_DRAW_FLOOR ||
             item->draw.type==TOY_MAP_DRAW_BORDER) { floor_sources++;continue; }
@@ -4696,13 +4696,15 @@ static int draw_cuboid(struct toy_renderer *renderer,
 static int render_text_panel(struct toy_renderer *,const struct camera *,
     int,int,int,int,int,int,int,const char *,int,uint32_t);
 
-struct cpu_terminal_context { struct toy_renderer *renderer; const struct camera *camera; int pixels; };
+struct cpu_terminal_context { struct toy_renderer *renderer; const struct camera *camera; int pixels,alpha; };
 static int cpu_terminal_quad(void *context,const int p[4][3],unsigned color)
 {
     struct cpu_terminal_context *c=context;
     struct vec3 q[4];
     for (int i=0;i<4;++i) q[i]=(struct vec3){p[i][0],p[i][1],p[i][2]};
-    c->pixels+=draw_quad(c->renderer,c->camera,&q[0],&q[1],&q[2],&q[3],color);
+    c->pixels+=c->alpha<255 ?
+        draw_quad_alpha(c->renderer,c->camera,&q[0],&q[1],&q[2],&q[3],color,c->alpha) :
+        draw_quad(c->renderer,c->camera,&q[0],&q[1],&q[2],&q[3],color);
     return 0;
 }
 static int render_world_sign(struct toy_renderer *renderer,
@@ -4712,7 +4714,7 @@ static int render_world_sign(struct toy_renderer *renderer,
     int x = (sign->a + sign->b) / 2;
     int z = (sign->c + sign->d) / 2;
     if (sign->style>=2) {
-        struct cpu_terminal_context c={renderer,camera,0};
+        struct cpu_terminal_context c={renderer,camera,0,sign->style==6 ? 42 : 255};
         if (rf_lab_terminal_emit(sign,cpu_terminal_quad,&c)<0) return -1;
         return c.pixels;
     }

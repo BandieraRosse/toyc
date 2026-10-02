@@ -509,6 +509,14 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         }
         draw->texture_u = runtime_render_int(render, "texture_u", 0);
         draw->texture_v = runtime_render_int(render, "texture_v", 0);
+        if (type==TOY_MAP_DRAW_SIGN && draw->style==5) {
+            long long width=(long long)draw->b-draw->a,height=(long long)draw->f-draw->e;
+            if (draw->texture_u<1 || draw->texture_u>1024 ||
+                draw->texture_v<1 || draw->texture_v>1024 ||
+                width<draw->texture_u || height<draw->texture_v ||
+                width>2147483647 || height>2147483647 ||
+                width%draw->texture_u || height%draw->texture_v) return -1;
+        }
         if (type == TOY_MAP_DRAW_BOX && runtime_render_int(render, "top", 0))
             draw->e = runtime_render_int(render, "top", draw->e);
         text = rf_map_runtime_render_attribute(render, "text");

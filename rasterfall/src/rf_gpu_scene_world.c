@@ -150,7 +150,8 @@ static int scene_world_capture(const struct rasterfall_map_state *map,
         item->visible=(!gate || air_walls_enabled) &&
             (draw->type!=TOY_MAP_DRAW_PLATFORM || draw->style!=0);
         item->alpha=draw->type==TOY_MAP_DRAW_PLATFORM && draw->style!=2 ? 96 :
-            draw->type==TOY_MAP_DRAW_BOX && gate ? 48 : 255;
+            draw->type==TOY_MAP_DRAW_BOX && gate ? 48 :
+            draw->type==TOY_MAP_DRAW_SIGN && draw->style==6 ? 42 : 255;
         if (next_render) {
             struct rf_gpu_scene_world_render_item_v1 *value=&next_render->items[i];
             memcpy(value->id,item->id,sizeof(value->id));
@@ -301,7 +302,7 @@ static int scene_world_item_same(
         x->c==y->c && x->d==y->d && x->e==y->e && x->f==y->f &&
         x->color==y->color && x->texture_u==y->texture_u &&
         x->texture_v==y->texture_v && x->style==y->style &&
-        ((x->type==TOY_MAP_DRAW_SIGN && x->style==4) ||
+        ((x->type==TOY_MAP_DRAW_SIGN && (x->style==4 || x->style==5)) ||
          !memcmp(x->text,y->text,sizeof(x->text)));
 }
 

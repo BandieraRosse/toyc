@@ -10,7 +10,7 @@
 #define RASTERFALL_MAP_IR_MAX_INTERACTIONS 64
 #define RASTERFALL_MAP_IR_MAX_ACTOR_SPAWNS 32
 #define RASTERFALL_MAP_IR_MAX_PICKUPS 48
-#define RASTERFALL_MAP_IR_MAX_OBJECTS 256
+#define RASTERFALL_MAP_IR_MAX_OBJECTS 320
 #define RASTERFALL_MAP_IR_MAX_ATTRIBUTES 8
 #define RASTERFALL_MAP_IR_ID_SIZE 64
 #define RASTERFALL_MAP_IR_KIND_SIZE 32
@@ -137,6 +137,14 @@ struct rasterfall_map_ir_object {
     int line;
 };
 
+/* Authoring transform only; lowered before Runtime Map and collision expansion. */
+struct rasterfall_map_ir_assembly {
+    char id[RASTERFALL_MAP_IR_ID_SIZE];
+    int x, y, z, line;
+    struct rasterfall_map_ir_attribute attributes[RASTERFALL_MAP_IR_MAX_ATTRIBUTES];
+    int attribute_count;
+};
+
 struct rasterfall_map_ir {
     int version;
     char units[RASTERFALL_MAP_IR_KIND_SIZE];
@@ -159,6 +167,8 @@ struct rasterfall_map_ir {
     int pickup_count;
     struct rasterfall_map_ir_object objects[RASTERFALL_MAP_IR_MAX_OBJECTS];
     int object_count;
+    struct rasterfall_map_ir_assembly assemblies[64];
+    int assembly_count;
     int error_line;
     char error[RASTERFALL_MAP_ERROR_SIZE];
 };

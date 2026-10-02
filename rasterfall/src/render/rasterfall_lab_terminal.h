@@ -1,6 +1,7 @@
 #ifndef RASTERFALL_LAB_TERMINAL_H
 #define RASTERFALL_LAB_TERMINAL_H
 #include "rasterfall_text_panel.h"
+#include "rasterfall_machine_screen.h"
 
 /* Procedural terminal model: projector plinth, floating frame, category icon,
  * and replaceable glyph geometry. Shared CPU/Scene, no texture or asset I/O. */
@@ -23,6 +24,32 @@ static int rf_terminal_glyph(void *context,int x0,int x1,int y0,int y1,int glyph
     /* Gaps remain empty: the screen is a projection, not a solid sign plane. */
     return glyph ? rf_terminal_rect(c,x0,x1,y0,y1,c->color) : 0;
 }
+struct rf_machine_screen_context {
+    struct rf_terminal_emit_context emit;
+    const struct toy_map_draw *draw;
+};
+static int rf_machine_screen_span(void *context,int x0,int x1,int y0,int y1,unsigned color)
+{
+    struct rf_machine_screen_context *c=context;
+    const struct toy_map_draw *d=c->draw;
+    int pitch_x=(d->b-d->a)/d->texture_u,pitch_y=(d->f-d->e)/d->texture_v;
+    int left=d->facing>0 ? d->b-x1*pitch_x : d->a+x0*pitch_x;
+    int right=d->facing>0 ? d->b-x0*pitch_x : d->a+x1*pitch_x;
+    return rf_terminal_rect(&c->emit,left,right,d->f-y1*pitch_y,d->f-y0*pitch_y,color);
+}
+static int rf_terminal_box(struct rf_terminal_emit_context *c,
+    int x0,int x1,int y0,int y1,int z0,int z1,unsigned color)
+{
+    int p[8][3]={{x0,y0,z0},{x1,y0,z0},{x1,y1,z0},{x0,y1,z0},
+                 {x0,y0,z1},{x1,y0,z1},{x1,y1,z1},{x0,y1,z1}};
+    const int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,4,7,3},{1,2,6,5},{3,7,6,2},{0,1,5,4}};
+    for (int f=0;f<6;++f) {
+        int q[4][3];
+        for (int k=0;k<4;++k) for (int a=0;a<3;++a) q[k][a]=p[faces[f][k]][a];
+        if (c->quad(c->context,q,color)<0) return -1;
+    }
+    return 0;
+}
 static int rf_lab_terminal_emit(const struct toy_map_draw *d,
     rf_terminal_quad quad,void *context)
 {
@@ -31,21 +58,33 @@ static int rf_lab_terminal_emit(const struct toy_map_draw *d,
     int rail=large ? 24 : 12;
     struct rf_terminal_emit_context c={context,quad,z,d->color};
     if (d->b<=d->a || d->f<=d->e) return -1;
+    if (d->style==6) return rf_terminal_rect(&c,d->a,d->b,d->e,d->f,d->color);
+    if (d->style==5) {
+        struct rf_machine_screen_context screen={c,d};
+        if (d->texture_u<1 || d->texture_v<1 ||
+            (d->b-d->a)%d->texture_u || (d->f-d->e)%d->texture_v ||
+            d->b-d->a<d->texture_u || d->f-d->e<d->texture_v) return -1;
+        return rf_machine_screen_emit(d->texture_u,d->texture_v,d->text,d->color,
+            rf_machine_screen_span,&screen);
+    }
     /* Low projector housing, visible from either side. */
     int bx0=x-(large?360:180),bx1=x+(large?360:180);
-    int by0=large ? -900 : d->e-110,by1=by0+(large?140:70);
-    int p[4][3]={{bx0,by1,z-90},{bx1,by1,z-90},{bx1,by1,z+90},{bx0,by1,z+90}};
-    if (quad(context,p,0x263747)<0) return -1;
+    int by0=-896,by1=by0+(large?140:70);
+    /* Grounded complete enclosure, recessed optical cassette and protective feet. */
+    if (rf_terminal_box(&c,bx0,bx1,by0+12,by1-16,z-100,z+100,0x526874)<0 ||
+        rf_terminal_box(&c,bx0+18,bx1-18,by1-16,by1,z-78,z+78,0x172833)<0 ||
+        rf_terminal_box(&c,bx0+45,bx1-45,by1,by1+8,z-24,z+24,d->color)<0) return -1;
     for (int side=0;side<2;++side) {
-        c.z=z+(side?90:-90);
-        if (rf_terminal_rect(&c,bx0,bx1,by0,by1,0x263747)<0) return -1;
+        int foot=side ? bx1-48 : bx0;
+        if (rf_terminal_box(&c,foot,foot+48,by0,by0+20,z-120,z+120,0x253641)<0) return -1;
     }
     c.z=z;
     if (rf_terminal_rect(&c,bx0,bx1,by1-12,by1,d->color)<0 ||
         rf_terminal_rect(&c,d->a,d->b,d->e,d->e+rail,d->color)<0 ||
-        rf_terminal_rect(&c,d->a,d->b,d->f-rail,d->f,d->color)<0 ||
-        rf_terminal_rect(&c,d->a,d->a+rail,d->e,d->f,d->color)<0 ||
-        rf_terminal_rect(&c,d->b-rail,d->b,d->e,d->f,d->color)<0) return -1;
+        rf_terminal_rect(&c,d->a,d->a+rail*5,d->f-rail,d->f,d->color)<0 ||
+        rf_terminal_rect(&c,d->b-rail*5,d->b,d->f-rail,d->f,d->color)<0 ||
+        rf_terminal_rect(&c,d->a,d->a+rail,d->f-rail*4,d->f,d->color)<0 ||
+        rf_terminal_rect(&c,d->b-rail,d->b,d->f-rail*4,d->f,d->color)<0) return -1;
     int icon=large ? 240 : 90,ix=d->a+rail*3,iy=(d->e+d->f)/2;
     /* Four silhouettes: model diamond, animation stairs, light cross,
      * performance histogram. Color is redundant with these shapes. */
@@ -53,13 +92,22 @@ static int rf_lab_terminal_emit(const struct toy_map_draw *d,
         int q[4][3]={{ix,iy,z},{ix+icon/2,iy+icon/2,z},
             {ix+icon,iy,z},{ix+icon/2,iy-icon/2,z}};
         if (quad(context,q,d->color)<0) return -1;
+    } else if (d->texture_u==3) {
+        int mid=ix+icon/2,r=icon/6;
+        if (rf_terminal_rect(&c,mid-r,mid+r,iy-r,iy+r,d->color)<0 ||
+            rf_terminal_rect(&c,ix,mid-r-rail,iy-rail,iy+rail,d->color)<0 ||
+            rf_terminal_rect(&c,mid+r+rail,ix+icon,iy-rail,iy+rail,d->color)<0 ||
+            rf_terminal_rect(&c,mid-rail,mid+rail,iy+r+rail,iy+icon/2,d->color)<0 ||
+            rf_terminal_rect(&c,mid-rail,mid+rail,iy-icon/2,iy-r-rail,d->color)<0) return -1;
     } else for (int i=0;i<3;++i) {
-        int h=d->texture_u==4 ? icon*(i+1)/3 : icon/3;
-        int y0=d->texture_u==2 ? iy+(i-1)*icon/3 : iy-icon/2;
-        if (rf_terminal_rect(&c,ix+i*icon/3,ix+i*icon/3+icon/5,y0,y0+h,d->color)<0) return -1;
+        if (d->texture_u==2) {
+            int tx=ix+i*icon/3,ty=iy+(i-1)*icon/6;
+            int q[4][3]={{tx,ty-icon/4,z},{tx+icon/4,ty,z},
+                        {tx,ty+icon/4,z},{tx+rail,ty,z}};
+            if (quad(context,q,d->color)<0) return -1;
+        } else if (rf_terminal_rect(&c,ix+i*icon/3,ix+i*icon/3+icon/5,
+                       iy-icon/2,iy-icon/2+icon*(i+1)/3,d->color)<0) return -1;
     }
-    if (d->texture_u==3 &&
-        rf_terminal_rect(&c,ix,ix+icon,iy-rail,iy+rail,d->color)<0) return -1;
     return rasterfall_text_panel_emit(d->a+icon+rail*5,d->b-rail*2,
         d->e+rail*2,d->f-rail*2,0,0,d->text,d->facing,rf_terminal_glyph,&c);
 }
