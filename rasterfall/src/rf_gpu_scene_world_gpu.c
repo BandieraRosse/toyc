@@ -923,6 +923,14 @@ prop_ready:
     return 0;
 }
 
+struct scene_enemy_cached {
+    struct rf_gpu_scene_enemy_item_v1 enemy;
+    struct rf_gpu_scene_procedural_item_v1 actor;
+    struct rf_gpu_graphics_batch_item *runs;
+    unsigned run_count,triangles;
+    uint64_t generation;
+    int valid,is_actor,vertex_color;
+};
 struct scene_enemy_mesh {
     union {
         struct rf_gpu_graphics_vertex legacy[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES*3];
@@ -1089,7 +1097,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     uint32_t capacity,uint32_t *count,uint32_t *procedural_draws,int64_t *extract_us,
     int64_t *upload_us,int64_t *draw_prepare_us,
     uint32_t *reused,uint32_t *created,uint32_t *triangles,
-    uint32_t *prepare_culled)
+    uint32_t *prepare_culled,uint32_t *geometry_reused)
 {
     struct scene_enemy_mesh *mesh=NULL;
     uint32_t total=0,white=0xffffff;
@@ -1101,6 +1109,10 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const char *legacy_color=getenv("RF_GPU_SCENE_LEGACY_COLOR_DRAWS");
     const char *disable_cull=getenv("RF_GPU_SCENE_DISABLE_ENEMY_CULL");
     int vertex_color=!(legacy_color && legacy_color[0]=='1');
+    const char *legacy_cache=getenv("RF_GPU_SCENE_LEGACY_ENEMY_CACHE");
+    int cache=!(legacy_cache && !strcmp(legacy_cache,"1")) && !rebuild;
+    if(cache && !probe->enemy_cached) probe->enemy_cached=calloc(
+        RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS,sizeof(*probe->enemy_cached));
     *procedural_draws=0;
     *extract_us=0;
     *upload_us=0;
@@ -1139,6 +1151,25 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             (*prepare_culled)++;
             continue;
         }
+        struct scene_enemy_cached *saved=probe->enemy_cached?&probe->enemy_cached[i]:NULL;
+        unsigned first_draw=total;
+        int eligible=cache && saved && !(actor?actor->vertex_lighting:frame->vertex_lighting);
+        if(eligible && saved->valid && saved->generation==frame->world_generation &&
+            saved->is_actor==(actor!=NULL) && saved->vertex_color==vertex_color &&
+            (actor?!memcmp(&saved->actor,actor,sizeof(*actor)):!memcmp(&saved->enemy,source,sizeof(*source)))) {
+            if(saved->run_count>capacity-total) goto done;
+            for(unsigned j=0;j<saved->run_count;++j) {
+                items[total]=saved->runs[j];
+                struct rf_gpu_graphics_draw *d=&items[total++].draw;
+                d->camera[0]=camera->x;d->camera[1]=camera->y;d->camera[2]=camera->z;
+                d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
+                d->projection[0]=width;d->projection[1]=height;d->projection[3]=width*3/4;
+            }
+            if(actor) *procedural_draws+=saved->run_count;
+            *triangles+=saved->triangles;(*reused)++;(*geometry_reused)++;
+            continue;
+        }
+        if(saved) saved->valid=0;
         mesh->count=0;memset(mesh->light_cache,0,sizeof(mesh->light_cache));
         mesh->frame=frame;mesh->source=source;
         mesh->cache_lighting=!(legacy && !strcmp(legacy,"1"));
@@ -1207,6 +1238,17 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             first=end;
         }
         *draw_prepare_us+=rf_core_clock_now_us()-start;
+        if(eligible) {
+            unsigned n=total-first_draw;
+            void *next=realloc(saved->runs,(size_t)n*sizeof(*saved->runs));
+            if(next) {
+                saved->runs=next;saved->run_count=n;saved->triangles=mesh->count;
+                memcpy(saved->runs,items+first_draw,(size_t)n*sizeof(*saved->runs));
+                if(actor) saved->actor=*actor;else saved->enemy=*source;
+                saved->is_actor=actor!=NULL;saved->vertex_color=vertex_color;
+                saved->generation=frame->world_generation;saved->valid=1;
+            }
+        }
     }
     *count=total;result=0;
 done:
@@ -1382,7 +1424,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             items+draws,capacity-draws,&enemy_draws,&stats->procedural_draws,
             &stats->geometry_extract_us,&stats->enemy_upload_us,
             &stats->enemy_draw_prepare_us,&stats->dynamic_reused,&stats->dynamic_created,
-            &stats->enemy_triangles,&stats->enemy_prepare_culled)<0) goto done;
+            &stats->enemy_triangles,&stats->enemy_prepare_culled,&stats->enemy_geometry_reused)<0) goto done;
     draws+=enemy_draws;
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
     if(scene_lighting_lab_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
@@ -1391,6 +1433,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (scene_layers_prepare(probe,camera,width,height,model_texture,&items,&draws,stats)<0)
         goto done;
     stats->layer_prepare_us=rf_core_clock_now_us()-section_start;
+    if(!probe->quiet) __printf("SCENE-LAYER-COST frame=%llu extract_us=%lld clip_us=%lld pack_us=%lld upload_us=%lld batch_us=%lld triangles=%u culled=%u\n",
+        (unsigned long long)enemies->frame_id,(long long)stats->layer_extract_us,
+        (long long)stats->layer_clip_us,(long long)stats->layer_pack_us,
+        (long long)stats->layer_upload_us,(long long)stats->layer_batch_us,
+        stats->layer_triangles,stats->layer_culled);
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
     stats->misc_prepare_us=stats->prepare_us-stats->world_prepare_us-stats->actor_prepare_us-
         stats->enemy_prepare_us-stats->layer_prepare_us;
@@ -1422,6 +1469,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->queue_submit_us=(int64_t)(timing.queue_submit_ms*1000);
     stats->present_us=(int64_t)(timing.present_ms*1000);
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
+    stats->skin_reused=(uint32_t)(graphics_after.skin_reused-graphics_before.skin_reused);
     if (!probe->quiet && graphics_after.triangle_updates!=graphics_before.triangle_updates)
         __printf("SCENE-TRIANGLE-UPDATE frame=%llu validate_us=%lld map_us=%lld copy_us=%lld flush_us=%lld transfer_us=%lld updates=%llu bytes=%llu flush_bytes=%llu staging=%llu direct_flags=%llu staging_flags=%llu\n",
             (unsigned long long)enemies->frame_id,
@@ -1530,6 +1578,9 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     probe->layers=NULL;
     scene_layer_workspace_free(probe->layer_workspace);probe->layer_workspace=NULL;
     free(probe->enemy_workspace);probe->enemy_workspace=NULL;
+    if(probe->enemy_cached) for(unsigned i=0;i<RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS;++i)
+        free(probe->enemy_cached[i].runs);
+    free(probe->enemy_cached);probe->enemy_cached=NULL;
     free(probe->batch);probe->batch=NULL;probe->batch_capacity=0;
     for (unsigned i=0;i<RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])

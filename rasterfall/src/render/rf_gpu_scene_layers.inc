@@ -8,7 +8,19 @@ struct scene_layer_triangle {
     uint32_t color;
     int light,alpha,screen,textured,layer,emissive;
     int origin[3];
+    unsigned retained;
 };
+/* Camera-independent packets retain exact source order and local origins.
+ * Only explicitly immutable emitters use them; animated emitters stay live. */
+#define SCENE_RETAINED_TRIANGLES 131072u
+struct scene_layer_packet {
+    struct toy_map_draw key;
+    struct rf_gpu_graphics_batch_item *runs;
+    struct rf_gpu_graphics_resource **resources;
+    unsigned triangles,run_count,resource_count;
+    int valid,min[3],max[3];
+};
+struct scene_layer_workspace;
 struct scene_layer_mesh {
     struct scene_layer_triangle *triangles;
     uint32_t count,capacity;
@@ -18,6 +30,11 @@ struct scene_layer_mesh {
     struct rf_display_geometry *displays;
     unsigned display_budget;
     int cache_displays;
+    int profile;
+    int64_t clip_us;
+    uint32_t culled;
+    struct scene_layer_workspace *owner;
+    int retain;
 };
 struct scene_layer_workspace {
     struct scene_layer_mesh mesh;
@@ -28,7 +45,17 @@ struct scene_layer_workspace {
     uint32_t vertex_capacity,texture_bytes,texture_width,texture_height,texture_channels;
     struct rf_gpu_graphics_batch_item *ordered;
     uint32_t ordered_capacity;
+    struct rf_gpu_graphics *graphics;
+    struct scene_layer_packet *packets;
+    unsigned retained_triangles;
 };
+static void scene_packet_clear(struct scene_layer_workspace *w,struct scene_layer_packet *p)
+{
+    for(unsigned i=0;i<p->resource_count;++i)
+        if(p->resources[i]) rf_gpu_graphics_resource_destroy(w->graphics,p->resources[i]);
+    w->retained_triangles-=p->triangles;
+    free(p->resources);free(p->runs);memset(p,0,sizeof(*p));
+}
 static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
     uint32_t *capacity,uint32_t needed)
 {
@@ -42,6 +69,8 @@ static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
 static void scene_layer_workspace_free(struct scene_layer_workspace *w)
 {
     if (!w) return;
+    if(w->packets) for(unsigned i=0;i<TOY_MAP_MAX_DRAW;++i) scene_packet_clear(w,&w->packets[i]);
+    free(w->packets);
     if(w->mesh.displays) for(unsigned i=0;i<TOY_MAP_MAX_DRAW;++i) free(w->mesh.displays[i].quads);
     free(w->mesh.displays);
     free(w->mesh.triangles);free(w->vertices);free(w->colors);free(w->indices);
@@ -57,13 +86,17 @@ static int scene_layer_emit(struct scene_layer_mesh *m,
      * only triangles wholly outside one camera plane; crossing triangles keep
      * their original vertices for hardware clipping. No distance/size cutoff. */
     if (m->cull && !screen && alpha>0) {
+        int64_t start=m->profile?rf_core_clock_now_us():0;
+        int outside=0;
         for (int p=0;p<5;++p) {
             const double *f=m->clip[p];
             double da=f[0]*a->position[0]+f[1]*a->position[1]+f[2]*a->position[2]+f[3];
             double db=f[0]*b->position[0]+f[1]*b->position[1]+f[2]*b->position[2]+f[3];
             double dc=f[0]*c->position[0]+f[1]*c->position[1]+f[2]*c->position[2]+f[3];
-            if (da<0 && db<0 && dc<0) return 0;
+            if (da<0 && db<0 && dc<0) {outside=1;break;}
         }
+        if(m->profile) m->clip_us+=rf_core_clock_now_us()-start;
+        if(outside) {m->culled++;return 0;}
     }
     int origin[3]={0};
     if (!screen) {
@@ -263,8 +296,99 @@ static int scene_host_quad(void *context,const int p[4][3],unsigned color)
         for (int axis=0;axis<3;++axis) v[k].position[axis]=p[k][axis];
     return scene_layer_quad(context,v,color,255,0);
 }
+static void scene_draw_camera(struct rf_gpu_graphics_draw *d,const struct camera *c,unsigned width,unsigned height)
+{
+    d->camera[0]=c->x;d->camera[1]=c->y;d->camera[2]=c->z;
+    d->view[0]=c->sy;d->view[1]=c->cy;d->view[2]=c->pitch_sy;d->view[3]=c->pitch_cy;
+    d->projection[0]=width;d->projection[1]=height;d->projection[2]=64;d->projection[3]=width*3/4;
+}
+static int scene_packet_prepare(struct scene_layer_workspace *w,struct scene_layer_packet *p,
+    const struct toy_map_draw *key)
+{
+    if(p->valid && !memcmp(&p->key,key,sizeof(*key))) return p->valid>0?0:1;
+    scene_packet_clear(w,p);
+    struct scene_layer_mesh build={0};
+    struct rf_gpu_scene_color_vertex *vertices=NULL;
+    uint32_t *indices=NULL;
+    int result=1;
+    build.layer=RF_GPU_SCENE_WORLD;build.emissive=1;
+    if(rf_display_generate(key,scene_host_quad,&build)<0) goto done;
+    if(build.count>SCENE_RETAINED_TRIANGLES-w->retained_triangles) {result=1;goto done;}
+    if(!build.count) {result=0;goto done;}
+    vertices=malloc((size_t)build.count*3*sizeof(*vertices));
+    indices=malloc((size_t)build.count*3*sizeof(*indices));
+    p->resources=calloc((build.count+RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES-1)/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES,sizeof(*p->resources));
+    p->runs=calloc(build.count,sizeof(*p->runs));
+    if(!vertices || !indices || !p->resources || !p->runs) {result=1;goto done;}
+    for(unsigned i=0;i<build.count;++i) {
+        const struct scene_layer_triangle *t=&build.triangles[i];
+        for(unsigned v=0;v<3;++v) {
+            unsigned n=i*3+v;
+            memcpy(vertices[n].position,t->vertex[v].position,sizeof(vertices[n].position));
+            vertices[n].rgb24=t->color;vertices[n].light_q8=t->alpha;
+            indices[n]=n%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
+            for(int a=0;a<3;++a) {
+                int x=t->vertex[v].position[a]+t->origin[a];
+                if(!i && !v) p->min[a]=p->max[a]=x;
+                if(x<p->min[a]) p->min[a]=x;
+                if(x>p->max[a]) p->max[a]=x;
+            }
+        }
+    }
+    for(unsigned start=0;start<build.count;start+=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) {
+        unsigned n=build.count-start;
+        if(n>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) n=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+        struct rf_gpu_graphics_resource *r=rf_gpu_graphics_scene_color_resource_create(w->graphics,
+            vertices+start*3,n*3,indices+start*3,n*3);
+        if(!r) {result=-1;goto done;}
+        p->resources[p->resource_count++]=r;
+    }
+    for(unsigned first=0;first<build.count;) {
+        unsigned end=first+1,chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+        const struct scene_layer_triangle *t=&build.triangles[first];
+        while(end<build.count && end/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES==chunk &&
+            !memcmp(t->origin,build.triangles[end].origin,sizeof(t->origin))) ++end;
+        struct rf_gpu_graphics_batch_item *item=&p->runs[p->run_count++];
+        struct rf_gpu_graphics_draw *d=&item->draw;
+        item->resource=p->resources[chunk];
+        memcpy(d->translation_scale,t->origin,sizeof(t->origin));
+        d->translation_scale[3]=1000;d->rotation[1]=1024;
+        d->material[0]=t->color;d->material[1]=256;d->material[3]=2;
+        d->quality[2]=3;d->texture[0]=d->texture[1]=1;d->texture[2]=256;
+        d->first_index=(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;
+        d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=RF_GPU_SCENE_WORLD;
+        first=end;
+    }
+    void *compact=realloc(p->runs,(size_t)p->run_count*sizeof(*p->runs));
+    if(compact) p->runs=compact;
+    p->triangles=build.count;w->retained_triangles+=build.count;result=0;
+done:
+    free(vertices);free(indices);free(build.triangles);
+    if(result) scene_packet_clear(w,p);
+    p->key=*key;p->valid=result?-1:1;
+    return result;
+}
 static int scene_display_emit(struct scene_layer_mesh *mesh,const struct toy_map_draw *d,unsigned index)
 {
+    if(mesh->retain && mesh->owner->packets && index<TOY_MAP_MAX_DRAW) {
+        struct scene_layer_packet *packet=&mesh->owner->packets[index];
+        int status=scene_packet_prepare(mesh->owner,packet,d);
+        if(status<0) return -1;
+        if(!status) {
+            if(!packet->triangles) return 0;
+            if(mesh->cull) for(int p=0;p<5;++p) {
+                const double *f=mesh->clip[p];double maximum=f[3];
+                for(int k=0;k<3;++k) maximum+=f[k]*(f[k]>=0?packet->max[k]:packet->min[k]);
+                if(maximum<0) return 0;
+            }
+            /* One non-drawn marker preserves the exact order relative to live
+             * emitters. It also prevents merging across a retained packet. */
+            struct rf_gpu_graphics_vertex zero={0};
+            if(scene_layer_emit(mesh,&zero,&zero,&zero,0,256,255,2,0)<0) return -1;
+            mesh->triangles[mesh->count-1].retained=index+1;
+            return 0;
+        }
+    }
     if(!mesh->cache_displays || !mesh->displays || index>=TOY_MAP_MAX_DRAW)
         return rf_display_generate(d,scene_host_quad,mesh);
     struct rf_display_geometry *entry=&mesh->displays[index];
@@ -440,6 +564,14 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     if (!w) return -1;
     struct scene_layer_mesh mesh=w->mesh;
     mesh.count=0;mesh.failed=0;
+    w->graphics=probe->graphics;mesh.owner=w;
+    const char *legacy_retained=getenv("RF_GPU_SCENE_LEGACY_RETAINED_LAYERS");
+    const char *legacy_colors_mode=getenv("RF_GPU_SCENE_LEGACY_LAYER_COLORS");
+    mesh.retain=!(legacy_retained && !strcmp(legacy_retained,"1")) &&
+        !(legacy_colors_mode && !strcmp(legacy_colors_mode,"1"));
+    if(mesh.retain && !w->packets) w->packets=calloc(TOY_MAP_MAX_DRAW,sizeof(*w->packets));
+    const char *profile=getenv("RF_GPU_SCENE_PROFILE_LAYERS");
+    mesh.profile=profile && !strcmp(profile,"1");mesh.clip_us=0;mesh.culled=0;
     const char *legacy_display=getenv("RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY");
     mesh.cache_displays=!(legacy_display && !strcmp(legacy_display,"1"));
     if(mesh.cache_displays && !mesh.displays)
@@ -451,7 +583,11 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const char *legacy_colors=getenv("RF_GPU_SCENE_LEGACY_LAYER_COLORS");
     int color_batch=!(legacy_colors && legacy_colors[0]=='1');
     int result=-1,textured=0;
+    int64_t mark=rf_core_clock_now_us();
     if (probe->layers && scene_layers_extract(&mesh,probe->layers,camera,(int)width,(int)height)<0) goto done;
+    stats->layer_extract_us=rf_core_clock_now_us()-mark;
+    stats->layer_clip_us=mesh.clip_us;stats->layer_culled=mesh.culled;stats->layer_triangles=mesh.count;
+    mark=rf_core_clock_now_us();
     if (mesh.count) {
         if (mesh.capacity*3>w->vertex_capacity) {
             uint32_t capacity=mesh.capacity*3;
@@ -509,6 +645,7 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             }
             texels=w->texels;
         }
+        stats->layer_pack_us=rf_core_clock_now_us()-mark;mark=rf_core_clock_now_us();
         for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)
         for (int i=0;i<2;++i) {
             unsigned start=chunk*RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
@@ -549,18 +686,29 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 goto done;
             }
         }
+        stats->layer_upload_us=rf_core_clock_now_us()-mark;mark=rf_core_clock_now_us();
         if (mesh.count>UINT32_MAX-*count || scene_batch_reserve(batch,
                 &probe->batch_capacity,*count+mesh.count)<0) goto done;
         for (unsigned first=0;first<mesh.count;) {
             unsigned end=first+1;
             unsigned chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
             const struct scene_layer_triangle *t=&mesh.triangles[first];
+            if(t->retained) {
+                const struct scene_layer_packet *p=&w->packets[t->retained-1];
+                if(scene_batch_reserve(batch,&probe->batch_capacity,*count+p->run_count+mesh.count-first-1)<0) goto done;
+                for(unsigned j=0;j<p->run_count;++j) {
+                    struct rf_gpu_graphics_batch_item *item=&(*batch)[(*count)++];
+                    *item=p->runs[j];scene_draw_camera(&item->draw,camera,width,height);
+                }
+                ++first;continue;
+            }
             /* Color and opacity live on each triangle. Keep pass, origin and
              * source order intact, including overlapping projections. The
              * legacy baked light value is not consumed by GPU HDR lighting. */
             size_t key=color_batch && !t->textured ? offsetof(struct scene_layer_triangle,screen) :
                 offsetof(struct scene_layer_triangle,color);
             while (end<mesh.count && end/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES==chunk &&
+                    !mesh.triangles[end].retained &&
                     !!mesh.triangles[end].alpha==!!t->alpha &&
                     !memcmp((const char *)&mesh.triangles[end]+key,(const char *)t+key,sizeof(*t)-key)) ++end;
             struct rf_gpu_graphics_batch_item *entry=&(*batch)[(*count)++];
@@ -598,6 +746,7 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     w->ordered=*batch;*batch=ordered;
     uint32_t old_capacity=probe->batch_capacity;
     probe->batch_capacity=w->ordered_capacity;w->ordered_capacity=old_capacity;
+    stats->layer_batch_us=rf_core_clock_now_us()-mark;
     result=0;
 done:
     w->mesh=mesh;return result;

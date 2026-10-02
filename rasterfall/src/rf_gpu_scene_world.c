@@ -7,6 +7,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include "rf_scene_id_set.h"
 
 _Static_assert(RF_GPU_SCENE_FLAG_CAP==RASTERFALL_MAX_FLAGS,
     "Scene flag snapshot capacity must match session");
@@ -264,17 +265,98 @@ int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
             object->length!=prop->length) {
             tlibc_free(next);return -1;
         }
-        for(int j=0;j<i;++j)
-            if (!strcmp(next->items[j].id,object->id)) {
-                tlibc_free(next);return -1;
-            }
         memcpy(next->items[i].id,object->id,sizeof(object->id));
         next->items[i].submission_ordinal=(uint32_t)i;
         next->items[i].scene_light_q8=256;
         next->items[i].prop=*prop;
         next->items[i].prop.asset_id=rasterfall_prop_presented_asset(prop->asset_id,prop->length);
     }
+    if(rf_scene_ids_unique(next->items,next->count,sizeof(next->items[0]),RF_MAP_RUNTIME_ID_CAP)<0) {
+        tlibc_free(next);return -1;
+    }
     *props=*next;tlibc_free(next);
+    return 0;
+}
+
+/* Runtime Map is immutable for a loaded world. Keys still compare authored
+ * projection values: edits, air gates and presentation changes cannot reuse a
+ * stale value frame. The consumer receives copies, never cache/map pointers. */
+struct rf_gpu_scene_world_freeze_cache {
+    const void *runtime;
+    const struct toy_map *level;
+    uint64_t generation;
+    int render_valid,props_valid,air_walls;
+    unsigned world_count,prop_count;
+    struct toy_map_draw draws[TOY_MAP_MAX_DRAW];
+    struct toy_map_prop props[TOY_MAP_MAX_PROPS];
+    const struct rf_map_runtime_render *projection[TOY_MAP_MAX_DRAW];
+    struct rf_gpu_scene_world_input_v2 world[RF_GPU_SCENE_MAX_WORLD_V2];
+    struct rf_gpu_scene_world_render_frame_v1 render;
+    struct rf_gpu_scene_world_prop_frame_v1 prop_frame;
+};
+void rf_gpu_scene_world_freeze_cache_destroy(struct rf_gpu_scene_world_freeze_cache *cache)
+{ tlibc_free(cache); }
+static struct rf_gpu_scene_world_freeze_cache *scene_freeze_cache(
+    struct rf_gpu_scene_world_freeze_cache **slot,const struct rasterfall_map_state *map,uint64_t generation)
+{
+    if(!slot || !map || !map->runtime_loaded || !map->level || !generation) return NULL;
+    if(!*slot) {
+        *slot=tlibc_malloc(sizeof(**slot));
+        if(*slot) memset(*slot,0,sizeof(**slot));
+    }
+    struct rf_gpu_scene_world_freeze_cache *c=*slot;
+    if(c && (c->runtime!=map->runtime.impl || c->level!=map->level || c->generation!=generation)) {
+        c->render_valid=c->props_valid=0;c->runtime=map->runtime.impl;
+        c->level=map->level;c->generation=generation;
+    }
+    return c;
+}
+int rf_gpu_scene_world_render_freeze_cached(struct rf_gpu_scene_world_freeze_cache **slot,
+    const struct rasterfall_map_state *map,int air_walls,uint64_t frame,uint64_t generation,
+    struct rf_gpu_scene_world_input_v2 *world,uint32_t capacity,uint32_t *count,
+    struct rf_gpu_scene_world_render_frame_v1 *render)
+{
+    struct rf_gpu_scene_world_freeze_cache *c=scene_freeze_cache(slot,map,generation);
+    if(!c) return rf_gpu_scene_world_render_freeze(map,air_walls,frame,generation,world,capacity,count,render);
+    int n=map->level->draw_count;
+    if(!frame || !world || !count || !render || n<0 || n>TOY_MAP_MAX_DRAW || (unsigned)n>capacity) return -1;
+    if(!c->render_valid || c->world_count!=(unsigned)n || c->air_walls!=air_walls ||
+        memcmp(c->draws,map->level->draw,(size_t)n*sizeof(c->draws[0]))) {
+        c->render_valid=0;
+        if(rf_gpu_scene_world_render_freeze(map,air_walls,frame,generation,c->world,
+            RF_GPU_SCENE_MAX_WORLD_V2,&c->world_count,&c->render)<0) return -1;
+        memcpy(c->draws,map->level->draw,(size_t)n*sizeof(c->draws[0]));
+        for(int i=0;i<n;++i) c->projection[i]=rasterfall_map_render_projection_at(map,i);
+        c->air_walls=air_walls;c->render_valid=1;
+    }
+    *render=c->render;render->frame_id=frame;
+    for(int i=0;i<n;++i) {
+        /* Reset text to authored value before channel overlay, including when
+         * a previously populated channel is removed or shortened. */
+        render->items[i].draw=c->draws[i];
+        rasterfall_render_terminal_freeze(c->projection[i],&render->items[i].draw);
+    }
+    memcpy(world,c->world,(size_t)n*sizeof(*world));*count=(unsigned)n;
+    return 0;
+}
+int rf_gpu_scene_world_prop_freeze_cached(struct rf_gpu_scene_world_freeze_cache **slot,
+    const struct rasterfall_map_state *map,uint64_t frame,uint64_t generation,
+    struct rf_gpu_scene_world_prop_frame_v1 *props)
+{
+    struct rf_gpu_scene_world_freeze_cache *c=scene_freeze_cache(slot,map,generation);
+    if(!c) return rf_gpu_scene_world_prop_freeze(map,frame,generation,props);
+    int n=map->level->prop_count;
+    if(!frame || !props || n<0 || n>TOY_MAP_MAX_PROPS) return -1;
+    if(!c->props_valid || c->prop_count!=(unsigned)n ||
+        memcmp(c->props,map->level->props,(size_t)n*sizeof(c->props[0]))) {
+        c->props_valid=0;
+        if(rf_gpu_scene_world_prop_freeze(map,frame,generation,&c->prop_frame)<0) return -1;
+        memcpy(c->props,map->level->props,(size_t)n*sizeof(c->props[0]));
+        c->prop_count=(unsigned)n;c->props_valid=1;
+    }
+    *props=c->prop_frame;props->frame_id=frame;
+    for(int i=0;i<n;++i) props->items[i].prop.asset_id=
+        rasterfall_prop_presented_asset(c->props[i].asset_id,c->props[i].length);
     return 0;
 }
 

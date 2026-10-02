@@ -76,6 +76,7 @@ struct rf_gpu_graphics_stats {
     uint64_t shadow_draws;
     uint32_t lights, shadow_maps, present_mode;
     uint64_t mesh_upload_bytes, texture_upload_bytes;
+    uint64_t skin_reused;
     uint64_t instance_upload_bytes, indexed_draws, frames, target_builds;
     uint64_t bridge_roundtrips, bridge_transfer_bytes, raster_bridge_transfers;
     uint64_t queue_submits, fence_waits;

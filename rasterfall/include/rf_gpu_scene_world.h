@@ -115,6 +115,15 @@ int rf_gpu_scene_world_floor_freeze(const struct rasterfall_map_state *map,
 int rf_gpu_scene_world_prop_freeze(const struct rasterfall_map_state *map,
     uint64_t frame_id,uint64_t world_generation,
     struct rf_gpu_scene_world_prop_frame_v1 *props);
+struct rf_gpu_scene_world_freeze_cache;
+void rf_gpu_scene_world_freeze_cache_destroy(struct rf_gpu_scene_world_freeze_cache *cache);
+int rf_gpu_scene_world_render_freeze_cached(struct rf_gpu_scene_world_freeze_cache **cache,
+    const struct rasterfall_map_state *map,int air_walls,uint64_t frame,uint64_t generation,
+    struct rf_gpu_scene_world_input_v2 *world,uint32_t capacity,uint32_t *count,
+    struct rf_gpu_scene_world_render_frame_v1 *render);
+int rf_gpu_scene_world_prop_freeze_cached(struct rf_gpu_scene_world_freeze_cache **cache,
+    const struct rasterfall_map_state *map,uint64_t frame,uint64_t generation,
+    struct rf_gpu_scene_world_prop_frame_v1 *props);
 /* Builds four persistent map classes, partitioned floor, boundary walls,
  * legacy model cuboids, world signs, and legacy/special display silhouettes from
  * frozen values. V2 lighting still samples the active world-light state

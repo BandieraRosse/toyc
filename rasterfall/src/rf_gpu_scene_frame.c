@@ -1,6 +1,7 @@
 #include "rf_gpu_scene_frame.h"
 #include "tlibc_everything.h"
 #include <string.h>
+#include "rf_scene_id_set.h"
 
 static int scene_has_nul(const char *value,uint32_t capacity)
 {
@@ -60,10 +61,9 @@ int rf_gpu_scene_snapshot_build_v2(
             !scene_has_nul(world[i].kind, RF_GPU_SCENE_WORLD_KIND_CAP) ||
             world[i].alpha < 0 || world[i].alpha > 255)
             return -1;
-        for (j = 0; j < i; ++j)
-            if (!strcmp(world[i].id, world[j].id)) return -1;
         ordinals[ordinal_count++] = world[i].submission_ordinal;
     }
+    if(rf_scene_ids_unique(world,world_count,sizeof(*world),RF_GPU_SCENE_WORLD_ID_CAP)<0) return -1;
     for (i = 0; i < transient_count; ++i) {
         if (!transient[i].source || !transient[i].kind ||
             transient[i].alpha < 0 || transient[i].alpha > 255 ||

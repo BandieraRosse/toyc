@@ -25,4 +25,10 @@ struct toy_platform_host_sample {
 };
 void toy_platform_host_sample(struct toy_platform_host_sample *out);
 
+#ifdef TOYC_WINDOWS
+/* Opt-in native frame diagnosis. CPU accounting may have coarse resolution;
+ * wall minus CPU includes blocking and scheduling, not scheduling alone. */
+unsigned long long toy_platform_thread_cpu_us(void);
+#endif
+
 #endif

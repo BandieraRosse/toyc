@@ -206,6 +206,54 @@ static int rf_electronics_contract_test(void)
     if (rasterfall_electronics_get_frame().powered_mask) return -11;
     __printf("RF-ELECTRONICS RPM/phase-continuity/pause/power/rotors/status passed\n");return 0;
 }
+static int rf_scene_freeze_cache_test(struct rasterfall_map_state *map)
+{
+    struct freeze_test_values {
+        struct rf_gpu_scene_world_render_frame_v1 render[2];
+        struct rf_gpu_scene_world_prop_frame_v1 props[2];
+        struct rf_gpu_scene_world_input_v2 world[2][RF_GPU_SCENE_MAX_WORLD_V2];
+    } *v=calloc(1,sizeof(*v));
+    struct rf_gpu_scene_world_freeze_cache *cache=NULL;
+    struct toy_map_draw saved_draw=map->level->draw[0];
+    struct toy_map_prop saved_prop=map->level->props[0];
+    int saved_count=map->level->draw_count,result=-1;
+    if(!v) return -1;
+    for(int pass=0;pass<7;++pass) {
+        uint32_t count[2]={0};uint64_t frame=pass+1,generation=pass<4?1:2;int air=pass<3?0:1;
+        if(pass==2) map->level->draw[0].color^=0x123456;
+        if(pass==3) map->level->draw[0]=saved_draw;
+        rasterfall_render_terminal_set("character_lab",pass==5?"CACHE UPDATE":"OFF");
+        if(rf_gpu_scene_world_render_freeze(map,air,frame,generation,v->world[0],
+            RF_GPU_SCENE_MAX_WORLD_V2,&count[0],&v->render[0])<0 ||
+            rf_gpu_scene_world_render_freeze_cached(&cache,map,air,frame,generation,v->world[1],
+            RF_GPU_SCENE_MAX_WORLD_V2,&count[1],&v->render[1])<0 || count[0]!=count[1] ||
+            memcmp(v->world[0],v->world[1],count[0]*sizeof(v->world[0][0])) ||
+            memcmp(&v->render[0],&v->render[1],sizeof(v->render[0]))) goto done;
+        if(rf_gpu_scene_world_prop_freeze(map,frame,generation,&v->props[0])<0 ||
+            rf_gpu_scene_world_prop_freeze_cached(&cache,map,frame,generation,&v->props[1])<0 ||
+            memcmp(&v->props[0],&v->props[1],sizeof(v->props[0]))) goto done;
+        /* Neither caller writes nor the next freeze may mutate a previous snapshot. */
+        v->render[1].items[0].draw.color^=0xFFFFFF;
+        v->props[1].items[0].prop.x++;
+    }
+    if(rf_gpu_scene_world_prop_freeze_cached(&cache,map,9,2,&v->props[1])<0) goto done;
+    v->props[0]=v->props[1];map->level->props[0].x++;
+    if(rf_gpu_scene_world_prop_freeze_cached(&cache,map,10,2,&v->props[1])>=0 ||
+        memcmp(&v->props[0],&v->props[1],sizeof(v->props[0]))) goto done;
+    map->level->props[0]=saved_prop;
+    if(rf_gpu_scene_world_prop_freeze_cached(&cache,map,11,2,&v->props[1])<0) goto done;
+    v->render[0]=v->render[1];map->level->draw_count--;
+    uint32_t count=123;
+    if(rf_gpu_scene_world_render_freeze_cached(&cache,map,0,12,2,v->world[1],
+        RF_GPU_SCENE_MAX_WORLD_V2,&count,&v->render[1])>=0 || count!=123 ||
+        memcmp(&v->render[0],&v->render[1],sizeof(v->render[0]))) goto done;
+    result=0;
+done:
+    map->level->draw[0]=saved_draw;map->level->props[0]=saved_prop;map->level->draw_count=saved_count;
+    rf_gpu_scene_world_freeze_cache_destroy(cache);free(v);
+    if(!result) __printf("SCENE-FREEZE cache/content/generation/airwalls/value-ownership/failure passed\n");
+    return result;
+}
 static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
 {
     if (rf_lab_composite_contract_test()<0) return -12;
@@ -214,6 +262,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     if (rf_pane_contract_test()<0) return -14;
     if (rf_electronics_contract_test()<0) return -15;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;
+    if (rf_scene_freeze_cache_test(&runtime->session->map_ops)<0) return -24;
     struct camera origin=runtime->camera;
     uint64_t seed=runtime->session->seed;
     for (int i=0;i<RF_LAB_COUNT;++i) {
@@ -283,7 +332,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             if(rf_perf_lab.samples!=point) return -21;
             now+=RF_PERF_LAB_WARMUP_US;
             rf_perf_lab_sample(now,10000+point*1000,0,0,0,0,0,2,10,0,100,1,point,3,30,0,1280,720);
-            rf_perf_lab_sample_detail(300,200,100,50,20,10,400);
+            rf_perf_lab_sample_detail(300,200,100,50,20,10,400,NULL);
         }
         if(rf_perf_lab_finish(runtime,scene==5)<0 || rf_perf_lab.result.valid!=(scene==5?2:1) ||
             rf_perf_lab.result.point[4].p95_us!=14000 || rf_perf_lab.result.layer_us!=300 ||

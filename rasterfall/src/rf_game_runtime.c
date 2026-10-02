@@ -3341,6 +3341,10 @@ int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *rendere
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     static struct rf_gpu_scene_world_resources scene_world_resources;
+    struct rf_gpu_scene_world_freeze_cache *scene_freeze_cache=NULL;
+    const char *legacy_freeze=getenv("RF_GPU_SCENE_LEGACY_SNAPSHOT_CACHE");
+    struct rf_gpu_scene_world_freeze_cache **scene_freeze_slot=
+        legacy_freeze && !strcmp(legacy_freeze,"1")?NULL:&scene_freeze_cache;
     int scene_runtime_failed=0;
     int scene_native_frames=0,scene_capture_completed=0;
     struct rf_core core;
@@ -4498,6 +4502,9 @@ startup_again:
         }
 #endif
         int64_t audit_loop_start = rf_core_time_us(&core);
+#ifdef TOYC_WINDOWS
+        rf_scene_cost_begin(audit_loop_start);
+#endif
         int64_t scene_dropped_us = 0;
 #ifdef TOYC_WINDOWS
         if (renderer_switch_request >= 0) {
@@ -4659,6 +4666,13 @@ startup_again:
                     (long long)r->layer_us,(long long)r->actor_us,(long long)r->freeze_us,
                     (long long)r->source_us,(long long)r->record_us,(long long)r->sky_us,r->lab_mask,r->points,
                     r->lights_min,r->lights_max,r->shadows_min,r->shadows_max);
+                if(r->samples) {
+                    const struct rf_perf_lab_preparation *p=&r->preparation;int n=r->samples;
+                    __printf("PERF-LAB preparation layer_extract_us=%lld layer_pack_us=%lld layer_upload_us=%lld layer_batch_us=%lld retire_us=%lld skin_batch_us=%lld upload_bytes=%lld enemy_reused=%lld skin_reused=%lld\n",
+                        (long long)(p->extract/n),(long long)(p->pack/n),(long long)(p->upload/n),
+                        (long long)(p->batch/n),(long long)(p->retire/n),(long long)(p->skin/n),
+                        (long long)(p->bytes/n),(long long)(p->enemy_reused/n),(long long)(p->skin_reused/n));
+                }
                 for(int i=0;i<r->points;++i) {
                     const struct rf_perf_lab_point *p=&r->point[i];
                     __printf("PERF-LAB point index=%d frames=%d mean_us=%lld median_us=%lld p95_us=%lld p99_us=%lld layers_us=%lld actors_us=%lld enemy_us=%lld freeze_us=%lld\n",
@@ -6087,7 +6101,7 @@ startup_again:
                 uint32_t world_count=0,pose_count=0;
                 uint32_t map_primitives=0,map_resources=0;
                 if ((session.map_ops.runtime_loaded &&
-                        rf_gpu_scene_world_render_freeze(&session.map_ops,air_wall_enabled,
+                        rf_gpu_scene_world_render_freeze_cached(scene_freeze_slot,&session.map_ops,air_wall_enabled,
                             session.scene_local.frame_id+1,session.scene_local.world_generation,
                             world,RF_GPU_SCENE_MAX_WORLD_V2,&world_count,&world_render)<0) ||
                     (session.map_ops.runtime_loaded &&
@@ -6096,7 +6110,7 @@ startup_again:
                             session.scene_local.frame_id+1,session.scene_local.world_generation,
                             &floor_render)<0) ||
                     (session.map_ops.runtime_loaded &&
-                        rf_gpu_scene_world_prop_freeze(&session.map_ops,
+                        rf_gpu_scene_world_prop_freeze_cached(scene_freeze_slot,&session.map_ops,
                             session.scene_local.frame_id+1,session.scene_local.world_generation,
                             &prop_render)<0) ||
                     rf_gpu_scene_enemy_freeze(&enemy_render)<0 ||
@@ -6275,9 +6289,11 @@ startup_again:
                         renderer.surface.width,renderer.surface.height);
                     rf_perf_lab_sample_detail(probe_stats.layer_prepare_us,probe_stats.actor_prepare_us,
                         scene_freeze_us,audit_render_us,probe_stats.record_us,
-                        (int64_t)(probe_stats.gpu_sky_ms*1000),probe_stats.enemy_prepare_us);
+                        (int64_t)(probe_stats.gpu_sky_ms*1000),probe_stats.enemy_prepare_us,&probe_stats);
                     if (rf_scene_perf_sample(rendered_frames,audit_interval_us,&probe_stats,
                             renderer.surface.width,renderer.surface.height,paused)) running=0;
+                    rf_scene_cost_end((uint64_t)rendered_frames,audit_update_us,audit_render_us,scene_freeze_us,
+                        pose_extract_us,&probe_stats);
                     if (!rf_perf_lab.running && (options.frame_audit || frame_limit)) {
                     if (options.gpu_scene_independent_preview)
                         __printf("SCENE-LAYERS sky=%u world=%u transparent=%u effects=%u viewmodel=%u overlay=%u post=hdr-tonemap\n",
@@ -6714,7 +6730,9 @@ scene_shutdown:
     if (model_texture.blob) toy_texture_unload(&model_texture);
     if (dump_path) rasterfall_hud_dump_frame(dump_path, &surface);
     rasterfall_net_close(&net);
+    rf_gpu_scene_world_freeze_cache_destroy(scene_freeze_cache);
 #ifdef TOYC_WINDOWS
+    rf_scene_cost_report();
     rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);

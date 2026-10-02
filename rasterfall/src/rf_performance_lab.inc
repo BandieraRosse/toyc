@@ -6,6 +6,9 @@
 #define RF_PERF_LAB_WARMUP_US 2000000LL
 #define RF_PERF_LAB_DURATION_US 10000000LL
 
+struct rf_perf_lab_preparation {
+    int64_t extract,pack,upload,batch,retire,skin,bytes,enemy_reused,skin_reused;
+};
 struct rf_perf_lab_point {
     int samples;
     int64_t sum,median_us,p95_us,p99_us;
@@ -25,6 +28,7 @@ struct rf_perf_lab_result {
     int background,points;
     unsigned lab_mask;
     int64_t layer_us,actor_us,freeze_us,source_us,record_us,sky_us;
+    struct rf_perf_lab_preparation preparation;
     struct rf_perf_lab_point point[RF_PERF_LAB_POINTS];
 };
 struct rf_perf_lab_state {
@@ -49,6 +53,7 @@ struct rf_perf_lab_state {
     int previous_requested[RF_LAB_COUNT],previous_rpm;
     unsigned lab_mask;
     int64_t layer_sum,actor_sum,freeze_sum,source_sum,record_sum,sky_sum;
+    struct rf_perf_lab_preparation preparation;
     struct rf_perf_lab_point points[RF_PERF_LAB_POINTS];
 };
 static struct rf_perf_lab_state rf_perf_lab;
@@ -131,6 +136,7 @@ static void rf_perf_lab_clear(void)
     rf_perf_lab.max_alive = 0;
     rf_perf_lab.point=rf_perf_lab.detail_samples=rf_perf_lab.result_page=0;
     rf_perf_lab.layer_sum=rf_perf_lab.actor_sum=rf_perf_lab.freeze_sum=0;
+    memset(&rf_perf_lab.preparation,0,sizeof(rf_perf_lab.preparation));
     rf_perf_lab.source_sum=rf_perf_lab.record_sum=rf_perf_lab.sky_sum=0;
     memset(rf_perf_lab.points,0,sizeof(rf_perf_lab.points));
 }
@@ -294,6 +300,7 @@ static int rf_perf_lab_finish(struct rf_game_runtime *runtime, int aborted)
         r->layer_us=rf_perf_lab.layer_sum/n;r->actor_us=rf_perf_lab.actor_sum/n;
         r->freeze_us=rf_perf_lab.freeze_sum/n;r->source_us=rf_perf_lab.source_sum/n;
         r->record_us=rf_perf_lab.record_sum/n;r->sky_us=rf_perf_lab.sky_sum/n;
+        r->preparation=rf_perf_lab.preparation;
     }
     if (rf_perf_lab.isolated) {
         session->seed = rf_perf_lab.previous_seed;
@@ -372,12 +379,20 @@ static void rf_perf_lab_sample(int64_t now, int64_t interval_us,
 }
 
 static void rf_perf_lab_sample_detail(int64_t layers,int64_t actors,int64_t freeze,
-    int64_t source,int64_t record,int64_t sky,int64_t enemies)
+    int64_t source,int64_t record,int64_t sky,int64_t enemies,
+    const struct rf_gpu_scene_world_gpu_probe_stats *gpu)
 {
     if(!rf_perf_lab.running || rf_perf_lab.detail_samples==rf_perf_lab.samples) return;
     rf_perf_lab.detail_samples=rf_perf_lab.samples;
     rf_perf_lab.layer_sum+=layers;rf_perf_lab.actor_sum+=actors;rf_perf_lab.freeze_sum+=freeze;
     rf_perf_lab.source_sum+=source;rf_perf_lab.record_sum+=record;rf_perf_lab.sky_sum+=sky;
+    if(gpu) {
+        struct rf_perf_lab_preparation *p=&rf_perf_lab.preparation;
+        p->extract+=gpu->layer_extract_us;p->pack+=gpu->layer_pack_us;
+        p->upload+=gpu->layer_upload_us;p->batch+=gpu->layer_batch_us;
+        p->retire+=gpu->retire_us;p->skin+=gpu->actor_batch_us;p->bytes+=(int64_t)gpu->upload_bytes;
+        p->enemy_reused+=gpu->enemy_geometry_reused;p->skin_reused+=gpu->skin_reused;
+    }
     if(rf_perf_lab_panorama()) {
         struct rf_perf_lab_point *p=&rf_perf_lab.points[rf_perf_lab.point];
         p->samples++;p->sum+=rf_perf_lab.intervals[rf_perf_lab.samples-1];

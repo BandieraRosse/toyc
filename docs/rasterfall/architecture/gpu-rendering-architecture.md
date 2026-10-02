@@ -34,11 +34,28 @@ Scene world 资源由 `rasterfall/src/rf_gpu_scene_world_gpu.c` 准备，角色�
 阴影图各自的光空间独立剔除；镜头外的模型仍可投射镜头内阴影。GPU 蒙皮资源不使用 bind bounds
 剔除。没有距离隐藏、小物件删除或模型降面。静态纹理过滤设置在每帧准备开始时读取一次。
 
-Scene layer workspace 持有不随时间变化的显示几何缓存：完整 `toy_map_draw` 值作为失效键，包含文本、
-颜色、像素间距、朝向、样式及世界坐标。缓存保留原始 quad 顺序和实际包围盒；相机改变只重新判断裁剪。
-屏幕/文字变化立即重建，动态光束、旋转信标和机器活动仍走原逐帧路径。
-每个 owner 最多缓存 65,536 个 quad，分配失败或超预算回退直接生成；owner 关闭统一释放。
-共享生成器位于 `render/rf_display_geometry_cache.h`，该缓存不持有玩法状态、相机或 GPU resource。
+Scene layer workspace 将不随时间变化的显示几何保留为 GPU 资源及有序 draw 段：完整 `toy_map_draw`
+值作为失效键，包含文本、颜色、像素间距、朝向、样式及世界坐标。相机改变只更新包围盒裁剪与 draw
+相机参数，不再逐三角形生成、遍历、打包和上传。内容变化只重建该对象；相对动态来源的顺序、局部
+坐标原点和硬件近裁剪保持一致。动态光束、旋转信标和机器活动仍逐帧更新。
+每个 owner 的 GPU 显示缓存最多保留 131,072 个三角形；CPU 缓存分配失败或超预算时回退原 CPU
+quad 路径（65,536 quad 上限，继续不足时直接生成）。GPU 资源创建失败仍传播帧错误。
+共享生成器位于 `render/rf_display_geometry_cache.h`；GPU packet 由 layer workspace 持有，owner 关闭
+时统一释放。缓存属于渲染资源，不能引用玩法状态，也不按地图名称或实验区身份决定是否生效。
+
+敌人和程序角色的完整冻结值、world generation、顶点格式及 CPU 光照模式决定是否复用几何和 draw
+段；只有输入完全相同且无需 CPU 顶点光照时跳过提取和上传，相机参数仍逐帧更新。动画采样和表现
+历史照常推进，主视图与阴影仍各自剔除。GPU 蒙皮仅在 bind 未变、palette 和顶点数完全一致且上次
+提交成功时跳过重复上传与 dispatch；取消的更新不能成为有效缓存。可映射的 bind/palette 缓冲保持
+映射至资源销毁，非 coherent 内存仍显式 flush。没有跨实例共享姿态或放宽角色包围盒规则。
+
+Runtime 持有 world freeze cache，以 Runtime Map/level owner、world generation 和完整 authored draw/prop
+值校验静态结果，跳过重复 projection 查找、静态校验及重建。终端通道文本和 prop presentation 每帧
+刷新；消费者仍得到独立值快照，不持有缓存或地图指针。WORLD/prop ID 唯一性使用有界哈希表和完整
+字符串冲突比较。缓存随 runtime 关闭释放，世界身份改变后失效，分配失败回退无缓存冻结。
+
+当前 Scene 仍为单槽：上一帧退休后才能改写资源；蒙皮批次提交后等待完成，native present 后立即
+retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pipeline。
 
 启动环境切到 GPU Scene 时保留 Win32/SDL 窗口句柄，先释放 SDL 硬件呈现器并建立软件呈现器，再为同一窗口创建 Vulkan surface；启动页仍由软件画布呈现，进入游戏后由 GPU Scene 接管。窗口 resize、swapchain 重建及错误注入必须按 graphics owner 的完成/退休顺序处理。失败时传播帧错误，不把残缺 Scene 帧解释为成功。实现边界与复现入口见[Scene 工作流](../guides/gpu-scene-fixture.md)和[Windows Native](../guides/windows-native.md)。
 

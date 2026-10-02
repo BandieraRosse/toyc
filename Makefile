@@ -897,7 +897,7 @@ $(BUILD)/rf-gpu-scene-identity-test: tools/rf_gpu_scene_identity_test.c rasterfa
 
 .PHONY: gpu-scene-frame-test
 gpu-scene-frame-test: $(BUILD)/rf-gpu-scene-frame-test
-$(BUILD)/rf-gpu-scene-frame-test: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
+$(BUILD)/rf-gpu-scene-frame-test: tools/rf_gpu_scene_frame_test.c rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c rasterfall/src/rf_scene_id_set.h rasterfall/include/rf_gpu_scene_frame.h rasterfall/include/rf_gpu_scene_extract.h rasterfall/include/rf_gpu_scene_identity.h | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I rasterfall/include $< rasterfall/src/rf_gpu_scene_frame.c rasterfall/src/rf_gpu_scene_extract.c rasterfall/src/rf_gpu_scene_identity.c -o $@
 
 $(BUILD)/rf_viewmodel_contract.o: rasterfall/src/rf_viewmodel_contract.c \
@@ -2068,6 +2068,7 @@ export-qwen2-tokenizer:
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
+$(BUILD)/rf_gpu_scene_frame.o $(BUILD)/rf_gpu_scene_frame_self.o $(BUILD)/rf_gpu_scene_world.o $(BUILD)/rf_gpu_scene_world_self.o: $(RASTERFALL_SRC)/rf_scene_id_set.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_SRC)/render/rf_display_geometry_cache.h $(RASTERFALL_SRC)/render/rf_gpu_lighting_lab.inc $(RASTERFALL_SRC)/render/rf_gpu_scene_lighting.inc $(RASTERFALL_INC)/rasterfall_canvas.h
 $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
 

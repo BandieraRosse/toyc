@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <stdio.h>
 #include <string.h>
 #include "rf_gpu_scene_extract.h"
 
@@ -7,7 +8,7 @@ int main(void)
     struct rf_gpu_scene_identity_tracker tracker, before, replay_tracker;
     struct rf_gpu_scene_actor_input_v1 actors[TOY_GAME_MAX_ACTORS];
     uint32_t actor_ordinals[TOY_GAME_MAX_ACTORS];
-    struct rf_gpu_scene_world_input_v2 world[2];
+    struct rf_gpu_scene_world_input_v2 world[RF_GPU_SCENE_MAX_WORLD_V2];
     struct rf_gpu_scene_transient_input_v2 transient[2];
     struct rf_gpu_scene_snapshot_v2 snapshot, previous, replay;
     struct rf_gpu_scene_frozen_v1 scene, scene_before;
@@ -97,5 +98,18 @@ int main(void)
     assert(snapshot.actors[0].source_slot == 9 &&
         snapshot.actors[0].identity.generation == 1);
     assert(snapshot.air_walls_enabled == 0);
+    memset(actors,0,sizeof(actors));
+    for(unsigned i=0;i<RF_GPU_SCENE_MAX_WORLD_V2;++i) {
+        snprintf(world[i].id,sizeof(world[i].id),"dense-world-%u",i);
+        strcpy(world[i].kind,"box");world[i].submission_ordinal=i;
+        world[i].alpha=255;
+    }
+    assert(rf_gpu_scene_snapshot_build_v2(&tracker,actors,actor_ordinals,&camera,
+        12,1,3,1280,720,0,world,RF_GPU_SCENE_MAX_WORLD_V2,NULL,0,&snapshot)==0);
+    previous=snapshot;before=tracker;
+    strcpy(world[RF_GPU_SCENE_MAX_WORLD_V2-1].id,world[0].id);
+    assert(rf_gpu_scene_snapshot_build_v2(&tracker,actors,actor_ordinals,&camera,
+        13,1,3,1280,720,0,world,RF_GPU_SCENE_MAX_WORLD_V2,NULL,0,&snapshot)==-1);
+    assert(!memcmp(&snapshot,&previous,sizeof(snapshot)) && !memcmp(&tracker,&before,sizeof(tracker)));
     return 0;
 }

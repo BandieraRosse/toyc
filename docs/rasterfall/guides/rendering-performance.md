@@ -76,7 +76,23 @@ Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：�
 
 `-Stage All` 包含原隔离/干扰组、完整背景组和两种全景巡检。
 `-CompareGeometry` 在同一构建上交替比较显示几何缓存与 `RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY=1` 的直接生成路径，
-保留相同内容、视角与其余优化。报告按场景及每观察点比较，不能将不同镜头的均值差解释为缓存收益。
+两侧均关闭 GPU 显示常驻，以保留 CPU 缓存对照的含义。报告按场景及每观察点比较，不能将不同镜头的均值差解释为缓存收益。
+`-CompareBackend` 与它互斥，成对比较 GPU 显示常驻、相同姿态/敌人几何复用和静态快照缓存；
+参考侧通过 `RF_GPU_SCENE_LEGACY_RETAINED_LAYERS`、`RF_GPU_SCENE_LEGACY_POSE_REUSE`、
+`RF_GPU_SCENE_LEGACY_ENEMY_CACHE`、`RF_GPU_SCENE_LEGACY_SNAPSHOT_CACHE` 关闭这些路径。
+ID 哈希校验两侧共用，因此参考侧不等于旧版本二进制。`PERF-LAB preparation` 增加展示提取、打包、
+上传、组装、帧退休、蒙皮批次、上传字节和复用次数的每帧平均值，脚本写入 `report.json`。
+
+`-ProfileSlow`（运行时 `RF_GPU_SCENE_PROFILE_SLOW=1`）保留启动 120 帧后最慢的 16 帧，退出时集中
+打印 `SCENE-SLOW`，避免逐帧控制台输出。begin-to-begin 间隔对应前一帧的实际阶段，包括线程 CPU
+时间、提交、acquire、present 和 retire；蒙皮批次计时包含记录及等待，不是纯 GPU 执行时间。
+线程 CPU 时间粒度受 Windows 计时影响，墙钟差只能提示等待或调度，不足以证明系统抢占。
+`RF_GPU_SCENE_PROFILE_LAYERS=1` 另外逐三角形计裁剪耗时，扰动明显，仅作诊断，不用于性能签收；
+正常提取计时包含裁剪。脚本会关闭此开关及逐上传细分计时。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Panorama -Capped -CompareBackend -ProfileSlow -OutputDirectory tmp/preparation-ab
+```
 `--gpu-normal-scene performance-terminal 0` 和 `performance-menu 0` 可定向检查路侧位置与测试菜单。
 
 ## 实验园区正常场景采样

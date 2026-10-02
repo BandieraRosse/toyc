@@ -1,6 +1,64 @@
 /* Opt-in native whole-loop sampler. It observes the current scene without
  * suspending exhibits, replacing the world or changing the present policy. */
 #ifdef TOYC_WINDOWS
+#include "toy_platform.h"
+/* Bounded, delayed reporting: no per-frame console IO. Begin-to-begin timing
+ * is attached to the preceding frame's work, never the following frame. */
+struct rf_scene_cost_sample {
+    uint64_t frame;
+    int64_t interval,active,cpu,logic,source,freeze,pose;
+    struct rf_gpu_scene_world_gpu_probe_stats gpu;
+};
+static struct {
+    int enabled,count;
+    int64_t began,previous_begin,cpu_begin;
+    struct rf_scene_cost_sample pending,worst[16];
+} rf_scene_cost;
+static void rf_scene_cost_begin(int64_t now)
+{
+    if(!rf_scene_cost.enabled) return;
+    if(rf_scene_cost.pending.frame>120 && rf_scene_cost.previous_begin) {
+        struct rf_scene_cost_sample value=rf_scene_cost.pending;
+        value.interval=now-rf_scene_cost.previous_begin;
+        int at=rf_scene_cost.count;
+        if(at==16) {
+            at=0;
+            for(int i=1;i<16;++i) if(rf_scene_cost.worst[i].interval<rf_scene_cost.worst[at].interval) at=i;
+            if(value.interval<=rf_scene_cost.worst[at].interval) at=-1;
+        } else rf_scene_cost.count++;
+        if(at>=0) rf_scene_cost.worst[at]=value;
+    }
+    memset(&rf_scene_cost.pending,0,sizeof(rf_scene_cost.pending));
+    rf_scene_cost.previous_begin=rf_scene_cost.began=now;
+    rf_scene_cost.cpu_begin=(int64_t)toy_platform_thread_cpu_us();
+}
+static void rf_scene_cost_end(uint64_t frame,int64_t logic,int64_t source,int64_t freeze,int64_t pose,
+    const struct rf_gpu_scene_world_gpu_probe_stats *gpu)
+{
+    if(!rf_scene_cost.enabled) return;
+    struct rf_scene_cost_sample *s=&rf_scene_cost.pending;
+    s->frame=frame;s->active=rf_core_clock_now_us()-rf_scene_cost.began;
+    s->cpu=(int64_t)toy_platform_thread_cpu_us()-rf_scene_cost.cpu_begin;
+    s->logic=logic;s->source=source;s->freeze=freeze;s->pose=pose;s->gpu=*gpu;
+}
+static void rf_scene_cost_report(void)
+{
+    if(!rf_scene_cost.enabled) return;
+    for(int i=0;i<rf_scene_cost.count;++i) {
+        const struct rf_scene_cost_sample *s=&rf_scene_cost.worst[i];
+        const struct rf_gpu_scene_world_gpu_probe_stats *g=&s->gpu;
+        __printf("SCENE-SLOW frame=%llu interval_us=%lld active_us=%lld thread_cpu_us=%lld logic_us=%lld source_us=%lld freeze_us=%lld pose_us=%lld world_us=%lld actors_us=%lld enemy_us=%lld layers_us=%lld extract_us=%lld clip_us=%lld pack_us=%lld upload_us=%lld batch_us=%lld skin_batch_us=%lld record_us=%lld acquire_us=%lld queue_us=%lld present_us=%lld retire_us=%lld gpu_us=%lld bytes=%llu enemy_reused=%u skin_reused=%u\n",
+            (unsigned long long)s->frame,(long long)s->interval,(long long)s->active,(long long)s->cpu,
+            (long long)s->logic,(long long)s->source,(long long)s->freeze,(long long)s->pose,
+            (long long)g->world_prepare_us,(long long)g->actor_prepare_us,(long long)g->enemy_prepare_us,
+            (long long)g->layer_prepare_us,(long long)g->layer_extract_us,(long long)g->layer_clip_us,
+            (long long)g->layer_pack_us,(long long)g->layer_upload_us,(long long)g->layer_batch_us,
+            (long long)g->actor_batch_us,(long long)g->record_us,(long long)g->acquire_us,
+            (long long)g->queue_submit_us,(long long)g->present_us,(long long)g->retire_us,
+            (long long)(g->gpu_draw_ms*1000),(unsigned long long)g->upload_bytes,
+            g->enemy_geometry_reused,g->skin_reused);
+    }
+}
 static struct {
     int enabled,target,count,invalid,width,height;
     unsigned present_mode;
@@ -10,6 +68,9 @@ static struct {
 static void rf_scene_perf_init(int allowed)
 {
     memset(&rf_scene_perf,0,sizeof(rf_scene_perf));
+    memset(&rf_scene_cost,0,sizeof(rf_scene_cost));
+    const char *slow=getenv("RF_GPU_SCENE_PROFILE_SLOW");
+    rf_scene_cost.enabled=slow && !strcmp(slow,"1");
     const char *value=getenv("RF_SCENE_PERF_FRAMES");
     int frames=value?atoi(value):0;
     if (allowed && frames>=120 && frames<=4096) {

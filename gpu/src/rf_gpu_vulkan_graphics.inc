@@ -81,6 +81,11 @@ struct rf_gpu_graphics_resource {
     struct rf_gpu_vulkan_buffer *skin_pending_upload[2];
     uint64_t skin_pending_bytes[2];
     uint32_t skin_pending_vertices;
+    uint32_t *skin_last_palette;
+    uint32_t skin_last_words,skin_last_vertices;
+    int skin_cached;
+    void *skin_mapped[2];
+    struct rf_gpu_vulkan_buffer *skin_mapped_buffer[2];
 };
 struct rf_gpu_graphics {
     struct rf_gpu_vulkan_impl *owner;
@@ -1251,6 +1256,8 @@ int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g)
         for (struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
             gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
         result=gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING);
+        if(!result) for(struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
+            r->skin_cached=r->skin_last_palette!=NULL;
     }
     rf_gpu_graphics_skin_batch_cancel(g);
     return result;
@@ -1281,8 +1288,28 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         (g->skin_batch && (legacy || r->shared_binding.owner))) return -1;
     if (vertex_count>r->vertex_capacity ||
         palette_word_count>r->palette_word_capacity) return 1;
+    const char *legacy_pose=getenv("RF_GPU_SCENE_LEGACY_POSE_REUSE");
+    int reuse=!(legacy_pose && !strcmp(legacy_pose,"1"));
+    if(reuse && !bind_words && r->skin_cached && r->skin_last_vertices==vertex_count &&
+        r->skin_last_words==palette_word_count &&
+        !memcmp(r->skin_last_palette,palette_words,(size_t)palette_word_count*4)) {
+        g->stats.skin_reused++;return 0;
+    }
+    r->skin_cached=0;
+    if(reuse) {
+        void *next=r->skin_last_words==palette_word_count && r->skin_last_palette ?
+            r->skin_last_palette : realloc(r->skin_last_palette,(size_t)palette_word_count*4);
+        if(next) {
+            r->skin_last_palette=next;r->skin_last_words=palette_word_count;r->skin_last_vertices=vertex_count;
+            memcpy(next,palette_words,(size_t)palette_word_count*4);
+        } else {free(r->skin_last_palette);r->skin_last_palette=NULL;}
+    } else {free(r->skin_last_palette);r->skin_last_palette=NULL;}
     impl=g->owner;
     target[0]=&r->skin_bind; target[1]=&r->skin_palette;
+    if(!reuse || legacy) for(unsigned i=0;i<2;++i) if(r->skin_mapped[i]) {
+        impl->api.unmap_memory(impl->device,r->skin_mapped_buffer[i]->memory);
+        r->skin_mapped[i]=NULL;r->skin_mapped_buffer[i]=NULL;
+    }
     bytes[0]=(uint64_t)bind_word_count*4; bytes[1]=(uint64_t)palette_word_count*4;
     for (unsigned i=0;i<2;++i) {
         if (!data[i]) continue;
@@ -1293,7 +1320,15 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         if (!upload[i]->memory && gpu_buffer_create(impl,target[i]->size,RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                 upload[i])<0) goto done;
-        if (impl->api.map_memory(impl->device,upload[i]->memory,0,
+        if(reuse && !legacy) {
+            if(r->skin_mapped[i] && r->skin_mapped_buffer[i]!=upload[i]) {
+                impl->api.unmap_memory(impl->device,r->skin_mapped_buffer[i]->memory);
+                r->skin_mapped[i]=NULL;
+            }
+            if(!r->skin_mapped[i] && impl->api.map_memory(impl->device,upload[i]->memory,0,
+                upload[i]->allocation_size,0,&r->skin_mapped[i])!=RF_VK_SUCCESS) goto done;
+            r->skin_mapped_buffer[i]=upload[i];mapped=r->skin_mapped[i];
+        } else if (impl->api.map_memory(impl->device,upload[i]->memory,0,
                 upload[i]->allocation_size,0,&mapped)!=RF_VK_SUCCESS) goto done;
         mapped_index=i;
         memcpy(mapped,data[i],(size_t)bytes[i]);
@@ -1303,7 +1338,8 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
             range.memory=upload[i]->memory; range.size=upload[i]->allocation_size;
             if (impl->api.flush_mapped_memory_ranges(impl->device,1,&range)!=RF_VK_SUCCESS) goto done;
         }
-        impl->api.unmap_memory(impl->device,upload[i]->memory); mapped=NULL;
+        if(mapped!=r->skin_mapped[i]) impl->api.unmap_memory(impl->device,upload[i]->memory);
+        mapped=NULL;
     }
     if (g->skin_batch) {
         r->skin_pending_vertices=vertex_count;
@@ -1316,11 +1352,13 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         if (gfx_begin(g)<0) goto done;
         gfx_skin_record(g,r,upload,bytes,vertex_count);
         if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto done;
+        r->skin_cached=r->skin_last_palette!=NULL;
     }
     g->stats.mesh_upload_bytes+=bytes[0]+bytes[1];
     result=0;
 done:
-    if (mapped) impl->api.unmap_memory(impl->device,upload[mapped_index]->memory);
+    if (mapped && mapped!=r->skin_mapped[mapped_index])
+        impl->api.unmap_memory(impl->device,upload[mapped_index]->memory);
     for (unsigned i=0;i<2;++i) gpu_buffer_destroy(impl,&staging[i]);
     return result;
 }
@@ -1362,6 +1400,9 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
             resource->shared_binding.pool,NULL);
     if (resource->skin_descriptor_pool)
         g->owner->api.destroy_descriptor_pool(g->owner->device,resource->skin_descriptor_pool,NULL);
+    for(unsigned i=0;i<2;++i) if(resource->skin_mapped[i])
+        g->owner->api.unmap_memory(g->owner->device,resource->skin_mapped_buffer[i]->memory);
+    free(resource->skin_last_palette);
     gpu_buffer_destroy(g->owner,&resource->skin_bind);
     gpu_buffer_destroy(g->owner,&resource->skin_palette);
     for (unsigned i=0;i<2;++i) gpu_buffer_destroy(g->owner,&resource->skin_staging[i]);

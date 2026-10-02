@@ -31,6 +31,7 @@ struct rf_gpu_scene_actor_gpu;
 struct toy_texture_view;
 struct scene_layer_workspace;
 struct scene_enemy_mesh;
+struct scene_enemy_cached;
 
 #define RF_GPU_SCENE_PICKUP_MODEL_COUNT 7
 #define RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES 4
@@ -62,6 +63,7 @@ struct rf_gpu_scene_world_gpu_probe {
     struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];
     struct scene_layer_workspace *layer_workspace;
     struct scene_enemy_mesh *enemy_workspace;
+    struct scene_enemy_cached *enemy_cached;
     int enemy_vertex_color;
     struct rf_gpu_graphics_batch_item *batch;
     uint32_t batch_capacity;
@@ -90,6 +92,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint32_t layer_draws[6];
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;
     uint32_t enemy_prepare_culled;
+    uint32_t enemy_geometry_reused,skin_reused;
     uint32_t procedural_draws, procedural_items;
     uint32_t dynamic_reused,dynamic_created,enemy_triangles;
     uint32_t layer_reused,layer_created;
@@ -105,6 +108,8 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t submit_present_us,retire_us;
     int64_t record_us,acquire_us,queue_submit_us,present_us;
     int64_t actor_batch_us,misc_prepare_us;
+    int64_t layer_extract_us,layer_clip_us,layer_pack_us,layer_upload_us,layer_batch_us;
+    uint32_t layer_triangles,layer_culled;
     uint64_t upload_bytes,bridge_transfers;
     double gpu_draw_ms;
     double gpu_sky_ms;

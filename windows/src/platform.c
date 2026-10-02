@@ -6,6 +6,15 @@
 #include <string.h>
 #include "toy_platform.h"
 
+unsigned long long toy_platform_thread_cpu_us(void)
+{
+    FILETIME created,exited,kernel,user;
+    if(!GetThreadTimes(GetCurrentThread(),&created,&exited,&kernel,&user)) return 0;
+    unsigned long long k=((unsigned long long)kernel.dwHighDateTime<<32)|kernel.dwLowDateTime;
+    unsigned long long u=((unsigned long long)user.dwHighDateTime<<32)|user.dwLowDateTime;
+    return (k+u)/10;
+}
+
 #define HOST_THREADS_PER_CORE 8
 static PDH_HQUERY host_query;
 static PDH_HCOUNTER host_counter[TOY_PLATFORM_HOST_CORES][HOST_THREADS_PER_CORE];
