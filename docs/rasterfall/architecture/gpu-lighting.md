@@ -14,6 +14,8 @@ GPU Scene 使用独立实时光照；CPU 保留 Static World Lighting V2。GPU �
 
 ## 帧流程
 
+GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值、HDR 合成与资源边界见[GPU 天空](gpu-sky.md)。CPU 继续使用旧天空。
+
 1. 不透明 WORLD 几何绘制阴影：太阳采用三个相机附近的稳定正交范围；最多两盏聚光灯使用透视阴影。
 2. 阴影为 1024×1024 D32，深度在 GPU 内复制到 storage buffer，片元执行 3×3 PCF。此复制不经过 CPU readback。使用实际可见模型几何，碰撞盒不参与阴影。
 3. WORLD、天空、透明、特效与 viewmodel 写入 RGBA16F 线性 HDR；世界深度为 D32 reversed Z。纹理先由 sRGB 解码，再参与过滤和着色。

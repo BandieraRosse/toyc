@@ -58,6 +58,9 @@ struct rf_gpu_lighting {
     float environment[4]; /* linear diffuse fill, exposure in w */
     uint32_t count;
     struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
+    /* Presentation-only sky: coverage, density, base/thickness in km;
+     * wind offset x/z in km, fixed seed, haze. Zero density disables clouds. */
+    float sky_cloud[4],sky_weather[4];
 };
 enum rf_gpu_graphics_scene_layer {
     RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,
@@ -97,6 +100,7 @@ struct rf_gpu_scene_timing {
     uint64_t frame_id;
     int supported, valid;
     double world_draw_ms, present_blit_ms;
+    double sky_compute_ms; /* Included in world_draw_ms; excludes HDR composite. */
     /* CPU walls within native submit; separate from completed GPU queries. */
     double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };

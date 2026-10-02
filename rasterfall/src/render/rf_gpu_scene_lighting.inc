@@ -22,6 +22,28 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world,const struct camera *camera)
 {
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    /* Sky variants change the one shared sun, including WORLD shadows. */
+    const char *sky=getenv("RF_GPU_SKY_PRESET"),*sky_time=getenv("RF_GPU_SKY_TIME");
+    if(sky && !strcmp(sky,"rain")) {
+        lights.sky_cloud[0]=0.64f;lights.sky_cloud[1]=1.65f;
+        lights.sky_weather[3]=1.5f;
+        lights.sun_color[3]=2.8f;
+    } else if(sky && !strcmp(sky,"warm")) {
+        lights.sun_direction[0]=-0.86f;lights.sun_direction[1]=0.36f;lights.sun_direction[2]=-0.36f;
+        lights.sun_color[1]=0.79f;lights.sun_color[2]=0.60f;lights.sun_color[3]=3.0f;
+        lights.sky_weather[3]=1.25f;
+    } else if(sky && sky[0] && strcmp(sky,"clear")) {
+        fprintf(stderr,"Invalid RF_GPU_SKY_PRESET (clear/rain/warm)\n");return -1;
+    }
+    double seconds=probe->layers ? (double)probe->layers->host_time_ms/1000.0 : 0.0;
+    if(sky_time && sky_time[0]) {
+        char *end=NULL;seconds=strtod(sky_time,&end);
+        if(!end || *end || !(seconds>=0 && seconds<=1000000)) {
+            fprintf(stderr,"Invalid RF_GPU_SKY_TIME (seconds 0..1000000)\n");return -1;
+        }
+    }
+    lights.sky_weather[0]=(float)(seconds*0.004);
+    lights.sky_weather[1]=(float)(seconds*0.0015);
     for(unsigned i=0;!(probe->layers && probe->layers->fixed_lighting) && i<world->prop_count;++i) {
         const struct toy_map_prop *p=&world->prop_items[i].prop;
         if(p->asset_id!=RASTERFALL_PROP_ASSET_LAMP_POST) continue;

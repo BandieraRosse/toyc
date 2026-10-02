@@ -5,6 +5,17 @@ layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
 } d;
+layout(set=1,binding=4,std430) readonly buffer SkyImage { vec4 pixels[]; } sky_image;
+vec3 sky_fetch(ivec2 p) {
+    ivec2 size=ivec2(lighting.counts.zw);p=clamp(p,ivec2(0),size-1);
+    return sky_image.pixels[p.y*size.x+p.x].rgb;
+}
+vec3 sky_sample() {
+    vec2 p=gl_FragCoord.xy/vec2(d.projection.xy)*lighting.counts.zw-0.5;
+    ivec2 lo=ivec2(floor(p));vec2 f=fract(p);
+    return mix(mix(sky_fetch(lo),sky_fetch(lo+ivec2(1,0)),f.x),
+        mix(sky_fetch(lo+ivec2(0,1)),sky_fetch(lo+ivec2(1,1)),f.x),f.y);
+}
 layout(set=0,binding=0,std430) readonly buffer Texture { uint texels[]; } tex;
 layout(location=0) in vec2 texcoord;
 layout(location=1) in vec3 world_position;
@@ -17,6 +28,7 @@ vec3 fetch_repeat(ivec2 p) {
     return decode_srgb(rgb(tex.texels[p.y*d.texture_info.x+p.x]));
 }
 void main() {
+    if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
     float alpha=d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
     vec3 base=decode_srgb(rgb(triangle_color));
     if(d.material.z!=0u) {

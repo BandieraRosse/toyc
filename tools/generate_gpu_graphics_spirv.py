@@ -7,9 +7,9 @@ import sys
 import tempfile
 
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
-output = ['/* Generated from gpu/shaders/graphics_scene, graphics_shadow, graphics_tonemap and graphics_skin. */']
+output = ['/* Generated from gpu/shaders/graphics_scene, graphics_sky, graphics_shadow, graphics_tonemap and graphics_skin. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('color','vert'), ('shadow','vert'), ('tonemap','comp')]:
+    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
         source_variant = 'scene' if variant == 'color' else variant
         defines = ['-DRF_SCENE_COLOR=1'] if variant == 'color' else []

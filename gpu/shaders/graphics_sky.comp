@@ -1,0 +1,16 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+layout(local_size_x=8,local_size_y=8) in;
+#include "lighting.glsl"
+layout(push_constant) uniform Draw {
+    ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
+    ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
+} d;
+layout(set=1,binding=4,std430) writeonly buffer SkyImage { vec4 pixels[]; } sky_image;
+#include "sky.glsl"
+void main() {
+    ivec2 p=ivec2(gl_GlobalInvocationID.xy),size=ivec2(lighting.counts.zw);
+    if(any(greaterThanEqual(p,size))) return;
+    vec2 pixel=(vec2(p)+0.5)/vec2(size)*vec2(d.projection.xy);
+    sky_image.pixels[p.y*size.x+p.x]=vec4(rf_sky(pixel),1);
+}

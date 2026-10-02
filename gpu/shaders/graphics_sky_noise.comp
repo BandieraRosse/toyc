@@ -1,0 +1,34 @@
+#version 450
+layout(local_size_x=8,local_size_y=8) in;
+layout(set=1,binding=6,rgba16f) writeonly uniform image3D noise_volume;
+float hash(vec3 p) {
+    // Periodic lattice, including every octave, makes trilinear wrapping seamless.
+    uvec3 q=uvec3(ivec3(p)&ivec3(7));
+    uint h=q.x*1597334677u+q.y*3812015801u+q.z*2798796415u+1013904223u;
+    h=(h^(h>>16))*2246822519u;h=(h^(h>>13))*3266489917u;
+    return float((h^(h>>16))&0x00ffffffu)/16777215.0;
+}
+float noise(vec3 p) {
+    vec3 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+    return mix(mix(mix(hash(i),hash(i+vec3(1,0,0)),f.x),
+        mix(hash(i+vec3(0,1,0)),hash(i+vec3(1,1,0)),f.x),f.y),
+        mix(mix(hash(i+vec3(0,0,1)),hash(i+vec3(1,0,1)),f.x),
+        mix(hash(i+vec3(0,1,1)),hash(i+vec3(1,1,1)),f.x),f.y),f.z);
+}
+float billow(vec3 p) {
+    vec3 cell=floor(p),local=fract(p);float nearest=3.0;
+    for(int z=-1;z<=1;++z) for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
+        vec3 offset=vec3(x,y,z),at=cell+offset;
+        vec3 feature=vec3(hash(at),hash(at+vec3(3,5,1)),hash(at+vec3(5,1,3)));
+        vec3 delta=offset+feature-local;nearest=min(nearest,dot(delta,delta));
+    }
+    return 1.0-clamp(sqrt(nearest),0.0,1.0);
+}
+void main() {
+    ivec3 cell=ivec3(gl_GlobalInvocationID);vec3 p=vec3(cell)/8.0;
+    float base=noise(p);
+    // Keep coherent billows dominant; fine noise should soften their edges,
+    // not split the clear-sky silhouette into small detached fragments.
+    float shape=billow(p)*0.70+base*0.25+noise(p*4.0+vec3(7,3,5))*0.05;
+    imageStore(noise_volume,cell,vec4(shape,base,0,1));
+}

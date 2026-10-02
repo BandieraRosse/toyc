@@ -4032,6 +4032,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
                !strcmp(options.gpu_normal_view,"lighting-lab") ||
+               !strncmp(options.gpu_normal_view,"sky-",4) ||
                !strncmp(options.gpu_normal_view,"electronics-",12) ||
                !strncmp(options.gpu_normal_view,"lab-computer",12))))) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_CAMPAIGN_01) &&
@@ -4108,6 +4109,14 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
             rf_lab_camera_position(&session,&camera,"rf_light_lab_area",1252,4826);camera.y=2300;camera.cy=-1024;
             camera.pitch_sy=-320;camera.pitch_cy=973;
+        } else if (!strncmp(options.gpu_normal_view,"sky-",4)) {
+            /* First cross-road / central lane: clear of lab title projections. */
+            camera.x=0;camera.z=-52*512;
+            camera.sy=0;camera.cy=1024;
+            if(!strcmp(options.gpu_normal_view,"sky-south")) camera.cy=-1024;
+            if(!strcmp(options.gpu_normal_view,"sky-east")) {camera.sy=1024;camera.cy=0;}
+            if(!strcmp(options.gpu_normal_view,"sky-west")) {camera.sy=-1024;camera.cy=0;}
+            if(!strcmp(options.gpu_normal_view,"sky-sun")) {camera.sy=-724;camera.cy=-724;}
         } else if (!strcmp(options.gpu_normal_view, "model-lab")) {
             rf_lab_camera_position(&session,&camera,"rf_model_lab_area",216,2744);camera.y=650;camera.cy=-1024;
             rf_labs.requested[RF_LAB_MODEL]=1;
@@ -4175,6 +4184,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         camera.y = -350;
         camera.pitch_cy = 1024;
         if(!strcmp(options.gpu_normal_view,"lighting-lab")) camera.pitch_sy=0;
+        if(!strncmp(options.gpu_normal_view,"sky-",4)) {
+            camera.pitch_sy=265;camera.pitch_cy=989;
+            if(!strcmp(options.gpu_normal_view,"sky-up")) {camera.pitch_sy=1024;camera.pitch_cy=0;}
+            if(!strcmp(options.gpu_normal_view,"sky-down")) {camera.pitch_sy=-1024;camera.pitch_cy=0;}
+            if(!strcmp(options.gpu_normal_view,"sky-sun")) {camera.pitch_sy=836;camera.pitch_cy=591;}
+        }
         /* Session takes the camera body from the local actor on the first
          * fixed tick. Keep the deterministic view at its requested distance. */
         local_actor = toy_game_local_player_actor(&game);

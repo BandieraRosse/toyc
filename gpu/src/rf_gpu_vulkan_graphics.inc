@@ -1,6 +1,7 @@
 /* HG-2A/2B diagnostic executor, sharing the compute backend's device/queue.
  * Included after the buffer helpers; no Vulkan objects escape this owner. */
 #include "rf_vulkan_graphics_min.h"
+#include "rf_vulkan_sky_min.h"
 #include "rf_gpu_graphics.h"
 #include "rf_gpu_graphics_spirv.inc"
 #include <limits.h>
@@ -15,7 +16,8 @@
     X(CreateFramebuffer) X(DestroyFramebuffer) X(CreateGraphicsPipelines) \
     X(CmdBeginRenderPass) X(CmdEndRenderPass) X(CmdBindVertexBuffers) \
     X(CmdBindIndexBuffer) X(CmdDrawIndexed) X(CmdSetViewport) X(CmdSetScissor) \
-    X(CmdPushConstants) X(CmdCopyImageToBuffer) X(CmdBlitImage) X(CmdClearAttachments)
+    X(CmdPushConstants) X(CmdCopyImageToBuffer) X(CmdBlitImage) X(CmdClearAttachments) \
+    X(CreateSampler) X(DestroySampler)
 
 typedef struct rf_scene_blit {
     VkImageSubresourceLayers src; VkOffset3D src_offsets[2];
@@ -90,7 +92,13 @@ struct rf_gpu_graphics {
     rf_vk_pipeline_layout layout;
     rf_vk_pipeline pipelines[32];
     struct rf_gpu_lighting lighting;
-    struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer;
+    struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
+    struct rf_graphics_image sky_noise;
+    void *sky_sampler;
+    unsigned sky_scale,sky_width,sky_height;
+    rf_vk_pipeline_layout sky_layout;
+    rf_vk_pipeline sky_pipeline,sky_noise_pipeline;
+    int sky_noise_ready;
     struct rf_graphics_image shadow_depth;
     VkFramebuffer shadow_framebuffer;
     unsigned shadow_count;
@@ -266,8 +274,8 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     free(g);
 }
 
-static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image *out,
-    uint32_t width, uint32_t height, uint32_t format, uint32_t aspect, uint32_t usage)
+static int gfx_image_create_extent(struct rf_gpu_graphics *g, struct rf_graphics_image *out,
+    uint32_t width, uint32_t height, uint32_t depth, uint32_t format, uint32_t aspect, uint32_t usage)
 {
     struct rf_gpu_vulkan_impl *impl = g->owner;
     VkImageCreateInfo info = {0};
@@ -276,8 +284,8 @@ static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image 
     struct rf_vk_memory_allocate_info allocation = {0};
     int memory;
     info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    info.imageType = VK_IMAGE_TYPE_2D; info.format = format;
-    info.extent.width = width; info.extent.height = height; info.extent.depth = 1;
+    info.imageType = depth>1?RF_SKY_IMAGE_TYPE_3D:VK_IMAGE_TYPE_2D; info.format = format;
+    info.extent.width = width; info.extent.height = height; info.extent.depth = depth;
     info.mipLevels = info.arrayLayers = 1; info.samples = VK_SAMPLE_COUNT_1_BIT;
     info.tiling = VK_IMAGE_TILING_OPTIMAL;
     info.usage = usage | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -292,11 +300,14 @@ static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image 
     if (impl->api.allocate_memory(impl->device, &allocation, NULL, &out->memory) != RF_VK_SUCCESS ||
         g->api.BindImageMemory(impl->device, out->image, out->memory, 0) != RF_VK_SUCCESS) return -1;
     view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    view.image = out->image; view.viewType = VK_IMAGE_VIEW_TYPE_2D; view.format = format;
+    view.image = out->image; view.viewType = depth>1?RF_SKY_IMAGE_VIEW_TYPE_3D:VK_IMAGE_VIEW_TYPE_2D; view.format = format;
     view.subresourceRange.aspectMask = aspect;
     view.subresourceRange.levelCount = view.subresourceRange.layerCount = 1;
     return g->api.CreateImageView(impl->device, &view, NULL, &out->view) == RF_VK_SUCCESS ? 0 : -1;
 }
+static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image *out,
+    uint32_t width,uint32_t height,uint32_t format,uint32_t aspect,uint32_t usage)
+{ return gfx_image_create_extent(g,out,width,height,1,format,aspect,usage); }
 
 #include "rf_gpu_lighting.inc"
 
@@ -330,6 +341,7 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
     if (g->api.CreateFramebuffer(g->owner->device, &fb, NULL, &t.framebuffer) != RF_VK_SUCCESS) goto fail;
     views[0]=t.color.view;fb.renderPass=g->overlay_pass;
     if(g->api.CreateFramebuffer(g->owner->device,&fb,NULL,&t.overlay_framebuffer)!=RF_VK_SUCCESS) goto fail;
+    if(gfx_sky_resize(g,width,height)<0) goto fail;
     gfx_target_destroy(g, &g->target); g->target = t;
     gfx_lighting_images(g);
     g->stats.target_builds++;
@@ -1423,9 +1435,12 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
-        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,4);
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,5);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
+    gfx_sky_record(g,items,count);
+    if (g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,4);
     gfx_shadow_record(g,items,count);
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1487,6 +1502,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if(resource->scene_vertex_color) modern.quality[2]=0;
         if(d->scene_layer==RF_GPU_SCENE_EFFECTS) modern.quality[2]=3;
         if(d->scene_layer==RF_GPU_SCENE_VIEWMODEL) modern.quality[0]|=32;
+        if(d->scene_layer==RF_GPU_SCENE_SKY) modern.quality[0]|=64;
         if(overlay_started) modern.quality[0]|=16;
         g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&modern);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
@@ -1519,7 +1535,7 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
 {
     double start;
-    uint64_t ticks[4],mask;
+    uint64_t ticks[5],mask;
     if (!g) return -1;
     if (!g->scene_in_flight) return g->poisoned ? -1 : 0;
     start=now_ms();
@@ -1530,12 +1546,13 @@ int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
     g->scene_in_flight=0;
     if (g->scene_query_active) {
         if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-                0,4,sizeof(ticks),ticks,sizeof(ticks[0]),
+                0,5,sizeof(ticks),ticks,sizeof(ticks[0]),
                 RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)==RF_VK_SUCCESS) {
             mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
                 ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
             g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
             g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*g->owner->timestamp_period/1000000.0;
+            g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
             g->scene_timing.valid=1;
         }
         g->scene_query_active=0;
@@ -1583,7 +1600,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (impl->timestamp_supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=4;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
         if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -1699,7 +1716,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     if (g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=4;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
         if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
                 &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
@@ -1724,14 +1741,19 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
             g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
     int result=gpu_buffer_invalidate(g->owner,&g->target.readback);
     if (g->scene_query_active) {
-        uint64_t ticks[2],mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
+        uint64_t ticks[2],sky_end,mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
             ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
         if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
                 0,2,sizeof(ticks),ticks,sizeof(ticks[0]),
+                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS ||
+            g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
+                4,1,sizeof(sky_end),&sky_end,sizeof(sky_end),
                 RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)
             result=-1;
         else {
             g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*
+                g->owner->timestamp_period/1000000.0;
+            g->scene_timing.sky_compute_ms=(double)((sky_end-ticks[0])&mask)*
                 g->owner->timestamp_period/1000000.0;
             g->scene_timing.valid=1;
         }

@@ -1,6 +1,5 @@
 /* Independent Scene presentation extraction. No toy_renderer or framebuffer.
  * All source reads finish before resource preparation and target submission. */
-#include "rasterfall_sky.h"
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_lab_terminal.h"
 struct scene_layer_triangle {
@@ -264,7 +263,9 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     mesh->width=width;mesh->height=height;
     struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect};
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
-    mesh->layer=RF_GPU_SCENE_SKY;rasterfall_sky_layout(&canvas,camera);
+    /* GPU SKY is a ray-evaluated HDR background, independent of CPU canvas. */
+    mesh->layer=RF_GPU_SCENE_SKY;
+    scene_layer_rect_depth(mesh,0,0,width,height,0,255,1,2);
     mesh->layer=RF_GPU_SCENE_WORLD;
     mesh->emissive=1;
     for (unsigned i=0;input->map && i<input->map->count;++i) {

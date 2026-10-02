@@ -24,6 +24,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
+| GPU 天空、体积云与气氛 | [GPU 天空架构](architecture/gpu-sky.md)、[天空验证](guides/gpu-sky.md)、[设计研究](reference/sky-v2-design-study.md) | `gpu/shaders/sky.glsl`、`graphics_sky.comp`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_sky_study.ps1`；CPU 旧天空保留在 `src/rasterfall_sky.c` |
 | CPU/Scene 默认功能、高级能力与大厅渲染控制终端 | [正常帧渲染 baseline](reference/rendering-baseline.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Outpost V1](reference/outpost-hall-v1.md) | `src/rf_render_terminal.inc`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | 独立 GPU Scene 与直接来源预览 | [计划入口](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
 | GPU 实时光照与实验区 | [GPU 光照架构](architecture/gpu-lighting.md)、[实验与验证](guides/gpu-lighting.md) | `gpu/src/rf_gpu_lighting.inc`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_lighting_lab.ps1` |

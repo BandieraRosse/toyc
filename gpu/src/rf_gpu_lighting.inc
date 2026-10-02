@@ -4,8 +4,10 @@ struct rf_lighting_upload {
     float sun_direction[4],sun_color[4],environment[4],counts[4];
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16],cascade_center[3][4];
     struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
+    float sky_cloud[4],sky_weather[4];
 };
 _Static_assert(offsetof(struct rf_lighting_upload,lights)==432,"lighting std430 ABI");
+_Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==2480,"sky std430 ABI");
 
 void rf_gpu_lighting_default(struct rf_gpu_lighting *l)
 {
@@ -13,15 +15,24 @@ void rf_gpu_lighting_default(struct rf_gpu_lighting *l)
     l->sun_direction[0]=-0.4082483f;l->sun_direction[1]=0.8164966f;l->sun_direction[2]=-0.4082483f;
     l->sun_color[0]=1.0f;l->sun_color[1]=0.94f;l->sun_color[2]=0.84f;l->sun_color[3]=3.5f;
     l->environment[0]=0.10f;l->environment[1]=0.13f;l->environment[2]=0.18f;l->environment[3]=1.0f;
+    l->sky_cloud[0]=0.42f;l->sky_cloud[1]=1.3f;l->sky_cloud[2]=1.5f;l->sky_cloud[3]=1.1f;
+    l->sky_weather[2]=17.0f;l->sky_weather[3]=1.0f;
 }
 int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,const struct rf_gpu_lighting *l)
 {
     if(!g || !l || g->scene_in_flight || g->poisoned || l->count>RF_GPU_LIGHT_CAP) return -1;
     for(unsigned k=0;k<4;++k)
+        if(!__builtin_isfinite(l->sky_cloud[k]) || !__builtin_isfinite(l->sky_weather[k])) return -1;
+    if(l->sky_cloud[0]<0 || l->sky_cloud[0]>1 || l->sky_cloud[1]<0 || l->sky_cloud[1]>8 ||
+        l->sky_cloud[2]<0.1f || l->sky_cloud[2]>10 || l->sky_cloud[3]<0.1f || l->sky_cloud[3]>5 ||
+        l->sky_weather[3]<0.1f || l->sky_weather[3]>8) return -1;
+    if(fabs(l->sky_weather[0])>100000 || fabs(l->sky_weather[1])>100000 ||
+        fabs(l->sky_weather[2])>65536) return -1;
+    for(unsigned k=0;k<4;++k)
         if(!__builtin_isfinite(l->sun_direction[k]) || !__builtin_isfinite(l->sun_color[k]) ||
             !__builtin_isfinite(l->environment[k]) || l->sun_color[k]<0 || l->environment[k]<0) return -1;
     float length=0;for(unsigned k=0;k<3;++k) length+=l->sun_direction[k]*l->sun_direction[k];
-    if(length<0.01f || l->environment[3]<=0) return -1;
+    if(!__builtin_isfinite(length) || length<0.01f || l->environment[3]<=0) return -1;
     for(unsigned i=0;i<l->count;++i) {
         const float *p=(const float *)&l->lights[i];
         for(unsigned k=0;k<16;++k) if(!__builtin_isfinite(p[k])) return -1;
@@ -52,35 +63,51 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->shadow_pass) g->api.DestroyRenderPass(p->device,g->shadow_pass,NULL);
     if(g->overlay_pass) g->api.DestroyRenderPass(p->device,g->overlay_pass,NULL);
     if(g->tonemap) p->api.destroy_pipeline(p->device,g->tonemap,NULL);
+    if(g->sky_pipeline) p->api.destroy_pipeline(p->device,g->sky_pipeline,NULL);
+    if(g->sky_noise_pipeline) p->api.destroy_pipeline(p->device,g->sky_noise_pipeline,NULL);
+    if(g->sky_layout) p->api.destroy_pipeline_layout(p->device,g->sky_layout,NULL);
     if(g->post_layout) p->api.destroy_pipeline_layout(p->device,g->post_layout,NULL);
     if(g->light_pool) p->api.destroy_descriptor_pool(p->device,g->light_pool,NULL);
     if(g->light_layout) p->api.destroy_descriptor_set_layout(p->device,g->light_layout,NULL);
     gpu_buffer_destroy(p,&g->light_buffer);gpu_buffer_destroy(p,&g->shadow_buffer);
+    gpu_buffer_destroy(p,&g->sky_buffer);
+    gfx_image_destroy(g,&g->sky_noise);
+    if(g->sky_sampler) g->api.DestroySampler(p->device,g->sky_sampler,NULL);
 }
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[4]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[7]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[2]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,2},{3,2}};
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,3},{3,3},
+        {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
     struct rf_vk_descriptor_buffer_info buffers[2]={{0}};
-    struct rf_vk_write_descriptor_set writes[2]={{0}};
+    struct rf_vk_write_descriptor_set writes[4]={{0}};
     rf_gpu_lighting_default(&g->lighting);
-    for(unsigned i=0;i<4;++i) {
-        b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=i<2?RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:3;
-        b[i].stage_flags=i<2?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT:VK_SHADER_STAGE_COMPUTE_BIT;
+    g->sky_scale=4;
+    const char *scale=getenv("RF_GPU_SKY_SCALE");
+    if(scale && scale[0]) {
+        if(strcmp(scale,"1") && strcmp(scale,"2") && strcmp(scale,"4")) return -1;
+        g->sky_scale=(unsigned)(scale[0]-'0');
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=4;layout.bindings=b;
+    for(unsigned i=0;i<7;++i) {
+        b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=(i<2 || i==4)?RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:3;
+        if(i==5) b[i].descriptor_type=RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        b[i].stage_flags=(i<2 || i==4)?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT:VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=7;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
-    pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.max_sets=1;pool.pool_size_count=2;pool.pool_sizes=sizes;
+    pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.max_sets=1;pool.pool_size_count=3;pool.pool_sizes=sizes;
     if(p->api.create_descriptor_pool(p->device,&pool,NULL,&g->light_pool)!=RF_VK_SUCCESS) return -1;
     set.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;set.descriptor_pool=g->light_pool;
     set.descriptor_set_count=1;set.set_layouts=&g->light_layout;
     if(p->api.allocate_descriptor_sets(p->device,&set,&g->light_set)!=RF_VK_SUCCESS ||
         gpu_buffer_create(p,sizeof(struct rf_lighting_upload),RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
             RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,0,&g->light_buffer)<0 ||
+        gfx_image_create_extent(g,&g->sky_noise,64,64,64,VK_FORMAT_R16G16B16A16_SFLOAT,
+            VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_USAGE_STORAGE_BIT|RF_SKY_IMAGE_USAGE_SAMPLED_BIT)<0 ||
         gpu_buffer_create(p,(uint64_t)RF_GPU_SHADOW_MAPS*1024*1024*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&g->shadow_buffer)<0) return -1;
     buffers[0].buffer=g->light_buffer.buffer;buffers[0].range=g->light_buffer.size;
@@ -90,7 +117,22 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
         writes[i].dst_binding=i;writes[i].descriptor_count=1;writes[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         writes[i].buffer_info=&buffers[i];
     }
-    p->api.update_descriptor_sets(p->device,2,writes,0,NULL);
+    VkFormatProperties format;
+    g->api.GetPhysicalDeviceFormatProperties(p->physical_device,VK_FORMAT_R16G16B16A16_SFLOAT,&format);
+    if(!(format.optimalTilingFeatures&RF_SKY_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) return -1;
+    struct rf_sky_sampler_info sampler={0};
+    sampler.s_type=RF_SKY_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;sampler.mag_filter=sampler.min_filter=1;
+    if(g->api.CreateSampler(p->device,&sampler,NULL,&g->sky_sampler)!=RF_VK_SUCCESS) return -1;
+    struct rf_vk_descriptor_image_info images[2]={{0}};
+    for(unsigned i=0;i<2;++i) {
+        images[i].image_view=(rf_vk_image_view)g->sky_noise.view;images[i].image_layout=VK_IMAGE_LAYOUT_GENERAL;
+        if(!i) images[i].sampler=g->sky_sampler;
+        writes[i+2].s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;writes[i+2].dst_set=g->light_set;
+        writes[i+2].dst_binding=i+5;writes[i+2].descriptor_count=1;
+        writes[i+2].descriptor_type=i?3:RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i+2].image_info=&images[i];
+    }
+    p->api.update_descriptor_sets(p->device,4,writes,0,NULL);
     return 0;
 }
 static void gfx_lighting_images(struct rf_gpu_graphics *g)
@@ -133,7 +175,65 @@ static int gfx_lighting_pipelines(struct rf_gpu_graphics *g)
     pipeline.layout=g->post_layout;pipeline.base_pipeline_index=-1;
     int result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->tonemap);
     p->api.destroy_shader_module(p->device,module,NULL);
+    if(result!=RF_VK_SUCCESS) return -1;
+    push.size=128;
+    if(p->api.create_pipeline_layout(p->device,&layout,NULL,&g->sky_layout)!=RF_VK_SUCCESS) return -1;
+    shader.code_size=sizeof(rf_graphics_sky_comp_spirv);shader.code=rf_graphics_sky_comp_spirv;
+    if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS) return -1;
+    pipeline.stage.module=module;pipeline.layout=g->sky_layout;
+    result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->sky_pipeline);
+    p->api.destroy_shader_module(p->device,module,NULL);
+    if(result!=RF_VK_SUCCESS) return -1;
+    shader.code_size=sizeof(rf_graphics_sky_noise_comp_spirv);shader.code=rf_graphics_sky_noise_comp_spirv;
+    if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS) return -1;
+    pipeline.stage.module=module;
+    result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->sky_noise_pipeline);
+    p->api.destroy_shader_module(p->device,module,NULL);
     return result==RF_VK_SUCCESS?0:-1;
+}
+/* Per-slot target: retired before resize, no temporal history or CPU readback. */
+static int gfx_sky_resize(struct rf_gpu_graphics *g,unsigned width,unsigned height)
+{
+    struct rf_gpu_vulkan_buffer next={0};
+    unsigned w=(width+g->sky_scale-1)/g->sky_scale,h=(height+g->sky_scale-1)/g->sky_scale;
+    if(gpu_buffer_create(g->owner,(uint64_t)w*h*16,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&next)<0) return -1;
+    gpu_buffer_destroy(g->owner,&g->sky_buffer);g->sky_buffer=next;g->sky_width=w;g->sky_height=h;
+    struct rf_vk_descriptor_buffer_info buffer={0};struct rf_vk_write_descriptor_set write={0};
+    buffer.buffer=next.buffer;buffer.range=next.size;
+    write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;write.dst_set=g->light_set;
+    write.dst_binding=4;write.descriptor_count=1;write.descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    write.buffer_info=&buffer;g->owner->api.update_descriptor_sets(g->owner->device,1,&write,0,NULL);
+    return 0;
+}
+static void gfx_sky_record(struct rf_gpu_graphics *g,const struct rf_gpu_graphics_batch_item *items,unsigned count)
+{
+    for(unsigned i=0;i<count;++i) if(items[i].draw.scene_layer==RF_GPU_SCENE_SKY) {
+        g->owner->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->sky_layout,1,1,&g->light_set,0,NULL);
+        if(!g->sky_noise_ready) {
+            struct rf_vk_image_memory_barrier image_barrier={0};
+            image_barrier.s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+            image_barrier.old_layout=VK_IMAGE_LAYOUT_UNDEFINED;image_barrier.new_layout=VK_IMAGE_LAYOUT_GENERAL;
+            image_barrier.dst_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
+            image_barrier.src_queue_family_index=image_barrier.dst_queue_family_index=UINT32_MAX;
+            image_barrier.image=g->sky_noise.image;image_barrier.subresource_range.aspect_mask=VK_IMAGE_ASPECT_COLOR_BIT;
+            image_barrier.subresource_range.level_count=image_barrier.subresource_range.layer_count=1;
+            g->owner->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,0,NULL,0,NULL,1,&image_barrier);
+            g->owner->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->sky_noise_pipeline);
+            g->owner->api.cmd_dispatch(g->cmd,8,8,64);
+            struct rf_vk_memory_barrier noise_barrier={0};noise_barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            noise_barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;noise_barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
+            g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&noise_barrier,0,NULL,0,NULL);
+            g->sky_noise_ready=1;
+        }
+        g->owner->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->sky_pipeline);
+        g->api.CmdPushConstants(g->cmd,g->sky_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,128,&items[i].draw);
+        g->owner->api.cmd_dispatch(g->cmd,(g->sky_width+7)/8,(g->sky_height+7)/8,1);
+        struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
+        g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+        break;
+    }
 }
 static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_graphics_batch_item *items,uint32_t count)
 {
@@ -142,7 +242,9 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     for(unsigned i=0;i<count;++i) if(!items[i].draw.texture[3]) {camera=&items[i].draw;break;}
     memcpy(u.sun_direction,g->lighting.sun_direction,16);memcpy(u.sun_color,g->lighting.sun_color,16);
     memcpy(u.environment,g->lighting.environment,16);u.counts[0]=(float)g->lighting.count;
+    u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;
     memcpy(u.lights,g->lighting.lights,sizeof(u.lights));
+    memcpy(u.sky_cloud,g->lighting.sky_cloud,16);memcpy(u.sky_weather,g->lighting.sky_weather,16);
     float *l=u.sun_direction,right[3]={l[2],0,-l[0]},up[3];
     float length=(float)sqrt(right[0]*right[0]+right[2]*right[2]);
     if(length<0.01f) {right[0]=1;right[2]=0;} else {right[0]/=length;right[2]/=length;}
