@@ -22,7 +22,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world,const struct camera *camera)
 {
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
-    for(unsigned i=0;i<world->prop_count;++i) {
+    for(unsigned i=0;!(probe->layers && probe->layers->fixed_lighting) && i<world->prop_count;++i) {
         const struct toy_map_prop *p=&world->prop_items[i].prop;
         if(p->asset_id!=RASTERFALL_PROP_ASSET_LAMP_POST) continue;
         struct rf_gpu_light light={0};
@@ -32,7 +32,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         light.direction_outer[1]=-1;light.direction_outer[3]=0.35f;light.inner_shadow[0]=0.7f;
         scene_light_insert(&lights,&light,camera);
     }
-    if(probe->layers && probe->layers->source_effects) {
+    if(probe->layers && !probe->layers->fixed_lighting && probe->layers->source_effects) {
         const struct rasterfall_effects *effects=probe->layers->source_effects;
         for(unsigned i=0;i<RASTERFALL_EFFECT_INSTANCE_SLOTS;++i) {
             const struct rasterfall_effect_instance *p=&effects->instances[i];
@@ -50,7 +50,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             light.direction_outer[3]=-1;scene_light_insert(&lights,&light,camera);
         }
     }
-    if(probe->layers && probe->layers->flashlight) {
+    if(probe->layers && !probe->layers->fixed_lighting && probe->layers->flashlight) {
         struct rf_gpu_light light={0};
         light.position_radius[0]=(float)camera->x;light.position_radius[1]=(float)camera->y;light.position_radius[2]=(float)camera->z;
         light.position_radius[3]=15360;light.color_intensity[0]=light.color_intensity[1]=light.color_intensity[2]=1;
@@ -63,7 +63,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     if(scene_lighting_lab_visible(probe,camera)) {
         for(unsigned i=0;i<2;++i) {
             struct rf_gpu_light light={0};
-            scene_lighting_lab_position(i,probe->layers->host_time_ms,light.position_radius);
+            scene_lighting_lab_position(i,probe->layers->lighting_time_ms,light.position_radius);
             light.position_radius[3]=12000;light.color_intensity[0]=i?0.2f:1;
             light.color_intensity[1]=i?0.45f:0.55f;light.color_intensity[2]=i?1:0.2f;
             light.color_intensity[3]=220;light.direction_outer[1]=-1;

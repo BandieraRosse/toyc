@@ -1468,6 +1468,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->enemy_draws=enemy_draws-stats->procedural_draws;stats->enemy_items=enemies->count;
     stats->procedural_items=enemies->procedural_count;
     stats->enemy_deferred=enemies->deferred;stats->enemy_culled=enemies->culled;
+    stats->lights=graphics_after.lights;stats->shadow_maps=graphics_after.shadow_maps;
+    stats->shadow_draws=(uint32_t)(graphics_after.shadow_draws-graphics_before.shadow_draws);
+    stats->present_mode=graphics_after.present_mode;
     stats->draws=draws;stats->actor_draws=actor_draws;
     stats->flag_draws=flag_draws;stats->flag_text_draws=flag_text_draws;
     stats->projectile_draws=projectile_draws;

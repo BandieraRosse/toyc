@@ -1,7 +1,7 @@
 /* Outpost presentation exhibit. No gameplay entities or baked light inputs. */
 static int scene_lighting_lab_visible(const struct rf_gpu_scene_world_gpu_probe *p,
     const struct camera *c)
-{ return p->layers && p->layers->lighting_lab && abs(c->x-28900)<24000 && abs(c->z+32500)<24000; }
+{ (void)c; return p->layers && p->layers->lighting_lab; }
 static void scene_lighting_lab_position(unsigned i,unsigned time,float *p)
 {
     double phase=(double)(time%12000)*6.28318530718/12000+i*3.14159265359;
@@ -49,7 +49,7 @@ static int scene_lighting_lab_prepare(struct rf_gpu_scene_world_gpu_probe *p,
         d->roughness=0.90f-(i%4)*0.26f;d->metallic=i/4==1?1:0;
         d->quality[2]=i/4==2?2:1;d->material[0]=i/4==1?0xdca477:0x509db8;
         if(i>=12) {
-            float pos[3];scene_lighting_lab_position(i-12,p->layers->host_time_ms,pos);
+            float pos[3];scene_lighting_lab_position(i-12,p->layers->lighting_time_ms,pos);
             for(unsigned k=0;k<3;++k) d->translation_scale[k]=(int)pos[k];
             d->translation_scale[3]=180;d->material[0]=i==12?0xff9b48:0x488aff;
             d->quality[2]=3;d->scene_layer=RF_GPU_SCENE_EFFECTS;

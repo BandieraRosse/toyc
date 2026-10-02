@@ -30,4 +30,6 @@ GPU Scene 使用独立实时光照；CPU 保留 Static World Lighting V2。GPU �
 - 旧 `light_q8` 等字段在部分几何存储中暂时保留，但 GPU shader 不消费烘焙亮度；旧整数兼容 draw 被拒绝，兼容索引上传已删除，旧 shader 不再编入 SPIR-V。
 - 暂未建立本版本正式性能基线，不据短帧诊断承诺帧率。
 
+实验区普通进入默认关闭，由 Runtime 独立开关和展示时钟控制球体与移动灯；性能隔离期间不提取实验灯、地图灯或瞬时灯，太阳与环境填充保留，阴影实际绘制另计数。登记与生命周期见[实验区合同](../reference/experiment-labs.md)。
+
 实验区和验证入口见[光照指南](../guides/gpu-lighting.md)，当前交付顺序见[活动计划](../plans/README.md)。

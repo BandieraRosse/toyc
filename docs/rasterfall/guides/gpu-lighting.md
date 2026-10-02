@@ -12,7 +12,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_lighting_lab.ps1
 
 实验区位于前哨站模型实验场东侧，可从模型场地步行进入。脚本直接选择前哨站并把相机放在实验区入口；也可使用 `--renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene lighting-lab 0`。
 
-三排球体从近到远分别为 PBR 非金属、金属、风格化非金属。每排从左到右粗糙度为 0.12、0.38、0.64、0.90，底座标签数字表示百分数。两盏暖色/冷色聚光灯沿轨道移动，球体和侧边立柱提供投影遮挡。球体是 GPU 展示资源，不参与玩法碰撞；地面通过正常地图 surface/collision 声明提供行走空间。CPU 只显示地图场地。
+普通进入默认关闭，东北侧独立终端按 E 开启/关闭；显式 `lighting-lab` 镜头预先开启。展示开关与时钟遵守[实验区合同](../reference/experiment-labs.md)。
+
+三排球体从近到远分别为 PBR 非金属、金属、风格化非金属。每排从左到右粗糙度为 0.90、0.64、0.38、0.12，底座标签数字表示百分数。两盏暖色/冷色聚光灯沿轨道移动，球体和侧边立柱提供投影遮挡。球体是 GPU 展示资源，不参与玩法碰撞；地面通过正常地图 surface/collision 声明提供行走空间。CPU 只显示地图场地。
 
 大厅渲染终端可开启 GPU 手电筒、切换角色风格化材质与纹理过滤。实时阴影和 PBR 是 GPU 默认能力；CPU 不支持这些高级选项。
 

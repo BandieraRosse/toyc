@@ -1160,9 +1160,11 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
         for (int px = x; px < right; px++) put_pixel(surface, px, py, color);
 }
 
+#include "rf_experiment_labs.inc"
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
 #include "rf_performance_lab.inc"
+#include "dev-tests/rf_experiment_lab_test.inc"
 
 static void draw_pause_overlay(struct rasterfall_canvas *surface,
                                const struct pause_menu *menu,
@@ -3079,13 +3081,10 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
         if (rf_showcase_near)
             rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
                 canvas->height * 3 / 4,
-                (rf_showcase_near==1 ? rf_showcase_visible :
-                 rf_showcase_near==2 ? rf_walk_visible :
-                 rf_showcase_near==3 ? rf_actor_actions_visible :
-                 rf_showcase_near==4 ? rf_actor_walk_visible : rf_model_lab_visible) ?
-                    "E  HIDE TEST CHARACTERS" :
-                    "E  SHOW TEST CHARACTERS", 0xC7F2EE);
-        if (rf_model_lab_visible && rasterfall_render_outpost_model_lab_status()<0)
+                rf_lab_definitions[rf_showcase_near-1].gpu_only && !rf_render_terminal.scene_backend ?
+                    "GPU SCENE REQUIRED" :
+                rf_labs.requested[rf_showcase_near-1] ? "E  DISABLE EXHIBIT" : "E  ENABLE EXHIBIT", 0xC7F2EE);
+        if (rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0)
             rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
                 "MODEL UNAVAILABLE - CHECK ASSET INSTALL",0xFFAA66);
         if (!runtime->rts_active && !runtime->session->shop_open &&
@@ -3363,7 +3362,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t last_active = 0;   /* 帧间隔统计 */
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
-    int64_t last_render_start_us = 0;
+    int64_t last_frame_loop_start_us = 0;
     struct rasterfall_motion_snapshot motion_previous, motion_current;
     uint64_t motion_world_generation = 0;
     int64_t scene_previous_sample_us = 0;
@@ -3915,7 +3914,19 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     }
     rf_table_init();
     memset(&rf_perf_lab, 0, sizeof(rf_perf_lab));
+    rf_labs_reset();
+    rf_perf_lab.isolated=1;
+    {
+        const char *scope=getenv("RF_PERF_LAB_SCOPE");
+        const char *uncapped=getenv("RF_PERF_LAB_UNCAPPED");
+        const char *interference=getenv("RF_PERF_LAB_INTERFERENCE");
+        rf_perf_lab.isolated=!(scope && !strcmp(scope,"outpost"));
+        rf_perf_lab.uncapped=uncapped && !strcmp(uncapped,"1");
+        rf_perf_lab.interference=!rf_perf_lab.isolated && interference && !strcmp(interference,"1");
+        if (rf_perf_lab.interference) rf_labs.requested[RF_LAB_LIGHTING]=1;
+    }
     rf_render_terminal_init(options.gpu_scene_play, edge_pass_enabled);
+    rf_labs_diagnostic_view(options.gpu_normal_view);
     if (logic_test || options.gpu_scene_pose_test || options.gpu_scene_native_fixture || options.gpu_lighting_test) {
         int result = options.gpu_lighting_test ? rf_gpu_scene_lighting_fixture() : options.gpu_scene_native_fixture ? rf_gpu_scene_native_fixture(
             frame_limit, options.gpu_present_fault, options.gpu_present_fault_frame) :
@@ -3927,6 +3938,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                              rf_table.maps[i].name);
                     result = 1;
                 }
+            if (!result) {
+                int lab_result=rf_experiment_lab_logic_test(&game_runtime);
+                if (lab_result) { __fprintf(2,"EXPERIMENT-LAB test failed: %d\n",lab_result);result=1; }
+            }
             if (!result) {
                 session.seed = 0x1234;
                 if (rf_game_request_world(&game_runtime,
@@ -4075,22 +4090,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.x=2200;camera.z=3000;camera.y=-420;camera.sy=800;camera.cy=639;
         } else if (!strcmp(options.gpu_normal_view, "character-lab")) {
             camera.x=0;camera.z=-9500;camera.cy=-1024;
-            rf_showcase_visible=1;
+            rf_labs.requested[RF_LAB_INFECTED_POSES]=1;
         } else if (!strcmp(options.gpu_normal_view, "walk-lab")) {
             camera.x=0;camera.z=-25000;camera.cy=-1024;
-            rf_walk_visible=1;
+            rf_labs.requested[RF_LAB_INFECTED_WALK]=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-actions-lab")) {
             camera.x=16384;camera.z=-9500;camera.cy=-1024;
-            rf_actor_actions_visible=1;
+            rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
             camera.x=28900;camera.z=-26700;camera.y=2300;camera.cy=-1024;
             camera.pitch_sy=-320;camera.pitch_cy=973;
         } else if (!strcmp(options.gpu_normal_view, "model-lab")) {
             camera.x=16600;camera.z=-29000;camera.y=650;camera.cy=-1024;
-            rf_model_lab_visible=1;
+            rf_labs.requested[RF_LAB_MODEL]=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-walk-lab")) {
             camera.x=28672;camera.z=-9500;camera.cy=-1024;
-            rf_actor_walk_visible=1;
+            rf_labs.requested[RF_LAB_ACTOR_WALK]=1;
         } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
             camera.x = -10500; camera.z = 2000;
             camera.sy = -819; camera.cy = 614;
@@ -4438,8 +4453,8 @@ startup_again:
         int64_t now, elapsed, t_frame, t_stage;
 #ifdef TOYC_WINDOWS
         if (!frame_limit && !options.gpu_normal_fixed_tick &&
-            last_render_start_us) {
-            int64_t deadline = last_render_start_us + RENDER_STEP_US;
+            last_frame_loop_start_us && !(rf_perf_lab.running && rf_perf_lab.uncapped)) {
+            int64_t deadline = last_frame_loop_start_us + RENDER_STEP_US;
             int64_t remaining = deadline - rf_core_clock_now_us();
             while (remaining > 500) {
                 if (__sleep_high_resolution_us(remaining - 300) < 0)
@@ -4498,7 +4513,7 @@ startup_again:
             pointer_lock_requested = 0;
             rf_core_set_pointer_lock(&core, 0);
             accumulator = 0;
-            last_render_start_us = 0;
+            last_frame_loop_start_us = 0;
             rasterfall_motion_capture(&motion_current, &session.game_state);
             motion_previous = motion_current;
             motion_world_generation = session.scene_local.world_generation;
@@ -4575,20 +4590,22 @@ startup_again:
             session.world_id == RASTERFALL_WORLD_OUTPOST) {
             rf_perf_lab.selected = perf_lab_autorun_scene;
             perf_lab_autorun_started = 1;
-            if (rf_perf_lab_start(&session, &camera, rf_core_clock_now_us()) < 0) {
+            if (rf_perf_lab_start(&game_runtime) < 0) {
                 __fprintf(2,"PERF-LAB spawn failed scene=%d\n",
                     perf_lab_autorun_scene);
                 scene_runtime_failed = 1;
                 goto scene_shutdown;
             }
-            game_runtime.camera = camera;
+            camera = game_runtime.camera;
             __printf("PERF-LAB start scene=%d spawned=%d\n",
                 rf_perf_lab.selected,rf_perf_lab.spawned);
         }
         if (rf_perf_lab.running &&
             rf_core_clock_now_us()-rf_perf_lab.started_us >= RF_PERF_LAB_DURATION_US) {
-            rf_perf_lab_finish(&session, &camera);
-            game_runtime.camera = camera;
+            if (rf_perf_lab_finish(&game_runtime,0) < 0) {
+                scene_runtime_failed=1;goto scene_shutdown;
+            }
+            camera = game_runtime.camera;
             pointer_turn_pending = pointer_pitch_pending = 0;
             if (perf_lab_autorun_scene >= 0) {
                 const struct rf_perf_lab_result *r=&rf_perf_lab.result;
@@ -4600,6 +4617,11 @@ startup_again:
                     (long long)r->geometry_us,(long long)r->upload_us,
                     (long long)r->world_us,(long long)r->submit_us,
                     r->gpu_draw_ms,r->draws,game.enemies_alive);
+                __printf("PERF-LAB config scope=%s uncapped=%d interference=%d extent=%dx%d present_mode=%u lights=%u shadow_maps=%u shadow_draws=%u gpu_samples=%d logic_us=%lld map=%s seed=504552464c414231 flashlight=0 sun=default filter=%d stylized=%d\n",
+                    r->isolated?"isolated":"outpost",r->uncapped,rf_perf_lab.interference,
+                    r->width,r->height,r->present_mode,r->lights,r->shadow_maps,r->shadow_draws,
+                    r->gpu_samples,(long long)r->logic_us,r->map,
+                    rf_gpu_scene_linear_filter_enabled(),rf_gpu_scene_character_material_enabled());
                 running = 0;
             }
         }
@@ -4977,19 +4999,15 @@ startup_again:
             game.state == TOY_GAME_PLAYING &&
             camera.x >= -1250 && camera.x <= 1250 &&
             camera.z >= -1900 && camera.z <= -850;
-        if (session.world_id!=RASTERFALL_WORLD_OUTPOST)
-            rf_showcase_visible=rf_walk_visible=0;
-        if (session.world_id!=RASTERFALL_WORLD_OUTPOST) {
-            rf_actor_actions_visible=rf_actor_walk_visible=0;
-            rf_model_lab_visible=0;
-        }
+        if (session.world_id!=RASTERFALL_WORLD_OUTPOST && !rf_perf_lab.running)
+            rf_labs_reset();
         rf_showcase_near = 0;
         rf_render_terminal.near = 0;
         rf_perf_lab.control_near = rf_perf_lab.result_near = 0;
         if (!rf_perf_lab.running && !rf_perf_lab.menu_open &&
             !rf_perf_lab.result_open && !paused && !game_runtime.rts_active &&
             net.mode == RASTERFALL_NET_OFF &&
-            session.world_id == RASTERFALL_WORLD_OUTPOST &&
+            session.world_id == RASTERFALL_WORLD_OUTPOST && options.gpu_scene_play &&
             game.state == TOY_GAME_PLAYING) {
             rf_perf_lab.control_near = rf_perf_lab_near_object(
                 &session, "perf_control_terminal", camera.x, camera.z);
@@ -5009,7 +5027,14 @@ startup_again:
             game.state==TOY_GAME_PLAYING)
             rf_showcase_near=rf_showcase_button_near(&session,camera.x,camera.z);
         if (rf_perf_lab.running) {
-            /* The trial owns all controls until its fixed deadline. */
+            /* Aborting follows the same session return path as completion. */
+            if (action_pressed(&input, RF_ACTION_CANCEL)) {
+                if (rf_perf_lab_finish(&game_runtime,1) < 0) {
+                    scene_runtime_failed=1;goto scene_shutdown;
+                }
+                camera=game_runtime.camera;
+                resumed=1;
+            }
             action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
             pending_key_edges[KEY_ESC] = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
@@ -5023,6 +5048,15 @@ startup_again:
                 pointer_turn_pending = pointer_pitch_pending = 0;
                 resumed = 1;
             } else if (rf_perf_lab.menu_open) {
+                if (toy_input_pressed(&input,KEY_F2)) {
+                    rf_perf_lab.isolated=!rf_perf_lab.isolated;
+                    rf_perf_lab.interference=0;
+                    pending_key_edges[KEY_F2]=0;input.key_pressed[KEY_F2]=0;
+                }
+                if (toy_input_pressed(&input,KEY_T)) {
+                    rf_perf_lab.uncapped=!rf_perf_lab.uncapped;
+                    pending_key_edges[KEY_T]=0;input.key_pressed[KEY_T]=0;
+                }
                 for (int i=0; i<RF_PERF_LAB_SCENES; ++i) {
                     enum rf_input_action action =
                         (enum rf_input_action)(RF_ACTION_SLOT_1+i);
@@ -5035,9 +5069,10 @@ startup_again:
                 if (action_pressed(&input, RF_ACTION_CONFIRM)) {
                     action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
                     pending_key_edges[KEY_ENTER] = 0;
-                    if (rf_perf_lab_start(&session, &camera,
-                            rf_core_clock_now_us()) == 0) {
-                        game_runtime.camera = camera;
+                    int started=rf_perf_lab_start(&game_runtime);
+                    if (started < -1) { scene_runtime_failed=1;goto scene_shutdown; }
+                    if (started == 0) {
+                        camera = game_runtime.camera;
                         pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
                         pointer_turn_pending = pointer_pitch_pending = 0;
                         resumed = 1;
@@ -5158,11 +5193,9 @@ startup_again:
             pending_key_edges[KEY_E]=0;
             input.key_pressed[KEY_E]=0;
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
-            if (rf_showcase_near==1) rf_showcase_visible=!rf_showcase_visible;
-            else if (rf_showcase_near==2) rf_walk_visible=!rf_walk_visible;
-            else if (rf_showcase_near==3) rf_actor_actions_visible=!rf_actor_actions_visible;
-            else if (rf_showcase_near==4) rf_actor_walk_visible=!rf_actor_walk_visible;
-            else if (rf_showcase_near==5) rf_model_lab_visible=!rf_model_lab_visible;
+            int lab=rf_showcase_near-1;
+            if (!rf_lab_definitions[lab].gpu_only || options.gpu_scene_play)
+                rf_labs.requested[lab]=!rf_labs.requested[lab];
         } else if (rf_table.near &&
                    action_pressed(&input, RF_ACTION_INTERACT) &&
                    net.mode == RASTERFALL_NET_OFF) {
@@ -5592,8 +5625,9 @@ startup_again:
                     if (rf_perf_lab.running) {
                         struct toy_game_actor *test_player =
                             toy_game_local_player_actor(&game);
-                        camera.x = 34200;
-                        camera.z = rf_perf_lab_observe_z[rf_perf_lab.selected];
+                        camera.x = rf_perf_lab.isolated ? session.level.start_x : 34200;
+                        camera.z = rf_perf_lab.isolated ? session.level.start_z :
+                            rf_perf_lab_observe_z[rf_perf_lab.selected];
                         camera.sy = 1024; camera.cy = 0;
                         camera.pitch_sy = 0; camera.pitch_cy = 1024;
                         test_player->x = camera.x;
@@ -5654,6 +5688,8 @@ startup_again:
         if (logic_steps > 0)
             rasterfall_motion_capture(&motion_current, &session.game_state);
         if (motion_world_generation != session.scene_local.world_generation) {
+            if (!rf_perf_lab.running && !rf_perf_lab.returning) rf_labs_reset();
+            rf_perf_lab.returning=0;
             rasterfall_motion_capture(&motion_current, &session.game_state);
             motion_previous = motion_current;
             motion_world_generation = session.scene_local.world_generation;
@@ -5677,7 +5713,8 @@ startup_again:
          * 到下一次 begin 的间隔）在 dump 中用 wall − 活跃帧时间推导，
          * 与各阶段统计严格对消。 */
         t_frame = rf_core_time_us(&core);
-        last_render_start_us = t_frame;
+        /* Budget input and fixed-step logic as part of the capped frame. */
+        last_frame_loop_start_us = audit_loop_start;
         if (prev_begin > 0) {
             audit_interval_us = t_frame - prev_begin;
             rasterfall_perf_add_interval(&stats, &stats_total, audit_interval_us);
@@ -5855,26 +5892,30 @@ startup_again:
             game_runtime.console = developer_console;
             game_runtime.render_context.character_gpu_skinning =
                 options.gpu_character_skinning;
+            rf_labs_tick(session.world_id,paused ||
+                (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play,
+                options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
+                    (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us());
             rasterfall_render_set_outpost_showcase(
-                rf_showcase_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
-                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
-                    (uint64_t)rf_core_clock_now_us());
+                rf_lab_effective(RF_LAB_INFECTED_POSES,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                rf_labs.time_us[RF_LAB_INFECTED_POSES]);
             rasterfall_render_set_outpost_walk(
-                rf_walk_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
-                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
-                    (uint64_t)rf_core_clock_now_us());
+                rf_lab_effective(RF_LAB_INFECTED_WALK,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                rf_labs.time_us[RF_LAB_INFECTED_WALK]);
             rasterfall_render_set_outpost_actor_actions(
-                rf_actor_actions_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
-                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
-                    (uint64_t)rf_core_clock_now_us());
+                rf_lab_effective(RF_LAB_ACTOR_ACTIONS,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                rf_labs.time_us[RF_LAB_ACTOR_ACTIONS]);
             rasterfall_render_set_outpost_actor_walk(
-                rf_actor_walk_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
-                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
-                    (uint64_t)rf_core_clock_now_us());
+                rf_lab_effective(RF_LAB_ACTOR_WALK,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                rf_labs.time_us[RF_LAB_ACTOR_WALK]);
             rasterfall_render_set_outpost_model_lab(
-                rf_model_lab_visible && session.world_id==RASTERFALL_WORLD_OUTPOST,
-                options.gpu_normal_fixed_tick ? (uint64_t)(rendered_frames+1)*16000 :
-                    (uint64_t)rf_core_clock_now_us());
+                rf_lab_effective(RF_LAB_MODEL,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                rf_labs.time_us[RF_LAB_MODEL]);
             game_runtime.render_context.character_cpu_reference =
                 !options.gpu_character_skinning ||
                 (options.gpu_character_vertex_diff && rendered_frames + 1 == 30);
@@ -6096,17 +6137,21 @@ startup_again:
                             toy_input_down(&game_runtime.input_frame,KEY_TAB));
                     if (options.gpu_scene_independent_preview) {
                         layers.source_game=&game;layers.source_effects=&effects;
-                        layers.flashlight=rf_render_terminal.flashlight;
-                        layers.lighting_lab=session.world_id==RASTERFALL_WORLD_OUTPOST;
+                        layers.fixed_lighting=rf_perf_lab.running && !rf_perf_lab.interference;
+                        layers.flashlight=!layers.fixed_lighting && rf_render_terminal.flashlight;
+                        layers.lighting_lab=rf_lab_effective(RF_LAB_LIGHTING,session.world_id,
+                            rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play);
                         layers.props=&prop_render;
                         layers.host_time_ms=options.gpu_frame_capture ?
                             (unsigned)rendered_frames*16u : (unsigned)(rf_core_clock_now_us()/1000);
+                        if (layers.lighting_lab)
+                            layers.lighting_time_ms=(unsigned)(rf_labs.time_us[RF_LAB_LIGHTING]/1000);
                         rasterfall_host_set_capture_time(options.gpu_frame_capture ?
                             (int)layers.host_time_ms : -1);
                         rasterfall_host_update(layers.host_time_ms);
                         layers.map=&world_render;layers.fps=display_fps;layers.paused=paused;
                         layers.pause_selected=pause_menu.selected;layers.viewmodel_light=256;
-                        layers.show_viewmodel=!game_runtime.rts_active &&
+                        layers.show_viewmodel=!rf_perf_lab.running && !game_runtime.rts_active &&
                             !(options.gpu_normal_view &&
                               (!strcmp(options.gpu_normal_view,"character-lab") ||
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
@@ -6135,12 +6180,25 @@ startup_again:
                         scene_runtime_failed=1;goto scene_shutdown;
                     }
                     scene_world_probe.layers=NULL;
+                    if (options.gpu_scene_world_preview) {
+                        scene_native_frames++;
+                        if (options.gpu_frame_capture && rendered_frames==options.gpu_capture_frame)
+                            scene_capture_completed=1;
+                        if (options.gpu_scene_independent_preview && renderer.cmd_count) {
+                            __fprintf(2,"SCENE-SOURCE unexpected legacy recording\n");
+                            scene_runtime_failed=1;goto scene_shutdown;
+                        }
+                    }
+                    if (rf_perf_lab.running && probe_stats.bridge_transfers) rf_perf_lab.invalid=1;
                     rf_perf_lab_sample(rf_core_clock_now_us(), audit_interval_us,
                         probe_stats.enemy_prepare_us, probe_stats.geometry_extract_us,
                         probe_stats.enemy_upload_us, probe_stats.world_prepare_us,
                         probe_stats.submit_retire_us,
                         probe_stats.gpu_time_valid ? probe_stats.gpu_draw_ms : 0.0,
-                        probe_stats.draws, game.enemies_alive);
+                        probe_stats.draws, game.enemies_alive, audit_update_us,
+                        probe_stats.gpu_time_valid,probe_stats.lights,probe_stats.shadow_maps,
+                        probe_stats.shadow_draws,probe_stats.present_mode,
+                        renderer.surface.width,renderer.surface.height);
                     if (!rf_perf_lab.running) {
                     if (options.gpu_scene_independent_preview)
                         __printf("SCENE-LAYERS sky=%u world=%u transparent=%u effects=%u viewmodel=%u overlay=%u post=hdr-tonemap\n",
@@ -6148,16 +6206,9 @@ startup_again:
                             probe_stats.layer_draws[2],probe_stats.layer_draws[3],
                             probe_stats.layer_draws[4],probe_stats.layer_draws[5]);
                     if (options.gpu_scene_world_preview) {
-                        scene_native_frames++;
                         int scene_capture=options.gpu_frame_capture &&
                             rendered_frames==options.gpu_capture_frame;
-                        if (scene_capture) scene_capture_completed=1;
                         if (options.gpu_scene_independent_preview) {
-                            if (renderer.cmd_count) {
-                                __fprintf(2,"SCENE-SOURCE unexpected legacy recording\n");
-                                rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
-                                scene_runtime_failed=1;goto scene_shutdown;
-                            }
                             __printf("SCENE-SOURCE frame=%d independent=1 legacy_producer=0 raster_commands=0 mixed_draws=0 dynamic_sources_pending=0 enemies=%u enemy_culled=%u procedural=%u supplemental_modular=%u\n",
                                 rendered_frames,enemy_render.count,enemy_render.culled,
                                 enemy_render.procedural_count,enemy_render.modular_count);
@@ -6573,6 +6624,8 @@ startup_again:
         }
     }
 scene_shutdown:
+    rf_perf_lab.running=0;
+    rf_labs_reset();
     rasterfall_render_set_motion_presentation(NULL, NULL, 0);
     if (stats_enabled && stats_total.frames > 0)
         rasterfall_perf_dump(&stats_total, "total");

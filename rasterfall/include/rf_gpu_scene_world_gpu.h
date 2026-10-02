@@ -9,13 +9,13 @@ struct rasterfall_effects;
 /* Consumed synchronously into immutable geometry before GPU target writes. */
 struct rf_gpu_scene_layers_input {
     const struct rf_gpu_scene_world_prop_frame_v1 *props;
-    unsigned host_time_ms;
+    unsigned host_time_ms,lighting_time_ms;
     const struct toy_game *source_game;
     const struct rasterfall_effects *source_effects;
     const struct rf_gpu_scene_world_render_frame_v1 *map;
     struct rasterfall_hud_state hud;
     int fps,paused,pause_selected,viewmodel_light,show_viewmodel;
-    int flashlight,lighting_lab;
+    int flashlight,lighting_lab,fixed_lighting;
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
 };
@@ -83,6 +83,7 @@ struct rf_gpu_scene_world_gpu_probe {
     int pickup_pedestal_y[TOY_MAP_MAX_PICKUPS];
 };
 struct rf_gpu_scene_world_gpu_probe_stats {
+    uint32_t lights, shadow_maps, shadow_draws, present_mode;
     uint32_t draws, actor_draws, flag_draws, flag_text_draws;
     uint32_t layer_draws[6];
     uint32_t enemy_draws, enemy_items, enemy_deferred, enemy_culled;

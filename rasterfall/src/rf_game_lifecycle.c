@@ -15,7 +15,9 @@ int rf_game_request_world(struct rf_game_runtime *runtime,
     if (!runtime || !runtime->initialized || !runtime->session) return -1;
     if (world != RASTERFALL_WORLD_OUTPOST &&
         world != RASTERFALL_WORLD_CAMPAIGN_01 &&
-        world != RASTERFALL_WORLD_RETURN_TO_WHU_V0) return -1;
+        world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        world != RASTERFALL_WORLD_PERF_EMPTY &&
+        world != RASTERFALL_WORLD_PERF_COMPONENTS) return -1;
     seed = runtime->session->seed;
     if (rasterfall_session_load(runtime->session, world_path(world)) < 0)
         return -1;

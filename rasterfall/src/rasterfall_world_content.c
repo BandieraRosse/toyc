@@ -11,6 +11,10 @@ int rasterfall_world_uses_authored_ground(enum rasterfall_world_id world)
 
 const char *rasterfall_world_map_path(enum rasterfall_world_id world)
 {
+    if (world == RASTERFALL_WORLD_PERF_EMPTY)
+        return "rasterfall/assets/maps/performance_empty.map";
+    if (world == RASTERFALL_WORLD_PERF_COMPONENTS)
+        return "rasterfall/assets/maps/performance_components.map";
     if (world == RASTERFALL_WORLD_OUTPOST)
         return "rasterfall/assets/maps/outpost.map";
     if (world == RASTERFALL_WORLD_RETURN_TO_WHU_V0)
@@ -20,6 +24,8 @@ const char *rasterfall_world_map_path(enum rasterfall_world_id world)
 
 const char *rasterfall_world_content_path(enum rasterfall_world_id world)
 {
+    if (world == RASTERFALL_WORLD_PERF_EMPTY || world == RASTERFALL_WORLD_PERF_COMPONENTS)
+        return "rasterfall/assets/worlds/performance.content";
     if (world == RASTERFALL_WORLD_OUTPOST)
         return "rasterfall/assets/worlds/outpost.content";
     if (world == RASTERFALL_WORLD_RETURN_TO_WHU_V0)

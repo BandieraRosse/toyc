@@ -394,21 +394,33 @@ int rasterfall_session_load(struct rasterfall_session *session,
                         session->safe_rooms, session->spawn_zones,
                         &session->spawn_count, &session->air_walls_enabled,
                         session->items, &session->item_count);
-    if (rasterfall_map_load_runtime_overlay(&session->map_ops, map_path) < 0)
+    if (rasterfall_map_load_runtime_overlay(&session->map_ops, map_path) < 0) {
+        __fprintf(2,"Map load failed: %s line=%d %s\n",map_path,
+            session->map_ops.runtime.error_line,session->map_ops.runtime.error);
         return -1;
+    }
     {
         const char *identity = rf_map_runtime_world_info(&session->map_ops.runtime)->identity;
         session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
         if (!strcmp(identity, "outpost")) session->world_id = RASTERFALL_WORLD_OUTPOST;
         else if (!strcmp(identity, "return_to_whu_v0"))
             session->world_id = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
+        else if (!strcmp(identity, "performance_empty"))
+            session->world_id = RASTERFALL_WORLD_PERF_EMPTY;
+        else if (!strcmp(identity, "performance_components"))
+            session->world_id = RASTERFALL_WORLD_PERF_COMPONENTS;
         else if (*identity && strcmp(identity, "campaign_01")) return -1;
     }
     if (rasterfall_world_content_load(&session->content, session->world_id,
-                                      rasterfall_world_content_path(session->world_id)) < 0)
+                                      rasterfall_world_content_path(session->world_id)) < 0) {
+        __fprintf(2,"Content load failed: %s line=%d %s\n",
+            rasterfall_world_content_path(session->world_id),session->content.error_line,session->content.error);
         return -1;
+    }
     session->world_request = session->world_id;
-    if (rasterfall_map_project_runtime(&session->map_ops) < 0) return -1;
+    if (rasterfall_map_project_runtime(&session->map_ops) < 0) {
+        __fprintf(2,"Map projection failed: %s\n",map_path);return -1;
+    }
     __printf("Loading world source: %s\n", map_path);
     __printf("Map runtime loaded: regions=%d interactions=%d\n",
              rf_map_runtime_region_count(&session->map_ops.runtime),
@@ -428,8 +440,11 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
     }
     session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
     if (rasterfall_world_content_load(&session->content, session->world_id,
-                                      rasterfall_world_content_path(session->world_id)) < 0)
+                                      rasterfall_world_content_path(session->world_id)) < 0) {
+        __fprintf(2,"Content load failed: %s line=%d %s\n",
+            rasterfall_world_content_path(session->world_id),session->content.error_line,session->content.error);
         return -1;
+    }
     session->world_request = session->world_id;
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
@@ -463,7 +478,9 @@ int rasterfall_session_request_world(struct rasterfall_session *session,
 {
     if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
                      world != RASTERFALL_WORLD_CAMPAIGN_01 &&
-                     world != RASTERFALL_WORLD_RETURN_TO_WHU_V0)) return -1;
+                     world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+                     world != RASTERFALL_WORLD_PERF_EMPTY &&
+                     world != RASTERFALL_WORLD_PERF_COMPONENTS)) return -1;
     session->world_request = world;
     session->world_request_pending = 1;
     return 0;

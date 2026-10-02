@@ -25,9 +25,41 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 ## 前哨站游戏内性能实验场
 
-在 Windows 原生 GPU Scene 单人前哨站，前往光照实验区东侧连接路。靠近控制终端按 E，按 1 至 4 选择低压力、64 敌人、多组件或敌人与组件复合场景，Enter 开始。选择界面随即关闭；玩家固定在对应场地西侧道路的站立点并朝东观察。测试固定 10 秒，只运行一轮，前 2 秒预热。计时结束后测试敌人立即清零，恢复原位置和视角。到旁边的结果终端按 E 查看汇总，Esc 关闭。每次启动会先清空上一份结果；如果采样期间敌人数量下降，结果标为无效。
+Windows 原生 GPU Scene 单人前哨站的控制和结果终端在光照区东侧走道。靠近控制终端按 E，
+1 至 4 选择基础、64 敌人、24 组件或复合场景；F2 选择 ISOLATED / OUTPOST，T 选择
+120 FPS CAP / UNCAPPED，Enter 开始，Esc 可取消测试。默认 ISOLATED、正常限帧。
+固定十秒、前两秒预热，结束或取消后返回原站位和视角。上一份结果在启动时清空，结果终端按 E 查看。
 
-面板显示采样帧数、平均 FPS、帧间隔均值/中位/P95/P99、敌人准备、几何提取、敌人上传、世界准备、提交/等待、GPU 绘制时间、平均 draw 数和敌人存活范围。阶段数字用于找瓶颈，GPU 时间与 CPU 时间重叠。用于本机自动验收时可设置 `RF_PERF_LAB_AUTORUN=1..4`，分别运行四种场景；程序进入前哨站约 30 帧后启动同一流程，结束时输出 `PERF-LAB result` 并退出。比较不同版本时固定窗口、分辨率、设备、驱动和图形选项。
+ISOLATED 经 session 加载两份同基础场地的专用地图，只按所选配置增加敌人或 crate；
+前哨站展示、灯、建筑和碰撞不进入该世界。返回会重建前哨站 session，恢复本地玩家与展示请求，
+其他 session 内容重新初始化。OUTPOST 保留原四个场地，暂停所有非测试展示与动态灯，
+静态世界和碰撞背景仍属于其环境实测成本。两者不得混作一个基准。
+登记、所有权、空间例外和生命周期见[实验区合同](../reference/experiment-labs.md)。
+
+结果报告帧间隔平均/中位/P95/P99、敌人存活范围、敌人准备/提取/上传、世界准备、提交等待、
+逻辑循环墙钟、GPU 绘制均值与有效样本数、主绘制项、实际阴影绘制数、灯数和阴影图数。
+GPU 时间与 CPU 重叠；敌人准备包含提取和上传，不能累加这些阶段。
+GPU 时间包括阴影及 HDR 绘制/后处理，不包含全部 CPU 和 native present 成本。
+正常帧率包含 120 FPS 主动节流，UNCAPPED 移除测试期间的该节流，仍可能受实际 present 模式约束。
+敌人数或配置变化、取消、采样容量耗尽会使结果无效。没有有效 GPU 样本时不接受 GPU 均值。
+
+自动入口 `RF_PERF_LAB_AUTORUN=1..4` 在约三十帧后启动同一流程，完成后输出 result/config 并退出。
+`RF_PERF_LAB_SCOPE=outpost` 选择环境实测；`RF_PERF_LAB_UNCAPPED=1` 选择无主动节流。
+专项采样脚本先要求已暂存当前 Windows build，逐轮反转顺序，保存 exe/map/content hash、
+原始 stdout/stderr/runtime 日志与 `report.json`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 test
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Isolated -Rounds 3 -OutputDirectory tmp/performance-baseline
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Interference -Rounds 3 -OutputDirectory tmp/performance-interference
+```
+
+Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：诊断 `RF_PERF_LAB_INTERFERENCE=1`
+开启光照展示并保留非测试展示和地图灯。这是组合背景消融，不能将差值全部归于单独一盏灯或球体。
+脚本默认 UNCAPPED，`-Capped` 保留正常体验上限；`-Scenes` 可限定场景。
+比较固定窗口、分辨率、设备、驱动、材质/过滤选项与 workload；汇总每轮值和分位数，
+不能用单次结果承诺普遍收益。自动脚本检查真实进程退出、完整结果、GPU 有效样本和隔离灯合同。
+交互式重跑也可从配置结果查看灯数、阴影数、节流和 present 模式。
 
 ## 角色微基准
 

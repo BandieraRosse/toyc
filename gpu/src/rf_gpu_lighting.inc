@@ -205,6 +205,7 @@ static void gfx_shadow_record(struct rf_gpu_graphics *g,const struct rf_gpu_grap
             g->api.CmdBindIndexBuffer(g->cmd,r->indices.buffer,0,VK_INDEX_TYPE_UINT32);
             g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&d);
             g->api.CmdDrawIndexed(g->cmd,d.index_count,1,d.first_index,0,0);
+            g->stats.shadow_draws++;
         }
         g->api.CmdEndRenderPass(g->cmd);
         VkBufferImageCopy copy={0};copy.bufferOffset=(uint64_t)cascade*1024*1024*4;

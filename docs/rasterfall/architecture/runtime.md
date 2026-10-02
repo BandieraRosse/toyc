@@ -55,6 +55,18 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 - `src/rasterfall_session.c`、`include/rasterfall_session.h`：session-owned level/map 生命周期及 Map Runtime adapter 接入。
 - `src/rasterfall_logic_test.inc`：由主编译单元包含的聚合逻辑测试入口。
 
+## 实验区与性能测试
+
+Game Runtime 的 `rf_experiment_labs.inc` 统一持有六个展示请求、后端能力和独立时钟，
+从当前世界与性能独占状态派生有效开关。渲染只读这些值，不解析地图或更改玩法。
+`rf_performance_lab.inc` 持有单轮测试、结果和返回状态；session 仍拥有基准地图加载、投影和 reset。
+默认测试加载独立世界，结束/取消通过 `rf_game_request_world()` 返回前哨站；恢复本地玩家和展示请求，
+其余前哨站 session 内容重建。环境实测保持原 world，暂停展示和动态灯。
+无主动节流仅在所选测试期间生效，不改变正常帧或逻辑固定步长。
+120 FPS 节流以实际渲染帧所属的循环起点计算 8,333 微秒预算，包含输入、逻辑和渲染；
+下一帧不在等待该预算后额外叠加整段逻辑耗时。调度唤醒和呈现仍可能使实际帧率略低于上限。
+完整合同见[实验区合同](../reference/experiment-labs.md)，执行见[性能诊断](../guides/rendering-performance.md)。
+
 ## 生命周期
 
 默认 Game policy 加载 `RASTERFALL_WORLD_OUTPOST`（`assets/maps/outpost.map`），不让 Core 选择或解析

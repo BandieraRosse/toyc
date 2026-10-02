@@ -360,10 +360,15 @@ render id=rf_model_lab_title kind=sign min_x=14384 max_x=18384 min_z=-35950 max_
 render id=rf_model_lab_status kind=sign min_x=14784 max_x=17984 min_z=-28100 max_z=-28070 height=-300 color=81B4B5 attr.height2=0 attr.text=GPU_MODEL_LAB attr.facing=+z
 object id=rf_model_lab_button kind=facility_terminal x=20400 y=0 z=-28000 yaw=0 scale=1000 attr.collision=component
 
-# GPU lighting exhibit: east of RF_MODEL_LAB. Presentation spheres are GPU-owned.
+# GPU lighting exhibit: explicit switch, same terminal contract as other exhibits.
+object id=rf_light_lab_button kind=facility_terminal x=32700 y=0 z=-27600 yaw=0 scale=1000 attr.collision=component
 surface id=rf_light_lab kind=ground min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 material=68717A attr.collision_id=rf_light_lab_col
 collision id=rf_light_lab_col shape=flat min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 collision=false visible=true walkable=true color=68717A
-render id=rf_light_lab_floor kind=floor min_x=21504 max_x=33792 min_z=-36352 max_z=-26700 height=0 color=68717A
+render id=rf_light_lab_floor kind=floor min_x=21568 max_x=33728 min_z=-36288 max_z=-26764 height=0 color=68717A
+render id=rf_light_lab_north_line kind=floor min_x=21504 max_x=33792 min_z=-26764 max_z=-26700 height=0 color=9FE8C8
+render id=rf_light_lab_south_line kind=floor min_x=21504 max_x=33792 min_z=-36352 max_z=-36288 height=0 color=9FE8C8
+render id=rf_light_lab_west_line kind=floor min_x=21504 max_x=21568 min_z=-36288 max_z=-26764 height=0 color=9FE8C8
+render id=rf_light_lab_east_line kind=floor min_x=33728 max_x=33792 min_z=-36288 max_z=-26764 height=0 color=9FE8C8
 render id=rf_light_lab_back kind=wall min_x=24000 max_x=33792 min_z=-36300 max_z=-36300 height=4400 color=65717D
 render id=rf_light_lab_title kind=sign min_x=27000 max_x=30800 min_z=-36250 max_z=-36220 height=2700 color=B8DDEB attr.height2=3300 attr.text=RF_LIGHTING_LAB attr.facing=+z
 render id=rf_light_base_0_0 kind=box min_x=24700 max_x=26200 min_z=-30950 max_z=-29450 height=250 color=303B48

@@ -18,6 +18,11 @@ World Content text → Game-owned parser → session / gameplay actor state
 
 parser 只解释格式并产生运行时无关的 Map IR；Runtime Map 拥有稳定 ID 和运行时视图；session 拥有 level/map 的 load、binding、reset 与 unload。Game projection adapter 转换为现有玩法、碰撞和渲染兼容结构。可见几何、碰撞、玩法声明与 World Content 是不同输入，不能互相代替；renderer 不解析地图文本，也不拥有玩法真值。
 
+性能基准使用 `performance_empty` 和 `performance_components` 两个静态 identity，
+映射到各自 `.map` 与共用空 `performance.content`。组件版只增加 crate 对象和组件碰撞，
+不在渲染中删除碰撞或通过 visibility 改变玩法投影。它们由性能控制器请求，
+不加入指挥桌部署目录。测试结束仍走完整 session load/reset；合同见[实验区合同](../reference/experiment-labs.md)。
+
 ## Map IR Runtime Bridge
 
 `rf_map_runtime_load()` 在堆上分配容量型临时 Map IR，转换完成或失败后释放；

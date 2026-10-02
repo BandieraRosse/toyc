@@ -1,0 +1,45 @@
+# Isolated performance fixture. Common footprint, camera and sunlight.
+map version=1 units=rfu
+world min_x=-2400 max_x=13500 min_z=-4500 max_z=4500 room_limit=16000 attr.identity=performance_components
+region id=observer_safe kind=safe min_x=-2400 max_x=0 min_z=-4500 max_z=4500 attr.legacy_index=0
+region id=player_start kind=start min_x=-1300 max_x=-1300 min_z=0 max_z=0 attr.sy=1024 attr.cy=0
+surface id=perf_observer kind=ground min_x=-2400 max_x=0 min_z=-4500 max_z=4500 height=0 material=485860 attr.collision_id=perf_observer_col
+collision id=perf_observer_col shape=flat min_x=-2400 max_x=0 min_z=-4500 max_z=4500 height=0 collision=false visible=true walkable=true color=485860
+render id=perf_observer_paint kind=floor min_x=-2400 max_x=0 min_z=-4500 max_z=4500 height=0 color=485860
+surface id=perf_bay kind=ground min_x=0 max_x=13500 min_z=-4500 max_z=4500 height=0 material=52616A attr.collision_id=perf_bay_col
+collision id=perf_bay_col shape=flat min_x=0 max_x=13500 min_z=-4500 max_z=4500 height=0 collision=false visible=true walkable=true color=52616A
+render id=perf_bay_paint kind=floor min_x=64 max_x=13436 min_z=-4436 max_z=4436 height=0 color=52616A
+render id=perf_spawn_paint kind=floor min_x=1100 max_x=12300 min_z=-3600 max_z=3600 height=0 color=52616A
+render id=perf_north_line kind=floor min_x=0 max_x=13500 min_z=4436 max_z=4500 height=0 color=9FE8C8
+render id=perf_south_line kind=floor min_x=0 max_x=13500 min_z=-4500 max_z=-4436 height=0 color=9FE8C8
+render id=perf_west_line kind=floor min_x=0 max_x=64 min_z=-4436 max_z=4436 height=0 color=9FE8C8
+render id=perf_east_line kind=floor min_x=13436 max_x=13500 min_z=-4436 max_z=4436 height=0 color=9FE8C8
+collision id=perf_west shape=box min_x=0 max_x=200 min_z=-4500 max_z=4500 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_east shape=box min_x=13300 max_x=13500 min_z=-4500 max_z=4500 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_north shape=box min_x=200 max_x=13300 min_z=4300 max_z=4500 height=650 collision=true visible=true walkable=false color=6B8E92
+collision id=perf_south shape=box min_x=200 max_x=13300 min_z=-4500 max_z=-4300 height=650 collision=true visible=true walkable=false color=6B8E92
+region id=perf_spawn kind=spawn min_x=1100 max_x=12300 min_z=-3600 max_z=3600 attr.legacy_index=1
+object id=perf_component_0_0 kind=crate x=1500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_0_1 kind=crate x=3500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_0_2 kind=crate x=5500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_0_3 kind=crate x=7500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_0_4 kind=crate x=9500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_0_5 kind=crate x=11500 y=0 z=-2300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_0 kind=crate x=1500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_1 kind=crate x=3500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_2 kind=crate x=5500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_3 kind=crate x=7500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_4 kind=crate x=9500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_1_5 kind=crate x=11500 y=0 z=-300 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_0 kind=crate x=1500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_1 kind=crate x=3500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_2 kind=crate x=5500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_3 kind=crate x=7500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_4 kind=crate x=9500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_2_5 kind=crate x=11500 y=0 z=1700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_0 kind=crate x=1500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_1 kind=crate x=3500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_2 kind=crate x=5500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_3 kind=crate x=7500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_4 kind=crate x=9500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component
+object id=perf_component_3_5 kind=crate x=11500 y=0 z=3700 yaw=0 scale=1000 attr.collision=component

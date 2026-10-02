@@ -1506,7 +1506,11 @@ static int gfx_render(struct rf_gpu_graphics *g,
 
 void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_graphics_stats *stats)
 {
-    if (g && stats) *stats = g->stats;
+    if (g && stats) {
+        *stats = g->stats;
+        stats->lights=g->lighting.count;stats->shadow_maps=g->shadow_count;
+        stats->present_mode=g->owner->present_mode;
+    }
 }
 #undef RF_GFX_FUNCTIONS
 
