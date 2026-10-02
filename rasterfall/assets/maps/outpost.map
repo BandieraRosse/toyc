@@ -466,9 +466,9 @@ render id=rf_light_occluder_0 kind=box min_x=-3868 max_x=-3428 min_z=-1874 max_z
 render id=rf_light_occluder_1 kind=box min_x=5332 max_x=5772 min_z=-1874 max_z=-1434 height=2600 color=D4C4A1 attr.lab=rf_light_lab_area
 
 # Performance lab: four bounded bays in the southern row.
-object id=perf_control_terminal kind=facility_terminal x=17500 y=0 z=-37300 yaw=90 scale=1000 attr.collision=component
-object id=perf_result_terminal kind=facility_terminal x=17500 y=0 z=-35700 yaw=90 scale=1000 attr.collision=component
-render id=perf_control_sign kind=sign min_x=15000 max_x=17700 min_z=-38200 max_z=-38170 height=500 color=81B4B5 attr.height2=800 attr.text=PERFORMANCE_LAB attr.facing=+z attr.style=2 attr.texture_u=4
+object id=perf_control_terminal kind=facility_terminal x=15360 y=0 z=-38800 yaw=180 scale=1000 attr.collision=component
+object id=perf_result_terminal kind=facility_terminal x=17408 y=0 z=-38800 yaw=180 scale=1000 attr.collision=component
+render id=perf_control_sign kind=sign min_x=14592 max_x=18176 min_z=-38500 max_z=-38470 height=820 color=81B4B5 attr.height2=1080 attr.text=PERFORMANCE_LAB attr.facing=-z attr.style=2 attr.texture_u=4
 surface id=perf_enemy_ground kind=ground min_x=-6750 max_x=6750 min_z=-4500 max_z=4500 height=0 material=52616A attr.collision_id=perf_enemy_ground_col attr.lab=perf_enemy_area
 collision id=perf_enemy_ground_col shape=flat min_x=-6750 max_x=6750 min_z=-4500 max_z=4500 height=0 collision=false visible=true walkable=true color=52616A attr.lab=perf_enemy_area
 render id=perf_enemy_paint kind=floor min_x=-6686 max_x=6686 min_z=-4436 max_z=4436 height=0 color=607985 attr.lab=perf_enemy_area attr.style=10
@@ -583,8 +583,8 @@ lab id=perf_enemy_area x=-8704 z=-46592 width=13500 depth=9000 category=performa
 lab id=perf_components_area x=10752 z=-46592 width=13500 depth=9000 category=performance enclosure=walled
 lab id=perf_mixed_area x=30208 z=-46592 width=13500 depth=9000 category=performance enclosure=walled
 lab id=perf_low_area x=-28160 z=-46592 width=13500 depth=9000 category=performance enclosure=walled
-render id=performance_control_display kind=sign min_x=16700 max_x=17900 min_z=-37200 max_z=-37180 height=0 color=FFAB78 attr.height2=300 attr.style=4 attr.text=PERFORMANCE attr.facing=+z attr.texture_u=4 attr.channel=performance_control
-render id=performance_result_display kind=sign min_x=16700 max_x=17900 min_z=-35600 max_z=-35580 height=0 color=FFAB78 attr.height2=300 attr.style=4 attr.text=PERFORMANCE attr.facing=+z attr.texture_u=4 attr.channel=performance_result
+render id=performance_control_display kind=sign min_x=14610 max_x=16110 min_z=-39130 max_z=-39110 height=180 color=FFAB78 attr.height2=580 attr.style=4 attr.text=CONTROL attr.facing=-z attr.texture_u=4 attr.channel=performance_control
+render id=performance_result_display kind=sign min_x=16658 max_x=18158 min_z=-39130 max_z=-39110 height=180 color=FFAB78 attr.height2=580 attr.style=4 attr.text=RESULTS attr.facing=-z attr.texture_u=4 attr.channel=performance_result
 
 # RF Generation One product gallery.
 lab id=rf_electronics_lab_area x=9728 z=-19968 width=10240 depth=9216 category=model enclosure=open

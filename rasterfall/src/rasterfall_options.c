@@ -110,6 +110,7 @@ void rasterfall_options_usage(int fd)
         "    research-bx18: Outpost Research room static asset fixture (use enemy count 0)\n"
         "    model-lab / lighting-lab: GPU exhibits; use --map rasterfall/assets/maps/outpost.map and enemy count 0\n"
         "    lab-computer / lab-computer-close / lab-computer-side / lab-computer-rear: computer overview / ON screen / RF Gen1 internals / rear I/O\n"
+        "    performance-terminal / performance-menu: roadside performance terminals / test menu\n"
         "    electronics-lab / electronics-case: RF Gen1 product gallery / powered workstation\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
@@ -325,6 +326,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"actor-walk-lab") &&
                  strcmp(o->gpu_normal_view,"model-lab") &&
                  strcmp(o->gpu_normal_view,"lighting-lab") &&
+                 strcmp(o->gpu_normal_view,"performance-terminal") &&
+                 strcmp(o->gpu_normal_view,"performance-menu") &&
                  strcmp(o->gpu_normal_view,"sky-north") &&
                  strcmp(o->gpu_normal_view,"sky-east") &&
                  strcmp(o->gpu_normal_view,"sky-south") &&

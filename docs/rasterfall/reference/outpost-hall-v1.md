@@ -109,4 +109,4 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 实验区统一登记、开关、后端能力和隔离合同见[实验区合同](experiment-labs.md)。光照区已补独立终端和 64 RFU 边线，普通启动默认关闭。
 
 
-园区第三排的四个测试场从西至东为低压力、多敌人、多组件、复合，由性能横路连接。每场由 650 RFU 高的四面实体矮墙围住，西侧地块内部保留 4 m 观察支带和独立安全区。场地使用可见地板、橙色边线和场景标题牌；可行走 surface/collision 与绘制记录分别声明。控制终端和结果终端位于第二排预留地块东南服务口袋，分别使用地图对象 `perf_control_terminal` 与 `perf_result_terminal`；功能由 Game Runtime 根据对象 ID 绑定。多组件和复合场景各放置 24 个静态 crate；敌人在测试开始时才生成。地图只定义地形、碰撞和静态物件，不保存测试结果。四场地用于 OUTPOST 环境实测；控制终端默认选择 ISOLATED，经 session 加载同基础场地的独立基准世界，结束后返回原站位。操作与口径见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。
+园区第三排的四个测试场从西至东为低压力、多敌人、多组件、复合，由性能横路连接。每场由 650 RFU 高的四面实体矮墙围住，西侧地块内部保留 4 m 观察支带和独立安全区。场地使用可见地板、橙色边线和场景标题牌；可行走 surface/collision 与绘制记录分别声明。控制终端和结果终端并排位于性能横路北侧，分别使用地图对象 `perf_control_terminal` 与 `perf_result_terminal`；路侧布置和投影见[园区总平面](outpost-lab-layout-v3.md)。功能由 Game Runtime 根据对象 ID 绑定。多组件和复合场景各放置 24 个静态 crate；敌人在测试开始时才生成。地图只定义地形、碰撞和静态物件，不保存测试结果。四场地支持 OUTPOST 环境实测及 FULL SCENE 完整背景；另有当前/全开两种五视角全景巡检。控制终端默认选择 ISOLATED，经 session 加载独立基准世界，结束后返回原站位。操作与口径见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。

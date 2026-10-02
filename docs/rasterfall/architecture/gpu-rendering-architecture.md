@@ -34,6 +34,12 @@ Scene world 资源由 `rasterfall/src/rf_gpu_scene_world_gpu.c` 准备，角色�
 阴影图各自的光空间独立剔除；镜头外的模型仍可投射镜头内阴影。GPU 蒙皮资源不使用 bind bounds
 剔除。没有距离隐藏、小物件删除或模型降面。静态纹理过滤设置在每帧准备开始时读取一次。
 
+Scene layer workspace 持有不随时间变化的显示几何缓存：完整 `toy_map_draw` 值作为失效键，包含文本、
+颜色、像素间距、朝向、样式及世界坐标。缓存保留原始 quad 顺序和实际包围盒；相机改变只重新判断裁剪。
+屏幕/文字变化立即重建，动态光束、旋转信标和机器活动仍走原逐帧路径。
+每个 owner 最多缓存 65,536 个 quad，分配失败或超预算回退直接生成；owner 关闭统一释放。
+共享生成器位于 `render/rf_display_geometry_cache.h`，该缓存不持有玩法状态、相机或 GPU resource。
+
 启动环境切到 GPU Scene 时保留 Win32/SDL 窗口句柄，先释放 SDL 硬件呈现器并建立软件呈现器，再为同一窗口创建 Vulkan surface；启动页仍由软件画布呈现，进入游戏后由 GPU Scene 接管。窗口 resize、swapchain 重建及错误注入必须按 graphics owner 的完成/退休顺序处理。失败时传播帧错误，不把残缺 Scene 帧解释为成功。实现边界与复现入口见[Scene 工作流](../guides/gpu-scene-fixture.md)和[Windows Native](../guides/windows-native.md)。
 
 正常交互帧由 Game Runtime 以 120 FPS 节流。其 Vulkan swapchain 优先选 immediate，其次 mailbox，均不可用时退回必备的 FIFO；前两者允许在 60 Hz 显示器上继续采样并提交更多帧，immediate 可能出现画面撕裂。固定帧诊断仍用 FIFO。该呈现选择不改变 GPU service、资源退休或固定逻辑步。玩法状态的双 tick 展示插值见[运行时架构](runtime.md)。

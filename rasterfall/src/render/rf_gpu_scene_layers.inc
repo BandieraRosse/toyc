@@ -2,6 +2,7 @@
  * All source reads finish before resource preparation and target submission. */
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_lab_terminal.h"
+#include "rf_display_geometry_cache.h"
 struct scene_layer_triangle {
     struct rf_gpu_graphics_vertex vertex[3];
     uint32_t color;
@@ -14,6 +15,9 @@ struct scene_layer_mesh {
     int layer,failed,width,height,emissive;
     double clip[5][4];
     int cull;
+    struct rf_display_geometry *displays;
+    unsigned display_budget;
+    int cache_displays;
 };
 struct scene_layer_workspace {
     struct scene_layer_mesh mesh;
@@ -38,6 +42,8 @@ static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
 static void scene_layer_workspace_free(struct scene_layer_workspace *w)
 {
     if (!w) return;
+    if(w->mesh.displays) for(unsigned i=0;i<TOY_MAP_MAX_DRAW;++i) free(w->mesh.displays[i].quads);
+    free(w->mesh.displays);
     free(w->mesh.triangles);free(w->vertices);free(w->colors);free(w->indices);
     free(w->texels);free(w->texture_source);free(w->ordered);free(w);
 }
@@ -257,6 +263,22 @@ static int scene_host_quad(void *context,const int p[4][3],unsigned color)
         for (int axis=0;axis<3;++axis) v[k].position[axis]=p[k][axis];
     return scene_layer_quad(context,v,color,255,0);
 }
+static int scene_display_emit(struct scene_layer_mesh *mesh,const struct toy_map_draw *d,unsigned index)
+{
+    if(!mesh->cache_displays || !mesh->displays || index>=TOY_MAP_MAX_DRAW)
+        return rf_display_generate(d,scene_host_quad,mesh);
+    struct rf_display_geometry *entry=&mesh->displays[index];
+    if(rf_display_geometry_prepare(entry,d,&mesh->display_budget)<0)
+        return rf_display_generate(d,scene_host_quad,mesh);
+    /* Exact cached geometry bounds, with the same conservative plane slack
+     * as triangle clipping. This alpha presentation geometry casts no shadow. */
+    if(mesh->cull && entry->count) for(int p=0;p<5;++p) {
+        const double *f=mesh->clip[p];double maximum=f[3];
+        for(int k=0;k<3;++k) maximum+=f[k]*(f[k]>=0?entry->max[k]:entry->min[k]);
+        if(maximum<0) return 0;
+    }
+    return rf_display_geometry_emit(entry,scene_host_quad,mesh);
+}
 static int scene_glass_quad(void *context,const int p[4][3],unsigned color)
 {
     struct rf_gpu_graphics_vertex v[4]={0};
@@ -301,11 +323,9 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN &&
-            rf_lab_projection_text_emit(&item->draw,scene_host_quad,mesh)<0) return -1;
+            scene_display_emit(mesh,&item->draw,i)<0) return -1;
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==7 &&
             rf_lab_beacon_projection_emit(&item->draw,input->host_time_ms,scene_host_quad,mesh)<0) return -1;
-        if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && (item->draw.style==4 || item->draw.style==5) &&
-            rf_lab_terminal_emit(&item->draw,scene_host_quad,mesh)<0) return -1;
     }
     mesh->emissive=0;
     for (unsigned i=0;input->props && i<input->props->count;++i) {
@@ -420,6 +440,10 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     if (!w) return -1;
     struct scene_layer_mesh mesh=w->mesh;
     mesh.count=0;mesh.failed=0;
+    const char *legacy_display=getenv("RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY");
+    mesh.cache_displays=!(legacy_display && !strcmp(legacy_display,"1"));
+    if(mesh.cache_displays && !mesh.displays)
+        mesh.displays=calloc(TOY_MAP_MAX_DRAW,sizeof(*mesh.displays));
     struct rf_gpu_graphics_vertex *vertices=w->vertices;
     uint32_t *indices=w->indices,*texels=w->texels,white=0xffffff;
     const char *legacy=getenv("RF_GPU_SCENE_REBUILD_LAYERS");

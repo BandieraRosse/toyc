@@ -25,11 +25,11 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 ## 前哨站游戏内性能实验场
 
-Windows 原生 GPU Scene 单人前哨站的控制和结果终端在园区第二排预留地块东南服务口袋，
-从性能横路或第三、四列之间纵路进入。靠近控制终端按 E，
-1 至 4 选择基础、64 敌人、24 组件或复合场景；F2 选择 ISOLATED / OUTPOST，T 选择
+Windows 原生 GPU Scene 单人前哨站的控制和结果终端并排放在性能横路北侧，靠近第三、四列之间的路口，
+投影朝向南侧道路来向。靠近控制终端按 E，
+1 至 4 选择基础、64 敌人、24 组件或复合场景；F2 选择 ISOLATED / OUTPOST / FULL SCENE，T 选择
 120 FPS CAP / UNCAPPED，Enter 开始，Esc 可取消测试。默认 ISOLATED、正常限帧。
-固定十秒、前两秒预热，结束或取消后返回原站位和视角。上一份结果在启动时清空，结果终端按 E 查看。
+前四项固定十秒、前两秒预热，结束或取消后返回原站位和视角。上一份结果在启动时清空，结果终端按 E 查看。
 
 ISOLATED 经 session 加载两份同基础场地的专用地图，只按所选配置增加敌人或 crate；
 前哨站展示、灯、建筑和碰撞不进入该世界。返回会重建前哨站 session，恢复本地玩家与展示请求，
@@ -37,15 +37,25 @@ ISOLATED 经 session 加载两份同基础场地的专用地图，只按所选�
 静态世界和碰撞背景仍属于其环境实测成本。两者不得混作一个基准。
 登记、所有权、空间例外和生命周期见[实验区合同](../reference/experiment-labs.md)。
 
+FULL SCENE 在原场地保留全部背景、当前展示请求、动态灯、天空和 viewmodel，正常渲染器决定可见性。
+5、6 是全景巡检：5 保留当前展示状态；6 临时开启全部七类展示，电子设备为 600 RPM，结束或取消恢复原请求。
+两者固定使用 FULL SCENE，不生成额外敌人。按园区入口、控制计算机侧面、电子区、光照区、大厅天空五个观察点
+依次运行，每点 6 秒，前 2 秒预热、后 4 秒采样，总计 30 秒。观察点切换不暂停背景更新。
+全局结果之外，每点单独报告帧耗时分位数与准备成本；结果终端按 F2 切换概览/逐视角页。
+这些巡检不替代连续移动、战斗或首次进入地图的冷启动测试。
+自动新进程的“当前展示”使用正常默认全关状态，报告记录 `lab_mask`；游戏内启动则保留用户已经开启的展示。
+
 结果报告帧间隔平均/中位/P95/P99、敌人存活范围、敌人准备/提取/上传、世界准备、提交等待、
 逻辑循环墙钟、GPU 绘制均值与有效样本数、主绘制项、实际阴影绘制数、灯数和阴影图数。
+概览另列展示层、角色、快照、动态来源、命令录制和天空 compute；主绘制数使用实际提交值。
 GPU 时间与 CPU 重叠；敌人准备包含提取和上传，不能累加这些阶段。
 GPU 时间包括阴影及 HDR 绘制/后处理，不包含全部 CPU 和 native present 成本。
 正常帧率包含 120 FPS 主动节流，UNCAPPED 移除测试期间的该节流，仍可能受实际 present 模式约束。
 敌人数或配置变化、取消、采样容量耗尽会使结果无效。没有有效 GPU 样本时不接受 GPU 均值。
 
-自动入口 `RF_PERF_LAB_AUTORUN=1..4` 在约三十帧后启动同一流程，完成后输出 result/config 并退出。
+自动入口 `RF_PERF_LAB_AUTORUN=1..6` 在约三十帧后启动同一流程，完成后输出 result/config/stages 和逐视角数据并退出。
 `RF_PERF_LAB_SCOPE=outpost` 选择环境实测；`RF_PERF_LAB_UNCAPPED=1` 选择无主动节流。
+`RF_PERF_LAB_SCOPE=full` 保留背景；全景巡检自动使用该口径。
 专项采样脚本先要求已暂存当前 Windows build，逐轮反转顺序，保存 exe/map/content hash、
 原始 stdout/stderr/runtime 日志与 `report.json`：
 
@@ -53,6 +63,8 @@ GPU 时间包括阴影及 HDR 绘制/后处理，不包含全部 CPU 和 native 
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 test
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Isolated -Rounds 3 -OutputDirectory tmp/performance-baseline
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Interference -Rounds 3 -OutputDirectory tmp/performance-interference
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Full -Capped -OutputDirectory tmp/performance-full
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Panorama -Capped -CompareGeometry -OutputDirectory tmp/performance-panorama
 ```
 
 Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：诊断 `RF_PERF_LAB_INTERFERENCE=1`
@@ -61,6 +73,11 @@ Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：�
 比较固定窗口、分辨率、设备、驱动、材质/过滤选项与 workload；汇总每轮值和分位数，
 不能用单次结果承诺普遍收益。自动脚本检查真实进程退出、完整结果、GPU 有效样本和隔离灯合同。
 交互式重跑也可从配置结果查看灯数、阴影数、节流和 present 模式。
+
+`-Stage All` 包含原隔离/干扰组、完整背景组和两种全景巡检。
+`-CompareGeometry` 在同一构建上交替比较显示几何缓存与 `RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY=1` 的直接生成路径，
+保留相同内容、视角与其余优化。报告按场景及每观察点比较，不能将不同镜头的均值差解释为缓存收益。
+`--gpu-normal-scene performance-terminal 0` 和 `performance-menu 0` 可定向检查路侧位置与测试菜单。
 
 ## 实验园区正常场景采样
 

@@ -916,7 +916,7 @@ $(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/incl
 
 $(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc \
     rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/rf_scene_performance.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc \
-    rasterfall/src/render/rasterfall_machine_screen.h | $(BUILD)
+    rasterfall/src/render/rasterfall_machine_screen.h rasterfall/src/render/rf_display_geometry_cache.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -2068,7 +2068,7 @@ export-qwen2-tokenizer:
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
-$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_SRC)/render/rf_gpu_lighting_lab.inc $(RASTERFALL_SRC)/render/rf_gpu_scene_lighting.inc $(RASTERFALL_INC)/rasterfall_canvas.h
+$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_SRC)/render/rf_display_geometry_cache.h $(RASTERFALL_SRC)/render/rf_gpu_lighting_lab.inc $(RASTERFALL_SRC)/render/rf_gpu_scene_lighting.inc $(RASTERFALL_INC)/rasterfall_canvas.h
 $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)

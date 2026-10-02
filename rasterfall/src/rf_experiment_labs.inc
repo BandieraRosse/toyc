@@ -152,3 +152,12 @@ static void rf_lab_computer_camera(const struct rasterfall_session *session,
         camera->sy=729;camera->cy=719;camera->pitch_sy=-190;camera->pitch_cy=1006;
     }
 }
+
+static void rf_performance_terminal_camera(const struct rasterfall_session *session,struct camera *camera)
+{
+    const struct rf_map_runtime_object *a=rf_map_runtime_find_object(&session->map_ops.runtime,"perf_control_terminal");
+    const struct rf_map_runtime_object *b=rf_map_runtime_find_object(&session->map_ops.runtime,"perf_result_terminal");
+    if(!a || !b) return;
+    camera->x=(a->x+b->x)/2;camera->z=a->z-2300;camera->y=150;
+    camera->sy=0;camera->cy=1024;camera->pitch_sy=80;camera->pitch_cy=1021;
+}

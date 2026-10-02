@@ -1,6 +1,56 @@
 /* Contracts that are hard to observe: suspension, session return and statistics. */
 #include "../render/rasterfall_machine_screen.h"
 #include "../render/rasterfall_lab_terminal.h"
+#include "../render/rf_display_geometry_cache.h"
+struct rf_display_test { const struct rf_display_geometry *entry; unsigned index; };
+static int rf_display_test_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct rf_display_test *t=context;
+    if(t->index>=t->entry->count) return -1;
+    const struct rf_display_quad *q=&t->entry->quads[t->index++];
+    if(memcmp(q->p,p,sizeof(q->p)) || q->color!=color) return -1;
+    for(int k=0;k<4;++k) for(int a=0;a<3;++a)
+        if(p[k][a]<t->entry->min[a] || p[k][a]>t->entry->max[a]) return -1;
+    return 0;
+}
+static int rf_display_geometry_test(void)
+{
+    struct rf_display_geometry entry={0},limited={0};
+    struct toy_map_draw d={0};unsigned budget=0,full=RF_DISPLAY_QUAD_BUDGET;
+    int result=-1;
+    d.type=TOY_MAP_DRAW_SIGN;d.a=-128;d.b=128;d.c=d.d=12;d.e=0;d.f=256;
+    d.texture_u=d.texture_v=64;d.style=5;d.color=0x79E8C5;strcpy(d.text,"OFF");
+    for(int variant=0;variant<9;++variant) {
+        if(variant==1) strcpy(d.text,"\0332\033BON");
+        if(variant==2) d.color=0xAABBCC;
+        if(variant==3) d.facing=1;
+        if(variant==4) {d.a+=400;d.b+=400;d.c+=80;d.d+=80;}
+        if(variant==5) {d.b+=256;d.texture_u=128;}
+        if(variant==6) {d.style=4;d.texture_u=4;strcpy(d.text,"RESULT 12.34 ms");}
+        if(variant==7) {d.style=2;d.e=900;d.f=1400;}
+        if(variant==8) strcpy(d.text,"");
+        if(rf_display_geometry_prepare(&entry,&d,&budget)<0) goto done;
+        struct rf_display_test check={&entry,0};
+        if(rf_display_generate(&d,rf_display_test_quad,&check)<0 || check.index!=entry.count) goto done;
+        unsigned saved=budget;
+        if(rf_display_geometry_prepare(&entry,&d,&budget)<0 || saved!=budget) goto done;
+        check.index=0;
+        if(rf_display_geometry_emit(&entry,rf_display_test_quad,&check)<0 || check.index!=entry.count) goto done;
+    }
+    strcpy(d.text,"BUDGET FALLBACK");
+    if(rf_display_geometry_prepare(&limited,&d,&full)>=0 || full!=RF_DISPLAY_QUAD_BUDGET || limited.valid>0) goto done;
+    /* Resource identity/order changes must not preserve a stale screen. */
+    d.style=5;d.texture_u=d.texture_v=64;d.b=d.a+256;d.e=0;d.f=256;
+    strcpy(d.text,"OFF");
+    if(rf_display_geometry_prepare(&entry,&d,&budget)<0) goto done;
+    struct rf_display_test check={&entry,0};
+    if(rf_display_generate(&d,rf_display_test_quad,&check)<0 || check.index!=entry.count) goto done;
+    result=0;
+done:
+    free(entry.quads);free(limited.quads);
+    if(!result) __printf("DISPLAY-CACHE content/placement/invalidation/order/bounds/budget passed\n");
+    return result;
+}
 struct rf_pane_test { int count,points[4][3]; };
 static int rf_pane_test_quad(void *context,const int p[4][3],unsigned color)
 {
@@ -160,6 +210,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
 {
     if (rf_lab_composite_contract_test()<0) return -12;
     if (rf_machine_screen_contract_test()<0) return -13;
+    if (rf_display_geometry_test()<0) return -23;
     if (rf_pane_contract_test()<0) return -14;
     if (rf_electronics_contract_test()<0) return -15;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;
@@ -181,7 +232,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     rf_labs_tick(RASTERFALL_WORLD_OUTPOST,1,1,3000);
     if (rf_labs.time_us[RF_LAB_LIGHTING]!=clock) return -3;
     rf_perf_lab.isolated=1;
-    for (int scene=0;scene<RF_PERF_LAB_SCENES;++scene) {
+    for (int scene=0;scene<4;++scene) {
         rf_perf_lab.selected=scene;
         if (rf_perf_lab_start(runtime)<0) return -4;
         int expected=scene==1 || scene==3 ? 64 : 0;
@@ -205,7 +256,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     }
     /* Authored safe regions protect observation, never suppress bay spawning. */
     rf_perf_lab.isolated=0;
-    for (int scene=0;scene<RF_PERF_LAB_SCENES;++scene) {
+    for (int scene=0;scene<4;++scene) {
         rf_perf_lab.selected=scene;
         if (rf_perf_lab_start(runtime)<0) return -16;
         int expected=scene==1 || scene==3 ? 64 : 0;
@@ -215,6 +266,29 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             runtime->session->game_state.enemies_alive ||
             runtime->camera.x!=origin.x || runtime->camera.z!=origin.z ||
             !rf_labs.requested[RF_LAB_LIGHTING]) return -18;
+    }
+    /* Full-scene tours preserve the map and restore exhibit requests even on abort.
+     * Point warmups cannot leak into measurements; every point needs samples. */
+    for(int scene=4;scene<RF_PERF_LAB_SCENES;++scene) {
+        rf_labs_reset();rf_labs.requested[RF_LAB_LIGHTING]=1;
+        rf_perf_lab.isolated=1;rf_perf_lab.interference=0;rf_perf_lab.selected=scene;
+        if(rf_perf_lab_start(runtime)<0 || rf_perf_lab.isolated || !rf_perf_lab.interference ||
+            runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST) return -19;
+        unsigned expected_mask=scene==5?(1u<<RF_LAB_COUNT)-1:1u<<RF_LAB_LIGHTING;
+        if(rf_perf_lab_mask()!=expected_mask) return -20;
+        for(int point=0;point<RF_PERF_LAB_POINTS;++point) {
+            int64_t now=rf_perf_lab.started_us+point*RF_PERF_LAB_POINT_US+1;
+            rf_perf_lab_camera(runtime,now);
+            rf_perf_lab_sample(now,90000,0,0,0,0,0,2,10,0,100,1,point,3,30,0,1280,720);
+            if(rf_perf_lab.samples!=point) return -21;
+            now+=RF_PERF_LAB_WARMUP_US;
+            rf_perf_lab_sample(now,10000+point*1000,0,0,0,0,0,2,10,0,100,1,point,3,30,0,1280,720);
+            rf_perf_lab_sample_detail(300,200,100,50,20,10,400);
+        }
+        if(rf_perf_lab_finish(runtime,scene==5)<0 || rf_perf_lab.result.valid!=(scene==5?2:1) ||
+            rf_perf_lab.result.point[4].p95_us!=14000 || rf_perf_lab.result.layer_us!=300 ||
+            rf_perf_lab_mask()!=(1u<<RF_LAB_LIGHTING) || !rf_perf_lab.isolated ||
+            runtime->camera.x!=origin.x || runtime->camera.z!=origin.z) return -22;
     }
     rf_perf_lab.isolated=1;
     /* Any workload growth, including a previously empty scene, invalidates it. */
