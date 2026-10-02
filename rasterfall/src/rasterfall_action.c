@@ -9,7 +9,7 @@
 
 static const char *const action_names[] = {
     "NONE", "LOCOMOTION_IDLE", "LOCOMOTION_WALK", "RIFLE_IDLE",
-    "RIFLE_AIM", "RIFLE_FIRE", "RIFLE_RECOIL"
+    "RIFLE_AIM", "RIFLE_FIRE", "RIFLE_RECOIL", "EVADE_LEFT", "EVADE_RIGHT"
 };
 static const char *const layer_names[] = {"LOWER_BODY", "UPPER_BODY", "ADDITIVE"};
 static const char *const role_names[] = {
@@ -212,7 +212,9 @@ static int action_matches_layer(enum rasterfall_action_id id,
                id == RASTERFALL_ACTION_RIFLE_AIM ||
                id == RASTERFALL_ACTION_RIFLE_FIRE;
     if (layer == RASTERFALL_ACTION_LAYER_ADDITIVE)
-        return id == RASTERFALL_ACTION_RIFLE_RECOIL;
+        return id == RASTERFALL_ACTION_RIFLE_RECOIL ||
+               id == RASTERFALL_ACTION_EVADE_LEFT ||
+               id == RASTERFALL_ACTION_EVADE_RIGHT;
     return 0;
 }
 
@@ -252,7 +254,7 @@ static struct rasterfall_animation_quaternion quat_multiply(
 
 static int apply_layer(struct rasterfall_model_asset *pose,
     const struct rasterfall_action_layer *layer,
-    enum rasterfall_action_layer_id layer_id)
+    enum rasterfall_action_layer_id layer_id, int weight_milli)
 {
     unsigned int i;
     const struct rasterfall_action_clip *clip = layer->clip;
@@ -266,12 +268,16 @@ static int apply_layer(struct rasterfall_model_asset *pose,
         bone = rasterfall_model_humanoid_bone(pose, clip->tracks[i].target);
         if (bone < 0 || bone >= (int)pose->bone_count) return -1;
         if (layer_id == RASTERFALL_ACTION_LAYER_ADDITIVE) {
+            struct rasterfall_animation_quaternion identity = {0, 0, 0, 1};
+            struct rasterfall_animation_quaternion delta =
+                sample_track(clip, &clip->tracks[i], layer->time_ms);
             struct rasterfall_animation_quaternion base =
                 rasterfall_animation_quat_from_euler(
                     pose->bones[bone].rotate_x, pose->bones[bone].rotate_y,
                     pose->bones[bone].rotate_z);
-            rasterfall_animation_quat_to_euler(quat_multiply(base,
-                sample_track(clip, &clip->tracks[i], layer->time_ms)), &rotation);
+            if (weight_milli < 1000)
+                delta = rasterfall_animation_quat_nlerp(identity, delta, weight_milli);
+            rasterfall_animation_quat_to_euler(quat_multiply(base, delta), &rotation);
         } else rasterfall_animation_quat_to_euler(sample_track(clip,
             &clip->tracks[i], layer->time_ms), &rotation);
         pose->bones[bone].rotate_x = rotation.x;
@@ -287,12 +293,18 @@ int rasterfall_action_compose(struct rasterfall_model_instance *instance,
     struct rasterfall_model_asset *pose;
     int layer;
     if (!instance || !composition ||
+        composition->secondary_additive_weight_milli < 0 ||
+        composition->secondary_additive_weight_milli > 1000 ||
         rasterfall_model_instance_reset_pose(instance) < 0) return -1;
     pose = rasterfall_model_instance_pose(instance);
     if (!pose || !pose->has_character_contract) return -1;
     for (layer = RASTERFALL_ACTION_LAYER_LOWER_BODY;
          layer <= RASTERFALL_ACTION_LAYER_ADDITIVE; layer++)
-        if (apply_layer(pose, &composition->layers[layer], layer) < 0) return -1;
+        if (apply_layer(pose, &composition->layers[layer], layer, 1000) < 0) return -1;
+    if (composition->secondary_additive_weight_milli &&
+        apply_layer(pose, &composition->secondary_additive,
+                    RASTERFALL_ACTION_LAYER_ADDITIVE,
+                    composition->secondary_additive_weight_milli) < 0) return -1;
     return rasterfall_model_instance_update_bones(instance);
 }
 
@@ -737,7 +749,7 @@ int rasterfall_action_pipeline_compare_debug(
 
 int rasterfall_action_logic_test(void)
 {
-    struct rasterfall_action_clip clip, lower, aim, fire, recoil;
+    struct rasterfall_action_clip clip, lower, aim, fire, recoil, evade;
     struct rasterfall_animation_rotation a, b;
     unsigned int i, upper_roles = 0;
     if (rasterfall_action_load(&clip, "rasterfall/assets/actions/rifle_idle.rfanim") < 0) return 1;
@@ -779,5 +791,20 @@ int rasterfall_action_logic_test(void)
     if (lower.duration_ms != 800 || a.x != 24 || b.x != -24 ||
         sample_track(&lower,&lower.tracks[1],800).x !=
         sample_track(&lower,&lower.tracks[1],0).x) return 7;
+    for (int side = 0; side < 2; side++) {
+        if (rasterfall_action_load(&evade, side ?
+                "rasterfall/assets/actions/evade_right.rfanim" :
+                "rasterfall/assets/actions/evade_left.rfanim") < 0 ||
+            evade.duration_ms != 500 || evade.loop ||
+            !action_matches_layer(evade.id, RASTERFALL_ACTION_LAYER_ADDITIVE)) return 8;
+        for (i = 0; i < evade.track_count; i++) {
+            if (!role_in_layer(evade.tracks[i].target, RASTERFALL_ACTION_LAYER_ADDITIVE)) return 9;
+            rasterfall_animation_quat_to_euler(sample_track(&evade, &evade.tracks[i], 0), &a);
+            rasterfall_animation_quat_to_euler(sample_track(&evade, &evade.tracks[i], 500), &b);
+            if (a.x || a.y || a.z || b.x || b.y || b.z) return 10;
+        }
+        rasterfall_animation_quat_to_euler(sample_track(&evade, &evade.tracks[0], 140), &a);
+        if ((side && a.z >= 0) || (!side && a.z <= 0)) return 11;
+    }
     return 0;
 }

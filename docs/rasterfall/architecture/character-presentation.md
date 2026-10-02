@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall character/enemy presentation adapters
-> 最近核对：2026-09-23
+> 最近核对：2026-10-03
 
 本文描述玩法 actor 到可见角色的渲染侧适配。模型格式、bind pose、动画求值和 attachment 格式分别由
 [动画架构](animation-architecture.md)和
@@ -28,6 +28,17 @@ actor 先完成 pose、IK、bounds 和 body Draw 冻结，再按相同 actor 顺
 动作适配固定为 lower/upper/additive layers：IDLE/MOVE 保持 lower idle/walk，FIRE 只替换 upper 为
 rifle fire，aim 只有在 gameplay 提供明确 semantic 后才能接入。RFANIM authored 时间独立于 gameplay
 回卷值，instance 累积 presentation time 以保持完整周期和短时 upper action 下的 lower phase。
+
+成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 左手 IK → 附件。
+CPU modular pose cache 将该次方向、采样时间和权重纳入键，并按 combat generation 区分槽位复用。
+Scene local source 用相同的只读采样器冻结这些值到逐 actor sidecar；pose extraction 只消费冻结值，
+不读取玩法计时或推进历史。受控、腾空、死亡、倒地、复活中断当前事件后，即使状态提前解除也不恢复
+残留侧倾。HUD 与回避粒子仍沿各自表现链消费权威结果，骨骼避让不产生额外成功命中或伤害。
+
+`--combat-character-capture` 复用实际 modular adapter，除外观与行走射击矩阵外，输出同视角
+12 帧、间隔 60ms 的 `evade-00.bmp` 至 `evade-11.bmp`。三个独立角色覆盖左右避让、行走、连续射击、
+延迟触发和控制中断；每帧对比 CPU cache 与 Scene extraction 的最终 palette，资源必须保持只读。
+动作逻辑另验证 lower 不变、反冲保留、末帧归零、错误 mask 拒绝、冻结重放和最终 IK。
 
 weapon 从 finalized `WEAPON_R` 对齐 authored `PRIMARY_GRIP`；左手在绘制前用同一武器的 `FOREGRIP`
 执行 attachment IK。passive gear 只读取 finalized HEAD/CHEST/BACK/HIP 等 socket。所有修改只作用于

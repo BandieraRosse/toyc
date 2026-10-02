@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall 模型与动画求值
-> 最近核对：2026-09-21
+> 最近核对：2026-10-03
 
 本文说明运行时模块边界、扩展入口和当前仍需控制的技术债。格式细节仍以各公共头文件和
 转换工具为准。
@@ -17,7 +17,7 @@ Humanoid Action Composition V1 的正式边界为：
 ```text
 toy_game_actor animation semantic + deterministic time
                     ↓
-rasterfall_action_layer（LOWER_BODY / UPPER_BODY / ADDITIVE delta）
+rasterfall_action_layer（LOWER_BODY / UPPER_BODY / recoil delta / evade delta）
                     ↓ rasterfall_action_compose
 rasterfall_model_instance finalized pose
                     ↓
@@ -28,16 +28,28 @@ human/weapon socket query → attachment / weapon / rendering
 保留逐 actor lower locomotion，使 gameplay semantic 临时切到 FIRE 时仍能组合 WALK；action evaluator
 是 semantic role 到目标骨架 stable ID 的唯一 runtime 适配点。`model_instance` 仍拥有求值后的可变姿态。
 V1.1 提供 lower IDLE/WALK、upper RIFLE_IDLE/AIM/FIRE，以及 ADDITIVE 的 RIFLE_RECOIL。
-recoil 是局部旋转 delta，不是完整 pose；当前只允许 spine/chest、双肩和双臂，禁止 root、hips、legs。
+战斗避让追加一个有界 secondary additive 槽，加载公开的 EVADE_LEFT / EVADE_RIGHT RFANIM。
+两个 additive 都是局部旋转 delta，只允许 spine/chest、双肩和双臂，禁止 root、hips、legs。
 
 求值顺序固定为 reset bind/base pose → apply LOWER_BODY role mask → apply UPPER_BODY role mask →
-apply ADDITIVE delta → final bone update → socket/attachment/weapon/render。lower mask 是 root、hips 和双腿；
+apply recoil delta → apply secondary evade delta → final bone update → 左手 attachment IK →
+socket/attachment/weapon/render。lower mask 是 root、hips 和双腿；
 upper mask 是 spine 至双手，additive mask 是 spine/chest、双肩和双臂。RFANIM track 越界到错误层会失败，
 不允许 upper action 偶然覆盖腿或 recoil 修改 lower ownership。weapon target debug 以
 finalized character `WEAPON_R` 对齐 canonical weapon `PRIMARY_GRIP`，再变换 `FOREGRIP` 得到左腕目标；
 正式 RFANIM 的 RIFLE_IDLE/AIM/FIRE 先提供双臂与双手基准姿态，modular presentation 再对左上臂/前臂
 执行两骨骼 attachment IK，使左手跟随同一把枪的前握点。开发者 world strip 复用同一 composition 与
 左臂解算。
+
+`rasterfall_action_composition.secondary_additive_weight_milli` 明确限制为 0..1000；0 不应用额外层，
+旧三层调用保持原行为，1000 直接应用采样 delta，中间值从 identity 到 delta 插值。只保留一个额外槽，
+不引入动态 layer 列表。左右避让资源均为 500ms 非循环动作，首尾零旋转；缩肩和侧倾不产生 root motion，
+也不改变 actor 的权威位置、朝向、碰撞或命中体。
+
+`rasterfall_actor_evasion_sample` 属于 presentation adapter。它只读权威回避 sequence、generation、剩余
+动画时间、来源与强度，在逐实例历史中锁定该次方向和权重；后续命中和转向不重启或翻转这次动作。
+控制、腾空、死亡、倒地或复活会禁止当前事件的姿态；解除状态后同一 sequence 不重新播放。
+新事件或 actor generation 更新才解除该表现抑制。计时仍来自固定步玩法，重复提取不推进时间。
 
 ```text
 VMD / glTF / 程序生成动画
@@ -166,8 +178,9 @@ RF Humanoid modular actor 同样遵守该规则：其 RFANIM WALK 使用逐 acto
   应把解析与采样移入 `rasterfall/src/`，CLI 只保留输出和测试。
 - 当前 runtime clip 以骨骼局部旋转为主；加入通用骨骼平移、缩放或动画混合时，应增加
   独立 pose buffer 和 channel mask，不要继续增加 VMD 专用旁路状态。
-- RFANIM V1 固定容量、纯旋转、step/linear 插值；Composition V1.1 仍只有固定 role mask，新增
-  additive 仅进行局部四元数 delta 叠加，没有权重混合、animator graph、IK target 求解或 root motion。
+- RFANIM V1 固定容量、纯旋转、step/linear 插值；Composition 仍只有固定 role mask，两个有界
+  additive 仅进行局部四元数 delta 叠加；secondary 支持 identity 权重，没有通用 pose 混合、
+  animator graph、IK target channel 或 root motion。
   `weapon_target` 等非骨骼 semantic channel 应在扩展格式时增加显式 channel kind，不能伪装成骨名。
 
 回归命令和矩阵见[资产导入与诊断指南](../guides/asset-pipeline.md)。`rasterfall` 的 `--vmd-*` 参数属于旧 PMX/VMD 兼容诊断，不是新 RFCHAR 角色的默认开发者预览路径；正常启动不显示 Eula/VMD 私有预览，正式 Eula gameplay actor 存在时仍按 profile 懒加载 walk clip。

@@ -18,6 +18,8 @@ enum rasterfall_action_id {
     RASTERFALL_ACTION_RIFLE_AIM,
     RASTERFALL_ACTION_RIFLE_FIRE,
     RASTERFALL_ACTION_RIFLE_RECOIL,
+    RASTERFALL_ACTION_EVADE_LEFT,
+    RASTERFALL_ACTION_EVADE_RIGHT,
     RASTERFALL_ACTION_COUNT
 };
 
@@ -58,6 +60,10 @@ struct rasterfall_action_layer {
 
 struct rasterfall_action_composition {
     struct rasterfall_action_layer layers[RASTERFALL_ACTION_LAYER_COUNT];
+    /* One bounded secondary local delta, applied after the ordinary recoil.
+     * Zero weight preserves the original three-layer composition exactly. */
+    struct rasterfall_action_layer secondary_additive;
+    int secondary_additive_weight_milli;
 };
 
 struct rasterfall_action_weapon_targets {

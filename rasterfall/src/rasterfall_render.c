@@ -82,6 +82,7 @@ struct rasterfall_actor_action_layers {
     int actor_id, valid;
     enum rasterfall_action_id lower;
     int lower_time_ms, last_gameplay_time_ms, last_gameplay_animation;
+    struct rasterfall_actor_evasion_history evasion;
 };
 static struct rasterfall_actor_action_layers
     actor_action_layers[TOY_GAME_MAX_ACTORS];
@@ -138,7 +139,9 @@ static void humanoid_actions_load(void)
         "rasterfall/assets/actions/rifle_idle.rfanim",
         "rasterfall/assets/actions/rifle_aim.rfanim",
         "rasterfall/assets/actions/rifle_fire.rfanim",
-        "rasterfall/assets/actions/rifle_recoil.rfanim"
+        "rasterfall/assets/actions/rifle_recoil.rfanim",
+        "rasterfall/assets/actions/evade_left.rfanim",
+        "rasterfall/assets/actions/evade_right.rfanim"
     };
     int i;
     if (humanoid_actions_load_attempted) return;
@@ -7699,6 +7702,8 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
 
 struct rasterfall_modular_pose_cache {
     int valid, actor_id, character_id;
+    unsigned int combat_generation;
+    struct rasterfall_actor_evasion_pose evasion;
     enum rasterfall_action_id lower, upper, additive;
     int lower_time_ms, upper_time_ms, additive_time_ms;
     int weapon;
@@ -8114,6 +8119,7 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     struct rasterfall_rigid_transform actor_to_world;
     struct rasterfall_action_composition composition;
     enum rasterfall_action_id lower, upper, additive = RASTERFALL_ACTION_NONE;
+    struct rasterfall_actor_evasion_pose evasion = {0};
     int lower_time_ms, upper_time_ms, additive_time_ms;
     int debug_actor, weapon, have_weapon_source, pixels, scale = 835;
     int action_trace_changed, pose_cache_hit;
@@ -8205,8 +8211,21 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
             additive_time_ms;
         additive = RASTERFALL_ACTION_RIFLE_RECOIL;
     }
+    if (!debug_actor) {
+        rasterfall_actor_evasion_sample(actor, &actor_action_layers[actor_index].evasion,
+                                         &evasion);
+        if (evasion.weight_milli) {
+            composition.secondary_additive.clip = humanoid_action(evasion.side < 0 ?
+                RASTERFALL_ACTION_EVADE_LEFT : RASTERFALL_ACTION_EVADE_RIGHT);
+            composition.secondary_additive.time_ms = evasion.time_ms;
+            composition.secondary_additive_weight_milli = evasion.weight_milli;
+            if (!composition.secondary_additive.clip) return -1;
+        }
+    }
     pose_cache_hit = runtime->pose_cache[actor_index].valid &&
         runtime->pose_cache[actor_index].actor_id == actor->actor_id &&
+        runtime->pose_cache[actor_index].combat_generation == actor->combat_generation &&
+        !memcmp(&runtime->pose_cache[actor_index].evasion, &evasion, sizeof(evasion)) &&
         runtime->pose_cache[actor_index].character_id == actor->character_id &&
         runtime->pose_cache[actor_index].lower == lower &&
         runtime->pose_cache[actor_index].upper == upper &&
@@ -8226,6 +8245,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
             return -1;
         runtime->pose_cache[actor_index].valid = 1;
         runtime->pose_cache[actor_index].actor_id = actor->actor_id;
+        runtime->pose_cache[actor_index].combat_generation = actor->combat_generation;
+        runtime->pose_cache[actor_index].evasion = evasion;
         runtime->pose_cache[actor_index].character_id = actor->character_id;
         runtime->pose_cache[actor_index].lower = lower;
         runtime->pose_cache[actor_index].upper = upper;

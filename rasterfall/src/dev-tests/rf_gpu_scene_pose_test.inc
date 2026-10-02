@@ -18,6 +18,163 @@ static int scene_infected_test_triangle(void *context,
     g->hash=(g->hash^color)*1099511628211ULL;g->count++;return 0;
 }
 
+static int scene_evasion_pose_test(void)
+{
+    static struct rasterfall_model_instance instances[3];
+    static struct rf_gpu_scene_local_frame frame, saved_frame;
+    static struct rf_gpu_scene_pose_v1 baseline, evaded, replay;
+    static struct toy_game sample_game, saved_game;
+    struct rasterfall_action_composition composition = {0};
+    struct rasterfall_action_clip invalid;
+    struct rf_gpu_scene_local_source source = {0};
+    struct camera camera = {0};
+    struct toy_game_actor actor = {0}, *sample;
+    struct rasterfall_actor_evasion_history history = {0}, peer_history = {0};
+    struct rasterfall_actor_evasion_pose pose, peer_pose;
+    int failure = 0, bone, result;
+#define EVADE_CHECK(x) do { if (!(x)) { failure = __LINE__; goto done; } } while (0)
+    actor.active = 1; actor.state = TOY_GAME_ACTOR_ALIVE;
+    actor.actor_id = 4; actor.combat_generation = 1; actor.cy = 1024;
+    actor.evasion.sequence = 1; actor.evasion.animation_ms = 400;
+    actor.evasion.source_x = 1000; actor.evasion.strength_milli = 30000;
+    rasterfall_actor_evasion_sample(&actor, &history, &pose);
+    EVADE_CHECK(pose.side == -1 && pose.time_ms == 100 && pose.weight_milli == 850);
+    actor.evasion.animation_ms = 350; actor.evasion.source_x = -1000;
+    actor.evasion.strength_milli = 60000;
+    rasterfall_actor_evasion_sample(&actor, &history, &pose);
+    EVADE_CHECK(pose.side == -1 && pose.time_ms == 150 && pose.weight_milli == 850);
+    rasterfall_actor_evasion_sample(&actor, &peer_history, &peer_pose);
+    EVADE_CHECK(peer_pose.side == 1 && peer_pose.weight_milli == 1000);
+    for (int state = 0; state < 6; state++) {
+        actor.evasion.sequence++;
+        actor.control_disabled = state == 0;
+        actor.special_control = state == 1 ? TOY_GAME_SPECIAL_CONTROL_SMOKER : 0;
+        actor.airborne_ms = state == 2 ? 160 : 0;
+        actor.state = state == 3 ? TOY_GAME_ACTOR_DEAD :
+            state == 5 ? TOY_GAME_ACTOR_DOWNED : TOY_GAME_ACTOR_ALIVE;
+        actor.animation.id = state == 4 ? TOY_GAME_ANIM_REVIVE : TOY_GAME_ANIM_IDLE;
+        rasterfall_actor_evasion_sample(&actor, &history, &pose);
+        EVADE_CHECK(!pose.weight_milli);
+        actor.control_disabled = actor.special_control = actor.airborne_ms = 0;
+        actor.state = TOY_GAME_ACTOR_ALIVE; actor.animation.id = TOY_GAME_ANIM_IDLE;
+        rasterfall_actor_evasion_sample(&actor, &history, &pose);
+        EVADE_CHECK(!pose.weight_milli); /* An interrupted event never reappears. */
+    }
+    actor.combat_generation++;
+    rasterfall_actor_evasion_sample(&actor, &history, &pose);
+    EVADE_CHECK(pose.weight_milli && pose.side == 1);
+    actor.evasion.animation_ms = 0;
+    rasterfall_actor_evasion_sample(&actor, &history, &pose);
+    EVADE_CHECK(!pose.weight_milli);
+    EVADE_CHECK(!modular_actor_resources_init());
+    memset(instances, 0, sizeof(instances));
+    for (int i = 0; i < 3; i++)
+        EVADE_CHECK(!rasterfall_model_instance_init(&instances[i], &modular_actor_runtime.body));
+    composition.layers[0].clip = humanoid_action(RASTERFALL_ACTION_LOCOMOTION_WALK);
+    composition.layers[0].time_ms = 180;
+    composition.layers[1].clip = humanoid_action(RASTERFALL_ACTION_RIFLE_AIM);
+    composition.layers[1].time_ms = 35;
+    composition.layers[2].clip = humanoid_action(RASTERFALL_ACTION_RIFLE_RECOIL);
+    composition.layers[2].time_ms = 35;
+    EVADE_CHECK(composition.layers[0].clip && composition.layers[1].clip && composition.layers[2].clip);
+    EVADE_CHECK(!rasterfall_action_compose(&instances[0], &composition));
+    composition.secondary_additive.clip = humanoid_action(RASTERFALL_ACTION_EVADE_LEFT);
+    composition.secondary_additive.time_ms = 140;
+    composition.secondary_additive_weight_milli = 1000;
+    EVADE_CHECK(composition.secondary_additive.clip && !rasterfall_action_compose(&instances[1], &composition));
+    composition.secondary_additive.clip = humanoid_action(RASTERFALL_ACTION_EVADE_RIGHT);
+    EVADE_CHECK(composition.secondary_additive.clip && !rasterfall_action_compose(&instances[2], &composition));
+    for (int role = 0; role < RASTERFALL_HUMANOID_BONE_COUNT; role++) {
+        bone = rasterfall_model_humanoid_bone(&instances[0].pose, role);
+        EVADE_CHECK(bone >= 0);
+        if (role == RASTERFALL_HUMANOID_ROOT || role == RASTERFALL_HUMANOID_HIPS ||
+            role >= RASTERFALL_HUMANOID_LEFT_UPPER_LEG)
+            for (int i = 1; i < 3; i++)
+                EVADE_CHECK(!memcmp(&instances[0].pose.bone_transforms[bone],
+                    &instances[i].pose.bone_transforms[bone], sizeof(instances[0].pose.bone_transforms[bone])));
+    }
+    bone = rasterfall_model_humanoid_bone(&instances[0].pose, RASTERFALL_HUMANOID_CHEST);
+    EVADE_CHECK(instances[1].pose.bones[bone].rotate_z > 0 && instances[2].pose.bones[bone].rotate_z < 0);
+    composition.secondary_additive_weight_milli = 500;
+    EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition));
+    EVADE_CHECK(instances[1].pose.bones[bone].rotate_z < 0 &&
+        instances[1].pose.bones[bone].rotate_z > instances[2].pose.bones[bone].rotate_z);
+    composition.secondary_additive_weight_milli = 1001;
+    EVADE_CHECK(rasterfall_action_compose(&instances[1], &composition) < 0);
+    composition.secondary_additive_weight_milli = 1000;
+    result = instances[2].pose.bones[bone].rotate_x;
+    composition.layers[2].clip = NULL;
+    EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition));
+    EVADE_CHECK(instances[1].pose.bones[bone].rotate_x != result &&
+        instances[2].pose.bones[bone].rotate_x == result); /* Recoil and peer survive. */
+    composition.layers[2].clip = humanoid_action(RASTERFALL_ACTION_RIFLE_RECOIL);
+    composition.secondary_additive.time_ms = 500;
+    EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition));
+    EVADE_CHECK(!memcmp(instances[0].pose.bone_transforms, instances[1].pose.bone_transforms,
+        instances[0].pose.bone_count * sizeof(*instances[0].pose.bone_transforms)));
+    composition.secondary_additive.time_ms = 140;
+    composition.secondary_additive_weight_milli = 0;
+    EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition));
+    EVADE_CHECK(!memcmp(instances[0].pose.bone_transforms, instances[1].pose.bone_transforms,
+        instances[0].pose.bone_count * sizeof(*instances[0].pose.bone_transforms)));
+    invalid = *composition.secondary_additive.clip;
+    invalid.tracks[0].target = RASTERFALL_HUMANOID_HIPS;
+    composition.secondary_additive.clip = &invalid;
+    composition.secondary_additive_weight_milli = 1000;
+    EVADE_CHECK(rasterfall_action_compose(&instances[1], &composition) < 0);
+
+    /* The real Scene source freezes independent event samples; extraction
+     * consumes only that immutable frame and includes final attachment IK. */
+    toy_game_init(&sample_game, 938);
+    camera.cy = camera.pitch_cy = 1024;
+    EVADE_CHECK(!rf_gpu_scene_local_world(&source));
+    for (int i = 0; i < 2; i++) {
+        int id = toy_game_add_gunner(&sample_game, 1, i * 1000, 0, "POSE EVADE");
+        sample = toy_game_actor_by_id(&sample_game, id);
+        EVADE_CHECK(sample);
+        sample->animation.id = TOY_GAME_ANIM_MOVE; sample->animation.time_ms = 180;
+        EVADE_CHECK(!rf_gpu_scene_local_created(&source, sample));
+    }
+    EVADE_CHECK(!rf_gpu_scene_local_freeze(&source, &sample_game, &camera, 1280, 720, 1, &frame));
+    for (int i = 0; i < 2; i++) {
+        sample = toy_game_actor_by_id(&sample_game, source.actors[i].actor_id);
+        sample->animation.id = TOY_GAME_ANIM_FIRE; sample->animation.time_ms = 35;
+        sample->evasion.sequence = 1; sample->evasion.animation_ms = 360 - i * 60;
+        sample->evasion.source_x = sample->x + (i ? -1000 : 1000);
+        sample->evasion.strength_milli = 50000;
+    }
+    saved_game = sample_game;
+    EVADE_CHECK(!rf_gpu_scene_local_freeze(&source, &sample_game, &camera, 1280, 720, 1, &frame));
+    EVADE_CHECK(frame.presentation.evasion.side == -1 && frame.presentations[1].evasion.side == 1 &&
+        frame.presentation.evasion.time_ms == 140 && frame.presentations[1].evasion.time_ms == 200);
+    saved_frame = frame;
+    EVADE_CHECK(!rf_gpu_scene_pose_extract_at(&frame, 0, &evaded));
+    EVADE_CHECK(!rf_gpu_scene_pose_extract_at(&frame, 1, &replay));
+    EVADE_CHECK(memcmp(evaded.palette, replay.palette, sizeof(evaded.palette)));
+    EVADE_CHECK(!rf_gpu_scene_pose_extract_at(&frame, 0, &replay));
+    EVADE_CHECK(!memcmp(&evaded, &replay, sizeof(evaded)) &&
+        !memcmp(&frame, &saved_frame, sizeof(frame)) && !memcmp(&sample_game, &saved_game, sizeof(sample_game)));
+    frame.presentation.evasion.weight_milli = 0;
+    EVADE_CHECK(!rf_gpu_scene_pose_extract(&frame, &baseline));
+    EVADE_CHECK(memcmp(baseline.palette, evaded.palette, sizeof(evaded.palette)) &&
+        memcmp(&baseline.weapon_to_world, &evaded.weapon_to_world, sizeof(evaded.weapon_to_world)) &&
+        !memcmp(&baseline.body_to_world, &evaded.body_to_world, sizeof(evaded.body_to_world)));
+    composition.secondary_additive.clip = humanoid_action(RASTERFALL_ACTION_EVADE_LEFT);
+    composition.secondary_additive.time_ms = 140;
+    composition.secondary_additive_weight_milli = 1000;
+    EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition) &&
+        !modular_solve_left_hand(&instances[1], TOY_GAME_WEAPON_AK, 835));
+    EVADE_CHECK(!rasterfall_model_build_skin_palette(&instances[1].pose,
+        replay.palette, evaded.bone_count));
+    EVADE_CHECK(!memcmp(evaded.palette, replay.palette, sizeof(evaded.palette)));
+done:
+    for (int i = 0; i < 3; i++) rasterfall_model_instance_unload(&instances[i]);
+    if (failure) __printf("scene evasion FAIL line=%d\n", failure);
+    else __printf("scene evasion PASS lower/recoil/expiry/mask/independent-events/transitions/frozen-replay/final-IK\n");
+#undef EVADE_CHECK
+    return failure != 0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -30,6 +187,7 @@ int rf_gpu_scene_pose_logic_test(void)
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_independent_enemy_source_test());
+    POSE_CHECK(!scene_evasion_pose_test());
     /* Exercise the real network presentation adapter without sockets or a GPU.
      * Bodies behind the camera still freeze their values before raster clipping. */
     {

@@ -1707,6 +1707,10 @@ int rasterfall_render_combat_character_capture(const char *output_dir)
     struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
     static struct rasterfall_render_context context;
     struct toy_game_actor actors[3];
+    static struct toy_game evade_game;
+    static struct rf_gpu_scene_local_frame evade_frame;
+    static struct rf_gpu_scene_pose_v1 evade_scene, evade_cpu;
+    struct rf_gpu_scene_local_source evade_source = {0};
     const struct toy_game_weapon_info *weapon = toy_game_weapon_info(TOY_GAME_WEAPON_AK);
     unsigned char *body_copy;
     char path[512], label[192];
@@ -1732,10 +1736,11 @@ int rasterfall_render_combat_character_capture(const char *output_dir)
     }
     gallery_load();
     rasterfall_render_set_model_lighting(1);
-    for (frame = 0; frame < 23; frame++) {
+    for (frame = 0; frame < 35; frame++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
+        int evade = frame >= 23, elapsed = (frame - 23) * 60;
         int motion = frame >= 15, view = motion ? 3 : frame / 3;
         int range = motion ? 0 : frame % 3, failed = 0;
         visual_acceptance_camera(&camera, view == 4 ? 3 : view, distances[range]);
@@ -1743,7 +1748,14 @@ int rasterfall_render_combat_character_capture(const char *output_dir)
             camera.view.y = distances[range] * 3 / 4 - 450;
             camera.view.pitch_sy = -614; camera.view.pitch_cy = 819;
         }
-        if (frame == 15) memset(actor_action_layers, 0, sizeof(actor_action_layers));
+        if (frame == 15 || frame == 23)
+            memset(actor_action_layers, 0, sizeof(actor_action_layers));
+        if (frame == 23) {
+            memset(&evade_game, 0, sizeof(evade_game));
+            if (rf_gpu_scene_local_world(&evade_source) < 0) goto done;
+            for (i = 0; i < 3; i++)
+                if (rf_gpu_scene_local_created(&evade_source, &actors[i]) < 0) goto done;
+        }
         memset(&surface, 0, sizeof(surface));
         surface.width = 1600; surface.height = 900; surface.stride = 6400;
         surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
@@ -1757,15 +1769,48 @@ int rasterfall_render_combat_character_capture(const char *output_dir)
             actors[i].animation.id = motion ? TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_IDLE;
             actors[i].moving = motion;
             actors[i].animation.time_ms = motion ? ((frame - 15) * 100 + i * 100) % 400 : 0;
-            if (motion && i == 2 && (frame == 18 || frame == 22)) {
+            if (evade) {
+                int phase = elapsed - (i == 2 ? 120 : 0);
+                actors[i].animation.time_ms = elapsed % 400;
+                actors[i].evasion.sequence = phase >= 0 ? 1 : 0;
+                actors[i].evasion.animation_ms = phase >= 0 && phase < 500 ? 500 - phase : 0;
+                actors[i].evasion.source_x = actors[i].x + (i == 1 ? -1000 : 1000);
+                actors[i].evasion.source_z = actors[i].z;
+                actors[i].evasion.strength_milli = 45000;
+                actors[i].control_disabled = i == 2 && elapsed >= 300 && elapsed < 420;
+                actors[i].special_control = actors[i].control_disabled ? TOY_GAME_SPECIAL_CONTROL_SMOKER : 0;
+                if (i == 1) {
+                    actors[i].animation.id = TOY_GAME_ANIM_FIRE;
+                    actors[i].animation.time_ms = elapsed % 180;
+                }
+                evade_game.actors[i] = actors[i];
+            } else if (motion && i == 2 && (frame == 18 || frame == 22)) {
                 actors[i].animation.id = TOY_GAME_ANIM_FIRE;
                 actors[i].animation.time_ms = 40;
             }
             if (render_modular_ai_teammate(&renderer, &camera, &actors[i], i, NULL) < 0)
                 failed = 1;
         }
+        if (evade && !failed) {
+            if (rf_gpu_scene_local_freeze(&evade_source, &evade_game, &camera,
+                                          1600, 900, 1, &evade_frame) < 0) failed = 1;
+            for (i = 0; i < 3 && !failed; i++) {
+                memset(&evade_cpu, 0, sizeof(evade_cpu));
+                if (rf_gpu_scene_pose_extract_at(&evade_frame, i, &evade_scene) < 0 ||
+                    rasterfall_model_build_skin_palette(&runtime->instances[i].pose,
+                        evade_cpu.palette, runtime->body.definition.bone_count) < 0 ||
+                    memcmp(evade_cpu.palette, evade_scene.palette, sizeof(evade_cpu.palette))) {
+                    __fprintf(2, "combat-character: CPU/Scene evade mismatch frame=%d actor=%d\n", frame, i);
+                    failed = 1;
+                }
+            }
+        }
         if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0)) failed = 1;
-        if (motion) {
+        if (evade) {
+            snprintf(label, sizeof(label), "EVADE LEFT + WALK / EVADE RIGHT + FIRE / DELAYED + CONTROL + RELEASE   t=%d ms", elapsed);
+            if (snprintf(path, sizeof(path), "%s/evade-%02d.bmp", output_dir, frame - 23) >=
+                (int)sizeof(path)) failed = 1;
+        } else if (motion) {
             snprintf(label, sizeof(label), "FRIENDLY / GUNNER / ELITE   WALK + FIRE  t=%d ms",
                      (frame - 15) * 100);
             if (snprintf(path, sizeof(path), "%s/move-%d.bmp", output_dir, frame - 15) >=
@@ -1796,7 +1841,7 @@ int rasterfall_render_combat_character_capture(const char *output_dir)
     }
     if (memcmp(body_copy, runtime->body.definition.data, runtime->body.definition.data_size)) goto done;
     __printf("combat-character: shared_body=1 independent_instances=3 immutable_body=pass "
-             "cameras=15 motion_frames=8 gear=HEAD,CHEST,BACK weapon=AK\n");
+             "cameras=15 motion_frames=8 evade_frames=12 cpu_scene_evade=pass gear=HEAD,CHEST,BACK weapon=AK\n");
     result = 0;
 done:
     tlibc_free(body_copy);

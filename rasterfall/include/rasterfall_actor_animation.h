@@ -9,6 +9,54 @@
 #define RASTERFALL_RELOAD_WEAPON_PITCH 780
 #define RASTERFALL_MOVE_LEG_SWING 520
 
+/* Presentation history latches direction/strength once per authoritative
+ * event. Sampling never advances a clock or changes actor/world geometry. */
+struct rasterfall_actor_evasion_history {
+    unsigned int generation, sequence;
+    int actor_id, side, weight_milli, suppressed;
+};
+struct rasterfall_actor_evasion_pose {
+    int side, time_ms, weight_milli;
+};
+static inline void rasterfall_actor_evasion_sample(
+    const struct toy_game_actor *actor,
+    struct rasterfall_actor_evasion_history *history,
+    struct rasterfall_actor_evasion_pose *pose)
+{
+    if (!pose) return;
+    pose->side = pose->time_ms = pose->weight_milli = 0;
+    if (!actor || !history) return;
+    if (history->generation != actor->combat_generation ||
+        history->sequence != actor->evasion.sequence ||
+        history->actor_id != actor->actor_id) {
+        long long lateral =
+            ((long long)actor->evasion.source_x - actor->x) * actor->cy -
+            ((long long)actor->evasion.source_z - actor->z) * actor->sy;
+        history->generation = actor->combat_generation;
+        history->sequence = actor->evasion.sequence;
+        history->actor_id = actor->actor_id;
+        history->side = lateral > 0 ? -1 : lateral < 0 ? 1 :
+            ((actor->evasion.sequence + (unsigned int)actor->actor_id) & 1) ? 1 : -1;
+        history->weight_milli = 550 + actor->evasion.strength_milli / 100;
+        if (history->weight_milli < 550) history->weight_milli = 550;
+        if (history->weight_milli > 1000) history->weight_milli = 1000;
+        history->suppressed = 0;
+    }
+    if (!actor->active || actor->state != TOY_GAME_ACTOR_ALIVE ||
+        actor->control_disabled || actor->special_control != TOY_GAME_SPECIAL_CONTROL_NONE ||
+        actor->airborne_ms > 0 || actor->airborne_y > 0 ||
+        actor->animation.id == TOY_GAME_ANIM_REVIVE ||
+        actor->animation.id == TOY_GAME_ANIM_DEATH ||
+        actor->animation.id == TOY_GAME_ANIM_DOWNED)
+        history->suppressed = 1;
+    if (history->suppressed || !actor->evasion.sequence ||
+        actor->evasion.animation_ms <= 0) return;
+    pose->side = history->side;
+    pose->time_ms = TOY_CONFIG_EVASION_ANIMATION_MS - actor->evasion.animation_ms;
+    if (pose->time_ms < 0) pose->time_ms = 0;
+    pose->weight_milli = history->weight_milli;
+}
+
 struct rasterfall_actor_pose {
     int body_lift;
     int forward_shift;

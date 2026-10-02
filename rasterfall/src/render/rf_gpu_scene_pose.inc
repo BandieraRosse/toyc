@@ -178,6 +178,14 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
         composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].time_ms=actor->animation_time_ms;
         if (!composition.layers[RASTERFALL_ACTION_LAYER_ADDITIVE].clip) goto done;
     }
+    if (p->evasion.weight_milli) {
+        if (p->evasion.side != -1 && p->evasion.side != 1) goto done;
+        composition.secondary_additive.clip=humanoid_action(p->evasion.side < 0 ?
+            RASTERFALL_ACTION_EVADE_LEFT : RASTERFALL_ACTION_EVADE_RIGHT);
+        composition.secondary_additive.time_ms=p->evasion.time_ms;
+        composition.secondary_additive_weight_milli=p->evasion.weight_milli;
+        if (!composition.secondary_additive.clip) goto done;
+    }
     if (rasterfall_action_compose(instance,&composition)<0 ||
         actor->weapon < -1 || actor->weapon>=TOY_GAME_WEAPON_COUNT ||
         (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal &&

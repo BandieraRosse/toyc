@@ -3042,7 +3042,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     else if (runtime->lifecycle_paused)
         draw_pause_overlay(canvas, &menu, &settings, runtime->coordinate_axes,
                            runtime->net.mode != RASTERFALL_NET_OFF);
-    else if(rf_combat_modal())rf_combat_draw(canvas);
+    else if(rf_combat_modal())rf_combat_draw(canvas,runtime->rts_active);
     else if (rf_perf_lab.running || rf_perf_lab.menu_open || rf_perf_lab.result_open)
         rf_perf_lab_draw(canvas, rf_core_clock_now_us());
     else if (rf_render_terminal.open)
@@ -3050,7 +3050,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     else if (rf_table.open)
         rf_table_draw(canvas);
     else {
-        if(rf_combat_lab.running)rf_combat_draw(canvas);
+        if(rf_combat_lab.running)rf_combat_draw(canvas,runtime->rts_active);
         if(rf_combat_lab.control_near || rf_combat_lab.result_near)
             rasterfall_canvas_text(canvas,canvas->width/2-155,canvas->height*3/4,
                 rf_combat_lab.control_near?"E  COMBAT EXPERIMENTS":"E  COMBAT RESULTS",0xA1DFEE);

@@ -415,14 +415,15 @@ static void rf_combat_init(const struct rasterfall_options *o)
     if(!*commit)commit="source-build-unrecorded";
     snprintf(rf_combat_lab.commit,sizeof(rf_combat_lab.commit),"%s",commit);
 }
-static void rf_combat_draw(struct rasterfall_canvas *c)
+static void rf_combat_draw(struct rasterfall_canvas *c, int rts_active)
 {
     char line[160];int x=(c->width-820)/2,y=(c->height-500)/2;
     if(rf_combat_lab.running) {
+        int status_y=rts_active?105:35;
         snprintf(line,sizeof(line),"COMBAT %s  %.1fs  %s",rf_combat_names[rf_combat_lab.selected],
             rf_combat_lab.elapsed_ms/1000.0,rf_combat_lab.observe?"SCRIPTED":"FPS / M RTS");
-        rasterfall_canvas_text(c,25,35,line,0xA1DFEE);
-        rasterfall_canvas_text(c,25,58,"T STOP / RESULTS / RESET   ESC PAUSE",0xB5C1CB);
+        rasterfall_canvas_text(c,25,status_y,line,0xA1DFEE);
+        rasterfall_canvas_text(c,25,status_y+23,"T STOP / RESULTS / RESET   ESC PAUSE",0xB5C1CB);
         return;
     }
     rasterfall_canvas_rect(c,x,y,820,500,0x172530,235);
