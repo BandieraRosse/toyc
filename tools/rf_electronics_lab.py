@@ -7,14 +7,10 @@ from lab_computer import generate as computer,LAB_GROUPS
 
 def generate():
     name='rf_electronics_lab';area=name+'_area';group=LAB_GROUPS[name]
-    records=[r for r in lab(name,16384,-7000,'model','open').splitlines()
+    records=[r for r in lab(name,9728,-19968,'model','open').splitlines()
              if '_sample_info ' not in r]
     records=[r.replace('attr.text=MODEL_LAB','attr.text=RF_ELECTRONICS_GEN_1') for r in records]
-    # West-side access joins the existing experiment road without cutting the yard wall.
-    records.extend([
-        'surface id=rf_electronics_access kind=ground min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 material=485860 attr.collision_id=rf_electronics_access_col',
-        'collision id=rf_electronics_access_col shape=flat min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 collision=false visible=true walkable=true color=485860',
-        'render id=rf_electronics_access_paint kind=floor min_x=8192 max_x=11264 min_z=-11776 max_z=-7000 height=0 color=485860'])
+    # V3 public roads and the north entry belong to the global map layout.
     # Independent exhibit specimens are enlarged for inspection, explicitly labelled.
     for part,x,scale,title in (('cpu',-3000,1500,'C1_CPU_6X'),('memory',-1000,3000,'M1_MEMORY_3X'),
                                ('board',1000,2500,'B1_MAINBOARD_2.5X'),('compute',3000,3000,'X1_COMPUTE_3X')):

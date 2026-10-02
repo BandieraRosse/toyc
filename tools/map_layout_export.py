@@ -250,7 +250,7 @@ def render(doc,path,w,h):
     for o in sorted(doc["objects"],key=lambda x:order.index(x["type"])):
         b=o["bounds"];x,y=pt(b["min_x"],b["max_z"]);u,v=pt(b["max_x"],b["min_z"]);x,u=(x-3,u+3) if x==u else (x,u);y,v=(y-3,v+3) if y==v else (y,v);fill,stroke=pal[o["type"]]
         if is_ground(o): c.rect(x,y,u,v,ground_fill,ground_stroke)
-        else: c.rect(x,y,u,v,fill,stroke)
+        else: c.rect(x,y,u,v,None if o["type"] in ("safe","spawn","base") else fill,stroke)
         placed.append((o,x,y,u,v))
     # Collision and semantic overlays are deliberately drawn after filled
     # geometry so platforms/props cannot hide important map boundaries.

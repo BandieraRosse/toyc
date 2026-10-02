@@ -48,6 +48,8 @@ collision、surface 和 render 转换到 gameplay/renderer 现有数组。因此
 AI、prop 和 renderer 行为保持不变；Runtime Map 是 authoritative world representation，projection 只是迁移期接口，
 默认流程只加载 V1 Runtime Map。
 `legacy_index` 只用于兼容数组的稳定排列，不是 V1 record 的顺序语义。
+region 投影按显式索引排列后追加无索引记录，每条只消费一次；安全区可分开声明观察支带，
+不把性能场出生范围纳入安全区。
 GPU Scene 另以同一 object 投影顺序和 Runtime Map authored ID 冻结静态 prop 值；
 boundary wall 网格从该只读值帧构建，不改变 Runtime Map、碰撞或玩法所有权。
 

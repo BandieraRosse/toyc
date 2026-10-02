@@ -25,7 +25,8 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 ## 前哨站游戏内性能实验场
 
-Windows 原生 GPU Scene 单人前哨站的控制和结果终端在光照区东侧走道。靠近控制终端按 E，
+Windows 原生 GPU Scene 单人前哨站的控制和结果终端在园区第二排预留地块东南服务口袋，
+从性能横路或第三、四列之间纵路进入。靠近控制终端按 E，
 1 至 4 选择基础、64 敌人、24 组件或复合场景；F2 选择 ISOLATED / OUTPOST，T 选择
 120 FPS CAP / UNCAPPED，Enter 开始，Esc 可取消测试。默认 ISOLATED、正常限帧。
 固定十秒、前两秒预热，结束或取消后返回原站位和视角。上一份结果在启动时清空，结果终端按 E 查看。

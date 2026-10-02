@@ -4097,22 +4097,22 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strncmp(options.gpu_normal_view,"electronics-",12)) {
             rf_electronics_camera(&session,&camera,options.gpu_normal_view);
         } else if (!strcmp(options.gpu_normal_view, "character-lab")) {
-            camera.x=0;camera.z=-9500;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"character_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_INFECTED_POSES]=1;
         } else if (!strcmp(options.gpu_normal_view, "walk-lab")) {
-            camera.x=0;camera.z=-25000;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"walk_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_INFECTED_WALK]=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-actions-lab")) {
-            camera.x=16384;camera.z=-9500;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"actor_actions_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
-            camera.x=28900;camera.z=-26700;camera.y=2300;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"rf_light_lab_area",1252,4826);camera.y=2300;camera.cy=-1024;
             camera.pitch_sy=-320;camera.pitch_cy=973;
         } else if (!strcmp(options.gpu_normal_view, "model-lab")) {
-            camera.x=16600;camera.z=-29000;camera.y=650;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"rf_model_lab_area",216,2744);camera.y=650;camera.cy=-1024;
             rf_labs.requested[RF_LAB_MODEL]=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-walk-lab")) {
-            camera.x=28672;camera.z=-9500;camera.cy=-1024;
+            rf_lab_camera_position(&session,&camera,"actor_walk_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_ACTOR_WALK]=1;
         } else if (!strcmp(options.gpu_normal_view, "west-facility")) {
             camera.x = -10500; camera.z = 2000;
@@ -5841,15 +5841,15 @@ startup_again:
                 rf_electronics_camera(&session,&game_runtime.camera,options.gpu_normal_view);
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"lighting-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
-                game_runtime.camera.x=28900;game_runtime.camera.z=-23500;
+                rf_lab_camera_position(&session,&game_runtime.camera,"rf_light_lab_area",1252,8026);
                 game_runtime.camera.y=5400;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
                 game_runtime.camera.pitch_sy=-512;game_runtime.camera.pitch_cy=887;
             }
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
-                game_runtime.camera.x=16600;game_runtime.camera.z=-29000;
+                rf_lab_camera_position(&session,&game_runtime.camera,"rf_model_lab_area",216,2744);
                 game_runtime.camera.y=650;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
-                game_runtime.camera.pitch_sy=-64;game_runtime.camera.pitch_cy=1022;
+                game_runtime.camera.pitch_sy=-384;game_runtime.camera.pitch_cy=949;
             }
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab")) {
                 const char *view=getenv("RF_GPU_CHARACTER_VIEW");
@@ -5865,8 +5865,8 @@ startup_again:
                         radius+=(int)(rendered_frames*0.5);
                         if (radius>4096) radius=4096;
                     }
-                    game_runtime.camera.x=16000+(int)(sin(angle)*radius);
-                    game_runtime.camera.z=-31400+(int)(cos(angle)*radius);
+                    rf_lab_camera_position(&session,&game_runtime.camera,"rf_model_lab_area",
+                        -384+(int)(sin(angle)*radius),344+(int)(cos(angle)*radius));
                     game_runtime.camera.y=-114;
                     game_runtime.camera.sy=(int)(-sin(angle)*1024);
                     game_runtime.camera.cy=(int)(-cos(angle)*1024);

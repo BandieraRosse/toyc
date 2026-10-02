@@ -98,6 +98,15 @@ static void rf_labs_display(enum rasterfall_world_id world,int suspended,int gpu
     }
 }
 
+static void rf_lab_camera_position(const struct rasterfall_session *session,
+    struct camera *camera, const char *id, int x, int z)
+{
+    const struct rf_map_runtime_region *area=rf_map_runtime_find_region(
+        &session->map_ops.runtime,id);
+    if (!area) return;
+    camera->x=area->origin_x+x;camera->z=area->origin_z+z;
+}
+
 static void rf_electronics_camera(const struct rasterfall_session *session,struct camera *camera,const char *view)
 {
     const struct rf_map_runtime_region *area=rf_map_runtime_find_region(

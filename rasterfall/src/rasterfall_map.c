@@ -226,18 +226,19 @@ static const struct rf_map_runtime_interaction *runtime_interaction_projection_a
 static const struct rf_map_runtime_region *runtime_region_projection_at(
     const struct rf_map_runtime *runtime, int index)
 {
-    const struct rf_map_runtime_region *fallback = NULL;
-    int i;
+    int i, indexed = 0, unindexed = 0;
     for (i = 0; i < rf_map_runtime_region_count(runtime); i++) {
         const struct rf_map_runtime_region *item =
             rf_map_runtime_region_at(runtime, i);
-        if (!item->has_legacy_index) {
-            if (!fallback) fallback = item;
-            continue;
-        }
+        if (!item->has_legacy_index) continue;
+        if (item->legacy_index >= indexed) indexed = item->legacy_index + 1;
         if (item->legacy_index == index) return item;
     }
-    return fallback;
+    for (i = 0; i < rf_map_runtime_region_count(runtime); i++) {
+        const struct rf_map_runtime_region *item = rf_map_runtime_region_at(runtime, i);
+        if (!item->has_legacy_index && indexed + unindexed++ == index) return item;
+    }
+    return NULL;
 }
 
 static const struct rf_map_runtime_actor_spawn *runtime_spawn_projection_at(

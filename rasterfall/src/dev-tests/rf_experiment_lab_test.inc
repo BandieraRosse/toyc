@@ -203,6 +203,20 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             runtime->camera.z!=origin.z || runtime->session->game_state.enemies_alive ||
             !rf_labs.requested[RF_LAB_LIGHTING]) return -7;
     }
+    /* Authored safe regions protect observation, never suppress bay spawning. */
+    rf_perf_lab.isolated=0;
+    for (int scene=0;scene<RF_PERF_LAB_SCENES;++scene) {
+        rf_perf_lab.selected=scene;
+        if (rf_perf_lab_start(runtime)<0) return -16;
+        int expected=scene==1 || scene==3 ? 64 : 0;
+        if (runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST ||
+            runtime->session->game_state.enemies_alive!=expected) return -17;
+        if (rf_perf_lab_finish(runtime,scene==3)<0 ||
+            runtime->session->game_state.enemies_alive ||
+            runtime->camera.x!=origin.x || runtime->camera.z!=origin.z ||
+            !rf_labs.requested[RF_LAB_LIGHTING]) return -18;
+    }
+    rf_perf_lab.isolated=1;
     /* Any workload growth, including a previously empty scene, invalidates it. */
     rf_perf_lab.selected=0;
     if (rf_perf_lab_start(runtime)<0) return -8;
