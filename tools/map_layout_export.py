@@ -22,10 +22,22 @@ def v1_fields(fields):
 
 def parse_v1(path):
     stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
+    labs={}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        words=line.split("#",1)[0].split()
+        if words and words[0]=="lab":
+            f=v1_fields(words[1:]); labs[f["id"]]=f
+    doc["labs"]=[dict(f, origin={"x":int(f["x"]),"z":int(f["z"])}) for f in labs.values()]
     for line_no,line in enumerate(path.read_text(encoding="utf-8").splitlines(),1):
         words=line.split("#",1)[0].split()
         if not words: continue
         kind, f = words[0], v1_fields(words[1:]); raw={"line":line_no,"record":kind,"fields":words[1:]}; typ=None; o=None
+        if kind=="lab": continue
+        if "attr.lab" in f:
+            lab=labs.get(f["attr.lab"])
+            if lab is None: raise ValueError(f"line {line_no}: unknown lab {f['attr.lab']}")
+            for key,axis in (("x","x"),("min_x","x"),("max_x","x"),("z","z"),("min_z","z"),("max_z","z")):
+                if key in f: f[key]=str(int(f[key])+int(lab[axis]))
         if kind=="world":
             b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; doc["world"]={**b,"room_limit":num(f.get("room_limit","0")),"source":raw}; continue
         if kind=="region":
@@ -242,6 +254,13 @@ def render(doc,path,w,h):
         if o["type"]=="base":
             px,py=pt(o["center"]["x"],o["center"]["z"])
             c.star(px,py,13,(255,193,54),(255,239,145))
+    # Experiment outlines remain visible over broad safe-room shading.
+    lab_colors={"model":(159,180,255),"animation":(121,232,197),"lighting":(255,210,131),"performance":(255,171,120)}
+    for lab in doc.get("labs",[]):
+        ox,oz=int(lab["x"]),int(lab["z"]);hx,hz=int(lab["width"])//2,int(lab["depth"])//2
+        x,y=pt(ox-hx,oz+hz);u,v=pt(ox+hx,oz-hz);color=lab_colors[lab["category"]]
+        c.rect(x,y,u,v,None,color)
+        c.text(x+5,y+5,lab["id"].removesuffix("_area"),color)
     # Semantic areas win label space. Dense point clusters retain every ID in
     # JSON, while the PNG suppresses labels that would collide.
     priority={"safe":0,"base":1,"spawn":2,"ramp":3,"platform":4,"prop":5,"model":6,"button":7,"ai_spawn":8,"air_wall":9,"box":10}; occupied=[]

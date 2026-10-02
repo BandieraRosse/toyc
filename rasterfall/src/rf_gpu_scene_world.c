@@ -3,6 +3,7 @@
 #include "rasterfall_prop.h"
 #include "rasterfall_session.h"
 #include "rasterfall_effects.h"
+#include "rasterfall_render.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -156,6 +157,7 @@ static int scene_world_capture(const struct rasterfall_map_state *map,
             value->submission_ordinal=item->submission_ordinal;
             value->visible=item->visible;value->alpha=item->alpha;
             value->draw=*draw;
+            rasterfall_render_terminal_freeze(projection,&value->draw);
         }
     }
     memcpy(out,next,(size_t)total*sizeof(next[0]));
@@ -299,7 +301,8 @@ static int scene_world_item_same(
         x->c==y->c && x->d==y->d && x->e==y->e && x->f==y->f &&
         x->color==y->color && x->texture_u==y->texture_u &&
         x->texture_v==y->texture_v && x->style==y->style &&
-        !memcmp(x->text,y->text,sizeof(x->text));
+        ((x->type==TOY_MAP_DRAW_SIGN && x->style==4) ||
+         !memcmp(x->text,y->text,sizeof(x->text)));
 }
 
 static int scene_world_prop_same(

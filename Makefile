@@ -1010,6 +1010,7 @@ $(BUILD)/rasterfall_map_engine.o: $(RASTERFALL_LIB)/map.c \
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map_parser.o: $(RASTERFALL_LIB)/rasterfall_map_parser.c \
+	$(RASTERFALL_LIB)/rasterfall_map_labs.inc \
 	$(RASTERFALL_INC)/rasterfall_map_parser.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
@@ -1138,6 +1139,8 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                               $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                               $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                               $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
+                              $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h \
+                              $(RASTERFALL_SRC)/render/rf_lab_terminal.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                               $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
                               $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \
@@ -1661,6 +1664,7 @@ $(BUILD)/rasterfall_map_engine_self.o: $(RASTERFALL_LIB)/map.c \
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rasterfall_map_parser_self.o: $(RASTERFALL_LIB)/rasterfall_map_parser.c \
+                                      $(RASTERFALL_LIB)/rasterfall_map_labs.inc \
                                       $(RASTERFALL_INC)/rasterfall_map_parser.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
@@ -1778,6 +1782,8 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
                                    $(RASTERFALL_SRC)/dev-tests/rasterfall_actor_benchmark.inc \
                                    $(RASTERFALL_SRC)/render/rasterfall_enemy_visual.inc \
                                    $(RASTERFALL_SRC)/render/rf_outpost_showcase.inc \
+                                   $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h \
+                                   $(RASTERFALL_SRC)/render/rf_lab_terminal.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_enemy_source.inc \
                                    $(RASTERFALL_SRC)/render/rf_gpu_scene_actor_source.inc \
                                    $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_enemy_source_test.inc \

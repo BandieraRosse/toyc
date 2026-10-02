@@ -9,8 +9,8 @@ static const int outpost_actor_actions[] = {
 #define OUTPOST_ACTOR_WALK_COUNT 6
 _Static_assert(sizeof(outpost_actor_actions)/sizeof(outpost_actor_actions[0]) ==
     OUTPOST_ACTOR_ACTION_COUNT,"actor action stations must match catalog");
-#define OUTPOST_ACTOR_WALK_NORTH_Z -16600
-#define OUTPOST_ACTOR_WALK_SOUTH_Z -22400
+#define OUTPOST_ACTOR_WALK_NORTH_Z 2856
+#define OUTPOST_ACTOR_WALK_SOUTH_Z -2944
 struct outpost_actor_walker {
     int family, level, x, z, direction;
 };
@@ -59,7 +59,7 @@ void rasterfall_render_set_outpost_actor_walk(int visible,uint64_t time_us)
             struct outpost_actor_walker *entry=&outpost_actor_walkers[i];
             entry->family=i/3;
             entry->level=i%3;
-            entry->x=24600+i*1500;
+            entry->x=-4072+i*1500;
             entry->z=OUTPOST_ACTOR_WALK_NORTH_Z;
             entry->direction=-1;
         }
@@ -98,7 +98,9 @@ static void outpost_actor_fixture(struct toy_game_actor *actor,int family,
     actor->character_id=family ? RASTERFALL_CHARACTER_RF_RIFLEMAN :
         RASTERFALL_CHARACTER_NONE;
     actor->class_id=TOY_GAME_AI_LEVEL_1+level;
-    actor->x=x;actor->z=z;actor->cy=direction*1024;
+    rasterfall_render_lab_point(id>=64 ? "actor_walk_lab_area" : "actor_actions_lab_area",
+        x,z,&actor->x,&actor->z);
+    actor->cy=direction*1024;
     actor->current_slot=0;
     actor->slots[0].weapon=family ? TOY_GAME_WEAPON_AK :
         level==0 ? TOY_GAME_WEAPON_PISTOL :
@@ -119,8 +121,8 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
         if (!outpost_actor_actions_visible) break;
         for (int i=0;i<OUTPOST_ACTOR_ACTION_COUNT;++i) {
             struct toy_game_actor actor;
-            int x=12100+(i%6)*1650;
-            int z=-16300-(i/6)*2100-family*4200;
+            int x=-4284+(i%6)*1650;
+            int z=3156-(i/6)*2100-family*4200;
             int color=RF_COLOR_AI_RIFLE;
             if (family && i>=3) continue; /* Authored Humanoid actions absent. */
             outpost_actor_fixture(&actor,family,1,outpost_actor_actions[i],

@@ -2,16 +2,17 @@
  * All source reads finish before resource preparation and target submission. */
 #include "rasterfall_sky.h"
 #include "rasterfall_viewmodel.h"
+#include "rasterfall_lab_terminal.h"
 struct scene_layer_triangle {
     struct rf_gpu_graphics_vertex vertex[3];
     uint32_t color;
-    int light,alpha,screen,textured,layer;
+    int light,alpha,screen,textured,layer,emissive;
     int origin[3];
 };
 struct scene_layer_mesh {
     struct scene_layer_triangle *triangles;
     uint32_t count,capacity;
-    int layer,failed,width,height;
+    int layer,failed,width,height,emissive;
 };
 struct scene_layer_workspace {
     struct scene_layer_mesh mesh;
@@ -97,7 +98,7 @@ static int scene_layer_emit(struct scene_layer_mesh *m,
         for (int v=0;v<3;++v) t->vertex[v].position[k]-=origin[k];
     }
     t->color=color;t->light=light;t->alpha=alpha;t->screen=screen;
-    t->textured=textured;t->layer=m->layer;return 0;
+    t->textured=textured;t->layer=m->layer;t->emissive=m->emissive;return 0;
 }
 static int scene_layer_quad(struct scene_layer_mesh *m,
     struct rf_gpu_graphics_vertex v[4],uint32_t color,int alpha,int screen)
@@ -251,6 +252,13 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
     mesh->layer=RF_GPU_SCENE_SKY;rasterfall_sky_layout(&canvas,camera);
     mesh->layer=RF_GPU_SCENE_WORLD;
+    mesh->emissive=1;
+    for (unsigned i=0;input->map && i<input->map->count;++i) {
+        const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
+        if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==4 &&
+            rf_lab_terminal_emit(&item->draw,scene_host_quad,mesh)<0) return -1;
+    }
+    mesh->emissive=0;
     for (unsigned i=0;input->props && i<input->props->count;++i) {
         const struct toy_map_prop *p=&input->props->items[i].prop;
         struct rasterfall_prop_instance instance={p->asset_id,p->x,p->y-900,p->z,
@@ -454,6 +462,7 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
             d->projection[0]=width;d->projection[1]=height;d->projection[2]=64;d->projection[3]=width*3/4;
             d->material[0]=t->color;d->material[1]=t->light;d->material[2]=t->textured;
+            if (t->emissive) d->quality[2]=3;
             d->texture[0]=t->textured?texture->width:1;d->texture[1]=t->textured?texture->height:1;
             d->texture[2]=t->alpha;d->texture[3]=t->screen;
             d->first_index=(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;

@@ -119,8 +119,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             if (!outpost_actor_actions_visible) break;
             for (int i=0;i<OUTPOST_ACTOR_ACTION_COUNT;++i) {
                 struct toy_game_actor actor;
-                int x=12100+(i%6)*1650;
-                int z=-16300-(i/6)*2100-family*4200;
+                int x=-4284+(i%6)*1650;
+                int z=3156-(i/6)*2100-family*4200;
                 if (family && i>=3) continue;
                 outpost_actor_fixture(&actor,family,1,outpost_actor_actions[i],
                     x,z,1,outpost_actor_actions_time_us,family*32+i);
@@ -179,9 +179,11 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         for (unsigned i=0;i<2;++i) {
             if (scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS) goto fail;
             struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+            int x,z;
+            rasterfall_render_lab_point("rf_model_lab_area",-384+(int)i*1200,344,&x,&z);
             if (rf_gpu_scene_pose_body(RASTERFALL_BODY_RF_C01_V22H,
                     scene_enemy_capture.frame_id,scene_enemy_capture.world_generation,
-                    outpost_model_lab_time_us/1000,i,16000+(int)i*1200,-900,-31400,1024,pose)<0) {
+                    outpost_model_lab_time_us/1000,i,x,-900,z,1024,pose)<0) {
                 __printf("RF-MODEL-LAB resource unavailable or incompatible; body=%d\n",RASTERFALL_BODY_RF_C01_V22H);
                 scene_enemy_capture.modular_count=begin;
                 outpost_model_lab_status=-1;

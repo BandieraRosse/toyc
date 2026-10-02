@@ -209,10 +209,13 @@ static int allowed(struct rasterfall_map_ir *ir, int line, struct map_line *fiel
     return 0;
 }
 
+static int parse_lab(struct rasterfall_map_ir *, int, struct map_line *);
+
 static int parse_record(struct rasterfall_map_ir *ir, int line, struct map_line *record)
 {
     const char *value;
     if (check_duplicate_fields(ir, line, record) < 0) return -1;
+    if (!strcmp(record->record, "lab")) return parse_lab(ir, line, record);
     if (!strcmp(record->record, "map")) {
         int version;
         if (ir->has_map) return fail(ir, line, "duplicate map record");
@@ -376,6 +379,8 @@ static int parse_record(struct rasterfall_map_ir *ir, int line, struct map_line 
     return fail_field(ir, line, "unknown record type %s", record->record);
 }
 
+#include "rasterfall_map_labs.inc"
+
 static int inside(struct rasterfall_map_ir_bounds *inner, struct rasterfall_map_ir_bounds *outer)
 {
     return inner->min_x >= outer->min_x && inner->max_x <= outer->max_x && inner->min_z >= outer->min_z && inner->max_z <= outer->max_z;
@@ -422,5 +427,7 @@ int rasterfall_map_ir_parse_file(const char *path, struct rasterfall_map_ir *ir)
         line = next;
         line_no++;
     }
-    n = validate(ir); tlibc_free(data); return n;
+    n = map_labs_resolve(ir);
+    if (n == 0) n = validate(ir);
+    tlibc_free(data); return n;
 }

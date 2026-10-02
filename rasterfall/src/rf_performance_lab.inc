@@ -19,7 +19,7 @@ struct rf_perf_lab_state {
     int control_near, result_near, menu_open, result_open, selected, running;
     int spawned, min_alive, max_alive, samples;
     int isolated, uncapped, interference, gpu_samples, invalid, returning;
-    int width, height;
+    int width, height, observe_x, observe_z;
     int64_t logic_sum;
     unsigned lights, shadow_maps, present_mode;
     unsigned long long shadow_draws_sum;
@@ -37,8 +37,8 @@ static struct rf_perf_lab_state rf_perf_lab;
 static const char *rf_perf_lab_names[RF_PERF_LAB_SCENES] = {
     "LOW PRESSURE", "64 ENEMIES", "DENSE COMPONENTS", "ENEMIES + COMPONENTS"
 };
-static const int rf_perf_lab_observe_z[RF_PERF_LAB_SCENES] = {
-    900, -31500, -20700, -9900
+static const char *rf_perf_lab_areas[RF_PERF_LAB_SCENES] = {
+    "perf_low_area", "perf_enemy_area", "perf_components_area", "perf_mixed_area"
 };
 
 static int rf_perf_lab_near_object(const struct rasterfall_session *session,
@@ -72,15 +72,21 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
 {
     struct rasterfall_session *session = runtime->session;
     struct camera *camera = &runtime->camera;
-    struct toy_game_box spawn_box = {
-        .minx=36600, .maxx=47800, .minz=-35100, .maxz=-27900
-    };
+    struct toy_game_box spawn_box = {0};
     struct toy_game *test_game = &session->game_state;
     struct toy_game_actor *player = toy_game_local_player_actor(test_game);
     int scene = rf_perf_lab.selected;
     if (scene < 0 || scene >= RF_PERF_LAB_SCENES || !player ||
         test_game->state != TOY_GAME_PLAYING || test_game->enemies_alive ||
         session->world_id != RASTERFALL_WORLD_OUTPOST) return -1;
+    const struct rf_map_runtime_region *area=rf_map_runtime_find_region(
+        &session->map_ops.runtime,rf_perf_lab_areas[scene]);
+    if (!area || strcmp(area->kind,"experiment") ||
+        area->bounds.max_x-area->bounds.min_x<=2300 ||
+        area->bounds.max_z-area->bounds.min_z<=1800) return -1;
+    int observe_x=area->bounds.min_x-1300,observe_z=area->origin_z;
+    spawn_box.minx=area->bounds.min_x+1100;spawn_box.maxx=area->bounds.max_x-1200;
+    spawn_box.minz=area->bounds.min_z+900;spawn_box.maxz=area->bounds.max_z-900;
     rf_perf_lab_clear();
     rf_perf_lab.previous_camera = *camera;
     rf_perf_lab.previous_rng = test_game->rng;
@@ -107,12 +113,9 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
         spawn_box.minz=spawn->bounds.min_z;spawn_box.maxz=spawn->bounds.max_z;
     }
     test_game->rng = 0x504552464c414231ULL;
-    if (!rf_perf_lab.isolated && scene == 3) {
-        spawn_box.minz = -13500;
-        spawn_box.maxz = -6300;
-    }
-    camera->x = rf_perf_lab.isolated ? session->level.start_x : 34200;
-    camera->z = rf_perf_lab.isolated ? session->level.start_z : rf_perf_lab_observe_z[scene];
+    camera->x = rf_perf_lab.isolated ? session->level.start_x : observe_x;
+    camera->z = rf_perf_lab.isolated ? session->level.start_z : observe_z;
+    rf_perf_lab.observe_x=camera->x;rf_perf_lab.observe_z=camera->z;
     camera->sy = 1024; camera->cy = 0;
     camera->pitch_sy = 0; camera->pitch_cy = 1024;
     player->x = camera->x; player->z = camera->z;

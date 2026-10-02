@@ -10,6 +10,12 @@
 
 ## 所有权
 
+实验区投影终端由 `render/rasterfall_lab_terminal.h` 共用程序几何定义。Runtime 通过显示 channel
+更新内容，`render/rf_lab_terminal.inc` 保存展示文本，CPU 在绘制前取值，Scene 在 world freeze 时
+按值复制。可更新面由 `rf_gpu_scene_layers.inc` 进入 WORLD；静态网格构建跳过该面，静态资源比较
+忽略其文本变化。标题和试样小投影仍走静态 SIGN 网格。内容、控制 object、碰撞和 gameplay 相互
+独立；显示更新不修改地图源或玩法真值。样式、图形和默认交互见[实验区合同](../reference/experiment-labs.md)。
+
 | 职责 | 所有者 |
 | --- | --- |
 | world/角色/地图图元、投影、近裁剪与 draw command | `rasterfall/src/rasterfall_render.c` |

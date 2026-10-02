@@ -48,6 +48,18 @@ static void rf_labs_tick(enum rasterfall_world_id world,int suspended,int gpu,ui
 
 static void rf_labs_reset(void) { memset(&rf_labs,0,sizeof(rf_labs)); }
 
+static void rf_labs_display(enum rasterfall_world_id world,int suspended,int gpu)
+{
+    for (int i=0;i<RF_LAB_COUNT;++i) {
+        char text[96];
+        const char *status=rf_lab_definitions[i].gpu_only && !gpu ? "GPU REQUIRED" :
+            rf_lab_effective(i,world,suspended,gpu) ? "ON" :
+            rf_labs.requested[i] && suspended ? "SUSPENDED" : "OFF";
+        snprintf(text,sizeof(text),"%s / %s",rf_lab_definitions[i].id,status);
+        rasterfall_render_terminal_set(rf_lab_definitions[i].surface,text);
+    }
+}
+
 static void rf_labs_diagnostic_view(const char *view)
 {
     if (!view) return;

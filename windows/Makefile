@@ -128,7 +128,7 @@ $(BUILD)/glb-inspect.exe: app/linux/glb_inspect.c rasterfall/src/rasterfall_huma
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb_inspect.c rasterfall/src/rasterfall_humanoid_basis.c rasterfall/src/rasterfall_humanoid_retarget.c lib/linux/assets.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 $(BUILD)/glb2rmesh.exe: app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) -lws2_32
-$(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
+$(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_labs.inc rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/map_inspect.c rasterfall/lib/rasterfall_map_parser.c rasterfall/lib/rasterfall_map_runtime.c rasterfall/lib/rasterfall_map_components.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 
 .PHONY: all app stage package clean platform-sources pe-audit $(addprefix win-app-,$(PORTABLE_APP_NAMES))
@@ -245,6 +245,8 @@ stage: $(TARGET)
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
+	@mkdir -p "$(PACKAGE_DIR)/rasterfall/tests"
+	@cp rasterfall/tests/map_v1_lab*.map "$(PACKAGE_DIR)/rasterfall/tests/"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/private-assets"
 	@for entry in rasterfall/private-assets/*; do \
 	    [ -e "$$entry" ] || continue; \

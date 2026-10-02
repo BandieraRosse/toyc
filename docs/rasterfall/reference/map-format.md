@@ -44,6 +44,26 @@ Map IR 包含 world、regions、collisions、surfaces、renders、interactions�
 
 ## Surface V1
 
+### 实验区域复合定义
+
+```text
+lab id=sample_area x=16000 z=-32000 width=10240 depth=9216 category=model enclosure=open
+object id=sample_button kind=facility_terminal x=4000 y=0 z=4000 yaw=0 scale=1000 attr.lab=sample_area attr.collision=component
+render id=sample_info kind=sign min_x=-900 max_x=900 min_z=-800 max_z=-780 height=-700 color=9FB4FF attr.height2=-450 attr.style=3 attr.text=MODEL_IDLE attr.texture_u=1 attr.lab=sample_area
+```
+
+`lab` 原点为地面中心，仅作 X/Z 平移，宽深必须为偶数且至少 512 RFU；原点绝对值和宽深
+上限为 1000000 RFU。用途为 `model|animation|lighting|performance`，围合为
+`open|backdrop|walled`。Parser 将其降为 `kind=experiment` region，保存原点、用途与围合属性，
+不创建隐式可见面或碰撞。可复用的完整组合由[区域生成工具](../../../tools/experiment_lab.py)输出。
+
+region、surface、collision、render、object、interaction、actor_spawn、pickup 可声明
+`attr.lab`。Parser 在读完整文件后解析引用并平移其 X/Z bounds/position，再校验世界边界。
+支持先写子组件再写区域；ID 仍全局唯一，不自动加前缀。未知区域、重复 ID 和加法溢出失败并
+报告子记录行号。Y/height、yaw、scale、length 不平移；不支持嵌套、旋转或区域缩放。
+`attr.lab` 必须引用 `lab` 记录，不能把普通 region 当局部坐标原点。
+终端样式和展示默认值见[实验区合同](experiment-labs.md)。
+
 正式地图中的地面、平台和坡道使用独立的 V1 `surface` 记录，不再从 legacy 文本的
 `ground`/`floor`/`platform`/`ramp` 行读取 surface 数据。`id`、`kind`、bounds、height/height2、
 axis 和 material 原样保存在 Map IR/Runtime；parser 不解释 `kind` 或 `material`，`attr.*` 继续

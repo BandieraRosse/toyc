@@ -1,0 +1,9 @@
+map version=1 units=rfu
+world min_x=-10000 max_x=10000 min_z=-10000 max_z=10000
+# Forward references and negative local coordinates are intentional.
+object id=control kind=facility_terminal x=-300 y=50 z=400 yaw=90 scale=1000 attr.lab=fixture
+render id=screen kind=sign min_x=-500 max_x=500 min_z=0 max_z=20 height=100 color=79E8C5 attr.height2=400 attr.style=4 attr.channel=contract attr.lab=fixture
+surface id=floor kind=ground min_x=-1000 max_x=1000 min_z=-1000 max_z=1000 height=0 attr.lab=fixture
+collision id=wall shape=box min_x=-1000 max_x=1000 min_z=-1000 max_z=-900 height=500 attr.lab=fixture
+interaction id=use action=wave_skip x=0 y=0 z=0 attr.lab=fixture
+lab id=fixture x=1000 z=2000 width=2048 depth=2048 category=model enclosure=open

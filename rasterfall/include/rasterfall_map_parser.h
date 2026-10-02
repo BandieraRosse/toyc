@@ -36,6 +36,7 @@ struct rasterfall_map_ir_region {
     char id[RASTERFALL_MAP_IR_ID_SIZE];
     char kind[RASTERFALL_MAP_IR_KIND_SIZE];
     struct rasterfall_map_ir_bounds bounds;
+    int is_lab; /* authored composite; ordinary regions cannot impersonate it */
     struct rasterfall_map_ir_attribute attributes[RASTERFALL_MAP_IR_MAX_ATTRIBUTES];
     int attribute_count;
     int line;

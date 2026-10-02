@@ -5625,9 +5625,8 @@ startup_again:
                     if (rf_perf_lab.running) {
                         struct toy_game_actor *test_player =
                             toy_game_local_player_actor(&game);
-                        camera.x = rf_perf_lab.isolated ? session.level.start_x : 34200;
-                        camera.z = rf_perf_lab.isolated ? session.level.start_z :
-                            rf_perf_lab_observe_z[rf_perf_lab.selected];
+                        camera.x = rf_perf_lab.observe_x;
+                        camera.z = rf_perf_lab.observe_z;
                         camera.sy = 1024; camera.cy = 0;
                         camera.pitch_sy = 0; camera.pitch_cy = 1024;
                         test_player->x = camera.x;
@@ -5896,6 +5895,17 @@ startup_again:
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play,
                 options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
                     (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us());
+            rf_labs_display(session.world_id,paused ||
+                (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play);
+            rasterfall_render_terminal_set("performance_control",rf_perf_lab.running ?
+                "PERFORMANCE / RUNNING" : "PERFORMANCE / E CONFIGURE");
+            {
+                char text[96];
+                if (!rf_perf_lab.result.valid) snprintf(text,sizeof(text),"RESULT / NO SAMPLE");
+                else snprintf(text,sizeof(text),"%s / MEAN %lld US",rf_perf_lab.result.valid==1 ?
+                    "VALID" : "INVALID",(long long)rf_perf_lab.result.mean_us);
+                rasterfall_render_terminal_set("performance_result",text);
+            }
             rasterfall_render_set_outpost_showcase(
                 rf_lab_effective(RF_LAB_INFECTED_POSES,session.world_id,
                     rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),

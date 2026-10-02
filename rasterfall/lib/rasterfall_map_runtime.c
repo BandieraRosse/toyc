@@ -480,6 +480,15 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         impl->regions[i].bounds.min_z = parsed->regions[i].bounds.min_z;
         impl->regions[i].bounds.max_z = parsed->regions[i].bounds.max_z;
         impl->regions[i].start_cy = 1024;
+        {
+            const struct rasterfall_map_ir_region *r=&parsed->regions[i];
+            const char *text=extension_text(r->attributes,r->attribute_count,"category");
+            if (text) copy_string(impl->regions[i].category,RF_MAP_RUNTIME_KIND_CAP,text);
+            text=extension_text(r->attributes,r->attribute_count,"enclosure");
+            if (text) copy_string(impl->regions[i].enclosure,RF_MAP_RUNTIME_KIND_CAP,text);
+            extension_int(r->attributes,r->attribute_count,"origin_x",&impl->regions[i].origin_x);
+            extension_int(r->attributes,r->attribute_count,"origin_z",&impl->regions[i].origin_z);
+        }
         if (extension_int(parsed->regions[i].attributes,
                           parsed->regions[i].attribute_count, "sy",
                           &impl->regions[i].start_sy) < 0 ||

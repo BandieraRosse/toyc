@@ -5,7 +5,9 @@ static int scene_lighting_lab_visible(const struct rf_gpu_scene_world_gpu_probe 
 static void scene_lighting_lab_position(unsigned i,unsigned time,float *p)
 {
     double phase=(double)(time%12000)*6.28318530718/12000+i*3.14159265359;
-    p[0]=28900+(float)sin(phase)*3600;p[1]=4200;p[2]=-32600+(float)cos(phase)*2200;
+    int x,z;
+    rasterfall_render_lab_point("rf_light_lab_area",1252,-1074,&x,&z);
+    p[0]=x+(float)sin(phase)*3600;p[1]=4200;p[2]=z+(float)cos(phase)*2200;
 }
 static int scene_lighting_lab_prepare(struct rf_gpu_scene_world_gpu_probe *p,
     const struct camera *c,uint32_t width,uint32_t height,
@@ -40,7 +42,8 @@ static int scene_lighting_lab_prepare(struct rf_gpu_scene_world_gpu_probe *p,
     for(unsigned i=0;i<14;++i) {
         struct rf_gpu_graphics_batch_item *item=&(*items)[(*count)++];memset(item,0,sizeof(*item));
         item->resource=p->lighting_lab_sphere;struct rf_gpu_graphics_draw *d=&item->draw;
-        d->translation_scale[0]=25450+(i%4)*2300;d->translation_scale[2]=-30200-(i/4)*2300;
+        rasterfall_render_lab_point("rf_light_lab_area",-2198+(int)(i%4)*2300,
+            1326-(int)(i/4)*2300,&d->translation_scale[0],&d->translation_scale[2]);
         d->translation_scale[3]=1000;d->rotation[1]=1024;
         d->camera[0]=c->x;d->camera[1]=c->y;d->camera[2]=c->z;
         d->view[0]=c->sy;d->view[1]=c->cy;d->view[2]=c->pitch_sy;d->view[3]=c->pitch_cy;

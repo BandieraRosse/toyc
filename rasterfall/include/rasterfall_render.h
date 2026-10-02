@@ -13,6 +13,11 @@
 
 #define RASTERFALL_NEAR_Z 64
 
+void rasterfall_render_terminal_set(const char *channel,const char *text);
+void rasterfall_render_terminal_freeze(const struct rf_map_runtime_render *,
+    struct toy_map_draw *);
+void rasterfall_render_lab_point(const char *lab,int local_x,int local_z,int *x,int *z);
+
 struct rasterfall_render_context {
     struct rasterfall_session *session;
     struct rasterfall_effects *effects;

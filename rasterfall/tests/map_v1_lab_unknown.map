@@ -1,0 +1,3 @@
+map version=1 units=rfu
+world min_x=-10000 max_x=10000 min_z=-10000 max_z=10000
+object id=control kind=facility_terminal x=0 z=0 yaw=0 scale=1000 attr.lab=missing

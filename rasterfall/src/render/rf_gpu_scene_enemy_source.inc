@@ -267,7 +267,8 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             memset(item,0,sizeof(*item));
             item->source_slot=TOY_GAME_MAX_ENEMIES+(unsigned)i;
             item->type=entry->type;
-            item->x=entry->x;item->z=entry->z;item->dir_z=1024;
+            rasterfall_render_lab_point("character_lab_area",entry->x,entry->z,&item->x,&item->z);
+            item->dir_z=1024;
             item->scene_light_q8=256;
             item->double_sided=1;item->alpha=255;
             item->squash=1000;
@@ -290,7 +291,7 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             item->source_slot=TOY_GAME_MAX_ENEMIES+
                 RASTERFALL_OUTPOST_SHOWCASE_COUNT+(unsigned)i;
             item->type=entry->type;
-            item->x=entry->x;item->z=entry->z;
+            rasterfall_render_lab_point("walk_lab_area",entry->x,entry->z,&item->x,&item->z);
             item->dir_z=entry->direction*1024;
             item->scene_light_q8=256;
             item->double_sided=1;item->alpha=255;

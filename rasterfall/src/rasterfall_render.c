@@ -22,6 +22,8 @@
 #include "rf_gpu_scene_world.h"
 #include "rf_gpu_scene_enemy.h"
 #include "render/rasterfall_text_panel.h"
+#include "render/rasterfall_lab_terminal.h"
+#include "render/rf_lab_terminal.inc"
 
 #define special_target_active ability.special_target_active
 #define charge_active ability.charge_active
@@ -231,6 +233,14 @@ static long render_monotonic_us(void)
     return now.tv_sec * 1000000L + now.tv_nsec / 1000;
 }
 static struct rasterfall_session *active_session;
+
+void rasterfall_render_lab_point(const char *lab,int local_x,int local_z,int *x,int *z)
+{
+    const struct rf_map_runtime_region *r=active_session ?
+        rf_map_runtime_find_region(&active_session->map_ops.runtime,lab) : NULL;
+    *x=local_x+(r ? r->origin_x : 0);
+    *z=local_z+(r ? r->origin_z : 0);
+}
 static int active_pose_preview;
 static int edge_pass_enabled = 1;
 static struct rasterfall_effects *active_effects;
@@ -3879,11 +3889,18 @@ static int persistent_text_panel_quad(void *opaque,
         glyph ? 0xFFF0C0 : ctx->background);
 }
 
+static int persistent_terminal_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct vec3 q[4];
+    for (int i=0;i<4;++i) q[i]=(struct vec3){p[i][0],p[i][1],p[i][2]};
+    return persistent_map_mesh_add_quad(context,q,color);
+}
 static int persistent_map_mesh_add_sign(struct persistent_map_mesh_build *build,
     const struct toy_map_draw *sign)
 {
     int x=(sign->a+sign->b)/2,z=(sign->c+sign->d)/2;
     struct persistent_text_panel_context panel={build,z,sign->color};
+    if (sign->style>=2) return rf_lab_terminal_emit(sign,persistent_terminal_quad,build);
     if ((sign->style != 1 &&
          persistent_map_mesh_add_box(build,x-18,x+18,sign->e-220,sign->e,
             z-18,z+18,0x4B3526,0)<0) ||
@@ -4447,6 +4464,7 @@ int rf_gpu_scene_world_opaque_mesh_build(
         const struct rf_gpu_scene_world_render_item_v1 *item=&render->items[i];
         int kind;
         if (!item->visible) continue;
+        if (item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==4) continue;
         if (item->alpha<255) { blended++;continue; }
         if (item->draw.type==TOY_MAP_DRAW_FLOOR ||
             item->draw.type==TOY_MAP_DRAW_BORDER) { floor_sources++;continue; }
@@ -4678,12 +4696,26 @@ static int draw_cuboid(struct toy_renderer *renderer,
 static int render_text_panel(struct toy_renderer *,const struct camera *,
     int,int,int,int,int,int,int,const char *,int,uint32_t);
 
+struct cpu_terminal_context { struct toy_renderer *renderer; const struct camera *camera; int pixels; };
+static int cpu_terminal_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct cpu_terminal_context *c=context;
+    struct vec3 q[4];
+    for (int i=0;i<4;++i) q[i]=(struct vec3){p[i][0],p[i][1],p[i][2]};
+    c->pixels+=draw_quad(c->renderer,c->camera,&q[0],&q[1],&q[2],&q[3],color);
+    return 0;
+}
 static int render_world_sign(struct toy_renderer *renderer,
                              const struct camera *camera,
                              const struct toy_map_draw *sign)
 {
     int x = (sign->a + sign->b) / 2;
     int z = (sign->c + sign->d) / 2;
+    if (sign->style>=2) {
+        struct cpu_terminal_context c={renderer,camera,0};
+        if (rf_lab_terminal_emit(sign,cpu_terminal_quad,&c)<0) return -1;
+        return c.pixels;
+    }
     int pixels = 0;
     if (sign->style != 1)
         pixels += draw_cuboid(renderer, camera, x - 18, x + 18,
@@ -5755,7 +5787,10 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
             /* Screen labels are emitted after the world/viewmodel flush. */
         } else if (x->type==TOY_MAP_DRAW_SIGN) {
-            pixels += render_world_sign(renderer, camera, x);
+            struct toy_map_draw display=*x;
+            rasterfall_render_terminal_freeze(rasterfall_map_render_projection_at(
+                &active_session->map_ops,i),&display);
+            pixels += render_world_sign(renderer, camera, &display);
         }
 map_record_done:
         scene_stats.map_command_limit[i] = renderer->cmd_count;

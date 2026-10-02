@@ -18,6 +18,24 @@ V1 语法可用 `build/map-inspect <map-v1-file>` 检查，`make test-map-parser
 
 ## 修改地图排布的必经流程
 
+### 添加标准实验区域
+
+```powershell
+python tools/experiment_lab.py new_model_lab --x 0 --z -42000 --category model --enclosure open --output tmp/new_model_lab.map
+```
+
+工具输出地图片段，不覆写现有文件。把片段合入目标 `.map`，检查 world bounds 和容量。
+片段中的地面、标线、终端、入口显示与试样信息全部使用 `attr.lab` 局部坐标；移动区域只改 `lab`
+原点，连通道路仍由全局布局拥有。用途和围合选项以工具 `--help` 为准。
+
+新增展示功能时，在 `rf_experiment_labs.inc` 登记 surface、控制 object、诊断镜头和后端能力，
+沿用默认关闭、暂停时钟与性能独占规则，并在对应来源中使用区域局部坐标。新 channel 的内容由
+Runtime 更新；工具生成几何，不自动创建玩法或展示行为。
+Windows 运行 `NativeCodex.ps1 asset-tools` 后用
+`build-windows/map-inspect.exe (Resolve-Path <map>).Path` 检查，给原生工具传绝对路径；
+再运行 `python tools/map_layout_export.py <map> --output-dir tmp/lab-layout` 核对 PNG 与 JSON。
+JSON 的 `labs` 保留区域原点和分类，子记录导出为世界坐标，组件碰撞仍向原生 C Runtime 查询。
+
 正式 Campaign 设施组合记录位于 `rasterfall.map` 的 `env_*` object 段，沿用既有
 空间和 World Content。当前 adapter 投影全部 object；显式 `attr.legacy_index` 保留迁移排列，无索引 object 按稳定 ID 追加。新增实例
 必须检查 runtime/projection 数量和真实 render，不能只看布局导出。V1 object placement

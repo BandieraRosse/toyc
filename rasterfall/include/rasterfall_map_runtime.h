@@ -62,6 +62,8 @@ struct rf_map_runtime_region {
     char id[RF_MAP_RUNTIME_ID_CAP];
     char kind[RF_MAP_RUNTIME_KIND_CAP];
     struct rf_map_runtime_bounds bounds;
+    char category[RF_MAP_RUNTIME_KIND_CAP], enclosure[RF_MAP_RUNTIME_KIND_CAP];
+    int origin_x, origin_z; /* experiment authoring origin, ground plane */
     int start_sy, start_cy;
     int legacy_index;
     int has_legacy_index;

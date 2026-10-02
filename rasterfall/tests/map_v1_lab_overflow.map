@@ -1,0 +1,4 @@
+map version=1 units=rfu
+world min_x=-10000 max_x=10000 min_z=-10000 max_z=10000
+lab id=fixture x=1000 z=2000 width=2048 depth=2048 category=model enclosure=open
+render id=screen kind=sign min_x=2147483600 max_x=2147483647 min_z=0 max_z=20 height=0 attr.lab=fixture

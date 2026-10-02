@@ -2,8 +2,8 @@
  * sampled values; geometry extraction never advances this clock/history. */
 struct outpost_showcase_entry { int family, type, x, z, moving; };
 #define SHOWCASE_PAIR(family,type,x) \
-    {RASTERFALL_ENEMY_VISUAL_##family,TOY_GAME_ENEMY_PURSUIT_##type,x,-17408,0}, \
-    {RASTERFALL_ENEMY_VISUAL_##family,TOY_GAME_ENEMY_PURSUIT_##type,x,-20992,1}
+    {RASTERFALL_ENEMY_VISUAL_##family,TOY_GAME_ENEMY_PURSUIT_##type,x,2048,0}, \
+    {RASTERFALL_ENEMY_VISUAL_##family,TOY_GAME_ENEMY_PURSUIT_##type,x,-1536,1}
 static const struct outpost_showcase_entry outpost_showcase[] = {
     SHOWCASE_PAIR(BLOCK_INFECTED,COMMON,-4000),
     SHOWCASE_PAIR(BLOCK_INFECTED,FAST,-2500),
@@ -20,8 +20,8 @@ static uint64_t outpost_showcase_time_us, outpost_showcase_step_us;
 static struct rasterfall_infected_sample
     outpost_showcase_motion[RASTERFALL_OUTPOST_SHOWCASE_COUNT];
 
-#define OUTPOST_WALK_NORTH_Z -28700
-#define OUTPOST_WALK_SOUTH_Z -34700
+#define OUTPOST_WALK_NORTH_Z 3044
+#define OUTPOST_WALK_SOUTH_Z -2956
 struct outpost_walk_entry {
     int type, x, z, direction;
     struct rasterfall_infected_sample motion;
@@ -117,7 +117,8 @@ static int render_outpost_showcase(struct toy_renderer *renderer,
         const struct outpost_showcase_entry *entry=&outpost_showcase[i];
         struct toy_game_enemy model={0};
         model.active=1;model.type=entry->type;
-        model.x=entry->x;model.z=entry->z;model.dir_z=1024;
+        rasterfall_render_lab_point("character_lab_area",entry->x,entry->z,&model.x,&model.z);
+        model.dir_z=1024;
         pixels+=render_infected_enemy(renderer,camera,&model,&model,-1,
             1000,0,entry->family,&outpost_showcase_motion[i]);
     }
@@ -132,7 +133,7 @@ static int render_outpost_walk(struct toy_renderer *renderer,
         const struct outpost_walk_entry *entry=&outpost_walk[i];
         struct toy_game_enemy model={0};
         model.active=1;model.type=entry->type;
-        model.x=entry->x;model.z=entry->z;
+        rasterfall_render_lab_point("walk_lab_area",entry->x,entry->z,&model.x,&model.z);
         model.dir_z=entry->direction*1024;
         pixels+=render_infected_enemy(renderer,camera,&model,&model,-1,
             1000,0,RASTERFALL_ENEMY_VISUAL_HUMANOID_INFECTED,&entry->motion);

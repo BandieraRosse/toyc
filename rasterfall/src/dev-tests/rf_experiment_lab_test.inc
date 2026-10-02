@@ -1,6 +1,42 @@
 /* Contracts that are hard to observe: suspension, session return and statistics. */
+static int rf_lab_composite_contract_test(void)
+{
+    struct rf_map_runtime map={0};
+    if (rf_map_runtime_load(&map,"rasterfall/tests/map_v1_lab.map")<0) return -1;
+    const struct rf_map_runtime_region *r=rf_map_runtime_find_region(&map,"fixture");
+    const struct rf_map_runtime_object *o=rf_map_runtime_find_object(&map,"control");
+    const struct rf_map_runtime_surface *s=rf_map_runtime_find_surface(&map,"floor");
+    const struct rf_map_runtime_collision *c=rf_map_runtime_find_collision(&map,"wall");
+    const struct rf_map_runtime_interaction *i=rf_map_runtime_find_interaction(&map,"use");
+    const struct rf_map_runtime_render *panel=rf_map_runtime_find_render(&map,"screen");
+    if (!r || !o || !s || !c || !i || !panel || r->origin_x!=1000 || r->origin_z!=2000 ||
+        strcmp(r->category,"model") || strcmp(r->enclosure,"open") ||
+        o->x!=700 || o->z!=2400 || o->y!=50 || o->yaw!=90 ||
+        s->bounds.min_x!=0 || s->bounds.max_z!=3000 || c->bounds.min_z!=1000 ||
+        i->x!=1000 || i->z!=2000 || panel->bounds.min_x!=500) {
+        rf_map_runtime_unload(&map);return -2;
+    }
+    struct toy_map_draw frozen={0};
+    frozen.type=TOY_MAP_DRAW_SIGN;frozen.style=4;frozen.a=panel->bounds.min_x;
+    rasterfall_render_terminal_set("contract","ON");
+    rasterfall_render_terminal_freeze(panel,&frozen);
+    rasterfall_render_terminal_set("contract","OFF");
+    if (strcmp(frozen.text,"ON") || frozen.a!=500) { rf_map_runtime_unload(&map);return -3; }
+    rasterfall_render_terminal_freeze(panel,&frozen);
+    if (strcmp(frozen.text,"OFF")) { rf_map_runtime_unload(&map);return -4; }
+    rf_map_runtime_unload(&map);
+    if (rf_map_runtime_load(&map,"rasterfall/tests/map_v1_lab_unknown.map")>=0) {
+        rf_map_runtime_unload(&map);return -5;
+    }
+    if (rf_map_runtime_load(&map,"rasterfall/tests/map_v1_lab_overflow.map")>=0) {
+        rf_map_runtime_unload(&map);return -6;
+    }
+    __printf("EXPERIMENT-LAB composite/forward-reference/overflow/display-freeze passed\n");
+    return 0;
+}
 static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
 {
+    if (rf_lab_composite_contract_test()<0) return -12;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;
     struct camera origin=runtime->camera;
     uint64_t seed=runtime->session->seed;
