@@ -20,6 +20,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 物理键、动作默认绑定与输入边沿 | [运行时架构](architecture/runtime.md#物理键与动作绑定) | `include/rf_input_bindings.h`、`src/rf_input_bindings.c`、`windows/src/window_sdl.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c` |
+| 共享等级技能与战斗原型 V0 | [共享战斗能力](architecture/combat.md)、[活动任务](plans/combat-v0.md) | `lib/game_combat.inc`、`include/toy_game.h`；玩家/队友统一能力、枪手与回避接入 |
 | 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[历史计划](archive/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |
 | FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |

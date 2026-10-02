@@ -1,5 +1,6 @@
 #include "dev-tests/rf_gpu_scene_local_test.inc"
 #include "dev-tests/rf_gpu_scene_ui_test.inc"
+#include "dev-tests/game_combat_test.inc"
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
 #define special_target_kind ability.special_target_kind
@@ -1589,6 +1590,7 @@ static int run_logic_test(void)
     if (toy_window_windows_key_mapping_logic_test() < 0) return 261;
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
+    if (combat_capabilities_logic_test() != 0) return 279;
     if (rf_input_bindings_logic_test() != 0) return 277;
     struct camera camera;
     struct toy_input input;
@@ -2334,7 +2336,7 @@ static int run_logic_test(void)
         for(i=0;i<TOY_GAME_MAX_ACTORS;i++)
             if(session.game_state.actors[i].active&&
                session.game_state.actors[i].anime_character_id){anime=i;break;}
-        if(anime<0||session.game_state.actors[anime].max_hp!=190||
+        if(anime<0||session.game_state.actors[anime].max_hp!=200||
            session.game_state.actors[anime].slots[
              session.game_state.actors[anime].current_slot].weapon!=TOY_GAME_WEAPON_AK)
             return 169;
@@ -2593,7 +2595,7 @@ static int run_logic_test(void)
             ai_reload_test.actors[ai_id - 1].animation.id !=
                 TOY_GAME_ANIM_RELOAD) return 62;
         toy_game_update_ai_teammates(&ai_reload_test,
-                                     toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->reload_ms + 100);
+                                     ai_reload_test.actors[ai_id - 1].reload_timer_ms + 100);
         if (ai_reload_test.actors[ai_id - 1].reloading ||
             ai_reload_test.actors[ai_id - 1].slots[
                 ai_reload_test.actors[ai_id - 1].current_slot].reserve !=
@@ -3765,12 +3767,12 @@ death_fixture_done:
         if (!toy_game_actor_refill_ammo(&game, player) ||
             player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE ||
             player->slots[0].mag != 3) return 24;
-        /* SMG 全自动：按住 10 步（160ms，玩家增强后 50ms 冷却）消耗 3 发 */
+        /* SMG full-auto observes mechanical cadence; no player-only 2x rate. */
         player->slots[0].mag = TOY_CONFIG_SMG_MAG;
         for (i = 0; i < 10; i++)
             toy_game_update_actor_weapon_held(
                 &game, player, NULL, 0, 1, 0, 1024, 16, 100);
-        if (player->slots[0].mag != TOY_CONFIG_SMG_MAG - 3) return 25;
+        if (player->slots[0].mag != TOY_CONFIG_SMG_MAG - 2) return 25;
         /* 手枪半自动：按住不连发 */
         toy_game_actor_switch_weapon(&game, player, 1);
         for (i = 0; i < 5; i++)
@@ -3788,7 +3790,7 @@ death_fixture_done:
             toy_game_update_actor_weapon_held(
                 &game, player, NULL, 0, 0, 0, 1024, 16, 100);
         if (player->reloading || player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
-            player->slots[0].reserve != 647) return 28;
+            player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE - 2) return 28;
         /* 霰弹枪按配置容量：12 弹丸随机散射，整匣内应放倒并排两敌 */
         if (toy_game_actor_equip_weapon(&game, player,
                                         TOY_GAME_WEAPON_SHOTGUN) != 1 ||
@@ -5250,17 +5252,18 @@ death_fixture_done:
                 TOY_GAME_SPECIAL_CONTROL_NONE)
             return 156;
     }
-    /* 玩家武器增强只影响玩家操作者，AI 仍使用武器标准计时。 */
+    /* Player timing derives from the same capability map as every actor. */
     {
         struct toy_game_actor *player;
+        struct toy_game_capabilities caps;
         toy_game_init(&game, 143);
         player = toy_game_local_player_actor(&game);
         player->slots[player->current_slot].mag = 1;
         toy_game_actor_fire(&game, player,
                             0, 1024, 100);
-        if (player->fire_cooldown_ms != 200 * 100 /
-                TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT ||
-            player->reload_timer_ms != 1500 * 60 / 100) return 150;
+        toy_game_actor_capabilities(player, TOY_GAME_WEAPON_PISTOL, &caps);
+        if (player->fire_cooldown_ms < toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL)->cooldown_ms ||
+            player->reload_timer_ms != 1500 * caps.reload_percent / 100) return 150;
     }
     /* Combat Power 使用武器真实参数计算，并输出完整拆分，方便调平衡。 */
     {

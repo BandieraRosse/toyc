@@ -3,8 +3,8 @@
 #define RASTERFALL_TOY_GAME_CONFIG_H  /* 防止配置头重复包含 */
 
 /* General health and movement. */
-#define TOY_CONFIG_PLAYER_HP                  100  /* 主玩家生命值 */
-#define TOY_CONFIG_SECONDARY_PLAYER_HP        100  /* 第二玩家生命值 */
+#define TOY_CONFIG_PLAYER_HP                  120  /* Lv2 普通耐力模板；能力映射见 game_combat.inc */
+#define TOY_CONFIG_SECONDARY_PLAYER_HP        120  /* 与本地主玩家相同模板 */
 #define TOY_CONFIG_PLAYER_MOVE_STEP            76  /* 玩家每逻辑步移动量 */
 #define TOY_CONFIG_GROUND_STEP_HEIGHT          120 /* 可直接跨越的最大地面高差 */
 #define TOY_CONFIG_BASE_HP                     500 /* 基地核心初始/最大生命 */
@@ -25,9 +25,6 @@
 #define TOY_CONFIG_SPREAD_SHOT_STEP             9  /* 每次开火增加的散布 */
 #define TOY_CONFIG_SPREAD_HEAT_MAX            120  /* 连射散布上限 */
 #define TOY_CONFIG_SPREAD_RECOVER_PER_SEC      70  /* 每秒恢复的散布 */
-/* 玩家专属武器增强；武器定义仍保留标准参数，AI 与平衡计算不变。 */
-#define TOY_CONFIG_PLAYER_FIRE_RATE_PERCENT   200  /* 玩家射速倍率 */
-#define TOY_CONFIG_PLAYER_RELOAD_TIME_PERCENT  60  /* 玩家换弹时间倍率 */
 #define TOY_CONFIG_SHOVE_ANIMATION_MS        300  /* 推搡动画时长 */
 #define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
 #define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
@@ -202,22 +199,13 @@
 #define TOY_CONFIG_AI_LEVEL_2_HP             120  /* 二级生命值 */
 #define TOY_CONFIG_AI_LEVEL_3_HP             160  /* 三级生命值 */
 
-/* AI 强度：射击间隔倍率以百分比表示，转身速度为角度/秒。 */
-#define TOY_CONFIG_AI_LEVEL_1_FIRE_INTERVAL_PERCENT 150
-#define TOY_CONFIG_AI_LEVEL_2_FIRE_INTERVAL_PERCENT 100
-#define TOY_CONFIG_AI_LEVEL_3_FIRE_INTERVAL_PERCENT 80
-#define TOY_CONFIG_AI_LEVEL_1_TURN_SPEED_DEGREE      240
-#define TOY_CONFIG_AI_LEVEL_2_TURN_SPEED_DEGREE      380
-#define TOY_CONFIG_AI_LEVEL_3_TURN_SPEED_DEGREE      720
+/* AI shove remains its existing behavior; combat skills own other abilities. */
 #define TOY_CONFIG_AI_LEVEL_1_SHOVE_COOLDOWN_MS     2000
 #define TOY_CONFIG_AI_LEVEL_2_SHOVE_COOLDOWN_MS     1000
 #define TOY_CONFIG_AI_LEVEL_3_SHOVE_COOLDOWN_MS        0
 #define TOY_CONFIG_AI_LEVEL_1_MOVE_SPEED              30  /* 一级移动速度 */
 #define TOY_CONFIG_AI_LEVEL_2_MOVE_SPEED              38  /* 二级移动速度 */
 #define TOY_CONFIG_AI_LEVEL_3_MOVE_SPEED              46  /* 三级移动速度 */
-#define TOY_CONFIG_AI_LEVEL_1_SPREAD_PERCENT         160  /* 一级散布系数 */
-#define TOY_CONFIG_AI_LEVEL_2_SPREAD_PERCENT         125  /* 二级散布系数 */
-#define TOY_CONFIG_AI_LEVEL_3_SPREAD_PERCENT         100  /* 三级散布系数 */
 #define TOY_CONFIG_AI_HIRE_PRICE                    100  /* 一级 AI 雇佣价 */
 #define TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE      100  /* AI 手枪价 */
 #define TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER    10  /* AI 武器价倍率 */

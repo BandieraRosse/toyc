@@ -29,7 +29,8 @@ static void net_windows_log(const char *message) { (void)message; }
  * player fires; keeping them out of the periodic actor snapshot saves 180
  * bytes per player even when nobody is shooting. */
 #define NET_ENTITY_CHUNK_BASE 8
-#define NET_ACTOR_SIZE (43 + TOY_GAME_MAX_NAME + 32)
+#define NET_ACTOR_SKILLS_OFFSET (43 + TOY_GAME_MAX_NAME + 32)
+#define NET_ACTOR_SIZE (NET_ACTOR_SKILLS_OFFSET + TOY_GAME_SKILL_COUNT + 2)
 #define NET_ENEMY_SIZE 55
 #define NET_WORLD_BASE_SIZE 52
 #define NET_WORLD_FLAG_SIZE 12
@@ -1271,6 +1272,8 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
         q[0] = put_weapon_value(s->weapon);
         put_i16(q + 1, s->mag); put_i16(q + 3, s->reserve);
     }
+    memcpy(p + NET_ACTOR_SKILLS_OFFSET, a->skills.mastery, TOY_GAME_SKILL_COUNT);
+    put_i16(p + NET_ACTOR_SKILLS_OFFSET + TOY_GAME_SKILL_COUNT, a->max_hp);
 }
 
 static int net_animation_is_transient(int animation_id)
@@ -1290,6 +1293,8 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
     a->active = 1;
     a->actor_index = p[1];
     a->class_id = (p[0] >> 2) & 3;
+    memcpy(a->skills.mastery, p + NET_ACTOR_SKILLS_OFFSET, TOY_GAME_SKILL_COUNT);
+    a->max_hp = get_i16(p + NET_ACTOR_SKILLS_OFFSET + TOY_GAME_SKILL_COUNT);
     a->state = (p[0] >> 4) & 3;
     a->anime_character_id = (p[41] >> 1) & 7;
     a->moving = (p[0] & 0x80) != 0;
@@ -2119,6 +2124,7 @@ static int net_apply_client_fire_report(
     struct toy_game_actor *actor;
     const struct toy_game_weapon_info *info;
     int index, i, weapon;
+    struct toy_game_capabilities caps;
     if (!game || !client || !fire_seq || !rays ||
         (client->last_applied_fire_seq &&
          !sequence_after(fire_seq, client->last_applied_fire_seq))) return 0;
@@ -2163,9 +2169,10 @@ static int net_apply_client_fire_report(
             return 0;
     }
     actor->slots[actor->current_slot].mag--;
-    actor->fire_cooldown_ms = info->cooldown_ms;
+    actor->fire_cooldown_ms = toy_game_actor_fire_cooldown_ms(actor, info);
     actor->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
-    actor->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP;
+    toy_game_actor_capabilities(actor, weapon, &caps);
+    actor->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP * caps.heat_percent / 100;
     if (actor->weapon_spread_heat > TOY_CONFIG_SPREAD_HEAT_MAX)
         actor->weapon_spread_heat = TOY_CONFIG_SPREAD_HEAT_MAX;
     for (i = 0; i < ray_count; i++)
@@ -2186,6 +2193,11 @@ static int net_apply_client_fire_report(
     else
         toy_game_emit_event(game, TOY_GAME_EV_SHOOT);
     client->last_applied_fire_seq = fire_seq;
+    if (actor->slots[actor->current_slot].mag == 0) {
+        actor->reloading = 1;
+        actor->reload_timer_ms = toy_game_actor_reload_ms(actor, info);
+        toy_game_emit_event(game, TOY_GAME_EV_RELOAD_START);
+    }
     return 1;
 }
 
@@ -2954,6 +2966,7 @@ int rasterfall_net_pipeline_test(void)
         first->hired = 0;
         first->reloading = 1; first->reload_timer_ms = 240;
         first->control_disabled = 1; first->kills = 8;
+        first->skills.mastery[TOY_GAME_SKILL_RIFLE] = 3;
         toy_game_animation_set(&first->animation, TOY_GAME_ANIM_DEATH);
         second->state = TOY_GAME_ACTOR_DOWNED; second->hp = 0;
         second->revive_progress_ms = 320; second->special_kills = 4;
@@ -2967,6 +2980,8 @@ int rasterfall_net_pipeline_test(void)
             !decoded.reloading || decoded.reload_timer_ms != 240 ||
             !decoded.control_disabled || decoded.kills != 8 ||
             decoded.anime_character_id != 2 ||
+            decoded.max_hp != first->max_hp ||
+            memcmp(&decoded.skills, &first->skills, sizeof(first->skills)) ||
             decoded.character_id != -1 || decoded.hired ||
             decoded.animation.id != TOY_GAME_ANIM_DEATH)
             return 30;
@@ -3203,6 +3218,8 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                         index >= TOY_GAME_REMOTE_ACTOR_BASE ?
                         TOY_GAME_ACTOR_PLAYER : TOY_GAME_ACTOR_AI;
             dst->class_id = src->class_id;
+            memcpy(&dst->skills, &src->skills, sizeof(dst->skills));
+            dst->max_hp = src->max_hp;
             dst->character_id = src->character_id;
             dst->anime_character_id = src->anime_character_id;
             if (dst->moving != src->moving) {
@@ -3215,7 +3232,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
                 dst->sy = src->sy; dst->cy = src->cy;
             }
             dst->hp = src->hp;
-            if (src->anime_character_id) dst->max_hp = 190;
             dst->kills = src->kills;
             dst->special_kills = src->special_kills;
     dst->damage_dealt = src->damage_dealt;

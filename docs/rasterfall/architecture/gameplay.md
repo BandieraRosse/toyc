@@ -6,6 +6,9 @@
 
 本文记录玩法真值及 session 的所有权。地图格式与碰撞来源见[地图与世界内容](maps-and-world-content.md)，角色资源与 LOD 选择见[角色表现](character-presentation.md)。
 
+共享等级与精通的确定性能力映射由 `lib/game_combat.inc` 拥有，规则见[共享战斗能力](combat.md)。
+actor 的等级、个人精通和生命进入主机快照；动作资源和渲染状态不进入该能力层。
+
 ## World Content V1
 
 空间地图（Spatial Map）remains authoritative for terrain, collision and neutral spatial

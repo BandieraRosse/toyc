@@ -71,9 +71,10 @@ void rasterfall_render_set_outpost_actor_walk(int visible,uint64_t time_us)
         outpost_actor_walk_step_us+=16000;
         for (int i=0;i<OUTPOST_ACTOR_WALK_COUNT;++i) {
             struct outpost_actor_walker *entry=&outpost_actor_walkers[i];
-            static const int speeds[]={TOY_CONFIG_AI_LEVEL_1_MOVE_SPEED,
-                TOY_CONFIG_AI_LEVEL_2_MOVE_SPEED,TOY_CONFIG_AI_LEVEL_3_MOVE_SPEED};
-            int next=entry->z+entry->direction*speeds[entry->level];
+            struct toy_game_actor sample={0};
+            sample.class_id=entry->level;
+            int step=toy_game_actor_move_step(&sample,TOY_CONFIG_AI_RETURN_SPEED);
+            int next=entry->z+entry->direction*step;
             if (next<OUTPOST_ACTOR_WALK_SOUTH_Z) {
                 next=OUTPOST_ACTOR_WALK_SOUTH_Z+
                     (OUTPOST_ACTOR_WALK_SOUTH_Z-next);

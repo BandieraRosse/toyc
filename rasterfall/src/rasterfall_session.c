@@ -856,10 +856,11 @@ static void session_move_player(struct rasterfall_session *session,
     struct toy_game_actor *actor = toy_game_local_player_actor(&session->game_state);
     if (!actor || actor->control_disabled)
         return;
+    int step = toy_game_actor_move_step(actor, RASTERFALL_MOVE_STEP);
     int dx = (camera->sy * command->move_forward +
-              camera->cy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+              camera->cy * command->move_strafe) * step / 1024;
     int dz = (camera->cy * command->move_forward -
-              camera->sy * command->move_strafe) * RASTERFALL_MOVE_STEP / 1024;
+              camera->sy * command->move_strafe) * step / 1024;
     if (actor->airborne_ms <= 0) {
         /* Ground movement must use the gameplay actor API so ramps update
          * ground_y and ramp/platform seams remain traversable. */

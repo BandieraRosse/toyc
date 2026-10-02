@@ -193,6 +193,36 @@ enum toy_game_ai_class {
     TOY_GAME_AI_CLASS_COUNT
 };
 
+/* class_id is the existing zero-based level, including for human players.
+ * Mastery is a per-skill template offset: ordinary=0 .. master=3.
+ * The first five entries specialize the weapon ability by firearm category. */
+enum toy_game_skill {
+    TOY_GAME_SKILL_PISTOL, TOY_GAME_SKILL_SMG, TOY_GAME_SKILL_SHOTGUN,
+    TOY_GAME_SKILL_RIFLE, TOY_GAME_SKILL_SNIPER,
+    TOY_GAME_SKILL_MOVEMENT, TOY_GAME_SKILL_EVASION,
+    TOY_GAME_SKILL_ENDURANCE, TOY_GAME_SKILL_PRECISION,
+    TOY_GAME_SKILL_COUNT
+};
+
+struct toy_game_skills {
+    unsigned char mastery[TOY_GAME_SKILL_COUNT];
+};
+
+struct toy_game_capabilities {
+    int max_hp, move_percent, carry_capacity;
+    int fire_interval_percent, reload_percent, heat_percent;
+    int spread_percent, turn_degrees, aim_ms, weakpoint_percent;
+    int evasion_capacity, evasion_per_second;
+};
+
+enum toy_game_combat_template {
+    TOY_GAME_COMBAT_STANDARD,
+    TOY_GAME_COMBAT_PLAYER,
+    TOY_GAME_COMBAT_MOBILE,
+    TOY_GAME_COMBAT_GUNNER,
+    TOY_GAME_COMBAT_ELITE
+};
+
 enum toy_game_enemy_type {
     TOY_GAME_ENEMY_PURSUIT_COMMON,
     TOY_GAME_ENEMY_PURSUIT_HEAVY,
@@ -558,6 +588,7 @@ struct toy_game_actor {
     int actor_id;
     int kind;
     int class_id;
+    struct toy_game_skills skills;
     int character_id;           /* -1 ordinary; nonnegative IDs are explicit story identities */
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
@@ -808,6 +839,17 @@ struct toy_game {
 };
 
 struct toy_game_actor *toy_game_local_player_actor(struct toy_game *g);
+int toy_game_skill_tier(int class_id, int mastery);
+int toy_game_actor_skill_tier(const struct toy_game_actor *actor, int skill);
+void toy_game_actor_capabilities(const struct toy_game_actor *actor, int weapon,
+                                 struct toy_game_capabilities *out);
+void toy_game_actor_set_combat_template(struct toy_game_actor *actor,
+                                       int template_id);
+int toy_game_actor_move_step(const struct toy_game_actor *actor, int base_step);
+int toy_game_actor_fire_cooldown_ms(const struct toy_game_actor *actor,
+                                   const struct toy_game_weapon_info *weapon);
+int toy_game_actor_reload_ms(const struct toy_game_actor *actor,
+                             const struct toy_game_weapon_info *weapon);
 const struct toy_game_actor *toy_game_local_player_actor_const(
     const struct toy_game *g);
 
