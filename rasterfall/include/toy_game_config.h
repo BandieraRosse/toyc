@@ -25,13 +25,22 @@
 #define TOY_CONFIG_SPREAD_SHOT_STEP             9  /* 每次开火增加的散布 */
 #define TOY_CONFIG_SPREAD_HEAT_MAX            120  /* 连射散布上限 */
 #define TOY_CONFIG_SPREAD_RECOVER_PER_SEC      70  /* 每秒恢复的散布 */
+/* Continuous evasion: gameplay, retrigger and visual clocks are independent. */
+#define TOY_CONFIG_EVASION_WINDOW_MS          400
+#define TOY_CONFIG_EVASION_RETRIGGER_MS       1200
+#define TOY_CONFIG_EVASION_ANIMATION_MS        500
+#define TOY_CONFIG_EVASION_RECOVERY_DELAY_MS  3000
+#define TOY_CONFIG_EVASION_BULLET_WINDOW_PERCENT 50
+#define TOY_CONFIG_EVASION_MELEE_WINDOW_PERCENT  85
+#define TOY_CONFIG_EVASION_MELEE_COST_PERCENT   400
+#define TOY_CONFIG_EVASION_SPREAD_EXTRA          55
 #define TOY_CONFIG_SHOVE_ANIMATION_MS        300  /* 推搡动画时长 */
 #define TOY_CONFIG_SHOVE_SWEEP_DEGREES       240  /* 推搡手臂旋转角度 */
 #define TOY_CONFIG_SHOVE_RANGE               900  /* 推搡有效范围 */
 #define TOY_CONFIG_SHOVE_STUN_MS             1500  /* 敌人僵直时长 */
 #define TOY_CONFIG_MELEE_SWING_MS            500   /* 近战挥舞时间 */
 #define TOY_CONFIG_MELEE_RANGE               TOY_CONFIG_SHOVE_RANGE
-#define TOY_CONFIG_MELEE_DAMAGE              100
+#define TOY_CONFIG_MELEE_DAMAGE               30
 #define TOY_CONFIG_THROW_HANDOFF_MS          300   /* 投掷出手/第一人称动作 */
 #define TOY_CONFIG_THROW_COOLDOWN_MS         450
 #define TOY_CONFIG_EXPLOSIVE_RADIUS          3000  /* Bomb 爆炸半径 */
@@ -39,9 +48,9 @@
 #define TOY_CONFIG_MOLOTOV_BURN_RADIUS       2500  /* Molotov 燃烧半径 */
 #define TOY_CONFIG_MOLOTOV_BURN_MS           8000  /* 燃烧持续时间 */
 #define TOY_CONFIG_MOLOTOV_TICK_MS           1000  /* 燃烧伤害间隔 */
-#define TOY_CONFIG_MOLOTOV_DAMAGE              40  /* 每次燃烧伤害 */
+#define TOY_CONFIG_MOLOTOV_DAMAGE              12  /* 每次燃烧伤害 */
 #define TOY_CONFIG_MAX_BURN_ZONES              16
-#define TOY_CONFIG_BOMB_DAMAGE               100   /* Bomb 对敌方单位的伤害 */
+#define TOY_CONFIG_BOMB_DAMAGE                30   /* Bomb 对敌方单位的伤害 */
 #define TOY_CONFIG_BOMB_FUSE_MS              4000
 #define TOY_CONFIG_THROW_SPEED               15200  /* 投掷速度，影响距离 */
 #define TOY_CONFIG_THROW_GRAVITY             6000  /* 投掷物重力 */
@@ -76,7 +85,7 @@
 #define TOY_CONFIG_PISTOL_PELLETS               1  /* 每次弹丸数 */
 #define TOY_CONFIG_PISTOL_SPREAD               12  /* 散布范围 */
 #define TOY_CONFIG_PISTOL_SLOT                  1  /* 武器槽位 */
-#define TOY_CONFIG_PISTOL_DAMAGE               20  /* 单颗伤害 */
+#define TOY_CONFIG_PISTOL_DAMAGE                6  /* 单颗伤害 */
 
 /* SMG weapon tuning. */
 #define TOY_CONFIG_SMG_MAG                     40  /* 弹匣容量 */
@@ -87,7 +96,7 @@
 #define TOY_CONFIG_SMG_PELLETS                  1  /* 每次弹丸数 */
 #define TOY_CONFIG_SMG_SPREAD                  90  /* 散布范围 */
 #define TOY_CONFIG_SMG_SLOT                     0  /* 武器槽位 */
-#define TOY_CONFIG_SMG_DAMAGE                  25  /* 单颗伤害 */
+#define TOY_CONFIG_SMG_DAMAGE                   7  /* 单颗伤害 */
 
 /* Shotgun weapon tuning. */
 #define TOY_CONFIG_SHOTGUN_MAG                  8  /* 弹匣容量 */
@@ -98,7 +107,7 @@
 #define TOY_CONFIG_SHOTGUN_PELLETS             10  /* 每次弹丸数 */
 #define TOY_CONFIG_SHOTGUN_SPREAD             150  /* 散布范围 */
 #define TOY_CONFIG_SHOTGUN_SLOT                  0  /* 武器槽位 */
-#define TOY_CONFIG_SHOTGUN_DAMAGE               25  /* 单颗伤害 */
+#define TOY_CONFIG_SHOTGUN_DAMAGE                7  /* 单颗伤害 */
 
 /* AK rifle weapon tuning. */
 #define TOY_CONFIG_AK_MAG                       40  /* 弹匣容量 */
@@ -109,7 +118,7 @@
 #define TOY_CONFIG_AK_PELLETS                    1  /* 每次弹丸数 */
 #define TOY_CONFIG_AK_SPREAD                    50  /* 散布范围 */
 #define TOY_CONFIG_AK_SLOT                       0  /* 武器槽位 */
-#define TOY_CONFIG_AK_DAMAGE                    60  /* 单颗伤害 */
+#define TOY_CONFIG_AK_DAMAGE                    16  /* 单颗伤害 */
 
 /* AWP sniper weapon tuning. */
 #define TOY_CONFIG_AWP_MAG                      10  /* 弹匣容量 */
@@ -120,7 +129,7 @@
 #define TOY_CONFIG_AWP_PELLETS                   1  /* 每次弹丸数 */
 #define TOY_CONFIG_AWP_SPREAD                    4  /* 散布范围 */
 #define TOY_CONFIG_AWP_SLOT                      0  /* 武器槽位 */
-#define TOY_CONFIG_AWP_DAMAGE                  200  /* 单颗伤害 */
+#define TOY_CONFIG_AWP_DAMAGE                   60  /* 单颗伤害 */
 
 /* Weapon reach and AI teammate awareness. */
 #define TOY_CONFIG_PISTOL_RANGE              11500  /* 最大射程 */
@@ -135,27 +144,27 @@
 #define TOY_CONFIG_AWP_ALERT_RANGE           23000  /* AI 警觉范围 */
 
 /* Pursuit enemy tuning. */
-#define TOY_CONFIG_PURSUIT_COMMON_HP           50  /* 生命值 */
+#define TOY_CONFIG_PURSUIT_COMMON_HP           14  /* 生命值 */
 #define TOY_CONFIG_PURSUIT_COMMON_SPEED_MIN   66  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_COMMON_SPEED_MAX   82  /* 最高速度 */
 #define TOY_CONFIG_PURSUIT_COMMON_BITE_DAMAGE  2  /* 咬伤 */
-#define TOY_CONFIG_PURSUIT_HEAVY_HP          200  /* 生命值 */
+#define TOY_CONFIG_PURSUIT_HEAVY_HP           54  /* 生命值 */
 #define TOY_CONFIG_PURSUIT_HEAVY_SPEED_MIN    30  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_HEAVY_SPEED_MAX    42  /* 最高速度 */
 #define TOY_CONFIG_PURSUIT_HEAVY_BITE_DAMAGE   4  /* 咬伤 */
-#define TOY_CONFIG_PURSUIT_FAST_HP            60  /* 生命值 */
+#define TOY_CONFIG_PURSUIT_FAST_HP            16  /* 生命值 */
 #define TOY_CONFIG_PURSUIT_FAST_SPEED_MIN     92  /* 最低速度 */
 #define TOY_CONFIG_PURSUIT_FAST_SPEED_MAX    112  /* 最高速度 */
 #define TOY_CONFIG_PURSUIT_FAST_BITE_DAMAGE    2  /* 咬伤 */
-#define TOY_CONFIG_SMOKER_HP                 100  /* 生命值 */
+#define TOY_CONFIG_SMOKER_HP                  28  /* 生命值 */
 #define TOY_CONFIG_SMOKER_SPEED_MIN           34  /* 最低速度 */
 #define TOY_CONFIG_SMOKER_SPEED_MAX           46  /* 最高速度 */
 #define TOY_CONFIG_SMOKER_BITE_DAMAGE          0  /* 咬伤 */
-#define TOY_CONFIG_CHARGER_HP                300  /* 生命值 */
+#define TOY_CONFIG_CHARGER_HP                 80  /* 生命值 */
 #define TOY_CONFIG_CHARGER_SPEED_MIN          42  /* 最低速度 */
 #define TOY_CONFIG_CHARGER_SPEED_MAX          58  /* 最高速度 */
 #define TOY_CONFIG_CHARGER_BITE_DAMAGE         4  /* 咬伤 */
-#define TOY_CONFIG_TANK_HP                   4000  /* Boss 生命值 */
+#define TOY_CONFIG_TANK_HP                   1080  /* Boss 生命值 */
 #define TOY_CONFIG_TANK_SPEED_MIN              38  /* 与普通感染者一致 */
 #define TOY_CONFIG_TANK_SPEED_MAX              56
 #define TOY_CONFIG_TANK_BITE_DAMAGE             0  /* Tank 只使用范围挥击 */
@@ -214,7 +223,7 @@
 
 /* 粗略战斗力（Combat Power）评分。CP 不使用经济价格，也不试图模拟
  * 实战中的走位和目标选择，只给导演系统一个稳定的相对强度指标。 */
-#define TOY_CONFIG_COMBAT_DPS_SCALE                 20
+#define TOY_CONFIG_COMBAT_DPS_SCALE                  6 /* 与枪伤同步缩放，保留导演相对量级 */
 #define TOY_CONFIG_COMBAT_SPREAD_LOW_MAX             50
 #define TOY_CONFIG_COMBAT_SPREAD_MEDIUM_MAX         100
 #define TOY_CONFIG_COMBAT_SPREAD_HIGH_MAX           150

@@ -95,8 +95,8 @@ pose 派生 `FOREGRIP`；`rifle_idle`、`rifle_aim`、`rifle_fire` 都必须同�
 验收诊断；`visual_rf_check_grips()` 超过 4 RFU 误差即返回失败。
 Character Lab 的 front/three-quarter 对应 canonical +Z 正面，所有方向共享相同姿态与 framing。
 
-这套 V2 是后续 AI/NPC 身体与 headgear/职业附件扩展的基线候选。完整运行时资产仍为本地可选
-资源，生成器与 manifest 才是可复现源；本轮不自动替换全部 gameplay actor。最终冻结判断和
+这套 V2 是 AI/NPC 身体与 headgear/职业附件的共同基线。早期完整验收 carrier 保留为本地可选
+资源；正式共享 body/gear 的公开路径和生成命令见本文末尾战斗 V0 小节。该阶段的最终冻结判断和
 具体截图观察记录见 [final convergence record](../archive/rf-humanoid-v2-final-convergence.md)，导航不记录阶段测试数量。
 
 ## RF Humanoid Headgear / Face Coverage V1
@@ -194,3 +194,34 @@ three-quarter 各三档距离，加 side mid。重复 capture 逐字节核对七
 正式 Standard Response / Assault roster 复用这里冻结的同一 body、六职业 gear resource 和
 attachment contract；roster 的 character identity 与 ordered squad content 位于
 `include/rasterfall_roster.h` / `src/rasterfall_roster.c`，不新增资产载体，也不把资源字段复制到 actor。
+
+## 战斗 V0 公开共享身体与枪手组件
+
+战斗版本把原创 canonical `rf_humanoid_v2` 与六职业、普通/精英枪手的 rigid gear 安装为公开资源，
+路径为 `rasterfall/assets/models/characters/`。旧完整 `rf_profession_*` 和头部变体仍是本地 legacy
+验收 carrier；正式友军和敌方枪手只共享一份身体，没有新增枪手全身复制品。角色目录决定身体路径与
+shirt/pants palette，装备挂在 finalized HEAD/CHEST/BACK；武器继续使用 WEAPON_R 与左手 attachment IK。
+
+生成源仍由同一个 `generate_rasterfall_humanoid_v2.py` 拥有。新组件选择器为
+`--rigid-attachment=gunner-head`、`gunner-chest`、`gunner-back` 及对应 `gunner-elite-*`。
+全部 gear 的正式 manifest 位于 `tools/assets/manifests/characters/`；GLB 创作源保留在本地
+`private-assets/source`，可由公开生成器复现，不参与 package。根 Makefile 递归内嵌公开 assets，
+Windows package 递归复制公开 assets，均不需要逐个新增依赖。
+
+Windows 原生重建（Blender 路径按本机安装）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools
+python tools/rf_combat_character_round.py --generate --blender 'E:/Blender 5.2/blender.exe' --tool-dir build-windows
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 test
+python tools/rf_combat_character_round.py --capture --tool-dir build-windows
+```
+
+脚本对共享身体执行 RFCHAR contract、统一 importer 和 runtime 实例隔离；装备执行同一 rigid importer，
+并核对导出及 RFM2 中的 gear 主色，防止已有职业丢色。`--gunners-only` 用于仅重建六件枪手附件。
+`asset-report.json` 保存运行资源哈希、顶点/三角形和材质预算；日志与组图默认位于 `tmp/combat-v0/assets/`。
+
+`--combat-character-capture <dir>` 直接复用游戏内 modular actor adapter，输出友军/普通/精英同框的
+正、侧、后、三分之四和俯视近中远景，以及 100 ms 间隔的八帧 walk/fire 序列。它核对实例姿态存储独立、
+身体 resource 相同、原始身体/材质字节未被绘制修改。该离屏证据用于检查比例、色块、握点、附件贴合与
+动作连续性；真正 GPU 场景的帧时间及 FPS/RTS 游玩仍需由原生实验场验证，不能用离屏截图代替。

@@ -70,6 +70,10 @@ struct rasterfall_options {
     const char *character_performance_model;
     int character_performance_suite;
     int performance_warmup, performance_repeats;
+    int combat_lab, combat_lab_observe, combat_lab_suite, combat_lab_auto_exit;
+    int combat_lab_seed, combat_lab_repeat;
+    const char *combat_lab_output;
+    const char *combat_character_capture_dir;
 };
 
 void rasterfall_options_init(struct rasterfall_options *options,

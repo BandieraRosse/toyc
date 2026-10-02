@@ -15,6 +15,7 @@
 
 #include "toy_game.h"
 #include "rasterfall_units.h"
+#include "rasterfall_character.h"
 #include "string.h"
 #include "math.h"
 #include "tlibc_compat.h"
@@ -596,6 +597,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->state = TOY_GAME_PLAYING;
     player->active = 1;
+    player->combat_generation = ++g->next_combat_generation;
     player->actor_id = 0;
     player->character_id = -1;
     player->kind = TOY_GAME_ACTOR_PLAYER;
@@ -727,6 +729,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     a = &g->actors[1];
     memset(a, 0, sizeof(*a));
     a->active = active != 0;
+    a->combat_generation = ++g->next_combat_generation;
     a->actor_id = 1;
     a->character_id = -1;
     a->kind = TOY_GAME_ACTOR_AI;
@@ -762,6 +765,7 @@ int toy_game_add_anime_actor(struct toy_game *g, int anime_character_id,
     if(slot<0)return -1;
     a=&g->actors[slot];memset(a,0,sizeof(*a));
     a->active=1;a->actor_id=slot+1;a->kind=TOY_GAME_ACTOR_AI;
+    a->combat_generation=++g->next_combat_generation;
     a->character_id=-1;
     a->anime_character_id=anime_character_id+1;a->class_id=TOY_GAME_AI_LEVEL_2;
     a->companion=1;
@@ -770,7 +774,12 @@ int toy_game_add_anime_actor(struct toy_game *g, int anime_character_id,
     a->class_id=TOY_GAME_AI_LEVEL_3;
     toy_game_actor_set_combat_template(a,TOY_GAME_COMBAT_MOBILE);
     a->skills.mastery[TOY_GAME_SKILL_ENDURANCE]=2;
-    a->hp=a->max_hp=200;a->anime_wander_timer_ms=2000;
+    {
+        struct toy_game_capabilities caps;
+        toy_game_actor_capabilities(a, TOY_GAME_WEAPON_AK, &caps);
+        a->hp = a->max_hp = caps.max_hp;
+    }
+    a->anime_wander_timer_ms=2000;
     copy_name(a->name,name?name:"ANIME_ACTOR");actor_set_weapon(a,TOY_GAME_WEAPON_AK);
     a->fire_enabled=1;return a->actor_id;
 }
@@ -830,6 +839,7 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     a = &g->actors[slot];
     memset(a, 0, sizeof(*a));
     a->active = 1;
+    a->combat_generation = ++g->next_combat_generation;
     a->actor_id = slot + 1;
     a->character_id = -1;
     a->kind = TOY_GAME_ACTOR_AI;
@@ -846,6 +856,20 @@ int toy_game_add_ai(struct toy_game *g, int class_id, int x, int z,
     return a->actor_id;
 }
 
+int toy_game_add_gunner(struct toy_game *g, int elite, int x, int z,
+                        const char *name)
+{
+    int id = toy_game_add_ai(g, elite ? TOY_GAME_AI_LEVEL_2 : TOY_GAME_AI_LEVEL_1,
+                             x, z, name ? name : elite ? "ELITE GUNNER" : "GUNNER");
+    struct toy_game_actor *a = toy_game_actor_by_id(g, id);
+    if (!a) return -1;
+    toy_game_actor_set_combat_template(a, elite ? TOY_GAME_COMBAT_ELITE : TOY_GAME_COMBAT_GUNNER);
+    a->faction = TOY_GAME_FACTION_HOSTILE;
+    a->character_id = elite ? RASTERFALL_CHARACTER_GUNNER_ELITE : RASTERFALL_CHARACTER_GUNNER;
+    actor_set_weapon(a, TOY_GAME_WEAPON_AK);
+    return id;
+}
+
 int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
                                      int x, int z, int flag_index)
 {
@@ -853,7 +877,8 @@ int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
         return 0;
     a = &g->actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->companion) return 0;
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->companion ||
+        a->faction != TOY_GAME_FACTION_ALLIED) return 0;
     a->deployment_x = x;
     a->deployment_z = z;
     a->flag_index = flag_index;
@@ -942,6 +967,7 @@ int toy_game_set_remote_actor(struct toy_game *g, int player_id,
     a = &g->actors[index];
     if (!a->active || a->kind != TOY_GAME_ACTOR_PLAYER) {
         memset(a, 0, sizeof(*a));
+        a->combat_generation = ++g->next_combat_generation;
         a->actor_id = 100 + player_id;
         a->character_id = -1;
         a->kind = TOY_GAME_ACTOR_PLAYER;
@@ -980,7 +1006,14 @@ int toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms)
     if (a->revive_progress_ms < TOY_GAME_REVIVE_MS) return 0;
     a->revive_progress_ms = 0;
     a->hp = TOY_GAME_REVIVE_HP;
+    if (a->max_hp > 0 && a->hp > a->max_hp) a->hp = a->max_hp;
     a->state = TOY_GAME_ACTOR_ALIVE;
+    toy_game_actor_reset_combat(a, 1);
+    toy_game_clear_actor_special_control(a, 0);
+    a->control_disabled = 0;
+    a->airborne_ms = a->airborne_y = a->vertical_velocity = 0;
+    a->air_x = a->air_z = a->knockback_x = a->knockback_z = 0;
+    a->knockback_cooldown_ms = 0;
     toy_game_actor_set_animation(a, TOY_GAME_ANIM_REVIVE);
     push_event(g, TOY_GAME_EV_REVIVE);
     push_event(g, TOY_GAME_EV_ACTOR_REVIVE);
@@ -2231,7 +2264,8 @@ static int toy_game_actor_pill_heal(struct toy_game *g,
         struct toy_game_actor *target = &g->actors[i];
         long long dx, dz, d2, dist, dot;
         if (!target->active || target->state != TOY_GAME_ACTOR_ALIVE ||
-            target->base_core || target->hp >= target->max_hp) continue;
+            target->base_core || toy_game_actors_hostile(actor, target) ||
+            target->hp >= target->max_hp) continue;
         dx = target->x - actor->x; dz = target->z - actor->z;
         d2 = dx * dx + dz * dz;
         if (!d2 || d2 > range2) continue;
@@ -2532,6 +2566,8 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     struct toy_game_actor *player = toy_game_local_player_actor(g);
     int knockback_ready;
+    struct toy_game_attack attack = {0};
+    struct toy_game_damage_result result;
     if (!player || !player->active || player->state != TOY_GAME_ACTOR_ALIVE ||
         e->bite_cooldown_ms > 0) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
@@ -2540,14 +2576,11 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
      * while the player is not launched).  The state itself is nevertheless
      * actor-owned; the generic impact path is reserved for explosive and
      * special hits that explicitly launch their victim. */
-    player->hp -= info->bite_damage;
-    if (player->hp < 0) player->hp = 0;
-    player->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-    if (player->hp <= 0) {
-        player->state = TOY_GAME_ACTOR_DOWNED;
-        player->revive_progress_ms = 0;
-        toy_game_actor_set_animation(player, TOY_GAME_ANIM_DEATH);
-    } else toy_game_actor_set_animation(player, TOY_GAME_ANIM_HIT);
+    attack.kind = TOY_GAME_ATTACK_BITE;
+    attack.base_damage_milli = attack.health_damage_milli = info->bite_damage * 1000;
+    attack.source_x = e->x; attack.source_z = e->z;
+    result = toy_game_damage_actor(g, NULL, player, &attack);
+    if (!result.health_damage) return;
     e->hurt = 150;
     if (knockback_ready) {
         push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK_SPEED);
@@ -2555,9 +2588,6 @@ static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
             TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
     }
     push_event(g, TOY_GAME_EV_BITE);
-    if (player->state == TOY_GAME_ACTOR_DOWNED) {
-        push_event(g, TOY_GAME_EV_ACTOR_DOWN);
-    }
 }
 
 static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
@@ -2565,6 +2595,8 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     struct toy_game_actor *actor;
     int index = e->target_index;
+    struct toy_game_attack attack = {0};
+    struct toy_game_damage_result result;
     if (index < 0 || index >= TOY_GAME_MAX_ACTORS) index = 0;
     actor = &g->actors[index];
     if (e->bite_cooldown_ms > 0 || !actor->active ||
@@ -2572,16 +2604,14 @@ static void bite_ai(struct toy_game *g, struct toy_game_enemy *e)
          actor->kind != TOY_GAME_ACTOR_PLAYER) ||
         actor->state != TOY_GAME_ACTOR_ALIVE) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    actor->hp -= info->bite_damage;
-    if (actor->hp < 0) actor->hp = 0;
+    attack.kind = TOY_GAME_ATTACK_BITE;
+    attack.base_damage_milli = attack.health_damage_milli = info->bite_damage * 1000;
+    attack.source_x = e->x; attack.source_z = e->z;
+    result = toy_game_damage_actor(g, NULL, actor, &attack);
+    if (!result.health_damage) return;
     e->hurt = 150;
     push_event(g, TOY_GAME_EV_BITE);
-    if (actor->hp <= 0) {
-        actor->state = TOY_GAME_ACTOR_DOWNED;
-        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_DEATH);
-        actor->revive_progress_ms = 0;
-        push_event(g, TOY_GAME_EV_ACTOR_DOWN);
-    } else if (actor->kind == TOY_GAME_ACTOR_AI) {
+    if (actor->hp > 0 && actor->kind == TOY_GAME_ACTOR_AI) {
         toy_game_actor_set_animation(actor, TOY_GAME_ANIM_SHOVE);
         actor->animation.time_ms = 0;
         ai_try_shove(g, actor);
@@ -4311,6 +4341,8 @@ static void update_motion_values(struct toy_game *g,
         actor->knockback_x = 0;
         actor->knockback_z = 0;
         actor->airborne_y = 0;
+        if (actor->special_control == TOY_GAME_SPECIAL_CONTROL_NONE)
+            actor->control_disabled = 0;
     }
 }
 
@@ -4454,7 +4486,8 @@ void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms
     if (actor->airborne_ms == 0) {
         actor->air_x = 0;
         actor->air_z = 0;
-        actor->control_disabled = 0;
+        if (actor->special_control == TOY_GAME_SPECIAL_CONTROL_NONE)
+            actor->control_disabled = 0;
         toy_game_update_actor_ground(g, actor_index);
     }
 }
@@ -4554,30 +4587,16 @@ static void update_smoker(struct toy_game *g, struct toy_game_enemy *e,
                           (long long)pull_dz * pull_dz);
         /* 舌头把玩家拉到身边后保持束缚，并按接触间隔造成伤害。 */
         if (pull_dist < 420 && e->bite_cooldown_ms <= 0) {
-            if (target_kind == 0) {
-                struct toy_game_actor *a =
-                    toy_game_local_player_actor(g);
-                if (a && a->state == TOY_GAME_ACTOR_ALIVE) {
-                    a->hp -= TOY_GAME_SMOKER_DAMAGE;
-                    if (a->hp < 0) a->hp = 0;
-                    a->damage_flash_ms = TOY_GAME_DAMAGE_FLASH_MS;
-                    toy_game_actor_set_animation(a,
-                        a->hp <= 0 ? TOY_GAME_ANIM_DEATH : TOY_GAME_ANIM_HIT);
-                    if (a->hp <= 0) {
-                        a->state = TOY_GAME_ACTOR_DOWNED;
-                        a->revive_progress_ms = 0;
-                    }
-                }
-            } else if (target_kind == 1 && target_index >= 0 &&
-                       target_index < TOY_GAME_MAX_ACTORS) {
-                struct toy_game_actor *a = &g->actors[target_index];
-                a->hp -= TOY_GAME_SMOKER_DAMAGE;
-                if (a->hp <= 0) {
-                    a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
-                    toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
-                    a->revive_progress_ms = 0;
-                } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
-            }
+            struct toy_game_actor *a = target_kind == TOY_GAME_TARGET_HOST ?
+                toy_game_local_player_actor(g) :
+                target_index >= 0 && target_index < TOY_GAME_MAX_ACTORS ?
+                &g->actors[target_index] : NULL;
+            struct toy_game_attack attack = {0};
+            attack.kind = TOY_GAME_ATTACK_CONTROL;
+            attack.base_damage_milli = attack.health_damage_milli =
+                TOY_GAME_SMOKER_DAMAGE * 1000;
+            attack.source_x = e->x; attack.source_z = e->z;
+            toy_game_damage_actor(g, NULL, a, &attack);
             e->bite_cooldown_ms = 1000;
         }
         step = TOY_GAME_SMOKER_PULL_STEP;
@@ -4701,22 +4720,22 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
     dz = dz * knockback / (int)dist;
     if (kind == TOY_GAME_ENTITY_PLAYER || kind == TOY_GAME_ENTITY_ACTOR) {
         struct toy_game_actor *a;
+        struct toy_game_attack attack = {0};
         int apply_knockback;
         if (kind == TOY_GAME_ENTITY_PLAYER)
             index = TOY_GAME_PLAYER_ACTOR_INDEX;
         if (index < 0 || index >= TOY_GAME_MAX_ACTORS) return 0;
         a = &g->actors[index];
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE) return 0;
-        a->hp -= damage; if (a->hp < 0) a->hp = 0;
-        if (a->hp == 0) {
-            a->state = TOY_GAME_ACTOR_DOWNED;
-            toy_game_actor_set_animation(a, TOY_GAME_ANIM_DEATH);
-            a->revive_progress_ms = 0;
-        } else if (a->kind == TOY_GAME_ACTOR_AI && !a->base_core) {
+        attack.kind = TOY_GAME_ATTACK_IMPACT;
+        attack.base_damage_milli = attack.health_damage_milli = damage * 1000;
+        attack.source_x = a->x - dx; attack.source_z = a->z - dz;
+        toy_game_damage_actor(g, NULL, a, &attack);
+        if (a->hp > 0 && a->kind == TOY_GAME_ACTOR_AI && !a->base_core) {
             toy_game_actor_set_animation(a, TOY_GAME_ANIM_SHOVE);
             a->animation.time_ms = 0;
             ai_try_shove(g, a);
-        } else toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
+        } else if (a->hp > 0) toy_game_actor_set_animation(a, TOY_GAME_ANIM_HIT);
         if (a->base_core || a->hit_test_dummy) {
             /* The dedicated HIT_TEST actor is a stationary target: keep the
              * hit clip readable instead of hiding it inside knockback. */
@@ -5279,37 +5298,6 @@ static int segment_hits_box(int px, int pz, int qx, int qz,
     return t0 <= t1;
 }
 
-/* 射线 [px,pz] + (sy,cy) 与盒子的首个相交距离（u 单位 1<<20 定点，
- * 沿射线方向；u×1024 = 世界距离）。起点在盒内时返回出射距离；
- * 整盒在身后或射向不经过盒子返回 0。 */
-static int ray_box_entry(int px, int pz, int sy, int cy,
-                         const struct toy_game_box *b, long long *out)
-{
-    long long t0 = 0, t1 = 1LL << 62, t_in, t_out, tmp;
-    if (sy == 0) {
-        if (px < b->minx || px > b->maxx) return 0;
-    } else {
-        t_in = ((long long)(b->minx - px) << 20) / sy;
-        t_out = ((long long)(b->maxx - px) << 20) / sy;
-        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
-        if (t_in > t0) t0 = t_in;
-        if (t_out < t1) t1 = t_out;
-    }
-    if (cy == 0) {
-        if (pz < b->minz || pz > b->maxz) return 0;
-    } else {
-        t_in = ((long long)(b->minz - pz) << 20) / cy;
-        t_out = ((long long)(b->maxz - pz) << 20) / cy;
-        if (t_in > t_out) { tmp = t_in; t_in = t_out; t_out = tmp; }
-        if (t_in > t0) t0 = t_in;
-        if (t_out < t1) t1 = t_out;
-    }
-    if (t1 <= 0 || t0 > t1) return 0;
-    if (t0 <= 0) t0 = t1;   /* 起点在盒内：取出射点 */
-    *out = t0;
-    return 1;
-}
-
 static void normalize_dir(int *sy, int *cy)
 {
     long long length = isqrt((long long)*sy * *sy + (long long)*cy * *cy);
@@ -5324,7 +5312,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
                                 int enemy_index, int damage)
 {
     struct toy_game_enemy *e;
-    int inflicted;
+    int inflicted, reward;
     if (!g || !actor || enemy_index < 0 ||
         enemy_index >= TOY_GAME_MAX_ENEMIES || damage <= 0) return 0;
     e = &g->enemies[enemy_index];
@@ -5339,15 +5327,19 @@ int toy_game_apply_reported_hit(struct toy_game *g,
     e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
     e->flash = 120; g->enemies_alive--;
     actor->kills++;
-    if (e->type == TOY_GAME_ENEMY_TANK) g->money += TOY_CONFIG_MONEY_TANK;
+    if (e->type == TOY_GAME_ENEMY_TANK) reward = TOY_CONFIG_MONEY_TANK;
     else if (e->type == TOY_GAME_ENEMY_SMOKER ||
              e->type == TOY_GAME_ENEMY_CHARGER)
-        g->money += TOY_CONFIG_MONEY_SPECIAL;
+        reward = TOY_CONFIG_MONEY_SPECIAL;
     else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-        g->money += TOY_CONFIG_MONEY_HEAVY;
+        reward = TOY_CONFIG_MONEY_HEAVY;
     else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-        g->money += TOY_CONFIG_MONEY_FAST;
-    else g->money += TOY_CONFIG_MONEY_COMMON;
+        reward = TOY_CONFIG_MONEY_FAST;
+    else reward = TOY_CONFIG_MONEY_COMMON;
+    if (actor->faction == TOY_GAME_FACTION_ALLIED) {
+        g->money += reward;
+        actor->combat_stats.money_earned += reward;
+    }
     if (toy_game_enemy_info(e->type)->ability != TOY_GAME_ENEMY_ABILITY_NONE) {
         actor->special_kills++;
     }
@@ -5357,89 +5349,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
     return 2;
 }
 
-/* 单发 hitscan：最近且未被障碍遮挡的敌人一枪毙命，命中返回 1。
- * 同时输出射线终点：命中敌人 → 敌人位置；未命中 → 首个墙交点或最大射程。 */
-static int fire_ray(struct toy_game *g, int source_x, int source_z,
-                    struct toy_game_actor *actor,
-                    int sy, int cy, int damage, int range,
-                    int *out_ex, int *out_ez, int *out_hit_world,
-                    int *out_enemy_index, int *out_damage)
-{
-    int best = -1, best_t = 0, i;
-    int ray_y = actor ? actor->ground_y + actor->airborne_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU : RASTERFALL_HUMAN_EYE_HEIGHT_RFU;
-    int radius_times_1024 = TOY_GAME_HIT_RADIUS * 1024;
-    long long world_t = (long long)range << 20; /* 世界距离定点 */
-    *out_enemy_index = -1;
-    *out_damage = 0;
-    for (i = 0; i < g->primitive_count; i++) {
-        const struct toy_map_primitive *p = &g->primitives[i];
-        struct toy_game_box box;
-        long long entry_u;
-        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
-            p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
-        if (p->base_y > ray_y) continue;
-        box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
-        box.miny=p->base_y; box.maxy=p->surface_y0;
-        if (ray_box_entry(source_x, source_z, sy, cy,
-                          &box, &entry_u)) {
-            long long entry_w = entry_u * 1024;
-            if (entry_w < world_t) world_t = entry_w;
-        }
-    }
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        struct toy_game_enemy *e = &g->enemies[i];
-        int lx, lz, proj, cross, t, hit_x, hit_z, occluded = 0, j;
-        if (e->active != 1) continue;
-        lx = e->x - source_x;
-        lz = e->z - source_z;
-        proj = lx * sy + lz * cy;
-        if (proj <= 0) continue;
-        cross = lx * cy - lz * sy;
-        if (cross > radius_times_1024 || cross < -radius_times_1024) continue;
-        t = proj / 1024;
-        if (best >= 0 && t >= best_t) continue;
-        if ((long long)t << 20 >= world_t) continue;   /* 墙先于敌人 */
-        hit_x = source_x + (sy * t) / 1024;
-        hit_z = source_z + (cy * t) / 1024;
-        for (j = 0; j < g->primitive_count; j++) {
-            const struct toy_map_primitive *p = &g->primitives[j];
-            struct toy_game_box box;
-            if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
-                p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
-            if (p->base_y > ray_y) continue;
-            box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
-            box.miny=p->base_y; box.maxy=p->surface_y0;
-            if (segment_hits_box(source_x, source_z, hit_x, hit_z,
-                                 &box)) {
-                occluded = 1;
-                break;
-            }
-        }
-        if (!occluded) {
-            best = i;
-            best_t = t;
-        }
-    }
-    if (best >= 0) {
-        *out_enemy_index = best;
-        /* Report the weapon's damage operation, not the locally clamped HP
-         * delta.  The host clamps against its merged HP after concurrent
-         * client shots are ordered. */
-        *out_damage = damage;
-        *out_ex = source_x + (sy * best_t) / 1024;
-        *out_ez = source_z + (cy * best_t) / 1024;
-        *out_hit_world = 0;
-        toy_game_apply_reported_hit(g, actor, best, damage);
-        return 1;
-    }
-    {
-        long long dist_w = world_t >> 20;
-        *out_ex = source_x + (int)(sy * dist_w / 1024);
-        *out_ez = source_z + (int)(cy * dist_w / 1024);
-        *out_hit_world = world_t < ((long long)range << 20);
-    }
-    return 0;
-}
+#include "game_hitscan.inc"
 
 int toy_game_actor_use_special(struct toy_game *g,
                                struct toy_game_actor *actor,
@@ -5484,6 +5394,8 @@ int toy_game_actor_use_special(struct toy_game *g,
             TOY_CONFIG_MELEE_DAMAGE : e->hp;
         e->hp -= TOY_CONFIG_MELEE_DAMAGE;
         actor->damage_dealt += inflicted;
+        actor->combat_stats.health_damage += inflicted;
+        actor->combat_stats.overkill += TOY_CONFIG_MELEE_DAMAGE - inflicted;
         e->hurt = 150;
         hit = 1;
         if (e->hp <= 0) {
@@ -5494,6 +5406,26 @@ int toy_game_actor_use_special(struct toy_game *g,
             actor->kills++;
             push_event(g, TOY_GAME_EV_KILL);
         }
+    }
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        struct toy_game_actor *target = &g->actors[i];
+        struct toy_game_attack attack = {0};
+        long long dx = (long long)target->x - actor->x;
+        long long dz = (long long)target->z - actor->z;
+        long long dist2 = dx * dx + dz * dz;
+        if (!target->active || target->developer_only ||
+            target->state != TOY_GAME_ACTOR_ALIVE ||
+            !toy_game_actors_hostile(actor, target) || !dist2 || dist2 > range2 ||
+            (dx * sy + dz * cy) * TOY_GAME_SHOVE_CONE < isqrt(dist2) * 1024 ||
+            !combat_visible(g, actor, target->x, target->ground_y +
+                target->airborne_y + RASTERFALL_HUMAN_HEIGHT_RFU / 2, target->z))
+            continue;
+        attack.kind = TOY_GAME_ATTACK_MELEE;
+        attack.base_damage_milli = attack.health_damage_milli =
+            TOY_CONFIG_MELEE_DAMAGE * 1000;
+        attack.source_x = actor->x; attack.source_z = actor->z;
+        toy_game_damage_actor(g, actor, target, &attack);
+        hit = 1;
     }
     toy_game_shove_at(g, actor->x, actor->z, sy, cy);
     if (hit) push_event(g, TOY_GAME_EV_MELEE_HIT);
@@ -5549,7 +5481,7 @@ int toy_game_actor_throwable(struct toy_game *g,
 static struct toy_game_actor *toy_game_throwable_owner(
     struct toy_game *g, int owner_actor_id)
 {
-    if (!g || owner_actor_id < 100) return NULL;
+    if (!g || owner_actor_id < 0) return NULL;
     return toy_game_actor_by_id(g, owner_actor_id);
 }
 
@@ -5562,11 +5494,13 @@ static void toy_game_add_throwable_stats(struct toy_game *g,
     owner = toy_game_throwable_owner(g, owner_actor_id);
     if (owner) {
         owner->throwable_damage_dealt += damage;
+        owner->combat_stats.health_damage += damage;
         if (kill) owner->kills++;
     } else {
         owner = toy_game_local_player_actor(g);
         if (owner) {
             owner->throwable_damage_dealt += damage;
+            owner->combat_stats.health_damage += damage;
             if (kill) owner->kills++;
         }
     }
@@ -5627,6 +5561,25 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
                     push_event(g, TOY_GAME_EV_KILL);
                 }
             }
+            for (j = 0; j < TOY_GAME_MAX_ACTORS; j++) {
+                struct toy_game_actor *target = &g->actors[j];
+                struct toy_game_actor *owner =
+                    toy_game_throwable_owner(g, zone->owner_actor_id);
+                struct toy_game_attack attack = {0};
+                struct toy_game_damage_result result;
+                long long dx = (long long)target->x - zone->x;
+                long long dz = (long long)target->z - zone->z;
+                if (!target->active || target->developer_only ||
+                    target->state != TOY_GAME_ACTOR_ALIVE ||
+                    !toy_game_actors_hostile(owner, target) ||
+                    dx * dx + dz * dz > radius2) continue;
+                attack.kind = TOY_GAME_ATTACK_BURN;
+                attack.base_damage_milli = attack.health_damage_milli =
+                    TOY_CONFIG_MOLOTOV_DAMAGE * 1000;
+                attack.source_x = zone->x; attack.source_z = zone->z;
+                result = toy_game_damage_actor(g, owner, target, &attack);
+                if (owner) owner->throwable_damage_dealt += result.health_damage;
+            }
             zone->tick_ms += TOY_CONFIG_MOLOTOV_TICK_MS;
         }
         if (zone->remaining_ms <= 0) zone->active = 0;
@@ -5657,7 +5610,6 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb,
         }
         if (e->active == 2) {
             push_event(g, TOY_GAME_EV_KILL);
-            g->enemies_alive--;
             toy_game_add_throwable_stats(g, owner_actor_id, 0, 1);
         }
     }
@@ -5665,16 +5617,25 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb,
      * remaining non-local actors. */
     for (i = 0; bomb && i < TOY_GAME_MAX_ACTORS; i++) {
         struct toy_game_actor *a = &g->actors[i];
+        struct toy_game_actor *owner = toy_game_throwable_owner(g, owner_actor_id);
         long long dx, dz;
+        int before, hostile;
         if (i == TOY_GAME_PLAYER_ACTOR_INDEX) continue;
         if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->base_core)
             continue;
         dx = a->x - x; dz = a->z - z;
         if (dx * dx + dz * dz > radius2) continue;
+        before = a->hp;
+        hostile = toy_game_actors_hostile(owner, a);
         toy_game_apply_entity_impact(g, TOY_GAME_ENTITY_ACTOR, i,
                                      (int)dx, (int)dz,
-                                     a->kind == TOY_GAME_ACTOR_PLAYER ?
+                                     a->kind == TOY_GAME_ACTOR_PLAYER ||
+                                     hostile ?
                                          damage : 0);
+        if (hostile) {
+            toy_game_add_throwable_stats(g, owner_actor_id, before - a->hp, !a->hp);
+            if (!a->hp) push_event(g, TOY_GAME_EV_KILL);
+        }
     }
     {
         const struct toy_game_actor *player =
@@ -6001,6 +5962,7 @@ int toy_game_count_downed_actors(const struct toy_game *g)
     if (!g) return 0;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
         if (g->actors[i].active &&
+            g->actors[i].faction == TOY_GAME_FACTION_ALLIED &&
             g->actors[i].state == TOY_GAME_ACTOR_DOWNED) count++;
     return count;
 }
@@ -6097,6 +6059,7 @@ int toy_game_actor_current_spread(const struct toy_game_actor *actor)
                                TOY_CONFIG_SPREAD_STILL_PERCENT) / 100;
     spread = spread * caps.spread_percent / 100;
     spread += actor->weapon_spread_heat;
+    if (actor->evasion.animation_ms > 0) spread += TOY_CONFIG_EVASION_SPREAD_EXTRA;
     return spread < 1 ? 1 : spread;
 }
 
@@ -6116,78 +6079,68 @@ static int toy_game_switch_actor_weapon(struct toy_game_actor *actor, int slot)
     return 1;
 }
 
-int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
-                        int sy, int cy, int spread_percent)
+int toy_game_actor_begin_fire(struct toy_game *g, struct toy_game_actor *actor)
 {
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
-    int pellet, hit = 0, spread;
     struct toy_game_capabilities caps;
-    if (!g || !actor || actor->current_slot < 0 ||
-        actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
+    if (!g || !actor || !actor->active || actor->state != TOY_GAME_ACTOR_ALIVE ||
+        actor->current_slot < 0 || actor->current_slot >= TOY_GAME_WEAPON_SLOTS)
+        return 0;
     s = &actor->slots[actor->current_slot];
     w = toy_game_weapon_info_or_null(s->weapon);
-    if (!w || s->weapon == TOY_GAME_WEAPON_AXE ||
-        s->weapon == TOY_GAME_WEAPON_PILL ||
-        s->weapon == TOY_GAME_WEAPON_BOMB ||
-        s->weapon == TOY_GAME_WEAPON_MOLOTOV ||
-        actor->reloading || actor->weapon_switch_timer_ms > 0) return 0;
+    if (!w || s->weapon < TOY_GAME_WEAPON_PISTOL || s->weapon > TOY_GAME_WEAPON_AWP ||
+        actor->reloading || actor->fire_cooldown_ms > 0 ||
+        actor->weapon_switch_timer_ms > 0) return 0;
+    if (s->mag <= 0) { push_event(g, TOY_GAME_EV_DRY_FIRE); return 0; }
+    s->mag--;
     actor->fire_cooldown_ms = toy_game_actor_fire_cooldown_ms(actor, w);
     actor->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
-    if (s->mag <= 0) {
-        push_event(g, TOY_GAME_EV_DRY_FIRE);
-        return 0;
-    }
-    s->mag--;
     toy_game_actor_capabilities(actor, s->weapon, &caps);
-    actor->weapon_spread_heat +=
-        TOY_CONFIG_SPREAD_SHOT_STEP * caps.heat_percent / 100;
+    actor->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP * caps.heat_percent / 100;
     if (actor->weapon_spread_heat > TOY_CONFIG_SPREAD_HEAT_MAX)
         actor->weapon_spread_heat = TOY_CONFIG_SPREAD_HEAT_MAX;
-    if (s->weapon == TOY_GAME_WEAPON_SMG)
-        push_event(g, TOY_GAME_EV_SHOOT_SMG);
-    else if (s->weapon == TOY_GAME_WEAPON_SHOTGUN)
-        push_event(g, TOY_GAME_EV_SHOOT_SHOTGUN);
-    else if (s->weapon == TOY_GAME_WEAPON_AK)
-        push_event(g, TOY_GAME_EV_SHOOT_AK);
-    else if (s->weapon == TOY_GAME_WEAPON_AWP)
-        push_event(g, TOY_GAME_EV_SHOOT_AWP);
-    else
-        push_event(g, TOY_GAME_EV_SHOOT);
+    if (s->weapon == TOY_GAME_WEAPON_SMG) push_event(g, TOY_GAME_EV_SHOOT_SMG);
+    else if (s->weapon == TOY_GAME_WEAPON_SHOTGUN) push_event(g, TOY_GAME_EV_SHOOT_SHOTGUN);
+    else if (s->weapon == TOY_GAME_WEAPON_AK) push_event(g, TOY_GAME_EV_SHOOT_AK);
+    else if (s->weapon == TOY_GAME_WEAPON_AWP) push_event(g, TOY_GAME_EV_SHOOT_AWP);
+    else push_event(g, TOY_GAME_EV_SHOOT);
     if (s->mag == 0) {
         actor->reloading = 1;
         actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
     }
-    spread = toy_game_actor_current_spread(actor) * spread_percent / 100;
-    if (spread < 1) spread = 1;
     actor->fire_seq++;
     actor->ray_count = w->pellets;
+    actor->combat_stats.shots++;
+    actor->combat_stats.pellets += w->pellets;
+    return 1;
+}
+
+int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
+                        int sy, int cy, int spread_percent)
+{
+    const struct toy_game_weapon_info *w;
+    int pellet, spread;
+    if (!toy_game_actor_begin_fire(g, actor)) return 0;
+    w = toy_game_weapon_info(toy_game_actor_current_weapon(actor));
+    spread = toy_game_actor_current_spread(actor) * spread_percent / 100;
+    if (spread < 1) spread = 1;
     for (pellet = 0; pellet < w->pellets; pellet++) {
-        int off_x, off_y, ray_sy, ray_cy, ex, ez, hit_world, killed;
-        int enemy_index, inflicted;
+        struct toy_game_ray *ray = &actor->rays[pellet];
+        int off_x, off_y;
         do {
             off_x = rand_range(g, -spread, spread);
             off_y = rand_range(g, -spread, spread);
         } while (off_x * off_x + off_y * off_y > spread * spread);
-        ray_sy = (sy * 1024 - cy * off_x) / 1024;
-        ray_cy = (cy * 1024 + sy * off_x) / 1024;
-        normalize_dir(&ray_sy, &ray_cy);
-        killed = fire_ray(g, actor->x, actor->z, actor, ray_sy, ray_cy,
-                          w->damage, w->range, &ex, &ez, &hit_world,
-                          &enemy_index, &inflicted);
-        if (killed) hit = 1;
-        actor->rays[pellet].sy = ray_sy;
-        actor->rays[pellet].cy = ray_cy;
-        actor->rays[pellet].vy = off_y;
-        actor->rays[pellet].ex = ex;
-        actor->rays[pellet].ez = ez;
-        actor->rays[pellet].hit_enemy = killed;
-        actor->rays[pellet].hit_world = hit_world;
-        actor->rays[pellet].enemy_index = enemy_index;
-        actor->rays[pellet].damage = inflicted;
+        memset(ray, 0, sizeof(*ray));
+        ray->sy = (sy * 1024 - cy * off_x) / 1024;
+        ray->cy = (cy * 1024 + sy * off_x) / 1024;
+        normalize_dir(&ray->sy, &ray->cy);
+        ray->vy = off_y;
+        fire_ray(g, actor, ray, w->damage, w->range);
     }
-    return hit;
+    return toy_game_actor_resolve_shot(g, actor);
 }
 
 int toy_game_update_actor_weapon_held(
@@ -6281,9 +6234,7 @@ int toy_game_execute_actor_command(
         actor->moving = was_moving &&
                         (actor->x != command->move_x ||
                          actor->z != command->move_z);
-    } else {
-        actor->moving = 0;
-    }
+    } /* Without a movement intent, keep the caller's already-resolved motion. */
     if (command->aim_active) {
         actor->sy = command->aim_sy;
         actor->cy = command->aim_cy;
@@ -6297,189 +6248,7 @@ int toy_game_execute_actor_command(
 }
 
 /* AI 队友只负责观察和决策，实际动作通过 actor command 规则入口执行。 */
-void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
-{
-    struct toy_game_actor *actor;
-    int target = -1, best_dist = 0, i;
-    int sy = 0, cy = 1024;
-    int ai_idle = 1;
-    int fired = 0;
-    int keep_animation = 0;
-    int alert_range;
-    int actor_weapon;
-    int ai_can_fire;
-    int facing_error = 180;
-    int move_face_x = 0, move_face_z = 0;
-    struct toy_game_capabilities caps;
-    int move_step;
-    struct toy_game_actor_command command;
-    struct toy_game_ai_observation observation;
-    memset(&command, 0, sizeof(command));
-    command.switch_slot = -1;
-    actor = &g->actors[g->ai_context_actor_index];
-    if (!toy_game_ai_observe(g, g->ai_context_actor_index, &observation))
-        return;
-    if (actor->ai_shove_cooldown_ms > 0) {
-        actor->ai_shove_cooldown_ms -= dt_ms;
-        if (actor->ai_shove_cooldown_ms < 0) actor->ai_shove_cooldown_ms = 0;
-    }
-    actor_weapon = actor->current_slot >= 0 &&
-                   actor->current_slot < TOY_GAME_WEAPON_SLOTS ?
-                   actor->slots[actor->current_slot].weapon : -1;
-    toy_game_actor_capabilities(actor, actor_weapon, &caps);
-    move_step = toy_game_actor_move_step(actor, TOY_CONFIG_AI_RETURN_SPEED);
-    alert_range = toy_game_weapon_info(actor_weapon)->alert_range;
-    if (actor->hit_test_dummy) {
-        /* The hit-test actor is a stationary melee frontline target: keep
-         * its position and weapon logic frozen, but turn toward the nearest
-         * living enemy so the front-facing hit/shove pose remains readable. */
-        {
-            int nearest_dx = 0, nearest_dz = 0;
-            long long nearest_dist2 = 0;
-            int found_enemy = 0;
-
-            for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-                struct toy_game_enemy *enemy = &g->enemies[i];
-                int dx, dz;
-                long long dist2;
-                if (enemy->active != 1 || enemy->hp <= 0) continue;
-                dx = enemy->x - actor->x;
-                dz = enemy->z - actor->z;
-                dist2 = (long long)dx * dx + (long long)dz * dz;
-                if (!found_enemy || dist2 < nearest_dist2) {
-                    nearest_dx = dx;
-                    nearest_dz = dz;
-                    nearest_dist2 = dist2;
-                    found_enemy = 1;
-                }
-            }
-            if (found_enemy && (nearest_dx != 0 || nearest_dz != 0)) {
-                int distance = isqrt(nearest_dist2);
-                if (distance > 0) {
-                    actor->sy = (int)((long long)nearest_dx * 1024 / distance);
-                    actor->cy = (int)((long long)nearest_dz * 1024 / distance);
-                }
-            }
-        }
-        toy_game_actor_update_animation(actor, dt_ms);
-        return;
-    }
-    if (actor->airborne_ms > 0) {
-        /* Knockback used to erase HIT immediately on the next AI tick. */
-        if (actor->animation.id != TOY_GAME_ANIM_HIT &&
-            actor->animation.id != TOY_GAME_ANIM_SHOVE &&
-            actor->animation.id != TOY_GAME_ANIM_DEATH)
-            toy_game_actor_set_animation(actor, TOY_GAME_ANIM_NONE);
-        toy_game_actor_update_animation(actor, dt_ms);
-        update_motion_values(g, actor, dt_ms);
-        return; /* 被击飞时中断自己的行为，落地后恢复。 */
-    }
-    if (!actor->active || actor->state != TOY_GAME_ACTOR_ALIVE ||
-        g->state != TOY_GAME_PLAYING) {
-        toy_game_actor_update_animation(actor, dt_ms);
-        return;
-    }
-
-    /* Companions follow independently of mercenary deployment.  A generous
-     * stop radius prevents nervous pacing beside the player. */
-    {
-        if(actor->companion){const struct toy_game_actor *player=toy_game_local_player_actor_const(g);int dx=player->x-actor->x,dz=player->z-actor->z;int dist=isqrt((long long)dx*dx+(long long)dz*dz);if(dist>1600){ai_idle=0;actor_path_toward(g,actor,player->x,player->z,move_step);move_face_x=(actor->nav_active?actor->nav_x:player->x)-actor->x;move_face_z=(actor->nav_active?actor->nav_z:player->z)-actor->z;}else actor->nav_active=0;}
-        else if (!observation.at_deployment) {
-            ai_idle = 0;
-            actor_path_toward(g, actor, actor->deployment_x,
-                              actor->deployment_z, move_step);
-            move_face_x = (actor->nav_active ? actor->nav_x :
-                           actor->deployment_x) - actor->x;
-            move_face_z = (actor->nav_active ? actor->nav_z :
-                           actor->deployment_z) - actor->z;
-        } else {
-            actor->nav_active = 0;
-        }
-    }
-
-    /* 警戒半径由当前武器决定，且只选择无遮挡目标。 */
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        struct toy_game_enemy *e = &g->enemies[i];
-        int dx, dz, dist, j, blocked = 0;
-        long long d2;
-        if (e->active != 1) continue;
-        dx = e->x - actor->x;
-        dz = e->z - actor->z;
-        d2 = (long long)dx * dx + (long long)dz * dz;
-        if (d2 > (long long)alert_range * alert_range)
-            continue;
-        dist = (int)isqrt(d2);
-        if (dist <= 0) continue;
-        for (j = 0; j < g->primitive_count; j++) {
-            const struct toy_map_primitive *p = &g->primitives[j];
-            struct toy_game_box box;
-            if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
-                p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
-            if (p->base_y > actor->ground_y + actor->airborne_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU) continue;
-            box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
-            box.miny=p->base_y; box.maxy=p->surface_y0;
-            if (segment_hits_box(actor->x, actor->z, e->x, e->z,
-                                 &box)) { blocked = 1; break; }
-        }
-        if (blocked) continue;
-        if (target < 0 || dist < best_dist) {
-            target = i; best_dist = dist;
-            sy = (int)((long long)dx * 1024 / dist);
-            cy = (int)((long long)dz * 1024 / dist);
-        }
-    }
-
-    if (target >= 0) {
-        /* Combat aim owns facing whenever a target is visible. */
-        facing_error = ai_turn_toward(actor, sy, cy,
-                                      caps.turn_degrees, dt_ms);
-        sy = actor->sy;
-        cy = actor->cy;
-    } else if (!ai_idle && (move_face_x || move_face_z)) {
-        /* Otherwise turn into the actual path segment, including detours. */
-        ai_turn_toward(actor, move_face_x, move_face_z,
-                       caps.turn_degrees, dt_ms);
-    }
-    ai_can_fire = actor->fire_enabled && target >= 0 && facing_error <= 6;
-
-    command.aim_active = target >= 0;
-    command.aim_sy = sy;
-    command.aim_cy = cy;
-    command.fire_pressed = ai_can_fire;
-    command.fire_held = ai_can_fire;
-    /* Movement has already been selected above because the AI needs its
-     * target/formation heuristics; the common executor owns the final actor
-     * action and weapon state transition. */
-    actor->moving = !ai_idle;
-    fired = toy_game_execute_actor_command(
-        g, actor, &command, dt_ms, 100);
-    actor->moving = !ai_idle;
-
-    keep_animation =
-        (actor->animation.id == TOY_GAME_ANIM_FIRE &&
-         actor->animation.time_ms <
-         toy_game_animation_info(TOY_GAME_ANIM_FIRE)->duration_ms) ||
-        (actor->animation.id == TOY_GAME_ANIM_HIT &&
-         actor->animation.time_ms <
-         toy_game_animation_info(TOY_GAME_ANIM_HIT)->duration_ms) ||
-        (actor->animation.id == TOY_GAME_ANIM_REVIVE &&
-         actor->animation.time_ms <
-         toy_game_animation_info(TOY_GAME_ANIM_REVIVE)->duration_ms) ||
-        (actor->animation.id == TOY_GAME_ANIM_SHOVE &&
-         actor->animation.time_ms <
-         toy_game_animation_info(TOY_GAME_ANIM_SHOVE)->duration_ms) ||
-        (actor->animation.id == TOY_GAME_ANIM_DEATH &&
-         actor->state == TOY_GAME_ACTOR_DOWNED);
-    if (actor->reloading)
-        toy_game_actor_set_animation(actor, TOY_GAME_ANIM_RELOAD);
-    else if (fired) toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
-    else if (!keep_animation) {
-        toy_game_actor_set_animation(actor, ai_idle ? TOY_GAME_ANIM_IDLE :
-                                     TOY_GAME_ANIM_MOVE);
-    }
-    toy_game_actor_update_animation(actor, dt_ms);
-
-}
+#include "game_actor_ai.inc"
 
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
 {
@@ -6489,6 +6258,7 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
         TOY_GAME_ANIM_REVIVE, TOY_GAME_ANIM_SHOVE
     };
     int i, old_context = g->ai_context_actor_index;
+    g->combat_scan_budget = 8;
     /* Teammate updates consume the normalized local actor directly. */
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
@@ -6541,6 +6311,7 @@ void toy_game_update_held(struct toy_game *g,
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
     g->nav_tick++;
+    toy_game_update_combat(g, dt_ms);
     /* The actor is already normalized by the caller and remains the sole
      * local-player gameplay state. */
     player = toy_game_local_player_actor(g);
@@ -6631,6 +6402,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
     g->nav_tick++;
     profile = g->update_profile;
     if (profile && profile->clock_us) start = mark = profile->clock_us();
+    toy_game_update_combat(g, dt_ms);
     toy_game_update_projectiles(g, dt_ms);
     toy_game_update_burn_zones(g, dt_ms);
     if (profile && profile->clock_us) {

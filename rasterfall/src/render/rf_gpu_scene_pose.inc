@@ -15,11 +15,10 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     struct rasterfall_model_resource *resource;
     struct rasterfall_model_instance *instance;
     struct rasterfall_action_composition composition={0};
-    const char *name=rasterfall_character_body_resource_name(body_id);
+    const char *body_path=rasterfall_character_body_resource_path(body_id);
     char path[256];
     int result=-1;
-    if (!out || !name || snprintf(path,sizeof(path),
-        "rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+    if (!out || !body_path || snprintf(path,sizeof(path),"%s",body_path)>=(int)sizeof(path)) return -1;
     const char *diagnostic_model=getenv("RF_GPU_CHARACTER_MODEL");
     if (diagnostic_model && diagnostic_model[0]) {
         if (snprintf(path,sizeof(path),"%s",diagnostic_model)>=(int)sizeof(path)) return -1;

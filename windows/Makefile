@@ -273,6 +273,8 @@ $(BUILD)/win/%.o: %.c windows/Makefile rasterfall-rebuild | $(BUILD)
 	@printf '  WIN-CC  %s\n' "$<"
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: CPPFLAGS += -DRF_COMBAT_BUILD_COMMIT='"$(shell git describe --always --dirty 2>/dev/null)"'
+
 -include $(DEPS)
 
 clean:

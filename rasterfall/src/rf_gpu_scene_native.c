@@ -191,9 +191,14 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                     &slot->mesh[i].handle)<0) return -1;
             continue;
         }
-        name=i==1 ? rasterfall_character_body_resource_name(pose->body_resource_id) :
-            rasterfall_character_gear_resource_name(pose->attachments[i-2].resource_id);
-        if (!name || snprintf(path,sizeof(path),"rasterfall/private-assets/models/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+        if (i==1) {
+            name=rasterfall_character_body_resource_path(pose->body_resource_id);
+            if (!name || snprintf(path,sizeof(path),"%s",name)>=(int)sizeof(path)) return -1;
+        } else {
+            name=rasterfall_character_gear_resource_name(pose->attachments[i-2].resource_id);
+            if (!name || snprintf(path,sizeof(path),RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR
+                "/%s.rmesh",name)>=(int)sizeof(path)) return -1;
+        }
         const char *diagnostic_model=getenv("RF_GPU_CHARACTER_MODEL");
         if (i==1 && pose->character_id==RASTERFALL_CHARACTER_NONE && diagnostic_model && diagnostic_model[0]) {
             if (snprintf(path,sizeof(path),"%s",diagnostic_model)>=(int)sizeof(path)) return -1;

@@ -93,7 +93,7 @@ static void session_set_flag_assignments(struct rasterfall_session *s, int fi)
     for (i = 0; i < TOY_GAME_MAX_ACTORS && n < 4; i++) {
         struct toy_game_actor *a = &s->game_state.actors[i];
         if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
-            a->developer_only || a->companion) continue;
+            a->developer_only || a->companion || a->faction != TOY_GAME_FACTION_ALLIED) continue;
         if (a->flag_index == fi)
             toy_game_assign_actor_deployment(&s->game_state, i,
                 f->x + f->slot_offsets[n][0], f->z + f->slot_offsets[n][1], fi), n++;
@@ -106,6 +106,7 @@ static int session_flag_assigned_count(const struct rasterfall_session *s, int f
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &s->game_state.actors[i];
         if (a->active && a->kind == TOY_GAME_ACTOR_AI && !a->base_core &&
+            a->faction == TOY_GAME_FACTION_ALLIED &&
             !a->developer_only && !a->companion && a->flag_index == fi) count++;
     }
     return count;
@@ -152,6 +153,7 @@ static int session_collect_assignable(const struct rasterfall_session *s,
             int assigned = a->flag_index == fi;
             int assigned_elsewhere = a->flag_index >= 0 && !assigned;
             if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core ||
+                a->faction != TOY_GAME_FACTION_ALLIED ||
                 a->developer_only || a->companion || a->flag_guard || assigned_elsewhere ||
                 (pass == 0 ? !assigned : assigned)) continue;
             indices[count++] = i;
@@ -213,7 +215,7 @@ static int session_near_ai(const struct rasterfall_session *session,
         const struct toy_game_actor *actor = &session->game_state.actors[i];
         long long dx, dz, d2;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
-            actor->base_core ||
+            actor->base_core || actor->faction != TOY_GAME_FACTION_ALLIED ||
             actor->state != TOY_GAME_ACTOR_DOWNED) continue;
         dx = (long long)camera->x - actor->x;
         dz = (long long)camera->z - actor->z;
@@ -1028,13 +1030,9 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
         player->state != TOY_GAME_ACTOR_DOWNED ||
         game->money < RASTERFALL_PAID_REVIVE_COST)
         return 0;
+    if (!toy_game_revive_actor(game, TOY_GAME_PLAYER_ACTOR_INDEX,
+                               TOY_GAME_REVIVE_MS)) return 0;
     game->money -= RASTERFALL_PAID_REVIVE_COST;
-    toy_game_clear_actor_special_control(
-        toy_game_local_player_actor(game), 0);
-    player->state = TOY_GAME_ACTOR_ALIVE;
-    player->hp = TOY_GAME_REVIVE_HP;
-    player->revive_progress_ms = 0;
-    player->control_disabled = 0;
     camera->x = session->level.start_x;
     camera->z = session->level.start_z;
     camera->sy = session->level.start_sy;
@@ -1046,9 +1044,6 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     player->z = camera->z;
     player->sy = camera->sy;
     player->cy = camera->cy;
-    toy_game_actor_set_animation(player, TOY_GAME_ANIM_REVIVE);
-    toy_game_emit_event(game, TOY_GAME_EV_REVIVE);
-    toy_game_emit_event(game, TOY_GAME_EV_ACTOR_REVIVE);
     session->banner_ms = 1800;
     session->banner_success = 1;
     session->banner_text = "REVIVED -$20";
@@ -2118,30 +2113,18 @@ static void session_build_rts_command(struct rasterfall_session *session,
 {
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(&session->game_state);
-    const struct toy_game_weapon_info *weapon;
-    int range, target = -1;
-    long long best = 0;
-    int i;
+    struct toy_game_combat_target target;
     memset(command, 0, sizeof(*command));
     if (!player || player->state != TOY_GAME_ACTOR_ALIVE) return;
-    weapon = toy_game_weapon_info(player->slots[player->current_slot].weapon);
-    range = weapon ? weapon->range : 0;
-    for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
-        const struct toy_game_enemy *enemy = &session->game_state.enemies[i];
-        long long dx, dz, distance2;
-        if (enemy->active != 1 || enemy->hp <= 0) continue;
-        dx = (long long)enemy->x - camera->x;
-        dz = (long long)enemy->z - camera->z;
-        distance2 = dx * dx + dz * dz;
-        if (distance2 > (long long)range * range ||
-            (target >= 0 && distance2 >= best)) continue;
-        target = i;
-        best = distance2;
-    }
-    if (target >= 0) {
-        const struct toy_game_enemy *enemy =
-            &session->game_state.enemies[target];
-        if (session_managed_ai_face(camera, enemy->x, enemy->z, dt_ms)) {
+    if (toy_game_find_combat_target(&session->game_state, player, &target)) {
+        int dx = target.x - player->x, dz = target.z - player->z;
+        int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        if (distance > 0) {
+            camera->pitch_sy = (target.y - player->ground_y - player->airborne_y -
+                RASTERFALL_HUMAN_EYE_HEIGHT_RFU) * 1024 / distance;
+            camera->pitch_cy = 1024;
+        }
+        if (session_managed_ai_face(camera, target.x, target.z, dt_ms)) {
             command->buttons |= RASTERFALL_CMD_FIRE;
             command->fire_held = 1;
         }
@@ -2655,7 +2638,8 @@ static void session_build_managed_ai_command(
             const struct toy_game_actor *actor =
                 &session->game_state.actors[i];
             if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
-                actor->base_core || actor->state != TOY_GAME_ACTOR_DOWNED)
+                actor->base_core || actor->faction != TOY_GAME_FACTION_ALLIED ||
+                actor->state != TOY_GAME_ACTOR_DOWNED)
                 continue;
             target_x = actor->x;
             target_z = actor->z;
@@ -3110,6 +3094,7 @@ static void session_step_client_mode(struct rasterfall_session *session,
     int saved_events = session->game_state.event_count;
     int saved_muzzle = local_player->muzzle_flash_ms;
     int saved_ray_count = local_player->ray_count;
+    session->game_state.defer_actor_damage = 1;
     saved_throw_timer = local_player->throw_timer_ms;
     unsigned int saved_fire_seq = local_player->fire_seq;
     memcpy(saved_rays, local_player->rays, sizeof(saved_rays));

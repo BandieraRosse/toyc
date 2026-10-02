@@ -128,7 +128,8 @@ enum rasterfall_effect_instance_kind {
     RASTERFALL_EFFECT_INSTANCE_KIND_ENEMY_DEATH_DUST,
     RASTERFALL_EFFECT_INSTANCE_KIND_INTERACTION_HIGHLIGHT,
     RASTERFALL_EFFECT_INSTANCE_KIND_CAMERA_SHAKE,
-    RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY
+    RASTERFALL_EFFECT_INSTANCE_KIND_KNOCKBACK_TRAJECTORY,
+    RASTERFALL_EFFECT_INSTANCE_KIND_EVASION
 };
 
 /* Emitter child placement is a runtime policy, not an asset format. */
@@ -244,9 +245,12 @@ struct rasterfall_effects {
     struct rasterfall_effect_emitter emitters[RASTERFALL_EFFECT_EMITTER_SLOTS];
     int emitter_next;
     unsigned int last_fire_seq;
+    unsigned int last_confirmed_fire_seq, last_confirmed_generation;
     unsigned int last_network_fire_seq[4];
     unsigned int last_ai_fire_seq;
     unsigned int last_actor_fire_seq[TOY_GAME_MAX_ACTORS];
+    unsigned int last_actor_generation[TOY_GAME_MAX_ACTORS];
+    unsigned int last_evasion_sequence[TOY_GAME_MAX_ACTORS];
     uint32_t rng;
     int weapon_kick;
     /* Smoothed aggregate camera-shake state; never part of gameplay state. */
@@ -274,6 +278,9 @@ void rasterfall_effects_sync_projectile_flashes(
 void rasterfall_effects_sync_damage_flash(
     struct rasterfall_effects *effects, const struct toy_game *game,
     const struct camera *camera);
+void rasterfall_effects_sync_evasion(
+    struct rasterfall_effects *effects, const struct toy_game *game);
+int rasterfall_effects_combat_logic_test(void);
 void rasterfall_effects_sync_enemy_feedback(
     struct rasterfall_effects *effects, const struct toy_game *game);
 void rasterfall_effects_sync_interaction_highlight(

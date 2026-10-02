@@ -223,6 +223,48 @@ enum toy_game_combat_template {
     TOY_GAME_COMBAT_ELITE
 };
 
+enum toy_game_faction {
+    TOY_GAME_FACTION_ALLIED, TOY_GAME_FACTION_HOSTILE,
+    TOY_GAME_FACTION_INFECTED
+};
+
+enum toy_game_attack_kind {
+    TOY_GAME_ATTACK_BULLET, TOY_GAME_ATTACK_BITE,
+    TOY_GAME_ATTACK_CONTROL, TOY_GAME_ATTACK_IMPACT,
+    TOY_GAME_ATTACK_EXPLOSION, TOY_GAME_ATTACK_MELEE, TOY_GAME_ATTACK_BURN
+};
+
+struct toy_game_evasion {
+    int reserve_milli, window_ms, retrigger_ms, pressure_ms;
+    unsigned int sequence;
+    int source_x, source_z, strength_milli, animation_ms;
+    int trigger_time_ms;
+};
+
+struct toy_game_combat_stats {
+    int shots, pellets, hits, health_damage, damage_taken;
+    int money_earned; /* actual allied kill reward; owned labs can undo only theirs */
+    int armor_absorbed, overkill;
+    int evasion_spent_milli, evasion_events, evasion_exhaustions;
+};
+
+struct toy_game_attack {
+    int kind;
+    int base_damage_milli;   /* only actually hitting pellets, before weakpoints */
+    int health_damage_milli; /* corresponding post-weakpoint amount */
+    int source_x, source_z;
+};
+
+struct toy_game_damage_result {
+    int health_damage, evasion_spent_milli, overkill, killed;
+};
+
+struct toy_game_combat_target {
+    int kind; /* TOY_GAME_ENTITY_ACTOR / ENEMY, -1 means none */
+    int index, generation;
+    int x, z, y;
+};
+
 enum toy_game_enemy_type {
     TOY_GAME_ENEMY_PURSUIT_COMMON,
     TOY_GAME_ENEMY_PURSUIT_HEAVY,
@@ -281,6 +323,7 @@ enum toy_game_event {
     TOY_GAME_EV_BOMB_BEEP,
     TOY_GAME_EV_BOMB_EXPLODE,
     TOY_GAME_EV_MOLOTOV_BREAK,
+    TOY_GAME_EV_EVADE,
 };
 
 /* Gameplay-owned one-shot event.  This captures the hit-time values instead
@@ -489,10 +532,15 @@ struct toy_game_ray {
     int sy, cy;        /* 水平弹丸方向（1024 定点，已归一化） */
     int vy;            /* 屏幕竖直扩散方向（1024 定点，向上为正） */
     int ex, ez;        /* 终点：命中敌人/墙体位置，或最大射程端点 */
-    int hit_enemy;     /* 该弹丸击倒敌人 */
+    int hit_enemy;     /* 实体几何命中；包含 actor 和感染者，不等于掉血或击杀 */
     int hit_world;     /* 该弹丸撞上障碍（终点为墙体交点） */
     int enemy_index;   /* 命中的敌人；未命中为 -1 */
-    int damage;        /* 本次弹丸实际造成的伤害 */
+    int damage;        /* 命中弹丸的基础伤害报告，实际生命变化见 health_damage */
+    int actor_index;   /* hostile actor slot, -1 if absent */
+    unsigned int actor_generation;
+    int hit_y, weakpoint;
+    int health_damage; /* confirmed HP delta; damage above stays the base report */
+    int evasion_spent_milli;
 };
 
 struct toy_game_slot {
@@ -504,7 +552,7 @@ struct toy_game_slot {
 #define TOY_GAME_MAX_PROJECTILES 16
 struct toy_game_projectile {
     int active, kind;
-    int owner_actor_id;          /* 0=host player, 100+ = remote actor */
+    int owner_actor_id;          /* actor identity: local, AI or remote player */
     int x, z, vx, vz, vy;
     int fuse_ms;
     int blink_timer_ms;             /* 距离下一次红灯/滴声 */
@@ -589,6 +637,14 @@ struct toy_game_actor {
     int kind;
     int class_id;
     struct toy_game_skills skills;
+    int faction;
+    unsigned int combat_generation;
+    struct toy_game_evasion evasion;
+    struct toy_game_combat_stats combat_stats;
+    int damage_remainder_milli;
+    struct toy_game_combat_target combat_target;
+    int combat_scan_ms, combat_aim_ms, combat_lost_ms;
+    int combat_last_x, combat_last_z, combat_last_y;
     int character_id;           /* -1 ordinary; nonnegative IDs are explicit story identities */
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
@@ -737,6 +793,10 @@ struct toy_game_update_profile {
 };
 
 struct toy_game {
+    int combat_time_ms;
+    int combat_scan_budget;
+    unsigned int next_combat_generation;
+    int defer_actor_damage; /* client predicted shots await host actor damage */
     struct toy_game_update_profile *update_profile;
     int state;          /* enum toy_game_state */
     struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
@@ -850,6 +910,19 @@ int toy_game_actor_fire_cooldown_ms(const struct toy_game_actor *actor,
                                    const struct toy_game_weapon_info *weapon);
 int toy_game_actor_reload_ms(const struct toy_game_actor *actor,
                              const struct toy_game_weapon_info *weapon);
+int toy_game_actors_hostile(const struct toy_game_actor *a,
+                            const struct toy_game_actor *b);
+void toy_game_actor_reset_combat(struct toy_game_actor *actor, int refill_evasion);
+void toy_game_update_combat(struct toy_game *game, int dt_ms);
+struct toy_game_damage_result toy_game_damage_actor(
+    struct toy_game *game, struct toy_game_actor *source,
+    struct toy_game_actor *target, const struct toy_game_attack *attack);
+int toy_game_actor_begin_fire(struct toy_game *game, struct toy_game_actor *actor);
+int toy_game_actor_resolve_shot(struct toy_game *game, struct toy_game_actor *actor);
+int toy_game_add_gunner(struct toy_game *game, int elite, int x, int z,
+                         const char *name);
+int toy_game_find_combat_target(struct toy_game *game,
+    const struct toy_game_actor *actor, struct toy_game_combat_target *out);
 const struct toy_game_actor *toy_game_local_player_actor_const(
     const struct toy_game *g);
 

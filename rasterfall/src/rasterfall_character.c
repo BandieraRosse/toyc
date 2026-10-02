@@ -50,6 +50,12 @@ static const struct rasterfall_character_profile characters[] = {
     ,{ RASTERFALL_CHARACTER_SQUAD_B_MEDIC, RASTERFALL_PROFESSION_NONE,
       RASTERFALL_MODULAR_MEDIC, "Squad B Medic", "rf_humanoid_v2", ALL_ACTIONS,
       0x71878A, 0x657E81, 0xB98570, 0x343C42 }
+    ,{ RASTERFALL_CHARACTER_GUNNER, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_GUNNER, "Hostile Gunner", "rf_humanoid_v2", ALL_ACTIONS,
+      0xB94C3A, 0x554947, 0xB07F65, 0x282F36 }
+    ,{ RASTERFALL_CHARACTER_GUNNER_ELITE, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_GUNNER_ELITE, "Elite Gunner", "rf_humanoid_v2", ALL_ACTIONS,
+      0x8F302D, 0x343A40, 0xB07F65, 0x282F36 }
 };
 
 static const struct rasterfall_character_profile ordinary_character = {
@@ -114,7 +120,7 @@ int rasterfall_character_logic_test(void)
          i < RASTERFALL_CHARACTER_COUNT; i++)
         if (rasterfall_character_profile(i)->visual_recipe_id < 0 ||
             !rasterfall_character_visual_recipe_for_character(i)) return 1;
-    for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++) {
+    for (i = 0; i < RASTERFALL_MODULAR_RECIPE_COUNT; i++) {
         const struct rasterfall_character_visual_recipe *recipe =
             rasterfall_character_visual_recipe(i);
         if (!recipe || recipe->body_resource_id != RASTERFALL_BODY_RF_HUMANOID_V2 ||
@@ -131,7 +137,7 @@ int rasterfall_character_logic_test(void)
         }
     }
     return rasterfall_character_visual_recipe(-1) != NULL ||
-        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_PROFESSION_COUNT) != NULL ||
+        rasterfall_character_visual_recipe(RASTERFALL_MODULAR_RECIPE_COUNT) != NULL ||
         strcmp(rasterfall_character_body_resource_name(
             RASTERFALL_BODY_RF_HUMANOID_V2), "rf_humanoid_v2");
 }
@@ -170,7 +176,12 @@ static const struct rasterfall_character_visual_recipe modular_professions[] = {
        A(HIP_L,ENGINEER_HIP_L)},4},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x796C59, 0x6C695D,
       {A(HEAD,HEAVY_HEAD),A(CHEST,HEAVY_CHEST),A(BACK,HEAVY_BACK),
-       A(HIP_L,HEAVY_HIP_L),A(HIP_R,HEAVY_HIP_R)},5}
+       A(HIP_L,HEAVY_HIP_L),A(HIP_R,HEAVY_HIP_R)},5},
+    { RASTERFALL_BODY_RF_HUMANOID_V2, 0xB94C3A, 0x554947,
+      {A(HEAD,GUNNER_HEAD),A(CHEST,GUNNER_CHEST),A(BACK,GUNNER_BACK)},3},
+    { RASTERFALL_BODY_RF_HUMANOID_V2, 0x8F302D, 0x343A40,
+      {A(HEAD,GUNNER_ELITE_HEAD),A(CHEST,GUNNER_ELITE_CHEST),
+       A(BACK,GUNNER_ELITE_BACK)},3}
 };
 #undef A
 
@@ -181,13 +192,15 @@ static const char *gear_resource_names[] = {
     "rf_gear_medic_head", "rf_gear_medic_chest", "rf_gear_medic_back",
     "rf_gear_engineer_head", "rf_gear_engineer_chest", "rf_gear_engineer_back",
     "rf_gear_engineer_hip_l", "rf_gear_heavy_head", "rf_gear_heavy_chest",
-    "rf_gear_heavy_back", "rf_gear_heavy_hip_l", "rf_gear_heavy_hip_r"
+    "rf_gear_heavy_back", "rf_gear_heavy_hip_l", "rf_gear_heavy_hip_r",
+    "rf_gear_gunner_head", "rf_gear_gunner_chest", "rf_gear_gunner_back",
+    "rf_gear_gunner_elite_head", "rf_gear_gunner_elite_chest", "rf_gear_gunner_elite_back"
 };
 
 const struct rasterfall_character_visual_recipe *
 rasterfall_character_visual_recipe(int id)
 {
-    if (id < 0 || id >= RASTERFALL_MODULAR_PROFESSION_COUNT) return NULL;
+    if (id < 0 || id >= RASTERFALL_MODULAR_RECIPE_COUNT) return NULL;
     return &modular_professions[id];
 }
 
@@ -201,4 +214,13 @@ const char *rasterfall_character_gear_resource_name(int id)
 {
     if (id < 0 || id >= RASTERFALL_GEAR_RESOURCE_COUNT) return NULL;
     return gear_resource_names[id];
+}
+
+const char *rasterfall_character_body_resource_path(int id)
+{
+    static const char *paths[] = {
+        RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/rf_humanoid_v2.rmesh",
+        "rasterfall/private-assets/models/rf_c01_v022h.rmesh"
+    };
+    return id >= 0 && id < RASTERFALL_BODY_RESOURCE_COUNT ? paths[id] : NULL;
 }

@@ -195,8 +195,8 @@ recipe 和加载后的资源/instance 都不进入 `toy_game_actor` 或网络快
 
 生成器的 `--rigid-attachment=<profession>-<slot>` 直接复用 carrier builder 已验收几何，按 HEAD、
 CHEST、BACK、HIP_L、HIP_R socket authored origin 重定位后导出无 body、skin、skeleton、CHR1 的
-metric rigid GLB/RMESH。当前产物为每职业 HEAD/CHEST/BACK，另有 Engineer HIP_L 和 Heavy
-HIP_L/HIP_R，共 21 个 gear resource。Breacher 的前侧 lower armor 与 CHEST 壳构成同一刚体；
+metric rigid GLB/RMESH。职业产物为每职业 HEAD/CHEST/BACK，另有 Engineer HIP_L 和 Heavy
+HIP_L/HIP_R；普通/精英枪手各增加 HEAD/CHEST/BACK，合计 27 个 gear resource。Breacher 的前侧 lower armor 与 CHEST 壳构成同一刚体；
 它没有伪造新的 HIPS socket。
 
 `--profession-lineup` 输出 modular 六职业 front/three-quarter near/mid/far、side mid，并输出每职业

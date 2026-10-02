@@ -38,6 +38,18 @@ RF Shell 输入 `help` 查看只读 `/assets` 文件命令，输入 `boot` 选�
 玩家移动目标会显示 `MOVE` 标记，抵达后消失；再按 `M` 返回 FPS。
 验证方式和支持边界见 [Scene 工作流](../docs/rasterfall/guides/gpu-scene-fixture.md)。
 
+战斗 V0 可直接试玩普通/精英枪手与感染者混合遭遇：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-play --skip-boot --combat-lab 18
+```
+
+也可在前哨站南侧最西端实验场的配置终端按 E 进入，方向键选择预设、Enter 开始。
+WASD 移动、鼠标左键或 Enter 射击、R 换弹；M 切换 RTS，选择临时 LAB 旗帜后右键部署队友。
+T 结束并查看结果，结果页 Enter 重置，F2 回到配置；配置页 F2 切换玩家参与/脚本观察。
+回避条与青色反应效果表示消耗储备，实际受伤另计；持续集火和感染者围攻仍会耗尽储备。
+规则、固定预设及 CSV 复现入口见[战斗实验场](../docs/rasterfall/guides/combat-lab.md)。
+
 保留的 Linux/freestanding 构建入口：
 
 ```sh

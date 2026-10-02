@@ -24,7 +24,7 @@ Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rac
 | --- | --- | --- | --- |
 | Enemy Visual V2 六份 infected | 项目内 `generate_rasterfall_infected.py`，复用 V2 源生成器 | 公开 `assets/models/enemies/rf_infected_*.rmesh`；GLB 为可重建本地产物 | 公开运行资源，无第三方几何或纹理；生成源、材质与重建命令见 [敌人表现](enemy-visuals.md) |
 | Eula / 优菈 | 原始 PMX 当前无法核实 | `private-assets/models/eula.rmesh` | 未找回原包和许可前不得公开分发 |
-| RF Humanoid V2 | `tools/blender/generate_rasterfall_humanoid_v2.py` 项目内生成 | `private-assets/source/characters/rf_humanoid_v2.glb`、`private-assets/models/rf_humanoid_v2.rmesh` | 无外部原件；当前为私有验收资产，发布前仍需完成美术签收与发布边界检查 |
+| RF Humanoid V2、六职业与普通/精英枪手组件 | `tools/blender/generate_rasterfall_humanoid_v2.py` 项目内生成 | 公开 `assets/models/characters/rf_humanoid_v2.rmesh` 与 `rf_gear_*.rmesh`；本地 GLB 可重建 | 项目原创几何与五色块/装备材质，无第三方角色或纹理；公开运行资源，重建见[枪手与共享身体](../guides/character-art-acceptance.md#战斗-v0-公开共享身体与枪手组件) |
 | ST AR-15 | `.claude/AR15/GirlsFrontline AsteriaDefault.pmx` | `st_ar15.rmesh`、LOD 和纹理 | 本地 Readme 禁止二次配布、商业使用和拆取部件 |
 | G11 | `.claude/G11/GirlsFrontline MishtyDefault.pmx` | `g11.rmesh`、LOD 和纹理 | 未见独立许可，按同包最严格限制处理 |
 | Vector | `.claude/Vector/GirlsFrontline VectorDefault.pmx` | `vector.rmesh`、LOD 和纹理 | 未见独立许可，按同包最严格限制处理 |

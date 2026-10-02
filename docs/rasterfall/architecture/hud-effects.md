@@ -84,6 +84,12 @@ HUD 与 viewmodel 从 player actor 及 session/network presentation state 读取
 位置/朝向可以来自插值 cache；生命、武器、downed 和统计仍来自对应 actor。renderer/HUD 不缓存或修改
 权威 gameplay 真值。
 
+Combat V0 的玩家生命条读取 actor 的实际 `max_hp`，回避条读取最终能力容量和 actor 的毫点储备；
+低储备和耗尽使用警告色，反应、压力等待与就绪状态分别显示。回避反应由权威序号触发青色侧身
+碎光，同一序号的重复快照不重新播放，实例 generation 变化清除旧槽的表现记录。回避效果不改变
+镜头、位置或伤害结果。射线只有确认生命伤害大于零时才产生身体命中特效，actor 命中不得写入
+感染者的受击方向数组；客户端延后确认的身体效果不重播本地枪口、后坐力或弹道。
+
 内嵌 8×16 VGA ASCII 与 16×16 GB2312 字形由项目资产提供；运行时不依赖 FreeType、系统 CJK 字体或
 宿主编码转换。地图排布导出可以读取同一字形资产，但不拥有 HUD runtime。
 

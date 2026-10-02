@@ -8052,7 +8052,7 @@ static int modular_actor_resources_init(void)
     char path[RASTERFALL_MODEL_PATH_BYTES];
     unsigned int i;
     const char *model_dir = modular_actor_model_dir ? modular_actor_model_dir :
-        "rasterfall/private-assets/models";
+        RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR;
     if (runtime->load_attempted) return runtime->resources_ready ? 0 : -1;
     runtime->load_attempted = 1;
     if (!recipe) return -1;
@@ -8067,7 +8067,11 @@ static int modular_actor_resources_init(void)
                rasterfall_model_resource_load(&runtime->body, path) < 0)
         return -1;
     for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++) {
-        if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
+        /* A legacy six-profession acceptance directory predates gunner gear.
+         * New recipes always resolve their canonical public components. */
+        const char *gear_dir = i >= RASTERFALL_GEAR_GUNNER_HEAD ?
+            RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR : model_dir;
+        if (snprintf(path, sizeof(path), "%s/%s.rmesh", gear_dir,
                 rasterfall_character_gear_resource_name(i)) >=
                 (int)sizeof(path) ||
             rasterfall_model_resource_load(&runtime->gear[i], path) < 0 ||
@@ -9255,7 +9259,7 @@ static int render_network_teammate(struct toy_renderer *renderer,
             int render_airborne;
             int actor_index;
             if (i == net->local_player_id || !game_state) continue;
-            actor_index = TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            actor_index = rasterfall_net_player_actor_index(net, i);
             if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
             actor = &game_state->actors[actor_index];
             if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;
@@ -9332,7 +9336,7 @@ static void render_network_teammate_status(struct toy_renderer *renderer,
             const struct camera *render_camera;
             int actor_index;
             if (i == net->local_player_id || !game_state) continue;
-            actor_index = TOY_GAME_REMOTE_ACTOR_BASE + i - 1;
+            actor_index = rasterfall_net_player_actor_index(net, i);
             if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) continue;
             actor = &game_state->actors[actor_index];
             if (!actor->active || actor->kind != TOY_GAME_ACTOR_PLAYER) continue;

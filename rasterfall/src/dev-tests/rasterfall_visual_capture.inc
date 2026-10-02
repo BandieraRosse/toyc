@@ -1603,7 +1603,7 @@ int rasterfall_render_profession_lineup(const char *model_dir, const char *outpu
                  rasterfall_character_body_resource_name(
                      RASTERFALL_BODY_RF_HUMANOID_V2)) >= (int)sizeof(path) ||
         rasterfall_model_resource_load(&body, path) < 0) goto done;
-    for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++) {
+    for (i = 0; i < RASTERFALL_GEAR_GUNNER_HEAD; i++) {
         if (snprintf(path, sizeof(path), "%s/%s.rmesh", model_dir,
                      rasterfall_character_gear_resource_name(i)) >= (int)sizeof(path) ||
             rasterfall_model_resource_load(&gear[i], path) < 0 ||
@@ -1656,7 +1656,7 @@ int rasterfall_render_profession_lineup(const char *model_dir, const char *outpu
         __printf("rasterfall: modular profession lineup view=%s distance=%d output=%s\n", views[v], distances[d], path);
     }
     __printf("rasterfall: modular profession resources body_loads=1 body_resource=%p host_instances=6 gear_resources=%d\n",
-             (void *)&body, RASTERFALL_GEAR_RESOURCE_COUNT);
+             (void *)&body, RASTERFALL_GEAR_GUNNER_HEAD);
     for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++) {
         struct camera camera;
         struct toy_renderer renderer;
@@ -1692,6 +1692,114 @@ done:
     for (i = 0; i < RASTERFALL_MODULAR_PROFESSION_COUNT; i++)
         rasterfall_model_unload(&carriers[i]);
     rasterfall_model_resource_unload(&body);
+    return result;
+}
+
+/* Fixed cameras exercise the gameplay modular adapter, including its actual
+ * per-actor lower/upper/recoil composition, left-hand IK and gear sockets. */
+int rasterfall_render_combat_character_capture(const char *output_dir)
+{
+    static const char *views[] = {"front", "side", "back", "three-quarter", "rts"};
+    static const char *ranges[] = {"near", "mid", "far"};
+    static const int distances[] = {2400, 6000, 14000};
+    static const int identities[] = {RASTERFALL_CHARACTER_RF_RIFLEMAN,
+        RASTERFALL_CHARACTER_GUNNER, RASTERFALL_CHARACTER_GUNNER_ELITE};
+    struct rasterfall_modular_actor_runtime *runtime = &modular_actor_runtime;
+    static struct rasterfall_render_context context;
+    struct toy_game_actor actors[3];
+    const struct toy_game_weapon_info *weapon = toy_game_weapon_info(TOY_GAME_WEAPON_AK);
+    unsigned char *body_copy;
+    char path[512], label[192];
+    int i, frame, result = 1;
+    if (!output_dir || tlibc_recursive_mkdir(output_dir) < 0 ||
+        modular_actor_resources_init() < 0) return 1;
+    body_copy = tlibc_malloc(runtime->body.definition.data_size);
+    if (!body_copy) return 1;
+    memcpy(body_copy, runtime->body.definition.data, runtime->body.definition.data_size);
+    memset(&context, 0, sizeof(context));
+    context.diagnostic_fixed_lighting = 1;
+    rasterfall_render_bind(&context);
+    memset(actors, 0, sizeof(actors));
+    memset(actor_action_layers, 0, sizeof(actor_action_layers));
+    for (i = 0; i < 3; i++) {
+        actors[i].active = 1; actors[i].actor_id = i + 1;
+        actors[i].kind = TOY_GAME_ACTOR_AI;
+        actors[i].character_id = identities[i];
+        actors[i].state = TOY_GAME_ACTOR_ALIVE; actors[i].cy = 1024;
+        actors[i].current_slot = weapon->slot;
+        actors[i].slots[weapon->slot].weapon = TOY_GAME_WEAPON_AK;
+        actors[i].animation.id = TOY_GAME_ANIM_IDLE;
+    }
+    gallery_load();
+    rasterfall_render_set_model_lighting(1);
+    for (frame = 0; frame < 23; frame++) {
+        struct camera camera;
+        struct toy_renderer renderer;
+        struct toy_surface surface;
+        int motion = frame >= 15, view = motion ? 3 : frame / 3;
+        int range = motion ? 0 : frame % 3, failed = 0;
+        visual_acceptance_camera(&camera, view == 4 ? 3 : view, distances[range]);
+        if (view == 4) {
+            camera.view.y = distances[range] * 3 / 4 - 450;
+            camera.view.pitch_sy = -614; camera.view.pitch_cy = 819;
+        }
+        if (frame == 15) memset(actor_action_layers, 0, sizeof(actor_action_layers));
+        memset(&surface, 0, sizeof(surface));
+        surface.width = 1600; surface.height = 900; surface.stride = 6400;
+        surface.pixels = tlibc_malloc((size_t)surface.stride * surface.height);
+        if (!surface.pixels) goto done;
+        toy_renderer_init(&renderer); toy_renderer_set_frame_budget(&renderer, 0);
+        if (toy_renderer_begin(&renderer, &surface, 0x30343B) < 0) failed = 1;
+        for (i = 0; i < 3 && !failed; i++) {
+            int offset = (i - 1) * 520;
+            actors[i].x = (int)((long long)camera.view.cy * offset / 1024);
+            actors[i].z = -(int)((long long)camera.view.sy * offset / 1024);
+            actors[i].animation.id = motion ? TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_IDLE;
+            actors[i].moving = motion;
+            actors[i].animation.time_ms = motion ? ((frame - 15) * 100 + i * 100) % 400 : 0;
+            if (motion && i == 2 && (frame == 18 || frame == 22)) {
+                actors[i].animation.id = TOY_GAME_ANIM_FIRE;
+                actors[i].animation.time_ms = 40;
+            }
+            if (render_modular_ai_teammate(&renderer, &camera, &actors[i], i, NULL) < 0)
+                failed = 1;
+        }
+        if (!failed && (renderer.cmd_overflow || toy_renderer_flush(&renderer) < 0)) failed = 1;
+        if (motion) {
+            snprintf(label, sizeof(label), "FRIENDLY / GUNNER / ELITE   WALK + FIRE  t=%d ms",
+                     (frame - 15) * 100);
+            if (snprintf(path, sizeof(path), "%s/move-%d.bmp", output_dir, frame - 15) >=
+                (int)sizeof(path)) failed = 1;
+        } else {
+            snprintf(label, sizeof(label), "FRIENDLY / GUNNER / ELITE   %s / %s   shared body, independent poses",
+                     views[view], ranges[range]);
+            if (snprintf(path, sizeof(path), "%s/%s-%s.bmp", output_dir, views[view], ranges[range]) >=
+                (int)sizeof(path)) failed = 1;
+        }
+        if (!failed) {
+            fb_draw_string((unsigned char *)surface.pixels, 24, 24, label,
+                           RF_COLOR_UI_TEXT, surface.stride);
+            if (rasterfall_hud_dump_bmp(path, &surface) < 0) failed = 1;
+        }
+        toy_renderer_destroy(&renderer); tlibc_free(surface.pixels);
+        if (failed) goto done;
+        __printf("combat-character: frame=%d output=%s\n", frame, path);
+    }
+    for (i = 0; i < 3; i++) {
+        if (!runtime->instance_ready[i] ||
+            rasterfall_model_instance_resource(&runtime->instances[i]) != &runtime->body)
+            goto done;
+        for (int other = 0; other < i; other++)
+            if (runtime->instances[i].pose.bones == runtime->instances[other].pose.bones ||
+                runtime->instances[i].pose.bone_transforms == runtime->instances[other].pose.bone_transforms)
+                goto done;
+    }
+    if (memcmp(body_copy, runtime->body.definition.data, runtime->body.definition.data_size)) goto done;
+    __printf("combat-character: shared_body=1 independent_instances=3 immutable_body=pass "
+             "cameras=15 motion_frames=8 gear=HEAD,CHEST,BACK weapon=AK\n");
+    result = 0;
+done:
+    tlibc_free(body_copy);
     return result;
 }
 

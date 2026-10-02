@@ -67,6 +67,10 @@ void rasterfall_options_init(struct rasterfall_options *o,
 {
     memset(o, 0, sizeof(*o));
     o->requested_net_mode = RASTERFALL_NET_OFF;
+    o->combat_lab = -1;
+    o->combat_lab_seed = 1337;
+    o->combat_lab_repeat = 3;
+    o->combat_lab_output = "combat-lab.csv";
     o->net_port = RASTERFALL_NET_DEFAULT_PORT;
     o->textures_enabled = textures_enabled;
     o->enemy_visual_family = RASTERFALL_ENEMY_VISUAL_AUTO;
@@ -96,6 +100,11 @@ void rasterfall_options_usage(int fd)
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
         "  --texture-stats  --frames <count>  --dump-frame <path>\n"
         "  --logic-test  --input-test  --action-runtime-debug  --auto  --frame-audit\n"
+        "  --combat-lab <0..20> [--combat-lab-observe] (Outpost playable fixed combat preset)\n"
+        "  --combat-lab-suite [--combat-lab <0..20>] (same presets, fixed-step batch, no rendering)\n"
+        "  --combat-lab-seed <1..1000000> --combat-lab-repeat <1..3> --combat-lab-output <csv>\n"
+        "  --combat-lab-auto-exit (close after one native trial; wall-clock frame sample)\n"
+        "  --combat-character-capture <directory> (shared body / gunner components and motion views)\n"
         "  --gpu-lighting-test (hardware shadow, dynamic light, material and HDR regression)\n"
         "  GPU sky: RF_GPU_SKY_PRESET=clear|rain|warm; RF_GPU_SKY_TIME=seconds (optional frozen time)\n"
         "    RF_GPU_SKY_SCALE=1|2|4 (resolution divisor, default 4); RF_GPU_SKY_BENCH=1 with --gpu-lighting-test\n"
@@ -298,6 +307,30 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if(require_arguments(argc,argv,arg,2,option)<0)return -1;
             o->eula_acceptance_models=argv[++arg];
             o->eula_acceptance_dir=argv[++arg];
+        } else if (!strcmp(option,"--combat-lab")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            if(signed_int(argv[++arg],&o->combat_lab)<0 || o->combat_lab<0 || o->combat_lab>20) return -1;
+            o->skip_boot=1;
+        } else if (!strcmp(option,"--combat-lab-observe")) {
+            o->combat_lab_observe=1;
+        } else if (!strcmp(option,"--combat-lab-auto-exit")) {
+            o->combat_lab_auto_exit=1;
+        } else if (!strcmp(option,"--combat-lab-suite")) {
+            o->combat_lab_suite=1;o->combat_lab_observe=1;o->skip_boot=1;
+        } else if (!strcmp(option,"--combat-lab-seed")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->combat_lab_seed=positive_int(argv[++arg],0);
+            if(!o->combat_lab_seed)return -1;
+        } else if (!strcmp(option,"--combat-lab-repeat")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->combat_lab_repeat=positive_int(argv[++arg],0);
+            if(o->combat_lab_repeat<1 || o->combat_lab_repeat>3)return -1;
+        } else if (!strcmp(option,"--combat-lab-output")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->combat_lab_output=argv[++arg];
+        } else if (!strcmp(option,"--combat-character-capture")) {
+            if(require_arguments(argc,argv,arg,1,option)<0)return -1;
+            o->combat_character_capture_dir=argv[++arg];
         } else if (!strcmp(option,"--render-performance")) {
             o->render_performance=1;
             if(numeric_argument(argc,argv,arg))o->performance_iterations=positive_int(argv[++arg],o->performance_iterations);
@@ -600,17 +633,22 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         return -1;
     }
     if (o->gpu_frame_capture || o->gpu_capture_frame) {
-        if (!o->gpu_frame_capture || (!o->gpu_normal_view && !o->gpu_wave_repro) || !o->renderer_mode ||
+        if (!o->gpu_frame_capture || (!o->gpu_normal_view && !o->gpu_wave_repro && o->combat_lab<0) || !o->renderer_mode ||
             !o->gpu_native_present || !o->gpu_required) {
-            __fprintf(2,"rasterfall: GPU frame capture requires --gpu-normal-scene or --gpu-wave-repro and --renderer gpu-scene\n");
+            __fprintf(2,"rasterfall: GPU frame capture requires --gpu-normal-scene, --gpu-wave-repro or --combat-lab and --renderer gpu-scene\n");
             return -1;
         }
         if (!o->gpu_capture_frame) o->gpu_capture_frame=30;
         if (!o->frame_limit) o->frame_limit=o->gpu_capture_frame;
         if (o->frame_limit < o->gpu_capture_frame) return -1;
     }
-    if (o->gpu_normal_fixed_tick && !o->gpu_normal_view && !o->gpu_wave_repro) {
-        __fprintf(2,"rasterfall: --gpu-normal-fixed-tick requires --gpu-normal-scene or --gpu-wave-repro\n");
+    if ((o->combat_lab>=0 || o->combat_lab_suite) &&
+        (o->requested_net_mode!=RASTERFALL_NET_OFF || o->legacy_map || o->gpu_normal_view || o->gpu_wave_repro || o->world_cycle_gate)) {
+        __fprintf(2,"rasterfall: combat lab requires offline Outpost without another scene diagnostic\n");
+        return -1;
+    }
+    if (o->gpu_normal_fixed_tick && !o->gpu_normal_view && !o->gpu_wave_repro && o->combat_lab<0) {
+        __fprintf(2,"rasterfall: --gpu-normal-fixed-tick requires --gpu-normal-scene, --gpu-wave-repro or --combat-lab\n");
         return -1;
     }
     if (o->gpu_character_vertex_diff &&

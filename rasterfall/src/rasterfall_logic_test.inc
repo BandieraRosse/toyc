@@ -1,6 +1,9 @@
 #include "dev-tests/rf_gpu_scene_local_test.inc"
 #include "dev-tests/rf_gpu_scene_ui_test.inc"
 #include "dev-tests/game_combat_test.inc"
+#include "dev-tests/combat_evasion_test.inc"
+#include "dev-tests/game_hitscan_test.inc"
+#include "dev-tests/combat_ai_test.inc"
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
 #define special_target_kind ability.special_target_kind
@@ -1591,6 +1594,27 @@ static int run_logic_test(void)
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
     if (combat_capabilities_logic_test() != 0) return 279;
+    {
+        int combat_result = combat_evasion_logic_test();
+        if (combat_result) {
+            __printf("COMBAT evasion failure %d\n", combat_result);
+            return 692;
+        }
+    }
+    {
+        int result = combat_hitscan_logic_test();
+        if (result) {
+            __printf("COMBAT geometry fail=%d\n", result);
+            return 280;
+        }
+    }
+    {
+        int combat_result = combat_ai_logic_test();
+        if (combat_result) {
+            __printf("COMBAT AI failure %d\n", combat_result);
+            return 693;
+        }
+    }
     if (rf_input_bindings_logic_test() != 0) return 277;
     struct camera camera;
     struct toy_input input;
@@ -1734,7 +1758,13 @@ static int run_logic_test(void)
     if (enemy_group_mixed_radius_logic_test()) return 273;
     if (enemy_group_west_corridor_logic_test()) return 274;
     if (enemy_navigation_cache_logic_test()) return 275;
-    if (enemy_flow_logic_test()) return 276;
+    {
+        int result = enemy_flow_logic_test();
+        if (result) {
+            __printf("COMBAT flow regression fail=%d\n", result);
+            return 276;
+        }
+    }
     if (enemy_flow_corridor_logic_test()) return 277;
     if (rasterfall_session_rts_logic_test()) return 260;
     rasterfall_host_set_active_slots(24,24);
@@ -2511,9 +2541,10 @@ static int run_logic_test(void)
             ai_registry.agents[1].decision.target_enemy != -1) return 147;
         if (!actor || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->class_id != TOY_GAME_AI_LEVEL_2 ||
-            smg->damage != 25 || shotgun->damage != 25 ||
-            pursuit_common->max_hp != 50 ||
-            brute->max_hp != 200 || runner->max_hp != 60) return 49;
+            smg->damage != TOY_CONFIG_SMG_DAMAGE || shotgun->damage != TOY_CONFIG_SHOTGUN_DAMAGE ||
+            pursuit_common->max_hp != TOY_CONFIG_PURSUIT_COMMON_HP ||
+            brute->max_hp != TOY_CONFIG_PURSUIT_HEAVY_HP ||
+            runner->max_hp != TOY_CONFIG_PURSUIT_FAST_HP) return 49;
         if (!toy_game_enemy_type_is_valid(TOY_GAME_ENEMY_SMOKER) ||
             toy_game_enemy_type_is_valid(-1) ||
             toy_game_enemy_content_id(TOY_GAME_ENEMY_PURSUIT_COMMON) != 0 ||
@@ -2535,7 +2566,7 @@ static int run_logic_test(void)
             smoker->ability != TOY_GAME_ENEMY_ABILITY_SMOKER_TONGUE ||
             charger->ability != TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ||
             tank->ability != TOY_GAME_ENEMY_ABILITY_TANK_SWEEP ||
-            tank->max_hp != 4000 ||
+            tank->max_hp != TOY_CONFIG_TANK_HP ||
             tank->speed_min != 38 || tank->speed_max != 56 ||
             TOY_CONFIG_TANK_ATTACK_RANGE != 2850 ||
             TOY_CONFIG_TANK_ATTACK_START_DIVISOR != 2 ||
@@ -2591,6 +2622,9 @@ static int run_logic_test(void)
         ai_reload_test.enemies[0].z = 1000;
         ai_reload_test.enemies[0].hp = 200;
         toy_game_update_ai_teammates(&ai_reload_test, 16);
+        if (ai_reload_test.actors[ai_id - 1].fire_seq) return 62;
+        for (i = 0; i < 100 && !ai_reload_test.actors[ai_id - 1].reloading; i++)
+            toy_game_update_ai_teammates(&ai_reload_test, 16);
         if (!ai_reload_test.actors[ai_id - 1].reloading ||
             ai_reload_test.actors[ai_id - 1].animation.id !=
                 TOY_GAME_ANIM_RELOAD) return 62;
@@ -3791,7 +3825,7 @@ death_fixture_done:
                 &game, player, NULL, 0, 0, 0, 1024, 16, 100);
         if (player->reloading || player->slots[0].mag != TOY_CONFIG_SMG_MAG ||
             player->slots[0].reserve != TOY_CONFIG_SMG_RESERVE - 2) return 28;
-        /* 霰弹枪按配置容量：12 弹丸随机散射，整匣内应放倒并排两敌 */
+        /* 霰弹枪按配置随机散射，正常射击间隔内整匣放倒并排两目标。 */
         if (toy_game_actor_equip_weapon(&game, player,
                                         TOY_GAME_WEAPON_SHOTGUN) != 1 ||
             player->slots[0].mag != TOY_CONFIG_SHOTGUN_MAG ||
@@ -3814,8 +3848,11 @@ death_fixture_done:
         player->kills = 0;
         {
             unsigned int seq_before = player->fire_seq;
-            for (i = 0; i < 8 && player->kills < 2; i++)
+            for (i = 0; i < 8 && player->kills < 2; i++) {
+                toy_game_update_actor_weapon_held(&game, player, NULL, 0, 0,
+                    0, 1024, player->fire_cooldown_ms, 100);
                 toy_game_actor_fire(&game, player, 0, 1024, 100);
+            }
             if (player->kills != 2) return 30;
             if (player->slots[0].mag != TOY_CONFIG_SHOTGUN_MAG - i) return 31;
             /* 弹道记录：射线数量跟随霰弹枪配置 */
@@ -3846,6 +3883,7 @@ death_fixture_done:
             player->damage_dealt != 201) return 117;
         /* 无敌人时射线止于世界边界；当前地图没有安全屋内墙。 */
         player->reloading = 0;
+        player->fire_cooldown_ms = 0;
         player->slots[0].mag = 8;
         memset(game.enemies, 0, sizeof(game.enemies));
         game.enemies_alive = 0;
@@ -3998,7 +4036,7 @@ death_fixture_done:
         game.enemies[0].active = 1;
         game.enemies[0].type = TOY_GAME_ENEMY_SMOKER;
         game.enemies[0].x = 0; game.enemies[0].z = 1800;
-        game.enemies[0].hp = 20;
+        game.enemies[0].hp = TOY_CONFIG_PISTOL_DAMAGE;
         game.enemies[0].dir_x = 0; game.enemies[0].dir_z = -1024;
         toy_game_update_world(&game, 16);
         if (player->control_disabled || game.enemies[0].special_windup_ms <= 0)
@@ -4540,7 +4578,7 @@ death_fixture_done:
         net_test.last_snapshot_input_ack = 9;
         net_test.actor_count = 1;
         net_test.actors[0].active = 1;
-        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         net_test.actors[0].input_ack = 9;
         net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
         net_test.actors[0].x = camera.x - 1000;
@@ -4572,7 +4610,7 @@ death_fixture_done:
         net_test.snapshot_ready = 1;
         net_test.actor_count = 1;
         net_test.actors[0].active = 1;
-        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
         net_test.actors[0].input_ack = 9;
         net_test.actors[0].x = 900;
@@ -4598,7 +4636,7 @@ death_fixture_done:
         net_test.snapshot_ready = 1;
         net_test.actor_count = 1;
         net_test.actors[0].active = 1;
-        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
         net_test.actors[0].hp =
             toy_game_local_player_actor(&session.game_state)->hp;
@@ -4959,7 +4997,18 @@ death_fixture_done:
         if (game.money != 50 ||
             toy_game_local_player_actor(&game)->special_kills != 1) return 129;
     }
-    if (rasterfall_net_pipeline_test() != 0) return 140;
+    {
+        int result = rasterfall_net_pipeline_test();
+        if (result) {
+            __printf("COMBAT network pipeline fail=%d\n", result);
+            return 140;
+        }
+        result = rasterfall_effects_combat_logic_test();
+        if (result) {
+            __printf("COMBAT effects fail=%d\n", result);
+            return 691;
+        }
+    }
     if (rasterfall_net_client_slot_test() != 0) return 140;
     if (rasterfall_net_discovery_test() != 0) return 141;
     /* 已播完的预测死亡不能被致命射击确认前到达的旧存活快照重启。 */
@@ -4973,7 +5022,7 @@ death_fixture_done:
         net_test.snapshot_ready = 1;
         net_test.actor_count = 1;
         net_test.actors[0].active = 1;
-        net_test.actors[0].actor_index = 0;
+        net_test.actors[0].actor_index = TOY_GAME_REMOTE_ACTOR_BASE;
         net_test.actors[0].state = TOY_GAME_ACTOR_ALIVE;
         net_test.actors[0].hp =
             toy_game_local_player_actor(&session.game_state)->hp;
@@ -5269,7 +5318,7 @@ death_fixture_done:
     {
         int weapon;
         static const int expected_power[TOY_GAME_WEAPON_BOMB] = {
-            3, 7, 9, 12, 11, 5
+            3, 6, 8, 11, 11, 5
         };
         /* Consumables do not contribute combat power; keep this legacy
          * balance assertion limited to combat weapons. */

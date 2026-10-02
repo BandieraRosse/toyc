@@ -252,6 +252,7 @@ int rasterfall_render_actor_benchmark(int iterations, int frontend_workers,
 /* Process-only diagnostic: call before runtime initialization, then exit. */
 int rasterfall_render_visual_capture(const char *scenario, const char *output);
 int rasterfall_render_profession_lineup(const char *model_dir, const char *output_dir);
+int rasterfall_render_combat_character_capture(const char *output_dir);
 int rasterfall_render_squad_acceptance(const char *model_dir,
                                        const char *output_dir);
 int rasterfall_render_rigid_attachment_acceptance(const char *model_dir,

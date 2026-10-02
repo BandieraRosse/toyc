@@ -197,7 +197,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     }
     if (net && net->mode==RASTERFALL_NET_CLIENT) {
         for (int i=0;i<RASTERFALL_NET_PLAYER_MAX;++i) {
-            int slot=TOY_GAME_REMOTE_ACTOR_BASE+i-1,airborne=0;
+            int slot=rasterfall_net_player_actor_index(net,i),airborne=0;
             const struct toy_game_actor *actor;
             const struct camera *body;
             if (i==net->local_player_id || slot<0 || slot>=TOY_GAME_MAX_ACTORS) continue;

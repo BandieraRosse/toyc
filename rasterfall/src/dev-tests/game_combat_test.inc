@@ -55,6 +55,17 @@ static int combat_capabilities_logic_test(void)
     toy_game_actor_capabilities(pa, TOY_GAME_WEAPON_AK, &cb);
     if (cb.evasion_capacity <= 0 || cb.max_hp != ca.max_hp ||
         cb.fire_interval_percent != ca.fire_interval_percent) return 8;
+    /* Keep meaningful infected breakpoints while reducing shared gun output. */
+    if ((TOY_CONFIG_PURSUIT_COMMON_HP + TOY_CONFIG_PISTOL_DAMAGE - 1) /
+            TOY_CONFIG_PISTOL_DAMAGE != 3 ||
+        (TOY_CONFIG_PURSUIT_COMMON_HP + TOY_CONFIG_SMG_DAMAGE - 1) /
+            TOY_CONFIG_SMG_DAMAGE != 2 ||
+        TOY_CONFIG_AK_DAMAGE < TOY_CONFIG_PURSUIT_COMMON_HP ||
+        (TOY_CONFIG_PURSUIT_HEAVY_HP + TOY_CONFIG_AK_DAMAGE - 1) /
+            TOY_CONFIG_AK_DAMAGE != 4 ||
+        TOY_CONFIG_AWP_DAMAGE < TOY_CONFIG_PURSUIT_HEAVY_HP ||
+        (TOY_CONFIG_CHARGER_HP + TOY_CONFIG_AWP_DAMAGE - 1) /
+            TOY_CONFIG_AWP_DAMAGE != 2) return 9;
     __printf("COMBAT capabilities/equivalent-tiers/shared-cadence/mechanical-limit passed\n");
     return 0;
 }

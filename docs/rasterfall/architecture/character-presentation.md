@@ -18,7 +18,7 @@ profile/recipe，并向 renderer 提交 finalized pose、transform、材质 over
 单次 shirt/pants 或 scene-light override 只影响本次 submission，不修改 resource material table。
 资产坐标、profile basis、bind pose、动画求值和末端渲染补偿保持分层。
 
-## Modular teammate
+## Modular teammate 与敌方枪手
 
 正式 RF 小队按 character ID → profile → modular recipe 选择共享 V2 body 与 rigid gear。正常 world 中每个
 actor 先完成 pose、IK、bounds 和 body Draw 冻结，再按相同 actor 顺序提交 opaque gear/weapon RasterCmd；
@@ -35,6 +35,16 @@ weapon 从 finalized `WEAPON_R` 对齐 authored `PRIMARY_GRIP`；左手在绘制
 
 RFCHAR body、rigid gear、socket 与 weapon 统一采用 profile 定义的 `+Z` forward，不在枪械 helper
 额外加 180° 修正。失败时可以回退既有 procedural actor，但不能产生另一套权威状态。
+
+敌方普通/精英枪手使用稳定 `RASTERFALL_CHARACTER_GUNNER` / `GUNNER_ELITE` 身份，经同一目录解析
+到共享 `rf_humanoid_v2` 身体、独立 shirt/pants 调色和 HEAD/CHEST/BACK rigid 组件。普通为红色轻胸挂、
+帽檐/护目与窄背包；精英为红黑厚胸甲、全覆盖头盔/呼吸器和较宽背包。胸、背及俯视顶面都保留大块红色，
+识别不依赖 HUD 或微小标记；这些视觉配置不授予护甲或技能。新增 recipe 不扩充六职业 legacy carrier 清单。
+
+原创 V2 身体和全部职业/枪手组件的公开运行资源位于 `assets/models/characters/`；身体路径由角色目录拥有，
+CPU modular、Scene pose 与 Scene native consumer 读取同一资源。私有 RF-C01 body 仍保留独立目录边界。
+生成源、manifest 和真实 adapter 的固定视角/连续帧入口见
+[枪手与共享身体重建](../guides/character-art-acceptance.md#战斗-v0-公开共享身体与枪手组件)。
 
 ## Procedural 与职业表现
 

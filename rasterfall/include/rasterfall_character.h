@@ -24,6 +24,8 @@ enum rasterfall_character_id {
     RASTERFALL_CHARACTER_SQUAD_B_BREACHER,
     RASTERFALL_CHARACTER_SQUAD_B_HEAVY,
     RASTERFALL_CHARACTER_SQUAD_B_MEDIC,
+    RASTERFALL_CHARACTER_GUNNER,
+    RASTERFALL_CHARACTER_GUNNER_ELITE,
     RASTERFALL_CHARACTER_COUNT
 };
 
@@ -67,7 +69,10 @@ enum rasterfall_modular_profession_id {
     RASTERFALL_MODULAR_MEDIC,
     RASTERFALL_MODULAR_ENGINEER,
     RASTERFALL_MODULAR_HEAVY,
-    RASTERFALL_MODULAR_PROFESSION_COUNT
+    RASTERFALL_MODULAR_PROFESSION_COUNT,
+    RASTERFALL_MODULAR_GUNNER = RASTERFALL_MODULAR_PROFESSION_COUNT,
+    RASTERFALL_MODULAR_GUNNER_ELITE,
+    RASTERFALL_MODULAR_RECIPE_COUNT
 };
 
 enum rasterfall_character_body_resource_id {
@@ -90,6 +95,10 @@ enum rasterfall_character_gear_resource_id {
     RASTERFALL_GEAR_HEAVY_HEAD, RASTERFALL_GEAR_HEAVY_CHEST,
     RASTERFALL_GEAR_HEAVY_BACK, RASTERFALL_GEAR_HEAVY_HIP_L,
     RASTERFALL_GEAR_HEAVY_HIP_R,
+    RASTERFALL_GEAR_GUNNER_HEAD, RASTERFALL_GEAR_GUNNER_CHEST,
+    RASTERFALL_GEAR_GUNNER_BACK,
+    RASTERFALL_GEAR_GUNNER_ELITE_HEAD, RASTERFALL_GEAR_GUNNER_ELITE_CHEST,
+    RASTERFALL_GEAR_GUNNER_ELITE_BACK,
     RASTERFALL_GEAR_RESOURCE_COUNT
 };
 
@@ -114,6 +123,8 @@ const struct rasterfall_character_visual_recipe *
 rasterfall_character_visual_recipe(int modular_profession_id);
 const char *rasterfall_character_body_resource_name(int body_resource_id);
 const char *rasterfall_character_gear_resource_name(int gear_resource_id);
+#define RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "rasterfall/assets/models/characters"
+const char *rasterfall_character_body_resource_path(int body_resource_id);
 
 enum rasterfall_character_action {
     RASTERFALL_CHARACTER_ACTION_LOCOMOTION = 1 << 0,

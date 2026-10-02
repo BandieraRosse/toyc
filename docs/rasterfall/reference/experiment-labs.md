@@ -6,6 +6,10 @@
 
 ## 登记与展示
 
+固定战斗实验复用南排最西侧空性能场，新增 `combat_control_terminal` 和 `combat_result_terminal` 作为同一终端交互的专用入口。
+它由 `rf_combat_lab.inc` 管理真实 actor/enemy 实验生命周期，与下表纯视觉展示分开；战斗和性能测试不能同时使用场地。
+场地 region 仍是 `perf_low_area`，坐标由 Runtime Map 读取；具体操作、五类预设与结构化结果见[战斗实验场](../guides/combat-lab.md)。
+
 每个展示区登记一种用途、一份地图 surface、一个控制终端、一个诊断镜头和后端能力。
 `rf_experiment_labs.inc` 是控制登记表；Runtime Map 是地面边界和终端位置的事实来源，登记表不复制坐标。
 

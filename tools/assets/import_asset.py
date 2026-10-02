@@ -334,7 +334,7 @@ def import_asset(args):
         if source.suffix.lower() == ".glb":
             if manifest["type"] == "character":
                 run([sys.executable, repo / "tools/assets/rfchar_import.py", source, mesh,
-                     "--validator", repo / "build/glb-inspect"])
+                     "--validator", tool_dir / ("glb-inspect" + suffix)])
             else:
                 run([converter, source, mesh])
             extract_glb_textures(source, raw)

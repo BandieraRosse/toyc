@@ -155,7 +155,9 @@ static int enemy_flow_logic_test(void)
     toy_game_rebuild_navigation(&g);
     for (tick=0;tick<500;++tick) toy_game_update_world(&g,16);
     g.update_profile = NULL;
-    if (g.actors[0].hp == 100000 || profile.nav_searches) return 14;
+    if ((g.actors[0].hp == 100000 &&
+         !g.actors[0].combat_stats.evasion_spent_milli) ||
+        profile.nav_searches) return 14;
     toy_game_init(&g, 906); g.to_spawn = 0;
     toy_game_place_enemy(&g, 1000, 0);
     for (tick = 0; tick < 8; ++tick) toy_game_update_world(&g,16);

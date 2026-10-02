@@ -50,7 +50,8 @@ HEADGEAR_NAMES = (
     'bare', 'headset', 'patrol-cap', 'goggles', 'respirator',
     'tactical-helmet', 'engineering-helmet',
 )
-PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy')
+PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy',
+               'gunner', 'gunner-elite')
 RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack') + tuple(
     profession + '-' + slot
     for profession in PROFESSIONS
@@ -663,6 +664,10 @@ def create_profession(armature, scene, materials, profession):
         'medic': ((.20, .28, .29), (.13, .21, .22), (.65, .72, .64), (.72, .14, .055)),
         'engineer': ((.32, .20, .07), (.20, .18, .13), (.18, .16, .105), (.68, .43, .075)),
         'heavy': ((.19, .15, .10), (.15, .14, .11), (.13, .115, .08), (.43, .32, .13)),
+        'gunner': ((.526, .089, .052), (.111, .082, .077),
+                   (.12, .065, .055), (.64, .070, .032)),
+        'gunner-elite': ((.314, .036, .032), (.042, .052, .063),
+                         (.075, .087, .10), (.56, .038, .022)),
     }
     shirt, pants, gear, accent = palettes[profession]
     for key, color in (('shirt', shirt), ('pants', pants),
@@ -689,7 +694,9 @@ def create_profession(armature, scene, materials, profession):
 
     heads = {'rifleman': ('tactical-helmet',), 'breacher': ('tactical-helmet', 'respirator'),
              'recon': ('patrol-cap', 'headset'), 'medic': ('goggles', 'respirator'),
-             'engineer': ('engineering-helmet',), 'heavy': ('tactical-helmet',)}
+             'engineer': ('engineering-helmet',), 'heavy': ('tactical-helmet',),
+             'gunner': ('patrol-cap', 'goggles'),
+             'gunner-elite': ('tactical-helmet', 'respirator')}
     for head in heads[profession]:
         before = {obj.name for obj in scene.objects}
         create_headgear(armature, scene, materials, head)
@@ -726,7 +733,7 @@ def create_profession(armature, scene, materials, profession):
         box('ToolHead', (-.36, .24, 1.65), (-.10, .35, 1.77), a, slot='back')
         box('HipToolbox', (.235, -.09, .65), (.40, .18, .94), a,
             'RF_L_UPPER_LEG', 'hip-l')
-    else:
+    elif profession == 'heavy':
         plate(.285, 1.05, 1.51, -.26)
         box('AmmoBack', (-.32, .19, 1.01), (.32, .48, 1.62), slot='back')
         for sign, side in ((-1, 'R'), (1, 'L')):
@@ -736,6 +743,32 @@ def create_profession(armature, scene, materials, profession):
                 (sign * .27 + .075, .16, .94), g,
                 'RF_' + side + '_UPPER_LEG', 'hip-' + side.lower())
         box('ChestAmmo', (-.22, -.31, 1.10), (.22, -.25, 1.24), a)
+    elif profession == 'gunner':
+        # Broad red panels, visible from the front, rear and overhead. The
+        # narrow pack / exposed lower face distinguish the ordinary rifleman.
+        plate(.21, 1.10, 1.45, -.238, a)
+        box('ChestHarness', (-.18, -.325, 1.10), (.18, -.27, 1.23))
+        for side in (-1, 1):
+            box('ShoulderStrap' + str(side), (side*.15-.038, -.20, 1.43),
+                (side*.15+.038, .20, 1.515), a)
+        box('PatrolPack', (-.18, .19, 1.11), (.18, .36, 1.50), slot='back')
+        box('BackSignal', (-.14, .36, 1.20), (.14, .385, 1.45), a, slot='back')
+        box('PackTop', (-.14, .21, 1.49), (.14, .345, 1.515), a, slot='back')
+    elif profession == 'gunner-elite':
+        # Same body/socket contract, larger armor and a closed helmet. Gear
+        # stays below the deltoids so the active arm/hand chain remains free.
+        plate(.255, 1.06, 1.49, -.26, a)
+        box('ChestCore', (-.12, -.345, 1.20), (.12, -.29, 1.42))
+        box('ArmorBelt', (-.22, -.32, 1.07), (.22, -.25, 1.19))
+        for side in (-1, 1):
+            box('Collar' + str(side), (side*.15-.055, -.15, 1.47),
+                (side*.15+.055, .17, 1.565), a)
+        box('ArmoredPack', (-.255, .19, 1.06), (.255, .425, 1.59), slot='back')
+        box('BackSignal', (-.18, .425, 1.17), (.18, .45, 1.50), a, slot='back')
+        box('PackTop', (-.22, .23, 1.59), (.22, .39, 1.615), a, slot='back')
+        # Full-width helmet brow carries the faction hue in RTS views.
+        box('HelmetBrow', (-.19, -.239, 1.933), (.19, -.218, 1.979),
+            a, 'RF_HEAD', 'head')
 
 
 def create_rifleman_backpack(armature, scene, material, prefix=''):

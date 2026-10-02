@@ -460,6 +460,9 @@ static void render_player_hud(struct rasterfall_canvas *surface,
     int i, x = 16, y = surface->height - 68;
     int bar_x = x + 53, bar_y = y + 29, bar_w = 128;
     int hp = player ? player->hp : 0;
+    int max_hp = player && player->max_hp > 0 ? player->max_hp : 1;
+    struct toy_game_capabilities caps;
+    toy_game_actor_capabilities(player, toy_game_actor_current_weapon(player), &caps);
     uint32_t hp_color = hp < 10 ? RF_COLOR_UI_DANGER :
                         hp < 40 ? RF_COLOR_UI_WARNING : RF_COLOR_UI_SUCCESS;
     if (!player_name || !*player_name) player_name = "PLAYER";
@@ -476,11 +479,28 @@ static void render_player_hud(struct rasterfall_canvas *surface,
                    name, RF_COLOR_UI_TEXT);
     hud_fill_rect(surface, bar_x, bar_y, bar_w, 10, RF_COLOR_UI_PANEL);
     hud_fill_rect(surface, bar_x, bar_y,
-                  hp * bar_w / TOY_GAME_PLAYER_HP, 10, hp_color);
-    snprintf(line, sizeof(line), "%d / %d", hp, TOY_GAME_PLAYER_HP);
+                  (hp > max_hp ? max_hp : hp) * bar_w / max_hp, 10, hp_color);
+    snprintf(line, sizeof(line), "%d / %d", hp, max_hp);
     rasterfall_canvas_text(surface, bar_x + bar_w -
                    (int)strlen(line) * FB_FONT_W, bar_y + 12,
                    line, hp_color);
+    if (player && caps.evasion_capacity > 0) {
+        int reserve = player->evasion.reserve_milli;
+        int capacity = caps.evasion_capacity * 1000;
+        int ey = y - 29;
+        uint32_t color = reserve <= 0 ? RF_COLOR_UI_DANGER :
+            reserve < capacity / 4 ? RF_COLOR_UI_WARNING : 0x70E4EC;
+        const char *status = reserve <= 0 ? "EMPTY" :
+            player->evasion.animation_ms > 0 ? "EVADE" :
+            player->evasion.pressure_ms > 0 ? "WAIT" : "READY";
+        if (reserve < 0) reserve = 0;
+        if (reserve > capacity) reserve = capacity;
+        snprintf(line, sizeof(line), "EV %d/%d %s", (reserve + 999) / 1000,
+                 caps.evasion_capacity, status);
+        rasterfall_canvas_text(surface, bar_x, ey, line, color);
+        hud_fill_rect(surface, bar_x, ey + 18, bar_w, 6, RF_COLOR_UI_PANEL);
+        hud_fill_rect(surface, bar_x, ey + 18, reserve * bar_w / capacity, 6, color);
+    }
     if (player && player->slots[3].weapon == TOY_GAME_WEAPON_PILL) {
         int px = bar_x + bar_w + 18, py = bar_y - 2;
         hud_fill_rect(surface, px, py, 30, 24, 0xE8EEE8);

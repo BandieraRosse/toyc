@@ -12,8 +12,8 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 44
-#define RASTERFALL_NET_MAX_ACTORS 32
+#define RASTERFALL_NET_PROTOCOL_VERSION 45
+#define RASTERFALL_NET_MAX_ACTORS TOY_GAME_MAX_ACTORS
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
 #define RASTERFALL_NET_EVENT_QUEUE_MAX 64
@@ -137,6 +137,10 @@ struct rasterfall_net_actor {
     int class_id;
     struct toy_game_skills skills;
     int max_hp;
+    int actor_id, faction;
+    unsigned int combat_generation;
+    struct toy_game_evasion evasion;
+    struct toy_game_combat_stats combat_stats;
     int character_id;
     int anime_character_id;
     int moving;
@@ -155,6 +159,7 @@ struct rasterfall_net_actor {
     int revive_progress_ms;
     unsigned int fire_seq;
     int weapon_switch_timer_ms;
+    int fire_cooldown_ms, weapon_spread_heat;
     int airborne_ms;
     int airborne_y;
     struct toy_game_animation_state animation;
@@ -365,6 +370,8 @@ struct rasterfall_net {
     int net_loss_percent;
 };
 
+/* Resolve a network player ID to this peer's gameplay actor slot. */
+int rasterfall_net_player_actor_index(const struct rasterfall_net *net, int player_id);
 void rasterfall_net_init(struct rasterfall_net *net);
 int rasterfall_net_host(struct rasterfall_net *net, int port,
                         const struct camera *spawn);

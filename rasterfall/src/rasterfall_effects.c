@@ -1,6 +1,7 @@
 #include "tlibc_everything.h"
 #include "math.h"
 #include "rasterfall_effects.h"
+#include "rasterfall_units.h"
 
 static uint32_t xorshift32(uint32_t *state)
 {
@@ -785,6 +786,47 @@ void rasterfall_effects_sync_damage_flash(struct rasterfall_effects *effects,
     rasterfall_effects_spawn_instance(effects, &instance);
 }
 
+/* Authority emits one sequence per reaction, not per pellet. Snapshots can
+ * repeat a reaction or skip a frame without restarting its presentation. */
+void rasterfall_effects_sync_evasion(struct rasterfall_effects *effects,
+                                      const struct toy_game *game)
+{
+    int i;
+    if (!effects || !game) return;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        const struct toy_game_actor *a = &game->actors[i];
+        struct rasterfall_effect_event event;
+        if (!a->active) {
+            effects->last_evasion_sequence[i] = 0;
+            effects->last_actor_generation[i] = 0;
+            effects->last_actor_fire_seq[i] = 0;
+            continue;
+        }
+        if (effects->last_actor_generation[i] != a->combat_generation) {
+            effects->last_actor_generation[i] = a->combat_generation;
+            effects->last_evasion_sequence[i] = 0;
+            effects->last_actor_fire_seq[i] = 0;
+        }
+        if (effects->last_evasion_sequence[i] == a->evasion.sequence) continue;
+        effects->last_evasion_sequence[i] = a->evasion.sequence;
+        if (!a->evasion.sequence || a->evasion.animation_ms <= 0 ||
+            a->state != TOY_GAME_ACTOR_ALIVE || i == TOY_GAME_PLAYER_ACTOR_INDEX)
+            continue; /* Local feedback is the HUD; no involuntary camera kick. */
+        memset(&event, 0, sizeof(event));
+        event.type = RASTERFALL_EFFECT_EVENT_EVASION;
+        event.source_id = a->actor_id;
+        event.target_id = -1;
+        event.sequence = a->evasion.sequence;
+        event.x = a->x;
+        event.y = RASTERFALL_WORLD_GROUND_Y + a->ground_y + a->airborne_y +
+                  RASTERFALL_HUMAN_HEIGHT_RFU * 2 / 3;
+        event.z = a->z;
+        event.dir_sy = a->sy; event.dir_cy = a->cy;
+        event.life_ms = a->evasion.animation_ms;
+        rasterfall_effects_consume(effects, &event);
+    }
+}
+
 void rasterfall_effects_sync_enemy_feedback(struct rasterfall_effects *effects,
                                             const struct toy_game *game)
 {
@@ -953,9 +995,13 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     memset(effects->emitters, 0, sizeof(effects->emitters));
     effects->emitter_next = 0;
     effects->last_fire_seq = 0;
+    effects->last_confirmed_fire_seq = effects->last_confirmed_generation = 0;
     memset(effects->last_network_fire_seq, 0,
            sizeof(effects->last_network_fire_seq));
     effects->last_ai_fire_seq = 0;
+    memset(effects->last_actor_fire_seq, 0, sizeof(effects->last_actor_fire_seq));
+    memset(effects->last_actor_generation, 0, sizeof(effects->last_actor_generation));
+    memset(effects->last_evasion_sequence, 0, sizeof(effects->last_evasion_sequence));
     effects->weapon_kick = 0;
     effects->camera_shake_side = 0;
     effects->camera_shake_up = 0;
@@ -1083,8 +1129,32 @@ void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                  event->sx, event->sy, event->sz,
                                  0, 0, 0);
         }
+    } else if (event->type == RASTERFALL_EFFECT_EVENT_EVASION) {
+        int i;
+        for (i = 0; i < 5; i++) {
+            struct rasterfall_effect_instance cue;
+            int side = (i & 1) ? 1 : -1;
+            memset(&cue, 0, sizeof(cue));
+            cue.type = RASTERFALL_EFFECT_INSTANCE_PARTICLE;
+            cue.kind = RASTERFALL_EFFECT_INSTANCE_KIND_EVASION;
+            cue.source_id = event->source_id;
+            cue.sequence = event->sequence;
+            cue.x = event->x + side * event->dir_cy * (230 + i * 25) / 1024;
+            cue.y = event->y + (i - 2) * 95;
+            cue.z = event->z - side * event->dir_sy * (230 + i * 25) / 1024;
+            cue.vx = side * event->dir_cy * 16 / 1024;
+            cue.vz = -side * event->dir_sy * 16 / 1024;
+            cue.color = 0x70E4EC;
+            cue.size = 1300;
+            cue.stretch_y = 1800;
+            cue.alpha = 180;
+            cue.lifetime_ms = event->life_ms > 240 ? 240 : event->life_ms;
+            rasterfall_effects_spawn_instance(effects, &cue);
+        }
     } else if (event->type == RASTERFALL_EFFECT_EVENT_BULLET_IMPACT ||
                event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT) {
+        if (event->type == RASTERFALL_EFFECT_EVENT_ENTITY_HIT && event->damage <= 0)
+            return;
         rasterfall_effects_spawn_hit_particles(effects, event->x, event->y,
                                                 event->z, event->dir_sy,
                                                 event->dir_cy);
@@ -1294,4 +1364,44 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
     }
     effects->weapon_kick -= dt_ms * 2;
     if (effects->weapon_kick < 0) effects->weapon_kick = 0;
+}
+
+/* Exercises the authority-to-presentation boundary, including repeated
+ * snapshots and slot reuse, without relying on a particular particle count. */
+int rasterfall_effects_combat_logic_test(void)
+{
+    static struct rasterfall_effects effects;
+    static struct toy_game game;
+    struct rasterfall_effect_event hit;
+    int before, i, actor_id;
+    toy_game_init(&game, 91);
+    rasterfall_effects_init(&effects);
+    memset(&hit, 0, sizeof(hit));
+    hit.type = RASTERFALL_EFFECT_EVENT_ENTITY_HIT;
+    hit.target_id = -1;
+    rasterfall_effects_consume(&effects, &hit);
+    if (effects.instance_next) return 1;
+    actor_id = toy_game_add_ai(&game, TOY_GAME_AI_LEVEL_2, 0, 1000, "CUE");
+    if (actor_id < 0) return 2;
+    for (i = 1; i < TOY_GAME_MAX_ACTORS; i++)
+        if (game.actors[i].active && game.actors[i].actor_id == actor_id) break;
+    if (i == TOY_GAME_MAX_ACTORS) return 3;
+    game.actors[i].evasion.sequence = 1;
+    game.actors[i].evasion.animation_ms = 500;
+    rasterfall_effects_sync_evasion(&effects, &game);
+    before = effects.instance_next;
+    if (!before) return 4;
+    rasterfall_effects_sync_evasion(&effects, &game);
+    if (effects.instance_next != before) return 5;
+    game.actors[i].combat_generation++;
+    rasterfall_effects_sync_evasion(&effects, &game);
+    if (effects.instance_next == before) return 6;
+    for (i = 0; i < effects.instance_next; i++)
+        if (effects.instances[i].kind != RASTERFALL_EFFECT_INSTANCE_KIND_EVASION)
+            return 7;
+    hit.damage = 1;
+    before = effects.instance_next;
+    rasterfall_effects_consume(&effects, &hit);
+    if (effects.instance_next == before || effects.enemy_hit_strength[0]) return 8;
+    return 0;
 }

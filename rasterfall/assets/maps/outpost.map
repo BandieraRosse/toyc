@@ -466,6 +466,11 @@ render id=rf_light_occluder_0 kind=box min_x=-3868 max_x=-3428 min_z=-1874 max_z
 render id=rf_light_occluder_1 kind=box min_x=5332 max_x=5772 min_z=-1874 max_z=-1434 height=2600 color=D4C4A1 attr.lab=rf_light_lab_area
 
 # Performance lab: four bounded bays in the southern row.
+# Combat V0 shares the empty western bay; its runtime owns only test entities.
+object id=combat_control_terminal kind=facility_terminal x=-29200 y=0 z=-39800 yaw=180 scale=1000 attr.collision=component
+object id=combat_result_terminal kind=facility_terminal x=-27100 y=0 z=-39800 yaw=180 scale=1000 attr.collision=component
+render id=combat_control_sign kind=sign min_x=-31000 max_x=-25400 min_z=-39500 max_z=-39470 height=820 color=89C7DE attr.height2=1080 attr.text=COMBAT_LAB_V0 attr.facing=+z attr.style=2 attr.texture_u=4
+render id=combat_status_sign kind=sign min_x=-30800 max_x=-25500 min_z=-39460 max_z=-39430 height=450 color=89C7DE attr.height2=680 attr.text=READY attr.channel=combat_result attr.facing=+z attr.style=4 attr.texture_u=4
 object id=perf_control_terminal kind=facility_terminal x=15360 y=0 z=-38800 yaw=180 scale=1000 attr.collision=component
 object id=perf_result_terminal kind=facility_terminal x=17408 y=0 z=-38800 yaw=180 scale=1000 attr.collision=component
 render id=perf_control_sign kind=sign min_x=14592 max_x=18176 min_z=-38500 max_z=-38470 height=820 color=81B4B5 attr.height2=1080 attr.text=PERFORMANCE_LAB attr.facing=-z attr.style=2 attr.texture_u=4
