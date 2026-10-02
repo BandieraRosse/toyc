@@ -4740,6 +4740,12 @@ static int cpu_terminal_quad(void *context,const int p[4][3],unsigned color)
         draw_quad(c->renderer,c->camera,&q[0],&q[1],&q[2],&q[3],color);
     return 0;
 }
+static int cpu_projection_quad(void *context,const int p[4][3],unsigned color,int alpha)
+{
+    struct cpu_terminal_context *c=context;
+    c->alpha=alpha;
+    return cpu_terminal_quad(context,p,color);
+}
 static int render_world_sign(struct toy_renderer *renderer,
                              const struct camera *camera,
                              const struct toy_map_draw *sign)
@@ -4749,6 +4755,11 @@ static int render_world_sign(struct toy_renderer *renderer,
     if (sign->style>=2) {
         struct cpu_terminal_context c={renderer,camera,0,sign->style==6 ? 42 : 255};
         if (rf_lab_terminal_emit(sign,cpu_terminal_quad,&c)<0) return -1;
+        if (rf_lab_projection_text_emit(sign,cpu_terminal_quad,&c)<0) return -1;
+        if (sign->style==7 && rf_lab_beacon_projection_emit(sign,
+                (unsigned)(render_monotonic_us()/1000),cpu_terminal_quad,&c)<0) return -1;
+        if (rf_lab_projection_light_emit(sign,(unsigned)(render_monotonic_us()/1000),
+                camera->z,cpu_projection_quad,&c)<0) return -1;
         return c.pixels;
     }
     int pixels = 0;

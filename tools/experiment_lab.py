@@ -36,7 +36,8 @@ def site_finish(name, width, depth, category, plot_width=16384, plot_depth=10240
                        ('sw',-hx-220,-hz+180),('se',hx+220,-hz+180)):
         if x-180 < left or x+180 > right:
             raise ValueError("plot needs 400 RFU side clearance for corner beacons")
-        records.append(f'render id={name}_beacon_{side} kind=sign min_x={x-180} max_x={x+180} min_z={z-140} max_z={z+140} height=-896 color={color} attr.height2=-100 attr.style=7 attr.lab={name}')
+        records.append(f'render id={name}_beacon_{side} kind=sign min_x={x-180} max_x={x+180} min_z={z-140} max_z={z+140} height=-896 color={color} attr.height2=-52 attr.style=7 attr.lab={name}')
+        records.append(f'collision id={name}_beacon_{side}_col shape=box min_x={x-180} max_x={x+180} min_z={z-120} max_z={z+120} height=292 collision=true visible=false walkable=true color=526874 attr.lab={name}')
     return records
 
 def generate(name, x, z, category, enclosure, width=10240, depth=9216,

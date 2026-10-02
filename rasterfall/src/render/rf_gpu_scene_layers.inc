@@ -250,6 +250,13 @@ static int scene_glass_quad(void *context,const int p[4][3],unsigned color)
         for (int axis=0;axis<3;++axis) v[k].position[axis]=p[k][axis];
     return scene_layer_quad(context,v,color,42,0);
 }
+static int scene_projection_quad(void *context,const int p[4][3],unsigned color,int alpha)
+{
+    struct rf_gpu_graphics_vertex v[4]={0};
+    for (int k=0;k<4;++k)
+        for (int axis=0;axis<3;++axis) v[k].position[axis]=p[k][axis];
+    return scene_layer_quad(context,v,color,alpha,0);
+}
 
 static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct rf_gpu_scene_layers_input *input,const struct camera *camera,int width,int height)
@@ -262,6 +269,10 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     mesh->emissive=1;
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
+        if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN &&
+            rf_lab_projection_text_emit(&item->draw,scene_host_quad,mesh)<0) return -1;
+        if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==7 &&
+            rf_lab_beacon_projection_emit(&item->draw,input->host_time_ms,scene_host_quad,mesh)<0) return -1;
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && (item->draw.style==4 || item->draw.style==5) &&
             rf_lab_terminal_emit(&item->draw,scene_host_quad,mesh)<0) return -1;
     }
@@ -278,6 +289,14 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         mesh->emissive=0;
     }
     mesh->layer=RF_GPU_SCENE_TRANSPARENT;
+    mesh->emissive=1;
+    for (unsigned i=0;input->map && i<input->map->count;++i) {
+        const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
+        if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN &&
+            rf_lab_projection_light_emit(&item->draw,input->host_time_ms,camera->z,
+                scene_projection_quad,mesh)<0) return -1;
+    }
+    mesh->emissive=0;
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
         const struct toy_map_draw *d=&item->draw;

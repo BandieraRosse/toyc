@@ -190,9 +190,10 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 Parser、Runtime、玩法投影和 Scene 按同一容量合同接收。
 
 `render kind=sign attr.style=7` 为固定尺寸四角投影信标，bounds 中心决定 X/Z，
-底座占地 360×240 RFU，含投影的水平包络为 360×280 RFU，高度范围为世界 Y=-896 到 -100；
+底座占地 360×240 RFU，含动画投影的水平包络为 360×280 RFU，高度范围为世界 Y=-896 到 -52；
 `color` 为光学槽与交叉菱形框颜色。
-记录 bounds、height/height2 应匹配上述几何包络。信标没有文字、交互或隐式碰撞。
+记录 bounds、height/height2 应匹配上述几何包络。信标没有文字、交互或隐式碰撞；
+模板用独立 walkable box 声明底座粗碰撞，投影无碰撞。动画合同见[实验区合同](experiment-labs.md#标准地块铺装与角标)。
 
 `attr.*` 只承载地图层扩展，例如迁移期的 `legacy_index`、style、文字和附加高度。模型记录只
 引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
@@ -202,6 +203,9 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 
 正式 `rasterfall.map` 的 render records 由 V1 source 完整提供；`rasterfall_legacy.map` 仍保留
 作为 fallback，但正式启动路径的 draw data 来自 V1 render → runtime → draw adapter。
+
+投影 sign 样式 2/3/4 自动带半透明背景和从底座到牌面的动态散射光束；样式 7 带光束，
+不为开放菱形添加实体面板。背景和光束仅为展示几何，不新增地图记录或碰撞。
 
 透明机器窗 `kind=sign attr.style=6` 允许两种轴向：`min_z=max_z` 且 `min_x<max_x` 为正面窗；
 `min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，

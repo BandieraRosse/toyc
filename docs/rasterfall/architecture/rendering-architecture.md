@@ -14,12 +14,22 @@
 分别消费 floor style 10/11/12。板缝、道路边带和原地板颜色在同一平面内分区；
 CPU 与 Scene floor mesh 共用该来源。未指定新样式的通用地板维持原行为。
 四角信标由共享 `rasterfall_lab_terminal.h` 的 sign style 7 发射底座与正交开放菱形，
-沿用静态 WORLD 缓存；亮色几何表示投影，不依赖实际动态照明或透明面板。
+底座沿用静态 WORLD 缓存；投影以共享只读时间采样绕竖轴旋转并上下浮动，CPU 逐帧发射，
+Scene 消费 layer input 冻结的 `host_time_ms` 进入 WORLD。动画不使静态缓存失效。
+亮色几何表示投影，不依赖实际动态照明或透明面板；底座碰撞由地图独立声明。
+
+投影样式 2/3/4/7 共用 `rf_lab_projection_light_emit`：从光学槽展开的淡色光束壳、
+细射线和缓慢上行的亮度波模拟空气散射；信标光束上端跟随浮动高度。
+样式 2/3/4 另发射深色、区域色调的半透明背景，按观察侧放到字形后方，避免共面叠色。
+CPU 使用透明命令；Scene 从冻结地图与时间逐帧发射到 TRANSPARENT，自发光、深度测试但不写深度。
+背景与光束没有碰撞，不创建照明灯，不改变静态文字/机壳缓存或 gameplay。
 
 实验区投影终端由 `render/rasterfall_lab_terminal.h` 共用程序几何定义。Runtime 通过显示 channel
 更新内容，`render/rf_lab_terminal.inc` 保存展示文本，CPU 在绘制前取值，Scene 在 world freeze 时
 按值复制。可更新面由 `rf_gpu_scene_layers.inc` 进入 WORLD；静态网格构建跳过该面，静态资源比较
-忽略其文本变化。标题和试样小投影仍走静态 SIGN 网格。内容、控制 object、碰撞和 gameplay 相互
+忽略其文本变化。标题和试样小投影的机壳、图案仍走静态 SIGN 网格；样式 2/3/4 字体统一
+按原色向白色混合 45%，Scene 在 WORLD 自发光段逐帧发射，避免环境阴影压暗文字。
+CPU 共用提亮字形；背景与光束仍消费原始颜色。内容、控制 object、碰撞和 gameplay 相互
 独立；显示更新不修改地图源或玩法真值。样式、图形和默认交互见[实验区合同](../reference/experiment-labs.md)。
 
 机器屏幕 style 5 使用 `rasterfall_machine_screen.h` 的固定逻辑像素网格，共用字体、裁切和 span 发射器；
