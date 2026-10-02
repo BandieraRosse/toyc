@@ -10,14 +10,20 @@ PALETTE = {"model": ("9FB4FF", 1), "animation": ("79E8C5", 2),
 
 def site_finish(name, width, depth, category, plot_width=16384, plot_depth=10240,
                 plot_offset_x=0):
-    """Finish the setback without enlarging the working surface or its rules."""
+    """Finish the setback with ground support independent of the paint."""
     hx, hz = width // 2, depth // 2
     left, right = plot_offset_x-plot_width//2, plot_offset_x+plot_width//2
     south, north = -plot_depth//2, plot_depth//2
     if left > -hx or right < hx or south > -hz or north < hz:
         raise ValueError("working area must fit inside the planning plot")
     color, icon = PALETTE[category]
-    records = []
+    # One invisible support spans the plot, including paint/entry seams.
+    # Working-area walls, safety policy and visible floor remain independent.
+    bounds = f'min_x={left} max_x={right} min_z={south} max_z={north}'
+    records = [
+        f'surface id={name}_site_ground kind=ground {bounds} height=0 material=78858A attr.collision_id={name}_site_ground_col attr.lab={name}',
+        f'collision id={name}_site_ground_col shape=flat {bounds} height=0 collision=false visible=false walkable=true color=78858A attr.lab={name}',
+    ]
     for side, (a,b,c,d) in zip(('w','e','s','n'),
             ((left,-hx,south,north),(hx,right,south,north),
              (-hx,hx,south,-hz),(-hx,hx,hz,north))):

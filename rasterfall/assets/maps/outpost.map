@@ -738,6 +738,9 @@ collision id=perf_control_walk_col shape=flat min_x=14848 max_x=17920 min_z=-384
 render id=perf_control_walk_paint kind=floor min_x=14848 max_x=17920 min_z=-38400 max_z=-35328 height=0 color=485860
 
 # Standard site finish: setback paving and working-area corner projectors.
+# The fully paved park shares physical support across all paint and road seams.
+surface id=lab_park_site_ground kind=ground min_x=-40448 max_x=40448 min_z=-54784 max_z=-11776 height=0 material=78858A attr.collision_id=lab_park_site_ground_col
+collision id=lab_park_site_ground_col shape=flat min_x=-40448 max_x=40448 min_z=-54784 max_z=-11776 height=0 collision=false visible=false walkable=true color=78858A
 render id=character_lab_area_fill_w0 kind=floor min_x=-8192 max_x=-5120 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=character_lab_area
 render id=character_lab_area_fill_e0 kind=floor min_x=5120 max_x=8192 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=character_lab_area
 render id=character_lab_area_fill_s0 kind=floor min_x=-5120 max_x=5120 min_z=-5120 max_z=-4608 height=0 color=78858A attr.style=12 attr.lab=character_lab_area
