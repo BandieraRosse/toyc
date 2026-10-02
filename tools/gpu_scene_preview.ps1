@@ -34,7 +34,7 @@ try {
     }
     foreach ($View in $Views) {
         if (Get-Process rasterfall -ErrorAction SilentlyContinue) { throw 'Rasterfall is already running' }
-        $Argv=@('--renderer','gpu-compute','--gpu-required','--gpu-native-present',
+        $Argv=@('--renderer','gpu-scene','--gpu-required','--gpu-native-present',
             '--gpu-scene-world-preview','--gpu-normal-fixed-tick','--frames',$Frames)
         if ($MapPath) { $Argv+=@('--map',([IO.Path]::GetFullPath($MapPath))) }
         if ($Independent) { $Argv+='--gpu-scene-independent-preview' }
@@ -62,7 +62,7 @@ try {
         $Native=[regex]::Matches($Log,"SCENE-NATIVE frame=(\d+) world_only=$WorldOnly draws=\d+ bridges=0 readback=(\d+) mixed_execute=0")
         if ($Native.Count -ne $Frames) { throw "$View missing native Scene frames" }
         if ($Independent) {
-            $Layers=[regex]::Matches($Log,'SCENE-LAYERS sky=([1-9]\d*) world=([1-9]\d*) transparent=(\d+) effects=(\d+) viewmodel=(\d+) overlay=([1-9]\d*) post=identity')
+            $Layers=[regex]::Matches($Log,'SCENE-LAYERS sky=([1-9]\d*) world=([1-9]\d*) transparent=(\d+) effects=(\d+) viewmodel=(\d+) overlay=([1-9]\d*) post=(?:identity|hdr-tonemap)')
             if ($Layers.Count -ne $Frames) { throw "$View missing independent layers" }
             if ($View -eq 'frame-effects' -and ([int]$Layers[0].Groups[4].Value -lt 1 -or [int]$Layers[0].Groups[5].Value -lt 1)) {
                 throw "$View missing effects/viewmodel"

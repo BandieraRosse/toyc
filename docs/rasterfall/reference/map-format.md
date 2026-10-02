@@ -184,6 +184,16 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 ```
 
 基础字段是稳定 `id`、`kind`、bounds、可选 `height` 和 `color`；位置由 bounds 的中心表达。
+`render kind=floor` 的 `attr.style=10/11/12` 分别选择实验检修板、带浅色边带的道路板、低对比填充板；
+省略时保留通用地板。三个样式仅在共享地面分区中改变接缝及边带颜色，不改变 surface 或 collision。
+道路按矩形较长轴确定方向，交叉口仍由总平面道路并集拥有。地板与标识数量上限为 512 条 render，
+Parser、Runtime、玩法投影和 Scene 按同一容量合同接收。
+
+`render kind=sign attr.style=7` 为固定尺寸四角投影信标，bounds 中心决定 X/Z，
+底座占地 360×240 RFU，含投影的水平包络为 360×280 RFU，高度范围为世界 Y=-896 到 -100；
+`color` 为光学槽与交叉菱形框颜色。
+记录 bounds、height/height2 应匹配上述几何包络。信标没有文字、交互或隐式碰撞。
+
 `attr.*` 只承载地图层扩展，例如迁移期的 `legacy_index`、style、文字和附加高度。模型记录只
 引用 registry asset ID，不放 mesh、texture、material 或 rasterizer 状态。视觉装饰可以超出
 gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；collision/surface 仍必须位于 world 内。

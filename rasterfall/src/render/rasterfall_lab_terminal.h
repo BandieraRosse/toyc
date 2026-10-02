@@ -68,6 +68,34 @@ static int rf_lab_terminal_emit(const struct toy_map_draw *d,
         return -1;
     }
     if (d->b<=d->a) return -1;
+    if (d->style==7) {
+        /* Corner beacon: grounded optical pedestal and two crossed, open
+         * diamond projections. No solid screen; readable along either road. */
+        if (rf_terminal_box(&c,x-180,x+180,-896,-856,z-120,z+120,0x263743)<0 ||
+            rf_terminal_box(&c,x-130,x+130,-856,-640,z-86,z+86,0x526874)<0 ||
+            rf_terminal_box(&c,x-144,x+144,-664,-640,z-98,z+98,d->color)<0 ||
+            rf_terminal_box(&c,x-96,x+96,-640,-620,z-60,z+60,0x172833)<0 ||
+            rf_terminal_box(&c,x-64,x+64,-620,-608,z-32,z+32,d->color)<0) return -1;
+        for (int axis=0;axis<2;++axis) {
+            const int outer[4][2]={{0,200},{140,0},{0,-200},{-140,0}};
+            const int inner[4][2]={{0,164},{112,0},{0,-164},{-112,0}};
+            for (int side=0;side<4;++side) {
+                int next=(side+1)%4;
+                int uv[4][2]={{outer[side][0],outer[side][1]},
+                    {outer[next][0],outer[next][1]},
+                    {inner[next][0],inner[next][1]},
+                    {inner[side][0],inner[side][1]}};
+                int q[4][3];
+                for (int i=0;i<4;++i) {
+                    q[i][0]=x+(axis ? 0 : uv[i][0]);
+                    q[i][1]=-300+uv[i][1];
+                    q[i][2]=z+(axis ? uv[i][0] : 0);
+                }
+                if (quad(context,q,d->color)<0) return -1;
+            }
+        }
+        return 0;
+    }
     if (d->style==5) {
         struct rf_machine_screen_context screen={c,d};
         if (d->texture_u<1 || d->texture_v<1 ||

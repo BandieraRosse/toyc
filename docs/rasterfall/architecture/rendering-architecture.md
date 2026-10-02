@@ -10,6 +10,12 @@
 
 ## 所有权
 
+实验板、道路板和填充板由 `rasterfall_render.c` 的共享 `draw_partitioned_floor` 生成，
+分别消费 floor style 10/11/12。板缝、道路边带和原地板颜色在同一平面内分区；
+CPU 与 Scene floor mesh 共用该来源。未指定新样式的通用地板维持原行为。
+四角信标由共享 `rasterfall_lab_terminal.h` 的 sign style 7 发射底座与正交开放菱形，
+沿用静态 WORLD 缓存；亮色几何表示投影，不依赖实际动态照明或透明面板。
+
 实验区投影终端由 `render/rasterfall_lab_terminal.h` 共用程序几何定义。Runtime 通过显示 channel
 更新内容，`render/rf_lab_terminal.inc` 保存展示文本，CPU 在绘制前取值，Scene 在 world freeze 时
 按值复制。可更新面由 `rf_gpu_scene_layers.inc` 进入 WORLD；静态网格构建跳过该面，静态资源比较

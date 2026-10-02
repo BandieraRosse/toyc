@@ -4252,6 +4252,24 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                 floor_split_add(xs, &x_count, draw->b, base_x, tile_max_x);
                 floor_split_add(zs, &z_count, draw->c, base_z, tile_max_z);
                 floor_split_add(zs, &z_count, draw->d, base_z, tile_max_z);
+                /* Purpose-specific paving remains part of the same plane.
+                 * Split only tiles touched by an authored paving finish. */
+                if (draw->type == TOY_MAP_DRAW_FLOOR &&
+                    draw->style >= 10 && draw->style <= 12) {
+                    int inset = draw->style == 10 ? 48 : 24;
+                    floor_split_add(xs, &x_count, base_x + inset, base_x, tile_max_x);
+                    floor_split_add(zs, &z_count, base_z + inset, base_z, tile_max_z);
+                    if (draw->style == 11) {
+                        int along_x = draw->b-draw->a > draw->d-draw->c;
+                        if (along_x) {
+                            floor_split_add(zs,&z_count,draw->c+96,base_z,tile_max_z);
+                            floor_split_add(zs,&z_count,draw->d-96,base_z,tile_max_z);
+                        } else {
+                            floor_split_add(xs,&x_count,draw->a+96,base_x,tile_max_x);
+                            floor_split_add(xs,&x_count,draw->b-96,base_x,tile_max_x);
+                        }
+                    }
+                }
                 if (draw->type == TOY_MAP_DRAW_BORDER) {
                     floor_split_add(xs, &x_count, draw->a + draw->e,
                                     base_x, tile_max_x);
@@ -4306,6 +4324,19 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                 draw->style == TOY_MAP_FLOOR_GROUND) continue;
                             if (floor_draw_contains(draw, center_x, center_z)) {
                                 color = draw->color;
+                                if (draw->type == TOY_MAP_DRAW_FLOOR &&
+                                    draw->style >= 10 && draw->style <= 12) {
+                                    int inset = draw->style == 10 ? 48 : 24;
+                                    int edge = center_x < base_x+inset || center_z < base_z+inset;
+                                    if (edge) color = draw->style == 10 ? 0x435964 :
+                                                      draw->style == 11 ? 0x303F49 : 0x657479;
+                                    if (draw->style == 11) {
+                                        int along_x = draw->b-draw->a > draw->d-draw->c;
+                                        int kerb = along_x ? (center_z < draw->c+96 || center_z >= draw->d-96) :
+                                                             (center_x < draw->a+96 || center_x >= draw->b-96);
+                                        if (kerb) color = 0x879D9E;
+                                    }
+                                }
                                 /* WHU paint follows projection submission order:
                                  * later road/plaza/track paint replaces earlier paint
                                  * on this one plane, without depth competition. */

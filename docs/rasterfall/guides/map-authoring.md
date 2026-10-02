@@ -25,6 +25,9 @@ python tools/experiment_lab.py new_model_lab --x 0 --z -42000 --category model -
 ```
 
 工具输出地图片段，不覆写现有文件。把片段合入目标 `.map`，检查 world bounds 和容量。
+`--width/--depth` 控制实际工作区，`--plot-width/--plot-depth` 控制规划地块；
+模板在两者之间铺填充板，并在实际工作区四角外放置信标。相邻道路由总平面单独声明，
+使用 floor style 11；工作板与填充板分别为 style 10/12，原通用样式继续可用。
 片段中的地面、标线、入口显示与试样信息使用 `attr.lab` 局部坐标；终端由 `assembly` 引用 lab，
 其独立模型、像素屏和透明窗通过 `attr.assembly` 组合。移动区域只改 `lab` 原点，
 连通道路仍由全局布局拥有。用途和围合选项以工具 `--help` 为准。
