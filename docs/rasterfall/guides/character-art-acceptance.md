@@ -45,7 +45,7 @@ V2 是利用同一 RFCHAR V1 contract 对 V1.1 原型做的大尺度 body rebuil
 attachment ID。新的源生成器为 `tools/blender/generate_rasterfall_humanoid_v2.py`，manifest
 为 `tools/assets/manifests/characters/rf_humanoid_v2.asset.json`。
 
-造型策略是长腿、较短的视觉躯干、明确的 pelvis second volume、连续 ribcage → waist → pelvis
+最初 V2 的造型策略是长腿、较短的视觉躯干、明确的 pelvis second volume、连续 ribcage → waist → pelvis
 收缩、独立 deltoid/elbow/knee/calf 轮廓，以及 jaw/cheek/temple/crown 分层的头部和独立 hair
 silhouette mass。基础外观只使用 skin、hair、shirt、pants、boots 五个大色块；没有用战术附件
 掩盖人体比例。所有 deform 顶点保持最多两项影响，按现有 BDEF1/BDEF2 输入门导出。
@@ -155,7 +155,7 @@ three-quarter 和 `--character-world-capture` 的 near / mid / far；主要交�
 
 ## RF Humanoid V2.1 Final Body / Profession Visual System V1
 
-当前 `rf_humanoid_v2` 资产 ID 保持不变，生成内容为 V2.1 Final Body。局部收敛只调整
+V2.1 阶段保持 `rf_humanoid_v2` 资产 ID 不变。该轮局部收敛只调整
 胸背深度、肩峰到上臂的前后过渡、骨盆后侧与大腿根深度；骨盆最大半宽仍为 0.275m，
 头顶仍为 2.080m，canonical skeleton、八个 attachments 和五色块基础身体保持冻结。
 patrol cap 的下部壳体略扩，以包住原有 hair crown；脸与头发没有重新设计。
@@ -225,3 +225,29 @@ python tools/rf_combat_character_round.py --capture --tool-dir build-windows
 正、侧、后、三分之四和俯视近中远景，以及 100 ms 间隔的八帧 walk/fire 序列。它核对实例姿态存储独立、
 身体 resource 相同、原始身体/材质字节未被绘制修改。该离屏证据用于检查比例、色块、握点、附件贴合与
 动作连续性；真正 GPU 场景的帧时间及 FPS/RTS 游玩仍需由原生实验场验证，不能用离屏截图代替。
+
+### 共享身体连续关节表面
+
+当前 canonical body 在同一生成器中把每侧肩部至腕部改为一条衣袖 loft，把大腿、膝部和小腿
+改为一条裤腿 loft。肘、膝内部不再保留相互重叠的端盖，沿环带使用最多两个相邻骨骼的单调
+权重过渡；肩根收进胸侧，袖口和脚踝仍保留清晰终端。身体身高、手脚、躯干、21-role 骨架、
+八个 sockets、inverse bind 和装备 mount contract 不随该几何修正改变。
+
+衣袖与裤腿仅沿纵向共享法线，同一环的径向折面和端盖保持硬边；头、躯干、鞋、刚性装备沿用
+已有法线。法线来自 GLB 源资产，经现有 importer 和蒙皮路径消费，不增加 runtime 渲染分支。
+五个身体材质和角色 palette 继续共用；正式公共资源为 3,040 vertices / 1,636 triangles / 155,516 bytes。
+
+只迭代身体时使用 `--body-only`，避免重复生成 27 个无关装备：
+
+```powershell
+python tools/rf_combat_character_round.py --generate --body-only --blender 'E:/Blender 5.2/blender.exe' --tool-dir build-windows --output tmp/combat-v0/body-quality/after
+Copy-Item -LiteralPath rasterfall/assets/models/characters/rf_humanoid_v2.rmesh -Destination build-windows/rasterfall-windows/rasterfall/assets/models/characters/rf_humanoid_v2.rmesh -Force
+python tools/rf_combat_character_round.py --capture --body-only --tool-dir build-windows --output tmp/combat-v0/body-quality/after
+```
+
+执行前确保 package 已存在且没有正在读取资源的游戏进程。几何 A/B 使用相同可执行文件、动作和
+固定镜头，保留生成前 body/GLB 和截图；除上述持枪近中远景与连续 walk/fire，还用
+`--model-pose-views <body> <dir> bind|rfchar-test` 检查裸身体四方向，并用
+`--squad-acceptance rasterfall/assets/models/characters <dir>` 核对八名友军、palette 和附件隔离。
+对照骨架记录、CHR1、inverse bind matrices 与 bounds，必须精确相等；不能通过改 socket 或展示
+偏移掩盖关节问题。截图应同时查看正侧后、三分之四、俯视及远近尺度，检查轮廓与装备识别度。

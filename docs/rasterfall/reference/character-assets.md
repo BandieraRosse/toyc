@@ -193,6 +193,11 @@ attachment `{id,parent bone,local position RFU,local quaternion}`。v2-v13 继�
 `rasterfall_character_visual_recipe()` 解析 shirt/pants presentation palette 与稳定 gear resource ID。
 recipe 和加载后的资源/instance 都不进入 `toy_game_actor` 或网络快照。
 
+当前共享身体的衣袖和裤腿使用跨肘/膝的连续表面；源生成器只沿纵向平均衣物法线，保留径向
+低模折面与装备硬边。该源几何修正沿用同一 RFCHAR/RFM2 输入门，不改变 stable roles、sockets、
+inverse bind、身高和材质合同，也不为敌方创建身体分叉。局部重建与同镜头验收见
+[美术验收指南](../guides/character-art-acceptance.md#共享身体连续关节表面)。
+
 生成器的 `--rigid-attachment=<profession>-<slot>` 直接复用 carrier builder 已验收几何，按 HEAD、
 CHEST、BACK、HIP_L、HIP_R socket authored origin 重定位后导出无 body、skin、skeleton、CHR1 的
 metric rigid GLB/RMESH。职业产物为每职业 HEAD/CHEST/BACK，另有 Engineer HIP_L 和 Heavy

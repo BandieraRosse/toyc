@@ -46,8 +46,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--generate', action='store_true')
     parser.add_argument('--capture', action='store_true')
-    parser.add_argument('--gunners-only', action='store_true',
+    subset = parser.add_mutually_exclusive_group()
+    subset.add_argument('--gunners-only', action='store_true',
                         help='rebuild only six gunner attachments while iterating')
+    subset.add_argument('--body-only', action='store_true',
+                        help='rebuild only the canonical shared body while iterating')
     parser.add_argument('--blender', default='blender')
     parser.add_argument('--tool-dir', type=Path,
                         default=Path('build-windows' if os.name == 'nt' else 'build'))
@@ -74,6 +77,8 @@ def main():
     report = []
     for asset, flags, profile in entries():
         if args.gunners_only and not asset.startswith('rf_gear_gunner_'):
+            continue
+        if args.body_only and asset != 'rf_humanoid_v2':
             continue
         manifest = ROOT / f'tools/assets/manifests/characters/{asset}.asset.json'
         value = json.loads(manifest.read_text(encoding='utf-8'))

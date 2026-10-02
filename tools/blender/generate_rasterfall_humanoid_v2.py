@@ -68,12 +68,49 @@ def arguments():
                              if "--" in sys.argv else [])
 
 
-def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False):
+def longitudinal_normals(mesh, ring_count, sides):
+    """Smooth along a cloth volume, retaining the authored radial facets.
+
+    Each angular sector shares normals along its length, never across its
+    radial boundary or end caps. This removes triangulation/band seams without
+    turning the low-poly silhouette into a smooth cylinder. Normals are source
+    data, exported and skinned through the ordinary RFCHAR path.
+    """
+    sector_normals = []
+    for band in range(ring_count - 1):
+        row = []
+        for side in range(sides):
+            first = (band * sides + side) * 2
+            a, b = mesh.polygons[first], mesh.polygons[first + 1]
+            row.append((a.normal * a.area + b.normal * b.area).normalized())
+        sector_normals.append(row)
+    normal_values = [None] * len(mesh.loops)
+    side_faces = (ring_count - 1) * sides * 2
+    for polygon in mesh.polygons:
+        polygon.use_smooth = polygon.index < side_faces
+        side = (polygon.index // 2) % sides
+        for loop_index in polygon.loop_indices:
+            if polygon.index >= side_faces:
+                normal = polygon.normal
+            else:
+                ring = mesh.loops[loop_index].vertex_index // sides
+                normal = Vector((0.0, 0.0, 0.0))
+                if ring:
+                    normal += sector_normals[ring - 1][side]
+                if ring < ring_count - 1:
+                    normal += sector_normals[ring][side]
+                normal.normalize()
+            normal_values[loop_index] = tuple(normal)
+    mesh.normals_split_custom_set(normal_values)
+
+
+def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False,
+              longitudinal_smooth=False):
     """Create a capped ring loft.
 
-    Each ring is ``(center, basis_a, basis_b, radius_a, radius_b)``.  The
-    helper deliberately leaves the mesh flat shaded: the broad facets are a
-    feature of the low-poly body, not a missing normal pass.
+    Each ring is ``(center, basis_a, basis_b, radius_a, radius_b)``.
+    Broad radial facets remain a feature of the low-poly body. Cloth can opt
+    into longitudinal normal continuity; headgear and hard pieces stay flat.
     """
     vertices = []
     for center, basis_a, basis_b, radius_a, radius_b in rings:
@@ -108,6 +145,10 @@ def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False):
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(vertices, [], faces)
     mesh.update()
+    if longitudinal_smooth:
+        if front_cut:
+            raise ValueError('longitudinal cloth normals require complete rings')
+        longitudinal_normals(mesh, len(rings), sides)
     mesh.materials.append(material)
     obj = bpy.data.objects.new(name, mesh)
     scene.collection.objects.link(obj)
@@ -118,14 +159,15 @@ def ring_mesh(name, rings, sides, material, arm, scene, front_cut=False):
 
 
 def weighted_rings(name, rings, sides, material, arm, scene, weights,
-                   front_cut=False):
+                   front_cut=False, longitudinal_smooth=False):
     """Create a ring loft and assign one or two weights to every vertex ring.
 
     ``weights`` contains one ``[(bone, value), ...]`` entry per ring.  Each
     entry has at most two non-zero values, so the exported asset stays inside
     the BDEF1/BDEF2 contract without relying on importer truncation.
     """
-    obj = ring_mesh(name, rings, sides, material, arm, scene, front_cut)
+    obj = ring_mesh(name, rings, sides, material, arm, scene, front_cut,
+                    longitudinal_smooth)
     groups = {}
     for ring_weights in weights:
         for bone, value in ring_weights:
@@ -172,7 +214,7 @@ def box_mesh(name, minimum, maximum, material, arm, scene, bone='RF_HEAD'):
 
 
 def vertical_loft(name, profiles, sides, material, arm, scene, weights,
-                  front_cut=False):
+                  front_cut=False, longitudinal_smooth=False):
     """Build a vertical human volume.
 
     Profiles are ``(z, center_y, width_x, depth_y)``.  The explicit center_y
@@ -182,7 +224,7 @@ def vertical_loft(name, profiles, sides, material, arm, scene, weights,
     rings = [((0.0, center_y, z), (1, 0, 0), (0, 1, 0), width_x, depth_y)
              for z, center_y, width_x, depth_y in profiles]
     return weighted_rings(name, rings, sides, material, arm, scene, weights,
-                          front_cut)
+                          front_cut, longitudinal_smooth)
 
 
 def segment_loft(name, p0, p1, profiles, sides, material, arm, scene,
@@ -426,42 +468,33 @@ def create_body(armature, scene, materials):
              (1.0, 0.045, 0.050, 0.0)],
             SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
 
-    # Shoulder caps establish a deltoid volume separate from the ribcage.
+    # One sleeve and one trouser shell per side cross the joints. Adjacent
+    # rings share their surface instead of hiding closed, intersecting meshes
+    # inside an elbow/knee. Every ring still has at most two bone influences.
     for side, sign in (('L', 1.0), ('R', -1.0)):
-        segment_loft(
-            side + 'Shoulder', (0.23 * sign, 0.0, 1.52),
-            (0.44 * sign, 0.0, 1.50),
-            [(0.0, 0.090, 0.125, 0.0),
-             (0.35, 0.120, 0.135, 0.25),
-             (0.70, 0.110, 0.115, 0.75),
-             (1.0, 0.098, 0.100, 1.0)],
-            SIDES_LIMB, shirt, armature, scene,
-            'RF_' + side + '_SHOULDER', 'RF_' + side + '_UPPER_ARM')
+        prefix = 'RF_' + side + '_'
 
-        # Upper arm tapers into a readable elbow rather than staying a tube.
-        segment_loft(
-            side + 'UpperArm', (0.39 * sign, 0.0, 1.50),
-            (0.61 * sign, 0.0, 1.50),
-            [(0.0, 0.103, 0.108, 0.0),
-             (0.28, 0.108, 0.103, 0.0),
-             (0.70, 0.090, 0.082, 0.0),
-             (0.88, 0.082, 0.075, 0.45),
-             (1.0, 0.078, 0.070, 1.0)],
-            SIDES_LIMB, shirt, armature, scene,
-            'RF_' + side + '_UPPER_ARM', 'RF_' + side + '_FOREARM')
+        def blend(parent, child, amount):
+            return [(prefix + parent, 1.0 - amount), (prefix + child, amount)]
 
-        # Forearm re-widens slightly in the middle and then pinches to a
-        # narrow wrist. It is pants-like undersuit color, not a blocky glove.
-        segment_loft(
-            side + 'Forearm', (0.58 * sign, 0.0, 1.50),
-            (0.84 * sign, 0.0, 1.50),
-            [(0.0, 0.082, 0.075, 0.0),
-             (0.25, 0.086, 0.078, 0.0),
-             (0.60, 0.090, 0.080, 0.0),
-             (0.84, 0.073, 0.068, 0.35),
-             (1.0, 0.065, 0.060, 1.0)],
+        # Inset the shoulder root inside the chest; the visible deltoid starts
+        # at the next ring, so the terminal cap does not become a raised cuff.
+        sleeve = [
+            (.225, .060, .105), (.28, .115, .130), (.34, .116, .122),
+            (.40, .104, .104), (.46, .106, .100), (.53, .090, .082),
+            (.565, .084, .078), (.585, .084, .077), (.61, .085, .077),
+            (.665, .089, .080), (.73, .084, .076), (.785, .071, .066),
+            (.835, .064, .060),
+        ]
+        weighted_rings(side + 'Sleeve',
+            [((x * sign, 0.0, 1.50),
+              (0, 0, sign), (0, -1, 0), height, depth)
+             for x, height, depth in sleeve],
             SIDES_LIMB, shirt, armature, scene,
-            'RF_' + side + '_FOREARM', 'RF_' + side + '_HAND')
+            [blend('SHOULDER', 'UPPER_ARM', value) for value in (0, .2, .65, 1)] +
+            [blend('UPPER_ARM', 'FOREARM', value) for value in (0, .15, .35, .60, .85, 1)] +
+            [blend('FOREARM', 'HAND', value) for value in (0, .30, 1)],
+            longitudinal_smooth=True)
 
         segment_loft(
             side + 'Hand', (0.81 * sign, -0.005, 1.50),
@@ -472,44 +505,22 @@ def create_body(armature, scene, materials):
              (1.0, 0.052, 0.048, 0.0)],
             SIDES_LIMB, skin, armature, scene, 'RF_' + side + '_HAND')
 
-        # Thighs are full at the hip and taper toward an explicit knee volume.
-        segment_loft(
-            side + 'Thigh', (0.15 * sign, 0.0, 0.90),
-            (0.15 * sign, 0.0, 0.51),
-            [(0.0, 0.132, 0.155, 0.0),
-             (0.18, 0.138, 0.155, 0.0),
-             (0.52, 0.125, 0.120, 0.0),
-             (0.80, 0.118, 0.108, 0.35),
-             (1.0, 0.105, 0.098, 1.0)],
+        # Joint height remains at z=.50. Upper-leg influence decreases
+        # monotonically toward the shin; foot influence starts near the ankle.
+        trouser = vertical_loft(side + 'Trouser',
+            [(.12, 0, .066, .064), (.155, 0, .070, .067),
+             (.235, 0, .086, .084), (.345, 0, .108, .106),
+             (.435, 0, .112, .110), (.475, -.006, .109, .102),
+             (.50, -.010, .106, .103), (.54, -.008, .112, .105),
+             (.60, 0, .119, .111), (.70, 0, .126, .126),
+             (.825, 0, .138, .155), (.90, 0, .132, .155)],
             SIDES_LIMB, pants, armature, scene,
-            'RF_' + side + '_UPPER_LEG', 'RF_' + side + '_LOWER_LEG')
-
-        knee = vertical_loft(
-            side + 'Knee',
-            [(0.46, -0.012, 0.098, 0.092),
-             (0.51, -0.018, 0.108, 0.105),
-             (0.56, -0.010, 0.102, 0.095)],
-            SIDES_LIMB, pants, armature, scene,
-            [[('RF_' + side + '_UPPER_LEG', 0.35),
-              ('RF_' + side + '_LOWER_LEG', 0.65)],
-             [('RF_' + side + '_LOWER_LEG', 1.0)],
-             [('RF_' + side + '_LOWER_LEG', 1.0)]])
-        # Author in armature space; object TRS must stay identity for RFCHAR.
-        for vertex in knee.data.vertices:
+            [blend('LOWER_LEG', 'FOOT', value) for value in (1, .70, .15, 0)] +
+            [blend('UPPER_LEG', 'LOWER_LEG', value) for value in (1, .85, .60, .30, 0, 0, 0, 0)],
+            longitudinal_smooth=True)
+        # Author in armature space; object TRS and the skeleton stay frozen.
+        for vertex in trouser.data.vertices:
             vertex.co.x += 0.15 * sign
-
-        # The calf peaks above mid-shin and narrows clearly at the ankle.
-        segment_loft(
-            side + 'Calf', (0.15 * sign, 0.0, 0.55),
-            (0.15 * sign, 0.0, 0.12),
-            [(0.0, 0.100, 0.094, 0.0),
-             (0.25, 0.114, 0.112, 0.0),
-             (0.48, 0.108, 0.106, 0.0),
-             (0.74, 0.084, 0.082, 0.25),
-             (0.92, 0.069, 0.066, 0.70),
-             (1.0, 0.066, 0.064, 1.0)],
-            SIDES_LIMB, pants, armature, scene,
-            'RF_' + side + '_LOWER_LEG', 'RF_' + side + '_FOOT')
 
         # A shallow, forward wedge gives the boot a toe/heel read without the
         # V1.1 rock shape. The lowest ring is close to z=0 so the mesh remains
