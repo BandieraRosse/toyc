@@ -21,6 +21,7 @@ layout(location=0) in vec2 texcoord;
 layout(location=1) in vec3 world_position;
 layout(location=2) in vec3 world_normal;
 layout(location=3) flat in uint triangle_color;
+layout(location=4) flat in float triangle_alpha;
 layout(location=0) out vec4 color;
 vec3 rgb(uint c) { return vec3((c>>16)&255u,(c>>8)&255u,c&255u)/255.0; }
 vec3 fetch_repeat(ivec2 p) {
@@ -29,7 +30,7 @@ vec3 fetch_repeat(ivec2 p) {
 }
 void main() {
     if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
-    float alpha=d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
+    float alpha=d.texture_info.z==256 ? triangle_alpha : d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
     vec3 base=decode_srgb(rgb(triangle_color));
     if(d.material.z!=0u) {
         vec2 st=fract(texcoord)*vec2(d.texture_info.xy);base=fetch_repeat(ivec2(floor(st)));

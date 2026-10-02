@@ -74,6 +74,7 @@ struct rf_gpu_graphics_resource {
     int frame_dynamic;
     int sequential_triangles;
     int scene_vertex_color;
+    int vertex_alpha_valid;
     struct rf_gpu_vulkan_buffer triangle_staging;
     void *triangle_mapped;
     struct rf_gpu_graphics_resource *skin_pending_next;
@@ -96,12 +97,15 @@ struct rf_gpu_graphics {
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
     unsigned sky_scale,sky_width,sky_height;
+    int sky_reference_scan; /* Internal regression/benchmark control. */
     rf_vk_pipeline_layout sky_layout;
     rf_vk_pipeline sky_pipeline,sky_noise_pipeline;
     int sky_noise_ready;
     struct rf_graphics_image shadow_depth;
     VkFramebuffer shadow_framebuffer;
     unsigned shadow_count;
+    float shadow_matrix[RF_GPU_SHADOW_MAPS][16];
+    int disable_draw_cull;
     VkRenderPass shadow_pass,overlay_pass;
     rf_vk_descriptor_set_layout light_layout;
     rf_vk_descriptor_pool light_pool;
@@ -309,6 +313,45 @@ static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image 
     uint32_t width,uint32_t height,uint32_t format,uint32_t aspect,uint32_t usage)
 { return gfx_image_create_extent(g,out,width,height,1,format,aspect,usage); }
 
+/* Conservative resource bounds remain valid after dynamic CPU uploads. GPU
+ * skinning can move vertices outside bind bounds, so never cull it here. */
+static int gfx_draw_box(const struct rf_gpu_graphics_batch_item *item,float center[3],float extent[3])
+{
+    const struct rf_gpu_graphics_resource *r=item->resource;
+    const struct rf_gpu_graphics_draw *d=&item->draw;
+    if (r->skin_descriptor_set || d->texture[3]) return 0;
+    float scale=d->translation_scale[3]/1000.0f*512.0f/(d->quality[1]>512?d->quality[1]:512);
+    float sy=d->rotation[0]/1024.0f,cy=d->rotation[1]/1024.0f;
+    for (unsigned k=0;k<3;++k) center[k]=(float)d->translation_scale[k];
+    center[1]-=d->rotation[2]*scale;
+    extent[0]=(__builtin_fabsf(cy)*r->position_bound[0]+__builtin_fabsf(sy)*r->position_bound[2])*scale+2;
+    extent[1]=r->position_bound[1]*scale+2;
+    extent[2]=(__builtin_fabsf(sy)*r->position_bound[0]+__builtin_fabsf(cy)*r->position_bound[2])*scale+2;
+    return 1;
+}
+static int gfx_box_outside(const float c[3],const float e[3],const float plane[4])
+{
+    float maximum=plane[3];
+    for (unsigned k=0;k<3;++k) maximum+=plane[k]*c[k]+__builtin_fabsf(plane[k])*e[k];
+    return maximum<0;
+}
+static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item)
+{
+    const struct rf_gpu_graphics_draw *d=&item->draw;
+    float c[3],e[3];
+    if (!gfx_draw_box(item,c,e)) return 0;
+    float sy=d->view[0]/1024.0f,cy=d->view[1]/1024.0f,ps=d->view[2]/1024.0f,pc=d->view[3]/1024.0f;
+    float f[3]={sy*pc,ps,cy*pc},r[3]={cy,0,-sy},u[3]={-sy*ps,pc,-cy*ps};
+    for (unsigned k=0;k<3;++k) c[k]-=d->camera[k];
+    for (unsigned p=0;p<5;++p) {
+        float plane[4]={0,0,0,p==0?-64.0f:0};
+        float extent=d->projection[p<3?0:1]/(2.0f*d->projection[3]);
+        for (unsigned k=0;k<3;++k)
+            plane[k]=p==0?f[k]:f[k]*extent+((p&1)?1:-1)*(p<3?r[k]:u[k]);
+        if (gfx_box_outside(c,e,plane)) return 1;
+    }
+    return 0;
+}
 #include "rf_gpu_lighting.inc"
 
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height)
@@ -570,6 +613,8 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     {
         const char *profile=getenv("RF_GPU_PROFILE_TRIANGLE_UPDATE");
         g->profile_triangle_update=profile && !strcmp(profile,"1");
+        const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
+        g->disable_draw_cull=no_cull && no_cull[0]=='1';
     }
 #define RF_GFX_LOAD(n) do { \
     void *p = load_instance(&impl->api, impl->instance, "vk" #n); \
@@ -642,6 +687,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
     void *mapped = NULL;
     unsigned mapped_index = 0;
     int upload_failed = 1;
+    int alpha_valid=resource->scene_vertex_color;
     if (!g || g->poisoned || resource->vertices.buffer || !indices ||
         !vertex_count || vertex_count > 65536 || !index_count || index_count > 196608 || index_count % 3 ||
         !rgb_texels || !texture_width || !texture_height || texture_width > 1024 || texture_height > 1024) return -1;
@@ -655,6 +701,7 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
         if (resource->scene_vertex_color) {
             const struct rf_gpu_scene_color_vertex *v=&((const struct rf_gpu_scene_color_vertex *)vertices)[i];
             if (v->light_q8<0 || v->light_q8>384 || v->rgb24>0xffffff) return -1;
+            if (v->light_q8>255) alpha_valid=0;
         } else {
             const struct rf_gpu_graphics_vertex *v=&((const struct rf_gpu_graphics_vertex *)vertices)[i];
             for (unsigned j=0;j<9;++j)
@@ -669,6 +716,8 @@ static int gfx_resource_upload(struct rf_gpu_graphics *g, struct rf_gpu_graphics
             const struct rf_gpu_scene_color_vertex *v=vertices;
             if (v[indices[i]].rgb24!=v[indices[i+1]].rgb24 ||
                 v[indices[i]].rgb24!=v[indices[i+2]].rgb24) return -1;
+            if (v[indices[i]].light_q8!=v[indices[i+1]].light_q8 ||
+                v[indices[i]].light_q8!=v[indices[i+2]].light_q8) alpha_valid=0;
         } else {
             const struct rf_gpu_graphics_vertex *v=vertices;
             if (memcmp(v[indices[i]].normals,v[indices[i+1]].normals,36) ||
@@ -766,6 +815,7 @@ upload_done:
     }
     resource->index_count = index_count; resource->texture_width = texture_width; resource->texture_height = texture_height;
     resource->vertex_capacity = vertex_count;
+    resource->vertex_alpha_valid=alpha_valid;
     resource->sequential_triangles = index_count==vertex_count;
     for (uint32_t i=0;resource->sequential_triangles && i<index_count;++i)
         if (indices[i]!=i) resource->sequential_triangles=0;
@@ -927,6 +977,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
     int bounds[3]={0};
+    int alpha_valid=scene_color;
     void *mapped;
     uint64_t bytes=(uint64_t)vertex_count*(scene_color ?
         sizeof(struct rf_gpu_scene_color_vertex) : sizeof(struct rf_gpu_graphics_vertex));
@@ -950,6 +1001,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
             const struct rf_gpu_scene_color_vertex *v=vertices;
             if (v[i].light_q8<0 || v[i].light_q8>384 || v[i].rgb24>0xffffff ||
                 (i%3 && v[i].rgb24!=v[i-i%3].rgb24)) return -1;
+            if (v[i].light_q8>255 || (i%3 && v[i].light_q8!=v[i-i%3].light_q8)) alpha_valid=0;
         } else {
             const struct rf_gpu_graphics_vertex *v=vertices;
             for (unsigned k=0;k<9;++k)
@@ -1002,6 +1054,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
         if (gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0) return -1;
     }
     r->index_count=vertex_count;
+    r->vertex_alpha_valid=alpha_valid;
     memcpy(r->position_bound,bounds,sizeof(bounds));
     g->stats.mesh_upload_bytes+=bytes;
     if (g->profile_triangle_update) {
@@ -1346,15 +1399,16 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->integer_depth != 0 || d->double_sided > 1 || d->material[1] > 256 ||
         d->material[2] > 1 || d->material[3] > 2 ||
         ((d->material[3]==2) != g->resource->scene_vertex_color) ||
-        (d->material[3]==2 && (d->material[2] || d->integer_depth || d->texture[3] || d->rotation[3])) ||
+        (d->material[3]==2 && (d->material[2] || d->integer_depth || d->rotation[3])) ||
         d->quality[0]!=0 ||
         (d->quality[1]!=0 && (d->quality[1]<512 || d->quality[1]>65536)) ||
         (d->quality[1]>512 && (d->quality[0]&2)) ||
         d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>1 ||
         (d->integer_depth && (d->quality[0] || d->quality[1] || d->quality[2] || d->quality[3])) ||
-        (d->quality[2] && d->material[3]) ||
+        (d->quality[2] && d->material[3] && !(d->quality[2]==3 && d->material[3]==2)) ||
         ((d->quality[2]==1 || d->quality[2]==2) && !g->resource->sequential_triangles) ||
-        d->camera[3] || d->texture[2]<0 || d->texture[2]>255 ||
+        d->camera[3] || d->texture[2]<0 || d->texture[2]>256 ||
+        (d->texture[2]==256 && (d->material[3]!=2 || !g->resource->vertex_alpha_valid)) ||
         (d->texture[2] && d->integer_depth) ||
         d->texture[3]<0 || d->texture[3]>2 ||
         (d->texture[3] && d->integer_depth) ||
@@ -1457,8 +1511,11 @@ static int gfx_render(struct rf_gpu_graphics *g,
     int bound_integer=-1,bound_pipeline=-1;
     const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
     int reuse_bind=!(legacy_bind && !strcmp(legacy_bind,"1"));
+    unsigned drawn=0;
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = &items[i].draw;
+        if (!g->disable_draw_cull && (d->scene_layer==RF_GPU_SCENE_WORLD || d->scene_layer==RF_GPU_SCENE_TRANSPARENT) &&
+            gfx_draw_camera_outside(&items[i])) continue;
         if(d->scene_layer==RF_GPU_SCENE_OVERLAY && !overlay_started) {
             g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);
             begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
@@ -1499,13 +1556,14 @@ static int gfx_render(struct rf_gpu_graphics *g,
         float metal=d->metallic<0?0:d->metallic>1?1:d->metallic;
         float emission=d->emissive<0?0:d->emissive>15?15:d->emissive;
         modern.material[1]=(uint32_t)((rough>1?1:rough)*255)|((uint32_t)(metal*255)<<8)|((uint32_t)(emission*16)<<16);
-        if(resource->scene_vertex_color) modern.quality[2]=0;
+        if(resource->scene_vertex_color && modern.quality[2]!=3) modern.quality[2]=0;
         if(d->scene_layer==RF_GPU_SCENE_EFFECTS) modern.quality[2]=3;
         if(d->scene_layer==RF_GPU_SCENE_VIEWMODEL) modern.quality[0]|=32;
         if(d->scene_layer==RF_GPU_SCENE_SKY) modern.quality[0]|=64;
         if(overlay_started) modern.quality[0]|=16;
         g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&modern);
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
+        drawn++;
     }
     g->api.CmdEndRenderPass(g->cmd);
     if(!overlay_started) {
@@ -1514,8 +1572,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
     }
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,1);
-    g->stats.instance_upload_bytes += (uint64_t)count*128;
-    g->stats.indexed_draws += count; g->stats.frames++;
+    g->stats.instance_upload_bytes += (uint64_t)drawn*128;
+    g->stats.indexed_draws += drawn; g->stats.frames++;
     g->target.valid=1;
     return 0;
 }

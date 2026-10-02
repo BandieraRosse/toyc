@@ -102,8 +102,20 @@ static int scene_color_test(struct rf_gpu_vulkan_context *context)
     colored=rf_gpu_graphics_scene_color_resource_create(g,v,6,ix,6);
     plain=rf_gpu_graphics_resource_create(g,ref,6,ix,6,&white,1,1);
     CHECK(colored && plain);
-    for (unsigned trial=0;trial<3;++trial) {
-        for (unsigned i=0;i<6;++i) v[i].rgb24=colors[(i/3+trial)%2];
+    for (unsigned trial=0;trial<6;++trial) {
+        if (trial>=4) {
+            const int xy[6][2]={{16,16},{100,16},{100,80},{16,16},{100,80},{16,80}};
+            for (unsigned i=0;i<6;++i) {
+                v[i].position[0]=ref[i].position[0]=xy[i][0];
+                v[i].position[1]=ref[i].position[1]=xy[i][1];
+                v[i].position[2]=ref[i].position[2]=1024;
+            }
+            CHECK(rf_gpu_graphics_triangle_resource_update(g,plain,ref,6)==0);
+        }
+        for (unsigned i=0;i<6;++i) {
+            v[i].rgb24=colors[(i/3+trial)%2];
+            if (trial==2 || trial==3) v[i].light_q8=i<3?128:64;
+        }
         CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)==0);
         for (unsigned i=0;i<2;++i) {
             split[i].resource=plain;split[i].draw=draw(128,96);
@@ -115,7 +127,15 @@ static int scene_color_test(struct rf_gpu_vulkan_context *context)
                 split[i].draw.translation_scale[2]=64;
             }
             if (trial==2) {
-                split[i].draw.texture[2]=128;split[i].draw.scene_layer=RF_GPU_SCENE_TRANSPARENT;
+                split[i].draw.texture[2]=i?64:128;split[i].draw.scene_layer=RF_GPU_SCENE_TRANSPARENT;
+            }
+            if (trial==3) {
+                split[i].draw.material[3]=0;split[i].draw.quality[2]=3;
+                split[i].draw.texture[2]=i?64:128;split[i].draw.scene_layer=RF_GPU_SCENE_TRANSPARENT;
+            }
+            if (trial>=4) {
+                split[i].draw.texture[3]=trial==4?1:2;
+                split[i].draw.scene_layer=trial==4?RF_GPU_SCENE_VIEWMODEL:RF_GPU_SCENE_OVERLAY;
             }
         }
         CHECK(rf_gpu_graphics_scene_capture(g,split,2,pixels,depths,MAX_PIXELS)==0);
@@ -124,10 +144,20 @@ static int scene_color_test(struct rf_gpu_vulkan_context *context)
         CHECK(covered>0);
         memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
         merged=split[0];merged.resource=colored;merged.draw.material[3]=2;merged.draw.index_count=6;
+        if (trial==2 || trial==3) merged.draw.texture[2]=256;
         CHECK(rf_gpu_graphics_scene_capture(g,&merged,1,pixels,depths,MAX_PIXELS)==0);
         CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
     }
     CHECK(rf_gpu_graphics_resource_bind(g,colored)==0);
+    merged.draw.texture[2]=256;
+    CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)==0);
+    v[1].light_q8++;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)==0);
+    CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)<0);
+    v[1].light_q8=v[0].light_q8;
+    CHECK(rf_gpu_graphics_scene_color_resource_update(g,colored,v,6)==0);
+    CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)==0);
+    merged.draw.texture[2]=0;
     merged.draw.integer_depth=1;
     CHECK(rf_gpu_graphics_validate_draw(g,&merged.draw)<0);
     merged.draw.integer_depth=0;merged.draw.material[3]=1;
@@ -351,6 +381,10 @@ int main(void)
         memcpy(vertices[i].normals,normals,36);
         vertices[i].uv[0]=(i==1 || i==2)?65535:0;
         vertices[i].uv[1]=(i==2 || i==3)?65535:0;
+    }
+    if (getenv("RF_GPU_COLOR_TEST")) {
+        CHECK(scene_color_test(&context)==0);
+        result=0;goto done;
     }
     CHECK(scene_layers_test(&context)==0);
     CHECK(triangle_reuse_test(&context)==0);

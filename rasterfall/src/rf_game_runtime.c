@@ -1164,6 +1164,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
 #include "rf_performance_lab.inc"
+#include "rf_scene_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
 
 static void draw_pause_overlay(struct rasterfall_canvas *surface,
@@ -3928,6 +3929,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     }
     rf_render_terminal_init(options.gpu_scene_play, edge_pass_enabled);
     rf_labs_diagnostic_view(options.gpu_normal_view);
+#ifdef TOYC_WINDOWS
+    rf_scene_perf_init(options.gpu_scene_play && options.gpu_normal_view && !options.frame_audit && !frame_limit);
+#endif
     if (logic_test || options.gpu_scene_pose_test || options.gpu_scene_native_fixture || options.gpu_lighting_test) {
         int result = options.gpu_lighting_test ? rf_gpu_scene_lighting_fixture() : options.gpu_scene_native_fixture ? rf_gpu_scene_native_fixture(
             frame_limit, options.gpu_present_fault, options.gpu_present_fault_frame) :
@@ -6145,7 +6149,7 @@ startup_again:
                         map_primitives+=model->primitive_count;
                         map_resources++;
                     }
-                if (!rf_perf_lab.running)
+                if (!rf_perf_lab.running && (options.frame_audit || frame_limit))
                 __printf("SCENE-LOCAL frame=%llu world=%llu epoch=%llu generation=%u slot=%u items=%u world_items=%u map_payload=%u map_resources=%u map_loads=%u map_opaque=%u map_primitives=%u map_deferred=%u map_transparent=%u prop_payload=%u prop_opaque=%u interaction_payload=%u character=%d animation=%d time=%d weapon=%d y=%d scene_light=%d\n",
                     (unsigned long long)source_frame.snapshot.frame_id,
                     (unsigned long long)source_frame.snapshot.world_generation,
@@ -6206,7 +6210,7 @@ startup_again:
                             net_port,&camera);
                         scene_world_probe.layers=&layers;
                     }
-                    scene_world_probe.quiet=rf_perf_lab.running;
+                    scene_world_probe.quiet=rf_perf_lab.running || !(options.frame_audit || frame_limit);
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
@@ -6241,7 +6245,9 @@ startup_again:
                         probe_stats.gpu_time_valid,probe_stats.lights,probe_stats.shadow_maps,
                         probe_stats.shadow_draws,probe_stats.present_mode,
                         renderer.surface.width,renderer.surface.height);
-                    if (!rf_perf_lab.running) {
+                    if (rf_scene_perf_sample(rendered_frames,audit_interval_us,&probe_stats,
+                            renderer.surface.width,renderer.surface.height,paused)) running=0;
+                    if (!rf_perf_lab.running && (options.frame_audit || frame_limit)) {
                     if (options.gpu_scene_independent_preview)
                         __printf("SCENE-LAYERS sky=%u world=%u transparent=%u effects=%u viewmodel=%u overlay=%u post=hdr-tonemap\n",
                             probe_stats.layer_draws[1],probe_stats.layer_draws[0],

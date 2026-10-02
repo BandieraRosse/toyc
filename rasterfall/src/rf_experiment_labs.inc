@@ -126,6 +126,9 @@ static void rf_electronics_camera(const struct rasterfall_session *session,struc
 static void rf_labs_diagnostic_view(const char *view)
 {
     if (!view) return;
+    const char *all=getenv("RF_LABS_ALL");
+    if (all && all[0]=='1')
+        for (int i=0;i<RF_LAB_COUNT;++i) rf_labs.requested[i]=1;
     if (!strcmp(view,"electronics-case")) rf_labs.requested[RF_LAB_ELECTRONICS]=1;
     for (int i=0; i<RF_LAB_COUNT; ++i)
         if (!strcmp(view,rf_lab_definitions[i].view)) rf_labs.requested[i]=1;

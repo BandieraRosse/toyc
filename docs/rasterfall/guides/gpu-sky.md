@@ -27,18 +27,25 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_sky_study.ps1 -Pre
 ## 质量与诊断
 
 进程环境 `RF_GPU_SKY_SCALE` 选择每轴下采样倍率：4 为默认，2 为较高分辨率，1 为更密集步进的全分辨率参考；
+三档当前分别使用 32、40、64 步。默认档调整了云底填充和短距太阳遮光，以加强体积层次。
 需要重新启动进程。`RF_GPU_SKY_PRESET` 选择气氛，`RF_GPU_SKY_TIME` 冻结秒数。脚本临时设置
 预设/时间并在退出时恢复，不修改系统环境。
 
 `rasterfall.exe --gpu-lighting-test` 同时检查天空确定性、平移独立、旋转响应、共享太阳、零深度写入、
-不透明遮挡、天顶/下半球、resize 和非法参数。测试包含显式 readback，不能代替 native present。
+不透明遮挡、天顶/下半球、resize 和非法参数，并检查 12 组天气/视角下空区域跳过与完整扫描逐像素一致。
+测试包含显式 readback，不能代替 native present。
 
 设置 `RF_GPU_SKY_BENCH=1` 后运行该测试，会额外采集 1920×1080 天空与纯色 HDR 背景的 GPU
-timestamp 对照：预热后交替采集纯色/天空配对帧，并轮换先后顺序，输出 p50/p95、首帧 GPU 时间和
+timestamp 对照：预热后轮换采集纯色、跳过空区域的天空、完整扫描天空，输出 p50/p95、首帧 GPU 时间和
 配对差值的中位增量，减小频率与温度漂移的影响。它测量隔离天空成本，排除 capture
 readback；不是前哨站完整帧基线，也不承诺首帧 CPU pipeline 创建成本。分别启动不同质量档作比较。
 `SKY-COMPUTE` 单独报告天空 compute 时间戳的 p50/p95，排除预热中的噪声烘焙、后续 HDR 合成及读回；
 它包含在整段 GPU 时间内，不能再次相加。配对增量仍保留，用于观察合成等额外成本。
+同时输出完整扫描的 `reference_p50_ms` / `reference_p95_ms` 和配对节省 `skip_saving_p50_ms`；
+负值表示该次测量中跳过版本更慢，不应只从减少采样推断收益。
+正常运行默认使用完整扫描；当前对照未证明空区域跳过有稳定收益。设置 `RF_GPU_SKY_REFERENCE_SCAN=0`
+可试用跳过候选，设为 `1` 或移除变量恢复默认。基准中的 `reference_*` 是当前默认扫描，
+`p50_ms` / `p95_ms` 是跳过候选，不能将候选数字写成默认运行成本。
 
 着色器改动后使用 `tools/generate_gpu_graphics_spirv.py <glslangValidator路径>` 更新内嵌 SPIR-V，
 再构建 Windows。普通运行或 package 不需要 Vulkan SDK 或 shader 编译器。

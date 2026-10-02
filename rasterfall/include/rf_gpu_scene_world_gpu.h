@@ -107,6 +107,8 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t actor_batch_us,misc_prepare_us;
     uint64_t upload_bytes,bridge_transfers;
     double gpu_draw_ms;
+    double gpu_sky_ms;
+    uint32_t native_draws;
     int gpu_time_valid;
 };
 /* Explicit normal-frame audit only: offscreen draw plus readback, with the

@@ -11,7 +11,7 @@ struct rf_gpu_graphics_vertex {
 };
 struct rf_gpu_scene_color_vertex {
     int32_t position[3];
-    int32_t light_q8;
+    int32_t light_q8; /* Legacy light; flat opacity 0..255 when draw alpha=256. */
     uint32_t rgb24;
 };
 _Static_assert(sizeof(struct rf_gpu_scene_color_vertex)==20,"Scene color vertex ABI");
@@ -28,7 +28,7 @@ struct rf_gpu_graphics_draw {
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
     uint32_t material[4]; /* RGB, ignored legacy multiplier, textured, vertex format (2=color) */
-    int32_t texture[4]; /* width,height, alpha (0=opaque), screen mode (0/1/2) */
+    int32_t texture[4]; /* width,height, alpha (0=opaque,256=color-vertex alpha), screen mode (0/1/2) */
     /* Scene precision/material controls. Zero keeps ordinary defaults.
      * flags: public callers must pass zero; internal layer flags are owner-only.
      * units: local units/metre (0=512); shading: 0 flat, 1 smooth, 2 soft,

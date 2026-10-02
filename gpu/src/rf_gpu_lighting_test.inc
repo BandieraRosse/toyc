@@ -10,7 +10,8 @@ static int sky_benchmark(struct rf_gpu_graphics *g)
     const int corners[6][2]={{0,0},{1,0},{1,1},{0,0},{1,1},{0,1}};
     uint32_t *rgba=malloc(pixels*4);float *depth=malloc(pixels*4);
     struct rf_gpu_graphics_resource *r=NULL;struct rf_gpu_graphics_batch_item item={0};
-    struct rf_gpu_lighting l;double samples[4][32],first[2]={0};int result=-1;
+    struct rf_gpu_lighting l;double samples[6][32],first[3]={0};int result=-1;
+    int saved_reference=g->sky_reference_scan;
     if(!rgba || !depth) goto done;
     for(unsigned i=0;i<6;++i) {
         v[i].position[0]=corners[i][0]*width;v[i].position[1]=corners[i][1]*height;
@@ -25,22 +26,24 @@ static int sky_benchmark(struct rf_gpu_graphics *g)
     d->index_count=6;d->double_sided=1;
     rf_gpu_lighting_default(&l);
     if(rf_gpu_graphics_resize(g,width,height)<0 || rf_gpu_graphics_set_lighting(g,&l)<0) goto done;
-    /* Interleave paired control/sky frames, alternating order to reduce drift
+    /* Interleave control, candidate skip and full scan, rotating order to reduce drift
      * from laptop clocks and thermals. Report the median paired difference. */
     for(unsigned frame=0;frame<40;++frame) {
-        for(unsigned pass=0;pass<2;++pass) {
-            unsigned mode=pass^(frame&1);
+        for(unsigned pass=0;pass<3;++pass) {
+            unsigned mode=(pass+frame)%3;
+            g->sky_reference_scan=mode==2;
             d->scene_layer=mode?RF_GPU_SCENE_SKY:RF_GPU_SCENE_WORLD;
-            if(rf_gpu_graphics_scene_capture_at(g,&item,1,rgba,depth,pixels,frame*2+pass+1)<0 ||
+            if(rf_gpu_graphics_scene_capture_at(g,&item,1,rgba,depth,pixels,frame*3+pass+1)<0 ||
                 !g->scene_timing.valid) goto done;
             double ms=g->scene_timing.world_draw_ms;
             if(!frame) first[mode]=ms;
-            if(frame>=8) samples[mode][frame-8]=ms;
-            if(frame>=8 && mode) samples[3][frame-8]=g->scene_timing.sky_compute_ms;
+            if(frame>=8 && mode<2) samples[mode][frame-8]=ms;
+            if(frame>=8 && mode) samples[mode+2][frame-8]=g->scene_timing.sky_compute_ms;
         }
         if(frame>=8) samples[2][frame-8]=samples[1][frame-8]-samples[0][frame-8];
+        if(frame>=8) samples[5][frame-8]=samples[4][frame-8]-samples[3][frame-8];
     }
-    for(unsigned mode=0;mode<4;++mode) {
+    for(unsigned mode=0;mode<6;++mode) {
         for(unsigned i=1;i<32;++i) {
             double value=samples[mode][i];unsigned j=i;
             while(j && samples[mode][j-1]>value) {samples[mode][j]=samples[mode][j-1];--j;}
@@ -51,9 +54,10 @@ static int sky_benchmark(struct rf_gpu_graphics *g)
         g->sky_scale,(unsigned long long)(g->sky_buffer.size+64*64*64*8),
         samples[0][16],samples[0][30],samples[1][16],samples[1][30],samples[2][16],first[1]);
     result=0;
-    fprintf(stdout,"SKY-COMPUTE samples=32 p50_ms=%.3f p95_ms=%.3f includes_noise_bake=0 excludes_hdr_composite=1\n",
-        samples[3][16],samples[3][30]);
+    fprintf(stdout,"SKY-COMPUTE samples=32 p50_ms=%.3f p95_ms=%.3f reference_p50_ms=%.3f reference_p95_ms=%.3f skip_saving_p50_ms=%.3f includes_noise_bake=0 excludes_hdr_composite=1\n",
+        samples[3][16],samples[3][30],samples[4][16],samples[4][30],samples[5][16]);
 done:
+    g->sky_reference_scan=saved_reference;
     if(r) rf_gpu_graphics_resource_destroy(g,r);
     free(rgba);free(depth);return result;
 }
@@ -64,6 +68,7 @@ static int sky_regression(struct rf_gpu_graphics *g)
     uint32_t indices[6],white=0xffffff,a[96*96],b[96*96];float depth[96*96];
     struct rf_gpu_graphics_batch_item item={0};struct rf_gpu_lighting l;
     struct rf_gpu_graphics_resource *r=NULL;int result=-1;
+    int saved_reference=g->sky_reference_scan;
 #define SKY_CHECK(x) do {if(!(x)){fprintf(stderr,"SKY FAIL line=%d\n",__LINE__);goto done;}}while(0)
     for(unsigned i=0;i<6;++i) {
         v[i].position[0]=corners[i][0];v[i].position[1]=corners[i][1];v[i].position[2]=1;indices[i]=i;
@@ -77,6 +82,23 @@ static int sky_regression(struct rf_gpu_graphics *g)
     d->index_count=6;d->double_sided=1;d->scene_layer=RF_GPU_SCENE_SKY;
     rf_gpu_lighting_default(&l);
     SKY_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_set_lighting(g,&l));
+    // Empty-space skipping must preserve the full march, including sparse cloud,
+    // weather wrapping, oblique rays, and dense weather with no useful skips.
+    for(unsigned sample=0;sample<12;++sample) {
+        l.sky_cloud[0]=sample%3==0?0.18f:(sample%3==1?0.42f:0.78f);
+        l.sky_weather[0]=(float)sample*13.7f;l.sky_weather[1]=-(float)sample*9.1f;
+        d->view[0]=(sample&1)?1024:0;d->view[1]=(sample&1)?0:1024;
+        d->view[2]=(sample&2)?256:724;d->view[3]=(sample&2)?991:724;
+        SKY_CHECK(!rf_gpu_graphics_set_lighting(g,&l));
+        g->sky_reference_scan=0;
+        SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,a,depth,96*96));
+        g->sky_reference_scan=1;
+        SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
+        SKY_CHECK(!memcmp(a,b,sizeof(a)));
+    }
+    g->sky_reference_scan=0;rf_gpu_lighting_default(&l);
+    d->view[0]=0;d->view[1]=1024;d->view[2]=d->view[3]=724;
+    SKY_CHECK(!rf_gpu_graphics_set_lighting(g,&l));
     SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,a,depth,96*96));
     for(unsigned i=0;i<96*96;++i) SKY_CHECK(depth[i]==0 && lighting_test_rgb(a[i])>0);
     // Translation cannot move a distant cloud or alter its deterministic sample.
@@ -110,10 +132,11 @@ static int sky_regression(struct rf_gpu_graphics *g)
     SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
     for(unsigned i=0;i<65*67;++i) SKY_CHECK(depth[i]==0 && lighting_test_rgb(b[i])>0);
     l.sky_cloud[3]=0;SKY_CHECK(rf_gpu_graphics_set_lighting(g,&l)<0);
-    fprintf(stdout,"SKY PASS deterministic=1 translation_independent=1 rotation=1 shared_sun=1 depth_untouched=1 opaque_occlusion=1 poles_resize=1 invalid_parameters=1\n");
+    fprintf(stdout,"SKY PASS deterministic=1 translation_independent=1 rotation=1 shared_sun=1 depth_untouched=1 opaque_occlusion=1 poles_resize=1 invalid_parameters=1 skip_reference_equal=12\n");
     result=0;
 done:
     if(r) rf_gpu_graphics_resource_destroy(g,r);
+    g->sky_reference_scan=saved_reference;
     rf_gpu_lighting_default(&l);rf_gpu_graphics_set_lighting(g,&l);return result;
 #undef SKY_CHECK
 }
@@ -154,6 +177,22 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     for(unsigned p=0;p<64*64;++p) if(da[p]>0 && da[p]==db[p] &&
         lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15) ++shadow_pixels;
     LIGHT_CHECK(shadow_pixels>8);
+    /* Camera and light frusta are independent. Keep shadows from an offscreen
+     * caster; compare pixels and depth with the uncullable reference across
+     * translations, yaw, scale, near crossings and far cascade boundaries. */
+    for (unsigned sample=0;sample<12;++sample) {
+        struct rf_gpu_graphics_batch_item pair[2]={items[0],items[1]};
+        pair[1].draw.translation_scale[0]=(int)(sample%4)*1800-2400;
+        pair[1].draw.translation_scale[2]=sample<8?0:60000;
+        pair[1].draw.translation_scale[3]=sample&1?1800:1000;
+        pair[1].draw.rotation[0]=sample&2?724:0;
+        pair[1].draw.rotation[1]=sample&2?724:1024;
+        g->disable_draw_cull=1;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,a,da,96*96));
+        g->disable_draw_cull=0;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,b,db,96*96));
+        LIGHT_CHECK(!memcmp(a,b,64*64*4) && !memcmp(da,db,64*64*4));
+    }
     /* The old scene multiplier is not part of GPU illumination. */
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
     d->material[1]=32;LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));

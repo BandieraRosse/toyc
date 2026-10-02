@@ -87,6 +87,9 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     struct rf_vk_write_descriptor_set writes[4]={{0}};
     rf_gpu_lighting_default(&g->lighting);
     g->sky_scale=4;
+    const char *reference=getenv("RF_GPU_SKY_REFERENCE_SCAN");
+    // Keep the measured baseline until empty-space skipping wins reliably.
+    g->sky_reference_scan=!(reference && reference[0]=='0' && !reference[1]);
     const char *scale=getenv("RF_GPU_SKY_SCALE");
     if(scale && scale[0]) {
         if(strcmp(scale,"1") && strcmp(scale,"2") && strcmp(scale,"4")) return -1;
@@ -227,7 +230,9 @@ static void gfx_sky_record(struct rf_gpu_graphics *g,const struct rf_gpu_graphic
             g->sky_noise_ready=1;
         }
         g->owner->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->sky_pipeline);
-        g->api.CmdPushConstants(g->cmd,g->sky_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,128,&items[i].draw);
+        struct rf_gpu_graphics_draw sky_draw=items[i].draw;
+        if(g->sky_reference_scan) sky_draw.quality[0]|=128;
+        g->api.CmdPushConstants(g->cmd,g->sky_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,128,&sky_draw);
         g->owner->api.cmd_dispatch(g->cmd,(g->sky_width+7)/8,(g->sky_height+7)/8,1);
         struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
         barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
@@ -282,6 +287,7 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
         }
         m[14]-=depth_far*depth_near/(depth_far-depth_near);
     }
+    memcpy(g->shadow_matrix,u.shadow_matrix,sizeof(g->shadow_matrix));
     if(g->owner->api.map_memory(g->owner->device,g->light_buffer.memory,0,g->light_buffer.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
     memcpy(mapped,&u,sizeof(u));g->owner->api.unmap_memory(g->owner->device,g->light_buffer.memory);
     return 0;
@@ -294,17 +300,39 @@ static void gfx_shadow_record(struct rf_gpu_graphics *g,const struct rf_gpu_grap
     begin.sType=VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;begin.renderPass=g->shadow_pass;
     begin.framebuffer=g->shadow_framebuffer;begin.renderArea.extent=scissor.extent;
     begin.clearValueCount=1;begin.pClearValues=&clear;
+    const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
+    int reuse_bind=!(legacy_bind && legacy_bind[0]=='1');
     for(unsigned cascade=0;cascade<g->shadow_count;++cascade) {
+        struct rf_gpu_graphics_resource *bound=NULL;
+        int bound_pipeline=-1;
         g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);
         g->api.CmdSetViewport(g->cmd,0,1,&viewport);g->api.CmdSetScissor(g->cmd,0,1,&scissor);
         g->owner->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
         for(unsigned i=0;i<count;++i) {
             struct rf_gpu_graphics_draw d=items[i].draw;
             if(d.scene_layer!=RF_GPU_SCENE_WORLD || d.texture[2] || d.texture[3]) continue;
+            /* Cull in light clip space, independently of the camera: an
+             * offscreen building can still cast an onscreen shadow. */
+            float center[3],extent[3];int outside=0;
+            if (!g->disable_draw_cull && gfx_draw_box(&items[i],center,extent)) {
+                const float *m=g->shadow_matrix[cascade];
+                for (unsigned p=0;p<6 && !outside;++p) {
+                    float plane[4];unsigned row=p/2;
+                    for (unsigned k=0;k<4;++k)
+                        plane[k]=p==4?m[k*4+2]:m[k*4+3]+((p&1)?-1:1)*m[k*4+row];
+                    outside=gfx_box_outside(center,extent,plane);
+                }
+            }
+            if (outside) continue;
             struct rf_gpu_graphics_resource *r=items[i].resource;d.camera[3]=(int)cascade;
-            g->owner->api.cmd_bind_pipeline(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[r->scene_vertex_color?31:30]);
-            g->api.CmdBindVertexBuffers(g->cmd,0,1,&r->vertices.buffer,&offset);
-            g->api.CmdBindIndexBuffer(g->cmd,r->indices.buffer,0,VK_INDEX_TYPE_UINT32);
+            int pipeline=r->scene_vertex_color?31:30;
+            if (!reuse_bind || bound_pipeline!=pipeline)
+                g->owner->api.cmd_bind_pipeline(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);
+            if (!reuse_bind || bound!=r) {
+                g->api.CmdBindVertexBuffers(g->cmd,0,1,&r->vertices.buffer,&offset);
+                g->api.CmdBindIndexBuffer(g->cmd,r->indices.buffer,0,VK_INDEX_TYPE_UINT32);
+            }
+            bound=r;bound_pipeline=pipeline;
             g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&d);
             g->api.CmdDrawIndexed(g->cmd,d.index_count,1,d.first_index,0,0);
             g->stats.shadow_draws++;

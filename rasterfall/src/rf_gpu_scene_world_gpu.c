@@ -760,6 +760,9 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
     owner->prop_draws=owner->prop_deferred=owner->prop_culled=0;
     owner->prop_numeric_deferred=owner->prop_material_deferred=0;
     owner->prop_transparent_deferred=0;
+    /* Presentation settings are stable for this frozen frame. Reading the
+     * process environment per submesh is expensive on the native CRT. */
+    int linear_filter=rf_gpu_scene_linear_filter_enabled();
     for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind) {
         struct rasterfall_resource_handle handle=owner->opaque[kind];
         const struct rasterfall_model_asset *model;
@@ -910,7 +913,7 @@ prop_ready:
             draw->index_count=info.index_count;
             draw->double_sided=resolved.material.double_sided;
             draw->integer_depth=0;
-            if (rf_gpu_scene_linear_filter_enabled()) draw->quality[3]=1;
+            if (linear_filter) draw->quality[3]=1;
             if (!entry->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
             owner->prop_draws++;
@@ -1413,6 +1416,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->submit_retire_us=rf_core_clock_now_us()-section_start;
     if (timing.frame_id!=enemies->frame_id || (timing.supported && !timing.valid)) goto done;
     stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
+    stats->gpu_sky_ms=timing.sky_compute_ms;
     stats->record_us=(int64_t)(timing.record_ms*1000);
     stats->acquire_us=(int64_t)(timing.acquire_ms*1000);
     stats->queue_submit_us=(int64_t)(timing.queue_submit_ms*1000);
@@ -1470,6 +1474,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->enemy_deferred=enemies->deferred;stats->enemy_culled=enemies->culled;
     stats->lights=graphics_after.lights;stats->shadow_maps=graphics_after.shadow_maps;
     stats->shadow_draws=(uint32_t)(graphics_after.shadow_draws-graphics_before.shadow_draws);
+    stats->native_draws=(uint32_t)(graphics_after.indexed_draws-graphics_before.indexed_draws);
     stats->present_mode=graphics_after.present_mode;
     stats->draws=draws;stats->actor_draws=actor_draws;
     stats->flag_draws=flag_draws;stats->flag_text_draws=flag_text_draws;

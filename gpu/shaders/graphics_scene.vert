@@ -14,8 +14,10 @@ layout(location=0) out vec2 texcoord;
 layout(location=1) out vec3 world_position;
 layout(location=2) out vec3 world_normal;
 layout(location=3) flat out uint triangle_color;
+layout(location=4) flat out float triangle_alpha;
 void main() {
     triangle_color=d.material.w==2u ? uint(uv.y) : d.material.x;
+    triangle_alpha=d.material.w==2u && d.texture_info.z==256 ? float(uv.x)/255.0 : 1.0;
     texcoord=vec2(uv)/65536.0;world_position=vec3(0);world_normal=vec3(0,1,0);
     if(d.texture_info.w!=0) {
         float w=1048576.0/float(max(position.z,1));

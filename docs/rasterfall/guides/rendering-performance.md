@@ -62,6 +62,33 @@ Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：�
 不能用单次结果承诺普遍收益。自动脚本检查真实进程退出、完整结果、GPU 有效样本和隔离灯合同。
 交互式重跑也可从配置结果查看灯数、阴影数、节流和 present 模式。
 
+## 实验园区正常场景采样
+
+`tools/gpu_outpost_perf.ps1` 测量正常 Windows native 场景，默认覆盖天空/大厅、关闭的控制计算机近景、
+电子展区和开启的光照展区；`-AllLabs` 显式开启所有展示作压力对照，并排除会强制覆盖开关的计算机检修镜头。
+它保留默认窗口、真实逻辑时钟、
+120 FPS 节流和正常 immediate/mailbox/FIFO 选择，不经性能实验场隔离。需要先运行 native build。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -Compare -OutputDirectory tmp/outpost-ab
+```
+
+采样器由 `RF_SCENE_PERF_FRAMES` 显式启用，限用于无 `--frames`、无 `--frame-audit` 的 GPU 固定起点诊断；
+预热 120 帧后收集指定数量，结束自动退出。`SCENE-PERF` 报告整个 begin-to-begin 帧间隔分位数、
+GPU 与天空 compute 分位数、实际主绘制/阴影绘制和上传量。天空时间已包含在 GPU 时间内。
+暂停、尺寸/present 模式改变、无效 GPU 时间或 bridge 会使结果无效；仍须检查完整进程退出与错误日志。
+
+脚本默认五轮，轮间反转 reference/optimized 顺序，保存参数、exe/map hash、原始日志和 `report.json`。
+reference 只通过 `RF_GPU_SCENE_LEGACY_LAYER_COLORS=1`、`RF_GPU_SCENE_DISABLE_LAYER_CULL=1`、
+`RF_GPU_SCENE_DISABLE_DRAW_CULL=1` 恢复逐颜色/透明度绘制与完整几何提交，两侧使用相同天空和资源。
+这个对照不恢复历史构建、重复环境查询或正常帧日志，不能称作旧版全部成本。比较每视角五个单轮
+P50/P95/P99 的中位数，并保留范围。固定帧 `--frame-audit` 使用 FIFO，只适合归因和正确性检查，
+不能用其等待时间估计正常无界运行的吞吐。
+
+颜色/逐面透明度合批的像素、深度、近裁剪与屏幕层回归使用 Windows `gpu-graphics-test` 构建目标，
+设置 `RF_GPU_COLOR_TEST=1` 后运行 `build-windows/rf-gpu-graphics-test.exe`；此定向入口不执行旧兼容渲染断言。
+`--gpu-lighting-test` 另检查主视图/阴影独立剔除与完整提交的像素和深度一致性。
+
 ## 角色微基准
 
 ```text

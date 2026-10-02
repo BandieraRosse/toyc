@@ -12,10 +12,13 @@ struct scene_layer_mesh {
     struct scene_layer_triangle *triangles;
     uint32_t count,capacity;
     int layer,failed,width,height,emissive;
+    double clip[5][4];
+    int cull;
 };
 struct scene_layer_workspace {
     struct scene_layer_mesh mesh;
     struct rf_gpu_graphics_vertex *vertices;
+    struct rf_gpu_scene_color_vertex *colors;
     uint32_t *indices,*texels;
     unsigned char *texture_source;
     uint32_t vertex_capacity,texture_bytes,texture_width,texture_height,texture_channels;
@@ -35,7 +38,7 @@ static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
 static void scene_layer_workspace_free(struct scene_layer_workspace *w)
 {
     if (!w) return;
-    free(w->mesh.triangles);free(w->vertices);free(w->indices);
+    free(w->mesh.triangles);free(w->vertices);free(w->colors);free(w->indices);
     free(w->texels);free(w->texture_source);free(w->ordered);free(w);
 }
 static int scene_layer_emit(struct scene_layer_mesh *m,
@@ -44,6 +47,18 @@ static int scene_layer_emit(struct scene_layer_mesh *m,
     int screen,int textured)
 {
     if (m->failed) return -1;
+    /* These alpha-blended presentation surfaces do not cast shadows. Reject
+     * only triangles wholly outside one camera plane; crossing triangles keep
+     * their original vertices for hardware clipping. No distance/size cutoff. */
+    if (m->cull && !screen && alpha>0) {
+        for (int p=0;p<5;++p) {
+            const double *f=m->clip[p];
+            double da=f[0]*a->position[0]+f[1]*a->position[1]+f[2]*a->position[2]+f[3];
+            double db=f[0]*b->position[0]+f[1]*b->position[1]+f[2]*b->position[2]+f[3];
+            double dc=f[0]*c->position[0]+f[1]*c->position[1]+f[2]*c->position[2]+f[3];
+            if (da<0 && db<0 && dc<0) return 0;
+        }
+    }
     int origin[3]={0};
     if (!screen) {
         int split=0;
@@ -261,6 +276,21 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct rf_gpu_scene_layers_input *input,const struct camera *camera,int width,int height)
 {
     mesh->width=width;mesh->height=height;
+    const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_LAYER_CULL");
+    mesh->cull=!(no_cull && no_cull[0]=='1');
+    double sy=camera->sy/1024.0,cy=camera->cy/1024.0;
+    double ps=camera->pitch_sy/1024.0,pc=camera->pitch_cy/1024.0;
+    double forward[3]={sy*pc,ps,cy*pc},right[3]={cy,0,-sy},up[3]={-sy*ps,pc,-cy*ps};
+    double extent[2]={width/(2.0*(width*3/4)),height/(2.0*(width*3/4))};
+    for (int p=0;p<5;++p) {
+        double *f=mesh->clip[p];
+        for (int k=0;k<3;++k)
+            f[k]=p==0 ? forward[k] : forward[k]*extent[(p-1)/2]+
+                ((p&1)?1.0:-1.0)*(p<3?right[k]:up[k]);
+        /* Two RFU conservative slack covers floating-point clip arithmetic. */
+        f[3]=-f[0]*camera->x-f[1]*camera->y-f[2]*camera->z+
+            2*(fabs(f[0])+fabs(f[1])+fabs(f[2]))-(p==0?64:0);
+    }
     struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect};
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
     /* GPU SKY is a ray-evaluated HDR background, independent of CPU canvas. */
@@ -394,23 +424,36 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     uint32_t *indices=w->indices,*texels=w->texels,white=0xffffff;
     const char *legacy=getenv("RF_GPU_SCENE_REBUILD_LAYERS");
     int rebuild=legacy && legacy[0]=='1';
+    const char *legacy_colors=getenv("RF_GPU_SCENE_LEGACY_LAYER_COLORS");
+    int color_batch=!(legacy_colors && legacy_colors[0]=='1');
     int result=-1,textured=0;
     if (probe->layers && scene_layers_extract(&mesh,probe->layers,camera,(int)width,(int)height)<0) goto done;
     if (mesh.count) {
         if (mesh.capacity*3>w->vertex_capacity) {
             uint32_t capacity=mesh.capacity*3;
             struct rf_gpu_graphics_vertex *next_vertices=calloc(capacity,sizeof(*vertices));
+            struct rf_gpu_scene_color_vertex *next_colors=calloc(capacity,sizeof(*next_colors));
             uint32_t *next_indices=malloc((size_t)capacity*sizeof(*indices));
-            if (!next_vertices || !next_indices) { free(next_vertices);free(next_indices);goto done; }
+            if (!next_vertices || !next_colors || !next_indices) {
+                free(next_vertices);free(next_colors);free(next_indices);goto done;
+            }
             for (unsigned i=0;i<capacity;++i) next_indices[i]=i%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
-            free(w->vertices);free(w->indices);
+            free(w->vertices);free(w->colors);free(w->indices);
             vertices=w->vertices=next_vertices;indices=w->indices=next_indices;
+            w->colors=next_colors;
             w->vertex_capacity=capacity;
         }
         for (unsigned i=0;i<mesh.count;++i) {
             memcpy(vertices+i*3,mesh.triangles[i].vertex,3*sizeof(*vertices));
-            for (unsigned k=0;k<3;++k)
+            for (unsigned k=0;k<3;++k) {
                 indices[i*3+k]=(i%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3+k;
+                memcpy(w->colors[i*3+k].position,mesh.triangles[i].vertex[k].position,
+                    sizeof(w->colors[i*3+k].position));
+                /* Color vertices use the retired light lane for per-face
+                 * opacity only when draw.texture[2] selects vertex alpha. */
+                w->colors[i*3+k].light_q8=mesh.triangles[i].alpha;
+                w->colors[i*3+k].rgb24=mesh.triangles[i].color;
+            }
             textured|=mesh.triangles[i].textured;
         }
         if (textured) {
@@ -450,8 +493,10 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 triangles=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
             if (!triangles || (i && !textured)) continue;
             struct rf_gpu_graphics_resource **resource=&probe->layer_resource[chunk][i];
-            int grow=*resource && !rebuild ? rf_gpu_graphics_triangle_resource_update(
-                probe->graphics,*resource,vertices+start*3,triangles*3) : 1;
+            int colors=color_batch && !i;
+            int grow=*resource && !rebuild ? (colors ?
+                rf_gpu_graphics_scene_color_resource_update(probe->graphics,*resource,w->colors+start*3,triangles*3) :
+                rf_gpu_graphics_triangle_resource_update(probe->graphics,*resource,vertices+start*3,triangles*3)) : 1;
             if (grow<0) goto done;
             if (grow) stats->layer_created++;
             else stats->layer_reused++;
@@ -460,10 +505,13 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 if (allocated>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) allocated=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
                 if (rebuild) allocated=triangles;
                 if (*resource && rf_gpu_graphics_resource_destroy(probe->graphics,*resource)<0) goto done;
-                *resource=rf_gpu_graphics_resource_create(probe->graphics,vertices+start*3,allocated*3,
-                    indices+start*3,allocated*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
-                if (*resource && allocated!=triangles && rf_gpu_graphics_triangle_resource_update(
-                        probe->graphics,*resource,vertices+start*3,triangles*3)<0) goto done;
+                *resource=colors ? rf_gpu_graphics_scene_color_resource_create(probe->graphics,
+                    w->colors+start*3,allocated*3,indices+start*3,allocated*3) :
+                    rf_gpu_graphics_resource_create(probe->graphics,vertices+start*3,allocated*3,
+                        indices+start*3,allocated*3,i?texels:&white,i?texture->width:1,i?texture->height:1);
+                if (*resource && allocated!=triangles && (colors ?
+                        rf_gpu_graphics_scene_color_resource_update(probe->graphics,*resource,w->colors+start*3,triangles*3) :
+                        rf_gpu_graphics_triangle_resource_update(probe->graphics,*resource,vertices+start*3,triangles*3))<0) goto done;
             }
             if (!probe->layer_resource[chunk][i]) {
                 fprintf(stderr,"SCENE layer upload failed triangles=%u textured=%d\n",mesh.count,i);
@@ -483,9 +531,14 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             unsigned end=first+1;
             unsigned chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
             const struct scene_layer_triangle *t=&mesh.triangles[first];
+            /* Color and opacity live on each triangle. Keep pass, origin and
+             * source order intact, including overlapping projections. The
+             * legacy baked light value is not consumed by GPU HDR lighting. */
+            size_t key=color_batch && !t->textured ? offsetof(struct scene_layer_triangle,screen) :
+                offsetof(struct scene_layer_triangle,color);
             while (end<mesh.count && end/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES==chunk &&
-                    !memcmp(&mesh.triangles[end].color,&t->color,
-                    sizeof(*t)-offsetof(struct scene_layer_triangle,color))) ++end;
+                    !!mesh.triangles[end].alpha==!!t->alpha &&
+                    !memcmp((const char *)&mesh.triangles[end]+key,(const char *)t+key,sizeof(*t)-key)) ++end;
             struct rf_gpu_graphics_batch_item *entry=&(*batch)[(*count)++];
             struct rf_gpu_graphics_draw *d=&entry->draw;
             memset(entry,0,sizeof(*entry));entry->resource=probe->layer_resource[chunk][t->textured];
@@ -495,9 +548,11 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
             d->projection[0]=width;d->projection[1]=height;d->projection[2]=64;d->projection[3]=width*3/4;
             d->material[0]=t->color;d->material[1]=t->light;d->material[2]=t->textured;
+            if (color_batch && !t->textured) d->material[3]=2;
             if (t->emissive) d->quality[2]=3;
             d->texture[0]=t->textured?texture->width:1;d->texture[1]=t->textured?texture->height:1;
-            d->texture[2]=t->alpha;d->texture[3]=t->screen;
+            d->texture[2]=color_batch && !t->textured && t->alpha ? 256 : t->alpha;
+            d->texture[3]=t->screen;
             d->first_index=(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;
             d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=t->layer;
             first=end;

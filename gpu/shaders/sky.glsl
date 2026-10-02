@@ -44,22 +44,27 @@ vec3 sky_cloud_space(vec3 p) {
     p.xz+=lighting.sky_weather.xy;
     return p+vec3(lighting.sky_weather.z*3.71,0,lighting.sky_weather.z*1.93);
 }
-float sky_cloud_group(vec3 p) {
+float sky_weather_at(vec3 p) {
     p=sky_cloud_space(p);
-    float weather=sky_noise(vec3(p.x*0.19,3.7,p.z*0.19)).y;
+    return sky_noise(vec3(p.x*0.19,3.7,p.z*0.19)).y;
+}
+float sky_cloud_group(float weather) {
     float coverage=lighting.sky_cloud.x;
     return smoothstep(1.0-coverage-0.18,1.0-coverage+0.20,weather);
 }
-float sky_density(vec3 p,float group) {
+float sky_density(vec3 p,float group,float detail) {
     float distance_to_observer=length(p.xz);
     float h=(sky_height(p)-lighting.sky_cloud.z)/lighting.sky_cloud.w;
     if(h<=0.0 || h>=1.0) return 0.0;
     if(group<0.01) return 0.0;
     p=sky_cloud_space(p);
-    float shape=sky_noise(p*vec3(1.15,1.7,1.15)).x;
-    float profile=smoothstep(0.0,0.12,h)*(1.0-smoothstep(0.48,1.0,h));
-    float body=shape-(1.0-group*profile)*0.72;
-    return smoothstep(0.025,0.18,body)*lighting.sky_cloud.y*2.5*
+    vec4 shape=textureLod(noise_volume,p*vec3(0.82,1.2,0.82)/8.0+vec3(0.5/64.0),0.0);
+    // Weather controls cloud mass and height; erosion only touches the edge.
+    // Larger connected billows share a flat base and individually rising tops.
+    float top=mix(0.48,1.0,group);
+    float profile=smoothstep(0.0,0.10,h)*(1.0-smoothstep(0.38,1.0,h/top));
+    float body=mix(shape.a,shape.r,detail)-(0.66-0.46*group*profile)-0.05*(shape.b-0.5)*detail;
+    return smoothstep(0.0,0.12,body)*lighting.sky_cloud.y*2.5*
         (1.0-smoothstep(15.0,25.0,distance_to_observer));
 }
 float sky_shell_distance(vec3 ray,float height) {
@@ -86,26 +91,37 @@ vec3 rf_sky(vec2 pixel) {
     float end=min(sky_shell_distance(ray,lighting.sky_cloud.z+lighting.sky_cloud.w),25.0);
     if(end<=start) return background;
     // Quality is uniform for a dispatch: no per-row step-count discontinuities.
-    int steps=lighting.counts.y<1.5?64:(lighting.counts.y<3.0?40:24);
+    int steps=lighting.counts.y<1.5?64:(lighting.counts.y<3.0?40:32);
     float stride=(end-start)/float(steps),trans=1.0;
     // World-direction stratification breaks marching slices without frame noise
     // or screen-locked patterns. The reconstruction filter softens the residual.
-    float offset=mix(0.15,0.85,sky_noise(ray*256.0).y);
+    float offset=mix(0.35,0.65,sky_noise(ray*256.0).y);
     vec3 scattered=vec3(0);
     float mu=max(dot(ray,sun),0.0);
-    float phase=0.65+0.45*pow(mu,8.0);
+    float phase=0.55+0.65*pow(mu,8.0);
+    // The baked smooth value-noise weather has per-axis slope <= 1.5;
+    // use 1.6 to cover RGBA16F rounding and trilinear interpolation.
+    float weather_step_bound=1.6*0.19*stride*(abs(ray.x)+abs(ray.z));
     for(int i=0;i<steps;++i) {
         vec3 p=ray*(start+(float(i)+offset)*stride);
-        float group=sky_cloud_group(p);
-        float density=sky_density(p,group);
+        float weather=sky_weather_at(p);
+        // Skip only provably empty sample positions, keeping the exact original
+        // march lattice. Bit 128 is an internal reference-scan diagnostic.
+        if((d.quality.x&128)==0 && weather+3.0*weather_step_bound+0.001<1.0-lighting.sky_cloud.x-0.18) {
+            i+=3;
+            continue;
+        }
+        float group=sky_cloud_group(weather);
+        float detail=1.0-smoothstep(4.0,14.0,length(p.xz));
+        float density=sky_density(p,group,detail);
         if(density>0.001) {
             // Weather spans kilometres: reuse its local coverage for the short
             // light probes, while preserving each probe's shape and height.
-            float optical=sky_density(p+sun*0.22,group)*0.3+sky_density(p+sun*0.60,group)*0.4;
+            float optical=sky_density(p+sun*0.10,group,detail)*0.25+sky_density(p+sun*0.35,group,detail)*0.45;
             float visibility=exp(-optical*3.0);
             float height=clamp((sky_height(p)-lighting.sky_cloud.z)/lighting.sky_cloud.w,0.0,1.0);
-            vec3 fill=mix(vec3(0.14,0.20,0.29),vec3(0.38,0.45,0.53),height)*daylight;
-            vec3 light=fill+sunlit*(0.20+0.80*visibility)*phase;
+            vec3 fill=mix(vec3(0.10,0.15,0.23),vec3(0.34,0.40,0.47),height)*daylight;
+            vec3 light=fill+sunlit*(0.08+0.92*visibility)*phase;
             // Distant cloud fades into sky haze, not a white horizon wall.
             light=mix(light,background,1.0-exp(-length(p)*0.018));
             float alpha=1.0-exp(-density*stride*2.4);
