@@ -6063,9 +6063,13 @@ startup_again:
                 "PERFORMANCE / RUNNING" : "PERFORMANCE / E CONFIGURE");
             {
                 char combat_text[96];
-                if(rf_combat_lab.running)snprintf(combat_text,sizeof(combat_text),"%s / %d MS",rf_combat_names[rf_combat_lab.selected],rf_combat_lab.elapsed_ms);
-                else if(rf_combat_lab.result_count)snprintf(combat_text,sizeof(combat_text),"%s / HP %d / E RESULTS",rf_combat_lab.current.status==1?"COMPLETE":rf_combat_lab.current.status==2?"TIMEOUT":"ABORTED",rf_combat_lab.current.remaining_hp);
-                else snprintf(combat_text,sizeof(combat_text),"COMBAT V0 / E CONFIGURE");
+                rasterfall_render_terminal_set("combat_control",rf_perf_lab.running ?
+                    "PERFORMANCE IN PROGRESS" : rf_combat_lab.running ?
+                    "E STOP COMBAT TEST" : "E SELECT COMBAT TEST");
+                if(rf_perf_lab.running)snprintf(combat_text,sizeof(combat_text),"RESULTS UNAVAILABLE");
+                else if(rf_combat_lab.running)snprintf(combat_text,sizeof(combat_text),"RUNNING / %.1f S",rf_combat_lab.elapsed_ms/1000.0);
+                else if(rf_combat_lab.result_count)snprintf(combat_text,sizeof(combat_text),"E RESULTS / %s",rf_combat_lab.current.status==1?"COMPLETE":rf_combat_lab.current.status==2?"TIMEOUT":"ABORTED");
+                else snprintf(combat_text,sizeof(combat_text),"E RESULTS / NO SAMPLE");
                 rasterfall_render_terminal_set("combat_result",combat_text);
             }
             {
