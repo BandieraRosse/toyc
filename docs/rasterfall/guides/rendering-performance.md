@@ -132,6 +132,16 @@ P50/P95/P99 的中位数，并保留范围。固定帧 `--frame-audit` 使用 FI
 设置 `RF_GPU_COLOR_TEST=1` 后运行 `build-windows/rf-gpu-graphics-test.exe`；此定向入口不执行旧兼容渲染断言。
 `--gpu-lighting-test` 另检查主视图/阴影独立剔除与完整提交的像素和深度一致性。
 
+GPU 显示缓存的无窗口契约测试可独立运行，不构建游戏或启动 GPU：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/test_gpu_scene_display.ps1
+```
+
+脚本默认使用 `C:\msys64\mingw64\bin\gcc.exe`（可由 `-Gcc` 指定），产物写入
+`tmp/scene-display-test/`。测试调用真实 Scene display packet 代码，用严格的资源替身检查文字变化时
+复用、跨块增长、预算、失败释放，以及三角形顺序、世界原点和包围盒；性能结论仍由原生窗口采样确认。
+
 ## 角色微基准
 
 ```text

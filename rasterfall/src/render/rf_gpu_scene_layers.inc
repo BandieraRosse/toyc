@@ -17,7 +17,7 @@ struct scene_layer_packet {
     struct toy_map_draw key;
     struct rf_gpu_graphics_batch_item *runs;
     struct rf_gpu_graphics_resource **resources;
-    unsigned triangles,run_count,resource_count;
+    unsigned triangles,run_count,resource_count,allocated_triangles;
     int valid,min[3],max[3];
 };
 struct scene_layer_workspace;
@@ -53,7 +53,7 @@ static void scene_packet_clear(struct scene_layer_workspace *w,struct scene_laye
 {
     for(unsigned i=0;i<p->resource_count;++i)
         if(p->resources[i]) rf_gpu_graphics_resource_destroy(w->graphics,p->resources[i]);
-    w->retained_triangles-=p->triangles;
+    w->retained_triangles-=p->allocated_triangles;
     free(p->resources);free(p->runs);memset(p,0,sizeof(*p));
 }
 static int scene_batch_reserve(struct rf_gpu_graphics_batch_item **items,
@@ -306,49 +306,74 @@ static int scene_packet_prepare(struct scene_layer_workspace *w,struct scene_lay
     const struct toy_map_draw *key)
 {
     if(p->valid && !memcmp(&p->key,key,sizeof(*key))) return p->valid>0?0:1;
-    scene_packet_clear(w,p);
     struct scene_layer_mesh build={0};
     struct rf_gpu_scene_color_vertex *vertices=NULL;
+    struct rf_gpu_graphics_batch_item *runs=NULL;
     uint32_t *indices=NULL;
+    unsigned allocated=p->allocated_triangles,run_count=0;
+    unsigned available=SCENE_RETAINED_TRIANGLES-w->retained_triangles+allocated;
+    int minimum[3]={0},maximum[3]={0};
     int result=1;
     build.layer=RF_GPU_SCENE_WORLD;build.emissive=1;
     if(rf_display_generate(key,scene_host_quad,&build)<0) goto done;
-    if(build.count>SCENE_RETAINED_TRIANGLES-w->retained_triangles) {result=1;goto done;}
-    if(!build.count) {result=0;goto done;}
-    vertices=malloc((size_t)build.count*3*sizeof(*vertices));
-    indices=malloc((size_t)build.count*3*sizeof(*indices));
-    p->resources=calloc((build.count+RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES-1)/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES,sizeof(*p->resources));
-    p->runs=calloc(build.count,sizeof(*p->runs));
-    if(!vertices || !indices || !p->resources || !p->runs) {result=1;goto done;}
+    if(build.count>available) goto done;
+    if(!build.count) {scene_packet_clear(w,p);result=0;goto done;}
+    /* Changing one digit must not destroy buffers and descriptors. Retain a
+     * bounded high-water capacity, including spare triangles in the owner
+     * budget, and update only the live vertices after the previous retirement. */
+    if(allocated<build.count) {
+        allocated=build.count+build.count/4+256;
+        if(allocated>available) allocated=available;
+    }
+    unsigned chunks=(allocated+RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES-1)/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+    if(chunks>p->resource_count) {
+        void *next=realloc(p->resources,(size_t)chunks*sizeof(*p->resources));
+        if(!next) goto done;
+        p->resources=next;
+        memset(p->resources+p->resource_count,0,(size_t)(chunks-p->resource_count)*sizeof(*p->resources));
+        p->resource_count=chunks;
+    }
+    vertices=calloc((size_t)allocated*3,sizeof(*vertices));
+    indices=malloc((size_t)allocated*3*sizeof(*indices));
+    runs=calloc(build.count,sizeof(*runs));
+    if(!vertices || !indices || !runs) goto done;
+    for(unsigned n=0;n<allocated*3;++n) indices[n]=n%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
     for(unsigned i=0;i<build.count;++i) {
         const struct scene_layer_triangle *t=&build.triangles[i];
         for(unsigned v=0;v<3;++v) {
             unsigned n=i*3+v;
             memcpy(vertices[n].position,t->vertex[v].position,sizeof(vertices[n].position));
             vertices[n].rgb24=t->color;vertices[n].light_q8=t->alpha;
-            indices[n]=n%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
             for(int a=0;a<3;++a) {
                 int x=t->vertex[v].position[a]+t->origin[a];
-                if(!i && !v) p->min[a]=p->max[a]=x;
-                if(x<p->min[a]) p->min[a]=x;
-                if(x>p->max[a]) p->max[a]=x;
+                if(!i && !v) minimum[a]=maximum[a]=x;
+                if(x<minimum[a]) minimum[a]=x;
+                if(x>maximum[a]) maximum[a]=x;
             }
         }
     }
     for(unsigned start=0;start<build.count;start+=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) {
         unsigned n=build.count-start;
         if(n>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) n=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
-        struct rf_gpu_graphics_resource *r=rf_gpu_graphics_scene_color_resource_create(w->graphics,
-            vertices+start*3,n*3,indices+start*3,n*3);
-        if(!r) {result=-1;goto done;}
-        p->resources[p->resource_count++]=r;
+        struct rf_gpu_graphics_resource **r=&p->resources[start/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES];
+        int grow=*r ? rf_gpu_graphics_scene_color_resource_update(w->graphics,*r,vertices+start*3,n*3) : 1;
+        if(grow<0) {result=-1;goto done;}
+        if(grow) {
+            unsigned capacity=allocated-start;
+            if(capacity>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES) capacity=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+            if(*r && rf_gpu_graphics_resource_destroy(w->graphics,*r)<0) {result=-1;goto done;}
+            *r=rf_gpu_graphics_scene_color_resource_create(w->graphics,
+                vertices+start*3,capacity*3,indices+start*3,capacity*3);
+            if(!*r || (capacity!=n && rf_gpu_graphics_scene_color_resource_update(
+                    w->graphics,*r,vertices+start*3,n*3)!=0)) {result=-1;goto done;}
+        }
     }
     for(unsigned first=0;first<build.count;) {
         unsigned end=first+1,chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
         const struct scene_layer_triangle *t=&build.triangles[first];
         while(end<build.count && end/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES==chunk &&
             !memcmp(t->origin,build.triangles[end].origin,sizeof(t->origin))) ++end;
-        struct rf_gpu_graphics_batch_item *item=&p->runs[p->run_count++];
+        struct rf_gpu_graphics_batch_item *item=&runs[run_count++];
         struct rf_gpu_graphics_draw *d=&item->draw;
         item->resource=p->resources[chunk];
         memcpy(d->translation_scale,t->origin,sizeof(t->origin));
@@ -359,11 +384,14 @@ static int scene_packet_prepare(struct scene_layer_workspace *w,struct scene_lay
         d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=RF_GPU_SCENE_WORLD;
         first=end;
     }
-    void *compact=realloc(p->runs,(size_t)p->run_count*sizeof(*p->runs));
-    if(compact) p->runs=compact;
-    p->triangles=build.count;w->retained_triangles+=build.count;result=0;
+    void *compact=realloc(runs,(size_t)run_count*sizeof(*runs));
+    if(compact) runs=compact;
+    free(p->runs);p->runs=runs;runs=NULL;p->run_count=run_count;
+    memcpy(p->min,minimum,sizeof(minimum));memcpy(p->max,maximum,sizeof(maximum));
+    w->retained_triangles+=allocated-p->allocated_triangles;
+    p->allocated_triangles=allocated;p->triangles=build.count;result=0;
 done:
-    free(vertices);free(indices);free(build.triangles);
+    free(vertices);free(indices);free(runs);free(build.triangles);
     if(result) scene_packet_clear(w,p);
     p->key=*key;p->valid=result?-1:1;
     return result;
