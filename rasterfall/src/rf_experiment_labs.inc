@@ -1,7 +1,8 @@
 /* Runtime-owned experiment registry. Spatial facts stay in Runtime Map. */
 enum rf_experiment_lab {
     RF_LAB_INFECTED_POSES, RF_LAB_INFECTED_WALK, RF_LAB_ACTOR_ACTIONS,
-    RF_LAB_ACTOR_WALK, RF_LAB_MODEL, RF_LAB_LIGHTING, RF_LAB_ELECTRONICS, RF_LAB_COUNT
+    RF_LAB_ACTOR_WALK, RF_LAB_MODEL, RF_LAB_LIGHTING, RF_LAB_ELECTRONICS,
+    RF_LAB_RIFLE_CYCLE, RF_LAB_COUNT
 };
 struct rf_experiment_definition {
     const char *id, *surface, *terminal, *view;
@@ -14,7 +15,8 @@ static const struct rf_experiment_definition rf_lab_definitions[RF_LAB_COUNT] = 
     {"AI WALK", "actor_walk_lab", "actor_walk_button", "actor-walk-lab", 0},
     {"RF MODEL", "rf_model_lab", "rf_model_lab_button", "model-lab", 1},
     {"GPU LIGHTING", "rf_light_lab", "rf_light_lab_button", "lighting-lab", 1},
-    {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0}
+    {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0},
+    {"RIFLE CYCLE", "rifle_cycle_lab", "rifle_cycle_lab_button", "rifle-cycle-lab", 1}
 };
 static struct {
     int requested[RF_LAB_COUNT],fan_rpm;
@@ -121,6 +123,20 @@ static void rf_equipment_camera(const struct rasterfall_session *session,struct 
         -1044-(station/6)*2100+(int)(cos(angle)*1400));
     camera->y=-430;camera->sy=(int)(-sin(angle)*1024);camera->cy=(int)(-cos(angle)*1024);
     camera->pitch_sy=0;camera->pitch_cy=1024;
+}
+
+static uint64_t rf_rifle_cycle_time(void)
+{
+    const char *sample=getenv("RF_RIFLE_CYCLE_TIME_MS");
+    return sample && sample[0] ? (uint64_t)(strtoul(sample,NULL,10)%50000)*1000 :
+        rf_labs.time_us[RF_LAB_RIFLE_CYCLE];
+}
+
+static void rf_rifle_cycle_camera(const struct rasterfall_session *session,struct camera *camera)
+{
+    rf_lab_camera_position(session,camera,"rifle_cycle_lab_area",0,8800);
+    camera->y=5300;camera->sy=0;camera->cy=-1024;
+    camera->pitch_sy=-512;camera->pitch_cy=887;
 }
 
 static void rf_electronics_camera(const struct rasterfall_session *session,struct camera *camera,const char *view)

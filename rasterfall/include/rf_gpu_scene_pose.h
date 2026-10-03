@@ -24,6 +24,7 @@ struct rf_gpu_scene_pose_v1 {
      * centering/basis and PRIMARY_GRIP alignment exactly once. */
     int weapon_valid, weapon;
     struct rasterfall_rigid_transform weapon_to_world;
+    int muzzle_flash, weapon_muzzle[3]; /* Frozen presentation flash only. */
     struct rasterfall_model_skin_palette_bone palette[RF_GPU_SCENE_POSE_BONES];
     struct {
         uint32_t resource_id, host_socket;
@@ -46,9 +47,18 @@ int rf_gpu_scene_pose_body(int body_id, uint64_t frame, uint64_t world,
 enum rf_gpu_scene_body_action {
     RF_GPU_SCENE_BODY_IDLE, RF_GPU_SCENE_BODY_WALK,
     RF_GPU_SCENE_BODY_RIFLE_IDLE, RF_GPU_SCENE_BODY_RIFLE_AIM,
-    RF_GPU_SCENE_BODY_WALK_FIRE
+    RF_GPU_SCENE_BODY_WALK_FIRE, RF_GPU_SCENE_BODY_WALK_RIFLE
 };
 /* Catalog previews share the gameplay action, grip solver and weapon source. */
+struct rf_gpu_scene_body_sample {
+    uint64_t lower_time_ms;
+    int action_time_ms, walk, armed, fire;
+    struct rasterfall_rifle_pose_input rifle;
+};
+/* Explicit presentation sample; no environment, gameplay or clock reads. */
+int rf_gpu_scene_pose_body_sample(int body_id, uint64_t frame, uint64_t world,
+    const struct rf_gpu_scene_body_sample *sample, int x, int y, int z,
+    int sy, int cy, struct rf_gpu_scene_pose_v1 *out);
 int rf_gpu_scene_pose_body_action(int body_id, uint64_t frame, uint64_t world,
     uint64_t time_ms, int action, int x, int y, int z, int cy,
     struct rf_gpu_scene_pose_v1 *out);

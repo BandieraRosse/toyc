@@ -31,7 +31,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 独立 GPU Scene 与直接来源预览 | [计划入口](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
 | GPU 实时光照与实验区 | [GPU 光照架构](architecture/gpu-lighting.md)、[实验与验证](guides/gpu-lighting.md) | `gpu/src/rf_gpu_lighting.inc`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_lighting_lab.ps1` |
 | CPU 静态世界光照与诊断 | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | world-light bake、normal consumer 与诊断 scope |
-| 角色、敌人与附件表现、肩托瞄准、双臂握点、反冲与回避叠加 | [角色表现](architecture/character-presentation.md)、[动画架构](architecture/animation-architecture.md) | character/enemy presentation adapters；`rasterfall_rifle_pose.c` 共享瞄准/避让/双臂 IK、modular additive、可选指节链、目录动作展示与 Scene 冻结姿态 |
+| 角色、敌人与附件表现、肩托瞄准与低位移动持枪、双臂握点、反冲与回避叠加 | [角色表现](architecture/character-presentation.md)、[动画架构](architecture/animation-architecture.md) | character/enemy presentation adapters；`rasterfall_rifle_pose.c` 共享瞄准/移动持枪/避让/双臂 IK、modular additive、可选指节链、目录动作展示与 Scene 冻结姿态 |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |
 | 动态敌人 Scene 身体、死亡与附属表现诊断 | [角色表现](architecture/character-presentation.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rf_gpu_scene_enemy.h`、`render/rasterfall_enemy_rig.inc`、`render/rasterfall_enemy_visual.inc`、`tools/gpu_scene_enemies.ps1`, `tools/gpu_scene_play.ps1 -Stage Combat`；特感及六种普通感染体同帧冻结、独立提取及共享 WORLD 深度 |
 | 普通感染体步态采样与来源拆分 | [角色表现](architecture/character-presentation.md)、[活动计划](plans/README.md) | `rasterfall_enemy_visual.h`、`rasterfall_infected_sample_motion`；显式历史和时间的只读采样接口 |
@@ -52,7 +52,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
-| Blender/RF 角色保真、单表面眼球、基础色贴图与材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、RFM2 v15/MAT1 与 clamp/mip 纹理；五台位动作及左右侧握持检查 |
+| Blender/RF 角色保真、单表面眼球、基础色贴图与材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、RFM2 v15/MAT1 与 clamp/mip 纹理；目录动作台位及左右侧握持检查 |
 | 武器真实尺寸、文件轴向与握点适配 | [武器模型适配](reference/weapon-model-adapter.md)、[动画架构](architecture/animation-architecture.md) | `rasterfall_calibration.c` 的物理长度、模型 adapter 与接触帧；CPU/Scene 共用转换 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 新角色包合同、材质能力与接入缺口审计 | [合同草案](reference/character-package-v1.md)、[资产工作流](guides/asset-pipeline.md#新角色接入前的能力清点) | `tools/assets/rfchar_audit.py`、`tools/assets/rfchar_material_contract.py`；源清点与材质元数据校验，不替代完整资产合同或游戏验收 |
@@ -67,6 +67,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 前哨站指挥桌互动与地图屏幕 | [Outpost V1](reference/outpost-hall-v1.md)、[运行时架构](architecture/runtime.md) | `src/rf_outpost_table.inc`、`src/rf_game_runtime.c`；地图文件预览、鼠标部署与暂停菜单回站 |
 | 南侧矩形露天实验区、展示开关与六类感染体 | [Outpost V1](reference/outpost-hall-v1.md)、[角色表现](architecture/character-presentation.md) | `assets/maps/outpost.map`、`src/rf_game_runtime.c`、`src/render/rf_outpost_showcase.inc`、`src/render/rf_gpu_scene_enemy_source.inc`；共享实机步态、12 台静止/原地移动展示及 3 条 Humanoid 往返步行线，CPU/Scene 共用冻结值 |
 | 东侧 AI 队友动作台位与六条往返线 | [Outpost V1](reference/outpost-hall-v1.md)、[角色表现](architecture/character-presentation.md) | `assets/maps/outpost.map`、`src/render/rf_outpost_actor_showcase.inc`、`src/render/rf_gpu_scene_actor_source.inc`；Block 全动作、Humanoid 已有动作与两种外观乘三级 AI 的往返展示 |
+| 三种 AI 模型的瞄准、射击与低位移动射击循环 | [循环区入口](guides/gpu-scene-fixture.md#三模型持枪循环区)、[实验区合同](reference/experiment-labs.md)、[角色表现](architecture/character-presentation.md) | `--gpu-normal-scene rifle-cycle-lab 0`、`src/render/rf_outpost_rifle_cycle.inc`、`tools/rifle_cycle_lab.py`；Block / Humanoid / RF-C01 同步角度、端点转身与往返路线 |
 | Research BX18 环境、设备与物理终端 | [Research V1](reference/research-renovation-v1.md)、[生成验收](guides/research-assets.md) | `tools/blender/generate_research.py`、`tools/research_round.py`；独立静态 RMESH 族、粗碰撞与房间镜头 |
 | Host 机柜、CPU / Memory 硬件展示 | [Host Rack V2](reference/host-rack-v2.md)、[地图与世界内容](architecture/maps-and-world-content.md) | `tools/host_rack_layout.py`、`rasterfall_prop.c`、`toy_platform.h`；八个候选柜、硬件选柜及逐槽实时展示 |
 | 临时校园套件与合成场景 | [校园套件规格](reference/temporary-campus-kit-v0.md)、[生成验收](guides/temporary-campus-kit-v0.md) | 视觉资产、拼接与离屏复现；历史审阅见 [阶段记录](archive/temporary-campus-kit-v0.md) |

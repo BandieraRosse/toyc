@@ -490,6 +490,14 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         }
     }
     scene_layer_effects(mesh,input->source_effects,camera,width,height);
+    mesh->emissive=1;
+    for(unsigned i=0;input->actor_presentations && i<input->actor_presentations->modular_count;++i) {
+        const struct rf_gpu_scene_pose_v1 *pose=&input->actor_presentations->modular[i];
+        if(!pose->weapon_valid || !pose->muzzle_flash)continue;
+        const int *p=pose->weapon_muzzle;
+        scene_layer_box(mesh,p[0]-32,p[0]+32,p[1]-32,p[1]+32,p[2]-32,p[2]+32,0xffdf8c,220);
+    }
+    mesh->emissive=0;
     mesh->layer=RF_GPU_SCENE_VIEWMODEL;
     if (input->show_viewmodel && player &&
         player->state!=TOY_GAME_ACTOR_DOWNED) {

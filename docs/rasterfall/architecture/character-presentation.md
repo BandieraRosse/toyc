@@ -26,7 +26,8 @@ actor 先完成 pose、IK、bounds 和 body Draw 冻结，再按相同 actor 顺
 不改变动画、附件或 actor 顺序，也不跨越 transparent/effects/viewmodel/overlay。
 
 动作适配固定为 lower/upper/additive layers：IDLE/MOVE 保持 lower idle/walk，FIRE 只替换 upper 为
-rifle fire；目标获取与 FIRE 通过共享 rifle sampler 驱动展示举枪。RFANIM authored 时间独立于 gameplay
+rifle fire；共享 rifle sampler 在 AK 移动时保持低位持枪，停止移动后的目标获取与 FIRE 驱动肩托瞄准。
+两种姿态都跟踪射击方向，共享双臂握点与反冲。RFANIM authored 时间独立于 gameplay
 回卷值，instance 累积 presentation time 以保持完整周期和短时 upper action 下的 lower phase。
 
 成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 瞄准/胸部避让/双臂 IK → 附件。
@@ -157,14 +158,23 @@ asset identity 与 transform；registry/cache 共享模型，碰撞由 map profi
 ## 开发 fixture
 
 `RF_MODEL_LAB` 的目录 body 预览由 `rf_outpost_actor_showcase.inc` 拥有可见性与独立时钟，
-`rf_gpu_scene_actor_source.inc` 冻结两份角色 palette；`rf_gpu_scene_pose_body` 按 body resource ID
+`rf_gpu_scene_actor_source.inc` 按动作台位冻结角色 palette；`rf_gpu_scene_pose_body` 按 body resource ID
 解析不可变 RFCHAR，并在独立 instance 中采样已有 RFANIM。预览没有 gameplay character ID、
 玩法 actor 或网络状态，不修改原材质颜色。隐藏和退出释放预览 CPU resource，GPU 资源沿 Scene
 owner 的既有退休规则管理。缺失资源显示安装错误，重新关闭/开启后重试，不用其他角色替代。
-`rf_gpu_scene_pose_body_action` 另外提供站立持枪、瞄准与行走射击，复用正式动作 composition、
+`rf_gpu_scene_pose_body_action` 另外提供站立持枪、瞄准、低位移动持枪与行走射击，复用正式动作 composition、
 共享肩托瞄准、双臂握点 IK 与武器 placement；`rf_gpu_scene_pose_body` 保留原站立/步行兼容入口。
 目录预览与游戏实例使用同一握持求值，不额外补偿枪械位置或手腕方向。目录预览仍不代表换弹、
 近战、倒地等全部玩法动作已经适配。
+
+`RIFLE CYCLE` 是 RF 模型区东侧的三模型循环展示，控制与时钟仍归统一实验区 runtime。
+`render/rf_outpost_rifle_cycle.inc` 用显式时间生成三条同步路线、朝向、仰俯/左右角度、瞄准/低位权重和反冲；
+采样不依赖前一帧，不生成玩法射击、目标或伤害。停止、暂停和性能独占沿用[实验区合同](../reference/experiment-labs.md)。
+Block 使用程序角色冻结值，独立保存瞄准角度和下身时间；Humanoid 使用现有 rifleman recipe 与只读 game 副本；
+RF-C01 使用 `rf_gpu_scene_pose_body_sample`，显式传入完整朝向、上下身时间和 rifle 输入，不读取诊断环境变量。
+两种骨骼角色共用正式 composition、握点求解和武器 placement。提取与重放不推进循环时钟；移动射击保留下身步态。
+枪口位置从 finalized weapon socket 求值并随 pose 冻结，闪光由 Scene EFFECTS 消费，不写入玩法特效事件或动态灯。
+目录资源由 RF 模型区与循环区共用，最后一个使用区关闭才释放 CPU resource；缺失 RF-C01 时另外两种仍可展示。
 
 共享 Humanoid 和 RF-C01 的持枪指节来自 action composition，可换衣物继续使用同一最终骨架；
 肘部平面同时考虑目标掌骨朝向。姿态正确性包含腕部与前臂的关系及指节包握，不能仅由挂点误差签收。
@@ -178,7 +188,8 @@ CPU 入口显式接收已采样结果，独立 Scene 来源冻结同一结果；
 东侧两个队友实验区用独立开关和展示描述提供 Block 全动作固定台位、Humanoid 站立/行走/射击固定台位，
 并在后两排展示其余职业与敌方枪手的装备组合；所有 Humanoid 台位只采样已有动作。
 另有两种外观乘三级 AI 的六条往返线。CPU 在角色展示阶段消费临时 actor 值；独立 Scene 把程序角色冻结为
-procedural item，并在只读的 game 副本上用现有 local pose 提取模块角色。真实 `game` 不增加展示 actor，
+procedural item，并在只读的 game 副本上用现有 local pose 提取模块角色。真实 `game` 不增加展示 actor。
+所有身体都消费展示 actor 经实验区转换后的世界坐标；程序 Block 不得直接提交台位局部坐标。
 展示身份不占 gameplay 槽位。不同区域的可见性和时钟由各自的 presentation owner 管理。
 Scene 在冻结后为本次实际插入展示副本的槽位写入同一展示时钟，不从已取模的玩法动作时间推算
 完整步态周期；慢帧、首次晚采样与后端切换仍与 CPU 使用相同相位。未标记的真实角色保留自身时钟。

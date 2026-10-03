@@ -56,20 +56,21 @@ python tools/rf_character_fidelity_report.py tmp/character-fidelity
 运行逐帧缓慢绕转并拉远，保存末帧及全部 native 日志。需要观察中间角度时分别捕获对应帧数。
 每次对照固定资产、显示、距离和帧数。退出码、`SCENE-NATIVE`、PPM 和哈希共同组成证据。
 
-`-Station 0/1/2/3/4` 分别观察静止、步行、持枪、瞄准、移动射击台位。
-0/1 默认冻结 bind，`-Animate` 启用动作采样；2/3/4 始终使用正式持枪动作与完整握点求解。
+`-Station 0/1/2/3/4/5` 分别观察静止、步行、持枪、瞄准、低位移动射击、低位移动持枪台位。
+0/1 默认冻结 bind，`-Animate` 启用动作采样；持枪台位始终使用正式动作与完整握点求解。
 `-Views right-quarter` 和 `right-side` 从另一侧观察扳机手，配合 `unlit` 检查深色手套与枪的接触。
 持枪台位将观察中心下移至胸部，建议用 `-Distances 900 -Displays lit -Frames 120` 检查上身与枪。
 各次固定帧捕获来自同一动作时钟，不通过截图位置反推游戏状态。
 `-AimPitch`、`-AimYaw` 与 `-AimDistanceRfu` 可复现方向和近距离收敛；参数及实际模型哈希进入 manifest。
 例如在台位 3 用 `-AimPitch 75 -AimYaw 45` 检查高举瞄准，用 `-AimDistanceRfu 1024` 检查两米目标。
-观察台位 2 的放低持枪、台位 4 的移动反冲，并从两侧检查袖口和手指；单张正面图不能签收穿模。
+观察台位 2 的放低持枪、台位 4 的移动反冲和台位 5 的低位移动；4/5 同样消费瞄准方向参数。
+从两侧检查袖口、手指和枪托；单张正面图不能签收穿模。
 
 进程环境开关用于定向复现：`RF_GPU_CHARACTER_DISPLAY` 对应上述显示名，
 `RF_GPU_CHARACTER_DEPTH` 为 `float/quantized/legacy`；`RF_GPU_CHARACTER_VIEW` 为
 `front/quarter/side/right-quarter/right-side/back/orbit`，`RF_GPU_CHARACTER_DISTANCE` 使用 RFU；
 `RF_GPU_CHARACTER_MODEL` 是预览模型绝对路径，`RF_GPU_CHARACTER_FREEZE=1` 冻结 bind，
-`RF_GPU_CHARACTER_REVERSE=1` 交换顺序，`RF_GPU_CHARACTER_STATION=0..4` 选择观察台位。它们不改变 Game/session。瞄准诊断对应 `RF_GPU_CHARACTER_AIM_PITCH`、`RF_GPU_CHARACTER_AIM_YAW` 与 `RF_GPU_CHARACTER_AIM_DISTANCE`。
+`RF_GPU_CHARACTER_REVERSE=1` 交换顺序，`RF_GPU_CHARACTER_STATION=0..5` 选择观察台位。它们不改变 Game/session。瞄准诊断对应 `RF_GPU_CHARACTER_AIM_PITCH`、`RF_GPU_CHARACTER_AIM_YAW` 与 `RF_GPU_CHARACTER_AIM_DISTANCE`。
 
 ## Blender 参考
 

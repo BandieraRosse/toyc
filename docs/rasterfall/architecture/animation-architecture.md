@@ -107,15 +107,19 @@ canonical owner 仍是 resource，后续 Pose Buffer V2 再消除此布局债。
 pose，不共享 instance mutable storage，也不进入武器 placement/双手 IK 的约束求值阶段。
 
 主动步枪由 `rasterfall_rifle_pose` 统一求值，CPU actor、目录台位和 Scene extraction 共用。
-输入是只读展示值：举枪权重、玩法 pitch、相对 yaw、目标距离、反冲和护甲余量。
-`rasterfall_rifle_sample` 以 combat simulation 毫秒推进举枪/放枪历史；目标获取或 FIRE 进入瞄准，
+输入是只读展示值：肩托瞄准与低位移动权重、玩法 pitch、相对 yaw、目标距离、反冲和护甲余量。
+`rasterfall_rifle_sample` 以 combat simulation 毫秒推进持枪历史；AK 移动时采用低位持枪，移动 FIRE
+保留低位并叠加反冲；停止移动后，目标获取或 FIRE 进入肩托瞄准，无目标时回到放低待机。
 重装填、切枪、失能和非存活状态退出。重复冻结同一时间不推进，actor/generation 变化重置历史。
 历史属于 renderer/local source；冻结帧只保存求值输入，重放不查询 Game 或更新采样器。
 
 RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
 
 1. 将有界仰俯和左右瞄准分配给脊柱、胸、颈和头，保留基础站姿、行走与回避。
-2. 根据右肩和骨架比例构建枪托接触，低持枪与瞄准连续过渡；护甲增加前方余量。
+2. 根据右肩和骨架比例构建枪托接触，待机、低位移动与瞄准连续过渡；护甲增加前方余量。
+   AK 平视瞄准接触下移到肩窝，低位移动在肋侧持枪；大幅仰俯时逐渐抬高低位支点以保持臂展和腕部约束。
+   低位移动的枪托进一步下沉并向身体内侧收拢，胸部减少侧转、颈部抵消基础侧身，让平视时的头朝向回正。
+   低位移动与肩托瞄准都跟踪射击方向，不把低位动作当作向地面压枪。
 3. 沿既有玩法眼高、pitch 与目标距离构造展示瞄准点，迭代枪口收敛、胸部代理避让与有限肩窝调整。
    肩窝调整最多 40 RFU；不缩放肢体。小于两米的目标采用两米视觉收敛下限，玩法射线保持原值。
 4. 在肩部支点叠加反冲，求扳机臂的完整 attachment IK，然后从最终 `WEAPON_R` 和
@@ -132,7 +136,7 @@ RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
 指节命名见[角色资产合同](../reference/character-assets.md)。当前使用原创基础动作和有界程序瞄准，
 没有导入商业动作包，也没有新增通用动画图或逐手指接触求解器。
 
-`--gpu-scene-pose-test` 覆盖低持枪、瞄准、举枪中间态、反冲、仰俯/左右角度、近距离目标与护甲，
+`--gpu-scene-pose-test` 覆盖低持枪、瞄准、移动持枪/射击及其过渡、反冲、仰俯/左右角度、近距离目标与护甲，
 并验证握点闭合、可达性、腕部方向、胸部代理间隙、指节复位、源模型尺度变化及 CPU/Scene 冻结一致性。
 骨骼 Euler 的整数精度使最终枪口存在小角度误差；测试与近景检查分别验证数值边界和视觉效果。
 表现求值不回写命中、伤害、actor 朝向或网络真值。

@@ -83,6 +83,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     struct rf_gpu_scene_local_source next={0};
     struct rf_gpu_scene_local_frame frame;
     struct scene_actor_fixture_clock fixture_clocks[TOY_GAME_MAX_ACTORS]={0};
+    struct outpost_rifle_cycle_sample cycle={0};
+    int cycle_slot=-1;
     const struct rasterfall_net *net=active_net;
     static const unsigned colors[RASTERFALL_NET_PLAYER_MAX]={
         RF_COLOR_AI_RIFLE,RF_COLOR_UI_PLAYER,0xD59BFF,0x66D9D9};
@@ -134,7 +136,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
      * preserves the normal local pose extractor without changing game truth. */
     const struct toy_game *pose_game=&game;
     if (active_session->world_id==RASTERFALL_WORLD_OUTPOST &&
-        (outpost_actor_actions_visible || outpost_actor_walk_visible)) {
+        (outpost_actor_actions_visible || outpost_actor_walk_visible || outpost_rifle_cycle_visible)) {
         memcpy(&scene_actor_fixture_game,&game,sizeof(game));
         pose_game=&scene_actor_fixture_game;
         for (int family=0;family<2;++family) {
@@ -158,7 +160,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                     if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
                     scene_actor_restore_fixture_history(&next,actor.actor_id);
                 } else {
-                    if (scene_actor_procedural(&actor,x,z,0,1024,0,
+                    if (scene_actor_procedural(&actor,actor.x,actor.z,actor.sy,actor.cy,0,
                             RF_COLOR_AI_RIFLE,1)<0) goto fail;
                     if (actor.animation.id==TOY_GAME_ANIM_DOWNED)
                         scene_enemy_capture.procedural[
@@ -191,12 +193,50 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                 }
             }
     }
+    if (active_session->world_id==RASTERFALL_WORLD_OUTPOST && outpost_rifle_cycle_visible) {
+        struct toy_game_actor actor={0};
+        outpost_rifle_cycle_sample_at(outpost_rifle_cycle_time_us/1000,&cycle);
+        actor.active=1;actor.actor_id=10100;actor.kind=TOY_GAME_ACTOR_AI;
+        actor.state=TOY_GAME_ACTOR_ALIVE;actor.character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+        actor.cy=cycle.cy;actor.sy=cycle.sy;actor.moving=cycle.body.walk;
+        actor.current_slot=0;actor.slots[0].weapon=TOY_GAME_WEAPON_AK;
+        actor.animation.id=cycle.body.fire?TOY_GAME_ANIM_FIRE:
+            cycle.body.walk?TOY_GAME_ANIM_MOVE:TOY_GAME_ANIM_IDLE;
+        actor.animation.time_ms=cycle.body.action_time_ms;
+        actor.combat_target.kind=-1;actor.pitch_cy=1024;
+        rasterfall_render_lab_point("rifle_cycle_lab_area",0,cycle.z,&actor.x,&actor.z);
+        cycle_slot=TOY_GAME_MAX_ACTORS-1;
+        while(cycle_slot>=0 && scene_actor_fixture_game.actors[cycle_slot].active)--cycle_slot;
+        if(cycle_slot<0 || rf_gpu_scene_local_created(&next,&actor)<0)goto fail;
+        scene_actor_fixture_game.actors[cycle_slot]=actor;
+        fixture_clocks[cycle_slot].actor_id=actor.actor_id;
+        fixture_clocks[cycle_slot].time_ms=cycle.body.lower_time_ms;
+        scene_actor_restore_fixture_history(&next,actor.actor_id);
+        actor.character_id=RASTERFALL_CHARACTER_NONE;
+        rasterfall_render_lab_point("rifle_cycle_lab_area",-3000,cycle.z,&actor.x,&actor.z);
+        if(scene_actor_procedural(&actor,actor.x,actor.z,actor.sy,actor.cy,0,RF_COLOR_AI_RIFLE,1)<0)goto fail;
+        struct rasterfall_procedural_humanoid_state *block=
+            &scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1].state;
+        block->aim_pitch_mdeg=cycle.body.rifle.pitch_mdeg;
+        block->aim_yaw_mdeg=cycle.body.rifle.yaw_mdeg;
+        block->moving=cycle.body.walk;
+        block->locomotion_time_ms=(int)(cycle.body.lower_time_ms%400);
+        block->muzzle_flash=cycle.body.fire && cycle.body.action_time_ms<65;
+    }
     if (rf_gpu_scene_local_freeze_presentation(&next,pose_game,camera,width,height,
             0,NULL,0,&frame)<0) goto fail;
     scene_actor_freeze_fixture_clocks(&frame,fixture_clocks);
+    if(cycle_slot>=0)for(unsigned i=0;i<frame.snapshot.actor_count;++i)
+        if(frame.snapshot.actors[i].source_slot==(unsigned)cycle_slot) {
+            frame.presentations[i].lower_walk=cycle.body.walk;
+            frame.presentations[i].rifle=cycle.body.rifle;
+        }
+    if(frame.snapshot.actor_count)frame.presentation=frame.presentations[0];
     for (unsigned i=0;i<frame.snapshot.actor_count;++i) {
         struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
         if (rf_gpu_scene_pose_extract_at(&frame,i,pose)<0) goto fail;
+        if(cycle_slot>=0 && frame.snapshot.actors[i].source_slot==(unsigned)cycle_slot)
+            pose->muzzle_flash=cycle.body.fire && cycle.body.action_time_ms<65;
         pose->identity.source_id=0x80000000u+i;
         pose->identity.generation=(unsigned)scene_enemy_capture.frame_id;
         scene_enemy_capture.modular_count++;
@@ -206,7 +246,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         unsigned begin=scene_enemy_capture.modular_count;
         static const int actions[]={RF_GPU_SCENE_BODY_IDLE,RF_GPU_SCENE_BODY_WALK,
             RF_GPU_SCENE_BODY_RIFLE_IDLE,RF_GPU_SCENE_BODY_RIFLE_AIM,
-            RF_GPU_SCENE_BODY_WALK_FIRE};
+            RF_GPU_SCENE_BODY_WALK_FIRE,RF_GPU_SCENE_BODY_WALK_RIFLE};
         for (unsigned i=0;i<sizeof(actions)/sizeof(actions[0]);++i) {
             if (scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS) goto fail;
             struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
@@ -225,6 +265,23 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             scene_enemy_capture.modular_count++;
         }
         if (outpost_model_lab_status>=0) outpost_model_lab_status=1;
+    }
+    if (active_session->world_id==RASTERFALL_WORLD_OUTPOST && outpost_rifle_cycle_visible &&
+        outpost_rifle_cycle_status>=0) {
+        int x,z;
+        if(scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS)goto fail;
+        struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+        rasterfall_render_lab_point("rifle_cycle_lab_area",3000,cycle.z,&x,&z);
+        if(rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_C01_V22H,
+            scene_enemy_capture.frame_id,scene_enemy_capture.world_generation,
+            &cycle.body,x,-900,z,cycle.sy,cycle.cy,pose)<0) {
+            outpost_rifle_cycle_status=-1;
+            __printf("RIFLE-CYCLE RF-C01 resource unavailable; toggle exhibit to retry\n");
+        } else {
+            pose->identity.source_id=0x91000000u;pose->identity.generation=1;
+            scene_enemy_capture.modular_count++;
+            outpost_rifle_cycle_status=1;
+        }
     }
     if (net && net->mode==RASTERFALL_NET_CLIENT) {
         for (int i=0;i<RASTERFALL_NET_PLAYER_MAX;++i) {

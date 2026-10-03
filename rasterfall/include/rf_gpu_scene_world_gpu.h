@@ -14,6 +14,7 @@ struct rf_gpu_scene_layers_input {
     struct rasterfall_electronics_frame electronics;
     const struct toy_game *source_game;
     const struct rasterfall_effects *source_effects;
+    const struct rf_gpu_scene_enemy_frame_v1 *actor_presentations;
     const struct rf_gpu_scene_world_render_frame_v1 *map;
     struct rasterfall_hud_state hud;
     int fps,paused,pause_selected,viewmodel_light,show_viewmodel;

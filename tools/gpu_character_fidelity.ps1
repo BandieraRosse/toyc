@@ -7,7 +7,7 @@ param(
     [ValidateSet('float','quantized','legacy')][string]$Depth='float',
     [ValidateRange(128,4096)][int[]]$Distances=@(384),
     [ValidateRange(1,36000)][int]$Frames=2,
-    [ValidateRange(0,4)][int]$Station=0,
+    [ValidateRange(0,5)][int]$Station=0,
     [ValidateRange(-75,75)][int]$AimPitch=0,
     [ValidateRange(-45,45)][int]$AimYaw=0,
     [ValidateRange(1024,131072)][int]$AimDistanceRfu=16384,

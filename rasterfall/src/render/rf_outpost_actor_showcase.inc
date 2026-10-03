@@ -36,10 +36,12 @@ static uint64_t outpost_actor_actions_time_us;
 static int outpost_model_lab_visible;
 static int outpost_model_lab_status;
 static uint64_t outpost_model_lab_time_us, outpost_model_lab_start_us;
+#include "rf_outpost_rifle_cycle.inc"
 
 void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us)
 {
-    if (!visible && outpost_model_lab_visible) rf_gpu_scene_pose_body_release();
+    if (!visible && outpost_model_lab_visible && !outpost_rifle_cycle_visible)
+        rf_gpu_scene_pose_body_release();
     if (!visible || !outpost_model_lab_visible) outpost_model_lab_status=0;
     if (!outpost_model_lab_visible || time_us<outpost_model_lab_start_us)
         outpost_model_lab_start_us=time_us;
@@ -120,6 +122,8 @@ static void outpost_actor_fixture(struct toy_game_actor *actor,int family,
     rasterfall_render_lab_point(id>=64 ? "actor_walk_lab_area" : "actor_actions_lab_area",
         x,z,&actor->x,&actor->z);
     actor->cy=direction*1024;
+    actor->pitch_cy=1024;
+    actor->combat_target.kind=-1;
     actor->current_slot=0;
     actor->slots[0].weapon=family ? TOY_GAME_WEAPON_AK :
         level==0 ? TOY_GAME_WEAPON_PISTOL :
@@ -158,7 +162,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
                     actor.x,actor.z,0,actor.sy,actor.cy,actor.slots[0].weapon,
                     0,actor.animation.id==TOY_GAME_ANIM_DOWNED,
                     actor.animation.id,actor.animation.time_ms,
-                    RASTERFALL_PROFESSION_NONE};
+                    RASTERFALL_PROFESSION_NONE,0,0,0,0};
                 profile.body_color=color;
                 profile.leg_color=0x25354A;
                 pixels+=rasterfall_render_procedural_humanoid(renderer,camera,
@@ -182,7 +186,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
             struct rasterfall_procedural_humanoid_state state={
                 actor.x,actor.z,0,actor.sy,actor.cy,actor.slots[0].weapon,
                 0,0,actor.animation.id,actor.animation.time_ms,
-                RASTERFALL_PROFESSION_NONE};
+                RASTERFALL_PROFESSION_NONE,0,0,0,0};
             profile.body_color=entry->level==2 ? RF_COLOR_AI_HEAVY :
                 entry->level==1 ? RF_COLOR_AI_RIFLE : RF_COLOR_AI_BASIC;
             profile.leg_color=0x25354A;

@@ -1,6 +1,6 @@
 # Outpost V1. RFU = metres * 512; single floor, open roof, static furniture.
 map version=1 units=rfu
-world min_x=-41472 max_x=41472 min_z=-55808 max_z=10752 room_limit=56064 attr.identity=outpost
+world min_x=-41472 max_x=60928 min_z=-55808 max_z=10752 room_limit=61184 attr.identity=outpost
 region id=outpost_safe kind=safe min_x=-41216 max_x=41216 min_z=-41472 max_z=10496 attr.legacy_index=0
 region id=perf_low_observation_safe kind=safe min_x=-37376 max_x=-35328 min_z=-51712 max_z=-41472
 region id=perf_enemy_observation_safe kind=safe min_x=-17920 max_x=-15872 min_z=-51712 max_z=-41472
@@ -923,3 +923,59 @@ render id=atmosphere_aerial kind=box min_x=-4980 max_x=-4940 min_z=2980 max_z=30
 object id=atmosphere_equipment kind=crate x=-5000 y=0 z=300 yaw=0 scale=900 attr.collision=component attr.lab=atmosphere_lab_area
 object id=atmosphere_equipment_small kind=crate x=-3900 y=0 z=300 yaw=0 scale=700 attr.collision=component attr.lab=atmosphere_lab_area
 render id=atmosphere_entry_label kind=sign min_x=-4350 max_x=-2700 min_z=994 max_z=994 height=1100 color=8CA6B4 attr.height2=1400 attr.style=1 attr.text=ATMOSPHERE_03 attr.facing=-z attr.lab=atmosphere_lab_area
+
+# BEGIN RIFLE CYCLE LAB (tools/rifle_cycle_lab.py)
+lab id=rifle_cycle_lab_area x=48640 z=-19968 width=10240 depth=9216 category=animation enclosure=open
+surface id=rifle_cycle_lab kind=ground min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=rifle_cycle_lab_col attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_paint kind=floor min_x=-5056 max_x=5056 min_z=-4544 max_z=4544 height=0 color=607985 attr.style=10 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_north_line kind=floor min_x=-5120 max_x=5120 min_z=4544 max_z=4608 height=0 color=79E8C5 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_z=-4544 height=0 color=79E8C5 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=rifle_cycle_lab_area
+assembly id=rifle_cycle_lab_button_assembly x=4352 y=0 z=3840 attr.lab=rifle_cycle_lab_area
+object id=rifle_cycle_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8 attr.collision=component
+object id=rifle_cycle_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+object id=rifle_cycle_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rifle_cycle_lab_button_assembly attr.length=8
+render id=rifle_cycle_lab_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rifle_cycle_lab_computer attr.assembly=rifle_cycle_lab_button_assembly
+render id=rifle_cycle_lab_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rifle_cycle_lab_button_assembly
+render id=rifle_cycle_lab_title kind=sign min_x=-2400 max_x=2400 min_z=-4208 max_z=-4188 height=500 color=79E8C5 attr.height2=1100 attr.style=2 attr.text=AI_RIFLE_CYCLE attr.facing=+z attr.texture_u=2 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_display kind=sign min_x=5700 max_x=8100 min_z=4278 max_z=4298 height=900 color=79E8C5 attr.height2=1500 attr.style=4 attr.text=EXHIBIT_OFF attr.facing=+z attr.texture_u=2 attr.channel=rifle_cycle_lab attr.lab=rifle_cycle_lab_area
+surface id=rifle_cycle_lab_area_site_ground kind=ground min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 material=78858A attr.collision_id=rifle_cycle_lab_area_site_ground_col attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_area_site_ground_col shape=flat min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 collision=false visible=false walkable=true color=78858A attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_fill_w kind=floor min_x=-8192 max_x=-5120 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_fill_e kind=floor min_x=5120 max_x=8192 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_fill_s kind=floor min_x=-5120 max_x=5120 min_z=-5120 max_z=-4608 height=0 color=78858A attr.style=12 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_fill_n kind=floor min_x=-5120 max_x=5120 min_z=4608 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_beacon_nw kind=sign min_x=-5520 max_x=-5160 min_z=4288 max_z=4568 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_area_beacon_nw_col shape=box min_x=-5520 max_x=-5160 min_z=4308 max_z=4548 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_beacon_ne kind=sign min_x=5160 max_x=5520 min_z=4288 max_z=4568 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_area_beacon_ne_col shape=box min_x=5160 max_x=5520 min_z=4308 max_z=4548 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_beacon_sw kind=sign min_x=-5520 max_x=-5160 min_z=-4568 max_z=-4288 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_area_beacon_sw_col shape=box min_x=-5520 max_x=-5160 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lab_area_beacon_se kind=sign min_x=5160 max_x=5520 min_z=-4568 max_z=-4288 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=rifle_cycle_lab_area
+collision id=rifle_cycle_lab_area_beacon_se_col shape=box min_x=5160 max_x=5520 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rifle_cycle_lab_area
+# Sample origin is local (0, 0); add local records with attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lane_0 kind=sign min_x=-4250 max_x=-1750 min_z=3300 max_z=3320 height=-650 color=79E8C5 attr.height2=-380 attr.style=4 attr.text=BLOCK_AIM_FIRE_MOVE attr.facing=+z attr.texture_u=2 attr.channel=rifle_cycle_lane_0 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lane_1 kind=sign min_x=-1250 max_x=1250 min_z=3300 max_z=3320 height=-650 color=79E8C5 attr.height2=-380 attr.style=4 attr.text=HUMANOID_AIM_FIRE_MOVE attr.facing=+z attr.texture_u=2 attr.channel=rifle_cycle_lane_1 attr.lab=rifle_cycle_lab_area
+render id=rifle_cycle_lane_2 kind=sign min_x=1750 max_x=4250 min_z=3300 max_z=3320 height=-650 color=79E8C5 attr.height2=-380 attr.style=4 attr.text=RF-C01_AIM_FIRE_MOVE attr.facing=+z attr.texture_u=2 attr.channel=rifle_cycle_lane_2 attr.lab=rifle_cycle_lab_area
+surface id=rifle_cycle_road_0 kind=ground min_x=40448 max_x=59904 min_z=-14848 max_z=-11776 height=0 material=485860 attr.collision_id=rifle_cycle_road_0_col
+collision id=rifle_cycle_road_0_col shape=flat min_x=40448 max_x=59904 min_z=-14848 max_z=-11776 height=0 collision=false visible=true walkable=true color=485860
+render id=rifle_cycle_road_0_paint kind=floor min_x=40448 max_x=59904 min_z=-14848 max_z=-11776 height=0 color=485860 attr.style=11
+surface id=rifle_cycle_road_1 kind=ground min_x=40448 max_x=59904 min_z=-28160 max_z=-25088 height=0 material=485860 attr.collision_id=rifle_cycle_road_1_col
+collision id=rifle_cycle_road_1_col shape=flat min_x=40448 max_x=59904 min_z=-28160 max_z=-25088 height=0 collision=false visible=true walkable=true color=485860
+render id=rifle_cycle_road_1_paint kind=floor min_x=40448 max_x=59904 min_z=-28160 max_z=-25088 height=0 color=485860 attr.style=11
+surface id=rifle_cycle_road_2 kind=ground min_x=56832 max_x=59904 min_z=-25088 max_z=-14848 height=0 material=485860 attr.collision_id=rifle_cycle_road_2_col
+collision id=rifle_cycle_road_2_col shape=flat min_x=56832 max_x=59904 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true color=485860
+render id=rifle_cycle_road_2_paint kind=floor min_x=56832 max_x=59904 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+surface id=rifle_cycle_site kind=ground min_x=37376 max_x=59904 min_z=-28160 max_z=-11776 height=0 material=78858A attr.collision_id=rifle_cycle_site_col
+collision id=rifle_cycle_site_col shape=flat min_x=37376 max_x=59904 min_z=-28160 max_z=-11776 height=0 collision=false visible=false walkable=true color=78858A
+region id=rifle_cycle_safe kind=safe min_x=40448 max_x=59904 min_z=-28160 max_z=-11776
+# END RIFLE CYCLE LAB

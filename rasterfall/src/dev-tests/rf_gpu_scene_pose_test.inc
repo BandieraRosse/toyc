@@ -7,7 +7,7 @@ static int scene_infected_test_triangle(void *context,
 {
     struct scene_infected_test_geometry *g=context;
     const struct rf_gpu_scene_enemy_point *p[3]={a,b,c};
-    if (g->fail) return -1;
+    if (g->fail || color>0xffffff) return -1;
     for (int k=0;k<3;++k) {
         g->hash=(g->hash^(unsigned)p[k]->x)*1099511628211ULL;
         g->hash=(g->hash^(unsigned)p[k]->y)*1099511628211ULL;
@@ -316,6 +316,63 @@ done:
     return failure!=0;
 }
 
+static int scene_rifle_cycle_test(void)
+{
+    struct outpost_rifle_cycle_sample previous={0},sample,repeat;
+    static struct rf_gpu_scene_pose_v1 pose,replay;
+    int seen[4]={0};
+#define CYCLE_CHECK(x) do { if(!(x)) { __printf("scene rifle cycle FAIL line=%d\n",__LINE__); return 1; } } while(0)
+    for(unsigned t=0;t<=50000;t+=100) {
+        outpost_rifle_cycle_sample_at(t,&sample);
+        outpost_rifle_cycle_sample_at(t,&repeat);
+        CYCLE_CHECK(!memcmp(&sample,&repeat,sizeof(sample)));
+        CYCLE_CHECK(sample.phase>=0 && sample.phase<4);
+        seen[sample.phase]=1;
+        CYCLE_CHECK(sample.z>=-2200 && sample.z<=2200 &&
+            sample.body.rifle.aim_milli+sample.body.rifle.hip_milli==1000);
+        CYCLE_CHECK(sample.body.rifle.pitch_mdeg>=-75000 && sample.body.rifle.pitch_mdeg<=75000 &&
+            sample.body.rifle.yaw_mdeg>=-50000 && sample.body.rifle.yaw_mdeg<=50000);
+        if(t) CYCLE_CHECK(abs(sample.z-previous.z)<=40 &&
+            sample.sy*previous.sy+sample.cy*previous.cy>900000);
+        if(sample.body.walk) CYCLE_CHECK(sample.body.fire);
+        if(sample.phase==3) CYCLE_CHECK(!sample.body.fire && !sample.body.walk);
+        previous=sample;
+    }
+    for(int phase=0;phase<4;++phase) CYCLE_CHECK(seen[phase]);
+    static const unsigned samples[]={1000,5835,6035,12000,15635,16335,24100,26000,38335,40635,49900};
+    for(unsigned i=0;i<sizeof(samples)/sizeof(samples[0]);++i) {
+        outpost_rifle_cycle_sample_at(samples[i],&sample);
+        repeat=sample;
+        CYCLE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_C01_V22H,91,7,
+            &sample.body,3000,-900,sample.z,sample.sy,sample.cy,&pose));
+        CYCLE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_C01_V22H,91,7,
+            &sample.body,3000,-900,sample.z,sample.sy,sample.cy,&replay));
+        CYCLE_CHECK(!memcmp(&pose,&replay,sizeof(pose)) && !memcmp(&sample,&repeat,sizeof(sample)) &&
+            pose.weapon_valid && pose.body_to_world.rotation[2]==sample.sy/1024.0);
+        /* Flash frames must also survive procedural color packing, including
+         * the new plot's world coordinates outside signed int16 range. */
+        struct rf_gpu_scene_procedural_item_v1 block={0};
+        struct scene_infected_test_geometry geometry={0};
+        block.state.x=45640;block.state.z=-19968+sample.z;
+        block.state.sy=sample.sy;block.state.cy=sample.cy;
+        block.state.weapon=TOY_GAME_WEAPON_AK;
+        block.state.animation_id=sample.body.fire?TOY_GAME_ANIM_FIRE:TOY_GAME_ANIM_IDLE;
+        block.state.animation_time_ms=sample.body.action_time_ms;
+        block.state.aim_pitch_mdeg=sample.body.rifle.pitch_mdeg;
+        block.state.aim_yaw_mdeg=sample.body.rifle.yaw_mdeg;
+        block.state.moving=sample.body.walk;
+        block.state.locomotion_time_ms=(int)(sample.body.lower_time_ms%400);
+        block.state.muzzle_flash=pose.muzzle_flash;
+        block.body_color=0x405060;block.leg_color=0x203040;
+        block.skin_color=0xc09070;block.hair_color=0x302010;
+        CYCLE_CHECK(!rf_gpu_scene_procedural_triangles(&block,scene_infected_test_triangle,&geometry) &&
+            geometry.count && geometry.count<=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
+    }
+    __printf("scene rifle cycle PASS phases/return/turn/continuous-position/frozen-direction/palette/replay\n");
+#undef CYCLE_CHECK
+    return 0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -329,6 +386,7 @@ int rf_gpu_scene_pose_logic_test(void)
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_independent_enemy_source_test());
     POSE_CHECK(!scene_grip_pose_test());
+    POSE_CHECK(!scene_rifle_cycle_test());
     POSE_CHECK(!scene_evasion_pose_test());
     POSE_CHECK(!scene_equipment_pose_test());
     POSE_CHECK(!scene_clothing_pose_test());

@@ -281,6 +281,7 @@ static int active_enemy_roll_sin, active_enemy_roll_cos = 1024;
 static int active_actor_lift;
 static int active_actor_roll_sin;
 static int active_actor_roll_cos = 1024;
+static int active_actor_aim_sin, active_actor_aim_cos=1024;
 static int active_gallery_lighting;
 static int active_disable_material_light;
 static int active_model_form_lighting = 1;
@@ -5021,6 +5022,11 @@ static void oriented_world_point(int x, int z, int sy, int cy,
 static void actor_world_point(int x, int z, int sy, int cy,
                               int lx, int ly, int lz, struct vec3 *out)
 {
+    /* Scoped upper-body pitch around the legacy shoulders. Legs keep their
+     * own locomotion transform; both weapon and arm primitives share this. */
+    int aim_y=-180+((ly+180)*active_actor_aim_cos+lz*active_actor_aim_sin)/1024;
+    lz=(-(ly+180)*active_actor_aim_sin+lz*active_actor_aim_cos)/1024;
+    ly=aim_y;
     oriented_world_point(x, z, sy, cy, lx, ly, lz,
         RASTERFALL_HUMAN_HEIGHT_RFU * 1000 /
         RASTERFALL_LEGACY_ACTOR_HEIGHT_RFU, out);
@@ -6922,7 +6928,7 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
         active_scene_light_override_q8 = -1;
         pixels += draw_actor_box(renderer, camera, x, z, sy, cy,
                                  163, 227, -395, -355, 420, 495,
-                                 RF_COLOR_UI_ACCENT);
+                                 0xE7C058); /* Leave room for per-face highlights. */
         active_scene_light_override_q8 = saved_flash_scene;
     }
     /* Two overlapping cuboids per arm.  Both segments remain in the arm's
@@ -8880,7 +8886,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 0, actor->state == TOY_GAME_ACTOR_DOWNED,
                 actor->animation.id, actor->animation.time_ms,
                 actor->character_id < 0 ? RASTERFALL_PROFESSION_NONE :
-                                          profile->profession_id
+                                          profile->profession_id, 0, 0, 0, 0
             };
             struct rasterfall_character_profile character = *profile;
             unsigned long command_start = renderer->cmd_count;
@@ -8950,7 +8956,8 @@ static int render_player_avatar(struct toy_renderer *renderer,
     const struct rasterfall_procedural_humanoid_state state = {
         x, z, active_actor_lift, sy, cy, weapon, muzzle_flash, downed,
         animation_id, animation_time_ms,
-        character_id < 0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id
+        character_id < 0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id,
+        0, 0, 0, 0
     };
     struct rasterfall_character_profile character = *profile;
     /* Preserve the legacy negative-ID body tint for existing callers. */
@@ -9100,6 +9107,11 @@ int rasterfall_render_procedural_humanoid(
     }
     x = state->x; z = state->z;
     sy = state->sy; cy = state->cy;
+    if (state->aim_yaw_mdeg) {
+        double angle=state->aim_yaw_mdeg*M_PI/180000.0;
+        int turned_sy=(int)(sy*cos(angle)+cy*sin(angle));
+        cy=(int)(cy*cos(angle)-sy*sin(angle));sy=turned_sy;
+    }
     weapon = state->weapon; muzzle_flash = state->muzzle_flash;
     downed = state->downed;
     animation_id = state->animation_id;
@@ -9112,6 +9124,12 @@ int rasterfall_render_procedural_humanoid(
             toy_game_weapon_info(weapon)->reload_ms :
             toy_game_animation_info(animation_id)->duration_ms, &pose);
     animation_lift = pose.body_lift;
+    if (state->moving) {
+        struct rasterfall_actor_pose lower;
+        rasterfall_actor_animation_sample(TOY_GAME_ANIM_MOVE,state->locomotion_time_ms,
+            toy_game_animation_info(TOY_GAME_ANIM_MOVE)->duration_ms,&lower);
+        pose.leg_swing=lower.leg_swing;animation_lift=lower.body_lift;
+    }
     pose_x = x + sy * pose.forward_shift / 1024;
     pose_z = z + cy * pose.forward_shift / 1024;
     active_actor_roll_sin = 0;
@@ -9173,9 +9191,14 @@ int rasterfall_render_procedural_humanoid(
     }
     if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
         animation_id == TOY_GAME_ANIM_REVIVE) {
+        int saved_aim_sin=active_actor_aim_sin,saved_aim_cos=active_actor_aim_cos;
+        double angle=state->aim_pitch_mdeg*M_PI/180000.0;
+        active_actor_aim_sin=(int)(sin(angle)*1024);
+        active_actor_aim_cos=(int)(cos(angle)*1024);
         pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
                                       weapon, muzzle_flash, animation_id,
                                       animation_time_ms, body_color);
+        active_actor_aim_sin=saved_aim_sin;active_actor_aim_cos=saved_aim_cos;
     }
     /* Give the backing and both strokes separate surfaces. They previously
      * shared z=148, so equal-depth triangles fought over the cross. */
@@ -9205,7 +9228,7 @@ int rasterfall_render_procedural_humanoid(
         active_scene_light_override_q8 = -1;
         pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
                               -560 + active_actor_lift, -430 + active_actor_lift,
-                              pose_z - 120, pose_z + 120, RF_COLOR_UI_ACCENT);
+                              pose_z - 120, pose_z + 120, 0xE7C058);
         active_scene_light_override_q8 = saved_flash_scene;
     }
     active_actor_lift = saved_lift;
@@ -9229,6 +9252,10 @@ int rf_gpu_scene_procedural_triangles(const struct rf_gpu_scene_procedural_item_
         item->state.cy < -1024 || item->state.cy > 1024 ||
         item->state.animation_id<0 || item->state.animation_id>=TOY_GAME_ANIM_COUNT ||
         item->state.animation_time_ms<0 || item->state.animation_time_ms>60000 ||
+        item->state.aim_pitch_mdeg < -75000 || item->state.aim_pitch_mdeg > 75000 ||
+        item->state.aim_yaw_mdeg < -50000 || item->state.aim_yaw_mdeg > 50000 ||
+        item->state.moving<0 || item->state.moving>1 ||
+        item->state.locomotion_time_ms<0 || item->state.locomotion_time_ms>60000 ||
         item->state.profession_id<0 || item->state.profession_id>=RASTERFALL_PROFESSION_COUNT ||
         item->state.weapon < -1 || item->state.weapon>=TOY_GAME_WEAPON_COUNT ||
         item->scene_light_q8<0 || item->scene_light_q8>384 ||

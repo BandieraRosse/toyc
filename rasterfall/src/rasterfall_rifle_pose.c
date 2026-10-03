@@ -76,22 +76,30 @@ static double chest_clearance(const struct rasterfall_model_asset *p,
 void rasterfall_rifle_sample(const struct toy_game_actor *a,unsigned tick,
     struct rasterfall_rifle_history *h,struct rasterfall_rifle_pose_input *out)
 {
-    int aiming,step;
+    int aiming,hip,ready,step;
     memset(out,0,sizeof(*out));
     if(!a || !h)return;
-    aiming=(a->combat_target.kind>=0 || a->animation.id==TOY_GAME_ANIM_FIRE) &&
-        !a->reloading && !a->weapon_switch_timer_ms && !a->control_disabled &&
+    ready=!a->reloading && !a->weapon_switch_timer_ms && !a->control_disabled &&
         a->state==TOY_GAME_ACTOR_ALIVE;
+    hip=ready && a->moving && a->current_slot>=0 &&
+        a->current_slot<TOY_GAME_WEAPON_SLOTS &&
+        a->slots[a->current_slot].weapon==TOY_GAME_WEAPON_AK;
+    aiming=ready && !hip &&
+        (a->combat_target.kind>=0 || a->animation.id==TOY_GAME_ANIM_FIRE);
     if(!h->valid || h->actor_id!=a->actor_id || h->generation!=a->combat_generation) {
         memset(h,0,sizeof(*h));h->valid=1;h->actor_id=a->actor_id;
         h->generation=a->combat_generation;h->tick=tick;
         h->aim_milli=aiming?1000:0;
+        h->hip_milli=hip?1000:0;
     }
     /* Simulation milliseconds, not extraction calls. Repeated freeze is idempotent. */
     step=(int)(tick-h->tick);if(step<0)step=0;else if(step>250)step=250;
     if(aiming)h->aim_milli+=(1000-h->aim_milli<step*4?1000-h->aim_milli:step*4);
     else h->aim_milli-=(h->aim_milli<step*3?h->aim_milli:step*3);
+    if(hip)h->hip_milli+=(1000-h->hip_milli<step*4?1000-h->hip_milli:step*4);
+    else h->hip_milli-=(h->hip_milli<step*3?h->hip_milli:step*3);
     h->tick=tick;out->aim_milli=h->aim_milli;
+    out->hip_milli=h->hip_milli;
     out->armor_milli=(a->character_id==RASTERFALL_CHARACTER_SQUAD_B_HEAVY || a->character_id==RASTERFALL_CHARACTER_GUNNER_ELITE)?1000:0;
     out->pitch_mdeg=(int)(atan2(a->pitch_sy,a->pitch_cy>0?a->pitch_cy:1024)*180000/M_PI);
     if(a->animation.id==TOY_GAME_ANIM_FIRE && a->animation.time_ms<180) {
@@ -112,7 +120,7 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
     struct rasterfall_weapon_socket_transform stock,muzzle,grips[2];
     struct rasterfall_model_attachment_transform target,actual,right;
     double weapon_r[9],origin[3],anchor[3],offset[3],units,world_units;
-    double aim,pitch,yaw,shoulder_width,armor,aim_target[3],forward[3];
+    double aim,hip,track,rest,pitch,yaw,shoulder_width,armor,aim_target[3],forward[3];
     int shoulders[2],upper[2],fore[2],hand[2];
     struct rasterfall_rifle_diagnostics result={0};
     if(!instance || !input || character_scale<=0)return -1;
@@ -133,21 +141,31 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
     }
     units=p->position_scale/512.0;world_units=units*1000/character_scale;
     aim=clamp(input->aim_milli/1000.0,0,1);armor=clamp(input->armor_milli/1000.0,0,1);
-    pitch=clamp(input->pitch_mdeg/1000.0,-75,75)*aim-(1-aim)*30;
-    yaw=clamp(input->yaw_mdeg/1000.0,-50,50)*aim+10*(1-aim);
+    hip=weapon==TOY_GAME_WEAPON_AK?clamp(input->hip_milli/1000.0,0,1):0;
+    /* Cross-fade height independently of target tracking. A moving shot must
+     * not raise the weapon back to the shoulder or point it at the ground. */
+    if(aim+hip>1) { double total=aim+hip;aim/=total;hip/=total; }
+    track=aim+hip;rest=1-track;
+    pitch=clamp(input->pitch_mdeg/1000.0,-75,75)*track-rest*30;
+    yaw=clamp(input->yaw_mdeg/1000.0,-50,50)*track+10*rest;
+    double level=1-fabs(pitch)/75;
     /* Authored shoulder-aim base, distributed through torso/neck. The weapon
      * itself is aimed in character space after all local additive layers. */
-    add_role(p,RASTERFALL_HUMANOID_SPINE,(int)(-pitch*.18),(int)(-12+yaw*.45),0);
-    add_role(p,RASTERFALL_HUMANOID_CHEST,(int)(-pitch*.42),(int)(-23+yaw*.55),0);
-    add_role(p,RASTERFALL_HUMANOID_NECK,(int)(-pitch*.15+16*aim),(int)(35*aim),0);
+    add_role(p,RASTERFALL_HUMANOID_SPINE,(int)(-pitch*.18),(int)(-12+2*hip*level+yaw*.45),0);
+    add_role(p,RASTERFALL_HUMANOID_CHEST,(int)(-pitch*.42),(int)(-23+2*hip*level+yaw*.55),0);
+    add_role(p,RASTERFALL_HUMANOID_NECK,(int)(-pitch*.15+16*aim),(int)(35*aim+(35-4*level)*hip),0);
     add_role(p,RASTERFALL_HUMANOID_HEAD,(int)(-pitch*.25),0,(int)(12*aim));
     if(rasterfall_model_instance_update_bones(instance)<0)return -1;
     shoulder_width=fabs((double)p->bones[upper[1]].rest_x-p->bones[upper[0]].rest_x);
     /* Contact lies on the front of the firing-side shoulder, with a bounded
      * armor allowance. It follows torso motion rather than the old hand. */
-    offset[0]=shoulder_width*(.18+.10*fabs(pitch)/75+.08*(1-aim));
-    offset[1]=(20*aim-clamp(pitch,0,75)*.65-(1-aim)*33)*units;
-    offset[2]=(16+armor*12)*units;
+    offset[0]=shoulder_width*(.18+.10*fabs(pitch)/75+.08*rest-.04*hip*level);
+    /* AK shoulder contact sits below the shoulder joint; the moving hold
+     * rests beside the lower ribs. Preserve the other weapon profiles. */
+    double shoulder_height=20-(weapon==TOY_GAME_WEAPON_AK?28*level:0);
+    offset[1]=(shoulder_height*track-clamp(pitch,0,75)*.65-rest*33-
+        hip*105*level)*units;
+    offset[2]=(16+armor*12+hip*18*level)*units;
     vector(p->bone_transforms[shoulders[1]].rotation,offset,anchor);
     for(int i=0;i<3;++i)anchor[i]+=p->bone_transforms[upper[1]].position[i];
     rotation(-pitch,yaw,weapon_r);
@@ -165,8 +183,9 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
         vector(weapon_r,local_stock,offset);
         for(int i=0;i<3;++i)origin[i]=anchor[i]-offset[i];
         double clearance=chest_clearance(p,weapon,origin,weapon_r,units,world_units,shoulder_width,armor,forward);
-        if(clearance<2) {
-            double shift=clamp(2-clearance,0,12);
+        double margin=2+hip*2*clamp(level*2,0,1);
+        if(clearance<margin) {
+            double shift=clamp(margin-clearance,0,12);
             for(int i=0;i<3;++i)anchor[i]+=forward[i]*shift*units;
             result.clearance_shift_rfu+=shift;
             vector(weapon_r,local_stock,offset);
@@ -203,12 +222,12 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
                 result.reach_shift_rfu+=shift/units;
             }
         }
-        if(aim>0) {
+        if(track>0) {
             double m[3],v[3];vector(weapon_r,local_muzzle,m);
             for(int i=0;i<3;++i)v[i]=aim_target[i]-origin[i]-m[i];
             double converge_pitch=atan2(v[1],sqrt(v[0]*v[0]+v[2]*v[2]))*180/M_PI;
             double converge_yaw=atan2(v[0],v[2])*180/M_PI;
-            rotation(-pitch-aim*(converge_pitch-pitch),yaw+aim*(converge_yaw-yaw),weapon_r);
+            rotation(-pitch-track*(converge_pitch-pitch),yaw+track*(converge_yaw-yaw),weapon_r);
         }
     }
     /* Recoil rotates around shoulder contact, then both hands follow. */
@@ -233,7 +252,8 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
         quaternion(grips[side].rotation,g);multiply(weapon_r,g,target.rotation);
         quaternion(p->attachments[socket].local_rotation,local_socket);transpose(local_socket,inverse);
         multiply(target.rotation,inverse,palm);
-        for(int i=0;i<3;++i)pole[i]=-weapon_r[i*3+1]+(side?.35:-.30)*palm[i*3];
+        for(int i=0;i<3;++i)pole[i]=-(1-.7*hip)*weapon_r[i*3+1]+
+            (side?(.35+hip*2):(-.30-hip*2))*palm[i*3];
         pole[0]+=side?-.25:.18;
         p->attachment_ik_previous_pole_valid=0;
         if(rasterfall_model_solve_two_bone_attachment_pose(p,p->bones[upper[side]].name,

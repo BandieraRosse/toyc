@@ -7,11 +7,12 @@ struct rasterfall_model_instance;
 struct rasterfall_rifle_pose_input {
     int aim_milli, pitch_mdeg, yaw_mdeg, recoil_milli;
     int armor_milli, target_distance_rfu;
+    int hip_milli; /* Low moving hold; tracks the same target as shoulder aim. */
 };
 struct rasterfall_rifle_history {
     int valid, actor_id;
     unsigned generation, tick;
-    int aim_milli;
+    int aim_milli, hip_milli;
 };
 struct rasterfall_rifle_diagnostics {
     double stock_target[3], stock_actual[3], muzzle_direction[3];

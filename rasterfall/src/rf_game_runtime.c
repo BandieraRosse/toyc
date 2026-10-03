@@ -3073,7 +3073,8 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
                     "GPU SCENE REQUIRED" :
                 rf_showcase_near-1==RF_LAB_ELECTRONICS ? "E  OFF / 600 / 1200 / 1800 RPM" :
                 rf_labs.requested[rf_showcase_near-1] ? "E  DISABLE EXHIBIT" : "E  ENABLE EXHIBIT", 0xC7F2EE);
-        if (rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0)
+        if ((rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0) ||
+            (rf_labs.requested[RF_LAB_RIFLE_CYCLE] && rasterfall_render_outpost_rifle_cycle_status()<0))
             rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
                 "MODEL UNAVAILABLE - CHECK ASSET INSTALL",0xFFAA66);
         if (!runtime->rts_active && !runtime->session->shop_open &&
@@ -4067,6 +4068,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab") ||
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+               !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
                !strcmp(options.gpu_normal_view,"equipment-lab") ||
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
@@ -4153,6 +4155,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "equipment-lab")) {
             rf_equipment_camera(&session,&camera);
             rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
+        } else if (!strcmp(options.gpu_normal_view, "rifle-cycle-lab")) {
+            rf_lab_camera_position(&session,&camera,"rifle_cycle_lab_area",0,6000);
+            camera.y=0;camera.sy=0;camera.cy=-1024;
+            camera.pitch_sy=0;camera.pitch_cy=1024;
+            rf_labs.requested[RF_LAB_RIFLE_CYCLE]=1;
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
             rf_lab_camera_position(&session,&camera,"rf_light_lab_area",1252,4826);camera.y=2300;camera.cy=-1024;
             camera.pitch_sy=-320;camera.pitch_cy=973;
@@ -5971,6 +5978,9 @@ startup_again:
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"equipment-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
                 rf_equipment_camera(&session,&game_runtime.camera);
+            if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"rifle-cycle-lab") &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_rifle_cycle_camera(&session,&game_runtime.camera);
             if (options.gpu_normal_view &&
                 (!strcmp(options.gpu_normal_view,"character-lab") ||
                  !strcmp(options.gpu_normal_view,"walk-lab") ||
@@ -6008,7 +6018,7 @@ startup_again:
                     const char *distance=getenv("RF_GPU_CHARACTER_DISTANCE");
                     const char *station_text=getenv("RF_GPU_CHARACTER_STATION");
                     int station=station_text ? atoi(station_text) : 0;
-                    if(station<0 || station>4)station=0;
+                    if(station<0 || station>5)station=0;
                     double angle=!strcmp(view,"side") ? 1.5707963267948966 :
                         !strcmp(view,"back") ? 3.141592653589793 :
                         !strcmp(view,"quarter") ? 0.7853981633974483 :
@@ -6113,6 +6123,11 @@ startup_again:
                 rf_lab_effective(RF_LAB_MODEL,session.world_id,
                     rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
                 rf_labs.time_us[RF_LAB_MODEL]);
+            rasterfall_render_set_outpost_rifle_cycle(
+                rf_lab_effective(RF_LAB_RIFLE_CYCLE,session.world_id,
+                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                options.gpu_normal_view && !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ?
+                    rf_rifle_cycle_time() : rf_labs.time_us[RF_LAB_RIFLE_CYCLE]);
             game_runtime.render_context.character_cpu_reference =
                 !options.gpu_character_skinning ||
                 (options.gpu_character_vertex_diff && rendered_frames + 1 == 30);
@@ -6349,6 +6364,7 @@ startup_again:
                     }
                     if (options.gpu_scene_independent_preview) {
                         layers.source_game=&game;layers.source_effects=&effects;
+                        layers.actor_presentations=&enemy_render;
                         layers.fixed_lighting=rf_perf_lab.running && !rf_perf_lab.interference;
                         layers.flashlight=!layers.fixed_lighting && rf_render_terminal.flashlight;
                         layers.lighting_lab=rf_lab_effective(RF_LAB_LIGHTING,session.world_id,
@@ -6369,6 +6385,7 @@ startup_again:
                               (!strcmp(options.gpu_normal_view,"character-lab") ||
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+                               !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
                                !strcmp(options.gpu_normal_view,"equipment-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||

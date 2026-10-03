@@ -48,6 +48,8 @@ struct rasterfall_procedural_humanoid_state {
     int downed;
     int animation_id, animation_time_ms;
     int profession_id; /* rasterfall_profession_id; presentation identity, default NONE. */
+    /* Optional upper aim and independent lower phase for presentation fixtures. */
+    int aim_pitch_mdeg, aim_yaw_mdeg, moving, locomotion_time_ms;
 };
 
 /* Uses the bound render context and existing serial primitive helpers.
@@ -188,6 +190,8 @@ void rasterfall_render_set_outpost_walk(int visible,uint64_t time_us);
 void rasterfall_render_set_outpost_actor_actions(int visible,uint64_t time_us);
 void rasterfall_render_set_outpost_actor_walk(int visible,uint64_t time_us);
 void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us);
+void rasterfall_render_set_outpost_rifle_cycle(int visible,uint64_t time_us);
+int rasterfall_render_outpost_rifle_cycle_status(void);
 int rasterfall_render_outpost_model_lab_status(void);
 void rasterfall_render_set_edge_pass(int enabled);
 /* Presentation/diagnostic switch. Runtime default is Lighting V1 enabled. */
