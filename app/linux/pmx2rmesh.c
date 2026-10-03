@@ -912,7 +912,7 @@ audit_fail:
                  fixed(bones[i].z, scale), bones[i].flags, bones[i].depth);
     if (copy_textures(argv[1], argv[3], textures, texture_count) < 0) goto invalid;
     out = __openat(AT_FDCWD, argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0644); if (out < 0) { __printf("pmx2rmesh: cannot create output\n"); goto invalid; }
-    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, RASTERFALL_MODEL_VERSION); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16); put_u32(header_out + 60, 64 + primitive_count * 16 + material_count * RASTERFALL_MODEL_MATERIAL_BYTES + vertex_count * RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE + index_count * 4);
+    __memset(header_out, 0, sizeof(header_out)); header_out[0] = 'R'; header_out[1] = 'F'; header_out[2] = 'M'; header_out[3] = '2'; put_u32(header_out + 4, 14 /* legacy PMX layout */); put_u32(header_out + 8, vertex_count); put_u32(header_out + 12, index_count); put_u32(header_out + 16, scale); put_u32(header_out + 44, primitive_count); put_u32(header_out + 48, material_count); put_u32(header_out + 52, 64); put_u32(header_out + 56, 64 + primitive_count * 16); put_u32(header_out + 60, 64 + primitive_count * 16 + material_count * RASTERFALL_MODEL_MATERIAL_BYTES + vertex_count * RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE + index_count * 4);
     if (write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     index_base = 0; for (i = 0; i < material_count; i++) if (materials[i].index_count) { __memset(record, 0, sizeof(record)); put_u32(record, index_base); put_u32(record + 4, materials[i].index_count); put_u32(record + 8, i); if (write_all(out, record, RASTERFALL_MODEL_PRIMITIVE_BYTES) < 0) { __close(out); goto invalid; } index_base += materials[i].index_count; }
     for (i = 0; i < material_count; i++) {
@@ -953,7 +953,7 @@ audit_fail:
     if (__lseek(out, 0, SEEK_SET) < 0 || write_all(out, header_out, sizeof(header_out)) < 0) { __close(out); goto invalid; }
     __close(out);
     free_bones(bones, diagnostics.bone_count);
-    __munmap(file, size); __printf("pmx2rmesh: %s -> %s (%d vertices, %d triangles, %d materials, %d bones, RFM2 v%d)\n", argv[1], argv[2], vertex_count, index_count / 3, material_count, diagnostics.bone_count, RASTERFALL_MODEL_VERSION); return 0;
+    __munmap(file, size); __printf("pmx2rmesh: %s -> %s (%d vertices, %d triangles, %d materials, %d bones, RFM2 v%d)\n", argv[1], argv[2], vertex_count, index_count / 3, material_count, diagnostics.bone_count, 14 /* legacy PMX layout */); return 0;
 invalid:
     if (bones) free_bones(bones, diagnostics.bone_count);
     __munmap(file, size); __printf("pmx2rmesh: unsupported or truncated PMX\n"); return 1;

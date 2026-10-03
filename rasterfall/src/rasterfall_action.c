@@ -287,6 +287,39 @@ static int apply_layer(struct rasterfall_model_asset *pose,
     return 0;
 }
 
+/* Optional canonical finger chains remain outside the 21 body roles. Curl
+ * around the bind-space palm normal, mirrored for each hand. The trigger
+ * index stays extended at its base; the other fingers wrap the pistol grip.
+ * Missing chains on legacy resources retain their authored rigid hands. */
+static void apply_rifle_fingers(struct rasterfall_model_asset *pose)
+{
+    static const char *digits[] = {"0", "1", "2", "3", "thumb"};
+    for (int side=0;side<2;++side) {
+        int hand=rasterfall_model_humanoid_bone(pose,side ?
+            RASTERFALL_HUMANOID_RIGHT_HAND : RASTERFALL_HUMANOID_LEFT_HAND);
+        for (int digit=0;digit<5;++digit) {
+            char name[40]; int parent=hand;
+            for (int joint=0;joint<2;++joint) {
+                int bone,angle;
+                snprintf(name,sizeof(name),"RF_%s_FINGER_%s_%d",
+                    side ? "R" : "L",digits[digit],joint+1);
+                for (bone=0;bone<(int)pose->bone_count;++bone)
+                    if (!strcmp(pose->bones[bone].name,name)) break;
+                if (bone==(int)pose->bone_count || pose->bones[bone].parent!=parent) break;
+                angle=digit==4 ? (joint ? 35 : 25) :
+                    side && digit==0 ? (joint ? 55 : 12) :
+                    (joint ? 65 : 55);
+                pose->bones[bone].rotate_z=side ? angle : -angle;
+                /* Thumb opposition brings it around the other side of the
+                 * grip, independently of the index finger's trigger curl. */
+                if (digit==4 && !joint)
+                    pose->bones[bone].rotate_y=side ? -25 : 25;
+                parent=bone;
+            }
+        }
+    }
+}
+
 int rasterfall_action_compose(struct rasterfall_model_instance *instance,
     const struct rasterfall_action_composition *composition)
 {
@@ -305,6 +338,8 @@ int rasterfall_action_compose(struct rasterfall_model_instance *instance,
         apply_layer(pose, &composition->secondary_additive,
                     RASTERFALL_ACTION_LAYER_ADDITIVE,
                     composition->secondary_additive_weight_milli) < 0) return -1;
+    if (composition->layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].clip)
+        apply_rifle_fingers(pose);
     return rasterfall_model_instance_update_bones(instance);
 }
 
@@ -322,6 +357,10 @@ int rasterfall_action_apply(struct rasterfall_model_instance *instance,
     return rasterfall_action_compose(instance, &composition);
 }
 
+static void pipeline_matrix_multiply(const double a[9],const double b[9],double out[9]);
+static void pipeline_quaternion_matrix(const float q[4],double out[9]);
+static void pipeline_matrix_transpose(const double in[9],double out[9]);
+
 int rasterfall_action_weapon_target_debug(
     const struct rasterfall_model_instance *instance, int weapon,
     struct rasterfall_action_weapon_targets *targets)
@@ -329,30 +368,35 @@ int rasterfall_action_weapon_target_debug(
     struct rasterfall_model_attachment_transform grip_target;
     struct rasterfall_weapon_socket_transform grip, foregrip;
     const struct rasterfall_model_asset *pose;
+    double primary_rotation[9],inverse_primary[9],weapon_rotation[9],units;
     int i;
     if (!instance || !targets) return -1;
     pose = rasterfall_model_instance_final_pose(instance);
-    if (!pose || rasterfall_model_instance_attachment_transform(instance,
+    if (!pose || !pose->position_scale || rasterfall_model_instance_attachment_transform(instance,
             RASTERFALL_ATTACHMENT_WEAPON_R, &grip_target) < 0 ||
         rasterfall_weapon_socket_transform(weapon,
             RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP, &grip) < 0 ||
         rasterfall_weapon_socket_transform(weapon,
             RASTERFALL_WEAPON_SOCKET_FOREGRIP, &foregrip) < 0) return -1;
     memset(targets, 0, sizeof(*targets));
+    units=pose->position_scale/512.0;
+    pipeline_quaternion_matrix(grip.rotation,primary_rotation);
+    pipeline_matrix_transpose(primary_rotation,inverse_primary);
+    pipeline_matrix_multiply(grip_target.rotation,inverse_primary,weapon_rotation);
     for (i = 0; i < 9; i++)
-        targets->weapon_transform[i] = grip_target.rotation[i];
+        targets->weapon_transform[i] = weapon_rotation[i];
     for (i = 0; i < 3; i++) {
         int row;
         targets->right_hand_target[i] = grip_target.position[i];
         targets->weapon_transform[9+i] = grip_target.position[i];
         for (row = 0; row < 3; row++) {
-            targets->weapon_transform[9+i] -= grip_target.rotation[i*3+row] *
-                ((int *)&grip.position)[row];
+            targets->weapon_transform[9+i] -= weapon_rotation[i*3+row] *
+                ((int *)&grip.position)[row]*units;
         }
         targets->left_hand_target[i] = targets->weapon_transform[9+i];
         for (row = 0; row < 3; row++)
-            targets->left_hand_target[i] += grip_target.rotation[i*3+row] *
-                ((int *)&foregrip.position)[row];
+            targets->left_hand_target[i] += weapon_rotation[i*3+row] *
+                ((int *)&foregrip.position)[row]*units;
     }
     return 0;
 }
@@ -575,16 +619,16 @@ static int pipeline_print_weapon(
     pipeline_matrix_multiply(weapon_right->rotation, inverse_primary,
                              weapon_rotation);
     pipeline_matrix_vector(weapon_rotation,
-        (double[3]){authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.x,
-                    authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.y,
-                    authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.z},
+        (double[3]){authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.x*pose->position_scale/512.0,
+                    authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.y*pose->position_scale/512.0,
+                    authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.z*pose->position_scale/512.0},
         origin);
     for (i = 0; i < 3; i++) origin[i] = weapon_right->position[i] - origin[i];
     for (i = 0; i < RASTERFALL_WEAPON_SOCKET_COUNT; i++) {
         double local[3];
-        local[0] = authored[i].position.x;
-        local[1] = authored[i].position.y;
-        local[2] = authored[i].position.z;
+        local[0] = authored[i].position.x*pose->position_scale/512.0;
+        local[1] = authored[i].position.y*pose->position_scale/512.0;
+        local[2] = authored[i].position.z*pose->position_scale/512.0;
         pipeline_matrix_vector(weapon_rotation, local, derived_position[i]);
         for (int axis = 0; axis < 3; axis++)
             derived_position[i][axis] += origin[axis];
@@ -750,14 +794,15 @@ int rasterfall_action_pipeline_compare_debug(
 int rasterfall_action_logic_test(void)
 {
     struct rasterfall_action_clip clip, lower, aim, fire, recoil, evade;
-    struct rasterfall_animation_rotation a, b;
+    struct rasterfall_animation_rotation a, b, authored;
     unsigned int i, upper_roles = 0;
     if (rasterfall_action_load(&clip, "rasterfall/assets/actions/rifle_idle.rfanim") < 0) return 1;
     if (clip.id != RASTERFALL_ACTION_RIFLE_IDLE || clip.duration_ms != 2400 ||
         clip.track_count < 5 || clip.key_count < 10) return 2;
     rasterfall_animation_quat_to_euler(sample_track(&clip,&clip.tracks[0],1200),&a);
     rasterfall_animation_quat_to_euler(sample_track(&clip,&clip.tracks[0],3600),&b);
-    if (a.x != 1 || b.x != a.x || a.y || a.z) return 3;
+    rasterfall_animation_quat_to_euler(clip.keys[clip.tracks[0].first_key+1].rotation,&authored);
+    if (memcmp(&a,&authored,sizeof(a)) || memcmp(&b,&a,sizeof(a))) return 3;
     if (rasterfall_action_load(&lower, "rasterfall/assets/actions/locomotion_walk.rfanim") < 0 ||
         rasterfall_action_load(&aim, "rasterfall/assets/actions/rifle_aim.rfanim") < 0 ||
         rasterfall_action_load(&fire, "rasterfall/assets/actions/rifle_fire.rfanim") < 0 ||

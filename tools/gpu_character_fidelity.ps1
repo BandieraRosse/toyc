@@ -7,6 +7,11 @@ param(
     [ValidateSet('float','quantized','legacy')][string]$Depth='float',
     [ValidateRange(128,4096)][int[]]$Distances=@(384),
     [ValidateRange(1,36000)][int]$Frames=2,
+    [ValidateRange(0,4)][int]$Station=0,
+    [ValidateRange(-75,75)][int]$AimPitch=0,
+    [ValidateRange(-45,45)][int]$AimYaw=0,
+    [ValidateRange(1024,131072)][int]$AimDistanceRfu=16384,
+    [switch]$Animate,
     [switch]$Reverse
 )
 $ErrorActionPreference='Stop'
@@ -16,7 +21,9 @@ $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
 New-Item -ItemType Directory -Force -Path $Out | Out-Null
 $Saved=@{}
 foreach ($Key in @('RF_GPU_CHARACTER_MODEL','RF_GPU_CHARACTER_VIEW','RF_GPU_CHARACTER_DISPLAY',
-    'RF_GPU_CHARACTER_DEPTH','RF_GPU_CHARACTER_DISTANCE','RF_GPU_CHARACTER_FREEZE','RF_GPU_CHARACTER_REVERSE')) {
+    'RF_GPU_CHARACTER_DEPTH','RF_GPU_CHARACTER_DISTANCE','RF_GPU_CHARACTER_FREEZE','RF_GPU_CHARACTER_REVERSE',
+    'RF_GPU_CHARACTER_STATION','RF_GPU_CHARACTER_AIM_PITCH','RF_GPU_CHARACTER_AIM_YAW',
+    'RF_GPU_CHARACTER_AIM_DISTANCE')) {
     $Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')
 }
 $Results=@()
@@ -26,16 +33,20 @@ try {
     [Environment]::SetEnvironmentVariable('Path',$SavedPath,'Process')
     $env:RF_GPU_CHARACTER_MODEL=if ($Model) { (Resolve-Path -LiteralPath $Model).Path } else { '' }
     $ModelPath=if ($Model) { $env:RF_GPU_CHARACTER_MODEL } else {
-        Join-Path $Package 'rasterfall/private-assets/models/rf_c01_v025d.rmesh'
+        Join-Path $Package 'rasterfall/private-assets/models/rf_c01_v028.rmesh'
     }
     $ModelHeader=[IO.File]::ReadAllBytes($ModelPath)
     $PositionScale=[BitConverter]::ToUInt32($ModelHeader,16)
     if ($Depth -eq 'legacy' -and $PositionScale -ne 512) { throw 'Legacy transform requires a 512 units/metre model' }
     $env:RF_GPU_CHARACTER_DEPTH=$Depth
-    $env:RF_GPU_CHARACTER_FREEZE='1'
+    $env:RF_GPU_CHARACTER_FREEZE=if ($Animate) { '' } else { '1' }
+    $env:RF_GPU_CHARACTER_STATION=[string]$Station
+    $env:RF_GPU_CHARACTER_AIM_PITCH=[string]$AimPitch
+    $env:RF_GPU_CHARACTER_AIM_YAW=[string]$AimYaw
+    $env:RF_GPU_CHARACTER_AIM_DISTANCE=[string]$AimDistanceRfu
     $env:RF_GPU_CHARACTER_REVERSE=if ($Reverse) { '1' } else { '0' }
     foreach ($View in $Views) { foreach ($Display in $Displays) { foreach ($Distance in $Distances) {
-        if ($View -notin @('front','quarter','side','orbit') -or
+        if ($View -notin @('front','quarter','side','right-quarter','right-side','back','orbit') -or
             $Display -notin @('unlit','parts','lit','smooth','soft','material')) { throw 'Invalid view/display' }
         $env:RF_GPU_CHARACTER_VIEW=$View
         $env:RF_GPU_CHARACTER_DISPLAY=$Display
@@ -63,9 +74,19 @@ try {
             image="$Capture.scene.ppm";sha256=(Get-FileHash "$Capture.scene.ppm").Hash;exit_code=$p.ExitCode}
         Write-Host "[CHARACTER-FIDELITY] $Name PASS"
     } } }
-    @{model=$ModelPath;model_sha256=(Get-FileHash $ModelPath).Hash;position_scale=$PositionScale;
+    $TextureDirectory=[IO.Path]::ChangeExtension($ModelPath,'textures')
+    $Textures=@(if(Test-Path -LiteralPath $TextureDirectory) {
+        Get-ChildItem -LiteralPath $TextureDirectory -Filter '*.ttex' | ForEach-Object {
+            @{name=$_.Name;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}
+        }
+    })
+    @{model=$ModelPath;model_sha256=(Get-FileHash $ModelPath).Hash;position_scale=$PositionScale;textures=$Textures;
+      station=$Station;animated=[bool]$Animate;
+      aim_pitch=$AimPitch;aim_yaw=$AimYaw;aim_distance_rfu=$AimDistanceRfu;
       exe_sha256=(Get-FileHash "$Package/rasterfall.exe").Hash;
-      camera_target_rfu=@(16000,-114,-31400);focal_over_width=0.75;captures=$Results} |
+      camera_target_lab='rf_model_lab_area';
+      camera_target_local_rfu=@((-384+($Station%2)*1200),$(if($Station -ge 2){-320}else{-114}),(344-[Math]::Floor($Station/2)*1500));
+      focal_over_width=0.75;captures=$Results} |
         ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 "$Out/manifest.json"
 } finally {
     $env:Path=$SavedPath

@@ -73,6 +73,28 @@ static int model_load_character(struct rasterfall_model_asset *asset,
     return 0;
 }
 
+static int model_load_surfaces(struct rasterfall_model_asset *asset,
+    const unsigned char *data,unsigned int size)
+{
+    unsigned int i;
+    if (size<32 || model_u32(data)!=RASTERFALL_MODEL_SURFACE_MAGIC ||
+        model_u32(data+4)!=size || model_u32(data+8)!=1 ||
+        model_u32(data+12)!=asset->material_count || model_u32(data+16)!=16 ||
+        model_u32(data+20) || model_u32(data+24) || model_u32(data+28) ||
+        size!=32+asset->material_count*16) return -1;
+    for(i=0;i<asset->material_count;++i) {
+        const unsigned char *r=data+32+i*16,*m=asset->materials+i*asset->material_bytes;
+        float rough=model_f32(r+4),metal=model_f32(r+8);
+        unsigned int texture=model_u32(m+8);
+        if(model_u32(r)!=1 || model_u32(r+12) || !(rough>=0 && rough<=1) ||
+            !(metal>=0 && metal<=1) || (texture!=0xffffffffU && texture>=8) ||
+            m[4]!=255 || m[6] || (m[7]&~1U) || model_u32(m+12) ||
+            model_u32(m+16) || model_u32(m+20) || model_u32(m+24) ||
+            model_u32(m+28) || model_u32(m+32)) return -1;
+    }
+    asset->surfaces=data+32;return 0;
+}
+
 static void matrix_multiply(const double *a, const double *b, double *out)
 {
     double r[9];
@@ -353,6 +375,8 @@ static int model_texture_path(const char *model_path, int index,
                               char *out, int size)
 {
     const char *slash = strrchr(model_path, '/');
+    const char *backslash = strrchr(model_path, '\\');
+    if (backslash && (!slash || backslash>slash)) slash=backslash;
     const char *name = slash ? slash + 1 : model_path;
     const char *dot = strrchr(name, '.');
     int length = slash ? (int)(slash - model_path) : 0;
@@ -456,11 +480,14 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
         rasterfall_model_unload(asset);
         return -1;
     }
-    if (version >= 14 && skin_offset + skin_bytes < size &&
-        model_load_character(asset, data + skin_offset + skin_bytes,
-                             size - skin_offset - skin_bytes) < 0) {
-        __fprintf(2, "rasterfall: invalid RFM2 character section: %s\n", path);
-        rasterfall_model_unload(asset); return -1;
+    if (version >= 14 && (version>=15 || skin_offset + skin_bytes < size)) {
+        unsigned int offset=skin_offset+skin_bytes,remaining=size-offset;
+        unsigned int character_bytes=version>=15 && remaining>=8 ? model_u32(data+offset+4) : remaining;
+        if(character_bytes>remaining || model_load_character(asset,data+offset,character_bytes)<0 ||
+            (version>=15 && model_load_surfaces(asset,data+offset+character_bytes,remaining-character_bytes)<0)) {
+            __fprintf(2,"rasterfall: invalid RFM2 character/surface section: %s\n",path);
+            rasterfall_model_unload(asset);return -1;
+        }
     }
     if (asset->has_character_contract) {
         asset->animation.demo_right_arm = asset->humanoid_bones[RASTERFALL_HUMANOID_RIGHT_UPPER_ARM];
@@ -499,6 +526,19 @@ int rasterfall_model_load(struct rasterfall_model_asset *asset,
                 asset->textures.views[i].data_size = asset->textures.assets[i].data_size;
                 asset->textures.views[i].channels = asset->textures.assets[i].channels;
                 asset->textures.views[i].has_transparency = asset->textures.assets[i].has_transparency;
+            }
+        }
+    }
+    if (asset->surfaces) {
+        unsigned int i;
+        for(i=0;i<asset->material_count;++i) {
+            unsigned int index=model_u32(asset->materials+i*asset->material_bytes+8);
+            if(index==0xffffffffU)continue;
+            if(index>=asset->textures.count || !asset->textures.assets[index].data ||
+                !asset->textures.assets[index].width || !asset->textures.assets[index].height ||
+                asset->textures.assets[index].width>1024 || asset->textures.assets[index].height>1024) {
+                __fprintf(2,"rasterfall: missing or unsupported character texture: %s #%u\n",path,index);
+                rasterfall_model_unload(asset);return -1;
             }
         }
     }
@@ -3672,6 +3712,50 @@ int rasterfall_model_solve_two_bone_attachment(
     return 0;
 }
 
+int rasterfall_model_solve_two_bone_attachment_pose(
+    struct rasterfall_model_asset *asset, const char *upper_bone,
+    const char *forearm_bone, const char *hand_bone,
+    enum rasterfall_character_attachment attachment,
+    const struct rasterfall_model_attachment_transform *target,
+    const double pole_hint[3])
+{
+    struct rasterfall_model_attachment_transform current;
+    const struct rasterfall_model_attachment *socket;
+    double hand_inverse[9], socket_local[9], socket_inverse[9];
+    double desired_hand[9], wrist[3], offset[3], parent_inverse[9], local[9];
+    int hand, parent, reference[3], x, y, z;
+    if (!asset || !target || !pole_hint || attachment<0 ||
+        attachment>=RASTERFALL_ATTACHMENT_COUNT ||
+        !asset->attachments[attachment].present) return -1;
+    hand=rasterfall_model_find_bone(asset,hand_bone);
+    socket=&asset->attachments[attachment];
+    if (hand<0 || socket->parent_bone!=hand ||
+        (parent=asset->bones[hand].parent)<0 ||
+        rasterfall_model_update_bones(asset)<0 ||
+        rasterfall_model_character_attachment_transform(asset,attachment,&current)<0)
+        return -1;
+    /* Recover the immutable local socket basis without assuming the bind
+     * rotation is identity (RFCHAR permits authored palm/grip frames). */
+    model_matrix_transpose(asset->bone_transforms[hand].rotation,hand_inverse);
+    matrix_multiply(hand_inverse,current.rotation,socket_local);
+    model_matrix_transpose(socket_local,socket_inverse);
+    matrix_multiply(target->rotation,socket_inverse,desired_hand);
+    matrix_vector(desired_hand,socket->local_position[0],socket->local_position[1],
+                  socket->local_position[2],&offset[0],&offset[1],&offset[2]);
+    for (int i=0;i<3;++i) wrist[i]=target->position[i]-offset[i];
+    if (rasterfall_model_solve_two_bone_attachment(asset,upper_bone,forearm_bone,
+            hand_bone,wrist,pole_hint)<0) return -1;
+    model_matrix_transpose(asset->bone_transforms[parent].rotation,parent_inverse);
+    matrix_multiply(parent_inverse,desired_hand,local);
+    reference[0]=asset->bones[hand].rotate_x;
+    reference[1]=asset->bones[hand].rotate_y;
+    reference[2]=asset->bones[hand].rotate_z;
+    model_matrix_to_euler_near(local,reference,&x,&y,&z);
+    asset->bones[hand].rotate_x=x;asset->bones[hand].rotate_y=y;
+    asset->bones[hand].rotate_z=z;
+    return rasterfall_model_update_bones(asset);
+}
+
 void rasterfall_model_print_two_bone_diagnostics(
     const struct rasterfall_model_asset *asset,const char *label)
 {
@@ -3937,6 +4021,28 @@ static void model_palette_transform_vertex(
     position[2]+=bone->position[2];
     matrix_vector(bone->rotation,bind_normal[0],bind_normal[1],bind_normal[2],
                   &normal[0],&normal[1],&normal[2]);
+}
+
+int rasterfall_model_shared_skin_compatible(
+    const struct rasterfall_model_asset *body,
+    const struct rasterfall_model_asset *garment)
+{
+    if (!body || !garment || !body->has_character_contract ||
+        !garment->has_character_contract || !body->bones || !garment->bones ||
+        !garment->skin_vertices || !body->bone_count ||
+        body->bone_count!=garment->bone_count ||
+        body->position_scale!=garment->position_scale) return 0;
+    for (unsigned i=0;i<body->bone_count;++i) {
+        const struct rasterfall_model_bone *a=&body->bones[i],*b=&garment->bones[i];
+        if (!a->name || !b->name || strcmp(a->name,b->name) ||
+            a->parent!=b->parent || a->rest_x!=b->rest_x ||
+            a->rest_y!=b->rest_y || a->rest_z!=b->rest_z ||
+            a->flags!=b->flags || a->grant_parent!=b->grant_parent ||
+            a->grant_ratio!=b->grant_ratio) return 0;
+    }
+    for (unsigned i=0;i<RASTERFALL_HUMANOID_BONE_COUNT;++i)
+        if (body->humanoid_bones[i]!=garment->humanoid_bones[i]) return 0;
+    return 1;
 }
 
 int rasterfall_model_build_skin_palette(const struct rasterfall_model_asset *asset,
@@ -4671,6 +4777,38 @@ int rasterfall_model_skinning_logic_test(void)
             "HAND",target,pole)<0||!arm.attachment_ik_diagnostics.reach_clamped||
             arm.attachment_ik_diagnostics.hand_error>0.1)return 10;
         rasterfall_model_print_two_bone_diagnostics(&arm,"logic_test_left_arm");
+        /* A grip offset must rotate with the requested palm, even when the
+         * authored socket frame and the shoulder parent are both rotated. */
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].present=1;
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].parent_bone=3;
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].local_position[0]=3;
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].local_position[2]=2;
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].local_rotation[2]=0.7071067812f;
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].local_rotation[3]=0.7071067812f;
+        arm_bones[0].rotate_y=23;
+        for (int turn=0;turn<3;++turn) {
+            struct rasterfall_model_attachment_transform desired,actual;
+            double local_socket[9],desired_hand[9],offset[3];
+            matrix_rotate_xyz(20-turn*17,-35+turn*22,95-turn*80,desired.rotation);
+            matrix_rotate_xyz(0,0,-90,local_socket);
+            matrix_multiply(desired.rotation,local_socket,desired_hand);
+            matrix_vector(desired_hand,3,0,2,&offset[0],&offset[1],&offset[2]);
+            desired.position[0]=12+offset[0];
+            desired.position[1]=8+offset[1];
+            desired.position[2]=2+offset[2];
+            if (rasterfall_model_solve_two_bone_attachment_pose(&arm,"UPPER",
+                    "FOREARM","HAND",RASTERFALL_ATTACHMENT_FOREGRIP,&desired,pole)<0 ||
+                rasterfall_model_character_attachment_transform(&arm,
+                    RASTERFALL_ATTACHMENT_FOREGRIP,&actual)<0 ||
+                arm.attachment_ik_diagnostics.reach_clamped) return 11;
+            for (int i=0;i<3;++i)
+                if (fabs(actual.position[i]-desired.position[i])>0.3) return 12;
+            for (int i=0;i<9;++i)
+                if (fabs(actual.rotation[i]-desired.rotation[i])>0.025) return 13;
+        }
+        arm.attachments[RASTERFALL_ATTACHMENT_FOREGRIP].parent_bone=2;
+        if (!rasterfall_model_solve_two_bone_attachment_pose(&arm,"UPPER",
+                "FOREARM","HAND",RASTERFALL_ATTACHMENT_FOREGRIP,&attachment,pole)) return 14;
     }
     return 0;
 }

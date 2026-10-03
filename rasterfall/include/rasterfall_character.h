@@ -109,6 +109,22 @@ struct rasterfall_character_attachment_recipe {
     int gear_resource_id;
 };
 
+enum rasterfall_character_clothing_resource_id {
+    RASTERFALL_CLOTHING_FIELD_JACKET,
+    RASTERFALL_CLOTHING_COMBAT_TROUSERS,
+    RASTERFALL_CLOTHING_RESOURCE_COUNT
+};
+enum rasterfall_character_body_region {
+    RASTERFALL_BODY_REGION_TORSO_ARMS = 1u << 0,
+    RASTERFALL_BODY_REGION_HIPS_LEGS = 1u << 1
+};
+#define RASTERFALL_CHARACTER_RECIPE_CLOTHING 2
+struct rasterfall_character_clothing_profile {
+    const char *resource_name;
+    int body_resource_id;
+    uint32_t covered_body_regions;
+};
+
 /* Multiple independently removable followers may share a stable socket. */
 #define RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS 8
 struct rasterfall_character_visual_recipe {
@@ -120,7 +136,15 @@ struct rasterfall_character_visual_recipe {
     struct rasterfall_character_attachment_recipe
         attachments[RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
     unsigned int attachment_count;
+    /* Skin followers share the body's final palette, never socket transforms. */
+    unsigned int clothing_count;
+    int clothing_resources[RASTERFALL_CHARACTER_RECIPE_CLOTHING];
 };
+
+const struct rasterfall_character_clothing_profile *
+rasterfall_character_clothing_profile(int clothing_resource_id);
+uint32_t rasterfall_character_recipe_hidden_materials(
+    const struct rasterfall_character_visual_recipe *recipe);
 
 const struct rasterfall_character_visual_recipe *
 rasterfall_character_visual_recipe(int modular_profession_id);

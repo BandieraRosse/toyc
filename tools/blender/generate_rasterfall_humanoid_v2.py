@@ -305,6 +305,23 @@ def make_armature(scene):
         ('RF_R_FOOT', 'RF_R_LOWER_LEG', (-0.15, 0, 0.12),
          (-0.15, -0.28, 0.07)),
     ]
+    # Optional finger chains share the existing RF-C01 naming/handedness.
+    # Clothing uses this same rig even where these bones have no weights.
+    for side, sign in (('L', 1), ('R', -1)):
+        prefix = 'RF_' + side + '_'
+        for finger, (y, length) in enumerate(((-.051, .073), (-.019, .084),
+                                             (.014, .078), (.043, .062))):
+            start = (.956*sign, y, 1.495)
+            mid = ((.956+length*.53)*sign, y-.003, 1.4915)
+            end = ((.956+length)*sign, y-.006, 1.488)
+            name = prefix + 'FINGER_' + str(finger)
+            specs.extend(((name+'_1', prefix+'HAND', start, mid),
+                          (name+'_2', name+'_1', mid, end)))
+        name = prefix + 'FINGER_thumb'
+        specs.extend(((name+'_1', prefix+'HAND', (.866*sign,-.044,1.487),
+                       (.902*sign,-.071,1.482)),
+                      (name+'_2', name+'_1', (.902*sign,-.071,1.482),
+                       (.933*sign,-.095,1.478))))
     for name, parent, head, tail in specs:
         bone = edit_bones.new(name)
         bone.head = head
@@ -495,6 +512,9 @@ def create_profession(armature, scene, materials, profession):
             if obj.type == 'MESH' and obj.name not in before:
                 obj['rf_attachment_slot'] = 'head'
     equipment.profession(globals(), armature, scene, materials, profession)
+    if profession == 'heavy':
+        from rf_tactical_textures import apply_textiles
+        apply_textiles(scene, materials, ('headgear', 'headgear_light', 'webbing'))
 
 
 def create_rifleman_backpack(armature, scene, material, prefix=''):
@@ -597,6 +617,11 @@ def main():
     elif not args.rigid_attachment:
         create_headgear(armature, scene, materials, args.headgear)
 
+    body_surface=not args.rigid_attachment and not args.profession and args.headgear=='bare'
+    if body_surface:
+        from rf_humanoid_surface import apply_surface
+        apply_surface(scene,materials)
+
     # Merge authored pieces before export: RFM2 has a 32-primitive budget.
     # glTF emits one primitive per material on the joined mesh, retaining
     # vertex groups and the one armature modifier without changing geometry.
@@ -626,6 +651,10 @@ def main():
         export_armature_object_remove=not args.rigid_attachment)
 
     path = Path(args.output)
+    if body_surface or args.profession == 'heavy' or (args.rigid_attachment and
+            args.rigid_attachment.startswith('heavy-')):
+        from rf_tactical_textures import patch_export_materials
+        patch_export_materials(path)
     if not args.rigid_attachment:
         patch_glb_skeleton(path)
     vertex_count = sum(len(obj.data.vertices) for obj in scene.objects

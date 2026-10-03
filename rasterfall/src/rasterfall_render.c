@@ -36,6 +36,7 @@
 #include "rasterfall_actor_animation.h"
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_action.h"
+#include "rasterfall_rifle_pose.h"
 #include "rasterfall_character.h"
 #include "rasterfall_roster.h"
 #include "rasterfall_units.h"
@@ -83,10 +84,15 @@ struct rasterfall_actor_action_layers {
     enum rasterfall_action_id lower;
     int lower_time_ms, last_gameplay_time_ms, last_gameplay_animation;
     struct rasterfall_actor_evasion_history evasion;
+    struct rasterfall_rifle_history rifle;
 };
 static struct rasterfall_actor_action_layers
     actor_action_layers[TOY_GAME_MAX_ACTORS];
 static int active_character_palette_override;
+static uint32_t active_character_hidden_material_mask;
+/* Scoped borrowed final palette: clothing never evaluates animation or IK. */
+static const struct rasterfall_model_skin_palette_bone *active_clothing_palette;
+static unsigned int active_clothing_palette_count;
 static uint32_t active_character_shirt_color, active_character_pants_color;
 static struct rasterfall_scene_stats scene_stats;
 static struct rasterfall_ai_submission_stats ai_submission_stats;
@@ -1090,7 +1096,7 @@ static int prepare_gallery_vertex_cache(
         gallery_vertex_cache_capacity = model->vertex_count;
         frontend_state()->skinned_vertices_valid = 0;
     }
-    if (model->skinning_enabled && model->bone_count &&
+    if (!active_clothing_palette && model->skinning_enabled && model->bone_count &&
         !(frontend_state()->reuse_skinned_vertices &&
           frontend_state()->skinned_vertices_valid)) {
         phase_start = render_monotonic_us();
@@ -1104,9 +1110,14 @@ static int prepare_gallery_vertex_cache(
           frontend_state()->skinned_vertices_valid)) {
         phase_start = render_monotonic_us();
         for (i = 0; i < model->vertex_count; i++)
-            if (rasterfall_model_skin_vertex(model, i,
+            if ((active_clothing_palette ?
+                rasterfall_model_skin_vertex_palette(model, active_clothing_palette,
+                    active_clothing_palette_count, i,
                     gallery_vertex_cache[i].model_position,
-                    gallery_vertex_cache[i].normal) < 0) return -1;
+                    gallery_vertex_cache[i].normal) :
+                rasterfall_model_skin_vertex(model, i,
+                    gallery_vertex_cache[i].model_position,
+                    gallery_vertex_cache[i].normal)) < 0) return -1;
         for (i = 0; i < model->vertex_count; i++) {
             gallery_vertex_cache[i].source_normal[0] =
                 gallery_vertex_cache[i].normal[0];
@@ -1730,6 +1741,8 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         unsigned int index_count = model_u32(primitive + 4);
         unsigned int index_begin = 0, index_end = index_count;
         unsigned int material = model_u32(primitive + 8);
+        if (material<32 && (active_character_hidden_material_mask & (1u<<material)))
+            continue;
         const struct toy_texture_view *texture = 0;
         const struct toy_texture_view *sphere_texture = 0;
         const struct toy_texture_view *toon_texture = 0;
@@ -1748,7 +1761,7 @@ static int render_gallery_model_range(struct toy_renderer *renderer,
         active_skin_material = visual_class == RASTERFALL_VISUAL_SKIN;
         active_material_tint = active_skin_material ? 0x00fff5edU : 0x00ffffffU;
         toy_renderer_set_base_texture_bilinear(renderer,
-            policy.base_texture_bilinear);
+            model->surfaces ? 1 : policy.base_texture_bilinear);
         active_texture_view = 0;
         active_sphere_texture = 0;
         active_sphere_mode = 0;
@@ -7130,7 +7143,8 @@ static int render_skeletal_rifle(
     if(model->max_y-model->min_y>length)length=model->max_y-model->min_y;
     if(model->max_z-model->min_z>length)length=model->max_z-model->min_z;
     if(length<=0)return 0;
-    scale=asset->base_scale_milli*weapon_profile->scale_milli/1000/length;
+    scale=(asset->legacy_base_scale_milli ? asset->legacy_base_scale_milli :
+        asset->base_scale_milli)*weapon_profile->scale_milli/1000/length;
     character_scale=character_model_scale(character,profile->target_height_mm);
     for(i=0;i<3;i++){
         grip_offset[i]=((int *)&weapon_profile->grip)[i]-((int *)&asset->attachment_grip)[i];
@@ -7276,26 +7290,17 @@ struct rasterfall_modular_weapon_placement {
         authored[RASTERFALL_WEAPON_SOCKET_COUNT];
     double origin[3], rotation[9];
     double local_bounds_min[3], local_bounds_max[3];
+    struct rasterfall_weapon_model_adapter adapter;
 };
 
 static void modular_weapon_canonical_point(
-    const struct rasterfall_model_asset *model,
-    const struct rasterfall_weapon_asset_profile *asset,
+    const struct rasterfall_weapon_model_adapter *adapter,
     const int raw[3], int canonical[3])
 {
-    int centered[3] = {
-        raw[0] - (model->min_x + model->max_x) / 2,
-        raw[1] - (model->min_y + model->max_y) / 2,
-        raw[2] - (model->min_z + model->max_z) / 2};
-    if (asset->asset_basis == 1) {
-        canonical[0] = centered[2]; canonical[1] = centered[1];
-        canonical[2] = centered[0];
-    } else if (asset->asset_basis == 2) {
-        canonical[0] = -centered[0]; canonical[1] = centered[1];
-        canonical[2] = -centered[2];
-    } else {
-        canonical[0] = centered[0]; canonical[1] = centered[1];
-        canonical[2] = centered[2];
+    for(int i=0;i<3;++i) {
+        double value=0;
+        for(int j=0;j<3;++j)value+=adapter->basis[i*3+j]*(raw[j]-adapter->center[j]);
+        canonical[i]=(int)value;
     }
 }
 
@@ -7306,8 +7311,9 @@ static int modular_prepare_weapon_placement(
     const struct rasterfall_weapon_asset_profile *asset;
     struct rasterfall_model_asset *model;
     double primary_rotation[9], inverse_primary[9];
-    int length, i, socket, xi, yi, zi, have_bounds = 0;
-    if (!instance || !placement || character_scale <= 0 || weapon < 0)
+    int i, socket, xi, yi, zi, have_bounds = 0;
+    struct rasterfall_weapon_model_adapter adapter;
+    if (!instance || !placement || !instance->pose.position_scale || character_scale <= 0 || weapon < 0)
         return -1;
     memset(placement, 0, sizeof(*placement));
     asset = rasterfall_weapon_asset_profile(weapon);
@@ -7318,18 +7324,20 @@ static int modular_prepare_weapon_placement(
             RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP,
             &placement->authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP]) < 0)
         return -1;
+    /* Sockets follow the body's authored storage precision; weapon profiles
+     * and the actor transform use RFU. Normalize once at this boundary. */
+    for (i=0;i<3;++i)
+        placement->source_socket.position[i]*=512.0/instance->pose.position_scale;
     placement->has_muzzle = rasterfall_weapon_socket_transform(weapon,
         RASTERFALL_WEAPON_SOCKET_MUZZLE,
         &placement->authored[RASTERFALL_WEAPON_SOCKET_MUZZLE]) == 0;
     model = gallery_model_named(asset->model_path, NULL);
     if (!model) return -1;
-    length = model->max_x - model->min_x;
-    if (model->max_y - model->min_y > length)
-        length = model->max_y - model->min_y;
-    if (model->max_z - model->min_z > length)
-        length = model->max_z - model->min_z;
-    if (length <= 0 || asset->base_scale_milli <= 0) return -1;
-    placement->geometry_scale = asset->base_scale_milli / length;
+    if (rasterfall_weapon_model_adapt(weapon,
+            (int[3]){model->min_x,model->min_y,model->min_z},
+            (int[3]){model->max_x,model->max_y,model->max_z},&adapter)<0) return -1;
+    placement->adapter=adapter;
+    placement->geometry_scale = adapter.scale_milli;
     if (placement->geometry_scale <= 0) return -1;
     placement->weapon = weapon;
     placement->character_scale = character_scale;
@@ -7361,7 +7369,7 @@ static int modular_prepare_weapon_placement(
                           zi ? model->max_z : model->min_z};
             int canonical[3];
             double authored_point[3], model_point[3];
-            modular_weapon_canonical_point(model, asset, raw, canonical);
+            modular_weapon_canonical_point(&adapter, raw, canonical);
             for (i = 0; i < 3; i++) authored_point[i] = canonical[i] *
                 placement->geometry_scale / 1000.0;
             modular_weapon_model_point(placement->origin, placement->rotation,
@@ -7382,78 +7390,6 @@ static int modular_prepare_weapon_placement(
     return placement->valid ? 0 : -1;
 }
 
-/* The active rifle is authored around PRIMARY_GRIP/FOREGRIP, while the body
- * owns the WEAPON_R/FOREGRIP character sockets.  Keep the weapon on the right
- * hand, then solve only the left two-bone chain toward the authored foregrip.
- * This is shared by the developer action station and gameplay actors, so the
- * station cannot silently drift into a second hand/weapon placement path. */
-static int modular_solve_left_hand(
-    struct rasterfall_model_instance *instance, int weapon, int character_scale)
-{
-    struct rasterfall_model_attachment_transform weapon_right;
-    struct rasterfall_model_attachment_transform left_attachment;
-    struct rasterfall_weapon_socket_transform primary, foregrip;
-    struct rasterfall_model_asset *pose;
-    double primary_rotation[9], inverse_primary[9], weapon_rotation[9];
-    double origin[3], foregrip_model[3], wrist_target[3];
-    int left_hand_bone, upper_bone, forearm_bone, i, socket;
-    if (!instance || character_scale <= 0 ||
-        rasterfall_model_instance_attachment_transform(instance,
-            RASTERFALL_ATTACHMENT_WEAPON_R, &weapon_right) < 0 ||
-        rasterfall_model_instance_attachment_transform(instance,
-            RASTERFALL_ATTACHMENT_FOREGRIP, &left_attachment) < 0 ||
-        rasterfall_weapon_socket_transform(weapon,
-            RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP, &primary) < 0 ||
-        rasterfall_weapon_socket_transform(weapon,
-            RASTERFALL_WEAPON_SOCKET_FOREGRIP, &foregrip) < 0)
-        return -1;
-    modular_weapon_quaternion_matrix(primary.rotation, primary_rotation);
-    for (i = 0; i < 3; i++) for (socket = 0; socket < 3; socket++)
-        inverse_primary[i * 3 + socket] = primary_rotation[socket * 3 + i];
-    rigid_matrix_multiply(weapon_right.rotation, inverse_primary,
-                          weapon_rotation);
-    for (i = 0; i < 3; i++) {
-        double primary_local[3] = {
-            primary.position.x * 1000.0 / character_scale,
-            primary.position.y * 1000.0 / character_scale,
-            primary.position.z * 1000.0 / character_scale};
-        double rotated[3];
-        rigid_matrix_vector(weapon_rotation, primary_local, rotated);
-        origin[i] = weapon_right.position[i] - rotated[i];
-    }
-    modular_weapon_model_point(origin, weapon_rotation,
-        (double[3]){foregrip.position.x, foregrip.position.y,
-                     foregrip.position.z}, character_scale, foregrip_model);
-    pose = rasterfall_model_instance_pose(instance);
-    if (!pose) return -1;
-    left_hand_bone = rasterfall_model_humanoid_bone(pose,
-        RASTERFALL_HUMANOID_LEFT_HAND);
-    upper_bone = rasterfall_model_humanoid_bone(pose,
-        RASTERFALL_HUMANOID_LEFT_UPPER_ARM);
-    forearm_bone = rasterfall_model_humanoid_bone(pose,
-        RASTERFALL_HUMANOID_LEFT_FOREARM);
-    if (left_hand_bone < 0 || upper_bone < 0 || forearm_bone < 0)
-        return -1;
-    {
-        const struct rasterfall_model_bone_transform *hand =
-            rasterfall_model_instance_bone_transform(instance,
-                (unsigned int)left_hand_bone);
-        if (!hand) return -1;
-        /* The requested point is the weapon's foregrip. Convert it to the
-         * wrist target by removing the current character FOREGRIP offset. */
-        for (i = 0; i < 3; i++)
-            wrist_target[i] = foregrip_model[i] - left_attachment.position[i] +
-                              hand->position[i];
-    }
-    pose->attachment_ik_previous_pole_valid = 0;
-    if (rasterfall_model_solve_two_bone_attachment(pose,
-            pose->bones[upper_bone].name, pose->bones[forearm_bone].name,
-            pose->bones[left_hand_bone].name, wrist_target,
-            (double[3]){1.0, -0.7, 0.0}) < 0)
-        return -1;
-    return rasterfall_model_instance_update_bones(instance);
-}
-
 /* Active weapon presentation is deliberately independent from passive gear.
  * The finalized character WEAPON_R socket is the only runtime source for the
  * weapon pivot.  The weapon's canonical sockets and mesh remain authored in
@@ -7465,76 +7401,39 @@ static int render_modular_active_weapon(
     int weapon, int muzzle_flash, int debug_trace,
     const struct rasterfall_modular_weapon_placement *cached_placement)
 {
-    const struct rasterfall_weapon_asset_profile *asset;
     struct rasterfall_model_attachment_transform source_socket;
     struct rasterfall_weapon_socket_transform authored[RASTERFALL_WEAPON_SOCKET_COUNT];
     struct rasterfall_model_asset *weapon_model;
-    double primary_rotation[9], inverse_primary[9], weapon_rotation[9];
+    struct rasterfall_weapon_model_adapter adapter;
+    double weapon_rotation[9];
     double origin[3], primary_model[3], muzzle_model[3];
     struct vec3 primary_world, muzzle_world;
-    const char *path;
-    int length, geometry_scale, character_scale, socket;
+    int geometry_scale, character_scale, socket;
     int has_muzzle = 0, i, pixels = 0;
     long audit_start = render_monotonic_us();
     if (!renderer || !camera || !instance || !actor_to_world ||
         actor_to_world->scale_milli <= 0 || weapon < 0) return 0;
-    asset = rasterfall_weapon_asset_profile(weapon);
     if (cached_placement && cached_placement->valid &&
         cached_placement->weapon == weapon &&
         cached_placement->character_scale == actor_to_world->scale_milli) {
-        asset = cached_placement->asset;
         source_socket = cached_placement->source_socket;
         memcpy(authored, cached_placement->authored, sizeof(authored));
         weapon_model = cached_placement->model;
+        adapter=cached_placement->adapter;
         geometry_scale = cached_placement->geometry_scale;
         character_scale = cached_placement->character_scale;
         has_muzzle = cached_placement->has_muzzle;
         memcpy(origin, cached_placement->origin, sizeof(origin));
         memcpy(weapon_rotation, cached_placement->rotation,
                sizeof(weapon_rotation));
-    } else if (!asset->skeletal || !asset->model_path ||
-        rasterfall_model_instance_attachment_transform(instance,
-            RASTERFALL_ATTACHMENT_WEAPON_R, &source_socket) < 0 ||
-        rasterfall_weapon_socket_transform(weapon,
-            RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP,
-            &authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP]) < 0)
-        return 0;
-    else {
-        has_muzzle = rasterfall_weapon_socket_transform(weapon,
-            RASTERFALL_WEAPON_SOCKET_MUZZLE,
-            &authored[RASTERFALL_WEAPON_SOCKET_MUZZLE]) == 0;
-        if ((path = asset->model_path) == NULL ||
-            (weapon_model = gallery_model_named(path, NULL)) == NULL)
-            return 0;
-        length = weapon_model->max_x - weapon_model->min_x;
-        if (weapon_model->max_y - weapon_model->min_y > length)
-            length = weapon_model->max_y - weapon_model->min_y;
-        if (weapon_model->max_z - weapon_model->min_z > length)
-            length = weapon_model->max_z - weapon_model->min_z;
-        if (length <= 0 || asset->base_scale_milli <= 0) return 0;
-        geometry_scale = asset->base_scale_milli / length;
-        character_scale = actor_to_world->scale_milli;
-        if (geometry_scale <= 0 || character_scale <= 0) return 0;
-        modular_weapon_quaternion_matrix(
-            authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].rotation,
-            primary_rotation);
-        for (i = 0; i < 3; i++) for (socket = 0; socket < 3; socket++)
-            inverse_primary[i * 3 + socket] = primary_rotation[socket * 3 + i];
-        rigid_matrix_multiply(source_socket.rotation, inverse_primary,
-                              weapon_rotation);
-        for (i = 0; i < 3; i++) {
-            double primary[3] = {
-                authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.x *
-                    1000.0 / character_scale,
-                authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.y *
-                    1000.0 / character_scale,
-                authored[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP].position.z *
-                    1000.0 / character_scale
-            };
-            double rotated[3];
-            rigid_matrix_vector(weapon_rotation, primary, rotated);
-            origin[i] = source_socket.position[i] - rotated[i];
-        }
+    } else {
+        struct rasterfall_modular_weapon_placement prepared;
+        if (modular_prepare_weapon_placement(instance,weapon,actor_to_world->scale_milli,&prepared)<0) return 0;
+        source_socket=prepared.source_socket;adapter=prepared.adapter;
+        memcpy(authored,prepared.authored,sizeof(authored));weapon_model=prepared.model;
+        geometry_scale=prepared.geometry_scale;character_scale=prepared.character_scale;
+        has_muzzle=prepared.has_muzzle;memcpy(origin,prepared.origin,sizeof(origin));
+        memcpy(weapon_rotation,prepared.rotation,sizeof(weapon_rotation));
     }
     modular_weapon_model_point(origin, weapon_rotation,
         (double[3]){
@@ -7627,7 +7526,7 @@ static int render_modular_active_weapon(
                 raw[0] = *(const int *)p;
                 raw[1] = *(const int *)(p + 4);
                 raw[2] = *(const int *)(p + 8);
-                modular_weapon_canonical_point(weapon_model, asset, raw,
+                modular_weapon_canonical_point(&adapter, raw,
                                                canonical);
                 for (socket = 0; socket < 3; socket++)
                     authored_point[socket] = canonical[socket] *
@@ -7704,6 +7603,7 @@ struct rasterfall_modular_pose_cache {
     int valid, actor_id, character_id;
     unsigned int combat_generation;
     struct rasterfall_actor_evasion_pose evasion;
+    struct rasterfall_rifle_pose_input rifle;
     enum rasterfall_action_id lower, upper, additive;
     int lower_time_ms, upper_time_ms, additive_time_ms;
     int weapon;
@@ -7720,9 +7620,13 @@ struct rasterfall_modular_actor_runtime {
     int load_attempted, resources_ready;
     struct rasterfall_model_resource body;
     struct rasterfall_model_resource gear[RASTERFALL_GEAR_RESOURCE_COUNT];
+    struct rasterfall_model_resource clothing[RASTERFALL_CLOTHING_RESOURCE_COUNT];
+    struct rasterfall_model_asset clothing_views[RASTERFALL_CLOTHING_RESOURCE_COUNT];
     struct rasterfall_model_instance instances[TOY_GAME_MAX_ACTORS + 1];
     unsigned char instance_ready[TOY_GAME_MAX_ACTORS + 1];
     struct rasterfall_frontend_state frontends[TOY_GAME_MAX_ACTORS + 1];
+    struct rasterfall_frontend_state clothing_frontends[TOY_GAME_MAX_ACTORS + 1]
+        [RASTERFALL_CHARACTER_RECIPE_CLOTHING];
     unsigned char frontend_ready[TOY_GAME_MAX_ACTORS + 1];
     struct rasterfall_modular_pose_cache pose_cache[TOY_GAME_MAX_ACTORS + 1];
 };
@@ -8083,9 +7987,23 @@ static int modular_actor_resources_init(void)
             runtime->gear[i].definition.bone_count)
             goto fail;
     }
+    for (i=0;i<RASTERFALL_CLOTHING_RESOURCE_COUNT;++i) {
+        const struct rasterfall_character_clothing_profile *clothing=
+            rasterfall_character_clothing_profile(i);
+        if (!clothing || snprintf(path,sizeof(path),"%s/%s.rmesh",
+                RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR,clothing->resource_name)>=
+                (int)sizeof(path) ||
+            rasterfall_model_resource_load(&runtime->clothing[i],path)<0 ||
+            !rasterfall_model_shared_skin_compatible(&runtime->body.definition,
+                &runtime->clothing[i].definition)) goto fail;
+        runtime->clothing_views[i]=runtime->clothing[i].definition;
+        runtime->clothing_views[i].skinning_enabled=1;
+    }
     runtime->resources_ready = 1;
     return 0;
 fail:
+    for (i=0;i<RASTERFALL_CLOTHING_RESOURCE_COUNT;++i)
+        rasterfall_model_resource_unload(&runtime->clothing[i]);
     for (i = 0; i < RASTERFALL_GEAR_RESOURCE_COUNT; i++)
         rasterfall_model_resource_unload(&runtime->gear[i]);
     rasterfall_model_resource_unload(&runtime->body);
@@ -8093,6 +8011,48 @@ fail:
 }
 
 #include "render/rf_gpu_scene_pose.inc"
+
+static int render_modular_clothing(struct toy_renderer *renderer,
+    const struct camera *camera, const struct rasterfall_model_instance *instance,
+    const struct rasterfall_character_visual_recipe *recipe,
+    const struct rasterfall_rigid_transform *world, int actor_index,
+    int pose_cache_hit)
+{
+    struct rasterfall_modular_actor_runtime *runtime=&modular_actor_runtime;
+    const struct rasterfall_model_asset *pose=rasterfall_model_instance_final_pose(instance);
+    struct rasterfall_model_skin_palette_bone palette[RF_GPU_SCENE_POSE_BONES];
+    int pixels=0;
+    if (!recipe->clothing_count) return 0;
+    if (!pose || recipe->clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING ||
+        rasterfall_model_build_skin_palette(pose,palette,RF_GPU_SCENE_POSE_BONES)<0)
+        return -1;
+    active_clothing_palette=palette;
+    active_clothing_palette_count=pose->bone_count;
+    for (unsigned i=0;i<recipe->clothing_count;++i) {
+        int id=recipe->clothing_resources[i],part;
+        struct rasterfall_frontend_state *front=&runtime->clothing_frontends[actor_index][i];
+        if (id<0 || id>=RASTERFALL_CLOTHING_RESOURCE_COUNT) { pixels=-1;break; }
+        struct rasterfall_model_asset *view=&runtime->clothing_views[id];
+        /* Only the borrowed view's normal mode changes. Resource skeleton,
+         * body pose and finalized palette remain immutable during submission. */
+        view->animation.pose=pose->animation.pose;
+        front->toon_shared=-1;front->toon_level=255;
+        front->material_alpha=255;front->material_double_sided=1;
+        front->gallery_facing=runtime->frontends[actor_index].gallery_facing;
+        front->gallery_sy=runtime->frontends[actor_index].gallery_sy;
+        front->gallery_cy=runtime->frontends[actor_index].gallery_cy;
+        front->requested_pose_generation=runtime->pose_cache[actor_index].generation;
+        front->reuse_skinned_vertices=pose_cache_hit;
+        frontend_set_override(renderer,front);
+        part=render_gallery_model(renderer,camera,view,(int)world->translation[0],
+            (int)world->translation[1],(int)world->translation[2],world->scale_milli);
+        if (part<0) { pixels=-1;break; }
+        pixels+=part;
+    }
+    active_clothing_palette=NULL;active_clothing_palette_count=0;
+    frontend_set_override(renderer,&runtime->frontends[actor_index]);
+    return pixels;
+}
 
 struct modular_equipment_submission {
     const struct toy_game_actor *actor;
@@ -8120,6 +8080,7 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     struct rasterfall_action_composition composition;
     enum rasterfall_action_id lower, upper, additive = RASTERFALL_ACTION_NONE;
     struct rasterfall_actor_evasion_pose evasion = {0};
+    struct rasterfall_rifle_pose_input rifle = {0};
     int lower_time_ms, upper_time_ms, additive_time_ms;
     int debug_actor, weapon, have_weapon_source, pixels, scale = 835;
     int action_trace_changed, pose_cache_hit;
@@ -8212,6 +8173,8 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         additive = RASTERFALL_ACTION_RIFLE_RECOIL;
     }
     if (!debug_actor) {
+        rasterfall_rifle_sample(actor,(unsigned)(active_presentation_game ? active_presentation_game->combat_time_ms : 0),
+            &actor_action_layers[actor_index].rifle,&rifle);
         rasterfall_actor_evasion_sample(actor, &actor_action_layers[actor_index].evasion,
                                          &evasion);
         if (evasion.weight_milli) {
@@ -8222,10 +8185,12 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
             if (!composition.secondary_additive.clip) return -1;
         }
     }
+    if(debug_actor) rifle.aim_milli=upper==RASTERFALL_ACTION_RIFLE_AIM?1000:0;
     pose_cache_hit = runtime->pose_cache[actor_index].valid &&
         runtime->pose_cache[actor_index].actor_id == actor->actor_id &&
         runtime->pose_cache[actor_index].combat_generation == actor->combat_generation &&
         !memcmp(&runtime->pose_cache[actor_index].evasion, &evasion, sizeof(evasion)) &&
+        !memcmp(&runtime->pose_cache[actor_index].rifle, &rifle, sizeof(rifle)) &&
         runtime->pose_cache[actor_index].character_id == actor->character_id &&
         runtime->pose_cache[actor_index].lower == lower &&
         runtime->pose_cache[actor_index].upper == upper &&
@@ -8241,12 +8206,13 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         if (rasterfall_action_compose(instance, &composition) < 0) return -1;
         if (weapon >= 0 &&
             rasterfall_weapon_asset_profile(weapon)->skeletal &&
-            modular_solve_left_hand(instance, weapon, scale) < 0)
+            rasterfall_rifle_pose_solve(instance, weapon, scale, &rifle, NULL) < 0)
             return -1;
         runtime->pose_cache[actor_index].valid = 1;
         runtime->pose_cache[actor_index].actor_id = actor->actor_id;
         runtime->pose_cache[actor_index].combat_generation = actor->combat_generation;
         runtime->pose_cache[actor_index].evasion = evasion;
+        runtime->pose_cache[actor_index].rifle = rifle;
         runtime->pose_cache[actor_index].character_id = actor->character_id;
         runtime->pose_cache[actor_index].lower = lower;
         runtime->pose_cache[actor_index].upper = upper;
@@ -8314,6 +8280,12 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
                 &actor_to_world, part_min, part_max) == 0)
             modular_bounds_include(combined_min, combined_max,
                 part_min, part_max, &bounds_valid);
+        for (i=0;i<recipe->clothing_count;++i)
+            if (modular_transform_character_bounds(
+                    &runtime->clothing[recipe->clothing_resources[i]].definition,
+                    &actor_to_world,part_min,part_max)==0)
+                modular_bounds_include(combined_min,combined_max,
+                    part_min,part_max,&bounds_valid);
         for (i = 0; i < recipe->attachment_count; i++) {
             struct rasterfall_rigid_transform world;
             const struct rasterfall_model_asset *gear_model =
@@ -8356,8 +8328,16 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         runtime->pose_cache[actor_index].generation;
     runtime->frontends[actor_index].reuse_skinned_vertices = pose_cache_hit;
     frontend_set_override(renderer, &runtime->frontends[actor_index]);
+    active_character_hidden_material_mask=rasterfall_character_recipe_hidden_materials(recipe);
     pixels = rasterfall_render_character_instance(renderer, camera, instance,
         &actor_to_world, recipe->shirt_color, recipe->pants_color);
+    active_character_hidden_material_mask=0;
+    if (pixels>=0) {
+        int clothing_pixels=render_modular_clothing(renderer,camera,instance,recipe,
+            &actor_to_world,actor_index,pose_cache_hit);
+        if (clothing_pixels<0) pixels=-1;
+        else pixels+=clothing_pixels;
+    }
     runtime->frontends[actor_index].gallery_facing = 0;
     frontend_set_override(renderer, 0);
     /* CPU-skinned Draw may flush the preceding Raster prefix while replacing the body
@@ -8519,7 +8499,9 @@ static int render_modular_preview_frame(struct toy_renderer *renderer,
     composition.layers[RASTERFALL_ACTION_LAYER_UPPER_BODY].time_ms = 180;
     if (!lower || !upper || rasterfall_action_compose(instance, &composition) < 0)
         return -1;
-    modular_solve_left_hand(instance, TOY_GAME_WEAPON_AK, 835);
+    struct rasterfall_rifle_pose_input rifle={0};
+    rifle.aim_milli=upper_id==RASTERFALL_ACTION_RIFLE_IDLE?0:1000;
+    if(rasterfall_rifle_pose_solve(instance,TOY_GAME_WEAPON_AK,835,&rifle,NULL)<0)return -1;
     modular_rigid_identity(&actor_to_world);
     actor_to_world.translation[0] = x;
     actor_to_world.translation[1] = -900;

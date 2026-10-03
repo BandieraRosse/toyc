@@ -32,7 +32,9 @@ struct rf_gpu_graphics_draw {
     /* Scene precision/material controls. Zero keeps ordinary defaults.
      * flags: public callers must pass zero; internal layer flags are owner-only.
      * units: local units/metre (0=512); shading: 0 flat, 1 smooth, 2 soft,
-     * 3 unlit; filter: 0 nearest, 1 bilinear/repeat. */
+     * 3 unlit; filter: 0 nearest, 1 bilinear/repeat, 2 texture-set clamp/mip.
+     * Filter 2 uses material[2]=one-based texture-set index (0 untextured),
+     * and multiplies the sRGB base color by the texture in linear light. */
     int32_t quality[4];
     uint32_t first_index, index_count, double_sided;
     uint32_t integer_depth; /* Retired; nonzero is rejected. */
@@ -93,6 +95,11 @@ struct rf_gpu_graphics_stats {
 };
 struct rf_gpu_graphics;
 struct rf_gpu_graphics_resource;
+#define RF_GPU_GRAPHICS_TEXTURES 8
+struct rf_gpu_graphics_texture_image {
+    const uint32_t *rgb;
+    uint32_t width, height;
+};
 struct rf_gpu_graphics_batch_item {
     struct rf_gpu_graphics_resource *resource;
     struct rf_gpu_graphics_draw draw;
@@ -119,6 +126,17 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count,
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
+/* Immutable opaque sRGB images; <=8 images of <=1024 square, UV clamp and
+ * linear-light mips. Copies inputs synchronously. Retired, private resources
+ * only; descriptor mutation during a submitted frame is rejected. Chunks can
+ * share one set without copying images. Lifetime is reference-counted by the
+ * graphics owner, independent of the resource used to create the set. */
+int rf_gpu_graphics_resource_texture_set(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_graphics_texture_image *images,uint32_t count);
+int rf_gpu_graphics_resource_share_textures(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics_resource *resource,
+    const struct rf_gpu_graphics_resource *source);
 /* Update a private, retired triangle-list resource created with sequential
  * indices (0,1,...). Retains texture, indices and descriptors. Returns 1 if
  * capacity must grow, 0 on success, -1 on invalid input/failure. Caller must

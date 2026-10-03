@@ -4,6 +4,7 @@
 import argparse
 import base64
 import json
+import math
 import os
 import re
 import shutil
@@ -185,7 +186,7 @@ def rmesh_info(path):
         raise ImportFailure("not an RFM2 mesh: %s" % path)
     version, vertices, indices = struct.unpack_from("<III", data, 4)
     primitives, materials, primitive_at, material_at = struct.unpack_from("<IIII", data, 44)
-    if not 2 <= version <= 14 or not vertices or not indices or indices % 3:
+    if not 2 <= version <= 15 or not vertices or not indices or indices % 3:
         raise ImportFailure("invalid RFM2 counts/version: %s" % path)
     material_bytes = 40 if version >= 9 else 24 if version >= 8 else 16
     vertex_bytes = 36 if version >= 10 else 32 if version >= 6 else 24
@@ -194,11 +195,33 @@ def rmesh_info(path):
     end = index_at + indices * 4
     if primitive_at != 64 or material_at != 64 + primitives * 16 or end > len(data):
         raise ImportFailure("invalid or truncated RFM2 layout: %s" % path)
+    if version == 15:
+        at = struct.unpack_from("<I", data, 60)[0]
+        if at != end:
+            raise ImportFailure("invalid surface skeletal offset: %s" % path)
+        for magic in (b"SKN1", b"CHR1"):
+            if at + 32 > len(data) or data[at:at+4] != magic:
+                raise ImportFailure("missing surface character section: %s" % path)
+            size = struct.unpack_from("<I", data, at+4)[0]
+            if size < 32 or at+size > len(data):
+                raise ImportFailure("truncated surface character section: %s" % path)
+            at += size
+        size = 32 + 16*materials
+        if at+size != len(data) or struct.unpack_from("<8I", data, at) != (0x3154414d,size,1,materials,16,0,0,0):
+            raise ImportFailure("invalid MAT1 layout: %s" % path)
+        for i in range(materials):
+            flags, rough, metal, reserved = struct.unpack_from("<IffI", data, at+32+16*i)
+            mat = material_at + i*material_bytes
+            if (flags != 1 or reserved or any(not math.isfinite(x) or not 0<=x<=1 for x in (rough,metal)) or
+                    data[mat+4] != 255 or data[mat+6] or struct.unpack_from("<I",data,mat+12)[0]):
+                raise ImportFailure("invalid MAT1 material: %s" % path)
     texture_indices = set()
     for index in range(materials):
         at = material_at + index * material_bytes
         texture = struct.unpack_from("<I", data, at + 8)[0]
         if texture != 0xFFFFFFFF:
+            if version == 15 and texture >= 8:
+                raise ImportFailure("surface texture index exceeds 8 slots: %s" % path)
             texture_indices.add(texture)
         if version >= 5 and data[at + 6] == 1:
             texture_indices.add(data[at + 5])
@@ -209,18 +232,23 @@ def rmesh_info(path):
     return {"version": version, "textures": sorted(texture_indices)}
 
 
-def validate_ttex(path):
+def validate_ttex(path, surface=False):
     try:
         data = path.read_bytes()
     except OSError as error:
         raise ImportFailure("cannot read TTEX %s: %s" % (path, error))
     if (len(data) < 32 or data[:4] != b"TTEX" or
             struct.unpack_from("<H", data, 4)[0] != 1 or
+            struct.unpack_from("<H", data, 6)[0] != 32 or
             struct.unpack_from("<H", data, 16)[0] not in (3, 4) or
             struct.unpack_from("<H", data, 18)[0] != 1 or
             struct.unpack_from("<I", data, 20)[0] != 32 or
             struct.unpack_from("<I", data, 24)[0] != len(data) - 32):
         raise ImportFailure("invalid TTEX: %s" % path)
+    width,height = struct.unpack_from("<II",data,8)
+    channels = struct.unpack_from("<H",data,16)[0]
+    if not width or not height or width*height*channels != len(data)-32 or (surface and max(width,height)>1024):
+        raise ImportFailure("invalid TTEX dimensions: %s" % path)
 
 
 def convert_textures(raw_dir, texture_dir, toyasset):
@@ -246,7 +274,7 @@ def validate_outputs(mesh, texture_dir, lods):
         for path in texture_dir.iterdir():
             if not path.is_file() or not re.fullmatch(r"texture_\d{3}\.ttex", path.name):
                 raise ImportFailure("non-contract file in texture directory: %s" % path.name)
-            validate_ttex(path)
+            validate_ttex(path, surface=info["version"] == 15)
     for texture in info["textures"]:
         expected = texture_dir / ("texture_%03d.ttex" % texture)
         if not expected.is_file():
@@ -303,6 +331,8 @@ def import_asset(args):
         raise ImportFailure("%s requires a standardized GLB source" % manifest["type"])
     if manifest["type"] == "character" and source.suffix.lower() not in (".glb", ".pmx"):
         raise ImportFailure("character requires an RFCHAR GLB or compatibility PMX source")
+    if getattr(args,"character_surface",False) and (manifest["type"]!="character" or source.suffix.lower()!=".glb"):
+        raise ImportFailure("--character-surface requires an RFCHAR GLB character")
     repo = Path(__file__).resolve().parents[2]
     output_root = (args.output_root or repo / "rasterfall/private-assets/models").resolve()
     output_root.mkdir(parents=True, exist_ok=True)
@@ -333,8 +363,12 @@ def import_asset(args):
         textures = stage / (asset_id + ".textures")
         if source.suffix.lower() == ".glb":
             if manifest["type"] == "character":
-                run([sys.executable, repo / "tools/assets/rfchar_import.py", source, mesh,
-                     "--validator", tool_dir / ("glb-inspect" + suffix)])
+                command=[sys.executable, repo / "tools/assets/rfchar_import.py", source, mesh,
+                     "--validator", tool_dir / ("glb-inspect" + suffix)]
+                if getattr(args,"character_surface",False): command.append("--surface")
+                if getattr(args,"position_scale",None): command += ["--position-scale",str(args.position_scale)]
+                if getattr(args,"material_roles",None): command += ["--material-roles",args.material_roles.resolve()]
+                run(command)
             else:
                 run([converter, source, mesh])
             extract_glb_textures(source, raw)
@@ -365,6 +399,9 @@ def main():
     parser.add_argument("--output-root", type=Path)
     parser.add_argument("--tool-dir", type=Path, help="prebuilt converters directory (use with --no-build)")
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--character-surface", action="store_true",help="import RFCHAR GLB with v15 opaque surface profile")
+    parser.add_argument("--position-scale",type=int,choices=(512,8192,65536),help="RFCHAR local units per metre")
+    parser.add_argument("--material-roles",type=Path,help="RFCHAR explicit material-name to visual-role JSON")
     parser.add_argument("--no-build", action="store_true", help="use converters already in build/")
     parser.add_argument("--validate-only", action="store_true", help="validate installed outputs")
     parser.add_argument("--make", default="make", help="make command (default: make)")

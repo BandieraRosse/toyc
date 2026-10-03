@@ -6,34 +6,38 @@ skeleton RF_HUMANOID_V1
 loop 1
 
 track spine linear
-key 0 -4 0 0
-key 1000 -4 0 0
+key 0 3 0 0
+key 1000 3 0 0
 endtrack
 track chest linear
-key 0 -8 0 0
-key 1000 -8 0 0
+key 0 5 0 0
+key 1000 5 0 0
 endtrack
 track left_upper_arm linear
-key 0 0 -58 -36
-key 1000 0 -58 -36
+key 0 0 0 -70
+key 1000 0 0 -70
 endtrack
 track left_forearm linear
-key 0 0 -36 -50
-key 1000 0 -36 -50
+key 0 0 -80 0
+key 1000 0 -80 0
 endtrack
 track left_hand linear
-key 0 0 0 -8
-key 1000 0 0 -8
+key 0 0 0 0
+key 1000 0 0 0
 endtrack
 track right_upper_arm linear
-key 0 0 58 36
-key 1000 0 58 36
+key 0 -12 -12 90
+key 1000 -12 -12 90
 endtrack
 track right_forearm linear
-key 0 0 36 50
-key 1000 0 36 50
+key 0 -56 10 139
+key 1000 -56 10 139
 endtrack
 track right_hand linear
-key 0 80 -30 -121
-key 1000 80 -30 -121
+key 0 -153 -13 35
+key 1000 -153 -13 35
+endtrack
+track left_shoulder linear
+key 0 0 -20 0
+key 1000 0 -20 0
 endtrack

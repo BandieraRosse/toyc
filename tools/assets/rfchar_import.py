@@ -99,7 +99,34 @@ def material_record(material):
     record[36] = MATERIAL_ROLES.get(material.get("name", ""), 0)
     return record
 
-def convert(source,output,validator,position_scale=512,material_roles=None):
+def surface_record(material,document):
+    """Narrow MAT1 profile: opaque base color plus authored PBR constants."""
+    pbr=material.get("pbrMetallicRoughness",{})
+    if (material.get("extensions") or pbr.get("metallicRoughnessTexture") is not None or
+        any(material.get(x) is not None for x in ("normalTexture","occlusionTexture","emissiveTexture")) or
+        any(material.get("emissiveFactor",[0,0,0]))):
+        raise ValueError("RFCHAR V1 ERROR MATERIAL_CAPABILITY: unsupported surface channel")
+    rough=pbr.get("roughnessFactor",1);metal=pbr.get("metallicFactor",1)
+    if any(type(x) not in (int,float) or not math.isfinite(x) or not 0<=x<=1 for x in (rough,metal)):
+        raise ValueError("RFCHAR V1 ERROR MATERIAL_FIELD: invalid PBR factor")
+    texture=pbr.get("baseColorTexture")
+    if texture is not None:
+        index=texture.get("index")
+        if (type(index) is not int or not 0<=index<min(8,len(document.get("textures",[]))) or
+            texture.get("texCoord",0)!=0 or texture.get("extensions")):
+            raise ValueError("RFCHAR V1 ERROR MATERIAL_FIELD: surface requires UV0 and texture index <8")
+        sampler=document["textures"][index].get("sampler")
+        if sampler is not None:
+            samplers=document.get("samplers",[])
+            if type(sampler) is not int or not 0<=sampler<len(samplers):
+                raise ValueError("RFCHAR V1 ERROR MATERIAL_FIELD: invalid sampler")
+            s=samplers[sampler]
+            if (s.get("wrapS",10497)!=33071 or s.get("wrapT",10497)!=33071 or
+                s.get("magFilter")!=9729 or s.get("minFilter")!=9987):
+                raise ValueError("RFCHAR V1 ERROR MATERIAL_CAPABILITY: sampler must be clamp/linear/trilinear")
+    return struct.pack("<IffI",1,rough,metal,0)
+
+def convert(source,output,validator,position_scale=512,material_roles=None,surface=False):
     if position_scale not in (512, 8192, 65536):
         raise ValueError("RFCHAR position scale must be 512, 8192 or 65536 units/metre")
     def i32(x):
@@ -131,6 +158,14 @@ def convert(source,output,validator,position_scale=512,material_roles=None):
         for p in d["meshes"][n["mesh"]]["primitives"]:
             a=p["attributes"]; pos=accessor(d,b,a["POSITION"]); nor=accessor(d,b,a["NORMAL"])
             uv=accessor(d,b,a["TEXCOORD_0"]) if "TEXCOORD_0" in a else [[0,0]]*len(pos)
+            material_index=p.get("material")
+            if material_index is not None and (type(material_index) is not int or not 0<=material_index<source_material_count):
+                raise ValueError("RFCHAR V1 ERROR MATERIAL_INDEX: invalid primitive material")
+            textured=(material_index is not None and
+                "baseColorTexture" in materials[material_index].get("pbrMetallicRoughness",{}))
+            if surface and textured and ("TEXCOORD_0" not in a or len(uv)!=len(pos) or
+                any(not math.isfinite(x) or not 0<=x<=1 for pair in uv for x in pair)):
+                raise ValueError("RFCHAR V1 ERROR MATERIAL_UV: textured primitive requires finite UV0 in [0,1]")
             jo=accessor(d,b,a["JOINTS_0"]);we=accessor(d,b,a["WEIGHTS_0"]);base=len(vertices)
             for k in range(len(pos)):
                 vertices.append((i32(pos[k][0]),i32(pos[k][1]),i32(pos[k][2]),s16(nor[k][0]),s16(nor[k][1]),s16(nor[k][2]),q16(uv[k][0]),q16(uv[k][1])))
@@ -147,7 +182,8 @@ def convert(source,output,validator,position_scale=512,material_roles=None):
             elif type(material) is not int or not 0 <= material < source_material_count:
                 raise ValueError("RFCHAR V1 ERROR MATERIAL_INDEX: invalid primitive material")
             primitives.append((first,len(indices)-first,material))
-    out=bytearray(64);out[:4]=b"RFM2";struct.pack_into("<IIII",out,4,14,len(vertices),len(indices),position_scale)
+    version=15 if surface else 14
+    out=bytearray(64);out[:4]=b"RFM2";struct.pack_into("<IIII",out,4,version,len(vertices),len(indices),position_scale)
     mins=[min(v[i] for v in vertices) for i in range(3)];maxs=[max(v[i] for v in vertices) for i in range(3)]
     struct.pack_into("<6i",out,20,*mins,*maxs);struct.pack_into("<IIIII",out,44,len(primitives),len(materials),64,64+16*len(primitives),0)
     for first,count,mat in primitives: out+=struct.pack("<IIII",first,count,mat,0)
@@ -177,8 +213,11 @@ def convert(source,output,validator,position_scale=512,material_roles=None):
     roles=[joint_runtime[names[x]] if x in names else 0xffffffff for x in ROLES]
     size=32+4*len(roles)+40*len(attachments)
     out+=struct.pack("<8I",0x31524843,size,1,len(roles),len(attachments),40,0,0)+struct.pack("<21I",*roles)+b"".join(attachments)
+    if surface:
+        records=b"".join(surface_record(m,d) for m in materials)
+        out+=struct.pack("<8I",0x3154414d,32+len(records),1,len(materials),16,0,0,0)+records
     output.write_bytes(out)
-    print(f"rfchar-import: {source} -> {output} ({len(vertices)} vertices, {len(indices)//3} triangles, {len(joints)} bones, {len(attachments)} attachments, RFM2 v14)")
+    print(f"rfchar-import: {source} -> {output} ({len(vertices)} vertices, {len(indices)//3} triangles, {len(joints)} bones, {len(attachments)} attachments, RFM2 v{version})")
 
 def main():
     p=argparse.ArgumentParser();p.add_argument("input",type=Path);p.add_argument("output",type=Path);p.add_argument("--validator",type=Path,default=Path("build/glb-inspect"))
@@ -186,8 +225,9 @@ def main():
                    help="local units/metre; 65536 preserves facial gaps for GPU Scene")
     p.add_argument("--material-roles",type=Path,
                    help="explicit name-to-visual-role JSON for existing RFM2 role byte (no shader metadata)")
+    p.add_argument("--surface",action="store_true",help="RFM2 v15 opaque base-color/PBR constant surface profile")
     a=p.parse_args()
     try:convert(a.input,a.output,a.validator,a.position_scale,
-                json.loads(a.material_roles.read_text(encoding="utf-8-sig")) if a.material_roles else None)
+                json.loads(a.material_roles.read_text(encoding="utf-8-sig")) if a.material_roles else None,a.surface)
     except (ValueError,OSError,subprocess.CalledProcessError) as e:p.exit(1,f"rfchar-import: {e}\n")
 if __name__=="__main__":main()

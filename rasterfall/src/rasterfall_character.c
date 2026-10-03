@@ -128,6 +128,12 @@ int rasterfall_character_logic_test(void)
             recipe->attachment_count < 3 ||
             recipe->attachment_count > RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS)
             return 1;
+        if (recipe->clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING) return 1;
+        for (j=0;j<(int)recipe->clothing_count;++j) {
+            const struct rasterfall_character_clothing_profile *clothing=
+                rasterfall_character_clothing_profile(recipe->clothing_resources[j]);
+            if (!clothing || clothing->body_resource_id!=recipe->body_resource_id) return 1;
+        }
         for (j = 0; j < (int)recipe->attachment_count; j++) {
             if (!rasterfall_character_gear_resource_name(
                     recipe->attachments[j].gear_resource_id) ||
@@ -166,29 +172,59 @@ rasterfall_profession_visual_profile(int profession_id)
 static const struct rasterfall_character_visual_recipe modular_professions[] = {
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x6F8461, 0x84906F,
       {A(HEAD,RIFLEMAN_HEAD),A(CHEST,RIFLEMAN_CHEST),A(BACK,RIFLEMAN_BACK),
-       A(HEAD,BALLISTIC_GOGGLES),CARGO},6},
+       A(HEAD,BALLISTIC_GOGGLES),CARGO},6,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x4D5969, 0x616C79,
       {A(HEAD,BREACHER_HEAD),A(CHEST,BREACHER_CHEST),A(BACK,BREACHER_BACK),
-       A(HEAD,BALLISTIC_GOGGLES),CARGO},6},
+       A(HEAD,BALLISTIC_GOGGLES),CARGO},6,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x899376, 0x798465,
-      {A(HEAD,RECON_HEAD),A(CHEST,RECON_CHEST),A(BACK,RECON_BACK),CARGO},5},
+      {A(HEAD,RECON_HEAD),A(CHEST,RECON_CHEST),A(BACK,RECON_BACK),CARGO},5,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x7C9093, 0x657E81,
-      {A(HEAD,MEDIC_HEAD),A(CHEST,MEDIC_CHEST),A(BACK,MEDIC_BACK),CARGO},5},
+      {A(HEAD,MEDIC_HEAD),A(CHEST,MEDIC_CHEST),A(BACK,MEDIC_BACK),CARGO},5,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x997C4B, 0x7C7665,
       {A(HEAD,ENGINEER_HEAD),A(CHEST,ENGINEER_CHEST),A(BACK,ENGINEER_BACK),
-       A(HIP_L,ENGINEER_HIP_L),CARGO},6},
+       A(HIP_L,ENGINEER_HIP_L),CARGO},6,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x796C59, 0x6C695D,
       {A(HEAD,HEAVY_HEAD),A(CHEST,HEAVY_CHEST),A(BACK,HEAVY_BACK),
        A(HIP_L,HEAVY_HIP_L),A(HIP_R,HEAVY_HIP_R),
-       A(HEAD,BALLISTIC_GOGGLES),CARGO},8},
+       A(HEAD,BALLISTIC_GOGGLES)},6,
+       2,{RASTERFALL_CLOTHING_FIELD_JACKET,RASTERFALL_CLOTHING_COMBAT_TROUSERS}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0xB94C3A, 0x554947,
-      {A(HEAD,GUNNER_HEAD),A(CHEST,GUNNER_CHEST),A(BACK,GUNNER_BACK),CARGO},5},
+      {A(HEAD,GUNNER_HEAD),A(CHEST,GUNNER_CHEST),A(BACK,GUNNER_BACK),CARGO},5,0,{0}},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x8F302D, 0x343A40,
       {A(HEAD,GUNNER_ELITE_HEAD),A(CHEST,GUNNER_ELITE_CHEST),
-       A(BACK,GUNNER_ELITE_BACK),A(HEAD,BALLISTIC_GOGGLES),CARGO},6}
+       A(BACK,GUNNER_ELITE_BACK),A(HEAD,BALLISTIC_GOGGLES),CARGO},6,0,{0}}
 };
 #undef CARGO
 #undef A
+
+const struct rasterfall_character_clothing_profile *
+rasterfall_character_clothing_profile(int id)
+{
+    static const struct rasterfall_character_clothing_profile profiles[] = {
+        {"rf_clothing_field_jacket",RASTERFALL_BODY_RF_HUMANOID_V2,RASTERFALL_BODY_REGION_TORSO_ARMS},
+        {"rf_clothing_combat_trousers",RASTERFALL_BODY_RF_HUMANOID_V2,RASTERFALL_BODY_REGION_HIPS_LEGS}
+    };
+    return id>=0 && id<RASTERFALL_CLOTHING_RESOURCE_COUNT ? &profiles[id] : NULL;
+}
+
+uint32_t rasterfall_character_recipe_hidden_materials(
+    const struct rasterfall_character_visual_recipe *recipe)
+{
+    uint32_t regions=0;
+    if (!recipe || recipe->clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING)
+        return 0;
+    for (unsigned i=0;i<recipe->clothing_count;++i) {
+        const struct rasterfall_character_clothing_profile *profile=
+            rasterfall_character_clothing_profile(recipe->clothing_resources[i]);
+        if (!profile || profile->body_resource_id!=recipe->body_resource_id) return 0;
+        regions|=profile->covered_body_regions;
+    }
+    /* Humanoid's canonical body palette owns these complete surface regions.
+     * Other body fits must explicitly publish their own region mapping. */
+    if (recipe->body_resource_id!=RASTERFALL_BODY_RF_HUMANOID_V2) return 0;
+    return ((regions&RASTERFALL_BODY_REGION_TORSO_ARMS) ? 1u<<1 : 0) |
+           ((regions&RASTERFALL_BODY_REGION_HIPS_LEGS) ? 1u<<0 : 0);
+}
 
 static const char *gear_resource_names[] = {
     "rf_gear_rifleman_head", "rf_gear_rifleman_chest", "rf_gear_rifleman_back",
@@ -212,7 +248,7 @@ rasterfall_character_visual_recipe(int id)
 
 const char *rasterfall_character_body_resource_name(int id)
 {
-    static const char *names[]={"rf_humanoid_v2", "rf_c01_v025d"};
+    static const char *names[]={"rf_humanoid_v2", "rf_c01_v028"};
     return id>=0 && id<RASTERFALL_BODY_RESOURCE_COUNT ? names[id] : NULL;
 }
 
@@ -226,7 +262,7 @@ const char *rasterfall_character_body_resource_path(int id)
 {
     static const char *paths[] = {
         RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/rf_humanoid_v2.rmesh",
-        "rasterfall/private-assets/models/rf_c01_v025d.rmesh"
+        "rasterfall/private-assets/models/rf_c01_v028.rmesh"
     };
     return id >= 0 && id < RASTERFALL_BODY_RESOURCE_COUNT ? paths[id] : NULL;
 }

@@ -266,10 +266,47 @@ python tools/rf_combat_character_round.py --generate --gear-only --blender 'E:/B
 
 该入口覆盖八套职业装备及共享的 `ballistic-goggles`、`cargo-thigh-l/r`。新高切防弹盔的耳罩、
 导轨和前安装座保持独立体积；护目镜有镜框、密封圈、镜腿与扣具；板甲包含肩带、侧腰封、织带、
-弹匣袋和压缩带背包。侧袋与大腿外裤层挂 HIP sockets，不跨膝；完整可换蒙皮服装仍是后续能力，
-不能据此声称已实现整条裤子的衣物物理。素材与参考边界见[来源台账](../reference/asset-sources.md)。
+弹匣袋和压缩带背包。侧袋与大腿外裤层挂 HIP sockets，不跨膝；Heavy 的独立蒙皮衣物由下面
+的入口维护，未实现衣物物理。素材与参考边界见[来源台账](../reference/asset-sources.md)。
 
 完成生成后由 Windows native package 同步公开 assets。运行 `--gpu-scene-pose-test` 验证满容量、
 同 socket 多配件、左右腿动作跟随和 CPU/Scene 一致，再用 `--combat-character-capture` 与
 实验区近景核查头盔/护目镜是否重叠、瞄准时弹匣袋与前臂的间隙、侧袋跟随和各职业远景轮廓。
 不要用静态 bind 图代替动作检查。
+
+### 夹克、跨膝外裤与 Heavy 基础色纹理
+
+在 native asset-tools 构建后运行：
+
+```powershell
+python tools/rf_clothing_round.py --generate --import-assets --with-body --blender 'E:/Blender 5.2/blender.exe' --tool-dir build-windows --output tmp/character-quality/clothing
+```
+
+入口重建两件 skin 衣物及 Heavy 五件 rigid 组件，验证完整骨架、opaque、嵌入 PNG、UV0 范围、
+clamp/linear/mip sampler 和单模块三角预算，再经统一 importer 安装公开 mesh/texture。
+衣物使用 `--character-surface` 导出 v15 的 roughness/metallic 常量，rigid 沿现有格式导入。
+PNG 均为原创确定性 256² 织物，不使用游戏截图或游戏资产。私有 GLB 只是可重建中间件。
+
+`--with-body` 另导出 `rf_humanoid_surface.py` 的本体表面样板：512² 面部/手部、512² 短发/靴面、
+256² 中性织物三张基础色图。表面步骤保持输入几何、权重与五材质顺序；当前身体和衣物统一使用
+含手指链的 49 骨，身体生成器另为指节提供两骨权重。shirt/pants 纹理只提供
+中性织物调制，职业颜色仍由 recipe 替换。导入后继续执行 canonical palette 验证。
+
+先运行 `--gpu-scene-pose-test`，再观察 Heavy 正侧后与 WALK/瞄准姿态，确认衣物跟随同一
+final palette、膝前补强连续、夹克衣摆不漏旧 shirt、外裤不叠旧 pants/rigid 大腿层。
+检查近景的肩带与袖袋、护甲与拉链位置，远景则以 silhouette 和职业识别为准。
+
+### 双手握持与动作展示
+
+站立持枪、瞄准和行走射击都检查握点的完整位置和朝向。AK 的 PRIMARY_GRIP 位于实际手枪握把，
+FOREGRIP 位于护木后缘；右手掌骨延续前臂向上前方，手指包住握把，食指单独伸向扳机；
+左掌朝上、手指朝枪口并弯曲承托护木。武器与身体按各自 authored units 换算后求解，
+不要用 mesh 平移或 CHEST 补偿处理握持误差。固定镜头同时观察枪托与内肩、左右肘的位置以及
+手指/掌根是否贴合握把，连续采样检查反冲和步态中有无拉直、翻腕或滑脱。
+
+`--gpu-scene-pose-test` 的 `scene grip` 项覆盖 Humanoid、RF-C01 与等价高精度坐标身体，打印
+最大握点单轴位置误差（RFU）、旋转矩阵元素误差和最小腕部方向点积，并要求没有 reach clamp、
+右手不被左臂求解改变、腕部不直角折转、指节实际弯曲且退出持枪后复位。
+完整 `--logic-test` 另验证带旋转本地 socket 的腕部偏移处理。数值通过后仍需原生近景验收。
+目录预览通过 `rf_gpu_scene_pose_body_action` 选择持枪动作，使用正式的最终 palette/weapon transform；
+显式持枪动作不受只用于旧 bind 保真视图的 `RF_GPU_CHARACTER_FREEZE` 开关影响。

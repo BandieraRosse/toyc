@@ -12,11 +12,16 @@ enum rasterfall_weapon_socket {
     RASTERFALL_WEAPON_SOCKET_FOREGRIP,
     RASTERFALL_WEAPON_SOCKET_MUZZLE,
     RASTERFALL_WEAPON_SOCKET_MAGAZINE,
+    RASTERFALL_WEAPON_SOCKET_STOCK,
+    RASTERFALL_WEAPON_SOCKET_SIGHT,
     RASTERFALL_WEAPON_SOCKET_COUNT
 };
 struct rasterfall_weapon_socket_transform {
     struct rasterfall_cal_vec3 position;
     float rotation[4];
+};
+struct rasterfall_weapon_clearance_capsule {
+    double a[3], b[3], radius;
 };
 #define RASTERFALL_POSE_BODY_CHANNEL_COUNT 5
 struct rasterfall_weapon_asset_profile {
@@ -24,12 +29,30 @@ struct rasterfall_weapon_asset_profile {
     int asset_basis;
     int skeletal;
     int base_scale_milli;
+    int legacy_base_scale_milli; /* Existing imported pose-editor calibration. */
+    /* Physical reference, independent of character size and source units. */
+    int length_mm;
     /* Fixed source/asset attachment pivot.  Authored pose anchors are
      * evaluated relative to this pivot and must not move the mesh itself. */
     struct rasterfall_cal_vec3 attachment_grip;
     struct rasterfall_cal_vec3 sockets[RASTERFALL_WEAPON_SOCKET_COUNT];
+    float socket_rotations[RASTERFALL_WEAPON_SOCKET_COUNT][4];
     unsigned int socket_mask;
+    struct rasterfall_weapon_clearance_capsule clearance[4];
+    int clearance_count;
 };
+
+/* File-space -> canonical (+Z forward, RFU) adaptation. Shared by CPU and
+ * Scene. The source is immutable; only this transform normalizes its scale. */
+struct rasterfall_weapon_model_adapter {
+    int center[3];
+    double basis[9];
+    int scale_milli;
+    int reference_length_mm;
+    double presented_length_mm;
+};
+int rasterfall_weapon_model_adapt(int weapon, const int minimum[3],
+    const int maximum[3], struct rasterfall_weapon_model_adapter *out);
 
 struct rasterfall_pose_calibration {
     int character_id, weapon;

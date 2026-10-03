@@ -74,7 +74,18 @@ WORLD 深度、GPU skinning 和退休链。三角形展开数据以 65,535 个�
 跨块 primitive 拆成同材质 draw，骨架 palette 保持完整，材质和双面标志不改变。
 这保留现有 graphics 顶点容量，不提高设备入口上限。当前每个实例分别缓存 GPU bind 数据，
 同内容跨实例的 GPU buffer 共享仍未实现；逐帧只重新打包 palette 和 draw，资源 generation
-或 bind-normal 策略变化才重建静态顶点。角色材质仍只支持不透明分色，纹理/MASK/toon 扩展待实施。
+或 bind-normal 策略变化才重建静态顶点。
+
+角色与附件可使用不透明基础色纹理及粗糙度、金属度常量。RFCHAR 的显式 RFM2 v15/MAT1
+合同见[角色资产](../reference/character-assets.md)；旧 v14 仍可读，MASK/toon 与完整角色包尚未实现。
+每个 mesh 最多八张 1024² RGB/RGBA 基础色图。Scene 资源首次上传时由 CPU 在线性光空间生成
+完整 mip 链，再上传到 device-local texture set；shader 做 clamp/bilinear/trilinear，纹理与基础色
+因子在线性空间相乘后进入统一 PBR。RGBA 的 alpha 在本轮 OPAQUE 合同中忽略。
+同一实例的几何 chunks 以引用计数共享纹理缓冲，稳定帧不重复上传；资源更新和释放遵守退休规则。
+这不等于跨实例共享纹理缓存。静态世界既有 repeat 过滤路径保持独立。
+
+独立蒙皮衣物复用身体冻结后的完整 palette 和 body-to-world，先验证骨架 rest/顺序/角色映射一致，
+再与身体一同提交。被衣物覆盖的 body material 只在该实例绘制中隐藏，不改共享资源。
 
 Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD（包括静态建筑模型）统一使用 D32 原生 reversed Z（64/z），
 不再对倒数深度取整；旧整数兼容 draw 已拒绝。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，

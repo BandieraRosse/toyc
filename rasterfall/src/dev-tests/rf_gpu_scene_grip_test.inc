@@ -1,0 +1,199 @@
+/* Stable grasp contract: animation and representation units may change, but
+ * PRIMARY_GRIP/FOREGRIP must still close onto the finalized hand sockets. */
+static int scene_grip_pose_test(void)
+{
+    struct rasterfall_model_instance instance={0};
+    struct rasterfall_model_resource catalog={0};
+    struct rasterfall_action_composition composition={0};
+    struct rasterfall_model_attachment_transform left;
+    struct rasterfall_weapon_socket_transform foregrip;
+    struct rasterfall_modular_weapon_placement placement;
+    double maximum_position=0,maximum_rotation=0,minimum_wrist_dot=1;
+    static const int times[]={0,35,90,180,350,600,900,1200};
+    int failure=0,constraint_failures=0;
+#define GRIP_CHECK(x) do { if (!(x)) { failure=__LINE__;goto done; } } while (0)
+    {
+        struct toy_game_actor actor={0},saved;
+        struct rasterfall_rifle_history history={0};
+        struct rasterfall_rifle_pose_input sample,repeated;
+        struct rasterfall_weapon_model_adapter a,b;
+        actor.actor_id=7;actor.combat_generation=4;actor.state=TOY_GAME_ACTOR_ALIVE;
+        actor.combat_target.kind=-1;actor.pitch_cy=1024;
+        rasterfall_rifle_sample(&actor,0,&history,&sample);
+        GRIP_CHECK(!sample.aim_milli);
+        actor.combat_target.kind=0;actor.combat_target.z=4096;
+        actor.pitch_sy=1024;saved=actor;
+        rasterfall_rifle_sample(&actor,100,&history,&sample);
+        GRIP_CHECK(sample.aim_milli>0 && sample.aim_milli<1000 &&
+            sample.pitch_mdeg>=44999 && sample.pitch_mdeg<=45001 && sample.target_distance_rfu==4096);
+        rasterfall_rifle_sample(&actor,100,&history,&repeated);
+        GRIP_CHECK(!memcmp(&sample,&repeated,sizeof(sample)) && !memcmp(&actor,&saved,sizeof(actor)));
+        rasterfall_rifle_sample(&actor,350,&history,&sample);
+        GRIP_CHECK(sample.aim_milli==1000);
+        actor.combat_target.kind=-1;
+        rasterfall_rifle_sample(&actor,450,&history,&sample);
+        GRIP_CHECK(sample.aim_milli>0 && sample.aim_milli<1000);
+        rasterfall_rifle_sample(&actor,700,&history,&sample);
+        GRIP_CHECK(!sample.aim_milli);
+        actor.combat_generation++;
+        rasterfall_rifle_sample(&actor,50,&history,&sample);
+        GRIP_CHECK(!sample.aim_milli && history.generation==actor.combat_generation);
+        GRIP_CHECK(!rasterfall_weapon_model_adapt(TOY_GAME_WEAPON_AK,
+            (int[3]){-33,-256,-460},(int[3]){30,91,614},&a));
+        GRIP_CHECK(!rasterfall_weapon_model_adapt(TOY_GAME_WEAPON_AK,
+            (int[3]){-66+80,-512+60,-920+100},(int[3]){60+80,182+60,1228+100},&b));
+        GRIP_CHECK(a.reference_length_mm==880 && fabs(a.presented_length_mm-880)<2 &&
+            a.presented_length_mm==b.presented_length_mm && a.scale_milli==b.scale_milli*2);
+        GRIP_CHECK(a.basis[0]==-1 && a.basis[4]==1 && a.basis[8]==-1);
+        GRIP_CHECK(rasterfall_weapon_model_adapt(TOY_GAME_WEAPON_AK,
+            (int[3]){0,0,0},(int[3]){1,1,0},&b)<0);
+    }
+    GRIP_CHECK(!modular_actor_resources_init());
+    GRIP_CHECK(!rasterfall_model_resource_load(&catalog,
+        rasterfall_character_body_resource_path(RASTERFALL_BODY_RF_C01_V22H)));
+    GRIP_CHECK(!rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,
+        RASTERFALL_WEAPON_SOCKET_FOREGRIP,&foregrip));
+    for (int representation=0;representation<3;++representation) {
+        int scale=representation==2 ? 1000 : 835;
+        GRIP_CHECK(!rasterfall_model_instance_init(&instance,representation==2 ?
+            &catalog : &modular_actor_runtime.body));
+        for(int state=0;state<4;++state)
+        for(int pitch=-75;pitch<=75;pitch+=15) for(int yaw=-45;yaw<=45;yaw+=45) {
+            struct rasterfall_rifle_pose_input aim={0};
+            struct rasterfall_rifle_diagnostics d;
+            memset(&composition,0,sizeof(composition));
+            composition.layers[0].clip=humanoid_action(RASTERFALL_ACTION_LOCOMOTION_IDLE);
+            composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_AIM);
+            GRIP_CHECK(!rasterfall_action_compose(&instance,&composition));
+            if(representation==1) {
+                instance.pose.position_scale*=128;
+                for(unsigned i=0;i<instance.pose.bone_count;++i) {
+                    instance.pose.bones[i].rest_x*=128;
+                    instance.pose.bones[i].rest_y*=128;
+                    instance.pose.bones[i].rest_z*=128;
+                }
+                for(int i=0;i<RASTERFALL_ATTACHMENT_COUNT;++i)
+                    for(int axis=0;axis<3;++axis)instance.pose.attachments[i].local_position[axis]*=128;
+                GRIP_CHECK(!rasterfall_model_instance_update_bones(&instance));
+            }
+            aim.aim_milli=state==2?0:state==3?500:1000;
+            aim.pitch_mdeg=pitch*1000;aim.yaw_mdeg=yaw*1000;
+            aim.armor_milli=state==1?1000:0;
+            aim.target_distance_rfu=state==1?1024:16384;
+            aim.recoil_milli=state==3?1000:0;
+            GRIP_CHECK(!rasterfall_rifle_pose_solve(&instance,TOY_GAME_WEAPON_AK,scale,&aim,&d));
+            int good=!d.reach_clamped[0] && !d.reach_clamped[1] &&
+                d.grip_error[0]<3 && d.grip_error[1]<3 &&
+                d.wrist_dot[0]>.57 && d.wrist_dot[1]>.57 &&
+                d.clearance_rfu>-.5 && (state>1 || d.aim_error_degrees<2.5);
+            if(!good || getenv("RF_RIFLE_PROBE"))
+                __printf("RIFLE-CONSTRAINT body=%d state=%d pitch=%d yaw=%d error=%.2f,%.2f wrist=%.3f,%.3f clamped=%d,%d clearance=%.2f shift=%.2f aim=%.3f valid=%d\n",
+                    representation,state,pitch,yaw,d.grip_error[0],d.grip_error[1],
+                    d.wrist_dot[0],d.wrist_dot[1],d.reach_clamped[0],d.reach_clamped[1],
+                    d.clearance_rfu,d.clearance_shift_rfu,d.aim_error_degrees,good);
+            if(!good)++constraint_failures;
+        }
+        for (int mode=0;mode<3;++mode) for (unsigned sample=0;sample<sizeof(times)/sizeof(times[0]);++sample) {
+            double target[3],authored_rotation[9],target_rotation[9],units;
+            memset(&composition,0,sizeof(composition));
+            composition.layers[0].clip=humanoid_action(mode==2 ?
+                RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
+            composition.layers[0].time_ms=times[sample];
+            composition.layers[1].clip=humanoid_action(mode==2 ?
+                RASTERFALL_ACTION_RIFLE_FIRE : mode ?
+                RASTERFALL_ACTION_RIFLE_AIM : RASTERFALL_ACTION_RIFLE_IDLE);
+            composition.layers[1].time_ms=times[sample];
+            if (mode==2) {
+                composition.layers[2].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_RECOIL);
+                composition.layers[2].time_ms=times[sample]%600;
+            }
+            GRIP_CHECK(!rasterfall_action_compose(&instance,&composition));
+            /* Composition resets from the immutable definition. Scale only
+             * this evaluated instance to test an equivalent authored unit. */
+            if (representation==1) {
+                instance.pose.position_scale*=128;
+                for (unsigned i=0;i<instance.pose.bone_count;++i) {
+                    instance.pose.bones[i].rest_x*=128;
+                    instance.pose.bones[i].rest_y*=128;
+                    instance.pose.bones[i].rest_z*=128;
+                }
+                for (int i=0;i<RASTERFALL_ATTACHMENT_COUNT;++i)
+                    for (int axis=0;axis<3;++axis)
+                        instance.pose.attachments[i].local_position[axis]*=128;
+                GRIP_CHECK(!rasterfall_model_instance_update_bones(&instance));
+            }
+            units=instance.pose.position_scale/512.0;
+            struct rasterfall_rifle_pose_input rifle={0};
+            struct rasterfall_rifle_diagnostics diagnostic;
+            rifle.aim_milli=mode?1000:0;
+            rifle.recoil_milli=mode==2 && times[sample]<180?600:0;
+            GRIP_CHECK(!rasterfall_rifle_pose_solve(&instance,TOY_GAME_WEAPON_AK,scale,&rifle,&diagnostic));
+            GRIP_CHECK(!diagnostic.reach_clamped[0] && !diagnostic.reach_clamped[1]);
+            for (int side=0;side<2;++side) {
+                int hand=rasterfall_model_humanoid_bone(&instance.pose,side ?
+                    RASTERFALL_HUMANOID_RIGHT_HAND : RASTERFALL_HUMANOID_LEFT_HAND);
+                int elbow=instance.pose.bones[hand].parent;
+                const struct rasterfall_model_bone_transform *h=&instance.pose.bone_transforms[hand];
+                const struct rasterfall_model_bone_transform *e=&instance.pose.bone_transforms[elbow];
+                double dot=0,length=0;
+                for (int axis=0;axis<3;++axis) {
+                    double v=h->position[axis]-e->position[axis];
+                    length+=v*v;
+                    dot+=v*h->rotation[axis*3]*(side ? -1 : 1);
+                }
+                dot/=sqrt(length);
+                if (dot<minimum_wrist_dot) minimum_wrist_dot=dot;
+                if (dot<0.57) __printf("wrist bend representation=%d mode=%d time=%d side=%d dot=%.6f\n",
+                    representation,mode,times[sample],side,dot);
+                GRIP_CHECK(dot>0.57); /* Less than 55 degrees; never a right-angle fold. */
+                int index=rasterfall_model_find_bone(&instance.pose,side ? "RF_R_FINGER_0_1" : "RF_L_FINGER_0_1");
+                int middle=rasterfall_model_find_bone(&instance.pose,side ? "RF_R_FINGER_1_2" : "RF_L_FINGER_1_2");
+                GRIP_CHECK(index>=0 && middle>=0);
+                const double *f=instance.pose.bone_transforms[middle].rotation;
+                dot=0;
+                for (int axis=0;axis<3;++axis) dot+=f[axis*3]*h->rotation[axis*3];
+                GRIP_CHECK(dot<0.5); /* Fingers wrap instead of remaining a rigid open palm. */
+                if (side) {
+                    f=instance.pose.bone_transforms[index].rotation;dot=0;
+                    for (int axis=0;axis<3;++axis) dot+=f[axis*3]*h->rotation[axis*3];
+                    GRIP_CHECK(dot>0.9); /* Trigger index reaches forward separately. */
+                }
+            }
+            GRIP_CHECK(!rasterfall_model_instance_attachment_transform(&instance,
+                RASTERFALL_ATTACHMENT_FOREGRIP,&left));
+            GRIP_CHECK(!modular_prepare_weapon_placement(&instance,TOY_GAME_WEAPON_AK,scale,&placement));
+            modular_weapon_model_point(placement.origin,placement.rotation,
+                (double[3]){foregrip.position.x,foregrip.position.y,foregrip.position.z},scale,target);
+            modular_weapon_quaternion_matrix(foregrip.rotation,authored_rotation);
+            rigid_matrix_multiply(placement.rotation,authored_rotation,target_rotation);
+            for (int i=0;i<3;++i) {
+                double error=fabs(left.position[i]/units-target[i]);
+                if (error>maximum_position) maximum_position=error;
+                GRIP_CHECK(error<5.0);
+            }
+            for (int i=0;i<9;++i) {
+                double error=fabs(left.rotation[i]-target_rotation[i]);
+                if (error>maximum_rotation) maximum_rotation=error;
+                GRIP_CHECK(error<0.035);
+            }
+        }
+        memset(&composition,0,sizeof(composition));
+        composition.layers[0].clip=humanoid_action(RASTERFALL_ACTION_LOCOMOTION_IDLE);
+        GRIP_CHECK(!rasterfall_action_compose(&instance,&composition));
+        for (unsigned i=0;i<instance.pose.bone_count;++i)
+            if (strstr(instance.pose.bones[i].name,"_FINGER_"))
+                GRIP_CHECK(!instance.pose.bones[i].rotate_x &&
+                    !instance.pose.bones[i].rotate_y && !instance.pose.bones[i].rotate_z);
+        rasterfall_model_instance_unload(&instance);
+    }
+    GRIP_CHECK(!constraint_failures);
+done:
+    rasterfall_model_instance_unload(&instance);
+    rasterfall_model_resource_unload(&catalog);
+    if (failure) __printf("scene grip FAIL line=%d position_rfu=%.6f rotation=%.6f\n",
+        failure,maximum_position,maximum_rotation);
+    else __printf("scene grip PASS constraints=396 motion_samples=72 position_rfu=%.6f rotation=%.6f minimum_wrist_dot=%.6f fingers/reset\n",
+        maximum_position,maximum_rotation,minimum_wrist_dot);
+#undef GRIP_CHECK
+    return failure ? 1 : 0;
+}

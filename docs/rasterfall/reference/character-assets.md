@@ -51,6 +51,12 @@ Quaternius 等名字由各自 compatibility mapper 处理，不得加入本表�
 这 21 个 role 与现有 `rasterfall_humanoid_bone` 一一对应；V1 不新增第二套人形抽象。额外 twist、
 toe、finger、face、hair 和 cloth bones 可存在，但不是 humanoid role，不得插入上表要求的直接父子链。
 
+持枪样板可选用 `RF_<L|R>_FINGER_<0|1|2|3|thumb>_<1|2>`，0–3 为食指至小指。
+第一节直接挂同侧 HAND，第二节直接挂第一节；rest 仍为掌心朝下、手指向外的 canonical 空间。
+共享 Humanoid 与 RF-C01 使用这些链，RFANIM composition 在持枪上身层后应用左右镜像的弯指，
+扳机食指单独保留伸出姿态，拇指做对握。缺失链的旧资产保留原手型；不增加 humanoid role 或二进制格式。
+同骨架衣物须随 body 一起导出完整 49 骨（原 29 骨加 20 根手指骨），不能混用旧 29 骨衣物。
+
 ### 空间与静止姿态
 
 - Blender 源为米制（Unit Scale 1.0）、右手系、Z-up、-Y forward；GLB 按 glTF 标准导出为米制、
@@ -95,12 +101,36 @@ importer 会完整求值 node hierarchy，绝不沿用旧 `glb2rmesh` 的“只�
 Blender scene/camera/light。动画可与角色同包，但 skeletal importer 第一阶段可明确忽略；动画进入
 格式无关 `rasterfall_animation_clip` 的规则仍见 [animation architecture](../architecture/animation-architecture.md)。
 
-输入门与产物能力分开：当前 RFM2 v14 RFCHAR converter 只导入 OPAQUE，按其语义忽略
+输入门与产物能力分开：RFM2 v14/v15 RFCHAR converter 只导入 OPAQUE，按其语义忽略
 baseColorFactor alpha，写 byte 4=255；byte 5 为旧 toon index，不能写成 16 位 alpha 的高字节。
 `doubleSided` 写入 byte 7 的 bit 0；无材质引用的 primitive 使用独立默认白材质，不借用材质 0。
 MASK/BLEND 和 `extras.rf_material` 在写产物前以 `MATERIAL_CAPABILITY` 拒绝，直到新格式和消费者
 实现，不能再静默丢掉 cutoff 或 RF 参数。无效颜色/布尔值报 `MATERIAL_FIELD`，无效索引报
 `MATERIAL_INDEX`；验证失败保留已有输出。已导入的历史产物不会自动修正，需要重新构建。
+
+### RFM2 v15 opaque surface 扩展
+
+默认 importer 继续生成 v14；`--character-surface` 显式选择 v15。v15 完整保留原 header、
+40-byte material、vertex/index、SKN1 与 CHR1 布局，只在 CHR1 之后追加唯一 MAT1 block，
+不改骨架、权重或 attachment 表。runtime 同时可读历史 v14，不要求旧资源批量升级。
+
+MAT1 的 32-byte little-endian 头为八个 `uint32`：magic=`0x3154414d`（`MAT1`）、
+total bytes、version=1、material count、stride=16，以及三个 reserved=0。随后每材质一项
+16-byte `{uint32 flags=1, float32 roughness, float32 metallic, uint32 reserved=0}`，顺序与
+原 material 表一致；常量必须有限且在 `[0,1]`，material count、stride、尾块长度必须精确匹配。
+旧 material byte 8 的 texture index 和 byte 7 的 double-sided 位继续生效。
+
+flags=1 固定表示 opaque、sRGB 基础色、UV0、clamp、bilinear 和 mip 采样配置，不是任意
+shader feature bitset。每资源最多八个基础色 texture slot（0–7），每图最大 1024×1024；
+图像仍由统一 importer 提取成同目录 `.textures/*.ttex`，runtime 消费者准备 mip chain。
+有贴图的 primitive 必须带有限且落在 `[0,1]` 的 UV0；GLB sampler 明确使用
+wrapS/wrapT=CLAMP_TO_EDGE、mag=LINEAR、min=LINEAR_MIPMAP_LINEAR。
+当前拒绝 normal/occlusion/emissive/metallicRoughness 贴图、材质扩展及新的 RF extras；
+该窄扩展不等于[角色包与材质草案](character-package-v1.md)已经实现。
+
+刚性 GLB 装备保留原 RFM2 v2 材质表中既有 metallic/roughness 的 u16 常量，不为其添加
+SKN1/CHR1 或 MAT1。CPU/Scene 角色换装与 PBR 常量的读取按资产版本区分，不能把 v2 的
+metallic 字节误读成后续版本的 alpha/toon 字段。
 
 ## Attachment Contract V1
 
@@ -220,7 +250,7 @@ viewport，后者才是 glTF 导出的事实来源。`--generate` 会在导入�
 空间和材质。胸甲、弹匣袋、肩带、腰封、头盔壳、导轨、耳罩、背包与压缩带均为实几何，沿用 opaque
 材质与普通 rigid importer。战术头盔不含镜片；`rf_gear_ballistic_goggles` 可与其独立组合。
 `rf_gear_cargo_thigh_l/r` 是可拆大腿外裤与立体侧袋，分别跟随 `HIP_L/R`。外裤上层止于膝盖上方，
-不跨关节；跨膝裤腿仍由共享身体蒙皮表面拥有，当前没有通用蒙皮服装资源或布料模拟。
+不跨关节；它们继续服务原有职业。Heavy 另外装配下述独立跨关节蒙皮衣物。
 
 recipe 最多含 `RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS` 个独立 follower（当前为八个），同 socket
 可以挂多个资源。CPU cache、Scene 冻结载荷和 native mesh 列表都使用该容量；不能按 socket 去重，
@@ -231,3 +261,29 @@ recipe 最多含 `RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS` 个独立 follower（
 `--gpu-scene-pose-test` 的装备回归填满 recipe，检查重复 socket 的独立记录、左右大腿随 WALK、
 CPU/Scene transform 相同、查询不修改最终姿态及超容量拒绝。完整 carrier 也组装同一共享模块，
 用于 legacy/modular A/B；正常玩法只保留共享身体和独立 gear。
+
+### 可换蒙皮衣物样板
+
+`rf_clothing_field_jacket` 与 `rf_clothing_combat_trousers` 是独立 RFCHAR skin resource，
+由 `tools/blender/generate_rasterfall_clothing.py` 基于原创 Humanoid 版型生成，包含真实衣服厚度、
+衣摆、领口、上臂袋、跨膝补强与裤侧袋。生成器沿用身体含手指链的完整 49 骨以及其两骨权重，不新增
+cloth 骨、动画或刚体跨膝补偿。opaque UV0 基础色使用 `rf_tactical_textures.py` 生成的原创
+256² ripstop 织物 PNG，保留原 baseColorFactor；导出器显式修正 factor，防止 Blender 节点导出丢色。
+
+本体 `rf_humanoid_surface.py` 只增加 UV0 和三张原创基础色图：面部/手部与短发/靴面各 512²，
+shirt/pants 共用 256² 中性织物。五材质顺序仍是 pants/shirt/skin/hair/boots，颜色 factor、
+几何、法线、蒙皮权重与骨架不变；纹理不烘焙职业染色或方向光，避免 CPU/Scene palette override
+后二次染色。该样板使用 opaque PNG、clamp、bilinear 和 mip，面部细节不进入 shader 特例。
+
+`RASTERFALL_CHARACTER_RECIPE_CLOTHING` 限制每个 recipe 最多两件 skin follower；
+`rasterfall_model_shared_skin_compatible()` 必须验证骨名、顺序、父子、absolute rest、grant、
+position scale 与 humanoid role 映射一致。衣物消费 body finalized palette，不能重新求值
+IK 或拥有独立动作时钟。CPU scoped palette 与 Scene 同一 pose payload 使用相同 bind-normal 策略。
+
+覆盖区域是显式版型合同：`TORSO_ARMS` 对应 Humanoid body 的 shirt 材质 1，`HIPS_LEGS`
+对应 pants 材质 0。producer 冻结 mask，消费者只对本次 body primitive 提交生效，不隐藏手、
+脸、头发、靴子，也不修改共享 resource。Heavy recipe 移除原 rigid 大腿裤层以免叠穿，保留
+六件 rigid 装备。换装不改变碰撞、护甲数值或网络快照；不自动适配 RF-C01，不包含布料模拟。
+
+`--gpu-scene-pose-test` 验证共享 palette 的只读重放、骨架/单位不兼容拒绝、覆盖映射、容量错误
+拒绝及左右膝两骨顶点随 WALK 运动。真实衣摆与护甲穿插仍须用 native 多角度动作截图核查。

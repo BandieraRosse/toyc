@@ -52,7 +52,7 @@ class AuditTests(unittest.TestCase):
         result = self.probe(material={"alphaMode": "MASK", "doubleSided": True,
                                      "pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}})
         self.assertEqual(result["current_pipeline_gaps"], ["MASK_IMPORT_REJECTED",
-                         "SCENE_CHARACTER_TEXTURE_UNSUPPORTED"])
+                         "OPAQUE_SURFACE_PROFILE_REQUIRED"])
 
     def test_deformation_and_animation_are_not_silently_accepted(self):
         result = self.probe(weights=(0.4, 0.3, 0.2, 0.1), morph=True, animation=True)

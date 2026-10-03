@@ -55,6 +55,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_map.c \
              rasterfall/src/rasterfall_model.c \
              rasterfall/src/rasterfall_action.c \
+             rasterfall/src/rasterfall_rifle_pose.c \
              rasterfall/src/rasterfall_humanoid_basis.c \
              rasterfall/src/rasterfall_humanoid_retarget.c \
              rasterfall/src/rasterfall_ai.c \
@@ -123,7 +124,10 @@ WINDOWS_APP_SHIM_OBJ := $(BUILD)/windows/userland_winmain.o
 NATIVE_TOOL_FLAGS := $(CPPFLAGS) $(CFLAGS) -static -mconsole -Wl,--gc-sections -Wl,--stack,16777216
 NATIVE_TOOL_RUNTIME := windows/src/runtime.c windows/src/string.c windows/src/socket_winsock.c
 .PHONY: asset-tools
-asset-tools: $(BUILD)/glb2rmesh.exe $(BUILD)/map-inspect.exe $(BUILD)/glb-inspect.exe $(BUILD)/rfchar-runtime-test.exe $(BUILD)/rf-anim-info.exe
+asset-tools: $(BUILD)/toyasset.exe $(BUILD)/glb2rmesh.exe $(BUILD)/map-inspect.exe $(BUILD)/glb-inspect.exe $(BUILD)/rfchar-runtime-test.exe $(BUILD)/rf-anim-info.exe
+
+$(BUILD)/toyasset.exe: tools/toyasset.c tools/jpg_decode.c | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -static -o $@ tools/toyasset.c tools/jpg_decode.c -lz
 $(BUILD)/glb-inspect.exe: app/linux/glb_inspect.c rasterfall/src/rasterfall_humanoid_basis.c rasterfall/src/rasterfall_humanoid_retarget.c lib/linux/assets.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
 	$(WIN_CC) $(NATIVE_TOOL_FLAGS) -o $@ app/linux/glb_inspect.c rasterfall/src/rasterfall_humanoid_basis.c rasterfall/src/rasterfall_humanoid_retarget.c lib/linux/assets.c $(NATIVE_TOOL_RUNTIME) -lws2_32
 $(BUILD)/glb2rmesh.exe: app/linux/glb2rmesh.c $(NATIVE_TOOL_RUNTIME) windows/Makefile | $(BUILD)
@@ -232,7 +236,7 @@ $(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_lighting_test.inc) \
     $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_sky* gpu/shaders/*.glsl) \
-    gpu/src/rf_gpu_vulkan_graphics.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
+    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_texture_set.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
     gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp \
     $(wildcard rasterfall/include/rf_gpu*.h) include/toy_renderer.h
 .PHONY: gpu-graphics-test

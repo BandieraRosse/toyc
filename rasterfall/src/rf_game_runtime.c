@@ -6006,8 +6006,14 @@ startup_again:
                 const char *view=getenv("RF_GPU_CHARACTER_VIEW");
                 if (view && view[0]) {
                     const char *distance=getenv("RF_GPU_CHARACTER_DISTANCE");
+                    const char *station_text=getenv("RF_GPU_CHARACTER_STATION");
+                    int station=station_text ? atoi(station_text) : 0;
+                    if(station<0 || station>4)station=0;
                     double angle=!strcmp(view,"side") ? 1.5707963267948966 :
-                        !strcmp(view,"quarter") ? 0.7853981633974483 : 0.0;
+                        !strcmp(view,"back") ? 3.141592653589793 :
+                        !strcmp(view,"quarter") ? 0.7853981633974483 :
+                        !strcmp(view,"right-quarter") ? -0.7853981633974483 :
+                        !strcmp(view,"right-side") ? -1.5707963267948966 : 0.0;
                     int radius=distance ? atoi(distance) : 384;
                     if (radius<128) radius=128;
                     if (radius>4096) radius=4096;
@@ -6017,8 +6023,9 @@ startup_again:
                         if (radius>4096) radius=4096;
                     }
                     rf_lab_camera_position(&session,&game_runtime.camera,"rf_model_lab_area",
-                        -384+(int)(sin(angle)*radius),344+(int)(cos(angle)*radius));
-                    game_runtime.camera.y=-114;
+                        -384+(station%2)*1200+(int)(sin(angle)*radius),
+                        344-(station/2)*1500+(int)(cos(angle)*radius));
+                    game_runtime.camera.y=station>=2 ? -320 : -114;
                     game_runtime.camera.sy=(int)(-sin(angle)*1024);
                     game_runtime.camera.cy=(int)(-cos(angle)*1024);
                     game_runtime.camera.pitch_sy=0;game_runtime.camera.pitch_cy=1024;

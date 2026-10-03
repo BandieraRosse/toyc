@@ -112,7 +112,8 @@ def main():
             if profile:
                 expected = check_profession_materials(source, profile)
             run([sys.executable, ROOT / 'tools/assets/import_asset.py', '--no-build',
-                 '--tool-dir', tools, '--output-root', models, '--force', manifest], asset + '-import')
+                 '--tool-dir', tools, '--output-root', models, '--force',
+                 *(['--character-surface'] if asset=='rf_humanoid_v2' else []),manifest], asset + '-import')
         mesh = models / (asset + '.rmesh')
         raw = mesh.read_bytes()
         if profile and args.generate:

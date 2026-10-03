@@ -30,17 +30,40 @@ vec3 fetch_repeat(ivec2 p) {
     p=(p%d.texture_info.xy+d.texture_info.xy)%d.texture_info.xy;
     return decode_srgb(rgb(tex.texels[p.y*d.texture_info.x+p.x]));
 }
+vec3 texture_mip(uint entry,int level,vec2 uv) {
+    ivec2 size=ivec2(tex.texels[entry],tex.texels[entry+1u]);
+    uint offset=tex.texels[entry+2u];
+    for(int i=0;i<level;++i){offset+=uint(size.x*size.y);size=max(size/2,ivec2(1));}
+    vec2 p=clamp(uv,0.0,1.0)*vec2(size)-0.5;
+    ivec2 lo=ivec2(floor(p));vec2 f=fract(p);vec3 samples[4];
+    for(int i=0;i<4;++i){
+        ivec2 q=clamp(lo+ivec2(i&1,i>>1),ivec2(0),size-1);
+        samples[i]=decode_srgb(rgb(tex.texels[offset+uint(q.y*size.x+q.x)]));
+    }
+    return mix(mix(samples[0],samples[1],f.x),mix(samples[2],samples[3],f.x),f.y);
+}
+vec3 texture_filtered(uint index,vec2 uv) {
+    uint entry=index*4u;
+    vec2 size=vec2(tex.texels[entry],tex.texels[entry+1u]);
+    vec2 dx=dFdx(uv)*size,dy=dFdy(uv)*size;
+    float level=clamp(0.5*log2(max(max(dot(dx,dx),dot(dy,dy)),1.0)),0.0,float(tex.texels[entry+3u]-1u));
+    int lo=int(floor(level)),hi=min(lo+1,int(tex.texels[entry+3u])-1);
+    return mix(texture_mip(entry,lo,uv),texture_mip(entry,hi,uv),fract(level));
+}
 void main() {
     if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
     float alpha=d.texture_info.z==256 ? triangle_alpha : d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
     vec3 base=decode_srgb(rgb(triangle_color));
     if(d.material.z!=0u) {
+      if(d.quality.w==2) base*=texture_filtered(d.material.z-1u,texcoord);
+      else {
         vec2 st=fract(texcoord)*vec2(d.texture_info.xy);base=fetch_repeat(ivec2(floor(st)));
         if(d.quality.w!=0) {
             st-=0.5;ivec2 lo=ivec2(floor(st));vec2 f=fract(st);
             base=mix(mix(fetch_repeat(lo),fetch_repeat(lo+ivec2(1,0)),f.x),
                 mix(fetch_repeat(lo+ivec2(0,1)),fetch_repeat(lo+ivec2(1,1)),f.x),f.y);
         }
+      }
     }
     if((d.quality.x&16)!=0) { color=vec4(rgb(triangle_color),alpha);return; }
     if((d.texture_info.w!=0 && (d.quality.x&32)==0) || d.quality.z==3) { color=vec4(base,alpha);return; }

@@ -68,11 +68,14 @@ __declspec(dllimport) int __stdcall SetWindowPos(void *, void *, int, int, int, 
 #define SCENE_DRAWS RF_GPU_SCENE_ACTOR_MAX_DRAWS
 #define SCENE_CHUNK_VERTICES 65535u
 #define SCENE_CHUNKS 16u
+#define SCENE_MESHES (3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS+RASTERFALL_CHARACTER_RECIPE_CLOTHING)
 static int scene_round(double v) { return (int)(v<0 ? v-0.5 : v+0.5); }
 struct scene_mesh {
     struct rasterfall_resource_handle handle;
     struct rasterfall_resource_handle uploaded_bind_handle;
     struct rasterfall_resource_handle packed_handle;
+    struct rasterfall_resource_handle uploaded_texture_handle;
+    unsigned char texture_bound[SCENE_CHUNKS];
     int packed_normals;
     uint32_t *bind, *palette, *indices;
     struct rf_gpu_graphics_vertex *vertices;
@@ -84,7 +87,7 @@ struct scene_mesh {
 };
 struct scene_slot {
     struct rasterfall_resource_registry registry;
-    struct scene_mesh mesh[3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS];
+    struct scene_mesh mesh[SCENE_MESHES];
     struct rf_gpu_graphics_batch_item draws[SCENE_DRAWS];
     uint32_t draw_object[SCENE_DRAWS], draw_chunk[SCENE_DRAWS];
     uint32_t draw_count, mesh_count;
@@ -142,7 +145,7 @@ static int scene_backing_reserve(struct scene_mesh *m,uint32_t count,uint32_t pa
 }
 static void scene_device_free(struct scene_slot *slot,struct rf_gpu_graphics *g)
 {
-    for (uint32_t i=0;i<3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS;++i) {
+    for (uint32_t i=0;i<SCENE_MESHES;++i) {
         for (unsigned c=0;c<SCENE_CHUNKS;++c) {
             if (slot->mesh[i].chunks[c]) rf_gpu_graphics_resource_destroy(g,slot->mesh[i].chunks[c]);
             slot->mesh[i].chunks[c]=NULL;
@@ -156,14 +159,17 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     char path[256];
     struct rasterfall_model_asset *map;
     uint32_t gear_count=include_map ? 1 : pose->attachment_count;
+    uint32_t clothing_count=include_map ? 0 : pose->clothing_count;
     const char *name;
     const struct rasterfall_character_visual_recipe *recipe=
         rasterfall_character_visual_recipe_for_character(pose->character_id);
     int body_only=pose->character_id==RASTERFALL_CHARACTER_NONE;
     if (!rasterfall_character_body_resource_name(pose->body_resource_id) ||
-        gear_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS ||
-        (body_only ? (gear_count || pose->weapon_valid || include_map) :
+        gear_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS || clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING ||
+        (body_only ? (gear_count || clothing_count || pose->body_hidden_material_mask || include_map) :
         (!recipe || (!include_map && gear_count!=recipe->attachment_count) ||
+        (!include_map && (clothing_count!=recipe->clothing_count ||
+            pose->body_hidden_material_mask!=rasterfall_character_recipe_hidden_materials(recipe))) ||
         pose->shirt_color!=recipe->shirt_color ||
         pose->pants_color!=recipe->pants_color ||
         pose->body_resource_id!=(uint32_t)recipe->body_resource_id ||
@@ -173,7 +179,9 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             if (pose->attachments[i].resource_id!=(uint32_t)recipe->attachments[i].gear_resource_id ||
                 pose->attachments[i].host_socket!=recipe->attachments[i].host_socket)
                 return -1;
-    slot->mesh_count=2+gear_count+(!include_map && pose->weapon_valid);
+    for(uint32_t i=0;i<clothing_count;++i)
+        if(pose->clothing_resources[i]!=(uint32_t)recipe->clothing_resources[i])return -1;
+    slot->mesh_count=2+gear_count+clothing_count+(!include_map && pose->weapon_valid);
     if (include_map && !slot->mesh[0].handle.generation) {
         map=rf_gpu_scene_fixture_map();
         if (!map) return -1;
@@ -182,7 +190,7 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         }
     }
     for (uint32_t i=1;i<slot->mesh_count;++i) {
-        if (i==2+gear_count) {
+        if (i==2+gear_count+clothing_count) {
             const struct rasterfall_weapon_asset_profile *profile;
             if (pose->weapon<0 || pose->weapon>=TOY_GAME_WEAPON_COUNT ||
                 !(profile=rasterfall_weapon_asset_profile(pose->weapon)) ||
@@ -194,6 +202,12 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         if (i==1) {
             name=rasterfall_character_body_resource_path(pose->body_resource_id);
             if (!name || snprintf(path,sizeof(path),"%s",name)>=(int)sizeof(path)) return -1;
+        } else if(i>=2+gear_count) {
+            const struct rasterfall_character_clothing_profile *profile=
+                rasterfall_character_clothing_profile(pose->clothing_resources[i-2-gear_count]);
+            if(!profile || profile->body_resource_id!=(int)pose->body_resource_id ||
+                snprintf(path,sizeof(path),RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/%s.rmesh",
+                    profile->resource_name)>=(int)sizeof(path))return -1;
         } else {
             name=rasterfall_character_gear_resource_name(pose->attachments[i-2].resource_id);
             if (!name || snprintf(path,sizeof(path),RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR
@@ -207,12 +221,27 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     }
     return 0;
 }
+static uint32_t scene_material_texture(const struct rasterfall_model_asset *m,
+    const unsigned char *material)
+{
+    uint32_t texture=scene_u32(material+8);
+    /* Legacy meshes may retain a texture slot without its optional image.
+     * MAT1 references are mandatory and were validated by the model loader. */
+    if(!m->surfaces && (texture>=m->textures.count || !m->textures.assets ||
+        !m->textures.assets[texture].data))return 0xffffffffu;
+    return texture;
+}
 static int scene_material_supported(const struct rasterfall_model_asset *m,
     const unsigned char *material,int object)
 {
-    uint32_t texture=scene_u32(material+8);
-    return (texture>=m->textures.count || !m->textures.assets ||
-        !m->textures.assets[texture].data) && !scene_u32(material+12) &&
+    uint32_t texture=scene_material_texture(m,material);
+    if(texture!=0xffffffffu) {
+        if(texture>=RF_GPU_GRAPHICS_TEXTURES || texture>=m->textures.count || !m->textures.assets)return 0;
+        const struct toy_texture_asset *t=&m->textures.assets[texture];
+        if(!t->data || !t->width || !t->height || t->width>1024 || t->height>1024 ||
+            (t->channels!=3 && t->channels!=4) || (uint64_t)t->width*t->height*t->channels>t->data_size)return 0;
+    }
+    return !scene_u32(material+12) &&
         (m->format_version<4 || material[4]==255) &&
         (m->format_version<5 || !material[6]) &&
         (m->format_version<7 || !(material[7]&~1u)) &&
@@ -233,9 +262,12 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     for (uint32_t object=include_map ? 0 : 1;object<slot->mesh_count;++object) {
         struct scene_mesh *out=&slot->mesh[object];
         const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(&slot->registry,out->handle);
-        int weapon_object=!include_map && object==2+pose->attachment_count;
+        int clothing_object=!include_map && object>=2+pose->attachment_count &&
+            object<2+pose->attachment_count+pose->clothing_count;
+        int skinned=object==1 || clothing_object;
+        int weapon_object=!include_map && object==2+pose->attachment_count+pose->clothing_count;
         const struct rasterfall_rigid_transform *transform=!object ? NULL :
-            object==1 ? &pose->body_to_world :
+            skinned ? &pose->body_to_world :
             weapon_object ? &pose->weapon_to_world :
             &pose->attachments[object-2].model_to_world;
         if (!m || !m->index_count || m->index_count>SCENE_CHUNK_VERTICES*SCENE_CHUNKS || m->index_count%3 || m->vertex_bytes<24 ||
@@ -243,11 +275,15 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             !scene_range(m,m->indices,(uint64_t)m->index_count*4) ||
             !scene_range(m,m->primitives,(uint64_t)m->primitive_count*16) ||
             !scene_range(m,m->materials,(uint64_t)m->material_count*m->material_bytes) || m->material_bytes<16 ||
-            (object==1 && (m->bone_count!=pose->bone_count ||
+            (skinned && (m->bone_count!=pose->bone_count ||
                 !scene_range(m,m->skin_vertices,(uint64_t)m->vertex_count*8))) ||
-            (object!=1 && m->bone_count)) return -1;
+            (!skinned && m->bone_count)) return -1;
+        if(clothing_object) {
+            const struct rasterfall_model_asset *body=rasterfall_resources_resolve_active(&slot->registry,slot->mesh[1].handle);
+            if(!body || !rasterfall_model_shared_skin_compatible(body,m))return -1;
+        }
         if (object) {
-            out->palette_count=object==1 ? pose->bone_count*15 : 15;
+            out->palette_count=skinned ? pose->bone_count*15 : 15;
             if (scene_backing_reserve(out,m->index_count,out->palette_count,1)<0) return -1;
             if (!m->position_scale || transform->scale_milli<1 || transform->scale_milli>8000) return -1;
             for(int k=0;k<9;++k) if (!__builtin_isfinite(transform->rotation[k]) || fabs(transform->rotation[k])>1.01) return -1;
@@ -256,7 +292,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                 const struct rasterfall_model_skin_palette_bone *p=&pose->palette[bone];
                 uint32_t *dst=out->palette+bone*15;
                 for(int k=0;k<9;++k) {
-                    double v=object==1 ? p->rotation[k] : transform->rotation[k]*
+                    double v=skinned ? p->rotation[k] : transform->rotation[k]*
                         (weapon_object ? transform->scale_milli/1000.0 :
                         (((int64_t)RASTERFALL_RFU_PER_METER*transform->scale_milli+
                             m->position_scale/2)/m->position_scale)/1000.0);
@@ -264,16 +300,16 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                     dst[k]=scene_float(v);
                 }
                 for(int k=0;k<3;++k) {
-                    double v=object==1 ? p->position[k] : transform->translation[k];
+                    double v=skinned ? p->position[k] : transform->translation[k];
                     if (!__builtin_isfinite(v) || fabs(v)>262144) return -1;
-                    dst[9+k]=scene_float(v); dst[12+k]=object==1 ? (uint32_t)p->rest[k] : 0;
+                    dst[9+k]=scene_float(v); dst[12+k]=skinned ? (uint32_t)p->rest[k] : 0;
                 }
             }
         } else if (scene_backing_reserve(out,m->index_count,0,0)<0) return -1;
         out->count=m->index_count;
         int repack=out->packed_handle.slot!=out->handle.slot ||
             out->packed_handle.generation!=out->handle.generation ||
-            out->packed_normals!=(object==1 ? (int)pose->bind_normals : 0);
+            out->packed_normals!=(skinned ? (int)pose->bind_normals : 0);
         for(uint32_t v=0;repack && v<out->count;++v) {
             struct rf_gpu_graphics_vertex *dst=&out->vertices[v];
             uint32_t id=scene_u32(m->indices+v*4);
@@ -294,31 +330,35 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                 for(int influence=0;influence<4;++influence) {
                     uint32_t ci=influence ? scene_u32(m->indices+(v/3*3+influence-1)*4) : id;
                     uint32_t b0=0,b1=0,weight=65535,type=0;
-                    if (object==1) {
+                    if (skinned) {
                         const unsigned char *skin=m->skin_vertices+ci*8;
                         b0=scene_u16(skin); b1=scene_u16(skin+2); weight=scene_u16(skin+4); type=skin[6];
                         if (b0>=pose->bone_count || (type && b1>=pose->bone_count) || type>1) return -1;
                         if (!type) b1=b0;
                     }
                     packed[14+influence*2]=b0|(b1<<16);
-                    packed[15+influence*2]=weight|((type|(object==1 && pose->bind_normals ? 0x100u : 0))<<16);
+                    packed[15+influence*2]=weight|((type|(skinned && pose->bind_normals ? 0x100u : 0))<<16);
                 }
             }
         }
         out->packed_handle=out->handle;
-        out->packed_normals=object==1 ? (int)pose->bind_normals : 0;
+        out->packed_normals=skinned ? (int)pose->bind_normals : 0;
         for(uint32_t primitive=0;primitive<m->primitive_count;++primitive) {
             const unsigned char *p=m->primitives+primitive*16;
             uint32_t first=scene_u32(p),count=scene_u32(p+4),mi=scene_u32(p+8);
             if (!count || count%3 || first%3 || first>out->count || count>out->count-first || mi>=m->material_count || slot->draw_count>=SCENE_DRAWS) return -1;
             const unsigned char *material=m->materials+mi*m->material_bytes;
             /* Frozen opaque flat materials only. Version 2 has no alpha/toon flags. */
-            if (!scene_material_supported(m,material,object)) return -1;
+            if (!scene_material_supported(m,material,object)) {
+                __printf("SCENE-ACTOR unsupported material object=%u material=%u version=%u\n",object,mi,m->format_version);
+                return -1;
+            }
+            if(object==1 && mi<32 && (pose->body_hidden_material_mask&(1u<<mi)))continue;
             struct rf_gpu_graphics_batch_item *item=&slot->draws[slot->draw_count++];
             memset(item,0,sizeof(*item));
             struct rf_gpu_graphics_draw *d=&item->draw;
             d->translation_scale[3]=1000; d->rotation[1]=1024;
-            if (object==1) {
+            if (skinned) {
                 /* Frozen actor has yaw only; rigid gear consumes full matrix in compute. */
                 if (fabs(transform->rotation[1])+fabs(transform->rotation[3])+fabs(transform->rotation[5])+fabs(transform->rotation[7])>0.00001 || fabs(transform->rotation[4]-1)>0.00001) return -1;
                 for(int k=0;k<3;++k) d->translation_scale[k]=(int)scene_round(transform->translation[k]);
@@ -338,12 +378,30 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             d->material[1]=object ? (uint32_t)pose->scene_light_q8 : 256;
             d->roughness=weapon_object ? 0.38f : 0.7f;
             d->metallic=weapon_object ? 0.65f : 0.0f;
-            if (object==1) d->quality[2]=1;
+            if(m->format_version==2) {
+                d->metallic=scene_u16(material+4)/65535.0f;
+                d->roughness=scene_u16(material+6)/65535.0f;
+                if(d->roughness<0.06f)d->roughness=0.06f;
+            }
+            if (skinned) d->quality[2]=1;
+            if(m->surfaces) {
+                memcpy(&d->roughness,m->surfaces+mi*16+4,4);
+                memcpy(&d->metallic,m->surfaces+mi*16+8,4);
+                if(d->roughness<0.06f)d->roughness=0.06f;
+                d->quality[2]=1;
+            }
             if (object==1 && pose->character_id!=RASTERFALL_CHARACTER_NONE) {
                 if (mi==0) d->material[0]=pose->pants_color;
                 if (mi==1) d->material[0]=pose->shirt_color;
             }
             d->rotation[3]=object!=0; d->texture[0]=d->texture[1]=1;
+            uint32_t texture=scene_material_texture(m,material);
+            if(texture!=0xffffffffu) {
+                d->material[2]=texture+1;d->quality[3]=2;
+                d->texture[0]=m->textures.assets[texture].width;
+                d->texture[1]=m->textures.assets[texture].height;
+            }
+            if(skinned)d->quality[1]=(int)m->position_scale;
             if (object==1) {
                 const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
                 if (scene_material_override>=0) mode=scene_material_override ? "material" : "lit";
@@ -356,6 +414,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                             0x469990,0xdcbeff,0x9a6324,0xfffac8,0x800000,0xaaffc3,
                             0x808000,0xffd8b1,0x000075};
                         d->material[0]=colors[mi%(sizeof(colors)/sizeof(colors[0]))];
+                        d->material[2]=0;d->texture[0]=d->texture[1]=1;
                     }
                 } else if (mode && !strcmp(mode,"smooth")) d->quality[2]=1;
                 else if (mode && !strcmp(mode,"soft")) d->quality[2]=2;
@@ -390,6 +449,51 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     }
     return 0;
 }
+static int scene_prepare_textures(struct scene_mesh *mesh,struct rf_gpu_graphics *g,
+    const struct rasterfall_model_asset *asset)
+{
+    unsigned used=0;
+    for(unsigned i=0;i<asset->primitive_count;++i) {
+        unsigned material=scene_u32(asset->primitives+i*16+8);
+        if(material>=asset->material_count)return -1;
+        const unsigned char *record=asset->materials+material*asset->material_bytes;
+        uint32_t texture=scene_material_texture(asset,record);
+        if(texture!=0xffffffffu && (texture>=RF_GPU_GRAPHICS_TEXTURES ||
+            !scene_material_supported(asset,record,1)))return -1;
+        if(texture!=0xffffffffu)used|=1u<<texture;
+    }
+    if(!used)return 0;
+    if(mesh->uploaded_texture_handle.slot!=mesh->handle.slot ||
+        mesh->uploaded_texture_handle.generation!=mesh->handle.generation || !mesh->texture_bound[0]) {
+        struct rf_gpu_graphics_texture_image images[RF_GPU_GRAPHICS_TEXTURES]={{0}};
+        uint32_t *pixels[RF_GPU_GRAPHICS_TEXTURES]={0},white=0xffffff,count=0;
+        int result=-1;
+        for(unsigned i=0;used>>i;++i) {
+            count=i+1;images[i].rgb=&white;images[i].width=images[i].height=1;
+            if(!(used&(1u<<i)))continue;
+            const struct toy_texture_asset *t=&asset->textures.assets[i];
+            size_t n=(size_t)t->width*t->height;
+            pixels[i]=malloc(n*sizeof(uint32_t));if(!pixels[i])goto cleanup;
+            for(size_t p=0;p<n;++p) {
+                const unsigned char *rgb=(const unsigned char *)t->data+p*t->channels;
+                pixels[i][p]=(uint32_t)rgb[0]<<16|(uint32_t)rgb[1]<<8|rgb[2];
+            }
+            images[i].rgb=pixels[i];images[i].width=t->width;images[i].height=t->height;
+        }
+        result=rf_gpu_graphics_resource_texture_set(g,mesh->chunks[0],images,count);
+cleanup:
+        for(unsigned i=0;i<RF_GPU_GRAPHICS_TEXTURES;++i)free(pixels[i]);
+        if(result<0)return -1;
+        memset(mesh->texture_bound,0,sizeof(mesh->texture_bound));mesh->texture_bound[0]=1;
+        mesh->uploaded_texture_handle=mesh->handle;
+    }
+    for(unsigned c=1;c<SCENE_CHUNKS && c*SCENE_CHUNK_VERTICES<mesh->count;++c)
+        if(!mesh->texture_bound[c]) {
+            if(rf_gpu_graphics_resource_share_textures(g,mesh->chunks[c],mesh->chunks[0])<0)return -1;
+            mesh->texture_bound[c]=1;
+        }
+    return 0;
+}
 static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
     int include_map)
 {
@@ -407,7 +511,7 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
                 m->uploaded_bind_handle.slot==m->handle.slot &&
                 m->uploaded_bind_handle.generation==m->handle.generation &&
                 m->uploaded_bind_count==m->count &&
-                m->uploaded_bind_normals==(i==1 ? slot->bind_normals : 0);
+                m->uploaded_bind_normals==m->packed_normals;
             for (uint32_t c=0,base=0;base<m->count;++c,base+=SCENE_CHUNK_VERTICES) {
             uint32_t count=m->count-base;
             if (count>SCENE_CHUNK_VERTICES) count=SCENE_CHUNK_VERTICES;
@@ -417,6 +521,7 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
                 m->palette,m->palette_count) : 1;
             if (grow<0) return -1;
             if (grow) {
+                m->texture_bound[c]=0;
                 if (*gpu) {
                     if (rf_gpu_graphics_resource_destroy(g,*gpu)<0) return -1;
                     *gpu=NULL;
@@ -431,15 +536,18 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
             if (m->gpu) {
                 m->uploaded_bind_handle=m->handle;
                 m->uploaded_bind_count=m->count;
-                m->uploaded_bind_normals=i==1 ? slot->bind_normals : 0;
+                m->uploaded_bind_normals=m->packed_normals;
             }
         } else if (!m->gpu) m->chunks[0]=m->gpu=rf_gpu_graphics_resource_create(g,m->vertices,m->count,m->indices,m->count,&white,1,1);
         if (!m->gpu || !asset || rf_gpu_graphics_resource_bind(g,m->gpu)<0) return -1;
+        if(scene_prepare_textures(m,g,asset)<0){__printf("SCENE-ACTOR texture preparation failed object=%u\n",i);return -1;}
         for(uint32_t draw=0;draw<slot->draw_count;++draw) {
             if (slot->draw_object[draw]!=i) continue;
             slot->draws[draw].resource=m->chunks[slot->draw_chunk[draw]];
             if (rf_gpu_graphics_resource_bind(g,slot->draws[draw].resource)<0) return -1;
-            if (rf_gpu_graphics_validate_draw(g,&slot->draws[draw].draw)<0) return -1;
+            if (rf_gpu_graphics_validate_draw(g,&slot->draws[draw].draw)<0) {
+                __printf("SCENE-ACTOR draw validation failed object=%u draw=%u texture=%u\n",i,draw,slot->draws[draw].draw.material[2]);return -1;
+            }
         }
     }
     return 0;
@@ -468,10 +576,10 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
         !width || !height || width>INT_MAX || height>INT_MAX) return -1;
     *count=0;
     t0=rf_core_clock_now_us();
-    if (scene_load(&actor->slot,pose,0)<0) return -1;
+    if (scene_load(&actor->slot,pose,0)<0) {__printf("SCENE-ACTOR load failed character=%d\n",pose->character_id);return -1;}
     t1=rf_core_clock_now_us();
     if (scene_pack(&actor->slot,pose,camera,(int)width,(int)height,0)<0 ||
-        actor->slot.draw_count>capacity) return -1;
+        actor->slot.draw_count>capacity) {__printf("SCENE-ACTOR pack failed character=%d\n",pose->character_id);return -1;}
     t2=rf_core_clock_now_us();
     if (scene_prepare(&actor->slot,actor->graphics,0)<0) {
         scene_bind_cache_invalidate(&actor->slot);
@@ -514,7 +622,7 @@ void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
     rf_gpu_scene_actor_gpu_finish(actor);
     scene_device_free(&actor->slot,actor->graphics);
     rasterfall_resources_invalidate(&actor->slot.registry);
-    for(uint32_t i=0;i<3+RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS;++i)
+    for(uint32_t i=0;i<SCENE_MESHES;++i)
         scene_backing_free(&actor->slot.mesh[i]);
     free(actor);
 }

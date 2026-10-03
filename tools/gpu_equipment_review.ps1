@@ -64,11 +64,13 @@ try {
         Write-Output "[EQUIPMENT] $Name PASS"
     }}
     $Assets=@(Get-ChildItem -LiteralPath "$Package/rasterfall/assets/models/characters" -Filter '*.rmesh' |
-        Where-Object {$_.Name -like 'rf_gear_*' -or $_.Name -eq 'rf_humanoid_v2.rmesh'} |
+        Where-Object {$_.Name -like 'rf_gear_*' -or $_.Name -like 'rf_clothing_*' -or $_.Name -eq 'rf_humanoid_v2.rmesh'} |
         ForEach-Object {@{name=$_.Name;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}})
     $Manifest=@{exe_sha256=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash;
         map_sha256=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
-        assets=$Assets;captures=@($Runs.ToArray())}
+        assets=$Assets;captures=@($Runs.ToArray());
+        textures=@(Get-ChildItem -LiteralPath "$Package/rasterfall/assets/models/characters" -Recurse -Filter '*.ttex' |
+            ForEach-Object {@{name=$_.Directory.Name+'/'+$_.Name;sha256=(Get-FileHash -LiteralPath $_.FullName).Hash}})}
     [IO.File]::WriteAllText((Join-Path $Out 'manifest.json'),(ConvertTo-Json -InputObject $Manifest -Depth 8),$Utf8)
 } finally {
     if($Process -and !$Process.HasExited){Stop-Process -Id $Process.Id -Force}

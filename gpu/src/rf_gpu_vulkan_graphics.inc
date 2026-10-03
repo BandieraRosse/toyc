@@ -53,11 +53,16 @@ struct rf_graphics_target {
     uint32_t width, height;
     int valid;
 };
+struct rf_graphics_texture_set {
+    struct rf_gpu_vulkan_buffer buffer;
+    uint32_t references,count,width[RF_GPU_GRAPHICS_TEXTURES],height[RF_GPU_GRAPHICS_TEXTURES];
+};
 struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics *owner;
     struct rf_gpu_graphics_resource *next;
     struct rf_gpu_vulkan_buffer vertices, indices, texture;
     uint32_t index_count, texture_width, texture_height;
+    struct rf_graphics_texture_set *texture_set;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set descriptor_set;
     struct {
@@ -174,7 +179,9 @@ static int gfx_resource_share(struct rf_gpu_graphics *g,
     set.set_layouts=&g->set_layout;
     if (g->owner->api.allocate_descriptor_sets(g->owner->device,&set,
             &resource->shared_binding.set)!=RF_VK_SUCCESS) goto failed;
-    buffer[0].buffer=resource->texture.buffer;buffer[0].range=resource->texture.size;
+    const struct rf_gpu_vulkan_buffer *texture=resource->texture_set ?
+        &resource->texture_set->buffer : &resource->texture;
+    buffer[0].buffer=texture->buffer;buffer[0].range=texture->size;
     buffer[1].buffer=resource->vertices.buffer;buffer[1].range=resource->vertices.size;
     buffer[2].buffer=resource->indices.buffer;buffer[2].range=resource->indices.size;
     for(unsigned i=0;i<3;++i){
@@ -989,6 +996,8 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_scene_color_resource_create(
     return gfx_resource_create(g,vertices,vertex_count,indices,index_count,&white,1,1,1);
 }
 
+#include "rf_gpu_texture_set.inc"
+
 static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *r,
     const void *vertices,uint32_t vertex_count,int scene_color)
@@ -1434,6 +1443,7 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     gpu_buffer_destroy(g->owner, &resource->vertices);
     gpu_buffer_destroy(g->owner, &resource->indices);
     gpu_buffer_destroy(g->owner, &resource->texture);
+    gfx_texture_set_release(g,resource->texture_set);
     free(resource);
     return 0;
 }
@@ -1453,17 +1463,26 @@ int rf_gpu_graphics_upload(struct rf_gpu_graphics *g,
 static int gfx_draw_valid(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *d, int validate_resource_bounds)
 {
+    uint32_t width=g->resource->texture_width,height=g->resource->texture_height;
+    if (d->quality[3]==2) {
+        const struct rf_graphics_texture_set *set=g->resource->texture_set;
+        if (d->material[2]) {
+            uint32_t index=d->material[2]-1;
+            if (!set || index>=set->count) return 0;
+            width=set->width[index];height=set->height[index];
+        } else { width=height=1; }
+    } else if (d->material[2]>1 || (d->material[2] && g->resource->texture_set)) return 0;
     if (!__builtin_isfinite(d->roughness) || !__builtin_isfinite(d->metallic) ||
         !__builtin_isfinite(d->emissive) || !d->index_count || d->index_count % 3 || d->first_index % 3 ||
         d->first_index > g->resource->index_count || d->index_count > g->resource->index_count-d->first_index ||
         d->integer_depth != 0 || d->double_sided > 1 || d->material[1] > 256 ||
-        d->material[2] > 1 || d->material[3] > 2 ||
+        d->material[3] > 2 ||
         ((d->material[3]==2) != g->resource->scene_vertex_color) ||
         (d->material[3]==2 && (d->material[2] || d->integer_depth || d->rotation[3])) ||
         d->quality[0]!=0 ||
         (d->quality[1]!=0 && (d->quality[1]<512 || d->quality[1]>65536)) ||
         (d->quality[1]>512 && (d->quality[0]&2)) ||
-        d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>1 ||
+        d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>2 ||
         (d->integer_depth && (d->quality[0] || d->quality[1] || d->quality[2] || d->quality[3])) ||
         (d->quality[2] && d->material[3] && !(d->quality[2]==3 && d->material[3]==2)) ||
         ((d->quality[2]==1 || d->quality[2]==2) && !g->resource->sequential_triangles) ||
@@ -1478,7 +1497,7 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->rotation[3] < 0 || d->rotation[3] > 1 ||
         d->projection[0] != (int)g->target.width || d->projection[1] != (int)g->target.height ||
         d->projection[2] != 64 || d->projection[3] != (int)g->target.width*3/4 ||
-        d->texture[0] != (int)g->resource->texture_width || d->texture[1] != (int)g->resource->texture_height) return 0;
+        d->texture[0] != (int)width || d->texture[1] != (int)height) return 0;
     /* Runtime Map permits a 240000 RFU room. Keep one signed power-of-two
      * envelope beyond that contract so chunk-local meshes can place their
      * origins at the WHU south edge without weakening the int32 shader ABI. */

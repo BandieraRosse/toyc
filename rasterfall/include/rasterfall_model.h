@@ -51,7 +51,7 @@ struct rasterfall_vmd_clip;
  * the legacy model-profile inference path.
  */
 #define RASTERFALL_MODEL_MAGIC 0x324d4652U /* "RFM2" in little-endian */
-#define RASTERFALL_MODEL_VERSION 14
+#define RASTERFALL_MODEL_VERSION 15
 #define RASTERFALL_MODEL_VERTEX_BYTES 24
 #define RASTERFALL_MODEL_VERTEX_BYTES_ADDITIONAL_UV 32
 #define RASTERFALL_MODEL_VERTEX_BYTES_EDGE_SCALE 36
@@ -82,6 +82,13 @@ struct rasterfall_vmd_clip;
 #define RASTERFALL_MODEL_CHARACTER_MAGIC 0x31524843U /* "CHR1" */
 #define RASTERFALL_MODEL_CHARACTER_HEADER_BYTES 32
 #define RASTERFALL_MODEL_ATTACHMENT_BYTES 40
+/* v15 keeps the static/SKN1/CHR1 layout, then requires one MAT1 block:
+ * magic,total,version=1,count,stride=16,three reserved zero words;
+ * records: flags=1 (opaque sRGB clamp/mip), roughness f32, metallic f32, zero.
+ * This narrow surface contract is independent of the proposed character pack. */
+#define RASTERFALL_MODEL_SURFACE_MAGIC 0x3154414dU
+#define RASTERFALL_MODEL_SURFACE_HEADER_BYTES 32
+#define RASTERFALL_MODEL_SURFACE_BYTES 16
 
 enum rasterfall_model_pose {
     RASTERFALL_MODEL_POSE_BIND,
@@ -246,6 +253,7 @@ struct rasterfall_model_asset {
     unsigned int position_scale; /* authored units per meter from RFM2 header */
     const unsigned char *primitives;
     const unsigned char *materials;
+    const unsigned char *surfaces; /* v15 MAT1 records; NULL for older assets */
     const unsigned char *vertices;
     const unsigned char *indices;
     const unsigned char *skin_vertices;
@@ -571,6 +579,14 @@ int rasterfall_model_solve_two_bone_attachment(
     struct rasterfall_model_asset *asset, const char *upper_bone,
     const char *forearm_bone, const char *hand_bone,
     const double target[3], const double pole_hint[3]);
+/* Match a hand-mounted socket's complete model-space transform. The wrist
+ * target removes the rotated authored socket offset, not the pre-IK offset. */
+int rasterfall_model_solve_two_bone_attachment_pose(
+    struct rasterfall_model_asset *asset, const char *upper_bone,
+    const char *forearm_bone, const char *hand_bone,
+    enum rasterfall_character_attachment attachment,
+    const struct rasterfall_model_attachment_transform *target,
+    const double pole_hint[3]);
 void rasterfall_model_print_two_bone_diagnostics(
     const struct rasterfall_model_asset *asset, const char *label);
 int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
@@ -579,6 +595,10 @@ int rasterfall_model_skin_vertex(const struct rasterfall_model_asset *asset,
 int rasterfall_model_build_skin_palette(const struct rasterfall_model_asset *asset,
     struct rasterfall_model_skin_palette_bone *palette,
     unsigned int palette_count);
+/* Exact bind-space compatibility required to share a finalized palette. */
+int rasterfall_model_shared_skin_compatible(
+    const struct rasterfall_model_asset *body,
+    const struct rasterfall_model_asset *garment);
 int rasterfall_model_skin_vertex_palette(const struct rasterfall_model_asset *asset,
     const struct rasterfall_model_skin_palette_bone *palette,
     unsigned int palette_count, unsigned int index, int position[3],

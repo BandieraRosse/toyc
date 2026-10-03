@@ -1,7 +1,8 @@
 """Canonical Humanoid body sculpture; shared rig and materials live in V2.
 
 All detail is authored geometry, with five palette-compatible materials and at
-most two weights per vertex. No face, finger or cloth runtime is required.
+most two weights per vertex. Optional finger chains support runtime grasp;
+no face or cloth simulation is required.
 """
 
 import math
@@ -186,21 +187,35 @@ def create_body(api, armature, scene, materials):
             [blend('FOREARM', 'HAND', v) for v in (0, .22, .7, 1)],
             longitudinal_smooth=True)
         # Narrow wrist, metacarpal fan and finger tips have separate volumes.
-        # All remain rigid on the canonical hand; WEAPON sockets are untouched.
+        # Palm stays on HAND; two-joint fingers can close around a weapon.
         segment(side+'Palm', (.822*sign, -.003, 1.5),
                 (.973*sign, -.010, 1.5),
                 [(0, .047, .050, 0), (.35, .044, .064, 0),
                  (.78, .040, .066, 0), (1, .033, .054, 0)], skin, prefix+'HAND')
         for finger, (y, length) in enumerate(((-.051, .073), (-.019, .084),
                                              (.014, .078), (.043, .062))):
-            segment(side+'Finger'+str(finger), (.956*sign, y, 1.495),
+            finger_obj = segment(side+'Finger'+str(finger), (.956*sign, y, 1.495),
                     ((.956+length)*sign, y-.006, 1.488),
-                    [(0, .018, .016, 0), (.6, .018, .016, 0),
+                    [(0, .018, .016, 0), (.45, .018, .016, 0),
+                     (.60, .017, .015, 0),
                      (1, .012, .012, 0)], skin, prefix+'HAND', 8)
-        segment(side+'Thumb', (.866*sign, -.044, 1.487),
+            finger_obj.vertex_groups.clear()
+            groups = [finger_obj.vertex_groups.new(name=prefix+'FINGER_'+str(finger)+'_'+str(j)) for j in (1,2)]
+            for vertex in finger_obj.data.vertices:
+                amount = (0, .15, .80, 1)[vertex.index//8]
+                for group, weight in zip(groups,(1-amount,amount)):
+                    if weight: group.add([vertex.index],weight,'REPLACE')
+        thumb = segment(side+'Thumb', (.866*sign, -.044, 1.487),
                 (.933*sign, -.095, 1.478),
-                [(0, .030, .030, 0), (.50, .028, .028, 0),
+                [(0, .030, .030, 0), (.45, .028, .028, 0),
+                 (.65, .025, .025, 0),
                  (1, .019, .019, 0)], skin, prefix+'HAND', 8)
+        thumb.vertex_groups.clear()
+        groups = [thumb.vertex_groups.new(name=prefix+'FINGER_thumb_'+str(j)) for j in (1,2)]
+        for vertex in thumb.data.vertices:
+            amount = (0, .15, .80, 1)[vertex.index//8]
+            for group, weight in zip(groups,(1-amount,amount)):
+                if weight: group.add([vertex.index],weight,'REPLACE')
 
         # More longitudinal sections give cloth folds controlled amplitude;
         # the knee bridge retains its original monotonic two-bone blend.

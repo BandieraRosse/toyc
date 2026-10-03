@@ -61,7 +61,7 @@
 | `--edge-pass` / `--no-edge-pass` | CPU 旧模型边线诊断保留，默认关闭；GPU 描边未实现。 | 渲染终端不再为 CPU 提供高级功能控制；GPU 描边标为未实现。 |
 | `--enemy-visual-family` | 显式覆盖敌人外观家族；CPU 与 Scene 独立敌人来源都读取该策略。 | 内容/外观策略，不等于画质等级；若进入终端，需单独描述视觉和资源变化，不修改玩法敌人身份。 |
 | `--gpu-character-skinning-off`、`--gpu-character-vertex-diff`、`--frame-audit` | GPU 回退/差分/审计入口。 | 诊断或实现选择，不作为玩家可见的高级功能。 |
-| 角色柔和材质、纹理线性过滤 | Scene 实验支持，默认关闭；前哨站渲染终端可独立切换。前者消费 body 的既有 visual role，后者作用于静态纹理。 | [保真诊断](../guides/character-fidelity.md)拥有范围；当前无角色纹理/MASK 签收，不要求 CPU 同步实现。 |
+| 角色柔和材质、纹理线性过滤 | Scene 实验支持，默认关闭；前哨站渲染终端可独立切换。前者消费 body 的既有 visual role，后者作用于静态纹理。角色 v15 基础色图另按 clamp/mip 固定合同采样。 | [保真诊断](../guides/character-fidelity.md)拥有范围；本轮角色支持 OPAQUE，MASK 尚未实现。 |
 | `--input-test`、`--no-stats`、坐标轴/FPS 调试显示 | 输入、性能或开发者观察入口；坐标轴当前在 CPU 旧画面层单独绘制。 | 调试功能，排除在默认画质和高级画质清单之外；未来若要跨后端显示需另定合同。 |
 | PMX/VMD、完整 toon/anime outline、GI 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 私有原创 RF 角色的 GPU toon、边线与 sphere 材质能力按[活动计划](../plans/private-anime-character-gpu.md)单独实现和验收；PMX/VMD 恢复与其他效果不在该计划内。 |
 

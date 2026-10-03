@@ -26,10 +26,10 @@ actor 先完成 pose、IK、bounds 和 body Draw 冻结，再按相同 actor 顺
 不改变动画、附件或 actor 顺序，也不跨越 transparent/effects/viewmodel/overlay。
 
 动作适配固定为 lower/upper/additive layers：IDLE/MOVE 保持 lower idle/walk，FIRE 只替换 upper 为
-rifle fire，aim 只有在 gameplay 提供明确 semantic 后才能接入。RFANIM authored 时间独立于 gameplay
+rifle fire；目标获取与 FIRE 通过共享 rifle sampler 驱动展示举枪。RFANIM authored 时间独立于 gameplay
 回卷值，instance 累积 presentation time 以保持完整周期和短时 upper action 下的 lower phase。
 
-成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 左手 IK → 附件。
+成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 瞄准/胸部避让/双臂 IK → 附件。
 CPU modular pose cache 将该次方向、采样时间和权重纳入键，并按 combat generation 区分槽位复用。
 Scene local source 用相同的只读采样器冻结这些值到逐 actor sidecar；pose extraction 只消费冻结值，
 不读取玩法计时或推进历史。受控、腾空、死亡、倒地、复活中断当前事件后，即使状态提前解除也不恢复
@@ -40,14 +40,23 @@ Scene local source 用相同的只读采样器冻结这些值到逐 actor sideca
 延迟触发和控制中断；每帧对比 CPU cache 与 Scene extraction 的最终 palette，资源必须保持只读。
 动作逻辑另验证 lower 不变、反冲保留、末帧归零、错误 mask 拒绝、冻结重放和最终 IK。
 
-weapon 从 finalized `WEAPON_R` 对齐 authored `PRIMARY_GRIP`；左手在绘制前用同一武器的 `FOREGRIP`
-执行 attachment IK。passive gear 只读取 finalized HEAD/CHEST/BACK/HIP 等 socket。所有修改只作用于
-当前 mutable instance，不回写共享 resource。
+`rasterfall_rifle_pose` 先求肩托、目标方向和双臂，weapon 再从 finalized `WEAPON_R` 对齐
+authored `PRIMARY_GRIP`。物理尺寸、源中心和轴向通过统一 adapter 转换；详见
+[动画求值](animation-architecture.md)与[武器模型适配](../reference/weapon-model-adapter.md)。
+passive gear 只读取 finalized HEAD/CHEST/BACK/HIP 等 socket。所有修改只作用于当前 mutable
+instance，不回写共享 resource；rifle 输入与 evasion 一起纳入 CPU cache 和 Scene 冻结 sidecar。
 
 衣服外轮廓与装备按 recipe 条目组合；一个 socket 可以同时承载头盔与护目镜，或髋侧装备与大腿
 外裤层。CPU cache、Scene pose payload 与 native mesh 列表统一使用 recipe 容量，每项保留自己的
-resource ID 与 transform，不按 socket 合并身份。当前服装模块限于不跨关节的 rigid follower；
-跨关节袖/裤仍归身体蒙皮，未来独立蒙皮服装须补资源绑定合同，不能靠刚体跨膝代替。
+resource ID 与 transform，不按 socket 合并身份。独立夹克和跨膝外裤作为 skin follower 共用身体
+完成动作、握点修正后的最终 palette，不独立采样动画或求值 IK。Heavy recipe 装配两件衣物，
+其他职业保留原 rigid 大腿层；头盔、护目镜与硬甲仍跟随 sockets。
+
+skin follower 必须通过身体与衣物的骨名/顺序、父子层级、absolute rest、位置单位和 humanoid
+role 映射完全一致检查。recipe 仅携带最多两件衣物的稳定 ID，pose producer 同时冻结 clothing
+IDs 和 body hidden-material mask。CPU/Scene 都隐藏夹克覆盖的 shirt 或外裤覆盖的 pants，
+不会修改 body resource 材质表。该区域映射只属于 canonical Humanoid 五材质版型；RF-C01 或
+其他体型必须显式提供自己的兼容版型与区域映射。当前是蒙皮衣物，不包含布料物理模拟。
 
 RFCHAR body、rigid gear、socket 与 weapon 统一采用 profile 定义的 `+Z` forward，不在枪械 helper
 额外加 180° 修正。失败时可以回退既有 procedural actor，但不能产生另一套权威状态。
@@ -152,7 +161,15 @@ asset identity 与 transform；registry/cache 共享模型，碰撞由 map profi
 解析不可变 RFCHAR，并在独立 instance 中采样已有 RFANIM。预览没有 gameplay character ID、
 玩法 actor 或网络状态，不修改原材质颜色。隐藏和退出释放预览 CPU resource，GPU 资源沿 Scene
 owner 的既有退休规则管理。缺失资源显示安装错误，重新关闭/开启后重试，不用其他角色替代。
-当前为站立/原地步行动作采样、无武器；不能视为新角色完整动作与持枪适配验收。
+`rf_gpu_scene_pose_body_action` 另外提供站立持枪、瞄准与行走射击，复用正式动作 composition、
+共享肩托瞄准、双臂握点 IK 与武器 placement；`rf_gpu_scene_pose_body` 保留原站立/步行兼容入口。
+目录预览与游戏实例使用同一握持求值，不额外补偿枪械位置或手腕方向。目录预览仍不代表换弹、
+近战、倒地等全部玩法动作已经适配。
+
+共享 Humanoid 和 RF-C01 的持枪指节来自 action composition，可换衣物继续使用同一最终骨架；
+肘部平面同时考虑目标掌骨朝向。姿态正确性包含腕部与前臂的关系及指节包握，不能仅由挂点误差签收。
+RF-C01 的单表面眼球由私有 eyes 部件与不透明基础色图拥有，renderer 不增加眼部深度偏移或材质排序特例；
+诊断方法见[角色保真](../guides/character-fidelity.md)。
 
 前哨站南侧两个角色实验场使用只读展示状态。各区按钮由单人 runtime 消费 E 输入并独立控制可见性；`render/rf_outpost_showcase.inc` 拥有六类普通感染体的 12 个静止/原地移动台位，以及三个 Humanoid 往返步行实例、展示时钟和运动历史。台位与步行实例都通过实机 `rasterfall_infected_sample_motion` 采样；原地移动台按类型速度中值产生虚拟位移，步行实例按相同速度实际沿线段移动并在端点折返。隐藏、重新显示、时间回退或超过一秒的采样间隔重置历史；同一时间重复提交不推进动画。
 
@@ -168,7 +185,7 @@ Scene 在冻结后为本次实际插入展示副本的槽位写入同一展示�
 
 GPU Scene 的模块化队员 pose 求值由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
 `rf_gpu_scene_pose_extract_at`（单 actor fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、
-RFANIM composition、左手 attachment IK 和 finalized socket 求值，输出值类型的 body palette、
+RFANIM composition、共享 rifle pose 和 finalized socket 求值，输出值类型的 body palette、
 body-to-world、finalized pose 的 bind-normal 策略、被动 rigid gear 及主动武器的 model-to-world。武器变换包含 authored centering、
 basis 和 PRIMARY_GRIP 对齐；consumer 不得再次补偿。资源标识是 character/weapon catalog ID，
 尚非 GPU handle；consumer 必须解析、pin 后才能提交。独立 Scene fixture 的解析及 slot 所有权见

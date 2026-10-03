@@ -49,6 +49,21 @@ tools/assets/import_asset.py --validate-only path/to/foo.asset.json
 make test-asset-pipeline
 ```
 
+Windows 先构建原生 asset-tools，其中包含图片转换所需的 `toyasset.exe`，随后显式传入
+`--no-build --tool-dir build-windows`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools
+python tools/assets/import_asset.py --no-build --tool-dir build-windows --character-surface --output-root rasterfall/assets/models/characters --force tools/assets/manifests/characters/rf_clothing_field_jacket.asset.json
+```
+
+`--character-surface` 仅为 RFCHAR GLB 显式启用 RFM2 v15 的 opaque 基础色和
+roughness/metallic 常量；未指定时保持 v14。它不开启 MASK、normal map 或 RF shader extras。
+导入过程依次执行 RFCHAR validator、MAT1 layout/constant 检查、PNG/JPEG→TTEX 转换与
+尺寸/引用验证，任一步失败都保留旧产物。v15 单资源最多八个 ≤1024² 基础色纹理，必须是
+clamp/linear/mip 的 UV0 配置；格式字段由[角色资产合同](../reference/character-assets.md#rfm2-v15-opaque-surface-扩展)拥有。
+刚性附件继续走普通 GLB importer 和已有 RFM2 v2 PBR 常量，不传该选项。
+
 默认安装到 `rasterfall/private-assets/models`；公开工业 prop 可显式传
 `--output-root rasterfall/assets/models/props/industrial`。输出名称全部由 asset ID 推导：
 
@@ -91,7 +106,7 @@ python tools/assets/test_rfchar_material_contract.py
 
 此入口要求每个材质显式携带 `extras.rf_material`，输出展开默认值后的材质表及实际所需能力。
 它仅核对材质元数据、纹理/图片引用声明和 sampler profile，不检查 UV、图片字节、骨架或
-依赖路径，不安装资产。当前 v14 importer 仍拒绝新 RF extras；不可将此 JSON 当成运行时包。
+依赖路径，不安装资产。当前 v14/v15 importer 仍拒绝新 RF extras；不可将此 JSON 当成运行时包。
 
 公开原创材质小样复用 canonical fixture 骨架，并加入 UV0、内嵌 RGBA PNG、OPAQUE/MASK、
 单双面及 toon/outline/face_light 元数据：
@@ -123,7 +138,7 @@ RFCHAR importer 在调用原生 validator 前解析源、产物和工具的绝�
 - `static_prop`：Blender 源场景为真实米制、Z-up、-Y forward；标准化 GLB 为 Y-up、+Z forward，
   pivot 位于底面中心；导出前应用对象变换。
   importer 只接受标准化 GLB，不用末端展示缩放修补源资产空间。
-- `character`：RFCHAR V1 GLB 由 `tools/assets/rfchar_import.py` 转 RFM2 v14；PMX 仅为
+- `character`：RFCHAR V1 GLB 由 `tools/assets/rfchar_import.py` 转 RFM2 v14，显式 surface 样板转 v15；PMX 仅为
   compatibility path。manifest `type=character` 同时接受严格 GLB 与历史 PMX。
 - `weapon`：保留 grip/attachment 语义；刚性 GLB 以标准化 origin/manifest attachment 描述表达，
   带骨架武器走 PMX 路径。不要把握持补偿偷偷烘焙成角色专属末端偏移。

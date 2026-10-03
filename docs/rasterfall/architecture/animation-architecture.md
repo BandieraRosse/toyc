@@ -106,11 +106,36 @@ canonical owner 仍是 resource，后续 Pose Buffer V2 再消除此布局债。
 组合 attachment mount correction 与 actor/world transform，再提交无骨架 RMESH resource。它不回写
 pose，不共享 instance mutable storage，也不进入武器 placement/双手 IK 的约束求值阶段。
 
-active weapon presentation 与被动 rigid follower 分离：modular renderer 从同一个 finalized instance
-读取 `WEAPON_R`，用 authored weapon-local `PRIMARY_GRIP` 求出 weapon origin，再派生
-`FOREGRIP`、`MUZZLE` 和 `MAGAZINE` socket 供 renderer/debug 使用。此路径不使用 CHEST attachment 或
-`pose_calibration_local`；active weapon 绘制前只执行基于 finalized `WEAPON_R`/authored `FOREGRIP` 的
-左臂 attachment IK。CHEST/校准仍只属于 legacy acceptance/兼容诊断入口。
+主动步枪由 `rasterfall_rifle_pose` 统一求值，CPU actor、目录台位和 Scene extraction 共用。
+输入是只读展示值：举枪权重、玩法 pitch、相对 yaw、目标距离、反冲和护甲余量。
+`rasterfall_rifle_sample` 以 combat simulation 毫秒推进举枪/放枪历史；目标获取或 FIRE 进入瞄准，
+重装填、切枪、失能和非存活状态退出。重复冻结同一时间不推进，actor/generation 变化重置历史。
+历史属于 renderer/local source；冻结帧只保存求值输入，重放不查询 Game 或更新采样器。
+
+RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
+
+1. 将有界仰俯和左右瞄准分配给脊柱、胸、颈和头，保留基础站姿、行走与回避。
+2. 根据右肩和骨架比例构建枪托接触，低持枪与瞄准连续过渡；护甲增加前方余量。
+3. 沿既有玩法眼高、pitch 与目标距离构造展示瞄准点，迭代枪口收敛、胸部代理避让与有限肩窝调整。
+   肩窝调整最多 40 RFU；不缩放肢体。小于两米的目标采用两米视觉收敛下限，玩法射线保持原值。
+4. 在肩部支点叠加反冲，求扳机臂的完整 attachment IK，然后从最终 `WEAPON_R` 和
+   `inverse(PRIMARY_GRIP)` 取得枪的最终刚体帧，再闭合支撑臂 `FOREGRIP`。
+5. 生成最终 palette、被动装备和武器矩阵；绘制阶段不再移动枪或手。
+
+两个握点都约束位置和掌心朝向。求腕目标时先旋转 authored socket offset，再求肩肘链和手腕；
+肘部 pole 由枪下方向及掌骨方向引导，避免直角折腕。所有武器 socket 使用 RFU，身体 socket 按
+`position_scale` 换算；512 与 65536 authored units 使用同一路径。
+武器物理长度、文件轴向与握点配置属于[武器适配合同](../reference/weapon-model-adapter.md)，不属于动作 clip。
+
+可选指节链由 action composition 在持枪上身层后求值，随后跟随 HAND 参与最终 palette；
+它不移动挂点、不修改 rest。扳机食指与其余包握手指分别弯曲，退出持枪 composition 时复位。
+指节命名见[角色资产合同](../reference/character-assets.md)。当前使用原创基础动作和有界程序瞄准，
+没有导入商业动作包，也没有新增通用动画图或逐手指接触求解器。
+
+`--gpu-scene-pose-test` 覆盖低持枪、瞄准、举枪中间态、反冲、仰俯/左右角度、近距离目标与护甲，
+并验证握点闭合、可达性、腕部方向、胸部代理间隙、指节复位、源模型尺度变化及 CPU/Scene 冻结一致性。
+骨骼 Euler 的整数精度使最终枪口存在小角度误差；测试与近景检查分别验证数值边界和视觉效果。
+表现求值不回写命中、伤害、actor 朝向或网络真值。
 
 ## 扩展新动画格式
 

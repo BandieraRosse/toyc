@@ -1,3 +1,5 @@
+#include "rf_gpu_scene_clothing_test.inc"
+#include "rf_gpu_scene_grip_test.inc"
 struct scene_infected_test_geometry { uint64_t hash; unsigned count; int fail; };
 static int scene_infected_test_triangle(void *context,
     const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
@@ -163,7 +165,7 @@ static int scene_evasion_pose_test(void)
     composition.secondary_additive.time_ms = 140;
     composition.secondary_additive_weight_milli = 1000;
     EVADE_CHECK(!rasterfall_action_compose(&instances[1], &composition) &&
-        !modular_solve_left_hand(&instances[1], TOY_GAME_WEAPON_AK, 835));
+        !rasterfall_rifle_pose_solve(&instances[1], TOY_GAME_WEAPON_AK, 835,&frame.presentation.rifle,NULL));
     EVADE_CHECK(!rasterfall_model_build_skin_palette(&instances[1].pose,
         replay.palette, evaded.bone_count));
     EVADE_CHECK(!memcmp(evaded.palette, replay.palette, sizeof(evaded.palette)));
@@ -290,7 +292,7 @@ static int scene_fixture_clock_test(void)
     composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
     composition.layers[1].time_ms=fixture_game.actors[0].animation.time_ms;
     FIXTURE_CLOCK_CHECK(!rasterfall_action_compose(&reference,&composition) &&
-        !modular_solve_left_hand(&reference,TOY_GAME_WEAPON_AK,835));
+        !rasterfall_rifle_pose_solve(&reference,TOY_GAME_WEAPON_AK,835,&frame.presentation.rifle,NULL));
     memset(&repeat,0,sizeof(repeat));
     FIXTURE_CLOCK_CHECK(!rasterfall_model_build_skin_palette(&reference.pose,
         repeat.palette,reference.pose.bone_count) &&
@@ -326,8 +328,10 @@ int rf_gpu_scene_pose_logic_test(void)
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_independent_enemy_source_test());
+    POSE_CHECK(!scene_grip_pose_test());
     POSE_CHECK(!scene_evasion_pose_test());
     POSE_CHECK(!scene_equipment_pose_test());
+    POSE_CHECK(!scene_clothing_pose_test());
     POSE_CHECK(!scene_fixture_clock_test());
     /* Exercise the real network presentation adapter without sockets or a GPU.
      * Bodies behind the camera still freeze their values before raster clipping. */
@@ -527,7 +531,7 @@ int rf_gpu_scene_pose_logic_test(void)
         composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
         composition.layers[1].time_ms=160;
         if (rasterfall_action_compose(reference,&composition)<0 ||
-            modular_solve_left_hand(reference,TOY_GAME_WEAPON_AK,835)<0) failed=1;
+            rasterfall_rifle_pose_solve(reference,TOY_GAME_WEAPON_AK,835,&frame.presentation.rifle,NULL)<0) failed=1;
         for (unsigned int v=0; !failed && v<modular_actor_runtime.body.definition.vertex_count; ++v) {
             int a[3],b[3],an[3],bn[3];
             if (rasterfall_model_instance_skin_vertex(reference,v,a,an)<0 ||
@@ -551,7 +555,7 @@ int rf_gpu_scene_pose_logic_test(void)
                 const int *raw=(const int *)(placement.model->vertices+v*placement.model->vertex_bytes);
                 int canonical[3]; double authored[3],model_point[3],world[3],actual[3];
                 double raw_point[3]={raw[0],raw[1],raw[2]};
-                modular_weapon_canonical_point(placement.model,placement.asset,raw,canonical);
+                modular_weapon_canonical_point(&placement.adapter,raw,canonical);
                 for (int a=0;a<3;++a) authored[a]=canonical[a]*placement.geometry_scale/1000.0;
                 modular_weapon_model_point(placement.origin,placement.rotation,authored,835,model_point);
                 rigid_matrix_vector(first.body_to_world.rotation,model_point,world);
@@ -655,6 +659,8 @@ int rf_gpu_scene_pose_logic_test(void)
             repeat.attachment_count==recipe->attachment_count &&
             repeat.shirt_color==recipe->shirt_color &&
             repeat.pants_color==recipe->pants_color);
+        POSE_CHECK(repeat.clothing_count==recipe->clothing_count &&
+            repeat.body_hidden_material_mask==rasterfall_character_recipe_hidden_materials(recipe));
         for(uint32_t attachment=0;attachment<repeat.attachment_count;++attachment)
             POSE_CHECK(repeat.attachments[attachment].resource_id==
                 (uint32_t)recipe->attachments[attachment].gear_resource_id &&

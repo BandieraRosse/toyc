@@ -87,6 +87,7 @@ int rf_gpu_scene_local_freeze_presentation(struct rf_gpu_scene_local_source *s,
         p->muzzle_flash_ms=a->muzzle_flash_ms;
         p->scene_light_q8=256;
         rasterfall_actor_evasion_sample(a, &state->evasion, &p->evasion);
+        rasterfall_rifle_sample(a,(unsigned)game->combat_time_ms,&state->rifle,&p->rifle);
         if (a->character_id!=state->clock_character) {
             state->lower_time_ms=0; state->lower_walk=0;
         }

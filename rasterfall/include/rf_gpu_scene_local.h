@@ -2,6 +2,7 @@
 #define RF_GPU_SCENE_LOCAL_H
 #include "rf_gpu_scene_extract.h"
 #include "rasterfall_actor_animation.h"
+#include "rasterfall_rifle_pose.h"
 
 /* Session-owned roster source. Register at creation, retire at reset/unload.
  * Never infer a birth by comparing actor bytes or by observing slot reuse. */
@@ -9,6 +10,7 @@ struct rf_gpu_scene_local_actor_source {
     uint64_t epoch, lower_time_ms;
     int actor_id, lower_walk, last_animation, last_time_ms, clock_character;
     struct rasterfall_actor_evasion_history evasion;
+    struct rasterfall_rifle_history rifle;
 };
 struct rf_gpu_scene_local_source {
     uint64_t next_epoch, world_generation, frame_id;
@@ -30,6 +32,7 @@ struct rf_gpu_scene_local_presentation {
     uint64_t lower_time_ms;
     int lower_walk, scene_light_q8;
     struct rasterfall_actor_evasion_pose evasion;
+    struct rasterfall_rifle_pose_input rifle;
 };
 struct rf_gpu_scene_local_frame {
     struct rf_gpu_scene_snapshot_v2 snapshot;

@@ -35,6 +35,36 @@ static uint32_t rgba(uint32_t rgb)
     return 0xff000000U | ((rgb&255)<<16) | (rgb&0xff00) | ((rgb>>16)&255);
 }
 
+/* Numeric oracle for unlit linear HDR at the fixture's unit exposure.
+ * RGBA16F storage and final UNORM conversion may differ by one output code. */
+static unsigned hdr_channel(double linear)
+{
+    double mapped=linear*(2.51*linear+0.03)/
+        (linear*(2.43*linear+0.59)+0.14)*(2.43/2.51);
+    double srgb=mapped<=0.0031308 ? 12.92*mapped : 1.055*pow(mapped,1.0/2.4)-0.055;
+    return (unsigned)(srgb*255.0+0.5);
+}
+static uint32_t hdr_linear(double r,double g,double b)
+{
+    return 0xff000000u|hdr_channel(r)|(hdr_channel(g)<<8)|(hdr_channel(b)<<16);
+}
+static uint32_t hdr_rgb(uint32_t rgb)
+{
+    double linear[3];
+    for(unsigned i=0;i<3;++i) {
+        double c=((rgb>>(16-i*8))&255)/255.0;
+        linear[i]=c<=0.04045 ? c/12.92 : pow((c+0.055)/1.055,2.4);
+    }
+    return hdr_linear(linear[0],linear[1],linear[2]);
+}
+static int color_near(uint32_t actual,uint32_t expected)
+{
+    if((actual>>24)!=(expected>>24))return 0;
+    for(unsigned c=0;c<3;++c)
+        if(abs((int)((actual>>(c*8))&255)-(int)((expected>>(c*8))&255))>1)return 0;
+    return 1;
+}
+
 static int triangle_reuse_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
@@ -326,12 +356,16 @@ static int scene_layers_test(struct rf_gpu_vulkan_context *context)
     struct rf_gpu_graphics_vertex v[24]={0};
     uint32_t ix[36],white=0xffffff;
     struct rf_gpu_graphics_batch_item items[6]={0};
+    struct rf_gpu_lighting lighting;
+    uint32_t sky_corner;
     const int invz[6]={1,8192,4096,12288,1024,1};
     const unsigned layers[6]={RF_GPU_SCENE_SKY,RF_GPU_SCENE_WORLD,
         RF_GPU_SCENE_TRANSPARENT,RF_GPU_SCENE_EFFECTS,RF_GPU_SCENE_VIEWMODEL,RF_GPU_SCENE_OVERLAY};
     const unsigned colors[6]={0x0000ff,0xff0000,0x00ff00,0xffff00,0xff00ff,0x00ffff};
     int result=-1;
     CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    rf_gpu_lighting_default(&lighting);lighting.environment[3]=1;
+    CHECK(!rf_gpu_graphics_set_lighting(g,&lighting));
     for (unsigned i=0;i<6;++i) {
         int x0=i==0?0:32,x1=i==0?128:96,y0=i==0?0:16,y1=i==0?96:80;
         for (unsigned k=0;k<4;++k) {
@@ -349,17 +383,22 @@ static int scene_layers_test(struct rf_gpu_vulkan_context *context)
         items[i].draw.texture[3]=(i==0 || i==5)?2:1;
         items[i].draw.texture[2]=(i==2 || i==3)?128:(i==0 || i==5)?255:0;
         items[i].draw.material[0]=colors[i];items[i].draw.scene_layer=layers[i];
+        items[i].draw.quality[2]=3; /* Isolate layer composition from surface lighting. */
         items[i].draw.first_index=i*6;
     }
+    /* SKY is now procedural HDR. Compare its unobstructed pixel to an isolated
+     * sky pass, rather than expecting the old flat draw material color. */
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
+    sky_corner=pixels[0];CHECK((sky_corner&0xffffff)!=0 && depths[0]==0);
     CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[0]==rgba(0x0000ff) && depths[0]==0);
-    CHECK(pixels[48*128+64]==rgba(0xff0000) && depths[48*128+64]==0.5f);
+    CHECK(pixels[0]==sky_corner && depths[0]==0);
+    CHECK(color_near(pixels[48*128+64],hdr_rgb(0xff0000)) && depths[48*128+64]==0.5f);
     CHECK(rf_gpu_graphics_scene_capture(g,items,3,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[48*128+64]==rgba(0xff0000) && depths[48*128+64]==0.5f);
+    CHECK(color_near(pixels[48*128+64],hdr_rgb(0xff0000)) && depths[48*128+64]==0.5f);
     CHECK(rf_gpu_graphics_scene_capture(g,items,4,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[48*128+64]==rgba(0xff8000) && depths[48*128+64]==0.5f);
+    CHECK(color_near(pixels[48*128+64],hdr_linear(1,128.0/255.0,0)) && depths[48*128+64]==0.5f);
     CHECK(rf_gpu_graphics_scene_capture(g,items,5,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[48*128+64]==rgba(0xff00ff) && depths[48*128+64]==0.0625f);
+    CHECK(color_near(pixels[48*128+64],hdr_rgb(0xff00ff)) && depths[48*128+64]==0.0625f);
     CHECK(rf_gpu_graphics_scene_capture(g,items,6,pixels,depths,MAX_PIXELS)==0);
     CHECK(pixels[48*128+64]==rgba(0x00ffff) && depths[48*128+64]==0.0625f);
     struct rf_gpu_graphics_stats before,after;
@@ -380,8 +419,12 @@ static int precision_material_test(struct rf_gpu_vulkan_context *context)
     struct rf_gpu_graphics_vertex v[6];
     uint32_t ix[6]={0,1,2,3,4,5};
     struct rf_gpu_graphics_batch_item items[2]={0};
+    struct rf_gpu_lighting lighting;
+    struct rf_gpu_graphics_stats before,after;
     int result=-1;
     CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    rf_gpu_lighting_default(&lighting);lighting.environment[3]=1;
+    CHECK(!rf_gpu_graphics_set_lighting(g,&lighting));
     for (unsigned i=0;i<6;++i) v[i]=vertices[indices[i]];
     r=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
     CHECK(r!=NULL);
@@ -389,20 +432,24 @@ static int precision_material_test(struct rf_gpu_vulkan_context *context)
         items[i].resource=r;items[i].draw=draw(128,96);
         items[i].draw.translation_scale[2]=4000+i;
         items[i].draw.material[0]=i?0x00ff00:0xff0000;
+        items[i].draw.quality[2]=3;
     }
     CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[48*128+64]==rgba(0xff0000));
+    CHECK(color_near(pixels[48*128+64],hdr_rgb(0xff0000)));
+    CHECK(fabs(depths[48*128+64]-64.0/4000.0)<0.0000001);
     memcpy(saved,pixels,128*96*4);
     struct rf_gpu_graphics_batch_item swap=items[0];items[0]=items[1];items[1]=swap;
     CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
     CHECK(!memcmp(saved,pixels,128*96*4));
-    /* The old reciprocal-depth bucket cannot distinguish these surfaces. */
+    /* Quantized reciprocal-depth compatibility is retired. Rejection must
+     * leave the last complete image and submission counters untouched. */
     for (unsigned i=0;i<2;++i) items[i].draw.quality[0]=1;
-    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
-    uint32_t first=pixels[48*128+64];
-    swap=items[0];items[0]=items[1];items[1]=swap;
-    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)==0);
-    CHECK(first!=pixels[48*128+64]);
+    rf_gpu_graphics_get_stats(g,&before);
+    memcpy(saved_depths,depths,128*96*4);
+    CHECK(rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS)<0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(before.frames==after.frames && before.queue_submits==after.queue_submits);
+    CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
     items[0].draw=draw(128,96);items[0].draw.material[2]=1;
     CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
     memcpy(saved,pixels,128*96*4);
@@ -418,7 +465,7 @@ static int precision_material_test(struct rf_gpu_vulkan_context *context)
     CHECK(memcmp(saved,pixels,128*96*4));
     items[0].draw.quality[2]=3;
     CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
-    CHECK(pixels[48*128+64]==rgba(items[0].draw.material[0]));
+    CHECK(color_near(pixels[48*128+64],hdr_rgb(items[0].draw.material[0])));
     memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
     for (unsigned i=0;i<6;++i)
         for (unsigned k=0;k<3;++k) v[i].position[k]*=128;
@@ -431,6 +478,59 @@ static int precision_material_test(struct rf_gpu_vulkan_context *context)
 done:
     rf_gpu_graphics_destroy(g);
     printf("SCENE float depth/order, bilinear, smooth/unlit: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
+static int texture_set_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *a=NULL,*b=NULL;
+    struct rf_gpu_graphics_vertex v[6];uint32_t ix[6]={0,1,2,3,4,5};
+    uint32_t white=0xffffff,edges[4]={0xff0000,0x00ff00,0x0000ff,0xffffff};
+    uint32_t *checker=malloc(512*512*4);
+    struct rf_gpu_graphics_texture_image images[3]={{checker,512,512},{&white,1,1},{edges,2,2}};
+    struct rf_gpu_graphics_batch_item item={0};struct rf_gpu_graphics_stats before,after;
+    int result=-1;
+    CHECK(g && checker && !rf_gpu_graphics_resize(g,128,96));
+    for(unsigned y=0;y<512;++y)for(unsigned x=0;x<512;++x)checker[y*512+x]=((x+y)&1)?white:0;
+    for(unsigned i=0;i<6;++i)v[i]=vertices[indices[i]];
+    a=rf_gpu_graphics_resource_create(g,v,6,ix,6,&white,1,1);
+    b=rf_gpu_graphics_resource_create(g,v,6,ix,6,&white,1,1);CHECK(a && b);
+    CHECK(!rf_gpu_graphics_resource_texture_set(g,a,images,3));
+    CHECK(!rf_gpu_graphics_resource_share_textures(g,b,a));
+    CHECK(!rf_gpu_graphics_resource_destroy(g,a));a=NULL;
+    item.resource=b;item.draw=draw(128,96);item.draw.quality[2]=3;item.draw.quality[3]=2;
+    item.draw.texture[0]=item.draw.texture[1]=1;item.draw.material[2]=2;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    memcpy(saved,pixels,128*96*4);
+    item.draw.material[2]=0;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    CHECK(!memcmp(saved,pixels,128*96*4)); /* White texture preserves linear color factor. */
+    item.draw.material[0]=white;item.draw.material[2]=1;item.draw.texture[0]=item.draw.texture[1]=512;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    memcpy(saved,pixels,128*96*4);
+    item.draw.material[0]=0xbcbcbc;item.draw.material[2]=0;item.draw.texture[0]=item.draw.texture[1]=1;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    for(unsigned i=0;i<128*96;++i) if(depths[i]>0)
+        for(unsigned c=0;c<3;++c)CHECK(abs((int)((saved[i]>>(8*c))&255)-(int)((pixels[i]>>(8*c))&255))<=1);
+    /* Constant edge UV magnifies the corner; clamp cannot blend the opposite edge. */
+    for(unsigned i=0;i<6;++i)v[i].uv[0]=v[i].uv[1]=0;
+    CHECK(!rf_gpu_graphics_triangle_resource_update(g,b,v,6));
+    item.draw.material[0]=white;item.draw.material[2]=3;item.draw.texture[0]=item.draw.texture[1]=2;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));memcpy(saved,pixels,128*96*4);
+    item.draw.material[0]=edges[0];item.draw.material[2]=0;item.draw.texture[0]=item.draw.texture[1]=1;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));CHECK(!memcmp(saved,pixels,128*96*4));
+    item.draw.material[0]=white;item.draw.material[2]=3;item.draw.texture[0]=item.draw.texture[1]=2;
+    images[0].width=1025;rf_gpu_graphics_get_stats(g,&before);
+    CHECK(rf_gpu_graphics_resource_texture_set(g,b,images,3)<0);
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));CHECK(!memcmp(saved,pixels,128*96*4));
+    rf_gpu_graphics_get_stats(g,&after);CHECK(before.texture_upload_bytes==after.texture_upload_bytes);
+    item.draw.material[2]=4;CHECK(!rf_gpu_graphics_resource_bind(g,b));
+    CHECK(rf_gpu_graphics_validate_draw(g,&item.draw)<0);
+    result=0;
+done:
+    free(checker);rf_gpu_graphics_destroy(g);
+    printf("SCENE texture set: %s (linear factor, clamp, mip, sharing, failure retention)\n",result?"FAIL":"PASS");
     return result;
 }
 
@@ -452,6 +552,9 @@ int main(void)
         vertices[i].uv[0]=(i==1 || i==2)?65535:0;
         vertices[i].uv[1]=(i==2 || i==3)?65535:0;
     }
+    if(getenv("RF_GPU_TEXTURE_TEST")) {
+        CHECK(texture_set_test(&context)==0);result=0;goto done;
+    }
     if (getenv("RF_GPU_COLOR_TEST")) {
         CHECK(scene_color_test(&context)==0);
         result=0;goto done;
@@ -469,6 +572,7 @@ int main(void)
     CHECK(scene_color_test(&context)==0);
     CHECK(skin_batch_test(&context)==0);
     CHECK(precision_material_test(&context)==0);
+    CHECK(texture_set_test(&context)==0);
     result=0;
 done:
     rf_gpu_shutdown(&gpu);

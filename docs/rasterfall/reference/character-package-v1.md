@@ -107,10 +107,10 @@ emissive/occlusion 贴图及材质/纹理扩展在首版明确拒绝。显式 sa
 | `rfchar.skin2.v1` | 当前 GLB/RFM2/GPU 路径已有 | 现有基线，是否足够仍需最小变形样本 |
 | `rfchar.skin4.v1` / `rfchar.morph.v1` | 不支持 | 待样本决策，不得静默裁剪或中性化 |
 | `rfchar.material.v1` | 新 RF 元数据未消费 | 必需，包含本页基础色、toon、描边及脸部控制 |
-| `rfchar.texture_rgba_mip.v1` | 当前角色 Scene 只接受平色 | 必需，由 P2 实现 |
+| `rfchar.texture_rgba_mip.v1` | v15 MAT1 已贯通不透明基础色与 mip；本页 capability/package 尚未消费，alpha 未实现 | 完整能力仍待 P2 |
 | `rfchar.alpha_mask.v1` | GLB 门允许；RFCHAR converter 明确拒绝，未实现 cutoff | 必需，由 P1/P2 贯通 |
 | `rfchar.double_sided.v1` | RFCHAR converter 已保存 GLB doubleSided，Scene 已有标志消费 | 必需，完整材质联合验收仍待 P2 |
-| `rfchar.index32.v1` | RFM2 已写 uint32；Scene 当前最多 65,536 索引 | 必需，资源化提交，不能只扩大临时数组 |
+| `rfchar.index32.v1` | RFM2 已写 uint32；Scene 已分最多16块，每块65,535索引 | 保留已有分块资源提交 |
 | `rfchar.action_roles.v1` | RFANIM stable role 组合已有；GLB 动画不由 RFCHAR converter 导入 | 必需，manifest 显式引用 RFANIM |
 | `rfchar.action_aux.v1` | RFANIM 尚无通用辅助骨骼通道 | 待内容需求，不得硬编码指骨/发骨编号 |
 | `rfchar.lod.v1` / `rfchar.package.v1` | 完整角色组装包未实现 | 必需，由 P1/P3 接入 |
@@ -123,11 +123,11 @@ emissive/occlusion 贴图及材质/纹理扩展在首版明确拒绝。显式 sa
 
 ## 二进制迁移与资源边界
 
-继续演进 RFM2，下一目标保留为 v15；v2–v14 读取路径与 Humanoid 适配保持原行为。
-v15 保留 uint32 索引、SKN1/CHR1 的已验证语义，通过有长度、有版本的扩展目录关联新材质表；
-不能复用旧 PMX toon/sphere 字节猜测 RF 语义。目录项必须检查越界、重叠、重复及未知必需块。
-具体字节偏移、四权重扩展和 TTEX 版本尚未冻结，P0 不在没有读写器验证时宣称 ABI 完成。
-旧 loader 对 v15 必须拒绝；新 loader 对未来未知主版本同样拒绝，禁止降版本号蒙混加载。
+RFM2 v15 已被当前视觉样板占用：保留 uint32 索引及 SKN1/CHR1，追加窄范围 MAT1 块，
+只支持不透明基础色与粗糙度/金属度常量，见[已实现资产合同](character-assets.md)。
+这不代表本页角色包、扩展目录、四权重、toon、描边或脸部控制已实现；未来完整包的格式版本需另行分配，
+不能重新定义 v15，也不能复用旧 PMX toon/sphere 字节猜测 RF 语义。
+未来目录项必须检查越界、重叠、重复及未知必需块。loader 对未来未知主版本拒绝，禁止降版本号蒙混加载。
 
 包资源共享不可变 mesh/index/skin/material/texture/action；实例独占 pose、palette、动作时钟、
 IK 历史和蒙皮输出。缓存键至少包含内容 revision、布局版本和 device generation。

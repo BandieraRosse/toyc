@@ -19,7 +19,13 @@ $partsTool = 'tools/blender/rf_character_parts.py'
 编辑的独立部件场景。骨架和审阅场景分别在 `rig/`、`review/`；私有源、预览、GLB 和 RFM2 均不加入 Git。
 新输出使用未占用路径；工具拒绝覆盖已有部件版本及组装结果。
 以上 `assembly.json` 示例指初始迁移基线。继续当前造型时，改用设计稿指向的候选清单；
-V25d 为 `assembly-head-v025d.json`，三个头发部件均为 `editable_mesh`，按手工网格流程发布。
+当前 V28 为 `assembly-body-v028.json`，三个头发部件沿用 V25d 起的 `editable_mesh`，按手工网格流程发布。
+V27 显式移除了 eyes 清单中的独立虹膜与高光对象，眼球外形与旧离线表情位置保持，
+虹膜、瞳孔及高光进入同一眼球材质；这属于 eyes 对象清单迁移，不能用普通 publish 隐式删除对象。
+V28 另作显式手臂 rest 接口迁移：肩关节保留，上臂与前臂各延长 25%，手掌/指节整体平移，
+身体对应顶点同步调整；头、眼、口、发及非手臂骨骼源保持锁定。迁移脚本为私有
+`authoring/scripts/build_v028.py`，验证报告分别列出 arm rest 与身体顶点变化，不能声称骨架未变。
+源动作、身体拓扑、权重和 UV 保持；最终结果还须通过 runtime 与原生握持检查。
 
 ## 手工修改脸部或冻结头发网格
 

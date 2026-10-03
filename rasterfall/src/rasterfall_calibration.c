@@ -29,22 +29,48 @@ static void profile_init(void)
     for (i = 0; i < TOY_GAME_WEAPON_COUNT; i++) {
         asset_profiles[i].model_path = paths[i];
         asset_profiles[i].base_scale_milli = 760000;
+        for (int socket=0;socket<RASTERFALL_WEAPON_SOCKET_COUNT;++socket)
+            asset_profiles[i].socket_rotations[socket][3]=1.0f;
     }
     asset_profiles[TOY_GAME_WEAPON_AK].asset_basis = 2;
     asset_profiles[TOY_GAME_WEAPON_AK].skeletal = 1;
-    asset_profiles[TOY_GAME_WEAPON_AK].base_scale_milli = 760000;
+    asset_profiles[TOY_GAME_WEAPON_AK].base_scale_milli = 450000;
+    asset_profiles[TOY_GAME_WEAPON_AK].length_mm = 880;
+    asset_profiles[TOY_GAME_WEAPON_AK].legacy_base_scale_milli = 760000;
     asset_profiles[TOY_GAME_WEAPON_AK].attachment_grip =
         (struct rasterfall_cal_vec3){-18, -8, 24};
     asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP] =
-        (struct rasterfall_cal_vec3){-18, -8, 24};
+        (struct rasterfall_cal_vec3){-10, -2, -90};
     asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_FOREGRIP] =
-        (struct rasterfall_cal_vec3){5, 1, 137};
+        (struct rasterfall_cal_vec3){0, 28, 35};
     asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_MUZZLE] =
-        (struct rasterfall_cal_vec3){-5, 28, 314};
+        (struct rasterfall_cal_vec3){0, 38, 225};
     asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_MAGAZINE] =
-        (struct rasterfall_cal_vec3){-8, -42, 82};
+        (struct rasterfall_cal_vec3){0, -20, 0};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_STOCK] =
+        (struct rasterfall_cal_vec3){0, -25, -225};
+    asset_profiles[TOY_GAME_WEAPON_AK].sockets[RASTERFALL_WEAPON_SOCKET_SIGHT] =
+        (struct rasterfall_cal_vec3){0, 62, -80};
+    /* The metacarpals continue the forearm; finger joints wrap the grip.
+     * PRIMARY = Rx(-140) Rz(90): palm inward, knuckles up/forward.
+     * FOREGRIP: palm up, canted inward/upward to meet the support forearm. */
+    {
+        static const float primary[4]={-0.6644630244f,0.6644630244f,0.2418447626f,0.2418447626f};
+        static const float support[4]={0.4829629131f,0.1294095226f,0.8365163037f,0.2241438680f};
+        memcpy(asset_profiles[TOY_GAME_WEAPON_AK].socket_rotations[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP],primary,sizeof(primary));
+        memcpy(asset_profiles[TOY_GAME_WEAPON_AK].socket_rotations[RASTERFALL_WEAPON_SOCKET_FOREGRIP],support,sizeof(support));
+    }
     asset_profiles[TOY_GAME_WEAPON_AK].socket_mask =
         (1u << RASTERFALL_WEAPON_SOCKET_COUNT) - 1u;
+    /* Stock (excluding its shoulder contact face), receiver, grip, magazine.
+     * Conservative visual clearance capsules in canonical RFU. */
+    {
+        static const struct rasterfall_weapon_clearance_capsule capsules[4]={
+            {{0,0,-190},{0,10,-120},12}, {{0,35,-85},{0,35,80},15},
+            {{0,-10,-95},{0,-44,-105},10}, {{0,-5,-30},{0,-67,30},12}};
+        memcpy(asset_profiles[TOY_GAME_WEAPON_AK].clearance,capsules,sizeof(capsules));
+        asset_profiles[TOY_GAME_WEAPON_AK].clearance_count=4;
+    }
     asset_profiles[TOY_GAME_WEAPON_AWP].skeletal = 1;
     asset_profiles[TOY_GAME_WEAPON_AWP].base_scale_milli = 920000;
     pose_profiles[0][TOY_GAME_WEAPON_AK].character_id = 0;
@@ -125,7 +151,7 @@ const struct rasterfall_weapon_asset_profile *rasterfall_weapon_asset_profile(in
 
 const char *rasterfall_weapon_socket_name(enum rasterfall_weapon_socket socket)
 {
-    static const char *names[] = {"PRIMARY_GRIP", "FOREGRIP", "MUZZLE", "MAGAZINE"};
+    static const char *names[] = {"PRIMARY_GRIP", "FOREGRIP", "MUZZLE", "MAGAZINE", "STOCK", "SIGHT"};
     return socket >= 0 && socket < RASTERFALL_WEAPON_SOCKET_COUNT ? names[socket] : "INVALID";
 }
 
@@ -139,7 +165,7 @@ int rasterfall_weapon_socket_transform(int weapon,
     if (!(profile->socket_mask & (1u << socket))) return -1;
     memset(transform, 0, sizeof(*transform));
     transform->position = profile->sockets[socket];
-    transform->rotation[3] = 1.0f;
+    memcpy(transform->rotation,profile->socket_rotations[socket],sizeof(transform->rotation));
     return 0;
 }
 
@@ -220,6 +246,35 @@ void rasterfall_weapon_asset_to_canonical(int weapon, int x, int y, int z,
     if (basis == 1) { *ox = z; *oy = y; *oz = x; }
     else if (basis == 2) { *ox = -x; *oy = y; *oz = -z; }
     else { *ox = x; *oy = y; *oz = z; }
+}
+
+int rasterfall_weapon_model_adapt(int weapon, const int minimum[3],
+    const int maximum[3], struct rasterfall_weapon_model_adapter *out)
+{
+    const struct rasterfall_weapon_asset_profile *asset;
+    int length, axis;
+    if (!minimum || !maximum || !out || weapon<0 || weapon>=TOY_GAME_WEAPON_COUNT)
+        return -1;
+    asset=rasterfall_weapon_asset_profile(weapon);
+    memset(out,0,sizeof(*out));
+    for (int i=0;i<3;++i) {
+        if (maximum[i]<minimum[i]) return -1;
+        out->center[i]=(int)(((long long)minimum[i]+maximum[i])/2);
+        out->basis[i*3+i]=1;
+    }
+    if (asset->asset_basis==1) {
+        out->basis[0]=out->basis[8]=0;out->basis[2]=out->basis[6]=1;
+    } else if (asset->asset_basis==2) out->basis[0]=out->basis[8]=-1;
+    axis=asset->asset_basis==1 ? 0 : 2;
+    length=maximum[axis]-minimum[axis];
+    if (length<=0) return -1;
+    out->reference_length_mm=asset->length_mm;
+    /* 512 RFU/metre: mm*512 is the target length in milli-RFU. Round once
+     * at the integer rigid-transform boundary, and expose its actual size. */
+    out->scale_milli=(int)(((long long)(asset->length_mm ?
+        asset->length_mm*512 : asset->base_scale_milli)+length/2)/length);
+    out->presented_length_mm=length*out->scale_milli/512.0;
+    return out->scale_milli>0 ? 0 : -1;
 }
 
 static void dump_vec(const char *name, struct rasterfall_cal_vec3 v)

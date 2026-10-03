@@ -2,21 +2,21 @@
 
 ## RF_MODEL_LAB 角色预览
 
-本地安装 `rasterfall/private-assets/models/rf_c01_v023a.rmesh` 后构建 package。
-该资源从锁定的 `authoring/build/v023a/rf_c01-v023a.glb` 通过现有 `rfchar_import.py`
-和 Windows `glb-inspect.exe` 生成，使用 `--position-scale 65536` 保留局部细节；不覆盖旧候选。
-V23a 仅修订身体，头部与头发沿用 V22h；当前支持不透明分色和双面材质。
-创作和验证见[身体修订记录](../archive/character-body-v023a-20261003.md)。
+本地安装 `rasterfall/private-assets/models/rf_c01_v026f.rmesh` 及同名 `.textures` 目录后构建 package。
+该资源通过统一导入器的 `--character-surface --position-scale 65536` 生成，保留原局部细节和旧候选。
+V26f 沿用已修订身体，继续整理头脸、发束及中性眼睑，增加不透明基础色图和材质常量。
+创作与运行验证分别留证，见[角色表面与握持现场](../archive/character-surfaces-grip-20261003.md)。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene model-lab 0
 ```
 
-此入口直接定位并显示两个模型，仍可移动观察。普通前哨站入口初始隐藏，在场地东北侧终端按 E
+此入口直接定位并显示五个台位：静止、步行、持枪、瞄准、移动射击，仍可移动观察。普通前哨站入口初始隐藏，在场地东北侧终端按 E
 显示/隐藏。切离前哨站后隐藏；CPU 入口不绘制该预览。固定复现可追加
 `--gpu-normal-fixed-tick --frames 120 --frame-audit --gpu-frame-capture <绝对路径.bmp>`，
 截图产物为 `<绝对路径.bmp>.scene.ppm`；显式 readback 只用于捕获帧。
-目前复用已有静止与步行、上身 rifle-idle 采样，没有持枪适配、贴图、描边或 LOD 签收。
+持枪台位复用正式动作、手腕朝向和完整握点求解，支持 v15 不透明基础色图与材质常量；
+定向近景与动作帧检查见[保真诊断](character-fidelity.md)。描边与 LOD 不属于此次签收。
 缺失资源在画面与日志中显示错误，重新安装后关闭再开启展示。
 
 ## 实验性单人入口

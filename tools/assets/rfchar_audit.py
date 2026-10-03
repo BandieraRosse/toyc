@@ -63,7 +63,7 @@ def audit(path):
         elif alpha_mode != "OPAQUE":
             issues.add("ALPHA_MODE_UNSUPPORTED")
         if textured:
-            issues.add("SCENE_CHARACTER_TEXTURE_UNSUPPORTED")
+            issues.add("OPAQUE_SURFACE_PROFILE_REQUIRED")
         if "rf_material" in material.get("extras", {}):
             issues.add("RF_MATERIAL_IMPORT_REJECTED")
     return {

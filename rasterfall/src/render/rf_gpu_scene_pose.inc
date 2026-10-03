@@ -9,15 +9,41 @@ void rf_gpu_scene_pose_body_release(void)
         rasterfall_model_resource_unload(&scene_body_resources[i]);
 }
 
-int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
-    uint64_t time_ms,int walk,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
+static int scene_pose_weapon_from_instance(struct rf_gpu_scene_pose_v1 *next,
+    const struct rasterfall_model_instance *instance,int weapon_id,int scale)
+{
+    struct rasterfall_modular_weapon_placement weapon;
+    double rotation[9],offset[3],centered[3],center[3];
+    struct rasterfall_weapon_model_adapter adapter;
+    if (modular_prepare_weapon_placement(instance,weapon_id,scale,&weapon)<0) return -1;
+    if(rasterfall_weapon_model_adapt(weapon_id,
+        (int[3]){weapon.model->min_x,weapon.model->min_y,weapon.model->min_z},
+        (int[3]){weapon.model->max_x,weapon.model->max_y,weapon.model->max_z},&adapter)<0) return -1;
+    rigid_matrix_multiply(next->body_to_world.rotation,weapon.rotation,rotation);
+    rigid_matrix_multiply(rotation,adapter.basis,next->weapon_to_world.rotation);
+    rigid_matrix_vector(next->body_to_world.rotation,weapon.origin,offset);
+    for(int i=0;i<3;++i)center[i]=adapter.center[i];
+    rigid_matrix_vector(next->weapon_to_world.rotation,center,centered);
+    for (int i=0;i<3;++i)
+        next->weapon_to_world.translation[i]=next->body_to_world.translation[i]+
+            offset[i]*scale/1000.0-centered[i]*weapon.geometry_scale/1000.0;
+    next->weapon_to_world.scale_milli=weapon.geometry_scale;
+    next->weapon_valid=1;next->weapon=weapon_id;
+    return 0;
+}
+
+int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
+    uint64_t time_ms,int action,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
 {
     struct rasterfall_model_resource *resource;
     struct rasterfall_model_instance *instance;
     struct rasterfall_action_composition composition={0};
     const char *body_path=rasterfall_character_body_resource_path(body_id);
     char path[256];
-    int result=-1;
+    int result=-1,armed=action>=RF_GPU_SCENE_BODY_RIFLE_IDLE;
+    int walk=action==RF_GPU_SCENE_BODY_WALK || action==RF_GPU_SCENE_BODY_WALK_FIRE;
+    int scale=1000;
+    if (action<RF_GPU_SCENE_BODY_IDLE || action>RF_GPU_SCENE_BODY_WALK_FIRE) return -1;
     if (!out || !body_path || snprintf(path,sizeof(path),"%s",body_path)>=(int)sizeof(path)) return -1;
     const char *diagnostic_model=getenv("RF_GPU_CHARACTER_MODEL");
     if (diagnostic_model && diagnostic_model[0]) {
@@ -33,12 +59,34 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
         rasterfall_model_instance_init(instance,resource)<0) goto done;
     composition.layers[0].clip=humanoid_action(walk ?
         RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
-    composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
+    composition.layers[1].clip=humanoid_action(action>=RF_GPU_SCENE_BODY_RIFLE_AIM ?
+        RASTERFALL_ACTION_RIFLE_AIM : RASTERFALL_ACTION_RIFLE_IDLE);
     if (!composition.layers[0].clip || !composition.layers[1].clip) goto done;
     composition.layers[0].time_ms=(int)(time_ms%composition.layers[0].clip->duration_ms);
     composition.layers[1].time_ms=(int)(time_ms%composition.layers[1].clip->duration_ms);
+    if (action==RF_GPU_SCENE_BODY_WALK_FIRE) {
+        composition.layers[2].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_RECOIL);
+        composition.layers[2].time_ms=(int)(time_ms%600);
+        if (!composition.layers[2].clip) goto done;
+    }
     const char *freeze=getenv("RF_GPU_CHARACTER_FREEZE");
-    if (!(freeze && freeze[0]=='1') && rasterfall_action_compose(instance,&composition)<0) goto done;
+    if (!(freeze && freeze[0]=='1' && !armed) &&
+        rasterfall_action_compose(instance,&composition)<0) goto done;
+    if (armed) {
+        struct rasterfall_rifle_pose_input rifle={0};
+        rifle.aim_milli=action>=RF_GPU_SCENE_BODY_RIFLE_AIM?1000:0;
+        if(action==RF_GPU_SCENE_BODY_WALK_FIRE) {
+            int t=(int)(time_ms%600);
+            rifle.recoil_milli=t<35?t*1000/35:t<180?(180-t)*1000/145:0;
+        }
+        const char *pitch=getenv("RF_GPU_CHARACTER_AIM_PITCH");
+        const char *yaw=getenv("RF_GPU_CHARACTER_AIM_YAW");
+        const char *distance=getenv("RF_GPU_CHARACTER_AIM_DISTANCE");
+        if(pitch)rifle.pitch_mdeg=atoi(pitch)*1000;
+        if(yaw)rifle.yaw_mdeg=atoi(yaw)*1000;
+        if(distance)rifle.target_distance_rfu=atoi(distance);
+        if(rasterfall_rifle_pose_solve(instance,TOY_GAME_WEAPON_AK,scale,&rifle,NULL)<0)goto done;
+    }
     memset(out,0,sizeof(*out));
     out->abi_version=1;out->byte_size=sizeof(*out);
     out->frame_id=frame;out->world_generation=world;out->actor_count=1;
@@ -48,12 +96,20 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     out->body_to_world.rotation[4]=1;
     out->body_to_world.translation[0]=x;out->body_to_world.translation[1]=y;
     out->body_to_world.translation[2]=z;
-    out->body_to_world.scale_milli=1000;
+    out->body_to_world.scale_milli=scale;
+    if (armed && scene_pose_weapon_from_instance(out,instance,TOY_GAME_WEAPON_AK,scale)<0) goto done;
     result=rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
         out->palette,out->bone_count);
 done:
     rasterfall_model_instance_unload(instance);
     tlibc_free(instance);return result;
+}
+
+int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
+    uint64_t time_ms,int walk,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
+{
+    return rf_gpu_scene_pose_body_action(body_id,frame,world,time_ms,
+        walk ? RF_GPU_SCENE_BODY_WALK : RF_GPU_SCENE_BODY_IDLE,x,y,z,cy,out);
 }
 
 static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
@@ -76,6 +132,15 @@ static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
     next->character_id=p->character_id;
     next->shirt_color=recipe->shirt_color;
     next->pants_color=recipe->pants_color;
+    if (recipe->clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING) return -1;
+    next->clothing_count=recipe->clothing_count;
+    next->body_hidden_material_mask=rasterfall_character_recipe_hidden_materials(recipe);
+    for (unsigned i=0;i<recipe->clothing_count;++i) {
+        const struct rasterfall_character_clothing_profile *clothing=
+            rasterfall_character_clothing_profile(recipe->clothing_resources[i]);
+        if (!clothing || clothing->body_resource_id!=recipe->body_resource_id) return -1;
+        next->clothing_resources[i]=(uint32_t)recipe->clothing_resources[i];
+    }
     next->bind_normals=rasterfall_model_instance_final_pose(instance)->animation.pose==RASTERFALL_MODEL_POSE_BIND;
     if (rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
             next->palette,next->bone_count)<0) return -1;
@@ -88,25 +153,7 @@ static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
     next->body_to_world.rotation[6]=-actor->sy/1024.0;
     next->body_to_world.scale_milli=835;
     if (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal) {
-        struct rasterfall_modular_weapon_placement weapon;
-        double basis[9]={1,0,0,0,1,0,0,0,1}, rotation[9], offset[3], centered[3];
-        double center[3];
-        if (modular_prepare_weapon_placement(instance,actor->weapon,835,&weapon)<0) return -1;
-        if (weapon.asset->asset_basis==1) {
-            basis[0]=basis[8]=0; basis[2]=basis[6]=1;
-        } else if (weapon.asset->asset_basis==2) basis[0]=basis[8]=-1;
-        rigid_matrix_multiply(next->body_to_world.rotation,weapon.rotation,rotation);
-        rigid_matrix_multiply(rotation,basis,next->weapon_to_world.rotation);
-        rigid_matrix_vector(next->body_to_world.rotation,weapon.origin,offset);
-        center[0]=(weapon.model->min_x+weapon.model->max_x)/2;
-        center[1]=(weapon.model->min_y+weapon.model->max_y)/2;
-        center[2]=(weapon.model->min_z+weapon.model->max_z)/2;
-        rigid_matrix_vector(next->weapon_to_world.rotation,center,centered);
-        for (int i=0;i<3;++i)
-            next->weapon_to_world.translation[i]=next->body_to_world.translation[i]+
-                offset[i]*835.0/1000.0-centered[i]*weapon.geometry_scale/1000.0;
-        next->weapon_to_world.scale_milli=weapon.geometry_scale;
-        next->weapon_valid=1; next->weapon=actor->weapon;
+        if (scene_pose_weapon_from_instance(next,instance,actor->weapon,835)<0) return -1;
     }
     memset(&gear,0,sizeof(gear));
     if (modular_prepare_gear_transforms(instance,recipe,modular_actor_runtime.gear,&gear)<0) return -1;
@@ -189,7 +236,7 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
     if (rasterfall_action_compose(instance,&composition)<0 ||
         actor->weapon < -1 || actor->weapon>=TOY_GAME_WEAPON_COUNT ||
         (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal &&
-         modular_solve_left_hand(instance,actor->weapon,835)<0)) goto done;
+         rasterfall_rifle_pose_solve(instance,actor->weapon,835,&p->rifle,NULL)<0)) goto done;
     if (scene_pose_from_instance(next,instance,recipe,actor,p)<0) goto done;
     *out=*next; result=0;
 done:

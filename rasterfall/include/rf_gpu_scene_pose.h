@@ -15,6 +15,8 @@ struct rf_gpu_scene_pose_v1 {
     uint32_t actor_count, bone_count, body_resource_id, attachment_count;
     int character_id;
     uint32_t shirt_color, pants_color;
+    uint32_t clothing_count, body_hidden_material_mask;
+    uint32_t clothing_resources[RASTERFALL_CHARACTER_RECIPE_CLOTHING];
     uint32_t bind_normals; /* Frozen legacy normal policy from finalized pose. */
     int scene_light_q8;
     struct rasterfall_rigid_transform body_to_world;
@@ -40,6 +42,15 @@ void rf_gpu_scene_pose_body_release(void);
 /* Catalog body preview: independent instance, authored colors, no gameplay ID. */
 int rf_gpu_scene_pose_body(int body_id, uint64_t frame, uint64_t world,
     uint64_t time_ms, int walk, int x, int y, int z, int cy,
+    struct rf_gpu_scene_pose_v1 *out);
+enum rf_gpu_scene_body_action {
+    RF_GPU_SCENE_BODY_IDLE, RF_GPU_SCENE_BODY_WALK,
+    RF_GPU_SCENE_BODY_RIFLE_IDLE, RF_GPU_SCENE_BODY_RIFLE_AIM,
+    RF_GPU_SCENE_BODY_WALK_FIRE
+};
+/* Catalog previews share the gameplay action, grip solver and weapon source. */
+int rf_gpu_scene_pose_body_action(int body_id, uint64_t frame, uint64_t world,
+    uint64_t time_ms, int action, int x, int y, int z, int cy,
     struct rf_gpu_scene_pose_v1 *out);
 struct rasterfall_model_asset *rf_gpu_scene_fixture_map(void);
 int rf_gpu_scene_native_fixture(int frames, int fault, int fault_frame);

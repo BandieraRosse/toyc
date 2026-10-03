@@ -13,6 +13,7 @@ double sin(double x);
 double cos(double x);
 double atan2(double y, double x);
 double fabs(double x);
+double pow(double x, double y);
 long long isqrt(long long value);
 
 #endif
