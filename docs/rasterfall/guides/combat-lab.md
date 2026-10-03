@@ -7,7 +7,8 @@
 ## 现场操作
 
 前哨站南排最西侧 `LOW PRESSURE` 空性能场同时供战斗实验使用，两种实验不能同时启动。
-场地北侧横路的北边缘设有两个物理终端，总投影标注 `COMBAT LAB / LOW PRESSURE`。
+场地北侧横路的南边缘（LOW PRESSURE 一侧）设有两个物理终端，总投影标注 `COMBAT LAB / LOW PRESSURE`。
+终端与投影朝北，玩家从道路面向南方操作时，背景为 LOW PRESSURE 场地，避开北侧往返展示区。
 西侧终端投影为 `E SELECT COMBAT TEST`，打开与 `--combat-lab` 共用预设的战斗选择界面；
 东侧终端投影为 `E RESULTS`，显示最近一轮状态，无结果时标注 `NO SAMPLE`。
 FPS 靠近按 E，方向键选择预设，F2 切换玩家参与或脚本观察，
