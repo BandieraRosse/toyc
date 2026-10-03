@@ -14,7 +14,8 @@ struct rf_gpu_scene_enemy_point {
     int form_light_q8, light_min_q8, light_max_q8, double_sided;
     int light_override_plus_one;
 };
-#define RF_GPU_SCENE_ENEMY_MAX_TRIANGLES 2048U
+/* Includes the standard Block body, its weapon and profession attachments. */
+#define RF_GPU_SCENE_ENEMY_MAX_TRIANGLES 4096U
 #define RF_GPU_SCENE_SHOWCASE_COUNT (RASTERFALL_OUTPOST_SHOWCASE_COUNT+RASTERFALL_OUTPOST_WALK_COUNT)
 #define RF_GPU_SCENE_ENEMY_CAPACITY (TOY_GAME_MAX_ENEMIES+RF_GPU_SCENE_SHOWCASE_COUNT)
 

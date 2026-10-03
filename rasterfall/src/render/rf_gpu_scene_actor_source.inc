@@ -72,6 +72,8 @@ static int scene_actor_procedural(const struct toy_game_actor *actor,
     item->state.downed=actor->state==TOY_GAME_ACTOR_DOWNED;
     item->state.animation_id=actor->animation.id;
     item->state.animation_time_ms=actor->animation.time_ms;
+    item->state.moving=actor->moving;
+    item->state.locomotion_time_ms=(int)((unsigned long long)game.combat_time_ms%60000);
     item->state.profession_id=actor->character_id<0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id;
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(actor==&game.actors[i] && actor->kind==TOY_GAME_ACTOR_AI) {
         rasterfall_rifle_sample(actor,(unsigned)game.combat_time_ms,&scene_procedural_rifle[i],&item->state.rifle);
@@ -242,7 +244,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             &scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1].state;
         block->rifle_valid=1;block->rifle=cycle.body.rifle;
         block->moving=cycle.body.walk;
-        block->locomotion_time_ms=(int)(cycle.body.lower_time_ms%400);
+        block->locomotion_time_ms=(int)(cycle.body.lower_time_ms%60000);
         block->muzzle_flash=cycle.body.fire && cycle.body.action_time_ms<65;
     }
     if (rf_gpu_scene_local_freeze_presentation(&next,pose_game,camera,width,height,

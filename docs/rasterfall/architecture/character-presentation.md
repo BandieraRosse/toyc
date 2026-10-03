@@ -88,8 +88,29 @@ CPU modular、Scene pose 与 Scene native consumer 读取同一资源。私有 R
 Gunsmith、Logistics、Medic、Guard 的颜色和附件由 presentation-only profile 组合；downed/death/revive
 沿用既有整体变换，不新增玩法或网络字段。portrait 可以复用同一 renderer，但自行拥有 camera 与展示状态。
 
-Block AK AI 也消费共享 rifle sampler 的冻结权重；程序武器与双臂端点从同一握点刚体帧生成，
-单手动作释放左臂。CPU 与独立 Scene 分别拥有采样历史；提取器只读已冻结值，不推进随机序列。
+### Block 标准骨架
+
+Block 队友与网络玩家使用公开 `rf_block.rmesh`，由 `generate_rasterfall_block.py` 生成硬边方块身体。
+它复用 Humanoid V2 的完整 49 骨、rest 和八个挂点；身体分块以单骨权重保持棱角，领口使用双骨过渡。
+上臂、前臂、手掌、指节、大腿、小腿和脚都由标准 RFCHAR 骨架驱动，持枪不再按手部目标拉长方块。
+调色仍消费 character profile 的衣服、裤子、皮肤和头发颜色；四种源材质默认色是该资产的调色标识。
+
+`render/rasterfall_block_character.inc` 拥有不可变公开资源与串行 scratch instance。每次求值从 resource
+重置全部姿态及 IK 历史，消费冻结输入后生成蒙皮顶点；CPU 与 Scene 几何枚举共用该入口，实例不携带
+跨 actor 历史，也不把可变 pose 指针放进冻结帧。现有 procedural carrier 名称保留为兼容接口，不表示
+Block 仍无骨架。角色身份、职业、网络和玩法碰撞不随美术骨架改变。
+
+下身使用 RFANIM idle/walk，上身使用共享 rifle composition 与双臂握点求解；单手竖持释放左臂，
+双手握持保持固定骨长。换弹、推击、近战、投掷及受击保留为局部骨骼旋转叠加；倒地、死亡和复活
+作用于身体整体展示变换。职业装备跟随最终头、胸或髋骨。AK 从 finalized `WEAPON_R` 放置；尚无标准
+握点合同的其他武器保留旧尺寸和轴向，但绑定最终右手。它们尚不具备 AK 的完整双手接触约束。
+武器按资源路径独立懒加载，不依赖有数量上限的展示目录；没有模型的药品不发射手持几何。
+Scene 单角色三角形预算包含身体、武器和职业装备，完整组合由姿态回归覆盖，防止旧地图
+狙击手等非 AK 装备超过缓冲上限而使场景提交失败。
+
+CPU 与独立 Scene 分别拥有 rifle sampler 历史；提取器只读已冻结权重，不推进随机序列。
+真实角色步行相位使用只读 simulation 毫秒，台位和循环区使用所属展示时钟，避免 400ms 玩法动作
+回卷截断 800ms RFANIM 行走。固定骨长、挂点、实例隔离与冻结重放由 `--gpu-scene-pose-test` 验证。
 
 ## 敌人表现
 

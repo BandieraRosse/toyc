@@ -22,6 +22,7 @@ Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rac
 
 | 运行时名称 | 已知原件 | 转换产物 | 当前发布结论 |
 | --- | --- | --- | --- |
+| Block 队友标准骨架身体 | 项目内 `tools/blender/generate_rasterfall_block.py`，复用 Humanoid V2 骨架 | 公开 `assets/models/characters/rf_block.rmesh`；GLB 可重建 | 项目原创方块几何，无第三方模型或纹理；[重建入口](../guides/asset-pipeline.md#block-队友身体) |
 | Enemy Visual V2 六份 infected | 项目内 `generate_rasterfall_infected.py`，复用 V2 源生成器 | 公开 `assets/models/enemies/rf_infected_*.rmesh`；GLB 为可重建本地产物 | 公开运行资源，无第三方几何或纹理；生成源、材质与重建命令见 [敌人表现](enemy-visuals.md) |
 | Eula / 优菈 | 原始 PMX 当前无法核实 | `private-assets/models/eula.rmesh` | 未找回原包和许可前不得公开分发 |
 | RF Humanoid V2、六职业与普通/精英枪手组件 | `tools/blender/generate_rasterfall_humanoid_v2.py` 项目内生成 | 公开 `assets/models/characters/rf_humanoid_v2.rmesh` 与 `rf_gear_*.rmesh`；本地 GLB 可重建 | 项目原创几何与五色块/装备材质，无第三方角色或纹理；公开运行资源，重建见[枪手与共享身体](../guides/character-art-acceptance.md#战斗-v0-公开共享身体与枪手组件) |

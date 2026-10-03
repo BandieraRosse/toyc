@@ -51,6 +51,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | Scene 静态实例数值边界与近裁剪 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[Scene fixture](guides/gpu-scene-fixture.md) | `rasterfall_render_scene_static_prop_eligible`、`rf_gpu_scene_world_gpu_prepare`、`scene_static_prop_clip` |
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
+| Block 方块身体、标准骨架与动作迁移 | [Block 标准骨架](architecture/character-presentation.md#block-标准骨架)、[资产导入](guides/asset-pipeline.md#block-队友身体) | `render/rasterfall_block_character.inc`、`tools/blender/generate_rasterfall_block.py`；完整人形骨架、固定骨长、CPU/Scene 共用求值 |
 | 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
 | Blender/RF 角色保真、单表面眼球、基础色贴图与材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、RFM2 v15/MAT1 与 clamp/mip 纹理；目录动作台位及左右侧握持检查 |
 | 武器真实尺寸、文件轴向与握点适配 | [武器模型适配](reference/weapon-model-adapter.md)、[动画架构](architecture/animation-architecture.md) | `rasterfall_calibration.c` 的物理长度、模型 adapter 与接触帧；CPU/Scene 共用转换 |

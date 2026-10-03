@@ -1,5 +1,6 @@
 #include "rf_gpu_scene_clothing_test.inc"
 #include "rf_gpu_scene_grip_test.inc"
+#include "rf_block_character_test.inc"
 struct scene_infected_test_geometry { uint64_t hash; unsigned count; int fail; };
 static int scene_infected_test_triangle(void *context,
     const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
@@ -380,7 +381,8 @@ static int scene_rifle_cycle_test(void)
         block.state.aim_pitch_mdeg=sample.body.rifle.pitch_mdeg;
         block.state.aim_yaw_mdeg=sample.body.rifle.yaw_mdeg;
         block.state.moving=sample.body.walk;
-        block.state.locomotion_time_ms=(int)(sample.body.lower_time_ms%400);
+        block.state.locomotion_time_ms=(int)(sample.body.lower_time_ms%60000);
+        block.state.rifle_valid=1;block.state.rifle=sample.body.rifle;
         block.state.muzzle_flash=pose.muzzle_flash;
         block.body_color=0x405060;block.leg_color=0x203040;
         block.skin_color=0xc09070;block.hair_color=0x302010;
@@ -460,6 +462,7 @@ int rf_gpu_scene_pose_logic_test(void)
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_independent_enemy_source_test());
+    POSE_CHECK(!block_character_pose_test());
     POSE_CHECK(!scene_grip_pose_test());
     POSE_CHECK(!scene_rifle_cycle_test());
     POSE_CHECK(!scene_evasion_pose_test());
@@ -552,10 +555,11 @@ int rf_gpu_scene_pose_logic_test(void)
         __printf("scene network logic PASS host/guest/downed/local/disconnected/inactive/immutable/geometry\n");
     }
     for (int profession=0;profession<RASTERFALL_PROFESSION_COUNT;++profession) {
+      for (int weapon=0;weapon<TOY_GAME_WEAPON_COUNT;++weapon) {
         struct rf_gpu_scene_procedural_item_v1 item={0},original;
         item.state.x=123;item.state.z=456;item.state.lift=90;
         item.state.sy=384;item.state.cy=-949;
-        item.state.weapon=TOY_GAME_WEAPON_AK;
+        item.state.weapon=weapon;
         item.state.profession_id=profession;
         item.body_color=0x405060;item.skin_color=0xc09070;
         item.leg_color=0x203040;item.hair_color=0x302010;
@@ -563,8 +567,13 @@ int rf_gpu_scene_pose_logic_test(void)
         for (int animation=0;animation<TOY_GAME_ANIM_COUNT;++animation) {
             struct scene_infected_test_geometry a={0},b={0},failure={0};
             item.state.animation_id=animation;item.state.animation_time_ms=120;
+            item.state.muzzle_flash=animation==TOY_GAME_ANIM_FIRE;
             original=item;
-            POSE_CHECK(!rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&a));
+            int extracted=rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&a);
+            if (extracted<0 || a.count>RF_GPU_SCENE_ENEMY_MAX_TRIANGLES)
+                __printf("scene procedural failure profession=%d weapon=%d animation=%d triangles=%u result=%d\n",
+                    profession,weapon,animation,a.count,extracted);
+            POSE_CHECK(!extracted);
             POSE_CHECK(a.count>0 && a.count<=RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
             POSE_CHECK(!rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&b));
             POSE_CHECK(a.hash==b.hash && a.count==b.count && !memcmp(&item,&original,sizeof(item)));
@@ -574,6 +583,7 @@ int rf_gpu_scene_pose_logic_test(void)
             POSE_CHECK(rf_gpu_scene_procedural_triangles(&item,scene_infected_test_triangle,&failure)<0 && !failure.count);
             item=original;
         }
+      }
     }
     __printf("scene procedural PASS professions/actions/weapon/replay/failure\n");
     for (int recipe=0;recipe<6;++recipe) {

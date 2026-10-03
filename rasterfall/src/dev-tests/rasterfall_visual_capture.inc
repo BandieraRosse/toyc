@@ -317,6 +317,11 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     const char *weapon_path;
     int result = 1, i, count;
     int squad = scenario && !strcmp(scenario, "hurd-squad");
+    int block_pose=-1;
+    static const char *block_names[]={"block-aim","block-single","block-chest","block-low",
+        "block-walk-fire","block-reload","block-death","block-revive"};
+    for(unsigned b=0;scenario && b<sizeof(block_names)/sizeof(block_names[0]);++b)
+        if(!strcmp(scenario,block_names[b]))block_pose=(int)b;
     if(scenario && output && (!strncmp(scenario,"campus-asset-",13) ||
        !strcmp(scenario,"campus-corner") || !strcmp(scenario,"campus-corner-near") ||
        !strcmp(scenario,"campus-corner-mid") || !strcmp(scenario,"campus-corner-far") ||
@@ -330,7 +335,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
        !strcmp(scenario,"arch-hall") || !strcmp(scenario,"arch-hall-inside") ||
        !strcmp(scenario,"arch-hall-far") || !strcmp(scenario,"arch-hall-reverse")))
         return architecture_capture(scenario,output);
-    if (!scenario || (!squad && !prop_lighting && !modular_teammate &&
+    if (!scenario || (!squad && !prop_lighting && !modular_teammate && block_pose<0 &&
                       strcmp(scenario, "procedural-humanoid"))) {
         __fprintf(2, "rasterfall: unknown visual scenario '%s'; available: procedural-humanoid, hurd-squad, lighting-props, modular-teammate\n",
                   scenario ? scenario : "");
@@ -341,6 +346,22 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
         return 1;
     }
     visual_procedural_humanoid_setup(&camera, &state);
+    if(block_pose>=0) {
+        state.weapon=TOY_GAME_WEAPON_AK;state.rifle_valid=1;
+        state.animation_time_ms=block_pose==5?650:40;
+        if(block_pose==0)state.rifle.aim_milli=1000;
+        if(block_pose>=1 && block_pose<=3)state.rifle.idle_milli[block_pose-1]=1000;
+        if(block_pose==4) {
+            state.moving=1;state.locomotion_time_ms=230;state.animation_id=TOY_GAME_ANIM_FIRE;
+            state.rifle.hip_milli=1000;state.rifle.recoil_milli=500;
+        }
+        if(block_pose>=5) {
+            state.rifle_valid=0;
+            state.animation_id=block_pose==5?TOY_GAME_ANIM_RELOAD:
+                block_pose==6?TOY_GAME_ANIM_DEATH:TOY_GAME_ANIM_REVIVE;
+            if(block_pose>=6)state.animation_time_ms=350;
+        }
+    }
     count = squad ? 4 : prop_lighting || modular_teammate ? 0 : 1;
     if (squad) camera.body.z = -2600;
     if (prop_lighting || modular_teammate) {
@@ -350,7 +371,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
     /* Preload just the fixture weapons, never discover gameplay actors. */
     for (i = 0; i < (prop_lighting ? 0 : modular_teammate ? 1 : squad ? 2 : 1); i++) {
         weapon_path = rasterfall_weapon_model_path(
-            modular_teammate ? TOY_GAME_WEAPON_AK :
+            modular_teammate || block_pose>=0 ? TOY_GAME_WEAPON_AK :
             i ? TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_PISTOL);
         if (!weapon_path || rasterfall_model_load(&gallery_models[i], weapon_path) < 0) {
             __fprintf(2, "rasterfall: cannot load visual scenario weapon: %s\n",
@@ -429,6 +450,7 @@ int rasterfall_render_visual_capture(const char *scenario, const char *output)
         }
         if (rasterfall_render_procedural_humanoid(&renderer, &camera, &state,
                 rasterfall_character_profile(
+                    block_pose>=0 ? RASTERFALL_CHARACTER_NONE :
                     squad ? RASTERFALL_CHARACTER_HURD_GUNSMITH + i :
                             RASTERFALL_CHARACTER_HURD_GUNSMITH)) < 0) {
             __fprintf(2, "rasterfall: visual humanoid rendering failed\n");

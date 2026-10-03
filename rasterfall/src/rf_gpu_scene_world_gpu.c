@@ -1179,8 +1179,12 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         int extracted=actor ? rf_gpu_scene_procedural_triangles(actor,scene_enemy_triangle,mesh) :
             rf_gpu_scene_enemy_triangles(source,scene_enemy_triangle,mesh);
         *extract_us+=rf_core_clock_now_us()-start;
-        if (extracted<0 ||
-            mesh->count>capacity-total) goto done;
+        if (extracted<0 || mesh->count>capacity-total) {
+            __printf("SCENE geometry failed actor=%d weapon=%d profession=%d triangles=%u limit=%u\n",
+                actor!=NULL,actor?actor->state.weapon:-1,
+                actor?actor->state.profession_id:-1,mesh->count,RF_GPU_SCENE_ENEMY_MAX_TRIANGLES);
+            goto done;
+        }
         if (!mesh->count) {
             if (source->transparent) continue;
             goto done;

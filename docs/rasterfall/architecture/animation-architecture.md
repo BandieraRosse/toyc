@@ -73,8 +73,9 @@ skinning / rendering
   状态、某个角色名称或文件格式。
 - `rasterfall_action.*`：RFANIM 的动作资源与 LOWER_BODY、UPPER_BODY、ADDITIVE 组合入口。
   它把 stable humanoid role track 写入逐实例局部姿态；最终 pose 仍归 `rasterfall_model_instance`。
-- `rasterfall_actor_animation.h`：当前游戏角色的程序化表现层。它可以逐步被正式动作
-  clip 替换，但不应进入通用骨骼动画层。
+- `rasterfall_actor_animation.h`：玩法动作的程序化表现采样。Block 由
+  `render/rasterfall_block_character.inc` 将特殊动作采样适配为标准骨骼旋转；下身和 AK 持枪
+  复用 RFANIM 与共享 rifle solver。该适配不进入通用骨骼动画层。
 - `rasterfall_vmd.*`：VMD 解码和 VMD 语义分类。通过骨骼 resolver 映射目标模型，
   不直接绑定某个角色。
 - `rasterfall_glb_animation.h`：glTF 动画输入和 humanoid 源姿态。

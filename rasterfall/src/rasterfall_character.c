@@ -248,7 +248,7 @@ rasterfall_character_visual_recipe(int id)
 
 const char *rasterfall_character_body_resource_name(int id)
 {
-    static const char *names[]={"rf_humanoid_v2", "rf_c01_v028"};
+    static const char *names[]={"rf_humanoid_v2", "rf_c01_v028", "rf_block"};
     return id>=0 && id<RASTERFALL_BODY_RESOURCE_COUNT ? names[id] : NULL;
 }
 
@@ -262,7 +262,8 @@ const char *rasterfall_character_body_resource_path(int id)
 {
     static const char *paths[] = {
         RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/rf_humanoid_v2.rmesh",
-        "rasterfall/private-assets/models/rf_c01_v028.rmesh"
+        "rasterfall/private-assets/models/rf_c01_v028.rmesh",
+        RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/rf_block.rmesh"
     };
     return id >= 0 && id < RASTERFALL_BODY_RESOURCE_COUNT ? paths[id] : NULL;
 }

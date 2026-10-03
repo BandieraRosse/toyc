@@ -28,6 +28,23 @@ build/vmd_inspect <walk.vmd> <model.rmesh> --vmd-walk-final-flips
 Block/Humanoid 的 Common/Fast/Heavy。公开产物不依赖私有模型；重建命令、来源、预算与
 真实 enemy renderer 截图入口见 [enemy-visuals.md](enemy-visuals.md)。
 
+## Block 队友身体
+
+Block 使用独立公开 RFCHAR，骨架复用 Humanoid V2，几何保持硬边方块。Windows 重建：
+
+```powershell
+& 'E:/Blender 5.2/blender.exe' --background --factory-startup --python-exit-code 1 --python tools/blender/generate_rasterfall_block.py -- --output rasterfall/private-assets/source/characters/rf_block.glb
+python tools/assets/import_asset.py --no-build --tool-dir build-windows --output-root rasterfall/assets/models/characters --force tools/assets/manifests/characters/rf_block.asset.json
+& build-windows/rfchar-runtime-test.exe (Join-Path $PWD 'rasterfall/assets/models/characters/rf_block.rmesh')
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-pose-test
+```
+
+按本机选择 Blender 路径；首次先运行 `NativeCodex.ps1 asset-tools`。生成源 GLB 不提交，生成器、manifest
+与公开 RMESH 一起维护；既有递归内嵌和 Windows stage 复制规则包含新资源。普通启动、AI 动作区、
+真实 AI 持枪区和三模型循环区使用同一 Block 骨架入口；检查固定骨长之外，还应观察持枪、换弹、
+行走射击、单手闲置及死亡/复活动作。`--visual-capture block-aim --visual-output <bmp>` 等 Block
+场景通过真实适配器输出固定近景，完整名称见 `--help`。Block 感染体是另一套资源，不受此生成器影响。
+
 ## RFANIM V1
 
 动作文本字段和验证规则见 [RFANIM V1 格式](../reference/rfanim-format.md)。

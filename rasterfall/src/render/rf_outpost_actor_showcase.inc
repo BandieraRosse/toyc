@@ -162,6 +162,8 @@ static void outpost_actor_block_rifle(const struct toy_game_actor *actor,
     struct rasterfall_procedural_humanoid_state *state)
 {
     state->rifle=*outpost_actor_rifle_input(actor);
+    state->moving=actor->moving;
+    state->locomotion_time_ms=(int)(outpost_actor_locomotion_time(actor->actor_id)%60000);
     state->rifle_valid=state->weapon==TOY_GAME_WEAPON_AK &&
         (actor->animation.id==TOY_GAME_ANIM_IDLE || actor->animation.id==TOY_GAME_ANIM_MOVE ||
          actor->animation.id==TOY_GAME_ANIM_FIRE);

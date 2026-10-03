@@ -129,6 +129,7 @@ void rasterfall_options_usage(int fd)
         "  --enemy-visual-capture <output-dir> (families + rigid specials; attack keys, silhouette, world, death)\n"
         "  --enemy-visual-family <legacy|block-infected|humanoid-infected> (default: mixed)\n"
         "  --visual-capture <desktop-v1|procedural-humanoid|hurd-squad|lighting-props|modular-teammate> --visual-output <path.bmp>\n"
+        "  --visual-capture <block-aim|block-single|block-chest|block-low|block-walk-fire|block-reload|block-death|block-revive> --visual-output <path.bmp>\n"
         "  --visual-capture <arch-family|arch-alley|arch-hall> --visual-output <path.bmp>\n"
         "  --visual-capture <campus-corner|campus-corner-near|campus-corner-mid|campus-corner-far> --visual-output <path.bmp>\n"
         "    campus-asset-<name> captures one Temporary Campus Kit module\n"

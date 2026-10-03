@@ -5059,21 +5059,6 @@ static int draw_actor_box(struct toy_renderer *renderer,
     return pixels;
 }
 
-/* Small local-Z shear used for the hit reaction.  It is intentionally a
- * simple box approximation rather than a new skeletal/body system. */
-static int draw_actor_tilted_box(struct toy_renderer *renderer,
-                                 const struct camera *camera, int x, int z,
-                                 int sy, int cy, int x0, int x1,
-                                 int y0, int y1, int z0, int z1,
-                                 int pitch, uint32_t color)
-{
-    int pivot_y = -620;
-    int tilted_z0 = z0 + (y0 - pivot_y) * pitch / 1024;
-    int tilted_z1 = z1 + (y1 - pivot_y) * pitch / 1024;
-    return draw_actor_box(renderer, camera, x, z, sy, cy,
-                          x0, x1, y0, y1, tilted_z0, tilted_z1, color);
-}
-
 static const int circle_x[8] = {1024, 724, 0, -724, -1024, -724, 0, 724};
 static const int circle_z[8] = {0, 724, 1024, 724, 0, -724, -1024, -724};
 
@@ -5143,50 +5128,6 @@ static int draw_ellipsoid_head(struct toy_renderer *renderer,
         }
     }
     return pixels;
-}
-
-/* Avatar heads use the same local frame as the torso.  Keeping the head in
- * that frame is important during the fall: an upright world-space ellipse
- * otherwise looks like a long cylinder sliding through the body. */
-static int draw_actor_ellipsoid_head(struct toy_renderer *renderer,
-                                     const struct camera *camera, int x, int z,
-                                     int sy, int cy, int center_y,
-                                     int rx, int ry, uint32_t color)
-{
-    static const int ring_r[5] = {0, 724, 1024, 724, 0};
-    static const int ring_y[5] = {-1024, -724, 0, 724, 1024};
-    struct vec3 ring[5][8];
-    int r, i, pixels = 0;
-    for (r = 0; r < 5; r++) {
-        for (i = 0; i < 8; i++) {
-            int lx = circle_x[i] * rx * ring_r[r] / 1048576;
-            int ly = center_y + ring_y[r] * ry / 1024;
-            int lz = circle_z[i] * rx * ring_r[r] / 1048576;
-            actor_world_point(x, z, sy, cy, lx, ly, lz, &ring[r][i]);
-        }
-    }
-    for (r = 0; r < 4; r++) {
-        for (i = 0; i < 8; i++) {
-            int next = (i + 1) & 7;
-            pixels += draw_quad(renderer, camera, &ring[r][i],
-                                &ring[r][next], &ring[r + 1][next],
-                                &ring[r + 1][i], color + ((i & 3) * 0x030303));
-        }
-    }
-    return pixels;
-}
-
-static int draw_actor_face_rect(struct toy_renderer *renderer,
-                                const struct camera *camera, int x, int z,
-                                int sy, int cy, int face_z, int h0, int h1,
-                                int y0, int y1, uint32_t color)
-{
-    struct vec3 a, b, c, d;
-    actor_world_point(x, z, sy, cy, -h0, y0, face_z, &a);
-    actor_world_point(x, z, sy, cy, -h1, y0, face_z, &b);
-    actor_world_point(x, z, sy, cy, -h1, y1, face_z, &c);
-    actor_world_point(x, z, sy, cy, -h0, y1, face_z, &d);
-    return draw_quad(renderer, camera, &a, &b, &c, &d, color);
 }
 
 /* 沿敌人当前朝向在头部平面画小矩形，转身过程因此清晰可见。 */
@@ -6701,22 +6642,6 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                 int character_id, uint32_t body_color, int downed,
                                 int animation_id, int animation_time_ms);
 
-static void sample_actor_fall_roll(int progress, int *out_sin, int *out_cos)
-{
-    int phase;
-    if (progress < 0) progress = 0;
-    if (progress > 1000) progress = 1000;
-    if (progress < 500) {
-        phase = progress * 2;
-        *out_sin = 724 * phase / 1000;
-        *out_cos = 1024 - 300 * phase / 1000;
-    } else {
-        phase = (progress - 500) * 2;
-        *out_sin = 724 + 300 * phase / 1000;
-        *out_cos = 724 - 724 * phase / 1000;
-    }
-}
-
 static int draw_limb_segment(struct toy_renderer *renderer,
                              const struct camera *camera, int x, int z,
                              int sy, int cy,
@@ -6756,41 +6681,6 @@ static int draw_limb_segment(struct toy_renderer *renderer,
                                        &vertices[faces[i]],
                                        &vertices[faces[i + 1]],
                                        &vertices[faces[i + 2]], color);
-    return pixels;
-}
-
-/* A leg is a solid local cuboid rotating around its hip.  This is separate
- * from draw_limb_segment because a line extrusion loses its volume when the
- * camera sees the leg nearly edge-on. */
-static int draw_actor_leg_box(struct toy_renderer *renderer,
-                              const struct camera *camera, int x, int z,
-                              int sy, int cy, int x0, int x1,
-                              int y0, int y1, int swing_sin,
-                              uint32_t color)
-{
-    struct vec3 v[8];
-    static const int faces[36] = {
-        0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6,
-        0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6, 7,
-        0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2
-    };
-    int swing_cos = 1024 - (swing_sin < 0 ? -swing_sin : swing_sin) *
-                    (swing_sin < 0 ? -swing_sin : swing_sin) / 2048;
-    int i, pixels = 0;
-    int xs[8] = {x0, x1, x1, x0, x0, x1, x1, x0};
-    int ys[8] = {y0, y0, y1, y1, y0, y0, y1, y1};
-    int zs[8] = {-75, -75, -75, -75, 75, 75, 75, 75};
-    const int hip_y = -610;
-    for (i = 0; i < 8; i++) {
-        int dy = ys[i] - hip_y;
-        int ly = hip_y + (dy * swing_cos + zs[i] * swing_sin) / 1024;
-        int lz = (-dy * swing_sin + zs[i] * swing_cos) / 1024;
-        actor_world_point(x, z, sy, cy, xs[i], ly, lz, &v[i]);
-    }
-    for (i = 0; i < 36; i += 3)
-        pixels += draw_world_triangle(renderer, camera, &v[faces[i]],
-                                      &v[faces[i + 1]], &v[faces[i + 2]],
-                                      color + ((i / 3) & 3) * 0x050505);
     return pixels;
 }
 
@@ -6991,104 +6881,6 @@ static int render_actor_model_weapon(struct toy_renderer *renderer,
                                     ley - lfy * overlap / 1024,
                                     lez - lfz * overlap / 1024,
                                     lwx, lwy, lwz, 42, 0xC08A68);
-    }
-    return pixels;
-}
-
-static int render_actor_weapon(struct toy_renderer *renderer,
-                               const struct camera *camera, int x, int z,
-                               int sy, int cy, int weapon, int muzzle_flash,
-                               int animation_id, int animation_time_ms,
-                               uint32_t body_color)
-{
-    if (weapon < 0) return 0;
-    return render_actor_model_weapon(renderer, camera, x, z, sy, cy,
-                                     weapon, muzzle_flash, animation_id,
-                                     animation_time_ms, body_color, 1);
-}
-
-/* Block bodies consume the same frozen hold weights. Weapon geometry and
- * both hand endpoints share one rigid frame, including the released hand. */
-static int render_actor_relaxed_rifle(struct toy_renderer *renderer,const struct camera *camera,
-    int x,int z,int sy,int cy,const struct rasterfall_rifle_pose_input *rifle,int muzzle_flash,uint32_t color)
-{
-    struct rasterfall_model_asset *model=gallery_model_named(rasterfall_weapon_model_path(TOY_GAME_WEAPON_AK),NULL);
-    struct rasterfall_weapon_model_adapter adapter;
-    struct rasterfall_weapon_socket_transform grip,fore,muzzle;
-    double aim=rifle->aim_milli/1000.0,hip=rifle->hip_milli/1000.0;
-    double single=rifle->idle_milli[0]/1000.0,chest=rifle->idle_milli[1]/1000.0,low=rifle->idle_milli[2]/1000.0;
-    double total=aim+hip+single+chest+low;
-    if(total>1) { aim/=total;hip/=total;single/=total;chest/=total;low/=total; }
-    double rest=1-aim-hip-single-chest-low;
-    double pitch=((aim+hip)*rifle->pitch_mdeg/1000.0+72*single+24*chest-8*low-30*rest+
-        rifle->recoil_milli*.0018)*M_PI/180;
-    double yaw=((aim+hip)*rifle->yaw_mdeg/1000.0-8*single-58*chest-12*low+10*rest)*M_PI/180;
-    double a[9]={cos(yaw),0,sin(yaw),0,1,0,-sin(yaw),0,cos(yaw)};
-    double b[9]={1,0,0,0,cos(pitch),sin(pitch),0,-sin(pitch),cos(pitch)},r[9];
-    double unit=(double)RASTERFALL_LEGACY_ACTOR_HEIGHT_RFU/RASTERFALL_HUMAN_HEIGHT_RFU;
-    double hands[2][3],anchor[3]={160+80*single+60*chest,
-        -240*aim-470*hip-355*single-350*chest-490*low-420*rest,230+65*chest};
-    int pixels=0;
-    if(!model || rasterfall_weapon_model_adapt(TOY_GAME_WEAPON_AK,
-        (int[3]){model->min_x,model->min_y,model->min_z},
-        (int[3]){model->max_x,model->max_y,model->max_z},&adapter)<0 ||
-        rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP,&grip)<0 ||
-        rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,RASTERFALL_WEAPON_SOCKET_FOREGRIP,&fore)<0)return 0;
-    rigid_matrix_multiply(a,b,r);
-    double roll=-60*single*M_PI/180;
-    double c[9]={cos(roll),-sin(roll),0,sin(roll),cos(roll),0,0,0,1};
-    rigid_matrix_multiply(r,c,a);memcpy(r,a,sizeof(r));
-    double g[3]={grip.position.x,grip.position.y,grip.position.z};
-    double f[3]={(fore.position.x-g[0])*unit,(fore.position.y-g[1])*unit,(fore.position.z-g[2])*unit};
-    rigid_matrix_vector(r,f,hands[0]);
-    for(int k=0;k<3;++k) { hands[0][k]+=anchor[k];hands[1][k]=anchor[k]; }
-    for(int k=0;k<3;++k)hands[0][k]=hands[0][k]*(1-single)+(double[3]){-225,-580,15}[k]*single;
-    for(unsigned i=0;i<model->primitive_count;++i) {
-        const unsigned char *primitive=model->primitives+i*RASTERFALL_MODEL_PRIMITIVE_BYTES;
-        const unsigned char *indices=model->indices+model_u32(primitive)*4;
-        unsigned count=model_u32(primitive+4),material=model_u32(primitive+8);
-        uint32_t tint=material<model->material_count?model_u32(model->materials+material*model->material_bytes):0x555555;
-        for(unsigned j=0;j+2<count;j+=3) {
-            struct vec3 v[3];int k;
-            for(k=0;k<3;++k) {
-                unsigned id=model_u32(indices+(j+k)*4);
-                if(id>=model->vertex_count)break;
-                const int *p=(const int *)(model->vertices+id*model->vertex_bytes);
-                double centered[3],local[3],rotated[3];
-                for(int n=0;n<3;++n)centered[n]=p[n]-adapter.center[n];
-                rigid_matrix_vector(adapter.basis,centered,local);
-                for(int n=0;n<3;++n)local[n]=(local[n]*adapter.scale_milli/1000.0-g[n])*unit;
-                rigid_matrix_vector(r,local,rotated);
-                actor_world_point(x,z,sy,cy,(int)(rotated[0]+anchor[0]),(int)(rotated[1]+anchor[1]),
-                    (int)(rotated[2]+anchor[2]),&v[k]);
-            }
-            if(k==3)pixels+=draw_world_triangle(renderer,camera,&v[0],&v[1],&v[2],tint);
-        }
-    }
-    for(int side=0;side<2;++side) {
-        int shoulder=side?205:-205;
-        double opening=85+single*65+chest*55+low*20;
-        if(!side)opening*=1-single*.6;
-        int ex=(int)((shoulder+hands[side][0])*.5+(side?opening:-opening));
-        int ey=(int)((-180+hands[side][1])*.5)-65;
-        int ez=(int)(hands[side][2]*.35);
-        pixels+=draw_limb_segment(renderer,camera,x,z,sy,cy,shoulder,-180,0,ex,ey,ez,40,color);
-        pixels+=draw_limb_segment(renderer,camera,x,z,sy,cy,ex,ey,ez,
-            (int)hands[side][0],(int)hands[side][1],(int)hands[side][2],42,0xC08A68);
-    }
-    if(muzzle_flash>0 && !rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,
-        RASTERFALL_WEAPON_SOCKET_MUZZLE,&muzzle)) {
-        double local[3]={(muzzle.position.x-g[0])*unit,(muzzle.position.y-g[1])*unit,
-            (muzzle.position.z-g[2])*unit},rotated[3];
-        struct vec3 point;
-        rigid_matrix_vector(r,local,rotated);
-        actor_world_point(x,z,sy,cy,(int)(rotated[0]+anchor[0]),(int)(rotated[1]+anchor[1]),
-            (int)(rotated[2]+anchor[2]),&point);
-        int saved_flash_scene=active_scene_light_override_q8;
-        active_scene_light_override_q8=-1;
-        pixels+=draw_cuboid(renderer,camera,point.x-32,point.x+32,point.y-32,point.y+32,
-            point.z-32,point.z+32,0xE7C058);
-        active_scene_light_override_q8=saved_flash_scene;
     }
     return pixels;
 }
@@ -7642,7 +7434,8 @@ static int render_modular_active_weapon(
         active_scene_light_override_q8 = -1;
         pixels += draw_cuboid(renderer, camera, muzzle_world.x - 32,
             muzzle_world.x + 32, muzzle_world.y - 32, muzzle_world.y + 32,
-            muzzle_world.z - 32, muzzle_world.z + 32, RF_COLOR_UI_ACCENT);
+            muzzle_world.z - 32, muzzle_world.z + 32,
+            0xE7C058); /* Room for cuboid face highlights in RGB24 Scene output. */
         active_scene_light_override_q8 = saved_flash_scene;
     }
     return pixels;
@@ -8984,6 +8777,9 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 !actor->reloading && !actor->weapon_switch_timer_ms && !actor->control_disabled &&
                 !actor->melee_timer_ms && !actor->throw_timer_ms && !actor->airborne_ms && !actor->airborne_y;
             if(state.rifle_valid)state.muzzle_flash=actor->muzzle_flash_ms;
+            state.moving=actor->moving;
+            state.locomotion_time_ms=(int)((unsigned long long)(active_presentation_game ?
+                active_presentation_game->combat_time_ms : 0)%60000);
             unsigned long command_start = renderer->cmd_count;
             long phase_start = render_monotonic_us();
             if (actor->character_id < 0) {
@@ -9061,23 +8857,23 @@ static int render_player_avatar(struct toy_renderer *renderer,
                                                 &state, &character);
 }
 
-/* All equipment uses the same actor-local primitive transforms as the body.
- * Torso pieces share its hit-reaction shear; head pieces share its head lift.
- * The legacy downed proxy has no upright torso, so equipment is omitted there. */
+#include "render/rasterfall_block_character.inc"
+
+/* Legacy profession shapes are rigid followers of the finalized Block rig. */
 static int render_profession_visual(
     struct toy_renderer *renderer, const struct camera *camera,
-    int x, int z, int sy, int cy, int pitch,
+    const struct rasterfall_model_instance *instance,
+    const struct rasterfall_rigid_transform *world,
     const struct rasterfall_profession_visual_profile *p)
 {
     int pixels = 0;
-    int head_lift = pitch * 2 / 3;
     uint32_t accent = p->accent_color, gear = p->gear_color;
 #define GEAR_BOX(x0,x1,y0,y1,z0,z1,c) \
-    pixels += draw_actor_tilted_box(renderer,camera,x,z,sy,cy, \
-        x0,x1,y0,y1,z0,z1,pitch,c)
+    pixels += block_equipment_box(renderer,camera,instance,world,0, \
+        x0,x1,y0,y1,z0,z1,c)
 #define HEAD_BOX(x0,x1,y0,y1,z0,z1,c) \
-    pixels += draw_actor_box(renderer,camera,x,z,sy,cy, \
-        x0,x1,(y0)+head_lift,(y1)+head_lift,z0,z1,c)
+    pixels += block_equipment_box(renderer,camera,instance,world,1, \
+        x0,x1,y0,y1,z0,z1,c)
     /* Shared harness language; base sleeves and trousers remain character-owned. */
     GEAR_BOX(-135,135,-520,-150,101,125,gear);
     GEAR_BOX(-165,165,-605,-555,-115,132,gear);
@@ -9173,18 +8969,7 @@ int rasterfall_render_procedural_humanoid(
     const struct rasterfall_procedural_humanoid_state *state,
     const struct rasterfall_character_profile *character)
 {
-    struct rasterfall_actor_pose pose;
-    int x, z, sy, cy, weapon, muzzle_flash, downed;
-    int animation_id, animation_time_ms;
-    uint32_t body_color;
-    int saved_lift = active_actor_lift;
-    int saved_roll_sin = active_actor_roll_sin;
-    int saved_roll_cos = active_actor_roll_cos;
-    int pixels = 0, face_y0, face_y1, animation_lift;
-    int pose_x, pose_z;
-    int death_progress = 0;
-    int show_fall_gear = 0;
-    if (!renderer || !camera || !state || !character) return 0;
+    if (!renderer || !camera || !state || !character) return -1;
     if (scene_enemy_capture_active && !scene_procedural_emit) {
         if (scene_enemy_capture.procedural_count>=TOY_GAME_MAX_ACTORS) {
             scene_enemy_capture.failed=1;
@@ -9200,137 +8985,18 @@ int rasterfall_render_procedural_humanoid(
         item->vertex_lighting=active_world_light_v2;
         item->double_sided=active_material_double_sided;
     }
-    x = state->x; z = state->z;
-    sy = state->sy; cy = state->cy;
-    if (state->aim_yaw_mdeg) {
-        double angle=state->aim_yaw_mdeg*M_PI/180000.0;
-        int turned_sy=(int)(sy*cos(angle)+cy*sin(angle));
-        cy=(int)(cy*cos(angle)-sy*sin(angle));sy=turned_sy;
-    }
-    weapon = state->weapon; muzzle_flash = state->muzzle_flash;
-    downed = state->downed;
-    animation_id = state->animation_id;
-    animation_time_ms = state->animation_time_ms;
-    body_color = character->body_color;
-    active_actor_lift = state->lift;
-    rasterfall_actor_animation_sample(
-        animation_id, animation_time_ms,
-        animation_id == TOY_GAME_ANIM_RELOAD && weapon >= 0 ?
-            toy_game_weapon_info(weapon)->reload_ms :
-            toy_game_animation_info(animation_id)->duration_ms, &pose);
-    animation_lift = pose.body_lift;
-    if (state->moving) {
-        struct rasterfall_actor_pose lower;
-        rasterfall_actor_animation_sample(TOY_GAME_ANIM_MOVE,state->locomotion_time_ms,
-            toy_game_animation_info(TOY_GAME_ANIM_MOVE)->duration_ms,&lower);
-        pose.leg_swing=lower.leg_swing;animation_lift=lower.body_lift;
-    }
-    pose_x = x + sy * pose.forward_shift / 1024;
-    pose_z = z + cy * pose.forward_shift / 1024;
-    active_actor_roll_sin = 0;
-    active_actor_roll_cos = 1024;
-    active_actor_lift += animation_lift;
-    if (animation_id == TOY_GAME_ANIM_DEATH ||
-        animation_id == TOY_GAME_ANIM_REVIVE) {
-        death_progress = animation_time_ms * 1000 /
-                         toy_game_animation_info(TOY_GAME_ANIM_DEATH)->duration_ms;
-        if (death_progress > 1000) death_progress = 1000;
-        if (animation_id == TOY_GAME_ANIM_REVIVE)
-            death_progress = 1000 - death_progress;
-        sample_actor_fall_roll(death_progress, &active_actor_roll_sin,
-                               &active_actor_roll_cos);
-        show_fall_gear = animation_time_ms <
-                         toy_game_animation_info(animation_id)->duration_ms;
-        /* The legs are part of the same rigid character.  They are built in
-         * local space first, then receive the body fall rotation below. */
-        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
-                                     sy, cy, -95, -10, -900, -610,
-                                     0, character->leg_color);
-        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
-                                     sy, cy, 10, 95, -900, -610,
-                                     0, character->leg_color);
-        pixels += draw_actor_box(renderer, camera, pose_x, pose_z, sy, cy,
-                                 -155, 155, -620, -100, -100, 100,
-                                 body_color);
-        pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
-                                            sy, cy, 50, 145, 150,
-                                            character->skin_color);
-        face_y0 = -35; face_y1 = 185;
-    } else if (downed) {
-        pixels += draw_cuboid(renderer, camera, pose_x - 170, pose_x + 170,
-                              -850 + active_actor_lift, -650 + active_actor_lift,
-                              pose_z - 100, pose_z + 100, body_color);
-        pixels += draw_ellipsoid_head(renderer, camera, pose_x, pose_z,
-                                      -550 + active_actor_lift, 145, 100,
-                                      character->skin_color);
-        face_y0 = -650; face_y1 = -470;
-    } else {
-        int left_leg_shift = pose.leg_swing;
-        int right_leg_shift = -left_leg_shift;
-        /* Rotate two solid cuboids around their hips; the roots remain
-         * attached to the torso while the whole volume swings. */
-        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
-                                     sy, cy, -95, -10, -900, -610,
-                                     left_leg_shift, character->leg_color);
-        pixels += draw_actor_leg_box(renderer, camera, pose_x, pose_z,
-                                     sy, cy, 10, 95, -900, -610,
-                                     right_leg_shift, character->leg_color);
-        pixels += draw_actor_tilted_box(renderer, camera, pose_x, pose_z,
-                                        sy, cy, -155, 155, -620, -100,
-                                        -100, 100, pose.body_pitch,
-                                        body_color);
-        pixels += draw_actor_ellipsoid_head(renderer, camera, pose_x, pose_z,
-                                            sy, cy, 50 + pose.body_pitch * 2 / 3,
-                                            145, 150, character->skin_color);
-        face_y0 = -35; face_y1 = 185;
-    }
-    if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
-        animation_id == TOY_GAME_ANIM_REVIVE) {
-        int saved_aim_sin=active_actor_aim_sin,saved_aim_cos=active_actor_aim_cos;
-        double angle=state->aim_pitch_mdeg*M_PI/180000.0;
-        active_actor_aim_sin=(int)(sin(angle)*1024);
-        active_actor_aim_cos=(int)(cos(angle)*1024);
-        if(state->rifle_valid)
-            pixels += render_actor_relaxed_rifle(renderer,camera,pose_x,pose_z,sy,cy,&state->rifle,muzzle_flash,body_color);
-        else pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
-                                      weapon, muzzle_flash, animation_id,
-                                      animation_time_ms, body_color);
-        active_actor_aim_sin=saved_aim_sin;active_actor_aim_cos=saved_aim_cos;
-    }
-    /* Give the backing and both strokes separate surfaces. They previously
-     * shared z=148, so equal-depth triangles fought over the cross. */
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 148,
-                             -72, 72, face_y0, face_y1, character->hair_color);
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 152,
-                             -16, 16, face_y0 + 40,
-                             face_y1 - 40, character->skin_color);
-    pixels += draw_actor_face_rect(renderer, camera, pose_x, pose_z, sy, cy, 156,
-                             -72, 72, face_y0 + 90,
-                             face_y0 + 115, character->skin_color);
-    if (!downed || animation_id == TOY_GAME_ANIM_DEATH ||
-        animation_id == TOY_GAME_ANIM_REVIVE) {
-        const struct rasterfall_profession_visual_profile *profession =
-            rasterfall_profession_visual_profile(state->profession_id);
-        if (profession)
-            pixels += render_profession_visual(renderer, camera, pose_x, pose_z,
-                sy, cy, (animation_id == TOY_GAME_ANIM_DEATH ||
-                         animation_id == TOY_GAME_ANIM_REVIVE) ? 0 : pose.body_pitch,
-                profession);
-    }
-    if (muzzle_flash > 0 && !state->rifle_valid &&
-        ((animation_id != TOY_GAME_ANIM_DEATH &&
-          animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))
-    {
-        int saved_flash_scene = active_scene_light_override_q8;
-        active_scene_light_override_q8 = -1;
-        pixels += draw_cuboid(renderer, camera, pose_x - 45, pose_x + 45,
-                              -560 + active_actor_lift, -430 + active_actor_lift,
-                              pose_z - 120, pose_z + 120, 0xE7C058);
-        active_scene_light_override_q8 = saved_flash_scene;
-    }
-    active_actor_lift = saved_lift;
-    active_actor_roll_sin = saved_roll_sin;
-    active_actor_roll_cos = saved_roll_cos;
+    struct rasterfall_rigid_transform world;
+    if (block_body_ready()<0 || block_character_sample(state,&block_body_instance,&world)<0) return -1;
+    int pixels=render_block_body(renderer,camera,&block_body_instance,&world,character);
+    if (pixels<0) return -1;
+    if (state->weapon==TOY_GAME_WEAPON_AK)
+        pixels+=render_modular_active_weapon(renderer,camera,&block_body_instance,&world,
+            state->weapon,state->muzzle_flash,0,NULL);
+    else if (state->weapon>=0)
+        pixels+=render_block_other_weapon(renderer,camera,&block_body_instance,&world,state->weapon,state->muzzle_flash);
+    const struct rasterfall_profession_visual_profile *profession=
+        rasterfall_profession_visual_profile(state->profession_id);
+    if (profession) pixels+=render_profession_visual(renderer,camera,&block_body_instance,&world,profession);
     return pixels;
 }
 
@@ -9357,8 +9023,8 @@ int rf_gpu_scene_procedural_triangles(const struct rf_gpu_scene_procedural_item_
         item->state.weapon < -1 || item->state.weapon>=TOY_GAME_WEAPON_COUNT ||
         item->scene_light_q8<0 || item->scene_light_q8>384 ||
         (item->vertex_lighting!=0 && item->vertex_lighting!=1)) return -1;
-    if (item->state.weapon>=0 &&
-        !gallery_model_named(rasterfall_weapon_model_path(item->state.weapon),NULL)) return -1;
+    if (rasterfall_weapon_model_path(item->state.weapon) &&
+        !block_weapon_model(item->state.weapon)) return -1;
     character.body_color=item->body_color;character.leg_color=item->leg_color;
     character.skin_color=item->skin_color;character.hair_color=item->hair_color;
     active_world_light_v2=item->vertex_lighting;
