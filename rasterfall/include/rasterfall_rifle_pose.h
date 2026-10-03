@@ -33,6 +33,7 @@ struct rasterfall_rifle_diagnostics {
 };
 void rasterfall_rifle_sample(const struct toy_game_actor *actor,unsigned tick,
     struct rasterfall_rifle_history *history,struct rasterfall_rifle_pose_input *out);
+int rasterfall_rifle_recoil_sample(int weapon,int time_ms);
 int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
     int weapon,int character_scale,const struct rasterfall_rifle_pose_input *input,
     struct rasterfall_rifle_diagnostics *diagnostics);

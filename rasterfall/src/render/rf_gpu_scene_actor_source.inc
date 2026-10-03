@@ -77,7 +77,7 @@ static int scene_actor_procedural(const struct toy_game_actor *actor,
     item->state.profession_id=actor->character_id<0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id;
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(actor==&game.actors[i] && actor->kind==TOY_GAME_ACTOR_AI) {
         rasterfall_rifle_sample(actor,(unsigned)game.combat_time_ms,&scene_procedural_rifle[i],&item->state.rifle);
-        item->state.rifle_valid=item->state.weapon==TOY_GAME_WEAPON_AK &&
+        item->state.rifle_valid=item->state.weapon>=TOY_GAME_WEAPON_PISTOL && item->state.weapon<=TOY_GAME_WEAPON_AWP &&
             actor->state==TOY_GAME_ACTOR_ALIVE && !actor->reloading && !actor->weapon_switch_timer_ms &&
             !actor->control_disabled && !actor->melee_timer_ms && !actor->throw_timer_ms &&
             !actor->airborne_ms && !actor->airborne_y;
@@ -307,6 +307,28 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             scene_enemy_capture.modular_count++;
             outpost_rifle_cycle_status=1;
         }
+    }
+    if (active_session->world_id==RASTERFALL_WORLD_OUTPOST && outpost_weapon_cycle_visible) {
+        static const int bodies[]={RASTERFALL_BODY_RF_BLOCK,RASTERFALL_BODY_RF_HUMANOID_V2,RASTERFALL_BODY_RF_C01_V22H};
+        for(int row=0;row<3;++row)for(int w=0;w<5;++w) {
+            struct outpost_rifle_cycle_sample sample;
+            int x,z;
+            if(row==2 && outpost_weapon_cycle_status<0)continue;
+            if(scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS)goto fail;
+            outpost_weapon_cycle_sample_at(outpost_weapon_cycle_time_us/1000,w,&sample);
+            rasterfall_render_lab_point("weapon_cycle_lab_area",-5200+w*2600,2600-row*2600+sample.z,&x,&z);
+            struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+            if(rf_gpu_scene_pose_body_sample(bodies[row],scene_enemy_capture.frame_id,
+                scene_enemy_capture.world_generation,&sample.body,x,-900,z,sample.sy,sample.cy,pose)<0) {
+                if(row!=2)goto fail;
+                outpost_weapon_cycle_status=-1;
+                __printf("WEAPON-CYCLE RF-C01 unavailable; toggle exhibit to retry\n");
+                continue;
+            }
+            pose->identity.source_id=0x92000000u+row*5+w;pose->identity.generation=1;
+            scene_enemy_capture.modular_count++;
+        }
+        if(outpost_weapon_cycle_status>=0)outpost_weapon_cycle_status=1;
     }
     if (net && net->mode==RASTERFALL_NET_CLIENT) {
         for (int i=0;i<RASTERFALL_NET_PLAYER_MAX;++i) {

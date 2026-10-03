@@ -34,17 +34,19 @@ static struct outpost_actor_walker outpost_actor_walkers[OUTPOST_ACTOR_WALK_COUN
 static int outpost_actor_actions_visible, outpost_actor_walk_visible;
 static uint64_t outpost_actor_actions_time_us;
 static int outpost_model_lab_visible;
+static int outpost_weapon_cycle_visible;
 static int outpost_model_lab_status;
 static uint64_t outpost_model_lab_time_us, outpost_model_lab_start_us;
 static struct rasterfall_rifle_history outpost_actor_rifle_history[70],outpost_model_rifle_history;
 static struct rasterfall_rifle_pose_input outpost_actor_rifle[70],outpost_model_rifle;
 #include "rf_outpost_rifle_cycle.inc"
+#include "rf_outpost_weapon_cycle.inc"
 
 void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us)
 {
     if(!visible || !outpost_model_lab_visible || time_us<outpost_model_lab_start_us)
         memset(&outpost_model_rifle_history,0,sizeof(outpost_model_rifle_history));
-    if (!visible && outpost_model_lab_visible && !outpost_rifle_cycle_visible)
+    if (!visible && outpost_model_lab_visible && !outpost_rifle_cycle_visible && !outpost_weapon_cycle_visible)
         rf_gpu_scene_pose_body_release();
     if (!visible || !outpost_model_lab_visible) outpost_model_lab_status=0;
     if (!outpost_model_lab_visible || time_us<outpost_model_lab_start_us)

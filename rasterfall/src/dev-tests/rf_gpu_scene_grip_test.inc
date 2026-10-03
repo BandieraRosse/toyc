@@ -1,5 +1,65 @@
 /* Stable grasp contract: animation and representation units may change, but
  * PRIMARY_GRIP/FOREGRIP must still close onto the finalized hand sockets. */
+static int scene_firearm_grip_test(void)
+{
+    static const int bodies[]={RASTERFALL_BODY_RF_BLOCK,RASTERFALL_BODY_RF_HUMANOID_V2,RASTERFALL_BODY_RF_C01_V22H};
+    struct rasterfall_model_resource resource={0};
+    struct rasterfall_model_instance instance={0};
+    struct rasterfall_action_composition c={0};
+    int failures=0,samples=0;
+    for(int body=0;body<3;++body) {
+        if(rasterfall_model_resource_load(&resource,rasterfall_character_body_resource_path(bodies[body]))<0 ||
+            rasterfall_model_instance_init(&instance,&resource)<0) { failures++;break; }
+        int scale=body==2?1000:835;
+        for(int weapon=TOY_GAME_WEAPON_PISTOL;weapon<=TOY_GAME_WEAPON_AWP;++weapon) {
+            static const int lengths[]={204,267,1003,880,1120};
+            const struct rasterfall_weapon_asset_profile *profile=rasterfall_weapon_asset_profile(weapon);
+            struct rasterfall_model_asset model={0};
+            struct rasterfall_weapon_model_adapter adapter={0};
+            if(rasterfall_model_load(&model,profile->model_path)<0) { failures++;continue; }
+            int good=!rasterfall_weapon_model_adapt(weapon,
+                (int[3]){model.min_x,model.min_y,model.min_z},(int[3]){model.max_x,model.max_y,model.max_z},&adapter);
+            good=good && adapter.reference_length_mm==lengths[weapon] &&
+                fabs(adapter.presented_length_mm-lengths[weapon])<2;
+            if(!good)failures++;
+            if(!body)__printf("FIREARM-SIZE weapon=%d reference_mm=%d measured_mm=%.3f valid=%d\n",
+                weapon,lengths[weapon],adapter.presented_length_mm,good);
+            rasterfall_model_unload(&model);
+        }
+        for(int weapon=TOY_GAME_WEAPON_PISTOL;weapon<=TOY_GAME_WEAPON_AWP;++weapon)
+        for(int state=0;state<6;++state)
+        for(int pitch=-45;pitch<=45;pitch+=45)for(int yaw=-30;yaw<=30;yaw+=30) {
+            struct rasterfall_rifle_pose_input input={0};
+            struct rasterfall_rifle_diagnostics d={0};
+            struct rasterfall_modular_weapon_placement placement;
+            c.layers[0].clip=humanoid_action(state==1?RASTERFALL_ACTION_LOCOMOTION_WALK:RASTERFALL_ACTION_LOCOMOTION_IDLE);
+            c.layers[0].time_ms=180;
+            c.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_AIM);
+            input.aim_milli=state==0 || state==2?1000:0;
+            input.hip_milli=state==1?1000:0;
+            if(state>=3)input.idle_milli[state-3]=1000;
+            input.recoil_milli=state==2?1000:0;
+            input.pitch_mdeg=pitch*1000;input.yaw_mdeg=yaw*1000;input.target_distance_rfu=8192;
+            int good=!rasterfall_action_compose(&instance,&c) &&
+                !rasterfall_rifle_pose_solve(&instance,weapon,scale,&input,&d) &&
+                !modular_prepare_weapon_placement(&instance,weapon,scale,&placement);
+            good=good && !d.reach_clamped[0] && !d.reach_clamped[1] &&
+                d.grip_error[0]<3 && d.grip_error[1]<3 && d.wrist_dot[1]>.5 &&
+                (state==3 || d.wrist_dot[0]>.5) && d.clearance_rfu>-.5;
+            if(!good) {
+                if(failures<60)__printf("FIREARM-GRIP body=%d weapon=%d state=%d pitch=%d yaw=%d grip=%.2f,%.2f wrist=%.2f,%.2f reach=%d,%d clearance=%.2f\n",
+                    body,weapon,state,pitch,yaw,d.grip_error[0],d.grip_error[1],d.wrist_dot[0],d.wrist_dot[1],d.reach_clamped[0],d.reach_clamped[1],d.clearance_rfu);
+                failures++;
+            }
+            samples++;
+        }
+        rasterfall_model_instance_unload(&instance);rasterfall_model_resource_unload(&resource);
+    }
+    rasterfall_model_instance_unload(&instance);rasterfall_model_resource_unload(&resource);
+    __printf("firearm grip %s samples=%d failures=%d\n",failures?"FAIL":"PASS",samples,failures);
+    return failures!=0;
+}
+
 static int scene_grip_pose_test(void)
 {
     struct rasterfall_model_instance instance={0};
@@ -61,7 +121,7 @@ static int scene_grip_pose_test(void)
         GRIP_CHECK(!sample.aim_milli && !sample.hip_milli);
         actor.reloading=0;actor.slots[0].weapon=TOY_GAME_WEAPON_SMG;
         rasterfall_rifle_sample(&actor,1500,&history,&sample);
-        GRIP_CHECK(sample.aim_milli==1000 && !sample.hip_milli);
+        GRIP_CHECK(!sample.aim_milli && sample.hip_milli==1000);
         actor.slots[0].weapon=TOY_GAME_WEAPON_AK;actor.combat_generation++;
         rasterfall_rifle_sample(&actor,10,&history,&sample);
         GRIP_CHECK(!sample.aim_milli && sample.hip_milli==1000);

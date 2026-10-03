@@ -50,7 +50,7 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
     const char *body_path=rasterfall_character_body_resource_path(body_id);
     char path[256];
     int result=-1;
-    int scale=1000;
+    int scale=body_id==RASTERFALL_BODY_RF_C01_V22H?1000:835;
     if (!sample || !out || !body_path || sample->action_time_ms<0 ||
         snprintf(path,sizeof(path),"%s",body_path)>=(int)sizeof(path)) return -1;
     if (diagnostic_model && diagnostic_model[0]) {
@@ -78,7 +78,7 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
     }
     if (!(freeze && !sample->armed) &&
         rasterfall_action_compose(instance,&composition)<0) goto done;
-    if (sample->armed && rasterfall_rifle_pose_solve(instance,TOY_GAME_WEAPON_AK,
+    if (sample->armed && rasterfall_rifle_pose_solve(instance,sample->weapon,
             scale,&sample->rifle,NULL)<0) goto done;
     memset(out,0,sizeof(*out));
     out->abi_version=1;out->byte_size=sizeof(*out);
@@ -92,7 +92,7 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
     out->body_to_world.translation[0]=x;out->body_to_world.translation[1]=y;
     out->body_to_world.translation[2]=z;
     out->body_to_world.scale_milli=scale;
-    if (sample->armed && scene_pose_weapon_from_instance(out,instance,TOY_GAME_WEAPON_AK,scale)<0) goto done;
+    if (sample->armed && scene_pose_weapon_from_instance(out,instance,sample->weapon,scale)<0) goto done;
     out->muzzle_flash=sample->fire && sample->action_time_ms<65;
     result=rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
         out->palette,out->bone_count);
@@ -116,6 +116,7 @@ int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
     if (action<RF_GPU_SCENE_BODY_IDLE || action>RF_GPU_SCENE_BODY_WALK_RIFLE) return -1;
     sample.lower_time_ms=time_ms;
     sample.armed=action>=RF_GPU_SCENE_BODY_RIFLE_IDLE;
+    sample.weapon=TOY_GAME_WEAPON_AK;
     sample.walk=action==RF_GPU_SCENE_BODY_WALK || action==RF_GPU_SCENE_BODY_WALK_FIRE ||
         action==RF_GPU_SCENE_BODY_WALK_RIFLE;
     sample.fire=action==RF_GPU_SCENE_BODY_WALK_FIRE;

@@ -9,7 +9,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 LAB_GROUPS={name:i+1 for i,name in enumerate(('character_lab','walk_lab','actor_actions_lab',
-    'actor_walk_lab','rf_model_lab','rf_light_lab','rf_electronics_lab','rifle_cycle_lab','idle_rifle_lab'))}
+    'actor_walk_lab','rf_model_lab','rf_light_lab','rf_electronics_lab','rifle_cycle_lab','idle_rifle_lab','weapon_cycle_lab'))}
 PARTS=(('', 'stand', 0, 0, 0), ('_case','case',-320,578,-30),
        ('_board','board',-240,680,-30), ('_cpu','cpu',-258,858,-52),
        ('_memory_a','memory',-281,815,46), ('_memory_b','memory',-281,815,74),

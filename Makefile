@@ -1129,6 +1129,7 @@ $(BUILD)/rasterfall_render.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_grip_test.inc \
     $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
+    $(RASTERFALL_SRC)/render/rf_outpost_weapon_cycle.inc \
     $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
     $(RASTERFALL_INC)/rf_gpu_scene_enemy.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \
@@ -1779,6 +1780,7 @@ $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/rasterfall_render.c \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_pose_test.inc \
     $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_grip_test.inc \
     $(RASTERFALL_SRC)/render/rf_gpu_scene_pose.inc \
+    $(RASTERFALL_SRC)/render/rf_outpost_weapon_cycle.inc \
     $(RASTERFALL_INC)/rf_gpu_scene_pose.h \
     $(RASTERFALL_INC)/rf_gpu_scene_enemy.h \
     $(RASTERFALL_INC)/rasterfall_world_light.h \

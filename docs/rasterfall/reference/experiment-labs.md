@@ -24,6 +24,7 @@
 | RF 电子产品 | `rf_electronics_lab` | `rf_electronics_lab_button` | `electronics-lab` / `electronics-case` | CPU / Scene |
 | 三模型持枪循环 | `rifle_cycle_lab` | `rifle_cycle_lab_button` | `rifle-cycle-lab` | Scene |
 | 真实 AI 持枪待机与中断测试 | `idle_rifle_lab` | `idle_rifle_lab_button` | `idle-rifle-lab` | CPU / Scene |
+| 三角色五枪动画循环 | `weapon_cycle_lab` | `weapon_cycle_lab_button` | `weapon-cycle-lab` | Scene |
 
 普通启动全部关闭；靠近终端按 E 切换，普通展示提示使用 ENABLE / DISABLE EXHIBIT。
 电子产品控制台按 E 循环关闭、600、1200、1800 RPM；屏幕和入口牌显示当前档位。
@@ -41,6 +42,11 @@ RF 模型区东侧的 `AI RIFLE CYCLE` 以三条同步路线展示 Block、Human
 到端点平滑转身、停步瞄准，再沿原路返回，持续循环。试样屏显示模型、当前阶段及 pitch/yaw。
 普通入口通过东北终端按 E 启停；暂停与性能隔离冻结循环，不产生实际弹丸、伤害或 AI 目标。
 区域片段由 `tools/rifle_cycle_lab.py` 生成；固定镜头与时间采样见[Scene 工作流](../guides/gpu-scene-fixture.md#三模型持枪循环区)。
+
+该区东侧的 `WEAPON CYCLE 3 X 5` 将三种角色按行、五种枪械按列排列，独立控制和计时。
+它复用上述路线与角度采样，缩短每个台位的移动范围并加入低位待机，避免相邻组合交叉。
+每把枪使用自身接触帧与射击间隔，展示只冻结姿态和火光。生成入口为 `tools/weapon_cycle_lab.py`，
+近景和整圈验证见[五枪循环区](../guides/gpu-scene-fixture.md#三角色五枪循环区)。
 
 持枪循环区南侧的 `LIVE AI HOLDS` 由 `rf_idle_rifle_lab.inc` 管理真实游戏 actor。
 控制台 E 依次选择静止、往返移动、真实目标、关闭。Block、步枪手、重装和侦察四名 AI
@@ -63,7 +69,7 @@ GPU 球体保持 GPU owner 缓存，光照区关闭后不提交球体和实验�
 ## 空间与导视
 
 前哨站采用[园区 V3 总平面](outpost-lab-layout-v3.md)：全部实验地块位于测试庭院以南，
-原四列三排以 6 m 道路连接，第一排东侧另接三模型持枪循环地块，其南侧为真实 AI 持枪区；性能控制与结果终端位于第二排南侧路边。
+原四列三排以 6 m 道路连接，第一排东侧依次接三模型持枪循环与三角色五枪循环地块，前者南侧为真实 AI 持枪区；性能控制与结果终端位于第二排南侧路边。
 展示诊断镜头与区域内容一样按 Runtime Map 原点平移，不依赖旧世界坐标。
 
 实验区用 `lab` 复合定义声明中心原点、宽深、用途和围合类型；区内记录以 `attr.lab=<区域ID>`
@@ -160,8 +166,8 @@ CPU 源 GLB 使用四倍创作尺寸，assembly 的 `scale=250` 恢复上述尺�
 四个实体展台陈列 C1（6 倍）、M1（3 倍）、B1（2.5 倍）与 X1（3 倍）；标签明确比例，
 另有原尺寸完整工作站和东北控制台。它们均复用同一组资产；实验开关控制运行状态，关闭时静态产品仍可查看。
 
-`lab_computer` 组件的 `attr.length=1..9` 是展示组，按感染体姿态、感染体往返、AI 动作、AI 往返、
-RF 模型、GPU 光照、RF 电子产品、三模型持枪循环、真实 AI 持枪排序；0 是未绑定的静止预览。它不再表示物理尺寸；其他资产的 length 语义不变。
+`lab_computer` 组件的 `attr.length=1..10` 是展示组，按感染体姿态、感染体往返、AI 动作、AI 往返、
+RF 模型、GPU 光照、RF 电子产品、三模型持枪循环、真实 AI 持枪、三角色五枪循环排序；0 是未绑定的静止预览。它不再表示物理尺寸；其他资产的 length 语义不变。
 组内机箱、计算卡与散热器共享供电、时钟和连续相位。普通实验计算机随所属实验开关运行，
 转速采用电子展区选定的全局档位，默认 600 RPM。电子展区关闭会停止该区设备，其余已开启实验仍保持运行。
 

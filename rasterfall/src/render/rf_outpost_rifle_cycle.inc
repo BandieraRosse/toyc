@@ -29,6 +29,7 @@ static void outpost_rifle_cycle_sample_at(uint64_t time_ms,
     out->sy=(int)(sin(heading)*1024);out->cy=(int)(cos(heading)*1024);
     out->phase=turning?3:moving?2:phase<800?0:1;
     out->body.armed=1;out->body.walk=moving;
+    out->body.weapon=TOY_GAME_WEAPON_AK;
     out->body.lower_time_ms=(time_ms/25000)*12000+
         (t<12000?0:t>=24000?12000:t-12000);
     out->body.fire=!turning && (moving || (phase>=800 && phase<2250));
@@ -52,7 +53,7 @@ static void outpost_rifle_cycle_sample_at(uint64_t time_ms,
 void rasterfall_render_set_outpost_rifle_cycle(int visible,uint64_t time_us)
 {
     if(!visible || !outpost_rifle_cycle_visible)outpost_rifle_cycle_status=0;
-    if(!visible && outpost_rifle_cycle_visible && !outpost_model_lab_visible)
+    if(!visible && outpost_rifle_cycle_visible && !outpost_model_lab_visible && !outpost_weapon_cycle_visible)
         rf_gpu_scene_pose_body_release();
     outpost_rifle_cycle_visible=visible;
     outpost_rifle_cycle_time_us=time_us;

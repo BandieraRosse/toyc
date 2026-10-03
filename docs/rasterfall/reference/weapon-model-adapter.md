@@ -44,6 +44,26 @@ adapter 返回中心、轴变换、整数 `scale_milli`、参考长度及量化�
 
 ## 接入验证
 
+手枪、SMG、霰弹枪和 AWP 同样使用完整的接触帧与物理单位 adapter；各自的尺寸、轴向、
+前握点和掌心朝向由 calibration profile 拥有。当前现实尺寸依据如下；总长约束使用规范枪轴，
+不包含额外火光，也不按角色展示缩放二次放大。网格仍是现有美术模型，总长一致不表示外形达到工程精度。
+
+| 枪械 | 总长标定 | 现实参考与配置 |
+| --- | --- | --- |
+| 手枪 | 204 mm | [GLOCK 17 官方规格](https://us.glock.com/en/products/law-enforcement/pistols/g17)，标准 G17 |
+| SMG | 267 mm | [美国司法部收录的 Ingram M10 资料](https://www.ojp.gov/pdffiles1/Digitization/000606NCJRS.pdf)，无枪托 10.5 英寸，换算取整；对应当前无枪托网格 |
+| 霰弹枪 | 1003 mm | [Mossberg 590S 官方规格](https://resources.mossberg.com/hubfs/press_releases/Mossberg%20Releases%20590S%20Shotgun%20Line%20PR%2010-25-2021%20FINAL.pdf)，18.5 英寸枪管、完整枪托版本总长 39.5 英寸；作为现有通用泵动模型的尺寸参考 |
+| AK | 880 mm | 上述固定枪托 AKM 实测资料 |
+| AWP | 1120 mm | [Accuracy International 原厂手册第 3 页](https://www.indaginibalistiche.it/utlities/manuali/accuracy_international_aw_sniper_EN.pdf)，AWP、两块枪托垫片；区别于更长的 AW |
+
+手枪左掌托住扳机手，SMG 左掌握前方竖握把；短枪的动作支点是
+`PRIMARY_GRIP`，不会把无枪托模型强贴肩窝。霰弹枪握泵柄后段，AWP 支撑长护木。
+`hold_kind` 选择肩托、双手手枪或紧凑双握把，反冲角度与后移距离也由 profile 提供；
+角色骨长、rest pose 与资源网格不随枪型改变。武器资源按目录路径加载，不依赖展示 gallery 的容量。
+
+新增枪型或调整握点后，用[三角色五枪循环区](../guides/gpu-scene-fixture.md#三角色五枪循环区)
+对照不同体型、仰俯角、移动持枪和反冲。短枪的左右掌朝向可以不同，以保持托握时腕部连续。
+
 运行 `--gpu-scene-pose-test` 检查源坐标平移/倍率变化下的物理尺寸、握点闭合、关节可达、腕部方向、
 胸部代理间隙及冻结重放，再用[角色保真工具](../guides/character-fidelity.md)检查左右手、肩袖与枪托。
 代理体检查不代替网格近景检查；手指与握把接触处允许有限贴合，当前没有逐三角形自碰撞或手指接触求解器。

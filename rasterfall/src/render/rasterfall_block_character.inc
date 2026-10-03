@@ -49,12 +49,12 @@ static int block_character_sample(const struct rasterfall_procedural_humanoid_st
     if (!composition.layers[0].clip || (state->weapon>=0 && !composition.layers[1].clip) ||
         rasterfall_action_compose(instance,&composition)<0) return -1;
     struct rasterfall_model_asset *pose=rasterfall_model_instance_pose(instance);
-    if (state->weapon==TOY_GAME_WEAPON_AK) {
+    if (state->weapon>=TOY_GAME_WEAPON_PISTOL && state->weapon<=TOY_GAME_WEAPON_AWP) {
         if (!state->rifle_valid) {
             memset(&rifle,0,sizeof(rifle));
             rifle.aim_milli=walk?0:1000;rifle.hip_milli=walk?1000:0;
             rifle.pitch_mdeg=state->aim_pitch_mdeg;rifle.yaw_mdeg=state->aim_yaw_mdeg;
-            rifle.recoil_milli=action==TOY_GAME_ANIM_FIRE && time<180 ? (180-time)*1000/180 : 0;
+            rifle.recoil_milli=action==TOY_GAME_ANIM_FIRE ? rasterfall_rifle_recoil_sample(state->weapon,time) : 0;
         }
         if (rasterfall_rifle_pose_solve(instance,state->weapon,835,&rifle,NULL)<0) return -1;
     } else if (state->weapon<0) {
@@ -134,7 +134,7 @@ static int block_equipment_box(struct toy_renderer *renderer,const struct camera
     return pixels;
 }
 
-/* Non-AK assets have no authored grip contract yet. Keep their legacy basis
+/* Non-firearm assets have no authored grip contract yet. Keep their legacy basis
  * and size, but anchor their geometry to the finalized right-hand socket. */
 static struct rasterfall_model_asset *block_weapon_model(int weapon)
 {

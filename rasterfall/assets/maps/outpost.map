@@ -1,6 +1,6 @@
 # Outpost V1. RFU = metres * 512; single floor, open roof, static furniture.
 map version=1 units=rfu
-world min_x=-41472 max_x=60928 min_z=-55808 max_z=10752 room_limit=61184 attr.identity=outpost
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=10752 room_limit=80640 attr.identity=outpost
 region id=outpost_safe kind=safe min_x=-41216 max_x=41216 min_z=-41472 max_z=10496 attr.legacy_index=0
 region id=perf_low_observation_safe kind=safe min_x=-37376 max_x=-35328 min_z=-51712 max_z=-41472
 region id=perf_enemy_observation_safe kind=safe min_x=-17920 max_x=-15872 min_z=-51712 max_z=-41472
@@ -1033,3 +1033,68 @@ surface id=idle_rifle_site kind=ground min_x=37376 max_x=59904 min_z=-41472 max_
 collision id=idle_rifle_site_col shape=flat min_x=37376 max_x=59904 min_z=-41472 max_z=-25088 height=0 collision=false visible=false walkable=true color=78858A
 region id=idle_rifle_safe kind=safe min_x=40448 max_x=59904 min_z=-41472 max_z=-28160
 # END LIVE AI HOLD LAB
+# BEGIN WEAPON CYCLE LAB (tools/weapon_cycle_lab.py)
+lab id=weapon_cycle_lab_area x=68096 z=-19968 width=14336 depth=9216 category=animation enclosure=open
+surface id=weapon_cycle_lab kind=ground min_x=-7168 max_x=7168 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=weapon_cycle_lab_col attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_col shape=flat min_x=-7168 max_x=7168 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_paint kind=floor min_x=-7104 max_x=7104 min_z=-4544 max_z=4544 height=0 color=607985 attr.style=10 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_north_line kind=floor min_x=-7168 max_x=7168 min_z=4544 max_z=4608 height=0 color=79E8C5 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_south_line kind=floor min_x=-7168 max_x=7168 min_z=-4608 max_z=-4544 height=0 color=79E8C5 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_west_line kind=floor min_x=-7168 max_x=-7104 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_east_line kind=floor min_x=7104 max_x=7168 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=weapon_cycle_lab_area
+assembly id=weapon_cycle_lab_button_assembly x=6400 y=0 z=3840 attr.lab=weapon_cycle_lab_area
+object id=weapon_cycle_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10 attr.collision=component
+object id=weapon_cycle_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+object id=weapon_cycle_lab_button_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=weapon_cycle_lab_button_assembly attr.length=10
+render id=weapon_cycle_lab_button_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79E8C5 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=weapon_cycle_lab_computer attr.assembly=weapon_cycle_lab_button_assembly
+render id=weapon_cycle_lab_button_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=weapon_cycle_lab_button_assembly
+render id=weapon_cycle_lab_title kind=sign min_x=-2400 max_x=2400 min_z=-4208 max_z=-4188 height=500 color=79E8C5 attr.height2=1100 attr.style=2 attr.text=WEAPON_CYCLE_3_X_5 attr.facing=+z attr.texture_u=2 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_display kind=sign min_x=-2400 max_x=2400 min_z=4278 max_z=4298 height=900 color=79E8C5 attr.height2=1500 attr.style=4 attr.text=EXHIBIT_OFF attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_lab attr.lab=weapon_cycle_lab_area
+surface id=weapon_cycle_lab_area_site_ground kind=ground min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 material=78858A attr.collision_id=weapon_cycle_lab_area_site_ground_col attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_area_site_ground_col shape=flat min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 collision=false visible=false walkable=true color=78858A attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_fill_w kind=floor min_x=-8192 max_x=-7168 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_fill_e kind=floor min_x=7168 max_x=8192 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_fill_s kind=floor min_x=-7168 max_x=7168 min_z=-5120 max_z=-4608 height=0 color=78858A attr.style=12 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_fill_n kind=floor min_x=-7168 max_x=7168 min_z=4608 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_beacon_nw kind=sign min_x=-7568 max_x=-7208 min_z=4288 max_z=4568 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_area_beacon_nw_col shape=box min_x=-7568 max_x=-7208 min_z=4308 max_z=4548 height=292 collision=true visible=false walkable=true color=526874 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_beacon_ne kind=sign min_x=7208 max_x=7568 min_z=4288 max_z=4568 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_area_beacon_ne_col shape=box min_x=7208 max_x=7568 min_z=4308 max_z=4548 height=292 collision=true visible=false walkable=true color=526874 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_beacon_sw kind=sign min_x=-7568 max_x=-7208 min_z=-4568 max_z=-4288 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_area_beacon_sw_col shape=box min_x=-7568 max_x=-7208 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_lab_area_beacon_se kind=sign min_x=7208 max_x=7568 min_z=-4568 max_z=-4288 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.lab=weapon_cycle_lab_area
+collision id=weapon_cycle_lab_area_beacon_se_col shape=box min_x=7208 max_x=7568 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=weapon_cycle_lab_area
+# Sample origin is local (0, 0); add local records with attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_0 kind=sign min_x=-6350 max_x=-4050 min_z=3450 max_z=3470 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=BLOCK_PISTOL attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_0 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_1 kind=sign min_x=-3750 max_x=-1450 min_z=3450 max_z=3470 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=BLOCK_SMG attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_1 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_2 kind=sign min_x=-1150 max_x=1150 min_z=3450 max_z=3470 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=BLOCK_SHOTGUN attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_2 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_3 kind=sign min_x=1450 max_x=3750 min_z=3450 max_z=3470 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=BLOCK_AK attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_3 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_4 kind=sign min_x=4050 max_x=6350 min_z=3450 max_z=3470 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=BLOCK_AWP attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_4 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_5 kind=sign min_x=-6350 max_x=-4050 min_z=850 max_z=870 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=HUMANOID_PISTOL attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_5 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_6 kind=sign min_x=-3750 max_x=-1450 min_z=850 max_z=870 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=HUMANOID_SMG attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_6 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_7 kind=sign min_x=-1150 max_x=1150 min_z=850 max_z=870 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=HUMANOID_SHOTGUN attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_7 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_8 kind=sign min_x=1450 max_x=3750 min_z=850 max_z=870 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=HUMANOID_AK attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_8 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_9 kind=sign min_x=4050 max_x=6350 min_z=850 max_z=870 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=HUMANOID_AWP attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_9 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_10 kind=sign min_x=-6350 max_x=-4050 min_z=-1750 max_z=-1730 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=RF-C01_PISTOL attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_10 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_11 kind=sign min_x=-3750 max_x=-1450 min_z=-1750 max_z=-1730 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=RF-C01_SMG attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_11 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_12 kind=sign min_x=-1150 max_x=1150 min_z=-1750 max_z=-1730 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=RF-C01_SHOTGUN attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_12 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_13 kind=sign min_x=1450 max_x=3750 min_z=-1750 max_z=-1730 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=RF-C01_AK attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_13 attr.lab=weapon_cycle_lab_area
+render id=weapon_cycle_station_14 kind=sign min_x=4050 max_x=6350 min_z=-1750 max_z=-1730 height=-730 color=79E8C5 attr.height2=-460 attr.style=4 attr.text=RF-C01_AWP attr.facing=+z attr.texture_u=2 attr.channel=weapon_cycle_station_14 attr.lab=weapon_cycle_lab_area
+surface id=weapon_cycle_road_0 kind=ground min_x=59904 max_x=79360 min_z=-14848 max_z=-11776 height=0 material=485860 attr.collision_id=weapon_cycle_road_0_col
+collision id=weapon_cycle_road_0_col shape=flat min_x=59904 max_x=79360 min_z=-14848 max_z=-11776 height=0 collision=false visible=true walkable=true color=485860
+render id=weapon_cycle_road_0_paint kind=floor min_x=59904 max_x=79360 min_z=-14848 max_z=-11776 height=0 color=485860 attr.style=11
+surface id=weapon_cycle_road_1 kind=ground min_x=59904 max_x=79360 min_z=-28160 max_z=-25088 height=0 material=485860 attr.collision_id=weapon_cycle_road_1_col
+collision id=weapon_cycle_road_1_col shape=flat min_x=59904 max_x=79360 min_z=-28160 max_z=-25088 height=0 collision=false visible=true walkable=true color=485860
+render id=weapon_cycle_road_1_paint kind=floor min_x=59904 max_x=79360 min_z=-28160 max_z=-25088 height=0 color=485860 attr.style=11
+surface id=weapon_cycle_road_2 kind=ground min_x=76288 max_x=79360 min_z=-25088 max_z=-14848 height=0 material=485860 attr.collision_id=weapon_cycle_road_2_col
+collision id=weapon_cycle_road_2_col shape=flat min_x=76288 max_x=79360 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true color=485860
+render id=weapon_cycle_road_2_paint kind=floor min_x=76288 max_x=79360 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+region id=weapon_cycle_safe kind=safe min_x=59904 max_x=79360 min_z=-28160 max_z=-11776
+# END WEAPON CYCLE LAB

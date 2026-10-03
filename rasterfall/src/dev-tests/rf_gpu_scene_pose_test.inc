@@ -336,6 +336,44 @@ done:
     return failure!=0;
 }
 
+static int scene_weapon_cycle_test(void)
+{
+    static const int bodies[]={RASTERFALL_BODY_RF_BLOCK,RASTERFALL_BODY_RF_HUMANOID_V2,RASTERFALL_BODY_RF_C01_V22H};
+    static const unsigned times[]={0,7500,8000,8500,13835,24335,32500,46335,57900,58000,59900};
+    static struct rf_gpu_scene_pose_v1 pose,replay;
+    struct outpost_rifle_cycle_sample sample,previous;
+#define WEAPON_CYCLE_CHECK(x) do { if(!(x)) { __printf("weapon cycle FAIL line=%d\n",__LINE__);return 1; } } while(0)
+    for(int weapon=TOY_GAME_WEAPON_PISTOL;weapon<=TOY_GAME_WEAPON_AWP;++weapon) {
+        for(unsigned t=0;t<=60000;t+=50) {
+            outpost_weapon_cycle_sample_at(t,weapon,&sample);
+            WEAPON_CYCLE_CHECK(sample.body.weapon==weapon && sample.phase>=0 && sample.phase<=4);
+            WEAPON_CYCLE_CHECK(sample.body.rifle.recoil_milli>=0 && sample.body.rifle.recoil_milli<=1000);
+            if(t)WEAPON_CYCLE_CHECK(abs(sample.z-previous.z)<10 &&
+                sample.sy*previous.sy+sample.cy*previous.cy>990000);
+            previous=sample;
+        }
+        for(int body=0;body<3;++body)for(unsigned i=0;i<sizeof(times)/sizeof(times[0]);++i) {
+            outpost_weapon_cycle_sample_at(times[i],weapon,&sample);previous=sample;
+            WEAPON_CYCLE_CHECK(!rf_gpu_scene_pose_body_sample(bodies[body],32,4,&sample.body,
+                68096,-900,-19968+sample.z,sample.sy,sample.cy,&pose));
+            WEAPON_CYCLE_CHECK(!rf_gpu_scene_pose_body_sample(bodies[body],32,4,&sample.body,
+                68096,-900,-19968+sample.z,sample.sy,sample.cy,&replay));
+            WEAPON_CYCLE_CHECK(!memcmp(&pose,&replay,sizeof(pose)) && !memcmp(&sample,&previous,sizeof(sample)) &&
+                pose.weapon_valid && pose.weapon==weapon);
+            /* A character's scale cannot enlarge an already-normalized gun. */
+            struct rasterfall_model_asset *model=block_weapon_model(weapon);
+            struct rasterfall_weapon_model_adapter adapter;
+            WEAPON_CYCLE_CHECK(model && !rasterfall_weapon_model_adapt(weapon,
+                (int[3]){model->min_x,model->min_y,model->min_z},
+                (int[3]){model->max_x,model->max_y,model->max_z},&adapter));
+            WEAPON_CYCLE_CHECK(pose.weapon_to_world.scale_milli==adapter.scale_milli);
+        }
+    }
+    __printf("weapon cycle PASS all-firearms/all-bodies/continuity/scale/frozen-replay\n");
+#undef WEAPON_CYCLE_CHECK
+    return 0;
+}
+
 static int scene_rifle_cycle_test(void)
 {
     struct outpost_rifle_cycle_sample previous={0},sample,repeat;
@@ -465,6 +503,8 @@ int rf_gpu_scene_pose_logic_test(void)
     POSE_CHECK(!block_character_pose_test());
     POSE_CHECK(!scene_grip_pose_test());
     POSE_CHECK(!scene_rifle_cycle_test());
+    POSE_CHECK(!scene_firearm_grip_test());
+    POSE_CHECK(!scene_weapon_cycle_test());
     POSE_CHECK(!scene_evasion_pose_test());
     POSE_CHECK(!scene_equipment_pose_test());
     POSE_CHECK(!scene_clothing_pose_test());

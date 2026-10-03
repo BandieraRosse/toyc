@@ -40,6 +40,9 @@ struct rasterfall_weapon_asset_profile {
     unsigned int socket_mask;
     struct rasterfall_weapon_clearance_capsule clearance[4];
     int clearance_count;
+    /* 0: shoulder stock; 1: two-hand pistol; 2: compact vertical foregrip. */
+    int hold_kind;
+    int recoil_pitch_mdeg, recoil_back_rfu;
 };
 
 /* File-space -> canonical (+Z forward, RFU) adaptation. Shared by CPU and

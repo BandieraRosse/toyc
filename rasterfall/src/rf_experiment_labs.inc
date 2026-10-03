@@ -2,7 +2,7 @@
 enum rf_experiment_lab {
     RF_LAB_INFECTED_POSES, RF_LAB_INFECTED_WALK, RF_LAB_ACTOR_ACTIONS,
     RF_LAB_ACTOR_WALK, RF_LAB_MODEL, RF_LAB_LIGHTING, RF_LAB_ELECTRONICS,
-    RF_LAB_RIFLE_CYCLE, RF_LAB_IDLE_RIFLE, RF_LAB_COUNT
+    RF_LAB_RIFLE_CYCLE, RF_LAB_IDLE_RIFLE, RF_LAB_WEAPON_CYCLE, RF_LAB_COUNT
 };
 struct rf_experiment_definition {
     const char *id, *surface, *terminal, *view;
@@ -17,7 +17,8 @@ static const struct rf_experiment_definition rf_lab_definitions[RF_LAB_COUNT] = 
     {"GPU LIGHTING", "rf_light_lab", "rf_light_lab_button", "lighting-lab", 1},
     {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0},
     {"RIFLE CYCLE", "rifle_cycle_lab", "rifle_cycle_lab_button", "rifle-cycle-lab", 1},
-    {"LIVE AI HOLDS", "idle_rifle_lab", "idle_rifle_lab_button", "idle-rifle-lab", 0}
+    {"LIVE AI HOLDS", "idle_rifle_lab", "idle_rifle_lab_button", "idle-rifle-lab", 0},
+    {"WEAPON CYCLE 3 X 5", "weapon_cycle_lab", "weapon_cycle_lab_button", "weapon-cycle-lab", 1}
 };
 static struct {
     int requested[RF_LAB_COUNT],fan_rpm;
@@ -139,6 +140,40 @@ static void rf_rifle_cycle_camera(const struct rasterfall_session *session,struc
     rf_lab_camera_position(session,camera,"rifle_cycle_lab_area",0,8800);
     camera->y=5300;camera->sy=0;camera->cy=-1024;
     camera->pitch_sy=-512;camera->pitch_cy=887;
+}
+
+static uint64_t rf_weapon_cycle_time(void)
+{
+    const char *sample=getenv("RF_WEAPON_CYCLE_TIME_MS");
+    return sample && sample[0] ? (uint64_t)(strtoul(sample,NULL,10)%60000)*1000 :
+        rf_labs.time_us[RF_LAB_WEAPON_CYCLE];
+}
+
+static void rf_weapon_cycle_camera(const struct rasterfall_session *session,struct camera *camera)
+{
+    const char *station=getenv("RF_WEAPON_CYCLE_STATION"),*view=getenv("RF_WEAPON_CYCLE_VIEW");
+    int index=station?atoi(station):-1;
+    if(index>=0 && index<15) {
+        /* Follow the sampled route, including the return leg, from a fixed
+         * side of the station. The renderer consumes the same explicit time. */
+        unsigned t=(unsigned)((rf_weapon_cycle_time()/1000)%60000);
+        unsigned cycle=t<8000?0:t<58000?t-8000:0;
+        unsigned leg=cycle%25000;
+        int z=-550+(leg<12000?0:leg>=24000?1100:(int)(leg-12000)*1100/12000);
+        if(cycle>=25000)z=-z;
+        double angle=view && !strcmp(view,"side")?1.5707963267948966:
+            view && !strcmp(view,"left")?-1.5707963267948966:
+            view && !strcmp(view,"front")?0:.5235987755982988;
+        rf_lab_camera_position(session,camera,"weapon_cycle_lab_area",
+            -5200+(index%5)*2600+(int)(sin(angle)*1450),
+            2600-(index/5)*2600+z+(int)(cos(angle)*1450));
+        camera->y=-380;camera->sy=(int)(-sin(angle)*1024);camera->cy=(int)(-cos(angle)*1024);
+        camera->pitch_sy=0;camera->pitch_cy=1024;
+    } else {
+        rf_lab_camera_position(session,camera,"weapon_cycle_lab_area",0,11500);
+        camera->y=6800;camera->sy=0;camera->cy=-1024;
+        camera->pitch_sy=-512;camera->pitch_cy=887;
+    }
 }
 
 static void rf_electronics_camera(const struct rasterfall_session *session,struct camera *camera,const char *view)

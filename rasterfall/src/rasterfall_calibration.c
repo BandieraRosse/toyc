@@ -73,6 +73,45 @@ static void profile_init(void)
     }
     asset_profiles[TOY_GAME_WEAPON_AWP].skeletal = 1;
     asset_profiles[TOY_GAME_WEAPON_AWP].base_scale_milli = 920000;
+    /* Model-specific RFU contacts, measured on the centered canonical mesh.
+     * Short guns use PRIMARY_GRIP as the moving hold pivot, not a fake stock.
+     * Real-size references and variants: docs/rasterfall/reference/weapon-model-adapter.md. */
+    {
+        static const struct {
+            int weapon, basis, length, hold, recoil, back;
+            struct rasterfall_cal_vec3 contacts[RASTERFALL_WEAPON_SOCKET_COUNT];
+        } guns[]={
+            {TOY_GAME_WEAPON_PISTOL,0,204,1,4200,7,
+                {{-8,0,-30},{12,-4,-23},{0,28,52},{0,-31,-37},{0,0,-30},{0,39,-25}}},
+            {TOY_GAME_WEAPON_SMG,0,267,2,2200,5,
+                {{-9,11,-27},{9,5,36},{0,43,69},{0,-40,-27},{0,11,-27},{0,55,-36}}},
+            {TOY_GAME_WEAPON_SHOTGUN,1,1003,0,5200,12,
+                {{-11,13,-128},{0,12,60},{0,39,257},{0,12,-35},{0,-18,-257},{0,47,-25}}},
+            {TOY_GAME_WEAPON_AWP,2,1120,0,3400,10,
+                {{-9,-6,-138},{0,-7,-19},{0,16,287},{0,-25,-85},{0,-24,-287},{0,43,-142}}}
+        };
+        static const float primary[4]={-0.6644630244f,0.6644630244f,0.2418447626f,0.2418447626f};
+        static const float support[4]={0.4829629131f,0.1294095226f,0.8365163037f,0.2241438680f};
+        static const float compact_primary[4]={-0.5792279653f,0.5792279653f,0.4055797877f,0.4055797877f};
+        static const float vertical[4]={-0.5792279653f,-0.5792279653f,-0.4055797877f,0.4055797877f};
+        static const float pistol_support[4]={-0.4304593345f,-0.6743797232f,-0.5609855268f,0.2126311100f};
+        for(unsigned g=0;g<sizeof(guns)/sizeof(guns[0]);++g) {
+            struct rasterfall_weapon_asset_profile *p=&asset_profiles[guns[g].weapon];
+            p->asset_basis=guns[g].basis;p->length_mm=guns[g].length;p->skeletal=1;
+            p->hold_kind=guns[g].hold;p->recoil_pitch_mdeg=guns[g].recoil;p->recoil_back_rfu=guns[g].back;
+            memcpy(p->sockets,guns[g].contacts,sizeof(p->sockets));
+            memcpy(p->socket_rotations[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP],p->hold_kind?compact_primary:primary,sizeof(primary));
+            memcpy(p->socket_rotations[RASTERFALL_WEAPON_SOCKET_FOREGRIP],p->hold_kind==1?pistol_support:p->hold_kind?vertical:support,sizeof(support));
+            p->socket_mask=(1u<<RASTERFALL_WEAPON_SOCKET_COUNT)-1;
+            const struct rasterfall_cal_vec3 *a=&p->sockets[RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP];
+            const struct rasterfall_cal_vec3 *b=&p->sockets[RASTERFALL_WEAPON_SOCKET_FOREGRIP];
+            const struct rasterfall_cal_vec3 *m=&p->sockets[RASTERFALL_WEAPON_SOCKET_MAGAZINE];
+            p->clearance[0]=(struct rasterfall_weapon_clearance_capsule){{0,a->y+20,a->z},{0,b->y+20,b->z},12};
+            p->clearance[1]=(struct rasterfall_weapon_clearance_capsule){{0,a->y,a->z},{0,m->y,m->z},10};
+            p->clearance_count=2;
+        }
+        asset_profiles[TOY_GAME_WEAPON_AK].recoil_pitch_mdeg=1800;
+    }
     pose_profiles[0][TOY_GAME_WEAPON_AK].character_id = 0;
     pose_profiles[0][TOY_GAME_WEAPON_AK].weapon = TOY_GAME_WEAPON_AK;
     /* Imported from tmp/eula_ak.rfpose. */

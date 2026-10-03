@@ -119,6 +119,12 @@ pose，不共享 instance mutable storage，也不进入武器 placement/双手 
 重复冻结同一时间不推进，actor/generation 变化或时间回退重置历史。
 历史属于 renderer/local source；冻结帧只保存求值输入，重放不查询 Game 或更新采样器。
 
+手枪、SMG、霰弹枪、AK 和 AWP 都经过同一 sampler 与双臂 solver。移动持枪保持目标跟踪；
+枪型差异由 calibration profile 的接触帧、持枪支点和反冲参数决定。短枪瞄准时抬高并前伸，左掌分别
+托握或握竖把；短枪随机待机映射为双手低位警戒，长枪保留单手竖持、胸前斜持和低持。
+求解短枪肘部时用掌骨方向引导弯曲平面，避免把步枪的外展配置直接用于双手相邻的手枪握点。
+RFCHAR 目录采样显式携带 `weapon`，CPU actor、Block 和 Scene 使用同一套枪型配置。
+
 RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
 
 1. 将有界仰俯和左右瞄准分配给脊柱、胸、颈和头，保留基础站姿、行走与回避。

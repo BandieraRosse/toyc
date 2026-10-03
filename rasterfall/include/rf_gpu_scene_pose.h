@@ -52,7 +52,7 @@ enum rf_gpu_scene_body_action {
 /* Catalog previews share the gameplay action, grip solver and weapon source. */
 struct rf_gpu_scene_body_sample {
     uint64_t lower_time_ms;
-    int action_time_ms, walk, armed, fire;
+    int action_time_ms, walk, armed, fire, weapon;
     struct rasterfall_rifle_pose_input rifle;
 };
 /* Explicit presentation sample; no environment, gameplay or clock reads. */

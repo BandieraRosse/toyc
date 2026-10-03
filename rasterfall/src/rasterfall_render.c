@@ -7197,7 +7197,8 @@ static int modular_prepare_weapon_placement(
     double primary_rotation[9], inverse_primary[9];
     int i, socket, xi, yi, zi, have_bounds = 0;
     struct rasterfall_weapon_model_adapter adapter;
-    if (!instance || !placement || !instance->pose.position_scale || character_scale <= 0 || weapon < 0)
+    if (!instance || !placement || !instance->pose.position_scale || character_scale <= 0 ||
+        weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT)
         return -1;
     memset(placement, 0, sizeof(*placement));
     asset = rasterfall_weapon_asset_profile(weapon);
@@ -7215,8 +7216,10 @@ static int modular_prepare_weapon_placement(
     placement->has_muzzle = rasterfall_weapon_socket_transform(weapon,
         RASTERFALL_WEAPON_SOCKET_MUZZLE,
         &placement->authored[RASTERFALL_WEAPON_SOCKET_MUZZLE]) == 0;
-    model = gallery_model_named(asset->model_path, NULL);
-    if (!model) return -1;
+    /* Active weapons must not depend on the capped display gallery. */
+    static struct rasterfall_model_asset weapons[TOY_GAME_WEAPON_COUNT];
+    model=&weapons[weapon];
+    if(!model->data && rasterfall_model_load(model,asset->model_path)<0) return -1;
     if (rasterfall_weapon_model_adapt(weapon,
             (int[3]){model->min_x,model->min_y,model->min_z},
             (int[3]){model->max_x,model->max_y,model->max_z},&adapter)<0) return -1;
@@ -8773,7 +8776,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
             struct rasterfall_character_profile character = *profile;
             rasterfall_rifle_sample(actor,(unsigned)(active_presentation_game?active_presentation_game->combat_time_ms:0),
                 &actor_action_layers[i].rifle,&state.rifle);
-            state.rifle_valid=state.weapon==TOY_GAME_WEAPON_AK && actor->state==TOY_GAME_ACTOR_ALIVE &&
+            state.rifle_valid=state.weapon>=TOY_GAME_WEAPON_PISTOL && state.weapon<=TOY_GAME_WEAPON_AWP && actor->state==TOY_GAME_ACTOR_ALIVE &&
                 !actor->reloading && !actor->weapon_switch_timer_ms && !actor->control_disabled &&
                 !actor->melee_timer_ms && !actor->throw_timer_ms && !actor->airborne_ms && !actor->airborne_y;
             if(state.rifle_valid)state.muzzle_flash=actor->muzzle_flash_ms;
@@ -8989,7 +8992,7 @@ int rasterfall_render_procedural_humanoid(
     if (block_body_ready()<0 || block_character_sample(state,&block_body_instance,&world)<0) return -1;
     int pixels=render_block_body(renderer,camera,&block_body_instance,&world,character);
     if (pixels<0) return -1;
-    if (state->weapon==TOY_GAME_WEAPON_AK)
+    if (state->weapon>=TOY_GAME_WEAPON_PISTOL && state->weapon<=TOY_GAME_WEAPON_AWP)
         pixels+=render_modular_active_weapon(renderer,camera,&block_body_instance,&world,
             state->weapon,state->muzzle_flash,0,NULL);
     else if (state->weapon>=0)

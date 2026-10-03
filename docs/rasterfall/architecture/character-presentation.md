@@ -102,8 +102,8 @@ Block 仍无骨架。角色身份、职业、网络和玩法碰撞不随美术�
 
 下身使用 RFANIM idle/walk，上身使用共享 rifle composition 与双臂握点求解；单手竖持释放左臂，
 双手握持保持固定骨长。换弹、推击、近战、投掷及受击保留为局部骨骼旋转叠加；倒地、死亡和复活
-作用于身体整体展示变换。职业装备跟随最终头、胸或髋骨。AK 从 finalized `WEAPON_R` 放置；尚无标准
-握点合同的其他武器保留旧尺寸和轴向，但绑定最终右手。它们尚不具备 AK 的完整双手接触约束。
+作用于身体整体展示变换。职业装备跟随最终头、胸或髋骨。五种枪械均从 finalized `WEAPON_R` 放置，
+使用各自的完整双手握点、支点和物理单位 adapter；非枪械道具保留兼容尺寸和轴向，并绑定最终右手。
 武器按资源路径独立懒加载，不依赖有数量上限的展示目录；没有模型的药品不发射手持几何。
 Scene 单角色三角形预算包含身体、武器和职业装备，完整组合由姿态回归覆盖，防止旧地图
 狙击手等非 AK 装备超过缓冲上限而使场景提交失败。
@@ -207,7 +207,12 @@ Block 使用程序角色冻结的共享 rifle 输入和下身时间；Humanoid �
 RF-C01 使用 `rf_gpu_scene_pose_body_sample`，显式传入完整朝向、上下身时间和 rifle 输入，不读取诊断环境变量。
 两种骨骼角色共用正式 composition、握点求解和武器 placement。提取与重放不推进循环时钟；移动射击保留下身步态。
 枪口位置从 finalized weapon socket 求值并随 pose 冻结，闪光由 Scene EFFECTS 消费，不写入玩法特效事件或动态灯。
-目录资源由 RF 模型区与循环区共用，最后一个使用区关闭才释放 CPU resource；缺失 RF-C01 时另外两种仍可展示。
+`WEAPON CYCLE 3 X 5` 在原循环区东侧，三排角色与五列枪械显式采样相同的循环时钟。
+`render/rf_outpost_weapon_cycle.inc` 生成待机、角度、移动、反冲和武器 ID；三个目录身体均调用
+`rf_gpu_scene_pose_body_sample`，复用正式 RFANIM、双臂 IK、武器 adapter 和 palette 冻结。
+武器射击间隔只读 `toy_game_weapon_info`，不生成玩法 actor、射线或伤害；正常角色也消费相同握点配置。
+
+目录资源由 RF 模型区与两个循环区共用，最后一个使用区关闭才释放 CPU resource；缺失 RF-C01 时另外两种仍可展示。
 
 共享 Humanoid 和 RF-C01 的持枪指节来自 action composition，可换衣物继续使用同一最终骨架；
 肘部平面同时考虑目标掌骨朝向和身体外侧方向，胸前斜持及单手举枪增加外展，极端仰俯减少外展。

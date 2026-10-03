@@ -58,6 +58,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run 
 该变量仅用于 `rifle-cycle-lab` 诊断入口；删除变量可恢复连续播放。
 `--gpu-scene-pose-test` 验证整圈位置/转身连续性、移动射击下身时间与显式姿态的重复提取。
 
+## 三角色五枪循环区
+
+原 `AI RIFLE CYCLE` 东侧的 `WEAPON CYCLE 3 X 5` 同时显示 15 组组合。由北向南为 Block、
+Humanoid、RF-C01；由西向东为手枪、SMG、霰弹枪、AK、AWP。东北侧终端按 E 启停；
+通过入口横路可步行到达，普通运行可以绕到每组左右侧观察。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene weapon-cycle-lab 0
+```
+
+60 秒循环依次展示低位待机、瞄准与静止射击、低位移动射击、转身和返程；五种枪的节奏使用各自
+玩法射击间隔。三种身体共用同一时间，枪械和双手始终使用正式握点求解。暂停与性能隔离冻结时钟。
+RF-C01 私有资源缺失时另两排仍可使用，画面和日志提示缺失资源；安装后重新开启展示重试。
+
+原生定向采样使用已构建并暂存的 package：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_weapon_cycle.ps1 -Station 10 -TimeMs 8500 -View side -Frames 2 -OutputDirectory tmp/weapon-review
+```
+
+`Station` 为行优先的 0..14，-1 为全景；参数范围以脚本为准。8500 ms 为瞄准，13835 ms 为
+静止射击，24335 ms 为移动射击，32500 ms 为转身，46335 ms 为返程。`TimeMs=-1` 按固定逻辑步
+连续播放；展示时钟每帧推进 16 ms，完整一圈可用 `-Frames 4000`。脚本等待进程退出并校验 native 日志与截图，结果写入独立目录。
+`RF_WEAPON_CYCLE_TIME_MS`、`RF_WEAPON_CYCLE_STATION` 与 `RF_WEAPON_CYCLE_VIEW` 只影响本诊断入口。
+普通游戏不读取这些覆盖值。区域生成器为 `tools/weapon_cycle_lab.py`。
+
+`--gpu-scene-pose-test` 检查跨体型握点误差、腕部方向、可达性与循环采样；近景检查仍须确认手掌、
+握把、泵柄、枪托与身体的实际网格关系。
+
 ## 实验性单人入口
 
 构建 package 后可从原生入口启动：
