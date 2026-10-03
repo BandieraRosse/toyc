@@ -7,6 +7,7 @@ are derived from the same Blender generator and contain no external content.
 """
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -199,12 +200,116 @@ def write_header(layout):
     HEADER.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
+def audit_tray_material_change(before, after, support_height):
+    """Compare actual oriented triangles, independent of material regrouping."""
+    def decode(data):
+        vertices, indices, scale = struct.unpack_from("<III", data, 8)
+        primitives, count, primitive_at, material_at = struct.unpack_from("<4I", data, 44)
+        vertex_at = material_at+count*16
+        index_at = vertex_at+vertices*24
+        materials = [data[material_at+i*16:material_at+(i+1)*16] for i in range(count)]
+        faces = Counter()
+        for p in range(primitives):
+            first, length, material, unused = struct.unpack_from("<4I", data, primitive_at+p*16)
+            assert not unused
+            for i in range(first, first+length, 3):
+                triangle = tuple(data[vertex_at+v*24:vertex_at+(v+1)*24]
+                    for v in struct.unpack_from("<3I", data, index_at+i*4))
+                # Cyclic order may differ after export; reflected winding may not.
+                triangle = min(triangle[i:]+triangle[:i] for i in range(3))
+                faces[triangle, materials[material]] += 1
+        return faces, materials, scale
+
+    assert before[:44] == after[:44], "tray geometry header, bounds or scale changed"
+    old, old_materials, scale = decode(before)
+    new, new_materials, unused = decode(after)
+    def geometry(faces):
+        result = Counter()
+        for (triangle, material), count in faces.items():
+            result[triangle] += count
+        return result
+    assert geometry(old) == geometry(new), "tray position, normal, UV, winding or triangulation changed"
+    removed, added = old-new, new-old
+    assert sum(removed.values()) == sum(added.values())
+    for changes in (removed, added):
+        for (triangle, material), count in changes.items():
+            assert all(struct.unpack_from("<i", v, 4)[0] == support_height for v in triangle), \
+                "a material changed outside the actual support plane"
+    inspection = [m for m in new_materials if struct.unpack_from("<I", m)[0] == 0x747c81]
+    assert len(inspection) == 1, "expected one authored inspection material"
+    color, metal, rough, texture, flags = struct.unpack("<IHHII", inspection[0])
+    assert metal < 6554 and rough > 55049 and texture == 0xffffffff and flags == 0
+    assert all(material == inspection[0] for triangle, material in added)
+    support_faces = sum(count for (triangle, material), count in new.items() if material == inspection[0])
+    assert support_faces == 6, "inspection material must cover only the six existing support triangles"
+    return {"geometry_and_normals_unchanged": True, "changed_triangles": sum(added.values()),
+        "inspection_triangles": support_faces, "support_height_m": support_height/scale,
+        "material_count_before": len(old_materials), "material_count_after": len(new_materials),
+        "inspection_srgb": [116, 124, 129], "inspection_metallic": metal/65535,
+        "inspection_roughness": rough/65535}
+
+
+def rebuild_tray(args):
+    """Narrow material candidate: preserve every other runtime byte and contract."""
+    evidence = ROOT/"tmp/mesh-weaver/tray-material-candidate"
+    evidence.mkdir(parents=True, exist_ok=True)
+    tray = PUBLIC/"rf_mesh_weaver_tray.rmesh"
+    protected = {PUBLIC/("rf_mesh_weaver_"+name+".rmesh"): None
+                 for name in PARTS if name != "tray"}
+    protected[HEADER] = None
+    protected = {path: path.read_bytes() for path in protected}
+    before, layout_bytes = tray.read_bytes(), LAYOUT.read_bytes()
+    description = json.loads(layout_bytes)
+    (evidence/"before.rmesh").write_bytes(before)
+    candidate_layout = evidence/"source-layout.json"
+    run([args.blender, "--background", "--factory-startup", "--python-exit-code", "1",
+         "--python", ROOT/"tools/blender/generate_mesh_weaver.py", "--",
+         "--output", SOURCE, "--layout", candidate_layout, "--part", "tray"])
+    generated = json.loads(candidate_layout.read_text(encoding="utf-8"))["components"]["tray"]
+    assert generated == {k: v for k, v in description["components"]["tray"].items() if k != "runtime"}, \
+        "authored tray geometry or pivot changed"
+    try:
+        run([sys.executable, ROOT/"tools/assets/import_asset.py", "--no-build",
+             "--tool-dir", args.tool_dir.resolve(), "--force", "--output-root", PUBLIC,
+             MANIFESTS/"rf_mesh_weaver_tray.asset.json"])
+        audit()
+        after_layout = json.loads(LAYOUT.read_text(encoding="utf-8"))
+        old_runtime = description["components"]["tray"].pop("runtime")
+        new_runtime = after_layout["components"]["tray"].pop("runtime")
+        assert description == after_layout, "mechanical, support or blueprint contact contract changed"
+        after = tray.read_bytes()
+        report = audit_tray_material_change(before, after,
+            after_layout["tray_motion"]["support_surface"]["runtime_height_local"])
+        assert all(path.read_bytes() == original for path, original in protected.items()), \
+            "an unrelated runtime part or generated mechanical header changed"
+    except BaseException:
+        tray.write_bytes(before)
+        LAYOUT.write_bytes(layout_bytes)
+        for path, original in protected.items():
+            if path.read_bytes() != original:
+                path.write_bytes(original)
+        raise
+    report.update(before_sha256=hashlib.sha256(before).hexdigest(),
+        after_sha256=hashlib.sha256(after).hexdigest(), runtime_before=old_runtime,
+        runtime_after=new_runtime, other_parts_byte_identical=True, mechanical_contract_identical=True)
+    (evidence/"after.rmesh").write_bytes(after)
+    (evidence/"audit.json").write_text(json.dumps(report, indent=2)+"\n", encoding="utf-8", newline="\n")
+    print("Tray-only material candidate:", json.dumps(report), flush=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--blender", default="E:/Blender 5.2/blender.exe")
     parser.add_argument("--tool-dir", type=Path, default=ROOT/"build-windows")
     parser.add_argument("--audit-only", action="store_true")
+    parser.add_argument("--part", choices=("tray",),
+                        help="Rebuild only the tray material candidate; preserve all other runtime assets")
     args = parser.parse_args()
+    if args.part:
+        if args.audit_only:
+            parser.error("--part and --audit-only are separate operations")
+        rebuild_tray(args)
+        return
     if not args.audit_only:
         PUBLIC.mkdir(parents=True, exist_ok=True)
         MANIFESTS.mkdir(parents=True, exist_ok=True)

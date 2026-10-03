@@ -24,6 +24,12 @@ PARTS = ("base", "column", "tray", "terminal", "emitter_mount",
 COLORS = ((180, 191, 198), (37, 46, 57), (104, 124, 139),
           (214, 220, 217), (215, 124, 53), (124, 177, 181))
 MATERIAL_NAMES = ("shell", "graphite", "alloy", "ceramic", "warning", "optics")
+# Keep the accepted tray surround unchanged across the corrected sRGB importer.
+# These are the existing runtime RGB bytes, authored explicitly rather than
+# retaining the old converter's inaccurate linear-light approximation.
+TRAY_SURROUND_SRGB = {0: (172, 183, 191), 1: (34, 41, 51),
+                      2: (94, 114, 129), 4: (210, 114, 47)}
+TRAY_INSPECTION_SRGB = (116, 124, 129)
 MAX_TRIANGLES = {"base": 3600, "column": 1200, "tray": 1100,
                  "terminal": 1300, "emitter_mount": 900,
                  "emitter_yoke": 700, "emitter_core": 1100,
@@ -224,7 +230,11 @@ def build_tray(b):
     # including the shotgun butt at X=-.469 m after its 70-degree product yaw.
     # The side guards remain higher but outside all supported gun footprints.
     b.octagon((0, .065, 0), (1.006, .012, .456), 2, .020)
-    b.octagon((0, .071, 0), (.990, .006, .440), 1, .020)
+    contact = b.octagon((0, .071, 0), (.990, .006, .440), 1, .020)
+    # Only the existing upward contact face receives the matte inspection
+    # finish. Its vertices, triangulation, sides and support height stay fixed.
+    contact.data.materials.append(b.materials[6])
+    contact.data.polygons[1].material_index = 1
 
 
 def build_terminal(b):
@@ -617,6 +627,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--layout", type=Path)
+    parser.add_argument("--part", choices=PARTS,
+                        help="Export one independent component without changing the assembly source")
     parser.add_argument("--audit-clearance", type=Path, metavar="RMESH_DIRECTORY")
     parser.add_argument("--pose-csv", type=Path, help="Optional real pose trajectory for an additional frame clearance audit")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:])
@@ -639,11 +651,24 @@ def main():
         shader = mat.node_tree.nodes.get("Principled BSDF")
         shader.inputs["Metallic"].default_value = (.30, .65, .78, .12, .20, .18)[index]
         shader.inputs["Roughness"].default_value = (.69, .62, .44, .73, .61, .34)[index]
+    tray_materials = list(materials)
+    for index, color in TRAY_SURROUND_SRGB.items():
+        mat = materials[index].copy()
+        mat.name = "mw_tray_"+MATERIAL_NAMES[index]
+        rgba = (*linear(color), 1.0)
+        mat.diffuse_color = rgba
+        mat.node_tree.nodes.get("Principled BSDF").inputs["Base Color"].default_value = rgba
+        tray_materials[index] = mat
+    inspection = material("mw_tray_inspection", linear(TRAY_INSPECTION_SRGB))
+    inspection.node_tree.nodes.get("Principled BSDF").inputs["Metallic"].default_value = .08
+    inspection.node_tree.nodes.get("Principled BSDF").inputs["Roughness"].default_value = .86
+    tray_materials.append(inspection)
     description = layout()
     description["components"] = {}
     objects = {}
-    for name in PARTS:
-        b = Component(materials, precise=name in ("emitter_yoke", "emitter_core", "emitter_petal"))
+    for name in ((args.part,) if args.part else PARTS):
+        b = Component(tray_materials if name == "tray" else materials,
+                      precise=name in ("emitter_yoke", "emitter_core", "emitter_petal"))
         BUILDERS[name](b)
         obj, metrics = finish(b, name)
         objects[name] = obj
@@ -653,6 +678,10 @@ def main():
             export_animations=False, export_skins=False, export_morph=False,
             export_texcoords=False, export_normals=True, export_materials="EXPORT")
         print(obj.name, metrics["triangles"], "triangles", metrics["bounds_m"], flush=True)
+    if args.part:
+        bpy.ops.wm.save_as_mainfile(filepath=str(args.output/("mesh_weaver_"+args.part+".blend")))
+        args.layout.write_text(json.dumps(description, indent=2)+"\n", encoding="utf-8", newline="\n")
+        return
     frame, metrics = make_frame(objects, description, materials)
     description["components"]["frame"] = metrics
     bpy.ops.export_scene.gltf(filepath=str(args.output/(frame.name+".glb")),

@@ -505,7 +505,7 @@
             201
           ]
         ],
-        "sha256": "83f14695ff30cd52f9f05bde86e938bb9b70c2e773656efad5f05b8434d3ccf9"
+        "sha256": "afba4b39e9059602936dbda40e250bf06afbac516c8de519214b7e6c8ef5cc57"
       }
     },
     "column": {
@@ -549,7 +549,7 @@
             28
           ]
         ],
-        "sha256": "617f7ebf014e5899604e18a6334f80de1100df0687938a5280961fe2d701baae"
+        "sha256": "4b2fa823d5d1c5cab9866fba9be1a158afd534b459aa5f85d4c34d5884e0352d"
       }
     },
     "tray": {
@@ -577,8 +577,8 @@
         "file": "rf_mesh_weaver_tray.rmesh",
         "vertices": 552,
         "triangles": 296,
-        "primitives": 4,
-        "materials": 4,
+        "primitives": 5,
+        "materials": 5,
         "position_scale": 232,
         "quantization_degenerate_triangles": 0,
         "bounds_local": [
@@ -593,7 +593,7 @@
             107
           ]
         ],
-        "sha256": "921c7f6b7e441f6fb4b5edb70354bfb89348d0096ae722d19556f20080d3f57f"
+        "sha256": "284eb05fe1b0af1bfcc5da33cb8938242114bf11141b830d105f3622dbfdcc29"
       }
     },
     "terminal": {
@@ -637,7 +637,7 @@
             28
           ]
         ],
-        "sha256": "e35f85ab9ed2ee79ddafd515da7a1566bf166d4ff7fb9070e01b57757992290b"
+        "sha256": "4c8f9b96fd67868ba28e9a01fb3e024b2e439ee956cdbdfc0bb0e8f6cb9eddff"
       }
     },
     "emitter_mount": {
@@ -681,7 +681,7 @@
             -3
           ]
         ],
-        "sha256": "df779ccedcda26c059040ea1ea554b192326eec89cef83a8ec9ded9fbf418501"
+        "sha256": "880d211a2f34e0e97714131624d9e1f1d0c77d65a4080c16b74e463030f4f1d8"
       }
     },
     "emitter_yoke": {
@@ -725,7 +725,7 @@
             208
           ]
         ],
-        "sha256": "6218dc73ec303d92c0c43fede27708373a43941b243f2134260758f6afa8b6c2"
+        "sha256": "a5a2931fa46223f2cb8e69925f252c339e7a241e12b329feacf8cf4c228198d8"
       }
     },
     "emitter_core": {
@@ -769,7 +769,7 @@
             457
           ]
         ],
-        "sha256": "0dcdc80323a1cc1fdbd72a3a17291867f00040e7dad5df3af1e1cdf26e971890"
+        "sha256": "385c7874605973fd9fd452d3e9f0de1a6010949227f63c6226b17904800fc39e"
       }
     },
     "emitter_petal": {
@@ -813,7 +813,7 @@
             138
           ]
         ],
-        "sha256": "b5fbb9be5799e2ba4dcced315baf8dc643046a3e4ecafb2d35571b385c6606c8"
+        "sha256": "d80fc06b7a99ce36e5bffce9dbbdae1eacaa005cf926e1698805fff019235336"
       }
     },
     "frame": {
@@ -857,7 +857,7 @@
             244
           ]
         ],
-        "sha256": "c8f908d9a7a711e8049aad190fb0446c52c2d652855ad36e122b27e1855b783b"
+        "sha256": "38ca553a591e804bd0d8812c71cc26280ee74563910fcbf11df8ba9e8c0994fe"
       }
     }
   },

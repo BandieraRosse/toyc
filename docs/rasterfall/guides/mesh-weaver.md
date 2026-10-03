@@ -23,6 +23,16 @@
 Runtime 提交状态与左右增益，唯一音频线程混合独立机器声部，不占用八个战斗音效声部。
 原创 PCM 按实际输出采样率生成；换图和音频关闭会清理旧任务声音，不写入 Game 或网络快照。
 
+要直接进入机器前方自由操作，在新的 PowerShell 窗口运行：
+
+```powershell
+$env:RF_WEAVER_VIEW='interaction'
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --skip-boot --renderer gpu-scene --gpu-normal-scene mesh-weaver 0
+```
+
+这是正常时钟与输入入口，不会自动开始制造；E 打开终端，方向键选择，Enter 执行，Esc 关闭。
+M 切换已有 RTS 视角，滚轮缩放、WASD 平移，再按 M 返回第一人称。
+
 ## 资产与蓝图
 
 - `python tools/mesh_weaver_assets.py --help`：生成和审计机器部件、清单与布局头。
@@ -34,6 +44,13 @@ Runtime 提交状态与左右增益，唯一音频线程混合独立机器声部
 - `python tools/mesh_weaver_lab.py --help`：复现前哨站独立实验地块。
 
 源 GLB/Blend 在私有资产目录；公开 RMESH、生成器、清单和测量目录进入版本控制。
+已有新版原生资产工具后，`python tools/mesh_weaver_assets.py` 完整重建总装 Blend、九件 GLB/RMESH、
+布局和机械头，并核对量化几何、承托点及工作角域。作者色为 sRGB；生成器先转为线性 GLB 因子，
+导入器按标准 sRGB 编码运行色。单件迭代结束后应执行这条完整命令，保持总装源与运行部件一致。
+`python tools/mesh_weaver_assets.py --part tray` 仅重建托盘，并保留其他运行部件与机械布局头的字节。
+中央承托顶面采用独立哑光中灰，外框保留已接受的运行色；这个入口检查实际三角面的坐标、法线、
+绕序、接触高度及四枪承托点不变，避免新版颜色导入器顺带改变整机。前后 RMESH 与报告保存在
+`tmp/mesh-weaver/tray-material-candidate/`，不自动 stage 或运行游戏。
 服务线由 `tools/blender/generate_mesh_weaver_service_links.py` 原创参数化生成，无外部贴图或模型。
 独立静态 `mesh_weaver_service_links` 保留机器地块原点，布局清单记录 RF1、电源机和机器插口坐标；
 两线及少量压线夹沿设备后侧布置，电源机西侧接线盒直接贴壳，不进入动画网格或玩法输电网络。
@@ -87,3 +104,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_mesh_weaver.ps1 -B
 保留相同地块、RF1、电源、镜头和天空。active 在预热中开始真实 AK 任务，进入采样前已有动态资源；
 如果任务提前结束或暂停，样本无效。报告分别保存整帧、GPU、准备阶段、绘制数和上传量，
 多轮交替运行，不能把单次差值当作全园区保证。
+
+`NativeCodex.ps1 test` 与 `package` 会在构建和暂存前执行一次蓝图 `--check` 门禁。
+缺私有源时仍须通过公开运行资产和物理适配校验；有源时额外核对完整源统计。发现过期缓存即失败，
+不能仅重编主程序沿用旧计量；先用原始源重生成并审阅测量差异。
