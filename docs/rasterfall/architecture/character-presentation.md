@@ -34,6 +34,8 @@ rifle fire；共享 rifle sampler 在 AK 移动时保持低位持枪，停止移
 竖持时右手握枪、左臂放下；胸前斜持保持枪体与胸部间隙；低持放松在肋侧。目标、移动和特殊动作
 优先中断待机。历史、随机数与姿态权重归 presentation，CPU cache 与 Scene sidecar 冻结同一输入，
 不增加 Game/session 或网络字段。动作与中断合同见[动画求值](animation-architecture.md)。
+位置插值副本同时复制权威 `combat_time_ms`；新增实验 AI、补充模块角色和 Block 的采样时钟
+必须与正式 roster 一致，不能因未复制标量而停在初始低头姿态。
 
 成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 瞄准/胸部避让/双臂 IK → 附件。
 CPU modular pose cache 将该次方向、采样时间和权重纳入键，并按 combat generation 区分槽位复用。
@@ -174,18 +176,21 @@ owner 的既有退休规则管理。缺失资源显示安装错误，重新关�
 共享肩托瞄准、双臂握点 IK 与武器 placement；`rf_gpu_scene_pose_body` 保留原站立/步行兼容入口。
 目录预览与游戏实例使用同一握持求值，不额外补偿枪械位置或手腕方向。目录预览仍不代表换弹、
 近战、倒地等全部玩法动作已经适配。
+持枪闲置台位由展示 owner 用独立历史调用正式 `rasterfall_rifle_sample`，再显式传入冻结的 rifle 输入；
+按展示时钟随机停留和切换，pose 提取器不保存历史。指定 `RF_GPU_CHARACTER_IDLE_POSE` 时才固定单一姿态。
 
 `RIFLE CYCLE` 是 RF 模型区东侧的三模型循环展示，控制与时钟仍归统一实验区 runtime。
 `render/rf_outpost_rifle_cycle.inc` 用显式时间生成三条同步路线、朝向、仰俯/左右角度、瞄准/低位权重和反冲；
 采样不依赖前一帧，不生成玩法射击、目标或伤害。停止、暂停和性能独占沿用[实验区合同](../reference/experiment-labs.md)。
-Block 使用程序角色冻结值，独立保存瞄准角度和下身时间；Humanoid 使用现有 rifleman recipe 与只读 game 副本；
+Block 使用程序角色冻结的共享 rifle 输入和下身时间；Humanoid 使用现有 rifleman recipe 与只读 game 副本；
 RF-C01 使用 `rf_gpu_scene_pose_body_sample`，显式传入完整朝向、上下身时间和 rifle 输入，不读取诊断环境变量。
 两种骨骼角色共用正式 composition、握点求解和武器 placement。提取与重放不推进循环时钟；移动射击保留下身步态。
 枪口位置从 finalized weapon socket 求值并随 pose 冻结，闪光由 Scene EFFECTS 消费，不写入玩法特效事件或动态灯。
 目录资源由 RF 模型区与循环区共用，最后一个使用区关闭才释放 CPU resource；缺失 RF-C01 时另外两种仍可展示。
 
 共享 Humanoid 和 RF-C01 的持枪指节来自 action composition，可换衣物继续使用同一最终骨架；
-肘部平面同时考虑目标掌骨朝向。姿态正确性包含腕部与前臂的关系及指节包握，不能仅由挂点误差签收。
+肘部平面同时考虑目标掌骨朝向和身体外侧方向，胸前斜持及单手举枪增加外展，极端仰俯减少外展。
+姿态正确性包含腕部与前臂的关系及指节包握，不能仅由挂点误差签收。
 RF-C01 的单表面眼球由私有 eyes 部件与不透明基础色图拥有，renderer 不增加眼部深度偏移或材质排序特例；
 诊断方法见[角色保真](../guides/character-fidelity.md)。
 
@@ -201,6 +206,9 @@ procedural item，并在只读的 game 副本上用现有 local pose 提取模�
 展示身份不占 gameplay 槽位。不同区域的可见性和时钟由各自的 presentation owner 管理。
 Scene 在冻结后为本次实际插入展示副本的槽位写入同一展示时钟，不从已取模的玩法动作时间推算
 完整步态周期；慢帧、首次晚采样与后端切换仍与 CPU 使用相同相位。未标记的真实角色保留自身时钟。
+动作台位使用 AK；往返线保留对应等级装备。持枪历史按台位独立保存，CPU 与 Scene 消费同一采样值；
+静止台使用实机随机闲置逻辑，关闭或时间回退重置历史。Scene 只覆盖明确标记的展示槽位，
+不借用其他台位的历史，也不让游戏时钟替代展示时钟。
 
 GPU Scene 的模块化队员 pose 求值由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
 `rf_gpu_scene_pose_extract_at`（单 actor fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、

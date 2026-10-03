@@ -109,7 +109,8 @@ int rf_gpu_scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
 }
 
 int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
-    uint64_t time_ms,int action,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
+    uint64_t time_ms,int action,int x,int y,int z,int cy,
+    const struct rasterfall_rifle_pose_input *rifle,struct rf_gpu_scene_pose_v1 *out)
 {
     struct rf_gpu_scene_body_sample sample={0};
     if (action<RF_GPU_SCENE_BODY_IDLE || action>RF_GPU_SCENE_BODY_WALK_RIFLE) return -1;
@@ -125,6 +126,7 @@ int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
         int t=sample.action_time_ms;
         sample.rifle.recoil_milli=t<35?t*1000/35:t<180?(180-t)*1000/145:0;
     }
+    if(rifle)sample.rifle=*rifle;
     const char *pitch=getenv("RF_GPU_CHARACTER_AIM_PITCH");
     const char *yaw=getenv("RF_GPU_CHARACTER_AIM_YAW");
     const char *distance=getenv("RF_GPU_CHARACTER_AIM_DISTANCE");
@@ -132,7 +134,10 @@ int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
     const char *idle=getenv("RF_GPU_CHARACTER_IDLE_POSE");
     if(idle && action==RF_GPU_SCENE_BODY_RIFLE_IDLE) {
         int pose=atoi(idle);
-        if(pose>=1 && pose<=RASTERFALL_RIFLE_IDLE_COUNT)sample.rifle.idle_milli[pose-1]=1000;
+        if(pose>=1 && pose<=RASTERFALL_RIFLE_IDLE_COUNT) {
+            memset(&sample.rifle,0,sizeof(sample.rifle));
+            sample.rifle.idle_milli[pose-1]=1000;
+        }
     }
     if(pitch)sample.rifle.pitch_mdeg=atoi(pitch)*1000;
     if(yaw)sample.rifle.yaw_mdeg=atoi(yaw)*1000;
@@ -145,7 +150,7 @@ int rf_gpu_scene_pose_body(int body_id,uint64_t frame,uint64_t world,
     uint64_t time_ms,int walk,int x,int y,int z,int cy,struct rf_gpu_scene_pose_v1 *out)
 {
     return rf_gpu_scene_pose_body_action(body_id,frame,world,time_ms,
-        walk ? RF_GPU_SCENE_BODY_WALK : RF_GPU_SCENE_BODY_IDLE,x,y,z,cy,out);
+        walk ? RF_GPU_SCENE_BODY_WALK : RF_GPU_SCENE_BODY_IDLE,x,y,z,cy,NULL,out);
 }
 
 static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,

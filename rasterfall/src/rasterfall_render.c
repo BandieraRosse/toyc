@@ -87,7 +87,7 @@ struct rasterfall_actor_action_layers {
     struct rasterfall_rifle_history rifle;
 };
 static struct rasterfall_actor_action_layers
-    actor_action_layers[TOY_GAME_MAX_ACTORS];
+    actor_action_layers[TOY_GAME_MAX_ACTORS + 1];
 static int active_character_palette_override;
 static uint32_t active_character_hidden_material_mask;
 /* Scoped borrowed final palette: clothing never evaluates animation or IK. */
@@ -7067,7 +7067,9 @@ static int render_actor_relaxed_rifle(struct toy_renderer *renderer,const struct
     }
     for(int side=0;side<2;++side) {
         int shoulder=side?205:-205;
-        int ex=(int)((shoulder+hands[side][0])*.5)+(side?55:-55);
+        double opening=85+single*65+chest*55+low*20;
+        if(!side)opening*=1-single*.6;
+        int ex=(int)((shoulder+hands[side][0])*.5+(side?opening:-opening));
         int ey=(int)((-180+hands[side][1])*.5)-65;
         int ez=(int)(hands[side][2]*.35);
         pixels+=draw_limb_segment(renderer,camera,x,z,sy,cy,shoulder,-180,0,ex,ey,ez,40,color);
@@ -8157,6 +8159,7 @@ struct modular_equipment_submission {
 };
 
 static int outpost_actor_locomotion_time(int actor_id);
+static const struct rasterfall_rifle_pose_input *outpost_actor_rifle_input(const struct toy_game_actor *actor);
 static int render_modular_ai_teammate(struct toy_renderer *renderer,
     const struct camera *camera, const struct toy_game_actor *actor,
     int actor_index, struct modular_equipment_submission *deferred)
@@ -8263,8 +8266,10 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
         additive = RASTERFALL_ACTION_RIFLE_RECOIL;
     }
     if (!debug_actor) {
-        rasterfall_rifle_sample(actor,(unsigned)(active_presentation_game ? active_presentation_game->combat_time_ms : 0),
-            &actor_action_layers[actor_index].rifle,&rifle);
+        if(actor_index==TOY_GAME_MAX_ACTORS && actor->actor_id>=10000 && actor->actor_id<10070)
+            rifle=*outpost_actor_rifle_input(actor);
+        else rasterfall_rifle_sample(actor,(unsigned)(active_presentation_game ? active_presentation_game->combat_time_ms : 0),
+                &actor_action_layers[actor_index].rifle,&rifle);
         rasterfall_actor_evasion_sample(actor, &actor_action_layers[actor_index].evasion,
                                          &evasion);
         if (evasion.weight_milli) {
@@ -10215,6 +10220,9 @@ void rasterfall_render_set_motion_presentation(
     presentation_game.primitive_count =
         active_session->game_state.primitive_count;
     presentation_game.flow_probe_active = 0;
+    /* Supplemental actors and Block bodies sample the same simulation clock
+     * as registered actors; interpolation must not leave it at zero. */
+    presentation_game.combat_time_ms = active_session->game_state.combat_time_ms;
     presentation_game.update_profile = NULL;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; ++i) {
         const struct rasterfall_motion_point *a = &previous->actors[i];

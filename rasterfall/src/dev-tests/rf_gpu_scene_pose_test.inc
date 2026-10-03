@@ -307,11 +307,30 @@ static int scene_fixture_clock_test(void)
     frame=unpatched;
     scene_actor_freeze_fixture_clocks(&frame,clocks);
     FIXTURE_CLOCK_CHECK(!memcmp(&frame,&unpatched,sizeof(frame)));
+    /* Idle exhibits have their own clock even when the game clock is frozen.
+     * CPU and Scene must consume that same per-station rifle history. */
+    struct rasterfall_rifle_history idle_history={0};
+    struct rasterfall_rifle_pose_input idle;
+    memset(&outpost_actor_rifle_history[32],0,sizeof(outpost_actor_rifle_history[32]));
+    fixture_game.actors[0].animation.id=TOY_GAME_ANIM_IDLE;
+    fixture_game.actors[0].moving=0;
+    clocks[0].actor_id=fixture_game.actors[0].actor_id;clocks[0].rifle_valid=1;
+    for(unsigned tick=0;tick<=15000;tick+=100) {
+        outpost_actor_actions_time_us=(uint64_t)tick*1000;
+        rasterfall_rifle_sample(&fixture_game.actors[0],tick,&idle_history,&idle);
+        clocks[0].rifle=*outpost_actor_rifle_input(&fixture_game.actors[0]);
+        FIXTURE_CLOCK_CHECK(!rf_gpu_scene_local_freeze_presentation(&source,&fixture_game,
+            &camera,640,480,0,NULL,0,&frame));
+        scene_actor_freeze_fixture_clocks(&frame,clocks);
+        FIXTURE_CLOCK_CHECK(!memcmp(&frame.presentation.rifle,&idle,sizeof(idle)));
+        if(tick>=1000)FIXTURE_CLOCK_CHECK(idle.aim_milli || idle.idle_milli[0] ||
+            idle.idle_milli[1] || idle.idle_milli[2]);
+    }
 done:
     outpost_actor_actions_time_us=saved_time;
     rasterfall_model_instance_unload(&reference);
     if(failure) __printf("scene fixture clock FAIL line=%d\n",failure);
-    else __printf("scene fixture clock PASS late-first-sample/CPU-palette/replay/identity/no-game-mutation\n");
+    else __printf("scene fixture clock PASS late-first-sample/CPU-palette/replay/identity/no-game-mutation/idle-clock\n");
 #undef FIXTURE_CLOCK_CHECK
     return failure!=0;
 }
@@ -373,6 +392,62 @@ static int scene_rifle_cycle_test(void)
     return 0;
 }
 
+/* Exercise the interpolated source used by spawned lab AI, not just the
+ * sampler in isolation. Its weights must match authoritative-clock actors. */
+static int scene_idle_presentation_test(void)
+{
+    static struct rasterfall_session owner;
+    static struct rf_gpu_scene_enemy_frame_v1 captured;
+    static struct rasterfall_motion_snapshot motion;
+    struct rasterfall_session *saved_session=active_session;
+    struct toy_game *saved_game=active_presentation_game;
+    const struct rasterfall_net *saved_net=active_net;
+    struct rasterfall_world_lighting *saved_light=active_world_lighting;
+    struct rasterfall_rifle_history expected_history[2]={{0}};
+    struct rasterfall_rifle_pose_input expected[2];
+    struct camera camera={0};camera.cy=camera.pitch_cy=1024;
+    unsigned seen[2]={0};int failure=0;
+#define IDLE_SOURCE_CHECK(x) do {if(!(x)){failure=__LINE__;goto done;}}while(0)
+    memset(&owner,0,sizeof(owner));toy_game_init(&owner.game_state,1);
+    owner.world_id=RASTERFALL_WORLD_PERF_EMPTY;
+    int ids[2];
+    for(int i=0;i<2;++i) {
+        ids[i]=toy_game_add_ai(&owner.game_state,TOY_GAME_AI_LEVEL_2,i*1800,0,"IDLE");
+        struct toy_game_actor *actor=toy_game_actor_by_id(&owner.game_state,ids[i]);
+        IDLE_SOURCE_CHECK(actor);
+        actor->character_id=i?RASTERFALL_CHARACTER_RF_RIFLEMAN:RASTERFALL_CHARACTER_NONE;
+        actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
+        actor->combat_target.kind=-1;actor->animation.id=TOY_GAME_ANIM_IDLE;
+    }
+    active_session=&owner;active_net=NULL;active_world_lighting=NULL;
+    for(unsigned t=0;t<=30000;t+=100) {
+        owner.game_state.combat_time_ms=t;
+        for(int i=0;i<2;++i) {
+            rasterfall_rifle_sample(toy_game_actor_by_id(&owner.game_state,ids[i]),t,
+                &expected_history[i],&expected[i]);
+            seen[i]|=1u<<expected_history[i].idle_pose;
+        }
+        rasterfall_motion_capture(&motion,&owner.game_state);
+        rasterfall_render_set_motion_presentation(&motion,&motion,32768);
+        IDLE_SOURCE_CHECK((unsigned)active_presentation_game->combat_time_ms==t);
+        rf_gpu_scene_enemy_begin(1+t/100,987);
+        IDLE_SOURCE_CHECK(!rf_gpu_scene_actor_collect_independent(&camera,640,480));
+        IDLE_SOURCE_CHECK(!rf_gpu_scene_enemy_freeze(&captured));
+        IDLE_SOURCE_CHECK(captured.procedural_count==1 && captured.modular_count==1);
+        IDLE_SOURCE_CHECK(!memcmp(&captured.procedural[0].state.rifle,&expected[0],sizeof(expected[0])));
+        IDLE_SOURCE_CHECK(scene_actor_history.actor_count==1 &&
+            !memcmp(&scene_actor_history.actors[0].rifle,&expected_history[1],sizeof(expected_history[1])));
+    }
+    IDLE_SOURCE_CHECK((seen[0]&(seen[0]-1)) && (seen[1]&(seen[1]-1)));
+done:
+    active_session=saved_session;active_presentation_game=saved_game;
+    active_net=saved_net;active_world_lighting=saved_light;
+    if(failure)__printf("scene idle source FAIL line=%d\n",failure);
+    else __printf("scene idle source PASS interpolated-clock/Block/modular/random-holds\n");
+#undef IDLE_SOURCE_CHECK
+    return failure!=0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -391,6 +466,7 @@ int rf_gpu_scene_pose_logic_test(void)
     POSE_CHECK(!scene_equipment_pose_test());
     POSE_CHECK(!scene_clothing_pose_test());
     POSE_CHECK(!scene_fixture_clock_test());
+    POSE_CHECK(!scene_idle_presentation_test());
     /* Exercise the real network presentation adapter without sockets or a GPU.
      * Bodies behind the camera still freeze their values before raster clipping. */
     {

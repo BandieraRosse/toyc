@@ -113,7 +113,9 @@ pose，不共享 instance mutable storage，也不进入武器 placement/双手 
 在肩托警戒、右手竖持／左臂下垂、胸前斜上持枪、放松低持之间随机轮换；每次保持数秒，
 缓慢过渡且不连续重复。actor/generation 派生的独立随机序列只属于表现历史，不消耗玩法 RNG。
 发现目标、移动、重装填、切枪、近战、投掷、腾空、失能和非存活状态中断待机；战斗持枪更快接管。
-展示台和动作演示不自动触发随机待机。重复冻结同一时间不推进，actor/generation 变化或时间回退重置历史。
+展示台通过 owner 显式提供普通 AI 的只读输入、独立历史和展示时钟，复用同一随机待机逻辑；
+玩法内标记为 developer-only 或 animation-demo 的角色仍由其专用动作控制。
+重复冻结同一时间不推进，actor/generation 变化或时间回退重置历史。
 历史属于 renderer/local source；冻结帧只保存求值输入，重放不查询 Game 或更新采样器。
 
 RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
@@ -132,7 +134,8 @@ RFANIM lower/upper 与 recoil/evade additive 完成后，求解顺序为：
 5. 生成最终 palette、被动装备和武器矩阵；绘制阶段不再移动枪或手。
 
 两个握点都约束位置和掌心朝向。求腕目标时先旋转 authored socket offset，再求肩肘链和手腕；
-肘部 pole 由枪下方向及掌骨方向引导，避免直角折腕。所有武器 socket 使用 RFU，身体 socket 按
+肘部 pole 由枪下方向、掌骨方向及身体外侧方向引导；抱枪和单手举枪适量增加外展，
+极端仰俯减少外展，保留自然腕部约束。所有武器 socket 使用 RFU，身体 socket 按
 `position_scale` 换算；512 与 65536 authored units 使用同一路径。
 武器物理长度、文件轴向与握点配置属于[武器适配合同](../reference/weapon-model-adapter.md)，不属于动作 clip。
 

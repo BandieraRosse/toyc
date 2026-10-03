@@ -317,6 +317,9 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
             (side?(.35+(hip+low)*2):(-.30-(hip+low)*2))*palm[i*3];
         pole[0]+=side?-.25:.18;
         for(int i=0;i<3;++i)pole[i]=pole[i]*(1-relaxed)+(side?1:-1)*palm[i*3]*relaxed*2;
+        /* Elbow opening is body-relative, not weapon-relative: diagonal and
+         * upright holds must not drag the elbows inward with the gun roll. */
+        pole[0]+=(side?-1:1)*(.3*level+single*.65+chest*.5+low*.25);
         p->attachment_ik_previous_pole_valid=0;
         if(rasterfall_model_solve_two_bone_attachment_pose(p,p->bones[upper[side]].name,
             p->bones[fore[side]].name,p->bones[hand[side]].name,socket,&target,pole)<0)return -1;
@@ -339,7 +342,7 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
      * pose. Quaternion blending keeps the return to a two-hand grip smooth. */
     if(single>0) {
         int bones[4]={shoulders[0],upper[0],fore[0],hand[0]};
-        const int relaxed_angles[4][3]={{0,0,0},{-4,0,-82},{0,-8,0},{0,0,0}};
+        const int relaxed_angles[4][3]={{0,0,0},{-4,0,-76},{0,-8,0},{0,0,0}};
         for(int i=0;i<4;++i) {
             struct rasterfall_model_bone *b=&p->bones[bones[i]];
             struct rasterfall_animation_rotation r;

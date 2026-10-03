@@ -61,7 +61,7 @@ int rf_gpu_scene_pose_body_sample(int body_id, uint64_t frame, uint64_t world,
     int sy, int cy, struct rf_gpu_scene_pose_v1 *out);
 int rf_gpu_scene_pose_body_action(int body_id, uint64_t frame, uint64_t world,
     uint64_t time_ms, int action, int x, int y, int z, int cy,
-    struct rf_gpu_scene_pose_v1 *out);
+    const struct rasterfall_rifle_pose_input *rifle, struct rf_gpu_scene_pose_v1 *out);
 struct rasterfall_model_asset *rf_gpu_scene_fixture_map(void);
 int rf_gpu_scene_native_fixture(int frames, int fault, int fault_frame);
 int rf_gpu_scene_lighting_fixture(void);

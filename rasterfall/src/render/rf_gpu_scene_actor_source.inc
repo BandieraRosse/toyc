@@ -8,6 +8,8 @@ static struct toy_game scene_actor_fixture_game;
 struct scene_actor_fixture_clock {
     int actor_id;
     uint64_t time_ms;
+    int rifle_valid;
+    struct rasterfall_rifle_pose_input rifle;
 };
 
 static void scene_actor_freeze_fixture_clocks(struct rf_gpu_scene_local_frame *frame,
@@ -20,8 +22,10 @@ static void scene_actor_freeze_fixture_clocks(struct rf_gpu_scene_local_frame *f
         unsigned slot=actor->source_slot;
         if (slot<TOY_GAME_MAX_ACTORS && clocks[slot].actor_id>0 &&
             actor->identity.source==RF_GPU_SCENE_ACTOR_GAME &&
-            actor->identity.source_id==(unsigned)clocks[slot].actor_id)
+            actor->identity.source_id==(unsigned)clocks[slot].actor_id) {
             frame->presentations[i].lower_time_ms=clocks[slot].time_ms;
+            if(clocks[slot].rifle_valid)frame->presentations[i].rifle=clocks[slot].rifle;
+        }
     }
     if (frame->snapshot.actor_count) frame->presentation=frame->presentations[0];
 }
@@ -168,11 +172,15 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                     scene_actor_fixture_game.actors[slot]=actor;
                     fixture_clocks[slot].actor_id=actor.actor_id;
                     fixture_clocks[slot].time_ms=outpost_actor_locomotion_time(actor.actor_id);
+                    fixture_clocks[slot].rifle_valid=1;
+                    fixture_clocks[slot].rifle=*outpost_actor_rifle_input(&actor);
                     if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
                     scene_actor_restore_fixture_history(&next,actor.actor_id);
                 } else {
                     if (scene_actor_procedural(&actor,actor.x,actor.z,actor.sy,actor.cy,0,
                             RF_COLOR_AI_RIFLE,1)<0) goto fail;
+                    outpost_actor_block_rifle(&actor,&scene_enemy_capture.procedural[
+                        scene_enemy_capture.procedural_count-1].state);
                     if (actor.animation.id==TOY_GAME_ANIM_DOWNED)
                         scene_enemy_capture.procedural[
                             scene_enemy_capture.procedural_count-1].state.downed=1;
@@ -194,6 +202,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                     scene_actor_fixture_game.actors[slot]=actor;
                     fixture_clocks[slot].actor_id=actor.actor_id;
                     fixture_clocks[slot].time_ms=outpost_actor_locomotion_time(actor.actor_id);
+                    fixture_clocks[slot].rifle_valid=1;
+                    fixture_clocks[slot].rifle=*outpost_actor_rifle_input(&actor);
                     if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
                     scene_actor_restore_fixture_history(&next,actor.actor_id);
                 } else {
@@ -201,6 +211,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                         entry->level==1 ? RF_COLOR_AI_RIFLE : RF_COLOR_AI_BASIC;
                     if (scene_actor_procedural(&actor,actor.x,actor.z,
                             actor.sy,actor.cy,0,tint,1)<0) goto fail;
+                    outpost_actor_block_rifle(&actor,&scene_enemy_capture.procedural[
+                        scene_enemy_capture.procedural_count-1].state);
                 }
             }
     }
@@ -228,8 +240,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         if(scene_actor_procedural(&actor,actor.x,actor.z,actor.sy,actor.cy,0,RF_COLOR_AI_RIFLE,1)<0)goto fail;
         struct rasterfall_procedural_humanoid_state *block=
             &scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1].state;
-        block->aim_pitch_mdeg=cycle.body.rifle.pitch_mdeg;
-        block->aim_yaw_mdeg=cycle.body.rifle.yaw_mdeg;
+        block->rifle_valid=1;block->rifle=cycle.body.rifle;
         block->moving=cycle.body.walk;
         block->locomotion_time_ms=(int)(cycle.body.lower_time_ms%400);
         block->muzzle_flash=cycle.body.fire && cycle.body.action_time_ms<65;
@@ -265,7 +276,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             rasterfall_render_lab_point("rf_model_lab_area",-384+(int)(i%2)*1200,344-(int)(i/2)*1500,&x,&z);
             if (rf_gpu_scene_pose_body_action(RASTERFALL_BODY_RF_C01_V22H,
                     scene_enemy_capture.frame_id,scene_enemy_capture.world_generation,
-                    outpost_model_lab_time_us/1000,actions[i],x,-900,z,1024,pose)<0) {
+                    outpost_model_lab_time_us/1000,actions[i],x,-900,z,1024,
+                    actions[i]==RF_GPU_SCENE_BODY_RIFLE_IDLE?&outpost_model_rifle:NULL,pose)<0) {
                 __printf("RF-MODEL-LAB resource unavailable or incompatible; body=%d\n",RASTERFALL_BODY_RF_C01_V22H);
                 scene_enemy_capture.modular_count=begin;
                 outpost_model_lab_status=-1;

@@ -36,10 +36,14 @@ static uint64_t outpost_actor_actions_time_us;
 static int outpost_model_lab_visible;
 static int outpost_model_lab_status;
 static uint64_t outpost_model_lab_time_us, outpost_model_lab_start_us;
+static struct rasterfall_rifle_history outpost_actor_rifle_history[70],outpost_model_rifle_history;
+static struct rasterfall_rifle_pose_input outpost_actor_rifle[70],outpost_model_rifle;
 #include "rf_outpost_rifle_cycle.inc"
 
 void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us)
 {
+    if(!visible || !outpost_model_lab_visible || time_us<outpost_model_lab_start_us)
+        memset(&outpost_model_rifle_history,0,sizeof(outpost_model_rifle_history));
     if (!visible && outpost_model_lab_visible && !outpost_rifle_cycle_visible)
         rf_gpu_scene_pose_body_release();
     if (!visible || !outpost_model_lab_visible) outpost_model_lab_status=0;
@@ -47,6 +51,14 @@ void rasterfall_render_set_outpost_model_lab(int visible,uint64_t time_us)
         outpost_model_lab_start_us=time_us;
     outpost_model_lab_visible=visible;
     outpost_model_lab_time_us=time_us-outpost_model_lab_start_us;
+    if(visible) {
+        struct toy_game_actor actor={0};
+        actor.active=1;actor.actor_id=10200;actor.kind=TOY_GAME_ACTOR_AI;
+        actor.state=TOY_GAME_ACTOR_ALIVE;actor.combat_target.kind=-1;actor.pitch_cy=1024;
+        actor.slots[0].weapon=TOY_GAME_WEAPON_AK;actor.animation.id=TOY_GAME_ANIM_IDLE;
+        rasterfall_rifle_sample(&actor,(unsigned)(outpost_model_lab_time_us/1000),
+            &outpost_model_rifle_history,&outpost_model_rifle);
+    }
 }
 
 int rasterfall_render_outpost_model_lab_status(void)
@@ -62,6 +74,8 @@ static int outpost_actor_locomotion_time(int actor_id)
 
 void rasterfall_render_set_outpost_actor_actions(int visible,uint64_t time_us)
 {
+    if(!visible || !outpost_actor_actions_visible || time_us<outpost_actor_actions_time_us)
+        memset(outpost_actor_rifle_history,0,64*sizeof(outpost_actor_rifle_history[0]));
     outpost_actor_actions_visible=visible;
     outpost_actor_actions_time_us=time_us;
 }
@@ -72,6 +86,7 @@ void rasterfall_render_set_outpost_actor_walk(int visible,uint64_t time_us)
         time_us<outpost_actor_walk_time_us ||
         time_us-outpost_actor_walk_time_us>1000000;
     if (reset) {
+        memset(outpost_actor_rifle_history+64,0,6*sizeof(outpost_actor_rifle_history[0]));
         outpost_actor_walk_step_us=time_us;
         for (int i=0;i<OUTPOST_ACTOR_WALK_COUNT;++i) {
             struct outpost_actor_walker *entry=&outpost_actor_walkers[i];
@@ -125,13 +140,32 @@ static void outpost_actor_fixture(struct toy_game_actor *actor,int family,
     actor->pitch_cy=1024;
     actor->combat_target.kind=-1;
     actor->current_slot=0;
-    actor->slots[0].weapon=family ? TOY_GAME_WEAPON_AK :
+    actor->slots[0].weapon=family || id<64 ? TOY_GAME_WEAPON_AK :
         level==0 ? TOY_GAME_WEAPON_PISTOL :
         level==1 ? TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_AK;
     actor->animation.id=action;
     actor->animation.time_ms=info->duration_ms>0 ?
         (int)((time_us/1000)%(uint64_t)info->duration_ms) : 0;
     actor->moving=action==TOY_GAME_ANIM_MOVE;
+}
+
+static const struct rasterfall_rifle_pose_input *outpost_actor_rifle_input(const struct toy_game_actor *actor)
+{
+    int index=actor->actor_id-10000;
+    uint64_t time_us=index>=64?outpost_actor_walk_step_us:outpost_actor_actions_time_us;
+    rasterfall_rifle_sample(actor,(unsigned)(time_us/1000),
+        &outpost_actor_rifle_history[index],&outpost_actor_rifle[index]);
+    return &outpost_actor_rifle[index];
+}
+
+static void outpost_actor_block_rifle(const struct toy_game_actor *actor,
+    struct rasterfall_procedural_humanoid_state *state)
+{
+    state->rifle=*outpost_actor_rifle_input(actor);
+    state->rifle_valid=state->weapon==TOY_GAME_WEAPON_AK &&
+        (actor->animation.id==TOY_GAME_ANIM_IDLE || actor->animation.id==TOY_GAME_ANIM_MOVE ||
+         actor->animation.id==TOY_GAME_ANIM_FIRE);
+    state->muzzle_flash=actor->animation.id==TOY_GAME_ANIM_FIRE && actor->animation.time_ms<65;
 }
 
 static int render_outpost_actor_lab(struct toy_renderer *renderer,
@@ -163,6 +197,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
                     0,actor.animation.id==TOY_GAME_ANIM_DOWNED,
                     actor.animation.id,actor.animation.time_ms,
                     RASTERFALL_PROFESSION_NONE,0,0,0,0,0,{0}};
+                outpost_actor_block_rifle(&actor,&state);
                 profile.body_color=color;
                 profile.leg_color=0x25354A;
                 pixels+=rasterfall_render_procedural_humanoid(renderer,camera,
@@ -187,6 +222,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
                 actor.x,actor.z,0,actor.sy,actor.cy,actor.slots[0].weapon,
                 0,0,actor.animation.id,actor.animation.time_ms,
                 RASTERFALL_PROFESSION_NONE,0,0,0,0,0,{0}};
+            outpost_actor_block_rifle(&actor,&state);
             profile.body_color=entry->level==2 ? RF_COLOR_AI_HEAVY :
                 entry->level==1 ? RF_COLOR_AI_RIFLE : RF_COLOR_AI_BASIC;
             profile.leg_color=0x25354A;
