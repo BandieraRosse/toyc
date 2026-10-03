@@ -52,6 +52,54 @@ done:
     return result;
 }
 struct rf_pane_test { int count,points[4][3]; };
+static int rf_projection_test_quad(void *context,const int p[4][3],unsigned color,int alpha)
+{
+    int *count=context;
+    (void)p;(void)color;(void)alpha;(*count)++;return 0;
+}
+static int rf_projection_beams_contract_test(void)
+{
+    struct toy_map *level=calloc(1,sizeof(*level));
+    struct rasterfall_map_state map={0};
+    struct toy_game_box spawn[TOY_MAP_MAX_ZONES];
+    struct rasterfall_interactable unused;
+    int spawn_count=0,air=0,item_count=0,result=-1,seen=0;
+    if(!level) return -1;
+    rasterfall_map_bind(&map,level,level->safe_rooms,spawn,&spawn_count,&air,&unused,&item_count);
+    if(rasterfall_map_load_runtime_overlay(&map,"rasterfall/tests/map_v1_lab_projection_beams.map")<0 ||
+       rasterfall_map_project_runtime(&map)<0) goto done;
+    for(int i=0;i<level->draw_count;++i) {
+        const struct rf_map_runtime_render *source=rasterfall_map_render_projection_at(&map,i);
+        const char *attribute=rf_map_runtime_render_attribute(source,"projection_beams");
+        int disabled=attribute && !strcmp(attribute,"0"),on_count=0,off_count=0;
+        struct toy_map_draw d=level->draw[i];
+        if(d.projection_no_beams!=disabled || strcmp(d.text,"READABLE")) goto done;
+        seen|=disabled?2:attribute?4:1;
+        for(int style=2;style<=7;++style) {
+            if(style==5 || style==6) continue;
+            d.style=style;d.projection_no_beams=0;on_count=off_count=0;
+            if(rf_lab_projection_light_emit(&d,1200,4000,rf_projection_test_quad,&on_count)<0) goto done;
+            d.projection_no_beams=1;
+            if(rf_lab_projection_light_emit(&d,1200,4000,rf_projection_test_quad,&off_count)<0 ||
+               on_count<=off_count || off_count!=(style==7?0:1)) goto done;
+            /* Disabling scattering must not remove the housing or text. */
+            struct rf_display_geometry entry={0};unsigned budget=0;
+            d.style=4;
+            if(rf_display_geometry_prepare(&entry,&d,&budget)<0) {free(entry.quads);goto done;}
+            d.projection_no_beams=0;
+            struct rf_display_test check={&entry,0};
+            if(!entry.count || rf_display_generate(&d,rf_display_test_quad,&check)<0 ||
+               check.index!=entry.count) {free(entry.quads);goto done;}
+            free(entry.quads);
+        }
+    }
+    if(seen!=7) goto done;
+    result=0;
+done:
+    rasterfall_map_unload(&map);free(level);
+    if(!result) __printf("PROJECTION-BEAMS authored/default/IR/draw/shared-emitter/body-retention passed\n");
+    return result;
+}
 static int rf_pane_test_quad(void *context,const int p[4][3],unsigned color)
 {
     struct rf_pane_test *t=context;
@@ -218,10 +266,12 @@ static int rf_scene_freeze_cache_test(struct rasterfall_map_state *map)
     struct toy_map_prop saved_prop=map->level->props[0];
     int saved_count=map->level->draw_count,result=-1;
     if(!v) return -1;
-    for(int pass=0;pass<7;++pass) {
+    for(int pass=0;pass<9;++pass) {
         uint32_t count[2]={0};uint64_t frame=pass+1,generation=pass<4?1:2;int air=pass<3?0:1;
         if(pass==2) map->level->draw[0].color^=0x123456;
         if(pass==3) map->level->draw[0]=saved_draw;
+        if(pass==7) map->level->draw[0].projection_no_beams=1;
+        if(pass==8) map->level->draw[0].projection_no_beams=0;
         rasterfall_render_terminal_set("character_lab",pass==5?"CACHE UPDATE":"OFF");
         if(rf_gpu_scene_world_render_freeze(map,air,frame,generation,v->world[0],
             RF_GPU_SCENE_MAX_WORLD_V2,&count[0],&v->render[0])<0 ||
@@ -259,6 +309,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     if (rf_lab_composite_contract_test()<0) return -12;
     if (rf_machine_screen_contract_test()<0) return -13;
     if (rf_display_geometry_test()<0) return -23;
+    if (rf_projection_beams_contract_test()<0) return -25;
     if (rf_pane_contract_test()<0) return -14;
     if (rf_electronics_contract_test()<0) return -15;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;

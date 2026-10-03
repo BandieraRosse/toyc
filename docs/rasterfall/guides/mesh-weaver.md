@@ -18,15 +18,26 @@
 按 E 领取。领取替换对应武器槽，初始弹药只有已计价的标准弹匣；后续使用行动部补给。
 离开观察范围不删除任务；换图、重开或退出不保存本实验任务。
 
+机器声音属于只读表现：附近可听到启动、低强度工作循环、暂停与完成反馈；离开范围后静音，
+再次靠近不会补播已经发生的提示。控制台打开时制造及声音继续，全局暂停使工作循环淡出。
+Runtime 提交状态与左右增益，唯一音频线程混合独立机器声部，不占用八个战斗音效声部。
+原创 PCM 按实际输出采样率生成；换图和音频关闭会清理旧任务声音，不写入 Game 或网络快照。
+
 ## 资产与蓝图
 
 - `python tools/mesh_weaver_assets.py --help`：生成和审计机器部件、清单与布局头。
+- `python tools/mesh_weaver_service_links.py`：单独生成实验地块的供电线、RF1 数据线和端接件；`--audit-only` 核对量化面、真实插口接触和走线间隙。
 - `python tools/mesh_weaver_blueprints.py --check`：校验提交的测量目录与运行资产、物理适配。
 - `python tools/test_mesh_weaver_blueprints.py`：完整资产统计、缓存失效和体积边界回归。
 - `powershell -NoProfile -ExecutionPolicy Bypass -File tools/test_mesh_weaver_geometry.ps1`：原生共享几何审计；真实贴面、遮挡、八头覆盖、孔口轴线、连续性和托盘接触。
+- `powershell -NoProfile -ExecutionPolicy Bypass -File tools/test_mesh_weaver_gpu_cache.ps1`：不打开 GPU 的原生缓存审计；真实顶点来源、稳定抽样与活跃窗口、刚性绑定、超预算降级和完整实体保留。
 - `python tools/mesh_weaver_lab.py --help`：复现前哨站独立实验地块。
 
 源 GLB/Blend 在私有资产目录；公开 RMESH、生成器、清单和测量目录进入版本控制。
+服务线由 `tools/blender/generate_mesh_weaver_service_links.py` 原创参数化生成，无外部贴图或模型。
+独立静态 `mesh_weaver_service_links` 保留机器地块原点，布局清单记录 RF1、电源机和机器插口坐标；
+两线及少量压线夹沿设备后侧布置，电源机西侧接线盒直接贴壳，不进入动画网格或玩法输电网络。
+移动这三件设备时须同步修改走线生成源并重新运行端接审计，不能只平移地图对象。
 缺少私有源时应使用已验证缓存核对运行资产，不能无声重算一份假体积。
 新增资产后 `build` 本身不保证运行目录已更新；`test` 或 `run` 的 stage 步骤会同步资源。
 
@@ -49,6 +60,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_mesh_weaver.ps1 -B
 性能对照需要相同镜头、分辨率、冷启动预热和实际 native present，分别测量
 无机器、空闲、制造状态；记录 CPU 准备、GPU 时间、上传量与 draw 数。
 逻辑回归负责账本、步长、暂停和单次领取；实机观察负责材质、机构与交互可读性。
+
+音频可先运行 `powershell -NoProfile -ExecutionPolicy Bypass -File tools/test_weaver_audio.ps1`。
+需先完成 native build；脚本链接该构建的 `lib/portable/math.o`，与游戏使用同一数学实现。
+该独立原生 CPU 测试只生成和混合 PCM，不打开音频设备或 GPU；检查采样率、循环接缝、状态边沿、
+零增益、满队列停机、换图清理及线程交接。产物位于 `tmp/weaver-audio-test/`，近远距离和音量仍需实机试听。
 
 `tools/gpu_mesh_weaver_interaction.ps1` 在正常时钟中通过真实 Windows/SDL 按键操作控制台、
 断电恢复、领取和 Enter 射击。`MESH-WEAVER-INTERACTION` 仅作只读观测，不发送制造命令，

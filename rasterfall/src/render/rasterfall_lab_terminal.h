@@ -199,7 +199,9 @@ static inline int rf_lab_projection_light_emit(const struct toy_map_draw *d,
             {d->b,d->f,back_z},{d->a,d->f,back_z}};
         if (quad(context,panel,tint,112)<0) return -1;
     }
-    if (y1<=y0) return 0;
+    /* Authored local opt-out preserves the backdrop, glyphs and projector
+     * housing. Both CPU and Scene consume this same frozen draw value. */
+    if (d->projection_no_beams || y1<=y0) return 0;
     const int corners[4][2]={{-1,-1},{1,-1},{1,1},{-1,1}};
     double phase=(time_ms%4000)*6.283185307179586/4000.0+
         ((unsigned)x^(unsigned)z)%17*0.37;

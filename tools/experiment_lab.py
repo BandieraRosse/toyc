@@ -9,7 +9,7 @@ PALETTE = {"model": ("9FB4FF", 1), "animation": ("79E8C5", 2),
            "lighting": ("FFD283", 3), "performance": ("FFAB78", 4)}
 
 def site_finish(name, width, depth, category, plot_width=16384, plot_depth=10240,
-                plot_offset_x=0):
+                plot_offset_x=0, projection_beams=True):
     """Finish the setback with ground support independent of the paint."""
     hx, hz = width // 2, depth // 2
     left, right = plot_offset_x-plot_width//2, plot_offset_x+plot_width//2
@@ -36,12 +36,13 @@ def site_finish(name, width, depth, category, plot_width=16384, plot_depth=10240
                        ('sw',-hx-220,-hz+180),('se',hx+220,-hz+180)):
         if x-180 < left or x+180 > right:
             raise ValueError("plot needs 400 RFU side clearance for corner beacons")
-        records.append(f'render id={name}_beacon_{side} kind=sign min_x={x-180} max_x={x+180} min_z={z-140} max_z={z+140} height=-896 color={color} attr.height2=-52 attr.style=7 attr.lab={name}')
+        optical = '' if projection_beams else ' attr.projection_beams=0'
+        records.append(f'render id={name}_beacon_{side} kind=sign min_x={x-180} max_x={x+180} min_z={z-140} max_z={z+140} height=-896 color={color} attr.height2=-52 attr.style=7{optical} attr.lab={name}')
         records.append(f'collision id={name}_beacon_{side}_col shape=box min_x={x-180} max_x={x+180} min_z={z-120} max_z={z+120} height=292 collision=true visible=false walkable=true color=526874 attr.lab={name}')
     return records
 
 def generate(name, x, z, category, enclosure, width=10240, depth=9216,
-             plot_width=16384, plot_depth=10240):
+             plot_width=16384, plot_depth=10240, projection_beams=True):
     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9.-]{0,35}", name):
         raise ValueError("id must be a stable map name of at most 36 characters")
     if width < 2048 or depth < 2048 or width % 2 or depth % 2:
@@ -75,13 +76,15 @@ def generate(name, x, z, category, enclosure, width=10240, depth=9216,
     records.extend(computer(name+"_button",bx,bz,name,color,lab).splitlines())
     def panel(suffix, left, right, at_z, bottom, top, style, text, dynamic=False):
         attrs={"attr.height2":top,"attr.style":style,"attr.text":text,"attr.facing":"+z","attr.texture_u":icon}
+        if not projection_beams: attrs["attr.projection_beams"]=0
         if dynamic: attrs["attr.channel"]=name
         add("render", suffix, kind="sign", min_x=left, max_x=right, min_z=at_z, max_z=at_z+20, height=bottom, color=color, **attrs)
     half=min(2400,hx-128)
     panel("_title",-half,half,-hz+400,500,1100,2,category.upper()+"_LAB")
     panel("_display",-half,half,hz-330,900,1500,4,"EXHIBIT_OFF",True)
     panel("_sample_info",-min(900,hx-128),min(900,hx-128),-800,-700,-450,3,"SAMPLE_IDLE")
-    records.extend(site_finish(lab,width,depth,category,plot_width,plot_depth))
+    records.extend(site_finish(lab,width,depth,category,plot_width,plot_depth,
+                               projection_beams=projection_beams))
     records.append("# Sample origin is local (0, 0); add local records with attr.lab="+lab)
     return "\n".join(records)+"\n"
 
@@ -93,9 +96,12 @@ def main():
     p.add_argument("--width",type=int,default=10240);p.add_argument("--depth",type=int,default=9216)
     p.add_argument("--plot-width",type=int,default=16384,help="planning plot width in RFU")
     p.add_argument("--plot-depth",type=int,default=10240,help="planning plot depth in RFU")
+    p.add_argument("--projection-beams",choices=("on","off"),default="on",
+                   help="title/display/beacon scattering beams; off retains housings, signs and backdrops")
     p.add_argument("--output",type=Path,required=True,help="new fragment file; existing files are refused")
     args=p.parse_args()
-    try: text=generate(args.id,args.x,args.z,args.category,args.enclosure,args.width,args.depth,args.plot_width,args.plot_depth)
+    try: text=generate(args.id,args.x,args.z,args.category,args.enclosure,args.width,args.depth,args.plot_width,args.plot_depth,
+                       projection_beams=args.projection_beams=="on")
     except ValueError as error: p.error(str(error))
     with args.output.open("x",encoding="utf-8",newline="\n") as f: f.write(text)
     print(f"Created {args.output}; register the control/content producer in rf_experiment_labs.inc.")

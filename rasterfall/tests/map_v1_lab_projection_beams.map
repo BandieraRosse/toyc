@@ -1,0 +1,6 @@
+map version=1 units=rfu
+world min_x=-4096 max_x=4096 min_z=-4096 max_z=4096
+region id=player_start kind=start min_x=0 max_x=0 min_z=0 max_z=0 attr.sy=0 attr.cy=1024
+render id=default_panel kind=sign min_x=-700 max_x=700 min_z=-600 max_z=-580 height=100 color=79E8C5 attr.height2=400 attr.style=4 attr.text=READABLE
+render id=quiet_panel kind=sign min_x=-700 max_x=700 min_z=600 max_z=620 height=100 color=79E8C5 attr.height2=400 attr.style=4 attr.text=READABLE attr.projection_beams=0
+render id=explicit_panel kind=sign min_x=-700 max_x=700 min_z=1600 max_z=1620 height=100 color=79E8C5 attr.height2=400 attr.style=4 attr.text=READABLE attr.projection_beams=1

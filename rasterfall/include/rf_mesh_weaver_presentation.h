@@ -6,9 +6,25 @@
 struct rf_mesh_weaver_frame {
     int present, x, y, z;
     int phase, pause_reason, weapon, powered, output_slot;
-    unsigned serial, time_ms;
+    unsigned serial, time_ms, collected_count;
     double progress, phase_ms, phase_duration_ms;
+    int tray_pose_override;
+    double tray_extension;
 };
+
+/* Runtime-owned visual state, never Game or renderer-local history. Update
+ * once per presented frame, then publish the same immutable frame to CPU/GPU. */
+struct rf_weaver_presentation_state {
+    unsigned long long world_generation, last_time_us;
+    int valid, x, y, z, paused, returning;
+    unsigned serial, collected_count;
+    double extension, velocity;
+    double return_from, return_velocity, return_elapsed_ms, return_duration_ms;
+};
+void rf_weaver_presentation_reset(struct rf_weaver_presentation_state *);
+void rf_weaver_presentation_update(struct rf_weaver_presentation_state *,
+    struct rf_mesh_weaver_frame *, unsigned long long world_generation,
+    unsigned long long time_us, int paused);
 
 struct rf_mesh_weaver_gpu;
 

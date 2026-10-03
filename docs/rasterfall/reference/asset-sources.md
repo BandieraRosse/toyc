@@ -63,6 +63,12 @@ Research V1 八件由 `tools/blender/generate_research.py` 原创程序生成，
 生成，不引入第三方资产。公开 RMESH/TTEX 经对应 industrial manifest 和统一 importer 安装；
 本地 GLB/Blend 不提交，可由生成脚本重建。这三件的来源不适用下述旧样本来源未明结论。
 
+网格编织机九个机械组件及实验地块服务线是项目原创参数化几何，生成源分别为
+`tools/blender/generate_mesh_weaver.py` 和 `tools/blender/generate_mesh_weaver_service_links.py`。
+`assets/models/props/mesh_weaver/` 中的公开 RMESH 使用纯色材质，无第三方模型或纹理；
+私有目录内 GLB/Blend 可由对应工具重新生成，端接件与走线的地点坐标保存在独立布局清单中。
+重建、端接审计与蓝图说明见[制造实验指南](../guides/mesh-weaver.md#资产与蓝图)。
+
 `assets/fonts/gb2312-16.rfh` 的 GB2312 字形由 WenQuanYi Bitmap Song 1.0 (Hero) RC1 的 16×16
 BDF strike 确定性生成，半宽 ASCII 恢复为加入中文字体库前的 Rasterfall VGA 8×16 字形，源表为
 `assets/fonts/source/vga8x16.inc`。上游版权、GPL v2+ 字体嵌入例外、归档哈希、完整 COPYING、

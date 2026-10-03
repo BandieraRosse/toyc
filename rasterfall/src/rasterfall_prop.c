@@ -223,6 +223,9 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_MESH_WEAVER_FRAME, "mesh_weaver_frame",
       "rasterfall/assets/models/props/mesh_weaver/rf_mesh_weaver_frame.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS, "mesh_weaver_service_links",
+      "rasterfall/assets/models/props/mesh_weaver/rf_mesh_weaver_service_links.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -675,7 +678,8 @@ int rasterfall_prop_asset_logic_test(void)
                          asset->id<=RASTERFALL_PROP_ASSET_BOUNDARY_WALL) ||
                         (asset->id>=RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE &&
                          asset->id<=RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE) ||
-                        asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_FRAME;
+                        asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_FRAME ||
+                        asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS;
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
             (!visual_only &&

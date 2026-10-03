@@ -28,9 +28,10 @@ function Parse-Fields([string]$Text,[string]$Prefix){
 $MapPath=Join-Path $Package 'rasterfall/assets/maps/outpost.map'
 $MapText=[IO.File]::ReadAllText($MapPath,[Text.Encoding]::UTF8)
 $AbsentMap=Join-Path $Out 'outpost-no-weaver.map'
-$Removed=[regex]::Matches($MapText,'(?m)^(?:object id=mesh_weaver |render id=mesh_weaver_screen |collision id=mesh_weaver_(?:base_col|post_[0-3]) )[^\r\n]*(?:\r?\n|$)')
-if($Removed.Count -ne 7){throw 'Unexpected machine records; review absent map derivation'}
-$AbsentText=[regex]::Replace($MapText,'(?m)^(?:object id=mesh_weaver |render id=mesh_weaver_screen |collision id=mesh_weaver_(?:base_col|post_[0-3]) )[^\r\n]*(?:\r?\n|$)','')
+$MachineRecords='(?m)^(?:object id=mesh_weaver(?:_service_links)? |render id=mesh_weaver_screen |collision id=mesh_weaver_(?:base_col|post_[0-3]) )[^\r\n]*(?:\r?\n|$)'
+$Removed=[regex]::Matches($MapText,$MachineRecords)
+if($Removed.Count -ne 8){throw 'Unexpected machine records; review absent map derivation'}
+$AbsentText=[regex]::Replace($MapText,$MachineRecords,'')
 [IO.File]::WriteAllText($AbsentMap,$AbsentText,$Utf8)
 $SavedPath=$env:Path
 $Keys=@('RF_SCENE_PERF_FRAMES','RF_WEAVER_PERF_MODE','RF_WEAVER_VIEW','RF_GPU_SKY_TIME',

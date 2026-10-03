@@ -68,6 +68,7 @@ static void add_draw(struct toy_map *m, int type, int a, int b, int c, int d,
     if (m->draw_count >= TOY_MAP_MAX_DRAW) return;
     x=&m->draw[m->draw_count++]; x->type=type; x->a=a; x->b=b; x->c=c; x->d=d;
     x->e=e; x->f=f; x->color=col; x->texture_u=0; x->texture_v=0; x->style=0; x->facing=1; x->text[0]=0;
+    x->projection_no_beams=0;
     if (text) {
         strncpy(x->text, text, TOY_MAP_TEXT_SIZE-1);
         x->text[TOY_MAP_TEXT_SIZE-1] = 0;

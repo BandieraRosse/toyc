@@ -1160,6 +1160,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
 #include "rf_mesh_weaver_runtime.inc"
+#include "rf_mesh_weaver_audio.inc"
 #include "rf_mesh_weaver_diagnostics.inc"
 #include "rf_mesh_weaver_performance.inc"
 #include "rf_performance_lab.inc"
@@ -3939,6 +3940,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     }
     rf_render_terminal_init(options.gpu_scene_play, edge_pass_enabled);
     rf_weaver_terminal_init();
+    rf_weaver_present_reset();
     rf_labs_diagnostic_view(options.gpu_normal_view);
 #ifdef TOYC_WINDOWS
     rf_scene_perf_init(options.gpu_scene_play && options.gpu_normal_view && !options.frame_audit && !frame_limit);
@@ -4540,7 +4542,7 @@ startup_again:
         __printf("rasterfall: gameplay packet loss simulation %d%%\n",
                  net_loss_percent);
     __printf("rasterfall: pause menu uses arrows + Enter; mouse/arrows look, "
-             "WASD moves, click/Space fire (hold for SMG), R reload, "
+             "WASD moves, click/Enter fire (hold for SMG), R reload, "
              "1/2 weapons, E interact, Esc pauses/resumes\n");
     if (input_debug)
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
@@ -6195,6 +6197,9 @@ startup_again:
             rf_labs_display(session.world_id,paused ||
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play);
             rf_weaver_perf_before_frame(&session,rendered_frames);
+            rf_weaver_present_tick(&session,
+                options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
+                    (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us(),paused);
             rf_weaver_display(&session);
             {
                 struct rf_mesh_weaver_frame weaver_frame;
@@ -6290,6 +6295,7 @@ startup_again:
                             "rasterfall: GPU-required render contract failed\n");
                         break;
                     }
+                    rf_weaver_audio_update(&session,&game_runtime.render_camera,&audio,paused);
                     __fprintf(2,
                         "rasterfall: skipped frame after renderer watchdog timeout\n");
                     continue;
@@ -6297,6 +6303,7 @@ startup_again:
                 audit_render_us = rf_core_time_us(&core) - audit_render_start;
             }
             scene_pixels = game_runtime.scene_pixels;
+            rf_weaver_audio_update(&session,&game_runtime.render_camera,&audio,paused);
             if (options.gpu_frame_capture &&
                 rendered_frames + 1 == options.gpu_capture_frame)
                 core.gpu_frame.capture_path = options.gpu_frame_capture;
@@ -7008,6 +7015,7 @@ startup_again:
         }
     }
 scene_shutdown:
+    rf_weaver_present_reset();
     rf_weaver_perf_report(&session);
     rf_weaver_diag_audit(&session,"shutdown",rendered_frames);
     rasterfall_mesh_weaver_cpu_shutdown();

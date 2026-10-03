@@ -315,6 +315,90 @@ static double weaver_smooth(double v)
 static void weaver_metres(struct rf_weaver_transform *t,const double v[3])
 { for(int a=0;a<3;++a) t->position[a]=v[a]*RF_WEAVER_LOCAL_UNITS; }
 
+static double weaver_delivery_extension(const struct rf_mesh_weaver_frame *frame)
+{
+    if(frame->phase==TOY_WEAVER_READY) return 1;
+    return frame->phase==TOY_WEAVER_DELIVERING && frame->phase_duration_ms>0 ?
+        weaver_smooth(frame->phase_ms/frame->phase_duration_ms):0;
+}
+
+void rf_weaver_presentation_reset(struct rf_weaver_presentation_state *state)
+{ if(state) memset(state,0,sizeof(*state)); }
+
+static void weaver_return_finish(struct rf_weaver_presentation_state *state)
+{ state->returning=0;state->extension=state->velocity=0; }
+
+static void weaver_return_sample(struct rf_weaver_presentation_state *state,double dt_ms)
+{
+    state->return_elapsed_ms+=dt_ms;
+    double duration=state->return_duration_ms;
+    if(duration<=0 || state->return_elapsed_ms>=duration) {weaver_return_finish(state);return;}
+    double u=state->return_elapsed_ms/duration,u2=u*u,u3=u2*u;
+    /* Cubic Hermite: preserve the current velocity when shortening a return
+     * for a new calibration; reach home with zero final velocity. */
+    state->extension=weaver_clamp(state->return_from*(2*u3-3*u2+1)+
+        state->return_velocity*duration*(u3-2*u2+u),0,1);
+    state->velocity=state->return_from*(6*u2-6*u)/duration+
+        state->return_velocity*(3*u2-4*u+1);
+}
+
+static void weaver_return_begin(struct rf_weaver_presentation_state *state,double duration_ms)
+{
+    if(duration_ms<=0 || state->extension<=0) {weaver_return_finish(state);return;}
+    state->returning=1;state->return_from=state->extension;
+    /* This tangent interval makes the entire Hermite segment monotone. In
+     * normal use only the deadline is shortened, preserving the old tangent. */
+    state->return_velocity=weaver_clamp(state->velocity,-3*state->extension/duration_ms,0);
+    state->return_elapsed_ms=0;state->return_duration_ms=duration_ms;
+}
+
+void rf_weaver_presentation_update(struct rf_weaver_presentation_state *state,
+    struct rf_mesh_weaver_frame *frame,unsigned long long world_generation,
+    unsigned long long time_us,int paused)
+{
+    if(!state || !frame) return;
+    frame->tray_pose_override=0;frame->tray_extension=0;
+    if(!frame->present) {rf_weaver_presentation_reset(state);return;}
+    paused=!!(paused || !frame->powered || frame->pause_reason);
+    if(!state->valid || state->world_generation!=world_generation ||
+       state->x!=frame->x || state->y!=frame->y || state->z!=frame->z ||
+       time_us<state->last_time_us || frame->serial<state->serial ||
+       frame->collected_count<state->collected_count) {
+        rf_weaver_presentation_reset(state);
+        state->valid=1;state->world_generation=world_generation;
+        state->x=frame->x;state->y=frame->y;state->z=frame->z;
+        state->last_time_us=time_us;state->paused=paused;
+        state->serial=frame->serial;state->collected_count=frame->collected_count;
+        state->extension=weaver_delivery_extension(frame);
+    } else {
+        double dt_ms=(double)(time_us-state->last_time_us)/1000.0;
+        if(paused || state->paused) dt_ms=0;
+        state->last_time_us=time_us;state->paused=paused;
+        if(frame->phase==TOY_WEAVER_DELIVERING || frame->phase==TOY_WEAVER_READY) {
+            state->returning=0;state->velocity=0;
+            state->extension=weaver_delivery_extension(frame);
+        } else {
+            if(frame->collected_count>state->collected_count) {
+                state->velocity=0;weaver_return_begin(state,400);
+                /* The collection happened since the last displayed frame;
+                 * start from its exact visible position, never a guessed time. */
+                dt_ms=0;
+            }
+            if(state->returning) weaver_return_sample(state,dt_ms);
+            if(state->returning && frame->phase==TOY_WEAVER_CALIBRATING) {
+                double available=frame->phase_duration_ms-frame->phase_ms;
+                double remaining=state->return_duration_ms-state->return_elapsed_ms;
+                if(available<remaining) weaver_return_begin(state,available);
+            }
+            /* If a very late frame skipped calibration entirely, the return
+             * deadline has already passed. Do not carry it into fabrication. */
+            if(frame->phase==TOY_WEAVER_WEAVING) weaver_return_finish(state);
+        }
+        state->serial=frame->serial;state->collected_count=frame->collected_count;
+    }
+    frame->tray_pose_override=1;frame->tray_extension=state->extension;
+}
+
 static unsigned weaver_growth_lower(const struct rf_weaver_mesh *mesh,double threshold)
 {
     unsigned lo=0,hi=mesh->count;
@@ -466,17 +550,17 @@ void rf_weaver_pose_sample(const struct rf_mesh_weaver_frame *f,
     weaver_metres(&pose->bones[0],rf_mesh_weaver_tray_position_m);
     rf_weaver_transform_axis(&pose->bones[41],1,TOY_WEAVER_PRODUCT_YAW_DEG*radians);
     weaver_metres(&pose->bones[41],rf_mesh_weaver_build_center_m);
-    double delivery=f->phase==TOY_WEAVER_READY ? 1 :
-        f->phase==TOY_WEAVER_DELIVERING ? weaver_smooth(phase) : 0;
+    double delivery=weaver_delivery_extension(f);
+    double tray=f->tray_pose_override?weaver_clamp(f->tray_extension,0,1):delivery;
     if(gun && gun->count) {
         double supported=rf_mesh_weaver_tray_position_m[1]*RF_WEAVER_LOCAL_UNITS+
             weaver_round(rf_mesh_weaver_tray_support_height_m*RF_WEAVER_LOCAL_UNITS)-gun->minimum[1];
         pose->bones[41].position[1]+=(supported-pose->bones[41].position[1])*delivery;
     }
     for(int axis=0;axis<3;++axis) {
-        double displacement=rf_mesh_weaver_tray_delivery_translation_m[axis]*RF_WEAVER_LOCAL_UNITS*delivery;
-        pose->bones[0].position[axis]+=displacement;
-        pose->bones[41].position[axis]+=displacement;
+        double displacement=rf_mesh_weaver_tray_delivery_translation_m[axis]*RF_WEAVER_LOCAL_UNITS;
+        pose->bones[0].position[axis]+=displacement*tray;
+        pose->bones[41].position[axis]+=displacement*delivery;
     }
     for(int h=0;h<8;++h) {
         const struct rf_mesh_weaver_head_layout *layout=&rf_mesh_weaver_heads[h];

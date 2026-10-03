@@ -2104,7 +2104,15 @@ $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RAST
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/render/rf_mesh_weaver_cpu.inc $(RASTERFALL_INC)/rf_mesh_weaver_presentation.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_runtime.inc $(RASTERFALL_SRC)/rf_mesh_weaver_diagnostics.inc $(RASTERFALL_INC)/rf_weaver_blueprints_generated.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_performance.inc
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_audio.inc $(RASTERFALL_INC)/rasterfall_weaver_audio.h
+$(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_audio_self.o: $(RASTERFALL_SRC)/rasterfall_audio_weaver.inc $(RASTERFALL_INC)/rasterfall_weaver_audio.h
 $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
+
+# The presentation map value is embedded by session and frozen Scene records.
+# Recompile all game consumers when its layout changes, including the self lane.
+$(APP_EXTRA_OBJS_rasterfall) $(SELF_APP_EXTRA_OBJS_rasterfall) $(BUILD)/rasterfall.o $(BUILD)/rasterfall_self.o: $(RASTERFALL_INC)/toy_map.h
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h
+$(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/dev-tests/rf_experiment_lab_test.inc
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

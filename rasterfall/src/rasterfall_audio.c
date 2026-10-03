@@ -7,6 +7,8 @@
 
 #define SFX_BLOCK_FRAMES 512
 
+#include "rasterfall_audio_weaver.inc"
+
 static const char *sfx_asset_names[TOY_SFX_MOLOTOV_BREAK + 1] = {
     "gunshot", "dry_fire", "reload_start", "reload_done",
     "hit_marker", "kill", "bite", "death", "shove", "shove_hit",
@@ -52,10 +54,11 @@ static void *audio_thread_func(void *arg)
 {
     struct rasterfall_audio *audio = (struct rasterfall_audio *)arg;
     short play_buf[SFX_BLOCK_FRAMES * 2];
-    while (!audio->quit) {
+    while (!__atomic_load_n(&audio->quit, __ATOMIC_ACQUIRE)) {
         long ret;
         audio_drain_events(audio);
         toy_sfx_render(&audio->sfx, play_buf, SFX_BLOCK_FRAMES);
+        rf_weaver_audio_mix(audio->weaver, play_buf, SFX_BLOCK_FRAMES);
         ret = toy_audio_write(audio->output, play_buf, SFX_BLOCK_FRAMES);
         if (ret < 0) break;
     }
@@ -66,9 +69,9 @@ int rasterfall_audio_start(struct rasterfall_audio *audio,
                            struct toy_audio *output)
 {
     int kind;
-    if (!audio || !output) return -1;
+    if (!audio || !output || audio->running) return -1;
     audio->output = output;
-    audio->quit = 0;
+    __atomic_store_n(&audio->quit, 0, __ATOMIC_RELEASE);
     toy_sfx_init(&audio->sfx, TOY_SFX_RATE);
     for (kind = 0; kind <= TOY_SFX_MOLOTOV_BREAK; kind++)
         if (audio->assets[kind].blob)
@@ -76,7 +79,11 @@ int rasterfall_audio_start(struct rasterfall_audio *audio,
                                (const short *)audio->assets[kind].data,
                                audio->assets[kind].frames);
     toy_sfx_music(&audio->sfx, 1);
+    audio->weaver = rf_weaver_audio_create(output->rate);
     if (pthread_create(&audio->thread, NULL, audio_thread_func, audio) != 0) {
+        rf_weaver_audio_destroy(audio->weaver);
+        audio->weaver = NULL;
+        audio->output = NULL;
         return -1;
     }
     audio->running = 1;
@@ -88,10 +95,18 @@ int rasterfall_audio_start(struct rasterfall_audio *audio,
 void rasterfall_audio_stop(struct rasterfall_audio *audio)
 {
     if (!audio->running) return;
-    audio->quit = 1;
+    __atomic_store_n(&audio->quit, 1, __ATOMIC_RELEASE);
     pthread_join(audio->thread, NULL);
+    rf_weaver_audio_destroy(audio->weaver);
+    audio->weaver = NULL;
     audio->output = NULL;
     audio->running = 0;
+}
+
+void rasterfall_audio_weaver(struct rasterfall_audio *audio,
+    const struct rasterfall_weaver_audio_input *input)
+{
+    if (audio && audio->running) rf_weaver_audio_publish(audio->weaver, input);
 }
 
 void rasterfall_audio_play_events(struct rasterfall_audio *audio,

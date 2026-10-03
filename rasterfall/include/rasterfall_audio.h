@@ -5,8 +5,11 @@
 #include "toy_assets.h"
 #include "toy_game.h"
 #include "pthread.h"
+#include "rasterfall_weaver_audio.h"
 
 #define RASTERFALL_AUDIO_EVENT_RING 32
+
+struct rasterfall_weaver_audio_bus;
 
 struct rasterfall_audio {
     struct toy_audio *output;
@@ -17,6 +20,8 @@ struct rasterfall_audio {
     pthread_t thread;
     volatile int quit;
     int running;
+    /* Private presentation bus: publish on main, mix on the audio thread. */
+    struct rasterfall_weaver_audio_bus *weaver;
     /* Include shove and melee effects as well as the original clips. */
     struct toy_sound_asset assets[TOY_SFX_MOLOTOV_BREAK + 1];
 };

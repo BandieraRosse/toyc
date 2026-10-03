@@ -125,7 +125,17 @@ static void rf_weaver_terminal_click(struct rasterfall_session *s,
     rf_weaver_terminal_activate(s, row == 0 && pointer_x < x + 90 ? -1 : 1);
 }
 
-static void rf_weaver_frame(const struct rasterfall_session *s,
+static struct rf_weaver_presentation_state rf_weaver_present_state;
+static struct rf_mesh_weaver_frame rf_weaver_presented_frame;
+
+static void rf_weaver_present_reset(void)
+{
+    rf_weaver_presentation_reset(&rf_weaver_present_state);
+    memset(&rf_weaver_presented_frame,0,sizeof(rf_weaver_presented_frame));
+    rf_weaver_presented_frame.output_slot=-1;
+}
+
+static void rf_weaver_frame_source(const struct rasterfall_session *s,
     struct rf_mesh_weaver_frame *frame)
 {
     const struct toy_mesh_weaver *w;
@@ -143,6 +153,7 @@ static void rf_weaver_frame(const struct rasterfall_session *s,
         rf_weaver_selection()->geometry.weapon : w->blueprint.weapon;
     frame->powered = w->enabled && w->supply.power_on && w->supply.energy_kj > 0.0;
     frame->serial = w->job_serial;
+    frame->collected_count = w->collected_count;
     frame->progress = w->phase == TOY_WEAVER_IDLE ? 0.0 : w->progress;
     frame->phase_ms = w->phase_ms;
     frame->phase_duration_ms = w->phase == TOY_WEAVER_CALIBRATING ?
@@ -151,6 +162,26 @@ static void rf_weaver_frame(const struct rasterfall_session *s,
     frame->time_ms = (unsigned)w->elapsed_ms;
     if (s->weaver_item_serial && w->phase == TOY_WEAVER_READY)
         frame->output_slot = s->weaver_item_index;
+}
+
+/* One clock sample and state update for both render owners. Neither accessor
+ * advances visual time or projects a second, potentially different snapshot. */
+static void rf_weaver_present_tick(const struct rasterfall_session *s,
+    uint64_t time_us,int paused)
+{
+    rf_weaver_frame_source(s,&rf_weaver_presented_frame);
+    rf_weaver_presentation_update(&rf_weaver_present_state,&rf_weaver_presented_frame,
+        s?s->scene_local.world_generation:0,time_us,paused);
+}
+
+static void rf_weaver_frame(const struct rasterfall_session *s,
+    struct rf_mesh_weaver_frame *frame)
+{
+    if(!s || !rf_weaver_present_state.valid ||
+       rf_weaver_present_state.world_generation!=s->scene_local.world_generation) {
+        memset(frame,0,sizeof(*frame));frame->output_slot=-1;return;
+    }
+    *frame=rf_weaver_presented_frame;
 }
 
 static void rf_weaver_display(const struct rasterfall_session *s)

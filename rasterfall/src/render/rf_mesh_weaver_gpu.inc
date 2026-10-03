@@ -9,8 +9,17 @@
 #define RF_WEAVER_GPU_VERTEX_LIMIT 65535u
 #define RF_WEAVER_GPU_MACHINE_BONES 41u
 #define RF_WEAVER_GPU_EFFECT_VERTICES 768u
+#define RF_WEAVER_GPU_POINT_LIMIT 256u
+#define RF_WEAVER_GPU_POINT_VERTICES 24u
 
 struct rf_weaver_gpu_edge { int point[2][3]; double threshold; };
+/* One quantized topology position, with its actual incident source face and
+ * corner retained for audit. The face's reveal threshold owns this marker. */
+struct rf_weaver_gpu_point {
+    int position[3];
+    double threshold;
+    unsigned face, corner;
+};
 
 struct rf_weaver_gpu_run {
     unsigned first, count;
@@ -24,6 +33,8 @@ struct rf_weaver_gpu_mesh {
     unsigned run_count, vertex_count;
     struct rf_weaver_gpu_edge *edges;
     unsigned edge_count, edge_first;
+    struct rf_weaver_gpu_point *points;
+    unsigned point_count, point_first;
 };
 struct rf_mesh_weaver_gpu {
     struct rf_weaver_gpu_mesh machine;
@@ -98,7 +109,8 @@ static void rf_weaver_gpu_mesh_close(struct rf_gpu_graphics *graphics,
     struct rf_weaver_gpu_mesh *mesh)
 {
     if(mesh->resource)rf_gpu_graphics_resource_destroy(graphics,mesh->resource);
-    rf_weaver_mesh_free(&mesh->source);free(mesh->edges);memset(mesh,0,sizeof(*mesh));
+    rf_weaver_mesh_free(&mesh->source);free(mesh->edges);free(mesh->points);
+    memset(mesh,0,sizeof(*mesh));
 }
 static void rf_weaver_gpu_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
@@ -219,7 +231,69 @@ static int rf_weaver_gpu_edges_create(struct rf_weaver_gpu_mesh *mesh)
         first=end;
     }
     qsort(edges,unique,sizeof(*edges),rf_weaver_gpu_edge_growth_compare);
+    /* Effect detail may thin out on large unsupported previews; the original
+     * faces always fit first. A selected idle blueprint must remain loadable. */
+    unsigned capacity=(RF_WEAVER_GPU_VERTEX_LIMIT-mesh->source.count*3)/12;
+    if(unique>capacity) {
+        for(unsigned i=0;i<capacity;++i)edges[i]=edges[(size_t)i*unique/capacity];
+        unique=capacity;
+    }
     mesh->edges=edges;mesh->edge_count=unique;mesh->edge_first=mesh->source.count*3;
+    return 0;
+}
+static int rf_weaver_gpu_marker_position_compare(const void *pa,const void *pb)
+{
+    const struct rf_weaver_gpu_point *a=pa,*b=pb;
+    int result=rf_weaver_gpu_point_compare(a->position,b->position);
+    if(result)return result;
+    if(a->face!=b->face)return a->face<b->face?-1:1;
+    return a->corner<b->corner?-1:a->corner>b->corner;
+}
+static int rf_weaver_gpu_marker_growth_compare(const void *pa,const void *pb)
+{
+    const struct rf_weaver_gpu_point *a=pa,*b=pb;
+    if(a->threshold!=b->threshold)return a->threshold<b->threshold?-1:1;
+    return rf_weaver_gpu_point_compare(a->position,b->position);
+}
+static int rf_weaver_gpu_points_create(struct rf_weaver_gpu_mesh *mesh)
+{
+    unsigned count=mesh->source.count*3;
+    struct rf_weaver_gpu_point *points=malloc((size_t)count*sizeof(*points));
+    if(!points)return -1;
+    for(unsigned i=0;i<count;++i) {
+        struct rf_weaver_gpu_point *p=&points[i];
+        p->face=i/3;p->corner=i%3;
+        const struct rf_weaver_face *face=&mesh->source.faces[p->face];
+        memcpy(p->position,face->vertex[p->corner].position,sizeof(p->position));
+        p->threshold=face->threshold;
+    }
+    qsort(points,count,sizeof(*points),rf_weaver_gpu_marker_position_compare);
+    unsigned unique=0;
+    double span=mesh->source.maximum[2]-mesh->source.minimum[2];
+    for(unsigned first=0;first<count;) {
+        unsigned end=first+1,best=first;
+        double target=span>0?(points[first].position[2]-mesh->source.minimum[2])/span:.5;
+        while(end<count && !rf_weaver_gpu_point_compare(points[first].position,points[end].position)) {
+            /* Prefer the incident face closest to the vertex's long-axis
+             * position. Ties retain the stable material/source/corner order. */
+            if(fabs(points[end].threshold-target)<fabs(points[best].threshold-target))best=end;
+            ++end;
+        }
+        points[unique++]=points[best];first=end;
+    }
+    qsort(points,unique,sizeof(*points),rf_weaver_gpu_marker_growth_compare);
+    mesh->point_first=mesh->edge_first+mesh->edge_count*12;
+    unsigned capacity=(RF_WEAVER_GPU_VERTEX_LIMIT-mesh->point_first)/RF_WEAVER_GPU_POINT_VERTICES;
+    if(capacity>RF_WEAVER_GPU_POINT_LIMIT)capacity=RF_WEAVER_GPU_POINT_LIMIT;
+    if(unique>capacity) {
+        /* Evenly stratified over sorted growth order, including both ends.
+         * Selection is immutable and needs neither random sampling nor scans
+         * in the per-frame producer. */
+        for(unsigned i=0;i<capacity;++i)
+            points[i]=points[capacity>1?(size_t)i*(unique-1)/(capacity-1):0];
+        unique=capacity;
+    }
+    mesh->points=points;mesh->point_count=unique;
     return 0;
 }
 static void rf_weaver_gpu_bind_edge(uint32_t *bind,const struct rf_weaver_gpu_edge *edge)
@@ -229,9 +303,9 @@ static void rf_weaver_gpu_bind_edge(uint32_t *bind,const struct rf_weaver_gpu_ed
     unsigned smallest=0;
     for(unsigned k=1;k<3;++k)if(fabs(direction[k])<fabs(direction[smallest]))smallest=k;
     axis[smallest]=1;rf_weaver_gpu_cross(direction,axis,sides[0]);
-    rf_weaver_gpu_normalize(sides[0],.0006*RF_WEAVER_LOCAL_UNITS);
+    rf_weaver_gpu_normalize(sides[0],.0011*RF_WEAVER_LOCAL_UNITS);
     rf_weaver_gpu_cross(direction,sides[0],sides[1]);
-    rf_weaver_gpu_normalize(sides[1],.0006*RF_WEAVER_LOCAL_UNITS);
+    rf_weaver_gpu_normalize(sides[1],.0011*RF_WEAVER_LOCAL_UNITS);
     static const unsigned corners[6]={0,1,2,0,2,3};
     for(unsigned ribbon=0;ribbon<2;++ribbon) {
         int points[4][3];
@@ -249,6 +323,23 @@ static void rf_weaver_gpu_bind_edge(uint32_t *bind,const struct rf_weaver_gpu_ed
         }
     }
 }
+static void rf_weaver_gpu_bind_point(uint32_t *bind,const struct rf_weaver_gpu_point *point)
+{
+    int corners[6][3];
+    int radius=rf_weaver_gpu_round(.0022*RF_WEAVER_LOCAL_UNITS);
+    for(unsigned i=0;i<6;++i) {
+        memcpy(corners[i],point->position,sizeof(corners[i]));
+        corners[i][i/2]+=(i&1)?-radius:radius;
+    }
+    unsigned at=0;
+    for(unsigned x=0;x<2;++x)for(unsigned y=0;y<2;++y)for(unsigned z=0;z<2;++z) {
+        struct rf_weaver_face face={0};
+        memcpy(face.vertex[0].position,corners[x],sizeof(corners[x]));
+        memcpy(face.vertex[1].position,corners[2+y],sizeof(corners[x]));
+        memcpy(face.vertex[2].position,corners[4+z],sizeof(corners[x]));
+        rf_weaver_gpu_bind_face(bind+at*66,&face,0);++at;
+    }
+}
 static int rf_weaver_gpu_weapon_create(struct rf_gpu_scene_world_gpu_probe *probe,
     int weapon,const uint32_t *palette)
 {
@@ -257,8 +348,8 @@ static int rf_weaver_gpu_weapon_create(struct rf_gpu_scene_world_gpu_probe *prob
     uint32_t *bind=NULL;int result=-1;
     if(!profile || rf_weaver_mesh_load(&mesh->source,profile->model_path,weapon)<0 ||
         mesh->source.count>RF_WEAVER_GPU_VERTEX_LIMIT/3)goto done;
-    if(rf_weaver_gpu_edges_create(mesh)<0 || mesh->edge_count>(RF_WEAVER_GPU_VERTEX_LIMIT-mesh->source.count*3)/12)goto done;
-    mesh->vertex_count=mesh->source.count*3+mesh->edge_count*12;
+    if(rf_weaver_gpu_edges_create(mesh)<0 || rf_weaver_gpu_points_create(mesh)<0)goto done;
+    mesh->vertex_count=mesh->point_first+mesh->point_count*RF_WEAVER_GPU_POINT_VERTICES;
     bind=malloc((size_t)mesh->vertex_count*22*sizeof(*bind));if(!bind)goto done;
     for(unsigned face=0;face<mesh->source.count;++face) {
         const struct rf_weaver_face *f=&mesh->source.faces[face];
@@ -272,8 +363,10 @@ static int rf_weaver_gpu_weapon_create(struct rf_gpu_scene_world_gpu_probe *prob
     }
     for(unsigned i=0;i<mesh->edge_count;++i)
         rf_weaver_gpu_bind_edge(bind+(size_t)(mesh->edge_first+i*12)*22,&mesh->edges[i]);
+    for(unsigned i=0;i<mesh->point_count;++i)
+        rf_weaver_gpu_bind_point(bind+(size_t)(mesh->point_first+i*RF_WEAVER_GPU_POINT_VERTICES)*22,&mesh->points[i]);
     if(rf_weaver_gpu_create_resource(probe->graphics,mesh,bind,palette,15)<0)goto done;
-    if(!probe->quiet)__printf("SCENE-WEAVER weapon=%d triangles=%u materials=%u preview_edges=%u immutable_bind=1\n",weapon,mesh->source.count,mesh->run_count,mesh->edge_count);
+    if(!probe->quiet)__printf("SCENE-WEAVER weapon=%d triangles=%u materials=%u preview_edges=%u topology_points=%u vertices=%u immutable_bind=1\n",weapon,mesh->source.count,mesh->run_count,mesh->edge_count,mesh->point_count,mesh->vertex_count);
     result=0;
 done:
     free(bind);if(result)rf_weaver_gpu_mesh_close(probe->graphics,mesh);return result;
@@ -294,6 +387,15 @@ static unsigned rf_weaver_gpu_edge_limit(const struct rf_weaver_gpu_mesh *mesh,d
     while(lo<hi) {
         unsigned middle=lo+(hi-lo)/2;
         if(mesh->edges[middle].threshold<=threshold)lo=middle+1;else hi=middle;
+    }
+    return lo;
+}
+static unsigned rf_weaver_gpu_point_limit(const struct rf_weaver_gpu_mesh *mesh,double threshold)
+{
+    unsigned lo=0,hi=mesh->point_count;
+    while(lo<hi) {
+        unsigned middle=lo+(hi-lo)/2;
+        if(mesh->points[middle].threshold<=threshold)lo=middle+1;else hi=middle;
     }
     return lo;
 }
@@ -367,6 +469,21 @@ static int rf_weaver_gpu_work_light(struct rf_gpu_scene_world_gpu_probe *probe,f
     if(!probe || !probe->weaver || !probe->weaver->work_light_valid || !position)return 0;
     memcpy(position,probe->weaver->work_light_position,3*sizeof(float));return 1;
 }
+static double rf_weaver_gpu_beam_half_width(const double a[3],const double b[3],
+    const double eye[3],const struct camera *camera,uint32_t width)
+{
+    double q[3];
+    for(unsigned k=0;k<3;++k)q[k]=(a[k]+b[k])*.5-eye[k];
+    double yaw_depth=(q[0]*camera->sy+q[2]*camera->cy)/1024.0;
+    double depth=(q[1]*camera->pitch_sy+yaw_depth*camera->pitch_cy)/1024.0;
+    double half_width=.00085*RF_WEAVER_LOCAL_UNITS;
+    /* Match Scene's perspective at the beam midpoint. A ~one-pixel ribbon
+     * stays a thin physical beam: no unlimited distant screen-space growth. */
+    unsigned focal=width*3/4;
+    if(focal && depth>0 && .5*depth/focal>half_width)half_width=.5*depth/focal;
+    if(half_width>.0025*RF_WEAVER_LOCAL_UNITS)half_width=.0025*RF_WEAVER_LOCAL_UNITS;
+    return half_width;
+}
 static int rf_weaver_gpu_effects_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_mesh_weaver_frame *frame,const struct rf_weaver_pose *pose,
     const struct camera *camera,uint32_t width,uint32_t height,uint32_t *draws)
@@ -394,9 +511,10 @@ static int rf_weaver_gpu_effects_prepare(struct rf_gpu_scene_world_gpu_probe *pr
     }
     unsigned targets=0;double average[3]={0,0,0};
     if(frame->powered && !frame->pause_reason)for(unsigned h=0;h<8;++h)if(pose->beam_mask&(1u<<h)) {
+        double beam_width=rf_weaver_gpu_beam_half_width(pose->beam_start[h],pose->beam_end[h],eye,camera,width);
         if(rf_weaver_gpu_effect_line(owner,pose->beam_start[h],pose->beam_end[h],eye,
-            .00085*RF_WEAVER_LOCAL_UNITS,0x5db9c5,88)<0 ||
-           rf_weaver_gpu_effect_vertex(owner,pose->beam_end[h],.0030*RF_WEAVER_LOCAL_UNITS,0xb8e6e5,210)<0)return -1;
+            beam_width,0x5db9c5,88)<0 ||
+           rf_weaver_gpu_effect_vertex(owner,pose->beam_end[h],.0036*RF_WEAVER_LOCAL_UNITS,0xd4f1f2,235)<0)return -1;
         for(unsigned k=0;k<3;++k)average[k]+=pose->beam_end[h][k];
         ++targets;
     }
@@ -496,6 +614,15 @@ static int rf_weaver_gpu_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             if(rf_weaver_gpu_append(probe,frame,camera,width,height,weapon->resource,&preview,
                 weapon->edge_first+active_start*12,(preview_start-active_start)*12,
                 frame->pause_reason?0xc99652:0x88d7dd,frame->pause_reason?68:135,0,1,draws)<0)goto fail;
+        }
+        if(!finished && weapon->point_count) {
+            const struct rf_weaver_material point_material={0xb1e4e8,.8f,0};
+            unsigned start=rf_weaver_gpu_point_limit(weapon,solid);
+            unsigned end=rf_weaver_gpu_point_limit(weapon,front);
+            if(rf_weaver_gpu_append(probe,frame,camera,width,height,weapon->resource,&point_material,
+                weapon->point_first+start*RF_WEAVER_GPU_POINT_VERTICES,
+                (end-start)*RF_WEAVER_GPU_POINT_VERTICES,
+                frame->pause_reason?0xe2b76b:point_material.color,frame->pause_reason?100:190,0,1,draws)<0)goto fail;
         }
     }
     if(rf_weaver_gpu_effects_prepare(probe,frame,&pose,camera,width,height,draws)<0)goto fail;

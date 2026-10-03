@@ -123,6 +123,120 @@ static double joint_difference(double a,double b)
     return fabs(delta);
 }
 
+static void presentation_frame(const struct toy_mesh_weaver *w,struct rf_mesh_weaver_frame *frame)
+{
+    memset(frame,0,sizeof(*frame));frame->present=1;frame->output_slot=-1;
+    frame->powered=w->enabled && w->supply.power_on && w->supply.energy_kj>0;
+    frame->phase=w->phase;frame->pause_reason=w->pause_reason;frame->weapon=w->blueprint.weapon;
+    frame->serial=w->job_serial;frame->collected_count=w->collected_count;
+    frame->progress=w->phase==TOY_WEAVER_IDLE?0:w->progress;frame->phase_ms=w->phase_ms;
+    frame->phase_duration_ms=w->phase==TOY_WEAVER_CALIBRATING?w->coefficients.calibration_ms:
+        w->phase==TOY_WEAVER_DELIVERING?w->coefficients.delivery_ms:0;
+    frame->time_ms=(unsigned)w->elapsed_ms;
+}
+
+static void audit_retraction(const struct rf_weaver_mesh *mesh,struct toy_game *game,const char *name)
+{
+    struct rf_weaver_presentation_state state={0};
+    struct rf_mesh_weaver_frame frame;
+    const unsigned long long ready_time=1000000,collect_time=1016000;
+    presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&state,&frame,7,ready_time,0);
+    struct rf_weaver_presentation_state ready_state=state;
+    struct rf_weaver_pose ready,pose;rf_weaver_pose_sample(&frame,mesh,&ready);
+    require(toy_game_weaver_collect(game,&game->actors[0])==1,"collect actual completed product");
+    struct toy_mesh_weaver authority=game->weaver;
+    presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&state,&frame,7,collect_time,0);
+    struct rf_weaver_presentation_state collected=state;
+    rf_weaver_pose_sample(&frame,mesh,&pose);
+    require(frame.phase==TOY_WEAVER_IDLE && frame.tray_extension==1,"collection starts return without restoring product");
+    require(!memcmp(&pose.bones[0],&ready.bones[0],sizeof(pose.bones[0])),"collection has zero tray position jump");
+    double previous=1,max_step=0;
+    for(unsigned ms=16;ms<=400;ms+=16) {
+        presentation_frame(&game->weaver,&frame);
+        rf_weaver_presentation_update(&state,&frame,7,collect_time+ms*1000,0);
+        require(frame.tray_extension>=0 && frame.tray_extension<=previous,"return monotone within physical rail");
+        double step=(previous-frame.tray_extension)*205;
+        if(step>max_step)max_step=step;
+        previous=frame.tray_extension;
+        struct rf_weaver_pose gpu,cpu,frozen;
+        rf_weaver_pose_sample(&frame,mesh,&gpu);rf_weaver_pose_sample(&frame,NULL,&cpu);
+        rf_weaver_pose_sample(&frame,mesh,&frozen);
+        require(!memcmp(gpu.bones,cpu.bones,sizeof(gpu.bones)),"CPU/GPU use identical idle return bones");
+        require(!memcmp(&gpu,&frozen,sizeof(gpu)),"frozen return frame does not advance while sampled");
+    }
+    require(frame.tray_extension==0 && !state.returning,"nominal return finishes at 400 ms");
+    require(max_step<12.4,"return removes the 205 mm single-frame snap");
+    require(!memcmp(&authority,&game->weaver,sizeof(authority)),"visual return consumes no Game time or resources");
+
+    struct rf_weaver_presentation_state a=collected,b=collected;
+    presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+200000,0);
+    double direct=frame.tray_extension;
+    for(unsigned ms=20;ms<=200;ms+=20) {
+        presentation_frame(&game->weaver,&frame);
+        rf_weaver_presentation_update(&b,&frame,7,collect_time+ms*1000,0);
+    }
+    require(fabs(direct-frame.tray_extension)<1e-12,"different presentation steps reach identical return freeze");
+    a=collected;presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+100000,0);
+    double held=frame.tray_extension;
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+300000,1);
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+2300000,1);
+    require(frame.tray_extension==held,"application pause freezes return");
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+2316000,0);
+    require(frame.tray_extension==held,"resume does not consume the paused wall time");
+    frame.powered=0;rf_weaver_presentation_update(&a,&frame,7,collect_time+2416000,0);
+    require(frame.tray_extension==held,"unpowered tray return is held");
+    frame.powered=1;rf_weaver_presentation_update(&a,&frame,7,collect_time+2516000,0);
+    require(frame.tray_extension==held,"restoring power does not jump the tray");
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+2616000,0);
+    require(frame.tray_extension<held,"resumed tray continues returning");
+    a=collected;presentation_frame(&game->weaver,&frame);frame.x=1;
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+1000,0);
+    require(frame.tray_extension==0 && !a.returning,"machine movement clears return state");
+    a=collected;presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&a,&frame,8,collect_time+1000,0);
+    require(frame.tray_extension==0 && !a.returning,"world change clears return state");
+    a=collected;presentation_frame(&game->weaver,&frame);
+    rf_weaver_presentation_update(&a,&frame,7,collect_time-1,0);
+    require(frame.tray_extension==0 && !a.returning,"clock rollback clears return state");
+    a=collected;frame.present=0;rf_weaver_presentation_update(&a,&frame,7,collect_time+1000,0);
+    require(!a.valid && !frame.tray_pose_override,"missing machine clears visual state");
+    a=collected;rf_weaver_presentation_reset(&a);
+    require(!a.valid && !a.returning && a.extension==0,"explicit shutdown reset clears visual state");
+
+    require(toy_game_weaver_start(game,&authority.blueprint)==TOY_WEAVER_OK,"immediately start next actual job");
+    struct rf_mesh_weaver_frame calibration;presentation_frame(&game->weaver,&calibration);
+    a=collected;presentation_frame(&authority,&frame);
+    rf_weaver_presentation_update(&a,&frame,7,collect_time+40000,0);
+    double old_extension=a.extension,old_velocity=a.velocity;
+    frame=calibration;rf_weaver_presentation_update(&a,&frame,7,collect_time+40000,0);
+    require(fabs(a.extension-old_extension)<1e-12 && fabs(a.velocity-old_velocity)<1e-12,
+        "new calibration preserves return position and velocity");
+    require(a.return_duration_ms<=300,"new calibration shortens remaining return deadline");
+    previous=a.extension;
+    for(unsigned ms=1;ms<=300;++ms) {
+        frame=calibration;frame.phase_ms=ms;
+        rf_weaver_presentation_update(&a,&frame,7,collect_time+40000+ms*1000,0);
+        require(a.extension>=0 && a.extension<=previous,"retimed Hermite return remains monotone");
+        previous=a.extension;
+    }
+    require(frame.tray_extension==0,"retimed return reaches home by calibration end");
+
+    a=ready_state;frame=calibration;
+    rf_weaver_presentation_update(&a,&frame,7,collect_time,0);
+    require(frame.tray_extension==1,"collection and next start may skip an idle rendered frame");
+    for(unsigned ms=10;ms<=300;ms+=10) {
+        toy_game_weaver_update(game,10);presentation_frame(&game->weaver,&frame);
+        rf_weaver_presentation_update(&a,&frame,7,collect_time+ms*1000,0);
+    }
+    require(game->weaver.phase==TOY_WEAVER_WEAVING && frame.tray_extension==0,
+        "immediate next actual task starts weaving with tray home");
+    __printf("%s tray_return_ms=400 collect_jump_mm=0 max_16ms_step_mm=%.6f next_job_home_ms=300\n",name,max_step);
+}
+
 /* Time derivatives use the actual Game resource rules and the production
  * math object. This protects mechanical pacing, which epsilon continuity
  * alone cannot establish. Lower compute/power rates only slow this schedule. */
@@ -165,6 +279,7 @@ static void audit_speed(const struct rf_weaver_mesh *mesh,int weapon,const char 
     require(!lit_face_changes,"consecutive lit samples never jump between faces");
     __printf("%s actual_game_1ms elapsed_ms=%.6f max_yaw_dps=%.6f max_pitch_dps=%.6f lit_face_changes=%u\n",
         name,game->weaver.elapsed_ms,max_yaw,max_pitch,lit_face_changes);
+    audit_retraction(mesh,game,name);
     free(game);
 }
 static void audit(int weapon,const char *name)

@@ -206,6 +206,8 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 
 投影 sign 样式 2/3/4 自动带半透明背景和从底座到牌面的动态散射光束；样式 7 带光束，
 不为开放菱形添加实体面板。背景和光束仅为展示几何，不新增地图记录或碰撞。
+`attr.projection_beams=0` 显式关闭该 sign 的散射光锥和细射线，保留文字、背景、图案与机壳；
+省略或 `1` 保持原外观，其他取值拒绝投影到渲染数据。CPU 和 Scene 共用此只读表现选项。
 
 透明机器窗 `kind=sign attr.style=6` 允许两种轴向：`min_z=max_z` 且 `min_x<max_x` 为正面窗；
 `min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，

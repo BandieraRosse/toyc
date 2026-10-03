@@ -102,6 +102,9 @@ struct toy_map_draw {
     int style;
     int facing; /* +1: readable from +Z; -1: readable from -Z. */
     char text[TOY_MAP_TEXT_SIZE];
+    /* Explicit presentation opt-out; zero keeps the existing scattering beams.
+     * This map/render value is not a network or serialized asset wire record. */
+    int projection_no_beams;
 };
 
 struct toy_map {
