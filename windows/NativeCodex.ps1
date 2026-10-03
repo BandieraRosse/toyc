@@ -53,11 +53,28 @@ function Get-PythonForMake {
     if (-not $python) { Fail 'python3/python not found.' }
     return (Convert-ToMsysPath $python)
 }
+function Convert-ToLegacyNativeArgument([string] $Value) {
+    # Windows PowerShell joins native arguments into a command line. Quote each
+    # argument for the CRT parser, including empty values and literal quotes.
+    $escaped = [regex]::Replace($Value, '(\\*)"', '$1$1\"')
+    $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+    return '"' + $escaped + '"'
+}
 function Invoke-Staged([string[]] $ProgramArguments) {
     if (-not (Test-Path -LiteralPath $Exe)) { Fail "staged executable missing: $Exe" }
+    $nativeArguments = $ProgramArguments
+    $argumentMode = Get-Variable PSNativeCommandArgumentPassing -ErrorAction SilentlyContinue
+    if (-not $argumentMode -or $argumentMode.Value -eq 'Legacy') {
+        $nativeArguments = @($ProgramArguments | ForEach-Object { Convert-ToLegacyNativeArgument $_ })
+    }
+    # Newer PowerShell may otherwise turn a nonzero native exit into an exception
+    # before the original code can be propagated. This is local to the function.
+    $PSNativeCommandUseErrorActionPreference = $false
     Push-Location $PackageRoot
     try {
-        & '.\rasterfall.exe' @ProgramArguments
+        # A pipeline makes PowerShell wait for a Windows-subsystem executable.
+        # Out-Host streams its output and leaves the SDL window interactive.
+        & $Exe @nativeArguments | Out-Host
         $code = $LASTEXITCODE
     } finally { Pop-Location }
     if ($code -ne 0) { exit $code }
@@ -122,7 +139,12 @@ Windows Native Codex
 
 # The wrapper owns PATH order for this lane. Existing unrelated MinGW entries
 # are intentionally not searched before this fixed MSYS2 installation.
-$env:Path = "$MingwRoot\bin;$MsysRoot\usr\bin;$env:Path"
+$inheritedSearchPath = $env:PATH
+# Some launchers supply both spellings. Normalize them before native child
+# creation; PowerShell's case-insensitive environment dictionary rejects twins.
+Remove-Item Env:Path -ErrorAction SilentlyContinue
+Remove-Item Env:PATH -ErrorAction SilentlyContinue
+$env:PATH = "$MingwRoot\bin;$MsysRoot\usr\bin;$inheritedSearchPath"
 $env:SHELL = Join-Path $MsysRoot 'usr\bin\sh.exe'
 $MsysRootForMake = $MsysRoot -replace '\\', '/'
 

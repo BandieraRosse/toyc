@@ -40,6 +40,11 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 需要交付压缩包时，显式运行 `.\windows\NativeCodex.ps1 package`，生成
 `build-windows/rasterfall-windows.zip`。
 
+wrapper 通过输出管道等待 Windows GUI 子进程真正退出，持续显示日志，并向调用者传递游戏的非零退出码；
+不能用直接调用 GUI exe 后尚未更新的 `$LASTEXITCODE` 判断验收成功。`run` 的 SDL 窗口仍可正常交互。
+Windows PowerShell 5 的参数使用逐项原生转义，保留空格、字面引号、空参数和末尾反斜杠；
+不要自行拼接命令字符串。wrapper 也会合并继承环境中的 `PATH`/`Path` 同名键。
+
 ### 验证裁量
 
 上列命令是可用入口，不是每次修改都要执行的固定流程。先判断变更是否影响玩法真值、地图通行、资源合同、渲染提交或平台生命周期，再选能检出该风险的最小验证；只有出现具体未覆盖风险或正式签收要求时才扩大范围。已经有可信实机反馈时，不为重复证明同一个局部效果再跑完整构建、package 或 GPU 验收。
