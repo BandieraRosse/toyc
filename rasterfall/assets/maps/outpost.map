@@ -887,3 +887,38 @@ render id=rf_electronics_lab_area_beacon_se kind=sign min_x=5160 max_x=5520 min_
 collision id=rf_electronics_lab_area_beacon_se_col shape=box min_x=5160 max_x=5520 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rf_electronics_lab_area
 render id=lab_reserve_fill_0 kind=floor min_x=1536 max_x=14848 min_z=-38400 max_z=-28160 height=0 color=78858A attr.style=12
 render id=lab_reserve_fill_1 kind=floor min_x=14848 max_x=17920 min_z=-35328 max_z=-28160 height=0 color=78858A attr.style=12
+
+# Atmosphere study: low industrial silhouettes in the second-row reserve.
+# Static architecture uses ordinary WORLD geometry; no exhibit clock or lights.
+lab id=atmosphere_lab_area x=9728 z=-33280 width=12288 depth=9216 category=lighting enclosure=open
+render id=atmosphere_workshop kind=box min_x=-5600 max_x=-1000 min_z=1000 max_z=3500 height=2500 color=8B9598 attr.lab=atmosphere_lab_area
+collision id=atmosphere_workshop_col shape=box min_x=-5600 max_x=-1000 min_z=1000 max_z=3500 height=2500 visible=false walkable=true attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_roof kind=platform min_x=-5780 max_x=-820 min_z=820 max_z=3680 height=2560 color=4F5C65 attr.style=2 attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_plinth kind=box min_x=-5680 max_x=-920 min_z=920 max_z=3580 height=170 color=59686F attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_door kind=sign min_x=-4350 max_x=-2700 min_z=996 max_z=996 height=-890 color=465659 attr.height2=850 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_window kind=sign min_x=-2250 max_x=-1250 min_z=996 max_z=996 height=200 color=476374 attr.height2=1050 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_number kind=sign min_x=-5350 max_x=-4650 min_z=994 max_z=994 height=550 color=AAB6BB attr.height2=1240 attr.style=1 attr.text=03 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_rib0 kind=box min_x=-5580 max_x=-5460 min_z=900 max_z=1000 height=2460 color=6B7A82 attr.lab=atmosphere_lab_area
+render id=atmosphere_workshop_rib1 kind=box min_x=-1120 max_x=-1000 min_z=900 max_z=1000 height=2460 color=6B7A82 attr.lab=atmosphere_lab_area
+render id=atmosphere_station kind=box min_x=-500 max_x=2200 min_z=2100 max_z=4300 height=1850 color=7A888D attr.lab=atmosphere_lab_area
+collision id=atmosphere_station_col shape=box min_x=-500 max_x=2200 min_z=2100 max_z=4300 height=1850 visible=false walkable=true attr.lab=atmosphere_lab_area
+render id=atmosphere_station_roof kind=platform min_x=-650 max_x=2350 min_z=1950 max_z=4450 height=1900 color=52636C attr.style=2 attr.lab=atmosphere_lab_area
+render id=atmosphere_station_glazing kind=sign min_x=0 max_x=1650 min_z=2096 max_z=2096 height=50 color=415B6C attr.height2=650 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_station_label kind=sign min_x=100 max_x=1650 min_z=2094 max_z=2094 height=710 color=A5B3B8 attr.height2=895 attr.style=1 attr.text=WEATHER attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_tower kind=box min_x=3550 max_x=4450 min_z=2050 max_z=2950 height=5150 color=87959B attr.lab=atmosphere_lab_area
+collision id=atmosphere_tower_col shape=box min_x=3500 max_x=4500 min_z=2000 max_z=3000 height=5500 visible=false walkable=false attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_sill kind=platform min_x=3050 max_x=4950 min_z=1550 max_z=3450 height=4240 color=536570 attr.style=2 attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_glazing kind=sign min_x=3050 max_x=4950 min_z=1580 max_z=1580 height=3360 color=3E5A6E attr.height2=4150 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_glass_w kind=sign min_x=3050 max_x=3050 min_z=1580 max_z=3420 height=3360 color=5C8399 attr.height2=4150 attr.style=6 attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_glass_e kind=sign min_x=4950 max_x=4950 min_z=1580 max_z=3420 height=3360 color=5C8399 attr.height2=4150 attr.style=6 attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_glass_n kind=sign min_x=3050 max_x=4950 min_z=3420 max_z=3420 height=3360 color=5C8399 attr.height2=4150 attr.style=6 attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_cap kind=platform min_x=2900 max_x=5100 min_z=1400 max_z=3600 height=5150 color=546671 attr.style=2 attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_mullion0 kind=sign min_x=3100 max_x=3200 min_z=1576 max_z=1576 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_mullion1 kind=sign min_x=3950 max_x=4050 min_z=1576 max_z=1576 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_tower_mullion2 kind=sign min_x=4800 max_x=4900 min_z=1576 max_z=1576 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z attr.lab=atmosphere_lab_area
+render id=atmosphere_mast kind=box min_x=3980 max_x=4020 min_z=2480 max_z=2520 height=7600 color=566873 attr.lab=atmosphere_lab_area
+render id=atmosphere_roof_vent kind=box min_x=-1950 max_x=-1550 min_z=2400 max_z=2900 height=3000 color=596B74 attr.lab=atmosphere_lab_area
+render id=atmosphere_aerial kind=box min_x=-4980 max_x=-4940 min_z=2980 max_z=3020 height=4800 color=5E717B attr.lab=atmosphere_lab_area
+object id=atmosphere_equipment kind=crate x=-5000 y=0 z=300 yaw=0 scale=900 attr.collision=component attr.lab=atmosphere_lab_area
+object id=atmosphere_equipment_small kind=crate x=-3900 y=0 z=300 yaw=0 scale=700 attr.collision=component attr.lab=atmosphere_lab_area
+render id=atmosphere_entry_label kind=sign min_x=-4350 max_x=-2700 min_z=994 max_z=994 height=1100 color=8CA6B4 attr.height2=1400 attr.style=1 attr.text=ATMOSPHERE_03 attr.facing=-z attr.lab=atmosphere_lab_area

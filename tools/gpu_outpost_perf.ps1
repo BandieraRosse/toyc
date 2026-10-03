@@ -5,9 +5,11 @@ param(
     [ValidateRange(120,4096)][int]$Samples=360,
     [string[]]$Views=@('sky-north','lab-computer-side','electronics-lab','lighting-lab'),
     [switch]$Compare,
+    [switch]$ComparePreparation,
     [switch]$AllLabs
 )
 $ErrorActionPreference='Stop'
+if($Compare -and $ComparePreparation){throw 'Choose one comparison axis'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
 }
@@ -27,6 +29,7 @@ function Write-Json($Value,[string]$Name){
 $SavedPath=$env:Path
 $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
+    'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
@@ -35,11 +38,11 @@ $Process=$null
 $Hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash
 Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
     rounds=$Rounds;samples=$Samples;views=$Views;all_labs=[bool]$AllLabs;compare=[bool]$Compare;
+    compare_preparation=[bool]$ComparePreparation;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;
     warmup=120;sky_scale=4;sky_time=0;clock='realtime';cap=120} 'config.json'
 try {
     [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
     [Environment]::SetEnvironmentVariable('Path',$SavedPath,'Process')
-    $env:RF_GPU_VULKAN_VENDOR_ID='0x10de'
     $env:RF_SCENE_PERF_FRAMES=[string]$Samples
     $env:RF_LABS_ALL=if($AllLabs){'1'}else{'0'}
     $env:RF_GPU_SKY_TIME='0';$env:RF_GPU_SKY_SCALE='4'
@@ -47,13 +50,16 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation){@('reference','optimized')}else{@('optimized')}
             if($Round%2 -eq 0){[array]::Reverse($Modes)}
             foreach($Mode in $Modes) {
                 $Name="r$Round-$View-$Mode"
                 foreach($Key in @('RF_GPU_SCENE_LEGACY_LAYER_COLORS','RF_GPU_SCENE_DISABLE_LAYER_CULL',
                     'RF_GPU_SCENE_DISABLE_DRAW_CULL')) {
-                    [Environment]::SetEnvironmentVariable($Key,$(if($Mode -eq 'reference'){'1'}else{'0'}),'Process')
+                    [Environment]::SetEnvironmentVariable($Key,$(if($Compare -and $Mode -eq 'reference'){'1'}else{'0'}),'Process')
+                }
+                foreach($Key in @('RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING')) {
+                    [Environment]::SetEnvironmentVariable($Key,$(if($ComparePreparation -and $Mode -eq 'reference'){'1'}else{'0'}),'Process')
                 }
                 $Argv=@('--skip-boot','--renderer','gpu-scene','--map','rasterfall/assets/maps/outpost.map',
                     '--gpu-normal-scene',$View,'0')

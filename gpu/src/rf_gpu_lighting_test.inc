@@ -69,6 +69,9 @@ static int sky_regression(struct rf_gpu_graphics *g)
     struct rf_gpu_graphics_batch_item item={0};struct rf_gpu_lighting l;
     struct rf_gpu_graphics_resource *r=NULL;int result=-1;
     int saved_reference=g->sky_reference_scan;
+    unsigned saved_scale=g->sky_scale,solar_max_error=0,rotation_max_error=0;
+    unsigned sky_scale_max_error=0,sky_scale_error_pixel=0,sky_scale_error_a=0,sky_scale_error_b=0;
+    int sky_scale_error_yaw=0;
 #define SKY_CHECK(x) do {if(!(x)){fprintf(stderr,"SKY FAIL line=%d\n",__LINE__);goto done;}}while(0)
     for(unsigned i=0;i<6;++i) {
         v[i].position[0]=corners[i][0];v[i].position[1]=corners[i][1];v[i].position[2]=1;indices[i]=i;
@@ -95,7 +98,17 @@ static int sky_regression(struct rf_gpu_graphics *g)
         g->sky_reference_scan=1;
         SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
         SKY_CHECK(!memcmp(a,b,sizeof(a)));
+        // A subpixel camera rotation must not change the cloud integration
+        // phase or cross a hard density cutoff into an unrelated bright patch.
+        ++d->view[(sample&1)?1:0];
+        SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,a,depth,96*96));
+        for(unsigned pixel=0;pixel<96*96;++pixel) for(unsigned channel=0;channel<3;++channel) {
+            unsigned ca=(a[pixel]>>(channel*8))&255,cb=(b[pixel]>>(channel*8))&255;
+            unsigned error=ca>cb?ca-cb:cb-ca;
+            if(error>rotation_max_error) rotation_max_error=error;
+        }
     }
+    SKY_CHECK(rotation_max_error<=16);
     g->sky_reference_scan=0;rf_gpu_lighting_default(&l);
     d->view[0]=0;d->view[1]=1024;d->view[2]=d->view[3]=724;
     SKY_CHECK(!rf_gpu_graphics_set_lighting(g,&l));
@@ -124,6 +137,37 @@ static int sky_regression(struct rf_gpu_graphics *g)
     SKY_CHECK(!rf_gpu_graphics_set_lighting(g,&l));
     SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
     SKY_CHECK(lighting_test_rgb(a[48*96+48])>lighting_test_rgb(b[48*96+48])+30);
+    // A small rotation sweeps the sub-degree disc across the low-resolution
+    // sample grid. Its display pixels must agree with the full-resolution
+    // reference: cloud quality is not allowed to make the solar disc jump.
+    l.sun_direction[0]=1;
+    SKY_CHECK(!rf_gpu_graphics_set_lighting(g,&l));
+    for(int yaw=-16;yaw<=16;yaw+=4) {
+        d->view[1]=yaw;
+        g->sky_scale=4;SKY_CHECK(!gfx_sky_resize(g,96,96));
+        SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,a,depth,96*96));
+        g->sky_scale=1;SKY_CHECK(!gfx_sky_resize(g,96,96));
+        SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
+        for(unsigned i=0;i<96*96;++i) for(unsigned channel=0;channel<3;++channel) {
+            unsigned ca=(a[i]>>(channel*8))&255,cb=(b[i]>>(channel*8))&255;
+            unsigned error=ca>cb?ca-cb:cb-ca;
+            if(error>sky_scale_max_error) {
+                sky_scale_max_error=error;sky_scale_error_pixel=i;
+                sky_scale_error_a=ca;sky_scale_error_b=cb;sky_scale_error_yaw=yaw;
+            }
+            // The disc remains within one pixel of the centre for this sweep.
+            // Compare the disc and inner glare, excluding the low-resolution
+            // atmosphere/cirrus and clamped reconstruction at screen edges.
+            if(i%96>=40 && i%96<56 && i/96>=40 && i/96<56 && error>solar_max_error)
+                solar_max_error=error;
+        }
+    }
+    fprintf(stdout,"SKY SOLAR scale_roi_max_error=%u full_max_error=%u full_max_xy=%u,%u full_max_values=%u,%u yaw=%d\n",
+        solar_max_error,sky_scale_max_error,sky_scale_error_pixel%96,sky_scale_error_pixel/96,
+        sky_scale_error_a,sky_scale_error_b,sky_scale_error_yaw);
+    SKY_CHECK(solar_max_error<=4);
+    g->sky_scale=saved_scale;SKY_CHECK(!gfx_sky_resize(g,96,96));
+    d->view[1]=0;
     // Zenith and lower hemisphere, including a resized target, remain valid.
     d->view[2]=1024;d->view[3]=0;
     SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
@@ -132,13 +176,65 @@ static int sky_regression(struct rf_gpu_graphics *g)
     SKY_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,b,depth,96*96));
     for(unsigned i=0;i<65*67;++i) SKY_CHECK(depth[i]==0 && lighting_test_rgb(b[i])>0);
     l.sky_cloud[3]=0;SKY_CHECK(rf_gpu_graphics_set_lighting(g,&l)<0);
-    fprintf(stdout,"SKY PASS deterministic=1 translation_independent=1 rotation=1 shared_sun=1 depth_untouched=1 opaque_occlusion=1 poles_resize=1 invalid_parameters=1 skip_reference_equal=12\n");
+    fprintf(stdout,"SKY PASS deterministic=1 translation_independent=1 rotation=1 shared_sun=1 depth_untouched=1 opaque_occlusion=1 poles_resize=1 invalid_parameters=1 skip_reference_equal=12 cloud_rotation_max_error=%u solar_rotation_samples=9 solar_scale_max_error=%u\n",rotation_max_error,solar_max_error);
     result=0;
 done:
     if(r) rf_gpu_graphics_resource_destroy(g,r);
+    if(g->sky_scale!=saved_scale) {
+        g->sky_scale=saved_scale;
+        if(gfx_sky_resize(g,g->target.width,g->target.height)<0) result=-1;
+    }
     g->sky_reference_scan=saved_reference;
     rf_gpu_lighting_default(&l);rf_gpu_graphics_set_lighting(g,&l);return result;
 #undef SKY_CHECK
+}
+static int lighting_range_regression(struct rf_gpu_graphics *g)
+{
+    struct rf_gpu_graphics_vertex v[6]={0};
+    const int corners[6][2]={{-1,-1},{1,-1},{1,1},{-1,-1},{1,1},{-1,1}};
+    uint32_t indices[6],white=0xffffff,rgba[64*64];float depth[64*64];
+    struct rf_gpu_graphics_batch_item item={0};struct rf_gpu_lighting lights;
+    struct rf_gpu_graphics_resource *r=NULL;
+    unsigned upper=0,lower=0,highlight[2]={0};int result=-1;
+#define RANGE_CHECK(x) do {if(!(x)){fprintf(stderr,"LIGHTING RANGE FAIL line=%d\n",__LINE__);goto done;}}while(0)
+    for(unsigned i=0;i<6;++i) {
+        indices[i]=i;v[i].position[0]=corners[i][0]*1024;
+        v[i].position[1]=corners[i][1]*1024;v[i].position[2]=2048;
+        for(unsigned k=0;k<3;++k) {v[i].normals[k*3+1]=23170;v[i].normals[k*3+2]=-23170;}
+    }
+    r=rf_gpu_graphics_resource_create(g,v,6,indices,6,&white,1,1);RANGE_CHECK(r);
+    item.resource=r;struct rf_gpu_graphics_draw *d=&item.draw;
+    d->translation_scale[3]=1000;d->rotation[1]=1024;d->view[1]=d->view[3]=1024;
+    d->projection[0]=d->projection[1]=64;d->projection[2]=64;d->projection[3]=48;
+    d->texture[0]=d->texture[1]=1;d->material[0]=0x808080;d->material[1]=256;
+    d->quality[2]=1;d->index_count=6;d->double_sided=1;
+    rf_gpu_lighting_default(&lights);lights.sun_color[3]=0;
+    RANGE_CHECK(!rf_gpu_graphics_resize(g,64,64) && !rf_gpu_graphics_set_lighting(g,&lights));
+    RANGE_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,rgba,depth,64*64));
+    RANGE_CHECK(depth[32*64+32]>0);upper=lighting_test_rgb(rgba[32*64+32]);
+    /* With no sun or local light, the shading normal must still distinguish
+     * the sky-facing and ground-facing sides of the same material. */
+    for(unsigned i=0;i<6;++i) for(unsigned k=0;k<3;++k) v[i].normals[k*3+1]=-23170;
+    RANGE_CHECK(!rf_gpu_graphics_triangle_resource_update(g,r,v,6));
+    RANGE_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,rgba,depth,64*64));
+    lower=lighting_test_rgb(rgba[32*64+32]);RANGE_CHECK(lower>0 && upper>lower+12);
+    /* Finite HDR highlights above display white retain their ordering through
+     * the real half-float target and tonemap, rather than both clipping white. */
+    lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
+    RANGE_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));d->material[0]=white;
+    for(unsigned i=0;i<2;++i) {
+        d->emissive=i?8.0f:4.0f;
+        RANGE_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,rgba,depth,64*64));
+        uint32_t c=rgba[32*64+32];highlight[i]=lighting_test_rgb(c);
+        RANGE_CHECK(depth[32*64+32]>0 && (c&255)<255 && ((c>>8)&255)<255 && ((c>>16)&255)<255);
+    }
+    RANGE_CHECK(highlight[1]>highlight[0]+3);
+    fprintf(stdout,"LIGHTING RANGE PASS ambient_upper=%u ambient_lower=%u hdr4=%u hdr8=%u\n",
+        upper,lower,highlight[0],highlight[1]);result=0;
+done:
+    if(r) rf_gpu_graphics_resource_destroy(g,r);
+    rf_gpu_lighting_default(&lights);rf_gpu_graphics_set_lighting(g,&lights);return result;
+#undef RANGE_CHECK
 }
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
@@ -232,6 +328,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!rf_gpu_graphics_resize(g,96,96));d->projection[0]=d->projection[1]=96;d->projection[3]=72;
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
     lights.count=RF_GPU_LIGHT_CAP+1;LIGHT_CHECK(rf_gpu_graphics_set_lighting(g,&lights)<0);
+    LIGHT_CHECK(!lighting_range_regression(g));
     LIGHT_CHECK(!sky_regression(g));
     if(getenv("RF_GPU_SKY_BENCH")) LIGHT_CHECK(!sky_benchmark(g));
     fprintf(stdout,"LIGHTING PASS shadow_pixels=%u spot_shadow_pixels=%u moving_light_pixels=%u material_pixels=%u style_pixels=%u baked_independent=1 resize=1\n",

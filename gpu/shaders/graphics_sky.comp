@@ -12,5 +12,5 @@ void main() {
     ivec2 p=ivec2(gl_GlobalInvocationID.xy),size=ivec2(lighting.counts.zw);
     if(any(greaterThanEqual(p,size))) return;
     vec2 pixel=(vec2(p)+0.5)/vec2(size)*vec2(d.projection.xy);
-    sky_image.pixels[p.y*size.x+p.x]=vec4(rf_sky(pixel),1);
+    sky_image.pixels[p.y*size.x+p.x]=rf_sky(pixel);
 }

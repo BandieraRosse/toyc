@@ -5,16 +5,18 @@ layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
 } d;
+#include "sky_view.glsl"
 layout(set=1,binding=4,std430) readonly buffer SkyImage { vec4 pixels[]; } sky_image;
-vec3 sky_fetch(ivec2 p) {
+vec4 sky_fetch(ivec2 p) {
     ivec2 size=ivec2(lighting.counts.zw);p=clamp(p,ivec2(0),size-1);
-    return sky_image.pixels[p.y*size.x+p.x].rgb;
+    return sky_image.pixels[p.y*size.x+p.x];
 }
 vec3 sky_sample() {
     vec2 p=gl_FragCoord.xy/vec2(d.projection.xy)*lighting.counts.zw-0.5;
     ivec2 lo=ivec2(floor(p));vec2 f=fract(p);
-    return mix(mix(sky_fetch(lo),sky_fetch(lo+ivec2(1,0)),f.x),
+    vec4 sample_color=mix(mix(sky_fetch(lo),sky_fetch(lo+ivec2(1,0)),f.x),
         mix(sky_fetch(lo+ivec2(0,1)),sky_fetch(lo+ivec2(1,1)),f.x),f.y);
+    return sample_color.rgb+sky_solar(sky_ray(gl_FragCoord.xy))*sample_color.a;
 }
 layout(set=0,binding=0,std430) readonly buffer Texture { uint texels[]; } tex;
 layout(location=0) in vec2 texcoord;
@@ -49,18 +51,22 @@ void main() {
     float metal=float((d.material.y>>8)&255u)/255.0;
     float emissive=float((d.material.y>>16)&255u)/16.0;
     bool stylized=d.quality.z==2;
-    vec3 radiance=base*(1.0-metal)*lighting.environment.rgb+base*emissive;
+    vec3 radiance=base*(1.0-metal)*environment_irradiance(n)+base*emissive;
     vec3 l=lighting.sun_direction.xyz;
-    radiance+=brdf(base,n,v,l,rough,metal,stylized)*lighting.sun_color.rgb*
+    if(lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0))
+      radiance+=brdf(base,n,v,l,rough,metal,stylized)*lighting.sun_color.rgb*
         lighting.sun_color.w*sun_visibility(world_position,n);
     for(int i=0;i<int(lighting.counts.x);++i) {
         Light light=lighting.lights[i];vec3 delta=light.position_radius.xyz-world_position;
-        float distance_rfu=length(delta);
-        float fade=max(1.0-pow(distance_rfu/light.position_radius.w,4.0),0.0);
-        if(fade==0.0) continue;l=delta/max(distance_rfu,0.001);
+        float distance_squared=dot(delta,delta),radius_squared=light.position_radius.w*light.position_radius.w;
+        if(distance_squared>=radius_squared) continue;
+        float normalized_squared=distance_squared/radius_squared;
+        float fade=1.0-normalized_squared*normalized_squared;
+        l=delta*inversesqrt(max(distance_squared,0.000001));
         float spot=light.direction_outer.w<0.0 ? 1.0 : smoothstep(light.direction_outer.w,
             light.inner_shadow.x,dot(-l,light.direction_outer.xyz));
-        float attenuation=fade*fade/max(pow(distance_rfu/512.0,2.0),0.04);
+        if(spot<=0.0 || (!stylized && dot(n,l)<=0.0)) continue;
+        float attenuation=fade*fade/max(distance_squared/(512.0*512.0),0.04);
         radiance+=brdf(base,n,v,l,rough,metal,stylized)*light.color_intensity.rgb*
             light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);
     }

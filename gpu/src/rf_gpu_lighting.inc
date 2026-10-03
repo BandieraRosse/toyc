@@ -13,10 +13,10 @@ void rf_gpu_lighting_default(struct rf_gpu_lighting *l)
 {
     memset(l,0,sizeof(*l));
     l->sun_direction[0]=-0.4082483f;l->sun_direction[1]=0.8164966f;l->sun_direction[2]=-0.4082483f;
-    l->sun_color[0]=1.0f;l->sun_color[1]=0.94f;l->sun_color[2]=0.84f;l->sun_color[3]=3.5f;
-    l->environment[0]=0.10f;l->environment[1]=0.13f;l->environment[2]=0.18f;l->environment[3]=1.0f;
+    l->sun_color[0]=1.0f;l->sun_color[1]=0.94f;l->sun_color[2]=0.84f;l->sun_color[3]=2.9f;
+    l->environment[0]=0.16f;l->environment[1]=0.19f;l->environment[2]=0.24f;l->environment[3]=1.0f;
     l->sky_cloud[0]=0.42f;l->sky_cloud[1]=1.3f;l->sky_cloud[2]=1.5f;l->sky_cloud[3]=1.1f;
-    l->sky_weather[2]=17.0f;l->sky_weather[3]=1.0f;
+    l->sky_weather[2]=11.0f;l->sky_weather[3]=1.0f;
 }
 int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,const struct rf_gpu_lighting *l)
 {

@@ -26,7 +26,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | FPS/RTS 切换、俯视相机与指挥 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c` |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |
-| GPU 天空、体积云与气氛 | [GPU 天空架构](architecture/gpu-sky.md)、[天空验证](guides/gpu-sky.md)、[设计研究](reference/sky-v2-design-study.md) | `gpu/shaders/sky.glsl`、`graphics_sky.comp`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_sky_study.ps1`；CPU 旧天空保留在 `src/rasterfall_sky.c` |
+| GPU 天空、体积云与前哨站气氛实验区 | [GPU 天空架构](architecture/gpu-sky.md)、[天空验证](guides/gpu-sky.md)、[设计研究](reference/sky-v2-design-study.md) | `gpu/shaders/sky.glsl`、`graphics_sky.comp`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_sky_study.ps1`；`atmosphere-lab` 固定镜头与园区静态建筑，CPU 旧天空保留在 `src/rasterfall_sky.c` |
 | CPU/Scene 默认功能、高级能力与大厅渲染控制终端 | [正常帧渲染 baseline](reference/rendering-baseline.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Outpost V1](reference/outpost-hall-v1.md) | `src/rf_render_terminal.inc`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | 独立 GPU Scene 与直接来源预览 | [计划入口](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
 | GPU 实时光照与实验区 | [GPU 光照架构](architecture/gpu-lighting.md)、[实验与验证](guides/gpu-lighting.md) | `gpu/src/rf_gpu_lighting.inc`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_lighting_lab.ps1` |
@@ -56,7 +56,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 新角色包合同、材质能力与接入缺口审计 | [合同草案](reference/character-package-v1.md)、[资产工作流](guides/asset-pipeline.md#新角色接入前的能力清点) | `tools/assets/rfchar_audit.py`、`tools/assets/rfchar_material_contract.py`；源清点与材质元数据校验，不替代完整资产合同或游戏验收 |
 | 人形美术生成、敌方枪手组件与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图、`tools/rf_combat_character_round.py` 公开共享身体/gear 与近远景、动作序列 |
-| 私有角色脸部、头发的独立创作与组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md)、[发束边界与底发参考](reference/rf-c01-hair-surface-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、裸头枕部接口迁移、共同头壳包络与底发对已锁定侧后束的只读贴合、局部拓扑、表情往返与固定几何转光审阅 |
+| 私有角色头脸、头发与身体的独立创作和组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md)、[发束边界与底发参考](reference/rf-c01-hair-surface-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、头壳与发束接口、身体服装与关节局部拓扑、动作/表情采样、部件隔离和固定视图审阅 |
 | 新一代角色体系、私有动漫内容与 GPU 实验场接入 | [暂停的角色计划](plans/private-anime-character-gpu.md)、[实验场预览](guides/gpu-scene-fixture.md#rf_model_lab-角色预览)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-normal-scene model-lab 0`、目录 body pose 与分块 GPU 蒙皮；RF_MODEL_LAB 分色动作预览已接通，版本化角色包、纹理、完整动作与 LOD 继续按活动计划推进 |
 | 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |

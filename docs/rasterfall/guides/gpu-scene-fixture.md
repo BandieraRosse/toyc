@@ -2,9 +2,11 @@
 
 ## RF_MODEL_LAB 角色预览
 
-本地安装 `rasterfall/private-assets/models/rf_c01_v022h.rmesh` 后构建 package。
-该资源从锁定的 `authoring/build/v022h/rf_c01-v022h.glb` 通过现有 `rfchar_import.py`
-和 Windows `glb-inspect.exe` 生成，不覆盖私有创作候选。当前支持不透明分色和双面材质。
+本地安装 `rasterfall/private-assets/models/rf_c01_v023a.rmesh` 后构建 package。
+该资源从锁定的 `authoring/build/v023a/rf_c01-v023a.glb` 通过现有 `rfchar_import.py`
+和 Windows `glb-inspect.exe` 生成，使用 `--position-scale 65536` 保留局部细节；不覆盖旧候选。
+V23a 仅修订身体，头部与头发沿用 V22h；当前支持不透明分色和双面材质。
+创作和验证见[身体修订记录](../archive/character-body-v023a-20261003.md)。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene model-lab 0

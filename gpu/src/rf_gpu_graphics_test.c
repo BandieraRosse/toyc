@@ -82,6 +82,67 @@ done:
     return result;
 }
 
+static int resource_bounds_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *offset=NULL,*reference=NULL;
+    struct rf_gpu_graphics_vertex local[6],rebased[6];
+    struct rf_gpu_graphics_batch_item item={0};
+    struct rf_gpu_graphics_stats before,after;
+    uint32_t ix[6]={0,1,2,3,4,5};
+    const int pivot[3]={4096,1024,2048};
+    const int rotations[4][2]={{0,1024},{1024,0},{724,724},{-724,724}};
+    int result=-1;
+    CHECK(g && rf_gpu_graphics_resize(g,128,96)==0);
+    for (unsigned i=0;i<6;++i) {
+        rebased[i]=local[i]=vertices[indices[i]];
+        for (unsigned k=0;k<3;++k) local[i].position[k]+=pivot[k];
+    }
+    offset=rf_gpu_graphics_resource_create(g,local,6,ix,6,texels,2,2);
+    reference=rf_gpu_graphics_resource_create(g,rebased,6,ix,6,texels,2,2);
+    CHECK(offset && reference);
+    /* Equivalent world geometry with a distant local pivot must retain all
+     * visible pixels under yaw, scale, vertical pivot and large map positions. */
+    for (unsigned trial=0;trial<4;++trial) {
+        struct rf_gpu_graphics_draw d=draw(128,96);
+        int scale=trial==3?2:1;
+        d.rotation[0]=rotations[trial][0];d.rotation[1]=rotations[trial][1];
+        d.translation_scale[3]=scale*1000;d.translation_scale[2]=512;
+        d.quality[2]=3;
+        if (trial==3) {
+            d.camera[0]=d.translation_scale[0]=200000;
+            d.camera[2]=200000;d.translation_scale[2]+=200000;
+        }
+        item.resource=reference;item.draw=d;
+        CHECK(rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS)==0);
+        memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
+        item.resource=offset;item.draw=d;
+        item.draw.translation_scale[0]-=(pivot[0]*d.rotation[1]+pivot[2]*d.rotation[0])/1024*scale;
+        item.draw.translation_scale[2]-=(pivot[2]*d.rotation[1]-pivot[0]*d.rotation[0])/1024*scale;
+        item.draw.rotation[2]=pivot[1];
+        CHECK(rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS)==0);
+        CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
+    }
+    /* The origin-centred legacy bound overlaps the camera here, although the
+     * entire model is outside. Main-view rejection must reduce actual draws. */
+    item.draw=draw(128,96);item.draw.quality[2]=3;
+    rf_gpu_graphics_get_stats(g,&before);
+    CHECK(rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS)==0);
+    rf_gpu_graphics_get_stats(g,&after);
+    if (!getenv("RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS") && !getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL"))
+        CHECK(after.indexed_draws==before.indexed_draws);
+    /* A dynamic upload must replace, rather than accumulate, these bounds. */
+    CHECK(rf_gpu_graphics_triangle_resource_update(g,offset,rebased,6)==0);
+    CHECK(rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS)==0);
+    rf_gpu_graphics_get_stats(g,&after);
+    CHECK(after.indexed_draws>before.indexed_draws);
+    result=0;
+done:
+    rf_gpu_graphics_destroy(g);
+    printf("SCENE offset bounds/transform/update: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
 static int scene_color_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
@@ -397,12 +458,14 @@ int main(void)
     }
     if (getenv("RF_GPU_PREPARATION_TEST")) {
         CHECK(triangle_reuse_test(&context)==0);
+        CHECK(resource_bounds_test(&context)==0);
         CHECK(scene_color_test(&context)==0);
         CHECK(skin_batch_test(&context)==0);
         result=0;goto done;
     }
     CHECK(scene_layers_test(&context)==0);
     CHECK(triangle_reuse_test(&context)==0);
+    CHECK(resource_bounds_test(&context)==0);
     CHECK(scene_color_test(&context)==0);
     CHECK(skin_batch_test(&context)==0);
     CHECK(precision_material_test(&context)==0);

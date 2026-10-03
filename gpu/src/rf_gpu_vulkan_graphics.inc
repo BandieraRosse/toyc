@@ -70,7 +70,7 @@ struct rf_gpu_graphics_resource {
     uint32_t vertex_capacity, palette_word_capacity;
     rf_vk_descriptor_pool skin_descriptor_pool;
     rf_vk_descriptor_set skin_descriptor_set;
-    int position_bound[3];
+    int position_min[3],position_max[3];
     int frame_dynamic;
     int sequential_triangles;
     int scene_vertex_color;
@@ -111,6 +111,7 @@ struct rf_gpu_graphics {
     unsigned shadow_count;
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16];
     int disable_draw_cull;
+    int legacy_origin_bounds;
     VkRenderPass shadow_pass,overlay_pass;
     rf_vk_descriptor_set_layout light_layout;
     rf_vk_descriptor_pool light_pool;
@@ -327,11 +328,24 @@ static int gfx_draw_box(const struct rf_gpu_graphics_batch_item *item,float cent
     if (r->skin_descriptor_set || d->texture[3]) return 0;
     float scale=d->translation_scale[3]/1000.0f*512.0f/(d->quality[1]>512?d->quality[1]:512);
     float sy=d->rotation[0]/1024.0f,cy=d->rotation[1]/1024.0f;
-    for (unsigned k=0;k<3;++k) center[k]=(float)d->translation_scale[k];
-    center[1]-=d->rotation[2]*scale;
-    extent[0]=(__builtin_fabsf(cy)*r->position_bound[0]+__builtin_fabsf(sy)*r->position_bound[2])*scale+2;
-    extent[1]=r->position_bound[1]*scale+2;
-    extent[2]=(__builtin_fabsf(sy)*r->position_bound[0]+__builtin_fabsf(cy)*r->position_bound[2])*scale+2;
+    float local_center[3],local_extent[3];
+    for (unsigned k=0;k<3;++k) {
+        local_center[k]=(r->position_min[k]+r->position_max[k])*0.5f;
+        local_extent[k]=(r->position_max[k]-r->position_min[k])*0.5f;
+        if (r->owner->legacy_origin_bounds) {
+            local_center[k]=0;
+            local_extent[k]=(float)(abs(r->position_min[k])>abs(r->position_max[k]) ?
+                abs(r->position_min[k]) : abs(r->position_max[k]));
+        }
+    }
+    /* Match the vertex transform, including an off-origin model's pivot.
+     * Retain conservative slack for float evaluation at map-sized positions. */
+    center[0]=d->translation_scale[0]+(cy*local_center[0]+sy*local_center[2])*scale;
+    center[1]=d->translation_scale[1]+(local_center[1]-d->rotation[2])*scale;
+    center[2]=d->translation_scale[2]+(cy*local_center[2]-sy*local_center[0])*scale;
+    extent[0]=(__builtin_fabsf(cy)*local_extent[0]+__builtin_fabsf(sy)*local_extent[2])*scale+2;
+    extent[1]=local_extent[1]*scale+2;
+    extent[2]=(__builtin_fabsf(sy)*local_extent[0]+__builtin_fabsf(cy)*local_extent[2])*scale+2;
     return 1;
 }
 static int gfx_box_outside(const float c[3],const float e[3],const float plane[4])
@@ -620,6 +634,8 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
         g->disable_draw_cull=no_cull && no_cull[0]=='1';
+        const char *legacy_bounds=getenv("RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS");
+        g->legacy_origin_bounds=legacy_bounds && !strcmp(legacy_bounds,"1");
     }
 #define RF_GFX_LOAD(n) do { \
     void *p = load_instance(&impl->api, impl->instance, "vk" #n); \
@@ -828,9 +844,10 @@ upload_done:
         const int32_t *position=resource->scene_vertex_color ?
             ((const struct rf_gpu_scene_color_vertex *)vertices)[i].position :
             ((const struct rf_gpu_graphics_vertex *)vertices)[i].position;
-        for (unsigned j=0;j<3;++j)
-            if (abs(position[j])>resource->position_bound[j])
-                resource->position_bound[j]=abs(position[j]);
+        for (unsigned j=0;j<3;++j) {
+            if (!i || position[j]<resource->position_min[j]) resource->position_min[j]=position[j];
+            if (!i || position[j]>resource->position_max[j]) resource->position_max[j]=position[j];
+        }
     }
     g->stats.mesh_upload_bytes += (vertices ?
         bytes[0] : 0) + (uint64_t)index_count*4;
@@ -981,7 +998,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_vk_mapped_memory_range range={0};
     struct rf_vk_buffer_copy copy={0};
     struct rf_vk_memory_barrier barrier={0};
-    int bounds[3]={0};
+    int minimum[3]={0},maximum[3]={0};
     int alpha_valid=scene_color;
     void *mapped;
     uint64_t bytes=(uint64_t)vertex_count*(scene_color ?
@@ -1000,7 +1017,8 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
         for (unsigned k=0;k<3;++k) {
             int p=position[k];
             if (p < -32767 || p > 32767) return -1;
-            if (abs(p)>bounds[k]) bounds[k]=abs(p);
+            if (!i || p<minimum[k]) minimum[k]=p;
+            if (!i || p>maximum[k]) maximum[k]=p;
         }
         if (scene_color) {
             const struct rf_gpu_scene_color_vertex *v=vertices;
@@ -1060,7 +1078,8 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     }
     r->index_count=vertex_count;
     r->vertex_alpha_valid=alpha_valid;
-    memcpy(r->position_bound,bounds,sizeof(bounds));
+    memcpy(r->position_min,minimum,sizeof(minimum));
+    memcpy(r->position_max,maximum,sizeof(maximum));
     g->stats.mesh_upload_bytes+=bytes;
     if (g->profile_triangle_update) {
         g->stats.triangle_validate_ms+=validated-mark;
@@ -1485,7 +1504,7 @@ int rf_gpu_graphics_validate_dynamic_draw(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_draw *draw)
 {
     /* A frame-slot character resource combines many independently translated
-     * instances, so its aggregate position_bound is not a valid bound for one
+     * instances, so its aggregate position bounds are not a valid bound for one
      * Draw. The producer has already range-checked each bind vertex and the
      * common validator still enforces transforms, projection and index range. */
     return g && !g->poisoned && g->resource && g->target.framebuffer && draw &&

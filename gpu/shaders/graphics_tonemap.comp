@@ -6,7 +6,9 @@ layout(push_constant) uniform Exposure { float exposure; } pc;
 void main() {
     ivec2 p=ivec2(gl_GlobalInvocationID.xy);if(any(greaterThanEqual(p,imageSize(hdr)))) return;
     vec3 c=max(imageLoad(hdr,p).rgb*pc.exposure,vec3(0));
-    c=clamp((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14),0.0,1.0);
+    // Normalize the fitted shoulder to its asymptote. Finite highlights retain
+    // separation instead of crossing 1 and becoming a hard clipped white patch.
+    c=clamp((c*(2.51*c+0.03))/(c*(2.43*c+0.59)+0.14)*(2.43/2.51),0.0,1.0);
     c=mix(c*12.92,1.055*pow(c,vec3(1.0/2.4))-0.055,greaterThan(c,vec3(0.0031308)));
     imageStore(output_color,p,vec4(c,1));
 }

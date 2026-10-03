@@ -4070,6 +4070,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
                !strcmp(options.gpu_normal_view,"lighting-lab") ||
+               !strcmp(options.gpu_normal_view,"atmosphere-lab") ||
                !strncmp(options.gpu_normal_view,"performance-",12) ||
                !strncmp(options.gpu_normal_view,"sky-",4) ||
                !strncmp(options.gpu_normal_view,"electronics-",12) ||
@@ -4151,6 +4152,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
             rf_lab_camera_position(&session,&camera,"rf_light_lab_area",1252,4826);camera.y=2300;camera.cy=-1024;
             camera.pitch_sy=-320;camera.pitch_cy=973;
+        } else if (!strcmp(options.gpu_normal_view,"atmosphere-lab")) {
+            /* South road frames the compound clear of the performance signs. */
+            rf_lab_camera_position(&session,&camera,"atmosphere_lab_area",0,-7500);
+            camera.sy=0;camera.cy=1024;
         } else if (!strncmp(options.gpu_normal_view,"sky-",4)) {
             /* First cross-road / central lane: clear of lab title projections. */
             camera.x=0;camera.z=-52*512;
@@ -4226,6 +4231,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         camera.y = -350;
         camera.pitch_cy = 1024;
         if(!strcmp(options.gpu_normal_view,"lighting-lab")) camera.pitch_sy=0;
+        if(!strcmp(options.gpu_normal_view,"atmosphere-lab")) {camera.pitch_sy=225;camera.pitch_cy=999;}
         if(!strncmp(options.gpu_normal_view,"sky-",4)) {
             camera.pitch_sy=265;camera.pitch_cy=989;
             if(!strcmp(options.gpu_normal_view,"sky-up")) {camera.pitch_sy=1024;camera.pitch_cy=0;}
@@ -6348,6 +6354,7 @@ startup_again:
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||
                                !strcmp(options.gpu_normal_view,"lighting-lab") ||
+                               !strcmp(options.gpu_normal_view,"atmosphere-lab") ||
                                !strncmp(options.gpu_normal_view,"electronics-",12) ||
                                !strncmp(options.gpu_normal_view,"lab-computer",12)));
                         layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;

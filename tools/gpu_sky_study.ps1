@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('clear','rain','warm')][string]$Preset='clear',
-    [ValidateSet('north','east','south','west','up','down','sun')][string]$View='north',
+    [ValidateSet('north','east','south','west','up','down','sun','atmosphere')][string]$View='north',
     [switch]$Capture,
     [ValidateRange(0,1000000)][double]$Time=0,
     [string]$OutputDirectory='tmp/sky-v2-capture'
@@ -21,8 +21,9 @@ try {
     [Environment]::SetEnvironmentVariable('Path',$SavedPath,'Process')
     $env:RF_GPU_SKY_PRESET=$Preset
     $env:RF_GPU_SKY_TIME=if ($Capture) { $Time.ToString([Globalization.CultureInfo]::InvariantCulture) } else { $null }
+    $Scene=if($View -eq 'atmosphere'){'atmosphere-lab'}else{"sky-$View"}
     $Argv=@('--renderer','gpu-scene','--map',"$Root/rasterfall/assets/maps/outpost.map",
-        '--gpu-normal-scene',"sky-$View",'0')
+        '--gpu-normal-scene',$Scene,'0')
     if ($Capture) {
         $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
         New-Item -ItemType Directory -Force -Path $Out | Out-Null

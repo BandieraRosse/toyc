@@ -8,6 +8,20 @@ layout(set=1,binding=1,std430) readonly buffer Shadows { float depth[]; } shadow
 vec3 decode_srgb(vec3 c) {
     return mix(c/12.92,pow((c+0.055)/1.055,vec3(2.4)),greaterThan(c,vec3(0.04045)));
 }
+/* Bilinearly translated tent kernel: continuous sub-texel coverage from
+ * sixteen depth loads, without depth filtering extensions or random noise. */
+float shadow_filter(int map,vec3 uv,float bias) {
+    vec2 at=uv.xy*1024.0-0.5;ivec2 lo=ivec2(floor(at));vec2 f=fract(at);
+    vec4 wx=vec4(1.0-f.x,2.0-f.x,1.0+f.x,f.x);
+    vec4 wy=vec4(1.0-f.y,2.0-f.y,1.0+f.y,f.y);
+    float sum=0.0;
+    for(int y=0;y<4;++y) for(int x=0;x<4;++x) {
+        ivec2 tap=clamp(lo+ivec2(x-1,y-1),ivec2(0),ivec2(1023));
+        float z=shadows.depth[map*1048576+tap.y*1024+tap.x];
+        sum+=wx[x]*wy[y]*step(uv.z-bias,z);
+    }
+    return sum*(1.0/16.0);
+}
 float spot_visibility(Light light,vec3 p,vec3 n) {
     int map=int(light.inner_shadow.y);
     if(map<3) return 1.0;
@@ -15,29 +29,30 @@ float spot_visibility(Light light,vec3 p,vec3 n) {
     if(q.w<=0) return 0.0;
     vec3 uv=q.xyz/q.w*vec3(0.5,0.5,1)+vec3(0.5,0.5,0);
     if(any(lessThan(uv,vec3(0))) || any(greaterThan(uv,vec3(1)))) return 0.0;
-    ivec2 at=ivec2(uv.xy*1024.0);float sum=0;
-    for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
-        ivec2 tap=clamp(at+ivec2(x,y),ivec2(0),ivec2(1023));
-        sum+=uv.z-0.00008<=shadows.depth[map*1048576+tap.y*1024+tap.x]?1.0:0.0;
-    }
-    return sum/9.0;
+    return shadow_filter(map,uv,0.00008);
 }
 float sun_visibility(vec3 p, vec3 n) {
+    float result=1.0,remaining=1.0;
+    float bias=0.000025+0.00010*(1.0-max(dot(n,lighting.sun_direction.xyz),0.0));
     for(int cascade=0;cascade<3;++cascade) {
         vec4 center=lighting.cascade_center[cascade];
-        vec4 q=lighting.shadow_matrix[cascade]*vec4(p+n*center.w/1024.0,1);
+        vec4 q=lighting.shadow_matrix[cascade]*vec4(p+n*center.w*(0.8/1024.0),1);
         vec3 uv=q.xyz*vec3(0.5,0.5,1)+vec3(0.5,0.5,0);
         if(any(lessThan(uv,vec3(0.005))) || any(greaterThan(uv,vec3(0.995)))) continue;
-        ivec2 at=ivec2(uv.xy*1024.0);float sum=0;
-        float bias=0.00012+0.00035*(1.0-max(dot(n,lighting.sun_direction.xyz),0.0));
-        for(int y=-1;y<=1;++y) for(int x=-1;x<=1;++x) {
-            ivec2 tap=clamp(at+ivec2(x,y),ivec2(0),ivec2(1023));
-            float z=shadows.depth[cascade*1048576+tap.y*1024+tap.x];
-            sum+=uv.z-bias<=z ? 1.0:0.0;
-        }
-        return sum/9.0;
+        float edge=max(abs(q.x),abs(q.y));
+        float weight=1.0-smoothstep(0.82,0.98,edge);
+        if(weight<=0.0) continue;
+        result+=remaining*weight*(shadow_filter(cascade,uv,bias)-1.0);
+        remaining*=1.0-weight;
+        if(remaining<0.001) break;
     }
-    return 1.0;
+    return result;
+}
+vec3 environment_irradiance(vec3 n) {
+    /* Broad sky/ground bounce only; no visibility or reflection probe claim. */
+    float sky=0.5+0.5*n.y;
+    vec3 ground=lighting.environment.rgb*vec3(0.55,0.46,0.36);
+    return mix(ground,lighting.environment.rgb*1.3,sky);
 }
 vec3 brdf(vec3 base, vec3 n, vec3 v, vec3 l, float rough, float metal, bool stylized) {
     float nl=max(dot(n,l),0.0),nv=max(dot(n,v),0.001);

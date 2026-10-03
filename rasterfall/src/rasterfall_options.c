@@ -108,7 +108,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-lighting-test (hardware shadow, dynamic light, material and HDR regression)\n"
         "  GPU sky: RF_GPU_SKY_PRESET=clear|rain|warm; RF_GPU_SKY_TIME=seconds (optional frozen time)\n"
         "    RF_GPU_SKY_SCALE=1|2|4 (resolution divisor, default 4); RF_GPU_SKY_BENCH=1 with --gpu-lighting-test\n"
-        "  --gpu-normal-scene sky-north|sky-east|sky-south|sky-west|sky-up|sky-down|sky-sun 0\n"
+        "  --gpu-normal-scene sky-north|sky-east|sky-south|sky-west|sky-up|sky-down|sky-sun|atmosphere-lab 0\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-world-preview (diagnostic WORLD-only native Scene)\n"
         "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
@@ -359,6 +359,7 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"actor-walk-lab") &&
                  strcmp(o->gpu_normal_view,"model-lab") &&
                  strcmp(o->gpu_normal_view,"lighting-lab") &&
+                 strcmp(o->gpu_normal_view,"atmosphere-lab") &&
                  strcmp(o->gpu_normal_view,"performance-terminal") &&
                  strcmp(o->gpu_normal_view,"performance-menu") &&
                  strcmp(o->gpu_normal_view,"sky-north") &&

@@ -40,7 +40,7 @@ struct scene_layer_workspace {
     struct scene_layer_mesh mesh;
     struct rf_gpu_graphics_vertex *vertices;
     struct rf_gpu_scene_color_vertex *colors;
-    uint32_t *indices,*texels;
+    uint32_t *indices,*texels,*packed_first;
     unsigned char *texture_source;
     uint32_t vertex_capacity,texture_bytes,texture_width,texture_height,texture_channels;
     struct rf_gpu_graphics_batch_item *ordered;
@@ -73,7 +73,7 @@ static void scene_layer_workspace_free(struct scene_layer_workspace *w)
     free(w->packets);
     if(w->mesh.displays) for(unsigned i=0;i<TOY_MAP_MAX_DRAW;++i) free(w->mesh.displays[i].quads);
     free(w->mesh.displays);
-    free(w->mesh.triangles);free(w->vertices);free(w->colors);free(w->indices);
+    free(w->mesh.triangles);free(w->vertices);free(w->colors);free(w->indices);free(w->packed_first);
     free(w->texels);free(w->texture_source);free(w->ordered);free(w);
 }
 static int scene_layer_emit(struct scene_layer_mesh *m,
@@ -582,6 +582,9 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     int rebuild=legacy && legacy[0]=='1';
     const char *legacy_colors=getenv("RF_GPU_SCENE_LEGACY_LAYER_COLORS");
     int color_batch=!(legacy_colors && legacy_colors[0]=='1');
+    const char *legacy_packing=getenv("RF_GPU_SCENE_LEGACY_LAYER_PACKING");
+    int compact=color_batch && !(legacy_packing && !strcmp(legacy_packing,"1"));
+    uint32_t packed_count[RF_GPU_SCENE_LAYER_CHUNKS][2]={{0}};
     int result=-1,textured=0;
     int64_t mark=rf_core_clock_now_us();
     if (probe->layers && scene_layers_extract(&mesh,probe->layers,camera,(int)width,(int)height)<0) goto done;
@@ -594,27 +597,40 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             struct rf_gpu_graphics_vertex *next_vertices=calloc(capacity,sizeof(*vertices));
             struct rf_gpu_scene_color_vertex *next_colors=calloc(capacity,sizeof(*next_colors));
             uint32_t *next_indices=malloc((size_t)capacity*sizeof(*indices));
-            if (!next_vertices || !next_colors || !next_indices) {
-                free(next_vertices);free(next_colors);free(next_indices);goto done;
+            uint32_t *next_first=malloc((size_t)mesh.capacity*sizeof(*next_first));
+            if (!next_vertices || !next_colors || !next_indices || !next_first) {
+                free(next_vertices);free(next_colors);free(next_indices);free(next_first);goto done;
             }
             for (unsigned i=0;i<capacity;++i) next_indices[i]=i%(RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3);
-            free(w->vertices);free(w->colors);free(w->indices);
+            free(w->vertices);free(w->colors);free(w->indices);free(w->packed_first);
             vertices=w->vertices=next_vertices;indices=w->indices=next_indices;
             w->colors=next_colors;
+            w->packed_first=next_first;
             w->vertex_capacity=capacity;
         }
         for (unsigned i=0;i<mesh.count;++i) {
-            memcpy(vertices+i*3,mesh.triangles[i].vertex,3*sizeof(*vertices));
-            for (unsigned k=0;k<3;++k) {
-                indices[i*3+k]=(i%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3+k;
-                memcpy(w->colors[i*3+k].position,mesh.triangles[i].vertex[k].position,
-                    sizeof(w->colors[i*3+k].position));
+            const struct scene_layer_triangle *t=&mesh.triangles[i];
+            unsigned destination=i*3;
+            if (compact) {
+                /* Retained packets already own geometry. Pack each remaining
+                 * primitive only in its consumed vertex format. Source order
+                 * stays in the draw list, including mixed transparent runs. */
+                if (t->retained) continue;
+                unsigned chunk=i/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+                w->packed_first[i]=packed_count[chunk][!!t->textured]++*3;
+                destination=chunk*RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES*3+w->packed_first[i];
+            }
+            if (!compact || t->textured)
+                memcpy(vertices+destination,t->vertex,3*sizeof(*vertices));
+            if (!compact || !t->textured) for (unsigned k=0;k<3;++k) {
+                memcpy(w->colors[destination+k].position,t->vertex[k].position,
+                    sizeof(w->colors[destination+k].position));
                 /* Color vertices use the retired light lane for per-face
                  * opacity only when draw.texture[2] selects vertex alpha. */
-                w->colors[i*3+k].light_q8=mesh.triangles[i].alpha;
-                w->colors[i*3+k].rgb24=mesh.triangles[i].color;
+                w->colors[destination+k].light_q8=t->alpha;
+                w->colors[destination+k].rgb24=t->color;
             }
-            textured|=mesh.triangles[i].textured;
+            textured|=t->textured;
         }
         if (textured) {
             if (!texture || !texture->data || (texture->channels!=3 && texture->channels!=4) ||
@@ -652,6 +668,7 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             unsigned triangles=mesh.count>start?mesh.count-start:0;
             if (triangles>RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)
                 triangles=RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
+            if (compact) triangles=packed_count[chunk][i];
             if (!triangles || (i && !textured)) continue;
             struct rf_gpu_graphics_resource **resource=&probe->layer_resource[chunk][i];
             int colors=color_batch && !i;
@@ -678,9 +695,11 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 fprintf(stderr,"SCENE layer upload failed triangles=%u textured=%d\n",mesh.count,i);
                 for (unsigned v=0;v<mesh.count*3;++v)
                     for (unsigned k=0;k<3;++k)
-                        if (vertices[v].position[k]<-32767 || vertices[v].position[k]>32767) {
+                        if (mesh.triangles[v/3].vertex[v%3].position[k]<-32767 ||
+                            mesh.triangles[v/3].vertex[v%3].position[k]>32767) {
                             fprintf(stderr,"SCENE layer vertex=%u axis=%u position=%d layer=%d screen=%d\n",
-                                v,k,vertices[v].position[k],mesh.triangles[v/3].layer,mesh.triangles[v/3].screen);
+                                v,k,mesh.triangles[v/3].vertex[v%3].position[k],
+                                mesh.triangles[v/3].layer,mesh.triangles[v/3].screen);
                             goto done;
                         }
                 goto done;
@@ -725,7 +744,7 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             d->texture[0]=t->textured?texture->width:1;d->texture[1]=t->textured?texture->height:1;
             d->texture[2]=color_batch && !t->textured && t->alpha ? 256 : t->alpha;
             d->texture[3]=t->screen;
-            d->first_index=(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;
+            d->first_index=compact?w->packed_first[first]:(first%RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES)*3;
             d->index_count=(end-first)*3;d->double_sided=1;d->scene_layer=t->layer;
             first=end;
         }

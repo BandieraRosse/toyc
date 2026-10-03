@@ -22,6 +22,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_lighting_lab.ps1
 
 `rasterfall.exe --gpu-lighting-test` 在物理 Vulkan GPU 上做离屏行为回归，检查太阳/聚光灯遮挡、移动点光源、粗糙度、风格化响应、旧烘焙乘数无效和 resize。它有显式诊断 readback，不能代替 native present。
 
+同一入口的 `LIGHTING RANGE PASS` 检查无太阳/局部灯时，仅改变法线朝向就能区分天空与地面填充，
+并验证自发光 HDR 4/8 经真实 half-float 目标与色调映射后仍有亮度顺序，未同时裁成纯白。
+这些是稳定行为合同，不以指定截图颜色或亮度常量作为美术签收。阴影新增连续 PCF 与级联过渡后，
+仍须现场观察斜面自阴影、接触处悬浮、转头与跨级别时的边缘变化；使用
+[正常场景性能采样](rendering-performance.md#实验园区正常场景采样)核对 GPU 分位数和实际阴影绘制量。
+
 正常实验区截图可给启动参数增加 `--frames 3 --gpu-frame-capture <绝对路径> --gpu-capture-frame 2`。按 [Windows Native](windows-native.md) 等待进程句柄退出并检查日志和生成的 `.scene.ppm`。固定 capture 时使用固定展示时钟；观看灯移动时不要启用 capture。
 
 资源生命周期继续使用 `tools/gpu_scene_play.ps1 -Stage Interactive` 和 `-Stage World`。修改共享 CPU/Scene 展示来源后运行 `--logic-test`，确认 CPU 烘焙仍可用。开启 Vulkan validation 时必须检查 VUID 和同步错误；有 validation 的短帧时间不是正式性能数据。

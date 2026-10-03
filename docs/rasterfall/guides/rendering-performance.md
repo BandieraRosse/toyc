@@ -106,6 +106,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -Compare -OutputDirectory tmp/outpost-ab
 ```
 
+`-ComparePreparation` 与 `-Compare` 互斥，在同一构建上交替比较真实局部包围盒及动态层按格式
+紧凑打包；参考侧设置 `RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS=1` 和
+`RF_GPU_SCENE_LEGACY_LAYER_PACKING=1`，其余已有合批、剔除和缓存两侧保持开启。
+重点比较实际主/阴影绘制数、上传字节和帧耗时分布；上传下降不等于所有视角的 P95 都下降。
+脚本尊重已有 `RF_GPU_VULKAN_VENDOR_ID`；未设置时使用后端正常设备选择，不指定厂商。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -ComparePreparation -Rounds 3 -OutputDirectory tmp/outpost-preparation-ab
+```
+
 采样器由 `RF_SCENE_PERF_FRAMES` 显式启用，限用于无 `--frames`、无 `--frame-audit` 的 GPU 固定起点诊断；
 预热 120 帧后收集指定数量，结束自动退出。`SCENE-PERF` 报告整个 begin-to-begin 帧间隔分位数、
 GPU 与天空 compute 分位数、实际主绘制/阴影绘制和上传量。天空时间已包含在 GPU 时间内。

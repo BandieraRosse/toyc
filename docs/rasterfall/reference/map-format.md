@@ -211,7 +211,7 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 `min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，
 不带文字；双水平跨度非零或同时为零均无效。其他 sign 样式继续沿 X 展开。
 
-地图 IR 与玩法绘制投影的 render 容量均为 256，object/prop 容量均为 384；GPU Scene world snapshot
+地图 IR 与玩法绘制投影的 render 容量均为 512，object/prop 容量均为 384；GPU Scene world snapshot
 直接沿用绘制投影容量。各边界必须同步，避免新展区通过解析后在投影时截断或无法冻结。
 RF 电子组件的 `attr.length` 展示组定义见[实验区合同](experiment-labs.md#产品展区风扇与状态灯)。
 
