@@ -99,6 +99,8 @@ enum rasterfall_character_gear_resource_id {
     RASTERFALL_GEAR_GUNNER_BACK,
     RASTERFALL_GEAR_GUNNER_ELITE_HEAD, RASTERFALL_GEAR_GUNNER_ELITE_CHEST,
     RASTERFALL_GEAR_GUNNER_ELITE_BACK,
+    RASTERFALL_GEAR_BALLISTIC_GOGGLES,
+    RASTERFALL_GEAR_CARGO_THIGH_L, RASTERFALL_GEAR_CARGO_THIGH_R,
     RASTERFALL_GEAR_RESOURCE_COUNT
 };
 
@@ -107,7 +109,8 @@ struct rasterfall_character_attachment_recipe {
     int gear_resource_id;
 };
 
-#define RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS 5
+/* Multiple independently removable followers may share a stable socket. */
+#define RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS 8
 struct rasterfall_character_visual_recipe {
     int body_resource_id;
     uint32_t shirt_color;

@@ -26,7 +26,7 @@ try {
     [Environment]::SetEnvironmentVariable('Path',$SavedPath,'Process')
     $env:RF_GPU_CHARACTER_MODEL=if ($Model) { (Resolve-Path -LiteralPath $Model).Path } else { '' }
     $ModelPath=if ($Model) { $env:RF_GPU_CHARACTER_MODEL } else {
-        Join-Path $Package 'rasterfall/private-assets/models/rf_c01_v023a.rmesh'
+        Join-Path $Package 'rasterfall/private-assets/models/rf_c01_v025d.rmesh'
     }
     $ModelHeader=[IO.File]::ReadAllBytes($ModelPath)
     $PositionScale=[BitConverter]::ToUInt32($ModelHeader,16)

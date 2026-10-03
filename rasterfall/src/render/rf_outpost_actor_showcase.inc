@@ -6,6 +6,22 @@ static const int outpost_actor_actions[] = {
     TOY_GAME_ANIM_MELEE, TOY_GAME_ANIM_THROW
 };
 #define OUTPOST_ACTOR_ACTION_COUNT 11
+static const struct {
+    int character_id, action;
+} outpost_humanoid_stations[] = {
+    {RASTERFALL_CHARACTER_RF_RIFLEMAN, TOY_GAME_ANIM_IDLE},
+    {RASTERFALL_CHARACTER_RF_RIFLEMAN, TOY_GAME_ANIM_MOVE},
+    {RASTERFALL_CHARACTER_RF_RIFLEMAN, TOY_GAME_ANIM_FIRE},
+    {RASTERFALL_CHARACTER_SQUAD_B_BREACHER, TOY_GAME_ANIM_IDLE},
+    {RASTERFALL_CHARACTER_SQUAD_A_RECON, TOY_GAME_ANIM_MOVE},
+    {RASTERFALL_CHARACTER_SQUAD_A_MEDIC, TOY_GAME_ANIM_IDLE},
+    {RASTERFALL_CHARACTER_SQUAD_A_ENGINEER, TOY_GAME_ANIM_IDLE},
+    {RASTERFALL_CHARACTER_SQUAD_B_HEAVY, TOY_GAME_ANIM_MOVE},
+    {RASTERFALL_CHARACTER_GUNNER, TOY_GAME_ANIM_MOVE},
+    {RASTERFALL_CHARACTER_GUNNER_ELITE, TOY_GAME_ANIM_FIRE}
+};
+#define OUTPOST_HUMANOID_STATION_COUNT \
+    (sizeof(outpost_humanoid_stations)/sizeof(outpost_humanoid_stations[0]))
 #define OUTPOST_ACTOR_WALK_COUNT 6
 _Static_assert(sizeof(outpost_actor_actions)/sizeof(outpost_actor_actions[0]) ==
     OUTPOST_ACTOR_ACTION_COUNT,"actor action stations must match catalog");
@@ -98,6 +114,8 @@ static void outpost_actor_fixture(struct toy_game_actor *actor,int family,
     actor->kind=TOY_GAME_ACTOR_AI;actor->state=TOY_GAME_ACTOR_ALIVE;
     actor->character_id=family ? RASTERFALL_CHARACTER_RF_RIFLEMAN :
         RASTERFALL_CHARACTER_NONE;
+    if (family && id>=32 && id<32+(int)OUTPOST_HUMANOID_STATION_COUNT)
+        actor->character_id=outpost_humanoid_stations[id-32].character_id;
     actor->class_id=TOY_GAME_AI_LEVEL_1+level;
     rasterfall_render_lab_point(id>=64 ? "actor_walk_lab_area" : "actor_actions_lab_area",
         x,z,&actor->x,&actor->z);
@@ -125,8 +143,9 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
             int x=-4284+(i%6)*1650;
             int z=3156-(i/6)*2100-family*4200;
             int color=RF_COLOR_AI_RIFLE;
-            if (family && i>=3) continue; /* Authored Humanoid actions absent. */
-            outpost_actor_fixture(&actor,family,1,outpost_actor_actions[i],
+            if (family && i>=(int)OUTPOST_HUMANOID_STATION_COUNT) continue;
+            outpost_actor_fixture(&actor,family,1,family ?
+                outpost_humanoid_stations[i].action : outpost_actor_actions[i],
                 x,z,1,outpost_actor_actions_time_us,family*32+i);
             if (family) {
                 int result=render_modular_ai_teammate(renderer,camera,&actor,

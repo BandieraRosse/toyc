@@ -175,6 +175,145 @@ done:
     return failure != 0;
 }
 
+static int scene_equipment_pose_test(void)
+{
+    static struct rasterfall_model_instance host;
+    static struct rf_gpu_scene_pose_v1 scene, repeat;
+    struct rasterfall_modular_pose_cache cache;
+    struct rasterfall_character_visual_recipe recipe = {0};
+    struct rasterfall_action_composition composition = {0};
+    struct rf_gpu_scene_actor_v1 actor = {0};
+    struct rf_gpu_scene_local_presentation presentation = {0};
+    struct rasterfall_rigid_transform bind_left, bind_right, expected = {0};
+    struct rasterfall_model_skin_palette_bone before[RF_GPU_SCENE_POSE_BONES];
+    int failure = 0;
+#define EQUIPMENT_CHECK(x) do { if (!(x)) { failure = __LINE__; goto done; } } while (0)
+    EQUIPMENT_CHECK(!modular_actor_resources_init());
+    memset(&host,0,sizeof(host));
+    EQUIPMENT_CHECK(!rasterfall_model_instance_init(&host,&modular_actor_runtime.body));
+    /* Exercise the capacity contract independently of changing loadout taste:
+     * every entry remains a distinct follower, including repeated sockets. */
+    recipe.body_resource_id = RASTERFALL_BODY_RF_HUMANOID_V2;
+    recipe.attachment_count = RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS;
+    for (unsigned i=0;i<recipe.attachment_count;++i) {
+        recipe.attachments[i].host_socket = RASTERFALL_ATTACHMENT_HEAD;
+        recipe.attachments[i].gear_resource_id = i & 1 ?
+            RASTERFALL_GEAR_BALLISTIC_GOGGLES : RASTERFALL_GEAR_HEAVY_HEAD;
+    }
+    recipe.attachments[0].host_socket = RASTERFALL_ATTACHMENT_HIP_L;
+    recipe.attachments[0].gear_resource_id = RASTERFALL_GEAR_CARGO_THIGH_L;
+    recipe.attachments[1].host_socket = RASTERFALL_ATTACHMENT_HIP_R;
+    recipe.attachments[1].gear_resource_id = RASTERFALL_GEAR_CARGO_THIGH_R;
+    actor.weapon=-1; actor.cy=1024; actor.x=170; actor.y=-900; actor.z=320;
+    presentation.scene_light_q8=256;
+    composition.layers[0].clip=humanoid_action(RASTERFALL_ACTION_LOCOMOTION_WALK);
+    composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
+    EQUIPMENT_CHECK(composition.layers[0].clip && composition.layers[1].clip);
+    for (int sample=0;sample<2;++sample) {
+        composition.layers[0].time_ms=sample*180;
+        EQUIPMENT_CHECK(!rasterfall_action_compose(&host,&composition));
+        memset(before,0,sizeof(before)); memset(&cache,0,sizeof(cache));
+        memset(&scene,0,sizeof(scene)); memset(&repeat,0,sizeof(repeat));
+        EQUIPMENT_CHECK(!rasterfall_model_build_skin_palette(&host.pose,before,host.pose.bone_count));
+        EQUIPMENT_CHECK(!modular_prepare_gear_transforms(&host,&recipe,modular_actor_runtime.gear,&cache));
+        EQUIPMENT_CHECK(cache.gear_count==recipe.attachment_count);
+        EQUIPMENT_CHECK(!scene_pose_from_instance(&scene,&host,&recipe,&actor,&presentation));
+        EQUIPMENT_CHECK(scene.attachment_count==recipe.attachment_count &&
+            !memcmp(before,scene.palette,sizeof(before)));
+        EQUIPMENT_CHECK(!scene_pose_from_instance(&repeat,&host,&recipe,&actor,&presentation) &&
+            !memcmp(&scene,&repeat,sizeof(scene)));
+        for (unsigned i=0;i<recipe.attachment_count;++i) {
+            modular_rigid_compose(&scene.body_to_world,&cache.gear_local[i],&expected);
+            EQUIPMENT_CHECK(!memcmp(&expected,&scene.attachments[i].model_to_world,sizeof(expected)) &&
+                scene.attachments[i].resource_id==(unsigned)recipe.attachments[i].gear_resource_id);
+            if(i>2) EQUIPMENT_CHECK(!memcmp(&cache.gear_local[2],&cache.gear_local[i],sizeof(expected)));
+        }
+        if (!sample) { bind_left=cache.gear_local[0]; bind_right=cache.gear_local[1]; }
+        else EQUIPMENT_CHECK(memcmp(bind_left.rotation,cache.gear_local[0].rotation,sizeof(bind_left.rotation)) &&
+            memcmp(bind_right.rotation,cache.gear_local[1].rotation,sizeof(bind_right.rotation)));
+        EQUIPMENT_CHECK(!rasterfall_model_build_skin_palette(&host.pose,repeat.palette,host.pose.bone_count) &&
+            !memcmp(before,repeat.palette,sizeof(before)));
+    }
+    recipe.attachment_count++;
+    EQUIPMENT_CHECK(modular_prepare_gear_transforms(&host,&recipe,modular_actor_runtime.gear,&cache)<0 &&
+        scene_pose_from_instance(&scene,&host,&recipe,&actor,&presentation)<0);
+done:
+    rasterfall_model_instance_unload(&host);
+    if(failure) __printf("scene equipment FAIL line=%d\n",failure);
+    else __printf("scene equipment PASS capacity/repeated-socket/left-right-walk/CPU-Scene/read-only/overflow\n");
+#undef EQUIPMENT_CHECK
+    return failure != 0;
+}
+
+static int scene_fixture_clock_test(void)
+{
+    static struct toy_game fixture_game, untouched;
+    static struct rf_gpu_scene_local_frame frame, frozen, unpatched;
+    static struct rf_gpu_scene_pose_v1 pose, repeat;
+    static struct rasterfall_model_instance reference;
+    struct rf_gpu_scene_local_source source={0};
+    struct scene_actor_fixture_clock clocks[TOY_GAME_MAX_ACTORS]={0};
+    struct rasterfall_action_composition composition={0};
+    struct camera camera={0};
+    uint64_t saved_time=outpost_actor_actions_time_us;
+    int period=toy_game_animation_info(TOY_GAME_ANIM_MOVE)->duration_ms;
+    int failure=0;
+#define FIXTURE_CLOCK_CHECK(x) do { if (!(x)) { failure=__LINE__; goto done; } } while (0)
+    memset(&fixture_game,0,sizeof(fixture_game));
+    memset(&reference,0,sizeof(reference));
+    camera.cy=camera.pitch_cy=1024;
+    outpost_actor_actions_time_us=(uint64_t)(period+180)*1000;
+    outpost_actor_fixture(&fixture_game.actors[0],1,1,TOY_GAME_ANIM_MOVE,
+        0,0,1,outpost_actor_actions_time_us,32);
+    /* An ordinary actor in the old numeric fixture range is not tagged. */
+    fixture_game.actors[1]=fixture_game.actors[0];
+    fixture_game.actors[1].actor_id=10098;
+    clocks[0].actor_id=fixture_game.actors[0].actor_id;
+    clocks[0].time_ms=outpost_actor_locomotion_time(clocks[0].actor_id);
+    untouched=fixture_game;
+    FIXTURE_CLOCK_CHECK(!rf_gpu_scene_local_world(&source));
+    for (int i=0;i<2;++i)
+        FIXTURE_CLOCK_CHECK(!rf_gpu_scene_local_created(&source,&fixture_game.actors[i]));
+    FIXTURE_CLOCK_CHECK(!rf_gpu_scene_local_freeze_presentation(&source,&fixture_game,
+        &camera,640,480,0,NULL,0,&frame));
+    unpatched=frame;
+    FIXTURE_CLOCK_CHECK(frame.presentation.lower_time_ms==180);
+    scene_actor_freeze_fixture_clocks(&frame,clocks);
+    FIXTURE_CLOCK_CHECK(frame.presentation.lower_time_ms==(uint64_t)(period+180) &&
+        frame.presentations[0].lower_time_ms==frame.presentation.lower_time_ms &&
+        frame.presentations[1].lower_time_ms==unpatched.presentations[1].lower_time_ms);
+    frozen=frame;
+    FIXTURE_CLOCK_CHECK(!rf_gpu_scene_pose_extract_at(&frame,0,&pose));
+    FIXTURE_CLOCK_CHECK(!rasterfall_model_instance_init(&reference,&modular_actor_runtime.body));
+    composition.layers[0].clip=humanoid_action(RASTERFALL_ACTION_LOCOMOTION_WALK);
+    composition.layers[0].time_ms=outpost_actor_locomotion_time(clocks[0].actor_id);
+    composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
+    composition.layers[1].time_ms=fixture_game.actors[0].animation.time_ms;
+    FIXTURE_CLOCK_CHECK(!rasterfall_action_compose(&reference,&composition) &&
+        !modular_solve_left_hand(&reference,TOY_GAME_WEAPON_AK,835));
+    memset(&repeat,0,sizeof(repeat));
+    FIXTURE_CLOCK_CHECK(!rasterfall_model_build_skin_palette(&reference.pose,
+        repeat.palette,reference.pose.bone_count) &&
+        !memcmp(pose.palette,repeat.palette,sizeof(pose.palette)));
+    scene_actor_freeze_fixture_clocks(&frame,clocks);
+    FIXTURE_CLOCK_CHECK(!rf_gpu_scene_pose_extract_at(&frame,0,&repeat) &&
+        !memcmp(&pose,&repeat,sizeof(pose)) && !memcmp(&frame,&frozen,sizeof(frame)) &&
+        !memcmp(&fixture_game,&untouched,sizeof(fixture_game)) &&
+        outpost_actor_actions_time_us==(uint64_t)(period+180)*1000);
+    /* A recycled slot with a different identity cannot borrow the clock. */
+    clocks[0].actor_id++;
+    frame=unpatched;
+    scene_actor_freeze_fixture_clocks(&frame,clocks);
+    FIXTURE_CLOCK_CHECK(!memcmp(&frame,&unpatched,sizeof(frame)));
+done:
+    outpost_actor_actions_time_us=saved_time;
+    rasterfall_model_instance_unload(&reference);
+    if(failure) __printf("scene fixture clock FAIL line=%d\n",failure);
+    else __printf("scene fixture clock PASS late-first-sample/CPU-palette/replay/identity/no-game-mutation\n");
+#undef FIXTURE_CLOCK_CHECK
+    return failure!=0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -188,6 +327,8 @@ int rf_gpu_scene_pose_logic_test(void)
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_independent_enemy_source_test());
     POSE_CHECK(!scene_evasion_pose_test());
+    POSE_CHECK(!scene_equipment_pose_test());
+    POSE_CHECK(!scene_fixture_clock_test());
     /* Exercise the real network presentation adapter without sockets or a GPU.
      * Bodies behind the camera still freeze their values before raster clipping. */
     {
@@ -229,13 +370,17 @@ int rf_gpu_scene_pose_logic_test(void)
                 {
                     static struct rasterfall_session owner;
                     struct rasterfall_session *saved_session=active_session;
+                    struct toy_game *saved_presentation_game=active_presentation_game;
                     const struct rasterfall_net *saved_active_net=active_net;
                     struct rasterfall_world_lighting *saved_light=active_world_lighting;
                     memset(&owner,0,sizeof(owner));owner.game_state=source_game;
+                    owner.world_id=RASTERFALL_WORLD_PERF_EMPTY;
                     active_session=&owner;active_net=&net;active_world_lighting=NULL;
+                    active_presentation_game=&owner.game_state;
                     rf_gpu_scene_enemy_begin(10+downed,1);
                     int result=rf_gpu_scene_actor_collect_independent(&viewer,1280,720);
                     active_session=saved_session;active_net=saved_active_net;
+                    active_presentation_game=saved_presentation_game;
                     active_world_lighting=saved_light;
                     POSE_CHECK(!result && !rf_gpu_scene_enemy_freeze(&captured));
                     POSE_CHECK(captured.procedural_count==1 && !captured.modular_count);
@@ -248,10 +393,19 @@ int rf_gpu_scene_pose_logic_test(void)
                 }
             }
             /* Local player exclusion on guest, disconnected peer on host. */
-            if (client) net.local_player_id=1; else net.clients[0].connected=0;
+            if (client) {
+                /* Client slot zero owns the local avatar. Changing the peer
+                 * ID without remapping slots would turn this into the host. */
+                source_game.actors[0]=*actor;
+                actor->active=0;
+            } else net.clients[0].connected=0;
             rf_gpu_scene_enemy_begin(2,1);
             render_network_teammate(&renderer,&viewer,&net,&source_game);
             POSE_CHECK(!rf_gpu_scene_enemy_freeze(&captured) && !captured.procedural_count);
+            if (client) {
+                *actor=source_game.actors[0];
+                source_game.actors[0].active=0;
+            }
             actor->active=0;net.local_player_id=2;net.clients[0].connected=1;
             rf_gpu_scene_enemy_begin(3,1);
             render_network_teammate(&renderer,&viewer,&net,&source_game);
@@ -314,19 +468,25 @@ int rf_gpu_scene_pose_logic_test(void)
         static struct rasterfall_session owner;
         static struct rf_gpu_scene_enemy_frame_v1 captured;
         struct rasterfall_session *saved_session=active_session;
+        struct toy_game *saved_presentation_game=active_presentation_game;
         const struct rasterfall_net *saved_net=active_net;
         struct rasterfall_world_lighting *saved_light=active_world_lighting;
         memset(&owner,0,sizeof(owner));toy_game_init(&owner.game_state,1);
+        owner.world_id=RASTERFALL_WORLD_PERF_EMPTY;
         id=toy_game_add_ai(&owner.game_state,TOY_GAME_AI_LEVEL_1,120,240,"INDEPENDENT");
         POSE_CHECK(id>0);actor=&owner.game_state.actors[id-1];
         actor->character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
         actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
-        active_session=&owner;active_net=NULL;active_world_lighting=NULL;
         for (int downed=0;downed<2;++downed) {
             actor->state=downed ? TOY_GAME_ACTOR_DOWNED : TOY_GAME_ACTOR_ALIVE;
             before=owner.game_state;
             rf_gpu_scene_enemy_begin(100+downed,77);
+            active_session=&owner;active_net=NULL;active_world_lighting=NULL;
+            active_presentation_game=&owner.game_state;
             int result=rf_gpu_scene_actor_collect_independent(&camera,1280,720);
+            active_session=saved_session;active_net=saved_net;
+            active_presentation_game=saved_presentation_game;
+            active_world_lighting=saved_light;
             POSE_CHECK(!result && !rf_gpu_scene_enemy_freeze(&captured));
             POSE_CHECK(captured.modular_count==(unsigned)!downed &&
                 captured.procedural_count==(unsigned)downed);
@@ -334,7 +494,6 @@ int rf_gpu_scene_pose_logic_test(void)
             else POSE_CHECK(captured.modular[0].bone_count && captured.modular[0].weapon_valid);
             POSE_CHECK(!memcmp(&owner.game_state,&before,sizeof(before)));
         }
-        active_session=saved_session;active_net=saved_net;active_world_lighting=saved_light;
         __printf("scene independent actors PASS supplemental/downed/immutable/network\n");
     }
     toy_game_init(&source_game,1);

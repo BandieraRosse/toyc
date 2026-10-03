@@ -17,23 +17,29 @@ static int scene_independent_enemy_source_test(void)
     static struct toy_game untouched;
     static struct rf_gpu_scene_enemy_frame_v1 a,b;
     struct rasterfall_session *saved_session=active_session;
+    struct toy_game *saved_presentation_game=active_presentation_game;
     struct rasterfall_effects *saved_effects=active_effects;
     struct rasterfall_world_lighting *saved_lighting=active_world_lighting;
     const struct rasterfall_net *saved_net=active_net;
     int saved_family=enemy_visual_family;
     int saved_showcase=outpost_showcase_visible;
-    int showcase_triangles=0;
+    int saved_walk=outpost_walk_visible;
+    int showcase_triangles=0, failure=0;
     uint64_t saved_showcase_time=outpost_showcase_time_us;
+    uint64_t saved_showcase_step=outpost_showcase_step_us;
+    struct rasterfall_infected_sample saved_showcase_motion[RASTERFALL_OUTPOST_SHOWCASE_COUNT];
     struct camera camera={0};
 #define ENEMY_SOURCE_CHECK(x) do { if (!(x)) { \
-    __printf("scene independent enemy source failed line %d\n",__LINE__); \
-    return 1; } } while (0)
+    failure=__LINE__; goto done; } } while (0)
     camera.cy=camera.pitch_cy=1024;
     toy_game_init(&owner.game_state,1);
+    memcpy(saved_showcase_motion,outpost_showcase_motion,sizeof(saved_showcase_motion));
+    outpost_showcase_visible=outpost_walk_visible=0;
     memset(&test_effects,0,sizeof(test_effects));
     memset(&test_lighting,0,sizeof(test_lighting));
     test_lighting.field[0]=(struct rasterfall_world_light){256,0,256};
     active_session=&owner;active_effects=&test_effects;
+    active_presentation_game=&owner.game_state;
     active_world_lighting=&test_lighting;active_net=NULL;
     enemy_visual_family=RASTERFALL_ENEMY_VISUAL_LEGACY;
     owner.game_state.enemies[0].active=1;
@@ -96,19 +102,25 @@ static int scene_independent_enemy_source_test(void)
         a.count==2+RASTERFALL_OUTPOST_SHOWCASE_COUNT &&
         !memcmp(&untouched,&owner.game_state,sizeof(untouched)));
     for (int i=0;i<RASTERFALL_OUTPOST_SHOWCASE_COUNT;++i) {
+        const struct outpost_showcase_entry *entry=&outpost_showcase[i];
         const struct rf_gpu_scene_enemy_item_v1 *item=&a.items[2+i];
-        const struct toy_game_enemy_info *info=toy_game_enemy_info(item->type);
+        const struct toy_game_enemy_info *info=toy_game_enemy_info(entry->type);
         struct rasterfall_infected_motion previous={0};
         struct rasterfall_infected_sample first,expected;
+        int expected_x,expected_z;
+        rasterfall_render_lab_point("character_lab_area",entry->x,entry->z,
+            &expected_x,&expected_z);
         rasterfall_infected_sample_motion(&previous,1,0,0,1000000,&first);
         rasterfall_infected_sample_motion(&first.next,1,
-            i%2 ? (info->speed_min+info->speed_max)/2 : 0,0,1016000,&expected);
+            entry->moving ? (info->speed_min+info->speed_max)/2 : 0,0,1016000,&expected);
         ENEMY_SOURCE_CHECK(item->source_slot==TOY_GAME_MAX_ENEMIES+(unsigned)i &&
-            item->infected_recipe==i/2+1 &&
-            item->type==enemy_visual_recipes[i/2].type &&
+            item->infected_recipe>0 && (unsigned)item->infected_recipe<=
+                sizeof(enemy_visual_recipes)/sizeof(enemy_visual_recipes[0]));
+        ENEMY_SOURCE_CHECK(item->type==entry->type &&
+            enemy_visual_recipes[item->infected_recipe-1].type==entry->type &&
+            enemy_visual_recipes[item->infected_recipe-1].family==entry->family &&
             item->infected_swing==expected.swing &&
-            item->dir_z==1024 && item->x>=-5120 && item->x<=5120 &&
-            item->z>=-24064 && item->z<=-14848);
+            item->dir_z==1024 && item->x==expected_x && item->z==expected_z);
         showcase_triangles=0;
         ENEMY_SOURCE_CHECK(!rf_gpu_scene_enemy_triangles(item,
             scene_showcase_test_triangle,&showcase_triangles) && showcase_triangles>0);
@@ -130,10 +142,18 @@ static int scene_independent_enemy_source_test(void)
     ENEMY_SOURCE_CHECK(outpost_showcase_motion[1].swing!=0);
     rasterfall_render_set_outpost_showcase(1,1000000);
     ENEMY_SOURCE_CHECK(outpost_showcase_motion[1].swing==0);
+done:
     active_session=saved_session;active_effects=saved_effects;
+    active_presentation_game=saved_presentation_game;
     active_world_lighting=saved_lighting;active_net=saved_net;
     enemy_visual_family=saved_family;
-    rasterfall_render_set_outpost_showcase(saved_showcase,saved_showcase_time);
+    outpost_showcase_visible=saved_showcase;outpost_walk_visible=saved_walk;
+    outpost_showcase_time_us=saved_showcase_time;outpost_showcase_step_us=saved_showcase_step;
+    memcpy(outpost_showcase_motion,saved_showcase_motion,sizeof(saved_showcase_motion));
 #undef ENEMY_SOURCE_CHECK
+    if (failure) {
+        __printf("scene independent enemy source failed line %d\n",failure);
+        return 1;
+    }
     return 0;
 }

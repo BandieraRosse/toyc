@@ -44,6 +44,11 @@ weapon 从 finalized `WEAPON_R` 对齐 authored `PRIMARY_GRIP`；左手在绘制
 执行 attachment IK。passive gear 只读取 finalized HEAD/CHEST/BACK/HIP 等 socket。所有修改只作用于
 当前 mutable instance，不回写共享 resource。
 
+衣服外轮廓与装备按 recipe 条目组合；一个 socket 可以同时承载头盔与护目镜，或髋侧装备与大腿
+外裤层。CPU cache、Scene pose payload 与 native mesh 列表统一使用 recipe 容量，每项保留自己的
+resource ID 与 transform，不按 socket 合并身份。当前服装模块限于不跨关节的 rigid follower；
+跨关节袖/裤仍归身体蒙皮，未来独立蒙皮服装须补资源绑定合同，不能靠刚体跨膝代替。
+
 RFCHAR body、rigid gear、socket 与 weapon 统一采用 profile 定义的 `+Z` forward，不在枪械 helper
 额外加 180° 修正。失败时可以回退既有 procedural actor，但不能产生另一套权威状态。
 
@@ -153,10 +158,13 @@ owner 的既有退休规则管理。缺失资源显示安装错误，重新关�
 
 CPU 入口显式接收已采样结果，独立 Scene 来源冻结同一结果；两者复用实机资源与 `enemy_visual_apply_pose`，不通过 capture 全局覆盖量切换实验场姿态。GPU 几何提取只读冻结值，不推进展示时钟。台位不占玩法敌人槽，不进入 gameplay snapshot 或网络；Scene 值帧与动态资源池通过统一容量声明预留额外 12 个 source slot，静态断言核对台位数。场地、道路、标线和终端属于 `.map`，台位属于展示模块。
 
-东侧两个队友实验区用独立开关和展示描述提供 Block 全动作固定台位、Humanoid 已有动作固定台位与
-两种外观乘三级 AI 的六条往返线。CPU 在角色展示阶段消费临时 actor 值；独立 Scene 把程序角色冻结为
+东侧两个队友实验区用独立开关和展示描述提供 Block 全动作固定台位、Humanoid 站立/行走/射击固定台位，
+并在后两排展示其余职业与敌方枪手的装备组合；所有 Humanoid 台位只采样已有动作。
+另有两种外观乘三级 AI 的六条往返线。CPU 在角色展示阶段消费临时 actor 值；独立 Scene 把程序角色冻结为
 procedural item，并在只读的 game 副本上用现有 local pose 提取模块角色。真实 `game` 不增加展示 actor，
 展示身份不占 gameplay 槽位。不同区域的可见性和时钟由各自的 presentation owner 管理。
+Scene 在冻结后为本次实际插入展示副本的槽位写入同一展示时钟，不从已取模的玩法动作时间推算
+完整步态周期；慢帧、首次晚采样与后端切换仍与 CPU 使用相同相位。未标记的真实角色保留自身时钟。
 
 GPU Scene 的模块化队员 pose 求值由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
 `rf_gpu_scene_pose_extract_at`（单 actor fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、

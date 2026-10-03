@@ -201,7 +201,8 @@ inverse bind、身高和材质合同，也不为敌方创建身体分叉。局�
 生成器的 `--rigid-attachment=<profession>-<slot>` 直接复用 carrier builder 已验收几何，按 HEAD、
 CHEST、BACK、HIP_L、HIP_R socket authored origin 重定位后导出无 body、skin、skeleton、CHR1 的
 metric rigid GLB/RMESH。职业产物为每职业 HEAD/CHEST/BACK，另有 Engineer HIP_L 和 Heavy
-HIP_L/HIP_R；普通/精英枪手各增加 HEAD/CHEST/BACK，合计 27 个 gear resource。Breacher 的前侧 lower armor 与 CHEST 壳构成同一刚体；
+HIP_L/HIP_R；普通/精英枪手各增加 HEAD/CHEST/BACK，另有共享护目镜与左右大腿外裤模块。
+Breacher 的前侧 lower armor 与 CHEST 壳构成同一刚体；
 它没有伪造新的 HIPS socket。
 
 `--profession-lineup` 输出 modular 六职业 front/three-quarter near/mid/far、side mid，并输出每职业
@@ -212,3 +213,21 @@ rifle aim、turned 数值回归并报告 body 实际加载份数。`tools/rf_pro
 viewport，后者才是 glTF 导出的事实来源。`--generate` 会在导入前核对 GLB 中每个职业的
 `RF_Headgear` / `RF_HeadgearLight`，并在导入后核对 carrier 与 21 个 rigid gear 的 RFM2 材质色；
 这些门禁用于区分资产导出丢色与 raster command 消费问题。
+
+### 可组装轮廓装备
+
+`tools/blender/rf_humanoid_equipment.py` 拥有独立装备几何，body 生成器只传入已冻结的 canonical
+空间和材质。胸甲、弹匣袋、肩带、腰封、头盔壳、导轨、耳罩、背包与压缩带均为实几何，沿用 opaque
+材质与普通 rigid importer。战术头盔不含镜片；`rf_gear_ballistic_goggles` 可与其独立组合。
+`rf_gear_cargo_thigh_l/r` 是可拆大腿外裤与立体侧袋，分别跟随 `HIP_L/R`。外裤上层止于膝盖上方，
+不跨关节；跨膝裤腿仍由共享身体蒙皮表面拥有，当前没有通用蒙皮服装资源或布料模拟。
+
+recipe 最多含 `RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS` 个独立 follower（当前为八个），同 socket
+可以挂多个资源。CPU cache、Scene 冻结载荷和 native mesh 列表都使用该容量；不能按 socket 去重，
+否则头盔/镜片或侧箱/裤层会丢失。已有稳定 gear ID 不变，新 ID 追加。换装仍只属于 presentation，
+不进入权威 actor、命中体或网络协议。RFCHAR 新角色可复用相同 socket/recipe 边界；各体型仍需在
+源空间制作与验收自己的版型，不能以现有 Humanoid 模块自动适配任意动漫身体。
+
+`--gpu-scene-pose-test` 的装备回归填满 recipe，检查重复 socket 的独立记录、左右大腿随 WALK、
+CPU/Scene transform 相同、查询不修改最终姿态及超容量拒绝。完整 carrier 也组装同一共享模块，
+用于 legacy/modular A/B；正常玩法只保留共享身体和独立 gear。

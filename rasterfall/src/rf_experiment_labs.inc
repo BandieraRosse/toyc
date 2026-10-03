@@ -107,6 +107,22 @@ static void rf_lab_camera_position(const struct rasterfall_session *session,
     camera->x=area->origin_x+x;camera->z=area->origin_z+z;
 }
 
+static void rf_equipment_camera(const struct rasterfall_session *session,struct camera *camera)
+{
+    const char *station_text=getenv("RF_GPU_EQUIPMENT_STATION");
+    const char *view=getenv("RF_GPU_EQUIPMENT_VIEW");
+    int station=station_text ? atoi(station_text) : 3;
+    if (station<0 || station>9) station=3;
+    double angle=view && !strcmp(view,"front") ? 0.0 :
+        view && !strcmp(view,"side") ? 1.5707963267948966 :
+        view && !strcmp(view,"back") ? 3.1415926535897932 : 0.5235987755982988;
+    rf_lab_camera_position(session,camera,"actor_actions_lab_area",
+        -4284+(station%6)*1650+(int)(sin(angle)*1400),
+        -1044-(station/6)*2100+(int)(cos(angle)*1400));
+    camera->y=-430;camera->sy=(int)(-sin(angle)*1024);camera->cy=(int)(-cos(angle)*1024);
+    camera->pitch_sy=0;camera->pitch_cy=1024;
+}
+
 static void rf_electronics_camera(const struct rasterfall_session *session,struct camera *camera,const char *view)
 {
     const struct rf_map_runtime_region *area=rf_map_runtime_find_region(
@@ -130,6 +146,7 @@ static void rf_labs_diagnostic_view(const char *view)
     if (all && all[0]=='1')
         for (int i=0;i<RF_LAB_COUNT;++i) rf_labs.requested[i]=1;
     if (!strcmp(view,"electronics-case")) rf_labs.requested[RF_LAB_ELECTRONICS]=1;
+    if (!strcmp(view,"equipment-lab")) rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
     for (int i=0; i<RF_LAB_COUNT; ++i)
         if (!strcmp(view,rf_lab_definitions[i].view)) rf_labs.requested[i]=1;
 }

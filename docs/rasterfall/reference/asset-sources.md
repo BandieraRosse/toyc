@@ -34,6 +34,12 @@ Host Rack V2 的 `rf_host_*` 九件由项目内 `tools/blender/generate_host_rac
 角色显示高度是项目校准数据，不是版权方官方设定。来源等级和具体参数如仍有维护价值，应记录在
 角色 presentation profile 或校准文档，不作为许可依据。
 
+Humanoid 可组装战术装备由 `tools/blender/rf_humanoid_equipment.py` 原创生成。形体研究参考
+[Delta Force 官方角色与装备展示](https://www.playdeltaforce.com/en/universe/) 的职业大轮廓，
+以及 [Crye G4 Combat Pant 官方资料](https://www.cryeprecision.com/G4-Combat-Pant) 的立体侧袋、
+口袋盖与关节活动余量；仅借鉴功能与构造语言，没有提取或复制游戏模型、纹理、标识和产品几何。
+这些参考资料不是本项目资产的许可来源；公开产物完全来自仓库内参数化几何。
+
 ## 动画
 
 | 运行时文件 | 已知来源 | 本项目处理 | 当前发布结论 |

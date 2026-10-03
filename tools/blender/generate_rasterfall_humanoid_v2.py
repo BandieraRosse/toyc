@@ -43,6 +43,9 @@ except (AttributeError, OSError):
 import bpy
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import rf_humanoid_equipment as equipment
+
 
 SIDES_BODY = 10
 SIDES_LIMB = 8
@@ -52,7 +55,8 @@ HEADGEAR_NAMES = (
 )
 PROFESSIONS = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy',
                'gunner', 'gunner-elite')
-RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack') + tuple(
+RIGID_ATTACHMENTS = ('tactical-helmet', 'backpack', 'ballistic-goggles',
+                     'cargo-thigh-l', 'cargo-thigh-r') + tuple(
     profession + '-' + slot
     for profession in PROFESSIONS
     for slot in ('head', 'chest', 'back', 'hip-l', 'hip-r'))
@@ -358,186 +362,21 @@ def create_materials():
         'headgear_light': material('RF_HeadgearLight', (0.22, 0.275, 0.27)),
         'visor': material('RF_Visor', (0.035, 0.13, 0.16)),
         'mask': material('RF_Mask', (0.095, 0.125, 0.13)),
+        'webbing': material('RF_Webbing', (0.055, 0.061, 0.050)),
+        'rubber': material('RF_Rubber', (0.020, 0.025, 0.029)),
+        'metal': material('RF_Hardware', (0.23, 0.255, 0.27)),
+        'cloth': material('RF_OuterCloth', (0.16, 0.175, 0.13)),
+        'lens_glint': material('RF_LensGlint', (0.16, 0.30, 0.32)),
     }
 
 
 def create_body(armature, scene, materials):
-    shirt = materials['shirt']
-    pants = materials['pants']
-    skin = materials['skin']
-    hair = materials['hair']
-    boots = materials['boots']
-
-    # Pelvis is a full second volume. Its widest ring is around the hips and
-    # its lower edge narrows into the thighs; this avoids the V1.1 skirt/armor
-    # plate read.
-    vertical_loft(
-        'Pelvis',
-        [
-            (0.70, 0.000, 0.20, 0.14),
-            (0.77, 0.018, 0.255, 0.188),
-            (0.88, 0.025, 0.275, 0.205),
-            (0.98, 0.000, 0.255, 0.16),
-            (1.04, 0.000, 0.215, 0.115),
-        ],
-        SIDES_BODY, pants, armature, scene,
-        [
-            [('RF_HIPS', 1.0)],
-            [('RF_HIPS', 1.0)],
-            [('RF_HIPS', 0.85), ('RF_SPINE', 0.15)],
-            [('RF_HIPS', 0.35), ('RF_SPINE', 0.65)],
-            [('RF_SPINE', 1.0)],
-        ])
-
-    # One continuous shirt loft carries the neutral waist into the ribcage.
-    # Width and depth both change gradually; there is no broad rectangular
-    # chest slab.
-    vertical_loft(
-        'Torso',
-        [
-            (0.96, -0.005, 0.270, 0.190),
-            (1.04, -0.008, 0.235, 0.150),
-            (1.14, -0.010, 0.240, 0.160),
-            (1.25, -0.012, 0.255, 0.195),
-            (1.36, -0.008, 0.280, 0.220),
-            (1.47, 0.004, 0.290, 0.215),
-            (1.56, 0.010, 0.255, 0.175),
-        ],
-        SIDES_BODY, shirt, armature, scene,
-        [
-            [('RF_HIPS', 0.55), ('RF_SPINE', 0.45)],
-            [('RF_HIPS', 0.30), ('RF_SPINE', 0.70)],
-            [('RF_SPINE', 1.0)],
-            [('RF_SPINE', 0.65), ('RF_CHEST', 0.35)],
-            [('RF_CHEST', 0.80), ('RF_UPPER_CHEST', 0.20)],
-            [('RF_CHEST', 0.45), ('RF_UPPER_CHEST', 0.55)],
-            [('RF_UPPER_CHEST', 1.0)],
-        ])
-
-    # A tapered neck bridges the shirt collar and the head instead of ending
-    # in a square peg.
-    vertical_loft(
-        'Neck',
-        [
-            (1.52, 0.005, 0.105, 0.095),
-            (1.59, 0.008, 0.098, 0.090),
-            (1.70, 0.012, 0.082, 0.078),
-            (1.75, 0.015, 0.078, 0.073),
-        ],
-        SIDES_LIMB, skin, armature, scene,
-        [[('RF_NECK', 1.0)]] * 4)
-
-    # Head profile: narrow jaw/chin, broad cheek and temple, then a smaller
-    # crown. Center-y changes expose forehead/face/rear-skull volume from the
-    # side without adding small facial features.
-    vertical_loft(
-        'HeadMass',
-        [
-            (1.65, -0.020, 0.135, 0.105),  # jaw underside
-            (1.70, -0.055, 0.155, 0.135),  # chin
-            (1.76, -0.035, 0.205, 0.175),  # cheek
-            (1.84, 0.000, 0.220, 0.190),  # temple
-            (1.92, 0.018, 0.205, 0.180),  # forehead / upper skull
-            (2.00, 0.020, 0.180, 0.160),  # crown
-            (2.045, 0.010, 0.105, 0.105),
-        ],
-        SIDES_BODY, skin, armature, scene,
-        [[('RF_HEAD', 1.0)]] * 7)
-
-    # A closed crown stops at a clean hairline; no independent dark strip is
-    # drawn across the upper face. Two restrained side locks complete the
-    # silhouette while leaving the simplified face as one stable skin plane.
-    vertical_loft(
-        'HairCap',
-        [
-            (1.94, 0.025, 0.205, 0.190),
-            (1.98, 0.030, 0.220, 0.200),
-            (2.020, 0.040, 0.215, 0.190),
-            (2.060, 0.050, 0.185, 0.165),
-            (2.080, 0.035, 0.120, 0.115),
-        ],
-        SIDES_BODY, hair, armature, scene,
-        [[('RF_HEAD', 1.0)]] * 5,
-        front_cut=False)
-    for side, sign in (('L', 1.0), ('R', -1.0)):
-        segment_loft(
-            'HairLock' + side, (0.18 * sign, 0.025, 1.78),
-            (0.19 * sign, 0.045, 1.96),
-            [(0.0, 0.040, 0.045, 0.0),
-             (0.45, 0.055, 0.060, 0.0),
-             (1.0, 0.045, 0.050, 0.0)],
-            SIDES_LIMB, hair, armature, scene, 'RF_HEAD')
-
-    # One sleeve and one trouser shell per side cross the joints. Adjacent
-    # rings share their surface instead of hiding closed, intersecting meshes
-    # inside an elbow/knee. Every ring still has at most two bone influences.
-    for side, sign in (('L', 1.0), ('R', -1.0)):
-        prefix = 'RF_' + side + '_'
-
-        def blend(parent, child, amount):
-            return [(prefix + parent, 1.0 - amount), (prefix + child, amount)]
-
-        # Inset the shoulder root inside the chest; the visible deltoid starts
-        # at the next ring, so the terminal cap does not become a raised cuff.
-        sleeve = [
-            (.225, .060, .105), (.28, .115, .130), (.34, .116, .122),
-            (.40, .104, .104), (.46, .106, .100), (.53, .090, .082),
-            (.565, .084, .078), (.585, .084, .077), (.61, .085, .077),
-            (.665, .089, .080), (.73, .084, .076), (.785, .071, .066),
-            (.835, .064, .060),
-        ]
-        weighted_rings(side + 'Sleeve',
-            [((x * sign, 0.0, 1.50),
-              (0, 0, sign), (0, -1, 0), height, depth)
-             for x, height, depth in sleeve],
-            SIDES_LIMB, shirt, armature, scene,
-            [blend('SHOULDER', 'UPPER_ARM', value) for value in (0, .2, .65, 1)] +
-            [blend('UPPER_ARM', 'FOREARM', value) for value in (0, .15, .35, .60, .85, 1)] +
-            [blend('FOREARM', 'HAND', value) for value in (0, .30, 1)],
-            longitudinal_smooth=True)
-
-        segment_loft(
-            side + 'Hand', (0.81 * sign, -0.005, 1.50),
-            (1.00 * sign, -0.015, 1.50),
-            [(0.0, 0.065, 0.060, 0.0),
-             (0.30, 0.078, 0.067, 0.0),
-             (0.78, 0.073, 0.062, 0.0),
-             (1.0, 0.052, 0.048, 0.0)],
-            SIDES_LIMB, skin, armature, scene, 'RF_' + side + '_HAND')
-
-        # Joint height remains at z=.50. Upper-leg influence decreases
-        # monotonically toward the shin; foot influence starts near the ankle.
-        trouser = vertical_loft(side + 'Trouser',
-            [(.12, 0, .066, .064), (.155, 0, .070, .067),
-             (.235, 0, .086, .084), (.345, 0, .108, .106),
-             (.435, 0, .112, .110), (.475, -.006, .109, .102),
-             (.50, -.010, .106, .103), (.54, -.008, .112, .105),
-             (.60, 0, .119, .111), (.70, 0, .126, .126),
-             (.825, 0, .138, .155), (.90, 0, .132, .155)],
-            SIDES_LIMB, pants, armature, scene,
-            [blend('LOWER_LEG', 'FOOT', value) for value in (1, .70, .15, 0)] +
-            [blend('UPPER_LEG', 'LOWER_LEG', value) for value in (1, .85, .60, .30, 0, 0, 0, 0)],
-            longitudinal_smooth=True)
-        # Author in armature space; object TRS and the skeleton stay frozen.
-        for vertex in trouser.data.vertices:
-            vertex.co.x += 0.15 * sign
-
-        # A shallow, forward wedge gives the boot a toe/heel read without the
-        # V1.1 rock shape. The lowest ring is close to z=0 so the mesh remains
-        # grounded in the canonical bind pose.
-        foot = segment_loft(
-            side + 'Foot', (0.15 * sign, -0.015, 0.105),
-            (0.15 * sign, -0.31, 0.070),
-            [(0.0, 0.085, 0.080, 0.0),
-             (0.22, 0.108, 0.090, 0.0),
-             (0.72, 0.108, 0.075, 0.0),
-             (1.0, 0.082, 0.060, 0.0)],
-            SIDES_LIMB, boots, armature, scene,
-            'RF_' + side + '_FOOT')
-        # A planar sole gives both boots an actual canonical ground contact.
-        for vertex in foot.data.vertices:
-            if vertex.co.z < 0.055:
-                vertex.co.z = 0.0
+    # Body art evolves independently of the shared rig and modular equipment.
+    directory = str(Path(__file__).resolve().parent)
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    from rf_humanoid_body import create_body as sculpt_body
+    sculpt_body(sys.modules[__name__], armature, scene, materials)
 
 
 def create_headgear(armature, scene, materials, variant):
@@ -549,6 +388,12 @@ def create_headgear(armature, scene, materials, variant):
     """
     if variant == 'bare':
         return
+    if variant == 'tactical-helmet':
+        return equipment.helmet(globals(), armature, scene, materials)
+    if variant == 'goggles':
+        return equipment.goggles(globals(), armature, scene, materials)
+    if variant == 'respirator':
+        return equipment.respirator(globals(), armature, scene, materials)
 
     gear = materials['headgear']
     light = materials['headgear_light']
@@ -592,52 +437,6 @@ def create_headgear(armature, scene, materials, variant):
                  (0.215, -0.105, 1.985), light, armature, scene)
         return
 
-    if variant == 'goggles':
-        box_mesh('GoggleLensL', (-0.175, -0.270, 1.785),
-                 (-0.018, -0.185, 1.875), visor, armature, scene)
-        box_mesh('GoggleLensR', (0.018, -0.270, 1.785),
-                 (0.175, -0.185, 1.875), visor, armature, scene)
-        box_mesh('GoggleBridge', (-0.030, -0.265, 1.815),
-                 (0.030, -0.185, 1.850), light, armature, scene)
-        box_mesh('GoggleStrapL', (-0.225, 0.030, 1.805),
-                 (-0.170, 0.085, 1.875), gear, armature, scene)
-        box_mesh('GoggleStrapR', (0.170, 0.030, 1.805),
-                 (0.225, 0.085, 1.875), gear, armature, scene)
-        return
-
-    if variant == 'respirator':
-        box_mesh('RespiratorShell', (-0.145, -0.255, 1.635),
-                 (0.145, -0.130, 1.785), mask, armature, scene)
-        box_mesh('RespiratorFilterL', (-0.185, -0.300, 1.655),
-                 (-0.105, -0.225, 1.735), gear, armature, scene)
-        box_mesh('RespiratorFilterR', (0.105, -0.300, 1.655),
-                 (0.185, -0.225, 1.735), gear, armature, scene)
-        box_mesh('RespiratorStrapL', (-0.225, -0.040, 1.700),
-                 (-0.175, 0.060, 1.755), light, armature, scene)
-        box_mesh('RespiratorStrapR', (0.175, -0.040, 1.700),
-                 (0.225, 0.060, 1.755), light, armature, scene)
-        return
-
-    if variant == 'tactical-helmet':
-        vertical_loft(
-            'TacticalHelmetShell',
-            [(1.895, 0.025, 0.225, 0.195),
-             (1.965, 0.030, 0.245, 0.215),
-             (2.060, 0.040, 0.235, 0.205),
-             (2.145, 0.045, 0.185, 0.170),
-             (2.185, 0.035, 0.095, 0.090)],
-            SIDES_BODY, gear, armature, scene,
-            [[('RF_HEAD', 1.0)]] * 5)
-        box_mesh('TacticalHelmetBrow', (-0.235, -0.285, 1.875),
-                 (0.235, -0.105, 1.935), light, armature, scene)
-        box_mesh('TacticalHelmetEarL', (-0.275, -0.020, 1.765),
-                 (-0.205, 0.105, 1.970), gear, armature, scene)
-        box_mesh('TacticalHelmetEarR', (0.205, -0.020, 1.765),
-                 (0.275, 0.105, 1.970), gear, armature, scene)
-        box_mesh('TacticalHelmetVisor', (-0.190, -0.245, 1.790),
-                 (0.190, -0.185, 1.835), visor, armature, scene)
-        return
-
     if variant == 'engineering-helmet':
         vertical_loft(
             'EngineeringHelmetShell',
@@ -662,7 +461,7 @@ def create_headgear(armature, scene, materials, variant):
 
 
 def create_profession(armature, scene, materials, profession):
-    """V1 visual carriers: a few large masses, weighted to socket parents.
+    """Build reusable professional equipment in canonical bind space.
 
     These are authoring profiles, independent of the legacy Hurd identities.
     CHEST/BACK use RF_CHEST and HIP gear uses its upper-leg parent; attachment
@@ -684,25 +483,6 @@ def create_profession(armature, scene, materials, profession):
     for key, color in (('shirt', shirt), ('pants', pants),
                        ('headgear', gear), ('headgear_light', accent)):
         set_material_color(materials[key], color)
-    g, a = materials['headgear'], materials['headgear_light']
-
-    def tagged(obj, slot):
-        obj['rf_attachment_slot'] = slot
-        return obj
-
-    def box(name, lo, hi, mat=g, bone='RF_CHEST', slot='chest'):
-        return tagged(box_mesh(profession + '_' + name, lo, hi, mat,
-                               armature, scene, bone), slot)
-
-    def plate(width, bottom, top, front, mat=g):
-        # Taper at the clavicle leaves the shoulder/upper-arm rotation clear.
-        return tagged(vertical_loft(profession + '_Chest',
-            [(bottom, front + .045, width * .86, .065),
-             (bottom + .07, front + .025, width, .075),
-             (top - .07, front + .030, width, .070),
-             (top, front + .045, width * .72, .055)],
-            8, mat, armature, scene, [[('RF_CHEST', 1.0)]] * 4), 'chest')
-
     heads = {'rifleman': ('tactical-helmet',), 'breacher': ('tactical-helmet', 'respirator'),
              'recon': ('patrol-cap', 'headset'), 'medic': ('goggles', 'respirator'),
              'engineer': ('engineering-helmet',), 'heavy': ('tactical-helmet',),
@@ -714,72 +494,7 @@ def create_profession(armature, scene, materials, profession):
         for obj in scene.objects:
             if obj.type == 'MESH' and obj.name not in before:
                 obj['rf_attachment_slot'] = 'head'
-    if profession == 'rifleman':
-        plate(.205, 1.12, 1.46, -.235)
-        tagged(create_rifleman_backpack(armature, scene, g,
-               prefix=profession + '_'), 'back')
-        box('MagazineBlock', (-.17, -.29, 1.08), (.17, -.23, 1.22), a)
-    elif profession == 'breacher':
-        plate(.255, 1.035, 1.50, -.255)
-        box('Collar', (-.15, -.18, 1.48), (.15, .17, 1.60), a)
-        box('FlatBackPlate', (-.245, .18, 1.08), (.245, .30, 1.50), slot='back')
-        box('HipShield', (-.20, -.205, .86), (.20, -.15, 1.04), a, 'RF_HIPS')
-    elif profession == 'recon':
-        plate(.16, 1.15, 1.34, -.215)
-        box('NarrowPack', (-.12, .19, 1.20), (.12, .32, 1.58), slot='back')
-        box('RigBand', (-.19, -.25, 1.12), (.19, -.20, 1.20), a)
-    elif profession == 'medic':
-        plate(.22, 1.12, 1.46, -.235)
-        box('MedicalPack', (-.27, .18, 1.02), (.27, .44, 1.60), slot='back')
-        # Broad orange panels; identity stays readable without tiny symbols.
-        box('ChestPanel', (-.10, -.29, 1.22), (.10, -.245, 1.42), a)
-        box('BackPanel', (-.15, .435, 1.18), (.15, .455, 1.47), a, slot='back')
-        for sign in (-1, 1):
-            box('PackSide' + str(sign), (sign * .27 - .025, .23, 1.18),
-                (sign * .27 + .025, .39, 1.46), a, slot='back')
-    elif profession == 'engineer':
-        plate(.185, 1.14, 1.40, -.225, a)
-        box('ToolCase', (-.23, .19, 1.03), (.21, .40, 1.43), slot='back')
-        box('ToolHandle', (-.27, .25, 1.39), (-.20, .34, 1.76), a, slot='back')
-        box('ToolHead', (-.36, .24, 1.65), (-.10, .35, 1.77), a, slot='back')
-        box('HipToolbox', (.235, -.09, .65), (.40, .18, .94), a,
-            'RF_L_UPPER_LEG', 'hip-l')
-    elif profession == 'heavy':
-        plate(.285, 1.05, 1.51, -.26)
-        box('AmmoBack', (-.32, .19, 1.01), (.32, .48, 1.62), slot='back')
-        for sign, side in ((-1, 'R'), (1, 'L')):
-            box('AmmoStack' + side, (sign * .30 - .06, .22, 1.12),
-                (sign * .30 + .06, .43, 1.58), a, slot='back')
-            box('HipAmmo' + side, (sign * .27 - .075, -.08, .70),
-                (sign * .27 + .075, .16, .94), g,
-                'RF_' + side + '_UPPER_LEG', 'hip-' + side.lower())
-        box('ChestAmmo', (-.22, -.31, 1.10), (.22, -.25, 1.24), a)
-    elif profession == 'gunner':
-        # Broad red panels, visible from the front, rear and overhead. The
-        # narrow pack / exposed lower face distinguish the ordinary rifleman.
-        plate(.21, 1.10, 1.45, -.238, a)
-        box('ChestHarness', (-.18, -.325, 1.10), (.18, -.27, 1.23))
-        for side in (-1, 1):
-            box('ShoulderStrap' + str(side), (side*.15-.038, -.20, 1.43),
-                (side*.15+.038, .20, 1.515), a)
-        box('PatrolPack', (-.18, .19, 1.11), (.18, .36, 1.50), slot='back')
-        box('BackSignal', (-.14, .36, 1.20), (.14, .385, 1.45), a, slot='back')
-        box('PackTop', (-.14, .21, 1.49), (.14, .345, 1.515), a, slot='back')
-    elif profession == 'gunner-elite':
-        # Same body/socket contract, larger armor and a closed helmet. Gear
-        # stays below the deltoids so the active arm/hand chain remains free.
-        plate(.255, 1.06, 1.49, -.26, a)
-        box('ChestCore', (-.12, -.345, 1.20), (.12, -.29, 1.42))
-        box('ArmorBelt', (-.22, -.32, 1.07), (.22, -.25, 1.19))
-        for side in (-1, 1):
-            box('Collar' + str(side), (side*.15-.055, -.15, 1.47),
-                (side*.15+.055, .17, 1.565), a)
-        box('ArmoredPack', (-.255, .19, 1.06), (.255, .425, 1.59), slot='back')
-        box('BackSignal', (-.18, .425, 1.17), (.18, .45, 1.50), a, slot='back')
-        box('PackTop', (-.22, .23, 1.59), (.22, .39, 1.615), a, slot='back')
-        # Full-width helmet brow carries the faction hue in RTS views.
-        box('HelmetBrow', (-.19, -.239, 1.933), (.19, -.218, 1.979),
-            a, 'RF_HEAD', 'head')
+    equipment.profession(globals(), armature, scene, materials, profession)
 
 
 def create_rifleman_backpack(armature, scene, material, prefix=''):
@@ -791,7 +506,14 @@ def create_rifleman_backpack(armature, scene, material, prefix=''):
 def make_rigid_attachment(scene, armature, materials, name):
     """Build only attachment geometry and rebase it to its stable socket."""
     before = {obj.name for obj in scene.objects}
-    if name == 'tactical-helmet':
+    if name == 'ballistic-goggles':
+        equipment.goggles(globals(), armature, scene, materials)
+        origin = Vector((0.0, 0.005, 1.99))
+    elif name.startswith('cargo-thigh-'):
+        side = name[-1]
+        equipment.outer_thigh(globals(), armature, scene, materials, side)
+        origin = Vector((0.20 if side == 'l' else -0.20, 0.0, 0.87))
+    elif name == 'tactical-helmet':
         create_headgear(armature, scene, materials, name)
         origin = Vector((0.0, 0.005, 1.99))
     elif name == 'backpack':
@@ -866,6 +588,12 @@ def main():
         if args.headgear != 'bare':
             raise ValueError('--profession owns its headgear combination')
         create_profession(armature, scene, materials, args.profession)
+        # Legacy full carriers remain an honest A/B for the modular recipe.
+        shared_materials = create_materials()
+        if args.profession in ('rifleman', 'breacher', 'heavy', 'gunner-elite'):
+            equipment.goggles(globals(), armature, scene, shared_materials)
+        for side in ('l', 'r'):
+            equipment.outer_thigh(globals(), armature, scene, shared_materials, side)
     elif not args.rigid_attachment:
         create_headgear(armature, scene, materials, args.headgear)
 

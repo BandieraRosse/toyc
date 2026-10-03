@@ -4,6 +4,27 @@ static struct rf_gpu_scene_local_source scene_actor_history;
 static const struct rasterfall_session *scene_actor_session;
 static struct toy_game scene_actor_fixture_game;
 
+struct scene_actor_fixture_clock {
+    int actor_id;
+    uint64_t time_ms;
+};
+
+static void scene_actor_freeze_fixture_clocks(struct rf_gpu_scene_local_frame *frame,
+    const struct scene_actor_fixture_clock clocks[TOY_GAME_MAX_ACTORS])
+{
+    /* Only slots inserted into this presentation copy own an authored clock.
+     * A gameplay actor with a similar numeric ID must retain its own history. */
+    for (unsigned i=0;i<frame->snapshot.actor_count;++i) {
+        const struct rf_gpu_scene_actor_v1 *actor=&frame->snapshot.actors[i];
+        unsigned slot=actor->source_slot;
+        if (slot<TOY_GAME_MAX_ACTORS && clocks[slot].actor_id>0 &&
+            actor->identity.source==RF_GPU_SCENE_ACTOR_GAME &&
+            actor->identity.source_id==(unsigned)clocks[slot].actor_id)
+            frame->presentations[i].lower_time_ms=clocks[slot].time_ms;
+    }
+    if (frame->snapshot.actor_count) frame->presentation=frame->presentations[0];
+}
+
 static void scene_actor_restore_fixture_history(struct rf_gpu_scene_local_source *next,
     int actor_id)
 {
@@ -61,6 +82,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
 {
     struct rf_gpu_scene_local_source next={0};
     struct rf_gpu_scene_local_frame frame;
+    struct scene_actor_fixture_clock fixture_clocks[TOY_GAME_MAX_ACTORS]={0};
     const struct rasterfall_net *net=active_net;
     static const unsigned colors[RASTERFALL_NET_PLAYER_MAX]={
         RF_COLOR_AI_RIFLE,RF_COLOR_UI_PLAYER,0xD59BFF,0x66D9D9};
@@ -121,8 +143,9 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                 struct toy_game_actor actor;
                 int x=-4284+(i%6)*1650;
                 int z=3156-(i/6)*2100-family*4200;
-                if (family && i>=3) continue;
-                outpost_actor_fixture(&actor,family,1,outpost_actor_actions[i],
+                if (family && i>=(int)OUTPOST_HUMANOID_STATION_COUNT) continue;
+                outpost_actor_fixture(&actor,family,1,family ?
+                    outpost_humanoid_stations[i].action : outpost_actor_actions[i],
                     x,z,1,outpost_actor_actions_time_us,family*32+i);
                 if (family) {
                     int slot=TOY_GAME_MAX_ACTORS-1;
@@ -130,6 +153,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                         --slot;
                     if (slot<0) goto fail;
                     scene_actor_fixture_game.actors[slot]=actor;
+                    fixture_clocks[slot].actor_id=actor.actor_id;
+                    fixture_clocks[slot].time_ms=outpost_actor_locomotion_time(actor.actor_id);
                     if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
                     scene_actor_restore_fixture_history(&next,actor.actor_id);
                 } else {
@@ -154,6 +179,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                         --slot;
                     if (slot<0) goto fail;
                     scene_actor_fixture_game.actors[slot]=actor;
+                    fixture_clocks[slot].actor_id=actor.actor_id;
+                    fixture_clocks[slot].time_ms=outpost_actor_locomotion_time(actor.actor_id);
                     if (rf_gpu_scene_local_created(&next,&actor)<0) goto fail;
                     scene_actor_restore_fixture_history(&next,actor.actor_id);
                 } else {
@@ -166,6 +193,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     }
     if (rf_gpu_scene_local_freeze_presentation(&next,pose_game,camera,width,height,
             0,NULL,0,&frame)<0) goto fail;
+    scene_actor_freeze_fixture_clocks(&frame,fixture_clocks);
     for (unsigned i=0;i<frame.snapshot.actor_count;++i) {
         struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
         if (rf_gpu_scene_pose_extract_at(&frame,i,pose)<0) goto fail;

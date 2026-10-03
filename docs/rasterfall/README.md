@@ -55,8 +55,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | Blender/RF 角色保真、眼部遮挡与高级材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、渲染终端角色材质/过滤开关 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
 | 新角色包合同、材质能力与接入缺口审计 | [合同草案](reference/character-package-v1.md)、[资产工作流](guides/asset-pipeline.md#新角色接入前的能力清点) | `tools/assets/rfchar_audit.py`、`tools/assets/rfchar_material_contract.py`；源清点与材质元数据校验，不替代完整资产合同或游戏验收 |
-| 人形美术生成、敌方枪手组件与职业外观验收 | [美术验收指南](guides/character-art-acceptance.md) | RF Humanoid V1.1/V2、头部覆盖、职业组图、`tools/rf_combat_character_round.py` 公开共享身体/gear 与近远景、动作序列 |
-| 私有角色头脸、头发与身体的独立创作和组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md)、[发束边界与底发参考](reference/rf-c01-hair-surface-study.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；私有组装清单、头壳与发束接口、身体服装与关节局部拓扑、动作/表情采样、部件隔离和固定视图审阅 |
+| 人形精修、可组装衣裤护甲与头部装备、职业外观验收 | [美术验收指南](guides/character-art-acceptance.md)、[角色表现](architecture/character-presentation.md) | RF Humanoid V1.1/V2、独立装备与职业组图、`tools/rf_combat_character_round.py` 公开共享身体/gear 与近远景、动作序列；AI 动作区提供装备组合台位 |
+| 私有角色头脸、头发与身体的独立创作和组装 | [分部件创作架构](architecture/character-authoring.md)、[工作流](guides/character-parts.md)、[当前设计候选](reference/rf-c01-design-study.md)、[V25d 创作记录](archive/character-art-v025d-20261003.md) | `tools/blender/rf_character_parts.py`、`rf_parts/`；锁定部件、头壳接口、肩袖和发束拓扑迁移、动作/表情采样与固定视图审阅 |
 | 新一代角色体系、私有动漫内容与 GPU 实验场接入 | [暂停的角色计划](plans/private-anime-character-gpu.md)、[实验场预览](guides/gpu-scene-fixture.md#rf_model_lab-角色预览)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-normal-scene model-lab 0`、目录 body pose 与分块 GPU 蒙皮；RF_MODEL_LAB 分色动作预览已接通，版本化角色包、纹理、完整动作与 LOD 继续按活动计划推进 |
 | 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |

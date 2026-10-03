@@ -19,6 +19,7 @@ from rf_profession_round import check_profession_materials, check_rmesh_material
 from rf_profession_round import PROFESSION_GEAR_COLORS
 from rf_humanoid_headgear_sheet import assemble_grid
 from character_lab_sheet import write_png
+from assets.rfchar_import import glb, material_record
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILES = ('rifleman', 'breacher', 'recon', 'medic', 'engineer', 'heavy',
@@ -27,6 +28,19 @@ PROFESSION_GEAR_COLORS.update({
     'gunner': ((.12, .065, .055), (.64, .070, .032)),
     'gunner-elite': ((.075, .087, .10), (.56, .038, .022)),
 })
+
+
+def check_shared_body_palette(source, raw):
+    """The roster recolors pants=0 and shirt=1 on both render paths."""
+    document, _ = glb(source)
+    materials = document['materials']
+    names = ['RF_Pants', 'RF_Shirt', 'RF_Skin', 'RF_Hair', 'RF_Boots']
+    if [material.get('name') for material in materials] != names:
+        raise ValueError('shared body requires the canonical five-material order')
+    count, offset = struct.unpack_from('<I', raw, 48)[0], struct.unpack_from('<I', raw, 56)[0]
+    expected = b''.join(material_record(material) for material in materials)
+    if count != len(names) or raw[offset:offset+40*count] != expected:
+        raise ValueError('shared body material palette changed during import')
 
 
 def entries():
@@ -40,6 +54,8 @@ def entries():
         for slot in slots:
             asset = f'rf_gear_{profile}_{slot}'.replace('-', '_')
             yield asset, [f'--rigid-attachment={profile}-{slot}'], profile
+    for module in ('ballistic-goggles', 'cargo-thigh-l', 'cargo-thigh-r'):
+        yield 'rf_gear_' + module.replace('-', '_'), [f'--rigid-attachment={module}'], None
 
 
 def main():
@@ -51,6 +67,8 @@ def main():
                         help='rebuild only six gunner attachments while iterating')
     subset.add_argument('--body-only', action='store_true',
                         help='rebuild only the canonical shared body while iterating')
+    subset.add_argument('--gear-only', action='store_true',
+                        help='rebuild rigid clothing/equipment without the shared body')
     parser.add_argument('--blender', default='blender')
     parser.add_argument('--tool-dir', type=Path,
                         default=Path('build-windows' if os.name == 'nt' else 'build'))
@@ -80,6 +98,8 @@ def main():
             continue
         if args.body_only and asset != 'rf_humanoid_v2':
             continue
+        if args.gear_only and asset == 'rf_humanoid_v2':
+            continue
         manifest = ROOT / f'tools/assets/manifests/characters/{asset}.asset.json'
         value = json.loads(manifest.read_text(encoding='utf-8'))
         source = (manifest.parent / value['source']).resolve()
@@ -97,7 +117,9 @@ def main():
         raw = mesh.read_bytes()
         if profile and args.generate:
             check_rmesh_materials(mesh, profile, expected)
-        elif not profile:
+        elif asset == 'rf_humanoid_v2':
+            if args.generate:
+                check_shared_body_palette(source, raw)
             run([runtime_test, mesh], asset + '-runtime')
         version, vertices, indices, units = struct.unpack_from('<4I', raw, 4)
         primitives, materials = struct.unpack_from('<2I', raw, 44)

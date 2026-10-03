@@ -162,27 +162,32 @@ rasterfall_profession_visual_profile(int profession_id)
 }
 
 #define A(socket, gear) { RASTERFALL_ATTACHMENT_##socket, RASTERFALL_GEAR_##gear }
+#define CARGO A(HIP_L,CARGO_THIGH_L),A(HIP_R,CARGO_THIGH_R)
 static const struct rasterfall_character_visual_recipe modular_professions[] = {
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x6F8461, 0x84906F,
-      {A(HEAD,RIFLEMAN_HEAD),A(CHEST,RIFLEMAN_CHEST),A(BACK,RIFLEMAN_BACK)},3},
+      {A(HEAD,RIFLEMAN_HEAD),A(CHEST,RIFLEMAN_CHEST),A(BACK,RIFLEMAN_BACK),
+       A(HEAD,BALLISTIC_GOGGLES),CARGO},6},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x4D5969, 0x616C79,
-      {A(HEAD,BREACHER_HEAD),A(CHEST,BREACHER_CHEST),A(BACK,BREACHER_BACK)},3},
+      {A(HEAD,BREACHER_HEAD),A(CHEST,BREACHER_CHEST),A(BACK,BREACHER_BACK),
+       A(HEAD,BALLISTIC_GOGGLES),CARGO},6},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x899376, 0x798465,
-      {A(HEAD,RECON_HEAD),A(CHEST,RECON_CHEST),A(BACK,RECON_BACK)},3},
+      {A(HEAD,RECON_HEAD),A(CHEST,RECON_CHEST),A(BACK,RECON_BACK),CARGO},5},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x7C9093, 0x657E81,
-      {A(HEAD,MEDIC_HEAD),A(CHEST,MEDIC_CHEST),A(BACK,MEDIC_BACK)},3},
+      {A(HEAD,MEDIC_HEAD),A(CHEST,MEDIC_CHEST),A(BACK,MEDIC_BACK),CARGO},5},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x997C4B, 0x7C7665,
       {A(HEAD,ENGINEER_HEAD),A(CHEST,ENGINEER_CHEST),A(BACK,ENGINEER_BACK),
-       A(HIP_L,ENGINEER_HIP_L)},4},
+       A(HIP_L,ENGINEER_HIP_L),CARGO},6},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x796C59, 0x6C695D,
       {A(HEAD,HEAVY_HEAD),A(CHEST,HEAVY_CHEST),A(BACK,HEAVY_BACK),
-       A(HIP_L,HEAVY_HIP_L),A(HIP_R,HEAVY_HIP_R)},5},
+       A(HIP_L,HEAVY_HIP_L),A(HIP_R,HEAVY_HIP_R),
+       A(HEAD,BALLISTIC_GOGGLES),CARGO},8},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0xB94C3A, 0x554947,
-      {A(HEAD,GUNNER_HEAD),A(CHEST,GUNNER_CHEST),A(BACK,GUNNER_BACK)},3},
+      {A(HEAD,GUNNER_HEAD),A(CHEST,GUNNER_CHEST),A(BACK,GUNNER_BACK),CARGO},5},
     { RASTERFALL_BODY_RF_HUMANOID_V2, 0x8F302D, 0x343A40,
       {A(HEAD,GUNNER_ELITE_HEAD),A(CHEST,GUNNER_ELITE_CHEST),
-       A(BACK,GUNNER_ELITE_BACK)},3}
+       A(BACK,GUNNER_ELITE_BACK),A(HEAD,BALLISTIC_GOGGLES),CARGO},6}
 };
+#undef CARGO
 #undef A
 
 static const char *gear_resource_names[] = {
@@ -194,7 +199,8 @@ static const char *gear_resource_names[] = {
     "rf_gear_engineer_hip_l", "rf_gear_heavy_head", "rf_gear_heavy_chest",
     "rf_gear_heavy_back", "rf_gear_heavy_hip_l", "rf_gear_heavy_hip_r",
     "rf_gear_gunner_head", "rf_gear_gunner_chest", "rf_gear_gunner_back",
-    "rf_gear_gunner_elite_head", "rf_gear_gunner_elite_chest", "rf_gear_gunner_elite_back"
+    "rf_gear_gunner_elite_head", "rf_gear_gunner_elite_chest", "rf_gear_gunner_elite_back",
+    "rf_gear_ballistic_goggles", "rf_gear_cargo_thigh_l", "rf_gear_cargo_thigh_r"
 };
 
 const struct rasterfall_character_visual_recipe *
@@ -206,7 +212,7 @@ rasterfall_character_visual_recipe(int id)
 
 const char *rasterfall_character_body_resource_name(int id)
 {
-    static const char *names[]={"rf_humanoid_v2", "rf_c01_v023a"};
+    static const char *names[]={"rf_humanoid_v2", "rf_c01_v025d"};
     return id>=0 && id<RASTERFALL_BODY_RESOURCE_COUNT ? names[id] : NULL;
 }
 
@@ -220,7 +226,7 @@ const char *rasterfall_character_body_resource_path(int id)
 {
     static const char *paths[] = {
         RASTERFALL_CHARACTER_PUBLIC_MODEL_DIR "/rf_humanoid_v2.rmesh",
-        "rasterfall/private-assets/models/rf_c01_v023a.rmesh"
+        "rasterfall/private-assets/models/rf_c01_v025d.rmesh"
     };
     return id >= 0 && id < RASTERFALL_BODY_RESOURCE_COUNT ? paths[id] : NULL;
 }

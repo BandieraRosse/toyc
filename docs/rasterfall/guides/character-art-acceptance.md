@@ -228,16 +228,19 @@ python tools/rf_combat_character_round.py --capture --tool-dir build-windows
 
 ### 共享身体连续关节表面
 
-当前 canonical body 在同一生成器中把每侧肩部至腕部改为一条衣袖 loft，把大腿、膝部和小腿
-改为一条裤腿 loft。肘、膝内部不再保留相互重叠的端盖，沿环带使用最多两个相邻骨骼的单调
-权重过渡；肩根收进胸侧，袖口和脚踝仍保留清晰终端。身体身高、手脚、躯干、21-role 骨架、
-八个 sockets、inverse bind 和装备 mount contract 不随该几何修正改变。
+当前 canonical body 由主生成器委托 `tools/blender/rf_humanoid_body.py` 创作。每侧肩部至腕部
+保持一条衣袖 loft，大腿、膝部和小腿保持一条裤腿 loft；关节环带使用最多两个相邻骨骼的单调
+权重过渡。精修增加胸背到斜方肌的坡面、独立衣领、眉弓/眼窝/鼻梁/唇线/耳廓、覆盖后脑的短发、
+手掌与指端/拇指、靴筒/鞋底/鞋带。鼻梁直接并入头壳表面，避免侧视时独立鼻楔与脸之间的空隙。
+2.080m 头顶、地面、21-role 骨架、八个 sockets、inverse bind 和装备 mount contract 保持不变。
 
-衣袖与裤腿仅沿纵向共享法线，同一环的径向折面和端盖保持硬边；头、躯干、鞋、刚性装备沿用
-已有法线。法线来自 GLB 源资产，经现有 importer 和蒙皮路径消费，不增加 runtime 渲染分支。
-五个身体材质和角色 palette 继续共用；正式公共资源为 3,040 vertices / 1,636 triangles / 155,516 bytes。
+衣袖、裤腿和躯干沿纵向共享法线，径向折面与端盖保持硬边；头壳使用连续曲面法线，短发和鞋底
+保留明确结构面。法线来自 GLB 源资产，经现有 importer 和蒙皮路径消费，不增加 runtime 分支。
+五个身体材质和角色 palette 继续共用；顺序固定为 Pants、Shirt、Skin、Hair、Boots，生成轮次同时
+核对 GLB 顺序和导入后的材质字节，保护 CPU/Scene 的职业换色。正式公共资源为
+5,880 vertices / 4,286 triangles / 312,276 bytes；预算以生成轮次 `asset-report.json` 为准。
 
-只迭代身体时使用 `--body-only`，避免重复生成 27 个无关装备：
+只迭代身体时使用 `--body-only`，避免重复生成无关装备：
 
 ```powershell
 python tools/rf_combat_character_round.py --generate --body-only --blender 'E:/Blender 5.2/blender.exe' --tool-dir build-windows --output tmp/combat-v0/body-quality/after
@@ -249,5 +252,24 @@ python tools/rf_combat_character_round.py --capture --body-only --tool-dir build
 固定镜头，保留生成前 body/GLB 和截图；除上述持枪近中远景与连续 walk/fire，还用
 `--model-pose-views <body> <dir> bind|rfchar-test` 检查裸身体四方向，并用
 `--squad-acceptance rasterfall/assets/models/characters <dir>` 核对八名友军、palette 和附件隔离。
-对照骨架记录、CHR1、inverse bind matrices 与 bounds，必须精确相等；不能通过改 socket 或展示
-偏移掩盖关节问题。截图应同时查看正侧后、三分之四、俯视及远近尺度，检查轮廓与装备识别度。
+对照骨架记录、CHR1 和 inverse bind matrices，必须精确相等；几何精修造成的 bounds 变化应记录并
+核对来源，头顶与地面保持稳定，不能通过改 socket 或展示偏移掩盖关节问题。截图应同时查看
+正侧后、三分之四、俯视及远近尺度，检查轮廓与装备识别度。
+
+### 模块化轮廓装备重建
+
+只迭代装备时，复用已构建的原生 importer：
+
+```powershell
+python tools/rf_combat_character_round.py --generate --gear-only --blender 'E:/Blender 5.2/blender.exe' --tool-dir build-windows --output tmp/character-quality/equipment
+```
+
+该入口覆盖八套职业装备及共享的 `ballistic-goggles`、`cargo-thigh-l/r`。新高切防弹盔的耳罩、
+导轨和前安装座保持独立体积；护目镜有镜框、密封圈、镜腿与扣具；板甲包含肩带、侧腰封、织带、
+弹匣袋和压缩带背包。侧袋与大腿外裤层挂 HIP sockets，不跨膝；完整可换蒙皮服装仍是后续能力，
+不能据此声称已实现整条裤子的衣物物理。素材与参考边界见[来源台账](../reference/asset-sources.md)。
+
+完成生成后由 Windows native package 同步公开 assets。运行 `--gpu-scene-pose-test` 验证满容量、
+同 socket 多配件、左右腿动作跟随和 CPU/Scene 一致，再用 `--combat-character-capture` 与
+实验区近景核查头盔/护目镜是否重叠、瞄准时弹匣袋与前臂的间隙、侧袋跟随和各职业远景轮廓。
+不要用静态 bind 图代替动作检查。

@@ -18,8 +18,10 @@ $partsTool = 'tools/blender/rf_character_parts.py'
 初始完整角色可直接打开 `authoring/build/rf_c01.blend`。每个 `parts/<part>/v001.blend` 也包含可打开
 编辑的独立部件场景。骨架和审阅场景分别在 `rig/`、`review/`；私有源、预览、GLB 和 RFM2 均不加入 Git。
 新输出使用未占用路径；工具拒绝覆盖已有部件版本及组装结果。
+以上 `assembly.json` 示例指初始迁移基线。继续当前造型时，改用设计稿指向的候选清单；
+V25d 为 `assembly-head-v025d.json`，三个头发部件均为 `editable_mesh`，按手工网格流程发布。
 
-## 手工修改脸部或前发
+## 手工修改脸部或冻结头发网格
 
 打开部件源或完整组装文件，先另存到工作副本。修改目标部件；保留对象的 `part_id` 和 `object_id`，
 不要覆盖清单锁定的源文件。编辑脸部 Basis 后，检查旧表情是否需要同步处理。
@@ -29,10 +31,13 @@ $partsTool = 'tools/blender/rf_character_parts.py'
 ```
 
 成功后产生 `parts/head/v002.blend` 和 `assembly-head-v002.json`；其他部件继续引用原版本。
-从完整组装文件发布时，误改身体 UV、材质或审阅场景会拒绝。换成 `hair_front` 可独立发布前发。
+从完整组装文件发布时，误改身体 UV、材质或审阅场景会拒绝。换成清单中任一 `editable_mesh`
+头发部件 ID 可独立发布该部件。
 当前普通修订保持对象 ID 集合；新增或删除对象属于显式部件清单迁移。
 
-## 程序修改侧后发
+## 程序修改旧清单中的侧后发
+
+仅适用于部件 `mode` 仍为 `procedural` 的清单。当前 V25d 已迁移为冻结网格，不使用本节重建。
 
 复制 `hair-v001.json` 为新的参数文件，只修改所需发束 ID 下的角度、宽度、发尾或弯曲参数。
 不要改变共享空间接口来达到单束局部修形。

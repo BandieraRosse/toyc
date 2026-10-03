@@ -17,7 +17,7 @@
 | --- | --- | --- | --- | --- |
 | 感染体姿态 | `character_lab` | `lab_showcase_button` | `character-lab` | CPU / Scene |
 | 感染体往返 | `walk_lab` | `walk_lab_showcase_button` | `walk-lab` | CPU / Scene |
-| AI 动作 | `actor_actions_lab` | `actor_actions_button` | `actor-actions-lab` | CPU / Scene |
+| AI 动作与装备组合 | `actor_actions_lab` | `actor_actions_button` | `actor-actions-lab` / `equipment-lab` | CPU / Scene |
 | AI 往返 | `actor_walk_lab` | `actor_walk_button` | `actor-walk-lab` | CPU / Scene |
 | RF 模型 | `rf_model_lab` | `rf_model_lab_button` | `model-lab` | Scene |
 | GPU 光照 | `rf_light_lab` | `rf_light_lab_button` | `lighting-lab` | Scene |
@@ -27,6 +27,12 @@
 电子产品控制台按 E 循环关闭、600、1200、1800 RPM；屏幕和入口牌显示当前档位。
 CPU 对 Scene 专属区显示 GPU SCENE REQUIRED，不修改其请求。
 显式诊断镜头仅开启对应展区。离开前哨站或重载普通世界清空展示请求。
+
+AI 动作区的 Humanoid 台位保留步枪手站立、行走和射击，随后为突击、侦察、医疗、工程、重装、
+普通枪手与精英枪手的实际装备组合，台牌标注身份。它们使用已有 idle/walk/fire 动作，不提供未创作动作。
+`equipment-lab` 是同一区域的近景镜头；`RF_GPU_EQUIPMENT_STATION=0..9` 选择上述台位，
+`RF_GPU_EQUIPMENT_VIEW=front|quarter|side|back` 选择视角。固定截图或 fixed-tick 运行固定镜头，
+普通启动仍可移动观察。`tools/gpu_equipment_review.ps1` 记录原生退出码、逐帧来源、截图和资源哈希。
 
 Runtime 持有用户请求和各区展示时钟，按世界、后端与性能测试独占状态生成有效开关。
 暂停、关闭或性能隔离期间时钟不推进；渲染只消费有效开关与时钟。

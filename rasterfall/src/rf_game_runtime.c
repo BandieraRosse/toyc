@@ -4067,6 +4067,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab") ||
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+               !strcmp(options.gpu_normal_view,"equipment-lab") ||
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
                !strcmp(options.gpu_normal_view,"lighting-lab") ||
@@ -4148,6 +4149,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             rf_labs.requested[RF_LAB_INFECTED_WALK]=1;
         } else if (!strcmp(options.gpu_normal_view, "actor-actions-lab")) {
             rf_lab_camera_position(&session,&camera,"actor_actions_lab_area",0,9956);camera.cy=-1024;
+            rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
+        } else if (!strcmp(options.gpu_normal_view, "equipment-lab")) {
+            rf_equipment_camera(&session,&camera);
             rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
         } else if (!strcmp(options.gpu_normal_view, "lighting-lab")) {
             rf_lab_camera_position(&session,&camera,"rf_light_lab_area",1252,4826);camera.y=2300;camera.cy=-1024;
@@ -5964,6 +5968,9 @@ startup_again:
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
             game_runtime.camera = camera;
+            if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"equipment-lab") &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_equipment_camera(&session,&game_runtime.camera);
             if (options.gpu_normal_view &&
                 (!strcmp(options.gpu_normal_view,"character-lab") ||
                  !strcmp(options.gpu_normal_view,"walk-lab") ||
@@ -6355,6 +6362,7 @@ startup_again:
                               (!strcmp(options.gpu_normal_view,"character-lab") ||
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+                               !strcmp(options.gpu_normal_view,"equipment-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||
                                !strcmp(options.gpu_normal_view,"lighting-lab") ||
