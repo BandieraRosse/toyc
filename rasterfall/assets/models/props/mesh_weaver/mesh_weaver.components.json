@@ -303,58 +303,58 @@
       "runtime_contact_triangles": 6,
       "verified_weapon_contacts": {
         "ak": {
-          "minimum_y_m": -0.142734375,
+          "minimum_y_m": -0.1427001953125,
           "contact_vertices": 2,
           "contact_bounds_xz_m": [
             [
-              0.0349656045582152,
-              0.006039190512385642
+              0.0349418362592461,
+              0.006050442085142722
             ],
             [
-              0.040576872534651955,
-              0.021456022572154454
+              0.040536404033372025,
+              0.02142139071616222
             ]
           ]
         },
         "pistol": {
-          "minimum_y_m": -0.07429296875,
+          "minimum_y_m": -0.0743408203125,
           "contact_vertices": 8,
           "contact_bounds_xz_m": [
             [
-              -0.09952967540493297,
-              -0.04597471822548245
+              -0.09950799547380482,
+              -0.046017926251653594
             ],
             [
-              -0.03792422976795577,
-              -0.004054411841098244
+              -0.03791287363038441,
+              -0.0039991796692633065
             ]
           ]
         },
         "smg": {
-          "minimum_y_m": -0.110640625,
+          "minimum_y_m": -0.110595703125,
           "contact_vertices": 8,
           "contact_bounds_xz_m": [
             [
-              -0.059366758404549844,
-              -0.02712986796935101
+              -0.059337224323022957,
+              -0.02708849528032984
             ],
             [
-              -0.024674908717293192,
-              -0.0040302134679369725
+              -0.024660657848537035,
+              -0.00401521024752472
             ]
           ]
         },
         "shotgun": {
-          "minimum_y_m": -0.090728515625,
+          "minimum_y_m": -0.0906982421875,
           "contact_vertices": 2,
           "contact_bounds_xz_m": [
             [
-              -0.46948210569636983,
-              -0.1822571883487537
+              -0.469475611153615,
+              -0.18219753315096274
             ],
             [
-              -0.4595401412566903,
-              -0.15494186554571335
+              -0.45953899077867494,
+              -0.15489689304512216
             ]
           ]
         }
@@ -518,7 +518,7 @@
         [
           -0.113,
           0.0,
-          -0.124
+          -0.144
         ],
         [
           0.113,
@@ -526,13 +526,13 @@
           0.119
         ]
       ],
-      "triangles": 376,
-      "source_vertices": 224,
+      "triangles": 456,
+      "source_vertices": 272,
       "pivot_kind": "bottom_center",
       "runtime": {
         "file": "rf_mesh_weaver_column.rmesh",
-        "vertices": 744,
-        "triangles": 376,
+        "vertices": 888,
+        "triangles": 456,
         "primitives": 6,
         "materials": 6,
         "position_scale": 232,
@@ -541,7 +541,7 @@
           [
             -26,
             0,
-            -29
+            -33
           ],
           [
             26,
@@ -549,7 +549,7 @@
             28
           ]
         ],
-        "sha256": "c3cb363ab0c1989ace9ae514079c8574e4a83f6282457196a0bfb9d72a0ce94d"
+        "sha256": "617f7ebf014e5899604e18a6334f80de1100df0687938a5280961fe2d701baae"
       }
     },
     "tray": {
@@ -648,40 +648,40 @@
       ],
       "bounds_m": [
         [
-          -0.153,
+          -0.165,
           -0.1075,
           -0.1365
         ],
         [
-          0.153,
-          0.108,
-          0.042
+          0.165,
+          0.147,
+          -0.011
         ]
       ],
-      "triangles": 236,
-      "source_vertices": 140,
+      "triangles": 248,
+      "source_vertices": 148,
       "pivot_kind": "mechanical_mount",
       "runtime": {
         "file": "rf_mesh_weaver_emitter_mount.rmesh",
-        "vertices": 468,
-        "triangles": 236,
+        "vertices": 492,
+        "triangles": 248,
         "primitives": 4,
         "materials": 4,
         "position_scale": 232,
         "quantization_degenerate_triangles": 0,
         "bounds_local": [
           [
-            -35,
+            -38,
             -25,
             -32
           ],
           [
-            35,
-            25,
-            10
+            38,
+            34,
+            -3
           ]
         ],
-        "sha256": "b77ac1061c3f19b1ee0ff3f62e42d8130f10ea5ca7a6e869b093a242dd849e55"
+        "sha256": "df779ccedcda26c059040ea1ea554b192326eec89cef83a8ec9ded9fbf418501"
       }
     },
     "emitter_yoke": {
@@ -736,40 +736,40 @@
       ],
       "bounds_m": [
         [
-          -0.08,
+          -0.0837659,
           -0.0787846,
           -0.0495
         ],
         [
-          0.08,
+          0.0837659,
           0.0787846,
-          0.077
+          0.085
         ]
       ],
-      "triangles": 608,
-      "source_vertices": 318,
+      "triangles": 788,
+      "source_vertices": 414,
       "pivot_kind": "mechanical_mount",
       "runtime": {
         "file": "rf_mesh_weaver_emitter_core.rmesh",
-        "vertices": 954,
-        "triangles": 608,
-        "primitives": 4,
-        "materials": 4,
-        "position_scale": 5625,
+        "vertices": 1386,
+        "triangles": 788,
+        "primitives": 5,
+        "materials": 5,
+        "position_scale": 5372,
         "quantization_degenerate_triangles": 0,
         "bounds_local": [
           [
             -450,
-            -443,
-            -278
+            -423,
+            -266
           ],
           [
             450,
-            443,
-            433
+            423,
+            457
           ]
         ],
-        "sha256": "8f67e176c5579c9591efd1e5d2fa0b2154968f1d08c078460e89477c6dd680b7"
+        "sha256": "0dcdc80323a1cc1fdbd72a3a17291867f00040e7dad5df3af1e1cdf26e971890"
       }
     },
     "emitter_petal": {
@@ -780,40 +780,40 @@
       ],
       "bounds_m": [
         [
-          -0.027,
-          -0.062,
-          -0.008
+          -0.049,
+          -0.06,
+          -0.007
         ],
         [
-          0.027,
+          0.049,
           0.009,
-          0.011
+          0.015
         ]
       ],
-      "triangles": 124,
-      "source_vertices": 70,
+      "triangles": 184,
+      "source_vertices": 106,
       "pivot_kind": "mechanical_mount",
       "runtime": {
         "file": "rf_mesh_weaver_emitter_petal.rmesh",
-        "vertices": 258,
-        "triangles": 124,
-        "primitives": 4,
-        "materials": 4,
-        "position_scale": 12676,
+        "vertices": 320,
+        "triangles": 184,
+        "primitives": 5,
+        "materials": 5,
+        "position_scale": 9184,
         "quantization_degenerate_triangles": 0,
         "bounds_local": [
           [
-            -342,
-            -786,
-            -101
+            -450,
+            -551,
+            -64
           ],
           [
-            342,
-            114,
-            139
+            450,
+            83,
+            138
           ]
         ],
-        "sha256": "053da517e61bf316b283e7731149ce1516e98b09d3a642ba377354264e02095f"
+        "sha256": "b5fbb9be5799e2ba4dcced315baf8dc643046a3e4ecafb2d35571b385c6606c8"
       }
     },
     "frame": {
@@ -834,13 +834,13 @@
           1.05
         ]
       ],
-      "triangles": 5784,
-      "source_vertices": 3512,
+      "triangles": 6200,
+      "source_vertices": 3768,
       "pivot_kind": "bottom_center",
       "runtime": {
         "file": "rf_mesh_weaver_frame.rmesh",
-        "vertices": 11304,
-        "triangles": 5784,
+        "vertices": 12072,
+        "triangles": 6200,
         "primitives": 6,
         "materials": 6,
         "position_scale": 232,
@@ -857,7 +857,7 @@
             244
           ]
         ],
-        "sha256": "4ef69322170f8d406ba6ef64f323d2b255b061d12ae4f1bdf82ea75c8316f697"
+        "sha256": "c8f908d9a7a711e8049aad190fb0446c52c2d652855ad36e122b27e1855b783b"
       }
     }
   },
@@ -873,9 +873,70 @@
       "emitter_petal": 24,
       "frame": 0
     },
-    "triangles": 17344,
+    "triangles": 20640,
     "columns": 4,
     "emitters": 8,
     "petals": 24
+  },
+  "mechanical_clearance_audit": {
+    "method": "Quantized RMESH triangle BVH overlap; no rendered approximation.",
+    "petal_pose_samples": 8262,
+    "opening_samples": 17,
+    "assembled_frame_pose_samples": 33048,
+    "yaw_samples": 9,
+    "pitch_samples": 9,
+    "idle_pitch_variants": 2,
+    "intersections": {
+      "petal_core": 0,
+      "petal_petal": 0,
+      "petal_mount": 0,
+      "petal_yoke": 0,
+      "petal_frame": 7308
+    },
+    "assembled_frame_working_cone_intersections": 0,
+    "working_target_pitch_degrees": {
+      "lower": [
+        -62,
+        0
+      ],
+      "upper": [
+        0,
+        62
+      ]
+    },
+    "outside_working_cone_examples": [
+      {
+        "kind": "petal_frame",
+        "state": [
+          0.8125,
+          -27.625,
+          45.125,
+          1
+        ],
+        "triangles": 29,
+        "obstacle_center_m": [
+          -0.5646551847457886,
+          0.4468390941619873,
+          0.6034482717514038
+        ]
+      },
+      {
+        "kind": "petal_frame",
+        "state": [
+          0.8125,
+          -27.625,
+          45.125,
+          1
+        ],
+        "triangles": 29,
+        "obstacle_center_m": [
+          0.6034482717514038,
+          0.4468390941619873,
+          0.5646551847457886
+        ]
+      }
+    ],
+    "limitation": "A fully opened lower head aimed steeply downward can strike its column foot; manufacturing aims lower heads upward.",
+    "exclusion": "Core-shell check excludes intentional hinge shaft / bearing engagement."
   }
 }

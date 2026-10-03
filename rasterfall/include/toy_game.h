@@ -3,7 +3,8 @@
  *
  * 职责边界：本库只包含游戏规则 —— PRNG、世界碰撞查询、僵尸 AI/攻击、
  * 波次或闯关刷怪、安全室/终点、hitscan 射击与障碍遮挡、弹匣/换弹、玩家生命/死亡、事件队列
- * （供音效与 HUD 消费）。纯整数运算、零系统调用、零内存分配（固定数组），
+ * （供音效与 HUD 消费）。战斗使用整数/定点，制造使用 double 资源累计；
+ * 零系统调用、零内存分配（固定数组），
  * 不依赖窗口/输入/渲染设施，可无窗口测试。
  *
  * 约定：所有计时字段单位 ms；朝向 sy/cy 为 1024 基准定点（同 Rasterfall
@@ -15,6 +16,7 @@
 
 #include "tlibc_types.h"
 #include "toy_game_config.h"
+#include "toy_mesh_weaver.h"
 #include "rasterfall_colors.h"
 
 #define TOY_GAME_MAX_ENEMIES    64
@@ -793,6 +795,8 @@ struct toy_game_update_profile {
 };
 
 struct toy_game {
+    /* Offline experimental manufacturing authority; never a render clock. */
+    struct toy_mesh_weaver weaver;
     int combat_time_ms;
     int combat_scan_budget;
     unsigned int next_combat_generation;

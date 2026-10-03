@@ -6,12 +6,14 @@
 #include "rasterfall_camera.h"
 #include "rasterfall_hud.h"
 #include "rasterfall_prop.h"
+#include "rf_mesh_weaver_presentation.h"
 struct rasterfall_effects;
 /* Consumed synchronously into immutable geometry before GPU target writes. */
 struct rf_gpu_scene_layers_input {
     const struct rf_gpu_scene_world_prop_frame_v1 *props;
     unsigned host_time_ms,lighting_time_ms;
     struct rasterfall_electronics_frame electronics;
+    struct rf_mesh_weaver_frame weaver;
     const struct toy_game *source_game;
     const struct rasterfall_effects *source_effects;
     const struct rf_gpu_scene_enemy_frame_v1 *actor_presentations;
@@ -60,6 +62,7 @@ struct rf_gpu_scene_world_gpu_probe {
     int native_present;
     int quiet;
     struct rf_gpu_graphics_resource *lighting_lab_sphere;
+    struct rf_mesh_weaver_gpu *weaver;
     const struct rf_gpu_scene_layers_input *layers;
     struct rf_gpu_graphics_resource *layer_resource[RF_GPU_SCENE_LAYER_CHUNKS][2];
     struct scene_layer_workspace *layer_workspace;
@@ -109,6 +112,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t submit_present_us,retire_us;
     int64_t record_us,acquire_us,queue_submit_us,present_us;
     int64_t actor_batch_us,misc_prepare_us;
+    int64_t weaver_prepare_us;
     int64_t layer_extract_us,layer_clip_us,layer_pack_us,layer_upload_us,layer_batch_us;
     uint32_t layer_triangles,layer_culled;
     uint64_t upload_bytes,bridge_transfers;

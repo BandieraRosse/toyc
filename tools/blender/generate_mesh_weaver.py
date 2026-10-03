@@ -26,8 +26,8 @@ COLORS = ((180, 191, 198), (37, 46, 57), (104, 124, 139),
 MATERIAL_NAMES = ("shell", "graphite", "alloy", "ceramic", "warning", "optics")
 MAX_TRIANGLES = {"base": 3600, "column": 1200, "tray": 1100,
                  "terminal": 1300, "emitter_mount": 900,
-                 "emitter_yoke": 700, "emitter_core": 800,
-                 "emitter_petal": 150, "frame": 18000}
+                 "emitter_yoke": 700, "emitter_core": 1100,
+                 "emitter_petal": 240, "frame": 18000}
 
 
 def rf(v):
@@ -180,9 +180,20 @@ def build_column(b):
     # Two long shells wrap a narrow recessed inner service channel.
     for x in (-.055, .055):
         b.box_rf((x, .740, .029), (.052, 1.205, .104), 0, .010)
-    b.box_rf((0, .747, .081), (.038, 1.04, .017), 2, .002)
+    b.box_rf((0, .747, .055), (.038, 1.04, .017), 2, .002)
     b.box_rf((0, .747, .093), (.014, .738, .006), 5, .001)
-    b.box_rf((0, .694, -.102), (.111, .606, .022), 2, .010)
+    # The outward face needs its own broad service armour: from the usual
+    # quarter view it is as visible as the recessed inward instrument channel.
+    # Deliberate gaps expose the dark extrusion and the central latch.
+    for center, height in ((.385, .350), (.950, .610)):
+        low, high = center-height/2, center+height/2
+        outline = [(-.057, low), (.057, low), (.071, low+.014),
+                   (.071, high-.020), (.051, high), (-.051, high),
+                   (-.071, high-.020), (-.071, low+.014)]
+        b.prism("rear_service_armour", outline, -.132, -.109, "z", 0)
+    b.box_rf((0, .710, -.138), (.062, .014, .012), 1, 0)
+    b.box_rf((-.048, 1.043, -.138), (.013, .128, .012), 4, 0)
+    b.box_rf((.043, .276, -.138), (.025, .037, .012), 2, 0)
     for y in (.178, 1.269):
         b.box_rf((0, y, .093), (.115, .095, .036), 1, .006)
         b.box_rf((-.052, y, .116), (.009, .055, .006), 4, .001)
@@ -239,15 +250,19 @@ def build_mount(b):
     # Mount's origin is the steering axis, not its lower bounding face.
     b.box_rf((0, 0, -.109), (.17, .187, .055), 1, .012)
     b.box_rf((0, 0, -.075), (.244, .161, .043), 2, .010)
-    for x in (-.127, .127):
+    for x in (-.139, .139):
         poly = [(x-.026, -.095), (x+.026, -.078),
-                (x+.026, .073), (x, .100), (x-.026, .075)]
-        b.prism("angular_guard", poly, -.073, .029, "z", 0)
-        b.box_rf((x, -.025, .036), (.032, .056, .012), 1, .006)
-        b.box_rf((x, .063, .035), (.020, .020, .010), 4, .004)
-    b.box_rf((0, -.095, -.025), (.208, .025, .104), 1, .007)
-    b.box_rf((0, .098, -.036), (.184, .020, .078), 0, .005)
-    b.cylinder_rf((0, -.080, -.021), .044, .023, 2, 12, "y")
+                (x+.026, .068), (x+.009, .118), (x-.026, .081)]
+        b.prism("angular_guard", poly, -.096, -.024, "z", 0)
+        b.box_rf((x, -.025, -.017), (.032, .056, .012), 1, .006)
+        b.box_rf((x, .063, -.018), (.020, .020, .010), 4, .004)
+    b.box_rf((0, -.095, -.083), (.208, .025, .043), 1, .007)
+    # A rear-set angled cap reads as a protective brow without entering the
+    # petals' forward sweep or changing the yaw/pitch axes.
+    hood = [(-.098, -.092), (.098, -.092), (.080, -.025), (-.080, -.025)]
+    b.prism("recessed_visor", hood, .121, .143, role=2)
+    b.box_rf((0, .136, -.067), (.132, .022, .058), 0, 0)
+    b.cylinder_rf((0, -.080, -.076), .030, .023, 2, 12, "y")
 
 
 def build_yoke(b):
@@ -262,11 +277,11 @@ def build_yoke(b):
 
 def build_core(b):
     b.ring((0, 0, .011), .075, .049, .102, 1, 18)
-    b.ring((0, 0, .066), .080, .054, .016, 2, 18)
+    b.ring((0, 0, .066), .080, .054, .016, 3, 18)
     b.ring((0, 0, -.043), .071, .039, .013, 2, 18)
     b.cylinder_rf((0, 0, -.035), .048, .015, 1, 18)
     # Small triangular aperture in a dark, stepped triangular optical well.
-    for radius, z, depth, role in ((.047, .041, .011, 2),
+    for radius, z, depth, role in ((.047, .041, .011, 0),
                                   (.037, .052, .009, 1),
                                   (.026, .060, .007, 5)):
         poly = [(math.cos(a)*radius, math.sin(a)*radius)
@@ -274,20 +289,28 @@ def build_core(b):
         b.prism("triangular_aperture", poly, z-depth/2, z+depth/2, "z", role)
     for i in range(3):
         a = i*math.tau/3
-        x, y = -.064*math.sin(a), .064*math.cos(a)
-        b.cylinder_rf((x, y, .071), .008, .012, 3, 8)
+        # Paired bearing cheeks make the tangential leaf hinge readable. They
+        # stay with the core while the shaft and shutter rotate about local X.
+        for x in (-.036, .036):
+            cheek = b.box_rf((x, .064, .077), (.012, .020, .016), 2, .003)
+            cheek.matrix_world = Matrix.Rotation(-a, 4, "Y") @ cheek.matrix_world
 
 
 def build_petal(b):
     # Hinge is at local origin. +Y points radially outward, -Y toward aperture.
-    outline = [(-.021, .009), (.021, .009), (.026, -.009),
-               (.011, -.056), (-.006, -.062), (-.021, -.041)]
-    b.prism("shutter_leaf", outline, -.005, .005, "z", 0)
-    inset = [(-.012, -.005), (.012, -.005), (.007, -.034),
-             (-.004, -.043), (-.012, -.026)]
-    b.prism("shutter_inset", inset, .005, .008, "z", 2)
-    b.box_rf((0, 0, -.001), (.054, .012, .014), 1, .003)
-    b.box_rf((0, -.043, .009), (.010, .011, .004), 4, .001)
+    # Keep the armour wholly inward of the hinge: positive local Y would swing
+    # back through the optical rim as the shutter opens toward +Z.
+    outline = [(-.027, -.010), (.027, -.010), (.049, -.029),
+               (.016, -.051), (0, -.060), (-.016, -.051), (-.049, -.029)]
+    b.prism("shutter_leaf", outline, -.004, .008, "z", 0)
+    inset = [(-.021, -.017), (.021, -.017), (.038, -.030),
+             (.008, -.051), (-.014, -.044), (-.038, -.030)]
+    b.prism("shutter_inset", inset, .008, .011, "z", 2)
+    b.box_rf((0, -.010, .003), (.034, .014, .012), 1, 0)
+    b.cylinder_rf((0, 0, .002), .009, .070, 1, 12, "x")
+    for x in (-.038, .038):
+        b.cylinder_rf((x, 0, .002), .009, .006, 3, 10, "x")
+    b.box_rf((0, -.036, .013), (.020, .012, .004), 4, 0)
 
 
 BUILDERS = dict(zip(PARTS, (build_base, build_column, build_tray,
@@ -428,11 +451,180 @@ def make_frame(objects, description, materials):
     return finish(b, "frame")
 
 
+def audit_runtime_clearance(directory, pose_csv=None):
+    """Check quantized shutter motion, without rendering or using a GPU."""
+    import struct
+    from mathutils.bvhtree import BVHTree
+
+    def read(name):
+        data = (directory/("rf_mesh_weaver_"+name+".rmesh")).read_bytes()
+        nv, ni, scale = struct.unpack_from("<III", data, 8)
+        nm = struct.unpack_from("<I", data, 48)[0]
+        offset = struct.unpack_from("<I", data, 56)[0]+nm*16
+        vertices = [Vector(tuple(x/scale for x in struct.unpack_from("<3i", data, offset+i*24)))
+                    for i in range(nv)]
+        ids = struct.unpack_from("<%dI" % ni, data, offset+nv*24)
+        return vertices, [ids[i:i+3] for i in range(0, ni, 3)]
+
+    def tree(mesh, transform=Matrix.Identity(4)):
+        vertices, faces = mesh
+        return BVHTree.FromPolygons([transform@v for v in vertices], faces,
+                                   all_triangles=True, epsilon=0)
+
+    def armour(mesh):
+        # GLB separates vertices at hard normals. Reconnect only equal-position
+        # vertices to identify authored solids, excluding intentional shaft /
+        # bearing engagement from the moving plate versus core-shell test.
+        vertices, faces = mesh
+        neighbors = {}
+        for face in faces:
+            keys = [tuple(vertices[n]) for n in face]
+            for key in keys:
+                neighbors.setdefault(key, set()).update(keys)
+        components, selected = {}, set()
+        for key in neighbors:
+            if key in components:
+                continue
+            pending, reached = [key], set()
+            while pending:
+                point = pending.pop()
+                if point in reached:
+                    continue
+                reached.add(point)
+                pending.extend(neighbors[point]-reached)
+            for point in reached:
+                components[point] = key
+            if max(v[1] for v in reached) < -.003 and min(v[1] for v in reached) < -.020:
+                selected.add(key)
+        plates = [face for face in faces if components[tuple(vertices[face[0]])] in selected]
+        assert plates, "cannot identify the shutter armour solids"
+        return vertices, plates
+
+    mount, yoke, core, petal = (read(name) for name in
+        ("emitter_mount", "emitter_yoke", "emitter_core", "emitter_petal"))
+    description_path = directory/"mesh_weaver.components.json"
+    description = json.loads(description_path.read_text(encoding="utf-8"))
+    plate = armour(petal)
+    frame_mesh = read("frame")
+    fixed, barrel, frame = tree(mount), tree(core), tree(frame_mesh)
+    counts = {"petal_core": 0, "petal_petal": 0, "petal_mount": 0,
+              "petal_yoke": 0, "petal_frame": 0}
+    examples, working_examples, samples, frame_samples, working_frame_hits = [], [], 0, 0, 0
+    def overlap(kind, a, b, state):
+        hits = a.overlap(b)
+        counts[kind] += len(hits)
+        if hits and len(examples) < 12:
+            example = {"kind": kind, "state": state, "triangles": len(hits)}
+            if kind == "petal_frame":
+                vertices, faces = frame_mesh
+                example["obstacle_center_m"] = list(sum((vertices[n] for n in faces[hits[0][1]]), Vector())/3)
+            examples.append(example)
+        return len(hits)
+
+    for step in range(17):
+        opening = step/16
+        children = [Matrix.Rotation(math.radians(roll), 4, "Z") @
+                    Matrix.Translation(Vector((0, .064, .080))) @
+                    Matrix.Rotation(math.radians(-64*opening), 4, "X") for roll in (0, 120, 240)]
+        petals = [tree(petal, child) for child in children]
+        for i, child in enumerate(children):
+            overlap("petal_core", tree(plate, child), barrel, [opening, i])
+            overlap("petal_petal", petals[i], petals[(i+1) % 3], [opening, i])
+        for idle_pitch in (-28, 36):
+            world_mounts = [Matrix.Translation(Vector(head["mount_position_m"])) @
+                Matrix.Rotation(math.radians(head["mount_yaw_degrees"]), 4, "Y")
+                for head in description["emitters"] if head["idle_pitch_degrees"] == idle_pitch]
+            for yaw_step in range(9):
+                yaw = (-34+yaw_step*8.5)*opening
+                for pitch_step in range(9):
+                    target_pitch = -62+pitch_step*15.5
+                    pitch = idle_pitch*(1-opening)+target_pitch*opening
+                    working_cone = target_pitch <= 0 if idle_pitch < 0 else target_pitch >= 0
+                    turn = Matrix.Rotation(math.radians(yaw), 4, "Y")
+                    tilt = turn @ Matrix.Translation(Vector((0, 0, .015))) @ \
+                        Matrix.Rotation(math.radians(pitch), 4, "X")
+                    cradle = tree(yoke, turn)
+                    for i, child in enumerate(children):
+                        moving = tree(petal, tilt@child)
+                        state = [opening, yaw, pitch, i]
+                        overlap("petal_mount", moving, fixed, state)
+                        overlap("petal_yoke", moving, cradle, state)
+                        for world_mount in world_mounts:
+                            hits = overlap("petal_frame", tree(petal, world_mount@tilt@child), frame, state)
+                            if working_cone:
+                                working_frame_hits += hits
+                                if hits and len(working_examples) < 6:
+                                    working_examples.append({"idle_pitch": idle_pitch, "state": state,
+                                                             "triangles": hits})
+                            frame_samples += 1
+                        samples += 1
+    report = {"method": "Quantized RMESH triangle BVH overlap; no rendered approximation.",
+        "petal_pose_samples": samples, "opening_samples": 17,
+        "assembled_frame_pose_samples": frame_samples,
+        "yaw_samples": 9, "pitch_samples": 9, "idle_pitch_variants": 2,
+        "intersections": counts,
+        "assembled_frame_working_cone_intersections": working_frame_hits,
+        "working_target_pitch_degrees": {"lower": [-62, 0], "upper": [0, 62]},
+        "outside_working_cone_examples": examples[:2],
+        "limitation": "A fully opened lower head aimed steeply downward can strike its column foot; manufacturing aims lower heads upward.",
+        "exclusion": "Core-shell check excludes intentional hinge shaft / bearing engagement."}
+    if any(value for kind, value in counts.items() if kind != "petal_frame"):
+        print(json.dumps({"intersections": counts, "examples": examples[:4]}), flush=True)
+    assert not any(value for kind, value in counts.items() if kind != "petal_frame"), \
+        "shutter armour intersects another head part"
+    if working_examples:
+        print(json.dumps(working_examples, indent=2), flush=True)
+    assert not working_frame_hits, "shutter intersects the assembled frame in its manufacturing direction"
+    description["mechanical_clearance_audit"] = report
+    description_path.write_text(json.dumps(description, indent=2)+"\n", encoding="utf-8", newline="\n")
+    print("Runtime shutter clearance:", json.dumps(report), flush=True)
+    if pose_csv:
+        import csv
+        import hashlib
+        actual = {"source_csv": str(pose_csv),
+            "source_sha256": hashlib.sha256(pose_csv.read_bytes()).hexdigest(),
+            "head_pose_samples": 0, "petal_pose_samples": 0, "intersections": 0,
+            "weapons": {}, "examples": [], "assets": {}}
+        for name in ("frame", "emitter_petal", "emitter_core", "emitter_yoke"):
+            asset = directory/("rf_mesh_weaver_"+name+".rmesh")
+            actual["assets"][asset.name] = hashlib.sha256(asset.read_bytes()).hexdigest()
+        with pose_csv.open(encoding="utf-8-sig", newline="") as handle:
+            for row in csv.DictReader(handle):
+                head = description["emitters"][int(row["head"])]
+                yaw = head["mount_yaw_degrees"]+float(row["yaw_delta"])
+                root = Matrix.Translation(Vector(head["mount_position_m"])) @ \
+                    Matrix.Rotation(math.radians(yaw), 4, "Y")
+                parent = root @ Matrix.Translation(Vector((0, 0, .015))) @ \
+                    Matrix.Rotation(math.radians(float(row["pitch"])), 4, "X")
+                actual["head_pose_samples"] += 1
+                actual["weapons"][row["weapon"]] = actual["weapons"].get(row["weapon"], 0)+1
+                for roll in (0, 120, 240):
+                    child = Matrix.Rotation(math.radians(roll), 4, "Z") @ \
+                        Matrix.Translation(Vector((0, .064, .080))) @ \
+                        Matrix.Rotation(math.radians(-64*float(row["opening"])), 4, "X")
+                    hits = tree(petal, parent@child).overlap(frame)
+                    actual["petal_pose_samples"] += 1
+                    actual["intersections"] += len(hits)
+                    if hits and len(actual["examples"]) < 12:
+                        actual["examples"].append(dict(row, petal_roll=roll, intersections=len(hits)))
+        evidence = pose_csv.with_suffix(".clearance.json")
+        evidence.write_text(json.dumps(actual, indent=2)+"\n", encoding="utf-8", newline="\n")
+        print("Actual manufacturing shutter clearance:", json.dumps(actual), flush=True)
+        assert not actual["intersections"], "actual manufacturing trajectory intersects the machine frame"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--layout", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--layout", type=Path)
+    parser.add_argument("--audit-clearance", type=Path, metavar="RMESH_DIRECTORY")
+    parser.add_argument("--pose-csv", type=Path, help="Optional real pose trajectory for an additional frame clearance audit")
     args = parser.parse_args(sys.argv[sys.argv.index("--")+1:])
+    if args.audit_clearance:
+        audit_runtime_clearance(args.audit_clearance, args.pose_csv)
+        return
+    if not args.output or not args.layout:
+        parser.error("--output and --layout are required for asset generation")
     args.output.mkdir(parents=True, exist_ok=True)
     args.layout.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.wm.read_factory_settings(use_empty=True)

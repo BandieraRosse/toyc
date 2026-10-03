@@ -221,6 +221,10 @@ def main():
             run([sys.executable, ROOT/"tools/assets/import_asset.py", "--no-build",
                 "--tool-dir", args.tool_dir.resolve(), "--force", "--output-root", PUBLIC, manifest])
     audit()
+    if not args.audit_only:
+        run([args.blender, "--background", "--factory-startup", "--python-exit-code", "1",
+             "--python", ROOT/"tools/blender/generate_mesh_weaver.py", "--",
+             "--audit-clearance", PUBLIC])
 
 
 if __name__ == "__main__":

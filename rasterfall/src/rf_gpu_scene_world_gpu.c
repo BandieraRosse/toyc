@@ -495,6 +495,16 @@ done:
     return result;
 }
 
+static int pickup_weaver_owned(const struct rf_gpu_scene_world_gpu_probe *probe,
+    const struct rf_gpu_scene_interactable_item_v1 *source)
+{
+    const struct rf_mesh_weaver_frame *frame=probe->layers ? &probe->layers->weaver : NULL;
+    return frame && frame->present && frame->serial &&
+        frame->phase==TOY_WEAVER_READY && frame->output_slot>=0 &&
+        source->kind==TOY_MAP_PICKUP_WEAPON && source->weapon==frame->weapon &&
+        source->source_slot==(uint32_t)frame->output_slot;
+}
+
 static int pickup_model_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_interactable_frame_v1 *pickups,
     const struct toy_texture_view *texture,const struct camera *camera,
@@ -510,6 +520,7 @@ static int pickup_model_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe
         if (source->source_slot!=i || source->scene_light_q8<0 ||
             source->scene_light_q8>256 ||
             (source->highlight_on!=0 && source->highlight_on!=1)) return -1;
+        if (pickup_weaver_owned(probe,source)) { accepted++;continue; }
         if (kind<0) { remaining++;continue; }
         if (pickup_asset_prepare(probe,kind,texture)<0) return -1;
         asset=&probe->pickup[kind];
@@ -696,6 +707,7 @@ static int pickup_procedural_draws_prepare(
         const struct rf_gpu_scene_interactable_item_v1 *source=&pickups->items[i];
         int special=0,kind;
         uint32_t tint=source->highlight_on ? 0x383838u : 0;
+        if (pickup_weaver_owned(probe,source)) continue;
         if (pickup_model_kind(source)>=0) continue;
         kind=pickup_procedural_class(source,&special);
         if (kind==0) {
@@ -1260,6 +1272,7 @@ done:
 }
 
 #include "render/rf_gpu_scene_layers.inc"
+#include "render/rf_mesh_weaver_gpu.inc"
 #include "render/rf_gpu_lighting_lab.inc"
 #include "render/rf_gpu_scene_lighting.inc"
 
@@ -1432,6 +1445,10 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     draws+=enemy_draws;
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
     if(scene_lighting_lab_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
+    stage="mesh-weaver";
+    section_start=rf_core_clock_now_us();
+    if(rf_weaver_gpu_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
+    stats->weaver_prepare_us=rf_core_clock_now_us()-section_start;
     stage="layers";
     section_start=rf_core_clock_now_us();
     if (scene_layers_prepare(probe,camera,width,height,model_texture,&items,&draws,stats)<0)
@@ -1571,6 +1588,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
 {
     if (!probe) return;
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
+    rf_weaver_gpu_close(probe);
     if(probe->lighting_lab_sphere) rf_gpu_graphics_resource_destroy(probe->graphics,probe->lighting_lab_sphere);
     probe->lighting_lab_sphere=NULL;
     for (unsigned chunk=0;chunk<RF_GPU_SCENE_LAYER_CHUNKS;++chunk)

@@ -4,6 +4,7 @@
 #include "dev-tests/combat_evasion_test.inc"
 #include "dev-tests/game_hitscan_test.inc"
 #include "dev-tests/combat_ai_test.inc"
+#include "dev-tests/rf_mesh_weaver_test.inc"
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
 #define special_target_kind ability.special_target_kind
@@ -1593,6 +1594,7 @@ static int run_logic_test(void)
     if (toy_window_windows_key_mapping_logic_test() < 0) return 261;
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
+    if (rf_mesh_weaver_logic_test() != 0) return 694;
     if (combat_capabilities_logic_test() != 0) return 279;
     {
         int combat_result = combat_evasion_logic_test();
@@ -1725,7 +1727,8 @@ static int run_logic_test(void)
     if (rasterfall_animation_composition_logic_test() != 0) return 168;
     if (rasterfall_character_logic_test() != 0) return 166;
     if (rasterfall_roster_logic_test() != 0) return 226;
-    if (rasterfall_prop_asset_logic_test() != 0) return 170;
+    { int prop_result = rasterfall_prop_asset_logic_test();
+      if (prop_result) { __printf("prop asset failure: %d\n", prop_result); return 170; } }
     if (toy_map_lifecycle_logic_test() != 0) return 173;
     if (toy_map_prop_logic_test() != 0) return 171;
     if (rasterfall_render_static_prop_culling_logic_test() != 0) return 172;

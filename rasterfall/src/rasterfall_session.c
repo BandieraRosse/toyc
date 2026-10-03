@@ -392,6 +392,8 @@ int rasterfall_session_load(struct rasterfall_session *session,
     }
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
+    session->weaver_item_index = -1;
+    session->weaver_item_serial = 0;
     rasterfall_map_bind(&session->map_ops, &session->level,
                         session->safe_rooms, session->spawn_zones,
                         &session->spawn_count, &session->air_walls_enabled,
@@ -783,6 +785,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->manual_alarm_on = 0;
     session->manual_alarm_timer = 1000;
     session->highlight_index = -1;
+    session->weaver_item_index = -1;
+    session->weaver_item_serial = 0;
     session->smooth_turn_remaining = 0;
     session->ai_revive_active = 0;
     session->ai_revive_actor_index = -1;
@@ -945,7 +949,9 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
     /* A remote player's shop is a local UI on that player's machine.  The
      * host still processes shop requests separately, but must not open its
      * own armory when a client walks up to the same pickup. */
-    if (index >= 0 && session->items[index].kind != TOY_MAP_PICKUP_SHOP)
+    if (index >= 0 && (!session->weaver_item_serial ||
+        index != session->weaver_item_index) &&
+        session->items[index].kind != TOY_MAP_PICKUP_SHOP)
         session_interact(session, &session->items[index]);
 }
 
@@ -1048,6 +1054,78 @@ int rasterfall_session_paid_revive(struct rasterfall_session *session,
     session->banner_success = 1;
     session->banner_text = "REVIVED -$20";
     return 1;
+}
+
+void rasterfall_session_weaver_sync(struct rasterfall_session *session)
+{
+    struct toy_mesh_weaver *w;
+    int index, ready;
+    if (!session) return;
+    w = &session->game_state.weaver;
+    index = session->weaver_item_serial ? session->weaver_item_index : -1;
+    ready = w->enabled && w->phase == TOY_WEAVER_READY;
+    if (index >= 0 && index < session->item_count) {
+        if (!ready) {
+            for (int i = index + 1; i < session->item_count; ++i)
+                session->items[i - 1] = session->items[i];
+            --session->item_count;
+            if (session->highlight_index == index) session->highlight_index = -1;
+            else if (session->highlight_index > index) --session->highlight_index;
+            session->weaver_item_index = -1;
+            session->weaver_item_serial = 0;
+            return;
+        }
+    } else {
+        session->weaver_item_index = -1;
+        session->weaver_item_serial = 0;
+        if (!ready || session->item_count >= TOY_MAP_MAX_PICKUPS) return;
+        index = session->item_count++;
+        session->weaver_item_index = index;
+        session->weaver_item_serial = w->job_serial;
+    }
+    session->items[index].kind = TOY_MAP_PICKUP_WEAPON;
+    session->items[index].weapon = w->blueprint.weapon;
+    session->items[index].x = w->output_x;
+    session->items[index].z = w->output_z;
+    session->items[index].y = w->output_y;
+}
+
+void rasterfall_session_weaver_configure(struct rasterfall_session *session,
+    int enabled, int output_x, int output_z, int output_y)
+{
+    if (!session) return;
+    session->game_state.weaver.enabled = !!enabled;
+    session->game_state.weaver.output_x = output_x;
+    session->game_state.weaver.output_z = output_z;
+    session->game_state.weaver.output_y = output_y;
+    rasterfall_session_weaver_sync(session);
+}
+
+int rasterfall_session_weaver_start(struct rasterfall_session *session,
+    const struct toy_mesh_blueprint *blueprint)
+{
+    int reason;
+    if (!session) return TOY_WEAVER_DISABLED;
+    reason = toy_game_weaver_start(&session->game_state, blueprint);
+    session->banner_ms = 1800;
+    session->banner_success = reason == TOY_WEAVER_OK;
+    session->banner_text = reason == TOY_WEAVER_OK ?
+        "MESH WEAVER STARTED" : toy_mesh_weaver_reason_name(reason);
+    return reason;
+}
+
+int rasterfall_session_weaver_collect(struct rasterfall_session *session)
+{
+    int collected;
+    if (!session) return 0;
+    collected = toy_game_weaver_collect(&session->game_state,
+        toy_game_local_player_actor(&session->game_state));
+    session->banner_ms = 1800;
+    session->banner_success = collected;
+    session->banner_text = collected ? "WEAPON COLLECTED - ONE MAGAZINE" :
+        "NO FINISHED WEAPON";
+    rasterfall_session_weaver_sync(session);
+    return collected;
 }
 
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
@@ -1179,6 +1257,12 @@ static void session_client_interact_banner(struct rasterfall_session *session)
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it)
 {
+    if (session->weaver_item_serial && session->weaver_item_index >= 0 &&
+        session->weaver_item_index < session->item_count &&
+        it == &session->items[session->weaver_item_index]) {
+        rasterfall_session_weaver_collect(session);
+        return;
+    }
     struct toy_game_actor *player =
         toy_game_local_player_actor(&session->game_state);
     toy_game_emit_event(&session->game_state, TOY_GAME_EV_BUTTON);
@@ -2957,6 +3041,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     }
     /* World simulation is separate from the local actor's weapon step. */
     toy_game_update_world(&session->game_state, dt_ms);
+    rasterfall_session_weaver_sync(session);
     {
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);

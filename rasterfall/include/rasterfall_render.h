@@ -17,6 +17,11 @@ void rasterfall_render_terminal_set(const char *channel,const char *text);
 void rasterfall_render_terminal_freeze(const struct rf_map_runtime_render *,
     struct toy_map_draw *);
 void rasterfall_render_lab_point(const char *lab,int local_x,int local_z,int *x,int *z);
+struct rf_mesh_weaver_frame;
+/* CPU presentation consumes a by-value runtime snapshot. NULL clears it;
+ * shutdown also releases the immutable component/blueprint caches. */
+void rasterfall_mesh_weaver_set_frame(const struct rf_mesh_weaver_frame *frame);
+void rasterfall_mesh_weaver_cpu_shutdown(void);
 
 struct rasterfall_render_context {
     struct rasterfall_session *session;

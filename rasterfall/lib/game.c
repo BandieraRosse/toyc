@@ -588,6 +588,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     struct toy_game_actor *player;
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
+    toy_mesh_weaver_defaults(&g->weaver);
     g->nav_group_enabled = 1;
     g->nav_flow_enabled = 1;
     g->flow_repair_cell = -1;
@@ -6032,7 +6033,17 @@ int toy_game_actor_refill_ammo(struct toy_game *g,
         const struct toy_game_weapon_info *w;
         if (s->weapon < 0) continue;
         w = toy_game_weapon_info(s->weapon);
-        if (w->reserve_max == TOY_GAME_AMMO_INFINITE) continue;
+        if (w->reserve_max == TOY_GAME_AMMO_INFINITE) {
+            /* Manufactured pistols have a finite reserve. Operations supply
+             * gives those three magazines; legacy infinite pistols keep the
+             * existing behavior. No new actor or network field is needed. */
+            if (s->weapon == TOY_GAME_WEAPON_PISTOL && s->reserve >= 0 &&
+                s->reserve < w->mag_size * 3) {
+                s->reserve = w->mag_size * 3;
+                changed = 1;
+            }
+            continue;
+        }
         if (s->reserve < w->reserve_max) {
             s->reserve = w->reserve_max;
             changed = 1;
@@ -6105,7 +6116,8 @@ int toy_game_actor_begin_fire(struct toy_game *g, struct toy_game_actor *actor)
     else if (s->weapon == TOY_GAME_WEAPON_AK) push_event(g, TOY_GAME_EV_SHOOT_AK);
     else if (s->weapon == TOY_GAME_WEAPON_AWP) push_event(g, TOY_GAME_EV_SHOOT_AWP);
     else push_event(g, TOY_GAME_EV_SHOOT);
-    if (s->mag == 0) {
+    if (s->mag == 0 &&
+        (s->reserve == TOY_GAME_AMMO_INFINITE || s->reserve > 0)) {
         actor->reloading = 1;
         actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
         push_event(g, TOY_GAME_EV_RELOAD_START);
@@ -6393,12 +6405,15 @@ void toy_game_update_held(struct toy_game *g,
     else update_waves(g, dt_ms);
 }
 
+#include "game_mesh_weaver.inc"
+
 void toy_game_update_world(struct toy_game *g, int dt_ms)
 {
     int i;
     struct toy_game_update_profile *profile;
     int64_t start = 0, mark = 0, now;
     if (!g || g->state != TOY_GAME_PLAYING) return;
+    toy_game_weaver_update(g, dt_ms);
     g->nav_tick++;
     profile = g->update_profile;
     if (profile && profile->clock_us) start = mark = profile->clock_us();

@@ -10,6 +10,14 @@
 
 ## 所有权
 
+网格编织机的资产解码、稳定三角面成型次序和机械姿态由
+`rf_mesh_weaver_presentation.c` 共享；CPU/Scene 分别消费 Runtime 冻结的
+`rf_mesh_weaver_frame`。固定机架走静态道具，托盘、八个转向架/内芯和三瓣光学头
+走独立刚性变换，制造物使用完整枪械模型及同一物理适配。
+Game/session 拥有任务与成品，渲染仅绘制阶段与进度；待取枪体由该表现统一绘制，
+普通拾取模型抑制匹配槽位但保留交互。完整单位、网格和资源规则见
+[普通机合同](../reference/mesh-weaver.md)。
+
 实验板、道路板和填充板由 `rasterfall_render.c` 的共享 `draw_partitioned_floor` 生成，
 分别消费 floor style 10/11/12。板缝、道路边带和原地板颜色在同一平面内分区；
 CPU 与 Scene floor mesh 共用该来源。未指定新样式的通用地板维持原行为。

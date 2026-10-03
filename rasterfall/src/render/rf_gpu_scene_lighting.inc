@@ -82,6 +82,16 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         light.direction_outer[2]=(float)camera->cy*camera->pitch_cy/1048576;
         light.direction_outer[3]=0.85f;light.inner_shadow[0]=0.94f;scene_light_insert(&lights,&light,camera);
     }
+    if(probe->layers && !probe->layers->fixed_lighting) {
+        struct rf_gpu_light work={0};
+        if(rf_weaver_gpu_work_light(probe,work.position_radius)) {
+            work.position_radius[3]=650;
+            work.color_intensity[0]=.22f;work.color_intensity[1]=.78f;
+            work.color_intensity[2]=.86f;work.color_intensity[3]=1.2f;
+            work.direction_outer[3]=-1;
+            scene_light_insert(&lights,&work,camera);
+        }
+    }
     if(scene_lighting_lab_visible(probe,camera)) {
         for(unsigned i=0;i<2;++i) {
             struct rf_gpu_light light={0};

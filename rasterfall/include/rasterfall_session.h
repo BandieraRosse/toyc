@@ -147,6 +147,10 @@ struct rasterfall_session {
     /* Projection of Runtime Map pickups/interactions for current session UI. */
     struct rasterfall_interactable items[TOY_MAP_MAX_PICKUPS];
     int item_count;
+    /* Derived pickup projection of game_state.weaver's one ready product.
+     * The device renderer draws that item in its fixed delivery pose. */
+    int weaver_item_index;
+    unsigned weaver_item_serial;
     struct rasterfall_map_state map_ops;
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
@@ -215,6 +219,14 @@ void rasterfall_session_rts_move_player(struct rasterfall_session *session,
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z);
 int rasterfall_session_rts_logic_test(void);
+/* Offline experimental manufacturing. Reconfiguration is idempotent and
+ * never replenishes energy or resets a job; normal session reset does. */
+void rasterfall_session_weaver_configure(struct rasterfall_session *session,
+    int enabled, int output_x, int output_z, int output_y);
+int rasterfall_session_weaver_start(struct rasterfall_session *session,
+    const struct toy_mesh_blueprint *blueprint);
+void rasterfall_session_weaver_sync(struct rasterfall_session *session);
+int rasterfall_session_weaver_collect(struct rasterfall_session *session);
 /* 旁观者的托管 AI 脱困命令：同步重置相机、逻辑位置和击飞状态。 */
 int rasterfall_session_recover_managed_actor(
     struct rasterfall_session *session, struct camera *camera);

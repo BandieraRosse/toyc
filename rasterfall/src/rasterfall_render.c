@@ -43,6 +43,7 @@
 #include "rasterfall_glb_animation.h"
 #include "rasterfall_glb_preview.h"
 #include "rasterfall_prop.h"
+#include "rf_mesh_weaver_presentation.h"
 #include "rasterfall_map_components.h"
 #include "rasterfall_vmd.h"
 #include <limits.h>
@@ -75,6 +76,13 @@ struct vec3 { int x, y, z; };
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 
 static struct rasterfall_render_context *render_ctx;
+static struct rf_mesh_weaver_frame rf_mesh_weaver_cpu_frame;
+
+void rasterfall_mesh_weaver_set_frame(const struct rf_mesh_weaver_frame *frame)
+{
+    if(frame) rf_mesh_weaver_cpu_frame=*frame;
+    else memset(&rf_mesh_weaver_cpu_frame,0,sizeof(rf_mesh_weaver_cpu_frame));
+}
 
 static struct rasterfall_action_clip humanoid_actions[RASTERFALL_ACTION_COUNT];
 static unsigned int humanoid_action_ready_mask;
@@ -5317,6 +5325,19 @@ static int render_interactables(struct toy_renderer *renderer,
     for (i = 0; i < interactable_count; i++) {
         const interactable *it = &interactables[i];
         active_scene_light_override_q8 = saved_scene;
+        /* The owned READY product is already drawn at its shared delivery pose.
+         * Keep this item in session/HUD interaction queries; suppress only its
+         * generic pickup geometry, with identity checks against slot reuse. */
+        if (active_session->weaver_item_serial &&
+            i == active_session->weaver_item_index &&
+            it->kind == TOY_MAP_PICKUP_WEAPON &&
+            it->weapon == active_session->game_state.weaver.blueprint.weapon &&
+            active_session->weaver_item_serial == active_session->game_state.weaver.job_serial &&
+            rf_mesh_weaver_cpu_frame.present &&
+            rf_mesh_weaver_cpu_frame.phase == TOY_WEAVER_READY &&
+            rf_mesh_weaver_cpu_frame.output_slot == i &&
+            rf_mesh_weaver_cpu_frame.serial == active_session->weaver_item_serial)
+            continue;
         if (active_dynamic_world_lighting &&
             (it->kind == TOY_MAP_PICKUP_SMG || it->kind == TOY_MAP_PICKUP_SHOTGUN ||
              it->kind == TOY_MAP_PICKUP_WEAPON || it->kind == TOY_MAP_PICKUP_THROWABLE))
@@ -5697,6 +5718,8 @@ static int map_draw_visible(const struct toy_surface *surface,
                              miny, maxy, draw->c, draw->d);
 }
 
+#include "render/rf_mesh_weaver_cpu.inc"
+
 static int render_scene(struct toy_renderer *renderer, const struct camera *camera)
 {
     int pixels = 0;
@@ -5811,6 +5834,11 @@ map_record_done:
     phase_start = render_monotonic_us();
     {
         int drawn = render_static_props(renderer, camera);
+        if (drawn < 0) return -1;
+        pixels += drawn;
+    }
+    {
+        int drawn = rf_weaver_cpu_draw(renderer,camera,&rf_mesh_weaver_cpu_frame);
         if (drawn < 0) return -1;
         pixels += drawn;
     }
