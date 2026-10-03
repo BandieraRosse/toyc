@@ -23,35 +23,35 @@ static const struct rf_weaver_blueprint rf_weaver_blueprints[] = {
     {
         {TOY_GAME_WEAPON_AK, 528u, 968u, 2281167ULL, {52u, 285u, 881u}, 0ULL},
         "ak", "AK", "rasterfall/assets/models/ar_ak47.rmesh",
-        "523c4ef895510fab2d8016730c8e9befc2e9eb32a516b3716310c47227869877", "60f7e6f18d5b0005cde5c5d849486ca7a9539adb03b50f962d17ae1e92a07d72",
+        "523c4ef895510fab2d8016730c8e9befc2e9eb32a516b3716310c47227869877", "1213eadd375379adf7ee7e776ab2a0999533543c1139a490e37d1589053035f7",
         1978u, 3u, 1, 1,
         0u, ""
     },
     {
         {TOY_GAME_WEAPON_PISTOL, 596u, 1160u, 306137ULL, {28u, 149u, 204u}, 0ULL},
         "pistol", "Pistol", "rasterfall/assets/models/pg_glock1.rmesh",
-        "abfcbaac54c0fbe9851ba0e835327dab3b1d3861da0a7b1dc01c198a47e7c412", "624e1a584d861b2c7d979cc7cb78b4e4b36ec2544dc822daf90ce621ffa8c377",
+        "abfcbaac54c0fbe9851ba0e835327dab3b1d3861da0a7b1dc01c198a47e7c412", "afd23e3fc26b0320999cd09c96648b4c77687a936fb6caee91dcbec9646248d7",
         1929u, 5u, 1, 1,
         0u, ""
     },
     {
         {TOY_GAME_WEAPON_SMG, 312u, 572u, 588008ULL, {35u, 222u, 267u}, 0ULL},
         "smg", "SMG", "rasterfall/assets/models/smg_mac10.rmesh",
-        "9062eafee9f825a4cf7490623a85a306943e035ff017134a0b1e769236a55b16", "a6caa5528751f2a5857f4c5df4f1a47dfc267381e0584d0b8b59977284315db9",
+        "9062eafee9f825a4cf7490623a85a306943e035ff017134a0b1e769236a55b16", "7dbacf51016201aa25eb508f7cf0f6d875839d71ef74ac1ee8198d99ad512b37",
         1005u, 4u, 1, 1,
         0u, ""
     },
     {
         {TOY_GAME_WEAPON_SHOTGUN, 368u, 700u, 2025400ULL, {58u, 182u, 1004u}, 0ULL},
         "shotgun", "Shotgun", "rasterfall/assets/models/sg_pump_action.rmesh",
-        "f980e9bc2e8499afd1942c07473c57fb0a1e84cc33e637c9361c825191ae567d", "747a298628679800424d65b8b595a70af344b309a5a4751757abcee7ea017954",
+        "f980e9bc2e8499afd1942c07473c57fb0a1e84cc33e637c9361c825191ae567d", "7c002e879f5c1e07a521b0a59efb711307bde5d1e4a5c6b2d327967c75518f41",
         1381u, 3u, 1, 1,
         0u, ""
     },
     {
         {TOY_GAME_WEAPON_AWP, 930u, 1782u, 0ULL, {83u, 226u, 1119u}, 0ULL},
         "awp", "AWP", "rasterfall/assets/models/rf_AWP.rmesh",
-        "5e1b3b0692d71fb64d80809f8aa1d2f4bb42708c3c5004f3bd791e399327fc09", "1c59b7ad00d5788317adbf66628d20e402674cbc9716ffdfbe5e55ca45f33252",
+        "5e1b3b0692d71fb64d80809f8aa1d2f4bb42708c3c5004f3bd791e399327fc09", "d5d0a689a683d0394691f114eb2bfa165a8808ca20ced852c7f09ffeace0928f",
         3198u, 3u, 0, 0,
         5u, "open manufacturing mesh; does not fit the work volume at the manufacturing orientation"
     },

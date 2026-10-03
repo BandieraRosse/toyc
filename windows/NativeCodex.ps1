@@ -53,6 +53,16 @@ function Get-PythonForMake {
     if (-not $python) { Fail 'python3/python not found.' }
     return (Convert-ToMsysPath $python)
 }
+function Assert-WeaverBlueprintCache {
+    $python = Find-Tool 'python3'
+    if (-not $python) { $python = Find-Tool 'python' }
+    if (-not $python) { Fail 'python3/python not found for manufacturing blueprint validation.' }
+    # Public checkouts validate runtime hashes and adapters without private GLBs.
+    # Run before building/staging so stale measurements cannot reach a package.
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $python (Join-Path $Root 'tools/mesh_weaver_blueprints.py') --root $Root --check
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 function Convert-ToLegacyNativeArgument([string] $Value) {
     # Windows PowerShell joins native arguments into a command line. Quote each
     # argument for the CRT parser, including empty values and literal quotes.
@@ -147,6 +157,8 @@ Remove-Item Env:PATH -ErrorAction SilentlyContinue
 $env:PATH = "$MingwRoot\bin;$MsysRoot\usr\bin;$inheritedSearchPath"
 $env:SHELL = Join-Path $MsysRoot 'usr\bin\sh.exe'
 $MsysRootForMake = $MsysRoot -replace '\\', '/'
+
+if ($Command -in @('test', 'package')) { Assert-WeaverBlueprintCache }
 
 switch ($Command) {
     'doctor' { Doctor }

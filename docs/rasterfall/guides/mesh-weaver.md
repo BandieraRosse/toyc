@@ -41,6 +41,12 @@ Runtime 提交状态与左右增益，唯一音频线程混合独立机器声部
 缺少私有源时应使用已验证缓存核对运行资产，不能无声重算一份假体积。
 新增资产后 `build` 本身不保证运行目录已更新；`test` 或 `run` 的 stage 步骤会同步资源。
 
+既有五枪早于 manifest schema 1，文件名及私有源路径以蓝图目录为准。仅刷新刚性导入颜色时，
+先构建 `NativeCodex.ps1 asset-tools`，再运行 `python tools/assets/reimport_weaver_weapons.py`；
+它要求全部原始 GLB 和双哈希匹配，调用正常 GLB importer 完整重导出，拒绝几何、物理材质参数、
+尺度或制造输入变化，再生成并校验测量缓存。无纹理源的旧 slot 0 会规范为 `0xFFFFFFFF`，
+仍使用常量色；此入口不 stage、不重写源颜色、不迁移文件名，通常新资产仍走 manifest 入口。
+
 ## 原生验证
 
 ```powershell

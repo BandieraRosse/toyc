@@ -81,6 +81,12 @@ roughness/metallic 常量；未指定时保持 v14。它不开启 MASK、normal 
 clamp/linear/mip 的 UV0 配置；格式字段由[角色资产合同](../reference/character-assets.md#rfm2-v15-opaque-surface-扩展)拥有。
 刚性附件继续走普通 GLB importer 和已有 RFM2 v2 PBR 常量，不传该选项。
 
+刚性 GLB 的 `baseColorFactor` 按线性光读取，保留小于千分之一的颜色精度及 JSON 科学计数法，
+经标准 sRGB 分段函数编码后才四舍五入到 RGB24；Scene 按同一标准解码。源黑色保持黑色，
+不按资产类型提亮。此颜色路径不改变 metallic/roughness、文件尺度、顶点量化或 RFM2 布局。
+原生工具构建后运行 `python tools/assets/test_glb_colors.py --converter build-windows/glb2rmesh.exe`，
+用实际 GLB→RMESH 转换验证黑白、中灰、低亮通道、分段阈值和全部字节量化边界；Linux 可传 `build/glb2rmesh`。
+
 默认安装到 `rasterfall/private-assets/models`；公开工业 prop 可显式传
 `--output-root rasterfall/assets/models/props/industrial`。输出名称全部由 asset ID 推导：
 

@@ -40,6 +40,10 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 需要交付压缩包时，显式运行 `.\windows\NativeCodex.ps1 package`，生成
 `build-windows/rasterfall-windows.zip`。
 
+`test` 和 `package` 在构建、暂存前各执行一次制造蓝图缓存校验；运行网格、纹理、物理适配或
+生成头过期会直接失败。没有私有 GLB 的公开 checkout 仍核对运行资产及适配签名；源存在时同时
+核对源哈希和完整测量。资源修改后按[制造指南](mesh-weaver.md)重生成目录，不能跳过错误继续打包。
+
 wrapper 通过输出管道等待 Windows GUI 子进程真正退出，持续显示日志，并向调用者传递游戏的非零退出码；
 不能用直接调用 GUI exe 后尚未更新的 `$LASTEXITCODE` 判断验收成功。`run` 的 SDL 窗口仍可正常交互。
 Windows PowerShell 5 的参数使用逐项原生转义，保留空格、字面引号、空参数和末尾反斜杠；

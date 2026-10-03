@@ -15,10 +15,8 @@
       "source_path": ".claude/glb/Assault Rifle-XGeBGFQxYg.glb",
       "source_sha256": "523c4ef895510fab2d8016730c8e9befc2e9eb32a516b3716310c47227869877",
       "runtime_path": "rasterfall/assets/models/ar_ak47.rmesh",
-      "runtime_sha256": "60f7e6f18d5b0005cde5c5d849486ca7a9539adb03b50f962d17ae1e92a07d72",
-      "runtime_texture_sha256": {
-        "texture_000.ttex": null
-      },
+      "runtime_sha256": "1213eadd375379adf7ee7e776ab2a0999533543c1139a490e37d1589053035f7",
+      "runtime_texture_sha256": {},
       "adapter": {
         "asset_basis": 2,
         "length_mm": 880,
@@ -471,10 +469,8 @@
       "source_path": ".claude/glb/Pistol-L1u7KkJzY2.glb",
       "source_sha256": "abfcbaac54c0fbe9851ba0e835327dab3b1d3861da0a7b1dc01c198a47e7c412",
       "runtime_path": "rasterfall/assets/models/pg_glock1.rmesh",
-      "runtime_sha256": "624e1a584d861b2c7d979cc7cb78b4e4b36ec2544dc822daf90ce621ffa8c377",
-      "runtime_texture_sha256": {
-        "texture_000.ttex": null
-      },
+      "runtime_sha256": "afd23e3fc26b0320999cd09c96648b4c77687a936fb6caee91dcbec9646248d7",
+      "runtime_texture_sha256": {},
       "adapter": {
         "asset_basis": 0,
         "length_mm": 204,
@@ -775,10 +771,8 @@
       "source_path": ".claude/glb/Submachine Gun-thBPAYTK5R.glb",
       "source_sha256": "9062eafee9f825a4cf7490623a85a306943e035ff017134a0b1e769236a55b16",
       "runtime_path": "rasterfall/assets/models/smg_mac10.rmesh",
-      "runtime_sha256": "a6caa5528751f2a5857f4c5df4f1a47dfc267381e0584d0b8b59977284315db9",
-      "runtime_texture_sha256": {
-        "texture_000.ttex": null
-      },
+      "runtime_sha256": "7dbacf51016201aa25eb508f7cf0f6d875839d71ef74ac1ee8198d99ad512b37",
+      "runtime_texture_sha256": {},
       "adapter": {
         "asset_basis": 0,
         "length_mm": 267,
@@ -1119,10 +1113,8 @@
       "source_path": ".claude/glb/Shotgun-f54ZSBZZ8k.glb",
       "source_sha256": "f980e9bc2e8499afd1942c07473c57fb0a1e84cc33e637c9361c825191ae567d",
       "runtime_path": "rasterfall/assets/models/sg_pump_action.rmesh",
-      "runtime_sha256": "747a298628679800424d65b8b595a70af344b309a5a4751757abcee7ea017954",
-      "runtime_texture_sha256": {
-        "texture_000.ttex": null
-      },
+      "runtime_sha256": "7c002e879f5c1e07a521b0a59efb711307bde5d1e4a5c6b2d327967c75518f41",
+      "runtime_texture_sha256": {},
       "adapter": {
         "asset_basis": 1,
         "length_mm": 1003,
@@ -1395,10 +1387,8 @@
       "source_path": ".claude/glb/Sniper Rifle-ZkwSIy3JOV.glb",
       "source_sha256": "5e1b3b0692d71fb64d80809f8aa1d2f4bb42708c3c5004f3bd791e399327fc09",
       "runtime_path": "rasterfall/assets/models/rf_AWP.rmesh",
-      "runtime_sha256": "1c59b7ad00d5788317adbf66628d20e402674cbc9716ffdfbe5e55ca45f33252",
-      "runtime_texture_sha256": {
-        "texture_000.ttex": null
-      },
+      "runtime_sha256": "d5d0a689a683d0394691f114eb2bfa165a8808ca20ced852c7f09ffeace0928f",
+      "runtime_texture_sha256": {},
       "adapter": {
         "asset_basis": 2,
         "length_mm": 1120,

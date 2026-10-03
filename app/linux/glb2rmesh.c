@@ -3,6 +3,7 @@
 #include "tlibc_print.h"
 #include "tlibc_everything.h"
 #include "rasterfall_model.h"
+#include "math.h"
 
 #define GLB_MAGIC 0x46546c67U
 #define GLB_JSON  0x4e4f534aU
@@ -89,8 +90,7 @@ static int json_int(struct slice s, int fallback)
     return v * sign;
 }
 
-/* Parse a non-negative JSON decimal into thousandths. This is sufficient for
- * glTF material factors and avoids pulling floating-point parsing into runtime. */
+/* Preserve the existing thousandths contract for non-color material fields. */
 static int json_fixed(struct slice s, int fallback)
 {
     const char *p; int sign = 1, whole = 0, frac = 0, digits = 0;
@@ -103,6 +103,39 @@ static int json_fixed(struct slice s, int fallback)
     while (p < s.end && *p >= '0' && *p <= '9') { if (digits < 3) frac = frac * 10 + (*p - '0'); digits++; p++; }
     while (digits < 3) { frac *= 10; digits++; }
     return sign * (whole * 1000 + frac);
+}
+
+/* Color factors need sub-millith precision in the linear toe, and valid JSON
+ * may use scientific notation. This bounded slice parser is import-only. */
+static double json_color_factor(struct slice s, double fallback)
+{
+    const char *p; double value = 0.0, place = 0.1;
+    int sign = 1, digits = 0, exponent = 0, exponent_sign = 1;
+    if (!s.p) return fallback;
+    p = skip_ws(s.p, s.end);
+    if (p < s.end && *p == '-') { sign = -1; p++; }
+    while (p < s.end && *p >= '0' && *p <= '9') {
+        value = value * 10.0 + (*p++ - '0'); digits++;
+    }
+    if (p < s.end && *p == '.') {
+        p++;
+        while (p < s.end && *p >= '0' && *p <= '9') {
+            value += (*p++ - '0') * place; place *= 0.1; digits++;
+        }
+    }
+    if (!digits) return fallback;
+    if (p < s.end && (*p == 'e' || *p == 'E')) {
+        p++;
+        if (p < s.end && (*p == '+' || *p == '-')) { exponent_sign = *p == '-' ? -1 : 1; p++; }
+        if (p >= s.end || *p < '0' || *p > '9') return fallback;
+        while (p < s.end && *p >= '0' && *p <= '9') {
+            if (exponent < 400) exponent = exponent * 10 + (*p - '0');
+            p++;
+        }
+        if (exponent > 400) exponent = 400;
+        while (exponent-- > 0) value *= exponent_sign < 0 ? 0.1 : 10.0;
+    }
+    return sign * value;
 }
 
 static int json_type(struct slice s)
@@ -123,14 +156,16 @@ static float f32(const unsigned char *p)
 static int clamp_i(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int f_to_i(float f, int scale) { return (int)(f * scale + (f < 0 ? -0.5f : 0.5f)); }
 
-/* GLTF baseColorFactor is linear-light while the framebuffer is sRGB-like. */
-static int linear_to_srgb8(int linear_milli)
+/* glTF baseColorFactor is linear-light. RGB24 is standard sRGB, matching
+ * Scene's decode_srgb and the RFCHAR importer; quantize only at the end. */
+static int linear_to_srgb8(double linear)
 {
-    int target, x = 0;
-    linear_milli = clamp_i(linear_milli, 0, 1000);
-    target = linear_milli * 65025 / 1000;
-    while ((x + 1) * (x + 1) <= target) x++;
-    return x;
+    double encoded;
+    if (linear <= 0.0) return 0;
+    if (linear >= 1.0) return 255;
+    encoded = linear <= 0.0031308 ? 12.92 * linear :
+        1.055 * pow(linear, 1.0 / 2.4) - 0.055;
+    return clamp_i((int)(encoded * 255.0 + 0.5), 0, 255);
 }
 
 static int write_all(int fd, const void *buf, int len)
@@ -149,13 +184,14 @@ static struct material read_material(struct slice materials, int index)
 {
     struct material out = {0xFFFFFFFFU, 0, 65535, 0xffffffffU};
     struct slice m, pbr, color, base_texture;
-    int r, g, b, a, fixed;
+    double r, g, b;
+    int a, fixed;
     m = array_item(materials, index); if (!m.p) return out;
     pbr = raw_value(m, "pbrMetallicRoughness");
     color = raw_value(pbr, "baseColorFactor");
-    r = json_fixed(array_item(color, 0), 1000);
-    g = json_fixed(array_item(color, 1), 1000);
-    b = json_fixed(array_item(color, 2), 1000);
+    r = json_color_factor(array_item(color, 0), 1.0);
+    g = json_color_factor(array_item(color, 1), 1.0);
+    b = json_color_factor(array_item(color, 2), 1.0);
     a = json_fixed(array_item(color, 3), 1000);
     out.color = (unsigned int)linear_to_srgb8(r) << 16 |
                 (unsigned int)linear_to_srgb8(g) << 8 |
