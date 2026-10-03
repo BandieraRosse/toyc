@@ -50,6 +50,8 @@ struct rasterfall_procedural_humanoid_state {
     int profession_id; /* rasterfall_profession_id; presentation identity, default NONE. */
     /* Optional upper aim and independent lower phase for presentation fixtures. */
     int aim_pitch_mdeg, aim_yaw_mdeg, moving, locomotion_time_ms;
+    int rifle_valid;
+    struct rasterfall_rifle_pose_input rifle;
 };
 
 /* Uses the bound render context and existing serial primitive helpers.

@@ -72,6 +72,11 @@ python tools/rf_character_fidelity_report.py tmp/character-fidelity
 `RF_GPU_CHARACTER_MODEL` 是预览模型绝对路径，`RF_GPU_CHARACTER_FREEZE=1` 冻结 bind，
 `RF_GPU_CHARACTER_REVERSE=1` 交换顺序，`RF_GPU_CHARACTER_STATION=0..5` 选择观察台位。它们不改变 Game/session。瞄准诊断对应 `RF_GPU_CHARACTER_AIM_PITCH`、`RF_GPU_CHARACTER_AIM_YAW` 与 `RF_GPU_CHARACTER_AIM_DISTANCE`。
 
+静止持枪检查沿用 `gpu_character_fidelity.ps1 -Station 2 -Animate`，加 `-IdlePose 1` 检查
+单手竖持，`2` 检查胸前斜持，`3` 检查放松低持；`0` 保留台位默认动作。
+对应进程开关为 `RF_GPU_CHARACTER_IDLE_POSE`，只影响目录台位诊断。搭配 `quarter` 与
+`right-quarter` 视角检查两侧手臂、握点和枪体间隙。实际 AI 的随机停留和战斗中断由共享 rifle sampler 驱动。
+
 ## Blender 参考
 
 ```powershell

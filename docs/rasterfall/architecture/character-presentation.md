@@ -30,6 +30,11 @@ rifle fire；共享 rifle sampler 在 AK 移动时保持低位持枪，停止移
 两种姿态都跟踪射击方向，共享双臂握点与反冲。RFANIM authored 时间独立于 gameplay
 回卷值，instance 累积 presentation time 以保持完整周期和短时 upper action 下的 lower phase。
 
+真实 AK AI 静止、无目标时，由同一 rifle sampler 在肩托警戒与三种闲置持枪之间随机停留和过渡。
+竖持时右手握枪、左臂放下；胸前斜持保持枪体与胸部间隙；低持放松在肋侧。目标、移动和特殊动作
+优先中断待机。历史、随机数与姿态权重归 presentation，CPU cache 与 Scene sidecar 冻结同一输入，
+不增加 Game/session 或网络字段。动作与中断合同见[动画求值](animation-architecture.md)。
+
 成功回避的上身避让与射击反冲可同时存在：lower/upper → recoil → 500ms evade → 瞄准/胸部避让/双臂 IK → 附件。
 CPU modular pose cache 将该次方向、采样时间和权重纳入键，并按 combat generation 区分槽位复用。
 Scene local source 用相同的只读采样器冻结这些值到逐 actor sidecar；pose extraction 只消费冻结值，
@@ -80,6 +85,9 @@ CPU modular、Scene pose 与 Scene native consumer 读取同一资源。私有 R
 
 Gunsmith、Logistics、Medic、Guard 的颜色和附件由 presentation-only profile 组合；downed/death/revive
 沿用既有整体变换，不新增玩法或网络字段。portrait 可以复用同一 renderer，但自行拥有 camera 与展示状态。
+
+Block AK AI 也消费共享 rifle sampler 的冻结权重；程序武器与双臂端点从同一握点刚体帧生成，
+单手动作释放左臂。CPU 与独立 Scene 分别拥有采样历史；提取器只读已冻结值，不推进随机序列。
 
 ## 敌人表现
 

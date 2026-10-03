@@ -162,7 +162,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
                     actor.x,actor.z,0,actor.sy,actor.cy,actor.slots[0].weapon,
                     0,actor.animation.id==TOY_GAME_ANIM_DOWNED,
                     actor.animation.id,actor.animation.time_ms,
-                    RASTERFALL_PROFESSION_NONE,0,0,0,0};
+                    RASTERFALL_PROFESSION_NONE,0,0,0,0,0,{0}};
                 profile.body_color=color;
                 profile.leg_color=0x25354A;
                 pixels+=rasterfall_render_procedural_humanoid(renderer,camera,
@@ -186,7 +186,7 @@ static int render_outpost_actor_lab(struct toy_renderer *renderer,
             struct rasterfall_procedural_humanoid_state state={
                 actor.x,actor.z,0,actor.sy,actor.cy,actor.slots[0].weapon,
                 0,0,actor.animation.id,actor.animation.time_ms,
-                RASTERFALL_PROFESSION_NONE,0,0,0,0};
+                RASTERFALL_PROFESSION_NONE,0,0,0,0,0,{0}};
             profile.body_color=entry->level==2 ? RF_COLOR_AI_HEAVY :
                 entry->level==1 ? RF_COLOR_AI_RIFLE : RF_COLOR_AI_BASIC;
             profile.leg_color=0x25354A;

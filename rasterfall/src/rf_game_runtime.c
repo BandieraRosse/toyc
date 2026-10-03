@@ -1161,6 +1161,8 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_render_terminal.inc"
 #include "rf_performance_lab.inc"
 #include "rf_combat_lab.inc"
+#include "rf_idle_rifle_lab.inc"
+#include "dev-tests/rf_idle_rifle_lab_test.inc"
 #include "dev-tests/rf_combat_lab_test.inc"
 #include "rf_scene_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
@@ -2797,6 +2799,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
     game_camera = &runtime->camera;
     is_client = game_net->mode == RASTERFALL_NET_CLIENT;
     int64_t combat_step_started=0;
+    rf_idle_lab_step(runtime,dt_ms);
     if(rf_combat_lab.running && !runtime->lifecycle_paused) {
         combat_step_started=rf_core_clock_now_us();
         game_session->game_state.update_profile=&rf_combat_lab.profile;
@@ -3072,6 +3075,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
                 rf_lab_definitions[rf_showcase_near-1].gpu_only && !rf_render_terminal.scene_backend ?
                     "GPU SCENE REQUIRED" :
                 rf_showcase_near-1==RF_LAB_ELECTRONICS ? "E  OFF / 600 / 1200 / 1800 RPM" :
+                rf_showcase_near-1==RF_LAB_IDLE_RIFLE ? "E  IDLE / WALK / TARGET / OFF" :
                 rf_labs.requested[rf_showcase_near-1] ? "E  DISABLE EXHIBIT" : "E  ENABLE EXHIBIT", 0xC7F2EE);
         if ((rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0) ||
             (rf_labs.requested[RF_LAB_RIFLE_CYCLE] && rasterfall_render_outpost_rifle_cycle_status()<0))
@@ -3911,6 +3915,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rf_table_init();
     memset(&rf_perf_lab, 0, sizeof(rf_perf_lab));
     rf_combat_init(&options);
+    memset(&rf_idle_lab,0,sizeof(rf_idle_lab));
     rf_labs_reset();
     rf_perf_lab.isolated=1;
     {
@@ -3947,6 +3952,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 int combat_result=rf_combat_lab_logic_test(&game_runtime);
                 if(combat_result){__fprintf(2,"COMBAT-LAB lifecycle test failed: %d\n",combat_result);result=1;}
             }
+            if(!result && rf_idle_lab_logic_test(&game_runtime))result=1;
             if (!result) {
                 session.seed = 0x1234;
                 if (rf_game_request_world(&game_runtime,
@@ -4069,6 +4075,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"walk-lab") ||
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
                !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
+               !strcmp(options.gpu_normal_view,"idle-rifle-lab") ||
                !strcmp(options.gpu_normal_view,"equipment-lab") ||
                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                !strcmp(options.gpu_normal_view,"model-lab") ||
@@ -4155,6 +4162,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "equipment-lab")) {
             rf_equipment_camera(&session,&camera);
             rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
+        } else if (!strcmp(options.gpu_normal_view, "idle-rifle-lab")) {
+            rf_idle_lab_camera(&session,&camera);
+            const char *mode=getenv("RF_IDLE_LAB_MODE");
+            rf_labs.requested[RF_LAB_IDLE_RIFLE]=mode?atoi(mode):1;
+            if(rf_labs.requested[RF_LAB_IDLE_RIFLE]<1 || rf_labs.requested[RF_LAB_IDLE_RIFLE]>3)
+                rf_labs.requested[RF_LAB_IDLE_RIFLE]=1;
         } else if (!strcmp(options.gpu_normal_view, "rifle-cycle-lab")) {
             rf_lab_camera_position(&session,&camera,"rifle_cycle_lab_area",0,6000);
             camera.y=0;camera.sy=0;camera.cy=-1024;
@@ -5347,7 +5360,9 @@ startup_again:
             input.key_pressed[KEY_E]=0;
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             int lab=rf_showcase_near-1;
-            if (!rf_lab_definitions[lab].gpu_only || options.gpu_scene_play)
+            if(lab==RF_LAB_IDLE_RIFLE && net.mode!=RASTERFALL_NET_OFF) {
+                session.banner_text="LIVE AI LAB AVAILABLE OFFLINE";session.banner_ms=2200;
+            } else if (!rf_lab_definitions[lab].gpu_only || options.gpu_scene_play)
                 rf_lab_control(lab);
         } else if (rf_table.near &&
                    action_pressed(&input, RF_ACTION_INTERACT) &&
@@ -5981,6 +5996,9 @@ startup_again:
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"rifle-cycle-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
                 rf_rifle_cycle_camera(&session,&game_runtime.camera);
+            if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"idle-rifle-lab") &&
+                (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_idle_lab_camera(&session,&game_runtime.camera);
             if (options.gpu_normal_view &&
                 (!strcmp(options.gpu_normal_view,"character-lab") ||
                  !strcmp(options.gpu_normal_view,"walk-lab") ||
@@ -6083,6 +6101,7 @@ startup_again:
                     (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us());
             rf_labs_display(session.world_id,paused ||
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play);
+            rf_idle_lab_display(&session,paused || rf_perf_lab.running || rf_combat_lab.running);
             rasterfall_render_terminal_set("performance_control",rf_perf_lab.running ?
                 "PERFORMANCE / RUNNING" : "PERFORMANCE / E CONFIGURE");
             {
@@ -6386,6 +6405,7 @@ startup_again:
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
                                !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
+                               !strcmp(options.gpu_normal_view,"idle-rifle-lab") ||
                                !strcmp(options.gpu_normal_view,"equipment-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-walk-lab") ||
                                !strcmp(options.gpu_normal_view,"model-lab") ||
@@ -6867,6 +6887,7 @@ startup_again:
     }
 scene_shutdown:
     if(rf_combat_lab.running)rf_combat_finish(&game_runtime,3);
+    rf_idle_lab_clear(&session);
     rf_perf_lab.running=0;
     rf_labs_reset();
     rasterfall_render_set_motion_presentation(NULL, NULL, 0);

@@ -2,6 +2,7 @@
  * captured values later; this adapter never enters a draw producer. */
 static struct rf_gpu_scene_local_source scene_actor_history;
 static const struct rasterfall_session *scene_actor_session;
+static struct rasterfall_rifle_history scene_procedural_rifle[TOY_GAME_MAX_ACTORS];
 static struct toy_game scene_actor_fixture_game;
 
 struct scene_actor_fixture_clock {
@@ -68,6 +69,14 @@ static int scene_actor_procedural(const struct toy_game_actor *actor,
     item->state.animation_id=actor->animation.id;
     item->state.animation_time_ms=actor->animation.time_ms;
     item->state.profession_id=actor->character_id<0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id;
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(actor==&game.actors[i] && actor->kind==TOY_GAME_ACTOR_AI) {
+        rasterfall_rifle_sample(actor,(unsigned)game.combat_time_ms,&scene_procedural_rifle[i],&item->state.rifle);
+        item->state.rifle_valid=item->state.weapon==TOY_GAME_WEAPON_AK &&
+            actor->state==TOY_GAME_ACTOR_ALIVE && !actor->reloading && !actor->weapon_switch_timer_ms &&
+            !actor->control_disabled && !actor->melee_timer_ms && !actor->throw_timer_ms &&
+            !actor->airborne_ms && !actor->airborne_y;
+        if(item->state.rifle_valid)item->state.muzzle_flash=actor->muzzle_flash_ms;
+    }
     item->body_color=actor->character_id<0 ? tint : profile->body_color;
     item->leg_color=actor->character_id<0 && ordinary_ai ? 0x25354A : profile->leg_color;
     item->skin_color=profile->skin_color;item->hair_color=profile->hair_color;
@@ -94,6 +103,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         scene_enemy_capture.frame_id>UINT_MAX) return -1;
     next.world_generation=scene_enemy_capture.world_generation;
     next.frame_id=scene_enemy_capture.frame_id-1;
+    if(scene_actor_session!=active_session || scene_actor_history.world_generation!=next.world_generation)
+        memset(scene_procedural_rifle,0,sizeof(scene_procedural_rifle));
     if (active_session->rts_active) {
         const struct toy_game_actor *player =
             toy_game_local_player_actor_const(&game);

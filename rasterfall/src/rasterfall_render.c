@@ -7007,6 +7007,90 @@ static int render_actor_weapon(struct toy_renderer *renderer,
                                      animation_time_ms, body_color, 1);
 }
 
+/* Block bodies consume the same frozen hold weights. Weapon geometry and
+ * both hand endpoints share one rigid frame, including the released hand. */
+static int render_actor_relaxed_rifle(struct toy_renderer *renderer,const struct camera *camera,
+    int x,int z,int sy,int cy,const struct rasterfall_rifle_pose_input *rifle,int muzzle_flash,uint32_t color)
+{
+    struct rasterfall_model_asset *model=gallery_model_named(rasterfall_weapon_model_path(TOY_GAME_WEAPON_AK),NULL);
+    struct rasterfall_weapon_model_adapter adapter;
+    struct rasterfall_weapon_socket_transform grip,fore,muzzle;
+    double aim=rifle->aim_milli/1000.0,hip=rifle->hip_milli/1000.0;
+    double single=rifle->idle_milli[0]/1000.0,chest=rifle->idle_milli[1]/1000.0,low=rifle->idle_milli[2]/1000.0;
+    double total=aim+hip+single+chest+low;
+    if(total>1) { aim/=total;hip/=total;single/=total;chest/=total;low/=total; }
+    double rest=1-aim-hip-single-chest-low;
+    double pitch=((aim+hip)*rifle->pitch_mdeg/1000.0+72*single+24*chest-8*low-30*rest+
+        rifle->recoil_milli*.0018)*M_PI/180;
+    double yaw=((aim+hip)*rifle->yaw_mdeg/1000.0-8*single-58*chest-12*low+10*rest)*M_PI/180;
+    double a[9]={cos(yaw),0,sin(yaw),0,1,0,-sin(yaw),0,cos(yaw)};
+    double b[9]={1,0,0,0,cos(pitch),sin(pitch),0,-sin(pitch),cos(pitch)},r[9];
+    double unit=(double)RASTERFALL_LEGACY_ACTOR_HEIGHT_RFU/RASTERFALL_HUMAN_HEIGHT_RFU;
+    double hands[2][3],anchor[3]={160+80*single+60*chest,
+        -240*aim-470*hip-355*single-350*chest-490*low-420*rest,230+65*chest};
+    int pixels=0;
+    if(!model || rasterfall_weapon_model_adapt(TOY_GAME_WEAPON_AK,
+        (int[3]){model->min_x,model->min_y,model->min_z},
+        (int[3]){model->max_x,model->max_y,model->max_z},&adapter)<0 ||
+        rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,RASTERFALL_WEAPON_SOCKET_PRIMARY_GRIP,&grip)<0 ||
+        rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,RASTERFALL_WEAPON_SOCKET_FOREGRIP,&fore)<0)return 0;
+    rigid_matrix_multiply(a,b,r);
+    double roll=-60*single*M_PI/180;
+    double c[9]={cos(roll),-sin(roll),0,sin(roll),cos(roll),0,0,0,1};
+    rigid_matrix_multiply(r,c,a);memcpy(r,a,sizeof(r));
+    double g[3]={grip.position.x,grip.position.y,grip.position.z};
+    double f[3]={(fore.position.x-g[0])*unit,(fore.position.y-g[1])*unit,(fore.position.z-g[2])*unit};
+    rigid_matrix_vector(r,f,hands[0]);
+    for(int k=0;k<3;++k) { hands[0][k]+=anchor[k];hands[1][k]=anchor[k]; }
+    for(int k=0;k<3;++k)hands[0][k]=hands[0][k]*(1-single)+(double[3]){-225,-580,15}[k]*single;
+    for(unsigned i=0;i<model->primitive_count;++i) {
+        const unsigned char *primitive=model->primitives+i*RASTERFALL_MODEL_PRIMITIVE_BYTES;
+        const unsigned char *indices=model->indices+model_u32(primitive)*4;
+        unsigned count=model_u32(primitive+4),material=model_u32(primitive+8);
+        uint32_t tint=material<model->material_count?model_u32(model->materials+material*model->material_bytes):0x555555;
+        for(unsigned j=0;j+2<count;j+=3) {
+            struct vec3 v[3];int k;
+            for(k=0;k<3;++k) {
+                unsigned id=model_u32(indices+(j+k)*4);
+                if(id>=model->vertex_count)break;
+                const int *p=(const int *)(model->vertices+id*model->vertex_bytes);
+                double centered[3],local[3],rotated[3];
+                for(int n=0;n<3;++n)centered[n]=p[n]-adapter.center[n];
+                rigid_matrix_vector(adapter.basis,centered,local);
+                for(int n=0;n<3;++n)local[n]=(local[n]*adapter.scale_milli/1000.0-g[n])*unit;
+                rigid_matrix_vector(r,local,rotated);
+                actor_world_point(x,z,sy,cy,(int)(rotated[0]+anchor[0]),(int)(rotated[1]+anchor[1]),
+                    (int)(rotated[2]+anchor[2]),&v[k]);
+            }
+            if(k==3)pixels+=draw_world_triangle(renderer,camera,&v[0],&v[1],&v[2],tint);
+        }
+    }
+    for(int side=0;side<2;++side) {
+        int shoulder=side?205:-205;
+        int ex=(int)((shoulder+hands[side][0])*.5)+(side?55:-55);
+        int ey=(int)((-180+hands[side][1])*.5)-65;
+        int ez=(int)(hands[side][2]*.35);
+        pixels+=draw_limb_segment(renderer,camera,x,z,sy,cy,shoulder,-180,0,ex,ey,ez,40,color);
+        pixels+=draw_limb_segment(renderer,camera,x,z,sy,cy,ex,ey,ez,
+            (int)hands[side][0],(int)hands[side][1],(int)hands[side][2],42,0xC08A68);
+    }
+    if(muzzle_flash>0 && !rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,
+        RASTERFALL_WEAPON_SOCKET_MUZZLE,&muzzle)) {
+        double local[3]={(muzzle.position.x-g[0])*unit,(muzzle.position.y-g[1])*unit,
+            (muzzle.position.z-g[2])*unit},rotated[3];
+        struct vec3 point;
+        rigid_matrix_vector(r,local,rotated);
+        actor_world_point(x,z,sy,cy,(int)(rotated[0]+anchor[0]),(int)(rotated[1]+anchor[1]),
+            (int)(rotated[2]+anchor[2]),&point);
+        int saved_flash_scene=active_scene_light_override_q8;
+        active_scene_light_override_q8=-1;
+        pixels+=draw_cuboid(renderer,camera,point.x-32,point.x+32,point.y-32,point.y+32,
+            point.z-32,point.z+32,0xE7C058);
+        active_scene_light_override_q8=saved_flash_scene;
+    }
+    return pixels;
+}
+
 static const struct rasterfall_pose_calibration *render_pose_calibration(int weapon)
 {
     return rasterfall_pose_calibration_resolve(
@@ -8877,7 +8961,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         {
             const struct rasterfall_character_profile *profile =
                 rasterfall_character_profile(actor->character_id);
-            const struct rasterfall_procedural_humanoid_state state = {
+            struct rasterfall_procedural_humanoid_state state = {
                 actor->x, actor->z, actor->ground_y + actor->airborne_y,
                 actor->sy, actor->cy,
                 actor->current_slot >= 0 &&
@@ -8886,9 +8970,15 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 0, actor->state == TOY_GAME_ACTOR_DOWNED,
                 actor->animation.id, actor->animation.time_ms,
                 actor->character_id < 0 ? RASTERFALL_PROFESSION_NONE :
-                                          profile->profession_id, 0, 0, 0, 0
+                                          profile->profession_id, 0, 0, 0, 0, 0, {0}
             };
             struct rasterfall_character_profile character = *profile;
+            rasterfall_rifle_sample(actor,(unsigned)(active_presentation_game?active_presentation_game->combat_time_ms:0),
+                &actor_action_layers[i].rifle,&state.rifle);
+            state.rifle_valid=state.weapon==TOY_GAME_WEAPON_AK && actor->state==TOY_GAME_ACTOR_ALIVE &&
+                !actor->reloading && !actor->weapon_switch_timer_ms && !actor->control_disabled &&
+                !actor->melee_timer_ms && !actor->throw_timer_ms && !actor->airborne_ms && !actor->airborne_y;
+            if(state.rifle_valid)state.muzzle_flash=actor->muzzle_flash_ms;
             unsigned long command_start = renderer->cmd_count;
             long phase_start = render_monotonic_us();
             if (actor->character_id < 0) {
@@ -8957,7 +9047,7 @@ static int render_player_avatar(struct toy_renderer *renderer,
         x, z, active_actor_lift, sy, cy, weapon, muzzle_flash, downed,
         animation_id, animation_time_ms,
         character_id < 0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id,
-        0, 0, 0, 0
+        0, 0, 0, 0, 0, {0}
     };
     struct rasterfall_character_profile character = *profile;
     /* Preserve the legacy negative-ID body tint for existing callers. */
@@ -9195,7 +9285,9 @@ int rasterfall_render_procedural_humanoid(
         double angle=state->aim_pitch_mdeg*M_PI/180000.0;
         active_actor_aim_sin=(int)(sin(angle)*1024);
         active_actor_aim_cos=(int)(cos(angle)*1024);
-        pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
+        if(state->rifle_valid)
+            pixels += render_actor_relaxed_rifle(renderer,camera,pose_x,pose_z,sy,cy,&state->rifle,muzzle_flash,body_color);
+        else pixels += render_actor_weapon(renderer, camera, pose_x, pose_z, sy, cy,
                                       weapon, muzzle_flash, animation_id,
                                       animation_time_ms, body_color);
         active_actor_aim_sin=saved_aim_sin;active_actor_aim_cos=saved_aim_cos;
@@ -9220,7 +9312,7 @@ int rasterfall_render_procedural_humanoid(
                          animation_id == TOY_GAME_ANIM_REVIVE) ? 0 : pose.body_pitch,
                 profession);
     }
-    if (muzzle_flash > 0 &&
+    if (muzzle_flash > 0 && !state->rifle_valid &&
         ((animation_id != TOY_GAME_ANIM_DEATH &&
           animation_id != TOY_GAME_ANIM_REVIVE) || show_fall_gear))
     {

@@ -19,6 +19,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run 
 定向近景与动作帧检查见[保真诊断](character-fidelity.md)。描边与 LOD 不属于此次签收。
 缺失资源在画面与日志中显示错误，重新安装后关闭再开启展示。
 
+## 真实 AI 持枪实验区
+
+`LIVE AI HOLDS` 位于三模型持枪循环区正南方，沿东侧道路可以步行到达。东北控制台按 E 循环：
+静止随机持枪、往返部署、真实目标、关闭。四名角色分别为 Block、步枪手、重装和侦察，
+全部通过正常玩法 AI 和角色渲染运行。目标模式生成不还击的真实敌方枪手；其倒地后回到静止。
+可以走近、绕到侧面，或切换 RTS 观察。关闭只移除本区拥有的角色；离线可用，默认关闭。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene idle-rifle-lab 0
+```
+
+诊断入口自动开启静止模式；`RF_IDLE_LAB_MODE=1/2/3` 分别选择静止、移动和目标。
+固定截图可追加 `--gpu-normal-fixed-tick --frames 400 --frame-audit --gpu-frame-capture <绝对路径.bmp>`。
+它按真实固定逻辑步推进 AI 和持枪历史，不指定某种姿态，不调用展示专用动作曲线。
+持续观察随机停留时使用普通运行；暂停时逻辑和姿态同时停止。几何、台位与道路由
+`tools/idle_rifle_lab.py` 生成，所有权与中断规则见[实验区合同](../reference/experiment-labs.md)。
+
 ## 三模型持枪循环区
 
 RF 模型区东侧新增 `AI RIFLE CYCLE`，使用已有 Block、Humanoid 和 RF-C01 三种模型。

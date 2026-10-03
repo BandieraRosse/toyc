@@ -129,6 +129,11 @@ int rf_gpu_scene_pose_body_action(int body_id,uint64_t frame,uint64_t world,
     const char *yaw=getenv("RF_GPU_CHARACTER_AIM_YAW");
     const char *distance=getenv("RF_GPU_CHARACTER_AIM_DISTANCE");
     const char *freeze=getenv("RF_GPU_CHARACTER_FREEZE");
+    const char *idle=getenv("RF_GPU_CHARACTER_IDLE_POSE");
+    if(idle && action==RF_GPU_SCENE_BODY_RIFLE_IDLE) {
+        int pose=atoi(idle);
+        if(pose>=1 && pose<=RASTERFALL_RIFLE_IDLE_COUNT)sample.rifle.idle_milli[pose-1]=1000;
+    }
     if(pitch)sample.rifle.pitch_mdeg=atoi(pitch)*1000;
     if(yaw)sample.rifle.yaw_mdeg=atoi(yaw)*1000;
     if(distance)sample.rifle.target_distance_rfu=atoi(distance);

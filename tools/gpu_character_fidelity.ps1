@@ -10,6 +10,7 @@ param(
     [ValidateRange(0,5)][int]$Station=0,
     [ValidateRange(-75,75)][int]$AimPitch=0,
     [ValidateRange(-45,45)][int]$AimYaw=0,
+    [ValidateRange(0,3)][int]$IdlePose=0,
     [ValidateRange(1024,131072)][int]$AimDistanceRfu=16384,
     [switch]$Animate,
     [switch]$Reverse
@@ -23,7 +24,7 @@ $Saved=@{}
 foreach ($Key in @('RF_GPU_CHARACTER_MODEL','RF_GPU_CHARACTER_VIEW','RF_GPU_CHARACTER_DISPLAY',
     'RF_GPU_CHARACTER_DEPTH','RF_GPU_CHARACTER_DISTANCE','RF_GPU_CHARACTER_FREEZE','RF_GPU_CHARACTER_REVERSE',
     'RF_GPU_CHARACTER_STATION','RF_GPU_CHARACTER_AIM_PITCH','RF_GPU_CHARACTER_AIM_YAW',
-    'RF_GPU_CHARACTER_AIM_DISTANCE')) {
+    'RF_GPU_CHARACTER_AIM_DISTANCE','RF_GPU_CHARACTER_IDLE_POSE')) {
     $Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')
 }
 $Results=@()
@@ -44,6 +45,7 @@ try {
     $env:RF_GPU_CHARACTER_AIM_PITCH=[string]$AimPitch
     $env:RF_GPU_CHARACTER_AIM_YAW=[string]$AimYaw
     $env:RF_GPU_CHARACTER_AIM_DISTANCE=[string]$AimDistanceRfu
+    $env:RF_GPU_CHARACTER_IDLE_POSE=[string]$IdlePose
     $env:RF_GPU_CHARACTER_REVERSE=if ($Reverse) { '1' } else { '0' }
     foreach ($View in $Views) { foreach ($Display in $Displays) { foreach ($Distance in $Distances) {
         if ($View -notin @('front','quarter','side','right-quarter','right-side','back','orbit') -or
@@ -82,7 +84,7 @@ try {
     })
     @{model=$ModelPath;model_sha256=(Get-FileHash $ModelPath).Hash;position_scale=$PositionScale;textures=$Textures;
       station=$Station;animated=[bool]$Animate;
-      aim_pitch=$AimPitch;aim_yaw=$AimYaw;aim_distance_rfu=$AimDistanceRfu;
+      aim_pitch=$AimPitch;aim_yaw=$AimYaw;aim_distance_rfu=$AimDistanceRfu;idle_pose=$IdlePose;
       exe_sha256=(Get-FileHash "$Package/rasterfall.exe").Hash;
       camera_target_lab='rf_model_lab_area';
       camera_target_local_rfu=@((-384+($Station%2)*1200),$(if($Station -ge 2){-320}else{-114}),(344-[Math]::Floor($Station/2)*1500));

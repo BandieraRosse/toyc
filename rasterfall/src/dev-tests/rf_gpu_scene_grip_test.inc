@@ -79,6 +79,54 @@ static int scene_grip_pose_test(void)
             (int[3]){0,0,0},(int[3]){1,1,0},&b)<0);
     }
     GRIP_CHECK(!modular_actor_resources_init());
+    {
+        struct toy_game_actor actor={0},saved;
+        struct rasterfall_rifle_history history={0},before;
+        struct rasterfall_rifle_pose_input sample,repeated;
+        unsigned seen=0;
+        actor.active=1;actor.actor_id=11;actor.kind=TOY_GAME_ACTOR_AI;
+        actor.state=TOY_GAME_ACTOR_ALIVE;actor.combat_generation=3;
+        actor.combat_target.kind=-1;actor.pitch_cy=1024;
+        actor.slots[0].weapon=TOY_GAME_WEAPON_AK;actor.animation.id=TOY_GAME_ANIM_IDLE;
+        saved=actor;
+        for(unsigned tick=0;tick<=90000;tick+=100) {
+            before=history;
+            rasterfall_rifle_sample(&actor,tick,&history,&sample);
+            GRIP_CHECK(history.idle_active && !sample.recoil_milli && !sample.hip_milli);
+            if(before.idle_active && tick<before.idle_until)
+                GRIP_CHECK(history.idle_pose==before.idle_pose);
+            if(before.idle_active && tick>=before.idle_until)
+                GRIP_CHECK(history.idle_pose!=before.idle_pose);
+            seen|=1u<<history.idle_pose;
+            before=history;
+            rasterfall_rifle_sample(&actor,tick,&history,&repeated);
+            GRIP_CHECK(!memcmp(&sample,&repeated,sizeof(sample)) &&
+                !memcmp(&history,&before,sizeof(history)) && !memcmp(&actor,&saved,sizeof(actor)));
+        }
+        GRIP_CHECK(seen==15);
+        actor.combat_target.kind=0;
+        rasterfall_rifle_sample(&actor,90250,&history,&sample);
+        GRIP_CHECK(!history.idle_active && sample.aim_milli==1000);
+        for(int i=0;i<RASTERFALL_RIFLE_IDLE_COUNT;++i)GRIP_CHECK(!sample.idle_milli[i]);
+        actor.combat_target.kind=-1;actor.moving=1;
+        rasterfall_rifle_sample(&actor,90500,&history,&sample);
+        GRIP_CHECK(!history.idle_active && sample.hip_milli==1000);
+        actor.moving=0;actor.reloading=1;
+        rasterfall_rifle_sample(&actor,90750,&history,&sample);
+        GRIP_CHECK(!history.idle_active);
+        actor.reloading=0;actor.airborne_ms=100;
+        rasterfall_rifle_sample(&actor,91000,&history,&sample);
+        GRIP_CHECK(!history.idle_active);
+        actor.airborne_ms=0;actor.control_disabled=1;
+        rasterfall_rifle_sample(&actor,91250,&history,&sample);
+        GRIP_CHECK(!history.idle_active);
+        actor.control_disabled=0;
+        rasterfall_rifle_sample(&actor,100,&history,&sample);
+        GRIP_CHECK(history.tick==100 && history.idle_active);
+        actor.state=TOY_GAME_ACTOR_DOWNED;
+        rasterfall_rifle_sample(&actor,350,&history,&sample);
+        GRIP_CHECK(!history.idle_active);
+    }
     GRIP_CHECK(!rasterfall_model_resource_load(&catalog,
         rasterfall_character_body_resource_path(RASTERFALL_BODY_RF_C01_V22H)));
     GRIP_CHECK(!rasterfall_weapon_socket_transform(TOY_GAME_WEAPON_AK,
@@ -132,6 +180,36 @@ static int scene_grip_pose_test(void)
                     d.wrist_dot[0],d.wrist_dot[1],d.reach_clamped[0],d.reach_clamped[1],
                     d.clearance_rfu,d.clearance_shift_rfu,d.aim_error_degrees,good);
             if(!good)++constraint_failures;
+        }
+        if(representation!=1)for(int armored=0;armored<2;++armored)
+        for(int from=0;from<4;++from)for(int to=0;to<4;++to)
+        for(int blend=0;blend<=1000;blend+=250) {
+            struct rasterfall_rifle_pose_input rifle={0};
+            struct rasterfall_rifle_diagnostics d;
+            memset(&composition,0,sizeof(composition));
+            composition.layers[0].clip=humanoid_action(RASTERFALL_ACTION_LOCOMOTION_IDLE);
+            composition.layers[1].clip=humanoid_action(RASTERFALL_ACTION_RIFLE_IDLE);
+            GRIP_CHECK(!rasterfall_action_compose(&instance,&composition));
+            if(from==3)rifle.aim_milli+=1000-blend;else rifle.idle_milli[from]+=1000-blend;
+            if(to==3)rifle.aim_milli+=blend;else rifle.idle_milli[to]+=blend;
+            rifle.armor_milli=armored*1000;
+            GRIP_CHECK(!rasterfall_rifle_pose_solve(&instance,TOY_GAME_WEAPON_AK,scale,&rifle,&d));
+            int free=rifle.idle_milli[RASTERFALL_RIFLE_IDLE_SINGLE];
+            int good=!d.reach_clamped[1] && d.grip_error[1]<3 && d.wrist_dot[1]>.57 &&
+                (free || (!d.reach_clamped[0] && d.grip_error[0]<3 && d.wrist_dot[0]>.57)) &&
+                d.clearance_rfu>-.5;
+            if(!good) {
+                __printf("RIFLE-IDLE body=%d from=%d to=%d blend=%d grip=%.2f,%.2f wrist=%.3f,%.3f clamp=%d,%d clearance=%.2f\n",
+                    representation,from,to,blend,d.grip_error[0],d.grip_error[1],d.wrist_dot[0],d.wrist_dot[1],
+                    d.reach_clamped[0],d.reach_clamped[1],d.clearance_rfu);
+                ++constraint_failures;
+            }
+            if(free==1000) {
+                int wrist=rasterfall_model_humanoid_bone(&instance.pose,RASTERFALL_HUMANOID_LEFT_HAND);
+                int shoulder=rasterfall_model_humanoid_bone(&instance.pose,RASTERFALL_HUMANOID_LEFT_UPPER_ARM);
+                GRIP_CHECK(instance.pose.bone_transforms[wrist].position[1]<
+                    instance.pose.bone_transforms[shoulder].position[1]-120*instance.pose.position_scale/512.0);
+            }
         }
         for (int mode=0;mode<5;++mode) for (unsigned sample=0;sample<sizeof(times)/sizeof(times[0]);++sample) {
             double target[3],authored_rotation[9],target_rotation[9],units;

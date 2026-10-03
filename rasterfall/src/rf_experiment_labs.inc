@@ -2,7 +2,7 @@
 enum rf_experiment_lab {
     RF_LAB_INFECTED_POSES, RF_LAB_INFECTED_WALK, RF_LAB_ACTOR_ACTIONS,
     RF_LAB_ACTOR_WALK, RF_LAB_MODEL, RF_LAB_LIGHTING, RF_LAB_ELECTRONICS,
-    RF_LAB_RIFLE_CYCLE, RF_LAB_COUNT
+    RF_LAB_RIFLE_CYCLE, RF_LAB_IDLE_RIFLE, RF_LAB_COUNT
 };
 struct rf_experiment_definition {
     const char *id, *surface, *terminal, *view;
@@ -16,7 +16,8 @@ static const struct rf_experiment_definition rf_lab_definitions[RF_LAB_COUNT] = 
     {"RF MODEL", "rf_model_lab", "rf_model_lab_button", "model-lab", 1},
     {"GPU LIGHTING", "rf_light_lab", "rf_light_lab_button", "lighting-lab", 1},
     {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0},
-    {"RIFLE CYCLE", "rifle_cycle_lab", "rifle_cycle_lab_button", "rifle-cycle-lab", 1}
+    {"RIFLE CYCLE", "rifle_cycle_lab", "rifle_cycle_lab_button", "rifle-cycle-lab", 1},
+    {"LIVE AI HOLDS", "idle_rifle_lab", "idle_rifle_lab_button", "idle-rifle-lab", 0}
 };
 static struct {
     int requested[RF_LAB_COUNT],fan_rpm;
@@ -28,7 +29,8 @@ _Static_assert(RF_LAB_COUNT<RASTERFALL_ELECTRONICS_GROUPS,"RF lab presentation g
 static void rf_lab_control(int lab)
 {
     if (lab<0 || lab>=RF_LAB_COUNT) return;
-    if (lab!=RF_LAB_ELECTRONICS) rf_labs.requested[lab]=!rf_labs.requested[lab];
+    if(lab==RF_LAB_IDLE_RIFLE)rf_labs.requested[lab]=(rf_labs.requested[lab]+1)%4;
+    else if (lab!=RF_LAB_ELECTRONICS) rf_labs.requested[lab]=!rf_labs.requested[lab];
     else if (!rf_labs.requested[lab]) { rf_labs.requested[lab]=1;rf_labs.fan_rpm=600; }
     else if (rf_labs.fan_rpm<1800) rf_labs.fan_rpm+=600;
     else { rf_labs.requested[lab]=0;rf_labs.fan_rpm=600; }
