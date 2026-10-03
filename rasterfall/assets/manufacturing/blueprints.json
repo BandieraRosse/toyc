@@ -1,0 +1,1763 @@
+{
+  "schema": 1,
+  "algorithm": "exact-position-welded-closed-shell-sum-v1",
+  "generator_sha256": "786da40df2a64c96e5c90a4bea610d3294d861a20f17c0ca980b74c29ce191c8",
+  "vertex_count_policy": "exact POSITION coordinates welded across UV/normal/material seams within each scene node instance; distinct instances are counted separately",
+  "triangle_count_policy": "all triangles of every primitive of every active-scene instance in the full source mesh; no render LOD",
+  "volume_policy": "closed orientable shells only; split adjacency at edges with more than two incident faces; verify every resulting shell independently; repair inconsistent winding only in the measurement and report the flipped triangles; take absolute shell volume to handle mirrored/inward winding; sum may overestimate overlap",
+  "scale_policy": "source GLB coordinates times runtime position_scale times the existing quantized physical adapter scale_milli / 512000; bounds include the resulting actual metre scale",
+  "blueprints": [
+    {
+      "id": "ak",
+      "name": "AK",
+      "weapon": 3,
+      "weapon_enum": "TOY_GAME_WEAPON_AK",
+      "source_path": ".claude/glb/Assault Rifle-XGeBGFQxYg.glb",
+      "source_sha256": "523c4ef895510fab2d8016730c8e9befc2e9eb32a516b3716310c47227869877",
+      "runtime_path": "rasterfall/assets/models/ar_ak47.rmesh",
+      "runtime_sha256": "60f7e6f18d5b0005cde5c5d849486ca7a9539adb03b50f962d17ae1e92a07d72",
+      "runtime_texture_sha256": {
+        "texture_000.ttex": null
+      },
+      "adapter": {
+        "asset_basis": 2,
+        "length_mm": 880,
+        "weapon": 3,
+        "weapon_enum": "TOY_GAME_WEAPON_AK",
+        "runtime_path": "rasterfall/assets/models/ar_ak47.rmesh",
+        "rfu_per_metre": 512,
+        "adapter_code_sha256": "032b2e6fae0c71833903f1adaca74f8b4b05c88bef3fb7838c2735ffd5cde6f3",
+        "runtime_position_scale": 232,
+        "scale_milli": 420,
+        "presented_length_mm": 881.015625,
+        "source_units_to_m": 0.1903125
+      },
+      "adapter_sha256": "921ec38fa626eb12c807399a725b2a478bbef33a4687421fada9427352843e59",
+      "instances": [
+        {
+          "node": 0,
+          "mesh": 0,
+          "name": "AssaultRIfle_01_Cube.002",
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "exported_vertex_count": 1978,
+          "triangle_count": 968
+        }
+      ],
+      "material_count": 3,
+      "texture_bytes": 0,
+      "materials": [
+        {
+          "name": "Black_AssaultRIfle_01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.013702,
+              0.013702,
+              0.013702,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Brown_AssaultRIfle_01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.098505,
+              0.035314,
+              0.016233,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.676000006
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Gray_AssaultRIfle_01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.132868,
+              0.132868,
+              0.132868,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        }
+      ],
+      "bounds_m": [
+        0.05179164587985724,
+        0.2845143411867321,
+        0.8805300821363926
+      ],
+      "runtime_bounds_m": [
+        0.0516796875,
+        0.2846484375,
+        0.881015625
+      ],
+      "manufacturing_yaw_degrees": 70,
+      "rotated_bounds_m": [
+        0.845141406710479,
+        0.2845143411867321,
+        0.3498272523465107
+      ],
+      "workspace_edge_m": 1.02,
+      "bounds_mm": [
+        52,
+        285,
+        881
+      ],
+      "volume_mm3": 2281167,
+      "statistics": {
+        "vertex_count": 528,
+        "exported_vertex_count": 1978,
+        "triangle_count": 968,
+        "degenerate_triangles": 0,
+        "global_boundary_edges": 0,
+        "global_nonmanifold_edges": 1,
+        "shell_count": 24,
+        "inward_shell_count": 1,
+        "measurement_flipped_triangles": 0,
+        "volume_valid": true,
+        "volume_m3": 0.0022811667330224876,
+        "shells": [
+          {
+            "triangle_count": 80,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00047062463206774444,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00048533149336120126,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 96,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00016942808000597204,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 8.702183234866774e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.5553457386363026e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.977707938072048e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 80,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.876085927209813e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.721894895835491e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 8.230458976087975e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.683648317073611e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.271126274268525e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 60,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.0001229309787433492,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 48,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.588203955895674e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.2273021655207805e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 7.332050549011898e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.983816601417786e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 6.514770613960741e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 2.7968600526825293e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 4.5893321633826015e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.0005436908611371455,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 76,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00026663441578967024,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.5965121575293545e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.8643050923824914e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.555524450785379e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          }
+        ]
+      },
+      "runtime_quantization": {
+        "vertex_count": 525,
+        "exported_vertex_count": 1978,
+        "triangle_count": 968,
+        "degenerate_triangles": 1
+      },
+      "volume_method": "sum of absolute signed-tetrahedron volumes of independently closed oriented shells",
+      "volume_caveat": "overlapping shell volume is counted more than once; this is not exact boolean-union volume",
+      "manufacturable": true,
+      "size_supported": true,
+      "unsupported_reasons": 0,
+      "unsupported_reason": ""
+    },
+    {
+      "id": "pistol",
+      "name": "Pistol",
+      "weapon": 0,
+      "weapon_enum": "TOY_GAME_WEAPON_PISTOL",
+      "source_path": ".claude/glb/Pistol-L1u7KkJzY2.glb",
+      "source_sha256": "abfcbaac54c0fbe9851ba0e835327dab3b1d3861da0a7b1dc01c198a47e7c412",
+      "runtime_path": "rasterfall/assets/models/pg_glock1.rmesh",
+      "runtime_sha256": "624e1a584d861b2c7d979cc7cb78b4e4b36ec2544dc822daf90ce621ffa8c377",
+      "runtime_texture_sha256": {
+        "texture_000.ttex": null
+      },
+      "adapter": {
+        "asset_basis": 0,
+        "length_mm": 204,
+        "weapon": 0,
+        "weapon_enum": "TOY_GAME_WEAPON_PISTOL",
+        "runtime_path": "rasterfall/assets/models/pg_glock1.rmesh",
+        "rfu_per_metre": 512,
+        "adapter_code_sha256": "032b2e6fae0c71833903f1adaca74f8b4b05c88bef3fb7838c2735ffd5cde6f3",
+        "runtime_position_scale": 232,
+        "scale_milli": 91,
+        "presented_length_mm": 203.68359375,
+        "source_units_to_m": 0.041234375
+      },
+      "adapter_sha256": "91df633d591a126c9afbab2610602681f56eedbbc2d90a7619605fb782edb511",
+      "instances": [
+        {
+          "node": 0,
+          "mesh": 0,
+          "name": "Pistol_01_Cube.004",
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "exported_vertex_count": 1929,
+          "triangle_count": 1160
+        }
+      ],
+      "material_count": 5,
+      "texture_bytes": 0,
+      "materials": [
+        {
+          "name": "Pistol_01_Metal",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.132868,
+              0.132868,
+              0.132868,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Pistol_01Black",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0,
+              0,
+              0,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.676000006
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Pistol_01_Gray",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.439657,
+              0.439657,
+              0.439657,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Pistol_01_GrayScreen",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.617207,
+              0.617207,
+              0.617207,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Pistol_01BlackScreen",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.073236,
+              0.073236,
+              0.073236,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        }
+      ],
+      "bounds_m": [
+        0.027739476928487418,
+        0.14862913984060286,
+        0.2037289841752499
+      ],
+      "runtime_bounds_m": [
+        0.0277265625,
+        0.14858593750000001,
+        0.20368359375
+      ],
+      "manufacturing_yaw_degrees": 70,
+      "rotated_bounds_m": [
+        0.20093008294455178,
+        0.14862913984060286,
+        0.09574599814137247
+      ],
+      "workspace_edge_m": 1.02,
+      "bounds_mm": [
+        28,
+        149,
+        204
+      ],
+      "volume_mm3": 306137,
+      "statistics": {
+        "vertex_count": 596,
+        "exported_vertex_count": 1929,
+        "triangle_count": 1160,
+        "degenerate_triangles": 0,
+        "global_boundary_edges": 0,
+        "global_nonmanifold_edges": 0,
+        "shell_count": 8,
+        "inward_shell_count": 0,
+        "measurement_flipped_triangles": 0,
+        "volume_valid": true,
+        "volume_m3": 0.0003061369094625654,
+        "shells": [
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 3.2012998702951513e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 4.854156164682601e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 60,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.648807160677423e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 7.733666210820102e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 124,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00020657917403064572,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 60,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.185745614912384e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 844,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 9.038679734096062e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.1413995353991775e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          }
+        ]
+      },
+      "runtime_quantization": {
+        "vertex_count": 590,
+        "exported_vertex_count": 1929,
+        "triangle_count": 1160,
+        "degenerate_triangles": 12
+      },
+      "volume_method": "sum of absolute signed-tetrahedron volumes of independently closed oriented shells",
+      "volume_caveat": "overlapping shell volume is counted more than once; this is not exact boolean-union volume",
+      "manufacturable": true,
+      "size_supported": true,
+      "unsupported_reasons": 0,
+      "unsupported_reason": ""
+    },
+    {
+      "id": "smg",
+      "name": "SMG",
+      "weapon": 1,
+      "weapon_enum": "TOY_GAME_WEAPON_SMG",
+      "source_path": ".claude/glb/Submachine Gun-thBPAYTK5R.glb",
+      "source_sha256": "9062eafee9f825a4cf7490623a85a306943e035ff017134a0b1e769236a55b16",
+      "runtime_path": "rasterfall/assets/models/smg_mac10.rmesh",
+      "runtime_sha256": "a6caa5528751f2a5857f4c5df4f1a47dfc267381e0584d0b8b59977284315db9",
+      "runtime_texture_sha256": {
+        "texture_000.ttex": null
+      },
+      "adapter": {
+        "asset_basis": 0,
+        "length_mm": 267,
+        "weapon": 1,
+        "weapon_enum": "TOY_GAME_WEAPON_SMG",
+        "runtime_path": "rasterfall/assets/models/smg_mac10.rmesh",
+        "rfu_per_metre": 512,
+        "adapter_code_sha256": "032b2e6fae0c71833903f1adaca74f8b4b05c88bef3fb7838c2735ffd5cde6f3",
+        "runtime_position_scale": 232,
+        "scale_milli": 146,
+        "presented_length_mm": 266.3359375,
+        "source_units_to_m": 0.06615625
+      },
+      "adapter_sha256": "fa848d232ac934e232cfd3a3a9a7228af653afa4bbbb058c42875645d757d453",
+      "instances": [
+        {
+          "node": 0,
+          "mesh": 0,
+          "name": "SMG_01_Cube",
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "exported_vertex_count": 1005,
+          "triangle_count": 572
+        }
+      ],
+      "material_count": 4,
+      "texture_bytes": 0,
+      "materials": [
+        {
+          "name": "DarkBlue_SMG01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.000381,
+              0.007366,
+              0.025394,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.676000006
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Black_SMG01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.013702,
+              0.013702,
+              0.013702,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Gray_SMG01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.048172,
+              0.048172,
+              0.048172,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "White_SMG01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              1,
+              1,
+              1,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        }
+      ],
+      "bounds_m": [
+        0.03452965969033539,
+        0.2210948544088751,
+        0.2662524377815425
+      ],
+      "runtime_bounds_m": [
+        0.03450390625,
+        0.22099609375,
+        0.2663359375
+      ],
+      "manufacturing_yaw_degrees": 70,
+      "rotated_bounds_m": [
+        0.2620052902058498,
+        0.2210948544088751,
+        0.12351096334010869
+      ],
+      "workspace_edge_m": 1.02,
+      "bounds_mm": [
+        35,
+        222,
+        267
+      ],
+      "volume_mm3": 588008,
+      "statistics": {
+        "vertex_count": 312,
+        "exported_vertex_count": 1005,
+        "triangle_count": 572,
+        "degenerate_triangles": 0,
+        "global_boundary_edges": 0,
+        "global_nonmanifold_edges": 0,
+        "shell_count": 13,
+        "inward_shell_count": 0,
+        "measurement_flipped_triangles": 0,
+        "volume_valid": true,
+        "volume_m3": 0.0005880079232274033,
+        "shells": [
+          {
+            "triangle_count": 208,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00033566752006457983,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00010643957716395872,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 32,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.488621464703942e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.0988359085640723e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.131907319128325e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.819947501771011e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 3.426917896368284e-08,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 8.50593371635681e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 36,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 9.31758179409413e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 4.1134719338949825e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.0612214658081025e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 2.213930234702044e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.8752399336170878e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          }
+        ]
+      },
+      "runtime_quantization": {
+        "vertex_count": 312,
+        "exported_vertex_count": 1005,
+        "triangle_count": 572,
+        "degenerate_triangles": 0
+      },
+      "volume_method": "sum of absolute signed-tetrahedron volumes of independently closed oriented shells",
+      "volume_caveat": "overlapping shell volume is counted more than once; this is not exact boolean-union volume",
+      "manufacturable": true,
+      "size_supported": true,
+      "unsupported_reasons": 0,
+      "unsupported_reason": ""
+    },
+    {
+      "id": "shotgun",
+      "name": "Shotgun",
+      "weapon": 2,
+      "weapon_enum": "TOY_GAME_WEAPON_SHOTGUN",
+      "source_path": ".claude/glb/Shotgun-f54ZSBZZ8k.glb",
+      "source_sha256": "f980e9bc2e8499afd1942c07473c57fb0a1e84cc33e637c9361c825191ae567d",
+      "runtime_path": "rasterfall/assets/models/sg_pump_action.rmesh",
+      "runtime_sha256": "747a298628679800424d65b8b595a70af344b309a5a4751757abcee7ea017954",
+      "runtime_texture_sha256": {
+        "texture_000.ttex": null
+      },
+      "adapter": {
+        "asset_basis": 1,
+        "length_mm": 1003,
+        "weapon": 2,
+        "weapon_enum": "TOY_GAME_WEAPON_SHOTGUN",
+        "runtime_path": "rasterfall/assets/models/sg_pump_action.rmesh",
+        "rfu_per_metre": 512,
+        "adapter_code_sha256": "032b2e6fae0c71833903f1adaca74f8b4b05c88bef3fb7838c2735ffd5cde6f3",
+        "runtime_position_scale": 232,
+        "scale_milli": 451,
+        "presented_length_mm": 1003.298828125,
+        "source_units_to_m": 0.204359375
+      },
+      "adapter_sha256": "9d08085dd103b2ce5b9134d698444abebda811748b998154d7b245b690c9af89",
+      "instances": [
+        {
+          "node": 0,
+          "mesh": 0,
+          "name": "Shotgun_01_Cylinder.001",
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "exported_vertex_count": 1381,
+          "triangle_count": 700
+        }
+      ],
+      "material_count": 3,
+      "texture_bytes": 0,
+      "materials": [
+        {
+          "name": "Brown_Shotgun01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.122139,
+              0.048172,
+              0.024158,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.676000006
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Gray_Shotgun_01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.048172,
+              0.048172,
+              0.048172,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "White_Shotgun_01",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.617207,
+              0.617207,
+              0.617207,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        }
+      ],
+      "bounds_m": [
+        0.05712804836197756,
+        0.1810248087749351,
+        1.0033855467922985
+      ],
+      "runtime_bounds_m": [
+        0.057255859375,
+        0.18057617187500002,
+        1.0032988281250002
+      ],
+      "manufacturing_yaw_degrees": 70,
+      "rotated_bounds_m": [
+        0.962412937412636,
+        0.1810248087749351,
+        0.39686087401045733
+      ],
+      "workspace_edge_m": 1.02,
+      "bounds_mm": [
+        58,
+        182,
+        1004
+      ],
+      "volume_mm3": 2025400,
+      "statistics": {
+        "vertex_count": 368,
+        "exported_vertex_count": 1381,
+        "triangle_count": 700,
+        "degenerate_triangles": 0,
+        "global_boundary_edges": 0,
+        "global_nonmanifold_edges": 0,
+        "shell_count": 9,
+        "inward_shell_count": 9,
+        "measurement_flipped_triangles": 44,
+        "volume_valid": true,
+        "volume_m3": 0.0020253997896676266,
+        "shells": [
+          {
+            "triangle_count": 284,
+            "closed": true,
+            "consistent_winding": false,
+            "orientable": true,
+            "measurement_flipped_triangles": 10,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 0.001268494333921641,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 0.0002806924332376428,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 0.00021277409009734676,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 140,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 0.00022865995092837934,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 7.200367308846922e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 12,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 1.1168764662993417e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 52,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 1.1412802756483335e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 2.9026430302966383e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": false,
+            "orientable": true,
+            "measurement_flipped_triangles": 34,
+            "inward_winding": true,
+            "valid_volume": true,
+            "volume_m3": 1.1187113029225785e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          }
+        ]
+      },
+      "runtime_quantization": {
+        "vertex_count": 368,
+        "exported_vertex_count": 1381,
+        "triangle_count": 700,
+        "degenerate_triangles": 0
+      },
+      "volume_method": "sum of absolute signed-tetrahedron volumes of independently closed oriented shells",
+      "volume_caveat": "overlapping shell volume is counted more than once; this is not exact boolean-union volume",
+      "manufacturable": true,
+      "size_supported": true,
+      "unsupported_reasons": 0,
+      "unsupported_reason": ""
+    },
+    {
+      "id": "awp",
+      "name": "AWP",
+      "weapon": 4,
+      "weapon_enum": "TOY_GAME_WEAPON_AWP",
+      "source_path": ".claude/glb/Sniper Rifle-ZkwSIy3JOV.glb",
+      "source_sha256": "5e1b3b0692d71fb64d80809f8aa1d2f4bb42708c3c5004f3bd791e399327fc09",
+      "runtime_path": "rasterfall/assets/models/rf_AWP.rmesh",
+      "runtime_sha256": "1c59b7ad00d5788317adbf66628d20e402674cbc9716ffdfbe5e55ca45f33252",
+      "runtime_texture_sha256": {
+        "texture_000.ttex": null
+      },
+      "adapter": {
+        "asset_basis": 2,
+        "length_mm": 1120,
+        "weapon": 4,
+        "weapon_enum": "TOY_GAME_WEAPON_AWP",
+        "runtime_path": "rasterfall/assets/models/rf_AWP.rmesh",
+        "rfu_per_metre": 512,
+        "adapter_code_sha256": "032b2e6fae0c71833903f1adaca74f8b4b05c88bef3fb7838c2735ffd5cde6f3",
+        "runtime_position_scale": 232,
+        "scale_milli": 271,
+        "presented_length_mm": 1118.93359375,
+        "source_units_to_m": 0.122796875
+      },
+      "adapter_sha256": "18886990099bd494899d7fb3e9acc9ea11c0456d783175a5b65cf72a2ec45aae",
+      "instances": [
+        {
+          "node": 0,
+          "mesh": 0,
+          "name": "Sniper_02_Cube.001",
+          "matrix": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ],
+          "exported_vertex_count": 3198,
+          "triangle_count": 1782
+        }
+      ],
+      "material_count": 3,
+      "texture_bytes": 0,
+      "materials": [
+        {
+          "name": "Green_Sniper_02",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.020591,
+              0.054969,
+              0.004282,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Black_Sniper02",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.013702,
+              0.013702,
+              0.013702,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        },
+        {
+          "name": "Silver_Sniper02",
+          "pbrMetallicRoughness": {
+            "baseColorFactor": [
+              0.439657,
+              0.439657,
+              0.439657,
+              1
+            ],
+            "metallicFactor": 0,
+            "roughnessFactor": 0.775
+          },
+          "emissiveFactor": [
+            0,
+            0,
+            0
+          ],
+          "alphaMode": "OPAQUE",
+          "doubleSided": false
+        }
+      ],
+      "bounds_m": [
+        0.08299877528054639,
+        0.22571564604435115,
+        1.1188884101659058
+      ],
+      "runtime_bounds_m": [
+        0.083099609375,
+        0.22600976562500003,
+        1.11893359375
+      ],
+      "manufacturing_yaw_degrees": 70,
+      "rotated_bounds_m": [
+        1.0797984355330859,
+        0.22571564604435115,
+        0.46067571107577016
+      ],
+      "workspace_edge_m": 1.02,
+      "bounds_mm": [
+        83,
+        226,
+        1119
+      ],
+      "volume_mm3": 0,
+      "statistics": {
+        "vertex_count": 930,
+        "exported_vertex_count": 3198,
+        "triangle_count": 1782,
+        "degenerate_triangles": 0,
+        "global_boundary_edges": 20,
+        "global_nonmanifold_edges": 0,
+        "shell_count": 17,
+        "inward_shell_count": 0,
+        "measurement_flipped_triangles": 0,
+        "volume_valid": false,
+        "volume_m3": null,
+        "shells": [
+          {
+            "triangle_count": 380,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.0013736435244826224,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.0002948203196702849,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 44,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.201110799846665e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 76,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.604377072221147e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.6114987052648097e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 172,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.3575624560430933e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.3908296965731588e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 174,
+            "closed": false,
+            "consistent_winding": false,
+            "orientable": false,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": false,
+            "volume_m3": null,
+            "boundary_edges": 20,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 132,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 3.671750837204038e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.4077020190373552e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 28,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.618015780921462e-07,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 36,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 3.0549385565462744e-05,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 408,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 0.00031017119366478406,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 92,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 9.24396803657014e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 1.640472339900527e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 20,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 6.382523929828112e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          },
+          {
+            "triangle_count": 40,
+            "closed": true,
+            "consistent_winding": true,
+            "orientable": true,
+            "measurement_flipped_triangles": 0,
+            "inward_winding": false,
+            "valid_volume": true,
+            "volume_m3": 5.074420322613782e-06,
+            "boundary_edges": 0,
+            "nonmanifold_edges": 0
+          }
+        ]
+      },
+      "runtime_quantization": {
+        "vertex_count": 930,
+        "exported_vertex_count": 3198,
+        "triangle_count": 1782,
+        "degenerate_triangles": 0
+      },
+      "volume_method": "sum of absolute signed-tetrahedron volumes of independently closed oriented shells",
+      "volume_caveat": "overlapping shell volume is counted more than once; this is not exact boolean-union volume",
+      "manufacturable": false,
+      "size_supported": false,
+      "unsupported_reasons": 5,
+      "unsupported_reason": "open manufacturing mesh; does not fit the work volume at the manufacturing orientation"
+    }
+  ]
+}

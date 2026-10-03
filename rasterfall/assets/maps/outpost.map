@@ -1098,3 +1098,60 @@ collision id=weapon_cycle_road_2_col shape=flat min_x=76288 max_x=79360 min_z=-2
 render id=weapon_cycle_road_2_paint kind=floor min_x=76288 max_x=79360 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
 region id=weapon_cycle_safe kind=safe min_x=59904 max_x=79360 min_z=-28160 max_z=-11776
 # END WEAPON CYCLE LAB
+# BEGIN MESH WEAVER LAB (tools/mesh_weaver_lab.py)
+lab id=mesh_weaver_lab_area x=68096 z=-33280 width=6144 depth=6144 category=model enclosure=open
+surface id=mesh_weaver_lab kind=ground min_x=-3072 max_x=3072 min_z=-3072 max_z=3072 height=0 material=52616A attr.collision_id=mesh_weaver_lab_col attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_col shape=flat min_x=-3072 max_x=3072 min_z=-3072 max_z=3072 height=0 collision=false visible=true walkable=true color=52616A attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_paint kind=floor min_x=-3008 max_x=3008 min_z=-3008 max_z=3008 height=0 color=607985 attr.style=10 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_north_line kind=floor min_x=-3072 max_x=3072 min_z=3008 max_z=3072 height=0 color=9FB4FF attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_south_line kind=floor min_x=-3072 max_x=3072 min_z=-3072 max_z=-3008 height=0 color=9FB4FF attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_west_line kind=floor min_x=-3072 max_x=-3008 min_z=-3008 max_z=3008 height=0 color=9FB4FF attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_east_line kind=floor min_x=3008 max_x=3072 min_z=-3008 max_z=3008 height=0 color=9FB4FF attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_title kind=sign min_x=-2400 max_x=2400 min_z=-2672 max_z=-2652 height=500 color=9FB4FF attr.height2=1100 attr.style=2 attr.text=RF_MESH_WEAVER attr.facing=+z attr.texture_u=1 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_display kind=sign min_x=-2400 max_x=2400 min_z=2742 max_z=2762 height=900 color=9FB4FF attr.height2=1500 attr.style=4 attr.text=EXHIBIT_OFF attr.facing=+z attr.texture_u=1 attr.channel=mesh_weaver_lab attr.lab=mesh_weaver_lab_area
+surface id=mesh_weaver_lab_area_site_ground kind=ground min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 material=78858A attr.collision_id=mesh_weaver_lab_area_site_ground_col attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_area_site_ground_col shape=flat min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 collision=false visible=false walkable=true color=78858A attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_fill_w kind=floor min_x=-8192 max_x=-3072 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_fill_e kind=floor min_x=3072 max_x=8192 min_z=-5120 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_fill_s kind=floor min_x=-3072 max_x=3072 min_z=-5120 max_z=-3072 height=0 color=78858A attr.style=12 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_fill_n kind=floor min_x=-3072 max_x=3072 min_z=3072 max_z=5120 height=0 color=78858A attr.style=12 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_beacon_nw kind=sign min_x=-3472 max_x=-3112 min_z=2752 max_z=3032 height=-896 color=9FB4FF attr.height2=-52 attr.style=7 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_area_beacon_nw_col shape=box min_x=-3472 max_x=-3112 min_z=2772 max_z=3012 height=292 collision=true visible=false walkable=true color=526874 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_beacon_ne kind=sign min_x=3112 max_x=3472 min_z=2752 max_z=3032 height=-896 color=9FB4FF attr.height2=-52 attr.style=7 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_area_beacon_ne_col shape=box min_x=3112 max_x=3472 min_z=2772 max_z=3012 height=292 collision=true visible=false walkable=true color=526874 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_beacon_sw kind=sign min_x=-3472 max_x=-3112 min_z=-3032 max_z=-2752 height=-896 color=9FB4FF attr.height2=-52 attr.style=7 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_area_beacon_sw_col shape=box min_x=-3472 max_x=-3112 min_z=-3012 max_z=-2772 height=292 collision=true visible=false walkable=true color=526874 attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_lab_area_beacon_se kind=sign min_x=3112 max_x=3472 min_z=-3032 max_z=-2752 height=-896 color=9FB4FF attr.height2=-52 attr.style=7 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_lab_area_beacon_se_col shape=box min_x=3112 max_x=3472 min_z=-3012 max_z=-2772 height=292 collision=true visible=false walkable=true color=526874 attr.lab=mesh_weaver_lab_area
+# Sample origin is local (0, 0); add local records with attr.lab=mesh_weaver_lab_area
+assembly id=mesh_weaver_rf1_assembly x=-1280 y=0 z=0 attr.lab=mesh_weaver_lab_area
+object id=mesh_weaver_rf1 kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0 attr.collision=component
+object id=mesh_weaver_rf1_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+render id=mesh_weaver_rf1_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79DDE8 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=mesh_weaver_lab_computer attr.assembly=mesh_weaver_rf1_assembly
+render id=mesh_weaver_rf1_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=mesh_weaver_rf1_assembly
+object id=mesh_weaver kind=mesh_weaver_frame x=0 y=0 z=0 yaw=0 scale=1000 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_base_col shape=box min_x=-440 max_x=440 min_z=-440 max_z=440 height=166 collision=true visible=false walkable=true color=526874 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_post_0 shape=box min_x=-385 max_x=-295 min_z=-385 max_z=-295 height=922 collision=true visible=false walkable=false color=526874 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_post_1 shape=box min_x=295 max_x=385 min_z=-385 max_z=-295 height=922 collision=true visible=false walkable=false color=526874 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_post_2 shape=box min_x=295 max_x=385 min_z=295 max_z=385 height=922 collision=true visible=false walkable=false color=526874 attr.lab=mesh_weaver_lab_area
+collision id=mesh_weaver_post_3 shape=box min_x=-385 max_x=-295 min_z=295 max_z=385 height=922 collision=true visible=false walkable=false color=526874 attr.lab=mesh_weaver_lab_area
+object id=mesh_weaver_power kind=power_unit x=1600 y=0 z=-600 yaw=0 scale=350 attr.collision=component attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_screen kind=sign min_x=-372 max_x=-212 min_z=510 max_z=510 height=-630 color=79DDE8 attr.height2=-526 attr.style=5 attr.text=RF_MESH_WEAVER attr.facing=+z attr.texture_u=160 attr.texture_v=104 attr.channel=mesh_weaver_screen attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_power_label kind=sign min_x=1130 max_x=2070 min_z=-115 max_z=-95 height=-500 color=FFB875 attr.height2=-220 attr.style=4 attr.text=RF_POWER attr.facing=+z attr.texture_u=3 attr.channel=mesh_weaver_power attr.lab=mesh_weaver_lab_area
+render id=mesh_weaver_rf1_label kind=sign min_x=-1860 max_x=-750 min_z=510 max_z=530 height=-670 color=79DDE8 attr.height2=-460 attr.style=4 attr.text=RF1 attr.facing=+z attr.texture_u=1 attr.channel=mesh_weaver_rf1 attr.lab=mesh_weaver_lab_area
+surface id=mesh_weaver_road_1 kind=ground min_x=59904 max_x=79360 min_z=-41472 max_z=-38400 height=0 material=485860 attr.collision_id=mesh_weaver_road_1_col
+collision id=mesh_weaver_road_1_col shape=flat min_x=59904 max_x=79360 min_z=-41472 max_z=-38400 height=0 collision=false visible=true walkable=true color=485860
+render id=mesh_weaver_road_1_paint kind=floor min_x=59904 max_x=79360 min_z=-41472 max_z=-38400 height=0 color=485860 attr.style=11
+surface id=mesh_weaver_road_2 kind=ground min_x=76288 max_x=79360 min_z=-38400 max_z=-28160 height=0 material=485860 attr.collision_id=mesh_weaver_road_2_col
+collision id=mesh_weaver_road_2_col shape=flat min_x=76288 max_x=79360 min_z=-38400 max_z=-28160 height=0 collision=false visible=true walkable=true color=485860
+render id=mesh_weaver_road_2_paint kind=floor min_x=76288 max_x=79360 min_z=-38400 max_z=-28160 height=0 color=485860 attr.style=11
+region id=mesh_weaver_safe kind=safe min_x=59904 max_x=79360 min_z=-41472 max_z=-28160
+# END MESH WEAVER LAB

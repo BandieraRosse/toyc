@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "id": "rf_mesh_weaver_terminal",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/mesh_weaver/rf_mesh_weaver_terminal.glb"
+}

@@ -1,0 +1,881 @@
+{
+  "schema": 1,
+  "id": "rf_mesh_weaver",
+  "source_units": "metres",
+  "coordinate_system": "X-right Y-up +Z-front",
+  "rfu_per_metre": 512,
+  "manufacturing_bounds_m": [
+    [
+      -0.51,
+      0.48,
+      -0.51
+    ],
+    [
+      0.51,
+      1.5,
+      0.51
+    ]
+  ],
+  "build_center_m": [
+    0,
+    0.965,
+    0
+  ],
+  "fixed_instances": [
+    {
+      "name": "base",
+      "part": "base",
+      "position_m": [
+        0,
+        0,
+        0
+      ],
+      "yaw_degrees": 0
+    },
+    {
+      "name": "tray",
+      "part": "tray",
+      "position_m": [
+        0,
+        0.362,
+        0
+      ],
+      "yaw_degrees": 0
+    },
+    {
+      "name": "terminal",
+      "part": "terminal",
+      "position_m": [
+        -0.57,
+        0.1,
+        0.93
+      ],
+      "yaw_degrees": 0
+    },
+    {
+      "name": "column_0",
+      "part": "column",
+      "position_m": [
+        -0.665,
+        0.373,
+        0.665
+      ],
+      "yaw_degrees": 135.0
+    },
+    {
+      "name": "head_0_lower_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        -0.5850969,
+        0.542,
+        0.5850969
+      ],
+      "yaw_degrees": 135.0
+    },
+    {
+      "name": "head_0_upper_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        -0.5850969,
+        1.62,
+        0.5850969
+      ],
+      "yaw_degrees": 135.0
+    },
+    {
+      "name": "column_1",
+      "part": "column",
+      "position_m": [
+        0.665,
+        0.373,
+        0.665
+      ],
+      "yaw_degrees": -135.0
+    },
+    {
+      "name": "head_1_lower_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        0.5850969,
+        0.542,
+        0.5850969
+      ],
+      "yaw_degrees": -135.0
+    },
+    {
+      "name": "head_1_upper_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        0.5850969,
+        1.62,
+        0.5850969
+      ],
+      "yaw_degrees": -135.0
+    },
+    {
+      "name": "column_2",
+      "part": "column",
+      "position_m": [
+        0.665,
+        0.373,
+        -0.665
+      ],
+      "yaw_degrees": -45.0
+    },
+    {
+      "name": "head_2_lower_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        0.5850969,
+        0.542,
+        -0.5850969
+      ],
+      "yaw_degrees": -45.0
+    },
+    {
+      "name": "head_2_upper_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        0.5850969,
+        1.62,
+        -0.5850969
+      ],
+      "yaw_degrees": -45.0
+    },
+    {
+      "name": "column_3",
+      "part": "column",
+      "position_m": [
+        -0.665,
+        0.373,
+        -0.665
+      ],
+      "yaw_degrees": 45.0
+    },
+    {
+      "name": "head_3_lower_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        -0.5850969,
+        0.542,
+        -0.5850969
+      ],
+      "yaw_degrees": 45.0
+    },
+    {
+      "name": "head_3_upper_mount",
+      "part": "emitter_mount",
+      "position_m": [
+        -0.5850969,
+        1.62,
+        -0.5850969
+      ],
+      "yaw_degrees": 45.0
+    }
+  ],
+  "emitters": [
+    {
+      "name": "head_0_lower",
+      "column": 0,
+      "level": "lower",
+      "mount_position_m": [
+        -0.5850969,
+        0.542,
+        0.5850969
+      ],
+      "mount_yaw_degrees": 135.0,
+      "idle_pitch_degrees": -28
+    },
+    {
+      "name": "head_0_upper",
+      "column": 0,
+      "level": "upper",
+      "mount_position_m": [
+        -0.5850969,
+        1.62,
+        0.5850969
+      ],
+      "mount_yaw_degrees": 135.0,
+      "idle_pitch_degrees": 36
+    },
+    {
+      "name": "head_1_lower",
+      "column": 1,
+      "level": "lower",
+      "mount_position_m": [
+        0.5850969,
+        0.542,
+        0.5850969
+      ],
+      "mount_yaw_degrees": -135.0,
+      "idle_pitch_degrees": -28
+    },
+    {
+      "name": "head_1_upper",
+      "column": 1,
+      "level": "upper",
+      "mount_position_m": [
+        0.5850969,
+        1.62,
+        0.5850969
+      ],
+      "mount_yaw_degrees": -135.0,
+      "idle_pitch_degrees": 36
+    },
+    {
+      "name": "head_2_lower",
+      "column": 2,
+      "level": "lower",
+      "mount_position_m": [
+        0.5850969,
+        0.542,
+        -0.5850969
+      ],
+      "mount_yaw_degrees": -45.0,
+      "idle_pitch_degrees": -28
+    },
+    {
+      "name": "head_2_upper",
+      "column": 2,
+      "level": "upper",
+      "mount_position_m": [
+        0.5850969,
+        1.62,
+        -0.5850969
+      ],
+      "mount_yaw_degrees": -45.0,
+      "idle_pitch_degrees": 36
+    },
+    {
+      "name": "head_3_lower",
+      "column": 3,
+      "level": "lower",
+      "mount_position_m": [
+        -0.5850969,
+        0.542,
+        -0.5850969
+      ],
+      "mount_yaw_degrees": 45.0,
+      "idle_pitch_degrees": -28
+    },
+    {
+      "name": "head_3_upper",
+      "column": 3,
+      "level": "upper",
+      "mount_position_m": [
+        -0.5850969,
+        1.62,
+        -0.5850969
+      ],
+      "mount_yaw_degrees": 45.0,
+      "idle_pitch_degrees": 36
+    }
+  ],
+  "tray_motion": {
+    "delivery_translation_m": [
+      0,
+      0,
+      0.205
+    ],
+    "support_surface": {
+      "kind": "horizontal_chamfered_plate",
+      "height_m": 0.074,
+      "normal": [
+        0,
+        1,
+        0
+      ],
+      "bounds_xz_m": [
+        [
+          -0.495,
+          -0.22
+        ],
+        [
+          0.495,
+          0.22
+        ]
+      ],
+      "corner_chamfer_m": 0.02,
+      "description": "Gun minimum Y rests on this plane, not the higher side guards.",
+      "runtime_height_m": 0.07327586206896551,
+      "runtime_height_local": 17,
+      "runtime_position_scale": 232,
+      "runtime_contact_triangles": 6,
+      "verified_weapon_contacts": {
+        "ak": {
+          "minimum_y_m": -0.142734375,
+          "contact_vertices": 2,
+          "contact_bounds_xz_m": [
+            [
+              0.0349656045582152,
+              0.006039190512385642
+            ],
+            [
+              0.040576872534651955,
+              0.021456022572154454
+            ]
+          ]
+        },
+        "pistol": {
+          "minimum_y_m": -0.07429296875,
+          "contact_vertices": 8,
+          "contact_bounds_xz_m": [
+            [
+              -0.09952967540493297,
+              -0.04597471822548245
+            ],
+            [
+              -0.03792422976795577,
+              -0.004054411841098244
+            ]
+          ]
+        },
+        "smg": {
+          "minimum_y_m": -0.110640625,
+          "contact_vertices": 8,
+          "contact_bounds_xz_m": [
+            [
+              -0.059366758404549844,
+              -0.02712986796935101
+            ],
+            [
+              -0.024674908717293192,
+              -0.0040302134679369725
+            ]
+          ]
+        },
+        "shotgun": {
+          "minimum_y_m": -0.090728515625,
+          "contact_vertices": 2,
+          "contact_bounds_xz_m": [
+            [
+              -0.46948210569636983,
+              -0.1822571883487537
+            ],
+            [
+              -0.4595401412566903,
+              -0.15494186554571335
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "kinematics": {
+    "mount_origin": "yaw-axis center; fixed shell uses mount_yaw_degrees",
+    "yoke_pivot_m": [
+      0,
+      0,
+      0
+    ],
+    "yoke_yaw_axis": [
+      0,
+      1,
+      0
+    ],
+    "yaw_limit_degrees": [
+      -34,
+      34
+    ],
+    "core_position_in_yoke_m": [
+      0,
+      0,
+      0.015
+    ],
+    "core_pitch_axis": [
+      1,
+      0,
+      0
+    ],
+    "pitch_limit_degrees": [
+      -62,
+      62
+    ],
+    "optical_axis": [
+      0,
+      0,
+      1
+    ],
+    "aperture_in_core_m": [
+      0,
+      0,
+      0.065
+    ],
+    "aperture_radius_m": 0.026,
+    "petal_hinge_in_core_m": [
+      0,
+      0.064,
+      0.08
+    ],
+    "petal_roll_degrees": [
+      0,
+      120,
+      240
+    ],
+    "petal_open_axis": [
+      1,
+      0,
+      0
+    ],
+    "petal_closed_degrees": 0,
+    "petal_open_degrees": -64
+  },
+  "terminal_screen": {
+    "part": "terminal",
+    "center_m": [
+      0,
+      0.529,
+      0.066
+    ],
+    "normal": [
+      0,
+      0,
+      1
+    ],
+    "width_rfu": 160,
+    "height_rfu": 104,
+    "logical_pixels": [
+      160,
+      104
+    ]
+  },
+  "service_ports": {
+    "power_m": [
+      -0.08,
+      0.162,
+      -0.908
+    ],
+    "data_m": [
+      0.097,
+      0.162,
+      -0.908
+    ],
+    "outward": [
+      0,
+      0,
+      -1
+    ]
+  },
+  "export_contract": {
+    "node_transforms_baked": true,
+    "recentering": false,
+    "automatic_floor_offset": false,
+    "runtime_scale": "Read each RMESH header position_scale; RFU = local * 512 / position_scale.",
+    "animation": "Independent rigid transforms; no baked beam or luminous aperture overlay."
+  },
+  "components": {
+    "base": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.852,
+          0.0,
+          -0.906
+        ],
+        [
+          0.852,
+          0.384,
+          0.866
+        ]
+      ],
+      "triangles": 2096,
+      "source_vertices": 1312,
+      "pivot_kind": "bottom_center",
+      "runtime": {
+        "file": "rf_mesh_weaver_base.rmesh",
+        "vertices": 3984,
+        "triangles": 2096,
+        "primitives": 6,
+        "materials": 6,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -198,
+            0,
+            -210
+          ],
+          [
+            198,
+            89,
+            201
+          ]
+        ],
+        "sha256": "83f14695ff30cd52f9f05bde86e938bb9b70c2e773656efad5f05b8434d3ccf9"
+      }
+    },
+    "column": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.113,
+          0.0,
+          -0.124
+        ],
+        [
+          0.113,
+          1.397,
+          0.119
+        ]
+      ],
+      "triangles": 376,
+      "source_vertices": 224,
+      "pivot_kind": "bottom_center",
+      "runtime": {
+        "file": "rf_mesh_weaver_column.rmesh",
+        "vertices": 744,
+        "triangles": 376,
+        "primitives": 6,
+        "materials": 6,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -26,
+            0,
+            -29
+          ],
+          [
+            26,
+            324,
+            28
+          ]
+        ],
+        "sha256": "c3cb363ab0c1989ace9ae514079c8574e4a83f6282457196a0bfb9d72a0ce94d"
+      }
+    },
+    "tray": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.532,
+          0.0,
+          -0.46
+        ],
+        [
+          0.532,
+          0.092,
+          0.46
+        ]
+      ],
+      "triangles": 296,
+      "source_vertices": 184,
+      "pivot_kind": "bottom_center",
+      "runtime": {
+        "file": "rf_mesh_weaver_tray.rmesh",
+        "vertices": 552,
+        "triangles": 296,
+        "primitives": 4,
+        "materials": 4,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -123,
+            0,
+            -107
+          ],
+          [
+            123,
+            21,
+            107
+          ]
+        ],
+        "sha256": "921c7f6b7e441f6fb4b5edb70354bfb89348d0096ae722d19556f20080d3f57f"
+      }
+    },
+    "terminal": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.198,
+          0.0,
+          -0.12
+        ],
+        [
+          0.198,
+          0.6705,
+          0.12
+        ]
+      ],
+      "triangles": 296,
+      "source_vertices": 184,
+      "pivot_kind": "bottom_center",
+      "runtime": {
+        "file": "rf_mesh_weaver_terminal.rmesh",
+        "vertices": 600,
+        "triangles": 296,
+        "primitives": 5,
+        "materials": 5,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -46,
+            0,
+            -28
+          ],
+          [
+            46,
+            156,
+            28
+          ]
+        ],
+        "sha256": "e35f85ab9ed2ee79ddafd515da7a1566bf166d4ff7fb9070e01b57757992290b"
+      }
+    },
+    "emitter_mount": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.153,
+          -0.1075,
+          -0.1365
+        ],
+        [
+          0.153,
+          0.108,
+          0.042
+        ]
+      ],
+      "triangles": 236,
+      "source_vertices": 140,
+      "pivot_kind": "mechanical_mount",
+      "runtime": {
+        "file": "rf_mesh_weaver_emitter_mount.rmesh",
+        "vertices": 468,
+        "triangles": 236,
+        "primitives": 4,
+        "materials": 4,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -35,
+            -25,
+            -32
+          ],
+          [
+            35,
+            25,
+            10
+          ]
+        ],
+        "sha256": "b77ac1061c3f19b1ee0ff3f62e42d8130f10ea5ca7a6e869b093a242dd849e55"
+      }
+    },
+    "emitter_yoke": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.108,
+          -0.068,
+          -0.0755
+        ],
+        [
+          0.108,
+          0.041,
+          0.05
+        ]
+      ],
+      "triangles": 428,
+      "source_vertices": 232,
+      "pivot_kind": "mechanical_mount",
+      "runtime": {
+        "file": "rf_mesh_weaver_emitter_yoke.rmesh",
+        "vertices": 816,
+        "triangles": 428,
+        "primitives": 4,
+        "materials": 4,
+        "position_scale": 4167,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -450,
+            -283,
+            -315
+          ],
+          [
+            450,
+            171,
+            208
+          ]
+        ],
+        "sha256": "6218dc73ec303d92c0c43fede27708373a43941b243f2134260758f6afa8b6c2"
+      }
+    },
+    "emitter_core": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.08,
+          -0.0787846,
+          -0.0495
+        ],
+        [
+          0.08,
+          0.0787846,
+          0.077
+        ]
+      ],
+      "triangles": 608,
+      "source_vertices": 318,
+      "pivot_kind": "mechanical_mount",
+      "runtime": {
+        "file": "rf_mesh_weaver_emitter_core.rmesh",
+        "vertices": 954,
+        "triangles": 608,
+        "primitives": 4,
+        "materials": 4,
+        "position_scale": 5625,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -450,
+            -443,
+            -278
+          ],
+          [
+            450,
+            443,
+            433
+          ]
+        ],
+        "sha256": "8f67e176c5579c9591efd1e5d2fa0b2154968f1d08c078460e89477c6dd680b7"
+      }
+    },
+    "emitter_petal": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.027,
+          -0.062,
+          -0.008
+        ],
+        [
+          0.027,
+          0.009,
+          0.011
+        ]
+      ],
+      "triangles": 124,
+      "source_vertices": 70,
+      "pivot_kind": "mechanical_mount",
+      "runtime": {
+        "file": "rf_mesh_weaver_emitter_petal.rmesh",
+        "vertices": 258,
+        "triangles": 124,
+        "primitives": 4,
+        "materials": 4,
+        "position_scale": 12676,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -342,
+            -786,
+            -101
+          ],
+          [
+            342,
+            114,
+            139
+          ]
+        ],
+        "sha256": "053da517e61bf316b283e7731149ce1516e98b09d3a642ba377354264e02095f"
+      }
+    },
+    "frame": {
+      "pivot_m": [
+        0,
+        0,
+        0
+      ],
+      "bounds_m": [
+        [
+          -0.852,
+          0.0,
+          -0.906
+        ],
+        [
+          0.852,
+          1.77,
+          1.05
+        ]
+      ],
+      "triangles": 5784,
+      "source_vertices": 3512,
+      "pivot_kind": "bottom_center",
+      "runtime": {
+        "file": "rf_mesh_weaver_frame.rmesh",
+        "vertices": 11304,
+        "triangles": 5784,
+        "primitives": 6,
+        "materials": 6,
+        "position_scale": 232,
+        "quantization_degenerate_triangles": 0,
+        "bounds_local": [
+          [
+            -198,
+            0,
+            -210
+          ],
+          [
+            198,
+            411,
+            244
+          ]
+        ],
+        "sha256": "4ef69322170f8d406ba6ef64f323d2b255b061d12ae4f1bdf82ea75c8316f697"
+      }
+    }
+  },
+  "assembly_metrics": {
+    "instances_by_component": {
+      "base": 1,
+      "column": 4,
+      "tray": 1,
+      "terminal": 1,
+      "emitter_mount": 8,
+      "emitter_yoke": 8,
+      "emitter_core": 8,
+      "emitter_petal": 24,
+      "frame": 0
+    },
+    "triangles": 17344,
+    "columns": 4,
+    "emitters": 8,
+    "petals": 24
+  }
+}
