@@ -5,6 +5,9 @@
 #include "rasterfall_units.h"
 #include "rf_ui_font.h"
 #include "rf_story.h"
+#include "rasterfall_model.h"
+#include "rasterfall_calibration.h"
+#include "rasterfall_viewmodel.h"
 #include "string.h"
 
 static int ui_min(int a,int b) { return a<b?a:b; }
@@ -78,12 +81,93 @@ const char *rf_player_ui_mode_name(int mode)
     }
 }
 
+/* UI-sized side views of the actual weapon meshes, prepared outside draw.
+ * Like RTS portraits these retain only coverage, never a model or GPU view. */
+#define UI_WEAPON_W 144
+#define UI_WEAPON_H 48
+static struct {
+    int prepared;
+    unsigned char mask[UI_WEAPON_W*UI_WEAPON_H];
+} ui_weapon_meshes[TOY_GAME_WEAPON_COUNT];
+
+static void ui_weapon_edge(unsigned char *mask,int x,int y,int endx,int endy)
+{
+    int dx=abs(endx-x),dy=-abs(endy-y),sx=x<endx?1:-1,sy=y<endy?1:-1,e=dx+dy;
+    for(;;) {
+        if(x>=0 && x<UI_WEAPON_W && y>=0 && y<UI_WEAPON_H)mask[y*UI_WEAPON_W+x]=220;
+        if(x==endx && y==endy)break;
+        int e2=e*2;if(e2>=dy){e+=dy;x+=sx;}if(e2<=dx){e+=dx;y+=sy;}
+    }
+}
+
+static void ui_weapon_point(const struct rasterfall_weapon_model_adapter *adapter,
+    const unsigned char *vertex,double *x,double *y)
+{
+    int v[3];memcpy(v,vertex,sizeof(v));
+    *x=*y=0;
+    for(int n=0;n<3;++n) {
+        *x+=adapter->basis[6+n]*((double)v[n]-adapter->center[n]);
+        *y+=adapter->basis[3+n]*((double)v[n]-adapter->center[n]);
+    }
+}
+
+static void ui_weapon_mesh_prepare(int weapon)
+{
+    struct rasterfall_model_asset asset={0};
+    struct rasterfall_weapon_model_adapter adapter;
+    int minimum[3]={2147483647,2147483647,2147483647},maximum[3]={-2147483647,-2147483647,-2147483647};
+    double minx=1e30,miny=1e30,maxx=-1e30,maxy=-1e30;
+    if(weapon<0 || weapon>=TOY_GAME_WEAPON_COUNT || ui_weapon_meshes[weapon].prepared)return;
+    ui_weapon_meshes[weapon].prepared=1;
+    const char *path=rasterfall_weapon_model_path(weapon);
+    if(!path || rasterfall_model_load(&asset,path)<0)return;
+    unsigned char *mask=ui_weapon_meshes[weapon].mask;
+    for(unsigned i=0;i<asset.vertex_count;++i) {
+        int v[3];memcpy(v,asset.vertices+i*asset.vertex_bytes,sizeof(v));
+        for(int n=0;n<3;++n){minimum[n]=ui_min(minimum[n],v[n]);maximum[n]=ui_max(maximum[n],v[n]);}
+    }
+    if(!asset.vertex_count || rasterfall_weapon_model_adapt(weapon,minimum,maximum,&adapter)<0) {
+        rasterfall_model_unload(&asset);return;
+    }
+    for(unsigned i=0;i<asset.vertex_count;++i) {
+        double x,y;ui_weapon_point(&adapter,asset.vertices+i*asset.vertex_bytes,&x,&y);
+        if(x<minx)minx=x;
+        if(x>maxx)maxx=x;
+        if(y<miny)miny=y;
+        if(y>maxy)maxy=y;
+    }
+    double scale=(UI_WEAPON_W-6)/(maxx-minx+1),ys=(UI_WEAPON_H-6)/(maxy-miny+1);
+    if(ys<scale)scale=ys;
+    for(unsigned i=0;i+2<asset.index_count;i+=3) {
+        int px[3],py[3],valid=1;
+        for(int n=0;n<3;++n) {
+            unsigned index;double x,y;memcpy(&index,asset.indices+4*(i+n),4);
+            if(index>=asset.vertex_count){valid=0;break;}
+            ui_weapon_point(&adapter,asset.vertices+index*asset.vertex_bytes,&x,&y);
+            px[n]=UI_WEAPON_W/2+(int)((x-(minx+maxx)*.5)*scale);
+            py[n]=UI_WEAPON_H/2-(int)((y-(miny+maxy)*.5)*scale);
+        }
+        if(valid)for(int n=0;n<3;++n)ui_weapon_edge(mask,px[n],py[n],px[(n+1)%3],py[(n+1)%3]);
+    }
+    /* Dense triangles merge at icon size; retain contour and subdued interior
+     * mesh, with the same scan treatment as the RTS body portrait. */
+    unsigned char edges[UI_WEAPON_W*UI_WEAPON_H];memcpy(edges,mask,sizeof(edges));
+    for(int y=1;y<UI_WEAPON_H-1;++y)for(int x=1;x<UI_WEAPON_W-1;++x) {
+        int k=y*UI_WEAPON_W+x;
+        if(edges[k] && edges[k-1] && edges[k+1] && edges[k-UI_WEAPON_W] && edges[k+UI_WEAPON_W])
+            mask[k]=(y%6==0 || (x+y/3)%9==0)?140:35;
+    }
+    rasterfall_model_unload(&asset);
+}
+
 void rf_player_ui_prepare(struct rf_player_ui_state *state,const struct toy_map *map,
                           const struct toy_game *game,unsigned int map_generation)
 {
     if (!state) return;
     rf_minimap_prepare(&state->minimap,map,map_generation);
     rf_minimap_collect_allies(&state->minimap,game);
+    const struct toy_game_actor *player=toy_game_local_player_actor_const(game);
+    if(player)ui_weapon_mesh_prepare(toy_game_actor_current_weapon(player));
 }
 
 void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_state *state,
@@ -152,7 +236,19 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
             if (state->rts_collapsed)
                 out->selection=out->commands=out->hints=out->groups=out->portrait=out->video=ui_rect(0,0,0,0);
         } else {
-            out->hints.w=out->vitals.x-out->hints.x-gap;
+            /* Reuse the resolved RTS selection span, including narrow-window
+             * reflow. The two compact FPS cards occupy its right-hand remainder. */
+            int card_h=ui_px(88,scale),card_gap=ui_px(6,scale);
+            int available=width-margin-out->portrait.x;
+            int status_w=ui_px(148,scale),gun_w=available-card_gap-status_w;
+            out->hints.x=out->selection.x;out->hints.w=out->selection.w;
+            out->weapon=ui_rect(width-margin-gun_w,height-margin-card_h,gun_w,card_h);
+            out->vitals=ui_rect(out->weapon.x-card_gap-status_w,out->weapon.y,status_w,card_h);
+            if(gun_w<ui_px(180,scale)) {
+                gun_w=available;
+                out->weapon=ui_rect(width-margin-gun_w,height-margin-card_h,gun_w,card_h);
+                out->vitals=ui_rect(out->weapon.x,out->weapon.y-card_gap-card_h,gun_w,card_h);
+            }
             out->selection=out->commands=out->groups=out->portrait=out->video=out->dock_toggle=ui_rect(0,0,0,0);
         }
     }
@@ -244,43 +340,85 @@ static void ui_bar(struct rasterfall_canvas *canvas,int x,int y,int w,int h,
         (int)((long long)ui_clamp(value,0,maximum)*w/maximum),h,color,255);
 }
 
+/* Preserve the RTS palette and corner accent with a 24% opaque backing. */
+static void ui_fps_card(struct rasterfall_canvas *canvas,struct rf_ui_rect r,
+    const struct rf_ui_theme *theme)
+{
+    rasterfall_canvas_rect(canvas,r.x,r.y,r.w,r.h,theme->panel,theme->panel_alpha*72/255);
+    rasterfall_canvas_rect(canvas,r.x,r.y,r.w,1,theme->border,95);
+    rasterfall_canvas_rect(canvas,r.x,r.y+r.h-1,r.w,1,theme->border,95);
+    rasterfall_canvas_rect(canvas,r.x,r.y,1,r.h,theme->border,75);
+    rasterfall_canvas_rect(canvas,r.x+r.w-1,r.y,1,r.h,theme->border,75);
+    rasterfall_canvas_rect(canvas,r.x,r.y,ui_min(22,r.w/3),2,theme->accent,210);
+}
+
+static void ui_fps_text(struct rasterfall_canvas *canvas,struct rf_ui_rect r,
+    const char *text,unsigned color,int scale,int lines)
+{
+    /* Keep numeric status/ammo complete when the RTS remainder is narrow;
+     * fit only the affected label rather than shrinking the whole HUD. */
+    int measured=rf_ui_font_text_width(text,1000);
+    if(measured>0)scale=ui_min(scale,ui_max(1,(r.w-2)*1000/measured));
+    struct rf_ui_rect shadow=r;
+    shadow.x+=ui_max(1,ui_px(1,scale));shadow.y+=ui_max(1,ui_px(1,scale));
+    rf_ui_text(canvas,shadow,text,0x102332,scale,lines);
+    rf_ui_text(canvas,r,text,color,scale,lines);
+}
+
 static void ui_vitals(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
-                       const struct rf_ui_layout *layout)
+                      const struct rf_ui_layout *layout)
 {
     const struct toy_game_actor *player=toy_game_local_player_actor_const(hud->game);
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
     struct toy_game_capabilities caps;
     struct rf_ui_rect r=layout->vitals;
-    int scale=ui_min(layout->text_scale_milli,ui_max(650,r.w*1000/230));
-    int pad=ui_min(layout->padding,ui_px(12,scale));
-    int x=r.x+pad,w=r.w-pad*2,hp,maximum,reserve,capacity;
-    unsigned hp_color,ev_color;
-    const char *ev_state;
+    int scale=layout->text_scale_milli,pad=ui_px(9,scale),x=r.x+pad,w=r.w-pad*2;
     char line[96];
-    if (!player) return;
-    hp=ui_max(0,player->hp);maximum=ui_max(1,player->max_hp);
+    if(!player)return;
     toy_game_actor_capabilities(player,toy_game_actor_current_weapon(player),&caps);
-    capacity=ui_max(0,caps.evasion_capacity)*1000;
-    reserve=ui_clamp(player->evasion.reserve_milli,0,capacity);
-    hp_color=hp<=maximum/4?theme->danger:hp<=maximum/2?theme->warning:theme->success;
-    ev_color=reserve<=0?theme->danger:reserve<capacity/4?theme->warning:theme->accent;
-    ev_state=capacity<=0?"不可用":reserve<=0?"耗尽":
-        player->evasion.animation_ms>0?"回避中":player->evasion.pressure_ms>0?"恢复等待":"就绪";
-    rf_ui_panel(canvas,r,theme,0);
-    rasterfall_canvas_rect(canvas,x,r.y+pad,ui_px(3,scale),ui_px(18,scale),hp_color,255);
-    rf_ui_text(canvas,ui_rect(x+ui_px(10,scale),r.y+pad,w-ui_px(96,scale),ui_px(20,scale)),
-        hud->player_name && *hud->player_name?hud->player_name:"PLAYER",theme->text,scale,1);
+    int hp=ui_max(0,player->hp),maximum=ui_max(1,player->max_hp);
+    int capacity=ui_max(0,caps.evasion_capacity)*1000;
+    int reserve=ui_clamp(player->evasion.reserve_milli,0,capacity);
+    unsigned hp_color=hp<=maximum/4?theme->danger:hp<=maximum/2?theme->warning:theme->success;
+    unsigned ev_color=capacity<=0?theme->muted:reserve<=0?theme->danger:reserve<capacity/4?theme->warning:theme->accent;
+    ui_fps_card(canvas,r,theme);
+    snprintf(line,sizeof(line),"生命 %d/%d",hp,maximum);
+    ui_fps_text(canvas,ui_rect(x,r.y+ui_px(8,scale),w,ui_px(20,scale)),line,hp_color,scale,1);
+    ui_bar(canvas,x,r.y+ui_px(30,scale),w,ui_px(5,scale),hp,maximum,hp_color);
+    snprintf(line,sizeof(line),"回避 %d/%d",(reserve+999)/1000,caps.evasion_capacity);
+    ui_fps_text(canvas,ui_rect(x,r.y+ui_px(39,scale),w,ui_px(20,scale)),line,ev_color,scale,1);
+    ui_bar(canvas,x,r.y+ui_px(61,scale),w,ui_px(3,scale),reserve,capacity,ev_color);
+    const char *status=capacity<=0?"不可用":reserve<=0?"耗尽":
+        player->evasion.animation_ms>0?"回避中":player->evasion.pressure_ms>0?"恢复等待":"";
+    int small=scale*3/4;
+    ui_fps_text(canvas,ui_rect(x,r.y+ui_px(69,scale),w/2,ui_px(16,scale)),status,ev_color,small,1);
     snprintf(line,sizeof(line),"药品 %d",player->slots[3].weapon==TOY_GAME_WEAPON_PILL?player->slots[3].mag:0);
-    rf_ui_text(canvas,ui_rect(x+w-ui_px(78,scale),r.y+pad,ui_px(78,scale),ui_px(20,scale)),
-        line,theme->muted,scale,1);
-    rasterfall_canvas_rect(canvas,x,r.y+ui_px(39,scale),w,1,theme->border,130);
-    snprintf(line,sizeof(line),"生命   %d / %d",hp,maximum);
-    rf_ui_text(canvas,ui_rect(x,r.y+ui_px(47,scale),w,ui_px(20,scale)),line,hp_color,scale,1);
-    ui_bar(canvas,x,r.y+ui_px(72,scale),w,ui_px(9,scale),hp,maximum,hp_color);
-    snprintf(line,sizeof(line),"回避 %d/%d  %s",(reserve+999)/1000,caps.evasion_capacity,ev_state);
-    rf_ui_text(canvas,ui_rect(x,r.y+ui_px(92,scale),w,ui_px(20,scale)),line,
-        capacity>0?ev_color:theme->muted,scale,1);
-    ui_bar(canvas,x,r.y+ui_px(120,scale),w,ui_px(5,scale),reserve,capacity,ev_color);
+    ui_fps_text(canvas,ui_rect(x+w/2,r.y+ui_px(69,scale),w-w/2,ui_px(16,scale)),line,theme->muted,small,1);
+}
+
+static void ui_weapon_wire(struct rasterfall_canvas *canvas,struct rf_ui_rect r,int weapon,unsigned color)
+{
+    if(weapon<0 || weapon>=TOY_GAME_WEAPON_COUNT || r.w<1 || r.h<1)return;
+    const unsigned char *mask=ui_weapon_meshes[weapon].mask;
+    int w=ui_min(r.w,r.h*UI_WEAPON_W/UI_WEAPON_H),h=w*UI_WEAPON_H/UI_WEAPON_W;
+    if(w<1 || h<1)return;
+    r.x+=(r.w-w)/2;r.y+=(r.h-h)/2;
+    for(int y=0;y<h;++y) {
+        int run=0,opacity=0;
+        for(int x=0;x<=w;++x) {
+            int on=0;
+            if(x<w) {
+                int ax=x*UI_WEAPON_W/w,bx=ui_max(ax+1,(x+1)*UI_WEAPON_W/w);
+                int ay=y*UI_WEAPON_H/h,by=ui_max(ay+1,(y+1)*UI_WEAPON_H/h);
+                for(int yy=ay;yy<by;++yy)for(int xx=ax;xx<bx;++xx)
+                    on=ui_max(on,mask[yy*UI_WEAPON_W+xx]);
+            }
+            if(on!=opacity) {
+                if(opacity)rasterfall_canvas_rect(canvas,r.x+run,r.y+y,x-run,1,color,opacity);
+                run=x;opacity=on;
+            }
+        }
+    }
 }
 
 static void ui_weapon(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
@@ -289,33 +427,25 @@ static void ui_weapon(struct rasterfall_canvas *canvas,const struct rasterfall_h
     const struct toy_game_actor *player=toy_game_local_player_actor_const(hud->game);
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
     struct rf_ui_rect r=layout->weapon;
-    const struct toy_game_slot *slot;
-    char line[96],key[24];
-    int scale=ui_min(layout->text_scale_milli,ui_max(650,r.w*1000/230));
-    int pad=ui_min(layout->padding,ui_px(12,scale));
-    if (!player || player->current_slot<0 || player->current_slot>=TOY_GAME_WEAPON_SLOTS) return;
-    slot=&player->slots[player->current_slot];
-    rf_ui_panel(canvas,r,theme,0);
-    if (slot->reserve==TOY_GAME_AMMO_INFINITE) snprintf(line,sizeof(line),"%d / INF",slot->mag);
-    else snprintf(line,sizeof(line),"%d / %d",slot->mag,slot->reserve);
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+pad,r.w-pad*2,ui_px(32,scale)),line,
+    int scale=layout->text_scale_milli,pad=ui_px(9,scale),x=r.x+pad,w=r.w-pad*2;
+    char line[96];
+    if(!player || player->current_slot<0 || player->current_slot>=TOY_GAME_WEAPON_SLOTS)return;
+    const struct toy_game_slot *slot=&player->slots[player->current_slot];
+    ui_fps_card(canvas,r,theme);
+    snprintf(line,sizeof(line),"%s",player->reloading?"换弹中":slot->weapon>=0?toy_game_weapon_name(slot->weapon):"未装备");
+    ui_fps_text(canvas,ui_rect(x,r.y+ui_px(7,scale),w,ui_px(18,scale)),line,theme->muted,scale*7/8,1);
+    int ammo_w=ui_min(ui_px(60,scale),w*2/5),mesh_w=w-ammo_w-ui_px(6,scale);
+    ui_weapon_wire(canvas,ui_rect(x,r.y+ui_px(27,scale),mesh_w,ui_px(45,scale)),slot->weapon,theme->accent);
+    snprintf(line,sizeof(line),"%d",slot->mag);
+    ui_fps_text(canvas,ui_rect(x+w-ammo_w,r.y+ui_px(26,scale),ammo_w,ui_px(30,scale)),line,
         slot->mag<=0?theme->danger:theme->text,scale*3/2,1);
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+ui_px(47,scale),r.w-pad*2,ui_px(18,scale)),
-        slot->weapon>=0?toy_game_weapon_name(slot->weapon):"未装备",theme->muted,scale,1);
-    if (player->reloading) {
-        ui_label(&hud->player_ui_view,RF_ACTION_RELOAD,key,sizeof(key));
-        snprintf(line,sizeof(line),"[%s] 换弹中",key);
-        rf_ui_text(canvas,ui_rect(r.x+pad,r.y+ui_px(69,scale),r.w-pad*2,ui_px(18,scale)),line,theme->warning,scale,1);
-    } else {
-        int card_w=(r.w-pad*2-ui_px(6,scale))/3;
-        for (int i=0;i<3;++i) {
-            const struct toy_game_weapon_info *info=toy_game_weapon_info_or_null(player->slots[i].weapon);
-            ui_label(&hud->player_ui_view,RF_ACTION_SLOT_1+i,key,sizeof(key));
-            snprintf(line,sizeof(line),"%s %s",key,info?info->short_name:"--");
-            rf_ui_button(canvas,ui_rect(r.x+pad+i*(card_w+ui_px(3,scale)),
-                r.y+r.h-pad-ui_px(25,scale),card_w,ui_px(25,scale)),theme,line,
-                scale,i==player->current_slot,1);
-        }
+    if(slot->reserve==TOY_GAME_AMMO_INFINITE)snprintf(line,sizeof(line),"/ INF");
+    else snprintf(line,sizeof(line),"/ %d",slot->reserve);
+    ui_fps_text(canvas,ui_rect(x+w-ammo_w,r.y+ui_px(55,scale),ammo_w,ui_px(20,scale)),line,theme->muted,scale*7/8,1);
+    if(player->reloading) {
+        int total=ui_max(1,toy_game_actor_reload_ms(player,toy_game_weapon_info_or_null(slot->weapon)));
+        ui_bar(canvas,x,r.y+ui_px(80,scale),w,ui_px(3,scale),
+            ui_clamp(total-player->reload_timer_ms,0,total),total,theme->warning);
     }
 }
 
