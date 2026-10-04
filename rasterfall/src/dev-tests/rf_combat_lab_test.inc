@@ -21,7 +21,6 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
     if(enemy<0)return -5;
     struct toy_game_enemy enemy_before=g->enemies[enemy];
     int count=g->enemies_alive,flags=runtime->session->flag_count;
-    int original_money=g->money;
     uint64_t rng=g->rng;
     for(int repeat=0;repeat<2;++repeat) {
         if(rf_combat_start(runtime,repeat==0?20:18,1,1337,repeat+1)<0)return -6;
@@ -71,14 +70,12 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
             if(allied_count!=4 || !hostile_count)return -21;
             rasterfall_session_set_rts(runtime->session,0);
         }
-        int money_before=g->money,target=-1;
+        int target=-1;
         struct toy_game_actor *subject=rf_combat_subject(g),*replacement=NULL;
         struct toy_game_actor replacement_before;
         for(int i=0;i<rf_combat_lab.member_count;++i)
             if(rf_combat_lab.members[i].enemy_slot>=0){target=rf_combat_lab.members[i].enemy_slot;break;}
         if(!subject || target<0 || !toy_game_apply_reported_hit(g,subject,target,g->enemies[target].hp))return -9;
-        if(subject->combat_stats.money_earned<=0)return -10;
-        g->money+=37; /* Independent income must survive the lab refund. */
         if(repeat==1) {
             struct rf_combat_member *owned=&rf_combat_lab.members[1];
             struct toy_game_actor *a=rf_combat_owned_actor(g,owned);
@@ -93,7 +90,7 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
         if(memcmp(foreign,&foreign_before,sizeof(*foreign)) ||
            memcmp(&g->enemies[enemy],&enemy_before,sizeof(enemy_before)) ||
            memcmp(toy_game_local_player_actor(g),&player_before,sizeof(player_before)) ||
-           g->enemies_alive!=count || g->rng!=rng || runtime->session->flag_count!=flags || g->money!=money_before+37)return -7;
+           g->enemies_alive!=count || g->rng!=rng || runtime->session->flag_count!=flags)return -7;
         if(replacement) {
             if(memcmp(replacement,&replacement_before,sizeof(*replacement)))return -13;
             memset(replacement,0,sizeof(*replacement));
@@ -102,8 +99,7 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
     }
     memset(foreign,0,sizeof(*foreign));memset(&g->enemies[enemy],0,sizeof(g->enemies[enemy]));
     g->enemies_alive--;
-    g->money=original_money;
     rf_combat_lab.suite=0;rf_combat_lab.result_open=0;rf_combat_lab.result_count=0;
-    __printf("COMBAT-LAB RTS formation / faction isolation / owned cleanup / generation / reward refund / repeat / no false TTK passed\n");
+    __printf("COMBAT-LAB RTS formation / faction isolation / owned cleanup / generation / repeat / no false TTK passed\n");
     return 0;
 }

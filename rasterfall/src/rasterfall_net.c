@@ -18,7 +18,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_MAGIC_2 'N'
 #define NET_MAGIC_3 '1'
 #define NET_INPUT_RAY_SIZE 28
-#define NET_INPUT_RAY_BASE 39
+#define NET_INPUT_RAY_BASE 33
 #define NET_INPUT_ENTRY_SIZE (NET_INPUT_RAY_BASE + \
                               TOY_GAME_MAX_RAYS * NET_INPUT_RAY_SIZE)
 #define NET_INPUT_META_SIZE 40
@@ -31,7 +31,7 @@ static void net_windows_log(const char *message) { (void)message; }
 #define NET_ENTITY_CHUNK_BASE 8
 #define NET_ACTOR_SKILLS_OFFSET (43 + TOY_GAME_MAX_NAME + 32)
 #define NET_ACTOR_COMBAT_OFFSET (NET_ACTOR_SKILLS_OFFSET + TOY_GAME_SKILL_COUNT + 2)
-#define NET_ACTOR_SIZE (NET_ACTOR_COMBAT_OFFSET + 96)
+#define NET_ACTOR_SIZE (NET_ACTOR_COMBAT_OFFSET + 92)
 /* Three redundant twelve-pellet input entries still fit one 1200-byte UDP
  * packet. Confirmed HP/evasion results are host output only. */
 typedef char net_input_fits_packet[(NET_HEADER_SIZE + NET_INPUT_SIZE <=
@@ -39,7 +39,7 @@ typedef char net_input_fits_packet[(NET_HEADER_SIZE + NET_INPUT_SIZE <=
 #define NET_ENEMY_SIZE 55
 #define NET_WORLD_BASE_SIZE 52
 #define NET_WORLD_FLAG_SIZE 12
-#define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + 4 + \
+#define NET_WORLD_FIXED_SIZE (NET_WORLD_BASE_SIZE + 4 + \
                         RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + \
                         TOY_GAME_MAX_ACTORS * 2)
 #define NET_WORLD_PROJECTILE_SIZE 28
@@ -568,33 +568,6 @@ static struct toy_game_actor *net_client_actor(
 static const struct toy_game_actor *net_client_actor_const(
     const struct toy_game *game, const struct rasterfall_net_client *client);
 
-/* A paid revive is a player action, not a rescue interaction.  The client
- * predicts it for responsiveness, but the shared money balance and the
- * remote actor's downed state must be changed here on the host. */
-static int net_paid_revive_client(struct rasterfall_net *net,
-                                  struct rasterfall_session *session,
-                                  struct rasterfall_net_client *client)
-{
-    struct toy_game *game;
-    struct toy_game_actor *actor;
-    if (!net || !session || !client || !client->active || !client->connected ||
-        session->game_state.state != TOY_GAME_PLAYING)
-        return 0;
-    game = &session->game_state;
-    actor = net_client_actor(game, client);
-    if (!actor || !actor->active || actor->state != TOY_GAME_ACTOR_DOWNED)
-        return 0;
-    if (game->money < RASTERFALL_PAID_REVIVE_COST) return 0;
-    if (!toy_game_revive_actor(game, (int)(actor - game->actors),
-                               TOY_GAME_REVIVE_MS)) return 0;
-    game->money -= RASTERFALL_PAID_REVIVE_COST;
-    client->camera = client->spawn;
-    client->reported_camera = client->spawn;
-    actor->x = client->camera.x;
-    actor->z = client->camera.z;
-    return 1;
-}
-
 static int net_send_join_accept(struct rasterfall_net *net,
                                 const struct sockaddr_in *address,
                                 int client_id, const struct camera *spawn)
@@ -979,14 +952,13 @@ static void encode_input_entry(unsigned char *p,
     p[8] = put_i8_value(c->move_forward);
     p[9] = put_i8_value(c->move_strafe);
     p[10] = (unsigned char)(c->fire_held != 0);
-    p[11] = (unsigned char)(c->shop_item < 0 ? 0 : c->shop_item);
-    put_i16(p + 12, c->turn); put_i16(p + 14, c->pitch);
-    put_u16(p + 16, c->buttons); put_u16(p + 18, c->shop_action);
-    put_i16(p + 20, c->shop_arg); put_u32(p + 24, c->shop_request_id);
-    put_i16(p + 28, input->jump_dx); put_i16(p + 30, input->jump_dz);
-    p[32] = (unsigned char)input->current_slot;
-    put_u32(p + 34, input->fire_seq);
-    p[38] = (unsigned char)input->ray_count;
+    put_i16(p + 11, c->turn); put_i16(p + 13, c->pitch);
+    put_u16(p + 15, c->buttons);
+    put_i16(p + 17, c->interact_kind); put_u32(p + 19, c->action_request_id);
+    put_i16(p + 23, input->jump_dx); put_i16(p + 25, input->jump_dz);
+    p[27] = (unsigned char)input->current_slot;
+    put_u32(p + 28, input->fire_seq);
+    p[32] = (unsigned char)input->ray_count;
     for (i = 0; i < input->ray_count && i < TOY_GAME_MAX_RAYS; i++) {
         const struct toy_game_ray *ray = &input->rays[i];
         unsigned char *q = p + NET_INPUT_RAY_BASE + i * NET_INPUT_RAY_SIZE;
@@ -1002,14 +974,14 @@ static int decode_input_entry(const unsigned char *p,
     memset(input, 0, sizeof(*input)); c = &input->command;
     input->sequence = get_u32(p); input->tick = get_u32(p + 4);
     c->move_forward = get_i8_value(p[8]); c->move_strafe = get_i8_value(p[9]);
-    c->fire_held = p[10] != 0; c->shop_item = p[11];
-    c->turn = get_i16(p + 12); c->pitch = get_i16(p + 14);
-    c->buttons = get_u16(p + 16); c->shop_action = get_u16(p + 18);
-    c->shop_arg = get_i16(p + 20); c->shop_request_id = get_u32(p + 24);
-    input->jump_dx = get_i16(p + 28); input->jump_dz = get_i16(p + 30);
+    c->fire_held = p[10] != 0;
+    c->turn = get_i16(p + 11); c->pitch = get_i16(p + 13);
+    c->buttons = get_u16(p + 15);
+    c->interact_kind = get_i16(p + 17); c->action_request_id = get_u32(p + 19);
+    input->jump_dx = get_i16(p + 23); input->jump_dz = get_i16(p + 25);
     c->jump_dx = input->jump_dx; c->jump_dz = input->jump_dz;
-    input->current_slot = p[32];
-    input->fire_seq = get_u32(p + 34); input->ray_count = p[38];
+    input->current_slot = p[27];
+    input->fire_seq = get_u32(p + 28); input->ray_count = p[32];
     if (input->current_slot < 0 || input->current_slot >= TOY_GAME_WEAPON_SLOTS ||
         input->ray_count < 0 || input->ray_count > TOY_GAME_MAX_RAYS) return -1;
     for (i = 0; i < input->ray_count; i++) {
@@ -1071,37 +1043,32 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
     if (net->mode != RASTERFALL_NET_CLIENT) return -1;
     memset(packet, 0, sizeof(packet));
     wire = *command;
-    if (wire.buttons & (RASTERFALL_CMD_SHOP |
-                        RASTERFALL_CMD_FLAG |
+    if (wire.buttons & (RASTERFALL_CMD_FLAG |
                         RASTERFALL_CMD_INTERACT)) {
-        net->pending_shop_request_id = ++net->shop_request_next_id;
-        if (!net->pending_shop_request_id)
-            net->pending_shop_request_id = ++net->shop_request_next_id;
-        net->pending_shop_action = wire.shop_action;
-        net->pending_shop_item = wire.shop_item;
-        net->pending_shop_arg = wire.shop_arg;
+        net->pending_action_request_id = ++net->action_request_next_id;
+        if (!net->pending_action_request_id)
+            net->pending_action_request_id = ++net->action_request_next_id;
+        net->pending_action_arg = wire.interact_kind;
         net->pending_action_buttons = wire.buttons &
-            (RASTERFALL_CMD_SHOP | RASTERFALL_CMD_FLAG |
+            (RASTERFALL_CMD_FLAG |
              RASTERFALL_CMD_INTERACT);
-        net->pending_shop_until_ms = net_monotonic_ms() + 2000;
-        net->pending_shop_input_sequence = 0;
+        net->pending_action_until_ms = net_monotonic_ms() + 2000;
+        net->pending_action_input_sequence = 0;
     }
-    if (net->pending_shop_request_id &&
-        net_monotonic_ms() < net->pending_shop_until_ms) {
+    if (net->pending_action_request_id &&
+        net_monotonic_ms() < net->pending_action_until_ms) {
         wire.buttons |= net->pending_action_buttons;
-        wire.shop_action = net->pending_shop_action;
-        wire.shop_item = net->pending_shop_item;
-        wire.shop_arg = net->pending_shop_arg;
-        wire.shop_request_id = net->pending_shop_request_id;
-    } else if (net->pending_shop_request_id) {
-        net->pending_shop_request_id = 0;
-        net->pending_shop_input_sequence = 0;
+        wire.interact_kind = net->pending_action_arg;
+        wire.action_request_id = net->pending_action_request_id;
+    } else if (net->pending_action_request_id) {
+        net->pending_action_request_id = 0;
+        net->pending_action_input_sequence = 0;
     }
     net->tick++;
     sequence = ++net->send_sequence;
-    if (wire.shop_request_id == net->pending_shop_request_id &&
-        !net->pending_shop_input_sequence)
-        net->pending_shop_input_sequence = sequence;
+    if (wire.action_request_id == net->pending_action_request_id &&
+        !net->pending_action_input_sequence)
+        net->pending_action_input_sequence = sequence;
     {
         struct rasterfall_net_input *entry =
             &net->input_history[sequence % RASTERFALL_NET_INPUT_HISTORY];
@@ -1163,7 +1130,7 @@ int rasterfall_net_send_command(struct rasterfall_net *net,
         net_record_prediction(net, sequence, predicted);
         /* Edge actions remain attached to ordinary inputs until a player
          * snapshot acknowledges the first carrying sequence.  The host
-         * deduplicates shop_request_id, so retransmission is harmless. */
+         * deduplicates action_request_id, so retransmission is harmless. */
     }
     return result;
 }
@@ -1341,7 +1308,6 @@ static void encode_actor(unsigned char *p, const struct toy_game_actor *a,
         put_u32(q + 84, (uint32_t)a->combat_stats.evasion_exhaustions);
         put_i16(q + 88, a->fire_cooldown_ms);
         put_i16(q + 90, a->weapon_spread_heat);
-        put_u32(q + 92, (uint32_t)a->combat_stats.money_earned);
     }
 }
 
@@ -1390,7 +1356,6 @@ static void decode_actor(const unsigned char *p, struct rasterfall_net_actor *a)
         a->combat_stats.evasion_exhaustions = (int)get_u32(q + 84);
         a->fire_cooldown_ms = get_i16(q + 88);
         a->weapon_spread_heat = get_i16(q + 90);
-        a->combat_stats.money_earned = (int)get_u32(q + 92);
     }
     a->state = (p[0] >> 4) & 3;
     a->anime_character_id = (p[41] >> 1) & 7;
@@ -1695,13 +1660,11 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     net->snapshot_world_wave_waiting_heavy = get_i16(w + 38);
     net->snapshot_world_wave_waiting_special = get_i16(w + 40);
     net->snapshot_world_wave_waiting_tank = get_i16(w + 42);
-    net->snapshot_money = (int)get_u32(w + NET_WORLD_BASE_SIZE);
-    net->snapshot_unlocked_weapons = get_u32(w + NET_WORLD_BASE_SIZE + 4);
-    net->snapshot_flag_count = get_i16(w + NET_WORLD_BASE_SIZE + 8);
+    net->snapshot_flag_count = get_i16(w + NET_WORLD_BASE_SIZE);
     if (net->snapshot_flag_count < 0 ||
         net->snapshot_flag_count > RASTERFALL_MAX_FLAGS) return -1;
     for (i = 0; i < RASTERFALL_MAX_FLAGS; i++) {
-        const unsigned char *fp = w + NET_WORLD_BASE_SIZE + 12 +
+        const unsigned char *fp = w + NET_WORLD_BASE_SIZE + 4 +
                                   i * NET_WORLD_FLAG_SIZE;
         struct rasterfall_flag *f = &net->snapshot_flags[i];
         f->x = (int)get_u32(fp); f->z = (int)get_u32(fp + 4);
@@ -1710,7 +1673,7 @@ static int decode_world_snapshot(const unsigned char *payload, int size,
     }
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
         net->snapshot_actor_flag_index[i] = get_i16(w + NET_WORLD_BASE_SIZE +
-            12 + RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2);
+            4 + RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2);
     {
         int cursor = NET_WORLD_FIXED_SIZE;
         int projectile_count, burn_count;
@@ -2276,27 +2239,21 @@ static int net_apply_client_actor_state(struct rasterfall_net *net,
         actor->current_slot >= TOY_GAME_WEAPON_SLOTS) return 0;
     weapon = actor->slots[actor->current_slot].weapon;
     if ((client->command.buttons & RASTERFALL_CMD_INTERACT) &&
-        client->command.shop_request_id != client->shop_request_id &&
+        client->command.action_request_id != client->action_request_id &&
         actor->state == TOY_GAME_ACTOR_ALIVE)
         rasterfall_session_interact_remote(
             session, &client->camera,
-            client->command.shop_arg > 0 ? client->command.shop_arg - 1 : -1);
+            client->command.interact_kind > 0 ? client->command.interact_kind - 1 : -1);
     if ((client->command.buttons & RASTERFALL_CMD_FLAG) &&
-        client->command.shop_request_id != client->shop_request_id)
+        client->command.action_request_id != client->action_request_id &&
+        actor->state == TOY_GAME_ACTOR_ALIVE)
         rasterfall_session_toggle_flag_remote(session, &client->camera,
                                                client->client_id);
     rasterfall_session_update_flag_remote(session, &client->camera,
                                           client->client_id);
-    if ((client->command.buttons & RASTERFALL_CMD_SHOP) &&
-        client->command.shop_request_id != client->shop_request_id) {
-        rasterfall_session_shop_request(session, client->command.shop_action,
-                                        client->command.shop_item,
-                                        client->command.shop_arg);
-        client->shop_request_id = client->command.shop_request_id;
-    }
     if (client->command.buttons & (RASTERFALL_CMD_FLAG |
                                    RASTERFALL_CMD_INTERACT))
-        client->shop_request_id = client->command.shop_request_id;
+        client->action_request_id = client->command.action_request_id;
 
     event_start = g->event_count;
     if ((weapon == TOY_GAME_WEAPON_AXE ||
@@ -2391,8 +2348,6 @@ static void net_apply_client(struct rasterfall_net *net,
          * executor still owns its timers and inventory transitions. */
         toy_game_execute_actor_command(g, actor, &actor_command, 16, 100);
     }
-    if (client->command.buttons & RASTERFALL_CMD_REVIVE)
-        net_paid_revive_client(net, session, client);
     net_apply_client_actor_state(net, session, client, actor);
 }
 
@@ -2708,8 +2663,7 @@ void rasterfall_net_apply_clients(struct rasterfall_net *net,
             client->command.move_strafe = 0;
             client->command.fire_held = 0;
             client->command.buttons = 0;
-            client->command.shop_action = 0;
-            client->command.shop_request_id = 0;
+            client->command.action_request_id = 0;
             client->input_jump_dx = 0;
             client->input_jump_dz = 0;
             client->command.jump_dx = 0;
@@ -2876,9 +2830,9 @@ static int net_combat_test(void)
             net_client_actor_slot(&peer, net_client_actor_slot(&peer, own)) != own)
             return 110;
     }
-    /* Paid and rescue entry points all finish the shared revive transition:
+    /* Local and remote rescues finish the shared revive transition:
      * no old lethal impulse/control may survive, and events occur only once. */
-    for (int revive_path = 0; revive_path < 4; revive_path++) {
+    for (int revive_path = 2; revive_path < 4; revive_path++) {
         int remote = revive_path & 1;
         memset(&view, 0, sizeof(view));
         memset(&camera, 0, sizeof(camera));
@@ -2893,7 +2847,6 @@ static int net_combat_test(void)
         peer.clients[0].camera = peer.clients[0].spawn;
         view.level.start_x = 320; view.level.start_z = 480;
         view.level.start_cy = 1024;
-        view.game_state.money = RASTERFALL_PAID_REVIVE_COST * 2;
         toy_game_set_remote_actor(&view.game_state, 1, 1, 100, 200, "REVIVE");
         target = &view.game_state.actors[remote ? TOY_GAME_REMOTE_ACTOR_BASE : 0];
         target->state = TOY_GAME_ACTOR_DOWNED; target->hp = 0;
@@ -2906,20 +2859,14 @@ static int net_combat_test(void)
                                             77, 0, 4);
         target->evasion.window_ms = target->evasion.animation_ms = 200;
         view.game_state.event_count = 0;
-        if (!revive_path) {
-            if (!rasterfall_session_paid_revive(&view, &camera)) return 114;
-        } else if (revive_path == 1) {
-            if (!net_paid_revive_client(&peer, &view, &peer.clients[0])) return 115;
-        } else net_finish_rescue(&peer, &view, remote);
+        net_finish_rescue(&peer, &view, remote);
         if (target->state != TOY_GAME_ACTOR_ALIVE || target->hp != TOY_GAME_REVIVE_HP ||
             target->animation.id != TOY_GAME_ANIM_REVIVE || target->revive_progress_ms ||
             target->control_disabled || target->special_control ||
             target->airborne_ms || target->airborne_y || target->vertical_velocity ||
             target->air_x || target->air_z || target->knockback_x || target->knockback_z ||
             target->knockback_cooldown_ms || target->evasion.window_ms ||
-            target->evasion.animation_ms || view.game_state.event_count != 2 ||
-            view.game_state.money != RASTERFALL_PAID_REVIVE_COST *
-                (revive_path < 2 ? 1 : 2)) return 116 + revive_path;
+            target->evasion.animation_ms || view.game_state.event_count != 2) return 116 + revive_path;
     }
     return 0;
 }
@@ -3212,7 +3159,6 @@ int rasterfall_net_pipeline_test(void)
         first->evasion.trigger_time_ms = 900123;
         first->combat_stats.evasion_spent_milli = 15789;
         first->combat_stats.health_damage = 97;
-        first->combat_stats.money_earned = 73;
         toy_game_animation_set(&first->animation, TOY_GAME_ANIM_DEATH);
         second->state = TOY_GAME_ACTOR_DOWNED; second->hp = 0;
         second->revive_progress_ms = 320; second->special_kills = 4;
@@ -3447,11 +3393,11 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         }
     if (!own || !own->active) return;
     net->last_snapshot_input_ack = own->input_ack;
-    if (net->pending_shop_request_id && net->pending_shop_input_sequence &&
-        sequence_before_or_equal(net->pending_shop_input_sequence,
+    if (net->pending_action_request_id && net->pending_action_input_sequence &&
+        sequence_before_or_equal(net->pending_action_input_sequence,
                                  own->input_ack)) {
-        net->pending_shop_request_id = 0;
-        net->pending_shop_input_sequence = 0;
+        net->pending_action_request_id = 0;
+        net->pending_action_input_sequence = 0;
     }
     if (session) {
         int seen[TOY_GAME_MAX_ACTORS];
@@ -3580,8 +3526,6 @@ void rasterfall_net_reconcile_client(struct rasterfall_net *net,
         session->game_state.wave_waiting_heavy = net->snapshot_world_wave_waiting_heavy;
         session->game_state.wave_waiting_special = net->snapshot_world_wave_waiting_special;
         session->game_state.wave_waiting_tank = net->snapshot_world_wave_waiting_tank;
-        session->game_state.money = net->snapshot_money;
-        session->game_state.unlocked_weapons = net->snapshot_unlocked_weapons;
         memcpy(session->game_state.projectiles, net->snapshot_projectiles,
                sizeof(session->game_state.projectiles));
         memcpy(session->game_state.burn_zones, net->snapshot_burn_zones,
@@ -3895,20 +3839,18 @@ static int net_send_world_snapshot(struct rasterfall_net *net,
     put_i16(w + 42, game->wave_waiting_tank);
     put_u32(w + 44, (uint32_t)game->spawn_timer_ms);
     put_u32(w + 48, (uint32_t)game->phase_timer_ms);
-    put_u32(w + NET_WORLD_BASE_SIZE, (uint32_t)game->money);
-    put_u32(w + NET_WORLD_BASE_SIZE + 4, game->unlocked_weapons);
-    put_i16(w + NET_WORLD_BASE_SIZE + 8, session ? session->flag_count : 0);
+    put_i16(w + NET_WORLD_BASE_SIZE, session ? session->flag_count : 0);
     for (i = 0; i < RASTERFALL_MAX_FLAGS; i++) {
         const struct rasterfall_flag *f = session && i < session->flag_count ?
                                           &session->flags[i] : NULL;
-        unsigned char *fp = w + NET_WORLD_BASE_SIZE + 12 +
+        unsigned char *fp = w + NET_WORLD_BASE_SIZE + 4 +
                             i * NET_WORLD_FLAG_SIZE;
         put_u32(fp, f ? (uint32_t)f->x : 0); put_u32(fp + 4, f ? (uint32_t)f->z : 0);
         fp[8] = f && f->active; fp[9] = f && f->carried;
         fp[10] = put_i8_value(f ? f->carrier_id : -1);
     }
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
-        put_i16(w + NET_WORLD_BASE_SIZE + 12 +
+        put_i16(w + NET_WORLD_BASE_SIZE + 4 +
                 RASTERFALL_MAX_FLAGS * NET_WORLD_FLAG_SIZE + i * 2,
                 session && session->game_state.actors[i].active ?
                     session->game_state.actors[i].flag_index : -1);

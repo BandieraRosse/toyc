@@ -1,6 +1,5 @@
 #include "tlibc_everything.h"
 #include "math.h"
-#include "rasterfall_ai_names.h"
 #include "rasterfall_session.h"
 #include "rasterfall_feature_freeze.h"
 #include "rasterfall_units.h"
@@ -33,17 +32,6 @@ static const int roster_spawn_positions[RASTERFALL_SQUAD_COUNT]
         { 14420, 420 }, { 13580, 420 }, { 13580, -420 }, { 14420, -420 }
     }
 };
-static const int hired_ai_positions[][2] = {
-    { 1000, 0 }, { 0, -900 }, { -1000, 0 },
-    { 1200, 900 }, { -1200, 900 }, { 0, 2100 },
-    { 0, -300 }, { 1800, 900 }, { -1800, 900 }, { 2400, 0 },
-    { -2400, 0 }, { 3000, 900 }, { -3000, 900 }, { 3600, 0 },
-    { -3600, 0 }, { 4200, 900 }, { -4200, 900 }, { 4800, 0 },
-    { -4800, 0 }, { 5400, 900 }, { -5400, 900 }, { 6000, 0 },
-    { -6000, 0 }, { 6600, 900 }, { -6600, 900 }, { 7200, 0 },
-    { -7200, 0 }, { 7800, 900 }, { -7800, 900 }, { 8400, 0 },
-    { -8400, 0 }, { 9000, 900 }, { -9000, 900 }, { 9600, 0 }
-};
 static const int flag_colors[] = { 0x173A70, 0x9E302B, 0xC78A24, 0x2B765B,
                                    0x704A91, 0xB75A2C };
 static const char *flag_names[] = { "TOYC", "GNU", "LLVM", "GCC", "NASA", "UNIX" };
@@ -59,19 +47,6 @@ static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
 static int session_near_flag(const struct rasterfall_session *session,
                              const struct camera *camera);
-
-/* The weapon table below the air wall is a developer-only pickup strip.
- * Keep this exception local to the map/session layer; the normal armory still
- * owns all purchase and unlock checks elsewhere. */
-static int session_is_developer_weapon_pickup(
-    const struct rasterfall_interactable *it)
-{
-    if (!it || it->z > -7000 || it->z < -8000 ||
-        it->x < -1800 || it->x > 1800) return 0;
-    return it->kind == TOY_MAP_PICKUP_WEAPON ||
-           it->kind == TOY_MAP_PICKUP_SMG ||
-           it->kind == TOY_MAP_PICKUP_SHOTGUN;
-}
 
 static void session_down_ai(struct rasterfall_session *session, int index,
                             int x, int z)
@@ -608,7 +583,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             RASTERFALL_AI_POLICY_MANAGED_SIMPLE);
     session->flag_count = 0;
     session->carried_flag = -1;
-    session->assignment_flag = 0;
     session->hurd_outpost.flag_index = -1;
     for (i = 0; i < RASTERFALL_HURD_SQUAD_SIZE; i++)
         session->hurd_outpost.squad_actor_indices[i] = -1;
@@ -745,12 +719,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->managed_ai_target_index = -1;
     session->managed_ai_retarget_ms = 0;
                 session->managed_ai_escape_phase = -1;
-    session->shop_open = 0;
-    session->shop_page = 0;
-    session->shop_selected = 0;
-    session->shop_nav_selected = 0;
-    session->shop_scroll = 0;
-    session->shop_request_only = 0;
     session_set_air_walls(session, 1);
     rasterfall_map_reset_interactables(&session->map_ops);
     session_add_content_terminals(session);
@@ -892,12 +860,8 @@ void rasterfall_session_interact_remote(struct rasterfall_session *session,
             index = -1;
         }
     }
-    /* A remote player's shop is a local UI on that player's machine.  The
-     * host still processes shop requests separately, but must not open its
-     * own armory when a client walks up to the same pickup. */
     if (index >= 0 && (!session->weaver_item_serial ||
-        index != session->weaver_item_index) &&
-        session->items[index].kind != TOY_MAP_PICKUP_SHOP)
+        index != session->weaver_item_index))
         session_interact(session, &session->items[index]);
 }
 
@@ -965,38 +929,6 @@ int rasterfall_session_revive_target(struct rasterfall_session *session,
     *progress_ms += dt_ms;
     if (*progress_ms < TOY_GAME_REVIVE_MS) return 0;
     *progress_ms = 0;
-    return 1;
-}
-
-int rasterfall_session_paid_revive(struct rasterfall_session *session,
-                                   struct camera *camera)
-{
-    struct toy_game *game;
-    struct toy_game_actor *player;
-    if (!session || !camera) return 0;
-    game = &session->game_state;
-    player = toy_game_local_player_actor(game);
-    if (!player || game->state != TOY_GAME_PLAYING ||
-        player->state != TOY_GAME_ACTOR_DOWNED ||
-        game->money < RASTERFALL_PAID_REVIVE_COST)
-        return 0;
-    if (!toy_game_revive_actor(game, TOY_GAME_PLAYER_ACTOR_INDEX,
-                               TOY_GAME_REVIVE_MS)) return 0;
-    game->money -= RASTERFALL_PAID_REVIVE_COST;
-    camera->x = session->level.start_x;
-    camera->z = session->level.start_z;
-    camera->sy = session->level.start_sy;
-    camera->cy = session->level.start_cy;
-    camera->pitch_sy = 0;
-    camera->pitch_cy = 1024;
-    camera->y = RASTERFALL_STANDING_CAMERA_Y;
-    player->x = camera->x;
-    player->z = camera->z;
-    player->sy = camera->sy;
-    player->cy = camera->cy;
-    session->banner_ms = 1800;
-    session->banner_success = 1;
-    session->banner_text = "REVIVED -$20";
     return 1;
 }
 
@@ -1103,16 +1035,6 @@ static void session_client_interact_banner(struct rasterfall_session *session)
     if (session->highlight_index < 0 ||
         session->highlight_index >= session->item_count) return;
     it = &session->items[session->highlight_index];
-    if (it->kind == TOY_MAP_PICKUP_SHOP) {
-        session->shop_open = 1;
-        session->shop_page = 0;
-        session->shop_selected = 0;
-        session->shop_nav_selected = 0;
-        toy_game_local_player_actor(&session->game_state)->control_disabled = 1;
-        session->banner_ms = 0;
-        session->banner_text = NULL;
-        return;
-    }
     session->banner_success = 1;
     session->banner_ms = 1800;
     if (it->kind == TOY_MAP_PICKUP_AIR_BUTTON)
@@ -1217,15 +1139,6 @@ static void session_interact(struct rasterfall_session *session,
         it->kind == TOY_MAP_PICKUP_WEAPON ||
         it->kind == TOY_MAP_PICKUP_THROWABLE)
         toy_game_emit_event(&session->game_state, TOY_GAME_EV_PICKUP);
-    if (it->kind == TOY_MAP_PICKUP_SHOP) {
-        session->shop_open = 1;
-        session->shop_page = 0;
-        session->shop_selected = 0;
-        session->banner_ms = 0;
-        session->banner_text = NULL;
-        toy_game_local_player_actor(&session->game_state)->control_disabled = 1;
-        return;
-    }
     if (it->kind == TOY_MAP_PICKUP_STATION_TERMINAL) {
 #if RASTERFALL_DESKTOP_RUNTIME_ENABLED
         session->station_gui_request = 1;
@@ -1504,16 +1417,6 @@ static void session_interact(struct rasterfall_session *session,
                 "V2 ACTION: RIFLE AIM" : "V2 ACTION: AIM + RECOIL";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
         toy_game_actor_refill_ammo(&session->game_state, player);
-    } else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON) {
-        session->game_state.money += 500;
-        session->banner_ms = 2000;
-        session->banner_text = "MONEY +500";
-    } else if (it->kind == TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON) {
-        int cleared = toy_game_clear_hired_ai(&session->game_state);
-        session->banner_ms = 2000;
-        session->banner_text = cleared > 0 ?
-            "HIRED AI CLEARED" : "NO HIRED AI";
-        session->banner_success = cleared > 0;
     } else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
         it->kind == TOY_MAP_PICKUP_THROWABLE ||
         it->kind == TOY_MAP_PICKUP_PILL) {
@@ -1522,29 +1425,11 @@ static void session_interact(struct rasterfall_session *session,
             toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
             return;
         }
-        if (session_is_developer_weapon_pickup(it)) {
-            session->game_state.unlocked_weapons |= 1u << it->weapon;
-            toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
-        } else if (toy_game_weapon_unlocked(&session->game_state, it->weapon))
-            toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
-        else {
-            session->banner_ms = 2000;
-            session->banner_success = 0;
-            session->banner_text = "LOCKED - BUY IT IN THE ARMORY";
-        }
+        toy_game_actor_equip_weapon(&session->game_state, player, it->weapon);
     } else {
         int weapon = it->kind == TOY_MAP_PICKUP_SMG ?
             TOY_GAME_WEAPON_SMG : TOY_GAME_WEAPON_SHOTGUN;
-        if (session_is_developer_weapon_pickup(it)) {
-            session->game_state.unlocked_weapons |= 1u << weapon;
-            toy_game_actor_equip_weapon(&session->game_state, player, weapon);
-        } else if (toy_game_weapon_unlocked(&session->game_state, weapon))
-            toy_game_actor_equip_weapon(&session->game_state, player, weapon);
-        else {
-            session->banner_ms = 2000;
-            session->banner_success = 0;
-            session->banner_text = "LOCKED - BUY IT IN THE ARMORY";
-        }
+        toy_game_actor_equip_weapon(&session->game_state, player, weapon);
     }
 }
 
@@ -1594,378 +1479,6 @@ static void session_update_carried_flag(struct rasterfall_session *s,
     if (i < 0 || i >= s->flag_count || !s->flags[i].carried) return;
     s->flags[i].x = camera->x;
     s->flags[i].z = camera->z;
-}
-
-static int session_hired_count(const struct rasterfall_session *session)
-{
-    int i, count = 0;
-    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++)
-        if (session->game_state.actors[i].active &&
-            session->game_state.actors[i].hired) count++;
-    return count;
-}
-
-static int session_hire_ai(struct rasterfall_session *session, int weapon)
-{
-    int hired, position, price, actor_id;
-    uint64_t raw;
-    char name[TOY_GAME_MAX_NAME];
-    hired = session_hired_count(session);
-    position = 3 + hired;
-    if (position >= (int)(sizeof(hired_ai_positions) /
-                          sizeof(hired_ai_positions[0]))) return -1;
-    if (!toy_game_weapon_is_valid(weapon)) return 0;
-    /* 雇佣价格 = 一级 AI 基础价 + 武器价（按玩家武器价的 10 倍）；
-     * 手枪没有玩家购买价，按 100 元武器价计算。 */
-    price = TOY_CONFIG_AI_HIRE_PRICE +
-            (weapon == TOY_GAME_WEAPON_PISTOL ?
-             TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE :
-             toy_game_weapon_price(weapon) *
-             TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER);
-    if (session->game_state.money < price) return 0;
-    raw = session->game_state.rng;
-    raw ^= raw >> 12; raw ^= raw << 25; raw ^= raw >> 27;
-    session->game_state.rng = raw;
-    strcpy(name, rasterfall_hired_ai_names[
-        (int)((raw >> 32) % RASTERFALL_HIRED_AI_NAME_COUNT)]);
-    actor_id = toy_game_add_hired_ai(&session->game_state, weapon,
-                                     hired_ai_positions[position][0],
-                                     hired_ai_positions[position][1], name);
-    if (actor_id < 0) return -1;
-    session->game_state.money -= price;
-    return 1;
-}
-
-static int session_collect_hired_ai(const struct rasterfall_session *session,
-                                    int *indices)
-{
-    int i, count = 0;
-    for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
-        const struct toy_game_actor *a = &session->game_state.actors[i];
-        if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
-        indices[count++] = i;
-    }
-    return count;
-}
-
-static int session_change_ai_weapon(struct rasterfall_session *session,
-                                    int actor_index, int weapon)
-{
-    int price;
-    struct toy_game_actor *a;
-    if (!session || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS ||
-        !toy_game_weapon_is_valid(weapon)) return 0;
-    a = &session->game_state.actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) return 0;
-    price = weapon == TOY_GAME_WEAPON_PISTOL ? 0 :
-            toy_game_weapon_price(weapon) *
-            TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER;
-    if (session->game_state.money < price) return 0;
-    if (!toy_game_set_ai_weapon(&session->game_state, actor_index, weapon)) return 0;
-    session->game_state.money -= price;
-    return 1;
-}
-
-static int session_buy_flag(struct rasterfall_session *s)
-{
-    const int price = 250;
-    int fi;
-    if (s->flag_count >= RASTERFALL_MAX_FLAGS || s->game_state.money < price)
-        return 0;
-    fi = s->flag_count++;
-    session_init_flag(s, fi,
-                      toy_game_local_player_actor(&s->game_state)->x,
-                      toy_game_local_player_actor(&s->game_state)->z);
-    s->game_state.money -= price;
-    return 1;
-}
-
-int rasterfall_session_shop_can(const struct rasterfall_session *session,
-                                const struct rasterfall_shop_request *request,
-                                int *price)
-{
-    const struct toy_game *g;
-    const struct toy_game_actor *actor;
-    int value = 0;
-    if (price) *price = 0;
-    if (!session || !request || session->game_state.state != TOY_GAME_PLAYING)
-        return 0;
-    g = &session->game_state;
-    actor = toy_game_local_player_actor_const(g);
-    if (request->action == RASTERFALL_SHOP_BUY_WEAPON) {
-        int weapon = request->item;
-        if (!toy_game_weapon_is_valid(weapon) ||
-            weapon == TOY_GAME_WEAPON_PISTOL) return 0;
-        if (toy_game_weapon_unlocked(g, weapon)) {
-            if (weapon == TOY_GAME_WEAPON_PILL &&
-                actor->slots[3].mag >= TOY_GAME_PILL_MAX) return 0;
-            if ((weapon == TOY_GAME_WEAPON_BOMB ||
-                 weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-                actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX) return 0;
-            value = (weapon == TOY_GAME_WEAPON_BOMB ||
-                     weapon == TOY_GAME_WEAPON_MOLOTOV ||
-                     weapon == TOY_GAME_WEAPON_PILL) ?
-                    toy_game_weapon_price(weapon) : 0;
-        } else value = toy_game_weapon_price(weapon);
-    } else if (request->action == RASTERFALL_SHOP_HIRE_AI) {
-        if (!toy_game_weapon_is_valid(request->item) ||
-            3 + session_hired_count(session) >=
-            (int)(sizeof(hired_ai_positions) / sizeof(hired_ai_positions[0])))
-            return 0;
-        value = TOY_CONFIG_AI_HIRE_PRICE +
-            (request->item == TOY_GAME_WEAPON_PISTOL ?
-             TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE :
-             toy_game_weapon_price(request->item) *
-             TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER);
-    } else if (request->action == RASTERFALL_SHOP_BUY_FLAG) {
-        if (session->flag_count >= RASTERFALL_MAX_FLAGS) return 0;
-        value = 250;
-    } else if (request->action == RASTERFALL_SHOP_ASSIGN_AI) {
-        return 0; /* Retired: flags no longer command actors. */
-    } else if (request->action == RASTERFALL_SHOP_UPGRADE_AI) {
-        if (request->target_actor < 0 ||
-            request->target_actor >= TOY_GAME_MAX_ACTORS) return 0;
-        actor = &g->actors[request->target_actor];
-        if (!actor->active || !actor->hired ||
-            actor->kind != TOY_GAME_ACTOR_AI ||
-            actor->class_id >= TOY_GAME_AI_LEVEL_3) return 0;
-        value = actor->class_id == TOY_GAME_AI_LEVEL_1 ?
-            TOY_CONFIG_AI_LEVEL_2_PRICE : TOY_CONFIG_AI_LEVEL_3_PRICE;
-    } else if (request->action == RASTERFALL_SHOP_CHANGE_AI_WEAPON) {
-        if (request->target_actor < 0 ||
-            request->target_actor >= TOY_GAME_MAX_ACTORS ||
-            !toy_game_weapon_is_valid(request->arg)) return 0;
-        actor = &g->actors[request->target_actor];
-        if (!actor->active || !actor->hired ||
-            actor->kind != TOY_GAME_ACTOR_AI) return 0;
-        value = request->arg == TOY_GAME_WEAPON_PISTOL ? 0 :
-            toy_game_weapon_price(request->arg) *
-            TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER;
-    } else return 0;
-    if (price) *price = value;
-    return g->money >= value;
-}
-
-int rasterfall_session_shop_execute(struct rasterfall_session *session,
-                                    const struct rasterfall_shop_request *request)
-{
-    int result = 0, price;
-    struct toy_game_actor *player;
-    if (!rasterfall_session_shop_can(session, request, &price)) return 0;
-    player = toy_game_local_player_actor(&session->game_state);
-    if (request->action == RASTERFALL_SHOP_BUY_WEAPON)
-        result = toy_game_buy_weapon(&session->game_state, player, request->item);
-    else if (request->action == RASTERFALL_SHOP_HIRE_AI)
-        result = session_hire_ai(session, request->item);
-    else if (request->action == RASTERFALL_SHOP_BUY_FLAG)
-        result = session_buy_flag(session);
-    else if (request->action == RASTERFALL_SHOP_ASSIGN_AI) {
-        return 0;
-    } else if (request->action == RASTERFALL_SHOP_UPGRADE_AI)
-        result = toy_game_upgrade_ai(&session->game_state,
-                                     request->target_actor);
-    else if (request->action == RASTERFALL_SHOP_CHANGE_AI_WEAPON)
-        result = session_change_ai_weapon(session, request->target_actor,
-                                          request->arg);
-    (void)price;
-    if (result > 0) {
-        session->banner_success = 1;
-        session->banner_ms = 1600;
-        session->banner_text = request->action == RASTERFALL_SHOP_BUY_FLAG ?
-            "FLAG PURCHASED" : request->action == RASTERFALL_SHOP_HIRE_AI ?
-            "AI HIRED" : request->action == RASTERFALL_SHOP_UPGRADE_AI ?
-            "AI UPGRADED" : "WEAPON PURCHASED";
-    }
-    return result;
-}
-
-void rasterfall_session_shop_input(struct rasterfall_session *session,
-                                   int up, int down, int left, int right,
-                                   int enter, int esc)
-{
-    int weapon;
-    if (!session || !session->shop_open) return;
-    if (esc) {
-        if (session->shop_page == 8) {
-            session->shop_page = 7;
-            session->shop_selected = 0;
-        } else if (session->shop_page) {
-            session->shop_page = 0;
-            session->shop_selected = 0;
-        } else {
-            session->shop_open = 0;
-            toy_game_local_player_actor(&session->game_state)->control_disabled = 0;
-        }
-        return;
-    }
-    if (!session->shop_page) {
-        if (up) session->shop_nav_selected =
-            (session->shop_nav_selected + 6) % 7;
-        if (down) session->shop_nav_selected =
-            (session->shop_nav_selected + 1) % 7;
-        if (enter) {
-            session->shop_page = session->shop_nav_selected == 4 ? 6 :
-                                 session->shop_nav_selected == 5 ? 7 :
-                                 session->shop_nav_selected == 6 ? 9 :
-                                 session->shop_nav_selected + 1;
-            session->shop_selected = 0;
-        }
-        return;
-    }
-    if (session->shop_page == 9) return;
-    if (session->shop_page == 3) {
-        if (enter) {
-            if (session->shop_request_only) {
-                session->banner_success = 1;
-                session->banner_ms = 1600;
-                session->banner_text = "FLAG PURCHASED";
-                return;
-            }
-            struct rasterfall_shop_request request = {
-                RASTERFALL_SHOP_BUY_FLAG, 0, -1, 0
-            };
-            int result = session->shop_request_only ? 0 :
-                         rasterfall_session_shop_execute(session, &request);
-            session->banner_ms = 1600; session->banner_success = result;
-            session->banner_text = result ? "FLAG PURCHASED" : "NOT ENOUGH MONEY";
-        }
-        return;
-    }
-    if (session->shop_page == 4 || session->shop_page == 5) return;
-    if (session->shop_page == 6) {
-        int indices[TOY_GAME_MAX_ACTORS], count;
-        count = session_collect_hired_ai(session, indices);
-        if (count <= 0) return;
-        if (up) session->shop_selected =
-            (session->shop_selected + count - 1) % count;
-        if (down) session->shop_selected =
-            (session->shop_selected + 1) % count;
-        if (session->shop_selected >= count) session->shop_selected = 0;
-        if (enter && !session->shop_request_only) {
-            struct rasterfall_shop_request request = {
-                RASTERFALL_SHOP_UPGRADE_AI, 0,
-                indices[session->shop_selected], 0
-            };
-            int result = rasterfall_session_shop_execute(session, &request);
-            session->banner_success = result;
-            session->banner_ms = 1600;
-            session->banner_text = result ? "AI UPGRADED" : "NOT ENOUGH MONEY";
-        }
-        return;
-    }
-    if (session->shop_page == 7) {
-        int indices[TOY_GAME_MAX_ACTORS], count;
-        count = session_collect_hired_ai(session, indices);
-        if (count <= 0) return;
-        if (up) session->shop_selected = (session->shop_selected + count - 1) % count;
-        if (down) session->shop_selected = (session->shop_selected + 1) % count;
-        if (enter) {
-            session->assignment_flag = indices[session->shop_selected];
-            session->shop_page = 8;
-            session->shop_selected = 0;
-        }
-        return;
-    }
-    if (session->shop_page == 8) {
-        static const int weapons[] = { TOY_GAME_WEAPON_PISTOL,
-            TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
-            TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
-        if (up) session->shop_selected = (session->shop_selected + 4) % 5;
-        if (down) session->shop_selected = (session->shop_selected + 1) % 5;
-        if (enter) {
-            struct rasterfall_shop_request request = {
-                RASTERFALL_SHOP_CHANGE_AI_WEAPON, 0,
-                session->assignment_flag, weapons[session->shop_selected]
-            };
-            int result = session->shop_request_only ? 1 :
-                rasterfall_session_shop_execute(session, &request);
-            session->banner_success = result;
-            session->banner_ms = 1600;
-            session->banner_text = result ? "AI WEAPON CHANGED" : "NOT ENOUGH MONEY";
-        }
-        return;
-    }
-    if (session->shop_page == 1) {
-        int count = 8, selected = session->shop_selected;
-        (void)left; (void)right;
-        if (up) selected = (selected + count - 1) % count;
-        if (down) selected = (selected + 1) % count;
-        session->shop_selected = selected;
-    } else {
-        if (up) session->shop_selected = (session->shop_selected + 4) % 5;
-        if (down) session->shop_selected = (session->shop_selected + 1) % 5;
-    }
-    if (enter) {
-        if (session->shop_request_only) {
-            session->banner_success = 1;
-            session->banner_ms = 2000;
-            session->banner_text = session->shop_page == 1 ?
-                "WEAPON PURCHASED" : "AI HIRED";
-            return;
-        }
-        if (session->shop_page == 1) {
-            static const int weapons[] = { TOY_GAME_WEAPON_SMG,
-                TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
-                TOY_GAME_WEAPON_AWP, TOY_GAME_WEAPON_AXE,
-                TOY_GAME_WEAPON_BOMB, TOY_GAME_WEAPON_MOLOTOV,
-                TOY_GAME_WEAPON_PILL };
-            weapon = weapons[session->shop_selected];
-            {
-                struct rasterfall_shop_request request = {
-                    RASTERFALL_SHOP_BUY_WEAPON, weapon, -1, 0
-                };
-                int result = rasterfall_session_shop_execute(session, &request);
-                session->banner_ms = 2000;
-                session->banner_success = result > 0;
-                session->banner_text = result > 0 ?
-                    (result == 2 ? "WEAPON UNLOCKED" : "WEAPON EQUIPPED") :
-                    "NOT ENOUGH MONEY";
-            }
-        } else {
-            weapon = -1;
-            {
-                struct rasterfall_shop_request request = {
-                    RASTERFALL_SHOP_HIRE_AI, session->shop_selected, -1, 0
-                };
-                int result = rasterfall_session_shop_execute(session, &request);
-                session->banner_ms = 2000;
-                session->banner_success = result > 0;
-                session->banner_text = result > 0 ? "AI HIRED" :
-                    result < 0 ? "NO AVAILABLE AI POSITION" :
-                    "NOT ENOUGH MONEY";
-            }
-        }
-    }
-}
-
-int rasterfall_session_shop_request(struct rasterfall_session *session,
-                                    int action, int item, int arg)
-{
-    struct rasterfall_shop_request request;
-    request.action = action;
-    request.item = item;
-    request.target_actor = action == RASTERFALL_SHOP_ASSIGN_AI ||
-                           action == RASTERFALL_SHOP_UPGRADE_AI ||
-                           action == RASTERFALL_SHOP_CHANGE_AI_WEAPON ?
-                           (action == RASTERFALL_SHOP_CHANGE_AI_WEAPON ?
-                            item : arg) : -1;
-    request.arg = action == RASTERFALL_SHOP_CHANGE_AI_WEAPON ? arg : 0;
-    if (action == RASTERFALL_SHOP_ASSIGN_AI) {
-        request.item = item;
-        request.target_actor = arg;
-    } else if (action == RASTERFALL_SHOP_UPGRADE_AI) {
-        request.target_actor = item;
-    } else if (action == RASTERFALL_SHOP_CHANGE_AI_WEAPON) {
-        request.target_actor = item;
-        request.arg = arg;
-    }
-    return rasterfall_session_shop_execute(session, &request);
-}
-
-int rasterfall_session_shop_actor_at(const struct rasterfall_session *session,
-    int flag_index,int selection)
-{
-    (void)session;(void)flag_index;(void)selection;return -1;
 }
 
 static void session_update_manual_alarm(struct rasterfall_session *session,
@@ -2360,7 +1873,7 @@ static int session_managed_ai_weapon_master(
         TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
         TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP
     };
-    int target_weapon, shop = -1, ammo = -1, i;
+    int target_weapon, pickup = -1, ammo = -1, i;
     int dx, dz, distance;
     const struct toy_game_weapon_info *info;
     struct toy_game_actor *player;
@@ -2462,23 +1975,26 @@ static int session_managed_ai_weapon_master(
     info = toy_game_weapon_info(target_weapon);
 
     for (i = 0; i < session->item_count; i++) {
-        if (session->items[i].kind == TOY_MAP_PICKUP_SHOP) shop = i;
+        if (session->items[i].weapon == target_weapon &&
+            (session->items[i].kind == TOY_MAP_PICKUP_WEAPON ||
+             session->items[i].kind == TOY_MAP_PICKUP_SMG ||
+             session->items[i].kind == TOY_MAP_PICKUP_SHOTGUN)) pickup = i;
         else if (session->items[i].kind == TOY_MAP_PICKUP_AMMO &&
                  /* This is the ammo box beside the central base. */
                  session->items[i].x > 0 && session->items[i].z > -2000)
             ammo = i;
     }
-    if (shop < 0 || ammo < 0 || !info) return 0;
+    if (pickup < 0 || ammo < 0 || !info) return 0;
 
     if (session->managed_ai_weapon_master_route <= 2) {
         int route_x = session->managed_ai_weapon_master_route == 0 ? 0 :
                       session->managed_ai_weapon_master_route == 1 ? 0 :
-                      session->items[shop].x;
+                      session->items[pickup].x;
         int route_z = session->managed_ai_weapon_master_route == 0 ? -3500 :
                       session->managed_ai_weapon_master_route == 1 ? -4500 :
-                      session->items[shop].z;
-        dx = session->items[shop].x - camera->x;
-        dz = session->items[shop].z - camera->z;
+                      session->items[pickup].z;
+        dx = session->items[pickup].x - camera->x;
+        dz = session->items[pickup].z - camera->z;
         distance = isqrt((long long)dx * dx + (long long)dz * dz);
         distance = isqrt((long long)(route_x - camera->x) *
                          (route_x - camera->x) +
@@ -2487,21 +2003,9 @@ static int session_managed_ai_weapon_master(
         if (distance <= 350) {
             if (session->managed_ai_weapon_master_route < 2) {
                 session->managed_ai_weapon_master_route++;
-            } else if (toy_game_weapon_unlocked(&session->game_state,
-                                                 target_weapon)) {
-                toy_game_actor_equip_weapon(&session->game_state, player,
-                                            target_weapon);
+            } else {
+                toy_game_actor_equip_weapon(&session->game_state, player, target_weapon);
                 session->managed_ai_weapon_master_route = 3;
-            } else if (session->game_state.money >=
-                       toy_game_weapon_price(target_weapon)) {
-                /* Deliberately bypass the shop UI: range and money are
-                 * checked here, then the authoritative purchase function. */
-                if (toy_game_buy_weapon(&session->game_state, player,
-                                        target_weapon) > 0) {
-                    session->managed_ai_weapon_master_route = 3;
-                    session->banner_ms = 1200;
-                    session->banner_text = "MANAGED AI BOUGHT WEAPON";
-                }
             }
         }
         if (!session_managed_ai_face(camera, route_x, route_z, dt_ms))
@@ -2577,8 +2081,6 @@ static void session_build_managed_ai_command(
     memset(command, 0, sizeof(*command));
     if (toy_game_local_player_actor_const(&session->game_state)->state ==
         TOY_GAME_ACTOR_DOWNED) {
-        if (session->game_state.money >= RASTERFALL_PAID_REVIVE_COST)
-            command->buttons = RASTERFALL_CMD_REVIVE;
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
@@ -2963,7 +2465,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     } else if (session_managed_ai_active(session)) {
         memset(&managed_command, 0, sizeof(managed_command));
         /* Weapon-master preparation owns the command while it is travelling
-         * through the shop route.  The generic calm route must not retarget
+         * through the weapon pickup route.  The generic calm route must not retarget
          * or rotate the player in the middle of that fixed path. */
         if (!session_managed_ai_weapon_master(session, camera,
                                               &managed_command, dt_ms))
@@ -2971,9 +2473,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
                                              dt_ms);
         command = &managed_command;
     }
-    if ((command->buttons & RASTERFALL_CMD_REVIVE) &&
-        rasterfall_session_paid_revive(session, camera))
-        return;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_FLAG)
         session_toggle_flag(session, camera);
@@ -3143,13 +2642,6 @@ int rasterfall_session_dev_killall(struct rasterfall_session *session)
     return killed;
 }
 
-void rasterfall_session_dev_give_money(struct rasterfall_session *session,
-                                       int amount)
-{
-    if (!session || amount <= 0) return;
-    session->game_state.money += amount;
-}
-
 static void session_step_client_mode(struct rasterfall_session *session,
                                      struct camera *camera,
                                      const struct rasterfall_command *command,
@@ -3175,9 +2667,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
         rasterfall_session_reset(session, camera, session->seed);
         return;
     }
-    if ((command->buttons & RASTERFALL_CMD_REVIVE) &&
-        rasterfall_session_paid_revive(session, camera))
-        return;
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_JUMP)
         session_jump_player(session, camera, command);

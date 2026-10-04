@@ -19,7 +19,6 @@ static void rf_idle_lab_remove(struct toy_game *g,int i)
 {
     struct toy_game_actor *a=rf_idle_lab_actor(g,i);
     if(a) {
-        g->money-=a->combat_stats.money_earned;
         memset(a,0,sizeof(*a));
     }
 }

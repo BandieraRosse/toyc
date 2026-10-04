@@ -202,7 +202,6 @@ pickup smg -250 -7450 -235
 pickup shotgun 250 -7450 -235
 pickup ammo 880 -7480 -520
 pickup ammo 450 900 -500
-pickup shop 1740 -4800 0
 pickup ak -700 -7450 -235
 pickup awp 700 -7450 -235
 pickup axe -1050 -7450 -235
@@ -218,8 +217,6 @@ button_fast -23940 -9000 200
 button_smoker 4200 -7600 -250
 button_charger 4700 -7600 -250
 button_tank 5200 -7600 -250
-button_money 5600 -8600 -250
-button_clear_hired 5600 -9200 -250
 # 敌人死亡表现测试：按钮前方空地生成 Common/Fast/Heavy 各两只并立即走正式致死伤害路径。
 label 10500 17500 -14100 -13900 FFD060 ENEMY_DEATH_PRESENTATION
 button_enemy_death_test 14000 -10500 -250

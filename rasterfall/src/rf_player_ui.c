@@ -449,20 +449,6 @@ static void ui_weapon(struct rasterfall_canvas *canvas,const struct rasterfall_h
     }
 }
 
-static void ui_top(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
-                    const struct rf_ui_layout *layout)
-{
-    const struct rf_ui_theme *theme=&hud->player_ui->theme;
-    const struct toy_game *game=hud->game;
-    int scale=layout->text_scale_milli,pad=layout->padding;
-    char line[160],key[24];
-    struct rf_ui_rect r=layout->resources;
-    rf_ui_panel(canvas,r,theme,0);
-    ui_label(&hud->player_ui_view,RF_ACTION_CANCEL,key,sizeof(key));
-    snprintf(line,sizeof(line),"$ %d   [%s] 菜单",game->money,key);
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+(r.h-ui_px(16,scale))/2,r.w-pad*2,ui_px(18,scale)),line,theme->warning,scale,1);
-}
-
 void rf_player_ui_map_view(struct rf_minimap_view *m,const struct rf_player_ui_state *state,
                            const struct rf_player_ui_view *view,
                            const struct toy_game_actor *player,int width,int height)
@@ -555,11 +541,10 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     const struct rf_player_ui_view *view=&hud->player_ui_view;
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
     struct rf_ui_layout layout;
-    char line[192],mode[24],terminal[24],map[24];
+    char line[192],mode[24],terminal[24],map[24],menu[24];
     if (!canvas || !hud->game) return;
     rf_ui_layout_resolve(&layout,hud->player_ui,canvas->width,canvas->height,view->rts_active);
     if(view->rts_active)rts_world_feedback(canvas,hud,&layout);
-    ui_top(canvas,hud,&layout);
     ui_fps(canvas,theme,&layout,fps);
     if (view->rts_active) {
         rf_ui_button(canvas,layout.dock_toggle,theme,hud->player_ui->rts_collapsed?"展开底栏":"收起底栏",
@@ -570,7 +555,8 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     ui_label(view,RF_ACTION_COMMAND_MODE,mode,sizeof(mode));
     ui_label(view,RF_ACTION_CONSOLE,terminal,sizeof(terminal));
     ui_label(view,RF_ACTION_COMMS_FOCUS,map,sizeof(map));
-    snprintf(line,sizeof(line),"[%s] %s  [%s] 终端  [%s] 信息栏",mode,
+    ui_label(view,RF_ACTION_CANCEL,menu,sizeof(menu));
+    snprintf(line,sizeof(line),"[%s] 菜单  [%s] %s  [%s] 终端  [%s] 信息栏",menu,mode,
         view->rts_active?"FPS":"战术视角",terminal,map);
     if (view->hints && layout.hints.w>ui_px(200,layout.text_scale_milli) &&
         !(view->rts_active && hud->player_ui->rts_collapsed)) {
@@ -606,14 +592,14 @@ void rf_player_ui_prompt_layout(struct rasterfall_canvas *canvas,const struct ra
     const char *title=view->interaction_title,*action=view->interaction_action;
     char line[192],key[24];
     int scale,width,y;
-    if (view->rts_active || view->modal || hud->shop_open) return;
+    if (view->rts_active || view->modal) return;
     rf_ui_layout_resolve(&layout,hud->player_ui,canvas->width,canvas->height,0);
     scale=layout.text_scale_milli;
     if (!title || !*title) {
         if (hud->flag_carried || hud->flag_near) { title="队伍旗帜";action=hud->flag_carried?"放置旗帜":"携带旗帜"; }
         else if (hud->highlighted>=0 && hud->highlighted<hud->interactable_count) {
             int kind=hud->interactables[hud->highlighted].kind;
-            title=kind==TOY_MAP_PICKUP_SHOP?"军械库":kind==TOY_MAP_PICKUP_AMMO?"弹药补给":
+            title=kind==TOY_MAP_PICKUP_AMMO?"弹药补给":
                 kind==TOY_MAP_PICKUP_OPERATIONS_TERMINAL?"行动部署":
                 kind==TOY_MAP_PICKUP_STATION_TERMINAL?"前哨站终端":
                 kind==TOY_MAP_PICKUP_RETURN_OUTPOST?"返回前哨站":"可交互对象";

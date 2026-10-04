@@ -224,7 +224,7 @@ clock 的 ready 状态；它不创建窗口、不启动终端，也不参与生�
 RF Command Runtime V0 由 `rasterfall_console_command` 注册表和 `rf_command_context` 组成，当前由
 Developer Console 这个 frontend 使用。`rf_terminal_session` 持有输入 buffer、history 和最近一次
 `rf_command_output`；session 只负责把命令交给 registry/handler，并不复制 command registry、handler
-或 permission logic。当前 `killall`、`give+N`、`pose`、`help`、`clear`、`status`、`runtime` 和
+或 permission logic。当前 `killall`、`pose`、`help`、`clear`、`status`、`runtime` 和
 `services` 均走同一注册/分发路径。`status` 组合 Core/Game snapshot，`runtime` 只读 Game snapshot，
 `services` 只读 Core snapshot；命令层不读取内部 service、session、actor 或 renderer state。
 
@@ -295,7 +295,7 @@ Windows 每批鼠标事件保留第一次按下及其 `button_x/button_y`，松�
 
 默认游戏操作为 WASD 移动、方向键看向、鼠标左键开火、Enter 打开/收起聊天、Space 跳跃、斜杠推开、R 换弹、
 1 至 4 切换槽位、E 互动、F 放旗、M 切换 RTS；Esc 暂停或返回，F1 打开渲染终端，
-F2 与反引号共用玩家终端开关，F3 无默认功能，F12 请求 Desktop。暂停/商店/启动菜单使用方向键、
+F2 与反引号共用玩家终端开关，F3 无默认功能，F12 请求 Desktop。暂停/启动菜单使用方向键、
 Enter、Esc；Tab 显示记分板或翻动姿态编辑页。姿态编辑的逗号/句号、J/L、R/P、U/O/I/V、
 X/Y/Z 和骨骼调试的 N/B、减号/等号保留原有功能。具体默认物理码以
 `src/rf_input_bindings.c` 为准。平台输入边沿先进入 Core，Game 在未跑固定逻辑步时保留物理键边沿，

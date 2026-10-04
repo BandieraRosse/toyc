@@ -102,7 +102,6 @@ static void rf_combat_cleanup(struct rf_game_runtime *runtime)
         struct rf_combat_member *m=&rf_combat_lab.members[i];
         struct toy_game_actor *owned=m->enemy_slot<0?rf_combat_owned_actor(g,m):NULL;
         if(m->enemy_slot<0 && !owned)continue;
-        if(owned)g->money-=owned->combat_stats.money_earned;
         if(m->enemy_slot>=0) {
             struct toy_game_enemy *e=&g->enemies[m->enemy_slot];
             if(e->active==1 && e->hp>0 && g->enemies_alive>0)g->enemies_alive--;
@@ -122,7 +121,6 @@ static void rf_combat_cleanup(struct rf_game_runtime *runtime)
         memset(&s->flags[rf_combat_lab.flag_index],0,sizeof(s->flags[0]));
         while(s->flag_count>rf_combat_lab.old_flag_count && !s->flags[s->flag_count-1].active)s->flag_count--;
         if(s->carried_flag==rf_combat_lab.flag_index)s->carried_flag=-1;
-        if(s->assignment_flag==rf_combat_lab.flag_index)s->assignment_flag=-1;
     }
     *toy_game_local_player_actor(g)=rf_combat_lab.previous_player;
     runtime->camera=rf_combat_lab.previous_camera;

@@ -2456,34 +2456,6 @@ static int run_logic_test(void)
         return 134;
     if (session.flags[0].x != 240 || session.flags[0].z != -120)
         return 135;
-    /* 单人商店 API：查询与执行必须使用同一套价格/合法性规则；AI
-     * 条件查询只读游戏状态，不能偷偷改变经济或库存。 */
-    {
-        struct rasterfall_shop_request shop = {
-            RASTERFALL_SHOP_BUY_WEAPON, TOY_GAME_WEAPON_SMG, -1, 0
-        };
-        int price = 0;
-        const struct toy_game_actor *ai = &session.game_state.actors[0];
-        if (!rasterfall_session_shop_can(&session, &shop, &price) ||
-            price != TOY_GAME_PRICE_SMG ||
-            toy_game_actor_health_percent(ai) <= 0 ||
-            toy_game_actor_ammo_percent(ai) < 0 ||
-            toy_game_count_active_enemies(&session.game_state) != 0 ||
-            toy_game_count_downed_actors(&session.game_state) != 0 ||
-            toy_game_nearest_enemy_distance(&session.game_state, ai) != -1)
-            return 142;
-        if (rasterfall_session_shop_execute(&session, &shop) != 2 ||
-            session.game_state.money != 0 ||
-            !toy_game_weapon_unlocked(&session.game_state,
-                                      TOY_GAME_WEAPON_SMG)) return 143;
-        shop.item = TOY_GAME_WEAPON_AWP;
-        if (rasterfall_session_shop_can(&session, &shop, &price)) return 143;
-        rasterfall_session_reset(&session, &camera, 1);
-    }
-    {
-        if (rasterfall_session_shop_actor_at(&session,0,0)!=-1 ||
-            rasterfall_session_shop_request(&session,4,0,1)!=0)return 136;
-    }
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
     if (session.item_count > 0) {
         memset(&command, 0, sizeof(command));
@@ -2555,8 +2527,7 @@ static int run_logic_test(void)
             !ai_observation.at_deployment) return 144;
         toy_game_ai_decision_clear(&ai_decision);
         if (ai_decision.target_enemy != -1 ||
-            ai_decision.switch_weapon != -1 ||
-            ai_decision.shop_action != 0) return 145;
+            ai_decision.switch_weapon != -1) return 145;
         rasterfall_ai_registry_init(&ai_registry);
         rasterfall_ai_registry_sync(&ai_registry, &ai_observe_test);
         if (ai_registry.count != 1 ||
@@ -2704,11 +2675,10 @@ static int run_logic_test(void)
             return 55;
         toy_game_init(&throwable_test, 4);
         throwable_player = toy_game_local_player_actor(&throwable_test);
-        throwable_test.money = 200;
-        if (toy_game_buy_weapon(&throwable_test, throwable_player,
+        if (toy_game_actor_equip_weapon(&throwable_test, throwable_player,
                                 TOY_GAME_WEAPON_BOMB) <= 0 ||
             throwable_player->slots[2].weapon != TOY_GAME_WEAPON_BOMB ||
-            toy_game_buy_weapon(&throwable_test, throwable_player,
+            toy_game_actor_equip_weapon(&throwable_test, throwable_player,
                                 TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
             throwable_player->slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV)
             return 137;
@@ -5011,7 +4981,7 @@ death_fixture_done:
             game.enemies[0].z != old_z ||
             game.enemies[0].shove_stun_ms != 0) return 130;
     }
-    /* Tank 击杀奖励独立于普通特感，固定为 50。 */
+    /* Tank 击杀仍记录普通击杀和特感击杀统计。 */
     {
         toy_game_init(&game, 85);
         game.primitive_count = 0; game.room_limit = 12000; game.to_spawn = 0;
@@ -5021,11 +4991,9 @@ death_fixture_done:
         game.enemies[0].type = TOY_GAME_ENEMY_TANK;
         game.enemies[0].hp = 1;
         game.enemies[0].x = 0; game.enemies[0].z = 1000;
-        game.money = 0;
         toy_game_actor_fire(&game, toy_game_local_player_actor(&game),
                             0, 1024, 100);
-        if (game.money != 50 ||
-            toy_game_local_player_actor(&game)->special_kills != 1) return 129;
+        if (toy_game_local_player_actor(&game)->special_kills != 1) return 129;
     }
     {
         int result = rasterfall_net_pipeline_test();
@@ -5367,33 +5335,24 @@ death_fixture_done:
             toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_3) != 28 ||
             toy_game_ai_level_combat_power(-1) != 0) return 138;
     }
-    /* Consumable shop items charge per purchase and stop at their inventory
-     * caps; buying the other throwable replaces the current throwable. */
+    /* Consumable pickups retain their caps and replace a different throwable. */
     {
-        int i;
         struct toy_game_actor *player;
         toy_game_init(&game, 141);
         player = toy_game_local_player_actor(&game);
-        game.money = 1000;
-        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) <= 0 ||
-            player->slots[2].mag != 1) return 142;
-        for (i = 0; i < TOY_GAME_THROWABLE_MAX - 1; i++)
-            if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) <= 0) return 143;
-        if (player->slots[2].mag != TOY_GAME_THROWABLE_MAX ||
-            toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_BOMB) != -1) return 144;
-        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
-            player->slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
+        for (int i = 0; i < TOY_GAME_THROWABLE_MAX + 2; ++i)
+            toy_game_actor_equip_weapon(&game, player, TOY_GAME_WEAPON_BOMB);
+        if (player->slots[2].weapon != TOY_GAME_WEAPON_BOMB ||
+            player->slots[2].mag != TOY_GAME_THROWABLE_MAX) return 144;
+        toy_game_actor_equip_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV);
+        if (player->slots[2].weapon != TOY_GAME_WEAPON_MOLOTOV ||
             player->slots[2].mag != 1) return 148;
-        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV) <= 0 ||
-            player->slots[2].mag != 2) return 149;
-        toy_game_init(&game, 142);
-        player = toy_game_local_player_actor(&game);
-        game.money = 1000;
-        if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) <= 0) return 145;
-        for (i = 1; i < TOY_GAME_PILL_MAX; i++)
-            if (toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) <= 0) return 146;
-        if (player->slots[3].mag != TOY_GAME_PILL_MAX ||
-            toy_game_buy_weapon(&game, player, TOY_GAME_WEAPON_PILL) != -1) return 147;
+        toy_game_actor_equip_weapon(&game, player, TOY_GAME_WEAPON_MOLOTOV);
+        if (player->slots[2].mag != 2) return 149;
+        for (int i = 0; i < TOY_GAME_PILL_MAX + 2; ++i)
+            toy_game_actor_equip_weapon(&game, player, TOY_GAME_WEAPON_PILL);
+        if (player->slots[3].weapon != TOY_GAME_WEAPON_PILL ||
+            player->slots[3].mag != TOY_GAME_PILL_MAX) return 147;
     }
     /* Ground-aware traversal must be consumed by behavior, not only stored in
      * the navigation grid: enemies climb and descend, while a companion that

@@ -158,7 +158,7 @@ void rasterfall_options_usage(int fd)
         "  --character-performance-suite [warmup] [frames] [repeats] [workers]\n"
         "  --render-performance [iterations] (headless world/enemy cost ablations)\n"
         "  --gpu-normal-scene <view> <0|10|20|30|60> (normal deterministic Campaign runtime; views listed above)\n"
-        "    UI views: ui-pause|ui-scoreboard|ui-shop|ui-over|ui-won\n"
+        "    UI views: ui-pause|ui-scoreboard|ui-over|ui-won\n"
         "    Corridor: west-empty 0; west-button|west-button-no-tank 0|16|32|64 (0 means 16; buttons at frame 61)\n"
         "  --gpu-frame-capture <output.bmp> [--gpu-capture-frame <N>] (native mixed GPU final image; with --frame-audit also writes <output.bmp>.scene.ppm; independent Scene preview writes only <output.bmp>.scene.ppm; default frame 30)\n"
         "  --gpu-wave-repro (start the real wave timer immediately in the loaded world)\n"
@@ -426,7 +426,6 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"frame-effects") &&
                  strcmp(o->gpu_normal_view,"ui-pause") &&
                  strcmp(o->gpu_normal_view,"ui-scoreboard") &&
-                 strcmp(o->gpu_normal_view,"ui-shop") &&
                  strcmp(o->gpu_normal_view,"ui-over") &&
                  strcmp(o->gpu_normal_view,"ui-won") &&
                  strcmp(o->gpu_normal_view,"enemy-tongue") &&

@@ -591,7 +591,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     }
     if (!input->paused && input->source_game->state==TOY_GAME_PLAYING) {
         rasterfall_hud_layout(&canvas,input->fps,&input->hud);
-        if (!input->hud.shop_open) rasterfall_hud_prompt_layout(&canvas,&input->hud);
+        rasterfall_hud_prompt_layout(&canvas,&input->hud);
     }
     for (int i=0;i<RASTERFALL_EFFECT_INSTANCE_SLOTS;++i) {
         const struct rasterfall_effect_instance *p=&input->source_effects->instances[i];

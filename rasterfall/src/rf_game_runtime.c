@@ -727,13 +727,7 @@ static void fill_hud_state(struct rasterfall_hud_state *hud,
     hud->net = net_state;
     hud->host_address = host_address;
     hud->host_port = host_port;
-    hud->shop_open = session.shop_open;
-    hud->shop_page = session.shop_page;
-    hud->shop_selected = session.shop_selected;
-    hud->shop_nav_selected = session.shop_nav_selected;
-    hud->shop_scroll = session.shop_scroll;
     hud->flag_count = session.flag_count;
-    hud->assignment_flag = session.assignment_flag;
     hud->flag_carried = session.carried_flag >= 0;
     hud->pose_debug_active = session.pose_debug_active;
     hud->pose_debug_bone = session.pose_debug_bone;
@@ -2870,7 +2864,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
                     if ((runtime->command.buttons & RASTERFALL_CMD_INTERACT) &&
                         game_session->highlight_index >= 0 &&
                         game_session->highlight_index < game_session->item_count)
-                        runtime->command.shop_arg =
+                        runtime->command.interact_kind =
                             game_session->items[game_session->highlight_index].kind + 1;
                     rasterfall_net_send_command(
                         game_net, &runtime->command, game_camera,
@@ -3138,7 +3132,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             (rf_labs.requested[RF_LAB_WEAPON_CYCLE] && rasterfall_render_outpost_weapon_cycle_status()<0))
             rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
                 "MODEL UNAVAILABLE - CHECK ASSET INSTALL",0xFFAA66);
-        if (runtime->player_controls.crosshair && !runtime->rts_active && !runtime->session->shop_open &&
+        if (runtime->player_controls.crosshair && !runtime->rts_active &&
             toy_game_local_player_actor_const(state)->state != TOY_GAME_ACTOR_DOWNED)
             draw_crosshair(canvas, state);
         if (!runtime->session->pose_editor.active &&
@@ -3254,7 +3248,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     audit_commands = rf_world_audit_command_position(runtime, renderer);
     audit_start = rf_core_clock_now_us();
     if (game_session->game_state.state == TOY_GAME_PLAYING &&
-        !runtime->lifecycle_paused && !game_session->shop_open)
+        !runtime->lifecycle_paused)
         pixels += rasterfall_render_interactables(renderer, render_camera);
     rf_world_submission_audit.interaction_commands =
         rf_world_audit_command_position(runtime, renderer) - audit_commands;
@@ -3356,8 +3350,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                        runtime->host_port, body_camera);
         rf_player_hud_fill(runtime,&hud,renderer->surface.width,renderer->surface.height);
         rasterfall_hud_layout(&ui_canvas, runtime->display_fps, &hud);
-        if (!hud.shop_open)
-            rasterfall_hud_prompt_layout(&ui_canvas, &hud);
+        rasterfall_hud_prompt_layout(&ui_canvas, &hud);
     }
     flushed = rasterfall_render_overlays(renderer);
     pixels += flushed;
@@ -4456,7 +4449,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             paused=1;pause_menu.selected=PAUSE_ITEM_MOUSE;
             settings.mouse_level=7;settings.keyboard_level=8;
         }
-        if (!strcmp(options.gpu_normal_view,"ui-shop")) session.shop_open=1;
         if (!strcmp(options.gpu_normal_view,"ui-over")) game.state=TOY_GAME_OVER;
         if (!strcmp(options.gpu_normal_view,"ui-won")) game.state=TOY_GAME_WON;
         if (!strcmp(options.gpu_normal_view,"actor-procedural")) {
@@ -5130,17 +5122,6 @@ startup_again:
                                        RASTERFALL_CONSOLE_WARNING, message);
             }
         }
-        if (developer_console.give_requested > 0) {
-            int amount = developer_console.give_requested;
-            rasterfall_session_dev_give_money(&session, amount);
-            developer_console.give_requested = 0;
-            {
-                char message[64];
-                snprintf(message, sizeof(message), "money +%d", amount);
-                rasterfall_console_log(&developer_console,
-                                       RASTERFALL_CONSOLE_INFO, message);
-            }
-        }
         if (developer_console.open) {
             fire_edge = 0;
             shove_edge = 0;
@@ -5310,11 +5291,11 @@ startup_again:
             }
         }
         rf_weaver_configure(&session, net.mode == RASTERFALL_NET_OFF);
-        if(game.state!=TOY_GAME_PLAYING || session.shop_open || session.pose_editor.active)
+        if(game.state!=TOY_GAME_PLAYING || session.pose_editor.active)
             game_runtime.comms_focus=0;
         if(!paused && !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
            !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open &&
-           game.state==TOY_GAME_PLAYING && !session.shop_open && !session.pose_editor.active &&
+           game.state==TOY_GAME_PLAYING && !session.pose_editor.active &&
            !rf_combat_modal() && !rf_perf_lab.menu_open && !rf_perf_lab.result_open) {
             if(rf_player_comms_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height)) {
                 rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
@@ -5329,7 +5310,7 @@ startup_again:
             !rf_combat_modal() && !rf_combat_lab.running && !rf_perf_lab.running &&
             !rf_perf_lab.menu_open && !rf_perf_lab.result_open &&
             !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
-            !session.shop_open && game.state == TOY_GAME_PLAYING &&
+            game.state == TOY_GAME_PLAYING &&
             (game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT ||
              !(session.weaver_item_serial && session.highlight_index == session.weaver_item_index)) &&
             rf_weaver_near(&session, camera.x, camera.z);
@@ -5624,7 +5605,7 @@ startup_again:
                    (action_pressed(&input, RF_ACTION_TERMINAL) &&
                     !rf_table.open && !paused &&
                     !developer_console.open && !managed_terminal.open &&
-                    !game_runtime.gui.active && !session.shop_open &&
+                    !game_runtime.gui.active &&
                     net.mode == RASTERFALL_NET_OFF &&
                     game.state == TOY_GAME_PLAYING)) {
             pending_key_edges[KEY_E] = 0;
@@ -5670,7 +5651,7 @@ startup_again:
             rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
         }
-        if (!paused && !resumed && !session.shop_open &&
+        if (!paused && !resumed &&
             action_pressed(&input, RF_ACTION_CANCEL)) {
             if (game.state == TOY_GAME_OVER || game.state == TOY_GAME_WON)
                 running = 0;
@@ -5686,10 +5667,10 @@ startup_again:
                 __printf("rasterfall: paused, pointer released\n");
             }
         }
-        if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open || session.shop_open ||
+        if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
             rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             pending_key_edges[KEY_M] = 0;
-        if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open || session.shop_open ||
+        if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
             rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
         {
@@ -5709,7 +5690,7 @@ startup_again:
             }
         }
         if(game_runtime.player_controls.requested_view==game_runtime.rts_active)game_runtime.player_controls.requested_view=-1;
-        if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) && !session.shop_open &&
+        if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) &&
             !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING &&
             ((!developer_console.open && action_pressed(&input, RF_ACTION_COMMAND_MODE)) ||
@@ -5753,10 +5734,10 @@ startup_again:
         }
         rf_rts_sync(&game_runtime.rts,&game,session.scene_local.world_generation);
         if(!game_runtime.rts_active || paused || rf_combat_modal() || developer_console.open ||
-            game_runtime.comms_focus || session.shop_open || !input.keyboard_focused)
+            game_runtime.comms_focus || !input.keyboard_focused)
             game_runtime.rts.drag_active=0;
         if (game_runtime.rts_active && !paused && !rf_combat_modal() && !developer_console.open && !game_runtime.comms_focus &&
-            !session.shop_open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+            !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING) {
             struct camera rts_camera = camera;
             int64_t pan_now = rf_core_time_us(&core);
@@ -5962,31 +5943,6 @@ startup_again:
                 struct rasterfall_command command;
                 if (game_runtime.rts_active && !session.rts_active)
                     rasterfall_session_set_rts(&session, 1);
-                int shop_input = session.shop_open;
-                int shop_enter = action_pressed(&input, RF_ACTION_CONFIRM);
-                int shop_page_before = session.shop_page;
-                int shop_selected_before = session.shop_selected;
-                session.shop_request_only = net.mode == RASTERFALL_NET_CLIENT;
-                if (shop_input) {
-                    rasterfall_session_shop_input(
-                        &session,
-                        action_pressed(&input, RF_ACTION_UI_UP),
-                        action_pressed(&input, RF_ACTION_UI_DOWN),
-                        action_pressed(&input, RF_ACTION_UI_LEFT),
-                        action_pressed(&input, RF_ACTION_UI_RIGHT),
-                        action_pressed(&input, RF_ACTION_CONFIRM),
-                        action_pressed(&input, RF_ACTION_CANCEL));
-                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_UP);
-                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_DOWN);
-                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_LEFT);
-                    action_consume(&input, pending_physical_edges, RF_ACTION_UI_RIGHT);
-                    action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
-                    action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
-                    input.key_pressed[KEY_UP] = 0;
-                    input.key_pressed[KEY_DOWN] = 0;
-                    input.key_pressed[KEY_ENTER] = 0;
-                    input.key_pressed[KEY_ESC] = 0;
-                }
                 if (net.mode == RASTERFALL_NET_CLIENT && net.spawn_pending) {
                     camera.x = net.client_spawn_base.x;
                     camera.z = net.client_spawn_base.z;
@@ -6008,7 +5964,7 @@ startup_again:
                     !(net.mode == RASTERFALL_NET_CLIENT &&
                       (!net.connected || !net.world_ready))) {
                     if (rf_weaver_terminal.open || rf_render_terminal.open || rf_table.open || game_runtime.comms_focus ||
-                        resumed || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe) || shop_input)
+                        resumed || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe))
                         memset(&command, 0, sizeof(command));
                     else
                         if (developer_console.open)
@@ -6022,55 +5978,6 @@ startup_again:
                         command.buttons&=~RASTERFALL_CMD_FIRE;command.fire_held=0;fire_edge=0;
                         if(!action_down(&input,RF_ACTION_FIRE_KEY) && !(input.mouse_buttons&1))
                             rf_combat_lab.suppress_fire=0;
-                    }
-                    if (toy_game_local_player_actor_const(&game)->state ==
-                            TOY_GAME_ACTOR_DOWNED &&
-                        (command.buttons & RASTERFALL_CMD_FLAG)) {
-                        command.buttons &= ~RASTERFALL_CMD_FLAG;
-                        command.buttons |= RASTERFALL_CMD_REVIVE;
-                    }
-                    if (net.mode == RASTERFALL_NET_CLIENT && shop_input &&
-                        shop_enter && shop_page_before > 0) {
-                        command.buttons |= RASTERFALL_CMD_SHOP;
-                        if (shop_page_before == 1) {
-                            static const int shop_weapons[] = {
-                                TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
-                                TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP,
-                                TOY_GAME_WEAPON_AXE, TOY_GAME_WEAPON_BOMB,
-                                TOY_GAME_WEAPON_MOLOTOV, TOY_GAME_WEAPON_PILL };
-                            command.shop_action = 1;
-                            command.shop_item = shop_weapons[shop_selected_before];
-                        } else if (shop_page_before == 2) {
-                            command.shop_action = 2;
-                            command.shop_item = shop_selected_before;
-                        } else if (shop_page_before == 3) {
-                            command.shop_action = 3;
-                            command.shop_item = 0;
-                        } else if (shop_page_before == 5) {
-                            command.shop_action = 4;
-                            command.shop_item = session.assignment_flag;
-                            command.shop_arg = rasterfall_session_shop_actor_at(
-                                &session, session.assignment_flag,
-                                shop_selected_before);
-                        } else if (shop_page_before == 6) {
-                            int upgrade_indices[TOY_GAME_MAX_ACTORS];
-                            int upgrade_count = 0;
-                            for (int ai = 0; ai < TOY_GAME_REMOTE_ACTOR_BASE; ai++)
-                                if (session.game_state.actors[ai].active &&
-                                    session.game_state.actors[ai].kind == TOY_GAME_ACTOR_AI &&
-                                    session.game_state.actors[ai].hired)
-                                    upgrade_indices[upgrade_count++] = ai;
-                            command.shop_action = 5;
-                            command.shop_item = shop_selected_before < upgrade_count ?
-                                upgrade_indices[shop_selected_before] : -1;
-                        } else if (shop_page_before == 8) {
-                            static const int ai_weapons[] = { TOY_GAME_WEAPON_PISTOL,
-                                TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
-                                TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
-                            command.shop_action = 6;
-                            command.shop_item = session.assignment_flag;
-                            command.shop_arg = ai_weapons[shop_selected_before];
-                        }
                     }
                     if (action_down(&input, RF_ACTION_POSE_PAGE) &&
                         action_pressed(&input, RF_ACTION_RELOAD)) {
@@ -6093,7 +6000,7 @@ startup_again:
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
                     rf_player_story_tick(&game_runtime,FIXED_STEP_US/1000,
-                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !shop_input);
+                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open);
                     rf_weaver_diag_step(&session, FIXED_STEP_US / 1000);
                     if (options.gpu_wave_repro) {
                         static int previous_phase = -1, previous_alive = -1;
@@ -6617,7 +6524,7 @@ startup_again:
                         &projectile_render)<0 ||
                     rf_gpu_scene_interactable_freeze(&session,&effects,
                         session.game_state.state==TOY_GAME_PLAYING &&
-                            !game_runtime.lifecycle_paused && !session.shop_open,
+                            !game_runtime.lifecycle_paused,
                         session.scene_local.frame_id+1,session.scene_local.world_generation,
                         &interactable_render)<0 ||
                     rf_gpu_scene_local_freeze_presentation(audit_source,&game,&game_runtime.render_camera,
@@ -6711,10 +6618,10 @@ startup_again:
                     scene_world_probe.native_present=options.gpu_scene_world_preview;
                     scene_world_probe.layers=NULL;
                     if (options.gpu_scene_independent_preview && options.frame_audit)
-                        __printf("SCENE-UI frame=%d extent=%dx%d state=%d paused=%d selected=%d mouse=%d keyboard=%d shop=%d tab=%d\n",
+                        __printf("SCENE-UI frame=%d extent=%dx%d state=%d paused=%d selected=%d mouse=%d keyboard=%d tab=%d\n",
                             rendered_frames,renderer.surface.width,renderer.surface.height,
                             game.state,paused,pause_menu.selected,settings.mouse_level,
-                            settings.keyboard_level,session.shop_open,
+                            settings.keyboard_level,
                             toy_input_down(&game_runtime.input_frame,KEY_TAB));
                     if (options.frame_audit && options.combat_lab>=0) {
                         struct toy_game_actor *lab_player=toy_game_local_player_actor(&game);

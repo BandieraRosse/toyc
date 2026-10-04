@@ -30,7 +30,7 @@ VIEWMODEL，screen overlay 留在 OVERLAY。首版表现的未完成项由活动
 Scene 射线使用世界空间 ribbon，由硬件执行近裁剪与透视；死亡碎片使用三维盒体，
 受击箭头消费 effect instance 中已经量化的方向，不重新计算玩法伤害。
 
-- `rasterfall_hud.c`：玩家、网络、波次、商店、交互提示、菜单以及 BMP/帧导出。
+- `rasterfall_hud.c`：玩家、网络、波次、交互提示、菜单以及 BMP/帧导出。
 - `rasterfall_viewmodel.c`：第一人称手臂、武器、摆动/后座和 local muzzle placement。
 - `rasterfall_effects.c`：消费 effect event，更新固定容量 runtime instance/emitter 池并提交可见组件。
 - `rasterfall_sky.c`：SKY 层；不属于 HUD 或 screen overlay。
@@ -97,7 +97,7 @@ Combat V0 的玩家生命条读取 actor 的实际 `max_hp`，回避条读取最
 
 `rf_player_ui_state` 由 Game Runtime 持有；`rasterfall_hud_state.player_ui_view` 是本次同步提交的
 只读投影。玩家/终端模式使用新的 FPS/RTS HUD，实验与显式 legacy 模式保留原 HUD。
-菜单、商店、复活和准星仍消费原有状态，不因界面切换创建新的玩法或设备状态。
+菜单、救援和准星仍消费原有状态，不因界面切换创建新的玩法或设备状态。
 
 - `rf_player_ui.h/c` 拥有语义颜色、720p 设计尺寸、缩放与窗口重排，以及 panel/button/window/text
   基础组件。`rf_ui_layout_resolve` 是 HUD 绘制和命中区域的共同来源；调整主题或布局描述不修改
@@ -125,6 +125,7 @@ Combat V0 的玩家生命条读取 actor 的实际 `max_hp`，回避条读取最
   保留 RTS 的主题、细边框与青色角标，底板默认约 24% 不透明；窄窗和大字号下自动上下排列。
   FPS 底部操作提示与 RTS 主信息控制栏共用左右边界；右侧两卡使用 RTS 单位镜头及操作区留下的宽度，
   文字按实际字宽适配，武器网格保持比例并与弹药分区，避免挤压或相互覆盖。
+  菜单快捷键位于底部操作提示栏，按实际 Cancel 绑定显示；右上角不再绘制金钱或菜单提示卡。
   `rf_player_ui.c` 绘制生命主条、回避细条、异常状态和药品数量，警告色按实际容量比例选择；
   不常驻姓名、就绪文字或完整武器槽。武器卡显示当前武器侧视网格、名称、弹匣和备弹，换弹时显示细进度条。
   侧视图由真实武器模型经共享 adapter 轴向投影生成，透明背景和轮廓/内部网格明暗沿用 RTS 网格风格；

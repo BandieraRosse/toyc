@@ -33,7 +33,7 @@ static int rf_mesh_weaver_logic_test(void)
     double initial_energy, expected, slow_progress;
     int elapsed, old_count;
     /* A zero-initialized session must never mistake static pickup zero for
-     * its output slot. Static weapon stands remain reusable armory supplies. */
+     * its output slot. Static weapon stands remain reusable weapon supplies. */
     memset(&fixture, 0, sizeof(fixture));
     toy_game_init(g, 7711);
     player = toy_game_local_player_actor(g);
@@ -48,9 +48,6 @@ static int rf_mesh_weaver_logic_test(void)
     memset(&view, 0, sizeof(view)); view.cy = view.pitch_cy = 1024;
     memset(&command, 0, sizeof(command)); command.buttons = RASTERFALL_CMD_INTERACT;
     rasterfall_session_step(&fixture, &view, &command, 16);
-    WEAVER_CHECK(!toy_game_weapon_unlocked(g, TOY_GAME_WEAPON_AK) &&
-        player->slots[0].weapon != TOY_GAME_WEAPON_AK && fixture.item_count == 1);
-    g->unlocked_weapons |= 1u << TOY_GAME_WEAPON_AK;
     for (int repeat = 0; repeat < 2; ++repeat) {
         rasterfall_session_step(&fixture, &view, &command, 16);
         WEAVER_CHECK(player->slots[0].weapon == TOY_GAME_WEAPON_AK &&
@@ -241,8 +238,6 @@ static int rf_mesh_weaver_logic_test(void)
             player->slots[weapon->slot].mag == weapon->mag_size &&
             player->slots[weapon->slot].reserve == 0);
         WEAVER_CHECK(!rasterfall_session_weaver_collect(&fixture));
-        if (bp.weapon == TOY_GAME_WEAPON_AK)
-            WEAVER_CHECK(!toy_game_weapon_unlocked(g, bp.weapon));
         action.switch_slot = -1;
         toy_game_execute_actor_command(g, player, &action, 1000, 100);
         target_id = toy_game_add_gunner(g, 0, 0, 2000, "WEAVER TARGET");

@@ -177,7 +177,6 @@ pickup id=pickup_smg kind=smg x=-250 y=-235 z=-7450 attr.legacy_index=0
 pickup id=pickup_shotgun kind=shotgun x=250 y=-235 z=-7450 attr.legacy_index=1
 pickup id=pickup_ammo_1 kind=ammo x=880 y=-520 z=-7480 attr.legacy_index=2
 pickup id=pickup_ammo_2 kind=ammo x=450 y=-500 z=900 attr.legacy_index=3
-pickup id=pickup_shop kind=shop x=1740 y=0 z=-4800 attr.legacy_index=4
 pickup id=pickup_ak kind=ak x=-700 y=-235 z=-7450 attr.legacy_index=5
 pickup id=pickup_awp kind=awp x=700 y=-235 z=-7450 attr.legacy_index=6
 pickup id=pickup_axe kind=axe x=-1050 y=-235 z=-7450 attr.legacy_index=7
@@ -207,8 +206,6 @@ interaction id=fast action=fast x=-23940 y=200 z=-9000 attr.legacy_index=20
 interaction id=smoker action=smoker x=4200 y=-250 z=-7600 attr.legacy_index=21
 interaction id=charger action=charger x=4700 y=-250 z=-7600 attr.legacy_index=22
 interaction id=tank action=tank x=5200 y=-250 z=-7600 attr.legacy_index=23
-interaction id=money action=money x=5600 y=-250 z=-8600 attr.legacy_index=24
-interaction id=clear_hired action=clear_hired x=5600 y=-250 z=-9200 attr.legacy_index=25
 interaction id=enemy_death_test action=enemy_death_test x=14000 y=-250 z=-10500 attr.legacy_index=26
 interaction id=air_right action=air x=23940 y=-250 z=-7600 attr.legacy_index=27
 interaction id=pose_reset action=pose x=-14250 y=-250 z=-11300 attr.legacy_index=28

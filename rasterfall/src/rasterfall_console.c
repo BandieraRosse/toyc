@@ -90,24 +90,12 @@ static void out(struct rf_command_output *output, const char *s)
 { rf_command_output_write(output, RF_COMMAND_OUTPUT_NORMAL, s); }
 static void out_error(struct rf_command_output *output, const char *s)
 { rf_command_output_write(output, RF_COMMAND_OUTPUT_ERROR, s); }
-static int num(const char *s, int *v, int *relative)
-{ int sign=1,n=0; *relative=0; if(*s=='+'||*s=='-'){*relative=1;if(*s++=='-')sign=-1;} if(!*s)return 0; while(*s>='0'&&*s<='9'){n=n*10+*s++-'0';} if(*s)return 0; *v=n*sign; return 1; }
 static int words(char *s,char **w,int max){int n=0;while(*s&&n<max){while(*s==' ')s++;if(!*s)break;w[n++]=s;while(*s&&*s!=' ')s++;if(*s)*s++=0;}return n;}
 static int command_killall(const struct rf_command_context *context,
                            struct rf_command_output *output, int argc, char **argv)
 { struct rasterfall_console *c=state_console(context); (void)argc; (void)argv;
   if (!c) { out_error(output,"command state unavailable"); return -1; }
   c->killall_requested=1; out(output,"killall requested"); return 0; }
-static int command_give(const struct rf_command_context *context,
-                        struct rf_command_output *output, int argc, char **argv)
-{ struct rasterfall_console *c=state_console(context); int v,r; if (!c) {
-      out_error(output, "command state unavailable"); return -1; }
-  if (argc != 1 || strncmp(argv[0], "give+", 5) != 0 ||
-      !num(argv[0] + 5, &v, &r) || r || v <= 0) {
-      out_error(output, "usage: give+<positive amount>"); return -1;
-  }
-  c->give_requested = v; out(output, "money grant requested"); return 0;
-}
 static int command_clear(const struct rf_command_context *context,
                          struct rf_command_output *output, int argc, char **argv)
 { struct rasterfall_console *c=state_console(context); (void)output; (void)argc; (void)argv;
@@ -306,7 +294,6 @@ static const struct rasterfall_console_command command_registry[] = {
     { "table", command_table, "mission maps, selection and deployment", RF_COMMAND_PERMISSION_USER },
     { "devices", command_devices, "query physical device presence and position", RF_COMMAND_PERMISSION_USER },
     { "killall", command_killall, "kill all active enemies", RF_COMMAND_PERMISSION_ADMIN },
-    { "give+", command_give, "add positive money", RF_COMMAND_PERMISSION_ADMIN },
     { "pose", command_pose, "open rifle pose editor", RF_COMMAND_PERMISSION_ADMIN }
 };
 const struct rasterfall_console_command *rasterfall_console_commands(unsigned int *count)
@@ -322,14 +309,10 @@ int rf_terminal_session_execute(struct rf_terminal_session *session,
   commands=rasterfall_console_commands(&count);
   rf_command_output_init(&session->output);
   for (i=0; i<count; i++) {
-      if (!strcmp(w[0], commands[i].name) ||
-          (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
+      if (!strcmp(w[0], commands[i].name)) {
           if ((!context && commands[i].permission>RF_COMMAND_PERMISSION_USER) ||
               (context && context->permission_level < commands[i].permission)) {
               out_error(&session->output, "permission denied"); result=-1;break;
-          }
-          if (!strcmp(commands[i].name, "give+")) {
-              result = commands[i].handler(context, &session->output, 1, w); break;
           }
           result = commands[i].handler(context, &session->output, n - 1, w + 1); break;
       }
@@ -418,4 +401,23 @@ void rasterfall_console_draw(struct toy_surface *s,const struct rasterfall_conso
     draw_wrapped(s,"INPUT   ENTER execute   UP/DOWN history   ESC close",x,h-16,
                  columns,1,0xD88A32);
 }
-int rasterfall_console_logic_test(void){struct rasterfall_console c; struct rf_terminal_session t; rasterfall_console_init(&c); rf_terminal_session_init(&t); if(c.calibration.weapon!=TOY_GAME_WEAPON_AK)return 1; if(rf_terminal_session_set_input(&t,"help")<0||rf_terminal_session_execute(&t,NULL)<0||t.output.count<2)return 2; rf_terminal_session_set_input(&t,"status"); if(rf_terminal_session_execute(&t,NULL)==0)return 3; return rasterfall_calibration_logic_test();}
+int rasterfall_console_logic_test(void)
+{
+    struct rasterfall_console c;
+    struct rf_terminal_session t;
+    struct rf_command_context context;
+    rasterfall_console_init(&c);
+    rf_terminal_session_init(&t);
+    if(c.calibration.weapon!=TOY_GAME_WEAPON_AK)return 1;
+    if(rf_terminal_session_set_input(&t,"help")<0 ||
+       rf_terminal_session_execute(&t,NULL)<0 || t.output.count<2)return 2;
+    rf_terminal_session_set_input(&t,"status");
+    if(rf_terminal_session_execute(&t,NULL)==0)return 3;
+    memset(&context,0,sizeof(context));
+    context.command_state=&c;
+    context.permission_level=RF_COMMAND_PERMISSION_ADMIN;
+    rf_terminal_session_set_input(&t,"give+500");
+    if(rf_terminal_session_execute(&t,&context)>=0 || t.output.count!=1 ||
+       strcmp(t.output.lines[0].text,"unknown command; type help"))return 4;
+    return rasterfall_calibration_logic_test();
+}

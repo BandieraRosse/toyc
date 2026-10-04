@@ -505,16 +505,16 @@ static int wave_combat_power(const struct toy_game *g)
 static int wave_enemy_cost(int type)
 {
     switch (type) {
-    case TOY_GAME_ENEMY_TANK: return TOY_CONFIG_MONEY_TANK *
+    case TOY_GAME_ENEMY_TANK: return TOY_CONFIG_WAVE_WEIGHT_TANK *
         TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
     case TOY_GAME_ENEMY_SMOKER:
-    case TOY_GAME_ENEMY_CHARGER: return TOY_CONFIG_MONEY_SPECIAL *
+    case TOY_GAME_ENEMY_CHARGER: return TOY_CONFIG_WAVE_WEIGHT_SPECIAL *
         TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
-    case TOY_GAME_ENEMY_PURSUIT_FAST: return TOY_CONFIG_MONEY_FAST *
+    case TOY_GAME_ENEMY_PURSUIT_FAST: return TOY_CONFIG_WAVE_WEIGHT_FAST *
         TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
-    case TOY_GAME_ENEMY_PURSUIT_HEAVY: return TOY_CONFIG_MONEY_HEAVY *
+    case TOY_GAME_ENEMY_PURSUIT_HEAVY: return TOY_CONFIG_WAVE_WEIGHT_HEAVY *
         TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
-    default: return TOY_CONFIG_MONEY_COMMON *
+    default: return TOY_CONFIG_WAVE_WEIGHT_COMMON *
         TOY_CONFIG_WAVE_ENEMY_COST_MULTIPLIER;
     }
 }
@@ -617,9 +617,6 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     player->slots[1].mag = w->mag_size;
     player->slots[1].reserve = w->reserve_max;
     player->current_slot = 1;
-    g->money = TOY_GAME_INITIAL_MONEY;
-    /* 手枪是基础装备；所有可购买主武器初始锁定。 */
-    g->unlocked_weapons = 1u << TOY_GAME_WEAPON_PISTOL;
     g->wave = 0;
     g->to_spawn = 0;
     g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
@@ -680,7 +677,6 @@ int toy_game_ai_observe(const struct toy_game *g, int actor_index,
     out->nearest_enemy_index = -1;
     out->nearest_enemy_distance = -1;
     out->wave = g->wave;
-    out->money = g->money;
     {
         long long dx = (long long)actor->deployment_x - actor->x;
         long long dz = (long long)actor->deployment_z - actor->z;
@@ -910,45 +906,6 @@ int toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon)
     a = &g->actors[actor_index];
     if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->base_core) return 0;
     actor_set_weapon(a, weapon);
-    return 1;
-}
-
-int toy_game_clear_hired_ai(struct toy_game *g)
-{
-    int i, count = 0;
-    if (!g) return 0;
-    for (i = 1; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
-        if (!g->actors[i].active || !g->actors[i].hired) continue;
-        memset(&g->actors[i], 0, sizeof(g->actors[i]));
-        count++;
-    }
-    if (g->ai_context_actor_index >= 0 &&
-        g->ai_context_actor_index < TOY_GAME_MAX_ACTORS &&
-        !g->actors[g->ai_context_actor_index].active)
-        g->ai_context_actor_index = 0;
-    return count;
-}
-
-int toy_game_upgrade_ai(struct toy_game *g, int actor_index)
-{
-    struct toy_game_actor *a;
-    int price;
-    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
-        return 0;
-    a = &g->actors[actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired ||
-        a->class_id >= TOY_GAME_AI_LEVEL_3) return 0;
-    price = a->class_id == TOY_GAME_AI_LEVEL_1 ?
-            TOY_CONFIG_AI_LEVEL_2_PRICE : TOY_CONFIG_AI_LEVEL_3_PRICE;
-    if (g->money < price) return 0;
-    g->money -= price;
-    a->class_id++;
-    {
-        struct toy_game_capabilities caps;
-        toy_game_actor_capabilities(a, toy_game_actor_current_weapon(a), &caps);
-        a->max_hp = caps.max_hp;
-    }
-    if (a->hp > 0) a->hp = a->max_hp;
     return 1;
 }
 
@@ -2365,7 +2322,6 @@ static void update_waves(struct toy_game *g, int dt_ms)
                 g->wave_spawn_interval_ms : 1;
         }
     } else if (g->campaign_phase == TOY_GAME_PHASE_HORDE && g->enemies_alive == 0) {
-        g->money += g->wave * 100;
         if (g->wave >= TOY_GAME_WAVE_MAX) {
             g->state = TOY_GAME_WON;
             push_event(g, TOY_GAME_EV_LEVEL_WON);
@@ -5313,7 +5269,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
                                 int enemy_index, int damage)
 {
     struct toy_game_enemy *e;
-    int inflicted, reward;
+    int inflicted;
     if (!g || !actor || enemy_index < 0 ||
         enemy_index >= TOY_GAME_MAX_ENEMIES || damage <= 0) return 0;
     e = &g->enemies[enemy_index];
@@ -5328,19 +5284,6 @@ int toy_game_apply_reported_hit(struct toy_game *g,
     e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS;
     e->flash = 120; g->enemies_alive--;
     actor->kills++;
-    if (e->type == TOY_GAME_ENEMY_TANK) reward = TOY_CONFIG_MONEY_TANK;
-    else if (e->type == TOY_GAME_ENEMY_SMOKER ||
-             e->type == TOY_GAME_ENEMY_CHARGER)
-        reward = TOY_CONFIG_MONEY_SPECIAL;
-    else if (e->type == TOY_GAME_ENEMY_PURSUIT_HEAVY)
-        reward = TOY_CONFIG_MONEY_HEAVY;
-    else if (e->type == TOY_GAME_ENEMY_PURSUIT_FAST)
-        reward = TOY_CONFIG_MONEY_FAST;
-    else reward = TOY_CONFIG_MONEY_COMMON;
-    if (actor->faction == TOY_GAME_FACTION_ALLIED) {
-        g->money += reward;
-        actor->combat_stats.money_earned += reward;
-    }
     if (toy_game_enemy_info(e->type)->ability != TOY_GAME_ENEMY_ABILITY_NONE) {
         actor->special_kills++;
     }
@@ -5829,21 +5772,6 @@ int toy_game_actor_equip_weapon(struct toy_game *g,
     return toy_game_equip_actor_weapon(g, actor, weapon);
 }
 
-int toy_game_weapon_price(int weapon)
-{
-    switch (weapon) {
-    case TOY_GAME_WEAPON_SMG: return TOY_GAME_PRICE_SMG;
-    case TOY_GAME_WEAPON_SHOTGUN: return TOY_GAME_PRICE_SHOTGUN;
-    case TOY_GAME_WEAPON_AK: return TOY_GAME_PRICE_AK;
-    case TOY_GAME_WEAPON_AWP: return TOY_GAME_PRICE_AWP;
-    case TOY_GAME_WEAPON_AXE: return 100;
-    case TOY_GAME_WEAPON_BOMB: return TOY_GAME_PRICE_BOMB;
-    case TOY_GAME_WEAPON_MOLOTOV: return TOY_GAME_PRICE_MOLOTOV;
-    case TOY_GAME_WEAPON_PILL: return TOY_GAME_PRICE_PILL;
-    default: return 0;
-    }
-}
-
 int toy_game_weapon_combat_dps(int weapon)
 {
     const struct toy_game_weapon_info *w;
@@ -5986,40 +5914,6 @@ int toy_game_nearest_enemy_distance(const struct toy_game *g,
         }
     }
     return best < 0 ? -1 : (int)isqrt(best_d2);
-}
-
-int toy_game_weapon_unlocked(const struct toy_game *g, int weapon)
-{
-    if (!g || weapon < 0 || weapon >= TOY_GAME_WEAPON_COUNT) return 0;
-    return (g->unlocked_weapons & (1u << weapon)) != 0;
-}
-
-int toy_game_buy_weapon(struct toy_game *g, struct toy_game_actor *actor,
-                        int weapon)
-{
-    int price, consumable;
-    if (!g || weapon <= TOY_GAME_WEAPON_PISTOL ||
-        weapon >= TOY_GAME_WEAPON_COUNT) return -1;
-    consumable = weapon == TOY_GAME_WEAPON_BOMB ||
-                 weapon == TOY_GAME_WEAPON_MOLOTOV ||
-                 weapon == TOY_GAME_WEAPON_PILL;
-    price = toy_game_weapon_price(weapon);
-    if (toy_game_weapon_unlocked(g, weapon))
-    {
-        if (!consumable) return toy_game_actor_equip_weapon(g, actor, weapon);
-        if (g->money < price) return 0;
-        if (!actor) return -1;
-        if ((weapon == TOY_GAME_WEAPON_PILL && actor->slots[3].mag >= TOY_GAME_PILL_MAX) ||
-            ((weapon == TOY_GAME_WEAPON_BOMB || weapon == TOY_GAME_WEAPON_MOLOTOV) &&
-             actor->slots[2].mag >= TOY_GAME_THROWABLE_MAX)) return -1;
-        g->money -= price;
-        toy_game_actor_equip_weapon(g, actor, weapon);
-        return 1;
-    }
-    if (g->money < price) return 0;
-    g->money -= price;
-    g->unlocked_weapons |= 1u << weapon;
-    return toy_game_actor_equip_weapon(g, actor, weapon) ? 2 : 1;
 }
 
 /* 弹药盒：补满已拥有武器的备弹（手枪无限备弹跳过），有变化返回 1 */

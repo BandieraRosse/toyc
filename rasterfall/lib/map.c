@@ -317,14 +317,13 @@ int toy_map_load(const char *path, struct toy_map *m)
             char *k=word(&p),*sx=word(&p),*sz=word(&p),*sy=word(&p);
             if(k&&sx&&sz&&sy){
                 int weapon = toy_game_weapon_from_name(k);
-                m->pickups[m->pickup_count].kind = !strcmp(k,"shop") ?
-                    TOY_MAP_PICKUP_SHOP : weapon >= 0 ?
+                if (weapon < 0 && strcmp(k,"ammo")) continue;
+                m->pickups[m->pickup_count].kind = weapon >= 0 ?
                     ((weapon == TOY_GAME_WEAPON_PILL) ? TOY_MAP_PICKUP_PILL :
                      (weapon == TOY_GAME_WEAPON_BOMB ||
                       weapon == TOY_GAME_WEAPON_MOLOTOV) ?
                      TOY_MAP_PICKUP_THROWABLE : TOY_MAP_PICKUP_WEAPON) :
-                    (!strcmp(k,"ammo") ? TOY_MAP_PICKUP_AMMO :
-                     TOY_MAP_PICKUP_AMMO);
+                    TOY_MAP_PICKUP_AMMO;
                 m->pickups[m->pickup_count].weapon = weapon;
                 m->pickups[m->pickup_count].x=number(sx,10);
                 m->pickups[m->pickup_count].z=number(sz,10);
@@ -337,8 +336,6 @@ int toy_map_load(const char *path, struct toy_map *m)
                  !strcmp(kind,"button_fast") || !strcmp(kind,"button_base1") ||
                  !strcmp(kind,"button_base2") || !strcmp(kind,"button_smoker") ||
                  !strcmp(kind,"button_charger") || !strcmp(kind,"button_tank") ||
-                 !strcmp(kind,"button_money") ||
-                 !strcmp(kind,"button_clear_hired") ||
                  !strcmp(kind,"button_wave_skip") ||
                  !strcmp(kind,"button_attack_x2") ||
                  !strcmp(kind,"button_attack_x3") ||
@@ -373,11 +370,7 @@ int toy_map_load(const char *path, struct toy_map *m)
                     TOY_MAP_PICKUP_SMOKER_BUTTON : !strcmp(kind,"button_charger") ?
                     TOY_MAP_PICKUP_CHARGER_BUTTON : !strcmp(kind,"button_tank") ?
                     TOY_MAP_PICKUP_TANK_BUTTON : TOY_MAP_PICKUP_BUTTON;
-                if (!strcmp(kind,"button_money"))
-                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_MONEY_BUTTON;
-                else if (!strcmp(kind,"button_clear_hired"))
-                    m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON;
-                else if (!strcmp(kind,"button_wave_skip"))
+                if (!strcmp(kind,"button_wave_skip"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_WAVE_SKIP_BUTTON;
                 else if (!strcmp(kind,"button_attack_x2"))
                     m->pickups[m->pickup_count].kind = TOY_MAP_PICKUP_ATTACK_X2_BUTTON;

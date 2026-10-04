@@ -74,7 +74,6 @@ struct rasterfall_console {
     struct rasterfall_console_log_line output[64];
     int output_count;
     int killall_requested;
-    int give_requested;
     int pose_hud_request;
     int close_requested;
     struct rasterfall_calibration_state calibration;

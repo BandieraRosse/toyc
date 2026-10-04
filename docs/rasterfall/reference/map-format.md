@@ -231,7 +231,9 @@ prop lamp_post 0 -17000 0 1000 collision=none
 其他受支持记录及参数应直接以 `lib/map.c` 的解析分支为准。新增记录时在本文记录用途和最小示例，
 不要只修改关卡文件。可见几何不能代替玩法碰撞，渲染正确也不能证明导航和地面查询正确。
 
-Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。内容地图的 `flag` 可使用 `facing=+z/-z` 指定单层旗布文字的正确阅读侧，省略时默认 `+z`；购买的新旗也默认 `+z`。阶段地图中的 control region 和刷怪区坐标见[历史记录](../archive/map-content-fixtures-2026-09.md)；若以后正式数据化这些内容，需同时扩展 parser、绑定、布局导出和 query schema。
+Hurd 旗帜与固定 actor 由 session 生成，不是地图记录。内容地图的 `flag` 可使用 `facing=+z/-z` 指定单层旗布文字的正确阅读侧，省略时默认 `+z`。阶段地图中的 control region 和刷怪区坐标见[历史记录](../archive/map-content-fixtures-2026-09.md)；若以后正式数据化这些内容，需同时扩展 parser、绑定、布局导出和 query schema。
+
+旧商店 pickup、`money`/`clear_hired` interaction 及其 legacy 按钮记录已移除，不属于当前地图动作词汇。
 
 地图修改、布局导出与精确查询流程见 [地图编辑与查询](../guides/map-authoring.md)。
 

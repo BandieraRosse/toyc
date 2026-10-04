@@ -109,17 +109,8 @@
 #define TOY_GAME_KEY_SLOT_3     4       /* evdev KEY_3：投掷物槽 */
 #define TOY_GAME_KEY_SLOT_4     5       /* evdev KEY_4：药丸槽 */
 
-/* 商店价格集中配置，便于后续调平衡。 */
-#define TOY_GAME_PRICE_SMG 50
-#define TOY_GAME_PRICE_SHOTGUN 50
-#define TOY_GAME_PRICE_AK 100
-#define TOY_GAME_PRICE_AWP 200
-#define TOY_GAME_PRICE_BOMB 20
-#define TOY_GAME_PRICE_MOLOTOV 50
-#define TOY_GAME_PRICE_PILL 10
 #define TOY_GAME_THROWABLE_MAX 5
 #define TOY_GAME_PILL_MAX 10
-#define TOY_GAME_INITIAL_MONEY 50
 
 enum toy_game_state { TOY_GAME_PLAYING, TOY_GAME_OVER, TOY_GAME_WON };
 
@@ -245,7 +236,6 @@ struct toy_game_evasion {
 
 struct toy_game_combat_stats {
     int shots, pellets, hits, health_damage, damage_taken;
-    int money_earned; /* actual allied kill reward; owned labs can undo only theirs */
     int armor_absorbed, overkill;
     int evasion_spent_milli, evasion_events, evasion_exhaustions;
 };
@@ -649,12 +639,12 @@ struct toy_game_actor {
     int combat_last_x, combat_last_z, combat_last_y;
     int character_id;           /* -1 ordinary; nonnegative IDs are explicit story identities */
     int base_core;              /* BASE: fixed defense objective */
-    int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
+    int hired;                  /* 运行时部署的普通 AI，计入波次战斗力 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
     int companion;              /* 常驻副官：跟随玩家，永不驻守旗帜 */
     int ai_stationary;          /* Resident policy: retain post without disabling animation/combat. */
     unsigned int movement_hold_token; /* Temporary owner; movement only, never special control. */
-    int flag_guard;             /* 固定旗帜驻守者：不可被商店重新分配 */
+    int flag_guard;             /* 固定旗帜驻守者 */
     int anime_character_id;     /* -1: low-poly AI; >=0: anime actor system */
     int anime_wander_timer_ms;
     int anime_wander_x, anime_wander_z;
@@ -745,14 +735,11 @@ struct toy_game_ai_observation {
     int nearest_enemy_distance;
     int nearest_enemy_dx, nearest_enemy_dz;
     int wave;
-    int money;
     int at_deployment;
 };
 
-/* A policy writes intent here.  The executor decides how much of it is legal
- * for the controlled actor and applies the normal game rules.  shop_* fields
- * intentionally use semantic values but remain independent of the session's
- * UI and network representations. */
+/* A policy writes intent here. The executor validates it for the controlled
+ * actor and applies the normal game rules. */
 struct toy_game_ai_decision {
     int target_enemy;
     int aim_sy, aim_cy;
@@ -761,10 +748,6 @@ struct toy_game_ai_decision {
     int reload;
     int switch_weapon;
     int use_pill;
-    int shop_action;
-    int shop_item;
-    int shop_target_actor;
-    int shop_arg;
 };
 
 /* Optional, read-only diagnostic sink. The caller owns its lifetime and clock. */
@@ -810,8 +793,6 @@ struct toy_game {
     int state;          /* enum toy_game_state */
     struct toy_game_projectile projectiles[TOY_GAME_MAX_PROJECTILES];
     struct toy_game_burn_zone burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
-    int money;
-    unsigned int unlocked_weapons;
 
     struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
     int base_actor_index;
@@ -958,8 +939,6 @@ int  toy_game_add_character_flag_guard(struct toy_game *g, int character_id,
                                        int x, int z, const char *name,
                                        int flag_index);
 int  toy_game_set_ai_weapon(struct toy_game *g, int actor_index, int weapon);
-int  toy_game_clear_hired_ai(struct toy_game *g);
-int  toy_game_upgrade_ai(struct toy_game *g, int actor_index);
 int  toy_game_set_remote_actor(struct toy_game *g, int player_id,
                                 int active, int x, int z,
                                 const char *name);
@@ -1067,7 +1046,6 @@ int  toy_game_actor_equip_weapon(struct toy_game *g,
                                  struct toy_game_actor *actor, int weapon);
 int  toy_game_actor_refill_ammo(struct toy_game *g,
                                 struct toy_game_actor *actor);
-int  toy_game_weapon_price(int weapon);
 int  toy_game_weapon_combat_dps(int weapon);
 int  toy_game_weapon_spread_penalty(int weapon);
 int  toy_game_weapon_combat_power(int weapon);
@@ -1082,9 +1060,6 @@ int  toy_game_count_active_enemies(const struct toy_game *g);
 int  toy_game_count_downed_actors(const struct toy_game *g);
 int  toy_game_nearest_enemy_distance(const struct toy_game *g,
                                      const struct toy_game_actor *actor);
-int  toy_game_weapon_unlocked(const struct toy_game *g, int weapon);
-int  toy_game_buy_weapon(struct toy_game *g, struct toy_game_actor *actor,
-                         int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info(int weapon);
 const struct toy_game_weapon_info *toy_game_weapon_info_or_null(int weapon);
 int  toy_game_weapon_is_valid(int weapon);

@@ -105,10 +105,10 @@ RTS 编组是可重叠的 runtime 选择集合，人数覆盖整个 actor 池；
 ### Session 与 AI 接口
 
 `src/rasterfall_session.c` + `include/rasterfall_session.h` 是模式编排层：加载/重置关卡，构建和执行
-玩家命令，商店与雇佣 AI，剧情阶段、托管角色，以及主机/客户端不同的 step/replay 路径。
+玩家命令，剧情阶段、托管角色，以及主机/客户端不同的 step/replay 路径。
 离线 RTS 命令由 session 校验：本地玩家目标保留在 session，队友的独立目标写入 Game actor 的
 `command_destination_active/command_x/command_z`，在正常 AI 固定步内优先于出生部署和副官跟随。
-移动、索敌、射击和动画仍通过正式 actor API 推进；旗帜不写入部署点，旧商店指派入口拒绝执行。
+移动、索敌、射击和动画仍通过正式 actor API 推进；旗帜不写入部署点。
 镜头、框选、编组和高亮属于 Game Runtime 展示状态，不进入 `toy_game`。当前 RTS 不接入联机命令协议。
 
 `src/rasterfall_ai.c` + `include/rasterfall_ai.h` 管理可插拔 AI 注册表，把 observation 交给控制器并
@@ -122,8 +122,12 @@ RTS 编组是可重叠的 runtime 选择集合，人数覆盖整个 actor 池；
 移动、跳跃、airborne、武器/reload/fire cooldown、投掷物、animation 和 special-control；camera.body
 始终由 actor 派生。AI 分配从槽位 1 开始，网络协议和远端 actor 槽位不变。
 
-session 的本地复活、商店控制锁、交互死亡判断和托管武器决策读取 actor 状态；出生点、付费复活
-和正式 world step 也直接写入或推进 local actor。
+session 的救援、交互死亡判断和托管武器决策读取 actor 状态；出生点和正式 world step
+直接写入或推进 local actor。
+
+玩法不维护金钱、击杀/波次收入或购买解锁状态。旧商店、AI 雇佣/付费升级/付费换枪、买旗、
+付费复活及加钱/清除雇佣兵按钮和命令已移除。普通武器拾取直接装备，托管武器准备路线读取
+实际武器拾取点；制造仍使用网格编织机的独立材料资源。波次导演使用独立敌人权重，保持原有难度预算。
 
 ## Hurd Relay gameplay foundation
 
@@ -133,9 +137,9 @@ session reset 按 Campaign Content 恢复四名 `ANIME_GUARD_*` Maid 队员，�
 所有 session 队员统一清除 `flag_index/flag_guard`，随后接受独立 RTS 命令。
 
 session reset 在正式 world 中创建固定 Gunsmith、Logistics、Medic、Guard 四名普通 AI actor，并明确
-写入四个 Hurd 专用稳定 `character_id`；前三人初始使用 Pistol，Guard 使用 SMG。普通 player、地图佣兵、
-商店 hired AI 以及 Eula actor 使用 `RASTERFALL_CHARACTER_NONE`，不按 actor slot 或 class 随机
-选择 Hurd identity。四人不是商店雇佣对象，不受“清除雇佣 AI”影响；其移动、部署、防守、战斗、受伤、
+写入四个 Hurd 专用稳定 `character_id`；前三人初始使用 Pistol，Guard 使用 SMG。普通 player、地图佣兵
+以及 Eula actor 使用 `RASTERFALL_CHARACTER_NONE`，不按 actor slot 或 class 随机
+选择 Hurd identity。四人的移动、部署、防守、战斗、受伤、
 DOWNED、REVIVE、动画和武器仍走普通 actor 规则。`hurd_outpost.squad_actor_indices[]` 定位固定角色，
 也作为 Hurd 人员统计来源；不再依赖旗帜 assignment。
 
@@ -180,7 +184,7 @@ Legacy `prop` 文本的 profile 默认碰撞规则不等于 V1 object 规则，�
 - 敌人类型、技能、波次：enemy 枚举/信息表、wave plan、enemy update 路径。
 - 移动、坡道、跳跃、碰撞：`toy_game_query_ground`、`position_blocked`、motion/navigation 相关函数；静态 prop 在 `lib/map.c` 中按 RFU profile 生成普通 box，导航消费同一 primitive。
 - 玩家输入产生何种动作：`rasterfall.c` 构造 command，session 执行，game 落实规则。
-- 商店、剧情、队友雇佣、托管玩法：`rasterfall_session.c` 的 `shop`、`campaign`、`managed_ai` 区域。
+- 剧情与托管玩法：`rasterfall_session.c` 的 `campaign`、`managed_ai` 区域。
 - 角色外观选择：`rasterfall_character.c`；角色动作状态仍由 `toy_game_actor.animation` 等字段拥有。
 - HUD 显示错误：先确认 `rasterfall_hud_state` 在主循环中是否正确填充，再改 `rasterfall_hud.c`。
 
@@ -205,8 +209,7 @@ component，敌人也不能索敌到控制线另一侧。关闭整组空气墙�
 
 敌人 Content ID 当前按敌人目录顺序固定为 `PURSUIT_COMMON=0`、`PURSUIT_HEAVY=1`、`PURSUIT_FAST=2`、`SMOKER=3`、`CHARGER=4`、`TANK=5`。这些 ID 用于网络/内容身份；本地 `toy_game_enemy_type` 仍是数组索引，模型或渲染 profile 不应复用这组身份值。
 
-开发者区域武器桌的 pickup 由 `src/rasterfall_session.c` 按地图坐标识别，直接解锁并装备；普通
-商店和其他区域的武器 pickup 仍经过 `toy_game_weapon_unlocked` 检查，购买流程不变。
+所有区域的普通武器 pickup 由 `src/rasterfall_session.c` 直接装备，不依赖购买或地图坐标特例。
 
 射击射线和命中结果由会话/展示适配器转换为 `rasterfall_effect_event`；该事件只描述开火、
 弹着点、受击或预留爆炸，不是玩法状态，也不加入快照。
@@ -245,7 +248,7 @@ player、AI actor 与 enemy 共用 clamp。当前 body 高度统一使用 1750 m
 恢复后续作。待取成品不再消耗制造资源，断电仍存在，并阻止新任务。session 只把此成品
 投影到 `items[weaver_item_index]`，复用普通距离、朝向和 E 互动；设备表现从同一权威状态
 绘制交付姿态，标准拾取模型跳过这一投影，避免重复显示。领取通过正式 actor 装备规则
-替换对应槽位，获得一个标准弹匣及零备弹，不解锁普通商店；后续射击、切枪和换弹走既有
+替换对应槽位，获得一个标准弹匣及零备弹；后续射击、切枪和换弹走既有
 规则。行动部补给为有限手枪补三个弹匣，旧出生手枪及地图装备的无限备弹行为保持原合同。
 
 同一 world/session 内任务与成品持续存在，普通 session reset 或换图重建会清除它们。

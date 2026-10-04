@@ -12,7 +12,7 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 45
+#define RASTERFALL_NET_PROTOCOL_VERSION 46
 #define RASTERFALL_NET_MAX_ACTORS TOY_GAME_MAX_ACTORS
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -211,7 +211,7 @@ struct rasterfall_net_client {
     int loss_permille;
     unsigned int last_applied_fire_seq;
     uint32_t reliable_event_ack;
-    unsigned int shop_request_id;
+    unsigned int action_request_id;
     long last_receive_ms;
 };
 
@@ -255,6 +255,7 @@ struct rasterfall_net {
     struct rasterfall_net_event remote_event_data[TOY_GAME_MAX_EVENTS];
     uint32_t remote_event_last_id;
     uint32_t reliable_event_ack;
+    unsigned int action_request_id;
     struct rasterfall_net_event reliable_events[RASTERFALL_NET_RELIABLE_EVENT_MAX];
     int reliable_event_count;
     uint32_t reliable_event_next_id;
@@ -281,8 +282,6 @@ struct rasterfall_net {
     int snapshot_world_wave_waiting_heavy;
     int snapshot_world_wave_waiting_special;
     int snapshot_world_wave_waiting_tank;
-    int snapshot_money;
-    unsigned int snapshot_unlocked_weapons;
     int snapshot_flag_count;
     struct rasterfall_flag snapshot_flags[RASTERFALL_MAX_FLAGS];
     int snapshot_actor_flag_index[TOY_GAME_MAX_ACTORS];
@@ -312,14 +311,12 @@ struct rasterfall_net {
     int correction_x, correction_z, correction_y;
     int correction_remaining_ms;
     long last_command_sent_ms;
-    unsigned int shop_request_next_id;
-    unsigned int pending_shop_request_id;
-    uint32_t pending_shop_input_sequence;
-    int pending_shop_action;
-    int pending_shop_item;
-    int pending_shop_arg;
+    unsigned int action_request_next_id;
+    unsigned int pending_action_request_id;
+    uint32_t pending_action_input_sequence;
+    int pending_action_arg;
     unsigned int pending_action_buttons;
-    long pending_shop_until_ms;
+    long pending_action_until_ms;
     uint32_t last_snapshot_sequence;
     unsigned int ai_fire_sent_seq[TOY_GAME_MAX_ACTORS];
     unsigned int player_fire_sent_seq[RASTERFALL_NET_CLIENT_MAX];

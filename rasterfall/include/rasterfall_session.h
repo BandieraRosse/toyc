@@ -18,7 +18,6 @@
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
 #define RASTERFALL_INTERACT_RANGE 1000
 #define RASTERFALL_MAX_FLAGS 8
-#define RASTERFALL_PAID_REVIVE_COST 20
 #define RASTERFALL_HURD_SQUAD_SIZE 4
 #define RASTERFALL_MAID_SQUAD_SIZE 4
 #define RASTERFALL_MAID_FLAG_INDEX 1
@@ -73,38 +72,8 @@ enum rasterfall_command_button {
     RASTERFALL_CMD_SHOVE      = 1 << 8,
     RASTERFALL_CMD_JUMP       = 1 << 9,
     RASTERFALL_CMD_CLEAR_STATS = 1 << 10,
-    RASTERFALL_CMD_FLAG       = 1 << 11,
-    RASTERFALL_CMD_SHOP       = 1 << 12,
-    RASTERFALL_CMD_REVIVE     = 1 << 13
+    RASTERFALL_CMD_FLAG       = 1 << 11
 };
-
-/* Stable single-player shop vocabulary.  The UI may use pages and selections,
- * but game logic and AI use these semantic operations instead. */
-enum rasterfall_shop_action {
-    RASTERFALL_SHOP_BUY_WEAPON = 1,
-    RASTERFALL_SHOP_HIRE_AI = 2,
-    RASTERFALL_SHOP_BUY_FLAG = 3,
-    RASTERFALL_SHOP_ASSIGN_AI = 4,
-    RASTERFALL_SHOP_UPGRADE_AI = 5,
-    RASTERFALL_SHOP_CHANGE_AI_WEAPON = 6
-};
-
-struct rasterfall_shop_request {
-    int action;
-    int item;
-    int target_actor;
-    int arg;
-};
-
-struct rasterfall_session;
-
-/* Query is side-effect free.  It returns whether the request is currently
- * executable and optionally exposes the price that execute will charge. */
-int rasterfall_session_shop_can(const struct rasterfall_session *session,
-                                const struct rasterfall_shop_request *request,
-                                int *price);
-int rasterfall_session_shop_execute(struct rasterfall_session *session,
-                                    const struct rasterfall_shop_request *request);
 
 /* 与窗口系统无关的单个逻辑步输入。以后网络客户端发送的也是这类游戏语义，
  * 而不是 evdev 键码或 toy_input 的内部数组。 */
@@ -115,10 +84,8 @@ struct rasterfall_command {
     int pitch;
     unsigned int buttons;
     int fire_held;
-    int shop_action;
-    int shop_item;
-    int shop_arg;
-    unsigned int shop_request_id;
+    int interact_kind; /* Highlighted pickup kind + 1; zero means unspecified. */
+    unsigned int action_request_id;
     /* Captured once when a jump command is built. */
     int jump_dx;
     int jump_dz;
@@ -177,16 +144,9 @@ struct rasterfall_session {
     int smooth_turn_remaining;
     int ai_revive_active;
     int ai_revive_actor_index;
-    int shop_open;
-    int shop_page;
-    int shop_selected;
-    int shop_nav_selected;
-    int shop_scroll;
-    int shop_request_only;
     struct rasterfall_flag flags[RASTERFALL_MAX_FLAGS];
     int flag_count;
     int carried_flag;
-    int assignment_flag;
     struct rasterfall_hurd_outpost hurd_outpost;
     struct rasterfall_squad_runtime squad_runtime[RASTERFALL_SQUAD_COUNT];
     int skeletal_demo_pose;
@@ -241,8 +201,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
                              const struct rasterfall_command *command,
                              int dt_ms);
 int rasterfall_session_dev_killall(struct rasterfall_session *session);
-void rasterfall_session_dev_give_money(struct rasterfall_session *session,
-                                        int amount);
 /* 客户端预测：只推进本地玩家和武器，不推进敌人/波次，也不在本地
  * 修改敌人生命；敌人命中结果由主机快照决定。 */
 void rasterfall_session_step_client(struct rasterfall_session *session,
@@ -269,20 +227,11 @@ int rasterfall_session_revive_target(struct rasterfall_session *session,
                                      const struct camera *rescuer,
                                      const struct camera *target,
                                      int *progress_ms, int dt_ms);
-int rasterfall_session_paid_revive(struct rasterfall_session *session,
-                                   struct camera *camera);
 int rasterfall_session_find_down_ai(const struct rasterfall_session *session,
                                     const struct camera *camera);
 void rasterfall_camera_rotate(struct camera *camera, int turn, int pitch);
 int rasterfall_session_compute_highlight(const struct rasterfall_session *session,
                                          const struct camera *camera);
-void rasterfall_session_shop_input(struct rasterfall_session *session,
-                                   int up, int down, int left, int right,
-                                   int enter, int esc);
-int rasterfall_session_shop_request(struct rasterfall_session *session,
-                                    int action, int item, int arg);
-int rasterfall_session_shop_actor_at(const struct rasterfall_session *session,
-                                     int flag_index, int selection);
 void rasterfall_session_hurd_status(
     const struct rasterfall_session *session,
     struct rasterfall_hurd_status *status);

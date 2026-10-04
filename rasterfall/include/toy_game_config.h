@@ -169,12 +169,12 @@
 #define TOY_CONFIG_TANK_SPEED_MAX              56
 #define TOY_CONFIG_TANK_BITE_DAMAGE             0  /* Tank 只使用范围挥击 */
 
-/* Money rewards for killing enemies. */
-#define TOY_CONFIG_MONEY_COMMON                1  /* 普通敌人击杀奖励 */
-#define TOY_CONFIG_MONEY_HEAVY                 2  /* 重型敌人击杀奖励 */
-#define TOY_CONFIG_MONEY_FAST                  2  /* 快速敌人击杀奖励 */
-#define TOY_CONFIG_MONEY_SPECIAL               5  /* 特殊敌人击杀奖励 */
-#define TOY_CONFIG_MONEY_TANK                  50  /* Tank 击杀奖励 */
+/* Enemy weights for the wave director's spawn budget. */
+#define TOY_CONFIG_WAVE_WEIGHT_COMMON                1
+#define TOY_CONFIG_WAVE_WEIGHT_HEAVY                 2
+#define TOY_CONFIG_WAVE_WEIGHT_FAST                  2
+#define TOY_CONFIG_WAVE_WEIGHT_SPECIAL               5
+#define TOY_CONFIG_WAVE_WEIGHT_TANK                  50
 
 /* Charger special tuning. */
 #define TOY_CONFIG_CHARGER_WINDUP_MS         700  /* 蓄力时间 */
@@ -215,11 +215,6 @@
 #define TOY_CONFIG_AI_LEVEL_1_MOVE_SPEED              30  /* 一级移动速度 */
 #define TOY_CONFIG_AI_LEVEL_2_MOVE_SPEED              38  /* 二级移动速度 */
 #define TOY_CONFIG_AI_LEVEL_3_MOVE_SPEED              46  /* 三级移动速度 */
-#define TOY_CONFIG_AI_HIRE_PRICE                    100  /* 一级 AI 雇佣价 */
-#define TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE      100  /* AI 手枪价 */
-#define TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER    10  /* AI 武器价倍率 */
-#define TOY_CONFIG_AI_LEVEL_2_PRICE                 400  /* 1→2 升级价 */
-#define TOY_CONFIG_AI_LEVEL_3_PRICE                 800  /* 2→3 升级价 */
 
 /* 粗略战斗力（Combat Power）评分。CP 不使用经济价格，也不试图模拟
  * 实战中的走位和目标选择，只给导演系统一个稳定的相对强度指标。 */

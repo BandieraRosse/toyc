@@ -130,8 +130,6 @@ static int runtime_action_to_pickup(int action_id, int *weapon)
     case RF_MAP_ACTION_SMOKER: return TOY_MAP_PICKUP_SMOKER_BUTTON;
     case RF_MAP_ACTION_CHARGER: return TOY_MAP_PICKUP_CHARGER_BUTTON;
     case RF_MAP_ACTION_TANK: return TOY_MAP_PICKUP_TANK_BUTTON;
-    case RF_MAP_ACTION_MONEY: return TOY_MAP_PICKUP_MONEY_BUTTON;
-    case RF_MAP_ACTION_CLEAR_HIRED: return TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON;
     case RF_MAP_ACTION_ATTACK_X2: return TOY_MAP_PICKUP_ATTACK_X2_BUTTON;
     case RF_MAP_ACTION_ATTACK_X3: return TOY_MAP_PICKUP_ATTACK_X3_BUTTON;
     case RF_MAP_ACTION_ATTACK_X4: return TOY_MAP_PICKUP_ATTACK_X4_BUTTON;
@@ -176,7 +174,6 @@ static int runtime_action_to_pickup(int action_id, int *weapon)
         if (weapon) *weapon = TOY_GAME_WEAPON_SHOTGUN;
         return TOY_MAP_PICKUP_WEAPON;
     case RF_MAP_ACTION_PICKUP_AMMO: return TOY_MAP_PICKUP_AMMO;
-    case RF_MAP_ACTION_PICKUP_SHOP: return TOY_MAP_PICKUP_SHOP;
     case RF_MAP_ACTION_PICKUP_AK:
         if (weapon) *weapon = TOY_GAME_WEAPON_AK;
         return TOY_MAP_PICKUP_WEAPON;
@@ -734,7 +731,6 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
                 kind = TOY_MAP_PICKUP_THROWABLE;
             else if (weapon >= 0) kind = TOY_MAP_PICKUP_WEAPON;
             else if (!strcmp(pickup->kind, "ammo")) kind = TOY_MAP_PICKUP_AMMO;
-            else if (!strcmp(pickup->kind, "shop")) kind = TOY_MAP_PICKUP_SHOP;
             else kind = -1;
         } else if (interaction) {
             kind = runtime_action_to_pickup(interaction->action_id, &weapon);

@@ -37,13 +37,7 @@ struct rasterfall_hud_state {
     const struct rasterfall_net *net;
     const char *host_address;
     int host_port;
-    int shop_open;
-    int shop_page;
-    int shop_selected;
-    int shop_nav_selected;
-    int shop_scroll;
     int flag_count;
-    int assignment_flag;
     int flag_near;
     int flag_carried;
     int flag_colors[8];

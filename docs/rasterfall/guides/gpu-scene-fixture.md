@@ -102,7 +102,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_weapon_cycle.ps1 -
 `tools/gpu_scene_play.ps1` 检查真实单人启动、窗口输入与 resize、世界切换、连续战役帧和五类
 present fault。使用新的 `-OutputDirectory`，可通过 `-ValidationLayerDirectory` 加载验证层；
 日志必须证明 validation/sync 已启用。固定 UI capture 可选择 `ui-pause`、`ui-scoreboard`、
-`ui-shop`、`ui-over`、`ui-won`，这些只证明内容布局，窗口交互由上述专项单独检查。
+`ui-over`、`ui-won`，这些只证明内容布局，窗口交互由上述专项单独检查。
 可用 `-Stage Interactive/World/Combat/Faults` 定向复跑；默认 `All`。Combat 必须在日志中看到
 真实波次的存活敌人，单纯达到帧数不能通过该项。
 

@@ -118,263 +118,6 @@ static void render_weapon_hud(struct rasterfall_canvas *surface,
                        player->current_slot == 2);
 }
 
-static void render_money(struct rasterfall_canvas *surface, const struct toy_game *game)
-{
-    char line[24];
-    int x = surface->width - 150, y = surface->height / 2 - 112;
-    snprintf(line, sizeof(line), "$ %d", game->money);
-    hud_fill_rect(surface, x, y, 134, 28, 0x26384C);
-    hud_fill_rect(surface, x, y, 3, 28, RF_COLOR_UI_ACCENT);
-    rasterfall_canvas_text(surface, x + 10, y + 6,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT);
-}
-
-static void render_shop(struct rasterfall_canvas *surface,
-                        const struct rasterfall_hud_state *state)
-{
-    static const int weapons[] = { TOY_GAME_WEAPON_SMG,
-        TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP,
-        TOY_GAME_WEAPON_AXE, TOY_GAME_WEAPON_BOMB,
-        TOY_GAME_WEAPON_MOLOTOV, TOY_GAME_WEAPON_PILL };
-    static const int hire_weapons[] = { TOY_GAME_WEAPON_PISTOL,
-        TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN, TOY_GAME_WEAPON_AK,
-        TOY_GAME_WEAPON_AWP };
-    static const char *hire_names[] = { "PISTOL", "SMG", "SG", "AK", "AWP" };
-    static const char *player_names[] = { "SMG", "SG", "AK", "AWP", "AXE",
-        "BOMB", "MOLOTOV", "PILL" };
-    char line[64];
-    int i, x = surface->width / 2 - 260, y = surface->height / 2 - 150;
-    hud_fill_rect(surface, 0, 0, surface->width, surface->height, 0xD010151D);
-    hud_fill_rect(surface, x, y, 520, 42, RF_COLOR_UI_PANEL_DARK);
-    rasterfall_canvas_text(surface, x + 18, y + 13,
-                   "ARMORY", RF_COLOR_UI_ACCENT_BRIGHT);
-    snprintf(line, sizeof(line), "$ %d", state->game->money);
-    rasterfall_canvas_text(surface, x + 400, y + 13,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT);
-    if (!state->shop_page) {
-        rasterfall_canvas_text(surface, x + 20, y + 78,
-                       state->shop_nav_selected == 0 ? "> PLAYER WEAPONS" : "  PLAYER WEAPONS",
-                       state->shop_nav_selected == 0 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 102,
-                       state->shop_nav_selected == 1 ? "> HIRE AI TEAMMATE" : "  HIRE AI TEAMMATE",
-                       state->shop_nav_selected == 1 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 126,
-                       state->shop_nav_selected == 2 ? "> BUY FLAGS" : "  BUY FLAGS",
-                       state->shop_nav_selected == 2 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 150,
-                       state->shop_nav_selected == 3 ? "> RTS UNIT CONTROL" : "  RTS UNIT CONTROL",
-                       state->shop_nav_selected == 3 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 174,
-                       state->shop_nav_selected == 4 ? "> UPGRADE AI" : "  UPGRADE AI",
-                       state->shop_nav_selected == 4 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 198,
-                       state->shop_nav_selected == 5 ? "> CHANGE AI WEAPON" : "  CHANGE AI WEAPON",
-                       state->shop_nav_selected == 5 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 20, y + 222,
-                       state->shop_nav_selected == 6 ? "> BASE COMBAT POWER" : "  BASE COMBAT POWER",
-                       state->shop_nav_selected == 6 ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "ENTER OPEN    ESC CLOSE", RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 3) {
-        rasterfall_canvas_text(surface, x + 20, y + 70,
-                       "BUY A NEW FLAG", RF_COLOR_UI_ACCENT_BRIGHT);
-        rasterfall_canvas_text(surface, x + 20, y + 104,
-                       "ENTER  PURCHASE       $250", RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "ENTER BUY  ESC NAVIGATION", RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 4 || state->shop_page == 5) {
-        rasterfall_canvas_text(surface,x+20,y+70,"RTS UNIT CONTROL",RF_COLOR_UI_ACCENT_BRIGHT);
-        rasterfall_canvas_text(surface,x+20,y+104,"M: RTS   DRAG: SELECT   RMB: MOVE",RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface,x+20,y+138,"CTRL + NUMBER: ADD TO GROUP",RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface,x+20,y+172,"FLAGS NO LONGER CONTROL TEAMMATES",RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 2) {
-        for (i = 0; i < 5; i++) {
-            int cy = y + 58 + i * 45;
-            int price = TOY_CONFIG_AI_HIRE_PRICE +
-                        (hire_weapons[i] == TOY_GAME_WEAPON_PISTOL ?
-                         TOY_CONFIG_AI_HIRE_PISTOL_WEAPON_PRICE :
-                         toy_game_weapon_price(hire_weapons[i]) *
-                         TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER);
-            hud_fill_rect(surface, x + 16, cy, 488, 36,
-                          i == state->shop_selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
-            snprintf(line, sizeof(line), "%sLV1  %s  $%d",
-                     i == state->shop_selected ? "> " : "  ",
-                     hire_names[i], price);
-            rasterfall_canvas_text(surface, x + 30, cy + 10,
-                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        }
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "MONEY", RF_COLOR_UI_ACCENT);
-        snprintf(line, sizeof(line), "$ %d", state->game->money);
-        rasterfall_canvas_text(surface, x + 68, y + 286,
-                       line, RF_COLOR_UI_ACCENT_BRIGHT);
-        rasterfall_canvas_text(surface, x + 160, y + 286,
-                       "UP/DOWN SELECT  ENTER HIRE  ESC NAVIGATION", RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 6) {
-        int n = 0;
-        rasterfall_canvas_text(surface, x + 20, y + 58,
-                       "UPGRADE HIRED AI", RF_COLOR_UI_ACCENT_BRIGHT);
-        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
-            const struct toy_game_actor *a = &state->game->actors[i];
-            int price, selected;
-            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
-            selected = n == state->shop_selected;
-            price = a->class_id == TOY_GAME_AI_LEVEL_1 ? TOY_CONFIG_AI_LEVEL_2_PRICE :
-                    a->class_id == TOY_GAME_AI_LEVEL_2 ? TOY_CONFIG_AI_LEVEL_3_PRICE : 0;
-            snprintf(line, sizeof(line), "%s%s  LV%d  %s",
-                     selected ? "> " : "  ", a->name, a->class_id + 1,
-                     price ? "UPGRADE" : "MAX LEVEL");
-            rasterfall_canvas_text(surface, x + 24, y + 90 + n * 28,
-                           line, selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-            if (price) {
-                snprintf(line, sizeof(line), "$%d", price);
-                rasterfall_canvas_text(surface, x + 390,
-                               y + 90 + n * 28, line, RF_COLOR_UI_ACCENT);
-            }
-            n++;
-        }
-        if (!n) rasterfall_canvas_text(surface, x + 24, y + 96,
-                               "NO HIRED AI", RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "UP/DOWN SELECT  ENTER UPGRADE  ESC NAVIGATION",
-                       RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 7) {
-        int n = 0;
-        rasterfall_canvas_text(surface, x + 20, y + 58,
-                       "SELECT AI", RF_COLOR_UI_ACCENT_BRIGHT);
-        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
-            const struct toy_game_actor *a = &state->game->actors[i];
-            const char *weapon;
-            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
-            weapon = a->current_slot >= 0 &&
-                     a->current_slot < TOY_GAME_WEAPON_SLOTS &&
-                     a->slots[a->current_slot].weapon >= 0 ?
-                     toy_game_weapon_name(a->slots[a->current_slot].weapon) : "NONE";
-            snprintf(line, sizeof(line), "%s%s  LV%d  %s",
-                     n == state->shop_selected ? "> " : "  ", a->name,
-                     a->class_id + 1, weapon);
-            rasterfall_canvas_text(surface, x + 24,
-                           y + 90 + n * 28, line,
-                           n == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-            n++;
-        }
-        if (!n) rasterfall_canvas_text(surface, x + 24, y + 96,
-                               "NO HIRED AI", RF_COLOR_UI_TEXT);
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "UP/DOWN SELECT  ENTER WEAPONS  ESC NAVIGATION",
-                       RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 8) {
-        static const int ai_weapons[] = { TOY_GAME_WEAPON_PISTOL,
-            TOY_GAME_WEAPON_SMG, TOY_GAME_WEAPON_SHOTGUN,
-            TOY_GAME_WEAPON_AK, TOY_GAME_WEAPON_AWP };
-        static const char *ai_weapon_names[] = { "PISTOL", "SMG", "SG", "AK", "AWP" };
-        for (i = 0; i < 5; i++) {
-            int cy = y + 58 + i * 45;
-            int price = ai_weapons[i] == TOY_GAME_WEAPON_PISTOL ? 0 :
-                        toy_game_weapon_price(ai_weapons[i]) *
-                        TOY_CONFIG_AI_HIRE_WEAPON_PRICE_MULTIPLIER;
-            hud_fill_rect(surface, x + 16, cy, 488, 36,
-                          i == state->shop_selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
-            snprintf(line, sizeof(line), "%s%s  $%d", i == state->shop_selected ? "> " : "  ",
-                     ai_weapon_names[i], price);
-            rasterfall_canvas_text(surface, x + 30, cy + 10,
-                           line, i == state->shop_selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        }
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "UP/DOWN SELECT  ENTER CHANGE  ESC AI LIST",
-                       RF_COLOR_UI_TEXT);
-        return;
-    }
-    if (state->shop_page == 9) {
-        int total_power = 0, n = 0;
-        rasterfall_canvas_text(surface, x + 20, y + 58,
-                       "BASE COMBAT POWER", RF_COLOR_UI_ACCENT_BRIGHT);
-        for (i = 0; i < TOY_GAME_REMOTE_ACTOR_BASE; i++) {
-            const struct toy_game_actor *a = &state->game->actors[i];
-            const char *weapon = "NONE";
-            const char *level;
-            int power;
-            if (!a->active || a->kind != TOY_GAME_ACTOR_AI || !a->hired) continue;
-            level = a->class_id == TOY_GAME_AI_LEVEL_1 ? "LV1" :
-                    a->class_id == TOY_GAME_AI_LEVEL_3 ? "LV3" : "LV2";
-            if (a->current_slot >= 0 && a->current_slot < TOY_GAME_WEAPON_SLOTS &&
-                a->slots[a->current_slot].weapon >= 0)
-                weapon = toy_game_weapon_name(a->slots[a->current_slot].weapon);
-            power = toy_game_actor_combat_power(a);
-            total_power += power;
-            if (n < 6) {
-                snprintf(line, sizeof(line), "%s  %s  %s  CP %d",
-                         a->name, level, weapon, power);
-                rasterfall_canvas_text(surface, x + 24,
-                               y + 92 + n * 28, line,
-                               RF_COLOR_UI_TEXT);
-            }
-            n++;
-        }
-        if (!n)
-            rasterfall_canvas_text(surface, x + 24, y + 96,
-                           "NO HIRED AI", RF_COLOR_UI_TEXT);
-        snprintf(line, sizeof(line), "TOTAL CP  %d", total_power);
-        rasterfall_canvas_text(surface, x + 300, y + 258,
-                       line, RF_COLOR_UI_ACCENT_BRIGHT);
-        rasterfall_canvas_text(surface, x + 16, y + 286,
-                       "ESC NAVIGATION", RF_COLOR_UI_TEXT);
-        return;
-    }
-    for (i = 0; i < 8; i++) {
-        const struct toy_game_actor *player =
-            toy_game_local_player_actor_const(state->game);
-        int cx = x + 16;
-        int cy = y + 56 + i * 27;
-        int selected = i == state->shop_selected;
-        int unlocked = toy_game_weapon_unlocked(state->game, weapons[i]);
-        int quantity = -1, quantity_max = 0;
-        if (weapons[i] == TOY_GAME_WEAPON_BOMB ||
-            weapons[i] == TOY_GAME_WEAPON_MOLOTOV) {
-            quantity = player && player->slots[2].weapon == weapons[i] ?
-                       player->slots[2].mag : 0;
-            quantity_max = TOY_GAME_THROWABLE_MAX;
-        } else if (weapons[i] == TOY_GAME_WEAPON_PILL) {
-            quantity = player && player->slots[3].weapon == weapons[i] ?
-                       player->slots[3].mag : 0;
-            quantity_max = TOY_GAME_PILL_MAX;
-        }
-        hud_fill_rect(surface, cx, cy, 488, 24,
-                      selected ? 0x3C4E5B : RF_COLOR_UI_PANEL_DARK);
-        rasterfall_canvas_text(surface, cx + 10, cy + 6,
-                       player_names[i], selected ? RF_COLOR_UI_ACCENT_BRIGHT : RF_COLOR_UI_TEXT);
-        if (quantity >= 0 && unlocked)
-            snprintf(line, sizeof(line), "%d/%d  BUY $%d", quantity,
-                     quantity_max, toy_game_weapon_price(weapons[i]));
-        else if (unlocked)
-            snprintf(line, sizeof(line), "OWNED  ENTER EQUIP");
-        else
-            snprintf(line, sizeof(line), "LOCKED  BUY $%d",
-                     toy_game_weapon_price(weapons[i]));
-        rasterfall_canvas_text(surface, cx + 170, cy + 6,
-                       line, unlocked ? RF_COLOR_UI_SUCCESS : RF_COLOR_UI_DANGER);
-    }
-    rasterfall_canvas_text(surface, x + 16,
-                   y + 286, "MONEY", RF_COLOR_UI_ACCENT);
-    snprintf(line, sizeof(line), "$ %d", state->game->money);
-    rasterfall_canvas_text(surface, x + 68, y + 286,
-                   line, RF_COLOR_UI_ACCENT_BRIGHT);
-    rasterfall_canvas_text(surface, x + 160, y + 286,
-                   "UP/DOWN SELECT  ENTER BUY/EQUIP  ESC CLOSE", RF_COLOR_UI_TEXT);
-}
-
 static char hud_upper_ascii(char c)
 {
     return c >= 'a' && c <= 'z' ? (char)(c - 'a' + 'A') : c;
@@ -449,15 +192,13 @@ static void render_revive_prompt(struct rasterfall_canvas *surface,
     const struct toy_game *game = state->game;
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
-    char line[96],interact_key[24]="E",revive_key[24]="F";
+    char line[96],interact_key[24]="E";
     int width, x, y = surface->height / 2 + 24;
     if (state->player_ui_view.bindings) {
         rf_input_action_label(state->player_ui_view.bindings,RF_ACTION_INTERACT,interact_key,sizeof(interact_key));
-        rf_input_action_label(state->player_ui_view.bindings,RF_ACTION_FLAG,revive_key,sizeof(revive_key));
     }
     if (player && player->state == TOY_GAME_ACTOR_DOWNED) {
-        snprintf(line, sizeof(line), "%s REVIVE $%d   WAIT FOR RESCUE",
-                 revive_key,RASTERFALL_PAID_REVIVE_COST);
+        snprintf(line, sizeof(line), "WAIT FOR RESCUE");
     } else if (!state->ai_revive_available &&
                               !state->ai_revive_active &&
                               !state->player_revive_available &&
@@ -664,7 +405,6 @@ void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
         render_wave_hud(surface, game, fps);
         render_network_hud(surface, state->net, state->host_address, state->host_port);
         render_weapon_hud(surface, game);
-        render_money(surface, game);
         rasterfall_hud_player_status(surface, game, state->player_name, 16, surface->height - 68);
     }
     render_revive_prompt(surface, state);
@@ -704,7 +444,6 @@ void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
         snprintf(line,sizeof(line),"U AXES  O ANCHORS  I IK  V PLAY  R RESET  P EXPORT  ESC EXIT%s",e->dirty?"  * DIRTY":"");
         rasterfall_canvas_text(surface,14,y+FB_FONT_H,line,0x90F090);
     }
-    if (state->shop_open) render_shop(surface, state);
     if ((!state->player_ui || state->player_ui->mode >= RF_PLAYER_UI_EXPERIMENT) &&
         state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
@@ -780,12 +519,6 @@ void rasterfall_hud_prompt_layout(struct rasterfall_canvas *surface,
         snprintf(label, sizeof(label), "E OPEN BASE 2 GATE");
     else if (it->kind == TOY_MAP_PICKUP_AMMO)
         snprintf(label, sizeof(label), "E TAKE AMMO");
-    else if (it->kind == TOY_MAP_PICKUP_SHOP)
-        snprintf(label, sizeof(label), "E OPEN ARMORY");
-    else if (it->kind == TOY_MAP_PICKUP_MONEY_BUTTON)
-        snprintf(label, sizeof(label), "E ADD $500");
-    else if (it->kind == TOY_MAP_PICKUP_CLEAR_HIRED_BUTTON)
-        snprintf(label, sizeof(label), "E CLEAR HIRED AI");
     else if (it->kind == TOY_MAP_PICKUP_ENEMY_DEATH_TEST_BUTTON)
         snprintf(label, sizeof(label), "E: TEST ENEMY DEATH EFFECTS");
     else if (it->kind == TOY_MAP_PICKUP_POSE_RESET_BUTTON)
