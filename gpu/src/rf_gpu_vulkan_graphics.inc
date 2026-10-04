@@ -139,8 +139,8 @@ struct rf_gpu_graphics {
     int scene_query_active;
     struct rf_gpu_scene_timing scene_timing;
     struct rf_gpu_graphics_stats stats;
-    struct rf_gpu_graphics *video;
-    int video_rect[4];
+    struct rf_gpu_graphics *video[RF_GPU_GRAPHICS_VIDEO_SLOTS];
+    int video_rect[RF_GPU_GRAPHICS_VIDEO_SLOTS][4];
     float background[3];
 };
 
@@ -1538,25 +1538,30 @@ int rf_gpu_graphics_scene_background(struct rf_gpu_graphics *g,float red,float g
     g->background[0]=red;g->background[1]=green;g->background[2]=blue;return 0;
 }
 
-int rf_gpu_graphics_scene_video(struct rf_gpu_graphics *g,
+int rf_gpu_graphics_scene_video_at(struct rf_gpu_graphics *g,unsigned slot,
     struct rf_gpu_graphics *source,int x,int y,int width,int height)
 {
-    if(!g || g->scene_in_flight || g->poisoned)return -1;
-    g->video=NULL;
+    if(slot>=RF_GPU_GRAPHICS_VIDEO_SLOTS || !g || g->scene_in_flight || g->poisoned)return -1;
+    g->video[slot]=NULL;
     if(!source)return 0;
     if(source==g || source->owner!=g->owner || source->poisoned ||
         source->scene_in_flight || !source->target.valid || x<0 || y<0 ||
         width<=0 || height<=0 || (uint64_t)x+width>g->target.width ||
         (uint64_t)y+height>g->target.height)return -1;
-    g->video=source;g->video_rect[0]=x;g->video_rect[1]=y;
-    g->video_rect[2]=width;g->video_rect[3]=height;return 0;
+    g->video[slot]=source;g->video_rect[slot][0]=x;g->video_rect[slot][1]=y;
+    g->video_rect[slot][2]=width;g->video_rect[slot][3]=height;return 0;
 }
+
+int rf_gpu_graphics_scene_video(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics *source,int x,int y,int width,int height)
+{ return rf_gpu_graphics_scene_video_at(g,0,source,x,y,width,height); }
 
 static void gfx_video_record(struct rf_gpu_graphics *g)
 {
     struct rf_vk_image_memory_barrier barrier={0};
     rf_scene_blit blit={0};
-    if(!g->video)return;
+    int any=0;for(unsigned slot=0;slot<RF_GPU_GRAPHICS_VIDEO_SLOTS;++slot)any|=g->video[slot]!=NULL;
+    if(!any)return;
     barrier.s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.old_layout=VK_IMAGE_LAYOUT_GENERAL;
     barrier.new_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -1570,13 +1575,15 @@ static void gfx_video_record(struct rf_gpu_graphics *g)
         RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
     blit.src.aspectMask=blit.dst.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
     blit.src.layerCount=blit.dst.layerCount=1;
-    blit.src_offsets[1].x=g->video->target.width;
-    blit.src_offsets[1].y=g->video->target.height;blit.src_offsets[1].z=1;
-    blit.dst_offsets[0].x=g->video_rect[0];blit.dst_offsets[0].y=g->video_rect[1];
-    blit.dst_offsets[1].x=g->video_rect[0]+g->video_rect[2];
-    blit.dst_offsets[1].y=g->video_rect[1]+g->video_rect[3];blit.dst_offsets[1].z=1;
-    g->api.CmdBlitImage(g->cmd,g->video->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        g->target.color.image,RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,0);
+    for(unsigned slot=0;slot<RF_GPU_GRAPHICS_VIDEO_SLOTS;++slot)if(g->video[slot]) {
+        blit.src_offsets[1].x=g->video[slot]->target.width;
+        blit.src_offsets[1].y=g->video[slot]->target.height;blit.src_offsets[1].z=1;
+        blit.dst_offsets[0].x=g->video_rect[slot][0];blit.dst_offsets[0].y=g->video_rect[slot][1];
+        blit.dst_offsets[1].x=g->video_rect[slot][0]+g->video_rect[slot][2];
+        blit.dst_offsets[1].y=g->video_rect[slot][1]+g->video_rect[slot][3];blit.dst_offsets[1].z=1;
+        g->api.CmdBlitImage(g->cmd,g->video[slot]->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            g->target.color.image,RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,0);
+    }
     barrier.old_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.new_layout=VK_IMAGE_LAYOUT_GENERAL;
     barrier.src_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT;

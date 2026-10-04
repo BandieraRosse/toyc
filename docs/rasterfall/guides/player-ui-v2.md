@@ -11,7 +11,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run 
 
 默认玩家界面。默认 F3 循环玩家/终端/实验，反引号临时打开或关闭玩家终端，M 切 FPS/RTS，
 G 放大地图已取消。Enter 打开/收起聊天记录，Esc 收起，上下键或滚轮查看历史；剧情自动推进，不再用 Z 回答或 H 收起视频。
-数字武器槽仍保留。提示由当前物理动作绑定生成，运行中改绑后不依赖这些默认字母。
+数字键在 FPS 选择武器槽，在 RTS 召回编组。提示由当前物理动作绑定生成，运行中改绑后不依赖这些默认字母。
 普通通讯允许继续移动和射击；主动展开聊天记录才占用指针。设备和终端关闭后，已按住的键鼠需先释放，
 再重新向玩法产生输入，避免关闭窗口时误开火或移动。
 
@@ -55,6 +55,40 @@ FPS 默认小地图显示附近区域，北向上、玩家箭头随朝向变化�
 两者共用地形缓存、目标和可见性规则，不扫描显示全部敌人。RTS 地图内左键把
 观察相机移到对应地点并取消跟随，右键向当前选择提交移动请求，目标仍由 session 校验。
 地图及底栏面板内的点击由 UI 消费，不继续落到后面的世界选择。普通玩家底栏不提供实验传送。
+
+## RTS 核心指挥
+
+M 进入 RTS。左键点选或拖动框选友军，Shift 点选/框选追加；空地点选取消选择。
+底栏上方有十个编组槽，`1…9、0` 召回，`Ctrl + 数字` 用当前选择完整重设对应组；没有选中单位时清空该组。
+编组条也可点击，Ctrl 点击执行同样的重设/清空。一名队员可同时属于多个组，不额外限制编组人数。
+十格从左到右对应 `1…9、0`，只显示组内人数。
+
+单选左侧显示随健康状态变色的身体网格，右侧显示名称、武器、生命、回避和弹药。
+多选显示单位卡片，悬停查看简要信息、点击改为单选；较多成员可滚轮或按钮翻页。
+所选单位脚底有绿圈，右键移动显示各自终点及连线，X 停止整个选择；WASD 和滚轮仍控制主观察镜头。
+信息与操作区之间的单位镜头实时拍摄当前主选队员，复用剧情取景；GPU Scene 支持视频，CPU 显示不可用。
+收起底栏停止该视频，保留选择与指令。镜头与多人编组均不改变 AI 的战斗、受伤或动画规则。
+单位镜头与剧情镜头同时显示，切换或取消单位选择不影响剧情视频。
+
+前哨站实验区北侧入口道路常驻三支正式 AI 小组，从西向东为步枪、狙击、霰弹枪，各三人。
+它们按 `outpost.content` 的 `rts_*` formation 生成，正常游戏启动即可选择与编组，不需要打开展示台。
+所有 AI 队友已独立于旗帜位置与寻路；旗帜仍可保留、购买和携带。
+
+架构和身份失效规则见 [RTS 核心指挥](../architecture/rts-command.md)。完成 native test/stage 后运行：
+
+```powershell
+python tools/rts_command_check.py --output tmp/rts-command
+python tools/rts_command_check.py --physical-mouse --fullscreen --story --gesture-ms 20 --output tmp/rts-fullscreen
+python tools/rts_command_check.py --physical-mouse --toggle-fullscreen --gesture-ms 20 --output tmp/rts-f11
+python tools/rts_command_check.py --boot --fullscreen --physical-mouse --story --output tmp/rts-normal-boot
+```
+
+该工具需要 Windows 桌面鼠标权限；只向它启动并取得前台的 SDL 窗口投递输入，失焦停止。
+输出包括逐步审计、GPU 截图和真实退出码；它不代替长时间性能与全部窗口组合验收。
+`--fullscreen` 使用游戏真正的桌面全屏；`--toggle-fullscreen` 从窗口进入全屏，并检查往返切换后的选择。
+系统鼠标路线使用真实坐标与按钮事件，短手势检查同批按下/松开；`--story` 另验证双视频及取消选择后剧情保留。
+`--boot` 让 Boot Manager 自动选择后端和默认地图，先确认首个游戏帧已有窗口焦点，再允许脚本操作。
+该路线不能同时指定显式渲染器；否则运行时会跳过 Boot Manager，无法覆盖直接启动 exe 的输入生命周期。
 
 ## GUI 与终端映射
 

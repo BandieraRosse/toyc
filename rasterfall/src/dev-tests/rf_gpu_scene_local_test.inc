@@ -321,7 +321,8 @@ static int scene_local_source_test(void)
         epoch=owner.scene_local.epoch;
         LOCAL_CHECK(rasterfall_session_load(&owner,"rasterfall/assets/maps/outpost.map")==0);
         rasterfall_session_reset(&owner,&camera,1);
-        LOCAL_CHECK(!owner.scene_local.active);
+        /* Outpost contains ordinary command-test squads as well as NULL. */
+        LOCAL_CHECK(owner.scene_local.active);
         LOCAL_CHECK(rasterfall_session_load(&owner,"rasterfall/assets/maps/rasterfall.map")==0);
         rasterfall_session_reset(&owner,&camera,1);
         LOCAL_CHECK(owner.scene_local.epoch>epoch);

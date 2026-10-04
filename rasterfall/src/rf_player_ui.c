@@ -85,18 +85,35 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
         int dock_h=ui_min(ui_px(config->rts_height,scale),height/3);
         int dock_y=height-margin-dock_h;
         int map_width=map_size;
-        int commands_width=ui_min(ui_px(278,scale),width/3);
+        int commands_width=ui_min(ui_px(230,scale),width/4);
         int selection_x=margin+map_width+gap;
+        int portrait_width=ui_min(ui_px(100,scale),width/8);
         out->commands=ui_rect(width-margin-commands_width,dock_y,commands_width,dock_h);
+        out->portrait=ui_rect(out->commands.x-gap-portrait_width,dock_y,portrait_width,dock_h);
         out->selection=ui_rect(selection_x,dock_y,
-            out->commands.x-selection_x-gap,dock_h);
-        out->hints=ui_rect(selection_x,dock_y-gap-ui_px(26,scale),
-            ui_max(0,out->commands.x-selection_x-gap),ui_px(26,scale));
+            out->portrait.x-selection_x-gap,dock_h);
+        /* High UI scales reflow this dense dock as a unit, preserving space
+         * for all ten group buttons and the selected-unit camera. */
+        if(out->selection.w<ui_px(300,scale)) {
+            int available=width-selection_x-margin-gap*3;
+            commands_width=available*28/100;portrait_width=available*12/100;
+            out->commands.x=width-margin-commands_width;out->commands.w=commands_width;
+            out->portrait.x=out->commands.x-gap-portrait_width;out->portrait.w=portrait_width;
+            out->selection.w=out->portrait.x-selection_x-gap;
+        }
+        out->groups=ui_rect(selection_x,dock_y-gap-ui_px(27,scale),out->selection.w,ui_px(27,scale));
+        out->video=ui_rect(out->portrait.x+2,out->portrait.y+ui_px(22,scale),
+            ui_max(0,out->portrait.w-4),ui_max(0,out->portrait.h-ui_px(44,scale)));
+        /* Shared portrait aspect ratio; inset instead of stretching video. */
+        int vw=ui_min(out->video.w,out->video.h*2/3);
+        out->video.x+=(out->video.w-vw)/2;out->video.w=vw;
+        out->video.h=vw*3/2;
+        out->hints=ui_rect(0,0,0,0);
         out->dock_toggle=ui_rect(width-margin-ui_px(100,scale),
             (state->rts_collapsed?height-margin:dock_y-gap)-ui_px(26,scale),
             ui_px(100,scale),ui_px(26,scale));
         if (state->rts_collapsed) {
-            out->selection=out->commands=out->hints=ui_rect(0,0,0,0);
+            out->selection=out->commands=out->hints=out->groups=out->portrait=out->video=ui_rect(0,0,0,0);
         }
     }
     (void)pad;
@@ -349,65 +366,7 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
         view->objective_active?theme->warning:theme->text,scale,1);
 }
 
-static void ui_rts(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
-                    const struct rf_ui_layout *layout)
-{
-    const struct rf_ui_theme *theme=&hud->player_ui->theme;
-    const struct rf_player_ui_view *view=&hud->player_ui_view;
-    const struct toy_game_actor *player=toy_game_local_player_actor_const(hud->game);
-    struct rf_ui_rect r=layout->selection;
-    int scale=layout->text_scale_milli,pad=layout->padding,count=0,hp=0,max_hp=0,moving=0;
-    int visible=0,y=r.y+pad;
-    char line[192],key[24];
-    rf_ui_panel(canvas,r,theme,0);
-    if (view->rts_selected<0) {
-        rf_ui_text(canvas,ui_rect(r.x+pad,y,r.w-2*pad,r.h-pad*2),
-            "战术指挥\n左键选择玩家或旗帜\n右键指定移动目标",theme->muted,scale,3);
-    } else {
-        for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
-            const struct toy_game_actor *a=&hud->game->actors[i];
-            int selected=view->rts_selected==0?a==player:a->flag_index==view->rts_selected-1;
-            if (!selected || !a->active || a->developer_only) continue;
-            ++count;hp+=ui_max(0,a->hp);max_hp+=a->max_hp;
-            if (a->nav_active || a->moving) ++moving;
-        }
-        if (view->rts_selected==0) snprintf(line,sizeof(line),"%s",hud->player_name&&*hud->player_name?hud->player_name:"PLAYER");
-        else snprintf(line,sizeof(line),"旗帜 %d  ·  %d 名队员",view->rts_selected,count);
-        rf_ui_text(canvas,ui_rect(r.x+pad,y,r.w-pad*2,ui_px(20,scale)),line,theme->text,scale,1);
-        y+=ui_px(27,scale);
-        snprintf(line,sizeof(line),"生命 %d / %d",hp,max_hp);
-        rf_ui_text(canvas,ui_rect(r.x+pad,y,r.w-pad*2,ui_px(18,scale)),line,theme->success,scale,1);
-        ui_bar(canvas,r.x+pad,y+ui_px(21,scale),r.w-2*pad,ui_px(5,scale),hp,max_hp,theme->success);
-        y+=ui_px(37,scale);
-        snprintf(line,sizeof(line),"当前命令: %s",view->rts_move_active?"移动到目标":
-            (player && player->moving && view->rts_selected==0)?"移动中":"待命 / 自主行动");
-        if (view->rts_selected>0) snprintf(line,sizeof(line),"队员移动中 %d / %d",moving,count);
-        rf_ui_text(canvas,ui_rect(r.x+pad,y,r.w-pad*2,ui_px(18,scale)),line,theme->text,scale,1);
-        y+=ui_px(26,scale);
-        if (view->rts_selected>0) for (int i=0;i<TOY_GAME_MAX_ACTORS && visible<2;++i) {
-            const struct toy_game_actor *a=&hud->game->actors[i];
-            if (!a->active || a->developer_only || a->flag_index!=view->rts_selected-1) continue;
-            snprintf(line,sizeof(line),"%s  %d/%d",a->name,a->hp,a->max_hp);
-            rf_ui_text(canvas,ui_rect(r.x+pad,y,r.w-pad*2,ui_px(18,scale)),line,theme->muted,scale,1);
-            y+=ui_px(20,scale);++visible;
-        }
-        if (view->command_feedback && *view->command_feedback)
-            rf_ui_text(canvas,ui_rect(r.x+pad,r.y+r.h-pad-ui_px(18,scale),r.w-pad*2,ui_px(18,scale)),
-                view->command_feedback,theme->warning,scale,1);
-    }
-    r=layout->commands;rf_ui_panel(canvas,r,theme,0);
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+pad,r.w-pad*2,ui_px(18,scale)),
-        "单位指令  ·  右键移动",theme->muted,scale,1);
-    ui_label(view,RF_ACTION_RTS_STOP,key,sizeof(key));
-    snprintf(line,sizeof(line),"[%s] 停止移动",key);
-    rf_ui_button(canvas,ui_rts_button(layout,0),theme,line,scale,0,view->rts_selected==0);
-    ui_label(view,RF_ACTION_RTS_FOLLOW,key,sizeof(key));
-    snprintf(line,sizeof(line),"视角 [%s] %s",key,view->rts_follow_player?"跟随中":"跟随玩家");
-    rf_ui_button(canvas,ui_rts_button(layout,1),theme,line,scale,view->rts_follow_player,1);
-    ui_label(view,RF_ACTION_COMMAND_MODE,key,sizeof(key));
-    snprintf(line,sizeof(line),"视角 [%s] 返回 FPS",key);
-    rf_ui_button(canvas,ui_rts_button(layout,2),theme,line,scale,0,1);
-}
+#include "rf_rts_ui.inc"
 
 static void ui_fps(struct rasterfall_canvas *canvas,const struct rf_ui_theme *theme,
                    const struct rf_ui_layout *layout,int fps)
@@ -436,6 +395,7 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     char line[192],mode[24],terminal[24],map[24];
     if (!canvas || !hud->game) return;
     rf_ui_layout_resolve(&layout,hud->player_ui,canvas->width,canvas->height,view->rts_active);
+    if(view->rts_active)rts_world_feedback(canvas,hud,&layout);
     ui_top(canvas,hud,&layout);
     ui_fps(canvas,theme,&layout,fps);
     if (view->rts_active) {

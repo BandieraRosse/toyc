@@ -97,6 +97,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
                 desired_z = a->z - dz * 700 / distance;
             }
         }
+    } else if (a->command_destination_active) {
+        desired_x = a->command_x; desired_z = a->command_z;
     } else if (a->companion && !a->ai_stationary) {
         const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
         long long dx = (long long)player->x - a->x, dz = (long long)player->z - a->z;

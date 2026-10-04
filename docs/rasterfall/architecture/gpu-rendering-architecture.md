@@ -69,19 +69,22 @@ retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pip
 
 正常交互帧由 Game Runtime 以 120 FPS 节流。其 Vulkan swapchain 优先选 immediate，其次 mailbox，均不可用时退回必备的 FIFO；前两者允许在 60 Hz 显示器上继续采样并提交更多帧，immediate 可能出现画面撕裂。固定帧诊断仍用 FIFO。该呈现选择不改变 GPU service、资源退休或固定逻辑步。玩法状态的双 tick 展示插值见[运行时架构](runtime.md)。
 
-## 通讯镜头与设备预览
+## 通讯镜头、单位镜头与设备预览
 
-`rf_gpu_scene_layers_input.aux_view` 是 Runtime 提交的单个辅助视图请求。它分开保存稳定来源 ID、
-generation、实体镜头变换、视频矩形、内部渲染尺寸和刷新频率；UI 布局变化只改变最终合成矩形。
-`render/rf_gpu_scene_aux.inc` 持有低频调度，Scene probe 持有持久子 owner。默认刷新为 12 Hz，最多 15 Hz。
+`rf_gpu_scene_layers_input.aux_view` 提交通讯/设备视图，`unit_view` 提交 RTS 单位视图，两路可同时显示。
+每路分别保存稳定来源 ID、generation、镜头变换、视频矩形、内部尺寸和刷新频率；UI 布局只改变最终合成矩形。
+`render/rf_gpu_scene_aux.inc` 按槽调度，Scene probe 的 `aux[2]` 各自持有持久子 owner、状态、刷新时刻与重试次数。
+默认刷新为 12 Hz，最多 15 Hz，子视图清除两路嵌套请求，不递归生成辅助视图。
 通讯直接按 240×360 的 2:3 竖画面渲染，合成矩形保持同一比例，禁止把横画面非等比拉伸进竖框；
-设备预览默认从 320×180 开始，再按预览矩形调整内部高度。实际性能签收依实机采样，不把这些值视为性能保证。通讯和设备预览共用一个可见
-槽位，由 Runtime 决定优先级，并向用户说明暂停原因。
+设备预览默认从 320×180 开始，再按预览矩形调整内部高度。实际性能签收依实机采样，不把这些值视为性能保证。
+槽 0 在设备打开时优先显示设备预览，否则显示剧情；槽 1 独立显示 RTS 单位，不能抢占剧情画面。
+单位镜头复用剧情取景参数、
+240×360 竖画面及低频调度，来源身份切换后等新帧再标记 live，具体见 [RTS 核心指挥](rts-command.md)。
 
 WORLD 模式使用本帧同一份 world、actor、敌人、设备和 effects 冻结值，以实体镜头重新准备完整
 小画面；不二次推进动画历史，不缓存背景图像。天空、动态光照、制造动画、角色和特效继续更新。
-主玩家手电保留原玩家镜头的位置和方向。远端镜头通过 `rf_gpu_scene_enemy_aux_camera` 在来源冻结前
-保留其附近敌人；普通 AI 来源本身不按主镜头裁掉，FPS 玩家额外身体只供辅助镜头消费。实体外壳按
+主玩家手电保留原玩家镜头的位置和方向。`rf_gpu_scene_enemy_aux_camera` 与 `rf_gpu_scene_enemy_unit_camera`
+在来源冻结前保留任一路镜头附近的敌人；普通 AI 来源本身不按主镜头裁掉，FPS 玩家额外身体只供辅助镜头消费。实体外壳按
 同一镜头轴向生成，在主场景可见，对其自身镜头排除；窗口收起时外壳仍可保留。
 
 WEAPON 模式复用制造展示的真实武器模型、物理适配和材质，按完整资产 bounds 居中取景，旋转只改变
@@ -91,17 +94,18 @@ WEAPON 模式复用制造展示的真实武器模型、物理适配和材质，�
 大型 GPU 资源。当前不提供任意角色、纹理模型或通用场景编辑器预览合同。
 
 Vulkan 的 `rf_gpu_graphics_scene_offscreen` 只写 device-local 颜色/深度/HDR attachment，不申请
-swapchain 图像，不读回 CPU。`rf_gpu_graphics_scene_video` 在主视图 tone map 后、HUD 之前以 GPU blit
-合成小画面；UI 必须为该矩形保留透明内容区。诊断 capture 才按需分配 staging readback buffer。
+swapchain 图像，不读回 CPU。`rf_gpu_graphics_scene_video_at` 独立绑定或清除两个槽，原 `scene_video` 保留为槽 0 接口。
+主视图 tone map 后、HUD 之前以 GPU blit 顺序合成两路小画面；清除一路不能影响另一路。
+UI 必须为各矩形保留透明内容区。诊断 capture 才按需分配 staging readback buffer。
 子镜头与主 owner 遵守现有单槽退休合同；辅助提交同步等待完成，正常帧没有 Raster bridge 或 CPU
 framebuffer 往返。销毁先排空主 owner，再释放其仍可能引用的子镜头图像。
 
 收起/关闭立即解除合成并停止辅助绘制，恢复和来源代际变化要求新帧。失败清空视频，按一秒间隔最多
-重试三次，状态为 `UNAVAILABLE`，不把旧画面标作实时；重新打开可以重新尝试。`aux_status` 提供状态、
+重试三次，状态为 `UNAVAILABLE`，不把旧画面标作实时；重新打开可以重新尝试。每槽的 `status` 提供状态、
 累计刷新次数、最近真实刷新时间、CPU 墙钟、GPU 时间戳和上传字节。CPU 后端应显示视频不可用并继续文本会话。
 
 `gpu/src/rf_gpu_graphics_test.c` 的 `RF_GPU_AUX_TEST=1` 分支验证 GPU 图像合成、真实目标更新、HUD
-覆盖顺序、隐藏、目标/几何复用以及辅助 owner 零读回和零 bridge；完整 graphics 回归也包含该项。
+覆盖顺序、双路共存与独立隐藏、目标/几何复用以及辅助 owner 零读回和零 bridge；完整 graphics 回归也包含该项。
 它不代替近处/远程 NULL、窗口布局与 native 生命周期的实机验收。
 
 ## 当前验证

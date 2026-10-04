@@ -76,7 +76,6 @@ static int rf_combat_actor_add(struct toy_game *g,int preset,int hostile,int x,i
     struct rf_combat_member *m=&rf_combat_lab.members[rf_combat_lab.member_count++];
     memset(m,0,sizeof(*m));m->actor_id=id;m->enemy_slot=-1;m->side=hostile;m->initial_hp=a->hp;
     m->generation=a->combat_generation;
-    if(!hostile && rf_combat_lab.flag_index>=0) a->flag_index=rf_combat_lab.flag_index;
     return id;
 }
 static int rf_combat_enemy_add(struct toy_game *g,int x,int z,int fixed)
@@ -168,8 +167,7 @@ static int rf_combat_start(struct rf_game_runtime *runtime,int preset,int observ
         s->flags[fi].x=area->origin_x-2500;s->flags[fi].z=area->origin_z;
         s->flags[fi].color=0x57BCD5;s->flags[fi].facing=1;strcpy(s->flags[fi].label,"LAB");
         s->flags[fi].carrier_id=-1;
-        /* Same compact square as the standard session flag.  These offsets
-         * apply only when commanded; preset spawn/deployment stays intact. */
+        /* The LAB flag is a field marker; individual RTS orders own movement. */
         static const int offsets[4][2]={{420,420},{-420,420},{-420,-420},{420,-420}};
         memcpy(s->flags[fi].slot_offsets,offsets,sizeof(offsets));
     }

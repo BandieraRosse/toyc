@@ -537,23 +537,28 @@ done:
 static int auxiliary_video_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context),*video=rf_gpu_graphics_create(context);
-    struct rf_gpu_graphics_batch_item source={0},items[2]={{0}};
+    struct rf_gpu_graphics *unit=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_batch_item source={0},unit_source={0},items[2]={{0}};
     struct rf_gpu_graphics_vertex hud[4]={0};
     const uint32_t quad[6]={0,1,2,0,2,3};
     struct rf_gpu_graphics_stats before,after;
     struct rf_gpu_lighting lighting;
     uint32_t white=0xffffff;
     int result=-1;
-    CHECK(g && video && !rf_gpu_graphics_resize(g,128,96) && !rf_gpu_graphics_resize(video,64,64));
+    CHECK(g && video && unit && !rf_gpu_graphics_resize(g,128,96) &&
+        !rf_gpu_graphics_resize(video,64,64) && !rf_gpu_graphics_resize(unit,64,64));
     rf_gpu_lighting_default(&lighting);lighting.environment[3]=1;
-    CHECK(!rf_gpu_graphics_set_lighting(g,&lighting) && !rf_gpu_graphics_set_lighting(video,&lighting));
+    CHECK(!rf_gpu_graphics_set_lighting(g,&lighting) && !rf_gpu_graphics_set_lighting(video,&lighting) &&
+        !rf_gpu_graphics_set_lighting(unit,&lighting));
     CHECK(!rf_gpu_graphics_scene_background(video,.018f,.030f,.045f));
     CHECK(rf_gpu_graphics_scene_background(video,-1,0,0)<0);
     source.resource=rf_gpu_graphics_resource_create(video,vertices,4,quad,6,&white,1,1);
+    unit_source.resource=rf_gpu_graphics_resource_create(unit,vertices,4,quad,6,&white,1,1);
     items[0].resource=rf_gpu_graphics_resource_create(g,vertices,4,quad,6,&white,1,1);
-    CHECK(source.resource && items[0].resource);
+    CHECK(source.resource && unit_source.resource && items[0].resource);
     source.draw=draw(64,64);source.draw.quality[2]=3;source.draw.material[0]=0xff0000;
     source.draw.texture[0]=source.draw.texture[1]=1;
+    unit_source.draw=source.draw;unit_source.draw.material[0]=0xffff00;
     items[0].draw=draw(128,96);items[0].draw.quality[2]=3;items[0].draw.material[0]=0x0000ff;
     items[0].draw.texture[0]=items[0].draw.texture[1]=1;
     for(unsigned i=0;i<4;++i) {
@@ -567,16 +572,21 @@ static int auxiliary_video_test(struct rf_gpu_vulkan_context *context)
     items[1].draw.scene_layer=RF_GPU_SCENE_OVERLAY;
     rf_gpu_graphics_get_stats(video,&before);
     CHECK(!rf_gpu_graphics_scene_offscreen(video,&source,1,1));
+    CHECK(!rf_gpu_graphics_scene_offscreen(unit,&unit_source,1,1));
     CHECK(!rf_gpu_graphics_scene_video(g,video,32,16,64,64));
+    CHECK(!rf_gpu_graphics_scene_video_at(g,1,unit,0,0,32,32));
+    CHECK(rf_gpu_graphics_scene_video_at(g,RF_GPU_GRAPHICS_VIDEO_SLOTS,unit,0,0,32,32)<0);
     CHECK(!rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS));
     { uint32_t background=pixels[17*128+33];
       CHECK((background&255)>0 && ((background>>16)&255)>(background&255)); }
     CHECK(color_near(pixels[40*128+64],hdr_rgb(0xff0000)));
+    CHECK(color_near(pixels[16*128+16],hdr_rgb(0xffff00))); /* Both cameras are visible. */
     CHECK(pixels[48*128+64]==rgba(0x00ffff)); /* HUD is above the video. */
     source.draw.material[0]=0x00ff00;
     CHECK(!rf_gpu_graphics_scene_offscreen(video,&source,1,2));
     CHECK(!rf_gpu_graphics_scene_capture(g,items,2,pixels,depths,MAX_PIXELS));
     CHECK(color_near(pixels[40*128+64],hdr_rgb(0x00ff00))); /* Real target update. */
+    CHECK(color_near(pixels[16*128+16],hdr_rgb(0xffff00))); /* Independent cadence. */
     rf_gpu_graphics_get_stats(video,&after);
     CHECK(after.target_builds==before.target_builds && after.mesh_upload_bytes==before.mesh_upload_bytes);
     CHECK(after.submits_by_kind[RF_GPU_SUBMIT_READBACK]==before.submits_by_kind[RF_GPU_SUBMIT_READBACK]);
@@ -584,12 +594,19 @@ static int auxiliary_video_test(struct rf_gpu_vulkan_context *context)
     CHECK(!rf_gpu_graphics_scene_video(g,NULL,0,0,0,0));
     CHECK(!rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS));
     CHECK(color_near(pixels[40*128+64],hdr_rgb(0x0000ff)));
+    CHECK(color_near(pixels[16*128+16],hdr_rgb(0xffff00))); /* Hiding story preserves unit. */
+    CHECK(!rf_gpu_graphics_scene_video(g,video,32,16,64,64));
+    CHECK(!rf_gpu_graphics_scene_video_at(g,1,NULL,0,0,0,0));
+    CHECK(!rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS));
+    CHECK(color_near(pixels[40*128+64],hdr_rgb(0x00ff00))); /* Hiding unit preserves story. */
+    CHECK(!color_near(pixels[16*128+16],hdr_rgb(0xffff00)));
     CHECK(rf_gpu_graphics_scene_video(g,video,100,16,64,64)<0);
     result=0;
 done:
-    if(g)rf_gpu_graphics_scene_video(g,NULL,0,0,0,0);
-    rf_gpu_graphics_destroy(g);rf_gpu_graphics_destroy(video);
-    printf("SCENE auxiliary video: %s (GPU copy, update, HUD order, hide, reuse, no readback)\n",result?"FAIL":"PASS");
+    if(g)for(unsigned i=0;i<RF_GPU_GRAPHICS_VIDEO_SLOTS;++i)
+        rf_gpu_graphics_scene_video_at(g,i,NULL,0,0,0,0);
+    rf_gpu_graphics_destroy(g);rf_gpu_graphics_destroy(video);rf_gpu_graphics_destroy(unit);
+    printf("SCENE auxiliary video: %s (two independent views, GPU copy, update, HUD order, hide, reuse, no readback)\n",result?"FAIL":"PASS");
     return result;
 }
 

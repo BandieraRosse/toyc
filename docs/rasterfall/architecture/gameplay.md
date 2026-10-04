@@ -38,10 +38,10 @@ Standard Response Squad 为 Jesus、Squad A Medic、Squad A Engineer、Squad A R
 运行时定位。正式 V2 roster 的战斗武器固定为 AK，以便与出生点 V2 动作展示使用同一武器资产和双手挂点；旧模型/程序化角色仍按 AI 等级选择武器。AI、武器、动画、伤害、碰撞和网络规则继续使用原有 actor 路径，actor 不携带 model、gear、
 RMESH 或 attachment 数据。
 
-两套正式小队在 reset 时各自绑定一面固定旗帜：Standard Response 使用 `RESP` 旗帜（`(0,7000)`，
-战场中部北侧空地），Assault 使用 `ASLT` 旗帜（`(14000,0)`，东部空地）。四名成员分别使用旗帜的
-四角部署槽；这两面旗帜不占用原中央基地、Maid 或 Hurd 的旗帜索引。坐标依据正式地图布局导出核对，
-并避开中央基地、东侧刷怪带和东侧走廊。
+两套正式小队按 Campaign Content 的成员出生位置独立部署，队友不再绑定旗帜。
+`RESP`、`ASLT` 和其他旗帜保留原物件位置、索引与携带用途，搬动旗帜不会改变任何队员的目的地。
+RTS 编组是可重叠的 runtime 选择集合，人数覆盖整个 actor 池；正式 roster 身份不随玩家编组变化。
+个体命令、选择与 HUD 的边界见 [RTS 核心指挥](rts-command.md)。
 
 ## 三层职责
 
@@ -106,10 +106,10 @@ RMESH 或 attachment 数据。
 
 `src/rasterfall_session.c` + `include/rasterfall_session.h` 是模式编排层：加载/重置关卡，构建和执行
 玩家命令，商店与雇佣 AI，剧情阶段、托管角色，以及主机/客户端不同的 step/replay 路径。
-离线 RTS 模式也由 session 持有：玩家移动目标、自动寻敌和射击命令在固定步长中生成，
-仍通过正式 actor 移动与武器 API 更新玩法真值。旗帜的 RTS 搬移即时更新 session 位置，
-并重算该旗帜的队员部署点。镜头平移、屏幕选取和选择高亮属于 Game Runtime 展示状态，
-不进入 `toy_game`。当前 RTS 不接入联机命令协议。
+离线 RTS 命令由 session 校验：本地玩家目标保留在 session，队友的独立目标写入 Game actor 的
+`command_destination_active/command_x/command_z`，在正常 AI 固定步内优先于出生部署和副官跟随。
+移动、索敌、射击和动画仍通过正式 actor API 推进；旗帜不写入部署点，旧商店指派入口拒绝执行。
+镜头、框选、编组和高亮属于 Game Runtime 展示状态，不进入 `toy_game`。当前 RTS 不接入联机命令协议。
 
 `src/rasterfall_ai.c` + `include/rasterfall_ai.h` 管理可插拔 AI 注册表，把 observation 交给控制器并
 将 decision 同步回游戏；具体内建战斗和移动规则大量仍在 `lib/game.c` 与 session 的托管 AI 中。
@@ -127,22 +127,21 @@ session 的本地复活、商店控制锁、交互死亡判断和托管武器决
 
 ## Hurd Relay gameplay foundation
 
-session reset 先在原坐标 `(-12000, 0)` 和原 flag 1 恢复四名 `ANIME_GUARD_*` Maid 旗卫；四人保留
-原 `anime_character_id=2..5`、slot offset、部署和旗卫配置，四人由 Campaign Content 统一配置 AK，并通过 actor 的
-`character_id=RASTERFALL_CHARACTER_MAID` 解析为 Maid profession。Hurd 改用 flag 2，避免占用 Maid 的
-稳定旧配置。
+session reset 按 Campaign Content 恢复四名 `ANIME_GUARD_*` Maid 队员，保留
+`anime_character_id=2..5`、出生坐标与 AK，通过 actor 的
+`character_id=RASTERFALL_CHARACTER_MAID` 解析为 Maid profession。Maid 和 Hurd 的旗帜仍保留各自索引，
+所有 session 队员统一清除 `flag_index/flag_guard`，随后接受独立 RTS 命令。
 
 session reset 在正式 world 中创建固定 Gunsmith、Logistics、Medic、Guard 四名普通 AI actor，并明确
 写入四个 Hurd 专用稳定 `character_id`；前三人初始使用 Pistol，Guard 使用 SMG。普通 player、地图佣兵、
 商店 hired AI 以及 Eula actor 使用 `RASTERFALL_CHARACTER_NONE`，不按 actor slot 或 class 随机
-选择 Hurd identity。四人设置 `flag_guard`，因此不进入
-旧商店重新指派列表，也不受“清除雇佣 AI”影响；其移动、部署、防守、战斗、受伤、DOWNED、REVIVE、
-动画和武器仍全部走现有 actor 规则。`hurd_outpost.squad_actor_indices[]` 只供 session 后续剧情定位固定
-角色，不承担 assignment；唯一 assignment truth 仍是 `actor.flag_index == HURD flag index`。
+选择 Hurd identity。四人不是商店雇佣对象，不受“清除雇佣 AI”影响；其移动、部署、防守、战斗、受伤、
+DOWNED、REVIVE、动画和武器仍走普通 actor 规则。`hurd_outpost.squad_actor_indices[]` 定位固定角色，
+也作为 Hurd 人员统计来源；不再依赖旗帜 assignment。
 
 北侧 HURD 旗帜初始部署于 `(0, 28500)`，固定 control region 为
 `x=-5000..5000, z=25500..31500` RFU。`rasterfall_session_hurd_status()` 是无副作用派生查询：旗帜必须
-active、未被携带且位于区域内；assigned count 沿用普通旗帜语义统计 `actor.flag_index`，capable count 只统计
+active、未被携带且位于区域内；assigned count 统计 Hurd roster 中的有效 actor，capable count 只统计
 `ALIVE && hp > 0`。`controlled = flag_deployed_in_region && capable_count > 0`，不保存第二份 controlled
 状态。DOWNED 仍计入 assigned 但不计 capable；复活任一 assigned guard 会使下一次查询立即恢复控制。
 该查询是下一轮 Tactical Map 和 Hurd pressure 的只读接口，二者不应自行维护控制状态。

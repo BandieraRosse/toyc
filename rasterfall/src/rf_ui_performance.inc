@@ -49,7 +49,7 @@ static void rf_ui_perf_sample(const struct rf_game_runtime *r,
     if(frame<=120){rf_ui_perf.previous_aux=aux->frames;return;}
     int n=rf_ui_perf.count++;
     const char *name=rf_ui_perf.name;
-    int wants_video=!strcmp(name,"weaver-preview") || !strcmp(name,"comms-visible") || !strcmp(name,"comms-remote");
+    int wants_video=!strcmp(name,"weaver-preview") || !strcmp(name,"comms-visible") || !strcmp(name,"comms-remote") || !strcmp(name,"player-rts");
     int wants_rts=!strcmp(name,"player-rts") || !strcmp(name,"experiment-rts");
     int wants_experiment=!strncmp(name,"experiment-",11);
     const struct rf_story_camera_entity *camera=rf_story_camera(&r->story,r->session);

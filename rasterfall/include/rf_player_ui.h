@@ -2,6 +2,7 @@
 #define RF_PLAYER_UI_H
 
 #include "rf_minimap.h"
+#include "rf_rts.h"
 
 struct rf_input_bindings;
 
@@ -11,7 +12,9 @@ enum rf_player_ui_mode {
 };
 struct rf_ui_rect { int x, y, w, h; };
 enum rf_player_ui_hit { RF_PLAYER_UI_HIT_NONE, RF_PLAYER_UI_HIT_STOP,
-    RF_PLAYER_UI_HIT_FOLLOW, RF_PLAYER_UI_HIT_FPS, RF_PLAYER_UI_HIT_DOCK };
+    RF_PLAYER_UI_HIT_FOLLOW, RF_PLAYER_UI_HIT_FPS, RF_PLAYER_UI_HIT_DOCK,
+    RF_PLAYER_UI_HIT_PAGE_PREV, RF_PLAYER_UI_HIT_PAGE_NEXT,
+    RF_PLAYER_UI_HIT_GROUP_BASE=20, RF_PLAYER_UI_HIT_UNIT_BASE=40 };
 struct rf_ui_theme {
     unsigned int panel, panel_raised, border, text, muted, accent;
     unsigned int success, warning, danger, selected;
@@ -28,6 +31,7 @@ struct rf_ui_layout {
     int scale_milli, text_scale_milli, margin, gap, padding;
     struct rf_ui_rect map, objective, vitals, weapon, phase, resources;
     struct rf_ui_rect selection, commands, hints, dock_toggle;
+    struct rf_ui_rect groups, portrait, video;
 };
 struct rf_player_ui_state {
     int mode, scale_percent, rts_collapsed;
@@ -46,6 +50,8 @@ struct rf_player_ui_view {
     const char *interaction_title, *interaction_action;
     int interaction_distance_rfu;
     const char *command_feedback;
+    const struct rf_rts_state *rts;
+    const struct camera *rts_camera;
 };
 struct rasterfall_hud_state;
 void rf_player_ui_init(struct rf_player_ui_state *state);
@@ -63,6 +69,9 @@ void rf_player_ui_map_view(struct rf_minimap_view *out,
 int rf_ui_rect_contains(struct rf_ui_rect rect, int x, int y);
 int rf_player_ui_hit_test(const struct rf_player_ui_state *state,
                           int width,int height,int rts_active,int x,int y);
+int rf_player_ui_rts_hit(const struct rf_ui_layout *layout,const struct rf_rts_state *rts,
+    const struct toy_game *game,int x,int y);
+int rf_player_ui_rts_page_size(const struct rf_ui_layout *layout);
 void rf_ui_panel(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,
                  const struct rf_ui_theme *theme, int selected);
 void rf_ui_button(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,

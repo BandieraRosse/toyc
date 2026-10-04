@@ -54,6 +54,8 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     v->modal=r->console.open||rf_weaver_terminal.open||rf_render_terminal.open||rf_table.open;
     v->region_name=r->session->world_id==RASTERFALL_WORLD_OUTPOST?"前哨站":"行动区域";
     v->rts_active=r->rts_active;v->rts_selected=r->rts_selected;v->rts_follow_player=r->rts_follow_player;
+    v->rts=&r->rts;v->rts_camera=&r->render_camera;
+    if(r->rts_active)rf_rts_portraits_prepare(&r->rts,&r->session->game_state);
     v->rts_move_active=r->session->rts_move_active;v->rts_move_x=r->session->rts_move_x;v->rts_move_z=r->session->rts_move_z;
     v->camera_x=r->render_camera.x;v->camera_z=r->render_camera.z;v->camera_sy=r->camera.sy;v->camera_cy=r->camera.cy;
     v->objective_title=r->story.task.title;v->objective_detail=r->story.task.hint;
@@ -204,20 +206,42 @@ static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_con
     return before||r->comms_focus||console->open;
 }
 #ifdef TOYC_WINDOWS
-static struct rf_gpu_scene_aux_view rf_player_aux;
+static struct rf_gpu_scene_aux_view rf_player_aux,rf_player_unit_aux;
 static void rf_player_audit(const struct rf_game_runtime *r,int frame,const struct rf_gpu_scene_aux_status *video)
 {
     if(!getenv("RF_UI_AUDIT") || frame%10)return;
+    if(r->rts_active) {
+        const struct toy_game *g=&r->session->game_state;
+        struct rf_ui_layout ui;int width=0,height=0;
+        struct toy_surface *surface=rf_core_surface(r->core);
+        if(surface){width=surface->width;height=surface->height;}
+        rf_ui_layout_resolve(&ui,&r->player_ui,width,height,1);
+        __printf("RTS-AUDIT {\"frame\":%d,\"selected\":%d,\"primary\":%d,\"hovered\":%d,\"drag\":%d,\"video\":%d,\"story_video\":%d,\"extent\":[%d,%d],\"dock\":[%d,%d,%d,%d],\"groups\":[",
+            frame,rf_rts_count(&r->rts,g),r->rts.primary,r->rts.hovered,r->rts.drag_active,
+            r->rts.video_live,r->ui_video_live,width,height,ui.selection.x,ui.selection.y,ui.selection.w,ui.selection.h);
+        for(int n=0;n<RF_RTS_GROUPS;++n)__printf("%s%d",n?",":"",rf_rts_group_count(&r->rts,g,n));
+        __printf("],\"actors\":[");int count=0;
+        for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(rf_rts_selectable(g,i)) {
+            const struct toy_game_actor *a=&g->actors[i];int x=-1,y=-1;
+            rf_rts_project(&r->render_camera,width,height,a->x,RASTERFALL_WORLD_GROUND_Y+a->ground_y+
+                a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU/2,a->z,&x,&y);
+            __printf("%s{\"i\":%d,\"id\":%d,\"selected\":%d,\"weapon\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"moving\":%d,\"goal_x\":%d,\"goal_z\":%d}",
+                count++?",":"",i,a->actor_id,rf_rts_member_valid(&r->rts.selected[i],g,i),
+                toy_game_actor_current_weapon(a),a->x,a->z,x,y,a->moving,a->command_x,a->command_z);
+        }
+        __printf("]}\n");
+    }
     __printf("PLAYER-UI-CHAT {\"frame\":%d,\"open\":%d,\"idle_ms\":%d,\"scroll\":%d,\"history\":%d,\"revision\":%u,\"visible\":%d}\n",
         frame,r->comms_focus,r->chat_idle_ms,r->chat_scroll,r->story.history_count,
         r->story.history_revision,r->comms_focus||(r->story.history_count&&r->chat_idle_ms<10000));
     const struct toy_game_actor *p=toy_game_local_player_actor_const(&r->session->game_state);
+    const struct toy_input *input=rf_core_input(r->core);
     const struct toy_mesh_weaver *w=&r->session->game_state.weaver;
     const struct rf_story_camera_entity *c=rf_story_camera(&r->story,r->session);
     struct rf_device_query device;unsigned mask=0;rf_device_query(r,&device);
     for(int i=0;i<device.feature_count;++i)if(device.features[i].enabled)mask|=1u<<i;
-    __printf("PLAYER-UI-AUDIT {\"frame\":%d,\"ui_mode\":%d,\"focus\":%d,\"terminal\":%d,\"rts\":%d,\"x\":%d,\"z\":%d,\"fire_seq\":%u,\"slot\":%d,\"story\":%d,\"node\":%d,\"sr\":%u,\"nr\":%u,\"link\":%d,\"collapsed\":%d,\"queue\":%d,\"progress_a\":%d,\"progress_b\":%d,\"hold\":%u,\"camera_generation\":%u,\"camera_valid\":%d,\"weaver_panel\":%d,\"selected\":%d,\"phase\":%d,\"progress\":%.6f,\"serial\":%u,\"collected\":%u,\"power\":%d,\"command_code\":%d,\"video\":%d,\"video_frames\":%llu,\"video_cpu_us\":%lld,\"video_gpu_us\":%lld,\"weaver_focus\":%d,\"task_id\":%d,\"task_state\":%d,\"normal_sim\":%d,\"driver\":%d}\n",
-        frame,r->player_ui.mode,r->comms_focus,r->console.open,r->rts_active,p->x,p->z,p->fire_seq,p->current_slot,
+    __printf("PLAYER-UI-AUDIT {\"frame\":%d,\"ui_mode\":%d,\"focus\":%d,\"window_focus\":%d,\"terminal\":%d,\"rts\":%d,\"x\":%d,\"z\":%d,\"fire_seq\":%u,\"slot\":%d,\"story\":%d,\"node\":%d,\"sr\":%u,\"nr\":%u,\"link\":%d,\"collapsed\":%d,\"queue\":%d,\"progress_a\":%d,\"progress_b\":%d,\"hold\":%u,\"camera_generation\":%u,\"camera_valid\":%d,\"weaver_panel\":%d,\"selected\":%d,\"phase\":%d,\"progress\":%.6f,\"serial\":%u,\"collected\":%u,\"power\":%d,\"command_code\":%d,\"video\":%d,\"video_frames\":%llu,\"video_cpu_us\":%lld,\"video_gpu_us\":%lld,\"weaver_focus\":%d,\"task_id\":%d,\"task_state\":%d,\"normal_sim\":%d,\"driver\":%d}\n",
+        frame,r->player_ui.mode,r->comms_focus,input?input->keyboard_focused:0,r->console.open,r->rts_active,p->x,p->z,p->fire_seq,p->current_slot,
         r->story.active_story,r->story.node_id,r->story.session_revision,r->story.node_revision,r->story.link,
         r->story.collapsed,r->story.queue_count,r->story.progress[0],r->story.progress[1],r->story.hold_token,
         c?c->generation:0,c!=NULL,rf_weaver_terminal.open,r->player_controls.selected_blueprint,w->phase,
@@ -238,8 +262,11 @@ static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height
 {
     const struct rf_story_camera_entity *camera=rf_story_camera(&r->story,r->session);
     memset(&rf_player_aux,0,sizeof(rf_player_aux));
+    memset(&rf_player_unit_aux,0,sizeof(rf_player_unit_aux));
+    rf_player_unit_aux.now_us=now;rf_player_unit_aux.refresh_hz=12;
     rf_player_aux.render_width=320;rf_player_aux.render_height=180;rf_player_aux.refresh_hz=12;
     rf_player_aux.now_us=now;
+    r->rts.video_requested=0;
     if(camera){rf_player_aux.camera=camera->view;rf_player_aux.shell_visible=1;rf_player_aux.stable_id=101;
         rf_player_aux.generation=camera->generation;}
     if(!hidden && rf_weaver_terminal.open && r->player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
@@ -264,8 +291,30 @@ static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height
          * this rectangle would squeeze the actor horizontally. */
         rf_player_aux.render_width=240;rf_player_aux.render_height=360;
     }
+    if(!hidden && !rf_weaver_terminal.open && r->rts_active && !r->player_ui.rts_collapsed &&
+        r->player_ui.mode<RF_PLAYER_UI_EXPERIMENT && rf_rts_count(&r->rts,&r->session->game_state)) {
+        struct rf_ui_layout layout;
+        int index=r->rts.primary;
+        if(index<0 || index>=TOY_GAME_MAX_ACTORS || !rf_rts_member_valid(&r->rts.selected[index],&r->session->game_state,index))
+            index=rf_rts_nth(&r->rts,&r->session->game_state,0);
+        const struct toy_game_actor *a=&r->session->game_state.actors[index];
+        rf_ui_layout_resolve(&layout,&r->player_ui,width,height,1);
+        r->rts.video_requested=1;
+        if(r->rts.video_actor_id!=a->actor_id || r->rts.video_generation!=a->combat_generation)
+            r->rts.video_live=0;
+        r->rts.video_actor_id=a->actor_id;r->rts.video_generation=a->combat_generation;
+        rf_player_unit_aux.kind=RF_GPU_AUX_WORLD;rf_player_unit_aux.shell_visible=0;
+        rf_player_unit_aux.stable_id=2000u+(unsigned)index;
+        rf_player_unit_aux.generation=(r->rts.world_generation<<32)|a->combat_generation;
+        rf_player_unit_aux.visible=rf_story_actor_camera(r->session,a,&rf_player_unit_aux.camera);
+        rf_player_unit_aux.x=layout.video.x;rf_player_unit_aux.y=layout.video.y;
+        rf_player_unit_aux.width=layout.video.w;rf_player_unit_aux.height=layout.video.h;
+        rf_player_unit_aux.render_width=240;rf_player_unit_aux.render_height=360;
+        if(!rf_player_unit_aux.visible){r->rts.video_live=0;r->rts.video_state=RF_GPU_AUX_UNAVAILABLE;}
+    }
     if(!rf_player_aux.visible)r->ui_video_live=0;
     rf_gpu_scene_enemy_aux_camera(rf_player_aux.visible&&rf_player_aux.kind==RF_GPU_AUX_WORLD?&rf_player_aux.camera:NULL);
+    rf_gpu_scene_enemy_unit_camera(rf_player_unit_aux.visible?&rf_player_unit_aux.camera:NULL);
 }
 #endif
 static int rf_player_combat(const struct toy_game *g)

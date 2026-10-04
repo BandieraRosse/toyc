@@ -1595,7 +1595,7 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
-    if(probe->graphics)rf_gpu_graphics_scene_video(probe->graphics,NULL,0,0,0,0);
+    if(probe->graphics)for(unsigned i=0;i<2;++i)rf_gpu_graphics_scene_video_at(probe->graphics,i,NULL,0,0,0,0);
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     rf_weaver_gpu_close(probe);
     if(probe->lighting_lab_sphere) rf_gpu_graphics_resource_destroy(probe->graphics,probe->lighting_lab_sphere);
@@ -1642,11 +1642,13 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     if (probe->graphics) rf_gpu_graphics_destroy(probe->graphics);
     /* The main owner can retain the child image during a failed submission.
      * Its destroy drains device work before we release that image's owner. */
-    if(probe->aux) {
-        rf_gpu_scene_world_gpu_probe_close(probe->aux);free(probe->aux);probe->aux=NULL;
+    for(unsigned i=0;i<2;++i) {
+        if(probe->aux[i].owner) {
+            rf_gpu_scene_world_gpu_probe_close(probe->aux[i].owner);
+            free(probe->aux[i].owner);
+        }
+        memset(&probe->aux[i],0,sizeof(probe->aux[i]));
     }
-    probe->aux_visible=0;probe->aux_next_us=0;probe->aux_attempts=0;
-    memset(&probe->aux_status,0,sizeof(probe->aux_status));
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;

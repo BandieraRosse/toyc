@@ -223,6 +223,8 @@ int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z);
 int rasterfall_session_rts_logic_test(void);
+int rasterfall_session_rts_order_actor(struct rasterfall_session *session,
+    int index,int actor_id,unsigned generation,int x,int z,int stop);
 /* Offline experimental manufacturing. Reconfiguration is idempotent and
  * never replenishes energy or resets a job; normal session reset does. */
 void rasterfall_session_weaver_configure(struct rasterfall_session *session,

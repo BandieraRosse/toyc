@@ -229,6 +229,29 @@ static int actor_available(const struct toy_game_actor *a)
         !a->airborne_y && !a->damage_flash_ms && a->combat_target.kind < 0;
 }
 
+int rf_story_actor_camera(const struct rasterfall_session *session,
+    const struct toy_game_actor *a,struct camera *view)
+{
+    const struct story_camera_profile *p=&camera_profiles[0];
+    int distance=0,eye=a->ground_y+a->airborne_y+
+        RASTERFALL_HUMAN_EYE_HEIGHT_RFU+p->eye_offset_y;
+    for(int i=0;i<3;++i) {
+        int blocked=0,steps=(p->distances[i]+31)/32;
+        for(int n=1;n<=steps;++n)
+            if(toy_game_position_blocked_at_height(&session->game_state,
+                a->x+p->offset_sy*p->distances[i]*n/steps/1024,
+                a->z+p->offset_cy*p->distances[i]*n/steps/1024,32,eye)) {blocked=1;break;}
+        if(!blocked){distance=p->distances[i];break;}
+    }
+    if(!distance)return 0;
+    memset(view,0,sizeof(*view));
+    view->x=a->x+p->offset_sy*distance/1024;view->z=a->z+p->offset_cy*distance/1024;
+    view->y=RASTERFALL_WORLD_GROUND_Y+eye;
+    view->sy=-p->offset_sy;view->cy=-p->offset_cy;
+    view->pitch_sy=p->pitch_sy;view->pitch_cy=p->pitch_cy;
+    return 1;
+}
+
 static int bind_camera(struct rf_story *s, struct rasterfall_session *session)
 {
     struct toy_game_actor *a;

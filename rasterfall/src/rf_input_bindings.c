@@ -10,7 +10,8 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     58, 53, 59, 42, 43, 225, 54, 55, 13, 15, 19,
     24, 18, 12, 25, 27, 28, 29, 17, 5, 45, 46,
     21, 41, 21, 69, 43, 43, 28, 23,
-    60, 0, 40, 11, 29, 27
+    60, 0, 40, 11, 29, 27,
+    30,31,32,33,34,35,36,37,38,39,224
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {
     [RF_ACTION_FIRE_KEY] = 88,
@@ -20,6 +21,7 @@ static const unsigned short default_secondary[RF_ACTION_COUNT] = {
     [RF_ACTION_SLOT_3] = 91,
     [RF_ACTION_SLOT_4] = 92,
     [RF_ACTION_MODIFIER] = 229,
+    [RF_ACTION_CONTROL] = 228,
     [RF_ACTION_POSE_FINE_DECREASE] = 86,
     [RF_ACTION_POSE_FINE_INCREASE] = 87
 };
@@ -31,9 +33,12 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     59, 41, 60, 14, 15, 42, 51, 52, 36, 38, 25,
     22, 24, 23, 47, 45, 21, 44, 49, 48, 12, 13,
     19, 1, 19, 88, 15, 15, 21, 20,
-    61, 0, 28, 35, 44, 45
+    61, 0, 28, 35, 44, 45,
+    2,3,4,5,6,7,8,9,10,11,29
 };
-static const unsigned short default_secondary[RF_ACTION_COUNT] = {0};
+static const unsigned short default_secondary[RF_ACTION_COUNT] = {
+    [RF_ACTION_CONTROL]=97, [RF_ACTION_MODIFIER]=54
+};
 #endif
 
 void rf_input_bindings_defaults(struct rf_input_bindings *bindings)
@@ -79,6 +84,7 @@ void rf_input_action_label(const struct rf_input_bindings *bindings,
         case 53:name="`";break;case 79:name="Right";break;case 80:name="Left";break;
         case 81:name="Down";break;case 82:name="Up";break;case 88:name="Num Enter";break;
         case 225:case 229:name="Shift";break;
+        case 224:case 228:name="Ctrl";break;
     }
 #else
     static const unsigned keys[]={30,48,46,32,18,33,34,35,23,36,37,38,50,49,24,25,16,19,31,20,22,47,17,45,21,44};
@@ -91,6 +97,7 @@ void rf_input_action_label(const struct rf_input_bindings *bindings,
         case 41:name="`";break;case 103:name="Up";break;case 108:name="Down";break;
         case 105:name="Left";break;case 106:name="Right";break;case 88:name="F12";break;
         case 42:case 54:name="Shift";break;
+        case 29:case 97:name="Ctrl";break;
     }
 #endif
     if(name)snprintf(label,capacity,"%s",name);

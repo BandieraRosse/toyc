@@ -90,14 +90,26 @@ void rf_player_weaver_query(const struct rf_game_runtime *r,struct rf_player_wea
         if(w->phase==TOY_WEAVER_READY)q->rounds=w->cost.initial_rounds;
     }
 }
-static int ground_target(const struct rasterfall_session *s,int x,int z)
+static int rts_order_selection(struct rf_game_runtime *r,int x,int z,int stop)
 {
-    const struct toy_game_actor *p=toy_game_local_player_actor_const(&s->game_state);
-    struct toy_game_ground_query q;
-    if(x<-2000000 || x>2000000 || z<-2000000 || z>2000000 || !p)return 0;
-    q=toy_game_query_ground(&s->game_state,x,z,RASTERFALL_PLAYER_RADIUS,p->ground_y);
-    return q.has_support && !toy_game_position_blocked_at_height(&s->game_state,x,z,
-        RASTERFALL_PLAYER_RADIUS,q.support_y);
+    struct rasterfall_session *s=r->session;
+    int count=rf_rts_count(&r->rts,&s->game_state),columns=1,ordinal=0,accepted=0;
+    if(!stop && (x<-1990000 || x>1990000 || z<-1990000 || z>1990000))return 0;
+    while(columns*columns<count)++columns;
+    int rows=(count+columns-1)/columns;
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct rf_rts_member *m=&r->rts.selected[i];
+        int tx=x,tz=z;
+        if(!rf_rts_member_valid(m,&s->game_state,i))continue;
+        if(count>1){tx+=(2*(ordinal%columns)-columns+1)*300;tz+=(2*(ordinal/columns)-rows+1)*300;}
+        int moved=rasterfall_session_rts_order_actor(s,i,m->actor_id,m->generation,tx,tz,stop);
+        /* At a wall/ledge retain the valid clicked ground rather than drop a
+         * member merely because its formation offset cannot fit. */
+        if(!moved && !stop && (tx!=x || tz!=z))
+            moved=rasterfall_session_rts_order_actor(s,i,m->actor_id,m->generation,x,z,0);
+        accepted+=moved;ordinal++;
+    }
+    return accepted;
 }
 struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
     const struct rf_player_request *a,enum rf_command_permission_level permission)
@@ -180,22 +192,30 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
         else out=result(RF_PLAYER_OK,"已领取成品与标准弹匣");
         break;
     case RF_PLAYER_RTS_SELECT:
-        if(a->value<-1 || a->value>s->flag_count ||
-           (a->value>0 && !s->flags[a->value-1].active))out=result(RF_PLAYER_INVALID,"选择对象已失效");
-        else r->rts_selected=a->value;
+        if(a->value<-1 || (a->value>=0 && !rf_rts_selectable(&s->game_state,a->value)))
+            out=result(RF_PLAYER_INVALID,"选择对象已失效");
+        else {
+            rf_rts_sync(&r->rts,&s->game_state,s->scene_local.world_generation);
+            rf_rts_select(&r->rts,&s->game_state,a->value,0);
+            r->rts_selected=a->value==0?0:-1;
+        }
         break;
     case RF_PLAYER_RTS_MOVE:
-        if(!r->rts_active || !s->rts_active || r->rts_selected<0)out=result(RF_PLAYER_INVALID,"请进入 RTS 并选择玩家或旗帜小队");
-        else if(!ground_target(s,a->x,a->z))out=result(RF_PLAYER_INVALID,"目标地面不可通行");
-        else if(r->rts_selected==0)rasterfall_session_rts_move_player(s,a->x,a->z);
-        else if(!rasterfall_session_rts_move_flag(s,r->rts_selected-1,a->x,a->z))out=result(RF_PLAYER_STALE,"小队旗帜已失效");
-        if(!out.code)out=result(RF_PLAYER_OK,"移动指令已接收（目标标记并非寻路路径）");
+        if(!r->rts_active || !s->rts_active || !rf_rts_count(&r->rts,&s->game_state))
+            out=result(RF_PLAYER_INVALID,"请先选择单位");
+        else {
+            out.affected=rts_order_selection(r,a->x,a->z,0);
+            out.code=out.affected?RF_PLAYER_OK:RF_PLAYER_INVALID;
+            snprintf(out.message,sizeof(out.message),"%d / %d 单位接受移动指令",out.affected,rf_rts_count(&r->rts,&s->game_state));
+        }
         break;
     case RF_PLAYER_RTS_STOP:
         if(!r->rts_active || !s->rts_active)out=result(RF_PLAYER_INVALID,"请先进入 RTS");
-        else if(r->rts_selected==0)s->rts_move_active=0;
-        else if(r->rts_selected>0)out=result(RF_PLAYER_UNAVAILABLE,"现有小队由旗帜指挥，请移动旗帜设置集结点");
-        else out=result(RF_PLAYER_INVALID,"未选择可停止对象");
+        else {
+            out.affected=rts_order_selection(r,0,0,1);
+            out.code=out.affected?RF_PLAYER_OK:RF_PLAYER_INVALID;
+            snprintf(out.message,sizeof(out.message),"%d 单位停止移动",out.affected);
+        }
         break;
     case RF_PLAYER_RTS_FOLLOW:
         if(a->value<0 || a->value>1)out=result(RF_PLAYER_INVALID,"请输入 0 或 1");
@@ -396,9 +416,10 @@ int rf_player_terminal_command(const struct rf_command_context *ctx,
         }
     } else if(!strcmp(group,"rts")) {
         if(!strcmp(sub,"status")) {
-            snprintf(text,sizeof(text),"view=%s selected=%d follow=%d moving=%d target=%d,%d",r->rts_active?"RTS":"FPS",
-                r->rts_selected,r->rts_follow_player,r->session->rts_move_active,r->session->rts_move_x,r->session->rts_move_z);line(o,text);
-            line(o,"rts view fps|rts; rts select -1|0|flag; rts move X Z; rts stop; rts follow 0|1");return 0;
+            snprintf(text,sizeof(text),"view=%s selected=%d primary=%d follow=%d moving=%d target=%d,%d",r->rts_active?"RTS":"FPS",
+                rf_rts_count(&r->rts,&r->session->game_state),r->rts.primary,r->rts_follow_player,
+                r->session->rts_move_active,r->session->rts_move_x,r->session->rts_move_z);line(o,text);
+            line(o,"rts view fps|rts; rts select ACTOR_INDEX|-1; rts move X Z; rts stop; rts follow 0|1");return 0;
         }
         if(argc==3 && !strcmp(sub,"view") && (!strcmp(argv[2],"fps")||!strcmp(argv[2],"rts"))) {
             a.operation=RF_PLAYER_VIEW;a.value=!strcmp(argv[2],"rts");valid=1;

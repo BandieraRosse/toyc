@@ -11,12 +11,17 @@ static uint64_t scene_independent_enemy_generation;
 static uint64_t scene_independent_enemy_frame;
 static int scene_independent_enemy_family;
 static const struct rasterfall_session *scene_independent_enemy_session;
-static struct camera scene_enemy_aux_view;
-static int scene_enemy_aux_active;
+static struct camera scene_enemy_aux_view[2];
+static int scene_enemy_aux_active[2];
 void rf_gpu_scene_enemy_aux_camera(const struct camera *camera)
 {
-    scene_enemy_aux_active=camera!=NULL;
-    if(camera)scene_enemy_aux_view=*camera;
+    scene_enemy_aux_active[0]=camera!=NULL;
+    if(camera)scene_enemy_aux_view[0]=*camera;
+}
+void rf_gpu_scene_enemy_unit_camera(const struct camera *camera)
+{
+    scene_enemy_aux_active[1]=camera!=NULL;
+    if(camera)scene_enemy_aux_view[1]=*camera;
 }
 
 static struct enemy_rig_input scene_independent_enemy_rig_input(
@@ -135,9 +140,13 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         world_to_view(camera,&center,&view);
         if (view.z>(family!=RASTERFALL_ENEMY_VISUAL_LEGACY ?
                     56000:ENEMY_RENDER_DISTANCE)) {
-            int64_t dx=(int64_t)e->x-scene_enemy_aux_view.x;
-            int64_t dz=(int64_t)e->z-scene_enemy_aux_view.z;
-            if(!scene_enemy_aux_active || dx*dx+dz*dz>56000LL*56000LL) {
+            int visible=0;
+            for(int slot=0;slot<2;++slot)if(scene_enemy_aux_active[slot]) {
+                int64_t dx=(int64_t)e->x-scene_enemy_aux_view[slot].x;
+                int64_t dz=(int64_t)e->z-scene_enemy_aux_view[slot].z;
+                visible|=dx*dx+dz*dz<=56000LL*56000LL;
+            }
+            if(!visible) {
                 frame.culled++;continue;
             }
         }

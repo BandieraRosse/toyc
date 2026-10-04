@@ -50,10 +50,12 @@ struct toy_window_events {
     int pointer_locked;
     unsigned int button;
     int button_pressed;
+    int button_x, button_y; /* Position of the retained button event, before later motion. */
     unsigned int mouse_buttons;
     int wheel_y; /* signed wheel steps accumulated during this poll */
     uint32_t button_serial;
     int keyboard_focus_changed;
+    int keyboard_focus_valid; /* Current focus snapshot, even without a focus edge. */
     int keyboard_focused;
     int key_event_count;
     struct toy_key_event key_events[TOY_WINDOW_MAX_KEY_EVENTS];

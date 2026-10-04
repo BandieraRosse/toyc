@@ -51,6 +51,47 @@ static void clear_events(struct toy_window_events *events)
         ((unsigned char *)events)[i] = 0;
 }
 
+/* Keep the first press in a poll even when a slow frame batches press, motion
+ * and release. The final pointer/buttons still describe the end of the poll;
+ * RTS needs both the original press position and the final drag endpoint. */
+static void poll_mouse_button(struct toy_window_events *events,
+                              const SDL_MouseButtonEvent *event)
+{
+    events->pointer_moved = 1;
+    events->pointer_x = event->x;
+    events->pointer_y = event->y;
+    if (event->button < SDL_BUTTON_LEFT || event->button > SDL_BUTTON_X2 ||
+        events->button_pressed) return;
+    events->button = event->button == SDL_BUTTON_LEFT ? 0x110 :
+        event->button == SDL_BUTTON_RIGHT ? 0x111 :
+        event->button == SDL_BUTTON_MIDDLE ? 0x112 :
+        event->button == SDL_BUTTON_X1 ? 0x113 : 0x114;
+    events->button_pressed = event->type == SDL_MOUSEBUTTONDOWN;
+    events->button_x = event->x;
+    events->button_y = event->y;
+}
+
+int toy_window_windows_mouse_logic_test(void)
+{
+    struct toy_window_events events = {0};
+    SDL_MouseButtonEvent event = {0};
+    event.type = SDL_MOUSEBUTTONDOWN; event.button = SDL_BUTTON_LEFT;
+    event.x = 10; event.y = 20; poll_mouse_button(&events, &event);
+    event.type = SDL_MOUSEBUTTONUP; event.x = 80; event.y = 90;
+    poll_mouse_button(&events, &event);
+    if (!events.button_pressed || events.button != 0x110 ||
+        events.button_x != 10 || events.button_y != 20 ||
+        events.pointer_x != 80 || events.pointer_y != 90) return -1;
+    /* Another button's release must not erase the first press either. */
+    event.button = SDL_BUTTON_RIGHT; poll_mouse_button(&events, &event);
+    if (!events.button_pressed || events.button != 0x110) return -1;
+    clear_events(&events); poll_mouse_button(&events, &event);
+    if (events.button_pressed || events.button != 0x111) return -1;
+    event.type = SDL_MOUSEBUTTONDOWN; poll_mouse_button(&events, &event);
+    return events.button_pressed && events.button == 0x111 &&
+        events.button_x == 80 && events.button_y == 90 ? 0 : -1;
+}
+
 static int has_key_event(const struct toy_window_events *events,
                          unsigned int key, int pressed)
 {
@@ -459,8 +500,8 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
     /* Pump SDL first, then merge the native snapshot only when it contributes
      * an edge SDL did not deliver.  has_key_event() prevents duplicates. */
     SDL_PumpEvents();
-    if (timeout_ms > 0 && !SDL_WaitEventTimeout(&event, timeout_ms)) return 0;
     if (timeout_ms > 0) {
+        if (!SDL_WaitEventTimeout(&event, timeout_ms)) goto snapshot;
         have_event = 1;
         goto dispatch;
     }
@@ -521,17 +562,7 @@ dispatch:
             break;
         case SDL_MOUSEBUTTONDOWN:
         case SDL_MOUSEBUTTONUP:
-            events->pointer_moved = 1;
-            events->pointer_x = event.button.x;
-            events->pointer_y = event.button.y;
-            if (event.button.button >= SDL_BUTTON_LEFT &&
-                event.button.button <= SDL_BUTTON_X2) {
-                events->button = event.button.button == SDL_BUTTON_LEFT ? 0x110 :
-                    event.button.button == SDL_BUTTON_RIGHT ? 0x111 :
-                    event.button.button == SDL_BUTTON_MIDDLE ? 0x112 :
-                    event.button.button == SDL_BUTTON_X1 ? 0x113 : 0x114;
-                events->button_pressed = event.type == SDL_MOUSEBUTTONDOWN;
-            }
+            poll_mouse_button(events, &event.button);
             break;
         case SDL_MOUSEWHEEL:
             events->wheel_y += event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ?
@@ -541,9 +572,15 @@ dispatch:
         }
         if (timeout_ms > 0) break;
     }
+snapshot:
     if (sync_window_surface(window, events) < 0) return -1;
     if (events) {
-        poll_windows_keys(events, SDL_GetKeyboardFocus() == window->window);
+        /* Firmware may consume FOCUS_GAINED before Core's input service starts.
+         * Publish current focus on every poll, including idle timeout polls;
+         * keep keyboard_focus_changed reserved for actual window events. */
+        events->keyboard_focus_valid = 1;
+        events->keyboard_focused = SDL_GetKeyboardFocus() == window->window;
+        poll_windows_keys(events, events->keyboard_focused);
         {
             Uint32 buttons = SDL_GetMouseState(NULL, NULL);
             events->mouse_buttons = 0;

@@ -12,7 +12,7 @@ enum rf_gpu_scene_aux_kind { RF_GPU_AUX_WORLD, RF_GPU_AUX_WEAPON };
 enum rf_gpu_scene_aux_state {
     RF_GPU_AUX_HIDDEN, RF_GPU_AUX_CONNECTING, RF_GPU_AUX_LIVE, RF_GPU_AUX_UNAVAILABLE
 };
-/* Runtime selects one visible view. Layout is in final framebuffer pixels;
+/* Runtime selects the visible views. Layout is in final framebuffer pixels;
  * render extent and cadence are independent of UI scale. The WORLD transform
  * comes from the real camera entity, never from the main player's camera. */
 struct rf_gpu_scene_aux_view {
@@ -47,6 +47,7 @@ struct rf_gpu_scene_layers_input {
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
     const struct rf_gpu_scene_aux_view *aux_view;
+    const struct rf_gpu_scene_aux_view *unit_view;
     int world_only; /* Camera texture: no HUD, names or viewmodel. */
     const struct camera *light_camera;
 };
@@ -83,16 +84,19 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
 
 #define RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES 16384U
 #define RF_GPU_SCENE_LAYER_CHUNKS 16U
+struct rf_gpu_scene_aux_slot {
+    struct rf_gpu_scene_world_gpu_probe *owner;
+    struct rf_gpu_scene_aux_status status;
+    uint64_t id,generation,world_generation,next_us;
+    unsigned attempts;
+    int visible,kind;
+};
 struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
     int quiet;
     int offscreen_only;
-    struct rf_gpu_scene_world_gpu_probe *aux;
-    struct rf_gpu_scene_aux_status aux_status;
-    uint64_t aux_id,aux_generation,aux_world_generation,aux_next_us;
-    unsigned aux_attempts;
-    int aux_visible,aux_kind;
+    struct rf_gpu_scene_aux_slot aux[2]; /* 0: story/device, 1: RTS unit. */
     struct rf_gpu_graphics_resource *lighting_lab_sphere;
     struct rf_mesh_weaver_gpu *weaver;
     const struct rf_gpu_scene_layers_input *layers;

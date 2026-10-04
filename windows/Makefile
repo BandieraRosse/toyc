@@ -75,6 +75,7 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_sky.c \
              rasterfall/src/rasterfall_viewmodel.c
 GAME_SRCS += rasterfall/src/rf_viewmodel_contract.c
+GAME_SRCS += rasterfall/src/rf_rts.c rasterfall/src/rf_rts_portrait.c
 GAME_SRCS += rasterfall/src/rf_mesh_weaver_presentation.c
 GAME_SRCS += rasterfall/src/rf_player_ui.c rasterfall/src/rf_minimap.c \
              rasterfall/src/rf_player_commands.c rasterfall/src/rf_story.c \

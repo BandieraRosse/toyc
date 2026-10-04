@@ -6,6 +6,11 @@
 
 ## 登记与展示
 
+实验区北侧入口道路的 `rts_rifle`、`rts_sniper`、`rts_shotgun` 三个 formation 由
+`assets/worlds/outpost.content` 配置，各含三名普通 AI 队员。session reset 沿正式 actor 创建路径加载，
+不使用 `animation_demo`、`developer_only` 或展示开关；它们可选择、移动、战斗和受伤，供 RTS 编组实测。
+从西向东依次为步枪、狙击、霰弹枪。操作见 [RTS 核心指挥](../guides/player-ui-v2.md#rts-核心指挥)。
+
 固定战斗实验复用南排最西侧空性能场，新增 `combat_control_terminal` 和 `combat_result_terminal` 作为同一终端交互的专用入口。
 它由 `rf_combat_lab.inc` 管理真实 actor/enemy 实验生命周期，与下表纯视觉展示分开；战斗和性能测试不能同时使用场地。
 场地 region 仍是 `perf_low_area`，坐标由 Runtime Map 读取；具体操作、五类预设与结构化结果见[战斗实验场](../guides/combat-lab.md)。

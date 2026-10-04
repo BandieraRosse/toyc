@@ -816,6 +816,7 @@ APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_input_bindings.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world_gpu.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_viewmodel_contract.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_player_ui.o $(BUILD)/rf_minimap.o $(BUILD)/rf_player_commands.o $(BUILD)/rf_story.o $(BUILD)/rf_story_test.o $(BUILD)/rf_player_panels.o $(BUILD)/rf_device_commands.o $(BUILD)/rf_ui_font.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_rts.o $(BUILD)/rf_rts_portrait.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
@@ -1630,6 +1631,7 @@ SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world_gpu_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_mesh_weaver_presentation_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_player_ui_self.o $(BUILD)/rf_minimap_self.o $(BUILD)/rf_player_commands_self.o $(BUILD)/rf_story_self.o $(BUILD)/rf_story_test_self.o $(BUILD)/rf_player_panels_self.o $(BUILD)/rf_device_commands_self.o $(BUILD)/rf_ui_font_self.o
+SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_rts_self.o $(BUILD)/rf_rts_portrait_self.o
 SELF_APP_EXTRA_OBJS_glb_inspect := $(BUILD)/rasterfall_humanoid_basis_self.o \
 	$(BUILD)/rasterfall_humanoid_retarget_self.o
 
@@ -2123,9 +2125,11 @@ $(BUILD)/rf_gpu_scene_%_self.o: rasterfall/src/rf_gpu_scene_%.c $(SELF_CC) | $(B
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 # Shared player presentation and command/story services.
-$(BUILD)/rf_player_ui.o $(BUILD)/rf_minimap.o $(BUILD)/rf_player_commands.o $(BUILD)/rf_story.o $(BUILD)/rf_story_test.o $(BUILD)/rf_player_panels.o $(BUILD)/rf_device_commands.o $(BUILD)/rf_ui_font.o: $(BUILD)/%.o: rasterfall/src/%.c | $(BUILD)
+$(BUILD)/rf_rts.o $(BUILD)/rf_rts_portrait.o $(BUILD)/rf_player_ui.o $(BUILD)/rf_minimap.o $(BUILD)/rf_player_commands.o $(BUILD)/rf_story.o $(BUILD)/rf_story_test.o $(BUILD)/rf_player_panels.o $(BUILD)/rf_device_commands.o $(BUILD)/rf_ui_font.o: $(BUILD)/%.o: rasterfall/src/%.c | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
-$(BUILD)/rf_player_ui_self.o $(BUILD)/rf_minimap_self.o $(BUILD)/rf_player_commands_self.o $(BUILD)/rf_story_self.o $(BUILD)/rf_story_test_self.o $(BUILD)/rf_player_panels_self.o $(BUILD)/rf_device_commands_self.o $(BUILD)/rf_ui_font_self.o: $(BUILD)/%_self.o: rasterfall/src/%.c $(SELF_CC) | $(BUILD)
+$(BUILD)/rf_rts_self.o $(BUILD)/rf_rts_portrait_self.o $(BUILD)/rf_player_ui_self.o $(BUILD)/rf_minimap_self.o $(BUILD)/rf_player_commands_self.o $(BUILD)/rf_story_self.o $(BUILD)/rf_story_test_self.o $(BUILD)/rf_player_panels_self.o $(BUILD)/rf_device_commands_self.o $(BUILD)/rf_ui_font_self.o: $(BUILD)/%_self.o: rasterfall/src/%.c $(SELF_CC) | $(BUILD)
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_aux.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_player_runtime.inc $(RASTERFALL_SRC)/rf_device_runtime.inc $(RASTERFALL_SRC)/rf_ui_performance.inc $(RASTERFALL_INC)/rf_player_ui.h $(RASTERFALL_INC)/rf_player_commands.h $(RASTERFALL_INC)/rf_player_panels.h $(RASTERFALL_INC)/rf_story.h $(RASTERFALL_INC)/rf_device_commands.h
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_rts_runtime.inc $(RASTERFALL_INC)/rf_rts.h
+$(BUILD)/rf_player_ui.o $(BUILD)/rf_player_ui_self.o: $(RASTERFALL_SRC)/rf_rts_ui.inc $(RASTERFALL_INC)/rf_rts.h

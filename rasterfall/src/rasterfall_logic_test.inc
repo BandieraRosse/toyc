@@ -34,6 +34,31 @@ static int physical_input_boundary_logic_test(void)
     toy_input_apply(&input, &events);
     if (input.physical_down[TOY_PHYSICAL_KEY_COUNT - 1] ||
         !input.physical_released[TOY_PHYSICAL_KEY_COUNT - 1]) return -3;
+
+    /* Firmware consumed the focus edge, then Core initialized/reset input.
+     * The next idle poll must recover focus without another activation. */
+    toy_input_init(&input);
+    memset(&events,0,sizeof(events));
+    events.keyboard_focus_valid=1;events.keyboard_focused=1;
+    toy_input_apply(&input,&events);
+    if(!input.keyboard_focused)return -4;
+    events.key_event_count=1;
+    events.key_events[0].key=30;events.key_events[0].physical_key=4;
+    events.key_events[0].pressed=1;
+    toy_input_apply(&input,&events);
+    toy_input_begin_frame(&input);events.key_event_count=0;
+    toy_input_apply(&input,&events);
+    if(!input.keyboard_focused || !input.key_down[30] || !input.physical_down[4] ||
+        input.key_pressed[30] || input.physical_pressed[4])return -5;
+    /* A snapshot of real focus loss still clears held input. */
+    events.keyboard_focused=0;toy_input_apply(&input,&events);
+    if(input.keyboard_focused || input.key_down[30] || input.physical_down[4] ||
+        !input.key_released[30] || !input.physical_released[4])return -6;
+    /* Event-only backends retain their last focus between events. */
+    events.keyboard_focus_valid=0;events.keyboard_focus_changed=1;events.keyboard_focused=1;
+    toy_input_apply(&input,&events);
+    memset(&events,0,sizeof(events));toy_input_apply(&input,&events);
+    if(!input.keyboard_focused)return -7;
     return 0;
 }
 
@@ -1594,6 +1619,8 @@ static int run_logic_test(void)
 #ifdef TOYC_WINDOWS
     extern int toy_window_windows_key_mapping_logic_test(void);
     if (toy_window_windows_key_mapping_logic_test() < 0) return 261;
+    extern int toy_window_windows_mouse_logic_test(void);
+    if (toy_window_windows_mouse_logic_test() < 0) return 703;
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
     if (rf_mesh_weaver_logic_test() != 0) return 694;
@@ -1622,6 +1649,7 @@ static int run_logic_test(void)
     if (rf_input_bindings_logic_test() != 0) return 277;
     { int code=rf_minimap_logic_test();if(code){__printf("UI-MAP-TEST %d\n",code);return 301;} }
     { int code=rf_player_ui_logic_test();if(code){__printf("UI-LAYOUT-TEST %d\n",code);return 302;} }
+    { int code=rf_rts_logic_test();if(code){__printf("RTS-SELECTION-TEST %d\n",code);return 306;} }
     { int code=rf_story_logic_test();if(code){__printf("STORY-TEST %d\n",code);return 303;} }
     { int code=rf_player_commands_logic_test();if(code){__printf("PLAYER-COMMAND-TEST %d\n",code);return 304;} }
     { int code=rf_device_commands_logic_test();if(code){__printf("DEVICE-COMMAND-TEST %d\n",code);return 305;} }
@@ -1778,7 +1806,7 @@ static int run_logic_test(void)
         }
     }
     if (enemy_flow_corridor_logic_test()) return 277;
-    if (rasterfall_session_rts_logic_test()) return 260;
+    { int code=rasterfall_session_rts_logic_test();if(code){__printf("RTS-SESSION-TEST %d\n",code);return 260;} }
     rasterfall_host_set_active_slots(24,24);
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||
@@ -1920,9 +1948,8 @@ static int run_logic_test(void)
                 continue;
             }
             if (!strcmp(actor->name, "EULA")) has_eula = 1;
-            if (actor->character_id != RASTERFALL_CHARACTER_NONE &&
-                !rasterfall_character_visual_recipe_for_character(
-                    actor->character_id))
+            if (actor->character_id >= RASTERFALL_CHARACTER_RF_RIFLEMAN &&
+                !rasterfall_character_visual_recipe_for_character(actor->character_id))
                 return 222;
         }
         if (!has_jesus || !has_eula) return 223;
@@ -1942,9 +1969,7 @@ static int run_logic_test(void)
                 if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
                     actor->character_id != roster->members[member].character_id ||
                     strcmp(actor->name, roster->members[member].name) ||
-                    actor->flag_index != (squad == RASTERFALL_SQUAD_STANDARD_RESPONSE ?
-                                          RASTERFALL_STANDARD_FLAG_INDEX :
-                                          RASTERFALL_ASSAULT_FLAG_INDEX) ||
+                    actor->flag_index != -1 ||
                     !rasterfall_character_visual_recipe_for_character(
                         actor->character_id))
                     return 227;
@@ -1974,9 +1999,9 @@ static int run_logic_test(void)
             const struct toy_game_actor *actor = &session.game_state.actors[i];
             int maid_slot;
             if (!actor->active ||
-                actor->flag_index != RASTERFALL_MAID_FLAG_INDEX) continue;
+                actor->character_id != RASTERFALL_CHARACTER_MAID) continue;
             maid_slot = actor->anime_character_id - 2;
-            if (!actor->flag_guard || maid_slot < 0 ||
+            if (actor->flag_guard || actor->flag_index!=-1 || maid_slot < 0 ||
                 maid_slot >= RASTERFALL_MAID_SQUAD_SIZE ||
                 actor->character_id != RASTERFALL_CHARACTER_MAID ||
                 rasterfall_character_profile(actor->character_id)->profession_id !=
@@ -2017,12 +2042,12 @@ static int run_logic_test(void)
             if (actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
                 return 213;
             actor = &session.game_state.actors[actor_index];
-            if (!actor->active || !actor->flag_guard ||
+            if (!actor->active || actor->flag_guard ||
                 actor->anime_character_id != 0 ||
                 actor->character_id != hurd_characters[i] ||
                 rasterfall_character_profile(actor->character_id)->profession_id !=
                     RASTERFALL_PROFESSION_GUNSMITH + i ||
-                actor->flag_index != RASTERFALL_HURD_FLAG_INDEX ||
+                actor->flag_index != -1 ||
                 strcmp(actor->name, hurd_names[i]) ||
                 actor->slots[actor->current_slot].weapon != hurd_weapons[i])
                 return 213;
@@ -2456,15 +2481,8 @@ static int run_logic_test(void)
         rasterfall_session_reset(&session, &camera, 1);
     }
     {
-        int actor_index = rasterfall_session_shop_actor_at(&session, 0, 0);
-        int was_assigned;
-        if (actor_index < 0) return 135;
-        was_assigned = session.game_state.actors[actor_index].flag_index == 0;
-        if (rasterfall_session_shop_request(&session, 4, 0,
-                                            actor_index) <= 0 ||
-            session.game_state.actors[actor_index].flag_index !=
-                (was_assigned ? -1 : 0))
-            return 136;
+        if (rasterfall_session_shop_actor_at(&session,0,0)!=-1 ||
+            rasterfall_session_shop_request(&session,4,0,1)!=0)return 136;
     }
     /* 客户端交互由主机执行，但按下 E 后本地仍必须立即显示反馈。 */
     if (session.item_count > 0) {
@@ -3906,11 +3924,11 @@ death_fixture_done:
             if (r->hit_enemy) return 39;
         }
     }
-    /* 新地图没有按钮、武器/弹药拾取物或据点阶段；正式小队会占用
-     * 后续 actor slots 并绑定各自旗帜，只有本地玩家固定属于基地。 */
+    /* 新地图没有按钮、武器/弹药拾取物或据点阶段；正式小队占用
+     * 后续 actor slots，玩家和队友均不再绑定旗帜。 */
     if (game.campaign_mode || game.campaign_stage != 0 ||
         game.actors[1].active == 0 || game.actors[2].active == 0 ||
-        game.actors[0].flag_index != 0)
+        game.actors[0].flag_index != -1)
         return 32;
     {
         static struct toy_game base_test;

@@ -27,7 +27,7 @@ void toy_input_apply(struct toy_input *input,
                      const struct toy_window_events *events)
 {
     if (!input || !events) return;
-    if (events->keyboard_focus_changed) {
+    if (events->keyboard_focus_changed || events->keyboard_focus_valid) {
         input->keyboard_focused = events->keyboard_focused;
         if (!events->keyboard_focused) {
             for (int key = 0; key < TOY_INPUT_KEY_COUNT; key++) {

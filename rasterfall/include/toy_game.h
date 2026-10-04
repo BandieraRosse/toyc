@@ -700,6 +700,9 @@ struct toy_game_actor {
     int ray_count;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
     int deployment_x, deployment_z;
+    /* Explicit allied command overrides deployment/companion following until
+     * replaced. Arrival retains the post; it never changes flag membership. */
+    int command_destination_active, command_x, command_z;
     int flag_index;
     int nav_x, nav_z;
     int nav_active;

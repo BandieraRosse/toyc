@@ -56,6 +56,8 @@ int toy_window_poll(struct toy_window *window, struct toy_window_events *events,
         events->pointer_locked = input.pointer_locked;
         events->button = input.button;
         events->button_pressed = input.button_pressed;
+        events->button_x = input.pointer_x;
+        events->button_y = input.pointer_y;
         events->button_serial = input.button_serial;
         events->keyboard_focus_changed = input.keyboard_focus_changed;
         events->keyboard_focused = input.keyboard_focused;

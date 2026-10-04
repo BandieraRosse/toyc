@@ -55,6 +55,7 @@ void rf_gpu_scene_enemy_begin(uint64_t frame_id, uint64_t world_generation);
 /* Set before independent collection; NULL clears. Keeps only the remote
  * camera neighborhood in addition to the main view's ordinary source set. */
 void rf_gpu_scene_enemy_aux_camera(const struct camera *camera);
+void rf_gpu_scene_enemy_unit_camera(const struct camera *camera);
 /* Called after begin with a bound renderer context. Samples gameplay/effects
  * without issuing draw commands; commits presentation history once per frame. */
 int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,

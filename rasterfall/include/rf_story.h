@@ -104,5 +104,9 @@ const struct rf_story_camera_entity *rf_story_camera(const struct rf_story *stor
 int rf_story_save(struct rf_story *story, const char *path);
 int rf_story_load(struct rf_story *story, const char *path);
 int rf_story_logic_test(void);
+/* Shared cinematic framing, without acquiring a story movement/facing hold. */
+struct toy_game_actor;
+int rf_story_actor_camera(const struct rasterfall_session *session,
+    const struct toy_game_actor *actor,struct camera *camera);
 
 #endif

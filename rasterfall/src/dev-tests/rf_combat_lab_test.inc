@@ -49,17 +49,23 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
                 if(a->x!=before[i][2] || a->z!=before[i][3])return -17;
                 if(a->faction==TOY_GAME_FACTION_HOSTILE) {
                     hostile_count++;
-                    if(a->deployment_x!=before[i][0] || a->deployment_z!=before[i][1])return -18;
+                    if(a->deployment_x!=before[i][0] || a->deployment_z!=before[i][1] ||
+                       rasterfall_session_rts_order_actor(runtime->session,(int)(a-g->actors),a->actor_id,
+                           a->combat_generation,field->origin_x,field->origin_z,0))return -18;
                     continue;
                 }
                 allied_count++;
-                if(a->flag_index!=fi || (a->deployment_x==before[i][0] && a->deployment_z==before[i][1]))return -19;
+                if(a->flag_index!=-1 || a->deployment_x!=before[i][0] || a->deployment_z!=before[i][1])return -19;
+                int tx=field->origin_x+allied_count*600,tz=field->origin_z-2400;
+                if(!rasterfall_session_rts_order_actor(runtime->session,(int)(a-g->actors),a->actor_id,
+                    a->combat_generation,tx,tz,0) || !a->command_destination_active ||
+                    a->command_x!=tx || a->command_z!=tz)return -20;
                 for(int j=0;j<i;++j) {
                     const struct rf_combat_member *previous=&rf_combat_lab.members[j];
                     if(previous->enemy_slot>=0)continue;
                     const struct toy_game_actor *b=rf_combat_owned_actor(g,previous);
                     if(b->faction==TOY_GAME_FACTION_ALLIED &&
-                       a->deployment_x==b->deployment_x && a->deployment_z==b->deployment_z)return -20;
+                       a->command_x==b->command_x && a->command_z==b->command_z)return -20;
                 }
             }
             if(allied_count!=4 || !hostile_count)return -21;

@@ -238,6 +238,10 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
  * submission. NULL clears the binding. Both owners must share a device. */
 int rf_gpu_graphics_scene_video(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics *source,int x,int y,int width,int height);
+/* Independent sources composite before HUD. Clearing one slot preserves others. */
+#define RF_GPU_GRAPHICS_VIDEO_SLOTS 2
+int rf_gpu_graphics_scene_video_at(struct rf_gpu_graphics *g,unsigned slot,
+    struct rf_gpu_graphics *source,int x,int y,int width,int height);
 void rf_gpu_graphics_scene_timing(const struct rf_gpu_graphics *g,
     struct rf_gpu_scene_timing *timing);
 /* Explicit diagnostic only: direct attachment readback, no Raster conversion. */

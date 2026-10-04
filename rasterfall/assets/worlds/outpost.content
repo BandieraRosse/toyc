@@ -1,2 +1,16 @@
 # Outpost Hall V1: NULL works in the hall; terminals are map furniture.
 actor id=null name=NULL character=NULL x=3686 y=0 z=-256 yaw=270
+# Ordinary three-person squads on the north experiment access road.
+# West to east: rifle / sniper / shotgun. Control groups start unassigned.
+actor id=rts_rifle_1 name=RIFLE-1 character=RF_RIFLEMAN weapon=ak x=-7168 y=0 z=-13312 yaw=0
+actor id=rts_rifle_2 name=RIFLE-2 character=RF_RIFLEMAN weapon=ak x=-6400 y=0 z=-13312 yaw=0
+actor id=rts_rifle_3 name=RIFLE-3 character=RF_RIFLEMAN weapon=ak x=-5632 y=0 z=-13312 yaw=0
+actor id=rts_sniper_1 name=SNIPER-1 character=SQUAD_A_RECON weapon=awp x=-768 y=0 z=-13312 yaw=0
+actor id=rts_sniper_2 name=SNIPER-2 character=SQUAD_A_RECON weapon=awp x=0 y=0 z=-13312 yaw=0
+actor id=rts_sniper_3 name=SNIPER-3 character=SQUAD_A_RECON weapon=awp x=768 y=0 z=-13312 yaw=0
+actor id=rts_shotgun_1 name=SHOTGUN-1 character=SQUAD_B_BREACHER weapon=shotgun x=5632 y=0 z=-13312 yaw=0
+actor id=rts_shotgun_2 name=SHOTGUN-2 character=SQUAD_B_BREACHER weapon=shotgun x=6400 y=0 z=-13312 yaw=0
+actor id=rts_shotgun_3 name=SHOTGUN-3 character=SQUAD_B_BREACHER weapon=shotgun x=7168 y=0 z=-13312 yaw=0
+formation id=rts_rifle members=rts_rifle_1,rts_rifle_2,rts_rifle_3
+formation id=rts_sniper members=rts_sniper_1,rts_sniper_2,rts_sniper_3
+formation id=rts_shotgun members=rts_shotgun_1,rts_shotgun_2,rts_shotgun_3

@@ -16,6 +16,7 @@
 #include "rf_player_commands.h"
 #include "rf_device_commands.h"
 #include "rf_story.h"
+#include "rf_rts.h"
 
 struct rasterfall_options;
 struct rf_core;
@@ -71,11 +72,12 @@ struct rf_game_runtime {
     unsigned char ui_suppressed_keys[RF_INPUT_KEY_COUNT];
     unsigned ui_suppressed_mouse;
     int rts_active;
+    struct rf_rts_state rts;
     int rts_camera_x, rts_camera_z;
     int rts_camera_distance;
     int rts_saved_pitch_sy, rts_saved_pitch_cy;
     int64_t rts_pan_last_us;
-    int rts_selected; /* -1 none, 0 local player, positive flag index + 1 */
+    int rts_selected; /* Legacy overlay hint: 0 local player, -1 other/empty. */
     int rts_follow_player;
     int rts_teleport_pending;
     struct rasterfall_command command;
