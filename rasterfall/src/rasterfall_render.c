@@ -17,6 +17,7 @@
 #include "rasterfall_render.h"
 #include "rasterfall_motion_presentation.h"
 #include "rasterfall_hud.h"
+#include "rasterfall_actor_labels.h"
 #include "rasterfall_render_frontend.h"
 #include "rasterfall_draw.h"
 #include "rf_gpu_scene_world.h"
@@ -7474,9 +7475,11 @@ static int network_actor_lift(int x, int z, int airborne_y)
 }
 
 static void render_ai_teammate_name(struct toy_renderer *renderer,
-                                    const struct camera *camera)
+                                    const struct camera *camera,int rts_active)
 {
     int i;
+    struct rf_actor_labels labels={0};
+    struct rasterfall_canvas canvas=rasterfall_canvas_surface(&renderer->surface);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *actor = &game.actors[i];
         char label[64];
@@ -7485,10 +7488,12 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_UI_ACCENT :
                          actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_UI_AI :
                          RF_COLOR_UI_PLAYER;
-        if(actor->faction!=toy_game_local_player_actor_const(&game)->faction)
+        int hostile=actor->faction!=toy_game_local_player_actor_const(&game)->faction;
+        if(hostile)
             color=RF_COLOR_UI_DANGER;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->state == TOY_GAME_ACTOR_DEAD) continue;
+        int friendly_rts=rts_active && !hostile && strcmp(actor->name,"BASE");
         dx = (long)actor->x - camera->x;
         dz = (long)actor->z - camera->z;
         d2 = dx * dx + dz * dz;
@@ -7496,20 +7501,41 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         dist = isqrt(d2);
         if (dist <= 0) continue;
         dot = dx * camera->sy + dz * camera->cy;
-        if (dot < dist * 650) continue;
+        if (!friendly_rts && dot < dist * 650) continue;
         display_name = actor->name;
         if (actor->animation_demo) {
             snprintf(label, sizeof(label), "%s [%s]", actor->name,
                      toy_game_animation_name(actor->animation.id));
             display_name = label;
         }
-        render_actor_status(renderer, camera, actor->x, actor->z,
-                            actor->ground_y + actor->airborne_y +
-                            (actor->state == TOY_GAME_ACTOR_DOWNED ? -350 : 700),
-                            display_name, actor->hp, actor->max_hp,
-                            actor->state == TOY_GAME_ACTOR_DOWNED,
-                            actor->revive_progress_ms, color);
+        int downed=actor->state==TOY_GAME_ACTOR_DOWNED;
+        int head_y=actor->ground_y+actor->airborne_y+(downed?-350:700);
+        if(hostile || !strcmp(display_name,"BASE")) {
+            render_actor_status(renderer,camera,actor->x,actor->z,head_y,
+                display_name,actor->hp,actor->max_hp,downed,
+                actor->revive_progress_ms,color);
+            continue;
+        }
+        struct vec3 world={actor->x,head_y,actor->z},view;
+        struct toy_screen_vertex screen;
+        world_to_view(camera,&world,&view);
+        if(view.z<NEAR_Z || (!friendly_rts && view.z>ENEMY_RENDER_DISTANCE))continue;
+        project_vertex(&renderer->surface,&view,&screen);
+        int name_width=rasterfall_canvas_text_width(display_name,1000);
+        /* Preserve the old CPU name visibility gate using real UTF-8 width. */
+        int name_x=screen.x-name_width/2;
+        if(name_x<0 || name_x+name_width>=canvas.width || screen.y<0 ||
+            screen.y+FB_FONT_H>=canvas.height)continue;
+        int hp=actor->hp*64/(actor->max_hp>0?actor->max_hp:100);
+        uint32_t hp_color=actor->hp<10?RF_COLOR_UI_DANGER:
+            actor->hp<40?RF_COLOR_UI_WARNING:RF_COLOR_UI_SUCCESS;
+        rf_actor_labels_add(&labels,actor->actor_id,actor->combat_generation,
+            screen.x,screen.y,display_name,hp,downed,
+            actor->revive_progress_ms*64/TOY_GAME_REVIVE_MS,
+            downed?0xff6060:color,hp_color,RF_COLOR_UI_PANEL);
     }
+    rf_actor_labels_place(&labels,canvas.width,canvas.height);
+    rf_actor_labels_paint(&labels,&canvas);
 }
 
 struct rasterfall_modular_pose_cache {
@@ -10144,9 +10170,9 @@ int rasterfall_render_network_teammate(struct toy_renderer *renderer,
 }
 
 void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
-                                        const struct camera *camera)
+                                        const struct camera *camera,int rts_active)
 {
-    render_ai_teammate_name(renderer, camera);
+    render_ai_teammate_name(renderer, camera,rts_active);
 }
 
 void rasterfall_render_network_teammate_status(

@@ -7,6 +7,8 @@
 #include "dev-tests/rf_mesh_weaver_test.inc"
 #include "dev-tests/rf_frontier_mission_test.inc"
 #include "dev-tests/rf_frontier_session_test.inc"
+#include "dev-tests/game_actor_squad_test.inc"
+#include "dev-tests/game_actor_corner_test.inc"
 #include "rf_ui_font.h"
 #include "rf_device_commands.h"
 #define special_windup_ms ability.special_windup_ms
@@ -1628,6 +1630,8 @@ static int run_logic_test(void)
     if (rf_mesh_weaver_logic_test() != 0) return 694;
     if (rf_frontier_mission_logic_test() != 0) return 697;
     if (rf_frontier_session_logic_test() != 0) return 704;
+    if (game_actor_squad_logic_test() != 0) return 705;
+    if (actor_corner_logic_test() != 0) return 706;
     if (combat_capabilities_logic_test() != 0) return 279;
     {
         int combat_result = combat_evasion_logic_test();
@@ -1779,6 +1783,7 @@ static int run_logic_test(void)
     if (scene_ui_test() != 0) return 254;
     if (rasterfall_render_draw_reference_logic_test() != 0) return 252;
     if (rasterfall_render_resources_logic_test() != 0) return 253;
+    if (rf_core_frame_lifecycle_logic_test() != 0) return 253;
     if (rfm2_material_alpha_producer_logic_test() != 0) return 244;
     if (rfm2_texel_alpha_producer_logic_test() != 0) return 245;
     if (rasterfall_render_map_transparency_logic_test() != 0) return 250;
@@ -1795,6 +1800,13 @@ static int run_logic_test(void)
     if (nav_ground_reuse_logic_test()) return 259;
     if (enemy_short_connection_logic_test()) return 261;
     if (enemy_direct_target_logic_test()) return 268;
+    {
+        int result = ordinary_enemy_retention_logic_test();
+        if (result) {
+            __printf("INFECTED TARGET regression fail=%d\n", result);
+            return 308;
+        }
+    }
     if (enemy_group_navigation_logic_test()) return 269;
     if (enemy_group_lifecycle_logic_test()) return 270;
     if (enemy_group_capacity_logic_test()) return 271;

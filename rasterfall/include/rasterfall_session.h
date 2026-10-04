@@ -124,6 +124,9 @@ struct rasterfall_session {
     int managed_ai_enabled;
     int null_actor_index; /* Resolved authored actor id=null; invalidated on session reset. */
     int frontier_squad_indices[5]; /* Authored assault/support order, rebuilt on reset. */
+    struct toy_game_squad_handle frontier_autonomous_squad;
+    struct toy_game_squad_handle frontier_gunner_squads[2];
+    unsigned int frontier_gunner_bound_mask;
     int frontier_squad_actor_ids[5];
     unsigned frontier_squad_generations[5];
     struct rf_frontier_config frontier_config;

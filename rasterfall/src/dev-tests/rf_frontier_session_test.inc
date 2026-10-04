@@ -55,6 +55,14 @@ static int rf_frontier_session_logic_test(void)
     player = toy_game_local_player_actor(g);
     FRONTIER_SESSION_CHECK(g->state == TOY_GAME_PLAYING &&
         fixture.frontier.phase == RF_FRONTIER_ASSAULT && fixture.frontier.guards_alive == 12);
+    FRONTIER_SESSION_CHECK(fixture.frontier_autonomous_squad.index>=0 &&
+        g->squads[fixture.frontier_autonomous_squad.index].count==5 &&
+        g->squads[fixture.frontier_autonomous_squad.index].mode==TOY_GAME_SQUAD_FOLLOW);
+    for(int i=0;i<RF_FRONTIER_TRACKED;i++) {
+        const struct rf_frontier_entity *e=&fixture.frontier.entities[i];
+        if(e->active && e->actor && e->role==RF_FRONTIER_GUARD)
+            FRONTIER_SESSION_CHECK(!g->squad_lookup[e->index] && g->actors[e->index].ai_guard_radius>0);
+    }
     for (int i = 0; i < TOY_GAME_WEAPON_SLOTS; ++i) {
         has_ak |= player->slots[i].weapon == TOY_GAME_WEAPON_AK;
         has_pistol |= player->slots[i].weapon == TOY_GAME_WEAPON_PISTOL;
@@ -200,6 +208,27 @@ static int rf_frontier_session_logic_test(void)
     g->actors[reused_index].actor_id = TOY_GAME_MAX_ACTORS + 17;
     rasterfall_session_step(&fixture, &view, &idle, 16);
     FRONTIER_SESSION_CHECK(fixture.frontier.phase == RF_FRONTIER_FAILED && g->state == TOY_GAME_OVER);
+    /* Formal bindings preserve two three-person batches and all spawn quotas. */
+    rasterfall_session_reset(&fixture,&view,7916);
+    fixture.frontier.phase=RF_FRONTIER_COUNTERATTACK;
+    fixture.frontier.phase_ms=0;fixture.frontier.first_final_infected_ms=-1;
+    rasterfall_session_step(&fixture,&view,&idle,16);
+    for(elapsed=0;elapsed<12500 && fixture.frontier.final_gunners_spawned<6;elapsed+=16)
+        rasterfall_session_step(&fixture,&view,&idle,16);
+    FRONTIER_SESSION_CHECK(fixture.frontier.final_gunners_spawned==6 &&
+        fixture.frontier_gunner_bound_mask==63);
+    for(int i=0;i<2;i++) {
+        struct toy_game_squad_handle h=fixture.frontier_gunner_squads[i];
+        FRONTIER_SESSION_CHECK(h.index>=0 && g->squads[h.index].count==3 &&
+            g->squads[h.index].mode==TOY_GAME_SQUAD_ASSAULT &&
+            g->squads[h.index].x==fixture.frontier_config.assault_x+(i?1080:-1080) &&
+            g->squads[h.index].z==fixture.frontier_config.assault_z);
+        for(int n=0;n<g->squads[h.index].count;n++) {
+            int index=g->squads[h.index].members[n].identity.index;
+            FRONTIER_SESSION_CHECK(g->actors[index].deployment_x==fixture.frontier_config.assault_x &&
+                g->actors[index].deployment_z==fixture.frontier_config.assault_z);
+        }
+    }
 cleanup:
     rasterfall_session_unload(&fixture);
     test_runtime.session = NULL;

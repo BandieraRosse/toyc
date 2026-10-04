@@ -588,6 +588,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     struct toy_game_actor *player;
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
+    toy_game_squad_reset(g);
     toy_mesh_weaver_defaults(&g->weaver);
     g->nav_group_enabled = 1;
     g->nav_flow_enabled = 1;
@@ -1694,6 +1695,7 @@ static void rebuild_component_navigation(struct toy_game *g)
     g->nav_dispatch_cursor = -1;
     g->nav_group_generation++;
     g->navigation_generation++;
+    toy_game_squad_reset(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
         toy_game_actor_cancel_navigation(&g->actors[i]);
     if (!g || g->room_limit <= 0) return;
@@ -1906,6 +1908,8 @@ static void init_enemy_ai(struct toy_game *g, struct toy_game_enemy *e)
     e->target_x = e->x;
     e->target_z = e->z;
     e->target_kind = -1;
+    e->target_index = -1;
+    e->target_generation = 0;
     e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     e->wander_timer_ms = 0;
     e->nav_group = -1;
@@ -2942,6 +2946,22 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
 }
 
+/* Keep one ordinary pursuit identity through small distance changes. Special
+ * abilities still choose their nearest target. This score cannot bypass
+ * validity or bounded physical direct reachability under the existing budgets. */
+static long long ordinary_enemy_target_score(const struct toy_game *g,
+                                             const struct toy_game_enemy *e,
+                                             int actor, long long distance2)
+{
+    int current = e->target_kind == TOY_GAME_TARGET_HOST ?
+                  TOY_GAME_PLAYER_ACTOR_INDEX : e->target_index;
+    if (e->type <= TOY_GAME_ENEMY_PURSUIT_FAST && e->target_kind >= 0 &&
+        e->target_generation && actor == current &&
+        e->target_generation == g->actors[actor].combat_generation)
+        return distance2 * 4;
+    return distance2 * 5;
+}
+
 static int nearest_ai_position(const struct toy_game *g,
                                const struct toy_game_enemy *e,
                                int *out_x, int *out_z,
@@ -2949,16 +2969,17 @@ static int nearest_ai_position(const struct toy_game *g,
                                int *out_index)
 {
     int i, found = 0;
-    long long best = 0;
+    long long best = 0, best_score = 0;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
-        long long dx, dz, d2;
+        long long dx, dz, d2, score;
         if (!enemy_target_valid(g, e, 1, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
         d2 = dx * dx + dz * dz;
-        if (!found || d2 < best) {
-            found = 1; best = d2;
+        score = ordinary_enemy_target_score(g, e, i, d2);
+        if (!found || score < best_score) {
+            found = 1; best = d2; best_score = score;
             *out_x = a->x; *out_z = a->z;
             if (out_index) *out_index = i;
         }
@@ -2968,32 +2989,35 @@ static int nearest_ai_position(const struct toy_game *g,
 }
 
 /* A wall can hide the nearest candidate while another nearby target is
- * physically reachable.  Probe only candidates closer than the best direct
+ * physically reachable. Probe only candidates scoring ahead of the best direct
  * one, and only on the ordinary enemy's target refresh. */
 static int nearest_direct_enemy_target_impl(struct toy_game *g,
                                        const struct toy_game_enemy *e,
                                        int *out_kind, int *out_index)
 {
     long long best = (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
-                     TOY_GAME_SHORT_CONNECTION_RANGE + 1;
+                     TOY_GAME_SHORT_CONNECTION_RANGE * 5 + 1;
     int found = 0, i;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_game_actor *a = &g->actors[i];
-        long long dx, dz, distance2;
+        long long dx, dz, distance2, score;
         int kind = i == TOY_GAME_PLAYER_ACTOR_INDEX ?
                    TOY_GAME_TARGET_HOST : TOY_GAME_TARGET_ACTOR;
         if (!enemy_target_valid(g, e, kind, i, NULL, NULL)) continue;
         dx = (long long)a->x - e->x;
         dz = (long long)a->z - e->z;
         distance2 = dx * dx + dz * dz;
-        if (distance2 >= best) continue;
+        if (distance2 > (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
+                        TOY_GAME_SHORT_CONNECTION_RANGE) continue;
+        score = ordinary_enemy_target_score(g, e, i, distance2);
+        if (score >= best) continue;
         if (g->nav_flow_enabled) {
             if (g->flow_local_budget < 160) break;
             g->flow_local_budget -= 80;
         }
         if (!toy_game_short_connection(g, e->x, e->z, a->x, a->z,
                                        enemy_radius(e), e->ground_y)) continue;
-        best = distance2;
+        best = score;
         *out_kind = kind;
         *out_index = kind == TOY_GAME_TARGET_HOST ? -1 : i;
         found = 1;
@@ -3518,10 +3542,61 @@ static int actor_nav_attach_cell(const struct toy_game *g, int x, int z,
     return best;
 }
 
+/* Rare actor endpoint repair only: a valid body can occupy a narrow strip
+ * whose conservative grid cells are all blocked. Try at most four nearest
+ * same-component centers and two axis bends each, with at most sixteen short
+ * segment probes. The wider exit proof covers waypoint arrival tolerance. */
+static int actor_nav_attach_corner(const struct toy_game *g, int x, int z,
+    int radius, int ground_y, int component, int arrival_margin,
+    int *out_x, int *out_z)
+{
+    int cells[4],count=0,i,dx,dz;
+    long long distances[4];
+    int cx=(x-g->nav_origin)/g->nav_cell_size;
+    int cz=(z-g->nav_origin)/g->nav_cell_size;
+    int range=(TOY_GAME_SHORT_CONNECTION_RANGE+g->nav_cell_size-1)/g->nav_cell_size;
+    if(!component)return 0;
+    for(dz=-range;dz<=range;dz++)for(dx=-range;dx<=range;dx++) {
+        int nx=cx+dx,nz=cz+dz,cell,px,pz,pos;
+        long long ox,oz,distance;
+        if(nx<0 || nz<0 || nx>=g->nav_width || nz>=g->nav_height)continue;
+        cell=nz*g->nav_width+nx;
+        if(!g->nav_walkable[cell] || g->nav_component[cell]!=component ||
+            g->nav_ground_y[cell]!=ground_y)continue;
+        px=g->nav_origin+nx*g->nav_cell_size+g->nav_cell_size/2;
+        pz=g->nav_origin+nz*g->nav_cell_size+g->nav_cell_size/2;
+        ox=(long long)px-x;oz=(long long)pz-z;distance=ox*ox+oz*oz;
+        if(distance>(long long)TOY_GAME_SHORT_CONNECTION_RANGE*TOY_GAME_SHORT_CONNECTION_RANGE)continue;
+        pos=count;
+        while(pos>0 && distances[pos-1]>distance)pos--;
+        if(pos>=4)continue;
+        if(count<4)count++;
+        for(i=count-1;i>pos;i--){cells[i]=cells[i-1];distances[i]=distances[i-1];}
+        cells[pos]=cell;distances[pos]=distance;
+    }
+    for(i=0;i<count;i++)for(int axis=0;axis<2;axis++) {
+        int px=g->nav_origin+(cells[i]%g->nav_width)*g->nav_cell_size+g->nav_cell_size/2;
+        int pz=g->nav_origin+(cells[i]/g->nav_width)*g->nav_cell_size+g->nav_cell_size/2;
+        int bx=axis?x:px,bz=axis?pz:z,end_y;
+        long long bend_x=(long long)bx-x,bend_z=(long long)bz-z;
+        struct toy_game_ground_query ground;
+        if(g->update_profile)g->update_profile->nav_candidates++;
+        if(bend_x*bend_x+bend_z*bend_z<=(long long)arrival_margin*arrival_margin)continue;
+        if(!short_connection_height(g,x,z,bx,bz,radius,ground_y,&end_y) || end_y!=ground_y ||
+            position_blocked_at_height_ground(g,bx,bz,radius+arrival_margin,ground_y,1,&ground) ||
+            !ground.has_support || ground.support_y!=ground_y ||
+            !short_connection_height(g,bx,bz,px,pz,radius+arrival_margin,ground_y,&end_y) ||
+            end_y!=g->nav_ground_y[cells[i]])continue;
+        *out_x=bx;*out_z=bz;return 1;
+    }
+    return 0;
+}
+
 static int nav_next_waypoint_impl(const struct toy_game *g,
                              int x, int z, int target_x, int target_z,
                              int radius, int ground_y,
-                             int *out_x, int *out_z, int attach_endpoints)
+                             int *out_x, int *out_z, int attach_endpoints,
+                             int arrival_margin)
 {
     struct toy_game_update_profile *profile = g->update_profile;
     int64_t mark = 0;
@@ -3539,7 +3614,8 @@ static int nav_next_waypoint_impl(const struct toy_game *g,
         int goal_component = g->nav_component[goal];
         if (!g->nav_walkable[start]) start = actor_nav_attach_cell(g, x, z,
             radius, ground_y, goal_component);
-        if (start < 0) return 0;
+        if (start < 0) return actor_nav_attach_corner(g,x,z,radius,ground_y,
+            goal_component,arrival_margin,out_x,out_z);
         if (!g->nav_walkable[goal]) {
             struct toy_game_ground_query ground = toy_game_query_ground(g,
                 target_x, target_z, radius, ground_y);
@@ -3618,7 +3694,7 @@ static int nav_next_waypoint(const struct toy_game *g,
     int *out_x, int *out_z)
 {
     return nav_next_waypoint_impl(g, x, z, target_x, target_z, radius,
-        ground_y, out_x, out_z, 0);
+        ground_y, out_x, out_z, 0, 0);
 }
 
 static int enemy_nav_group_valid(const struct toy_game *g,
@@ -4357,7 +4433,7 @@ int toy_game_actor_navigation_target(struct toy_game *g, struct toy_game_actor *
         }
         if (!direct && nav_next_waypoint_impl(g, a->x, a->z, target_x, target_z,
                                          TOY_GAME_PLAYER_RADIUS, a->ground_y,
-                                         &a->nav_x, &a->nav_z, 1))
+                                         &a->nav_x, &a->nav_z, 1, speed+24))
             a->nav_active = 1;
     }
     *out_x = a->nav_active ? a->nav_x : target_x;
@@ -5159,7 +5235,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             int dt_ms)
 {
     const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
-    int target_x, target_z, target_kind;
+    int target_x, target_z, target_kind, target_index;
     int primary_dx = player->x - e->x;
     int primary_dz = player->z - e->z;
     long long primary_dist2 = (long long)primary_dx * primary_dx +
@@ -5220,23 +5296,37 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
         return;
     }
 
-    /* 普通敌人只有一条规则：选择最近有效目标，然后直接追击。 */
+    /* Ordinary pursuit keeps a generation-bound identity between scans. */
     if (e->retarget_timer_ms > 0) e->retarget_timer_ms -= dt_ms;
     if (!enemy_target_valid(g, e, e->target_kind, e->target_index,
-                            NULL, NULL))
+                            NULL, NULL) || !e->target_generation ||
+        e->target_generation != g->actors[e->target_kind ==
+            TOY_GAME_TARGET_HOST ? TOY_GAME_PLAYER_ACTOR_INDEX :
+            e->target_index].combat_generation) {
         e->retarget_timer_ms = 0;
+        e->target_generation = 0;
+        e->nav_direct_valid = 0;
+        e->nav_active = 0;
+        e->nav_flow_node = 0;
+    }
     if (e->retarget_timer_ms <= 0 || e->target_kind < 0) {
         if (!nearest_direct_enemy_target(g, e, &target_kind,
-                                         &e->target_index)) {
+                                         &target_index)) {
             ai_available = nearest_ai_position(g, e, &ai_x, &ai_z,
                                                &ai_dist2, &ai_index);
             primary_valid = enemy_target_valid(g, e, 0, -1, NULL, NULL);
             target_kind = primary_valid ? 0 : -1;
             if (ai_available &&
-                (target_kind < 0 || ai_dist2 < primary_dist2)) target_kind = 1;
-            e->target_index = target_kind == 1 ? ai_index : -1;
+                (target_kind < 0 || ordinary_enemy_target_score(g, e, ai_index,
+                    ai_dist2) < ordinary_enemy_target_score(g, e,
+                    TOY_GAME_PLAYER_ACTOR_INDEX, primary_dist2))) target_kind = 1;
+            target_index = target_kind == 1 ? ai_index : -1;
         }
         e->target_kind = target_kind;
+        e->target_index = target_index;
+        e->target_generation = target_kind < 0 ? 0 :
+            g->actors[target_kind == TOY_GAME_TARGET_HOST ?
+                TOY_GAME_PLAYER_ACTOR_INDEX : e->target_index].combat_generation;
         e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
     } else {
         target_kind = e->target_kind;
@@ -5246,6 +5336,7 @@ static void update_enemy_ai(struct toy_game *g, struct toy_game_enemy *e,
                             &target_x, &target_z)) {
         e->target_kind = -1;
         e->target_index = -1;
+        e->target_generation = 0;
         e->retarget_timer_ms = 0;
         return;
     }
@@ -6309,6 +6400,7 @@ int toy_game_execute_actor_command(
 }
 
 /* AI 队友只负责观察和决策，实际动作通过 actor command 规则入口执行。 */
+#include "game_actor_squad.inc"
 #include "game_actor_ai.inc"
 
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
@@ -6319,6 +6411,7 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
         TOY_GAME_ANIM_REVIVE, TOY_GAME_ANIM_SHOVE
     };
     int i, old_context = g->ai_context_actor_index;
+    actor_squad_tick(g, dt_ms);
     g->combat_scan_budget = 8;
     /* Teammate updates consume the normalized local actor directly. */
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {

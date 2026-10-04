@@ -82,6 +82,19 @@ retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pip
 武器预览、后续开启的展示和新动态容量仍可能首次加载。应用持有 device-local 资源至失效/退休，
 物理显存驻留仍由驱动和操作系统管理，不把全部资产目录强行常驻。
 
+首图 session 通过 `frontier_actor_prewarm` 与 `frontier_actor_warm_activate` 两个只读 layer 提示，
+分别授权 ASSAULT 入图准备和 COUNTERATTACK 资源移交。主 probe 在既有入图离屏帧退休后，借用
+实际初始枪手的冻结 pose，按原有 load/pack/prepare 路径创建最多六份独立备用资源：普通 AK 三份、
+普通 SMG 两份、精英 AK 一份。scratch draw 只用于准备，不加入主 batch，不生成未来演员或推进玩法。
+备用资源解除 frame pin 后由 probe 独占；真实枪手进入空 pose ordinal 槽时，只有 world generation、
+character/body/bone、装备及 socket、衣裤、隐藏材料、颜色、武器、bind normal 与显示/过滤策略全部
+相同才移动唯一所有权。真实 pose 的 palette、世界变换、附件变换和 draw 仍正常重新准备。
+角色身份不参与外观复用；GUNNER/GUNNER_ELITE 门禁阻止玩家或其他职业消费资源。
+地图代际替换及 probe 关闭销毁所有未移交资源；已移交资源归原 actor 槽的正常清理链。
+缺少 donor、外观不匹配或可选预热失败沿用正常冷加载，预热失败本身不新增启动失败条件。
+这将后续首用成本和额外 CPU/GPU 常驻容量移到入图阶段；不改变既有同步提交，不扩展跨帧 pipeline。
+量化与签收口径见[性能诊断](../guides/rendering-performance.md#首图普通行动的阶段采样)。
+
 交互式 GPU 启动为首帧 probe 安装临时事件观察者，由 Scene owner 报告预热及首个 native 帧的
 实际耗时；运行时将结果加入独立 GPU 启动事件表，预热后刷新待呈现状态，成功呈现后解除观察者。
 启动总计覆盖后端选择至首帧成功，计量边界见[启动界面合同](../reference/boot-interface.md)。
@@ -130,6 +143,11 @@ framebuffer 往返。销毁先排空主 owner，再释放其仍可能引用的�
 收起/关闭立即解除合成并停止辅助绘制，恢复和来源代际变化要求新帧。失败清空视频，按一秒间隔最多
 重试三次，状态为 `UNAVAILABLE`，不把旧画面标作实时；重新打开可以重新尝试。每槽的 `status` 提供状态、
 累计刷新次数、最近真实刷新时间、CPU 墙钟、GPU 时间戳和上传字节。CPU 后端应显示视频不可用并继续文本会话。
+
+可选 slow profile 在主帧原有辅助调用前后观察两槽 `status.frames`，只将本次成功刷新的 child
+CPU 时间归给主帧；child GPU 还要求已退休 query 的 frame ID 与冻结 Scene 一致且正有限。
+缓存画面不继承旧 timing。观察不改变刷新调度、共享 reader、同步退休或正常显示，关闭时不新增
+读钟、query 读取或 slot 遍历；输出口径及可选 COUNTER 稳态筛选见[性能诊断](../guides/rendering-performance.md)。
 
 `gpu/src/rf_gpu_graphics_test.c` 的 `RF_GPU_AUX_TEST=1` 分支验证 GPU 图像合成、真实目标更新、HUD
 覆盖顺序、双路共存与独立隐藏、目标/几何复用以及辅助 owner 零读回和零 bridge；完整 graphics 回归也包含该项。

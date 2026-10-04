@@ -222,11 +222,15 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
             a->deployment_x : a->x;
         desired_z = a->ai_guard_radius > 0 || a->ai_assault_active ?
             a->deployment_z : a->z;
+        if (a->ai_assault_active && !a->ai_guard_radius &&
+            !target_present && !a->combat_lost_ms)
+            actor_squad_idle_goal(g, g->ai_context_actor_index, &desired_x, &desired_z);
         if (target_present || a->combat_lost_ms) {
             int dx = a->combat_last_x - a->x, dz = a->combat_last_z - a->z;
             int distance = isqrt((long long)dx * dx + (long long)dz * dz);
             int reach = toy_game_weapon_info(toy_game_actor_current_weapon(a))->range;
             int hold = reach / 3;
+            desired_x = a->x; desired_z = a->z;
             if (hold > 6000) hold = 6000;
             if (hold < 2400) hold = 2400;
             if (distance > hold || !target_present) {
@@ -241,6 +245,9 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         }
     } else if (a->command_destination_active) {
         desired_x = a->command_x; desired_z = a->command_z;
+    } else if (!rescue && actor_squad_idle_goal(g, g->ai_context_actor_index,
+                                             &desired_x, &desired_z)) {
+        /* The cached autonomous goal already replaced deployment. */
     } else if (a->companion && !a->ai_stationary) {
         const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
         long long dx = (long long)player->x - a->x, dz = (long long)player->z - a->z;

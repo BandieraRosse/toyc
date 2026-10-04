@@ -126,6 +126,7 @@ static int enemy_flow_logic_test(void)
         toy_game_place_enemy(&g, -3000, g.actors[i].z);
         g.enemies[i-1].target_kind = TOY_GAME_TARGET_ACTOR;
         g.enemies[i-1].target_index = i;
+        g.enemies[i-1].target_generation = g.actors[i].combat_generation;
         g.enemies[i-1].retarget_timer_ms = 1000000;
     }
     memset(&profile, 0, sizeof(profile)); g.update_profile = &profile;
@@ -163,5 +164,247 @@ static int enemy_flow_logic_test(void)
     for (tick = 0; tick < 8; ++tick) toy_game_update_world(&g,16);
     if (g.flow_probe_active || g.flow_probe_count) return 15;
     __printf("FLOW-TEST passed\n");
+    return 0;
+}
+
+/* Identity and behavior contracts for ordinary pursuit's existing scan. */
+static void ordinary_enemy_retention_fixture(struct toy_game *g,
+                                             struct toy_map_primitive *world)
+{
+    int i, id;
+    struct toy_game_actor *a;
+    toy_game_init(g, 913);
+    g->external_director = 1;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; ++i) g->actors[i].active = 0;
+    world[0] = test_flat_primitive(-10000, 10000, -10000, 10000, 0);
+    toy_game_set_primitives(g, world, 1, 10000);
+    id = toy_game_add_ai(g, TOY_GAME_AI_LEVEL_2, -240, 1920, "PURSUIT ALLY");
+    a = toy_game_actor_by_id(g, id);
+    if (a) {
+        a->movement_hold_token = 1; a->fire_enabled = 0;
+        a->hp = a->max_hp = 100000;
+    }
+    id = toy_game_add_gunner(g, 0, 240, 2080, "PURSUIT GUNNER");
+    a = toy_game_actor_by_id(g, id);
+    if (a) {
+        a->movement_hold_token = 1; a->fire_enabled = 0;
+        a->hp = a->max_hp = 100000;
+    }
+    toy_game_spawn_enemy(g, TOY_GAME_ENEMY_PURSUIT_COMMON, 0, 0);
+    g->enemies[0].speed = 0;
+}
+
+static int ordinary_enemy_retention_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[4];
+    struct toy_game_enemy *e;
+    struct toy_game_actor *a, *b;
+    struct toy_game_update_profile p = {0};
+    unsigned int generation;
+    uint64_t rng;
+    int tick, selected, index, type;
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    if (!a->active || !b->active || e->active != 1 ||
+        e->target_generation || e->target_kind != -1 ||
+        e->target_index != -1) return 1;
+    rng = g.rng;
+    toy_game_update_world(&g, 16);
+    if (e->target_kind != TOY_GAME_TARGET_ACTOR || e->target_index != 1 ||
+        e->target_generation != a->combat_generation) return 2;
+    /* Tiny near-equal motion must not change a valid identity every scan. */
+    for (tick = 0; tick < 160; ++tick) {
+        a->z = tick / 32 % 2 ? 2080 : 1920;
+        b->z = tick / 32 % 2 ? 1920 : 2080;
+        toy_game_update_world(&g, 16);
+        if (e->target_index != 1 || e->target_generation != a->combat_generation)
+            return 3;
+        if (e->retarget_timer_ms < 0 || e->retarget_timer_ms > TOY_GAME_RETARGET_MS)
+            return 4;
+    }
+    if (rng != g.rng) return 5;
+    /* A substantially nearer target wins by the scheduled scan, <=512ms. */
+    b->z = 1100;
+    for (tick = 0; tick < 32 && e->target_index != 2; ++tick)
+        toy_game_update_world(&g, 16);
+    if (e->target_index != 2 || e->target_generation != b->combat_generation)
+        return 6;
+    /* Retaining a higher slot must not be overwritten by scan output aliases. */
+    for (tick = 0; tick < 160; ++tick) {
+        a->z = tick / 32 % 2 ? 2080 : 1920;
+        b->z = tick / 32 % 2 ? 1920 : 2080;
+        toy_game_update_world(&g, 16);
+        if (e->target_index != 2 || e->target_generation != b->combat_generation)
+            return 22;
+    }
+    /* Inactive, dead and replaced targets invalidate between scheduled scans. */
+    b->active = 0; e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 1 || e->target_generation != a->combat_generation)
+        return 7;
+    b->active = 1; b->z = 1900; a->z = 2000;
+    generation = a->combat_generation;
+    a->combat_generation++; /* Same actor_id: generation itself is required. */
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    e->nav_direct_valid = 1; e->nav_direct_actor = 1;
+    e->nav_direct_tick = g.nav_tick + 1000;
+    e->nav_active = 1;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 2 || e->target_generation != b->combat_generation ||
+        e->target_generation == generation || e->nav_direct_actor == 1)
+        return 8;
+    b->combat_generation++; b->actor_id += 1000; b->z = 2000; a->z = 1900;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 1 || e->target_generation != a->combat_generation)
+        return 9;
+    a->hp = 0; a->state = TOY_GAME_ACTOR_DOWNED;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 2 || e->target_generation != b->combat_generation)
+        return 10;
+    b->active = 0;
+    toy_game_update_world(&g, 16);
+    if (e->target_kind != -1 || e->target_index != -1 ||
+        e->target_generation || e->retarget_timer_ms) return 11;
+    index = toy_game_spawn_enemy(&g, TOY_GAME_ENEMY_PURSUIT_COMMON, 1000, 0);
+    if (index < 0 || g.enemies[index].target_generation) return 12;
+    e->active = 0; e->target_generation = 0xf123u;
+    index = toy_game_spawn_enemy(&g, TOY_GAME_ENEMY_PURSUIT_COMMON, 0, 0);
+    if (index != 0 || e->target_generation || e->target_kind != -1 ||
+        e->target_index != -1) return 13;
+    /* Every spawn lane reuses the same dirty slot through init_enemy_ai. */
+    e->active = 0; e->target_generation = 0xf123u;
+    toy_game_place_enemy(&g, 0, 0);
+    if (e->active != 1 || e->target_generation || e->target_kind != -1 ||
+        e->target_index != -1) return 23;
+    {
+        struct toy_game_box zone = {0};
+        zone.minx = -5000; zone.maxx = -4000;
+        zone.minz = -5000; zone.maxz = -4000;
+        e->active = 0; e->target_generation = 0xf123u;
+        if (toy_game_spawn_horde_type(&g, TOY_GAME_ENEMY_PURSUIT_COMMON,
+                                       1, 1, &zone, 1, 0) != 1 ||
+            e->target_generation || e->target_kind != -1 ||
+            e->target_index != -1) return 24;
+        e->active = 0; e->target_generation = 0xf123u;
+        g.external_director = 0; g.campaign_mode = 1;
+        g.campaign_phase = TOY_GAME_PHASE_BUILDUP; g.spawn_budget = 1;
+        g.phase_timer_ms = 0; g.spawn_timer_ms = 0;
+        g.spawn_zones = &zone; g.spawn_zone_count = 1; g.alarm_spawn_zone = -1;
+        toy_game_update_world(&g, 16);
+        if (e->active != 1 || e->target_generation || e->target_kind != -1 ||
+            e->target_index != -1) return 25;
+    }
+    for (type = TOY_GAME_ENEMY_PURSUIT_COMMON;
+         type <= TOY_GAME_ENEMY_PURSUIT_FAST; ++type) {
+        e->active = 0; e->target_generation = 0xf123u;
+        index = toy_game_spawn_enemy(&g, type, 0, 0);
+        if (index != 0 || e->type != type || e->target_generation ||
+            e->target_kind != -1 || e->target_index != -1) return 29;
+    }
+
+    /* A wall-hidden current target cannot beat a physically direct candidate. */
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    world[1] = test_box_primitive(-300, -100, -400, 400, 0, 1000,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&g, world, 2, 10000);
+    e->x = -700; a->x = 200; a->z = 0; b->x = -700; b->z = 1300;
+    e->target_kind = TOY_GAME_TARGET_ACTOR; e->target_index = 1;
+    e->target_generation = a->combat_generation; e->retarget_timer_ms = 0;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 2) return 14;
+    /* A ground-to-ceiling combat boundary invalidates even a pinned target. */
+    world[1].minx = -10000; world[1].maxx = 10000;
+    world[1].minz = 600; world[1].maxz = 700;
+    memcpy(world[1].role, "air_gate", 9);
+    toy_game_set_primitives(&g, world, 2, 10000);
+    a->x = -700; a->z = 100; b->x = -700; b->z = 1300;
+    e->target_kind = TOY_GAME_TARGET_ACTOR; e->target_index = 2;
+    e->target_generation = b->combat_generation;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 1 || e->target_generation != a->combat_generation)
+        return 15;
+    /* Navigation rebuild changes route lifetime, not the valid target identity. */
+    selected = e->target_index; generation = e->target_generation;
+    e->nav_direct_valid = 1; e->nav_active = 1;
+    toy_game_rebuild_navigation(&g);
+    if (e->nav_active || e->nav_direct_valid || e->target_index != selected ||
+        e->target_generation != generation) return 16;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != selected || e->target_generation != generation)
+        return 17;
+
+    /* Special abilities keep nearest selection, with no ordinary preference. */
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    a->z = 2080; b->z = 1920;
+    e->type = TOY_GAME_ENEMY_SMOKER;
+    e->target_kind = TOY_GAME_TARGET_ACTOR; e->target_index = 1;
+    e->target_generation = a->combat_generation;
+    toy_game_update_world(&g, 16);
+    if (e->nav_target_actor != 2) return 18;
+    /* Weighting cannot expand the original physical-direct probe range. */
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    a->z = 2500; b->z = 2600;
+    e->target_kind = TOY_GAME_TARGET_ACTOR; e->target_index = 1;
+    e->target_generation = a->combat_generation; e->retarget_timer_ms = 0;
+    memset(&p, 0, sizeof(p)); g.update_profile = &p;
+    toy_game_update_world(&g, 16);
+    g.update_profile = NULL;
+    if (p.nav_short_queries || e->target_index != 1) return 27;
+    /* An artificial unbound cache never inherits identity-based preference. */
+    b->z = 2400; e->target_generation = 0;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    toy_game_update_world(&g, 16);
+    if (e->target_index != 2 || e->target_generation != b->combat_generation)
+        return 28;
+
+    /* A retained upper-floor actor must not be bitten through the floor. */
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    world[1] = test_flat_primitive(-10000, 10000, -10000, 10000, 3500);
+    toy_game_set_primitives(&g, world, 2, 10000);
+    a->x = a->z = 0; a->ground_y = 3500; b->active = 0;
+    e->x = 0; e->z = 100; e->ground_y = 0;
+    e->target_kind = TOY_GAME_TARGET_ACTOR; e->target_index = 1;
+    e->target_generation = a->combat_generation;
+    e->retarget_timer_ms = TOY_GAME_RETARGET_MS;
+    for (tick = 0; tick < 32; ++tick) {
+        toy_game_update_world(&g, 16);
+        if (a->hp != a->max_hp || e->target_generation != a->combat_generation)
+            return 26;
+    }
+
+    /* A generic narrow doorway: coherent pursuit arrives under collision. */
+    ordinary_enemy_retention_fixture(&g, world);
+    a = &g.actors[1]; b = &g.actors[2]; e = &g.enemies[0];
+    world[1] = test_box_primitive(-10000, 500, 1000, 1300, 0, 1800,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    world[2] = test_box_primitive(2000, 10000, 1000, 1300, 0, 1800,
+                                  TOY_MAP_PRIMITIVE_COLLISION);
+    toy_game_set_primitives(&g, world, 3, 10000);
+    a->x = 1100; a->z = 3500; b->x = 1580; b->z = 3500;
+    e->speed = toy_game_enemy_info(e->type)->speed_max;
+    memset(&p, 0, sizeof(p));
+    g.update_profile = &p;
+    for (tick = 0; tick < 1200 && a->hp == a->max_hp && b->hp == b->max_hp; ++tick) {
+        unsigned int edges = p.flow_edges, samples = p.flow_samples;
+        a->z = 3500 + (tick / 32 % 2 ? 80 : -80);
+        b->z = 3500 - (tick / 32 % 2 ? 80 : -80);
+        toy_game_update_world(&g, 16);
+        if (p.flow_edges - edges > TOY_GAME_FLOW_EDGES_PER_TICK ||
+            p.flow_samples - samples > TOY_GAME_FLOW_SAMPLES_PER_TICK +
+                                      TOY_GAME_FLOW_LOCAL_PER_TICK)
+            return 19;
+    }
+    g.update_profile = NULL;
+    if (a->hp == a->max_hp && b->hp == b->max_hp) return 20;
+    if (p.nav_searches || p.nav_group_searches) return 21;
+    __printf("INFECTED TARGET passed\n");
     return 0;
 }

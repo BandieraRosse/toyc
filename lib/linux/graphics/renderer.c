@@ -67,11 +67,11 @@ static int clampi(int value, int low, int high)
 /* tlibc 的 __clock_gettime 是裸系统调用（无 vdso），逐命令计时会显著
  * 污染测量本身，因此路径耗时只按“路径段切换”取钟：场景按类型成组提交，
  * 每帧仅数次调用。 */
-static long renderer_monotonic_us(void)
+static int64_t renderer_monotonic_us(void)
 {
     struct timespec now;
     if (__clock_gettime(CLOCK_MONOTONIC, &now) < 0) return 0;
-    return now.tv_sec * 1000000L + now.tv_nsec / 1000;
+    return (int64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000;
 }
 
 static long renderer_thread_cpu_us(void)
@@ -1518,7 +1518,7 @@ static void *render_worker_main(void *arg)
         worker->current_task = -1;
         worker->task_start_us = 0;
         worker->path_start = 0;
-        long active_start = renderer_monotonic_us();
+        int64_t active_start = renderer_monotonic_us();
         long cpu_start = renderer_thread_cpu_us();
         if (renderer->job_is_parallel) {
             if (worker->id < renderer->job_parallel_workers)
@@ -1608,12 +1608,12 @@ int toy_renderer_job_cancelled(struct toy_renderer *renderer)
 }
 
 static int renderer_wait_workers(struct toy_renderer *renderer,
-                                 const char *stage, long wait_start)
+                                 const char *stage, int64_t wait_start)
 {
-    long next_report = wait_start + TOY_RENDER_FRAME_BUDGET_US;
+    int64_t next_report = wait_start + TOY_RENDER_FRAME_BUDGET_US;
     int timed_out = 0;
     while (renderer->job_done_count != renderer->worker_count) {
-        long now = renderer_monotonic_us();
+        int64_t now = renderer_monotonic_us();
         if (!timed_out && (__atomic_load_n(&renderer->job_cancelled,
                                            __ATOMIC_ACQUIRE) ||
             (renderer->frame_deadline_us > 0 &&
@@ -1624,19 +1624,19 @@ static int renderer_wait_workers(struct toy_renderer *renderer,
         if (now >= next_report) {
             int i;
             __fprintf(2,
-                "renderer watchdog: stage=%s elapsed_ms=%ld done=%d/%d cancel=%d\n",
-                stage, (now - wait_start) / 1000,
+                "renderer watchdog: stage=%s elapsed_ms=%lld done=%d/%d cancel=%d\n",
+                stage, (long long)((now - wait_start) / 1000),
                 renderer->job_done_count, renderer->worker_count,
                 __atomic_load_n(&renderer->job_cancelled, __ATOMIC_ACQUIRE));
             for (i = 0; i < renderer->worker_count; i++) {
                 struct toy_render_worker *worker = &renderer->workers[i];
                 if (worker->current_task != -1)
                     __fprintf(2,
-                        "renderer watchdog: worker=%d task=%d running_ms=%ld"
+                        "renderer watchdog: worker=%d task=%d running_ms=%lld"
                         " (-2=clear,-3=raster)\n",
                         i, worker->current_task,
-                        worker->task_start_us > 0 ?
-                            (now - worker->task_start_us) / 1000 : 0);
+                        (long long)(worker->task_start_us > 0 ?
+                            (now - worker->task_start_us) / 1000 : 0));
             }
             next_report = now + TOY_RENDER_WATCHDOG_REPORT_US;
         }
@@ -1651,7 +1651,7 @@ static int renderer_wait_workers(struct toy_renderer *renderer,
 static int renderer_dispatch(struct toy_renderer *renderer, int is_clear,
                              uint32_t clear_color)
 {
-    long wait_start = renderer_monotonic_us();
+    int64_t wait_start = renderer_monotonic_us();
     renderer->job_is_clear = is_clear;
     renderer->job_is_parallel = 0;
     renderer->job_clear_color = clear_color;
@@ -1673,7 +1673,7 @@ int toy_renderer_parallel_for(struct toy_renderer *renderer, int task_count,
                               toy_renderer_parallel_fn function,
                               void *context)
 {
-    long wait_start;
+    int64_t wait_start;
     if (!renderer || !function || task_count < 1) return -1;
     if (toy_renderer_job_cancelled(renderer)) return -1;
     if (ensure_workers(renderer) < 0) return -1;
@@ -1834,7 +1834,7 @@ int toy_renderer_begin(struct toy_renderer *renderer,
     __atomic_store_n(&renderer->job_cancelled, 0, __ATOMIC_RELEASE);
     renderer->job_cancel_flag = NULL;
     renderer->frame_deadline_us = renderer->frame_budget_ms > 0 ?
-        renderer_monotonic_us() + (long)renderer->frame_budget_ms * 1000 : 0;
+        renderer_monotonic_us() + (int64_t)renderer->frame_budget_ms * 1000 : 0;
     renderer->deadline_check_counter = 0;
     required = (size_t)surface->width * (size_t)surface->height * sizeof(int);
     if (required != renderer->depth_size) {
@@ -1931,7 +1931,7 @@ int toy_renderer_flush(struct toy_renderer *renderer)
     long total = 0;
     unsigned long tex = 0, planar = 0, fallback = 0, bbox = 0, inside = 0;
     long flat_us = 0, tex_us = 0, planar_us = 0;
-    long sort_start, phase_start;
+    int64_t sort_start, phase_start;
     if (!renderer) return 0;
     if (renderer->command_filter)
         renderer->command_filter(renderer, renderer->command_filter_context);

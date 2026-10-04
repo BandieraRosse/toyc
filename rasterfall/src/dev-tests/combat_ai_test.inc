@@ -371,6 +371,65 @@ static int combat_target_retention_logic_test(void)
     return 0;
 }
 
+static int gunner_hold_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_game_actor *a;
+    int weapon, tick, z, previous, settled, band;
+    for (weapon = TOY_GAME_WEAPON_PISTOL; weapon <= TOY_GAME_WEAPON_AWP; weapon++) {
+        a = combat_ai_fixture(&g);
+        if (!a) return 1;
+        g.external_director = 1; a->fire_enabled = 0;
+        toy_game_actor_equip_weapon(&g, a, weapon);
+        a->weapon_switch_timer_ms = 0;
+        band = toy_game_weapon_info(weapon)->range / 3;
+        if (band > 6000) band = 6000;
+        if (band < 2400) band = 2400;
+        g.actors[0].z = band + 850;
+        if (!toy_game_actor_set_guard(&g, (int)(a - g.actors), 0, 0, 8500)) return 2;
+        for (tick = 0; tick < 300; tick++) toy_game_update_world(&g, 16);
+        settled = a->z;
+        if (settled <= 0 || g.actors[0].z - settled > band ||
+            a->combat_target.kind != TOY_GAME_ENTITY_ACTOR) return 3;
+        /* Every firearm pursues into its own existing hold band, then stays
+         * still instead of undoing pursuit toward its deployment post. */
+        for (tick = 0; tick < 64; tick++) {
+            toy_game_update_world(&g, 16);
+            if (a->z != settled || a->x || a->moving) return 4;
+        }
+        previous = a->z; z = g.actors[0].z;
+        for (tick = 0; tick < 192; tick++) {
+            g.actors[0].z = z + ((tick / 32) % 2 ? 200 : -200);
+            toy_game_update_world(&g, 16);
+            if (a->z < previous) return 5;
+            previous = a->z;
+        }
+        /* Near contact still retreats, then holds instead of walking back
+         * into contact. No pursuit/retreat state or target lease is added. */
+        g.actors[0].z = a->z + 1500; a->combat_scan_ms = 0;
+        settled = a->z;
+        for (tick = 0; tick < 96; tick++) toy_game_update_world(&g, 16);
+        if (a->z >= settled || g.actors[0].z - a->z < 1800) return 6;
+        settled = a->z;
+        for (tick = 0; tick < 64; tick++) {
+            toy_game_update_world(&g, 16);
+            if (a->z != settled) return 7;
+        }
+        /* Identity loss retains only the bounded last-seen chase, then
+         * returns normally to deployment while respecting the guard area. */
+        g.actors[0].active = 0;
+        for (tick = 0; tick < 700; tick++) {
+            toy_game_update_world(&g, 16);
+            if ((long long)a->x * a->x + (long long)a->z * a->z > 8500LL * 8500)
+                return 8;
+        }
+        if (a->combat_target.kind >= 0 || a->combat_lost_ms ||
+            (long long)a->x * a->x + (long long)a->z * a->z > 200LL * 200) return 9;
+    }
+    __printf("COMBAT gunner-hold weapon-bands/stable-pursuit/400RFU-motion/retreat/lost-target/guard passed\n");
+    return 0;
+}
+
 static int combat_ai_logic_test(void)
 {
     static struct toy_game g;
@@ -634,6 +693,8 @@ static int combat_ai_logic_test(void)
     if (i) { __printf("ACTOR-NAV endpoints contract failed: %d\n", i); return 44; }
     i = combat_target_retention_logic_test();
     if (i) { __printf("COMBAT target-retention contract failed: %d\n", i); return 45; }
+    i = gunner_hold_logic_test();
+    if (i) { __printf("COMBAT gunner-hold contract failed: %d\n", i); return 46; }
     __printf("COMBAT AI aim/visibility/death/identity/finite-ammo/guard/assault/three-factions/RTS passed\n");
     return 0;
 }

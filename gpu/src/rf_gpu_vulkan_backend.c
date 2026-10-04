@@ -1541,6 +1541,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     snapshot_capabilities(api, selected_device, impl->device, selected_index,
                           impl->shader_int64_enabled,
                           &info->capabilities);
+    fprintf(stderr,"rf-gpu-device: selected index=%u queue-family=%u name=%s\n",
+        selected_index,selected_family,info->adapter_name);
     impl->max_storage_buffer_range =
         info->capabilities.max_storage_buffer_range;
     impl->native_presentation_supported = want_present && impl->surface &&

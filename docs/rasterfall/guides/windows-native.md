@@ -51,6 +51,12 @@ wrapper 通过输出管道等待 Windows GUI 子进程真正退出，持续显�
 Windows PowerShell 5 的参数使用逐项原生转义，保留空格、字面引号、空参数和末尾反斜杠；
 不要自行拼接命令字符串。wrapper 也会合并继承环境中的 `PATH`/`Path` 同名键。
 
+普通 CPU 启动和换图只对每个 world generation 的首个成功呈现帧预热，随后恢复 200 ms renderer
+watchdog；后端切换也重新预热。取消帧由 Core 安全 discard，不 present、不计成功帧，且继续处理输入。
+CPU 冒烟须保存首帧后的实际画面、后续输入结果、stdout/stderr 和真实退出码；`0 frames` 或仅有
+watchdog/skipped 日志不足以证明可玩，即使进程退出 0。非取消 begin/render/present 错误必须非零退出。
+显式 frame-audit 的计数与截图只能验证生命周期/画面，不能充当普通 CPU 性能或完整路线签收。
+
 ### 验证裁量
 
 上列命令是可用入口，不是每次修改都要执行的固定流程。先判断变更是否影响玩法真值、地图通行、资源合同、渲染提交或平台生命周期，再选能检出该风险的最小验证；只有出现具体未覆盖风险或正式签收要求时才扩大范围。已经有可信实机反馈时，不为重复证明同一个局部效果再跑完整构建、package 或 GPU 验收。

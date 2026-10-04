@@ -3,6 +3,7 @@
 #include "rasterfall_viewmodel.h"
 #include "rasterfall_lab_terminal.h"
 #include "rf_display_geometry_cache.h"
+#include "rasterfall_actor_labels.h"
 struct scene_layer_triangle {
     struct rf_gpu_graphics_vertex vertex[3];
     uint32_t color;
@@ -561,6 +562,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         if (rasterfall_viewmodel_geometry(&geometry,input->source_game,input->source_effects,input->viewmodel_light)<0) return -1;
     }
     mesh->layer=RF_GPU_SCENE_OVERLAY;
+    struct rf_actor_labels labels={0};
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&input->source_game->actors[i];
         int x,y,z;
@@ -573,6 +575,21 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
                 actor->ground_y+actor->airborne_y+(downed?-350:700),actor->z,&x,&y,&z)) continue;
         int hostile=player && actor->faction!=player->faction;
         uint32_t color=downed?0xff6060:hostile?0xf03030:0xb0e0ff;
+        if(!hostile && strcmp(actor->name,"BASE")) {
+            int text_width=rasterfall_canvas_text_width(actor->name,1000);
+            int block_width=text_width>68?text_width:68;
+            int block_height=downed?49:25;
+            /* Project can return distant offscreen pixels. Preserve clipped
+             * visibility rather than pulling those actors into the viewport. */
+            if(x-block_width/2+block_width<=0 || x-block_width/2>=width ||
+                y+block_height<=0 || y>=height)continue;
+            int hp=actor->max_hp>0?actor->hp*64/actor->max_hp:0;
+            rf_actor_labels_add(&labels,actor->actor_id,actor->combat_generation,
+                x,y,actor->name,hp,downed,
+                actor->revive_progress_ms*64/TOY_GAME_REVIVE_MS,
+                color,actor->hp<40?0xff8050:0x60cf80,0x18202c);
+            continue;
+        }
         rasterfall_canvas_text(&canvas,x-rasterfall_canvas_text_width(actor->name,1000)/2,y,actor->name,color);
         rasterfall_canvas_rect(&canvas,x-34,y+18,68,7,0x18202c,255);
         int hp=actor->max_hp>0?actor->hp*64/actor->max_hp:0;
@@ -585,6 +602,8 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
             rasterfall_canvas_rect(&canvas,x-32,y+46,revive,3,0xffd060,255);
         }
     }
+    rf_actor_labels_place(&labels,width,height);
+    rf_actor_labels_paint(&labels,&canvas);
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct toy_map_draw *d=&input->map->items[i].draw;
         int x,y,z;

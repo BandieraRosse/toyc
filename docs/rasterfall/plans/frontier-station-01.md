@@ -22,6 +22,19 @@
 
 ## 首图完成后
 
+首图正式普通行动闭环已通过 R13：同一普通 Windows 窗口连续完成前哨部署、周期感染者、
+整备内三设施接管与真实制造领取、三方反击、合法肃清、返回前哨和正常退出。
+`tmp/frontier-normal-r13/report.json` 为 `full_route_verified=true`、
+`input_failure_observed=false`，五类 checkpoint 齐全，实际退出码为 0。
+对应统一原生 build/test 退出 0，证据在 `tmp/frontier-checks-focus-prewarm/`；
+完整版本、动作与早期失败边界见[首图现场归档](../archive/frontier-station-01-20261005.md)。
+CPU 仅普通可玩冒烟通过，完整 CPU 路线未测，稳定 60 FPS 和听感目标仍独立保留。
+
+小队、目标身份迟滞、仓库转角与CPU帧生命周期改进后的同版本 R15 也通过完整普通路线，
+116动作连续完成、42增援合法肃清、五类checkpoint齐全、正常退出0；对应统一
+build/test/gpu-test 和独立 CPU05 冒烟通过。自然倒地场景的标签交叠与后续普通性能采样
+仍单独记录，不从路线通过推导展示和帧率结论。
+
 在剩余实际时间内，改善敌方枪手和感染者自主感知、追击与进场；友军策略优先服从 RTS 指令，
 加强四至五人小队协作，并检查共享寻路、预算和性能。以本图实际卡点和采样为依据，保持有界工作量。
 

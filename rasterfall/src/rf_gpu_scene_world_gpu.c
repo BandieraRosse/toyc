@@ -45,6 +45,102 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
 #include <string.h>
 #include "render/rasterfall_text_panel.h"
 
+#define SCENE_ACTOR_WARM_SPARES 6U
+struct scene_actor_warm_pool {
+    uint64_t world_generation;
+    struct {
+        struct rf_gpu_scene_actor_gpu *actor;
+        struct rf_gpu_scene_actor_appearance key;
+    } spare[SCENE_ACTOR_WARM_SPARES];
+};
+static void scene_actor_warm_clear(struct rf_gpu_scene_world_gpu_probe *probe)
+{
+    if(!probe->actor_warm_pool)return;
+    for(unsigned i=0;i<SCENE_ACTOR_WARM_SPARES;++i)
+        rf_gpu_scene_actor_gpu_destroy(probe->actor_warm_pool->spare[i].actor);
+    free(probe->actor_warm_pool);probe->actor_warm_pool=NULL;
+}
+/* No live batch or gameplay snapshot is extended. The scratch draw descriptors
+ * are discarded after synchronous canonical preparation; only idle resources
+ * survive. Missing donors and optional allocation failures retain cold loading. */
+static void scene_actor_warm_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
+    uint64_t world,const struct rf_gpu_scene_pose_v1 *poses,uint32_t pose_count,
+    const struct camera *camera,uint32_t width,uint32_t height)
+{
+    const struct rf_gpu_scene_pose_v1 *donor[3]={0};
+    const unsigned family[SCENE_ACTOR_WARM_SPARES]={0,0,0,1,1,2};
+    struct rf_gpu_scene_actor_appearance donor_key[3];
+    struct rf_gpu_graphics_batch_item scratch[RF_GPU_SCENE_ACTOR_MAX_DRAWS];
+    struct rf_gpu_graphics_stats before,after;
+    int64_t start=rf_core_clock_now_us();
+    unsigned ready=0,missing=0,failed=0;
+    uint64_t cpu_buffers=0;
+    if(!probe->layers || !probe->layers->frontier_actor_prewarm ||
+        probe->shared_parent || !probe->graphics)return;
+    scene_actor_warm_clear(probe);
+    probe->actor_warm_pool=calloc(1,sizeof(*probe->actor_warm_pool));
+    if(!probe->actor_warm_pool) {
+        __printf("SCENE-ACTOR-PREWARM world=%llu ready=0 failed=6 reason=pool-allocation\n",
+            (unsigned long long)world);
+        return;
+    }
+    probe->actor_warm_pool->world_generation=world;
+    for(uint32_t i=0;i<pose_count;++i) {
+        struct rf_gpu_scene_actor_appearance key;
+        if(!rf_gpu_scene_actor_gunner_appearance(&poses[i],&key))continue;
+        unsigned kind=key.character==RASTERFALL_CHARACTER_GUNNER_ELITE ? 2 :
+            (key.weapon==TOY_GAME_WEAPON_SMG ? 1 : 0);
+        if(kind==2 && key.weapon!=TOY_GAME_WEAPON_AK)continue;
+        if(!donor[kind]) {donor[kind]=&poses[i];donor_key[kind]=key;}
+    }
+    rf_gpu_graphics_get_stats(probe->graphics,&before);
+    for(unsigned i=0;i<SCENE_ACTOR_WARM_SPARES;++i) {
+        unsigned kind=family[i];uint32_t count=0;
+        if(!donor[kind]) {++missing;continue;}
+        struct rf_gpu_scene_actor_gpu *actor=rf_gpu_scene_actor_gpu_create(probe->graphics);
+        rf_gpu_scene_actor_gpu_set_quiet(actor,1);
+        if(!actor || rf_gpu_scene_actor_gpu_prepare(actor,donor[kind],camera,width,height,
+                scratch,RF_GPU_SCENE_ACTOR_MAX_DRAWS,&count)<0) {
+            rf_gpu_scene_actor_gpu_destroy(actor);++failed;continue;
+        }
+        /* Resource creation/update has completed its existing synchronous
+         * submissions. No scratch descriptor is submitted as a Scene draw. */
+        rf_gpu_scene_actor_gpu_finish(actor);
+        probe->actor_warm_pool->spare[i].actor=actor;
+        probe->actor_warm_pool->spare[i].key=donor_key[kind];
+        cpu_buffers+=rf_gpu_scene_actor_gpu_cpu_buffer_bytes(actor);++ready;
+    }
+    rf_gpu_graphics_get_stats(probe->graphics,&after);
+    __printf("SCENE-ACTOR-PREWARM world=%llu ready=%u missing=%u failed=%u cpu_us=%lld upload_bytes=%llu cpu_buffer_bytes=%llu queue_submits=%llu fence_waits=%llu\n",
+        (unsigned long long)world,ready,missing,failed,(long long)(rf_core_clock_now_us()-start),
+        (unsigned long long)(after.mesh_upload_bytes-before.mesh_upload_bytes+
+            after.texture_upload_bytes-before.texture_upload_bytes+
+            after.instance_upload_bytes-before.instance_upload_bytes),
+        (unsigned long long)cpu_buffers,
+        (unsigned long long)(after.queue_submits-before.queue_submits),
+        (unsigned long long)(after.fence_waits-before.fence_waits));
+}
+static struct rf_gpu_scene_actor_gpu *scene_actor_warm_take(
+    struct rf_gpu_scene_world_gpu_probe *probe,const struct rf_gpu_scene_pose_v1 *pose,
+    uint32_t ordinal)
+{
+    struct scene_actor_warm_pool *pool=probe->actor_warm_pool;
+    struct rf_gpu_scene_actor_appearance key;
+    if(!pool || !probe->layers || !probe->layers->frontier_actor_warm_activate ||
+        pool->world_generation!=pose->world_generation ||
+        !rf_gpu_scene_actor_gunner_appearance(pose,&key))return NULL;
+    for(unsigned i=0;i<SCENE_ACTOR_WARM_SPARES;++i) {
+        if(!pool->spare[i].actor || memcmp(&pool->spare[i].key,&key,sizeof(key)))continue;
+        struct rf_gpu_scene_actor_gpu *actor=pool->spare[i].actor;
+        pool->spare[i].actor=NULL; /* Unique ownership moves into the empty live slot. */
+        __printf("SCENE-ACTOR-WARM-TAKE world=%llu frame=%llu ordinal=%u spare=%u character=%u weapon=%u\n",
+            (unsigned long long)pose->world_generation,(unsigned long long)pose->frame_id,
+            ordinal,i,key.character,key.weapon);
+        return actor;
+    }
+    return NULL;
+}
+
 static const uint32_t flag_cube_indices[36]={
     0,1,3,0,3,2, 4,6,7,4,7,5,
     0,2,6,0,6,4, 1,5,7,1,7,3,
@@ -1285,6 +1381,32 @@ done:
 #include "render/rf_gpu_scene_lighting.inc"
 #include "render/rf_gpu_scene_aux.inc"
 
+/* Slow-profile observation only: unchanged slots retain cached UI status,
+ * but never contribute stale child timing to this main frame's sample. */
+static void scene_aux_profile_end(struct rf_gpu_scene_world_gpu_probe *probe,
+    const uint64_t before[2],uint64_t frame_id,
+    struct rf_gpu_scene_world_gpu_probe_stats *stats)
+{
+    for(unsigned i=0;i<2;++i) {
+        const struct rf_gpu_scene_aux_slot *slot=&probe->aux[i];
+        stats->aux_frames_before[i]=before[i];
+        stats->aux_frames_after[i]=slot->status.frames;
+        if(slot->status.frames<=before[i])continue;
+        stats->aux_refresh_mask|=1u<<i;
+        stats->aux_cpu_us[i]=slot->status.last_cpu_us;
+        struct rf_gpu_scene_timing timing;
+        rf_gpu_graphics_scene_timing(slot->owner?slot->owner->graphics:NULL,&timing);
+        if(timing.valid && timing.frame_id==frame_id &&
+            timing.world_draw_ms>0 &&
+            timing.world_draw_ms<1e12) {
+            int64_t gpu_us=(int64_t)(timing.world_draw_ms*1000);
+            if(gpu_us>0) {
+                stats->aux_gpu_valid_mask|=1u<<i;stats->aux_gpu_us[i]=gpu_us;
+            }
+        }
+    }
+}
+
 int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_vulkan_context *context,struct rf_gpu_scene_world_resources *owner,
     const struct camera *camera,uint32_t width,uint32_t height,
@@ -1335,6 +1457,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             if (!memcmp(&poses[i].identity,&poses[j].identity,
                     sizeof(poses[i].identity))) return -1;
     }
+    if(probe->actor_warm_pool &&
+        probe->actor_warm_pool->world_generation!=owner->world_generation)
+        scene_actor_warm_clear(probe);
     /* Finish the current map's primary uploads and render-target setup
      * before exposing its first native image. This calls the normal producer
      * on the exact frozen values, without advancing gameplay or animation. */
@@ -1364,6 +1489,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
                 "scene-prewarm", -1, rf_core_clock_now_us()-start);
             return -1;
         }
+        scene_actor_warm_prepare(probe,owner->world_generation,poses,pose_count,camera,width,height);
         probe->prewarmed_generation=owner->world_generation;
         __printf("SCENE-PREWARM world=%llu cpu_us=%lld upload_bytes=%llu draws=%u aux_targets=2\n",
             (unsigned long long)owner->world_generation,(long long)(rf_core_clock_now_us()-start),
@@ -1373,6 +1499,10 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         prepare_start=rf_core_clock_now_us();
     }
     memset(stats,0,sizeof(*stats));
+    if(!probe->slow_profile_state) {
+        const char *slow=getenv("RF_GPU_SCENE_PROFILE_SLOW");
+        probe->slow_profile_state=slow && !strcmp(slow,"1")?2:1;
+    }
     if (!probe->graphics) {
         probe->graphics=rf_gpu_graphics_create(context);
         if (!probe->graphics) return -1;
@@ -1416,7 +1546,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         capacity+=pose_count*RF_GPU_SCENE_ACTOR_MAX_DRAWS;
         for(uint32_t i=0;i<pose_count;++i) {
             if (!probe->shared_parent && !probe->actor[i]) {
-                probe->actor[i]=rf_gpu_scene_actor_gpu_create(probe->graphics);
+                probe->actor[i]=scene_actor_warm_take(probe,&poses[i],i);
+                if(!probe->actor[i])probe->actor[i]=rf_gpu_scene_actor_gpu_create(probe->graphics);
                 if (!probe->actor[i]) return -1;
             }
         }
@@ -1536,8 +1667,18 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
      * child reads them. The parent keeps its registry/actor pins until every
      * synchronous child and the native frame have retired. */
     probe->batch=items;
+    uint64_t aux_before[2]={0};
+    int64_t aux_start=0;
+    if(probe->slow_profile_state==2) {
+        for(unsigned i=0;i<2;++i)aux_before[i]=probe->aux[i].status.frames;
+        aux_start=rf_core_clock_now_us();
+    }
     scene_aux_prepare(probe,context,owner,camera,poses,pose_count,flags,
         projectiles,interactables,enemies,model_texture);
+    if(probe->slow_profile_state==2) {
+        stats->aux_prepare_us=rf_core_clock_now_us()-aux_start;
+        scene_aux_profile_end(probe,aux_before,enemies->frame_id,stats);
+    }
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
     stats->misc_prepare_us=stats->prepare_us-stats->world_prepare_us-stats->actor_prepare_us-
         stats->enemy_prepare_us-stats->layer_prepare_us;
@@ -1565,6 +1706,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->submit_retire_us=rf_core_clock_now_us()-section_start;
     if (timing.frame_id!=enemies->frame_id || (timing.supported && !timing.valid)) goto done;
     stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
+    if(probe->slow_profile_state==2)stats->gpu_query_frame=timing.frame_id;
     stats->gpu_sky_ms=timing.sky_compute_ms;
     stats->record_us=(int64_t)(timing.record_ms*1000);
     stats->acquire_us=(int64_t)(timing.acquire_ms*1000);
@@ -1670,6 +1812,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     if (!probe) return;
     if(probe->graphics)for(unsigned i=0;i<2;++i)rf_gpu_graphics_scene_video_at(probe->graphics,i,NULL,0,0,0,0);
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
+    scene_actor_warm_clear(probe);
     rf_weaver_gpu_close(probe);
     if(probe->lighting_lab_sphere) rf_gpu_graphics_resource_destroy(probe->graphics,probe->lighting_lab_sphere);
     probe->lighting_lab_sphere=NULL;
@@ -1725,6 +1868,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;probe->shared_parent=NULL;probe->prewarmed_generation=0;
+    probe->slow_profile_state=0;
     probe->flag_pole=NULL;
     memset(probe->flag_label,0,sizeof(probe->flag_label));
     memset(probe->flag_label_text,0,sizeof(probe->flag_label_text));

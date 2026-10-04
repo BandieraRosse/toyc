@@ -80,6 +80,32 @@ CPU/GPU/整帧及各成本的 P50/P95/P99。两个阶段均至少有 120 个有�
 复制和实体扫描），逐行值只计 end；关机输出不在样本内。记录该开销以评估扰动，不能从帧间隔中
 简单减掉来声称无测量开销。Windows 短帧 OS CPU 记账仍可能粗于帧间隔。
 
+首图增援资源预热另输出 `SCENE-ACTOR-PREWARM`：成功/缺 donor/失败数量、启动墙钟、上传字节、
+CPU buffer 容量与 queue/fence 次数。六份资源的上传量不是 VRAM 占用；CPU buffer 只包含 actor
+bookkeeping 及 upload 数组，未包含 catalog model、分配器与驱动内存。该成本包含在地图启动预热
+墙钟内，独立上传量另报，不与原 `SCENE-PREWARM upload_bytes` 混算。
+`SCENE-ACTOR-WARM-TAKE` 的实际 frame、ordinal、character、weapon 可验证有限池移交；没有该记录
+不推断预热命中，外观不匹配仍允许冷加载。验收需实际普通行动的首次两批枪手进场，分别比较
+actor/prepare 长尾与入图耗时，保留 exe/资产/adapter/窗口/present 和有效实体规模。
+审计进程可用于确认移交及正常画面，不能替代关闭 audit/capture 的阶段性能对照；固定镜头稳态
+不能证明首用长尾消失，也不能据单轮结果声称稳定帧率或总显存减少。
+
+R13 普通输入的完整路线（`tmp/frontier-normal-r13/stdout.log`，2026-10-05）记录 world4 的
+`ready=6 missing=0 failed=0`，六个不同 spare 在 frame9203/9302 各三次移交，消耗后剩余零。
+稀疏任务审计将两批夹在阶段 9952–10144ms、11968–12144ms，枪手计数 0→3→6，符合既有
+10/12 秒节拍；不能把稀疏审计当成每次移交的精确阶段时间。可选资源预热实际耗时 451746us，
+上传 43821760 字节、CPU buffer 23768220 字节及 49 次提交/等待；地图总预热 2476230us。
+该进程含 audit/capture，只证明真实两批资源匹配与正常路线。随后关闭审计的
+`tmp/frontier-phase-ordinary-02/` 采集两个阶段各 4096 个有效样本，正常退出 0；六份资源在真实
+10/12 秒帧全部移交，actor 准备为 3.310/4.854ms，而旧进程对应为 237.230/247.598ms。
+额外预热为 466.412ms，反击整体 P50/P95/P99 帧间隔没有改善；两个版本的行动、镜头与负载不同，
+不能据此宣称整体 FPS、同 seed AI 收益或稳定 60 FPS。完整数据、原始哈希与限定范围归
+[首图现场](../archive/frontier-station-01-20261005.md)。
+
+友军标签避让的纯布局工作最多 64×9 候选，比较先前块的矩形测试上界为 18144；移位连接线每块
+最多三次 rectangle 发射。该上界不代表实机成本。确认实际密集、分离和倒地画面后，继续观察正常
+阶段的 layer/prepare 分位数；截图或审计帧不能作为标签开销的正常性能样本。
+
 ## 前哨站游戏内性能实验场
 
 Windows 原生 GPU Scene 单人前哨站的控制和结果终端并排放在性能横路北侧，靠近第三、四列之间的路口，
@@ -144,6 +170,31 @@ ID 哈希校验两侧共用，因此参考侧不等于旧版本二进制。`PERF
 打印 `SCENE-SLOW`，避免逐帧控制台输出。begin-to-begin 间隔对应前一帧的实际阶段，包括线程 CPU
 时间、提交、acquire、present 和 retire；蒙皮批次计时包含记录及等待，不是纯 GPU 执行时间。
 线程 CPU 时间粒度受 Windows 计时影响，墙钟差只能提示等待或调度，不足以证明系统抢占。
+
+默认 slow profile 仍按全进程 `frame>120` 的 begin-to-begin 间隔保留最大 16 条，满槽相同间隔
+保留先到行。`SCENE-SLOW-META` 报告实际 scope、eligible_ended/ranked、excluded、selected 及
+最后 pending 行未被下一次 begin 排名的边界。行内 `frame` 是进程成功帧，`scene_frame/world`
+来自实际成功 Scene 冻结值，mission/phase/phase_ms 在同一 end 保存；下一 begin 不回读新阶段。
+`main_query_frame` 来自已有主 query 读取，COUNTER scope 要求与 scene_frame 相同。
+
+显式 `RF_GPU_SCENE_PROFILE_SLOW_SCOPE=frontier-counter` 仅筛选 Frontier COUNTER、phase_ms>=16000、
+每个实际 world/mission 的首 120 个成功 Scene 帧之后、PLAYING、非暂停、零 bridge、正有限且有效的
+同帧 GPU 行。仍用原间隔排名和固定 16 槽；unknown scope 明示回退 global。该诊断不改变普通
+`RF_FRONTIER_PHASE_PERF` 的 first4096 窗口、输出格式或计数。后续感染者几何/容量增长、镜头首次打开
+与来源切换仍可能是冷峰；16 秒筛选不保证所有资源预热，也不保证视角或 workload 相同。
+
+`aux_us` 是主帧内整个原有 `scene_aux_prepare` 的 CPU 墙钟，包含缓存绑定、子帧准备和同步等待；
+它与 `weaver_us` 嵌套于 `misc_us`，不能相加。`aux_refresh_mask` bit0 是剧情/设备，bit1 是单位镜头，
+只在对应 `auxN_after>auxN_before` 时记录成功刷新，正常 delta 为 1。未刷新时 child CPU/GPU 均为
+0/invalid；失败尝试可体现在 aux_us，刷新位不表示尝试位。child GPU 有效位还要求退休 query
+frame ID 等于本次冻结帧，且微秒值为正有限；GPU0 不充当有效时间。child CPU 含退休等待，
+主 gpu_us 不含已先行退休的 child GPU，二者不能相加或用分位数相减。
+`enemy_created/extract/upload/draw` 描述既有主视图敌人/程序角色阶段；created 也可能是容量重建。
+
+同一构建和场面下通过正常界面分别显示/收起单位镜头，保存动作、OS 截图、硬件/分辨率/present、
+exe/map/content hash、原日志和真实退出码，再按刷新位与帧计数差归因。worst16 是有偏诊断，
+不能估计刷新频率、总体分位数或稳定 FPS；正式阶段性能须另跑 slow profile 关闭的普通采样。
+关闭 slow profile 时仅保留缓存开关分支和现有 stats 中增加的 88 字节清零/复制，无新增取钟或 query。
 `RF_GPU_SCENE_PROFILE_LAYERS=1` 另外逐三角形计裁剪耗时，扰动明显，仅作诊断，不用于性能签收；
 正常提取计时包含裁剪。脚本会关闭此开关及逐上传细分计时。
 

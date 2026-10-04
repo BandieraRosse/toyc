@@ -201,6 +201,7 @@ int rf_core_switch_renderer(struct rf_core *core,
          (!config->native_present || !config->gpu_backend))) return -1;
     rf_gpu_shutdown(&core->gpu);
     memset(&core->gpu_frame, 0, sizeof(core->gpu_frame));
+    core->cpu_warm_world_generation=core->cpu_frame_world_generation=0;
     core->gpu_frame.renderer = RF_CORE_RENDERER_CPU;
     if (config->renderer_mode == RF_CORE_RENDERER_CPU) {
         rf_gpu_init(&core->gpu, RF_GPU_POLICY_DISABLED, NULL, NULL);
@@ -341,6 +342,27 @@ int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color)
     core->viewmodel_active = 0;
     core->gpu_frame.frame_begin_us = rf_core_clock_now_us();
     return ready;
+}
+
+int rf_core_prepare_cpu_world_frame(struct rf_core *core,uint64_t world_generation)
+{
+    if(!core || !core->renderer || !world_generation ||
+        core->gpu_frame.renderer!=RF_CORE_RENDERER_CPU)return -1;
+    core->cpu_frame_world_generation=world_generation;
+    if(core->cpu_warm_world_generation!=world_generation)
+        toy_renderer_set_frame_budget(core->renderer,0);
+    return 0;
+}
+
+static void core_cpu_world_presented(struct rf_core *core)
+{
+    if(core->gpu_frame.renderer==RF_CORE_RENDERER_CPU &&
+        core->cpu_frame_world_generation &&
+        core->cpu_warm_world_generation!=core->cpu_frame_world_generation) {
+        core->cpu_warm_world_generation=core->cpu_frame_world_generation;
+        toy_renderer_set_frame_budget(core->renderer,200);
+    }
+    core->cpu_frame_world_generation=0;
 }
 
 void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
@@ -565,9 +587,31 @@ static int core_end_frame_present(struct rf_core *core)
 int rf_core_end_frame(struct rf_core *core)
 {
     int result = core_end_frame_present(core);
-    if (result >= 0)
+    if (result >= 0) {
         rasterfall_resources_frame_complete(rasterfall_render_resources());
+        core_cpu_world_presented(core);
+    }
     return result;
+}
+
+int rf_core_discard_frame(struct rf_core *core)
+{
+    if(!core || !core->renderer || core->gpu_frame.renderer!=RF_CORE_RENDERER_CPU)
+        return -1;
+    /* Both dispatch/parallel_for return only after renderer_wait_workers has
+     * drained cancellation. Refuse early pin release if that contract breaks. */
+    if(core->renderer->worker_count>0 &&
+        __atomic_load_n(&core->renderer->job_done_count,__ATOMIC_ACQUIRE)!=
+            core->renderer->worker_count)return -1;
+    if(rf_core_viewmodel_end_v1(core)<0)return -1;
+    core->renderer->cmd_count=0;
+    core->renderer->frame_deadline_us=0;
+    core->renderer->job_cancel_flag=NULL;
+    __atomic_store_n(&core->renderer->job_cancelled,0,__ATOMIC_RELEASE);
+    rasterfall_resources_frame_complete(rasterfall_render_resources());
+    core->cpu_frame_world_generation=0;
+    core->gpu_frame.frame_begin_us=0;
+    return 0;
 }
 
 int rf_core_get_gpu_frame_stats(const struct rf_core *core,
@@ -723,3 +767,5 @@ void rf_core_reset_input(struct rf_core *core)
     memset(core->input, 0, sizeof(*core->input));
     toy_input_init(core->input);
 }
+
+#include "dev-tests/rf_core_frame_lifecycle_test.inc"

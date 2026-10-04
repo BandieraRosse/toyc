@@ -44,6 +44,8 @@ struct rf_gpu_scene_layers_input {
     struct rasterfall_hud_state hud;
     int fps,paused,pause_selected,viewmodel_light,show_viewmodel;
     int flashlight,lighting_lab,fixed_lighting;
+    /* Explicit session hints; renderer never infers or changes mission truth. */
+    int frontier_actor_prewarm,frontier_actor_warm_activate;
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
     const struct rf_gpu_scene_aux_view *aux_view;
@@ -62,6 +64,7 @@ struct toy_texture_view;
 struct scene_layer_workspace;
 struct scene_enemy_mesh;
 struct scene_enemy_cached;
+struct scene_actor_warm_pool;
 
 #define RF_GPU_SCENE_PICKUP_MODEL_COUNT 7
 #define RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES 4
@@ -95,6 +98,7 @@ struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
     int quiet;
+    int slow_profile_state; /* 0: unchecked, 1: off, 2: bounded slow profile. */
     int offscreen_only;
     /* Synchronous child borrows the parent frame; never owns its resources. */
     struct rf_gpu_scene_world_gpu_probe *shared_parent;
@@ -118,6 +122,7 @@ struct rf_gpu_scene_world_gpu_probe {
     struct rf_gpu_graphics *graphics;
     struct rf_gpu_resource_cache *cache;
     struct rf_gpu_scene_actor_gpu *actor[TOY_GAME_MAX_ACTORS];
+    struct scene_actor_warm_pool *actor_warm_pool;
     struct rf_gpu_graphics_resource *flag_pole;
     struct rf_gpu_graphics_resource *flag_label[RF_GPU_SCENE_FLAG_CAP];
     char flag_label_text[RF_GPU_SCENE_FLAG_CAP][5];
@@ -156,6 +161,12 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t record_us,acquire_us,queue_submit_us,present_us;
     int64_t actor_batch_us,misc_prepare_us;
     int64_t weaver_prepare_us;
+    /* Opt-in slow profile: only completed fresh child frames have timings. */
+    int64_t aux_prepare_us;
+    uint32_t aux_refresh_mask,aux_gpu_valid_mask;
+    uint64_t gpu_query_frame; /* Existing main retired query, slow profile only. */
+    uint64_t aux_frames_before[2],aux_frames_after[2];
+    int64_t aux_cpu_us[2],aux_gpu_us[2];
     int64_t layer_extract_us,layer_clip_us,layer_pack_us,layer_upload_us,layer_batch_us;
     uint32_t layer_triangles,layer_culled;
     uint64_t upload_bytes,bridge_transfers;

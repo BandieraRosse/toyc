@@ -176,8 +176,18 @@ Windows 每次轮询（包括超时无事件）还发布有效的当前窗口焦
 UI 保留 720p 设计基准，按客户区高度和用户百分比计算，绘制与点击共用布局；使用见[玩家界面](../guides/player-ui-v2.md)。
 显示模式不选择渲染后端，普通 Boot Manager 仍自动探测 GPU 并允许回退 CPU。
 freestanding Linux/WSL 默认窗口仍为 1280×720，不接入 Windows 全屏快捷键。
-WSL CPU 在每个 world 的首帧完成懒加载预热并成功 present 后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV
-和权威状态不依赖该策略。WSL 的 GPU、音频与额外窗口集成仍不属于 CPU 最小可玩承诺。
+CPU 在所有平台按真实 world generation 暂停首帧的 renderer watchdog，完成懒加载并成功 present 后
+恢复正常的 200 ms 预算；经 session 重载并递增 world generation 的同图重载及后端切换也重新预热。
+仅重置 Game 而未改变 world generation 不新增预热。Runtime 只向 Core 提供只读 generation，
+Core 持有已成功预热和当前帧的记录；取消或失败帧不得标记已预热。玩法单位、相机 FOV 和权威状态
+不依赖该策略。WSL 的 GPU、音频与额外窗口集成仍不属于 CPU 最小可玩承诺。
+
+CPU watchdog 取消在 clear、WORLD/后续 flush 或最终 flush 返回后均丢弃该帧，不呈现半帧、
+不增加成功帧数。Renderer 的 dispatch/parallel producer 同步等待取消 worker 全部退出本轮工作；
+Game render facade 的失败出口结束动态光照 scope，Core `rf_core_discard_frame()` 再核验 worker 已退休，
+恢复 VIEWMODEL 借用的 depth/coverage、清命令并完成 registry frame，下一次 begin 才可复用资源。
+非取消错误、无法安全 discard、begin 或真正 present 失败有明确错误日志并非零退出；正常窗口关闭
+仍返回 0。GPU 独立 Scene 的 submit/retire 与 reader 生命周期保持独立。
 
 本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后
 world step 推进共享世界规则，再由 `session_sync_special_motion()` 派生 camera 的位置和高度。

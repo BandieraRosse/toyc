@@ -27,6 +27,33 @@ int rf_gpu_scene_linear_filter_enabled(void)
     return 0;
 #endif
 }
+int rf_gpu_scene_actor_gunner_appearance(const struct rf_gpu_scene_pose_v1 *pose,
+    struct rf_gpu_scene_actor_appearance *key)
+{
+    if(!pose || !key || pose->actor_count!=1 ||
+        (pose->character_id!=RASTERFALL_CHARACTER_GUNNER &&
+         pose->character_id!=RASTERFALL_CHARACTER_GUNNER_ELITE) ||
+        !pose->weapon_valid ||
+        (pose->weapon!=TOY_GAME_WEAPON_AK && pose->weapon!=TOY_GAME_WEAPON_SMG) ||
+        !pose->bone_count || pose->bone_count>RF_GPU_SCENE_POSE_BONES ||
+        pose->bind_normals>1 ||
+        pose->attachment_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS ||
+        pose->clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING) return 0;
+    memset(key,0,sizeof(*key));
+    key->character=pose->character_id;key->body=pose->body_resource_id;
+    key->bones=pose->bone_count;key->attachments=pose->attachment_count;
+    key->clothing=pose->clothing_count;key->hidden_materials=pose->body_hidden_material_mask;
+    key->shirt=pose->shirt_color;key->pants=pose->pants_color;
+    key->bind_normals=pose->bind_normals;key->weapon=pose->weapon;
+    key->material=rf_gpu_scene_character_material_enabled();
+    key->linear_filter=rf_gpu_scene_linear_filter_enabled();
+    for(uint32_t i=0;i<pose->attachment_count;++i) {
+        key->gear[i][0]=pose->attachments[i].resource_id;
+        key->gear[i][1]=pose->attachments[i].host_socket;
+    }
+    for(uint32_t i=0;i<pose->clothing_count;++i)key->clothes[i]=pose->clothing_resources[i];
+    return 1;
+}
 #ifndef TOYC_WINDOWS
 int rf_gpu_scene_lighting_fixture(void) { return 3; }
 int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
@@ -46,6 +73,8 @@ void rf_gpu_scene_actor_gpu_set_quiet(struct rf_gpu_scene_actor_gpu *actor,int q
 { (void)actor;(void)quiet; }
 void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor)
 { (void)actor; }
+uint64_t rf_gpu_scene_actor_gpu_cpu_buffer_bytes(const struct rf_gpu_scene_actor_gpu *actor)
+{ (void)actor;return 0; }
 void rf_gpu_scene_actor_gpu_invalidate_bind(struct rf_gpu_scene_actor_gpu *actor)
 { (void)actor; }
 void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
@@ -110,6 +139,18 @@ static int scene_range(const struct rasterfall_model_asset *m,const void *ptr,ui
 {
     uintptr_t base=(uintptr_t)m->data,p=(uintptr_t)ptr;
     return ptr && p>=base && p-base<=(uint64_t)m->data_size && size<=(uint64_t)m->data_size-(p-base);
+}
+uint64_t rf_gpu_scene_actor_gpu_cpu_buffer_bytes(const struct rf_gpu_scene_actor_gpu *actor)
+{
+    if(!actor)return 0;
+    uint64_t bytes=sizeof(*actor);
+    for(uint32_t i=0;i<SCENE_MESHES;++i) {
+        const struct scene_mesh *m=&actor->slot.mesh[i];
+        bytes+=(uint64_t)m->vertex_capacity*(sizeof(*m->indices)+sizeof(*m->vertices));
+        if(m->bind)bytes+=(uint64_t)m->vertex_capacity*22*sizeof(*m->bind);
+        bytes+=(uint64_t)m->palette_capacity*sizeof(*m->palette);
+    }
+    return bytes;
 }
 static void scene_backing_free(struct scene_mesh *m)
 {

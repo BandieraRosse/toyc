@@ -203,6 +203,12 @@ $(TARGET): $(OBJS) | $(BUILD)
 	@printf '  WIN-LD  %s\n' "$@"
 	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
+# Included gameplay/test units must invalidate their owning translation unit.
+$(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_squad_test.inc
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_corner_test.inc
+$(BUILD)/win/rasterfall/src/rf_core_host.o: rasterfall/src/dev-tests/rf_core_frame_lifecycle_test.inc
+
 # Hosted resource lifecycle integration, excluded from the player package.
 RESOURCE_TEST_OBJS := $(filter-out $(BUILD)/win/rasterfall/src/rasterfall.o $(BUILD)/win/windows/src/winmain.o,$(OBJS))
 $(BUILD)/rfchar-runtime-test.exe: $(BUILD)/win/app/linux/rfchar_runtime_test.o $(RESOURCE_TEST_OBJS)

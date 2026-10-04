@@ -128,9 +128,9 @@ struct toy_render_worker {
     long active_us;           /* 完整 raster job 墙钟活跃时间 */
     long cpu_us;              /* CLOCK_THREAD_CPUTIME_ID */
     volatile int current_task; /* -1=idle; watchdog diagnostic only */
-    volatile long task_start_us;
+    volatile int64_t task_start_us;
     int last_path;            /* 路径段计时：上一条命令类型（-1=无） */
-    long path_start;          /* 当前路径段起点（us） */
+    int64_t path_start;       /* 当前路径段起点（us） */
 };
 
 struct toy_renderer {
@@ -229,7 +229,7 @@ struct toy_renderer {
     volatile int job_parallel_next;
     volatile int job_cancelled;
     volatile int *job_cancel_flag;
-    long frame_deadline_us;
+    int64_t frame_deadline_us; /* Absolute time; Windows long is only 32 bits. */
     int frame_budget_ms;
     unsigned int deadline_check_counter;
 };

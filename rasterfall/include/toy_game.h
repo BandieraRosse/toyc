@@ -597,6 +597,7 @@ struct toy_game_enemy {
     int target_x, target_z; /* 特感技能锁定的目标位置 */
     int target_kind;         /* enum toy_game_target_kind：主机玩家或 actor */
     int target_index;        /* target_kind=TOY_GAME_TARGET_ACTOR 时的 actor 数组索引 */
+    unsigned int target_generation; /* Ordinary pursuit target lifetime; zero is unbound. */
     int retarget_timer_ms;
     int wander_timer_ms; /* 仅供特感恢复阶段使用 */
     int dir_x, dir_z;   /* 面向，1024 基准定点 */
@@ -794,6 +795,37 @@ struct toy_game_update_profile {
     unsigned int ticks;
 };
 
+/* Optional autonomous actor intent, independent of runtime RTS selections. */
+#define TOY_GAME_SQUAD_GROUPS 5
+#define TOY_GAME_SQUAD_MEMBERS 5
+#define TOY_GAME_SQUAD_TRAIL 16
+enum toy_game_squad_mode { TOY_GAME_SQUAD_IDLE, TOY_GAME_SQUAD_FOLLOW,
+                           TOY_GAME_SQUAD_ASSAULT };
+struct toy_game_actor_identity {
+    int index, actor_id;
+    unsigned int generation;
+};
+struct toy_game_squad_handle { int index; unsigned int generation; };
+struct toy_game_squad_member {
+    struct toy_game_actor_identity identity;
+    int active, eligible, slot, goal_valid, x, z, y;
+};
+struct toy_game_squad_point { int x, z, y; };
+struct toy_game_squad {
+    unsigned int generation, map_generation;
+    int active, faction, count, mode, leader, refresh_ms;
+    int x, z, sy, cy, column, fit_streak;
+    int anchor_x, anchor_z;
+    struct toy_game_actor_identity anchor;
+    struct toy_game_squad_member members[TOY_GAME_SQUAD_MEMBERS];
+    struct toy_game_squad_point trail[TOY_GAME_SQUAD_TRAIL];
+    int trail_head, trail_count;
+};
+struct toy_game_squad_profile {
+    int membership_checks, resolve_checks, anchor_checks, refreshes, candidate_probes;
+    int leader_changes, goal_changes, column_entries, column_exits, no_valid_goal;
+};
+
 struct toy_game {
     int external_director; /* Local mission owns spawning and completion. */
     /* Offline experimental manufacturing authority; never a render clock. */
@@ -808,6 +840,12 @@ struct toy_game {
     struct toy_game_burn_zone burn_zones[TOY_CONFIG_MAX_BURN_ZONES];
 
     struct toy_game_actor actors[TOY_GAME_MAX_ACTORS];
+    struct toy_game_squad squads[TOY_GAME_SQUAD_GROUPS];
+    /* Zero means unbound; otherwise group*MEMBERS+ordinal+1. */
+    unsigned char squad_lookup[TOY_GAME_MAX_ACTORS];
+    unsigned int next_squad_generation;
+    int squad_cursor;
+    struct toy_game_squad_profile squad_profile;
     int base_actor_index;
     int base_regen_timer_ms;
 
@@ -958,6 +996,22 @@ int  toy_game_set_remote_actor(struct toy_game *g, int player_id,
                                 const char *name);
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
+/* Reset/rebuild retires handles within this Game lifetime. toy_game_init starts
+ * a new lifetime; its caller must discard handles together with world identity. */
+void toy_game_squad_reset(struct toy_game *g);
+int toy_game_squad_bind(struct toy_game *g, int faction,
+    const struct toy_game_actor_identity *members, int count,
+    struct toy_game_squad_handle *out);
+int toy_game_squad_assault(struct toy_game *g, struct toy_game_squad_handle handle,
+    int x, int z);
+int toy_game_squad_follow(struct toy_game *g, struct toy_game_squad_handle handle,
+    struct toy_game_actor_identity anchor);
+int toy_game_squad_append(struct toy_game *g, struct toy_game_squad_handle handle,
+    struct toy_game_actor_identity member);
+int toy_game_squad_release(struct toy_game *g, struct toy_game_squad_handle handle);
+/* Queries may count diagnostics, but never change movement intent, search,
+ * body, weapon or explicit commands. */
+int toy_game_squad_actor_goal(struct toy_game *g, int actor_index, int *x, int *z);
 int  toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
                                       int x, int z, int flag_index);
 int  toy_game_actor_set_guard(struct toy_game *g, int actor_index,

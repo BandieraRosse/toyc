@@ -67,6 +67,13 @@ static int session_frontier_bind(struct rasterfall_session *s)
 static void session_frontier_reset(struct rasterfall_session *s)
 {
     memset(&s->frontier,0,sizeof(s->frontier));
+    s->frontier_autonomous_squad.index=-1;
+    s->frontier_autonomous_squad.generation=0;
+    s->frontier_gunner_bound_mask=0;
+    for(int i=0;i<2;i++) {
+        s->frontier_gunner_squads[i].index=-1;
+        s->frontier_gunner_squads[i].generation=0;
+    }
     if(s->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)return;
     s->game_state.external_director=1;
     s->game_state.to_spawn=0;
@@ -84,7 +91,40 @@ static void session_frontier_reset(struct rasterfall_session *s)
         s->banner_text="站点任务初始化失败，请返回前哨站";s->banner_ms=10000;
         __fprintf(2,"FRONTIER initialization failed\n");return;
     }
+    struct toy_game_actor_identity members[5],anchor;
+    for(int i=0;i<5;i++) {
+        members[i].index=s->frontier_squad_indices[i];
+        members[i].actor_id=s->frontier_squad_actor_ids[i];
+        members[i].generation=s->frontier_squad_generations[i];
+    }
+    anchor.index=TOY_GAME_PLAYER_ACTOR_INDEX;anchor.actor_id=p->actor_id;
+    anchor.generation=p->combat_generation;
+    if(toy_game_squad_bind(&s->game_state,TOY_GAME_FACTION_ALLIED,members,5,
+        &s->frontier_autonomous_squad))
+        toy_game_squad_follow(&s->game_state,s->frontier_autonomous_squad,anchor);
     __printf("FRONTIER begin mission=%u guards=%d squad=5\n",s->frontier.mission_id,s->frontier.guards_alive);
+}
+
+/* Bind each successful spawn exactly once. A capacity-delayed third member is
+ * appended to its partial group; missing/dead members never alter mission quota. */
+static void session_frontier_bind_gunners(struct rasterfall_session *s)
+{
+    for(int i=0;i<RF_FRONTIER_TRACKED;i++) {
+        const struct rf_frontier_entity *e=&s->frontier.entities[i];
+        if(!e->active || !e->actor || e->role!=RF_FRONTIER_REINFORCEMENT_GUNNER ||
+            e->ordinal<0 || e->ordinal>=6 || (s->frontier_gunner_bound_mask&(1u<<e->ordinal)))continue;
+        struct toy_game_actor_identity member={e->index,e->stable_id,e->generation};
+        struct toy_game_squad_handle *h=&s->frontier_gunner_squads[e->ordinal/3];
+        if(h->index<0) {
+            if(toy_game_squad_bind(&s->game_state,TOY_GAME_FACTION_HOSTILE,&member,1,h))
+                toy_game_squad_assault(&s->game_state,*h,s->frontier_config.assault_x+
+                    (e->ordinal/3?1080:-1080),
+                    s->frontier_config.assault_z);
+        } else toy_game_squad_append(&s->game_state,*h,member);
+        /* Optional policy failure falls back to the existing actor assault;
+         * it must not retry forever or control spawn/death accounting. */
+        s->frontier_gunner_bound_mask|=1u<<e->ordinal;
+    }
 }
 
 int rasterfall_session_frontier_near(const struct rasterfall_session *s,int facing)
@@ -159,6 +199,7 @@ static void session_frontier_step(struct rasterfall_session *s,int dt)
     }
     int before=s->frontier.phase;
     rf_frontier_mission_step(&s->frontier,&s->game_state,dt);
+    session_frontier_bind_gunners(s);
     if(before!=s->frontier.phase)__printf("FRONTIER phase=%s alive=%d pending=%d captured=%d%d%d\n",
         rf_frontier_mission_phase_name(s->frontier.phase),s->frontier.enemies_alive,
         s->frontier.pending_spawns,s->frontier.captured[0],s->frontier.captured[1],s->frontier.captured[2]);

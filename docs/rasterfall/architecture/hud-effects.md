@@ -20,6 +20,18 @@ UTF-8 点阵字形 run；`rasterfall_sky_layout`、`rasterfall_hud_layout` 和 p
 回调不保存到异步 GPU slot。AI 名字、血量和倒地/救援进度由 Scene 从当前 actor 展示值生成。
 正常运行的 Desktop/Console 仍遵守 [Application Runtime](application-runtime.md) 的关闭 gate。
 
+`rasterfall_actor_labels.h` 是 CPU/Scene 共用的友军世界标签布局 leaf。调用者保持原有阵营、距离、
+投影和离屏门禁，只传当前展示姓名、actor ID/combat generation、原屏幕锚点和已计算的 HP/救援
+填充及颜色。固定栈容量 64，以身份排序后尝试九个位置；姓名、HP 和倒地状态作为同一块移动。
+普通块高 25px，倒地块高 49px，CPU 同样显示已有 DOWNED/救援状态；字体宽度使用 canvas UTF-8
+步进。重叠仍无法完全消除时选有界候选中的最小重叠，不隐去单位。移位块用细连接线指回原锚点。
+叶子不读取 Game、资源、时钟或输入，不分配堆内存；hostile、BASE 与 network 继续原标签路径。
+RTS 身体/脚底及卡片命中仍由原输入 owner 处理，移位标签没有点击代理，也不改变世界位置或敌人可见性。
+
+CPU 标签入口显式消费 runtime 的 `rts_active`。仅 RTS 友军非 BASE 标签跳过旧 FPS 水平朝向和
+24k view-Z 远距门，以支持高处俯视相机；仍保留 10800 XZ 距离、near 和实际姓名投影/离屏裁切。
+FPS、hostile、BASE、network 及身体可见性维持原路径，不根据 pitch 推测模式。
+
 `rasterfall_viewmodel_geometry` 共享手臂、武器、换弹、摆动与 local muzzle 的几何求值，
 通过显式 callback 输出投影顶点、材质 alpha、光照及纹理。旧 renderer adapter 和 Scene
 adapter 分别消费，几何入口不创建 RasterCmd。Scene 屏幕顶点保留 inverse-Z 与透视 UV，

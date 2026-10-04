@@ -3263,12 +3263,12 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         (double)(rf_core_clock_now_us() - audit_start) / 1000.0;
     /* Existing world-to-overlay ordering barrier. */
     if (rf_core_render_frame_enter_layer_v1(
-            runtime->core, RF_RENDER_LAYER_WORLD) < 0) return -1;
+            runtime->core, RF_RENDER_LAYER_WORLD) < 0) goto render_failed;
     raster_commands = (unsigned long)renderer->cmd_count;
     rf_core_render_frame_record_world_v1(runtime->core, renderer->cmds,
                                          renderer->cmd_count);
     flushed = rf_core_flush(runtime->core);
-    if (flushed < 0) return -1;
+    if (flushed < 0) goto render_failed;
     pixels += flushed;
     if (perf_window) {
         rasterfall_perf_add_raster(perf_window, perf_total, renderer,
@@ -3280,9 +3280,9 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
 
     rasterfall_render_end_dynamic_lighting();
     if (rf_core_render_frame_enter_layer_v1(
-            runtime->core, RF_RENDER_LAYER_TRANSPARENT) < 0) return -1;
+            runtime->core, RF_RENDER_LAYER_TRANSPARENT) < 0) goto render_failed;
     if (rf_core_render_frame_enter_layer_v1(
-            runtime->core, RF_RENDER_LAYER_EFFECTS) < 0) return -1;
+            runtime->core, RF_RENDER_LAYER_EFFECTS) < 0) goto render_failed;
     raster_commands = (unsigned long)renderer->cmd_count;
     {
         struct rasterfall_effect_render_stats effect_stats;
@@ -3292,19 +3292,19 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         rf_core_render_frame_record_direct_pixels_v1(runtime->core,
             RF_RENDER_LAYER_EFFECTS, effect_stats.direct_pixels);
     }
-    if (flushed < 0) return -1;
+    if (flushed < 0) goto render_failed;
     pixels += flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
         (unsigned long)renderer->cmd_count - raster_commands,
         (unsigned long)flushed);
     flushed = rf_core_flush(runtime->core);
-    if (flushed < 0) return -1;
+    if (flushed < 0) goto render_failed;
     pixels += flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_EFFECTS,
                                    0, (unsigned long)flushed);
 
     if (rf_core_render_frame_enter_layer_v1(
-            runtime->core, RF_RENDER_LAYER_VIEWMODEL) < 0) return -1;
+            runtime->core, RF_RENDER_LAYER_VIEWMODEL) < 0) goto render_failed;
     if (!runtime->rts_active &&
         toy_game_local_player_actor_const(&game_session->game_state)->state !=
         TOY_GAME_ACTOR_DOWNED) {
@@ -3312,7 +3312,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         raster_commands = (unsigned long)renderer->cmd_count;
         viewmodel_direct_pixels = rasterfall_viewmodel_render(
             renderer, &game_session->game_state, &runtime->effects, local_scene_light);
-        if (viewmodel_direct_pixels < 0) return -1;
+        if (viewmodel_direct_pixels < 0) goto render_failed;
         /* V1 normal producers only submit triangle commands.  Keep this
          * statistic separate from the subsequent command flush so direct
          * framebuffer writes cannot be mistaken for rasterized pixels. */
@@ -3328,13 +3328,13 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     /* Viewmodel is the last post-world scene layer and therefore the final
      * input to Post V1. Screen-space UI starts only after this barrier. */
     flushed = rf_core_flush(runtime->core);
-    if (flushed < 0) return -1;
+    if (flushed < 0) goto render_failed;
     pixels += flushed;
     rf_core_render_frame_record_v1(runtime->core, RF_RENDER_LAYER_VIEWMODEL,
                                    0, (unsigned long)flushed);
 
     surface = rf_core_begin_screen_overlay(runtime->core);
-    if (!surface) return -1;
+    if (!surface) goto render_failed;
 
     struct rasterfall_canvas ui_canvas = rasterfall_canvas_surface(surface);
     rasterfall_render_map_labels(renderer, render_camera);
@@ -3348,7 +3348,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     managed_terminal.open = runtime->managed_terminal_open;
     strcpy(managed_terminal.line, runtime->managed_terminal_line);
     strcpy(managed_terminal.message, runtime->managed_terminal_message);
-    rasterfall_render_ai_teammate_name(renderer, render_camera);
+    rasterfall_render_ai_teammate_name(renderer, render_camera,runtime->rts_active);
     rasterfall_render_network_teammate_status(
         renderer, render_camera, &runtime->net, &game_session->game_state);
     if (!runtime->lifecycle_paused &&
@@ -3380,6 +3380,9 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
             &perf_start, renderer->submitted_triangles-perf_tris, overlay_pixels);
     runtime->scene_pixels = pixels;
     return pixels;
+render_failed:
+    rasterfall_render_end_dynamic_lighting();
+    return -1;
 }
 
 int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *renderer,
@@ -3446,9 +3449,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int coordinate_axes = 0;
     int last_pointer_x = 0, last_pointer_y = 0, have_pointer_position = 0;
     int rendered_frames = 0, scene_pixels = 0;
-#ifndef TOYC_WINDOWS
-    unsigned int watchdog_warm_world = UINT_MAX;
-#endif
     int display_fps = 0, fps_window_frames = 0, fps_previous_frames = 0;
     int fire_edge = 0, shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
@@ -3802,14 +3802,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         __printf("Rasterfall renderer=%s gpu_policy=%s\n",
             rf_core_renderer_name(core.gpu_frame.renderer),
             rf_gpu_policy_name(core.gpu.policy));
-#ifndef TOYC_WINDOWS
-        /* Each world's first CPU frame performs lazy model/resource
-         * preparation on the software-render path.  The initial world starts
-         * with the watchdog disabled; world transitions repeat this warm-up
-         * below until their first frame presents successfully. */
-        if (!options.renderer_mode)
-            toy_renderer_set_frame_budget(&renderer, 0);
-#endif
 #ifdef TOYC_WINDOWS
         {
             char gpu_log[320];
@@ -6173,10 +6165,24 @@ startup_again:
         if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
                 session.scene_local.world_generation);
+        if(core.gpu_frame.renderer==RF_CORE_RENDERER_CPU &&
+            rf_core_prepare_cpu_world_frame(&core,session.scene_local.world_generation)<0) {
+            __fprintf(2,"rasterfall: CPU world frame preparation failed\n");
+            scene_runtime_failed=1;break;
+        }
         ready = options.gpu_scene_independent_preview ?
             rf_core_begin_scene_frame(&core) : rf_core_begin_frame(&core, 0x151922);
         surface = *rf_core_surface(&core);
-        if (ready < 0) break;
+        if (ready < 0) {
+            if(core.gpu_frame.renderer==RF_CORE_RENDERER_CPU &&
+                __atomic_load_n(&renderer.job_cancelled,__ATOMIC_ACQUIRE) &&
+                rf_core_discard_frame(&core)==0) {
+                __fprintf(2,"rasterfall: skipped frame after renderer clear watchdog timeout\n");
+                continue;
+            }
+            __fprintf(2,"rasterfall: frame begin failed\n");
+            scene_runtime_failed=1;break;
+        }
         if (ready == 0) {
             struct toy_window_events stall_events;
             /* 双缓冲都在组合器手里：阻塞等 buffer release，期间
@@ -6455,11 +6461,6 @@ startup_again:
             core.gpu_frame.character_skinning=options.gpu_character_skinning;
             core.gpu_frame.character_vertex_diff_requested=
                 options.gpu_character_vertex_diff && rendered_frames + 1 == 30;
-#ifndef TOYC_WINDOWS
-            if (!options.renderer_mode &&
-                watchdog_warm_world != (unsigned int)session.world_id)
-                toy_renderer_set_frame_budget(&renderer, 0);
-#endif
             {
                 int64_t audit_render_start = rf_core_time_us(&core);
                 /* Explicit Scene audits include cold asset/pose extraction.
@@ -6487,6 +6488,13 @@ startup_again:
                             "rasterfall: GPU-required render contract failed\n");
                         break;
                     }
+                    int cancelled=__atomic_load_n(&renderer.job_cancelled,__ATOMIC_ACQUIRE);
+                    if(core.gpu_frame.renderer!=RF_CORE_RENDERER_CPU ||
+                        rf_core_discard_frame(&core)<0 || !cancelled) {
+                        __fprintf(2,"rasterfall: render failed; frame cannot be continued\n");
+                        scene_runtime_failed=1;break;
+                    }
+                    rasterfall_render_set_motion_presentation(NULL,NULL,0);
                     rf_weaver_audio_update(&session,&game_runtime.render_camera,&audio,paused);
                     __fprintf(2,
                         "rasterfall: skipped frame after renderer watchdog timeout\n");
@@ -6503,9 +6511,17 @@ startup_again:
             present_result = options.gpu_scene_independent_preview ? 0 : rf_core_end_frame(&core);
             audit_present_us = rf_core_time_us(&core) - t_stage;
             if (present_result < 0) {
+                if(core.gpu_frame.renderer==RF_CORE_RENDERER_CPU &&
+                    __atomic_load_n(&renderer.job_cancelled,__ATOMIC_ACQUIRE) &&
+                    rf_core_discard_frame(&core)==0) {
+                    rasterfall_render_set_motion_presentation(NULL,NULL,0);
+                    __fprintf(2,"rasterfall: skipped frame after final renderer watchdog timeout\n");
+                    continue;
+                }
                 __fprintf(2, "rasterfall: frame presentation failed%s\n",
                     rf_core_runtime_failed(&core) ?
                     " (GPU-required contract violation)" : "");
+                scene_runtime_failed=1;
                 break;
             }
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_PRESENT,
@@ -6516,13 +6532,6 @@ startup_again:
                     !strcmp(options.gpu_normal_view,"mesh-weaver"),rendered_frames);
             if (options.gpu_frame_capture && rendered_frames==options.gpu_capture_frame)
                 rf_weaver_diag_audit(&session,"capture",rendered_frames);
-#ifndef TOYC_WINDOWS
-            if (!options.renderer_mode &&
-                watchdog_warm_world != (unsigned int)session.world_id) {
-                watchdog_warm_world = (unsigned int)session.world_id;
-                toy_renderer_set_frame_budget(&renderer, 200);
-            }
-#endif
             fps_window_frames++;
             now = rf_core_time_us(&core);
             last_active = now - t_frame;
@@ -6694,6 +6703,10 @@ startup_again:
                     }
                     if (options.gpu_scene_independent_preview) {
                         layers.source_game=&game;layers.source_effects=&effects;
+                        layers.frontier_actor_prewarm=session.world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 &&
+                            session.frontier.phase==RF_FRONTIER_ASSAULT;
+                        layers.frontier_actor_warm_activate=session.world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 &&
+                            session.frontier.phase==RF_FRONTIER_COUNTERATTACK;
                         layers.actor_presentations=&enemy_render;
                         layers.fixed_lighting=rf_perf_lab.running && !rf_perf_lab.interference;
                         layers.flashlight=!layers.fixed_lighting && rf_render_terminal.flashlight;
@@ -6810,7 +6823,7 @@ startup_again:
                     if (rf_scene_perf_sample(rendered_frames,audit_interval_us,&probe_stats,
                             renderer.surface.width,renderer.surface.height,paused)) running=0;
                     rf_scene_cost_end((uint64_t)rendered_frames,audit_update_us,audit_render_us,scene_freeze_us,
-                        pose_extract_us,&probe_stats);
+                        pose_extract_us,&probe_stats,&game_runtime,&enemy_render);
                     rf_frontier_perf_end((uint64_t)rendered_frames,&game_runtime,&probe_stats,
                         renderer.surface.width,renderer.surface.height,weaver_capture!=NULL ||
                         (options.gpu_frame_capture && rendered_frames==options.gpu_capture_frame),

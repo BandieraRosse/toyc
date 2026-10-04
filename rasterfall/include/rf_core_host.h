@@ -117,6 +117,7 @@ struct rf_core {
     unsigned long viewmodel_pixel_count;
     int *world_depth;
     int viewmodel_active;
+    uint64_t cpu_warm_world_generation,cpu_frame_world_generation;
     struct toy_audio audio;
     int audio_ready;
     int exit_requested;
@@ -193,6 +194,8 @@ int rf_core_request_exit(struct rf_core *core);
 int rf_core_should_exit(const struct rf_core *core);
 int rf_core_runtime_failed(const struct rf_core *core);
 int rf_core_begin_frame(struct rf_core *core, uint32_t clear_color);
+/* One CPU cold frame per world generation/backend lifetime, until presented. */
+int rf_core_prepare_cpu_world_frame(struct rf_core *core,uint64_t world_generation);
 /* Native Scene owns targets and resources; acquire extent without recording. */
 int rf_core_begin_scene_frame(struct rf_core *core);
 void rf_core_render_frame_begin_v1(struct rf_core *core, int camera_x,
@@ -227,6 +230,10 @@ unsigned int rf_core_render_frame_fallback_reason_v1(
 /* Core-owned submission point for layered rendering within one frame. */
 int rf_core_flush(struct rf_core *core);
 int rf_core_end_frame(struct rf_core *core);
+/* CPU only; caller's synchronous producers must have drained all workers.
+ * Discard commands, restore VM depth and retire pins without presenting. */
+int rf_core_discard_frame(struct rf_core *core);
+int rf_core_frame_lifecycle_logic_test(void);
 /* Returns the normal software surface on the CPU backend, and a cleared
  * Core-owned color+coverage overlay surface on native GPU presentation. */
 struct toy_surface *rf_core_begin_screen_overlay(struct rf_core *core);

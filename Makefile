@@ -890,7 +890,7 @@ $(BUILD)/rf_core_filesystem.o: rasterfall/src/rf_core_filesystem.c rasterfall/in
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
-$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/include/rasterfall_draw.h rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
+$(BUILD)/rf_core_host.o: rasterfall/src/rf_core_host.c rasterfall/src/dev-tests/rf_core_frame_lifecycle_test.inc rasterfall/include/rasterfall_draw.h rasterfall/include/rf_core_host.h rasterfall/include/rf_core_input.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -919,7 +919,7 @@ $(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/incl
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
 $(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc \
-    rasterfall/src/rasterfall_logic_test.inc rasterfall/src/dev-tests/game_combat_test.inc rasterfall/src/dev-tests/combat_evasion_test.inc rasterfall/src/dev-tests/game_hitscan_test.inc rasterfall/src/dev-tests/combat_ai_test.inc \
+    rasterfall/src/rasterfall_logic_test.inc rasterfall/src/dev-tests/game_combat_test.inc rasterfall/src/dev-tests/combat_evasion_test.inc rasterfall/src/dev-tests/game_hitscan_test.inc rasterfall/src/dev-tests/combat_ai_test.inc rasterfall/src/dev-tests/game_actor_squad_test.inc rasterfall/src/dev-tests/game_actor_corner_test.inc \
     rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/rf_combat_lab.inc rasterfall/src/rf_idle_rifle_lab.inc rasterfall/src/dev-tests/rf_idle_rifle_lab_test.inc rasterfall/src/dev-tests/rf_combat_lab_test.inc rasterfall/src/rf_scene_performance.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc \
     rasterfall/src/render/rasterfall_machine_screen.h rasterfall/src/render/rf_display_geometry_cache.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
@@ -959,7 +959,7 @@ $(LIBC_OBJS) $(APP_OBJS) $(APP_EXTRA_OBJS_rasterfall) \
 $(APP_EXTRA_OBJS_vmd_inspect) $(APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
-$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1277,6 +1277,8 @@ $(BUILD)/rasterfall.o: $(RASTERFALL_SRC)/rasterfall.c \
                        $(RASTERFALL_INC)/rasterfall_options.h \
                        $(RASTERFALL_INC)/toy_game.h \
                        $(RASTERFALL_SRC)/rasterfall_logic_test.inc \
+                       $(RASTERFALL_SRC)/dev-tests/game_actor_squad_test.inc \
+                       $(RASTERFALL_SRC)/dev-tests/game_actor_corner_test.inc \
                        $(RASTERFALL_INC)/rasterfall_session.h \
                        $(RASTERFALL_INC)/rasterfall_net.h \
                        $(RASTERFALL_INC)/rasterfall_camera.h \
@@ -1692,7 +1694,7 @@ $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_game_self.o: \
 $(BUILD)/rf_mesh_weaver_presentation.o $(BUILD)/rf_mesh_weaver_presentation_self.o: \
     $(RASTERFALL_INC)/rf_mesh_weaver_layout_generated.h $(RASTERFALL_INC)/toy_mesh_weaver.h
 
-$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -2112,10 +2114,13 @@ export-qwen2-tokenizer:
 
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_core_host.o $(BUILD)/rf_game_lifecycle.o $(BUILD)/rf_game_runtime.o: $(RASTERFALL_INC)/rasterfall_render_resources.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_enemy.h
+$(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_native_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_actor_gpu.h $(RASTERFALL_INC)/rf_gpu_scene_pose.h $(RASTERFALL_INC)/rasterfall_character.h
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o $(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_native_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_scene_world_gpu.h
 $(BUILD)/rf_gpu_scene_frame.o $(BUILD)/rf_gpu_scene_frame_self.o $(BUILD)/rf_gpu_scene_world.o $(BUILD)/rf_gpu_scene_world_self.o: $(RASTERFALL_SRC)/rf_scene_id_set.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_layers.inc $(RASTERFALL_SRC)/render/rf_display_geometry_cache.h $(RASTERFALL_SRC)/render/rf_gpu_lighting_lab.inc $(RASTERFALL_SRC)/render/rf_gpu_scene_lighting.inc $(RASTERFALL_INC)/rasterfall_canvas.h
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_mesh_weaver_gpu.inc $(RASTERFALL_INC)/rf_mesh_weaver_presentation.h
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/render/rf_mesh_weaver_cpu.inc $(RASTERFALL_INC)/rf_mesh_weaver_presentation.h
+$(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rasterfall_actor_labels.h $(RASTERFALL_INC)/rasterfall_canvas.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_runtime.inc $(RASTERFALL_SRC)/rf_mesh_weaver_diagnostics.inc $(RASTERFALL_INC)/rf_weaver_blueprints_generated.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_performance.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_audio.inc $(RASTERFALL_INC)/rasterfall_weaver_audio.h
