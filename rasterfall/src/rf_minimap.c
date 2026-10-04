@@ -202,6 +202,37 @@ void rf_minimap_layout(struct rasterfall_canvas *canvas,
         else for (int edge=0;edge<4;++edge)
             mini_line(canvas,v,x[edge],y[edge],x[(edge+1)%4],y[(edge+1)%4],color);
     }
+    /* Clip the camera footprint to the map, before drawing friendly markers. */
+    if(v->sight_count==3) {
+        int x[3],y[3],top=v->y+v->height,bottom=v->y;
+        for(int i=0;i<3;++i) {
+            rf_minimap_world_to_screen(v,v->sight_x[i],v->sight_z[i],&x[i],&y[i]);
+            if(y[i]<top)top=y[i];
+            if(y[i]>bottom)bottom=y[i];
+        }
+        top=mini_clamp(top,v->y,v->y+v->height-1);
+        bottom=mini_clamp(bottom,v->y,v->y+v->height-1);
+        for(int row=top;row<=bottom;++row) {
+            int left=0,right=0,hits=0;
+            for(int i=0;i<3;++i) {
+                int j=(i+1)%3;
+                if((y[i]<=row && y[j]>row)||(y[j]<=row && y[i]>row)) {
+                    int at=x[i]+(int)((long long)(x[j]-x[i])*(row-y[i])/(y[j]-y[i]));
+                    if(!hits)left=right=at;
+                    if(at<left)left=at;
+                    if(at>right)right=at;
+                    ++hits;
+                }
+            }
+            if(hits>1)mini_rect(canvas,v,left,row,right-left+1,1,accent,45);
+        }
+    }
+    for(int i=0;i<v->sight_count && i<4;++i) {
+        int j=(i+1)%v->sight_count,x0,y0,x1,y1;
+        rf_minimap_world_to_screen(v,v->sight_x[i],v->sight_z[i],&x0,&y0);
+        rf_minimap_world_to_screen(v,v->sight_x[j],v->sight_z[j],&x1,&y1);
+        mini_line(canvas,v,x0,y0,x1,y1,accent);
+    }
     for (int pass=0;pass<2;++pass) for (int i=0;i<state->marker_count;++i) {
         const struct rf_minimap_marker *m=&state->markers[i];
         int x,y,inside,layer,duplicate=0;
@@ -246,7 +277,7 @@ void rf_minimap_layout(struct rasterfall_canvas *canvas,
 
 int rf_minimap_logic_test(void)
 {
-    struct rf_minimap_view view={10,20,200,100,250,-500,10000,0,1024,200,1000};
+    struct rf_minimap_view view={10,20,200,100,250,-500,10000,0,1024,200,1000,0,{0},{0}};
     int x,y,wx,wz;
     if (!rf_minimap_world_to_screen(&view,250,-500,&x,&y) || x!=110 || y!=70) return -1;
     if (!rf_minimap_world_to_screen(&view,2250,500,&x,&y) || x!=150 || y!=50) return -2;

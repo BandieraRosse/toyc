@@ -70,10 +70,10 @@ const struct rf_story_node *rf_story_current_node(const struct rf_story *s)
 
 int rf_story_line_duration_ms(const char *line)
 {
-    /* About four spoken syllables/second, plus a one-second lead/tail.
+    /* Temporary normal speech speed: about four CJK syllables/second.
      * Decode UTF-8 scalars so CJK bytes do not inflate speaking time. */
     const unsigned char *p = (const unsigned char *)line;
-    int ms = 1000;
+    int ms = 500;
     if (!p) return ms;
     while (*p) {
         unsigned cp = *p++;

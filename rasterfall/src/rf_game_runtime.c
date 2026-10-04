@@ -3354,7 +3354,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         game_session->game_state.state == TOY_GAME_PLAYING) {
         fill_hud_state(&hud, &runtime->net, runtime->host_address,
                        runtime->host_port, body_camera);
-        rf_player_hud_fill(runtime,&hud);
+        rf_player_hud_fill(runtime,&hud,renderer->surface.width,renderer->surface.height);
         rasterfall_hud_layout(&ui_canvas, runtime->display_fps, &hud);
         if (!hud.shop_open)
             rasterfall_hud_prompt_layout(&ui_canvas, &hud);
@@ -4941,14 +4941,6 @@ startup_again:
         }
         rf_player_input_filter(&game_runtime,&input);
         game_runtime.camera=camera;
-        if(action_pressed(&input,RF_ACTION_UI_MODE) && !paused) {
-            rf_player_request(&game_runtime,RF_PLAYER_SET_MODE,(game_runtime.player_ui.mode+1)%3,0,0);
-            developer_console.open=game_runtime.player_ui.mode==RF_PLAYER_UI_TERMINAL;
-            pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active&&
-                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open&&!game_runtime.comms_focus)>0;
-            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
-            resumed=1;fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;
-        }
         command_context.permission_level=game_runtime.player_ui.mode==RF_PLAYER_UI_EXPERIMENT?
             RF_COMMAND_PERMISSION_ADMIN:RF_COMMAND_PERMISSION_USER;
         if (events.key_event_count > 0) {
@@ -6704,7 +6696,7 @@ startup_again:
                         layers.aux_view=&rf_player_aux;layers.unit_view=&rf_player_unit_aux;
                         fill_hud_state(&layers.hud,&net,host_address,
                             net_port,&camera);
-                        rf_player_hud_fill(&game_runtime,&layers.hud);
+                        rf_player_hud_fill(&game_runtime,&layers.hud,renderer.surface.width,renderer.surface.height);
                         scene_world_probe.layers=&layers;
                     }
                     scene_world_probe.quiet=rf_perf_lab.running || !(options.frame_audit || frame_limit);

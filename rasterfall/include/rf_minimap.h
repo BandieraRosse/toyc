@@ -33,6 +33,7 @@ struct rf_minimap_view {
     int center_x, center_z, span; /* span is horizontal world extent */
     int rotation_sy, rotation_cy; /* 1024 unit rotation; north up = 0,1024 */
     int reference_y, layer_threshold;
+    int sight_count, sight_x[4], sight_z[4];
 };
 void rf_minimap_init(struct rf_minimap_state *state);
 void rf_minimap_invalidate(struct rf_minimap_state *state);

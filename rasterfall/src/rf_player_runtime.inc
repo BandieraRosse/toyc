@@ -43,7 +43,7 @@ static int rf_player_object_facing(const struct rf_game_runtime *r,const char *i
     if(abs(object->y-player->ground_y)>RASTERFALL_RFU_PER_METER)return 0;
     return distance<96 || dx*r->camera.sy+dz*r->camera.cy>=(int64_t)distance*512;
 }
-static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_state *h)
+static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_state *h,int width,int height)
 {
     struct rf_player_ui_view *v=&h->player_ui_view;
     rf_player_ui_prepare(&r->player_ui,&r->session->level,&r->session->game_state,
@@ -58,6 +58,34 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     if(r->rts_active)rf_rts_portraits_prepare(&r->rts,&r->session->game_state);
     v->rts_move_active=r->session->rts_move_active;v->rts_move_x=r->session->rts_move_x;v->rts_move_z=r->session->rts_move_z;
     v->camera_x=r->render_camera.x;v->camera_z=r->render_camera.z;v->camera_sy=r->camera.sy;v->camera_cy=r->camera.cy;
+    v->map_sight_count=0;
+    if(r->rts_active && width>1 && height>1) {
+        const struct camera *c=&r->render_camera;
+        for(int i=0;i<4;++i) {
+            int sx=(i==1 || i==2)?width:0,sy=i>=2?height:0,y;
+            int *x=&v->map_sight_x[i],*z=&v->map_sight_z[i];
+            if(!rts_surface_pick(&r->session->level,c,width,height,sx,sy,
+                r->session->air_walls_enabled,x,&y,z)) {
+                double vx=(double)(sx-width/2)/(width*3/4);
+                double vy=(double)(height/2-sy)/(width*3/4);
+                double dy=(vy*c->pitch_cy+c->pitch_sy)/1024.0;
+                double wz=(-vy*c->pitch_sy+c->pitch_cy)/1024.0;
+                double distance=(RASTERFALL_WORLD_GROUND_Y-c->y)/dy;
+                *x=c->x+(int)(distance*(vx*c->cy+wz*c->sy)/1024.0);
+                *z=c->z+(int)(distance*(-vx*c->sy+wz*c->cy)/1024.0);
+            }
+        }
+        v->map_sight_count=4;
+    } else {
+        int reach=RASTERFALL_RFU_PER_METER*30;
+        v->map_sight_count=3;
+        v->map_sight_x[0]=r->camera.x;v->map_sight_z[0]=r->camera.z;
+        for(int i=1;i<3;++i) {
+            int side=i==1?-1:1;
+            v->map_sight_x[i]=r->camera.x+(int)((long long)reach*(r->camera.sy+side*r->camera.cy*2/3)/1024);
+            v->map_sight_z[i]=r->camera.z+(int)((long long)reach*(r->camera.cy-side*r->camera.sy*2/3)/1024);
+        }
+    }
     v->objective_title=r->story.task.title;v->objective_detail=r->story.task.hint;
     v->objective_active=r->story.task.target_valid;v->objective_x=r->story.task.x;
     v->objective_y=r->story.task.y;v->objective_z=r->story.task.z;
@@ -306,10 +334,19 @@ static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height
         rf_player_unit_aux.kind=RF_GPU_AUX_WORLD;rf_player_unit_aux.shell_visible=0;
         rf_player_unit_aux.stable_id=2000u+(unsigned)index;
         rf_player_unit_aux.generation=(r->rts.world_generation<<32)|a->combat_generation;
-        rf_player_unit_aux.visible=rf_story_actor_camera(r->session,a,&rf_player_unit_aux.camera);
+        /* Fixed actor-local front view; never changes gameplay facing. */
+        struct camera *unit_camera=&rf_player_unit_aux.camera;
+        memset(unit_camera,0,sizeof(*unit_camera));
+        unit_camera->x=a->x+a->sy*720/1024;
+        unit_camera->z=a->z+a->cy*720/1024;
+        unit_camera->y=RASTERFALL_WORLD_GROUND_Y+a->ground_y+a->airborne_y+
+            RASTERFALL_HUMAN_HEIGHT_RFU/2+RASTERFALL_RFU_FROM_CM(35);
+        unit_camera->sy=-a->sy;unit_camera->cy=-a->cy;unit_camera->pitch_cy=1024;
+        rf_player_unit_aux.visible=layout.video.w>0 && layout.video.h>0;
         rf_player_unit_aux.x=layout.video.x;rf_player_unit_aux.y=layout.video.y;
         rf_player_unit_aux.width=layout.video.w;rf_player_unit_aux.height=layout.video.h;
-        rf_player_unit_aux.render_width=240;rf_player_unit_aux.render_height=360;
+        rf_player_unit_aux.render_height=360;
+        rf_player_unit_aux.render_width=layout.video.h>0?360u*layout.video.w/layout.video.h:0;
         if(!rf_player_unit_aux.visible){r->rts.video_live=0;r->rts.video_state=RF_GPU_AUX_UNAVAILABLE;}
     }
     if(!rf_player_aux.visible)r->ui_video_live=0;
@@ -328,6 +365,7 @@ static void rf_player_story_tick(struct rf_game_runtime *r,int dt,int allow_star
     int had_focus=r->comms_focus;
     if(r->net.mode!=RASTERFALL_NET_OFF){rf_story_detach(&r->story,r->session);return;}
     rf_story_update(&r->story,r->session,dt,rf_player_combat(&r->session->game_state),allow_start);
+    rf_player_subtitles_update(&r->player_ui,&r->story,dt);
     if(r->chat_history_revision!=r->story.history_revision) {
         r->chat_history_revision=r->story.history_revision;
         r->chat_idle_ms=0;

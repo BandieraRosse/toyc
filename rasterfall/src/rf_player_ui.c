@@ -4,6 +4,7 @@
 #include "rf_input_bindings.h"
 #include "rasterfall_units.h"
 #include "rf_ui_font.h"
+#include "rf_story.h"
 #include "string.h"
 
 static int ui_min(int a,int b) { return a<b?a:b; }
@@ -20,13 +21,50 @@ void rf_player_ui_init(struct rf_player_ui_state *state)
         0x6FD88B,0xF2CB73,0xF07170,0xE7B55F,216
     };
     static const struct rf_ui_layout_config layout={
-        18,10,12,144,284,144,284,106,145,260,350,184
+        18,10,12,220,230,145,230,106,145,260,350,184
     };
     if (!state) return;
     memset(state,0,sizeof(*state));
     state->mode=RF_PLAYER_UI_PLAYER;state->scale_percent=100;
     state->theme=theme;state->layout=layout;
     rf_minimap_init(&state->minimap);
+}
+
+void rf_player_subtitles_update(struct rf_player_ui_state *state,
+    const struct rf_story *story,int dt_ms)
+{
+    unsigned added=story->history_revision-state->subtitle_history_revision;
+    int kept=0;
+    for(int i=0;i<state->subtitle_count;++i) {
+        struct rf_ui_subtitle entry=state->subtitles[i];
+        int speaking=story->active_story && entry.choice<0 &&
+            entry.node_id==story->node_id && entry.revision==story->node_revision;
+        if(speaking)entry.remaining_ms=RF_UI_SUBTITLE_FADE_MS;
+        else if(entry.speaking)entry.remaining_ms=RF_UI_SUBTITLE_FADE_MS;
+        else entry.remaining_ms-=ui_max(0,dt_ms);
+        entry.speaking=speaking;
+        if(entry.remaining_ms>0)state->subtitles[kept++]=entry;
+    }
+    state->subtitle_count=kept;
+    if(added>(unsigned)story->history_count)added=(unsigned)story->history_count;
+    for(int i=story->history_count-(int)added;i<story->history_count;++i) {
+        const struct rf_story_history_entry *source=&story->history[i];
+        const struct rf_story_node *node=rf_story_find_node(source->node_id);
+        struct rf_ui_subtitle *entry;
+        if(!node)continue;
+        if(state->subtitle_count==RF_UI_SUBTITLE_CAP) {
+            memmove(state->subtitles,state->subtitles+1,
+                sizeof(state->subtitles[0])*(RF_UI_SUBTITLE_CAP-1));
+            --state->subtitle_count;
+        }
+        entry=&state->subtitles[state->subtitle_count++];
+        entry->node_id=source->node_id;entry->choice=source->choice;entry->revision=source->revision;
+        entry->speaking=story->active_story && source->choice<0 &&
+            source->node_id==story->node_id && source->revision==story->node_revision;
+        entry->remaining_ms=rf_story_line_duration_ms(source->choice>=0 && source->choice<node->choice_count?
+            node->choices[source->choice].text:node->line)+RF_UI_SUBTITLE_FADE_MS;
+    }
+    state->subtitle_history_revision=story->history_revision;
 }
 
 const char *rf_player_ui_mode_name(int mode)
@@ -68,8 +106,7 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
     out->resources=ui_rect(width-margin-resource_width,margin,resource_width,ui_px(38,scale));
     if (out->phase.x+out->phase.w+gap>out->resources.x)
         out->phase.x=out->resources.x-gap-out->phase.w;
-    if (rts_active)
-        map_size=ui_min(ui_px(220,scale),ui_min(width/3,height/3));
+    map_size=ui_min(map_size,ui_min(width/3,height/3));
     out->map=ui_rect(margin,height-margin-map_size,map_size,map_size);
     out->objective=ui_rect(margin,out->map.y-ui_px(24,scale)-gap-ui_px(22,scale),
         ui_max(map_size,ui_min(ui_px(360,scale),width-margin*2)),ui_px(22,scale));
@@ -81,7 +118,7 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
         weapon_width,ui_px(config->weapon_height,scale));
     out->hints=ui_rect(out->map.x+out->map.w+gap,height-margin-ui_px(30,scale),
         out->vitals.x-out->map.x-out->map.w-gap*2,ui_px(30,scale));
-    if (rts_active) {
+    {
         int dock_h=ui_min(ui_px(config->rts_height,scale),height/3);
         int dock_y=height-margin-dock_h;
         int map_width=map_size;
@@ -102,18 +139,21 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
             out->selection.w=out->portrait.x-selection_x-gap;
         }
         out->groups=ui_rect(selection_x,dock_y-gap-ui_px(27,scale),out->selection.w,ui_px(27,scale));
-        out->video=ui_rect(out->portrait.x+2,out->portrait.y+ui_px(22,scale),
-            ui_max(0,out->portrait.w-4),ui_max(0,out->portrait.h-ui_px(44,scale)));
-        /* Shared portrait aspect ratio; inset instead of stretching video. */
-        int vw=ui_min(out->video.w,out->video.h*2/3);
-        out->video.x+=(out->video.w-vw)/2;out->video.w=vw;
-        out->video.h=vw*3/2;
-        out->hints=ui_rect(0,0,0,0);
-        out->dock_toggle=ui_rect(width-margin-ui_px(100,scale),
-            (state->rts_collapsed?height-margin:dock_y-gap)-ui_px(26,scale),
-            ui_px(100,scale),ui_px(26,scale));
-        if (state->rts_collapsed) {
-            out->selection=out->commands=out->hints=out->groups=out->portrait=out->video=ui_rect(0,0,0,0);
+        out->video=ui_rect(out->portrait.x+1,out->portrait.y+1,
+            ui_max(0,out->portrait.w-2),ui_max(0,out->portrait.h-2));
+        out->vitals=out->commands;
+        out->weapon.x=out->vitals.x;out->weapon.w=out->vitals.w;
+        out->weapon.y=out->vitals.y-gap-out->weapon.h;
+        if (rts_active) {
+            out->hints=ui_rect(0,0,0,0);
+            out->dock_toggle=ui_rect(width-margin-ui_px(100,scale),
+                (state->rts_collapsed?height-margin:dock_y-gap)-ui_px(26,scale),
+                ui_px(100,scale),ui_px(26,scale));
+            if (state->rts_collapsed)
+                out->selection=out->commands=out->hints=out->groups=out->portrait=out->video=ui_rect(0,0,0,0);
+        } else {
+            out->hints.w=out->vitals.x-out->hints.x-gap;
+            out->selection=out->commands=out->groups=out->portrait=out->video=out->dock_toggle=ui_rect(0,0,0,0);
         }
     }
     (void)pad;
@@ -211,7 +251,8 @@ static void ui_vitals(struct rasterfall_canvas *canvas,const struct rasterfall_h
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
     struct toy_game_capabilities caps;
     struct rf_ui_rect r=layout->vitals;
-    int scale=layout->text_scale_milli,pad=layout->padding;
+    int scale=ui_min(layout->text_scale_milli,ui_max(650,r.w*1000/230));
+    int pad=ui_min(layout->padding,ui_px(12,scale));
     int x=r.x+pad,w=r.w-pad*2,hp,maximum,reserve,capacity;
     unsigned hp_color,ev_color;
     const char *ev_state;
@@ -250,7 +291,8 @@ static void ui_weapon(struct rasterfall_canvas *canvas,const struct rasterfall_h
     struct rf_ui_rect r=layout->weapon;
     const struct toy_game_slot *slot;
     char line[96],key[24];
-    int scale=layout->text_scale_milli,pad=layout->padding;
+    int scale=ui_min(layout->text_scale_milli,ui_max(650,r.w*1000/230));
+    int pad=ui_min(layout->padding,ui_px(12,scale));
     if (!player || player->current_slot<0 || player->current_slot>=TOY_GAME_WEAPON_SLOTS) return;
     slot=&player->slots[player->current_slot];
     rf_ui_panel(canvas,r,theme,0);
@@ -283,22 +325,9 @@ static void ui_top(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
     const struct toy_game *game=hud->game;
     int scale=layout->text_scale_milli,pad=layout->padding;
-    int seconds=((game->campaign_phase==TOY_GAME_PHASE_CALM?game->spawn_timer_ms:
-        game->phase_timer_ms)+999)/1000;
-    const char *phase=game->campaign_phase==TOY_GAME_PHASE_HORDE?"战斗阶段":
-        game->campaign_phase==TOY_GAME_PHASE_BUILDUP?"来袭预警":
-        game->wave>=TOY_GAME_WAVE_MAX?"波次完成":"准备阶段";
     char line[160],key[24];
-    struct rf_ui_rect r=layout->phase;
-    if (hud->player_ui_view.phase_visible) {
-        rf_ui_panel(canvas,r,theme,0);
-        if (game->campaign_phase==TOY_GAME_PHASE_HORDE)
-            snprintf(line,sizeof(line),"%s  剩余敌人 %d  波次 %d/%d",phase,game->enemies_alive,game->wave,TOY_GAME_WAVE_MAX);
-        else if (seconds>0) snprintf(line,sizeof(line),"%s  %02d:%02d  波次 %d/%d",phase,seconds/60,seconds%60,game->wave,TOY_GAME_WAVE_MAX);
-        else snprintf(line,sizeof(line),"%s  波次 %d/%d",phase,game->wave,TOY_GAME_WAVE_MAX);
-        rf_ui_text(canvas,ui_rect(r.x+pad,r.y+(r.h-ui_px(16,scale))/2,r.w-pad*2,ui_px(18,scale)),line,theme->text,scale,1);
-    }
-    r=layout->resources;rf_ui_panel(canvas,r,theme,0);
+    struct rf_ui_rect r=layout->resources;
+    rf_ui_panel(canvas,r,theme,0);
     ui_label(&hud->player_ui_view,RF_ACTION_CANCEL,key,sizeof(key));
     snprintf(line,sizeof(line),"$ %d   [%s] 菜单",game->money,key);
     rf_ui_text(canvas,ui_rect(r.x+pad,r.y+(r.h-ui_px(16,scale))/2,r.w-pad*2,ui_px(18,scale)),line,theme->warning,scale,1);
@@ -341,6 +370,10 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     int scale=layout->text_scale_milli;
     rf_ui_panel(canvas,r,theme,0);
     rf_player_ui_map_view(&m,state,view,player,canvas->width,canvas->height);
+    m.sight_count=view->map_sight_count;
+    for(int i=0;i<m.sight_count;++i) {
+        m.sight_x[i]=view->map_sight_x[i];m.sight_z[i]=view->map_sight_z[i];
+    }
     rf_minimap_layout(canvas,map,&m,0x577181,theme->accent);
     if (view->objective_active) {
         int x,y;
@@ -406,8 +439,8 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     } else { ui_map(canvas,hud,&layout);ui_vitals(canvas,hud,&layout);ui_weapon(canvas,hud,&layout); }
     ui_label(view,RF_ACTION_COMMAND_MODE,mode,sizeof(mode));
     ui_label(view,RF_ACTION_CONSOLE,terminal,sizeof(terminal));
-    ui_label(view,RF_ACTION_UI_MODE,map,sizeof(map));
-    snprintf(line,sizeof(line),"[%s] %s  [%s] 终端  [%s] 界面",mode,
+    ui_label(view,RF_ACTION_COMMS_FOCUS,map,sizeof(map));
+    snprintf(line,sizeof(line),"[%s] %s  [%s] 终端  [%s] 信息栏",mode,
         view->rts_active?"FPS":"战术视角",terminal,map);
     if (view->hints && layout.hints.w>ui_px(200,layout.text_scale_milli) &&
         !(view->rts_active && hud->player_ui->rts_collapsed)) {
@@ -484,6 +517,34 @@ static int ui_text_test_rectangle(void *context,int x,int y,int w,int h,
 
 int rf_player_ui_logic_test(void)
 {
+    /* A new utterance must not restart another utterance's fade, and an
+     * interrupted/current utterance remains visible until it actually ends. */
+    {
+        static struct rf_player_ui_state state;
+        struct rf_story story={0};
+        rf_player_ui_init(&state);
+        story.active_story=RF_STORY_OUTPOST;story.node_id=1010;story.node_revision=1;
+        story.history[0]=(struct rf_story_history_entry){RF_STORY_OUTPOST,1010,-1,1};
+        story.history_count=1;story.history_revision=1;
+        rf_player_subtitles_update(&state,&story,16);
+        rf_player_subtitles_update(&state,&story,60000);
+        if(state.subtitle_count!=1 || !state.subtitles[0].speaking) return -5;
+        story.node_id=1012;story.node_revision=2;
+        story.history[1]=(struct rf_story_history_entry){RF_STORY_OUTPOST,1012,-1,2};
+        story.history_count=2;story.history_revision=2;
+        rf_player_subtitles_update(&state,&story,16);
+        if(state.subtitle_count!=2 || state.subtitles[0].speaking ||
+            !state.subtitles[1].speaking) return -6;
+        rf_player_subtitles_update(&state,&story,RF_UI_SUBTITLE_FADE_MS/2);
+        if(state.subtitles[0].remaining_ms!=RF_UI_SUBTITLE_FADE_MS/2) return -7;
+        rf_player_subtitles_update(&state,&story,RF_UI_SUBTITLE_FADE_MS);
+        if(state.subtitle_count!=1 || state.subtitles[0].node_id!=1012) return -8;
+        story.active_story=0;
+        rf_player_subtitles_update(&state,&story,16);
+        rf_player_subtitles_update(&state,&story,RF_UI_SUBTITLE_FADE_MS);
+        rf_player_subtitles_update(&state,&story,16);
+        if(state.subtitle_count) return -9;
+    }
     const char mixed[]="A中B";
     const char *invalid="\xf0\x80\x80\x80";
     struct ui_text_test_result bounds={0};

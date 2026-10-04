@@ -5,6 +5,14 @@
 #include "rf_rts.h"
 
 struct rf_input_bindings;
+struct rf_story;
+
+#define RF_UI_SUBTITLE_CAP 4
+#define RF_UI_SUBTITLE_FADE_MS 220
+struct rf_ui_subtitle {
+    int node_id, choice, remaining_ms, speaking;
+    unsigned revision;
+};
 
 enum rf_player_ui_mode {
     RF_PLAYER_UI_PLAYER, RF_PLAYER_UI_TERMINAL, RF_PLAYER_UI_EXPERIMENT,
@@ -38,6 +46,9 @@ struct rf_player_ui_state {
     struct rf_ui_theme theme;
     struct rf_ui_layout_config layout;
     struct rf_minimap_state minimap;
+    struct rf_ui_subtitle subtitles[RF_UI_SUBTITLE_CAP];
+    int subtitle_count;
+    unsigned subtitle_history_revision;
 };
 /* Synchronous borrowed projection; never retained by an asynchronous GPU slot. */
 struct rf_player_ui_view {
@@ -46,6 +57,7 @@ struct rf_player_ui_view {
     int rts_active, rts_selected, rts_follow_player, comms_visible, hints, modal, phase_visible;
     int rts_move_active, rts_move_x, rts_move_z;
     int camera_x, camera_z, camera_sy, camera_cy;
+    int map_sight_count, map_sight_x[4], map_sight_z[4];
     int objective_active, objective_x, objective_y, objective_z;
     const char *interaction_title, *interaction_action;
     int interaction_distance_rfu;
@@ -55,6 +67,8 @@ struct rf_player_ui_view {
 };
 struct rasterfall_hud_state;
 void rf_player_ui_init(struct rf_player_ui_state *state);
+void rf_player_subtitles_update(struct rf_player_ui_state *state,
+    const struct rf_story *story,int dt_ms);
 void rf_player_ui_prepare(struct rf_player_ui_state *state,
                           const struct toy_map *map, const struct toy_game *game,
                           unsigned int map_generation);

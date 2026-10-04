@@ -274,7 +274,7 @@ void rf_player_comms_layout(struct rf_player_comms_rects *o,int width,int height
                             const struct rf_player_ui_state *ui,int compact,int collapsed)
 {
     struct rf_ui_layout layout;
-    int scale,pad,gap,w,x,y,video_w,video_h,choice_h;
+    int scale,pad,gap,w,x,y,video_w,video_h;
     memset(o,0,sizeof(*o));
     rf_ui_layout_resolve(&layout,ui,width,height,0);
     scale=layout.text_scale_milli;o->scale_milli=scale;
@@ -297,17 +297,11 @@ void rf_player_comms_layout(struct rf_player_comms_rects *o,int width,int height
     }
     o->window=p_rect(x,y,video_w,video_h+p_px(34,scale));
     o->video=p_rect(x,y+p_px(34,scale),video_w,video_h);
-    /* Chat sits between the corner HUDs, above the bottom command strip. */
-    x=layout.map.x+layout.map.w+gap;
-    w=p_max(160,layout.vitals.x-gap-x);
-    w=p_min(w,p_px(620,scale));
-    x=p_max(x,(width-w)/2);
-    if(x+w>layout.vitals.x-gap)x=layout.vitals.x-gap-w;
-    choice_h=p_px(28,scale);
-    y=p_min(height*78/100,height-layout.margin-p_px(ui->layout.rts_height,scale)-gap);
-    o->text=p_rect(x,y-p_px(128,scale),w,p_px(128,scale));
-    for(int i=0;i<3;++i)o->choices[i]=p_rect(x,y+i*choice_h,w,choice_h);
-    o->footer=p_rect(x,y+3*choice_h,w,p_px(24,scale));
+    /* One four-line subtitle rail, identical in FPS and RTS. */
+    w=width/2;
+    x=(width-w)/2;
+    y=layout.margin;
+    o->text=p_rect(x+pad,y+pad,p_max(1,w-pad*2),p_px(22,scale*85/100)*4);
     (void)pad;(void)compact;(void)collapsed;
 }
 
@@ -347,17 +341,35 @@ int rf_player_chat_scroll_max(const struct rf_game_runtime *r,int width,int heig
 {
     struct rf_player_comms_rects o;
     rf_player_comms_layout(&o,width,height,&r->player_ui,r->story.combat,r->story.collapsed);
-    return p_max(0,p_chat_lines(&r->story,o.text,o.scale_milli)-o.text.h/p_px(22,o.scale_milli));
+    int scale=o.scale_milli*85/100;
+    return p_max(0,p_chat_lines(&r->story,o.text,scale)-o.text.h/p_px(22,scale));
 }
 
-struct p_chat_clip { struct rasterfall_canvas *target;struct rf_ui_rect rect; };
+struct p_chat_clip { struct rasterfall_canvas *target;struct rf_ui_rect rect;int alpha; };
 static int p_chat_rectangle(void *context,int x,int y,int w,int h,unsigned color,int alpha)
 {
     struct p_chat_clip *clip=context;
     int right=p_min(x+w,clip->rect.x+clip->rect.w),bottom=p_min(y+h,clip->rect.y+clip->rect.h);
     x=p_max(x,clip->rect.x);y=p_max(y,clip->rect.y);
-    rasterfall_canvas_rect(clip->target,x,y,right-x,bottom-y,color,alpha);
+    if(right<=x || bottom<=y)return 0;
+    rasterfall_canvas_rect(clip->target,x,y,right-x,bottom-y,color,alpha*clip->alpha/255);
     return clip->target->failed?-1:0;
+}
+
+static void p_subtitle_text(struct rasterfall_canvas *chat,int x,int y,int width,
+    int max_lines,const char *text,int scale)
+{
+    struct p_chat_clip *clip=chat->context;
+    int alpha=clip->alpha,offset=p_max(1,p_px(1,scale));
+    static const int direction[4][2]={{-1,0},{1,0},{0,-1},{0,1}};
+    /* Paint the complete halo first so neighboring glyph runs cannot darken
+     * text already drawn. The halo shares the utterance's fade and clipping. */
+    clip->alpha=alpha*190/255;
+    for(int i=0;i<4;++i)
+        rf_ui_font_text_wrap(chat,x+direction[i][0]*offset,y+direction[i][1]*offset,
+            width,max_lines,text,0x102030,scale);
+    clip->alpha=alpha;
+    rf_ui_font_text_wrap(chat,x,y,width,max_lines,text,0xFFFFFF,scale);
 }
 
 void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runtime *runtime,
@@ -367,11 +379,11 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
     const struct rf_story_node *node=rf_story_current_node(story);
     const struct rf_ui_theme *theme=&runtime->player_ui.theme;
     struct rf_player_comms_rects o;
-    char line[512],key[24];
+    char line[512];
     int scale;
     rf_player_comms_layout(&o,c->width,c->height,&runtime->player_ui,story->combat,story->collapsed);
     scale=o.scale_milli;
-    p_key(bindings,RF_ACTION_COMMS_FOCUS,key,sizeof(key));
+    (void)bindings;
     if(node) {
         if(story->collapsed) {
             rf_ui_text(c,o.window,"NULL 通讯已收起",theme->muted,scale,1);
@@ -389,36 +401,47 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
             }
         }
     }
-    if(!runtime->comms_focus && !node && (!story->history_count || runtime->chat_idle_ms>=10000))return;
-    {
+    scale=scale*85/100;
+    if(!runtime->comms_focus) {
+        const struct rf_player_ui_state *ui=&runtime->player_ui;
+        int rows[RF_UI_SUBTITLE_CAP],alpha[RF_UI_SUBTITLE_CAP];
+        int leading=p_px(22,scale),total=0;
+        for(int i=0;i<ui->subtitle_count;++i) {
+            const struct rf_ui_subtitle *entry=&ui->subtitles[i];
+            struct rf_story_history_entry source={0,entry->node_id,entry->choice,entry->revision};
+            p_chat_message(&source,line,sizeof(line));
+            rows[i]=rf_ui_font_text_wrap(NULL,0,0,o.text.w,4,line,0,scale);
+            total+=rows[i];
+            alpha[i]=entry->speaking?255:p_min(255,entry->remaining_ms*255/RF_UI_SUBTITLE_FADE_MS);
+        }
+        if(!total)return;
+        int y=o.text.y+o.text.h-total*leading;
+        for(int i=0;i<ui->subtitle_count;++i) {
+            const struct rf_ui_subtitle *entry=&ui->subtitles[i];
+            struct rf_story_history_entry source={0,entry->node_id,entry->choice,entry->revision};
+            struct p_chat_clip clip={c,o.text,alpha[i]};
+            struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle};
+            p_chat_message(&source,line,sizeof(line));
+            if(y+rows[i]*leading>o.text.y)
+                p_subtitle_text(&chat,o.text.x,y,o.text.w,4,line,scale);
+            y+=rows[i]*leading;
+        }
+    } else {
         int leading=p_px(22,scale),lines=p_chat_lines(story,o.text,scale);
         int scroll=p_min(runtime->chat_scroll,p_max(0,lines-o.text.h/leading));
         int y=o.text.y+o.text.h-lines*leading+scroll*leading;
-        struct p_chat_clip clip={c,o.text};
+        struct p_chat_clip clip={c,o.text,255};
         struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle};
         rasterfall_canvas_rect(c,o.text.x-o.padding,o.text.y-o.padding,
-            o.text.w+2*o.padding,o.text.h+2*o.padding,theme->panel,runtime->comms_focus?170:16);
+            o.text.w+2*o.padding,o.text.h+2*o.padding,0x142536,72);
         for(int i=0;i<story->history_count;++i) {
             p_chat_message(&story->history[i],line,sizeof(line));
             int rows=rf_ui_font_text_wrap(NULL,0,0,o.text.w,32,line,0,scale);
             if(y+rows*leading>o.text.y && y<o.text.y+o.text.h)
-                rf_ui_font_text_wrap(&chat,o.text.x,y,o.text.w,32,line,
-                    story->history[i].choice>=0?theme->accent:theme->text,scale);
+                p_subtitle_text(&chat,o.text.x,y,o.text.w,32,line,scale);
             y+=rows*leading;
         }
-        if(!story->history_count)rf_ui_text(c,o.text,"暂无聊天记录",theme->muted,scale,1);
-    }
-    if(o.footer.w<p_px(360,scale)) {
-        o.footer.h=p_px(44,scale);
-        if(runtime->comms_focus)
-            snprintf(line,sizeof(line),"[%s] 收起\n↑↓ / 滚轮记录",key);
-        else snprintf(line,sizeof(line),"[%s] 聊天",key);
-        rf_ui_text(c,o.footer,line,theme->muted,scale,2);
-    } else {
-        if(runtime->comms_focus)
-            snprintf(line,sizeof(line),"[%s] 收起  ↑↓ / 滚轮 查看记录",key);
-        else snprintf(line,sizeof(line),"[%s] 打开聊天记录",key);
-        rf_ui_text(c,o.footer,line,theme->muted,scale,1);
+        if(!story->history_count)rf_ui_text(c,o.text,"暂无聊天记录",0xFFFFFF,scale,1);
     }
 }
 

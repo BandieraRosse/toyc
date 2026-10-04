@@ -7,13 +7,14 @@
 static const unsigned short default_physical[RF_ACTION_COUNT] = {
     26, 22, 4, 7, 80, 79, 82, 81, 40, 44, 56, 21,
     30, 31, 32, 33, 8, 9, 16, 41, 40, 82, 81, 80, 79,
-    58, 53, 59, 42, 43, 225, 54, 55, 13, 15, 19,
+    58, 53, 0, 42, 43, 225, 54, 55, 13, 15, 19,
     24, 18, 12, 25, 27, 28, 29, 17, 5, 45, 46,
     21, 41, 21, 69, 43, 43, 28, 23,
-    60, 0, 40, 11, 29, 27,
+    0, 0, 40, 11, 29, 27,
     30,31,32,33,34,35,36,37,38,39,224
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {
+    [RF_ACTION_CONSOLE] = 59,
     [RF_ACTION_FIRE_KEY] = 88,
     [RF_ACTION_CONFIRM] = 88,
     [RF_ACTION_SLOT_1] = 89,
@@ -30,13 +31,14 @@ static const unsigned short default_secondary[RF_ACTION_COUNT] = {
 static const unsigned short default_physical[RF_ACTION_COUNT] = {
     17, 31, 30, 32, 105, 106, 103, 108, 28, 57, 53, 19,
     2, 3, 4, 5, 18, 33, 50, 1, 28, 103, 108, 105, 106,
-    59, 41, 60, 14, 15, 42, 51, 52, 36, 38, 25,
+    59, 41, 0, 14, 15, 42, 51, 52, 36, 38, 25,
     22, 24, 23, 47, 45, 21, 44, 49, 48, 12, 13,
     19, 1, 19, 88, 15, 15, 21, 20,
-    61, 0, 28, 35, 44, 45,
+    0, 0, 28, 35, 44, 45,
     2,3,4,5,6,7,8,9,10,11,29
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {
+    [RF_ACTION_CONSOLE]=60,
     [RF_ACTION_CONTROL]=97, [RF_ACTION_MODIFIER]=54
 };
 #endif
@@ -158,9 +160,18 @@ int rf_input_bindings_logic_test(void)
     memset(pending, 0, sizeof(pending));
     rf_input_bindings_defaults(&bindings);
     for (int action = 0; action < RF_ACTION_COUNT; action++)
-        if ((!bindings.physical[action] && action != RF_ACTION_MAP_EXPAND) ||
+        if ((!bindings.physical[action] && action != RF_ACTION_MAP_EXPAND &&
+              action != RF_ACTION_UI_MODE && action != RF_ACTION_MANAGED_TERMINAL) ||
             bindings.physical[action] >= RF_INPUT_PHYSICAL_KEY_COUNT)
             return -7;
+    /* Both terminal shortcuts use the same edge and consumption path. */
+    original=bindings.secondary[RF_ACTION_CONSOLE];
+    frame.physical_pressed[original]=1;
+    pending[original]=1;
+    if(!rf_action_pressed(&bindings,&frame,pending,RF_ACTION_CONSOLE) ||
+        rf_action_pressed(&bindings,&frame,pending,RF_ACTION_MANAGED_TERMINAL)) return -8;
+    rf_action_consume(&bindings,&frame,pending,RF_ACTION_CONSOLE);
+    if(rf_action_pressed(&bindings,&frame,pending,RF_ACTION_CONSOLE)) return -9;
 #ifdef TOYC_WINDOWS
     frame.physical_pressed[88] = 1;
     if (!rf_action_pressed(&bindings, &frame, pending,

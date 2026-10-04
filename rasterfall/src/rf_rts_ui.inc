@@ -232,16 +232,11 @@ static void ui_rts(struct rasterfall_canvas *c,const struct rasterfall_hud_state
     rasterfall_canvas_rect(c,p.x,video.y+video.h,p.w,p.y+p.h-video.y-video.h,t->panel,245);
     rts_ui_outline(c,p,t->border,255);
     int camera_scale=ui_max(650,ui_min(scale*3/4,(p.w-8)*1000/ui_max(1,rf_ui_font_text_width("单位镜头",1000))));
-    rf_ui_text(c,ui_rect(p.x+4,p.y+3,p.w-8,ui_px(20,scale)),"单位镜头",t->accent,camera_scale,1);
     if(!s || !s->video_live || !s->video_requested) {
         rasterfall_canvas_rect(c,video.x,video.y,video.w,video.h,t->panel_raised,255);
         rf_ui_text(c,ui_rect(video.x+3,video.y+video.h/2-ui_px(18,scale),video.w-6,ui_px(54,scale)),
             !count?"未选择":s && s->video_requested?(s->video_state==3?"镜头不可用":"连接中"):"镜头不可用",
             t->muted,camera_scale,3);
-    }
-    if(count) {
-        int index=rf_rts_member_valid(&s->selected[ui_clamp(s->primary,0,TOY_GAME_MAX_ACTORS-1)],h->game,s->primary)?s->primary:rf_rts_nth(s,h->game,0);
-        rf_ui_text(c,ui_rect(p.x+4,p.y+p.h-ui_px(20,scale),p.w-8,ui_px(19,scale)),h->game->actors[index].name,t->text,camera_scale,1);
     }
     r=l->commands;rf_ui_panel(c,r,t,0);
     int command_scale=ui_min(scale,ui_max(1000,r.w*1000/230));
