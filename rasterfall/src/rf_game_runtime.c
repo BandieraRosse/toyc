@@ -3739,8 +3739,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     {
         struct rf_core_config core_config;
         core_config.title = "Rasterfall";
-        core_config.width = RASTERFALL_DEFAULT_WIDTH;
-        core_config.height = RASTERFALL_DEFAULT_HEIGHT;
+        core_config.width = options.window_width ? options.window_width : RASTERFALL_DEFAULT_WIDTH;
+        core_config.height = options.window_height ? options.window_height : RASTERFALL_DEFAULT_HEIGHT;
+        core_config.fullscreen = options.window_mode == 2 ||
+            (!options.window_mode && !frame_limit && !options.frame_audit && !options.gpu_normal_view &&
+             !options.gpu_scene_native_fixture && !options.gpu_scene_pose_test &&
+             !options.gpu_lighting_test);
         core_config.input = &platform_input;
         core_config.renderer = &renderer;
         core_config.renderer_mode = options.gpu_scene_independent_preview ?
@@ -4006,6 +4010,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_story_load(&game_runtime.story,game_runtime.story_save_path);
     }
     if(options.gpu_normal_view || frame_limit || options.gpu_frame_capture)game_runtime.story.enabled=0;
+    if(options.ui_scale_percent)
+        game_runtime.player_ui.scale_percent=options.ui_scale_percent;
     if(getenv("RF_UI_STORY"))game_runtime.story.enabled=atoi(getenv("RF_UI_STORY"))!=0;
     if(getenv("RF_UI_MODE")) {
         const char *mode=getenv("RF_UI_MODE");

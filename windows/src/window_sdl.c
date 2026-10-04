@@ -21,6 +21,7 @@ struct toy_window {
     int reported_pointer_locked;
     int minimized;
     int native_present;
+    int display_switching;
 };
 
 /* Linux input numbers are part of the existing game-facing key contract. Keep
@@ -304,7 +305,8 @@ int toy_window_windows_key_mapping_logic_test(void)
 }
 
 static struct toy_window *toy_window_open_impl(const char *title, int width,
-                                               int height, int native_present)
+                                               int height, int native_present,
+                                               int display_switching, int fullscreen)
 {
     struct toy_window *out;
     size_t pixels;
@@ -313,16 +315,36 @@ static struct toy_window *toy_window_open_impl(const char *title, int width,
         return NULL;
     pixels = (size_t)width * (size_t)height;
     if (pixels > (size_t)-1 / sizeof(uint32_t)) return NULL;
-    if (SDL_WasInit(SDL_INIT_VIDEO) == 0 && SDL_InitSubSystem(SDL_INIT_VIDEO) < 0)
-        return NULL;
+    if (SDL_WasInit(SDL_INIT_VIDEO) == 0) {
+        /* Keep client, pointer and Vulkan pixels in the same coordinate space,
+         * even when Windows desktop scaling is greater than 100 percent. */
+        if (display_switching)
+            SDL_SetHint("SDL_WINDOWS_DPI_AWARENESS", "permonitorv2");
+        if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) return NULL;
+    }
     out = (struct toy_window *)SDL_calloc(1, sizeof(*out));
     if (!out) return NULL;
     out->width = width;
     out->height = height;
     out->native_present = native_present;
+    out->display_switching = display_switching;
     out->window = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED, width, height,
                                    SDL_WINDOW_RESIZABLE);
+    if (out->window && fullscreen &&
+        SDL_SetWindowFullscreen(out->window, SDL_WINDOW_FULLSCREEN_DESKTOP) < 0) {
+        toy_window_close(out);
+        return NULL;
+    }
+    if (out->window) SDL_GetWindowSize(out->window, &width, &height);
+    if (width <= 0 || height <= 0 ||
+        (size_t)width > (size_t)-1 / (size_t)height / sizeof(uint32_t)) {
+        toy_window_close(out);
+        return NULL;
+    }
+    out->width = width;
+    out->height = height;
+    pixels = (size_t)width * (size_t)height;
     out->renderer = out->window ? SDL_CreateRenderer(out->window, -1,
         native_present ? SDL_RENDERER_SOFTWARE : 0) : NULL;
     out->texture = out->renderer ? SDL_CreateTexture(out->renderer,
@@ -337,17 +359,68 @@ static struct toy_window *toy_window_open_impl(const char *title, int width,
     }
     SDL_SetRelativeMouseMode(SDL_FALSE);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+    if (display_switching)
+        SDL_Log("DISPLAY mode=%s width=%d height=%d", fullscreen ? "fullscreen" : "windowed",
+                width, height);
     return out;
 }
 
 struct toy_window *toy_window_open(const char *title, int width, int height)
 {
-    return toy_window_open_impl(title, width, height, 0);
+    return toy_window_open_impl(title, width, height, 0, 0, 0);
 }
 
 struct toy_window *toy_window_open_native(const char *title, int width, int height)
 {
-    return toy_window_open_impl(title, width, height, 1);
+    return toy_window_open_impl(title, width, height, 1, 0, 0);
+}
+
+struct toy_window *toy_window_open_display(const char *title, int width, int height,
+                                          int native_present, int fullscreen)
+{
+    return toy_window_open_impl(title, width, height, native_present, 1, fullscreen);
+}
+
+/* Resolve the final client extent after the event batch, not stale intermediate
+ * resize messages. A failed allocation must not render with mismatched input. */
+static int sync_window_surface(struct toy_window *window,
+                                struct toy_window_events *events)
+{
+    int width, height;
+    SDL_Texture *texture;
+    uint32_t *pixels;
+    size_t count;
+    SDL_GetWindowSize(window->window, &width, &height);
+    if (width <= 0 || height <= 0 ||
+        (width == window->width && height == window->height)) return 0;
+    if ((size_t)width > (size_t)-1 / (size_t)height / sizeof(*pixels)) return -1;
+    count = (size_t)width * (size_t)height;
+    texture = SDL_CreateTexture(window->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                SDL_TEXTUREACCESS_STREAMING, width, height);
+    pixels = texture ? (uint32_t *)SDL_calloc(count, sizeof(*pixels)) : NULL;
+    if (!texture || !pixels) {
+        SDL_DestroyTexture(texture);
+        SDL_free(pixels);
+        return -1;
+    }
+    SDL_DestroyTexture(window->texture);
+    SDL_free(window->pixels);
+    window->texture = texture;
+    window->pixels = pixels;
+    window->width = width;
+    window->height = height;
+    if (events) {
+        events->resized = 1;
+        events->width = width;
+        events->height = height;
+        SDL_GetMouseState(&events->pointer_x, &events->pointer_y);
+        events->pointer_moved = 1;
+    }
+    if (window->display_switching)
+        SDL_Log("DISPLAY mode=%s width=%d height=%d",
+            (SDL_GetWindowFlags(window->window) & SDL_WINDOW_FULLSCREEN_DESKTOP) ?
+            "fullscreen" : "windowed", width, height);
+    return 0;
 }
 
 int toy_window_prepare_native(struct toy_window *window)
@@ -403,27 +476,6 @@ dispatch:
             if (event.window.event == SDL_WINDOWEVENT_RESTORED ||
                 event.window.event == SDL_WINDOWEVENT_MAXIMIZED)
                 window->minimized = 0;
-            if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                int new_width = event.window.data1, new_height = event.window.data2;
-                if (new_width > 0 && new_height > 0) {
-                    size_t count = (size_t)new_width * (size_t)new_height;
-                    SDL_Texture *texture = SDL_CreateTexture(window->renderer,
-                        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                        new_width, new_height);
-                    uint32_t *pixels = texture ? (uint32_t *)SDL_calloc(
-                        count, sizeof(*pixels)) : NULL;
-                    if (texture && pixels) {
-                        SDL_DestroyTexture(window->texture);
-                        SDL_free(window->pixels);
-                        window->texture = texture; window->pixels = pixels;
-                        window->width = new_width; window->height = new_height;
-                        events->resized = 1;
-                        events->width = new_width; events->height = new_height;
-                    } else {
-                        SDL_DestroyTexture(texture); SDL_free(pixels);
-                    }
-                }
-            }
             if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED ||
                 event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                 events->keyboard_focus_changed = 1;
@@ -433,6 +485,15 @@ dispatch:
             break;
         case SDL_KEYDOWN:
         case SDL_KEYUP: {
+            if (window->display_switching && event.key.keysym.scancode == SDL_SCANCODE_F11) {
+                if (event.type == SDL_KEYDOWN && !event.key.repeat) {
+                    Uint32 mode = (SDL_GetWindowFlags(window->window) &
+                        SDL_WINDOW_FULLSCREEN_DESKTOP) ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP;
+                    if (SDL_SetWindowFullscreen(window->window, mode) < 0)
+                        SDL_Log("DISPLAY switch failed: %s", SDL_GetError());
+                }
+                break;
+            }
             unsigned int key = key_code(event.key.keysym.scancode,
                                         event.key.keysym.sym);
             if (event.key.repeat) break;
@@ -480,6 +541,7 @@ dispatch:
         }
         if (timeout_ms > 0) break;
     }
+    if (sync_window_surface(window, events) < 0) return -1;
     if (events) {
         poll_windows_keys(events, SDL_GetKeyboardFocus() == window->window);
         {

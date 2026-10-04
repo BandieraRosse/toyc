@@ -102,6 +102,9 @@ Combat V0 的玩家生命条读取 actor 的实际 `max_hp`，回避条读取最
 - `rf_player_ui.h/c` 拥有语义颜色、720p 设计尺寸、缩放与窗口重排，以及 panel/button/window/text
   基础组件。`rf_ui_layout_resolve` 是 HUD 绘制和命中区域的共同来源；调整主题或布局描述不修改
   生命、弹药、制造、任务或 RTS 命令规则。
+  显示 surface 使用实际客户区像素；1080p 的默认比例为 1.5 倍，并叠加用户 UI 百分比。
+  字形 run 和面板几何按目标尺寸生成，不上传放大的 720p HUD 图片。窗口/F11 切换后下一帧
+  绘制、点击与辅助镜头重新读取同一布局。CLI `--ui-scale` 在加载偏好后覆盖玩家 UI 比例。
 - `rf_player_panels.h/c` 拥有设备三栏、收起状态卡、固定竖框通讯和终端的纯绘制。
   `rf_player_weaver_layout` 与 `rf_player_comms_layout` 同时提供绘制、点击和 GPU 辅助镜头矩形。
   UI 不执行按钮业务；Runtime 根据命中 ID 调用共享命令边界并展示真实查询结果。

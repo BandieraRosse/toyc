@@ -157,6 +157,7 @@ struct rf_core_config {
     const char *title;
     int width;
     int height;
+    int fullscreen; /* Windows desktop mode; width/height retain windowed size. */
     struct toy_input *input;
     struct toy_renderer *renderer;
     enum rf_gpu_policy gpu_policy;

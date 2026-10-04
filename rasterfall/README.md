@@ -27,6 +27,8 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 ```
 
 实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --renderer gpu-scene`（`--gpu-scene-play` 为等价入口）。
+Windows 普通游玩默认以桌面原生分辨率无边框全屏，F11 切换窗口；窗口尺寸和 UI 缩放设置见
+[玩家界面指南](../docs/rasterfall/guides/player-ui-v2.md#分辨率与显示模式)。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。
 普通离线启动依次进入 RF Platform Firmware 和 RF Boot Manager。菜单默认选中 Start Rasterfall，五秒后自动探测可用显卡并启动，GPU Scene 初始化失败时回退 CPU；任意按键或鼠标按下可暂停自动启动。菜单还提供 RF Workbench（图形环境，手动选择 CPU/GPU Scene）、RF Shell（终端环境）、Diagnostics（硬件与服务信息，Esc 返回）和 Power Off（退出）。方向键选择、Enter 确认，也可按数字 1–5 直接进入。
 RF Shell 输入 `help` 查看只读 `/assets` 文件命令，输入 `boot` 选择 CPU/GPU。RF Workbench 支持鼠标选择和返回；自动启动复用其图形进度页。

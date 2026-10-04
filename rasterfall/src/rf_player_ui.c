@@ -534,5 +534,23 @@ int rf_player_ui_logic_test(void)
     if (rasterfall_canvas_codepoint(&invalid)!='?' || (unsigned char)*invalid!=0x80) return -2;
     rasterfall_canvas_text_wrap(&canvas,3,5,68,3,"中英文 mixed words 正确换行与省略",0xffffff,1250);
     if (!bounds.count || bounds.right>71 || bounds.bottom>75 || canvas.failed) return -3;
+    /* Painting and hit testing must keep the same coordinate space after
+     * native resolution changes and independent user scaling. */
+    {
+        static const int sizes[][2]={{1280,720},{1920,1080},{1600,900}};
+        static const int scales[]={75,100,125,175};
+        struct rf_player_ui_state state;
+        struct rf_ui_layout layout;
+        rf_player_ui_init(&state);
+        for (int i=0;i<3;++i) for (int j=0;j<4;++j) for (int folded=0;folded<2;++folded) {
+            state.scale_percent=scales[j];state.rts_collapsed=folded;
+            rf_ui_layout_resolve(&layout,&state,sizes[i][0],sizes[i][1],1);
+            struct rf_ui_rect r=layout.dock_toggle;
+            if (r.w<=0 || r.h<=0 || r.x<0 || r.y<0 ||
+                r.x+r.w>sizes[i][0] || r.y+r.h>sizes[i][1] ||
+                rf_player_ui_hit_test(&state,sizes[i][0],sizes[i][1],1,
+                    r.x+r.w/2,r.y+r.h/2)!=RF_PLAYER_UI_HIT_DOCK) return -4;
+        }
+    }
     return 0;
 }

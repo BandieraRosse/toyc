@@ -154,8 +154,16 @@ world effects、viewmodel、HUD、pause、scoreboard、debug overlay、labels �
 
 Windows 正常交互帧以 120 FPS 为提交上限，玩法仍以 16,667 微秒固定步长推进。每个渲染帧轮询并采样输入；按键边沿保留到下一逻辑步，鼠标位移在下一逻辑步进入命令，同时立即用于本帧的只读第一人称视角。渲染保存前后两个已完成逻辑状态，以 accumulator 比例对同一身份的 actor、enemy 和 projectile 的位置与高度，以及角色和敌人的朝向做展示插值；同一动作的动画时间、敌人倒地时间和弹体飞行时间也按已知状态插值。新生成、槽位复用、动作切换或大幅瞬移直接显示当前状态。插值展示约落后逻辑一个 tick，玩法、碰撞、网络权威状态不读取展示副本。相机不采用该延迟。固定帧审计保留原诊断时序，不使用交互帧节流或世界插值。HUD FPS 仍按实际完成的渲染帧计数；达到 120 取决于完整帧成本和呈现能力。
 
-正常窗口默认使用 CPU renderer，Windows 与 freestanding Linux/WSL 的默认 framebuffer 均为
-1280×720。WSL CPU 在每个 world 的首帧完成懒加载预热并成功 present 后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV
+Windows 普通启动默认无边框桌面全屏，surface 与 Scene 主视图使用实际客户区像素；在 1920×1080
+桌面上原生渲染 1080p，不把 720p framebuffer 拉伸。Game options 选择显示模式和恢复后的窗口尺寸，
+Core 将配置交给 Windows 平台层；SDL 持有全屏状态和恢复位置，F11 在同一窗口句柄上切换。
+每批事件后按最终客户区尺寸同步 surface，再由现有 GPU owner 处理 swapchain 重建；分配失败传播错误。
+Windows DPI awareness 使指针、surface 与 native present 共用像素坐标。
+显式窗口模式、有限帧、frame-audit 与 Scene 诊断默认保留 1280×720 窗口，可用 CLI 覆盖。
+UI 保留 720p 设计基准，按客户区高度和用户百分比计算，绘制与点击共用布局；使用见[玩家界面](../guides/player-ui-v2.md)。
+显示模式不选择渲染后端，普通 Boot Manager 仍自动探测 GPU 并允许回退 CPU。
+freestanding Linux/WSL 默认窗口仍为 1280×720，不接入 Windows 全屏快捷键。
+WSL CPU 在每个 world 的首帧完成懒加载预热并成功 present 后恢复正常的 200 ms renderer watchdog；玩法单位、相机 FOV
 和权威状态不依赖该策略。WSL 的 GPU、音频与额外窗口集成仍不属于 CPU 最小可玩承诺。
 
 本地 session/client prediction 把控制器命令交给 actor API；actor 先更新 gameplay body，随后

@@ -95,6 +95,10 @@ void rasterfall_options_usage(int fd)
         "  --textures | --no-textures  --edge-pass | --no-edge-pass  --no-stats\n"
         "  --renderer <cpu|gpu-scene> [--gpu-required] [--gpu-native-present]\n"
         "  --boot (show RF Boot Manager with --frames)  --skip-boot\n"
+        "  --fullscreen | --windowed  (Windows: borderless desktop / resizable window; F11 toggles)\n"
+        "    Windows default: desktop fullscreen; frame/Scene diagnostics use a 1280x720 window\n"
+        "  --window-size <width> <height>  (640..7680 x 480..4320; also selects windowed mode)\n"
+        "  --ui-scale <75..175>  (percent of automatic 720p-based player UI scale)\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
@@ -201,6 +205,26 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
         else if (!strcmp(option, "--gpu-scene-play")) o->gpu_scene_play = 1;
         else if (!strcmp(option, "--skip-boot")) o->skip_boot = 1;
         else if (!strcmp(option, "--boot")) o->force_boot = 1;
+        else if (!strcmp(option, "--windowed")) o->window_mode = 1;
+        else if (!strcmp(option, "--fullscreen")) o->window_mode = 2;
+        else if (!strcmp(option, "--window-size")) {
+            if (require_arguments(argc,argv,arg,2,option)<0) return -1;
+            o->window_width=positive_int(argv[++arg],0);
+            o->window_height=positive_int(argv[++arg],0);
+            if (o->window_width<640 || o->window_width>7680 ||
+                o->window_height<480 || o->window_height>4320) {
+                __fprintf(2,"rasterfall: invalid window size (640..7680 x 480..4320)\n");
+                return -1;
+            }
+            o->window_mode=1;
+        }
+        else if (!strcmp(option, "--ui-scale")) {
+            if (require_arguments(argc,argv,arg,1,option)<0) return -1;
+            o->ui_scale_percent=positive_int(argv[++arg],0);
+            if (o->ui_scale_percent<75 || o->ui_scale_percent>175) {
+                __fprintf(2,"rasterfall: UI scale must be 75..175\n");return -1;
+            }
+        }
         else if (!strcmp(option, "--gpu-scene-independent-preview")) {
             o->gpu_scene_independent_preview = 1;
             o->gpu_scene_world_preview = 1;

@@ -29,6 +29,12 @@ static int rf_core_init_window(struct rf_core *core, const char *title,
     core->input = input;
     core->renderer = renderer;
     started = rf_core_clock_now_us();
+#ifdef TOYC_WINDOWS
+    if (config)
+        core->window = toy_window_open_display(title, width, height,
+                                               native_present, config->fullscreen);
+    else
+#endif
     core->window = native_present ? toy_window_open_native(title, width, height) :
         toy_window_open(title, width, height);
     if (config && config->init_event)

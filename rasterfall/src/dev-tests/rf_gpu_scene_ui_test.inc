@@ -23,6 +23,17 @@ static int scene_ui_test(void)
     if (rasterfall_options_parse(&options,2,args) || !options.gpu_required ||
         !options.gpu_native_present || !options.gpu_scene_independent_preview ||
         options.gpu_normal_view || options.gpu_normal_fixed_tick) return 1;
+    {
+        char *display_args[]={"rasterfall","--window-size","1600","900",
+                              "--fullscreen","--ui-scale","125"};
+        char *invalid_size[]={"rasterfall","--window-size","1920","0"};
+        char *invalid_scale[]={"rasterfall","--ui-scale","176"};
+        if (rasterfall_options_parse(&options,7,display_args) ||
+            options.window_mode!=2 || options.window_width!=1600 ||
+            options.window_height!=900 || options.ui_scale_percent!=125) return 6;
+        if (!rasterfall_options_parse(&options,4,invalid_size) ||
+            !rasterfall_options_parse(&options,3,invalid_scale)) return 7;
+    }
     draw_pause_overlay(&canvas,&menu,&settings,0,0);
     uint64_t initial=sink.hash;
     if (canvas.failed || !sink.calls) return 2;

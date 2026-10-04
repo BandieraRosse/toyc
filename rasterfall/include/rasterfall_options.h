@@ -14,6 +14,8 @@ struct rasterfall_options {
     const char *net_address;
     int auto_mode, textures_enabled, edge_pass_enabled;
     int skip_boot, force_boot;
+    int window_mode; /* 0: automatic, 1: windowed, 2: desktop fullscreen */
+    int window_width, window_height, ui_scale_percent;
     int renderer_mode, gpu_required, gpu_native_present;
     int gpu_present_fault, gpu_present_fault_frame;
     const char *map_path;
