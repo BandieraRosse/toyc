@@ -3390,6 +3390,22 @@ int rf_game_render(struct rf_game_runtime *runtime, struct toy_renderer *rendere
 
 #define effects (*active_effects)
 
+struct rf_boot_scene_context {
+    struct rf_core *core;
+    struct rf_boot_journal *journal;
+};
+
+static int rf_boot_scene_event(void *context, const char *task, int result,
+                               int64_t elapsed_us)
+{
+    struct rf_boot_scene_context *boot = context;
+    rf_boot_record_event(boot->journal, task, result, elapsed_us);
+    if (!result && !strcmp(task, "scene-prewarm"))
+        return rf_boot_progress(boot->core, RF_CORE_RENDERER_GPU_SCENE,
+            boot->journal, "Presenting first GPU frame", 7, 8, NULL);
+    return 0;
+}
+
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     static struct rf_gpu_scene_world_resources scene_world_resources;
@@ -3439,7 +3455,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     unsigned char pending_physical_edges[RF_INPUT_PHYSICAL_KEY_COUNT];
     int input_event_count = 0, have_last_key = 0;
-    struct rasterfall_perf_stats stats, stats_total;
+    struct rasterfall_perf_stats stats = {0}, stats_total = {0};
     unsigned int last_key = 0;
     int last_key_pressed = 0;
     /* 按键按压边沿跨帧保留位：逻辑步（E/R 及切枪换弹）可能因
@@ -3450,13 +3466,15 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     char host_address[16];
     uint64_t seed;
     struct rasterfall_options options;
-    struct rf_boot_journal boot_journal;
+    struct rf_boot_journal boot_journal, firmware_journal;
     struct rf_core_config boot_cpu_config;
     int interactive_boot;
     int renderer_switch_request = -1;
     int renderer_switch_count = 0;
     int boot_renderer = RF_CORE_RENDERER_CPU;
-    int64_t boot_task_started = 0;
+    int64_t boot_task_started = 0, gpu_boot_started = 0;
+    int gpu_boot_pending = 0;
+    struct rf_boot_scene_context boot_scene = {&core, &boot_journal};
     int public_room = 0, public_room_id = 0;
     int managed_spectator = 0, managed_third_person = 0;
     const char *startup_error = NULL;
@@ -3807,15 +3825,20 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (interactive_boot) {
         struct rf_boot_result choice;
         const char *boot_error = NULL;
+        firmware_journal = boot_journal;
         for (;;) {
-            int boot_result = rf_boot_run(&core, &choice, &boot_journal,
+            int boot_result = rf_boot_run(&core, &choice, &firmware_journal,
                                           boot_error);
             if (boot_result <= 0) {
                 rf_core_shutdown(&core);
                 return boot_result == 0 ? 0 : 1;
             }
             boot_renderer = choice.renderer;
-            if (choice.renderer == RF_CORE_RENDERER_CPU) break;
+            if (choice.renderer == RF_CORE_RENDERER_CPU) {
+                gpu_boot_pending = 0;
+                boot_journal = firmware_journal;
+                break;
+            }
 #ifdef TOYC_WINDOWS
             struct rf_core_config gpu_config;
             memset(&gpu_config, 0, sizeof(gpu_config));
@@ -3831,10 +3854,24 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             gpu_config.native_present = 1;
             gpu_config.init_event = rf_boot_record_event;
             gpu_config.init_event_context = &boot_journal;
+            /* Firmware remains in the process log, never in this launch journal. */
+            memset(&boot_journal, 0, sizeof(boot_journal));
+            boot_journal.owner = "gpu-startup";
+            gpu_boot_started = choice.started_us;
+            gpu_boot_pending = 1;
+            if (choice.automatic) {
+                rf_boot_record_event(&boot_journal, "hardware-query", 0, choice.hardware_query_us);
+                rf_boot_record_event(&boot_journal, "graphics-adapter-probe", 0, choice.adapter_probe_us);
+            }
             if (rf_core_switch_renderer(&core, &gpu_config) < 0) {
+                rf_boot_record_event(&boot_journal, "gpu-startup-total", -1,
+                    rf_core_clock_now_us() - gpu_boot_started);
+                gpu_boot_pending = 0;
                 if (choice.automatic) {
                     rf_boot_log_task("boot-manager", "gpu-fallback-cpu", 0, 0);
                     boot_renderer = RF_CORE_RENDERER_CPU;
+                    gpu_boot_pending = 0;
+                    boot_journal = firmware_journal;
                     break;
                 }
                 boot_error = "GPU Scene unavailable; choose CPU or retry";
@@ -3859,7 +3896,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
 #endif
         }
         if (rf_boot_progress(&core, boot_renderer, &boot_journal,
-                             "Loading Outpost map", 0, 4, &choice) < 0) {
+                             "Loading Outpost map", 0, gpu_boot_pending ? 8 : 4, &choice) < 0) {
             rf_core_shutdown(&core);
             return 1;
         }
@@ -3888,12 +3925,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_boot_record_event(&boot_journal, "session-map-load", 0,
             rf_core_clock_now_us() - boot_task_started);
         if (rf_boot_progress(&core, boot_renderer, &boot_journal,
-                             "Baking world lightmap", 1, 4, NULL) < 0) {
+                             "Baking world lightmap", 1, gpu_boot_pending ? 8 : 4, NULL) < 0) {
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
             return 1;
         }
     }
+    boot_task_started = rf_core_clock_now_us();
     /* The effects macro names the active pool for the helper functions below;
      * temporarily suspend it while naming the facade member itself. */
 #undef effects
@@ -3930,6 +3968,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     rasterfall_render_set_vmd_legacy_root_offset(vmd_legacy_root_offset);
     rasterfall_render_set_vmd_legacy_knee_ccd(vmd_legacy_knee_ccd);
     rasterfall_render_set_vmd_skin_trace(vmd_skin_trace);
+    if (gpu_boot_pending)
+        rf_boot_record_event(&boot_journal, "renderer-bind", 0,
+            rf_core_clock_now_us() - boot_task_started);
     boot_task_started = rf_core_clock_now_us();
     game_runtime.render_context.gpu_scene_lighting=options.gpu_scene_world_preview || options.gpu_lighting_test;
     rasterfall_render_bake_lightmap();
@@ -3937,7 +3978,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_boot_record_event(&boot_journal, "world-lightmap-bake", 0,
             rf_core_clock_now_us() - boot_task_started);
         if (rf_boot_progress(&core, boot_renderer, &boot_journal,
-                             "Loading optional model texture", 2, 4, NULL) < 0) {
+                             "Loading optional model texture", 2, gpu_boot_pending ? 8 : 4, NULL) < 0) {
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
             return 1;
@@ -3966,7 +4007,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             model_texture.blob ? 0 : 1,
             rf_core_clock_now_us() - boot_task_started);
         if (rf_boot_progress(&core, boot_renderer, &boot_journal,
-                             "Preparing Outpost session", 3, 4, NULL) < 0) {
+                             "Preparing Outpost session", 3, gpu_boot_pending ? 8 : 4, NULL) < 0) {
             if (model_texture.blob) toy_texture_unload(&model_texture);
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
@@ -3976,7 +4017,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     if (!textures_enabled) {
         __printf("rasterfall: textures disabled, using pure colors\n");
     }
+    int64_t table_started = rf_core_clock_now_us();
     rf_table_init();
+    if (gpu_boot_pending)
+        rf_boot_record_event(&boot_journal, "map-preview-load", 0,
+            rf_core_clock_now_us() - table_started);
+    int64_t runtime_started = rf_core_clock_now_us();
     memset(&rf_perf_lab, 0, sizeof(rf_perf_lab));
     rf_combat_init(&options);
     memset(&rf_idle_lab,0,sizeof(rf_idle_lab));
@@ -4090,6 +4136,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     else if (__getrandom(&seed, sizeof(seed), 0) < 0)
         seed = (uint64_t)rf_core_time_us(&core);
     if (seed == 0) seed = 1;
+    if (gpu_boot_pending)
+        rf_boot_record_event(&boot_journal, "game-runtime-prepare", 0,
+            rf_core_clock_now_us() - runtime_started);
     boot_task_started = rf_core_clock_now_us();
     rasterfall_session_reset(&session, &camera, seed);
     rf_weaver_configure(&session, net.mode == RASTERFALL_NET_OFF);
@@ -4097,13 +4146,15 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_boot_record_event(&boot_journal, "outpost-session-reset", 0,
             rf_core_clock_now_us() - boot_task_started);
         if (rf_boot_progress(&core, boot_renderer, &boot_journal,
-                             "Entering Outpost", 4, 4, NULL) < 0) {
+                             gpu_boot_pending ? "Preparing game services" : "Entering Outpost",
+                             4, gpu_boot_pending ? 8 : 4, NULL) < 0) {
             if (model_texture.blob) toy_texture_unload(&model_texture);
             rf_game_shutdown(&game_runtime);
             rf_core_shutdown(&core);
             return 1;
         }
     }
+    boot_task_started = rf_core_clock_now_us();
     rf_windows_log("startup: session reset");
     if(options.combat_lab>=0 || options.combat_lab_suite) {
         if(session.world_id!=RASTERFALL_WORLD_OUTPOST &&
@@ -4620,8 +4671,21 @@ startup_again:
              "1/2 weapons, E interact, Esc pauses/resumes\n");
     if (input_debug)
         __printf("rasterfall: input debug HUD enabled; test chords and focus changes\n");
+    if (gpu_boot_pending) {
+        rf_boot_record_event(&boot_journal, "game-services-prepare", 0,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                "Loading sound assets", 4, 8, NULL) < 0) {
+            scene_runtime_failed=1;goto scene_shutdown;
+        }
+    }
+    boot_task_started = rf_core_clock_now_us();
     memset(&audio, 0, sizeof(audio));
     rasterfall_audio_load_assets(&audio);
+    if (gpu_boot_pending)
+        rf_boot_record_event(&boot_journal, "sound-assets-load-attempt", 0,
+            rf_core_clock_now_us() - boot_task_started);
+    boot_task_started = rf_core_clock_now_us();
     if (!rf_core_audio_ready(&core) ||
         rasterfall_audio_start(&audio, rf_core_audio(&core)) < 0) {
         __printf("rasterfall: audio unavailable, playing silent\n");
@@ -4632,6 +4696,15 @@ startup_again:
     } else {
         rf_windows_log("startup: audio ready");
     }
+    if (gpu_boot_pending) {
+        rf_boot_record_event(&boot_journal, "game-audio-start", audio.running ? 0 : 1,
+            rf_core_clock_now_us() - boot_task_started);
+        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                "Preparing first Scene frame", 5, 8, NULL) < 0) {
+            scene_runtime_failed=1;goto scene_shutdown;
+        }
+    }
+    boot_task_started = rf_core_clock_now_us();
     pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
     last_time = rf_core_begin_tick(&core);
     fps_window_start = last_time;
@@ -6577,10 +6650,16 @@ startup_again:
                     actor_pose[pose_count++]=enemy_render.modular[i];
                 }
                 int64_t pose_extract_us=rf_core_clock_now_us()-pose_extract_start;
+                if (gpu_boot_pending)
+                    rf_boot_record_event(&boot_journal, "scene-source-freeze", 0,
+                        rf_core_clock_now_us() - boot_task_started);
                 int64_t scene_map_prepare_start=rf_core_clock_now_us();
                 if (session.map_ops.runtime_loaded &&
                     rf_gpu_scene_world_resources_prepare(&scene_world_resources,
                         &source_frame.snapshot,&world_render,&floor_render,&prop_render)<0) {
+                    if (gpu_boot_pending)
+                        rf_boot_record_event(&boot_journal, "scene-world-resources", -1,
+                            rf_core_clock_now_us() - scene_map_prepare_start);
                     __fprintf(2,"SCENE-LOCAL map resource preparation failed\n");
 #ifdef TOYC_WINDOWS
                     rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
@@ -6590,6 +6669,9 @@ startup_again:
                 if (!session.map_ops.runtime_loaded)
                     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
                 int64_t scene_map_prepare_us=rf_core_clock_now_us()-scene_map_prepare_start;
+                if (gpu_boot_pending)
+                    rf_boot_record_event(&boot_journal, "scene-world-resources", 0, scene_map_prepare_us);
+                if (gpu_boot_pending) boot_task_started = rf_core_clock_now_us();
                 for(unsigned int kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
                     if (scene_world_resources.opaque[kind].generation) {
                         const struct rasterfall_model_asset *model=
@@ -6697,6 +6779,16 @@ startup_again:
                         options.gpu_scene_independent_preview && !options.gpu_frame_capture &&
                         ((options.frame_audit && options.gpu_normal_view && !strcmp(options.gpu_normal_view,"mesh-weaver") &&
                         !rf_weaver_performance.mode) || getenv("RF_UI_CAPTURE_DIRECTORY")),rendered_frames);
+                    if (gpu_boot_pending) {
+                        rf_boot_record_event(&boot_journal, "scene-source-prepare", 0,
+                            rf_core_clock_now_us() - boot_task_started);
+                        if (rf_boot_progress(&core, boot_renderer, &boot_journal,
+                                "Prewarming GPU resources", 6, 8, NULL) < 0) {
+                            scene_runtime_failed=1;goto scene_shutdown;
+                        }
+                        scene_world_probe.startup_event=rf_boot_scene_event;
+                        scene_world_probe.startup_event_context=&boot_scene;
+                    }
                     uint64_t warm_generation=scene_world_probe.prewarmed_generation;
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
@@ -6711,6 +6803,11 @@ startup_again:
                         __fprintf(2,"SCENE-WORLD-GPU normal audit failed\n");
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
                         scene_runtime_failed=1;goto scene_shutdown;
+                    }
+                    if (gpu_boot_pending) {
+                        rf_boot_record_event(&boot_journal, "gpu-startup-total", 0,
+                            rf_core_clock_now_us() - gpu_boot_started);
+                        gpu_boot_pending = 0;
                     }
                     if(warm_generation!=scene_world_probe.prewarmed_generation) {
                         /* Map loading time is outside the fixed-step clock. */
@@ -7185,6 +7282,11 @@ startup_again:
         }
     }
 scene_shutdown:
+    if (gpu_boot_pending) {
+        rf_boot_record_event(&boot_journal, "gpu-startup-total", -1,
+            rf_core_clock_now_us() - gpu_boot_started);
+        gpu_boot_pending = 0;
+    }
     rf_weaver_present_reset();
     rf_weaver_perf_report(&session);
     rf_weaver_diag_audit(&session,"shutdown",rendered_frames);

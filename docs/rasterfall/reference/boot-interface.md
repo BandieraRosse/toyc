@@ -3,7 +3,7 @@
 > 状态：已确认设计；当前实现范围与限制以运行时架构为准
 > 所有者：Core Host 生命周期与 Game 启动展示
 > 决策日期：2026-09-30
-> 最近核对：2026-10-01
+> 最近核对：2026-10-04
 
 本页定义启动界面的视觉、交互和信息真实性约束。平台与渲染资源归
 [Core Host](../architecture/runtime.md)，世界选择与加载归 Game/session；
@@ -93,7 +93,9 @@ Shell 输出行与 Workbench 详情区可以局部扫描；命令回显、输入
 
 各行记录调用前后的单调时钟耗时；`OK` 表示该调用完成，`N/A` 表示可选工作不可用，
 `FAIL` 表示失败。微秒级状态设置也是真实调用，但不代表设备探测或资源加载。
-Firmware 只显示基础服务；启动页的事件表保留此前的 Core 事件，并追加所选后端及 Game 装载事件。
+Firmware 只显示基础服务。GPU 启动页使用独立事件表，只显示本次后端选择、GPU 和 Game 装载事件；
+此前的 Firmware 事件保留在进程日志中，不重复显示。CPU 启动页沿用 Core 事件表。
+GPU 装载日志使用 `stage=gpu-startup`，与 Firmware 的 `stage=core` 区分。
 
 | 阶段与事件 | 实际计入的工作 | 边界 |
 | --- | --- | --- |
@@ -104,17 +106,28 @@ Firmware 只显示基础服务；启动页的事件表保留此前的 Core 事�
 | Firmware `audio` | 尝试打开 SDL 音频设备及音频流 | 音频可选；失败仍记录实际尝试耗时并显示 N/A |
 | Firmware `CORE INITIALIZATION` | 从窗口创建开始到 Core 基础服务就绪的总墙钟时间 | 包含阶段间的早期画面更新；不是各行之和，不含完成后的倒计时 |
 | CPU 启动 `gpu-state-init (CPU mode)` | 将 GPU 服务状态初始化为禁用策略 | 内部事件名为 `gpu-state-init-cpu`；不探测或初始化 Vulkan，成功显示 OK |
-| 自动启动 `graphics-adapter-probe` | 用临时 Vulkan 后端检查图形设备与 native present 能力，再关闭临时后端 | Boot Manager 的独立探测；只写结构化日志，不进入启动页事件表；手动选择后端时不必发生 |
+| 自动启动 `hardware-query` / `graphics-adapter-probe` | 查询平台硬件；用临时 Vulkan 后端检查图形设备与 native present 能力，再关闭临时后端 | 自动选择 GPU 时将本次实测结果带入独立事件表；手动选择后端不发生 |
+| GPU 启动 `native-window-prepare` / `native-window-bind` | 切换既有窗口的软件呈现器，取得并绑定原生窗口句柄 | 不重复创建 Firmware 窗口；分别计时并记录失败 |
 | GPU 启动 `gpu-backend` | 调用 `rf_gpu_init` 建立正式 Vulkan 后端 | 不包含此前的窗口 native 准备、句柄设置，也不包含首帧 Scene 资源准备、上传或 present |
 | CPU/GPU `session-map-load` | `rf_game_init`：加载地图和 World Content、构建 runtime 投影，并初始化 Game Runtime 的相关状态 | 比单纯读取地图范围更广；不包含后面的 session reset |
 | CPU/GPU `world-lightmap-bake` | 调用当前世界光照烘焙并更新 generation | 不代表 GPU 光照资源已提交 |
 | CPU/GPU `optional-model-texture` | 尝试读取并解析可选模型纹理 | 缺失时显示 N/A，耗时仍是实际尝试；与所选渲染后端无关 |
 | CPU/GPU `outpost-session-reset` | 重建 session、gameplay 与角色初始状态 | 当前事件名沿用 Outpost；显式加载其他世界时仍执行对应世界的 reset |
+| GPU `renderer-bind` | 绑定渲染上下文及设置渲染选项 | 不包含后续光照烘焙 |
+| GPU `map-preview-load` | 读取指挥桌的三张地图预览 | 与当前 session 地图装载分开 |
+| GPU `game-runtime-prepare` | 初始化实验区、终端、玩家设置和剧情存档等运行态，准备 reset 参数 | 不包含指挥桌预览和 session reset |
+| GPU `game-services-prepare` | reset 后的运行态与所选网络模式准备 | 普通离线启动不包含网络握手；联机入口按实际路径执行 |
+| GPU `sound-assets-load-attempt` / `game-audio-start` | 尝试读取音效资源；配置混音器并启动音频线程 | 前者记录加载尝试完成，不表示全部音效均存在；音频启动不可用显示 N/A |
+| GPU `scene-source-freeze` / `scene-world-resources` / `scene-source-prepare` | 音频准备后的运行编排、首帧来源冻结与姿态提取；世界模型资源准备；剩余 draw/layer 输入组装 | 三段顺序计时，不重叠；不包含随后 GPU 预热 |
+| GPU `scene-prewarm` | 对冻结场景执行首次离屏资源准备与绘制，并创建两路辅助目标 | 包含上传、蒙皮等待及管线/目标首次开销；由 Scene owner 报告 |
+| GPU `scene-first-native-frame` | 预热后的首帧资源准备、native 提交、present 和退休 | 成功才结束启动；不包含预热后启动页刷新 |
+| GPU `gpu-startup-total` | 从确认启动、呈现工作状态开始到首个 native 帧成功返回 | 包含自动探测、阶段间画面更新和切页扫描；不包含 Firmware、菜单倒计时和用户停留，不是各行之和 |
 
 自动启动探测失败后写出的 `gpu-fallback-cpu elapsed_us=0` 是选择结果事件，零值不是回退耗时。
 Shell 的 `devices` 命令另可按需记录 `vulkan-adapter-probe`，它不属于每次启动的固定阶段。
 菜单就绪、后端选择和运行中切换等无 `elapsed_us` 的标记也不作为耗时项。
-进入游戏后的首帧、GPU Scene 上传与 native present 尚未由上述装载事件覆盖。
+GPU 首帧准备、预热和 native present 已覆盖；上传字节仍由 `SCENE-PREWARM` 诊断日志提供，
+不将墙钟耗时解释为纯 GPU 执行时间。
 
 进度表示已完成的实际任务或可测量的工作量。若采用阶段计数，应明确显示“启动阶段”，
 不把等权阶段比例描述为资源字节百分比或剩余时间。没有已知总量时显示工作中和当前任务，
@@ -145,6 +158,7 @@ GPU 信息遵守以下命名：
 扩展 Firmware 服务时同步检查固定行布局和 Core 总计位置；扩展 Game 装载任务时同步更新
 `rf_boot_progress` 的完成数与总阶段数；增加事件时检查 journal 容量和只展示最近事件的界面限制。
 
-当前实现的阶段计数覆盖地图加载、光照烘焙、可选模型纹理和 session reset。GPU Scene 首帧的
-资源上传、分配量和驱动预算尚未进入引导状态接口；界面只能声明不可查询，不能把阶段计数当成
-这些指标。终端 `devices` 可主动探测 Vulkan adapter，native Scene 可用性仍在选择 GPU 时验证。
+CPU 的阶段计数覆盖地图加载、光照烘焙、可选模型纹理和 session reset；GPU 另包含游戏音频、
+Scene 来源准备、预热及首帧呈现，共八个阶段。原生帧呈现前最多显示七个完成阶段，成功后游戏接管
+画面，并写入首帧结果和总耗时，不为展示完成表格额外等待。资源分配量和驱动预算仍未进入引导状态
+接口，不能把阶段计数当成这些指标。终端 `devices` 可主动探测 Vulkan adapter。

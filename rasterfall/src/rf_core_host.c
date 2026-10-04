@@ -207,16 +207,25 @@ int rf_core_switch_renderer(struct rf_core *core,
         return 0;
     }
     memset(&gpu_native, 0, sizeof(gpu_native));
+    started = rf_core_clock_now_us();
     result = toy_window_prepare_native(core->window);
+    if (config->init_event)
+        config->init_event(config->init_event_context, "native-window-prepare", result,
+                           rf_core_clock_now_us() - started);
     if (result < 0) goto failed;
+    started = rf_core_clock_now_us();
     result = toy_window_get_native_handle(core->window, &native);
     if (result > 0) {
         gpu_native.type = native.type;
         gpu_native.window = native.window;
         gpu_native.instance = native.instance;
     }
-    if (result <= 0 || rf_gpu_set_native_window(config->gpu_backend,
-            config->gpu_backend_context, &gpu_native) < 0) goto failed;
+    result = result > 0 ? rf_gpu_set_native_window(config->gpu_backend,
+            config->gpu_backend_context, &gpu_native) : -1;
+    if (config->init_event)
+        config->init_event(config->init_event_context, "native-window-bind", result,
+                           rf_core_clock_now_us() - started);
+    if (result < 0) goto failed;
     started = rf_core_clock_now_us();
     result = rf_gpu_init(&core->gpu, config->gpu_policy,
                          config->gpu_backend, config->gpu_backend_context);

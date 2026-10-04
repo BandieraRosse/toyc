@@ -49,6 +49,7 @@ struct boot_ui {
     int auto_seconds;
     int urgent_output;
     int launching;
+    int64_t hardware_query_us, adapter_probe_us;
 };
 
 void rf_boot_record_event(void *context, const char *service, int result,
@@ -63,7 +64,8 @@ void rf_boot_record_event(void *context, const char *service, int result,
         event->result = result;
         event->elapsed_us = elapsed_us;
     }
-    rf_boot_log_task("core", service, result, elapsed_us);
+    rf_boot_log_task(journal && journal->owner ? journal->owner : "core",
+                     service, result, elapsed_us);
 }
 
 void rf_boot_log_task(const char *owner, const char *task, int result,
@@ -171,7 +173,9 @@ static int boot_any_key(const struct toy_window_events *events)
 
 static void boot_probe_hardware(struct boot_ui *ui, struct rf_core *core)
 {
+    int64_t query_started = rf_core_clock_now_us();
     toy_platform_hardware_query(&ui->hardware);
+    ui->hardware_query_us = rf_core_clock_now_us() - query_started;
     rf_core_get_status(core, &ui->core_status);
     memset(&ui->gpu_status, 0, sizeof(ui->gpu_status));
     ui->gpu_ready = 0;
@@ -201,9 +205,10 @@ static void boot_probe_hardware(struct boot_ui *ui, struct rf_core *core)
             ui->gpu_status.renderer.native_presentation_v1)
             ui->gpu_ready = 1;
         rf_gpu_shutdown(&probe);
+        ui->adapter_probe_us = rf_core_clock_now_us() - started;
         rf_boot_log_task("boot-manager", "graphics-adapter-probe",
                          ui->gpu_ready ? 0 : 1,
-                         rf_core_clock_now_us() - started);
+                         ui->adapter_probe_us);
     }
 #endif
 }
@@ -832,6 +837,7 @@ static int boot_run(struct rf_core *core, struct rf_boot_result *result,
 selected:
     /* A real presented status frame stays visible during the synchronous GPU
      * probe and Core rebuild. The same frame seeds the next window's scan. */
+    result->started_us = rf_core_clock_now_us();
     ui.launching = 1;
     ready = rf_core_begin_frame(core, BOOT_BG);
     if (ready < 0) return -1;
@@ -847,6 +853,8 @@ selected:
         boot_probe_hardware(&ui, core);
         ui.renderer = ui.gpu_ready ? RF_CORE_RENDERER_GPU_SCENE : RF_CORE_RENDERER_CPU;
     }
+    result->hardware_query_us = ui.automatic ? ui.hardware_query_us : 0;
+    result->adapter_probe_us = ui.automatic ? ui.adapter_probe_us : 0;
     result->renderer = ui.renderer;
     result->automatic = ui.automatic;
     snprintf(line, sizeof(line),

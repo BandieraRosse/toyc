@@ -6,6 +6,7 @@
 /* Boot presentation is transient.  The caller retains Core and Game ownership. */
 struct rf_boot_result {
     int renderer; /* RF_CORE_RENDERER_* */
+    int64_t started_us, hardware_query_us, adapter_probe_us;
     int automatic; /* Start Rasterfall: fall back to CPU on GPU init failure */
     struct {
         uint32_t *pixels; /* Last actually presented boot frame. */
@@ -13,7 +14,7 @@ struct rf_boot_result {
     } transition;
 };
 
-#define RF_BOOT_MAX_EVENTS 16
+#define RF_BOOT_MAX_EVENTS 32
 struct rf_boot_event {
     const char *service;
     int result; /* 0 ready, 1 optional unavailable, negative failure */
@@ -22,6 +23,7 @@ struct rf_boot_event {
 struct rf_boot_journal {
     struct rf_boot_event events[RF_BOOT_MAX_EVENTS];
     int count;
+    const char *owner; /* NULL during Firmware; gpu-startup for its own journal. */
     int64_t started_us, completed_us;
 };
 

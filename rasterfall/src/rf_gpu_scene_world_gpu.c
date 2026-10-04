@@ -1349,19 +1349,30 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         int ok=rf_gpu_scene_world_gpu_probe_frame(probe,context,owner,camera,width,height,
             poses,pose_count,flags,projectiles,interactables,enemies,model_texture,&warm,NULL);
         probe->native_present=1;probe->offscreen_only=0;
-        if(ok<0)return -1;
+        if(ok<0) {
+            if(probe->startup_event)probe->startup_event(probe->startup_event_context,
+                "scene-prewarm", -1, rf_core_clock_now_us()-start);
+            return -1;
+        }
         for(unsigned i=0;i<2;++i) {
             struct rf_gpu_scene_aux_slot *slot=&probe->aux[i];
             if(!slot->owner)slot->owner=calloc(1,sizeof(*slot->owner));
-            if(!slot->owner)return -1;
+            if(!slot->owner) {ok=-1;break;}
             slot->owner->offscreen_only=1;slot->owner->quiet=1;
             if(!slot->owner->graphics)slot->owner->graphics=rf_gpu_graphics_create(context);
-            if(!slot->owner->graphics || rf_gpu_graphics_resize(slot->owner->graphics,240,360)<0)return -1;
+            if(!slot->owner->graphics || rf_gpu_graphics_resize(slot->owner->graphics,240,360)<0) {ok=-1;break;}
+        }
+        if(ok<0) {
+            if(probe->startup_event)probe->startup_event(probe->startup_event_context,
+                "scene-prewarm", -1, rf_core_clock_now_us()-start);
+            return -1;
         }
         probe->prewarmed_generation=owner->world_generation;
         __printf("SCENE-PREWARM world=%llu cpu_us=%lld upload_bytes=%llu draws=%u aux_targets=2\n",
             (unsigned long long)owner->world_generation,(long long)(rf_core_clock_now_us()-start),
             (unsigned long long)warm.upload_bytes,warm.draws);
+        if(probe->startup_event && probe->startup_event(probe->startup_event_context,
+                "scene-prewarm", 0, rf_core_clock_now_us()-start)<0)return -1;
         prepare_start=rf_core_clock_now_us();
     }
     memset(stats,0,sizeof(*stats));
@@ -1631,6 +1642,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->hits=after.hits-before.hits;
     result=0;
 done:
+    if(probe->native_present && probe->startup_event) {
+        if(probe->startup_event(probe->startup_event_context, "scene-first-native-frame",
+                result, rf_core_clock_now_us()-prepare_start)<0)result=-1;
+        probe->startup_event=NULL;probe->startup_event_context=NULL;
+    }
     if (items) probe->batch=items;
     if (result<0) {
         rf_gpu_graphics_skin_batch_cancel(probe->graphics);
