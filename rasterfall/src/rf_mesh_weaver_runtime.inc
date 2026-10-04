@@ -3,6 +3,15 @@
 #include "rf_mesh_weaver_presentation.h"
 #include "rf_weaver_blueprints_generated.h"
 
+static const char *rf_weaver_environment(const char *name)
+{
+#ifdef X86_64_TLIBC
+    return get_env_var(global_envp,name);
+#else
+    return getenv(name);
+#endif
+}
+
 struct rf_weaver_terminal_ui {
     int open, near, selected, row, pointer_x, pointer_y;
     const char *message;
@@ -305,7 +314,7 @@ static void rf_weaver_camera(const struct rasterfall_session *session,struct cam
     int origin_x=machine?machine->x:area->origin_x;
     int origin_z=machine?machine->z:area->origin_z;
     int origin_y=machine?machine->y:0;
-    const char *view=getenv("RF_WEAVER_VIEW");
+    const char *view=rf_weaver_environment("RF_WEAVER_VIEW");
     double dx=950,dz=2050,dy=530,tx=0,ty=-420,tz=0;
     if(view && !strcmp(view,"interaction")) {dx=0;dz=850;dy=0;}
     else if(view && !strcmp(view,"front")) {dx=160;dz=1620;dy=100;}

@@ -8,7 +8,7 @@ static struct {
 
 static int rf_weaver_perf_initial(int allowed)
 {
-    const char *mode=getenv("RF_WEAVER_PERF_MODE");
+    const char *mode=rf_weaver_environment("RF_WEAVER_PERF_MODE");
     memset(&rf_weaver_performance,0,sizeof(rf_weaver_performance));
     rf_weaver_performance.minimum_progress=1;
     if(!allowed || !mode || !mode[0])return 0;

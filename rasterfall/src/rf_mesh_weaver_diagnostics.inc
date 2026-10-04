@@ -25,11 +25,11 @@ static const char *rf_weaver_capture_path(int allowed,unsigned frame)
 {
     if(!allowed)return NULL;
     if(!rf_weaver_capture.initialized) {
-        const char *directory=getenv("RF_WEAVER_CAPTURE_DIRECTORY");
+        const char *directory=rf_weaver_environment("RF_WEAVER_CAPTURE_DIRECTORY");
         rf_weaver_capture.initialized=1;
         if(directory && directory[0] && strlen(directory)<sizeof(rf_weaver_capture.directory)) {
             strcpy(rf_weaver_capture.directory,directory);rf_weaver_capture.enabled=1;
-            const char *every=getenv("RF_WEAVER_CAPTURE_EVERY");
+            const char *every=rf_weaver_environment("RF_WEAVER_CAPTURE_EVERY");
             if(every && rf_weaver_diagnostic.enabled) {
                 char *end;long value=strtol(every,&end,10);
                 if(!*end && value>=1 && value<=60)rf_weaver_capture.every=(unsigned)value;
@@ -79,7 +79,7 @@ static int rf_weaver_capture_complete(const struct rasterfall_session *s,unsigne
 
 static int rf_weaver_diag_integer(const char *name,int fallback,int minimum,int maximum)
 {
-    const char *text=getenv(name);char *end=NULL;long value;
+    const char *text=rf_weaver_environment(name);char *end=NULL;long value;
     if(!text || !text[0]) return fallback;
     value=strtol(text,&end,10);
     if(!end || *end || value<minimum || value>maximum) {
@@ -221,7 +221,7 @@ static int rf_weaver_diag_initial(struct rasterfall_session *s,int enabled,
        fixed_step_ms<1 || fixed_step_ms>1000 || d->capture_frame<1 ||
        d->capture_frame>36000 || (d->resume_ms>=0 &&
        (d->pause_ms<0 || d->resume_ms<=d->pause_ms))) return -1;
-    const char *name=getenv("RF_WEAVER_BLUEPRINT");
+    const char *name=rf_weaver_environment("RF_WEAVER_BLUEPRINT");
     if(name && name[0] && strcmp(name,"idle")) {
         for(unsigned i=0;i<RF_WEAVER_BLUEPRINT_COUNT;++i)
             if(!strcmp(name,rf_weaver_blueprints[i].id)) {d->blueprint=(int)i;break;}
@@ -278,7 +278,7 @@ static void rf_weaver_interaction_audit(const struct rasterfall_session *s,
     static int previous_menu=-1,previous_row=-1,previous_selection=-1;
     static int previous_phase=-1,previous_reason=-1,previous_highlight=-2;
     static unsigned previous_fire,previous_collected;
-    const char *requested=getenv("RF_WEAVER_INTERACTION_AUDIT");
+    const char *requested=rf_weaver_environment("RF_WEAVER_INTERACTION_AUDIT");
     if(!allowed || !requested || strcmp(requested,"1"))return;
     const struct toy_mesh_weaver *w=&s->game_state.weaver;
     const struct toy_game_actor *a=toy_game_local_player_actor_const(&s->game_state);

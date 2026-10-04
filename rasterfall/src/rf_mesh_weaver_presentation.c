@@ -1,10 +1,55 @@
+#include "tlibc_everything.h"
 #include "rf_mesh_weaver_presentation.h"
 #include "rasterfall_model.h"
 #include "rasterfall_calibration.h"
-#include "tlibc_everything.h"
 #include "math.h"
 #include "limits.h"
 #include "rf_mesh_weaver_layout_generated.h"
+
+#ifdef X86_64_TLIBC
+/* The freestanding allocator is zero-filled and paired with tlibc_free.
+ * Its unrelated thread-arena malloc has no individual free operation. */
+static void *weaver_calloc(size_t count,size_t size)
+{
+    if(size && count>(size_t)-1/size) return NULL;
+    return tlibc_malloc(count*size);
+}
+#define weaver_malloc tlibc_malloc
+#define weaver_free tlibc_free
+
+/* Tinylibc has no qsort. Keep the same total-order comparators as the hosted
+ * path; this bounded-stack heapsort needs no second mesh-sized allocation. */
+static void weaver_sort_swap(unsigned char *a,unsigned char *b,size_t size)
+{
+    for(size_t i=0;i<size;++i) {unsigned char value=a[i];a[i]=b[i];b[i]=value;}
+}
+static void weaver_sort_sift(unsigned char *base,size_t root,size_t count,
+    size_t size,int (*compare)(const void *,const void *))
+{
+    while(root<count/2) {
+        size_t child=root*2+1;
+        if(child+1<count && compare(base+child*size,base+(child+1)*size)<0) ++child;
+        if(compare(base+root*size,base+child*size)>=0) return;
+        weaver_sort_swap(base+root*size,base+child*size,size);root=child;
+    }
+}
+static void weaver_sort(void *values,size_t count,size_t size,
+    int (*compare)(const void *,const void *))
+{
+    unsigned char *base=values;
+    if(count<2 || !size) return;
+    for(size_t root=count/2;root>0;--root) weaver_sort_sift(base,root-1,count,size,compare);
+    for(size_t end=count;end>1;--end) {
+        weaver_sort_swap(base,base+(end-1)*size,size);
+        weaver_sort_sift(base,0,end-1,size,compare);
+    }
+}
+#else
+#define weaver_calloc calloc
+#define weaver_malloc malloc
+#define weaver_free free
+#define weaver_sort qsort
+#endif
 
 static unsigned weaver_u32(const unsigned char *p)
 { return (unsigned)p[0]|(unsigned)p[1]<<8|(unsigned)p[2]<<16|(unsigned)p[3]<<24; }
@@ -70,10 +115,10 @@ static unsigned weaver_ray_node_build(struct rf_weaver_mesh *mesh,unsigned first
 
 static int weaver_rays_create(struct rf_weaver_mesh *mesh)
 {
-    mesh->rays=calloc(1,sizeof(*mesh->rays));
+    mesh->rays=weaver_calloc(1,sizeof(*mesh->rays));
     if(!mesh->rays) return -1;
-    mesh->rays->nodes=calloc((size_t)mesh->count*2,sizeof(*mesh->rays->nodes));
-    mesh->rays->faces=malloc((size_t)mesh->count*sizeof(*mesh->rays->faces));
+    mesh->rays->nodes=weaver_calloc((size_t)mesh->count*2,sizeof(*mesh->rays->nodes));
+    mesh->rays->faces=weaver_malloc((size_t)mesh->count*sizeof(*mesh->rays->faces));
     if(!mesh->rays->nodes || !mesh->rays->faces) return -1;
     for(unsigned i=0;i<mesh->count;++i) mesh->rays->faces[i]=i;
     weaver_ray_node_build(mesh,0,mesh->count);return 0;
@@ -169,8 +214,8 @@ static int weaver_growth_compare(const void *pa,const void *pb)
 void rf_weaver_mesh_free(struct rf_weaver_mesh *mesh)
 {
     if(!mesh) return;
-    if(mesh->rays) {free(mesh->rays->nodes);free(mesh->rays->faces);free(mesh->rays);}
-    free(mesh->faces);free(mesh->growth);free(mesh->strokes);memset(mesh,0,sizeof(*mesh));
+    if(mesh->rays) {weaver_free(mesh->rays->nodes);weaver_free(mesh->rays->faces);weaver_free(mesh->rays);}
+    weaver_free(mesh->faces);weaver_free(mesh->growth);weaver_free(mesh->strokes);memset(mesh,0,sizeof(*mesh));
 }
 
 int rf_weaver_mesh_load(struct rf_weaver_mesh *mesh,const char *path,int weapon)
@@ -191,7 +236,7 @@ int rf_weaver_mesh_load(struct rf_weaver_mesh *mesh,const char *path,int weapon)
         reflected=b[0]*(b[4]*b[8]-b[5]*b[7])-b[1]*(b[3]*b[8]-b[5]*b[6])+
             b[2]*(b[3]*b[7]-b[4]*b[6])<0;
     }
-    built.faces=calloc(model.index_count/3,sizeof(*built.faces));
+    built.faces=weaver_calloc(model.index_count/3,sizeof(*built.faces));
     if(!built.faces) goto done;
     built.material_count=model.material_count;
     for(unsigned m=0;m<model.material_count;++m) {
@@ -262,13 +307,13 @@ int rf_weaver_mesh_load(struct rf_weaver_mesh *mesh,const char *path,int weapon)
         int span=built.maximum[2]-built.minimum[2];
         face->threshold=span>0 ? (z-built.minimum[2])/span : .5;
     }
-    qsort(built.faces,built.count,sizeof(*built.faces),weaver_face_compare);
-    built.growth=malloc((size_t)built.count*sizeof(*built.growth));
+    weaver_sort(built.faces,built.count,sizeof(*built.faces),weaver_face_compare);
+    built.growth=weaver_malloc((size_t)built.count*sizeof(*built.growth));
     if(!built.growth) goto done;
     for(unsigned i=0;i<built.count;++i) {
         built.growth[i].face=i;built.growth[i].threshold=built.faces[i].threshold;
     }
-    qsort(built.growth,built.count,sizeof(*built.growth),weaver_growth_compare);
+    weaver_sort(built.growth,built.count,sizeof(*built.growth),weaver_growth_compare);
     if(weapon>=0 && (weaver_rays_create(&built)<0 || weaver_strokes_create(&built)<0)) goto done;
     *mesh=built;memset(&built,0,sizeof(built));result=0;
 done:
@@ -430,7 +475,7 @@ static int weaver_strokes_create(struct rf_weaver_mesh *mesh)
     struct rf_weaver_transform gun;
     rf_weaver_transform_axis(&gun,1,TOY_WEAVER_PRODUCT_YAW_DEG*radians);
     weaver_metres(&gun,rf_mesh_weaver_build_center_m);
-    mesh->strokes=calloc(8*(RF_WEAVER_STROKE_BINS+1),sizeof(*mesh->strokes));
+    mesh->strokes=weaver_calloc(8*(RF_WEAVER_STROKE_BINS+1),sizeof(*mesh->strokes));
     if(!mesh->strokes) return -1;
     for(int head=0;head<8;++head) {
         double origin[3];

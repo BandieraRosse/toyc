@@ -7,6 +7,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef X86_64_TLIBC
+#include "core.h"
+/* Both supported platform allocators zero-fill; keep the freestanding
+ * allocations out of the separate, individually unfreeable thread arena. */
+#define RF_WEAVER_AUDIO_CALLOC(count,size) tlibc_malloc((count)*(size))
+#define RF_WEAVER_AUDIO_MALLOC(size) tlibc_malloc(size)
+#define RF_WEAVER_AUDIO_FREE(pointer) tlibc_free(pointer)
+#else
+#define RF_WEAVER_AUDIO_CALLOC(count,size) calloc(count,size)
+#define RF_WEAVER_AUDIO_MALLOC(size) malloc(size)
+#define RF_WEAVER_AUDIO_FREE(pointer) free(pointer)
+#endif
+
 #define RF_WEAVER_CUE_RING 16u
 #define RF_WEAVER_LOOP_RUNNING (1u << 18)
 enum rf_weaver_audio_cue { RF_WEAVER_START, RF_WEAVER_PAUSE, RF_WEAVER_RESUME, RF_WEAVER_DONE, RF_WEAVER_CUE_COUNT };
@@ -78,7 +91,7 @@ static struct rasterfall_weaver_audio_bus *rf_weaver_audio_create(unsigned rate)
 {
     static const unsigned durations[RF_WEAVER_CUE_COUNT]={140,90,80,240};
     if(rate<8000 || rate>192000) return NULL;
-    struct rasterfall_weaver_audio_bus *b=calloc(1,sizeof(*b));
+    struct rasterfall_weaver_audio_bus *b=RF_WEAVER_AUDIO_CALLOC(1,sizeof(*b));
     if(!b)return NULL;
     b->rate=rate;b->fade_frames=rate*60/1000;b->loop.frames=rate;
     unsigned total=rate;
@@ -86,8 +99,8 @@ static struct rasterfall_weaver_audio_bus *rf_weaver_audio_create(unsigned rate)
         b->cues[k].frames=rate*durations[k]/1000;
         total+=b->cues[k].frames;
     }
-    b->storage=malloc((size_t)total*sizeof(*b->storage));
-    if(!b->storage){free(b);return NULL;}
+    b->storage=RF_WEAVER_AUDIO_MALLOC((size_t)total*sizeof(*b->storage));
+    if(!b->storage){RF_WEAVER_AUDIO_FREE(b);return NULL;}
     b->loop.samples=b->storage;unsigned offset=rate;
     for(unsigned k=0;k<RF_WEAVER_CUE_COUNT;++k) {
         b->cues[k].samples=b->storage+offset;offset+=b->cues[k].frames;
@@ -96,7 +109,7 @@ static struct rasterfall_weaver_audio_bus *rf_weaver_audio_create(unsigned rate)
 }
 static void rf_weaver_audio_destroy(struct rasterfall_weaver_audio_bus *b)
 {
-    if(b){free(b->storage);free(b);}
+    if(b){RF_WEAVER_AUDIO_FREE(b->storage);RF_WEAVER_AUDIO_FREE(b);}
 }
 static int rf_weaver_audio_busy(const struct rasterfall_weaver_audio_input *in)
 {
