@@ -73,6 +73,7 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
         out->map.y=out->phase.y+out->phase.h+gap;
     out->objective=ui_rect(margin,out->map.y+map_size+gap,
         ui_min(ui_px(config->objective_width,scale),width/2-margin),ui_px(56,scale));
+    if (width<ui_px(1000,scale)) out->objective.w=map_size;
     vital_width=ui_min(ui_px(config->vital_width,scale),(width-margin*2-gap)/2);
     weapon_width=ui_min(ui_px(config->weapon_width,scale),(width-margin*2-gap)/2);
     out->vitals=ui_rect(margin,height-margin-ui_px(config->vital_height,scale),
@@ -357,7 +358,7 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
         snprintf(line,sizeof(line),"%s",view->objective_detail);
     else {
         ui_label(view,RF_ACTION_MAP_EXPAND,key,sizeof(key));
-        snprintf(line,sizeof(line),"[%s] 按住查看地图",key);
+        snprintf(line,sizeof(line),r.w<ui_px(220,scale)?"[%s] 地图":"[%s] 按住查看地图",key);
     }
     rf_ui_text(canvas,ui_rect(r.x+pad,r.y+pad+ui_px(21,scale),r.w-2*pad,
         r.h-pad-ui_px(21,scale)),line,theme->muted,scale,1);

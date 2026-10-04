@@ -10,6 +10,8 @@ The output records requested and actual client dimensions and process exits.
 param(
     [string]$OutputDirectory='tmp/player-ui/layout',
     [ValidateSet('All','720p','1080p','Narrow')][string]$Case='All',
+    [switch]$OutpostOnly,
+    [switch]$CommsOnly,
     [switch]$CheckOnly
 )
 $ErrorActionPreference='Stop'
@@ -31,6 +33,15 @@ public static class PlayerUiLayoutWindow {
     [DllImport("user32.dll")] static extern uint MapVirtualKey(uint key,uint mode);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window,uint message,IntPtr a,IntPtr b);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr window,int command);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr window);
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from,uint to,bool attach);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [StructLayout(LayoutKind.Sequential)] struct Point { public int x,y; }
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr window,ref Point point);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
     [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr window,int index);
     [DllImport("user32.dll")] static extern int SetWindowLong(IntPtr window,int index,int value);
     [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
@@ -68,9 +79,28 @@ public static class PlayerUiLayoutWindow {
         PostMessage(window,down?0x100u:0x101u,new IntPtr(code),new IntPtr(bits));
     }
     public static void Button(IntPtr window,int x,int y,bool down) {
-        var point=new IntPtr((y<<16)|(x&65535));
-        PostMessage(window,0x200u,IntPtr.Zero,point);
-        PostMessage(window,down?0x201u:0x202u,new IntPtr(down?1:0),point);
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        ShowWindow(window,9);
+        var foreground=GetForegroundWindow();uint owner;
+        uint other=GetWindowThreadProcessId(foreground,out owner),current=GetCurrentThreadId();
+        bool attached=other!=0&&other!=current&&AttachThreadInput(current,other,true);
+        try { BringWindowToTop(window);SetForegroundWindow(window); }
+        finally {if(attached)AttachThreadInput(current,other,false);}
+        if(GetForegroundWindow()!=window) {
+            if(!down)mouse_event(4u,0,0,0,UIntPtr.Zero);
+            throw new InvalidOperationException("Target SDL window is not foreground; mouse input stopped.");
+        }
+        if(down) {
+            var point=new Point{x=x,y=y};
+            if(!ClientToScreen(window,ref point)||!SetCursorPos(point.x,point.y))
+                throw new InvalidOperationException("Mouse positioning failed.");
+            PostMessage(window,0x200u,IntPtr.Zero,new IntPtr((y<<16)|(x&65535)));
+            System.Threading.Thread.Sleep(200);
+        }
+        var pointBits=new IntPtr((y<<16)|(x&65535));
+        PostMessage(window,0x200u,IntPtr.Zero,pointBits);
+        if(!PostMessage(window,down?0x201u:0x202u,new IntPtr(down?1:0),pointBits))
+            throw new InvalidOperationException("Guarded window button post failed.");
     }
 }
 '@
@@ -100,10 +130,20 @@ function Key-Layout([IntPtr]$Window,[int]$Code) {
     try{Start-Sleep -Milliseconds 140}finally{[PlayerUiLayoutWindow]::Key($Window,$Code,$false)}
     Start-Sleep -Milliseconds 240
 }
-function Click-Layout([IntPtr]$Window,[int]$PointX,[int]$PointY) {
+function Click-Layout([IntPtr]$Window,[int]$PointX,[int]$PointY,[string]$AuditPath) {
+    $Before=@(Select-String -LiteralPath $AuditPath -Pattern '^PLAYER-UI-POINTER ' -Encoding UTF8).Count
     [PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$true)
     try{Start-Sleep -Milliseconds 140}finally{[PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$false)}
     Start-Sleep -Milliseconds 240
+    if(@(Select-String -LiteralPath $AuditPath -Pattern '^PLAYER-UI-POINTER ' -Encoding UTF8).Count -eq $Before) {
+        Write-Output '[UI-LAYOUT] First SDL activation click was not delivered; retrying the same point once.'
+        [PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$true)
+        try{Start-Sleep -Milliseconds 140}finally{[PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$false)}
+        Start-Sleep -Milliseconds 240
+        if(@(Select-String -LiteralPath $AuditPath -Pattern '^PLAYER-UI-POINTER ' -Encoding UTF8).Count -eq $Before) {
+            throw 'No SDL pointer edge after the bounded activation retry.'
+        }
+    }
 }
 function Wait-LayoutVideo($Run,[string]$Stdout) {
     $Until=[DateTime]::UtcNow.AddSeconds(25)
@@ -149,6 +189,7 @@ try {
     foreach($Spec in $Cases) {
         if($Case -ne 'All' -and $Spec.name -ne $Case){continue}
         foreach($Scene in @('Outpost','Weaver')) {
+            if($OutpostOnly -and $Scene -eq 'Weaver'){continue}
             foreach($Name in $EnvKeys){[Environment]::SetEnvironmentVariable($Name,$null,'Process')}
             $Name=$Spec.name+'-'+$Scene;$Frames=Join-Path $Out ($Name+'-frames')
             [void](New-Item -ItemType Directory -Path $Frames)
@@ -162,6 +203,7 @@ try {
             if($Scene -eq 'Weaver'){$LaunchArgs+=' --gpu-normal-scene mesh-weaver 0';$env:RF_WEAVER_VIEW='interaction'}
             $Run=[pscustomobject]@{name=$Name;frames=$Frames;width=$Spec.width;height=$Spec.height;sequence=0;process=$null;screens=[Collections.Generic.List[object]]::new()}
             $Record=[ordered]@{case=$Name;width=$Spec.width;height=$Spec.height;scale=$Spec.scale;status='started';
+                mouse_route='verified-native-cursor-and-Win32-posted-button';
                 stdout=$Stdout;stderr=$Stderr;exe_sha256=(Get-FileHash -LiteralPath $Exe -Algorithm SHA256).Hash}
             $Window=[IntPtr]::Zero
             try {
@@ -185,20 +227,22 @@ try {
                 } else {
                     Wait-LayoutVideo $Run $Stdout
                     Capture-Layout $Run 'fps-comms'
+                    if(-not $CommsOnly) {
                     Key-Layout $Window 72;Capture-Layout $Run 'fps-player'
                     Key-Layout $Window 77;Capture-Layout $Run 'rts-player'
                     # UI-only fold affordance; no selection or gameplay command.
                     $Scale=[Math]::Max(1.0,$Spec.height/720.0)*$Spec.scale/100.0
-                    $Margin=[Math]::Round(18*$Scale);$Gap=[Math]::Round(12*$Scale)
+                    $Margin=[Math]::Round(18*$Scale);$Gap=[Math]::Round(10*$Scale)
                     $Dock=[Math]::Min([Math]::Round(145*$Scale),[Math]::Floor($Spec.height/3))
                     $ToggleX=$Spec.width-$Margin-[Math]::Round(50*$Scale)
-                    Click-Layout $Window $ToggleX ($Spec.height-$Margin-$Dock-$Gap-[Math]::Round(13*$Scale))
+                    Click-Layout $Window $ToggleX ($Spec.height-$Margin-$Dock-$Gap-[Math]::Round(13*$Scale)) $Stdout
                     Capture-Layout $Run 'rts-collapsed'
-                    Click-Layout $Window $ToggleX ($Spec.height-$Margin-[Math]::Round(13*$Scale))
+                    Click-Layout $Window $ToggleX ($Spec.height-$Margin-[Math]::Round(13*$Scale)) $Stdout
                     Capture-Layout $Run 'rts-restored'
                     Key-Layout $Window 72;Capture-Layout $Run 'rts-comms'
                     Key-Layout $Window 77;Key-Layout $Window 192;Capture-Layout $Run 'terminal'
                     Key-Layout $Window 192;Key-Layout $Window 112;Capture-Layout $Run 'render-device'
+                    }
                 }
                 [void][PlayerUiLayoutWindow]::PostMessage($Window,0x10,[IntPtr]::Zero,[IntPtr]::Zero)
                 if(-not $Run.process.WaitForExit(30000)){throw 'Native shutdown timed out.'}

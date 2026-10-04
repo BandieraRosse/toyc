@@ -4795,6 +4795,11 @@ startup_again:
         /* 非阻塞收输入：present 后立刻开始下一帧 CPU 工作，组合器处理
          * 已提交缓冲的时间被渲染流水线掩盖（双缓冲）。 */
         events = *rf_core_events(&core);
+#ifdef TOYC_WINDOWS
+        if(getenv("RF_UI_AUDIT") && events.button_pressed)
+            __printf("PLAYER-UI-POINTER button=%u x=%d y=%d rts=%d\n",
+                events.button,input.pointer_x,input.pointer_y,game_runtime.rts_active);
+#endif
         if (perf_lab_autorun_scene >= 0 && !perf_lab_autorun_started &&
             rendered_frames >= 30 &&
             session.world_id == RASTERFALL_WORLD_OUTPOST) {
@@ -5717,6 +5722,10 @@ startup_again:
                 struct rf_ui_layout ui;
                 rf_ui_layout_resolve(&ui,&game_runtime.player_ui,renderer.surface.width,renderer.surface.height,1);
                 int hit=rf_player_ui_hit_test(&game_runtime.player_ui,renderer.surface.width,renderer.surface.height,1,input.pointer_x,input.pointer_y);
+#ifdef TOYC_WINDOWS
+                if(getenv("RF_UI_AUDIT"))__printf("PLAYER-UI-HIT hit=%d dock=%d x=%d y=%d w=%d h=%d\n",
+                    hit,game_runtime.player_ui.rts_collapsed,ui.dock_toggle.x,ui.dock_toggle.y,ui.dock_toggle.w,ui.dock_toggle.h);
+#endif
                 if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_STOP)rf_player_request(&game_runtime,RF_PLAYER_RTS_STOP,0,0,0);
                 if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_FOLLOW)rf_player_request(&game_runtime,RF_PLAYER_RTS_FOLLOW,1,0,0);
                 if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_FPS)rf_player_request(&game_runtime,RF_PLAYER_VIEW,0,0,0);

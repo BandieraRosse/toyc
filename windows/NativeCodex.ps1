@@ -81,12 +81,18 @@ function Invoke-Staged([string[]] $ProgramArguments) {
     # before the original code can be propagated. This is local to the function.
     $PSNativeCommandUseErrorActionPreference = $false
     Push-Location $PackageRoot
+    $savedErrorPreference = $ErrorActionPreference
     try {
         # A pipeline makes PowerShell wait for a Windows-subsystem executable.
-        # Out-Host streams its output and leaves the SDL window interactive.
-        & $Exe @nativeArguments | Out-Host
+        # PS5 turns redirected native stderr into ErrorRecord objects. Keep
+        # diagnostics as text and let the actual process exit decide success.
+        $ErrorActionPreference = 'Continue'
+        & $Exe @nativeArguments 2>&1 | ForEach-Object { $_.ToString() } | Out-Host
         $code = $LASTEXITCODE
-    } finally { Pop-Location }
+    } finally {
+        $ErrorActionPreference = $savedErrorPreference
+        Pop-Location
+    }
     if ($code -ne 0) { exit $code }
 }
 function Ensure-Staged([string] $Target = 'stage') {

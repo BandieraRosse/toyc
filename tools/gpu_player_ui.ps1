@@ -11,7 +11,7 @@ Output includes all samples/actions, explicit native captures and actual exit.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('All','Outpost','Resume','Weaver','Boundaries','RenderBoundaries')][string]$Stage='All',
+    [ValidateSet('All','Outpost','Resume','Weaver','Remote','Boundaries','RenderBoundaries')][string]$Stage='All',
     [string]$OutputDirectory='tmp/player-ui/interaction',
     [string]$ResumeDirectory='',
     [ValidateRange(90,600)][int]$TimeoutSeconds=240,
@@ -134,7 +134,7 @@ function Read-Ui {
                     }
                     Assert-Ui ($s.normal_sim -eq 1 -and $s.driver -eq 0) 'A diagnostic task driver contaminated native input acceptance.'
                     $c.latest=$s;$c.samples.Add($s)
-                } elseif($line.TrimEnd("`r") -match '^PLAYER-UI-DEVICE (\{.*\})$') {
+                } elseif($line.TrimEnd("`r") -match '^PLAYER-UI-(?:DEVICE|REMOTE) (\{.*\})$') {
                     $d=$Matches[1]|ConvertFrom-Json
                     if($c.latest -and $c.latest.frame -eq $d.frame) {
                         foreach($property in $d.PSObject.Properties) {
@@ -451,6 +451,36 @@ function Boundary-RenderRoute {
     Assert-Ui ($query.render_mask -eq $changed.render_mask -and $query.fire_seq -eq $first.fire_seq) 'Render status changed the GUI setting or fired.'
     Screen-Ui 'render-terminal-shared-state'
 }
+function Remote-Route {
+    $first=Wait-Ui 'remote scene has a real live introduction' {param($s) ($s.story -eq 101 -or $s.story -eq 102) -and $s.link -eq 2}
+    if($first.story -eq 101) {
+        Key-Ui 90 'Z answer pending outpost introduction before remote call'
+        $answered=Wait-Ui 'outpost response before remote call' {param($s) $s.node -eq 1011} 20000 $first.frame
+        Key-Ui 90 'Z finish pending outpost introduction'
+        [void](Wait-Ui 'outpost completed before queued remote call' {param($s) $s.progress_a -eq 4} 20000 $answered.frame)
+    }
+    $remote=Wait-Ui 'remote NULL video is live in real labs' {param($s) $s.story -eq 102 -and $s.node -eq 1020 -and $s.link -eq 2 -and $s.video -eq 2 -and $s.video_frames -gt 0}
+    foreach($field in @('null_x','null_z','null_actor_id','null_actor_generation')) {
+        Assert-Ui ($null -ne $remote.PSObject.Properties[$field]) "Remote evidence needs current entity audit field $field."
+    }
+    $dx=[long]$remote.x-[long]$remote.null_x;$dz=[long]$remote.z-[long]$remote.null_z
+    $distance=[Math]::Sqrt([double]($dx*$dx+$dz*$dz))
+    Assert-Ui ($distance -gt 10000 -and $remote.camera_valid -eq 1 -and $remote.hold -ne 0) 'Remote video is not bound to a distant, controlled real NULL entity.'
+    $script:UiRun.metrics.remote=[ordered]@{player_x=$remote.x;player_z=$remote.z;
+        null_x=$remote.null_x;null_z=$remote.null_z;null_actor_id=$remote.null_actor_id;
+        null_actor_generation=$remote.null_actor_generation;camera_generation=$remote.camera_generation;
+        distance_rfu=$distance;story=$remote.story;node=$remote.node;session_revision=$remote.sr;node_revision=$remote.nr}
+    Screen-Ui 'remote-labs-null-live'
+    $refreshed=Wait-Ui 'distant real camera continues refreshing' {param($s) $s.video_frames -gt ($remote.video_frames+2)} 20000 $remote.frame
+    Assert-Ui ($refreshed.node -eq 1020 -and $refreshed.sr -eq $remote.sr) 'Remote refresh silently answered or replaced the conversation.'
+    Key-Ui 90 'Z ask NULL to introduce the real weaver'
+    $answer=Wait-Ui 'remote answer selects real weaver task' {param($s) $s.node -eq 1021 -and $s.task_id -eq 203 -and $s.task_state -eq 1} 20000 $refreshed.frame
+    Screen-Ui 'remote-weaver-guidance'
+    Key-Ui 90 'Z finish remote introduction'
+    $done=Wait-Ui 'remote call completes and releases NULL' {param($s) $s.story -eq 0 -and $s.progress_b -eq 4 -and $s.hold -eq 0} 20000 $answer.frame
+    Assert-Ui ($done.task_id -eq 203 -and $done.task_state -eq 1) 'Closing the remote introduction prematurely completed the device task.'
+    Write-Host "[PLAYER-UI] remote actor=$($remote.null_actor_id) generation=$($remote.null_actor_generation) distance_rfu=$distance"
+}
 function Run-Ui([string]$Name,[string]$SaveDirectory=$Out) {
     $stdout=Join-Path $Out "$Name.stdout.log";$stderr=Join-Path $Out "$Name.stderr.log"
     $saveName=if($Name -eq 'Resume'){'Outpost'}else{$Name}
@@ -460,7 +490,7 @@ function Run-Ui([string]$Name,[string]$SaveDirectory=$Out) {
         Assert-Ui ((Test-Path -LiteralPath $uiPath) -and (Test-Path -LiteralPath $storyPath)) 'Resume requires completed Outpost-ui.cfg and Outpost-story.bin from an Outpost route.'
     }
     $argv=@('--renderer','gpu-scene','--skip-boot','--map','rasterfall/assets/maps/outpost.map','--frame-audit')
-    if($Name -eq 'Weaver' -or $Name -eq 'BoundaryWeaver'){$argv+=@('--gpu-normal-scene','mesh-weaver','0')}
+    if($Name -eq 'Weaver' -or $Name -eq 'BoundaryWeaver' -or $Name -eq 'Remote'){$argv+=@('--gpu-normal-scene','mesh-weaver','0')}
     $c=[pscustomobject]@{name=$Name;stdout=$stdout;stderr=$stderr;process=$null;reader=$null;pending='';latest=$null;
         window=[IntPtr]::Zero;deadline=[DateTime]::UtcNow.AddSeconds($TimeoutSeconds);captureId=0;
         captureDirectory=(Join-Path $Out "$Name-frames");samples=[Collections.Generic.List[object]]::new();
@@ -476,7 +506,7 @@ function Run-Ui([string]$Name,[string]$SaveDirectory=$Out) {
         $env:RF_UI_AUDIT='1';$env:RF_UI_STORY='1';$env:RF_UI_NO_SAVE=$null
         $env:RF_UI_SAVE_PATH=$uiPath
         $env:RF_STORY_SAVE_PATH=$storyPath
-        $env:RF_WEAVER_VIEW=if($Name -eq 'Weaver' -or $Name -eq 'BoundaryWeaver'){'interaction'}else{$null}
+        $env:RF_WEAVER_VIEW=if($Name -eq 'Weaver' -or $Name -eq 'BoundaryWeaver' -or $Name -eq 'Remote'){'interaction'}else{$null}
         if(-not $NoScreenshots){New-Item -ItemType Directory -Path $c.captureDirectory | Out-Null;$env:RF_UI_CAPTURE_DIRECTORY=$c.captureDirectory}
         else{$env:RF_UI_CAPTURE_DIRECTORY=$null}
         $quoted=($argv|ForEach-Object {Quote-Native $_}) -join ' '
@@ -494,6 +524,7 @@ function Run-Ui([string]$Name,[string]$SaveDirectory=$Out) {
         elseif($Name -eq 'BoundaryOutpost'){Boundary-OutpostRoute}
         elseif($Name -eq 'BoundaryWeaver'){Boundary-WeaverRoute}
         elseif($Name -eq 'BoundaryRender'){Boundary-RenderRoute}
+        elseif($Name -eq 'Remote'){Remote-Route}
         else{Weaver-Route}
         $record.final_state=$c.latest
         [void][PlayerUiWindow]::PostMessage($c.window,0x10,[IntPtr]::Zero,[IntPtr]::Zero)
@@ -540,6 +571,7 @@ try {
         Run-Ui 'Resume' ([IO.Path]::GetFullPath((Join-Path $Root $ResumeDirectory)))
     }
     if($Stage -eq 'All' -or $Stage -eq 'Weaver'){Run-Ui 'Weaver'}
+    if($Stage -eq 'All' -or $Stage -eq 'Remote'){Run-Ui 'Remote'}
     if($Stage -eq 'All' -or $Stage -eq 'Boundaries'){
         Run-Ui 'BoundaryOutpost'
         Run-Ui 'BoundaryWeaver'

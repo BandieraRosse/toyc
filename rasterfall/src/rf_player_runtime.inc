@@ -252,6 +252,11 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
         rf_weaver_diagnostic.enabled||rf_weaver_performance.mode);
     __printf("PLAYER-UI-DEVICE {\"frame\":%d,\"combat\":%d,\"device_code\":%d,\"table_selected\":%d,\"table_pending\":%d,\"render_mask\":%u}\n",
         frame,r->story.combat,r->device_service.last.code,device.selected_map,device.pending_world,mask);
+    if(c && c->actor_index>=0 && c->actor_index<TOY_GAME_MAX_ACTORS) {
+        const struct toy_game_actor *actor=&r->session->game_state.actors[c->actor_index];
+        __printf("PLAYER-UI-REMOTE {\"frame\":%d,\"null_x\":%d,\"null_z\":%d,\"null_actor_id\":%d,\"null_actor_generation\":%u}\n",
+            frame,actor->x,actor->z,c->actor_id,c->actor_generation);
+    }
     fflush(stdout);
 }
 static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height,uint64_t now,int hidden)

@@ -1,7 +1,7 @@
 # Windows Native Codex
 
 > 状态：当前
-> 文档更新：2026-09-27
+> 文档更新：2026-10-04
 > 源码核对基线：`windows/Makefile`、`windows/NativeCodex.ps1`、`tools/gpu_scene_play.ps1`、当前 `rasterfall_options.c`
 
 这是 Rasterfall 当前主要且优先的开发、构建编排、GPU 实机验证和签收 lane。唯一入口是
@@ -46,6 +46,8 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 
 wrapper 通过输出管道等待 Windows GUI 子进程真正退出，持续显示日志，并向调用者传递游戏的非零退出码；
 不能用直接调用 GUI exe 后尚未更新的 `$LASTEXITCODE` 判断验收成功。`run` 的 SDL 窗口仍可正常交互。
+原生 stdout/stderr 合并为文本展示，避免 PowerShell 5 将预期负例诊断包装为终止型 `NativeCommandError`；
+成功与否由实际进程退出码判定，诊断内容仍完整保留。此错误偏好调整仅作用于原生调用期间。
 Windows PowerShell 5 的参数使用逐项原生转义，保留空格、字面引号、空参数和末尾反斜杠；
 不要自行拼接命令字符串。wrapper 也会合并继承环境中的 `PATH`/`Path` 同名键。
 
