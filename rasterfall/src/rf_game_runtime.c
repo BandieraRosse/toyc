@@ -453,9 +453,19 @@ static void rts_setup_camera(struct camera *camera,
 {
     camera->x = runtime->rts_camera_x;
     camera->z = runtime->rts_camera_z;
-    camera->y = rts_visual_ground_y(&runtime->session->level,
-        runtime->session->air_walls_enabled, camera->x, camera->z) +
-        runtime->rts_camera_distance;
+    if (runtime->rts_follow_player) {
+        const struct toy_game_actor *player =
+            toy_game_local_player_actor_const(&runtime->session->game_state);
+        camera->x = player->x;
+        /* Offset by the fixed view slope to put the player's feet at center. */
+        camera->z = player->z - runtime->rts_camera_distance * 90 / 1020;
+        camera->y = -900 + player->ground_y + player->airborne_y +
+                    runtime->rts_camera_distance;
+    } else {
+        camera->y = rts_visual_ground_y(&runtime->session->level,
+            runtime->session->air_walls_enabled, camera->x, camera->z) +
+            runtime->rts_camera_distance;
+    }
     camera->sy = 0;
     camera->cy = 1024;
     camera->pitch_sy = -1020;
@@ -470,6 +480,27 @@ int rasterfall_rts_projection_logic_test(void)
     const int points[3][2] = {{640, 360}, {200, 600}, {1100, 100}};
     memset(&camera, 0, sizeof(camera));
     memset(&map, 0, sizeof(map));
+    {
+        static struct rasterfall_session follow_session;
+        struct rf_game_runtime follow_runtime;
+        int sx, sy;
+        memset(&follow_session, 0, sizeof(follow_session));
+        memset(&follow_runtime, 0, sizeof(follow_runtime));
+        toy_game_init(&follow_session.game_state, 1);
+        struct toy_game_actor *player = toy_game_local_player_actor(&follow_session.game_state);
+        player->x = 68096; player->z = -33280; player->ground_y = 1200;
+        follow_runtime.session = &follow_session;
+        follow_runtime.rts_follow_player = 1;
+        for (int distance = RTS_CAMERA_MIN_DISTANCE; distance <= RTS_CAMERA_MAX_DISTANCE;
+             distance += 1000) {
+            follow_runtime.rts_camera_distance = distance;
+            rts_setup_camera(&camera, &follow_runtime);
+            if (!rts_world_screen(&camera, 1280, 720, player->x,
+                    -900 + player->ground_y, player->z, &sx, &sy) ||
+                sx < 639 || sx > 641 || sy < 359 || sy > 361) return 12;
+        }
+        memset(&camera, 0, sizeof(camera));
+    }
     if (rts_zoom_distance(40000, 1) >= 40000 ||
         rts_zoom_distance(40000, -1) <= 40000 ||
         rts_zoom_distance(40000, 100) != RTS_CAMERA_MIN_DISTANCE ||
@@ -2996,7 +3027,7 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
                  runtime->rts_selected);
     else
         strcpy(selected, "SELECTED: NONE");
-    rasterfall_canvas_rect(canvas, 14, 14, 350, 76,
+    rasterfall_canvas_rect(canvas, 14, 14, 440, 124,
                            RF_COLOR_UI_BACKGROUND, 220);
     rasterfall_canvas_text(canvas, 22, 20, "RTS  M: FPS  WASD: PAN",
                            RF_COLOR_UI_ACCENT);
@@ -3004,6 +3035,10 @@ static void draw_rts_overlay(struct rasterfall_canvas *canvas,
                            RF_COLOR_UI_TEXT);
     rasterfall_canvas_text(canvas, 22, 58, selected, RF_COLOR_UI_TEXT);
     rasterfall_canvas_text(canvas, 22, 77, "WHEEL: ZOOM", RF_COLOR_UI_TEXT);
+    rasterfall_canvas_text(canvas, 22, 96, runtime->rts_follow_player ?
+        "Y: FOLLOW PLAYER [ON]" : "Y: FOLLOW PLAYER [OFF]", RF_COLOR_UI_TEXT);
+    rasterfall_canvas_text(canvas, 22, 115, runtime->rts_teleport_pending ?
+        "TELEPORT: LEFT CLICK GROUND / T: CANCEL" : "T: TELEPORT PLAYER", RF_COLOR_UI_ACCENT);
     if (session->rts_move_active) {
         int mx, my;
         int ground_y = rts_visual_ground_y(&session->level,
@@ -4080,6 +4115,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
         session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        !(options.gpu_normal_view && !strcmp(options.gpu_normal_view, "mesh-weaver")) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
           (options.environment_capture_dir || options.normal_frame_audit_output ||
            (options.gpu_normal_view && (!strncmp(options.gpu_normal_view,"host-",5) ||
@@ -5504,14 +5540,16 @@ startup_again:
             if (net.mode == RASTERFALL_NET_OFF) {
                 game_runtime.rts_active = !game_runtime.rts_active;
                 rasterfall_session_set_rts(&session, game_runtime.rts_active);
-                game_runtime.rts_selected = -1;
+                game_runtime.rts_selected = 0;
+                game_runtime.rts_follow_player = 0;
+                game_runtime.rts_teleport_pending = 0;
                 if (game_runtime.rts_active) {
                     game_runtime.rts_saved_pitch_sy = camera.pitch_sy;
                     game_runtime.rts_saved_pitch_cy = camera.pitch_cy;
                     camera.pitch_sy = 0;
                     camera.pitch_cy = 1024;
                     game_runtime.rts_camera_x = camera.x;
-                    game_runtime.rts_camera_z = camera.z - 9000;
+                    game_runtime.rts_camera_z = camera.z - RTS_CAMERA_DEFAULT_DISTANCE * 90 / 1020;
                     game_runtime.rts_camera_distance = RTS_CAMERA_DEFAULT_DISTANCE;
                     game_runtime.rts_pan_last_us = rf_core_time_us(&core);
                     rf_core_set_pointer_lock(&core, 0);
@@ -5529,6 +5567,7 @@ startup_again:
             }
         }
         if (game_runtime.rts_active && !paused && !rf_combat_modal() && !developer_console.open &&
+            !session.shop_open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING) {
             struct camera rts_camera = camera;
             int ground_x, ground_y, ground_z;
@@ -5539,6 +5578,25 @@ startup_again:
             if (pan_elapsed < 0) pan_elapsed = 0;
             if (pan_elapsed > 50000) pan_elapsed = 50000;
             pan = (int)(pan_elapsed * 12000 / 1000000);
+            if (action_pressed(&input, RF_ACTION_RTS_FOLLOW)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_RTS_FOLLOW);
+                game_runtime.rts_follow_player = 1;
+            }
+            if (action_pressed(&input, RF_ACTION_RTS_TELEPORT)) {
+                action_consume(&input, pending_physical_edges, RF_ACTION_RTS_TELEPORT);
+                game_runtime.rts_teleport_pending = !game_runtime.rts_teleport_pending;
+            }
+            if (action_down(&input, RF_ACTION_FORWARD) ||
+                action_down(&input, RF_ACTION_BACK) ||
+                action_down(&input, RF_ACTION_STRAFE_RIGHT) ||
+                action_down(&input, RF_ACTION_STRAFE_LEFT)) {
+                if (game_runtime.rts_follow_player) {
+                    rts_setup_camera(&rts_camera, &game_runtime);
+                    game_runtime.rts_camera_x = rts_camera.x;
+                    game_runtime.rts_camera_z = rts_camera.z;
+                }
+                game_runtime.rts_follow_player = 0;
+            }
             game_runtime.rts_camera_x += pan *
                 (action_down(&input, RF_ACTION_STRAFE_RIGHT) -
                  action_down(&input, RF_ACTION_STRAFE_LEFT));
@@ -5554,7 +5612,16 @@ startup_again:
                     renderer.surface.height, input.pointer_x, input.pointer_y,
                     session.air_walls_enabled,
                     &ground_x, &ground_y, &ground_z)) {
-                if (events.button == BTN_LEFT) {
+                if (events.button == BTN_LEFT && game_runtime.rts_teleport_pending) {
+                    int moved = rasterfall_session_rts_teleport_player(&session,
+                        &camera, ground_x, ground_y, ground_z);
+                    session.banner_text = moved ? "PLAYER TELEPORTED" : "TELEPORT: GROUND BLOCKED";
+                    session.banner_ms = 1800;
+                    if (moved) {
+                        game_runtime.rts_teleport_pending = 0;
+                        game_runtime.rts_selected = 0;
+                    }
+                } else if (events.button == BTN_LEFT) {
                     long long dx = (long long)ground_x - camera.x;
                     long long dz = (long long)ground_z - camera.z;
                     long long nearest = dx * dx + dz * dz;

@@ -59,6 +59,8 @@ struct rf_game_runtime {
     int rts_saved_pitch_sy, rts_saved_pitch_cy;
     int64_t rts_pan_last_us;
     int rts_selected; /* -1 none, 0 local player, positive flag index + 1 */
+    int rts_follow_player;
+    int rts_teleport_pending;
     struct rasterfall_command command;
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
     int pointer_turn_pending;

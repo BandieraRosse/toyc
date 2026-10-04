@@ -2173,6 +2173,38 @@ void rasterfall_session_rts_move_player(struct rasterfall_session *session,
     session->rts_move_active = 1;
 }
 
+int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
+                                          struct camera *camera,
+                                          int x, int surface_y, int z)
+{
+    struct toy_game_actor *player;
+    struct toy_game_ground_query ground;
+    int height = surface_y + 900; /* Render floor origin -> gameplay feet. */
+    if (!session || !camera || !session->rts_active ||
+        session->game_state.state != TOY_GAME_PLAYING) return 0;
+    player = toy_game_local_player_actor(&session->game_state);
+    if (!player || player->state != TOY_GAME_ACTOR_ALIVE ||
+        player->control_disabled) return 0;
+    ground = toy_game_query_ground(&session->game_state, x, z,
+                                   RASTERFALL_PLAYER_RADIUS, height);
+    /* Visible paint, walls and the world backdrop are not support. */
+    /* Ray intersection and integer ramp interpolation can differ by 1 RFU. */
+    if (!ground.has_support || ground.support_y < height - 2 ||
+        ground.support_y > height + 2 ||
+        toy_game_position_blocked_at_height(&session->game_state, x, z,
+                                            RASTERFALL_PLAYER_RADIUS, ground.support_y))
+        return 0;
+    player->x = x;
+    player->z = z;
+    player->ground_y = ground.support_y;
+    player->airborne_ms = player->airborne_y = player->vertical_velocity = 0;
+    player->air_x = player->air_z = 0;
+    player->knockback_x = player->knockback_z = 0;
+    session->rts_move_active = 0;
+    session_sync_special_motion(session, camera);
+    return 1;
+}
+
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z)
 {
@@ -2260,6 +2292,43 @@ int rasterfall_session_rts_logic_test(void)
     rasterfall_session_set_rts(&test, 0);
     if (test.rts_move_active ||
         rasterfall_session_rts_move_flag(&test, 0, 0, 0)) return 4;
+    {
+        struct toy_map_primitive floors[3];
+        struct toy_game_actor *player = toy_game_local_player_actor(&test.game_state);
+        memset(floors, 0, sizeof(floors));
+        floors[0].minx = floors[0].minz = -2000;
+        floors[0].maxx = floors[0].maxz = 2000;
+        floors[0].flags = TOY_MAP_PRIMITIVE_WALKABLE;
+        floors[1] = floors[0];
+        floors[1].minx = 3000; floors[1].maxx = 6000;
+        floors[1].surface_y0 = floors[1].surface_y1 = 1200;
+        floors[2] = floors[0];
+        floors[2].shape = TOY_MAP_PRIMITIVE_BOX;
+        floors[2].minx = floors[2].minz = -400;
+        floors[2].maxx = floors[2].maxz = 400;
+        floors[2].surface_y0 = floors[2].surface_y1 = 2000;
+        floors[2].flags = TOY_MAP_PRIMITIVE_COLLISION;
+        test.game_state.primitives = floors;
+        test.game_state.primitive_count = 3;
+        test.game_state.room_limit = 8000;
+        if (rasterfall_session_rts_teleport_player(&test, &camera, 1000, -900, 0)) return 5;
+        rasterfall_session_set_rts(&test, 1);
+        player->airborne_ms = 200; player->airborne_y = 300;
+        player->vertical_velocity = -40; player->air_x = 50;
+        test.rts_move_active = 1;
+        if (!rasterfall_session_rts_teleport_player(&test, &camera, 4000, 300, 0) ||
+            player->x != 4000 || player->ground_y != 1200 ||
+            camera.x != 4000 || camera.y != RASTERFALL_STANDING_CAMERA_Y + 1200 ||
+            player->airborne_ms || player->airborne_y || player->vertical_velocity ||
+            player->air_x || test.rts_move_active) return 6;
+        if (rasterfall_session_rts_teleport_player(&test, &camera, 7000, -900, 0) ||
+            rasterfall_session_rts_teleport_player(&test, &camera, 0, -900, 0) ||
+            rasterfall_session_rts_teleport_player(&test, &camera, 4000, -900, 0) ||
+            player->x != 4000 || player->ground_y != 1200) return 7;
+        player->control_disabled = 1;
+        if (rasterfall_session_rts_teleport_player(&test, &camera, 1000, -900, 0)) return 8;
+        test.game_state.primitives = NULL;
+    }
     return 0;
 }
 

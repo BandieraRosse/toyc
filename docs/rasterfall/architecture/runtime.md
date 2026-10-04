@@ -256,6 +256,14 @@ render camera；`WASD` 平移该镜头，滚轮调节相对当地可见地面的
 玩家移动目标由 session 持有，runtime 将其投影为随镜头移动的 `MOVE` 标记；旗帜位置也交给 session。
 切回 FPS 后恢复原来的视角俯仰。
 
+进入 RTS 默认选中本地玩家。Y 将独立 render camera 锁定到玩家，按固定俯视倾角和缩放距离
+补偿水平偏移，使玩家脚底投影在屏幕中央；WASD 平移从当前跟随位置接续并解除锁定，缩放保持跟随。
+跟随和 T 传送选点都属于 runtime UI 状态，物理动作绑定分别为 `RF_ACTION_RTS_FOLLOW` 和
+`RF_ACTION_RTS_TELEPORT`。T 切换选点，下一次左键地面命中交给 session；session 将可见高度
+转换为玩法脚底高度，核对真实支撑和 body collision，仅在存活且未受特殊控制时更新本地 actor，
+清除空中动量和旧 RTS 移动目标，再同步 camera。无效地点不改 actor；成功后关闭选点并选中玩家。
+该功能沿 RTS 的离线边界使用，不向客户端开放本地权威位置修改。
+
 ### 物理键与动作绑定
 
 平台事件同时提供原有的字符/菜单键码和独立物理键码。Windows 物理键码是 SDL 扫描码，按键布局

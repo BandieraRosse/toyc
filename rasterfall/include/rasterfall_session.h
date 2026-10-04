@@ -216,6 +216,9 @@ int rasterfall_session_set_managed_ai(struct rasterfall_session *session,
 void rasterfall_session_set_rts(struct rasterfall_session *session, int active);
 void rasterfall_session_rts_move_player(struct rasterfall_session *session,
                                         int x, int z);
+int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
+                                          struct camera *camera,
+                                          int x, int surface_y, int z);
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z);
 int rasterfall_session_rts_logic_test(void);
