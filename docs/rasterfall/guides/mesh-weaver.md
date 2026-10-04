@@ -105,6 +105,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_mesh_weaver.ps1 -B
 如果任务提前结束或暂停，样本无效。报告分别保存整帧、GPU、准备阶段、绘制数和上传量，
 多轮交替运行，不能把单次差值当作全园区保证。
 
+`-Executable` 可指定已保存的同平台基线 EXE，须先放到 staged `rasterfall.exe` 同目录；
+Windows 启动层会以 EXE 目录定位资源，单改工作目录不够。比较不同版本时须保持该目录资源不变，
+并核对输出中的 EXE 路径、哈希、地图及采样配置。
+
 `NativeCodex.ps1 test` 与 `package` 会在构建和暂存前执行一次蓝图 `--check` 门禁。
 缺私有源时仍须通过公开运行资产和物理适配校验；有源时额外核对完整源统计。发现过期缓存即失败，
 不能仅重编主程序沿用旧计量；先用原始源重生成并审阅测量差异。

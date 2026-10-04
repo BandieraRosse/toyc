@@ -254,7 +254,9 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     float length=(float)sqrt(right[0]*right[0]+right[2]*right[2]);
     if(length<0.01f) {right[0]=1;right[2]=0;} else {right[0]/=length;right[2]/=length;}
     up[0]=l[1]*right[2];up[1]=l[2]*right[0]-l[0]*right[2];up[2]=-l[1]*right[0];
-    const float radii[3]={6144,20480,65536};
+    /* Keep the first 1024 map dense around nearby contacts (8 m radius).
+     * The shader's texel-relative normal offset follows this same scale. */
+    const float radii[3]={4096,20480,65536};
     for(unsigned c=0;c<3;++c) {
         float r=radii[c],zrange=131072.0f,cx=0,cy=0,cz=0;
         for(unsigned k=0;k<3;++k) {cx+=right[k]*camera->camera[k];cy+=up[k]*camera->camera[k];cz+=l[k]*camera->camera[k];}

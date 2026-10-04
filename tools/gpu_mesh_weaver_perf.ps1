@@ -3,14 +3,24 @@ param(
     [string]$OutputDirectory='tmp/mesh-weaver/performance',
     [ValidateRange(1,5)][int]$Rounds=3,
     [ValidateRange(120,720)][int]$Samples=240,
-    [ValidateSet('quarter','front','rear','gun','wide')][string]$View='quarter'
+    [ValidateSet('quarter','front','rear','gun','wide')][string]$View='quarter',
+    [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe'
 )
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
+$Exe=if([IO.Path]::IsPathRooted($Executable)) {
+    [IO.Path]::GetFullPath($Executable)
+} else { [IO.Path]::GetFullPath((Join-Path $Root $Executable)) }
+if(-not (Test-Path -LiteralPath $Exe -PathType Leaf)){throw 'Native executable is missing'}
+if([IO.Path]::GetDirectoryName($Exe) -ne $Package) {
+    throw 'Place the comparison EXE alongside staged rasterfall.exe; native startup uses its own directory for assets.'
+}
 $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
 if(Test-Path -LiteralPath $Out){throw 'Use a new evidence directory'}
-if(Get-Process rasterfall -ErrorAction SilentlyContinue){throw 'Rasterfall already running'}
+if(Get-Process -Name @('rasterfall',[IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction SilentlyContinue){
+    throw 'Rasterfall already running'
+}
 New-Item -ItemType Directory -Path $Out | Out-Null
 $Utf8=[Text.UTF8Encoding]::new($false)
 function Write-Json($Value,[string]$Name){
@@ -40,8 +50,14 @@ $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
 $Process=$null
-$Hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash
-Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath $MapPath).Hash;
+$Hash=(Get-FileHash -LiteralPath $Exe).Hash
+$AssetPaths=@('rasterfall/assets/models/ar_ak47.rmesh','rasterfall/assets/manufacturing/blueprints.json')
+$AssetPaths+=@(Get-ChildItem -LiteralPath (Join-Path $Package 'rasterfall/assets/models/props/mesh_weaver') -Filter '*.rmesh' -File |
+    ForEach-Object {'rasterfall/assets/models/props/mesh_weaver/'+$_.Name})
+$AssetHashes=@{}
+foreach($Asset in $AssetPaths){$AssetHashes[$Asset]=(Get-FileHash -LiteralPath (Join-Path $Package $Asset)).Hash}
+Write-Json @{exe=$Hash;exe_path=$Exe;map=(Get-FileHash -LiteralPath $MapPath).Hash;
+    assets=$AssetHashes;
     absent_map=(Get-FileHash -LiteralPath $AbsentMap).Hash;removed_records=@($Removed | ForEach-Object {$_.Value.Trim()});
     rounds=$Rounds;samples=$Samples;view=$View;warmup=120;sky_time=0;sky_scale=4;
     clock='realtime';cap=120;active='real AK task starts at warmup frame 60 with one second accounted preroll; sampling starts after 120';
@@ -61,7 +77,7 @@ try {
             $env:RF_WEAVER_PERF_MODE=$Mode
             $RunMap=if($Mode -eq 'absent'){$AbsentMap}else{$MapPath}
             $Argv=@('--skip-boot','--renderer','gpu-scene','--map',$RunMap,'--gpu-normal-scene','mesh-weaver','0')
-            $Process=Start-Process -FilePath "$Package/rasterfall.exe" -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
+            $Process=Start-Process -FilePath $Exe -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
                 -ArgumentList (($Argv | ForEach-Object {'"'+$_+'"'}) -join ' ') `
                 -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
             $Handle=$Process.Handle
@@ -87,7 +103,12 @@ try {
             $Process=$null
         }
     }
-    if((Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash -ne $Hash){throw 'Executable changed while sampling'}
+    if((Get-FileHash -LiteralPath $Exe).Hash -ne $Hash){throw 'Executable changed while sampling'}
+    foreach($Asset in $AssetPaths){
+        if((Get-FileHash -LiteralPath (Join-Path $Package $Asset)).Hash -ne $AssetHashes[$Asset]){
+            throw "Runtime asset changed while sampling: $Asset"
+        }
+    }
 } finally {
     if($Process -and !$Process.HasExited){Stop-Process -Id $Process.Id -Force}
     foreach($Key in $Keys){[Environment]::SetEnvironmentVariable($Key,$Saved[$Key],'Process')}
