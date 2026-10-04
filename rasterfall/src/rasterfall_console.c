@@ -3,6 +3,8 @@
 #include "rasterfall_console.h"
 #include "rf_application_projection.h"
 #include "rf_game_lifecycle.h"
+#include "rf_player_commands.h"
+#include "rf_device_commands.h"
 #include "core.h"
 #include "fb_draw.h"
 #include "fb_font.h"
@@ -272,6 +274,21 @@ static int command_pose(const struct rf_command_context *context,
   c->calibration.animation_playing=0;c->pose_hud_request=1;c->close_requested=1;
   out(output,character?"Rifle Pose Editor: Maid + AK":"Rifle Pose Editor: Eula + AK"); return 0;
 }
+#define PLAYER_COMMAND(name) \
+static int command_##name(const struct rf_command_context *c,struct rf_command_output *o,int n,char **v) \
+{ char *args[8];args[0]=#name;for(int i=0;i<n&&i<7;++i)args[i+1]=v[i];return rf_player_terminal_command(c,o,n+1,args); }
+PLAYER_COMMAND(ui)
+PLAYER_COMMAND(weaver)
+PLAYER_COMMAND(rts)
+PLAYER_COMMAND(comms)
+PLAYER_COMMAND(task)
+PLAYER_COMMAND(notices)
+#define DEVICE_COMMAND(name) \
+static int command_##name(const struct rf_command_context *c,struct rf_command_output *o,int n,char **v) \
+{ char *args[8];args[0]=#name;for(int i=0;i<n&&i<7;++i)args[i+1]=v[i];return rf_device_terminal_command(c,o,n+1,args); }
+DEVICE_COMMAND(render)
+DEVICE_COMMAND(table)
+DEVICE_COMMAND(devices)
 static const struct rasterfall_console_command command_registry[] = {
     { "help", command_help, "show command groups", RF_COMMAND_PERMISSION_USER },
     { "clear", command_clear, "clear console log", RF_COMMAND_PERMISSION_USER },
@@ -279,6 +296,15 @@ static const struct rasterfall_console_command command_registry[] = {
     { "runtime", command_runtime, "show Game runtime status", RF_COMMAND_PERMISSION_USER },
     { "services", command_services, "show Core service status", RF_COMMAND_PERMISSION_USER },
     { "personnel", command_personnel, "show personnel projection", RF_COMMAND_PERMISSION_USER },
+    { "ui", command_ui, "mode, scale, opacity, hints, crosshair", RF_COMMAND_PERMISSION_USER },
+    { "weaver", command_weaver, "blueprints, status, manufacture, collect", RF_COMMAND_PERMISSION_USER },
+    { "rts", command_rts, "selection, move, stop, view", RF_COMMAND_PERMISSION_USER },
+    { "comms", command_comms, "dialogue, answers, history", RF_COMMAND_PERMISSION_USER },
+    { "task", command_task, "current objective and target", RF_COMMAND_PERMISSION_USER },
+    { "notices", command_notices, "notification history", RF_COMMAND_PERMISSION_USER },
+    { "render", command_render, "render status and presentation settings", RF_COMMAND_PERMISSION_USER },
+    { "table", command_table, "mission maps, selection and deployment", RF_COMMAND_PERMISSION_USER },
+    { "devices", command_devices, "query physical device presence and position", RF_COMMAND_PERMISSION_USER },
     { "killall", command_killall, "kill all active enemies", RF_COMMAND_PERMISSION_ADMIN },
     { "give+", command_give, "add positive money", RF_COMMAND_PERMISSION_ADMIN },
     { "pose", command_pose, "open rifle pose editor", RF_COMMAND_PERMISSION_ADMIN }
@@ -298,8 +324,9 @@ int rf_terminal_session_execute(struct rf_terminal_session *session,
   for (i=0; i<count; i++) {
       if (!strcmp(w[0], commands[i].name) ||
           (!strcmp(commands[i].name, "give+") && !strncmp(w[0], "give+", 5))) {
-          if (context && context->permission_level < commands[i].permission) {
-              out_error(&session->output, "permission denied"); break;
+          if ((!context && commands[i].permission>RF_COMMAND_PERMISSION_USER) ||
+              (context && context->permission_level < commands[i].permission)) {
+              out_error(&session->output, "permission denied"); result=-1;break;
           }
           if (!strcmp(commands[i].name, "give+")) {
               result = commands[i].handler(context, &session->output, 1, w); break;
@@ -313,7 +340,15 @@ int rf_terminal_session_execute(struct rf_terminal_session *session,
 static void execute(struct rasterfall_console *c,
                     const struct rf_command_context *context)
 { unsigned int j;
-  rf_terminal_session_execute(&c->terminal, context);
+  int result=rf_terminal_session_execute(&c->terminal, context);
+#ifdef TOYC_WINDOWS
+  if(getenv("RF_UI_AUDIT")) {
+      __printf("PLAYER-UI-COMMAND status=%d lines=%u command=%s\n",result,c->terminal.output.count,c->terminal.input);
+      fflush(stdout);
+  }
+#else
+  (void)result;
+#endif
   for (j=0; j<c->terminal.output.count; j++)
       rasterfall_console_log(c,
           c->terminal.output.lines[j].level == RF_COMMAND_OUTPUT_ERROR ?

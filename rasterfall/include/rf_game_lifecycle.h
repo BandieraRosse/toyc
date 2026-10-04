@@ -12,6 +12,10 @@
 #include "rf_core_input.h"
 #include "rasterfall_gui.h"
 #include "rasterfall_app.h"
+#include "rf_player_ui.h"
+#include "rf_player_commands.h"
+#include "rf_device_commands.h"
+#include "rf_story.h"
 
 struct rasterfall_options;
 struct rf_core;
@@ -38,6 +42,7 @@ struct rf_game_runtime {
      * the presentation and frame-loop state which used to be implicit in
      * rasterfall.c. */
     struct rasterfall_session *session;
+    struct rf_device_service device_service;
     /* Borrowed Core context; Core owns the referenced services. */
     struct rf_core *core;
     struct rasterfall_render_context render_context;
@@ -53,6 +58,15 @@ struct rf_game_runtime {
     struct rf_application_query_context application_query;
     struct camera camera;
     struct camera render_camera;
+    struct rf_player_ui_state player_ui;
+    struct rf_player_controls player_controls;
+    struct rf_story story;
+    int player_persistence, comms_focus, comms_choice, persistence_retry_ms;
+    const char *ui_settings_path,*story_save_path;
+    int ui_pointer_capture, ui_video_live, ui_video_state;
+    unsigned char ui_suppressed_physical[RF_INPUT_PHYSICAL_KEY_COUNT];
+    unsigned char ui_suppressed_keys[RF_INPUT_KEY_COUNT];
+    unsigned ui_suppressed_mouse;
     int rts_active;
     int rts_camera_x, rts_camera_z;
     int rts_camera_distance;
@@ -114,6 +128,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
                    int dt_ms);
 int rf_game_request_world(struct rf_game_runtime *runtime,
                           enum rasterfall_world_id world);
+int rf_game_world_request_logic_test(void);
 int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,
                    struct toy_surface *surface);

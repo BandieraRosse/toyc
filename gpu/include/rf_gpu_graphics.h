@@ -204,6 +204,9 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
 void rf_gpu_lighting_default(struct rf_gpu_lighting *lighting);
 int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,
     const struct rf_gpu_lighting *lighting);
+/* Linear HDR clear color for isolated model previews. Default is black;
+ * world SKY geometry remains authoritative wherever it is present. */
+int rf_gpu_graphics_scene_background(struct rf_gpu_graphics *g,float red,float green,float blue);
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g);
 /* Validate the currently bound resource/draw without touching target contents. */
 int rf_gpu_graphics_validate_draw(struct rf_gpu_graphics *g,
@@ -226,6 +229,15 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g);
 int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count,uint64_t frame_id);
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g);
+/* A persistent auxiliary camera target. This draws and retires synchronously
+ * without acquiring the swapchain or reading pixels to the CPU. */
+int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,uint64_t frame_id);
+/* One opaque device-local video image, composed after tonemapping and before
+ * HUD geometry. Source must have completed its draw and outlive the receiver's
+ * submission. NULL clears the binding. Both owners must share a device. */
+int rf_gpu_graphics_scene_video(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics *source,int x,int y,int width,int height);
 void rf_gpu_graphics_scene_timing(const struct rf_gpu_graphics *g,
     struct rf_gpu_scene_timing *timing);
 /* Explicit diagnostic only: direct attachment readback, no Raster conversion. */

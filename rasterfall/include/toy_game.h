@@ -652,6 +652,8 @@ struct toy_game_actor {
     int hired;                  /* 雇佣 AI：可由商店/开发者按钮清除 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
     int companion;              /* 常驻副官：跟随玩家，永不驻守旗帜 */
+    int ai_stationary;          /* Resident policy: retain post without disabling animation/combat. */
+    unsigned int movement_hold_token; /* Temporary owner; movement only, never special control. */
     int flag_guard;             /* 固定旗帜驻守者：不可被商店重新分配 */
     int anime_character_id;     /* -1: low-poly AI; >=0: anime actor system */
     int anime_wander_timer_ms;

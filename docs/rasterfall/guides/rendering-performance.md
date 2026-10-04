@@ -23,6 +23,23 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 不要把不同入口的累计计时、wall time 或分位数相加。
 
+## 玩家界面与辅助镜头
+
+`tools/gpu_player_ui_perf.ps1` 在同一原生可执行文件、资产、地图、天空和呈现条件下，比较 player 与
+experiment 界面的 FPS/RTS，并采样真实武器预览、通讯显示/收起/关闭，以及实验区远程通讯。
+experiment 是同版本兼容界面基线；它不冒充改动前的二进制。比较旧二进制时须另存同环境证据。
+脚本按轮反转顺序，预热期通过类型化命令配置状态；采样期不反复覆盖 gameplay 或 camera。
+每项记录输入哈希、原始日志、退出码、`SCENE-PERF`、`SCENE-CPU`、`UI-PERF` 和 JSON。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_perf.ps1 -Rounds 2 -Samples 360 -OutputDirectory tmp/player-ui/performance-round
+```
+
+`SCENE-CPU` 是主线程操作系统 CPU 时间，短帧可能受到线程时间记账粒度影响；`prepare` 是准备阶段
+墙钟。辅助镜头只统计实际刷新的帧，分别报告 CPU 墙钟和 GPU 时间戳；其同步退休等待包含在辅助 CPU
+墙钟中，不能和主帧 GPU 分位数相加。隐藏/关闭要求采样期没有新的辅助帧。诊断 capture 与逐帧审计
+在本采样中关闭，GPU lane 必须串行。脚本和环境钩子仅为诊断，不改变正常游玩初始化。
+
 ## 前哨站游戏内性能实验场
 
 Windows 原生 GPU Scene 单人前哨站的控制和结果终端并排放在性能横路北侧，靠近第三、四列之间的路口，

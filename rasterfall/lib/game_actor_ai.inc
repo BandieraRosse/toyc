@@ -97,7 +97,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
                 desired_z = a->z - dz * 700 / distance;
             }
         }
-    } else if (a->companion) {
+    } else if (a->companion && !a->ai_stationary) {
         const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
         long long dx = (long long)player->x - a->x, dz = (long long)player->z - a->z;
         desired_x = a->x; desired_z = a->z;
@@ -106,7 +106,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         }
     }
     sx = a->x; sz = a->z;
-    if (!a->control_disabled && !a->base_core) {
+    if (!a->control_disabled && !a->base_core && !a->movement_hold_token) {
         long long dx = (long long)desired_x - a->x, dz = (long long)desired_z - a->z;
         if (dx * dx + dz * dz > TOY_GAME_AI_DEPLOY_RADIUS * TOY_GAME_AI_DEPLOY_RADIUS)
             actor_path_toward(g, a, desired_x, desired_z,

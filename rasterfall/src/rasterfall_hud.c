@@ -2,6 +2,7 @@
 #include "rasterfall_hud.h"
 #include "fb_draw.h"
 #include "fb_font.h"
+#include "rf_input_bindings.h"
 
 #define special_target_active ability.special_target_active
 
@@ -518,11 +519,15 @@ static void render_revive_prompt(struct rasterfall_canvas *surface,
     const struct toy_game *game = state->game;
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
-    char line[64];
+    char line[96],interact_key[24]="E",revive_key[24]="F";
     int width, x, y = surface->height / 2 + 24;
+    if (state->player_ui_view.bindings) {
+        rf_input_action_label(state->player_ui_view.bindings,RF_ACTION_INTERACT,interact_key,sizeof(interact_key));
+        rf_input_action_label(state->player_ui_view.bindings,RF_ACTION_FLAG,revive_key,sizeof(revive_key));
+    }
     if (player && player->state == TOY_GAME_ACTOR_DOWNED) {
-        snprintf(line, sizeof(line), "F REVIVE $%d   WAIT FOR RESCUE",
-                 RASTERFALL_PAID_REVIVE_COST);
+        snprintf(line, sizeof(line), "%s REVIVE $%d   WAIT FOR RESCUE",
+                 revive_key,RASTERFALL_PAID_REVIVE_COST);
     } else if (!state->ai_revive_available &&
                               !state->ai_revive_active &&
                               !state->player_revive_available &&
@@ -532,17 +537,17 @@ static void render_revive_prompt(struct rasterfall_canvas *surface,
                  state->player_revive_name ? state->player_revive_name : "PLAYER",
                  state->player_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
     } else if (state->player_revive_available) {
-        snprintf(line, sizeof(line), "E REVIVE %s",
-                 state->player_revive_name ? state->player_revive_name : "PLAYER");
+        snprintf(line, sizeof(line), "%s REVIVE %s",
+                 interact_key,state->player_revive_name ? state->player_revive_name : "PLAYER");
     } else if (state->ai_revive_active) {
         snprintf(line, sizeof(line), "REVIVING %s  %d%%",
                  state->ai_revive_name ? state->ai_revive_name : "ALLY",
                  state->ai_revive_progress_ms * 100 / TOY_GAME_REVIVE_MS);
     } else {
-        snprintf(line, sizeof(line), "E REVIVE %s",
-                 state->ai_revive_name ? state->ai_revive_name : "ALLY");
+        snprintf(line, sizeof(line), "%s REVIVE %s",
+                 interact_key,state->ai_revive_name ? state->ai_revive_name : "ALLY");
     }
-    width = (int)strlen(line) * FB_FONT_W;
+    width = rasterfall_canvas_text_width(line,1000);
     x = (surface->width - width) / 2;
     hud_fill_rect(surface, x - 8, y - 5, width + 16, FB_FONT_H + 10,
                   RF_COLOR_UI_BACKGROUND);
@@ -718,14 +723,20 @@ static void render_wave_hud(struct rasterfall_canvas *surface,
 void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
                            const struct rasterfall_hud_state *state)
 {
+    if (state->player_ui && state->player_ui->mode<=RF_PLAYER_UI_TERMINAL &&
+        state->player_ui_view.modal) return;
     const struct toy_game *game = state->game;
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
-    render_wave_hud(surface, game, fps);
-    render_network_hud(surface, state->net, state->host_address, state->host_port);
-    render_weapon_hud(surface, game);
-    render_money(surface, game);
-    render_player_hud(surface, game, state->player_name);
+    if (state->player_ui && state->player_ui->mode <= RF_PLAYER_UI_TERMINAL) {
+        rf_player_ui_layout(surface,state);
+    } else {
+        render_wave_hud(surface, game, fps);
+        render_network_hud(surface, state->net, state->host_address, state->host_port);
+        render_weapon_hud(surface, game);
+        render_money(surface, game);
+        render_player_hud(surface, game, state->player_name);
+    }
     render_revive_prompt(surface, state);
     if (state->pose_debug_active && state->pose_editor && state->pose_editor->active) {
         static const char *pages[] = {"BODY", "WEAPON", "ANCHORS", "ANIMATION"};
@@ -764,7 +775,8 @@ void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
         rasterfall_canvas_text(surface,14,y+FB_FONT_H,line,0x90F090);
     }
     if (state->shop_open) render_shop(surface, state);
-    if (state->horde_banner_ms > 0 && state->interaction_banner) {
+    if ((!state->player_ui || state->player_ui->mode >= RF_PLAYER_UI_EXPERIMENT) &&
+        state->horde_banner_ms > 0 && state->interaction_banner) {
         int banner_y = surface->height / 3;
         rasterfall_canvas_text(surface,
                        (surface->width - (int)strlen(state->interaction_banner) * FB_FONT_W) / 2,
@@ -793,6 +805,12 @@ void rasterfall_hud_prompt_layout(struct rasterfall_canvas *surface,
     const struct rasterfall_interactable *it;
     char label[48];
     int text_w, x, y;
+    if (state->player_ui && state->player_ui->mode<=RF_PLAYER_UI_TERMINAL &&
+        state->player_ui_view.modal) return;
+    if (state->player_ui && state->player_ui->mode <= RF_PLAYER_UI_TERMINAL) {
+        rf_player_ui_prompt_layout(surface,state);
+        return;
+    }
     if (state->flag_carried || state->flag_near) {
         snprintf(label, sizeof(label), "F %s FLAG",
                  state->flag_carried ? "PLANT" : "CARRY");

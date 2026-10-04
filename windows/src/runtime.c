@@ -53,25 +53,31 @@ ssize_t __read(int fd, void *buf, size_t len)
     return (ssize_t)_read(fd, buf, (unsigned int)len);
 }
 
-int __openat(int dirfd, const char *path, int flags, unsigned int mode)
+static const char *runtime_file_path(const char *path, char absolute[MAX_PATH])
 {
-    char absolute[MAX_PATH];
-    wchar_t wide[MAX_PATH];
     const char *resolved = path;
     DWORD length;
-    (void)dirfd;
     if (path && path[0] && path[1] != ':' && path[0] != '\\' && path[0] != '/') {
-        length = GetModuleFileNameA(NULL, absolute, sizeof(absolute));
-        if (length > 0 && length < sizeof(absolute)) {
+        length = GetModuleFileNameA(NULL, absolute, MAX_PATH);
+        if (length > 0 && length < MAX_PATH) {
             while (length > 0 && absolute[length - 1] != '\\' &&
                    absolute[length - 1] != '/')
                 length--;
-            if (length + strlen(path) < sizeof(absolute)) {
+            if (length + strlen(path) < MAX_PATH) {
                 strcpy(absolute + length, path);
                 resolved = absolute;
             }
         }
     }
+    return resolved;
+}
+
+int __openat(int dirfd, const char *path, int flags, unsigned int mode)
+{
+    char absolute[MAX_PATH];
+    wchar_t wide[MAX_PATH];
+    const char *resolved = runtime_file_path(path, absolute);
+    (void)dirfd;
     if (resolved && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
                                         resolved, -1, wide, MAX_PATH) > 0)
         return _wopen(wide, win_flags(flags), mode);
@@ -153,6 +159,29 @@ int tlibc_recursive_mkdir(const char *path)
     attributes = GetFileAttributesA(buffer);
     return attributes != INVALID_FILE_ATTRIBUTES &&
            (attributes & FILE_ATTRIBUTE_DIRECTORY) ? 0 : -1;
+}
+
+/* Match the Linux replacement semantics for small application saves. The
+ * complete new file is closed before this single directory-entry operation. */
+int __rename(const char *oldpath, const char *newpath)
+{
+    int old_count, new_count, result;
+    wchar_t *old_wide, *new_wide;
+    char old_absolute[MAX_PATH], new_absolute[MAX_PATH];
+    if (!oldpath || !newpath) return -1;
+    oldpath = runtime_file_path(oldpath, old_absolute);
+    newpath = runtime_file_path(newpath, new_absolute);
+    old_count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, oldpath, -1, NULL, 0);
+    new_count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, newpath, -1, NULL, 0);
+    if (!old_count || !new_count) return -1;
+    old_wide = (wchar_t *)malloc((size_t)old_count * sizeof(wchar_t));
+    new_wide = (wchar_t *)malloc((size_t)new_count * sizeof(wchar_t));
+    if (!old_wide || !new_wide) { free(old_wide); free(new_wide); return -1; }
+    result = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, oldpath, -1, old_wide, old_count) &&
+        MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, newpath, -1, new_wide, new_count) &&
+        MoveFileExW(old_wide, new_wide, MOVEFILE_REPLACE_EXISTING);
+    free(old_wide); free(new_wide);
+    return result ? 0 : -1;
 }
 
 static LARGE_INTEGER qpc_frequency;

@@ -8,6 +8,29 @@
 #include "rasterfall_prop.h"
 #include "rf_mesh_weaver_presentation.h"
 struct rasterfall_effects;
+enum rf_gpu_scene_aux_kind { RF_GPU_AUX_WORLD, RF_GPU_AUX_WEAPON };
+enum rf_gpu_scene_aux_state {
+    RF_GPU_AUX_HIDDEN, RF_GPU_AUX_CONNECTING, RF_GPU_AUX_LIVE, RF_GPU_AUX_UNAVAILABLE
+};
+/* Runtime selects one visible view. Layout is in final framebuffer pixels;
+ * render extent and cadence are independent of UI scale. The WORLD transform
+ * comes from the real camera entity, never from the main player's camera. */
+struct rf_gpu_scene_aux_view {
+    int visible,kind,shell_visible;
+    uint64_t stable_id,generation,now_us;
+    struct camera camera;
+    int x,y,width,height;
+    unsigned render_width,render_height,refresh_hz;
+    int weapon,rotation_degrees;
+};
+struct rf_gpu_scene_aux_status {
+    int state;
+    uint64_t frames,last_update_us;
+    int64_t last_cpu_us;
+    uint64_t last_upload_bytes;
+    double last_gpu_ms;
+    int gpu_time_valid;
+};
 /* Consumed synchronously into immutable geometry before GPU target writes. */
 struct rf_gpu_scene_layers_input {
     const struct rf_gpu_scene_world_prop_frame_v1 *props;
@@ -23,6 +46,9 @@ struct rf_gpu_scene_layers_input {
     int flashlight,lighting_lab,fixed_lighting;
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
+    const struct rf_gpu_scene_aux_view *aux_view;
+    int world_only; /* Camera texture: no HUD, names or viewmodel. */
+    const struct camera *light_camera;
 };
 
 struct rf_gpu_resource_cache;
@@ -61,6 +87,12 @@ struct rf_gpu_scene_world_gpu_probe {
     /* Stage 3 preview: synchronous native Scene instead of audit readback. */
     int native_present;
     int quiet;
+    int offscreen_only;
+    struct rf_gpu_scene_world_gpu_probe *aux;
+    struct rf_gpu_scene_aux_status aux_status;
+    uint64_t aux_id,aux_generation,aux_world_generation,aux_next_us;
+    unsigned aux_attempts;
+    int aux_visible,aux_kind;
     struct rf_gpu_graphics_resource *lighting_lab_sphere;
     struct rf_mesh_weaver_gpu *weaver;
     const struct rf_gpu_scene_layers_input *layers;

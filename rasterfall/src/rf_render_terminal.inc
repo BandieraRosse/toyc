@@ -87,7 +87,9 @@ static int rf_render_terminal_near(const struct rasterfall_session *session,
            z >= terminal->z - 850 && z <= terminal->z + 850;
 }
 
-static void rf_render_terminal_request(int index)
+/* UI requests are implemented by the shared typed command bridge below. */
+static void rf_render_terminal_request(int index);
+static void rf_render_terminal_apply(int index,int enabled)
 {
     enum rf_render_support support;
     if (index < 0 || index >= RF_RENDER_FEATURE_COUNT) return;
@@ -103,7 +105,7 @@ static void rf_render_terminal_request(int index)
     }
     if (index == 0) {
         /* This feature has no resources to rebuild; apply before the next frame. */
-        rf_render_terminal.edge_requested = !rf_render_terminal.edge_requested;
+        rf_render_terminal.edge_requested = enabled;
         rasterfall_render_set_edge_pass(rf_render_terminal.edge_requested);
         rf_render_terminal.edge_effective = rf_render_terminal.edge_requested;
         rf_render_terminal.message = rf_render_terminal.edge_effective ?
@@ -111,14 +113,14 @@ static void rf_render_terminal_request(int index)
     } else if (index == 1 || index == 2) {
         rf_render_terminal.message = "GPU 基础光照管线，默认启用";
     } else if (index == 3) {
-        rf_render_terminal.flashlight = !rf_render_terminal.flashlight;
+        rf_render_terminal.flashlight = enabled;
         rf_render_terminal.message = rf_render_terminal.flashlight ? "手电筒已开启" : "手电筒已关闭";
     } else if (index == 4) {
-        rf_gpu_scene_character_material_set(!rf_gpu_scene_character_material_enabled());
+        rf_gpu_scene_character_material_set(enabled);
         rf_render_terminal.message = rf_gpu_scene_character_material_enabled() ?
             "角色风格化材质已开启" : "角色已切换为 PBR 材质";
     } else if (index == 5) {
-        rf_gpu_scene_linear_filter_set(!rf_gpu_scene_linear_filter_enabled());
+        rf_gpu_scene_linear_filter_set(enabled);
         rf_render_terminal.message = rf_gpu_scene_linear_filter_enabled() ?
             "场景纹理线性过滤已开启" : "已恢复最近邻过滤";
     }

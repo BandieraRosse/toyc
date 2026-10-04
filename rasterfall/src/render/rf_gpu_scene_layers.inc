@@ -446,6 +446,29 @@ static int scene_projection_quad(void *context,const int p[4][3],unsigned color,
     return scene_layer_quad(context,v,color,alpha,0);
 }
 
+static int scene_camera_shell(struct scene_layer_mesh *mesh,
+    const struct rf_gpu_scene_aux_view *view)
+{
+    const struct camera *c=&view->camera;
+    struct rf_gpu_graphics_vertex corners[8]={0};
+    static const unsigned faces[6][4]={{0,1,3,2},{4,6,7,5},{0,4,5,1},
+        {2,3,7,6},{0,2,6,4},{1,5,7,3}};
+    for(unsigned i=0;i<8;++i) {
+        int x=(i&1)?100:-100,y=(i&2)?70:-70,z=(i&4)?-30:-180;
+        int pitched_y=(y*c->pitch_cy+z*c->pitch_sy)/1024;
+        int pitched_z=(z*c->pitch_cy-y*c->pitch_sy)/1024;
+        corners[i].position[0]=c->x+(x*c->cy+pitched_z*c->sy)/1024;
+        corners[i].position[1]=c->y+pitched_y;
+        corners[i].position[2]=c->z+(pitched_z*c->cy-x*c->sy)/1024;
+    }
+    for(unsigned face=0;face<6;++face) {
+        struct rf_gpu_graphics_vertex quad[4];
+        for(unsigned i=0;i<4;++i)quad[i]=corners[faces[face][i]];
+        if(scene_layer_quad(mesh,quad,face==1?0x55ccdc:0x344552,0,0)<0)return -1;
+    }
+    return 0;
+}
+
 static int scene_layers_extract(struct scene_layer_mesh *mesh,
     const struct rf_gpu_scene_layers_input *input,const struct camera *camera,int width,int height)
 {
@@ -471,6 +494,8 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     mesh->layer=RF_GPU_SCENE_SKY;
     scene_layer_rect_depth(mesh,0,0,width,height,0,255,1,2);
     mesh->layer=RF_GPU_SCENE_WORLD;
+    if(!input->world_only && input->aux_view && input->aux_view->shell_visible &&
+        scene_camera_shell(mesh,input->aux_view)<0)return -1;
     mesh->emissive=1;
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
@@ -526,6 +551,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         scene_layer_box(mesh,p[0]-32,p[0]+32,p[1]-32,p[1]+32,p[2]-32,p[2]+32,0xffdf8c,220);
     }
     mesh->emissive=0;
+    if(input->world_only)return mesh->failed ? -1 : 0;
     mesh->layer=RF_GPU_SCENE_VIEWMODEL;
     if (input->show_viewmodel && player &&
         player->state!=TOY_GAME_ACTOR_DOWNED) {

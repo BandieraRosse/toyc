@@ -1,2 +1,2 @@
-# Outpost Hall V1: Null works in the hall; terminals are map furniture.
-actor id=null name=Null character=NULL x=3686 y=0 z=-256 yaw=270
+# Outpost Hall V1: NULL works in the hall; terminals are map furniture.
+actor id=null name=NULL character=NULL x=3686 y=0 z=-256 yaw=270

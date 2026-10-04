@@ -15,6 +15,8 @@ static const char *rf_weaver_environment(const char *name)
 struct rf_weaver_terminal_ui {
     int open, near, selected, row, pointer_x, pointer_y;
     const char *message;
+    struct rf_game_runtime *runtime; /* borrowed command owner */
+    int confirm_replace, minimized;
 };
 static struct rf_weaver_terminal_ui rf_weaver_terminal;
 
@@ -26,7 +28,8 @@ static void rf_weaver_terminal_init(void)
 
 static const struct rf_weaver_blueprint *rf_weaver_selection(void)
 {
-    int index = rf_weaver_terminal.selected;
+    int index = rf_weaver_terminal.runtime ?
+        rf_weaver_terminal.runtime->player_controls.selected_blueprint : rf_weaver_terminal.selected;
     if (index < 0 || (unsigned)index >= RF_WEAVER_BLUEPRINT_COUNT) index = 0;
     return &rf_weaver_blueprints[index];
 }
@@ -54,59 +57,41 @@ static int rf_weaver_configure(struct rasterfall_session *s, int offline)
 
 static int rf_weaver_near(const struct rasterfall_session *s, int x, int z)
 {
-    const struct rf_map_runtime_object *machine, *rf1;
-    long long dx, dz;
-    if (!s || !s->game_state.weaver.enabled) return 0;
-    machine = rf_map_runtime_find_object(&s->map_ops.runtime, "mesh_weaver");
-    rf1 = rf_map_runtime_find_object(&s->map_ops.runtime, "mesh_weaver_rf1");
-    if (machine) {
-        dx = (long long)x - (machine->x - 292);
-        dz = (long long)z - (machine->z + 510);
-        if (dx * dx + dz * dz <= 700LL * 700) return 1;
-    }
-    if (rf1) {
-        dx = (long long)x - (rf1->x + 130);
-        dz = (long long)z - (rf1->z + 180);
-        if (dx * dx + dz * dz <= 750LL * 750) return 1;
-    }
-    return 0;
+    return rf_player_weaver_near(s,x,z,1);
+}
+
+static void rf_weaver_submit(int operation,int value,int confirmed)
+{
+    struct rf_game_runtime *r=rf_weaver_terminal.runtime;
+    struct rf_player_request a={0};
+    if(!r)return;
+    a.operation=operation;a.value=value;a.confirmed=confirmed;
+    a.world_generation=r->session->scene_local.world_generation;
+    a.serial=r->session->game_state.weaver.job_serial;
+    rf_player_execute(r,&a,RF_COMMAND_PERMISSION_USER);
+    rf_weaver_terminal.selected=r->player_controls.selected_blueprint;
+    rf_weaver_terminal.message=r->player_controls.last.message;
 }
 
 static void rf_weaver_terminal_activate(struct rasterfall_session *s, int direction)
 {
-    struct toy_mesh_weaver_supply supply;
-    const struct rf_weaver_blueprint *b;
-    const char *unavailable;
-    int reason;
     if (!s || !s->game_state.weaver.enabled) {
         rf_weaver_terminal.message = "实验制造仅在离线前哨站开放";
         return;
     }
     if (rf_weaver_terminal.row == 0) {
         int count = (int)RF_WEAVER_BLUEPRINT_COUNT;
-        rf_weaver_terminal.selected =
-            (rf_weaver_terminal.selected + (direction < 0 ? count - 1 : 1)) % count;
-        unavailable = rf_weaver_unavailable(rf_weaver_selection());
-        rf_weaver_terminal.message = unavailable ? unavailable :
-            "蓝图已选择；开始后本次任务固定使用该模型";
+        int selected=rf_weaver_terminal.runtime?rf_weaver_terminal.runtime->player_controls.selected_blueprint:rf_weaver_terminal.selected;
+        rf_weaver_submit(RF_PLAYER_WEAVER_SELECT,(selected+(direction<0?count-1:1))%count,0);
         return;
     }
     if (rf_weaver_terminal.row == 1) {
-        b = rf_weaver_selection();
-        unavailable = rf_weaver_unavailable(b);
-        if (unavailable) { rf_weaver_terminal.message = unavailable; return; }
-        reason = rasterfall_session_weaver_start(s, &b->geometry);
-        rf_weaver_terminal.message = reason ? toy_mesh_weaver_reason_name(reason) :
-            "制造已开始；关闭面板可近看，靠近成品按 E 领取";
+        rf_weaver_submit(RF_PLAYER_WEAVER_START,0,0);
         return;
     }
-    supply = s->game_state.weaver.supply;
-    if (rf_weaver_terminal.row == 2) supply.power_on = !supply.power_on;
-    else if (rf_weaver_terminal.row == 3) supply.cpu_on = !supply.cpu_on;
-    else if (rf_weaver_terminal.row == 4) supply.x1_on = !supply.x1_on;
-    else return;
-    toy_game_weaver_set_supply(&s->game_state, &supply);
-    rf_weaver_terminal.message = "供给已切换；已耗资源和当前制造进度保留";
+    if(rf_weaver_terminal.row==2)rf_weaver_submit(RF_PLAYER_WEAVER_POWER,!s->game_state.weaver.supply.power_on,0);
+    if(rf_weaver_terminal.row==3)rf_weaver_submit(RF_PLAYER_WEAVER_CPU,!s->game_state.weaver.supply.cpu_on,0);
+    if(rf_weaver_terminal.row==4)rf_weaver_submit(RF_PLAYER_WEAVER_X1,!s->game_state.weaver.supply.x1_on,0);
 }
 
 static void rf_weaver_terminal_input(struct rasterfall_session *s,

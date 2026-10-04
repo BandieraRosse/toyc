@@ -139,6 +139,9 @@ struct rf_gpu_graphics {
     int scene_query_active;
     struct rf_gpu_scene_timing scene_timing;
     struct rf_gpu_graphics_stats stats;
+    struct rf_gpu_graphics *video;
+    int video_rect[4];
+    float background[3];
 };
 
 static void gfx_lighting_destroy(struct rf_gpu_graphics *g);
@@ -400,10 +403,7 @@ int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t h
         gfx_image_create(g,&t.hdr,width,height,VK_FORMAT_R16G16B16A16_SFLOAT,
             VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT|VK_IMAGE_USAGE_STORAGE_BIT)<0 ||
         gfx_image_create(g, &t.depth, width, height, VK_FORMAT_D32_SFLOAT,
-            VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) < 0 ||
-        gpu_buffer_create(g->owner, (uint64_t)width*height*8,
-            RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT, RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-            RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, &t.readback) < 0) goto fail;
+            VK_IMAGE_ASPECT_DEPTH_BIT, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) < 0) goto fail;
     views[0] = t.hdr.view; views[1] = t.depth.view;
     fb.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO; fb.renderPass = g->render_pass;
     fb.attachmentCount = 2; fb.pAttachments = views; fb.width = width; fb.height = height; fb.layers = 1;
@@ -492,8 +492,8 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
     pass.subpassCount = 1; pass.pSubpasses = &subpass;
     pass.dependencyCount = 2; pass.pDependencies = deps;
     if(overlay) {
-        deps[0].srcStageMask=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        deps[0].srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        deps[0].srcStageMask=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT;
+        deps[0].srcAccessMask=VK_ACCESS_SHADER_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_TRANSFER_WRITE_BIT;
     } else if(!shadow) {
         deps[1].dstStageMask|=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         deps[1].dstAccessMask|=VK_ACCESS_SHADER_READ_BIT;
@@ -1530,6 +1530,61 @@ int rf_gpu_graphics_validate_dynamic_draw(struct rf_gpu_graphics *g,
         gfx_draw_valid(g, draw, 0) ? 0 : -1;
 }
 
+int rf_gpu_graphics_scene_background(struct rf_gpu_graphics *g,float red,float green,float blue)
+{
+    if(!g || g->scene_in_flight || g->poisoned ||
+        !__builtin_isfinite(red) || !__builtin_isfinite(green) || !__builtin_isfinite(blue) ||
+        red<0 || green<0 || blue<0 || red>1 || green>1 || blue>1)return -1;
+    g->background[0]=red;g->background[1]=green;g->background[2]=blue;return 0;
+}
+
+int rf_gpu_graphics_scene_video(struct rf_gpu_graphics *g,
+    struct rf_gpu_graphics *source,int x,int y,int width,int height)
+{
+    if(!g || g->scene_in_flight || g->poisoned)return -1;
+    g->video=NULL;
+    if(!source)return 0;
+    if(source==g || source->owner!=g->owner || source->poisoned ||
+        source->scene_in_flight || !source->target.valid || x<0 || y<0 ||
+        width<=0 || height<=0 || (uint64_t)x+width>g->target.width ||
+        (uint64_t)y+height>g->target.height)return -1;
+    g->video=source;g->video_rect[0]=x;g->video_rect[1]=y;
+    g->video_rect[2]=width;g->video_rect[3]=height;return 0;
+}
+
+static void gfx_video_record(struct rf_gpu_graphics *g)
+{
+    struct rf_vk_image_memory_barrier barrier={0};
+    rf_scene_blit blit={0};
+    if(!g->video)return;
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.old_layout=VK_IMAGE_LAYOUT_GENERAL;
+    barrier.new_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dst_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.src_queue_family_index=barrier.dst_queue_family_index=UINT32_MAX;
+    barrier.image=g->target.color.image;
+    barrier.subresource_range.aspect_mask=VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresource_range.level_count=barrier.subresource_range.layer_count=1;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,NULL,0,NULL,1,&barrier);
+    blit.src.aspectMask=blit.dst.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.src.layerCount=blit.dst.layerCount=1;
+    blit.src_offsets[1].x=g->video->target.width;
+    blit.src_offsets[1].y=g->video->target.height;blit.src_offsets[1].z=1;
+    blit.dst_offsets[0].x=g->video_rect[0];blit.dst_offsets[0].y=g->video_rect[1];
+    blit.dst_offsets[1].x=g->video_rect[0]+g->video_rect[2];
+    blit.dst_offsets[1].y=g->video_rect[1]+g->video_rect[3];blit.dst_offsets[1].z=1;
+    g->api.CmdBlitImage(g->cmd,g->video->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        g->target.color.image,RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&blit,0);
+    barrier.old_layout=RF_VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.new_layout=VK_IMAGE_LAYOUT_GENERAL;
+    barrier.src_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,NULL,0,NULL,1,&barrier);
+}
+
 static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count)
 {
@@ -1575,6 +1630,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,4);
     gfx_shadow_record(g,items,count);
+    for(unsigned channel=0;channel<3;++channel)clear[0].color.float32[channel]=g->background[channel];
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     begin.renderPass = g->render_pass; begin.framebuffer = g->target.framebuffer;
@@ -1596,7 +1652,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if (!g->disable_draw_cull && (d->scene_layer==RF_GPU_SCENE_WORLD || d->scene_layer==RF_GPU_SCENE_TRANSPARENT) &&
             gfx_draw_camera_outside(&items[i])) continue;
         if(d->scene_layer==RF_GPU_SCENE_OVERLAY && !overlay_started) {
-            g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);
+            g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);gfx_video_record(g);
             begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
             g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);
             impl->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
@@ -1646,7 +1702,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     }
     g->api.CmdEndRenderPass(g->cmd);
     if(!overlay_started) {
-        gfx_tonemap_record(g);begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
+        gfx_tonemap_record(g);gfx_video_record(g);begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
         g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);g->api.CmdEndRenderPass(g->cmd);
     }
     if (g->scene_query_active)
@@ -1837,6 +1893,45 @@ failed:
     return -1;
 }
 
+int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count,uint64_t frame_id)
+{
+    if(!g || g->poisoned || g->skin_batch || g->scene_in_flight || !frame_id)return -1;
+    memset(&g->scene_timing,0,sizeof(g->scene_timing));
+    g->scene_timing.frame_id=frame_id;
+    g->scene_timing.supported=g->owner->timestamp_supported;
+    if(g->scene_timing.supported && !g->scene_query_pool) {
+        struct rf_vk_query_pool_create_info query={0};
+        query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
+        if(g->owner->api.create_query_pool(g->owner->device,&query,NULL,
+            &g->scene_query_pool)!=RF_VK_SUCCESS)return -1;
+    }
+    g->scene_query_active=g->scene_timing.supported;
+    double start=now_ms();
+    if(gfx_render(g,items,count)<0){g->scene_query_active=0;return -1;}
+    g->scene_timing.record_ms=now_ms()-start;
+    /* Queue and image dependencies stay on the device; this wait protects the
+     * existing single-slot resource mutation contract, never maps the target. */
+    int result=gfx_submit(g,1,RF_GPU_SUBMIT_DRAW);
+    if(!result && g->scene_query_active) {
+        uint64_t ticks[2],sky_end,mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
+            ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
+        if(g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
+            0,2,sizeof(ticks),ticks,sizeof(ticks[0]),
+            RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS ||
+            g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
+            4,1,sizeof(sky_end),&sky_end,sizeof(sky_end),
+            RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)result=-1;
+        else {
+            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
+            g->scene_timing.sky_compute_ms=(double)((sky_end-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
+            g->scene_timing.valid=1;
+        }
+    }
+    g->scene_query_active=0;return result;
+}
+
 int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t capacity,uint64_t frame_id)
@@ -1847,6 +1942,12 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     uint64_t bytes;
     if (!g || !rgba || !depth || g->skin_batch || g->scene_in_flight || g->poisoned ||
         (uint64_t)g->target.width*g->target.height>capacity) return -1;
+    /* Normal main/auxiliary targets allocate only device-local attachments.
+     * Explicit capture is the sole owner of this diagnostic staging buffer. */
+    if(!g->target.readback.buffer && gpu_buffer_create(g->owner,
+        (uint64_t)g->target.width*g->target.height*8,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &g->target.readback)<0)return -1;
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
     g->scene_timing.frame_id=frame_id;
     g->scene_timing.supported=frame_id && g->owner->timestamp_supported;

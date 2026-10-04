@@ -76,6 +76,10 @@ GAME_SRCS := rasterfall/src/rasterfall.c \
              rasterfall/src/rasterfall_viewmodel.c
 GAME_SRCS += rasterfall/src/rf_viewmodel_contract.c
 GAME_SRCS += rasterfall/src/rf_mesh_weaver_presentation.c
+GAME_SRCS += rasterfall/src/rf_player_ui.c rasterfall/src/rf_minimap.c \
+             rasterfall/src/rf_player_commands.c rasterfall/src/rf_story.c \
+             rasterfall/src/rf_story_test.c rasterfall/src/rf_player_panels.c \
+             rasterfall/src/rf_device_commands.c rasterfall/src/rf_ui_font.c
 GAME_SRCS += gpu/src/rf_gpu_vulkan_backend.c \
              gpu/src/rf_gpu_resource_cache.c
 ANIMATION_SRCS := app/linux/glb_inspect.c rasterfall/src/rasterfall_vmd.c

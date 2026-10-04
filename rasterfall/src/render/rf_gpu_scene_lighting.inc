@@ -73,13 +73,14 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         }
     }
     if(probe->layers && !probe->layers->fixed_lighting && probe->layers->flashlight) {
+        const struct camera *lamp=probe->layers->light_camera ? probe->layers->light_camera : camera;
         struct rf_gpu_light light={0};
-        light.position_radius[0]=(float)camera->x;light.position_radius[1]=(float)camera->y;light.position_radius[2]=(float)camera->z;
+        light.position_radius[0]=(float)lamp->x;light.position_radius[1]=(float)lamp->y;light.position_radius[2]=(float)lamp->z;
         light.position_radius[3]=15360;light.color_intensity[0]=light.color_intensity[1]=light.color_intensity[2]=1;
         light.color_intensity[3]=45;
-        light.direction_outer[0]=(float)camera->sy*camera->pitch_cy/1048576;
-        light.direction_outer[1]=(float)camera->pitch_sy/1024;
-        light.direction_outer[2]=(float)camera->cy*camera->pitch_cy/1048576;
+        light.direction_outer[0]=(float)lamp->sy*lamp->pitch_cy/1048576;
+        light.direction_outer[1]=(float)lamp->pitch_sy/1024;
+        light.direction_outer[2]=(float)lamp->cy*lamp->pitch_cy/1048576;
         light.direction_outer[3]=0.85f;light.inner_shadow[0]=0.94f;scene_light_insert(&lights,&light,camera);
     }
     if(probe->layers && !probe->layers->fixed_lighting) {

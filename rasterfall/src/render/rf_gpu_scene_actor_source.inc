@@ -111,7 +111,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     next.frame_id=scene_enemy_capture.frame_id-1;
     if(scene_actor_session!=active_session || scene_actor_history.world_generation!=next.world_generation)
         memset(scene_procedural_rifle,0,sizeof(scene_procedural_rifle));
-    if (active_session->rts_active) {
+    if (active_session->rts_active || scene_enemy_aux_active) {
         const struct toy_game_actor *player =
             toy_game_local_player_actor_const(&game);
         if (player && player->active &&
@@ -119,6 +119,8 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
                 player->sy, player->cy,
                 player->ground_y + player->airborne_y,
                 RF_COLOR_UI_PLAYER, 0) < 0) goto fail;
+        if(player && player->active && !active_session->rts_active)
+            scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1].auxiliary_only=1;
     }
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&game.actors[i];

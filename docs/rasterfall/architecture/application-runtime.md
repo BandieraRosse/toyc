@@ -9,7 +9,7 @@
 
 ## 当前运行边界
 
-`RASTERFALL_DESKTOP_RUNTIME_ENABLED` 当前为 `0`。正常启动不初始化 GUI 或 app manager；F12、反引号和前哨站 terminal 请求只显示暂不可用的 HUD 提示。`desktop-v1` 离屏视觉场景和 GUI、app manager、projection 逻辑测试仍作为隔离验证入口。原型源码的存在不表示 Desktop 已进入 normal frame。
+`RASTERFALL_DESKTOP_RUNTIME_ENABLED` 当前为 `0`。正常启动不初始化 GUI 或 app manager；F12 和旧前哨站 Desktop 请求仍显示暂不可用提示。玩家终端现在独立复用 command registry/session，通过共享 canvas 呈现；反引号打开时不暂停世界，不解除 Desktop gate。玩家窗口与命令边界见 [玩家命令](player-commands.md)。`desktop-v1` 离屏视觉场景和 GUI、app manager、projection 逻辑测试仍作为隔离验证入口。
 
 RF Boot Manager 的 RF Shell 终端环境和 RF Workbench 图形环境属于独立的启动展示层，见[启动界面合同](../reference/boot-interface.md)。
 它们借用 Core 的窗口和输入服务，不依赖或解除上述 Desktop/Application feature gate，

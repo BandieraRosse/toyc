@@ -1,0 +1,313 @@
+/* Presentation orchestration. Commands and story state have independent owners. */
+static void rf_player_input_filter(struct rf_game_runtime *r,struct rf_input_frame *in)
+{
+    for(int i=0;i<RF_INPUT_PHYSICAL_KEY_COUNT;++i) {
+        if(!in->physical_down[i])r->ui_suppressed_physical[i]=0;
+        if(r->ui_suppressed_physical[i])in->physical_down[i]=in->physical_pressed[i]=0;
+    }
+    for(int i=0;i<RF_INPUT_KEY_COUNT;++i) {
+        if(!in->key_down[i])r->ui_suppressed_keys[i]=0;
+        if(r->ui_suppressed_keys[i])in->key_down[i]=in->key_pressed[i]=0;
+    }
+    r->ui_suppressed_mouse&=in->mouse_buttons;
+    in->mouse_buttons&=~r->ui_suppressed_mouse;
+}
+static void rf_player_block_input(struct rf_game_runtime *r,struct rf_input_frame *in,
+    unsigned char *keys,unsigned char *physical,struct toy_window_events *events)
+{
+    for(int i=0;i<RF_INPUT_PHYSICAL_KEY_COUNT;++i)r->ui_suppressed_physical[i]|=in->physical_down[i];
+    for(int i=0;i<RF_INPUT_KEY_COUNT;++i)r->ui_suppressed_keys[i]|=in->key_down[i];
+    r->ui_suppressed_mouse|=in->mouse_buttons;
+    memset(in->key_down,0,sizeof(in->key_down));memset(in->key_pressed,0,sizeof(in->key_pressed));
+    memset(in->physical_down,0,sizeof(in->physical_down));memset(in->physical_pressed,0,sizeof(in->physical_pressed));
+    memset(keys,0,RF_INPUT_KEY_COUNT);memset(physical,0,RF_INPUT_PHYSICAL_KEY_COUNT);
+    in->mouse_buttons=0;in->relative_x=in->relative_y=0;in->wheel_y=0;
+    if(events){events->button_pressed=0;events->relative_x=events->relative_y=0;}
+}
+static struct rf_player_result rf_player_request(struct rf_game_runtime *r,int op,int value,int x,int z)
+{
+    struct rf_player_request a={0};a.operation=op;a.value=value;a.x=x;a.z=z;
+    a.world_generation=r->session->scene_local.world_generation;
+    a.serial=r->session->game_state.weaver.job_serial;
+    a.session_revision=r->story.session_revision;a.node_revision=r->story.node_revision;
+    return rf_player_execute(r,&a,r->player_ui.mode==RF_PLAYER_UI_EXPERIMENT?
+        RF_COMMAND_PERMISSION_ADMIN:RF_COMMAND_PERMISSION_USER);
+}
+static int rf_player_object_facing(const struct rf_game_runtime *r,const char *id)
+{
+    const struct rf_map_runtime_object *object=rf_map_runtime_find_object(&r->session->map_ops.runtime,id);
+    const struct toy_game_actor *player=toy_game_local_player_actor_const(&r->session->game_state);
+    if(!object||!player)return 0;
+    int64_t dx=(int64_t)object->x-player->x,dz=(int64_t)object->z-player->z;
+    int distance=isqrt(dx*dx+dz*dz);
+    if(abs(object->y-player->ground_y)>RASTERFALL_RFU_PER_METER)return 0;
+    return distance<96 || dx*r->camera.sy+dz*r->camera.cy>=(int64_t)distance*512;
+}
+static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_state *h)
+{
+    struct rf_player_ui_view *v=&h->player_ui_view;
+    rf_player_ui_prepare(&r->player_ui,&r->session->level,&r->session->game_state,
+        (unsigned)r->session->scene_local.world_generation);
+    h->player_ui=&r->player_ui;v->bindings=&game_bindings;
+    v->hints=r->player_controls.hints;
+    v->phase_visible=r->session->world_id!=RASTERFALL_WORLD_OUTPOST||rf_combat_lab.running;
+    v->modal=r->console.open||rf_weaver_terminal.open||rf_render_terminal.open||rf_table.open;
+    v->region_name=r->session->world_id==RASTERFALL_WORLD_OUTPOST?"前哨站":"行动区域";
+    v->rts_active=r->rts_active;v->rts_selected=r->rts_selected;v->rts_follow_player=r->rts_follow_player;
+    v->rts_move_active=r->session->rts_move_active;v->rts_move_x=r->session->rts_move_x;v->rts_move_z=r->session->rts_move_z;
+    v->camera_x=r->render_camera.x;v->camera_z=r->render_camera.z;v->camera_sy=r->camera.sy;v->camera_cy=r->camera.cy;
+    v->objective_title=r->story.task.title;v->objective_detail=r->story.task.hint;
+    v->objective_active=r->story.task.target_valid;v->objective_x=r->story.task.x;
+    v->objective_y=r->story.task.y;v->objective_z=r->story.task.z;
+    v->command_feedback=r->player_controls.last.message;
+    v->comms_visible=r->story.active_story&&!r->story.collapsed;
+    if(rf_weaver_terminal.near){v->interaction_title="网格编织机";v->interaction_action="打开设备";}
+    else if(rf_render_terminal.near){v->interaction_title="渲染控制终端";v->interaction_action="打开设备";}
+    else if(rf_table.near){v->interaction_title="前哨站指挥桌";v->interaction_action="部署行动";}
+    {
+        const char *id=rf_weaver_terminal.near?"mesh_weaver":rf_render_terminal.near?"main_terminal":rf_table.near?"command_table":NULL;
+        const struct rf_map_runtime_object *object=id?rf_map_runtime_find_object(&r->session->map_ops.runtime,id):NULL;
+        int x=0,z=0,valid=0;
+        if(object){x=object->x;z=object->z;valid=1;}
+        else if(r->session->highlight_index>=0 && r->session->highlight_index<r->session->item_count) {
+            x=r->session->items[r->session->highlight_index].x;z=r->session->items[r->session->highlight_index].z;valid=1;
+        }
+        if(valid) {
+            double dx=(double)x-r->camera.x,dz=(double)z-r->camera.z;
+            v->interaction_distance_rfu=(int)sqrt(dx*dx+dz*dz);
+        }
+    }
+    const struct rf_map_runtime_object *m=rf_map_runtime_find_object(&r->session->map_ops.runtime,"mesh_weaver");
+    if(m) {
+        struct rf_minimap_marker mark={0};mark.id=1001;mark.kind=RF_MINIMAP_DEVICE;
+        mark.x=m->x;mark.y=m->y;mark.z=m->z;snprintf(mark.label,sizeof(mark.label),"网格编织机");
+        rf_minimap_marker_set(&r->player_ui.minimap,&mark);
+    }else rf_minimap_marker_remove(&r->player_ui.minimap,1001);
+}
+
+static void rf_player_weaver_action(struct rf_game_runtime *r,int hit,
+    struct rasterfall_console *console)
+{
+    const struct toy_mesh_weaver *w=&r->session->game_state.weaver;
+    if(hit==RF_WEAVER_HIT_START && w->phase==TOY_WEAVER_READY)hit=RF_WEAVER_HIT_COLLECT;
+    if(hit>=RF_WEAVER_HIT_BLUEPRINT_BASE) {
+        rf_weaver_submit(RF_PLAYER_WEAVER_SELECT,hit-RF_WEAVER_HIT_BLUEPRINT_BASE,0);
+        rf_weaver_terminal.confirm_replace=0;return;
+    }
+    switch(hit) {
+    case RF_WEAVER_HIT_START:rf_weaver_submit(RF_PLAYER_WEAVER_START,0,0);break;
+    case RF_WEAVER_HIT_COLLECT: {
+        struct rf_player_weaver_query q;rf_player_weaver_query(r,&q);
+        rf_weaver_submit(RF_PLAYER_WEAVER_COLLECT,
+            rf_weaver_terminal.confirm_replace?rf_weaver_terminal.confirm_replace-2:q.replace_weapon,
+            rf_weaver_terminal.confirm_replace!=0);
+        if(r->player_controls.last.code==RF_PLAYER_CONFIRM_REPLACE)
+            rf_weaver_terminal.confirm_replace=q.replace_weapon+2;
+        else rf_weaver_terminal.confirm_replace=0;
+        break;
+    }
+    case RF_WEAVER_HIT_POWER:rf_weaver_submit(RF_PLAYER_WEAVER_POWER,!w->supply.power_on,0);break;
+    case RF_WEAVER_HIT_CPU:rf_weaver_submit(RF_PLAYER_WEAVER_CPU,!w->supply.cpu_on,0);break;
+    case RF_WEAVER_HIT_X1:rf_weaver_submit(RF_PLAYER_WEAVER_X1,!w->supply.x1_on,0);break;
+    case RF_WEAVER_HIT_DETAILS:r->player_controls.details=!r->player_controls.details;break;
+    case RF_WEAVER_HIT_MINIMIZE:rf_weaver_terminal.open=0;rf_weaver_terminal.minimized=1;break;
+    case RF_WEAVER_HIT_CLOSE:rf_weaver_terminal.open=0;rf_weaver_terminal.minimized=0;break;
+    case RF_WEAVER_HIT_TERMINAL:console->open=1;console->was_paused=0;
+        if(!console->terminal.input[0])rf_terminal_session_set_input(&console->terminal,"weaver status");
+        break;
+    case RF_WEAVER_HIT_ROTATE_LEFT:r->player_controls.preview_yaw=(r->player_controls.preview_yaw+345)%360;break;
+    case RF_WEAVER_HIT_ROTATE_RIGHT:r->player_controls.preview_yaw=(r->player_controls.preview_yaw+15)%360;break;
+    default:break;
+    }
+}
+static void rf_player_weaver_input(struct rf_game_runtime *r,struct rasterfall_console *console,
+    const struct rf_input_frame *in,const struct toy_window_events *events,int width,int height)
+{
+    struct rf_player_weaver_rects rects;
+    int focus=rf_weaver_terminal.row,order[32],count=0,at=0,hit=0;
+    rf_player_weaver_layout(&rects,width,height,&r->player_ui);
+    for(unsigned i=0;i<RF_WEAVER_BLUEPRINT_COUNT;++i)order[count++]=RF_WEAVER_HIT_BLUEPRINT_BASE+(int)i;
+    for(int i=1;i<RF_WEAVER_HIT_COUNT;++i)if(i!=RF_WEAVER_HIT_COLLECT)order[count++]=i;
+    for(int i=0;i<count;++i)if(order[i]==focus)at=i;
+    if(action_pressed(in,RF_ACTION_CANCEL)){rf_weaver_terminal.open=0;rf_weaver_terminal.minimized=0;return;}
+    if(action_pressed(in,RF_ACTION_UI_DOWN)||action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD))at=(at+1)%count;
+    if(action_pressed(in,RF_ACTION_UI_UP))at=(at+count-1)%count;
+    rf_weaver_terminal.row=order[at];
+    if(action_pressed(in,RF_ACTION_UI_LEFT))hit=RF_WEAVER_HIT_ROTATE_LEFT;
+    if(action_pressed(in,RF_ACTION_UI_RIGHT))hit=RF_WEAVER_HIT_ROTATE_RIGHT;
+    if(action_pressed(in,RF_ACTION_CONFIRM))hit=rf_weaver_terminal.row;
+    if(events->button_pressed && events->button==BTN_LEFT) {
+        hit=rf_player_weaver_hit(&rects,in->pointer_x,in->pointer_y);
+        if(hit)rf_weaver_terminal.row=hit;
+    }
+    if(hit)rf_player_weaver_action(r,hit,console);
+}
+
+static int rf_player_device_focus[2]={RF_DEVICE_HIT_FEATURE_BASE,RF_DEVICE_HIT_MAP_BASE};
+static void rf_player_device_input(struct rf_game_runtime *r,struct rasterfall_console *console,
+    const struct rf_input_frame *in,const struct toy_window_events *events,int width,int height,int kind)
+{
+    struct rf_device_query q;struct rf_player_device_rects rects;
+    int order[RF_PLAYER_DEVICE_FEATURE_ROWS+3],count=0,at=0,hit=0;
+    rf_device_query(r,&q);rf_player_device_layout(&rects,width,height,&r->player_ui,kind);
+    if(kind==RF_PLAYER_DEVICE_RENDER)for(int i=0;i<q.feature_count&&i<RF_PLAYER_DEVICE_FEATURE_ROWS;++i)order[count++]=RF_DEVICE_HIT_FEATURE_BASE+i;
+    else {
+        for(int i=0;i<q.map_count&&i<RF_PLAYER_DEVICE_MAP_ROWS;++i)order[count++]=RF_DEVICE_HIT_MAP_BASE+i;
+        order[count++]=RF_DEVICE_HIT_DEPLOY;
+    }
+    order[count++]=RF_DEVICE_HIT_TERMINAL;order[count++]=RF_DEVICE_HIT_CLOSE;
+    for(int i=0;i<count;++i)if(order[i]==rf_player_device_focus[kind])at=i;
+    if(action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD)||action_pressed(in,RF_ACTION_UI_DOWN))at=(at+1)%count;
+    if(action_pressed(in,RF_ACTION_UI_UP))at=(at+count-1)%count;
+    rf_player_device_focus[kind]=order[at];
+    if(action_pressed(in,RF_ACTION_CONFIRM))hit=order[at];
+    if(events->button_pressed && events->button==BTN_LEFT) {
+        hit=rf_player_device_hit(&rects,in->pointer_x,in->pointer_y);
+        if(hit)rf_player_device_focus[kind]=hit;
+    }
+    if(action_pressed(in,RF_ACTION_CANCEL))hit=RF_DEVICE_HIT_CLOSE;
+    if(hit==RF_DEVICE_HIT_CLOSE) {
+        if(kind==RF_PLAYER_DEVICE_RENDER)rf_render_terminal.open=0;else rf_table.open=0;
+    } else if(hit==RF_DEVICE_HIT_TERMINAL) {
+        console->open=1;console->was_paused=0;
+        if(!console->terminal.input[0])rf_terminal_session_set_input(&console->terminal,
+            kind==RF_PLAYER_DEVICE_RENDER?"render status":"table status");
+    } else if(kind==RF_PLAYER_DEVICE_RENDER && hit>=RF_DEVICE_HIT_FEATURE_BASE && hit<RF_DEVICE_HIT_FEATURE_BASE+q.feature_count)
+        rf_render_terminal_request(hit-RF_DEVICE_HIT_FEATURE_BASE);
+    else if(kind==RF_PLAYER_DEVICE_TABLE && hit>=RF_DEVICE_HIT_MAP_BASE && hit<RF_DEVICE_HIT_MAP_BASE+q.map_count)
+        rf_device_table_request(hit-RF_DEVICE_HIT_MAP_BASE,0);
+    else if(kind==RF_PLAYER_DEVICE_TABLE && hit==RF_DEVICE_HIT_DEPLOY)
+        rf_device_table_request(q.selected_map,1);
+}
+
+static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_console *console,struct rf_input_frame *in,
+    const struct toy_window_events *events,int width,int height)
+{
+    const struct rf_story_node *node=rf_story_current_node(&r->story);
+    struct rf_player_comms_rects rects;
+    int before=r->comms_focus,hit=0;
+    if(!node)return 0;
+    if(action_pressed(in,RF_ACTION_COMMS_HIDE)) {
+        rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,!r->story.collapsed,0,0);
+        if(r->story.collapsed)r->comms_focus=0;
+    }
+    if(action_pressed(in,RF_ACTION_COMMS_FOCUS)) {
+        r->comms_focus=!r->comms_focus;
+        if(r->comms_focus)rf_story_collapse(&r->story,0);
+    }
+    if(r->comms_choice>=node->choice_count)r->comms_choice=0;
+    if(r->comms_focus) {
+        if(node->choice_count && (action_pressed(in,RF_ACTION_UI_DOWN)||action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD)))
+            r->comms_choice=(r->comms_choice+1)%node->choice_count;
+        if(node->choice_count && action_pressed(in,RF_ACTION_UI_UP))
+            r->comms_choice=(r->comms_choice+node->choice_count-1)%node->choice_count;
+        if(action_pressed(in,RF_ACTION_CANCEL))r->comms_focus=0;
+        rf_player_comms_layout(&rects,width,height,&r->player_ui,r->story.combat,r->story.collapsed);
+        if(events->button_pressed && events->button==BTN_LEFT)
+            hit=rf_player_comms_hit(&rects,in->pointer_x,in->pointer_y,node->choice_count);
+        if(hit==RF_COMMS_HIT_COLLAPSE) {rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,1,0,0);r->comms_focus=0;}
+        if(hit==RF_COMMS_HIT_CLOSE)rf_player_request(r,RF_PLAYER_DIALOG_CLOSE,0,0,0);
+        if(hit==RF_COMMS_HIT_HISTORY) {
+            console->open=1;console->was_paused=0;r->comms_focus=0;
+            for(int i=0;i<r->story.history_count;++i) {
+                const struct rf_story_history_entry *entry=&r->story.history[i];
+                const struct rf_story_node *past=rf_story_find_node(entry->node_id);
+                char text[512];if(!past)continue;
+                if(entry->choice>=0 && entry->choice<past->choice_count)
+                    snprintf(text,sizeof(text),"YOU: %s",past->choices[entry->choice].text);
+                else snprintf(text,sizeof(text),"%s: %s",past->speaker,past->line);
+                rasterfall_console_log(console,RASTERFALL_CONSOLE_INFO,text);
+            }
+            rf_core_set_pointer_lock(r->core,0);
+        }
+        if(hit>=RF_COMMS_HIT_CHOICE_BASE)r->comms_choice=hit-RF_COMMS_HIT_CHOICE_BASE;
+    }
+    if(!r->story.collapsed && (action_pressed(in,RF_ACTION_COMMS_ANSWER) ||
+       (r->comms_focus&&action_pressed(in,RF_ACTION_CONFIRM)) || hit>=RF_COMMS_HIT_CHOICE_BASE || hit==RF_COMMS_HIT_CONTINUE)) {
+        rf_player_request(r,RF_PLAYER_DIALOG_ANSWER,node->choice_count?r->comms_choice:-1,0,0);
+        r->comms_choice=0;
+    }
+    if(!r->story.active_story)r->comms_focus=0;
+    if(before!=r->comms_focus)rf_core_set_pointer_lock(r->core,!r->comms_focus&&!r->rts_active&&!console->open);
+    return before||r->comms_focus||console->open;
+}
+#ifdef TOYC_WINDOWS
+static struct rf_gpu_scene_aux_view rf_player_aux;
+static void rf_player_audit(const struct rf_game_runtime *r,int frame,const struct rf_gpu_scene_aux_status *video)
+{
+    if(!getenv("RF_UI_AUDIT") || frame%10)return;
+    const struct toy_game_actor *p=toy_game_local_player_actor_const(&r->session->game_state);
+    const struct toy_mesh_weaver *w=&r->session->game_state.weaver;
+    const struct rf_story_camera_entity *c=rf_story_camera(&r->story,r->session);
+    struct rf_device_query device;unsigned mask=0;rf_device_query(r,&device);
+    for(int i=0;i<device.feature_count;++i)if(device.features[i].enabled)mask|=1u<<i;
+    __printf("PLAYER-UI-AUDIT {\"frame\":%d,\"ui_mode\":%d,\"focus\":%d,\"terminal\":%d,\"rts\":%d,\"x\":%d,\"z\":%d,\"fire_seq\":%u,\"slot\":%d,\"story\":%d,\"node\":%d,\"sr\":%u,\"nr\":%u,\"link\":%d,\"collapsed\":%d,\"queue\":%d,\"progress_a\":%d,\"progress_b\":%d,\"hold\":%u,\"camera_generation\":%u,\"camera_valid\":%d,\"weaver_panel\":%d,\"selected\":%d,\"phase\":%d,\"progress\":%.6f,\"serial\":%u,\"collected\":%u,\"power\":%d,\"command_code\":%d,\"video\":%d,\"video_frames\":%llu,\"video_cpu_us\":%lld,\"video_gpu_us\":%lld,\"weaver_focus\":%d,\"task_id\":%d,\"task_state\":%d,\"normal_sim\":%d,\"driver\":%d}\n",
+        frame,r->player_ui.mode,r->comms_focus,r->console.open,r->rts_active,p->x,p->z,p->fire_seq,p->current_slot,
+        r->story.active_story,r->story.node_id,r->story.session_revision,r->story.node_revision,r->story.link,
+        r->story.collapsed,r->story.queue_count,r->story.progress[0],r->story.progress[1],r->story.hold_token,
+        c?c->generation:0,c!=NULL,rf_weaver_terminal.open,r->player_controls.selected_blueprint,w->phase,
+        w->progress,w->job_serial,w->collected_count,w->supply.power_on,r->player_controls.last.code,
+        video->state,(unsigned long long)video->frames,(long long)video->last_cpu_us,(long long)(video->last_gpu_ms*1000),
+        rf_weaver_terminal.row,r->story.task.id,r->story.task.state,!rf_weaver_diagnostic.enabled,
+        rf_weaver_diagnostic.enabled||rf_weaver_performance.mode);
+    __printf("PLAYER-UI-DEVICE {\"frame\":%d,\"combat\":%d,\"device_code\":%d,\"table_selected\":%d,\"table_pending\":%d,\"render_mask\":%u}\n",
+        frame,r->story.combat,r->device_service.last.code,device.selected_map,device.pending_world,mask);
+    fflush(stdout);
+}
+static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height,uint64_t now,int hidden)
+{
+    const struct rf_story_camera_entity *camera=rf_story_camera(&r->story,r->session);
+    memset(&rf_player_aux,0,sizeof(rf_player_aux));
+    rf_player_aux.render_width=320;rf_player_aux.render_height=180;rf_player_aux.refresh_hz=12;
+    rf_player_aux.now_us=now;
+    if(camera){rf_player_aux.camera=camera->view;rf_player_aux.shell_visible=1;rf_player_aux.stable_id=101;
+        rf_player_aux.generation=camera->generation;}
+    if(!hidden && rf_weaver_terminal.open && r->player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
+        struct rf_player_weaver_rects rects;rf_player_weaver_layout(&rects,width,height,&r->player_ui);
+        rf_player_aux.kind=RF_GPU_AUX_WEAPON;rf_player_aux.visible=rects.preview.w>0&&rects.preview.h>0;
+        rf_player_aux.stable_id=1000+(unsigned)r->player_controls.selected_blueprint;
+        rf_player_aux.generation=r->session->scene_local.world_generation;
+        rf_player_aux.weapon=rf_weaver_selection()->geometry.weapon;
+        rf_player_aux.rotation_degrees=r->player_controls.preview_yaw;
+        rf_player_aux.x=rects.preview.x;rf_player_aux.y=rects.preview.y;
+        rf_player_aux.width=rects.preview.w;rf_player_aux.height=rects.preview.h;
+        if(rects.preview.w>0) {
+            unsigned h=320u*(unsigned)rects.preview.h/(unsigned)rects.preview.w;
+            rf_player_aux.render_height=h<64?64:h>480?480:h;
+        }
+    } else if(!hidden && camera && r->story.active_story&&!r->story.collapsed) {
+        struct rf_player_comms_rects rects;rf_player_comms_layout(&rects,width,height,&r->player_ui,r->story.combat,0);
+        rf_player_aux.kind=RF_GPU_AUX_WORLD;rf_player_aux.visible=1;
+        rf_player_aux.x=rects.video.x;rf_player_aux.y=rects.video.y;
+        rf_player_aux.width=rects.video.w;rf_player_aux.height=rects.video.h;
+    }
+    if(!rf_player_aux.visible)r->ui_video_live=0;
+    rf_gpu_scene_enemy_aux_camera(rf_player_aux.visible&&rf_player_aux.kind==RF_GPU_AUX_WORLD?&rf_player_aux.camera:NULL);
+}
+#endif
+static int rf_player_combat(const struct toy_game *g)
+{
+    const struct toy_game_actor *p=toy_game_local_player_actor_const(g);
+    return p&&(p->damage_flash_ms>0 || p->fire_cooldown_ms>0 ||
+        (g->campaign_phase==TOY_GAME_PHASE_HORDE && g->enemies_alive>0));
+}
+static void rf_player_story_tick(struct rf_game_runtime *r,int dt,int allow_start)
+{
+    int had_focus=r->comms_focus;
+    if(r->net.mode!=RASTERFALL_NET_OFF){rf_story_detach(&r->story,r->session);return;}
+    rf_story_update(&r->story,r->session,dt,rf_player_combat(&r->session->game_state),allow_start);
+    rf_player_controls_observe(r,dt);
+    if(!r->story.active_story || r->story.collapsed)r->comms_focus=0;
+    if(had_focus&&!r->comms_focus)rf_core_set_pointer_lock(r->core,!r->rts_active&&!r->console.open);
+    if(r->persistence_retry_ms>0)r->persistence_retry_ms-=dt;
+    if(r->player_persistence && r->persistence_retry_ms<=0) {
+        int failed=0;
+        if(r->story.dirty && rf_story_save(&r->story,r->story_save_path)<0)failed=1;
+        if(r->player_controls.settings_dirty && rf_player_settings_save(r,r->ui_settings_path)<0)failed=1;
+        if(failed) {
+            r->persistence_retry_ms=5000;
+            snprintf(r->player_controls.last.message,sizeof(r->player_controls.last.message),"保存失败：检查目录权限，5 秒后重试");
+            r->player_controls.last.code=RF_PLAYER_UNAVAILABLE;
+        }
+    }
+}

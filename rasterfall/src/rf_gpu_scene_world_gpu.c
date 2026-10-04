@@ -1152,6 +1152,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             if (source->transparent && source->alpha<=0) continue;
         } else {
             actor=&frame->procedural[i-frame->count];
+            if(actor->auxiliary_only && !probe->offscreen_only)continue;
             procedural_source.x=actor->state.x;procedural_source.z=actor->state.z;
             procedural_source.lift=actor->state.lift;
             procedural_source.scene_light_q8=actor->scene_light_q8;
@@ -1275,6 +1276,7 @@ done:
 #include "render/rf_mesh_weaver_gpu.inc"
 #include "render/rf_gpu_lighting_lab.inc"
 #include "render/rf_gpu_scene_lighting.inc"
+#include "render/rf_gpu_scene_aux.inc"
 
 int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_vulkan_context *context,struct rf_gpu_scene_world_resources *owner,
@@ -1330,11 +1332,15 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (!probe->graphics) {
         probe->graphics=rf_gpu_graphics_create(context);
         if (!probe->graphics) return -1;
+    }
+    if (!probe->cache) {
         probe->cache=rf_gpu_resource_cache_create(probe->graphics,&owner->registry);
         if (!probe->cache) return -1;
     }
     if (!probe->cache || rf_gpu_graphics_resize(probe->graphics,width,height)<0)
         return -1;
+    scene_aux_prepare(probe,context,owner,camera,poses,pose_count,flags,
+        projectiles,interactables,enemies,model_texture);
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_before);
     if (!probe->flag_pole) {
         probe->flag_pole=flag_cube_resource(probe->graphics,-16,16,-900,2700,-16,16);
@@ -1385,11 +1391,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (!capacity) return 0;
     if (scene_batch_reserve(&probe->batch,&probe->batch_capacity,capacity)<0) goto done;
     items=probe->batch;
-    if (!probe->native_present || capture_path) {
+    if ((!probe->native_present && !probe->offscreen_only) || capture_path) {
         color=calloc(pixels,sizeof(*color));
         depth=calloc(pixels,sizeof(*depth));
     }
-    if (!items || ((!probe->native_present || capture_path) && (!color || !depth)) ||
+    if (!items || (((!probe->native_present && !probe->offscreen_only) || capture_path) && (!color || !depth)) ||
         rasterfall_resources_frame_begin(&owner->registry)<0) goto done;
     frame_active=1;
     int64_t section_start=rf_core_clock_now_us();
@@ -1478,6 +1484,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         int64_t retire_start=rf_core_clock_now_us();
         if (rf_gpu_graphics_scene_retire(probe->graphics)<0) goto done;
         stats->retire_us=rf_core_clock_now_us()-retire_start;
+    } else if (probe->offscreen_only) {
+        if(rf_gpu_graphics_scene_offscreen(probe->graphics,items,draws,enemies->frame_id)<0)goto done;
     } else if (rf_gpu_graphics_scene_capture_at(probe->graphics,items,draws,
             color,depth,(uint32_t)pixels,enemies->frame_id)<0) goto done;
     rf_gpu_graphics_scene_timing(probe->graphics,&timing);
@@ -1587,6 +1595,7 @@ done:
 void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *probe)
 {
     if (!probe) return;
+    if(probe->graphics)rf_gpu_graphics_scene_video(probe->graphics,NULL,0,0,0,0);
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     rf_weaver_gpu_close(probe);
     if(probe->lighting_lab_sphere) rf_gpu_graphics_resource_destroy(probe->graphics,probe->lighting_lab_sphere);
@@ -1631,6 +1640,13 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
         if (probe->actor[i]) rf_gpu_scene_actor_gpu_destroy(probe->actor[i]);
     if (probe->cache) rf_gpu_resource_cache_destroy(probe->cache);
     if (probe->graphics) rf_gpu_graphics_destroy(probe->graphics);
+    /* The main owner can retain the child image during a failed submission.
+     * Its destroy drains device work before we release that image's owner. */
+    if(probe->aux) {
+        rf_gpu_scene_world_gpu_probe_close(probe->aux);free(probe->aux);probe->aux=NULL;
+    }
+    probe->aux_visible=0;probe->aux_next_us=0;probe->aux_attempts=0;
+    memset(&probe->aux_status,0,sizeof(probe->aux_status));
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;

@@ -8,8 +8,11 @@
 #include "rasterfall_net.h"
 #include "rasterfall_animation_composition.h"
 #include "rasterfall_calibration.h"
+#include "rf_player_ui.h"
 
 struct rasterfall_hud_state {
+    const struct rf_player_ui_state *player_ui;
+    struct rf_player_ui_view player_ui_view;
     const struct toy_game *game;
     const struct toy_map *map;
     const struct toy_game_box *safe_rooms;

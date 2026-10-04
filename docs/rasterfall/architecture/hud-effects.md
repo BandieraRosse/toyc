@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall presentation-only HUD/effects runtime
-> 最近核对：2026-09-23
+> 最近核对：2026-10-04
 
 本文定义 HUD、第一人称 viewmodel 和短生命周期特效的所有权与层序。帧 barrier 和 target 语义见
 [渲染架构](rendering-architecture.md)，玩法事件与网络真值由 gameplay/session/network 层拥有。
@@ -92,5 +92,47 @@ Combat V0 的玩家生命条读取 actor 的实际 `max_hp`，回避条读取最
 
 内嵌 8×16 VGA ASCII 与 16×16 GB2312 字形由项目资产提供；运行时不依赖 FreeType、系统 CJK 字体或
 宿主编码转换。地图排布导出可以读取同一字形资产，但不拥有 HUD runtime。
+
+## 玩家界面 V2 的展示契约
+
+`rf_player_ui_state` 由 Game Runtime 持有；`rasterfall_hud_state.player_ui_view` 是本次同步提交的
+只读投影。玩家/终端模式使用新的 FPS/RTS HUD，实验与显式 legacy 模式保留原 HUD。
+菜单、商店、复活和准星仍消费原有状态，不因界面切换创建新的玩法或设备状态。
+
+- `rf_player_ui.h/c` 拥有语义颜色、720p 设计尺寸、缩放与窗口重排，以及 panel/button/window/text
+  基础组件。`rf_ui_layout_resolve` 是 HUD 绘制和命中区域的共同来源；调整主题或布局描述不修改
+  生命、弹药、制造、任务或 RTS 命令规则。
+- `rf_player_panels.h/c` 拥有设备三栏、收起状态卡、普通/战斗通讯和终端的纯绘制。
+  `rf_player_weaver_layout` 与 `rf_player_comms_layout` 同时提供绘制、点击和 GPU 辅助镜头矩形。
+  UI 不执行按钮业务；Runtime 根据命中 ID 调用共享命令边界并展示真实查询结果。
+  渲染终端和指挥桌复用 `rf_player_device_layout/hit/draw`，分别呈现设备查询的能力行和地图卡片，
+  底部反馈读取 `device_service.last`。新布局仅替换展示与命中，实验模式继续使用原界面。
+- 设备图像和通讯视频区域是明确的透明洞。四周面板分别发射 canvas 几何，禁止用整窗底板盖住
+  已合成的 GPU 图像；无视频时显示连接/不可用状态。工程详情是用户显式打开的预览覆盖层。
+- `rasterfall_canvas` 仍只发射矩形字形 run；UTF-8 解码、字形宽度、缩放、换行与省略共享同一
+  字体步进，不用字符串字节数估计中文宽度。玩家组件通过 `rf_ui_font` 使用 18 px Noto Sans CJK SC
+  派生的独立灰度字形缓存；经典与世界字体保持原契约。热点索引缓存与离线合并矩形避免逐帧栅格化，
+  无系统字体依赖或 CPU 全屏纹理。字体来源、OFL 许可、生成与校验见资产目录的字体说明。
+- 快捷键标签从 `rf_input_action_label` 查询实际绑定；FPS/RTS HUD 的能力值来自当前 actor。
+  RTS 旗帜选择显示其实际成员和移动状态，移动目标标记不代表导航路径。
+  RTS 底栏的展开/收起只改变 `rts_collapsed` 展示状态，共用 `dock_toggle` 矩形与命中 ID，
+  不取消选中、移动命令或会话状态。
+  `modal` 投影使 HUD 与交互提示在独立设备/终端窗口打开时收起；`phase_visible` 由场景决定，
+  战斗阶段显示真实存活敌人数，其余相关阶段使用实际倒计时。
+
+### 共享地图服务
+
+`rf_minimap.h/c` 是 FPS/RTS 的唯一地图展示来源。地图底图从 `toy_map.draw` 的可见地面、道路、
+墙体和建筑足迹构建，保留静态世界坐标图元，不每帧重新渲染俯视世界。`rf_minimap_prepare` 以地图
+指针与 Runtime 提供的地图代际复用底图；同代内容更新调用 `rf_minimap_invalidate`，换代清除旧标记。
+地图世界到屏幕、逆变换、旋转、缩放和高差提示均使用同一 `rf_minimap_view`。
+`rf_player_ui_map_view` 从 UI 布局和只读玩家投影构造该视图，绘制与 Runtime 地图点击共享它，
+避免命中坐标另有一套缩放或边距。
+
+Runtime 每次准备 HUD 时更新存活友军的独立标记集合；actor 标记使用高位 ID 命名空间，业务设备和
+任务标记使用其余稳定 ID，可通过 `rf_minimap_marker_set/remove` 显式更新与释放。地形缓存不因
+友军移动重建。友军以实际阵营规则过滤，服务不遍历感染者位置，也没有隐藏敌人雷达；将来的敌人标记
+必须增加真实感知来源后再扩展。密集友军与设备标记按屏幕单元过滤，重要目标在边缘保留方向提示。
+默认北向上、玩家箭头转向；FPS 显示附近，RTS 与展开地图使用整体边界。两种布局使用同一目标和可见性规则。
 
 验证矩阵见 [视觉验收](../guides/visual-validation.md)和[GPU 验收与诊断](../guides/gpu-validation.md)。

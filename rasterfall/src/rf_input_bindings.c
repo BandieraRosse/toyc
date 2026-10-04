@@ -1,5 +1,6 @@
 #include "rf_input_bindings.h"
 #include "string.h"
+#include "stdio.h"
 
 #ifdef TOYC_WINDOWS
 /* SDL2 scancodes use USB HID keyboard usages for these keys. */
@@ -8,7 +9,8 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     30, 31, 32, 33, 8, 9, 16, 41, 40, 82, 81, 80, 79,
     58, 53, 59, 42, 43, 225, 54, 55, 13, 15, 19,
     24, 18, 12, 25, 27, 28, 29, 17, 5, 45, 46,
-    21, 41, 21, 69, 43, 43, 28, 23
+    21, 41, 21, 69, 43, 43, 28, 23,
+    60, 10, 6, 11, 29, 27
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {
     [RF_ACTION_FIRE_KEY] = 88,
@@ -28,7 +30,8 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     2, 3, 4, 5, 18, 33, 50, 1, 28, 103, 108, 105, 106,
     59, 41, 60, 14, 15, 42, 51, 52, 36, 38, 25,
     22, 24, 23, 47, 45, 21, 44, 49, 48, 12, 13,
-    19, 1, 19, 88, 15, 15, 21, 20
+    19, 1, 19, 88, 15, 15, 21, 20,
+    61, 34, 46, 35, 44, 45
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {0};
 #endif
@@ -58,6 +61,40 @@ unsigned int rf_input_binding(const struct rf_input_bindings *bindings,
     if (!bindings || (unsigned int)action >= RF_ACTION_COUNT)
         return RF_INPUT_PHYSICAL_KEY_COUNT;
     return bindings->physical[action];
+}
+
+void rf_input_action_label(const struct rf_input_bindings *bindings,
+                           enum rf_input_action action, char *label, unsigned capacity)
+{
+    unsigned key=rf_input_binding(bindings,action);
+    const char *name=0;
+    if (!label || !capacity) return;
+#ifdef TOYC_WINDOWS
+    if(key>=4 && key<=29) { snprintf(label,capacity,"%c",'A'+key-4);return; }
+    if(key>=30 && key<=38) { snprintf(label,capacity,"%u",key-29);return; }
+    if(key>=58 && key<=69) { snprintf(label,capacity,"F%u",key-57);return; }
+    switch(key) {
+        case 39:name="0";break;case 40:name="Enter";break;case 41:name="Esc";break;
+        case 42:name="Backspace";break;case 43:name="Tab";break;case 44:name="Space";break;
+        case 53:name="`";break;case 79:name="Right";break;case 80:name="Left";break;
+        case 81:name="Down";break;case 82:name="Up";break;case 88:name="Num Enter";break;
+        case 225:case 229:name="Shift";break;
+    }
+#else
+    static const unsigned keys[]={30,48,46,32,18,33,34,35,23,36,37,38,50,49,24,25,16,19,31,20,22,47,17,45,21,44};
+    for(unsigned i=0;i<26;++i) if(key==keys[i]) {snprintf(label,capacity,"%c",'A'+i);return;}
+    if(key>=2 && key<=10) {snprintf(label,capacity,"%u",key-1);return;}
+    if(key>=59 && key<=68) {snprintf(label,capacity,"F%u",key-58);return;}
+    switch(key) {
+        case 11:name="0";break;case 1:name="Esc";break;case 28:name="Enter";break;
+        case 14:name="Backspace";break;case 15:name="Tab";break;case 57:name="Space";break;
+        case 41:name="`";break;case 103:name="Up";break;case 108:name="Down";break;
+        case 105:name="Left";break;case 106:name="Right";break;case 88:name="F12";break;
+        case 42:case 54:name="Shift";break;
+    }
+#endif
+    if(name)snprintf(label,capacity,"%s",name);
+    else snprintf(label,capacity,"Key %u",key);
 }
 
 int rf_action_down(const struct rf_input_bindings *bindings,

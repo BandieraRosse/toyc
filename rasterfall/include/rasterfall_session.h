@@ -154,6 +154,7 @@ struct rasterfall_session {
     struct rasterfall_map_state map_ops;
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
+    int null_actor_index; /* Resolved authored actor id=null; invalidated on session reset. */
     int rts_active;
     int rts_move_active;
     int rts_move_x, rts_move_z;

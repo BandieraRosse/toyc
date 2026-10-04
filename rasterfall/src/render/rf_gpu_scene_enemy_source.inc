@@ -11,6 +11,13 @@ static uint64_t scene_independent_enemy_generation;
 static uint64_t scene_independent_enemy_frame;
 static int scene_independent_enemy_family;
 static const struct rasterfall_session *scene_independent_enemy_session;
+static struct camera scene_enemy_aux_view;
+static int scene_enemy_aux_active;
+void rf_gpu_scene_enemy_aux_camera(const struct camera *camera)
+{
+    scene_enemy_aux_active=camera!=NULL;
+    if(camera)scene_enemy_aux_view=*camera;
+}
 
 static struct enemy_rig_input scene_independent_enemy_rig_input(
     const struct toy_game_enemy *e,const struct enemy_rig_profile *profile,
@@ -127,7 +134,13 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
         center=(struct vec3){e->x,0,e->z};
         world_to_view(camera,&center,&view);
         if (view.z>(family!=RASTERFALL_ENEMY_VISUAL_LEGACY ?
-                    56000:ENEMY_RENDER_DISTANCE)) { frame.culled++;continue; }
+                    56000:ENEMY_RENDER_DISTANCE)) {
+            int64_t dx=(int64_t)e->x-scene_enemy_aux_view.x;
+            int64_t dz=(int64_t)e->z-scene_enemy_aux_view.z;
+            if(!scene_enemy_aux_active || dx*dx+dz*dz>56000LL*56000LL) {
+                frame.culled++;continue;
+            }
+        }
         if (frame.count>=RF_GPU_SCENE_ENEMY_CAPACITY) return -1;
         item=&frame.items[frame.count];
         memset(item,0,sizeof(*item));

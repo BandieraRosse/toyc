@@ -5,6 +5,8 @@
 #include "dev-tests/game_hitscan_test.inc"
 #include "dev-tests/combat_ai_test.inc"
 #include "dev-tests/rf_mesh_weaver_test.inc"
+#include "rf_ui_font.h"
+#include "rf_device_commands.h"
 #define special_windup_ms ability.special_windup_ms
 #define special_target_active ability.special_target_active
 #define special_target_kind ability.special_target_kind
@@ -1618,6 +1620,13 @@ static int run_logic_test(void)
         }
     }
     if (rf_input_bindings_logic_test() != 0) return 277;
+    { int code=rf_minimap_logic_test();if(code){__printf("UI-MAP-TEST %d\n",code);return 301;} }
+    { int code=rf_player_ui_logic_test();if(code){__printf("UI-LAYOUT-TEST %d\n",code);return 302;} }
+    { int code=rf_story_logic_test();if(code){__printf("STORY-TEST %d\n",code);return 303;} }
+    { int code=rf_player_commands_logic_test();if(code){__printf("PLAYER-COMMAND-TEST %d\n",code);return 304;} }
+    { int code=rf_device_commands_logic_test();if(code){__printf("DEVICE-COMMAND-TEST %d\n",code);return 305;} }
+    { int code=rf_ui_font_logic_test();if(code){__printf("UI-FONT-TEST %d\n",code);return 306;} }
+    { int code=rf_game_world_request_logic_test();if(code){__printf("WORLD-REQUEST-TEST %d\n",code);return 307;} }
     struct camera camera;
     struct toy_input input;
     struct vec3 triangle[3], clipped[4];
@@ -1817,7 +1826,7 @@ static int run_logic_test(void)
         }
         for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
             if (session.game_state.actors[i].active &&
-                !strcmp(session.game_state.actors[i].name, "Null")) has_null = 1;
+                !strcmp(session.game_state.actors[i].name, "NULL")) has_null = 1;
         if (!has_null || has_station || has_operations || has_super ||
             session.flag_count != 0 ||
             session.content.model_gallery_enabled ||

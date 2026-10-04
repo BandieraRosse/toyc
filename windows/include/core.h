@@ -14,6 +14,7 @@
 #define TOYC_WINDOWS 1
 
 int __creat(const char *path, int mode);
+int __rename(const char *oldpath, const char *newpath);
 int __fstat(int fd, struct stat *st);
 void *__mmap(void *addr, size_t length, int prot, int flags, int fd, off_t off);
 int __munmap(void *addr, size_t length);

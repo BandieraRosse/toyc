@@ -11,10 +11,12 @@ struct rf_table_map {
 };
 struct rf_table_ui {
     int open, near, selected, pointer_x, pointer_y;
+    char message[192];
     struct rf_table_map maps[RF_TABLE_MAPS];
 };
 static struct rf_table_ui rf_table;
 static int rf_showcase_near;
+static int rf_device_table_request(int index,int deploy);
 
 static int rf_showcase_button_near(const struct rasterfall_session *session,int x,int z)
 {
@@ -87,6 +89,7 @@ static void rf_table_read_map(struct rf_table_map *map)
 static void rf_table_init(void)
 {
     memset(&rf_table, 0, sizeof(rf_table));
+    snprintf(rf_table.message,sizeof(rf_table.message),"选择地图后部署；终端使用 table maps 查看目标");
     rf_table.maps[0].world = RASTERFALL_WORLD_OUTPOST;
     rf_table.maps[0].name = "OUTPOST";
     rf_table.maps[1].world = RASTERFALL_WORLD_CAMPAIGN_01;
@@ -145,6 +148,7 @@ static void rf_table_draw(struct rasterfall_canvas *canvas)
                                "MAP FILE UNAVAILABLE", 0xDDA88E);
     rasterfall_canvas_text(canvas, x + 28, y + 455,
                            "MOUSE: SELECT / DEPLOY      ESC: LEAVE TABLE", 0xA7DDE0);
+    rasterfall_canvas_text(canvas, x + 28, y + 428,rf_table.message,0xDDA88E);
     rasterfall_canvas_rect(canvas, rf_table.pointer_x - 5, rf_table.pointer_y, 11, 1, 0xFFFFFF, 255);
     rasterfall_canvas_rect(canvas, rf_table.pointer_x, rf_table.pointer_y - 5, 1, 11, 0xFFFFFF, 255);
 }

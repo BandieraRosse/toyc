@@ -26,6 +26,8 @@ enum rf_input_action {
     RF_ACTION_POSE_RESET, RF_ACTION_POSE_EXIT, RF_ACTION_RESTART,
     RF_ACTION_DESKTOP, RF_ACTION_SCOREBOARD, RF_ACTION_TEXT_NEXT_FIELD,
     RF_ACTION_RTS_FOLLOW, RF_ACTION_RTS_TELEPORT,
+    RF_ACTION_UI_MODE, RF_ACTION_MAP_EXPAND, RF_ACTION_COMMS_FOCUS,
+    RF_ACTION_COMMS_HIDE, RF_ACTION_COMMS_ANSWER, RF_ACTION_RTS_STOP,
     RF_ACTION_COUNT
 };
 
@@ -41,6 +43,9 @@ int rf_input_bind(struct rf_input_bindings *bindings,
 int rf_game_bind_action(enum rf_input_action action, unsigned int physical);
 unsigned int rf_input_binding(const struct rf_input_bindings *bindings,
                               enum rf_input_action action);
+/* Printable name of the current primary physical binding, never a UI literal. */
+void rf_input_action_label(const struct rf_input_bindings *bindings,
+                           enum rf_input_action action, char *label, unsigned capacity);
 int rf_action_down(const struct rf_input_bindings *bindings,
                    const struct rf_input_frame *frame,
                    enum rf_input_action action);

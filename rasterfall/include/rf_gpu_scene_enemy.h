@@ -8,6 +8,7 @@ struct rf_gpu_scene_procedural_item_v1 {
     struct rasterfall_procedural_humanoid_state state;
     unsigned body_color, leg_color, skin_color, hair_color;
     int scene_light_q8, vertex_lighting, double_sided;
+    int auxiliary_only; /* Local FPS body exists for remote camera views. */
 };
 struct rf_gpu_scene_enemy_point {
     int x, y, z;
@@ -51,6 +52,9 @@ struct rf_gpu_scene_enemy_frame_v1 {
 /* Capture the actual sampled living enemy body pose during normal render;
  * begin clears even frames where WORLD is not rendered. Freeze ends capture. */
 void rf_gpu_scene_enemy_begin(uint64_t frame_id, uint64_t world_generation);
+/* Set before independent collection; NULL clears. Keeps only the remote
+ * camera neighborhood in addition to the main view's ordinary source set. */
+void rf_gpu_scene_enemy_aux_camera(const struct camera *camera);
 /* Called after begin with a bound renderer context. Samples gameplay/effects
  * without issuing draw commands; commits presentation history once per frame. */
 int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,

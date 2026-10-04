@@ -1190,6 +1190,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_experiment_labs.inc"
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
+#include "rf_device_runtime.inc"
 #include "rf_mesh_weaver_runtime.inc"
 #include "rf_mesh_weaver_audio.inc"
 #include "rf_mesh_weaver_diagnostics.inc"
@@ -1200,6 +1201,9 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "dev-tests/rf_idle_rifle_lab_test.inc"
 #include "dev-tests/rf_combat_lab_test.inc"
 #include "rf_scene_performance.inc"
+#include "rf_player_panels.h"
+#include "rf_player_runtime.inc"
+#include "rf_ui_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
 
 static void draw_pause_overlay(struct rasterfall_canvas *surface,
@@ -3075,8 +3079,11 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
     menu.selected = runtime->pause_menu_selected;
-    if (runtime->console.open || runtime->gui.active ||
-        runtime->managed_terminal_open) return;
+    if (runtime->console.open) {
+        rf_player_terminal_draw(canvas,runtime,&game_bindings);
+        return;
+    }
+    if (runtime->gui.active || runtime->managed_terminal_open) return;
     if (state->state == TOY_GAME_OVER)
         draw_game_over_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
     else if (state->state == TOY_GAME_WON)
@@ -3087,12 +3094,21 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     else if(rf_combat_modal())rf_combat_draw(canvas,runtime->rts_active);
     else if (rf_perf_lab.running || rf_perf_lab.menu_open || rf_perf_lab.result_open)
         rf_perf_lab_draw(canvas, rf_core_clock_now_us());
-    else if (rf_weaver_terminal.open)
-        rf_weaver_terminal_draw(canvas, runtime->session);
-    else if (rf_render_terminal.open)
-        rf_render_terminal_draw(canvas);
-    else if (rf_table.open)
-        rf_table_draw(canvas);
+    else if (rf_weaver_terminal.open) {
+        if(runtime->player_ui.mode>=RF_PLAYER_UI_EXPERIMENT)
+            rf_weaver_terminal_draw(canvas, runtime->session);
+        else rf_player_weaver_draw(canvas,runtime,rf_weaver_terminal.row,
+            rf_weaver_terminal.pointer_x,rf_weaver_terminal.pointer_y,rf_weaver_terminal.confirm_replace);
+    }
+    else if (rf_render_terminal.open) {
+        if(runtime->player_ui.mode<RF_PLAYER_UI_EXPERIMENT)
+            rf_player_device_draw(canvas,runtime,RF_PLAYER_DEVICE_RENDER,rf_player_device_focus[RF_PLAYER_DEVICE_RENDER]);
+        else rf_render_terminal_draw(canvas);
+    } else if (rf_table.open) {
+        if(runtime->player_ui.mode<RF_PLAYER_UI_EXPERIMENT)
+            rf_player_device_draw(canvas,runtime,RF_PLAYER_DEVICE_TABLE,rf_player_device_focus[RF_PLAYER_DEVICE_TABLE]);
+        else rf_table_draw(canvas);
+    }
     else {
         if(rf_combat_lab.running)rf_combat_draw(canvas,runtime->rts_active);
         if(rf_combat_lab.control_near || rf_combat_lab.result_near)
@@ -3104,13 +3120,13 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
         if (rf_perf_lab.result_near)
             rasterfall_canvas_text(canvas, canvas->width/2-155,
                 canvas->height*3/4+22, "E  TEST RESULTS", 0xC7F2EE);
-        if (rf_render_terminal.near)
+        if (rf_render_terminal.near && runtime->player_ui.mode>=RF_PLAYER_UI_EXPERIMENT)
             rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
                 canvas->height * 3 / 4, "E  使用渲染终端", 0xC7F2EE);
-        if (rf_weaver_terminal.near)
+        if (rf_weaver_terminal.near && runtime->player_ui.mode>=RF_PLAYER_UI_EXPERIMENT)
             rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
                 canvas->height * 3 / 4, "E  网格编织机控制", 0x8AD9D1);
-        if (rf_table.near)
+        if (rf_table.near && runtime->player_ui.mode>=RF_PLAYER_UI_EXPERIMENT)
             rasterfall_canvas_text(canvas, canvas->width / 2 - 155,
                 canvas->height * 3 / 4, "E  USE COMMAND TABLE", 0xC7F2EE);
         if (rf_showcase_near)
@@ -3126,13 +3142,16 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             (rf_labs.requested[RF_LAB_WEAPON_CYCLE] && rasterfall_render_outpost_weapon_cycle_status()<0))
             rasterfall_canvas_text(canvas,canvas->width/2-180,canvas->height/2+40,
                 "MODEL UNAVAILABLE - CHECK ASSET INSTALL",0xFFAA66);
-        if (!runtime->rts_active && !runtime->session->shop_open &&
+        if (runtime->player_controls.crosshair && !runtime->rts_active && !runtime->session->shop_open &&
             toy_game_local_player_actor_const(state)->state != TOY_GAME_ACTOR_DOWNED)
             draw_crosshair(canvas, state);
         if (!runtime->session->pose_editor.active &&
             action_down(&runtime->input_frame, RF_ACTION_SCOREBOARD))
             draw_scoreboard(canvas, &runtime->net);
-        if (runtime->rts_active) draw_rts_overlay(canvas, runtime);
+        if (runtime->rts_active && runtime->player_ui.mode>=RF_PLAYER_UI_EXPERIMENT) draw_rts_overlay(canvas, runtime);
+        if(rf_weaver_terminal.minimized)rf_player_weaver_card(canvas,runtime);
+        rf_player_comms_draw(canvas,runtime,&game_bindings);
+        rf_player_notice_draw(canvas,runtime);
     }
 }
 
@@ -3339,6 +3358,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
         game_session->game_state.state == TOY_GAME_PLAYING) {
         fill_hud_state(&hud, &runtime->net, runtime->host_address,
                        runtime->host_port, body_camera);
+        rf_player_hud_fill(runtime,&hud);
         rasterfall_hud_layout(&ui_canvas, runtime->display_fps, &hud);
         if (!hud.shop_open)
             rasterfall_hud_prompt_layout(&ui_canvas, &hud);
@@ -3356,8 +3376,7 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
                          runtime->have_last_key ? runtime->last_key : 0,
                          runtime->have_last_key ? runtime->last_key_pressed : 0,
                          runtime->input_event_count);
-    if (runtime->console.open)
-        rasterfall_console_draw(surface, &runtime->console);
+    /* The player terminal is part of the shared GPU/CPU canvas callback. */
     else if (runtime->gui.active)
         rf_gui_render(surface, &runtime->gui);
     if (perf_window)
@@ -3974,7 +3993,25 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         if(scope && !strcmp(scope,"full")) rf_perf_lab.interference=1;
     }
     rf_render_terminal_init(options.gpu_scene_play, edge_pass_enabled);
+    rf_device_runtime_bind(&game_runtime);
     rf_weaver_terminal_init();
+    rf_weaver_terminal.runtime=&game_runtime;
+    game_runtime.player_persistence=!options.gpu_normal_view && !frame_limit &&
+        !options.gpu_frame_capture && requested_net_mode==RASTERFALL_NET_OFF;
+    if(getenv("RF_UI_SAVE_PATH")){game_runtime.ui_settings_path=getenv("RF_UI_SAVE_PATH");game_runtime.player_persistence=1;}
+    if(getenv("RF_STORY_SAVE_PATH")){game_runtime.story_save_path=getenv("RF_STORY_SAVE_PATH");game_runtime.player_persistence=1;}
+    if(getenv("RF_UI_NO_SAVE"))game_runtime.player_persistence=0;
+    if(game_runtime.player_persistence) {
+        rf_player_settings_load(&game_runtime,game_runtime.ui_settings_path);
+        rf_story_load(&game_runtime.story,game_runtime.story_save_path);
+    }
+    if(options.gpu_normal_view || frame_limit || options.gpu_frame_capture)game_runtime.story.enabled=0;
+    if(getenv("RF_UI_STORY"))game_runtime.story.enabled=atoi(getenv("RF_UI_STORY"))!=0;
+    if(getenv("RF_UI_MODE")) {
+        const char *mode=getenv("RF_UI_MODE");
+        game_runtime.player_ui.mode=!strcmp(mode,"experiment")?RF_PLAYER_UI_EXPERIMENT:
+            !strcmp(mode,"terminal")?RF_PLAYER_UI_TERMINAL:RF_PLAYER_UI_PLAYER;
+    }
     rf_weaver_present_reset();
     rf_labs_diagnostic_view(options.gpu_normal_view);
 #ifdef TOYC_WINDOWS
@@ -4022,17 +4059,16 @@ int rf_game_runtime_run(const struct rf_game_config *config)
      * 静默停声、wayland 发送失败则主循环干净退出）。SIG_IGN 值为 1。 */
     tlibc_sigaction(SIGPIPE, (void (*)(int))1);
     memset(&managed_terminal, 0, sizeof(managed_terminal));
-#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
     rasterfall_console_init(&developer_console);
+#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
     rf_gui_init(&game_runtime.gui);
     rf_gui_set_active(&game_runtime.gui, input_debug);
-#else
-    memset(&developer_console, 0, sizeof(developer_console));
 #endif
     command_context.core = &core;
     command_context.game_runtime = &game_runtime;
     command_context.command_state = &developer_console;
-    command_context.permission_level = RF_COMMAND_PERMISSION_SUPER;
+    command_context.permission_level = RF_COMMAND_PERMISSION_USER;
+    if(game_runtime.player_ui.mode==RF_PLAYER_UI_TERMINAL)developer_console.open=1;
     if (!textures_enabled)
         rasterfall_console_log(&developer_console,
                                RASTERFALL_CONSOLE_WARNING,
@@ -4749,6 +4785,7 @@ startup_again:
         struct toy_game_update_profile game_update_profile = {0};
         int logic_steps = 0;
         int resumed = 0;
+        int device_modal_was_open=rf_render_terminal.open||rf_table.open;
         int ready;
         static int logged_first_frame;
         unsigned char game_events[TOY_GAME_MAX_EVENTS];
@@ -4888,7 +4925,23 @@ startup_again:
         if (events.keyboard_focus_changed && !events.keyboard_focused) {
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
             memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
+            memset(game_runtime.ui_suppressed_physical,0,sizeof(game_runtime.ui_suppressed_physical));
+            memset(game_runtime.ui_suppressed_keys,0,sizeof(game_runtime.ui_suppressed_keys));
+            game_runtime.ui_suppressed_mouse=0;
         }
+        rf_player_input_filter(&game_runtime,&input);
+        game_runtime.camera=camera;
+        game_runtime.player_ui.map_expanded=!developer_console.open && action_down(&input,RF_ACTION_MAP_EXPAND);
+        if(action_pressed(&input,RF_ACTION_UI_MODE) && !paused) {
+            rf_player_request(&game_runtime,RF_PLAYER_SET_MODE,(game_runtime.player_ui.mode+1)%3,0,0);
+            developer_console.open=game_runtime.player_ui.mode==RF_PLAYER_UI_TERMINAL;
+            pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active&&
+                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open&&!game_runtime.comms_focus)>0;
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            resumed=1;fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;
+        }
+        command_context.permission_level=game_runtime.player_ui.mode==RF_PLAYER_UI_EXPERIMENT?
+            RF_COMMAND_PERMISSION_ADMIN:RF_COMMAND_PERMISSION_USER;
         if (events.key_event_count > 0) {
             int at = events.key_event_count - 1;
             last_key = events.key_events[at].key;
@@ -4939,23 +4992,18 @@ startup_again:
                                 events.button_pressed, events.button);
         if (game_runtime.gui.active && !developer_console.open)
             rf_app_manager_update(&game_runtime.app_manager, &input, 16);
-        if (!developer_console.open && action_pressed(&input, RF_ACTION_CONSOLE)) {
+        if (action_pressed(&input, RF_ACTION_CONSOLE) && !paused) {
             action_consume(&input, pending_physical_edges, RF_ACTION_CONSOLE);
             pending_key_edges[KEY_GRAVE] = 0;
-#if RASTERFALL_DESKTOP_RUNTIME_ENABLED
-            developer_console.open = 1;
+            developer_console.open = !developer_console.open;
             developer_console.was_paused = paused;
-            developer_console.terminal.input[0] = 0;
             rasterfall_console_log(&developer_console,
                                    RASTERFALL_CONSOLE_INFO,
-                                   "developer console opened");
-            rf_core_set_pointer_lock(&core, 0);
-            pointer_lock_requested = 0;
-#else
-            session.banner_ms = 2200;
-            session.banner_success = 0;
-            session.banner_text = RASTERFALL_CONSOLE_UNAVAILABLE_MESSAGE;
-#endif
+                                   "player terminal toggled");
+            pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active&&
+                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open&&!game_runtime.comms_focus)>0;
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            resumed=1;
         }
         {
             int console_was_open = developer_console.open;
@@ -4987,10 +5035,14 @@ startup_again:
                 rasterfall_console_log(&developer_console,
                                        RASTERFALL_CONSOLE_INFO,
                                        "developer console closed");
-                int capture_result = game_runtime.rts_active ? 0 :
+                int capture_result = game_runtime.rts_active || rf_weaver_terminal.open ? 0 :
                     rf_core_set_pointer_lock(&core, 1);
                 pointer_lock_requested = capture_result > 0;
                 paused = developer_console.was_paused;
+            }
+            if(console_was_open || developer_console.open) {
+                rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+                resumed=1;fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;
             }
         }
         if (developer_console.killall_requested) {
@@ -5184,13 +5236,23 @@ startup_again:
             }
         }
         rf_weaver_configure(&session, net.mode == RASTERFALL_NET_OFF);
+        if(!paused && !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open) {
+            if(rf_player_comms_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height)) {
+                rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+                resumed=1;fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;
+            }
+            action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_FOCUS);
+            action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_HIDE);
+            action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_ANSWER);
+        }
         rf_weaver_terminal.near = !rf_weaver_terminal.open && !rf_table.open &&
             !rf_render_terminal.open && !paused && !game_runtime.rts_active &&
             !rf_combat_modal() && !rf_combat_lab.running && !rf_perf_lab.running &&
             !rf_perf_lab.menu_open && !rf_perf_lab.result_open &&
             !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
             !session.shop_open && game.state == TOY_GAME_PLAYING &&
-            !(session.weaver_item_serial && session.highlight_index == session.weaver_item_index) &&
+            (game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT ||
+             !(session.weaver_item_serial && session.highlight_index == session.weaver_item_index)) &&
             rf_weaver_near(&session, camera.x, camera.z);
         rf_table.near = !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             !paused && !game_runtime.rts_active &&
@@ -5198,7 +5260,8 @@ startup_again:
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING &&
             camera.x >= -1250 && camera.x <= 1250 &&
-            camera.z >= -1900 && camera.z <= -850;
+            camera.z >= -1900 && camera.z <= -850 &&
+            rf_player_object_facing(&game_runtime,"command_table");
         if (session.world_id!=RASTERFALL_WORLD_OUTPOST && !rf_perf_lab.running)
             rf_labs_reset();
         rf_showcase_near = 0;
@@ -5226,7 +5289,7 @@ startup_again:
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING)
             rf_render_terminal.near = rf_render_terminal_near(
-                &session, camera.x, camera.z);
+                &session, camera.x, camera.z) && rf_player_object_facing(&game_runtime,"main_terminal");
         if (!rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
             !game_runtime.rts_active &&
             net.mode==RASTERFALL_NET_OFF &&
@@ -5344,7 +5407,9 @@ startup_again:
         } else if (rf_weaver_terminal.open) {
             rf_weaver_terminal.pointer_x = input.pointer_x;
             rf_weaver_terminal.pointer_y = input.pointer_y;
-            rf_weaver_terminal_input(&session,
+            if(!developer_console.open && game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT)
+                rf_player_weaver_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height);
+            else if(!developer_console.open)rf_weaver_terminal_input(&session,
                 action_pressed(&input, RF_ACTION_UI_UP),
                 action_pressed(&input, RF_ACTION_UI_DOWN),
                 action_pressed(&input, RF_ACTION_UI_LEFT),
@@ -5359,14 +5424,16 @@ startup_again:
             action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
             action_consume(&input, pending_physical_edges, RF_ACTION_TERMINAL);
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
-            if (rf_weaver_terminal.open && events.button_pressed && events.button == BTN_LEFT)
+            if (game_runtime.player_ui.mode>=RF_PLAYER_UI_EXPERIMENT && !developer_console.open &&
+                rf_weaver_terminal.open && events.button_pressed && events.button == BTN_LEFT)
                 rf_weaver_terminal_click(&session, renderer.surface.width,
                     renderer.surface.height, input.pointer_x, input.pointer_y);
             if (!rf_weaver_terminal.open) {
                 memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
-                pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
+                pointer_lock_requested = rf_core_set_pointer_lock(&core, !game_runtime.rts_active&&!developer_console.open) > 0;
                 resumed = 1;
             }
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             fire_edge = shove_edge = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
         } else if (rf_weaver_terminal.near && action_pressed(&input, RF_ACTION_INTERACT)) {
@@ -5374,6 +5441,15 @@ startup_again:
             pending_key_edges[KEY_E] = input.key_pressed[KEY_E] = 0;
             rf_weaver_terminal.open = 1;
             rf_weaver_terminal.near = 0;
+            rf_weaver_terminal.minimized=0;rf_weaver_terminal.confirm_replace=0;
+            rf_weaver_terminal.row=game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT?
+                RF_WEAVER_HIT_BLUEPRINT_BASE+game_runtime.player_controls.selected_blueprint:0;
+            rf_story_emit(&game_runtime.story,RF_STORY_EVENT_WEAVER_OPEN,"mesh_weaver");
+            if(game_runtime.player_ui.mode==RF_PLAYER_UI_TERMINAL) {
+                developer_console.open=1;developer_console.was_paused=0;
+                if(!developer_console.terminal.input[0])
+                    rf_terminal_session_set_input(&developer_console.terminal,"weaver status");
+            }
             rf_weaver_terminal.pointer_x = renderer.surface.width / 2;
             rf_weaver_terminal.pointer_y = renderer.surface.height / 2;
             rf_core_set_pointer_lock(&core, 0);
@@ -5382,6 +5458,14 @@ startup_again:
             pointer_turn_pending = pointer_pitch_pending = 0;
             resumed = 1;
         } else if (rf_render_terminal.open) {
+            if(game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
+                if(!developer_console.open)rf_player_device_input(&game_runtime,&developer_console,&input,&events,
+                    renderer.surface.width,renderer.surface.height,RF_PLAYER_DEVICE_RENDER);
+                if(!rf_render_terminal.open) {
+                    pointer_lock_requested=rf_core_set_pointer_lock(&core,!game_runtime.rts_active&&!developer_console.open)>0;
+                    resumed=1;
+                }
+            } else {
             int panel_x = (renderer.surface.width - 820) / 2;
             int panel_y = (renderer.surface.height - 500) / 2;
             rf_render_terminal.pointer_x = input.pointer_x;
@@ -5428,13 +5512,22 @@ startup_again:
                         rf_render_terminal_request(rf_render_terminal.selected);
                 }
             }
+            }
         } else if (rf_table.open) {
+            if(game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
+                if(!developer_console.open)rf_player_device_input(&game_runtime,&developer_console,&input,&events,
+                    renderer.surface.width,renderer.surface.height,RF_PLAYER_DEVICE_TABLE);
+                if(!rf_table.open) {
+                    pointer_lock_requested=rf_core_set_pointer_lock(&core,!game_runtime.rts_active&&!developer_console.open)>0;
+                    resumed=1;
+                }
+            } else {
             int hit;
             rf_table.pointer_x = input.pointer_x;
             rf_table.pointer_y = input.pointer_y;
             hit = rf_table_hit(renderer.surface.width, renderer.surface.height,
                                input.pointer_x, input.pointer_y);
-            if (hit >= 0) rf_table.selected = hit;
+            if (hit >= 0 && hit!=rf_table.selected) rf_device_table_request(hit,0);
             if (action_pressed(&input, RF_ACTION_CANCEL)) {
                 action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 pending_key_edges[KEY_ESC] = 0;
@@ -5444,16 +5537,8 @@ startup_again:
                 resumed = 1;
             } else if (events.button_pressed && events.button == BTN_LEFT &&
                        hit >= 0) {
-                if (rf_table.maps[hit].available &&
-                    rf_game_request_world(&game_runtime,
-                        rf_table.maps[hit].world) == 0) {
-                    camera = game_runtime.camera;
-                    rasterfall_effects_init(&effects);
-                    rf_table.open = rf_table.near = 0;
-                    pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
-                    pointer_turn_pending = pointer_pitch_pending = 0;
-                    resumed = 1;
-                }
+                rf_device_table_request(hit,1);
+            }
             }
         } else if ((rf_render_terminal.near &&
                     action_pressed(&input, RF_ACTION_INTERACT)) ||
@@ -5491,15 +5576,8 @@ startup_again:
         } else if (rf_table.near &&
                    action_pressed(&input, RF_ACTION_INTERACT) &&
                    net.mode == RASTERFALL_NET_OFF) {
-            struct toy_game_actor *player = toy_game_local_player_actor(&game);
             pending_key_edges[KEY_E] = 0;
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
-            camera.x = 0; camera.z = -1160;
-            camera.sy = 0; camera.cy = 1024;
-            camera.pitch_sy = 0; camera.pitch_cy = 1024;
-            player->x = camera.x; player->z = camera.z;
-            player->sy = camera.sy; player->cy = camera.cy;
-            game_runtime.camera = camera;
             rf_table.open = 1;
             rf_table.near = 0;
             rf_table.pointer_x = renderer.surface.width / 2;
@@ -5508,6 +5586,10 @@ startup_again:
             pointer_lock_requested = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
             resumed = 1;
+        }
+        if(device_modal_was_open||rf_render_terminal.open||rf_table.open) {
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
         }
         if (!paused && !resumed && !session.shop_open &&
             action_pressed(&input, RF_ACTION_CANCEL)) {
@@ -5526,22 +5608,41 @@ startup_again:
             }
         }
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open || session.shop_open ||
-            rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             pending_key_edges[KEY_M] = 0;
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open || session.shop_open ||
-            rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
-        if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) && !developer_console.open && !session.shop_open &&
-            !rf_render_terminal.open && !rf_weaver_terminal.open &&
+        {
+            int deploy_world=rf_device_take_deploy(&game_runtime);
+            if(deploy_world>=0 && rf_game_request_world(&game_runtime,deploy_world)==0) {
+                camera=game_runtime.camera;rasterfall_effects_init(&effects);
+                rf_table.open=rf_table.near=0;
+                pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active)>0;
+                pointer_turn_pending=pointer_pitch_pending=fire_edge=shove_edge=0;
+                rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+                resumed=1;
+            } else if(deploy_world>=0) {
+                game_runtime.device_service.last.code=RF_PLAYER_UNAVAILABLE;
+                snprintf(game_runtime.device_service.last.message,sizeof(game_runtime.device_service.last.message),
+                    "部署失败：地图或内容无法加载，请检查资源文件");
+                snprintf(rf_table.message,sizeof(rf_table.message),"%s",game_runtime.device_service.last.message);
+            }
+        }
+        if(game_runtime.player_controls.requested_view==game_runtime.rts_active)game_runtime.player_controls.requested_view=-1;
+        if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) && !session.shop_open &&
+            !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING &&
-            action_pressed(&input, RF_ACTION_COMMAND_MODE)) {
+            ((!developer_console.open && action_pressed(&input, RF_ACTION_COMMAND_MODE)) ||
+             game_runtime.player_controls.requested_view>=0)) {
             pending_key_edges[KEY_M] = 0;
             action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
             if (net.mode == RASTERFALL_NET_OFF) {
-                game_runtime.rts_active = !game_runtime.rts_active;
+                int target=game_runtime.player_controls.requested_view>=0?
+                    game_runtime.player_controls.requested_view:!game_runtime.rts_active;
+                game_runtime.player_controls.requested_view=-1;
+                game_runtime.rts_active = target;
                 rasterfall_session_set_rts(&session, game_runtime.rts_active);
-                game_runtime.rts_selected = 0;
-                game_runtime.rts_follow_player = 0;
                 game_runtime.rts_teleport_pending = 0;
                 if (game_runtime.rts_active) {
                     game_runtime.rts_saved_pitch_sy = camera.pitch_sy;
@@ -5558,9 +5659,11 @@ startup_again:
                     camera.pitch_sy = game_runtime.rts_saved_pitch_sy;
                     camera.pitch_cy = game_runtime.rts_saved_pitch_cy;
                     pointer_lock_requested =
-                        rf_core_set_pointer_lock(&core, 1) > 0;
+                        rf_core_set_pointer_lock(&core, !developer_console.open&&!game_runtime.comms_focus) > 0;
                 }
                 pointer_turn_pending = pointer_pitch_pending = 0;
+                rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+                resumed=1;fire_edge=shove_edge=0;
             } else {
                 session.banner_text = "RTS AVAILABLE OFFLINE";
                 session.banner_ms = 1800;
@@ -5578,11 +5681,15 @@ startup_again:
             if (pan_elapsed < 0) pan_elapsed = 0;
             if (pan_elapsed > 50000) pan_elapsed = 50000;
             pan = (int)(pan_elapsed * 12000 / 1000000);
+            if (action_pressed(&input, RF_ACTION_RTS_STOP)) {
+                action_consume(&input,pending_physical_edges,RF_ACTION_RTS_STOP);
+                rf_player_request(&game_runtime,RF_PLAYER_RTS_STOP,0,0,0);
+            }
             if (action_pressed(&input, RF_ACTION_RTS_FOLLOW)) {
                 action_consume(&input, pending_physical_edges, RF_ACTION_RTS_FOLLOW);
-                game_runtime.rts_follow_player = 1;
+                rf_player_request(&game_runtime,RF_PLAYER_RTS_FOLLOW,1,0,0);
             }
-            if (action_pressed(&input, RF_ACTION_RTS_TELEPORT)) {
+            if (game_runtime.player_ui.mode==RF_PLAYER_UI_EXPERIMENT && action_pressed(&input, RF_ACTION_RTS_TELEPORT)) {
                 action_consume(&input, pending_physical_edges, RF_ACTION_RTS_TELEPORT);
                 game_runtime.rts_teleport_pending = !game_runtime.rts_teleport_pending;
             }
@@ -5606,6 +5713,36 @@ startup_again:
             game_runtime.rts_camera_distance = rts_zoom_distance(
                 game_runtime.rts_camera_distance, input.wheel_y);
             rts_setup_camera(&rts_camera, &game_runtime);
+            if(events.button_pressed && game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
+                struct rf_ui_layout ui;
+                rf_ui_layout_resolve(&ui,&game_runtime.player_ui,renderer.surface.width,renderer.surface.height,1);
+                int hit=rf_player_ui_hit_test(&game_runtime.player_ui,renderer.surface.width,renderer.surface.height,1,input.pointer_x,input.pointer_y);
+                if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_STOP)rf_player_request(&game_runtime,RF_PLAYER_RTS_STOP,0,0,0);
+                if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_FOLLOW)rf_player_request(&game_runtime,RF_PLAYER_RTS_FOLLOW,1,0,0);
+                if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_FPS)rf_player_request(&game_runtime,RF_PLAYER_VIEW,0,0,0);
+                if(events.button==BTN_LEFT && hit==RF_PLAYER_UI_HIT_DOCK) {
+                    game_runtime.player_ui.rts_collapsed=!game_runtime.player_ui.rts_collapsed;
+                    events.button_pressed=0;
+                }
+                if(rf_ui_rect_contains(ui.map,input.pointer_x,input.pointer_y)) {
+                    struct rf_minimap_view map_view;
+                    struct rf_player_ui_view projection={0};int map_x,map_z;
+                    projection.rts_active=1;
+                    rf_player_ui_map_view(&map_view,&game_runtime.player_ui,&projection,
+                        toy_game_local_player_actor_const(&game),renderer.surface.width,renderer.surface.height);
+                    if(rf_minimap_screen_to_world(&map_view,input.pointer_x,input.pointer_y,&map_x,&map_z)) {
+                        if(events.button==BTN_LEFT) {
+                            game_runtime.rts_camera_x=map_x;game_runtime.rts_camera_z=map_z;
+                            rf_player_request(&game_runtime,RF_PLAYER_RTS_FOLLOW,0,0,0);
+                        } else if(events.button==BTN_RIGHT)
+                            rf_player_request(&game_runtime,RF_PLAYER_RTS_MOVE,0,map_x,map_z);
+                    }
+                }
+                if(rf_ui_rect_contains(ui.map,input.pointer_x,input.pointer_y) ||
+                   rf_ui_rect_contains(ui.objective,input.pointer_x,input.pointer_y) ||
+                   rf_ui_rect_contains(ui.selection,input.pointer_x,input.pointer_y) ||
+                   rf_ui_rect_contains(ui.commands,input.pointer_x,input.pointer_y))events.button_pressed=0;
+            }
             if (events.button_pressed &&
                 rts_surface_pick(&session.level, &rts_camera,
                     renderer.surface.width,
@@ -5637,14 +5774,9 @@ startup_again:
                             nearest = d2;
                         }
                     }
-                    game_runtime.rts_selected = selected;
+                    rf_player_request(&game_runtime,RF_PLAYER_RTS_SELECT,selected,0,0);
                 } else if (events.button == BTN_RIGHT) {
-                    if (game_runtime.rts_selected == 0)
-                        rasterfall_session_rts_move_player(
-                            &session, ground_x, ground_z);
-                    else if (game_runtime.rts_selected > 0)
-                        rasterfall_session_rts_move_flag(&session,
-                            game_runtime.rts_selected - 1, ground_x, ground_z);
+                    rf_player_request(&game_runtime,RF_PLAYER_RTS_MOVE,0,ground_x,ground_z);
                 }
             }
         }
@@ -5803,8 +5935,7 @@ startup_again:
         while (accumulator >= FIXED_STEP_US && logic_steps < MAX_LOGIC_STEPS) {
             rasterfall_motion_capture(&motion_previous, &session.game_state);
             if (!paused && !rf_combat_modal() && !managed_terminal.open && !rf_perf_lab.menu_open &&
-                !rf_perf_lab.result_open && !rf_table.open &&
-                !rf_render_terminal.open) {
+                !rf_perf_lab.result_open) {
                 struct rasterfall_command command;
                 if (game_runtime.rts_active && !session.rts_active)
                     rasterfall_session_set_rts(&session, 1);
@@ -5853,7 +5984,8 @@ startup_again:
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT &&
                       (!net.connected || !net.world_ready))) {
-                    if (rf_weaver_terminal.open || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe) || shop_input)
+                    if (rf_weaver_terminal.open || rf_render_terminal.open || rf_table.open || game_runtime.comms_focus ||
+                        resumed || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe) || shop_input)
                         memset(&command, 0, sizeof(command));
                     else
                         if (developer_console.open)
@@ -5937,6 +6069,8 @@ startup_again:
                     game_runtime.lifecycle_paused = paused;
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
+                    rf_player_story_tick(&game_runtime,FIXED_STEP_US/1000,
+                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !shop_input);
                     rf_weaver_diag_step(&session, FIXED_STEP_US / 1000);
                     if (options.gpu_wave_repro) {
                         static int previous_phase = -1, previous_alive = -1;
@@ -6255,6 +6389,12 @@ startup_again:
             game_runtime.have_last_key = have_last_key;
             game_runtime.input_event_count = input_event_count;
             game_runtime.console = developer_console;
+            if(!options.gpu_scene_play){game_runtime.ui_video_live=0;game_runtime.ui_video_state=3;}
+#ifdef TOYC_WINDOWS
+            rf_ui_perf_before_frame(&game_runtime,rendered_frames);
+            rf_player_aux_prepare(&game_runtime,renderer.surface.width,renderer.surface.height,
+                (uint64_t)rf_core_clock_now_us(),paused||developer_console.open||rf_render_terminal.open||rf_table.open);
+#endif
             game_runtime.render_context.character_gpu_skinning =
                 options.gpu_character_skinning;
             rf_labs_tick(session.world_id,paused ||
@@ -6602,15 +6742,17 @@ startup_again:
                                !strncmp(options.gpu_normal_view,"electronics-",12) ||
                                !strncmp(options.gpu_normal_view,"lab-computer",12)));
                         layers.ui_context=&game_runtime;layers.ui_layout=rf_game_shared_ui_layout;
+                        layers.aux_view=&rf_player_aux;
                         fill_hud_state(&layers.hud,&net,host_address,
                             net_port,&camera);
+                        rf_player_hud_fill(&game_runtime,&layers.hud);
                         scene_world_probe.layers=&layers;
                     }
                     scene_world_probe.quiet=rf_perf_lab.running || !(options.frame_audit || frame_limit);
                     const char *weaver_capture=rf_weaver_capture_path(
-                        options.gpu_scene_independent_preview && options.frame_audit && !options.gpu_frame_capture &&
-                        options.gpu_normal_view && !strcmp(options.gpu_normal_view,"mesh-weaver") &&
-                        !rf_weaver_performance.mode,rendered_frames);
+                        options.gpu_scene_independent_preview && !options.gpu_frame_capture &&
+                        ((options.frame_audit && options.gpu_normal_view && !strcmp(options.gpu_normal_view,"mesh-weaver") &&
+                        !rf_weaver_performance.mode) || getenv("RF_UI_CAPTURE_DIRECTORY")),rendered_frames);
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
@@ -6626,6 +6768,9 @@ startup_again:
                         scene_runtime_failed=1;goto scene_shutdown;
                     }
                     scene_world_probe.layers=NULL;
+                    game_runtime.ui_video_live=scene_world_probe.aux_status.state==RF_GPU_AUX_LIVE;
+                    game_runtime.ui_video_state=scene_world_probe.aux_status.state;
+                    rf_player_audit(&game_runtime,rendered_frames,&scene_world_probe.aux_status);
                     if(weaver_capture && rf_weaver_capture_complete(&session,rendered_frames)<0) {
                         __fprintf(2,"MESH-WEAVER-ERROR capture acknowledgement failed\n");
                         scene_runtime_failed=1;goto scene_shutdown;
@@ -6652,6 +6797,7 @@ startup_again:
                     rf_perf_lab_sample_detail(probe_stats.layer_prepare_us,probe_stats.actor_prepare_us,
                         scene_freeze_us,audit_render_us,probe_stats.record_us,
                         (int64_t)(probe_stats.gpu_sky_ms*1000),probe_stats.enemy_prepare_us,&probe_stats);
+                    rf_ui_perf_sample(&game_runtime,&scene_world_probe.aux_status,rendered_frames);
                     if (rf_scene_perf_sample(rendered_frames,audit_interval_us,&probe_stats,
                             renderer.surface.width,renderer.surface.height,paused)) running=0;
                     rf_scene_cost_end((uint64_t)rendered_frames,audit_update_us,audit_render_us,scene_freeze_us,

@@ -1,0 +1,16 @@
+{
+  "name": "Rasterfall UI Sans 18",
+  "upstream": "Noto Sans CJK SC Regular",
+  "source_url": "https://raw.githubusercontent.com/notofonts/noto-cjk/Sans2.004/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+  "source_sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+  "copyright": "Copyright 2014-2021 Adobe (http://www.adobe.com/).",
+  "license": "SIL Open Font License 1.1",
+  "pixel_size": 18,
+  "line_height": 20,
+  "baseline": 16,
+  "glyphs": 7544,
+  "rectangles": 455945,
+  "maximum_rectangles_per_glyph": 121,
+  "atlas_sha256": "12f386e81e71dc1788dca44d68107ea99c0039f3971de0b76461d24f9e4481d1",
+  "generator": "tools/fonts/build_player_ui_font.py"
+}

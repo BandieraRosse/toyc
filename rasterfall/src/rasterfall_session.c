@@ -550,6 +550,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     /* The game starts directly in the ordinary endless wave director.  There
      * are no safe rooms, capture stages, alarms, or objective transitions. */
     /* actor 0 is reserved for the local player; map-authored AI starts at 1. */
+    session->null_actor_index = -1;
     for (i = 0; i < session->level.ai_spawn_count && i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_map_ai_spawn *spawn = &session->level.ai_spawns[i];
         int actor_index;
@@ -600,12 +601,14 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 &session->game_state.actors[actor_index],
                 TOY_GAME_ANIM_IDLE);
         }
-        if (!strcmp(spawn->name, "Null")) {
+        if (!strcmp(spawn->name, "Null") || !strcmp(spawn->name, "NULL")) {
             struct toy_game_actor *null_actor =
                 &session->game_state.actors[actor_index];
             null_actor->fire_enabled = 0;
-            null_actor->control_disabled = 1;
+            null_actor->ai_stationary = 1;
             null_actor->companion = 1;
+            strcpy(null_actor->name, "NULL");
+            session->null_actor_index = actor_index;
         }
         if (!strcmp(spawn->name, "Jesus"))
             session->game_state.actors[actor_index].character_id =
@@ -623,8 +626,10 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                     struct toy_game_actor *a =
                         &session->game_state.actors[actor_id - 1];
                     a->fire_enabled = 0;
-                    a->control_disabled = 1;
+                    a->ai_stationary = 1;
                     a->companion = 1;
+                    strcpy(a->name, "NULL");
+                    session->null_actor_index = actor_id - 1;
                 }
             }
             break;
@@ -2161,7 +2166,8 @@ void rasterfall_session_set_rts(struct rasterfall_session *session, int active)
 {
     if (!session) return;
     session->rts_active = active != 0;
-    session->rts_move_active = 0;
+    /* A view switch does not cancel an already accepted order. FPS input
+     * temporarily owns the local body; RTS resumes the same destination. */
 }
 
 void rasterfall_session_rts_move_player(struct rasterfall_session *session,
@@ -2290,7 +2296,7 @@ int rasterfall_session_rts_logic_test(void)
     if (!rasterfall_session_rts_move_flag(&test, 0, 1200, 1300) ||
         test.flags[0].x != 1200 || test.flags[0].z != 1300) return 3;
     rasterfall_session_set_rts(&test, 0);
-    if (test.rts_move_active ||
+    if (!test.rts_move_active ||
         rasterfall_session_rts_move_flag(&test, 0, 0, 0)) return 4;
     {
         struct toy_map_primitive floors[3];

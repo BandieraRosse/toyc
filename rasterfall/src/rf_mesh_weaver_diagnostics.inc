@@ -26,6 +26,7 @@ static const char *rf_weaver_capture_path(int allowed,unsigned frame)
     if(!allowed)return NULL;
     if(!rf_weaver_capture.initialized) {
         const char *directory=rf_weaver_environment("RF_WEAVER_CAPTURE_DIRECTORY");
+        if(!directory)directory=rf_weaver_environment("RF_UI_CAPTURE_DIRECTORY");
         rf_weaver_capture.initialized=1;
         if(directory && directory[0] && strlen(directory)<sizeof(rf_weaver_capture.directory)) {
             strcpy(rf_weaver_capture.directory,directory);rf_weaver_capture.enabled=1;
@@ -158,6 +159,7 @@ static void rf_weaver_diag_start(struct rasterfall_session *s)
     if(d->blueprint>=0) {
         const struct rf_weaver_blueprint *b=&rf_weaver_blueprints[d->blueprint];
         rf_weaver_terminal.selected=d->blueprint;
+        if(rf_weaver_terminal.runtime)rf_weaver_terminal.runtime->player_controls.selected_blueprint=d->blueprint;
         d->start_result=rasterfall_session_weaver_start(s,&b->geometry);
         if(d->start_result) {
             const char *unavailable=rf_weaver_unavailable(b);
@@ -232,7 +234,10 @@ static int rf_weaver_diag_initial(struct rasterfall_session *s,int enabled,
     if(!s || !s->game_state.weaver.enabled || s->game_state.state!=TOY_GAME_PLAYING) {
         __printf("MESH-WEAVER-ERROR experiment_not_available\n");return -1;
     }
-    if(d->blueprint>=0) rf_weaver_terminal.selected=d->blueprint;
+    if(d->blueprint>=0) {
+        rf_weaver_terminal.selected=d->blueprint;
+        if(rf_weaver_terminal.runtime)rf_weaver_terminal.runtime->player_controls.selected_blueprint=d->blueprint;
+    }
     rf_weaver_terminal.open=d->menu;
     int visible_ms=d->capture_frame*fixed_step_ms,preroll=0;
     if(d->target_ms>=0) {
