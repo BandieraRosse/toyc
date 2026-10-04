@@ -73,8 +73,9 @@ retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pip
 
 `rf_gpu_scene_layers_input.aux_view` 是 Runtime 提交的单个辅助视图请求。它分开保存稳定来源 ID、
 generation、实体镜头变换、视频矩形、内部渲染尺寸和刷新频率；UI 布局变化只改变最终合成矩形。
-`render/rf_gpu_scene_aux.inc` 持有低频调度，Scene probe 持有持久子 owner。默认从 320×180、12 Hz
-开始，最多 15 Hz；实际性能签收依实机采样，不把这些值视为性能保证。通讯和设备预览共用一个可见
+`render/rf_gpu_scene_aux.inc` 持有低频调度，Scene probe 持有持久子 owner。默认刷新为 12 Hz，最多 15 Hz。
+通讯直接按 240×360 的 2:3 竖画面渲染，合成矩形保持同一比例，禁止把横画面非等比拉伸进竖框；
+设备预览默认从 320×180 开始，再按预览矩形调整内部高度。实际性能签收依实机采样，不把这些值视为性能保证。通讯和设备预览共用一个可见
 槽位，由 Runtime 决定优先级，并向用户说明暂停原因。
 
 WORLD 模式使用本帧同一份 world、actor、敌人、设备和 effects 冻结值，以实体镜头重新准备完整

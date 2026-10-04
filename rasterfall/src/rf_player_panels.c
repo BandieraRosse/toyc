@@ -279,17 +279,24 @@ void rf_player_comms_layout(struct rf_player_comms_rects *o,int width,int height
     rf_ui_layout_resolve(&layout,ui,width,height,0);
     scale=layout.text_scale_milli;o->scale_milli=scale;
     pad=o->padding=layout.padding;gap=layout.gap;
-    x=layout.margin;y=layout.margin+p_px(48,scale);
-    video_w=p_min(p_px(compact?200:272,scale),width/3);
-    video_h=video_w*9/16;
+    video_w=p_min(p_px(160,layout.scale_milli),width/3);
+    video_w-=video_w%2;
+    video_h=video_w*3/2;
+    /* Use the expanded RTS dock as a stable anchor in both view modes. */
+    {
+        struct rf_ui_layout anchor;
+        rf_ui_layout_resolve(&anchor,ui,width,height,1);
+        /* Keep the portrait above the task row even with larger UI text. */
+        video_w=p_min(video_w,p_max(2,(anchor.objective.y-gap*2-
+            layout.margin-p_px(48+34,scale))*2/3));
+        video_w-=video_w%2;
+        video_h=video_w*3/2;
+        x=layout.margin;
+        y=p_max(layout.margin+p_px(48,scale),
+            anchor.objective.y-gap*2-video_h-p_px(34,scale));
+    }
     o->window=p_rect(x,y,video_w,video_h+p_px(34,scale));
     o->video=p_rect(x,y+p_px(34,scale),video_w,video_h);
-    o->close=p_rect(x+video_w-p_px(28,scale),y,p_px(28,scale),p_px(26,scale));
-    o->collapse=p_rect(o->close.x-p_px(28,scale)-gap,y,p_px(28,scale),p_px(26,scale));
-    if (collapsed) {
-        o->window.h=p_px(34,scale);o->video=p_rect(0,0,0,0);
-        o->collapse=o->window;
-    }
     /* Chat sits between the corner HUDs, above the bottom command strip. */
     x=layout.map.x+layout.map.w+gap;
     w=p_max(160,layout.vitals.x-gap-x);
@@ -299,28 +306,14 @@ void rf_player_comms_layout(struct rf_player_comms_rects *o,int width,int height
     choice_h=p_px(28,scale);
     y=p_min(height*78/100,height-layout.margin-p_px(ui->layout.rts_height,scale)-gap);
     o->text=p_rect(x,y-p_px(128,scale),w,p_px(128,scale));
-    if(o->window.x+o->window.w+gap>o->text.x) {
-        video_w=p_max(p_px(120,scale),o->text.x-o->window.x-gap);
-        o->window.w=o->video.w=video_w;
-        o->video.h=collapsed?0:video_w*9/16;
-        o->window.h=p_px(34,scale)+o->video.h;
-        o->close.x=o->window.x+video_w-o->close.w;
-        if(!collapsed)o->collapse.x=o->close.x-gap-o->collapse.w;
-        else o->collapse=o->window;
-    }
     for(int i=0;i<3;++i)o->choices[i]=p_rect(x,y+i*choice_h,w,choice_h);
     o->footer=p_rect(x,y+3*choice_h,w,p_px(24,scale));
-    (void)pad;
+    (void)pad;(void)compact;(void)collapsed;
 }
 
 int rf_player_comms_hit(const struct rf_player_comms_rects *o,int x,int y,int choice_count)
 {
-    if (rf_ui_rect_contains(o->collapse,x,y)) return RF_COMMS_HIT_COLLAPSE;
-    if (rf_ui_rect_contains(o->close,x,y)) return RF_COMMS_HIT_CLOSE;
-    if (rf_ui_rect_contains(o->history,x,y)) return RF_COMMS_HIT_HISTORY;
-    for (int i=0;i<choice_count && i<3;++i)
-        if (rf_ui_rect_contains(o->choices[i],x,y)) return RF_COMMS_HIT_CHOICE_BASE+i;
-    if (!choice_count && rf_ui_rect_contains(o->choices[0],x,y)) return RF_COMMS_HIT_CONTINUE;
+    (void)o;(void)x;(void)y;(void)choice_count;
     return RF_COMMS_HIT_NONE;
 }
 
@@ -374,21 +367,18 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
     const struct rf_story_node *node=rf_story_current_node(story);
     const struct rf_ui_theme *theme=&runtime->player_ui.theme;
     struct rf_player_comms_rects o;
-    char line[512],key[24],answer[24];
+    char line[512],key[24];
     int scale;
     rf_player_comms_layout(&o,c->width,c->height,&runtime->player_ui,story->combat,story->collapsed);
     scale=o.scale_milli;
     p_key(bindings,RF_ACTION_COMMS_FOCUS,key,sizeof(key));
-    p_key(bindings,RF_ACTION_COMMS_ANSWER,answer,sizeof(answer));
     if(node) {
         if(story->collapsed) {
             rf_ui_text(c,o.window,"NULL 通讯已收起",theme->muted,scale,1);
         } else {
             p_panel_hole(c,o.window,o.video,theme);
             rf_ui_text(c,p_rect(o.window.x,o.window.y+p_px(5,scale),
-                o.collapse.x-o.window.x,p_px(22,scale)),node->speaker,theme->accent,scale,1);
-            rf_ui_button(c,o.collapse,theme,"-",scale,0,1);
-            rf_ui_button(c,o.close,theme,"X",scale,0,1);
+                o.window.w,p_px(22,scale)),node->speaker,theme->accent,scale,1);
             if(!runtime->ui_video_live || story->link!=RF_STORY_LINK_LIVE) {
                 const char *status=runtime->ui_video_state==3?"视频不可用":
                     story->link==RF_STORY_LINK_UNAVAILABLE?"镜头不可用":
@@ -399,7 +389,7 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
             }
         }
     }
-    if(!runtime->comms_focus && (!story->history_count || runtime->chat_idle_ms>=10000))return;
+    if(!runtime->comms_focus && !node && (!story->history_count || runtime->chat_idle_ms>=10000))return;
     {
         int leading=p_px(22,scale),lines=p_chat_lines(story,o.text,scale);
         int scroll=p_min(runtime->chat_scroll,p_max(0,lines-o.text.h/leading));
@@ -418,24 +408,14 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
         }
         if(!story->history_count)rf_ui_text(c,o.text,"暂无聊天记录",theme->muted,scale,1);
     }
-    if(runtime->comms_focus && node && !story->collapsed) {
-        struct rf_ui_theme choice_theme=*theme;choice_theme.panel_alpha=170;
-        for(int i=0;i<node->choice_count;++i)
-            rf_ui_button(c,o.choices[i],&choice_theme,node->choices[i].text,scale,runtime->comms_choice==i,1);
-        if(!node->choice_count)rf_ui_button(c,o.choices[0],&choice_theme,"继续",scale,1,1);
-    }
     if(o.footer.w<p_px(360,scale)) {
         o.footer.h=p_px(44,scale);
-        if(runtime->comms_focus && node && !story->collapsed)
-            snprintf(line,sizeof(line),"[%s] 收起\n[%s]回答 ↑↓记录",key,answer);
-        else if(runtime->comms_focus)
+        if(runtime->comms_focus)
             snprintf(line,sizeof(line),"[%s] 收起\n↑↓ / 滚轮记录",key);
         else snprintf(line,sizeof(line),"[%s] 聊天",key);
         rf_ui_text(c,o.footer,line,theme->muted,scale,2);
     } else {
-        if(runtime->comms_focus && node && !story->collapsed)
-            snprintf(line,sizeof(line),"[%s] 收起  ↑↓ / 滚轮 记录  ←→ / Tab 选择  [%s] 回答",key,answer);
-        else if(runtime->comms_focus)
+        if(runtime->comms_focus)
             snprintf(line,sizeof(line),"[%s] 收起  ↑↓ / 滚轮 查看记录",key);
         else snprintf(line,sizeof(line),"[%s] 打开聊天记录",key);
         rf_ui_text(c,o.footer,line,theme->muted,scale,1);

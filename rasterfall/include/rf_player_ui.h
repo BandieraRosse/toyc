@@ -20,7 +20,7 @@ struct rf_ui_theme {
 /* All dimensions are 720p design pixels, independent of gameplay data.
  * A future theme/editor can replace this descriptor without changing HUD code. */
 struct rf_ui_layout_config {
-    int margin, gap, padding, map_size, map_expanded_size;
+    int margin, gap, padding, map_size;
     int vital_width, vital_height, weapon_width, weapon_height;
     int rts_height, objective_width, phase_width, resource_width;
 };
@@ -30,7 +30,7 @@ struct rf_ui_layout {
     struct rf_ui_rect selection, commands, hints, dock_toggle;
 };
 struct rf_player_ui_state {
-    int mode, scale_percent, map_expanded, rts_collapsed;
+    int mode, scale_percent, rts_collapsed;
     struct rf_ui_theme theme;
     struct rf_ui_layout_config layout;
     struct rf_minimap_state minimap;
@@ -75,7 +75,7 @@ void rf_ui_text(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,
                 const char *text, unsigned int color, int scale_milli,
                 int max_lines);
 void rf_player_ui_layout(struct rasterfall_canvas *canvas,
-                         const struct rasterfall_hud_state *hud);
+                         const struct rasterfall_hud_state *hud,int fps);
 void rf_player_ui_prompt_layout(struct rasterfall_canvas *canvas,
                                 const struct rasterfall_hud_state *hud);
 int rf_player_ui_logic_test(void);

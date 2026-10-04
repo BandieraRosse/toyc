@@ -8,24 +8,21 @@
  * the controller, input, layout, and camera do not know dialogue branches. */
 static const struct rf_story_node nodes[] = {
     { 1010, RF_STORY_OUTPOST, 10, "null", "NULL", "前哨站",
-      "你到了。我是 NULL。这里是前哨站，先熟悉一下周围吧。", "null_comms", 0, 0, 3,
-      { { "hello", "你好，NULL。", 1011, 0, RF_STORY_TASK_EXPLORE },
-        { "facilities", "这里有什么？", 1012, 0, RF_STORY_TASK_LABS },
-        { "explore", "我先四处看看。", 1013, 0, RF_STORY_TASK_EXPLORE } } },
+      "你到了。我是 NULL。这里是前哨站，先熟悉一下周围吧。", "null_comms", 0, 0, 0,
+      {{0}}, 1012, RF_STORY_TASK_LABS },
     { 1011, RF_STORY_OUTPOST, 10, "null", "NULL", "前哨站",
-      "你好。需要了解这里的时候，可以来找我。", "null_comms", 0, 0, 0, {{0}} },
+      "你好。需要了解这里的时候，可以来找我。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
     { 1012, RF_STORY_OUTPOST, 10, "null", "NULL", "前哨站",
-      "你可以先看看这里的设施。想试用设备的话，再去实验区域。", "null_comms", 0, 0, 0, {{0}} },
+      "你可以先看看这里的设施。想试用设备的话，再去实验区域。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
     { 1013, RF_STORY_OUTPOST, 10, "null", "NULL", "前哨站",
-      "好，保持联系。", "null_comms", 0, 0, 0, {{0}} },
+      "好，保持联系。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
     { 1020, RF_STORY_LABS, 10, "null", "NULL", "前哨站 / 远程",
-      "这里是实验区域。你可以在这里查看设备、试用武器，也可以看看网格编织机的制造过程。", "null_comms", 0, 0, 2,
-      { { "weaver", "先介绍编织机。", 1021, 0, RF_STORY_TASK_WEAVER },
-        { "explore", "我自己看看。", 1022, 0, RF_STORY_TASK_EXPLORE }, {0} } },
+      "这里是实验区域。你可以在这里查看设备、试用武器，也可以看看网格编织机的制造过程。", "null_comms", 0, 0, 0,
+      {{0}}, 1021, RF_STORY_TASK_WEAVER },
     { 1021, RF_STORY_LABS, 10, "null", "NULL", "前哨站 / 远程",
-      "找到网格编织机，打开蓝图库。选好物品后，界面会显示制造时间和能源需求。", "null_comms", 0, 0, 0, {{0}} },
+      "找到网格编织机，打开蓝图库。选好物品后，界面会显示制造时间和能源需求。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
     { 1022, RF_STORY_LABS, 10, "null", "NULL", "前哨站 / 远程",
-      "好。需要操作设备时，靠近后查看交互提示。", "null_comms", 0, 0, 0, {{0}} }
+      "好。需要操作设备时，靠近后查看交互提示。", "null_comms", 0, 0, 0, {{0}}, 0, 0 }
 };
 
 struct story_camera_profile {
@@ -36,7 +33,9 @@ struct story_camera_profile {
 /* Framing is content configuration. A different camera ID can select a
  * different fixed setup without editing the conversation controller. */
 static const struct story_camera_profile camera_profiles[] = {
-    { "null_comms", { 1000, 850, 700 }, 0, 1024, 0, -160, 1011, 64, 67, 100 }
+    { "null_comms", { 720, 680, 640 }, 0, 1024,
+      RASTERFALL_HUMAN_HEIGHT_RFU / 2 + RASTERFALL_RFU_FROM_CM(35) - RASTERFALL_HUMAN_EYE_HEIGHT_RFU,
+      0, 1024, 64, 67, 100 }
 };
 
 static int story_index(int id)
@@ -46,11 +45,10 @@ static int story_index(int id)
 
 int rf_story_trigger_policy(int id)
 {
-    /* Content policy is separate from saved progress. Both current stories
-     * repeat; future one-shot content can opt into RF_STORY_TRIGGER_ONCE. */
+    /* Per-game latches are transient; saved completion is not a lifetime ban. */
     static const struct { int id, policy; } triggers[] = {
-        { RF_STORY_OUTPOST, RF_STORY_TRIGGER_EACH_ENTRY },
-        { RF_STORY_LABS, RF_STORY_TRIGGER_EACH_ENTRY }
+        { RF_STORY_OUTPOST, RF_STORY_TRIGGER_EACH_GAME },
+        { RF_STORY_LABS, RF_STORY_TRIGGER_EACH_GAME }
     };
     for (unsigned i=0;i<sizeof(triggers)/sizeof(triggers[0]);++i)
         if (triggers[i].id==id) return triggers[i].policy;
@@ -68,6 +66,28 @@ const struct rf_story_node *rf_story_find_node(int id)
 const struct rf_story_node *rf_story_current_node(const struct rf_story *s)
 {
     return s && s->active_story ? rf_story_find_node(s->node_id) : NULL;
+}
+
+int rf_story_line_duration_ms(const char *line)
+{
+    /* About four spoken syllables/second, plus a one-second lead/tail.
+     * Decode UTF-8 scalars so CJK bytes do not inflate speaking time. */
+    const unsigned char *p = (const unsigned char *)line;
+    int ms = 1000;
+    if (!p) return ms;
+    while (*p) {
+        unsigned cp = *p++;
+        if (cp >= 0xC0) {
+            int extra = cp < 0xE0 ? 1 : cp < 0xF0 ? 2 : 3;
+            cp &= extra == 1 ? 31 : extra == 2 ? 15 : 7;
+            while (extra-- && (*p & 0xC0) == 0x80) cp = (cp << 6) | (*p++ & 63);
+        }
+        if (cp == ',' || cp == 0xFF0C || cp == 0x3001) ms += 200;
+        else if (cp == '.' || cp == '!' || cp == '?' || cp == 0x3002 ||
+                 cp == 0xFF01 || cp == 0xFF1F) ms += 400;
+        else if (cp > 32) ms += cp < 128 ? 100 : 250;
+    }
+    return ms;
 }
 
 static void task_set(struct rf_story *s, int id)
@@ -105,6 +125,7 @@ void rf_story_init(struct rf_story *s)
     if (!s) return;
     memset(s, 0, sizeof(*s));
     s->enabled = 1;
+    s->collapsed = 1;
     s->actor_index = -1;
     s->session_revision = s->node_revision = 1;
     task_set(s, RF_STORY_TASK_NONE);
@@ -147,6 +168,14 @@ void rf_story_detach(struct rf_story *s, struct rasterfall_session *session)
 static void queue_story(struct rf_story *s, int id)
 {
     int i = story_index(id);
+    if (i >= 0 && rf_story_trigger_policy(id) == RF_STORY_TRIGGER_EACH_GAME) {
+        if ((s->triggered_this_game & (1u << i)) || s->queue_count >= RF_STORY_QUEUE_CAP) return;
+        s->triggered_this_game |= 1u << i;
+        s->progress[i] = RF_STORY_QUEUED;
+        s->queue[s->queue_count++] = id;
+        s->dirty = 1;
+        return;
+    }
     if (i < 0 || (s->progress[i] != RF_STORY_UNSEEN &&
         !(rf_story_trigger_policy(id)==RF_STORY_TRIGGER_EACH_ENTRY &&
           (s->progress[i]==RF_STORY_COMPLETED || s->progress[i]==RF_STORY_CANCELLED))) ||
@@ -227,7 +256,7 @@ static int bind_camera(struct rf_story *s, struct rasterfall_session *session)
             if (toy_game_position_blocked_at_height(&session->game_state,
                     a->x + profile->offset_sy * profile->distances[i] * n / steps / 1024,
                     a->z + profile->offset_cy * profile->distances[i] * n / steps / 1024, 32,
-                    a->ground_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU - 100)) {
+                    a->ground_y + RASTERFALL_HUMAN_EYE_HEIGHT_RFU + profile->eye_offset_y)) {
                 blocked = 1; break;
             }
         if (!blocked) { distance = profile->distances[i]; break; }
@@ -373,6 +402,7 @@ void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
         s->session_revision++; s->node_revision++;
         s->progress[story_index(s->active_story)] = RF_STORY_ACTIVE;
         s->collapsed = 0; s->link = RF_STORY_LINK_CONNECTING; s->retry_ms = 0;
+        s->line_elapsed_ms = 0;
         s->dirty = 1; history_add(s, -1);
     }
     if (!s->active_story) {
@@ -395,6 +425,12 @@ void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
             return;
         }
     }
+    if (s->link == RF_STORY_LINK_INTERRUPTED && !combat && allow_start &&
+        session->null_actor_index >= 0 && session->null_actor_index < TOY_GAME_MAX_ACTORS &&
+        actor_available(&session->game_state.actors[session->null_actor_index])) {
+        s->link = RF_STORY_LINK_CONNECTING; s->retry_ms = 0;
+        return;
+    }
     if (s->link != RF_STORY_LINK_LIVE) return;
     a = bound_actor(s, session);
     if (!actor_available(a) || !rf_story_camera(s, session) || a->hp < s->last_hp ||
@@ -410,6 +446,12 @@ void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
     }
     face_camera(a, &s->camera.view, dt_ms);
     s->last_hp = a->hp;
+    if (!s->collapsed && dt_ms > 0) {
+        const struct rf_story_node *node = rf_story_current_node(s);
+        s->line_elapsed_ms += dt_ms;
+        if (node && !node->choice_count && s->line_elapsed_ms >= rf_story_line_duration_ms(node->line))
+            rf_story_answer(s, session, s->session_revision, s->node_revision, -1);
+    }
 }
 
 int rf_story_answer(struct rf_story *s, struct rasterfall_session *session,
@@ -431,12 +473,22 @@ int rf_story_answer(struct rf_story *s, struct rasterfall_session *session,
         history_add(s, -1);
     } else {
         if (choice != -1) return 0;
+        if (n->auto_task) { task_set(s, n->auto_task); task_target(s, session); }
+        if (n->auto_next_node) {
+            if (!rf_story_find_node(n->auto_next_node)) return 0;
+            s->node_id = n->auto_next_node; s->node_revision++;
+            s->line_elapsed_ms = 0;
+            history_add(s, -1); s->dirty = 1;
+            return 1;
+        }
         s->progress[story_index(s->active_story)] = RF_STORY_COMPLETED;
         release_hold(s, session);
         s->active_story = s->node_id = 0;
+        s->collapsed = 1;
         s->link = RF_STORY_LINK_OFF; s->node_revision++;
     }
     s->dirty = 1;
+    s->line_elapsed_ms = 0;
     return 1;
 }
 
@@ -471,6 +523,7 @@ int rf_story_reset(struct rf_story *s, struct rasterfall_session *session, int i
     if (!id) s->progress[0] = s->progress[1] = RF_STORY_UNSEEN;
     else s->progress[index] = RF_STORY_UNSEEN;
     s->region_presence &= id ? ~(1u << index) : 0;
+    s->triggered_this_game &= id ? ~(1u << index) : 0;
     task_set(s, RF_STORY_TASK_NONE);
     s->session_revision++; s->node_revision++; s->dirty = 1;
     return 1;
@@ -573,13 +626,16 @@ int rf_story_load(struct rf_story *s, const char *path)
         if(index<0 || loaded.progress[index]!=RF_STORY_QUEUED || v[10+i]==v[4]) return -1;
         for(j=0;j<i;++j) if(v[10+j]==v[10+i]) return -1;
         loaded.queue[loaded.queue_count++]=v[10+i];
+        loaded.triggered_this_game |= 1u << index;
     }
     if(loaded.active_story) {
         int index=story_index(loaded.active_story);
         if(loaded.progress[index]!=RF_STORY_ACTIVE && loaded.progress[index]!=RF_STORY_INTERRUPTED) return -1;
         loaded.link=RF_STORY_LINK_CONNECTING; history_add(&loaded,-1);
+        loaded.triggered_this_game |= 1u << index;
     }
     loaded.session_revision=s->session_revision+1;
+    loaded.triggered_this_game |= s->triggered_this_game;
     loaded.node_revision=s->node_revision+1;
     loaded.dirty=0;
     *s=loaded;

@@ -10,7 +10,8 @@ struct rasterfall_session;
 enum rf_story_id { RF_STORY_NONE, RF_STORY_OUTPOST = 101, RF_STORY_LABS = 102 };
 enum rf_story_progress { RF_STORY_UNSEEN, RF_STORY_QUEUED, RF_STORY_ACTIVE,
     RF_STORY_INTERRUPTED, RF_STORY_COMPLETED, RF_STORY_CANCELLED };
-enum rf_story_trigger_policy { RF_STORY_TRIGGER_EACH_ENTRY, RF_STORY_TRIGGER_ONCE };
+enum rf_story_trigger_policy { RF_STORY_TRIGGER_EACH_ENTRY, RF_STORY_TRIGGER_ONCE,
+    RF_STORY_TRIGGER_EACH_GAME };
 int rf_story_trigger_policy(int story_id);
 enum rf_story_task_id { RF_STORY_TASK_NONE, RF_STORY_TASK_EXPLORE = 201,
     RF_STORY_TASK_LABS = 202, RF_STORY_TASK_WEAVER = 203,
@@ -36,6 +37,7 @@ struct rf_story_node {
     const char *speaker_id, *speaker, *location, *line, *camera_id;
     int action, condition, choice_count;
     struct rf_story_choice choices[RF_STORY_CHOICES];
+    int auto_next_node, auto_task;
 };
 struct rf_story_history_entry { int story_id, node_id, choice; unsigned revision; };
 struct rf_story_task {
@@ -69,6 +71,8 @@ struct rf_story {
     struct rf_story_history_entry history[RF_STORY_HISTORY_CAP];
     int history_count, dirty, persistence_error;
     unsigned history_revision, region_presence;
+    unsigned triggered_this_game;
+    int line_elapsed_ms;
 };
 
 void rf_story_init(struct rf_story *story);
@@ -82,6 +86,7 @@ void rf_story_update(struct rf_story *story, struct rasterfall_session *session,
 void rf_story_emit(struct rf_story *story, int event, const char *target_id);
 const struct rf_story_node *rf_story_current_node(const struct rf_story *story);
 const struct rf_story_node *rf_story_find_node(int node_id);
+int rf_story_line_duration_ms(const char *line);
 /* choice=-1 confirms a terminal line. Both revisions must match the snapshot
  * that produced the input; a stale/double answer never advances a new node. */
 int rf_story_answer(struct rf_story *story, struct rasterfall_session *session,

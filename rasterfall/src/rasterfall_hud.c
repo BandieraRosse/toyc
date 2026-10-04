@@ -450,15 +450,15 @@ static char hud_upper_ascii(char c)
     return c >= 'a' && c <= 'z' ? (char)(c - 'a' + 'A') : c;
 }
 
-static void render_player_hud(struct rasterfall_canvas *surface,
+void rasterfall_hud_player_status(struct rasterfall_canvas *surface,
                               const struct toy_game *game,
-                              const char *player_name)
+                              const char *player_name, int x, int y)
 {
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
     char name[TOY_GAME_MAX_NAME];
     char line[32];
-    int i, x = 16, y = surface->height - 68;
+    int i;
     int bar_x = x + 53, bar_y = y + 29, bar_w = 128;
     int hp = player ? player->hp : 0;
     int max_hp = player && player->max_hp > 0 ? player->max_hp : 1;
@@ -729,13 +729,13 @@ void rasterfall_hud_layout(struct rasterfall_canvas *surface, int fps,
     const struct toy_game_actor *player =
         toy_game_local_player_actor_const(game);
     if (state->player_ui && state->player_ui->mode <= RF_PLAYER_UI_TERMINAL) {
-        rf_player_ui_layout(surface,state);
+        rf_player_ui_layout(surface,state,fps);
     } else {
         render_wave_hud(surface, game, fps);
         render_network_hud(surface, state->net, state->host_address, state->host_port);
         render_weapon_hud(surface, game);
         render_money(surface, game);
-        render_player_hud(surface, game, state->player_name);
+        rasterfall_hud_player_status(surface, game, state->player_name, 16, surface->height - 68);
     }
     render_revive_prompt(surface, state);
     if (state->pose_debug_active && state->pose_editor && state->pose_editor->active) {

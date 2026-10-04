@@ -183,19 +183,13 @@ static void rf_player_device_input(struct rf_game_runtime *r,struct rasterfall_c
 static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_console *console,struct rf_input_frame *in,
     const struct toy_window_events *events,int width,int height)
 {
-    const struct rf_story_node *node=rf_story_current_node(&r->story);
-    struct rf_player_comms_rects rects;
-    int before=r->comms_focus,hit=0;
+    int before=r->comms_focus;
     int toggle=action_pressed(in,RF_ACTION_COMMS_FOCUS);
-    if(node && action_pressed(in,RF_ACTION_COMMS_HIDE)) {
-        rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,!r->story.collapsed,0,0);
-        if(r->story.collapsed)r->comms_focus=0;
-    }
+    (void)events;
     if(toggle) {
         r->comms_focus=!r->comms_focus;
         if(r->comms_focus) {rf_story_collapse(&r->story,0);r->chat_scroll=0;}
     }
-    if(node && r->comms_choice>=node->choice_count)r->comms_choice=0;
     if(r->comms_focus) {
         int scroll=in->wheel_y;
         if(action_pressed(in,RF_ACTION_UI_UP))scroll++;
@@ -204,23 +198,7 @@ static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_con
         if(r->chat_scroll<0)r->chat_scroll=0;
         int scroll_max=rf_player_chat_scroll_max(r,width,height);
         if(r->chat_scroll>scroll_max)r->chat_scroll=scroll_max;
-        if(node && node->choice_count && (action_pressed(in,RF_ACTION_UI_RIGHT)||action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD)))
-            r->comms_choice=(r->comms_choice+1)%node->choice_count;
-        if(node && node->choice_count && action_pressed(in,RF_ACTION_UI_LEFT))
-            r->comms_choice=(r->comms_choice+node->choice_count-1)%node->choice_count;
         if(action_pressed(in,RF_ACTION_CANCEL))r->comms_focus=0;
-        rf_player_comms_layout(&rects,width,height,&r->player_ui,r->story.combat,r->story.collapsed);
-        if(node && events->button_pressed && events->button==BTN_LEFT)
-            hit=rf_player_comms_hit(&rects,in->pointer_x,in->pointer_y,node->choice_count);
-        if(hit==RF_COMMS_HIT_COLLAPSE) {rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,1,0,0);r->comms_focus=0;}
-        if(hit==RF_COMMS_HIT_CLOSE)rf_player_request(r,RF_PLAYER_DIALOG_CLOSE,0,0,0);
-        if(hit==RF_COMMS_HIT_HISTORY)r->chat_scroll=0;
-        if(hit>=RF_COMMS_HIT_CHOICE_BASE)r->comms_choice=hit-RF_COMMS_HIT_CHOICE_BASE;
-    }
-    if(node && !toggle && !r->story.collapsed && (action_pressed(in,RF_ACTION_COMMS_ANSWER) ||
-       hit>=RF_COMMS_HIT_CHOICE_BASE || hit==RF_COMMS_HIT_CONTINUE)) {
-        rf_player_request(r,RF_PLAYER_DIALOG_ANSWER,node->choice_count?r->comms_choice:-1,0,0);
-        r->comms_choice=0;
     }
     if(before!=r->comms_focus)rf_core_set_pointer_lock(r->core,!r->comms_focus&&!r->rts_active&&!console->open);
     return before||r->comms_focus||console->open;
@@ -282,6 +260,9 @@ static void rf_player_aux_prepare(struct rf_game_runtime *r,int width,int height
         rf_player_aux.kind=RF_GPU_AUX_WORLD;rf_player_aux.visible=1;
         rf_player_aux.x=rects.video.x;rf_player_aux.y=rects.video.y;
         rf_player_aux.width=rects.video.w;rf_player_aux.height=rects.video.h;
+        /* Render the portrait view directly; blitting a landscape target into
+         * this rectangle would squeeze the actor horizontally. */
+        rf_player_aux.render_width=240;rf_player_aux.render_height=360;
     }
     if(!rf_player_aux.visible)r->ui_video_live=0;
     rf_gpu_scene_enemy_aux_camera(rf_player_aux.visible&&rf_player_aux.kind==RF_GPU_AUX_WORLD?&rf_player_aux.camera:NULL);

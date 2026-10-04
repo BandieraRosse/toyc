@@ -20,7 +20,7 @@ void rf_player_ui_init(struct rf_player_ui_state *state)
         0x6FD88B,0xF2CB73,0xF07170,0xE7B55F,216
     };
     static const struct rf_ui_layout_config layout={
-        18,10,12,144,360,320,116,228,106,145,260,350,184
+        18,10,12,144,284,144,284,106,145,260,350,184
     };
     if (!state) return;
     memset(state,0,sizeof(*state));
@@ -60,7 +60,7 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
     out->margin=margin=ui_px(config->margin,scale);
     out->gap=gap=ui_px(config->gap,scale);
     out->padding=pad=ui_px(config->padding,scale);
-    map_size=ui_px(state->map_expanded?config->map_expanded_size:config->map_size,scale);
+    map_size=ui_px(config->map_size,scale);
     map_size=ui_min(map_size,ui_min(width-margin*2,height-margin*2-96));
     resource_width=ui_min(ui_px(config->resource_width,scale),width/3);
     phase_width=ui_min(ui_px(config->phase_width,scale),width-resource_width-margin*3-gap);
@@ -68,11 +68,11 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
     out->resources=ui_rect(width-margin-resource_width,margin,resource_width,ui_px(38,scale));
     if (out->phase.x+out->phase.w+gap>out->resources.x)
         out->phase.x=out->resources.x-gap-out->phase.w;
-    if (rts_active && !state->map_expanded)
+    if (rts_active)
         map_size=ui_min(ui_px(220,scale),ui_min(width/3,height/3));
     out->map=ui_rect(margin,height-margin-map_size,map_size,map_size);
-    out->objective=ui_rect(margin,out->map.y-ui_px(24,scale)-gap-ui_px(56,scale),
-        map_size,ui_px(56,scale));
+    out->objective=ui_rect(margin,out->map.y-ui_px(24,scale)-gap-ui_px(22,scale),
+        ui_max(map_size,ui_min(ui_px(360,scale),width-margin*2)),ui_px(22,scale));
     vital_width=ui_min(ui_px(config->vital_width,scale),(width-margin*2-gap)/2);
     weapon_width=ui_min(ui_px(config->weapon_width,scale),(width-margin*2-gap)/2);
     out->vitals=ui_rect(width-margin-vital_width,height-margin-ui_px(config->vital_height,scale),
@@ -192,33 +192,37 @@ static void ui_vitals(struct rasterfall_canvas *canvas,const struct rasterfall_h
 {
     const struct toy_game_actor *player=toy_game_local_player_actor_const(hud->game);
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
-    struct rf_ui_rect r=layout->vitals;
     struct toy_game_capabilities caps;
-    int scale=layout->text_scale_milli,pad=layout->padding,x=r.x+pad,y=r.y+pad;
-    char line[128];
+    struct rf_ui_rect r=layout->vitals;
+    int scale=layout->text_scale_milli,pad=layout->padding;
+    int x=r.x+pad,w=r.w-pad*2,hp,maximum,reserve,capacity;
+    unsigned hp_color,ev_color;
+    const char *ev_state;
+    char line[96];
     if (!player) return;
-    rf_ui_panel(canvas,r,theme,0);
-    snprintf(line,sizeof(line),"%s",hud->player_name&&*hud->player_name?hud->player_name:"PLAYER");
-    rf_ui_text(canvas,ui_rect(x,y,r.w-pad*2,ui_px(18,scale)),line,theme->text,scale,1);
-    y+=ui_px(25,scale);
-    rf_ui_text(canvas,ui_rect(x,y+ui_px(5,scale),ui_px(48,scale),ui_px(20,scale)),
-        "生命",theme->muted,scale,1);
-    snprintf(line,sizeof(line),"%d / %d",player->hp,player->max_hp);
-    rf_ui_text(canvas,ui_rect(x+ui_px(52,scale),y,r.w-pad*2-ui_px(52,scale),ui_px(30,scale)),line,
-        player->hp*4<player->max_hp?theme->danger:theme->success,scale*3/2,1);
-    ui_bar(canvas,x,y+ui_px(30,scale),r.w-pad*2,ui_px(5,scale),player->hp,player->max_hp,theme->success);
+    hp=ui_max(0,player->hp);maximum=ui_max(1,player->max_hp);
     toy_game_actor_capabilities(player,toy_game_actor_current_weapon(player),&caps);
-    if (caps.evasion_capacity>0) {
-        int reserve=ui_max(0,player->evasion.reserve_milli);
-        const char *status=reserve==0?"耗尽":player->evasion.animation_ms>0?"回避中":
-            player->evasion.pressure_ms>0?"恢复等待":"就绪";
-        y+=ui_px(43,scale);
-        snprintf(line,sizeof(line),"回避 %d/%d  %s",(reserve+999)/1000,caps.evasion_capacity,status);
-        rf_ui_text(canvas,ui_rect(x,y,r.w-pad*2,ui_px(18,scale)),line,
-            reserve<caps.evasion_capacity*250?theme->warning:theme->accent,scale,1);
-        ui_bar(canvas,x,y+ui_px(22,scale),r.w-pad*2,ui_px(4,scale),reserve,
-            caps.evasion_capacity*1000,theme->accent);
-    }
+    capacity=ui_max(0,caps.evasion_capacity)*1000;
+    reserve=ui_clamp(player->evasion.reserve_milli,0,capacity);
+    hp_color=hp<=maximum/4?theme->danger:hp<=maximum/2?theme->warning:theme->success;
+    ev_color=reserve<=0?theme->danger:reserve<capacity/4?theme->warning:theme->accent;
+    ev_state=capacity<=0?"不可用":reserve<=0?"耗尽":
+        player->evasion.animation_ms>0?"回避中":player->evasion.pressure_ms>0?"恢复等待":"就绪";
+    rf_ui_panel(canvas,r,theme,0);
+    rasterfall_canvas_rect(canvas,x,r.y+pad,ui_px(3,scale),ui_px(18,scale),hp_color,255);
+    rf_ui_text(canvas,ui_rect(x+ui_px(10,scale),r.y+pad,w-ui_px(96,scale),ui_px(20,scale)),
+        hud->player_name && *hud->player_name?hud->player_name:"PLAYER",theme->text,scale,1);
+    snprintf(line,sizeof(line),"药品 %d",player->slots[3].weapon==TOY_GAME_WEAPON_PILL?player->slots[3].mag:0);
+    rf_ui_text(canvas,ui_rect(x+w-ui_px(78,scale),r.y+pad,ui_px(78,scale),ui_px(20,scale)),
+        line,theme->muted,scale,1);
+    rasterfall_canvas_rect(canvas,x,r.y+ui_px(39,scale),w,1,theme->border,130);
+    snprintf(line,sizeof(line),"生命   %d / %d",hp,maximum);
+    rf_ui_text(canvas,ui_rect(x,r.y+ui_px(47,scale),w,ui_px(20,scale)),line,hp_color,scale,1);
+    ui_bar(canvas,x,r.y+ui_px(72,scale),w,ui_px(9,scale),hp,maximum,hp_color);
+    snprintf(line,sizeof(line),"回避 %d/%d  %s",(reserve+999)/1000,caps.evasion_capacity,ev_state);
+    rf_ui_text(canvas,ui_rect(x,r.y+ui_px(92,scale),w,ui_px(20,scale)),line,
+        capacity>0?ev_color:theme->muted,scale,1);
+    ui_bar(canvas,x,r.y+ui_px(120,scale),w,ui_px(5,scale),reserve,capacity,ev_color);
 }
 
 static void ui_weapon(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
@@ -298,7 +302,7 @@ void rf_player_ui_map_view(struct rf_minimap_view *m,const struct rf_player_ui_s
     m->center_x=player?player->x:view->camera_x;m->center_z=player?player->z:view->camera_z;
     m->span=RASTERFALL_RFU_PER_METER*100;m->rotation_cy=1024;
     m->reference_y=player?player->ground_y:0;m->layer_threshold=RASTERFALL_RFU_PER_METER*2;
-    if (view->rts_active || state->map_expanded) {
+    if (view->rts_active) {
         m->center_x=map->minx+(map->maxx-map->minx)/2;
         m->center_z=map->minz+(map->maxz-map->minz)/2;
         m->span=ui_max(map->maxx-map->minx,(map->maxz-map->minz)*m->width/m->height);
@@ -316,8 +320,8 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     const struct rf_ui_theme *theme=&state->theme;
     struct rf_ui_rect r=layout->map;
     struct rf_minimap_view m;
-    char line[192],key[24];
-    int scale=layout->text_scale_milli,pad=ui_px(6,scale);
+    char line[192];
+    int scale=layout->text_scale_milli;
     rf_ui_panel(canvas,r,theme,0);
     rf_player_ui_map_view(&m,state,view,player,canvas->width,canvas->height);
     rf_minimap_layout(canvas,map,&m,0x577181,theme->accent);
@@ -337,20 +341,12 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     }
     rf_ui_text(canvas,ui_rect(layout->map.x,layout->map.y-ui_px(24,scale),layout->map.w,ui_px(22,scale)),
         view->region_name&&*view->region_name?view->region_name:"探索区域",theme->text,scale,1);
-    r=layout->objective;rf_ui_panel(canvas,r,theme,0);
+    r=layout->objective;
     if (view->objective_title && *view->objective_title)
         snprintf(line,sizeof(line),"%s",view->objective_title);
     else snprintf(line,sizeof(line),"自由探索");
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+pad,r.w-2*pad,ui_px(18,scale)),line,
+    rf_ui_text(canvas,r,line,
         view->objective_active?theme->warning:theme->text,scale,1);
-    if (view->objective_detail && *view->objective_detail)
-        snprintf(line,sizeof(line),"%s",view->objective_detail);
-    else {
-        ui_label(view,RF_ACTION_MAP_EXPAND,key,sizeof(key));
-        snprintf(line,sizeof(line),r.w<ui_px(220,scale)?"[%s] 地图":"[%s] 按住查看地图",key);
-    }
-    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+pad+ui_px(21,scale),r.w-2*pad,
-        r.h-pad-ui_px(21,scale)),line,theme->muted,scale,1);
 }
 
 static void ui_rts(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,
@@ -413,7 +409,26 @@ static void ui_rts(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     rf_ui_button(canvas,ui_rts_button(layout,2),theme,line,scale,0,1);
 }
 
-void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud)
+static void ui_fps(struct rasterfall_canvas *canvas,const struct rf_ui_theme *theme,
+                   const struct rf_ui_layout *layout,int fps)
+{
+    int scale=layout->text_scale_milli,pad=ui_px(8,scale);
+    struct rf_ui_rect r=ui_rect(layout->margin,layout->margin,ui_px(88,scale),ui_px(28,scale));
+    char value[16];
+    int number_width,label_width=rf_ui_font_text_width("FPS",scale);
+    if (fps>0) snprintf(value,sizeof(value),"%d",fps);
+    else snprintf(value,sizeof(value),"--");
+    number_width=rf_ui_font_text_width(value,scale);
+    r.w=ui_max(r.w,pad*3+label_width+ui_max(number_width,rf_ui_font_text_width("888",scale)));
+    rasterfall_canvas_rect(canvas,r.x,r.y,r.w,r.h,theme->panel,theme->panel_alpha);
+    rasterfall_canvas_rect(canvas,r.x,r.y,ui_px(18,scale),1,theme->accent,230);
+    rf_ui_text(canvas,ui_rect(r.x+pad,r.y+ui_px(5,scale),label_width,ui_px(20,scale)),
+        "FPS",theme->muted,scale,1);
+    rf_ui_text(canvas,ui_rect(r.x+r.w-pad-number_width,r.y+ui_px(5,scale),number_width,ui_px(20,scale)),
+        value,theme->text,scale,1);
+}
+
+void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *hud,int fps)
 {
     const struct rf_player_ui_view *view=&hud->player_ui_view;
     const struct rf_ui_theme *theme=&hud->player_ui->theme;
@@ -422,6 +437,7 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     if (!canvas || !hud->game) return;
     rf_ui_layout_resolve(&layout,hud->player_ui,canvas->width,canvas->height,view->rts_active);
     ui_top(canvas,hud,&layout);
+    ui_fps(canvas,theme,&layout,fps);
     if (view->rts_active) {
         rf_ui_button(canvas,layout.dock_toggle,theme,hud->player_ui->rts_collapsed?"展开底栏":"收起底栏",
             layout.text_scale_milli,0,1);

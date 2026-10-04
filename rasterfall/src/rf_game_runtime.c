@@ -3420,7 +3420,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct managed_terminal managed_terminal;
     struct rasterfall_console developer_console;
     struct rf_command_context command_context;
-    int64_t last_time, fps_window_start, fps_elapsed;
+    int64_t last_time, fps_window_start, fps_elapsed, fps_previous_elapsed = 0;
     int64_t last_active = 0;   /* 帧间隔统计 */
     int64_t menu_nav_ready_us = 0;
     int64_t accumulator = 0, prev_begin = 0;
@@ -3437,7 +3437,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
 #ifndef TOYC_WINDOWS
     unsigned int watchdog_warm_world = UINT_MAX;
 #endif
-    int display_fps = 0, fps_window_frames = 0;
+    int display_fps = 0, fps_window_frames = 0, fps_previous_frames = 0;
     int fire_edge = 0, shove_edge = 0;
     int pointer_turn_pending = 0, pointer_pitch_pending = 0;
     unsigned char pending_key_edges[TOY_INPUT_KEY_COUNT];
@@ -4729,6 +4729,9 @@ startup_again:
             last_time = rf_core_begin_tick(&core);
             fps_window_start = last_time;
             fps_window_frames = 0;
+            fps_previous_frames = 0;
+            fps_previous_elapsed = 0;
+            display_fps = 0;
             memset(pending_key_edges, 0, sizeof(pending_key_edges));
             memset(pending_physical_edges, 0, sizeof(pending_physical_edges));
             session.banner_text = restored_cpu ?
@@ -4936,7 +4939,6 @@ startup_again:
         }
         rf_player_input_filter(&game_runtime,&input);
         game_runtime.camera=camera;
-        game_runtime.player_ui.map_expanded=!developer_console.open && action_down(&input,RF_ACTION_MAP_EXPAND);
         if(action_pressed(&input,RF_ACTION_UI_MODE) && !paused) {
             rf_player_request(&game_runtime,RF_PLAYER_SET_MODE,(game_runtime.player_ui.mode+1)%3,0,0);
             developer_console.open=game_runtime.player_ui.mode==RF_PLAYER_UI_TERMINAL;
@@ -7225,9 +7227,15 @@ startup_again:
                 }
             }
             fps_elapsed = now - fps_window_start;
-            if (fps_elapsed >= 1000000) {
-                display_fps = (int)((long long)fps_window_frames * 1000000 /
-                                    fps_elapsed);
+            if (fps_elapsed >= 250000) {
+                /* Two adjacent quarter-second buckets smooth the HUD over
+                 * half a second, with four updates per second. Count only
+                 * main rendered frames, never logic ticks or auxiliary views. */
+                if (fps_previous_elapsed > 0)
+                    display_fps = (int)(((long long)fps_window_frames + fps_previous_frames) *
+                        1000000 / (fps_elapsed + fps_previous_elapsed));
+                fps_previous_frames = fps_window_frames;
+                fps_previous_elapsed = fps_elapsed;
                 fps_window_frames = 0;
                 fps_window_start = now;
             }

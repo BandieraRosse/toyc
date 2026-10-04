@@ -53,6 +53,8 @@ struct rasterfall_hud_state {
 };
 
 #include "rasterfall_canvas.h"
+void rasterfall_hud_player_status(struct rasterfall_canvas *,const struct toy_game *,
+    const char *player_name,int x,int y);
 void rasterfall_hud_layout(struct rasterfall_canvas *,int,
     const struct rasterfall_hud_state *);
 void rasterfall_hud_prompt_layout(struct rasterfall_canvas *,

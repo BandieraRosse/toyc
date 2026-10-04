@@ -47,17 +47,17 @@ int rf_story_logic_test(void)
     sr = story.session_revision; nr = story.node_revision;
     if (rf_story_answer(&story, &session, sr, nr, 3)) return 4;
     rf_story_collapse(&story, 1);
-    if (rf_story_answer(&story, &session, sr, nr, 0) ||
+    if (rf_story_answer(&story, &session, sr, nr, -1) ||
         story.progress[0] != RF_STORY_ACTIVE) return 5;
     rf_story_collapse(&story, 0);
-    if (!rf_story_answer(&story, &session, sr, nr, 0) ||
+    if (!rf_story_answer(&story, &session, sr, nr, -1) ||
         rf_story_answer(&story, &session, sr, nr, -1)) return 6;
-    if (story.node_id != 1011 || story.task.id != RF_STORY_TASK_EXPLORE) return 7;
+    if (story.node_id != 1012 || story.task.id != RF_STORY_TASK_LABS) return 7;
     if (!rf_story_answer(&story, &session, story.session_revision, story.node_revision, -1) ||
         actor->movement_hold_token || story.progress[0] != RF_STORY_COMPLETED) return 8;
     rf_story_update(&story, &session, 16, 0, 1);
     if (story.active_story != RF_STORY_LABS || story.node_id != 1020) return 9;
-    if (!rf_story_answer(&story, &session, story.session_revision, story.node_revision, 0) ||
+    if (!rf_story_answer(&story, &session, story.session_revision, story.node_revision, -1) ||
         story.task.id != RF_STORY_TASK_WEAVER) return 10;
     rf_story_close(&story, &session);
     if (story.progress[1] != RF_STORY_CANCELLED || actor->movement_hold_token ||
@@ -70,7 +70,7 @@ int rf_story_logic_test(void)
     if (story.task.state != RF_STORY_TASK_DONE) return 14;
     rf_story_emit(&story, RF_STORY_EVENT_LABS_ENTER, NULL);
     rf_story_emit(&story, RF_STORY_EVENT_LABS_ENTER, NULL);
-    if (story.queue_count!=1 || story.progress[1]!=RF_STORY_QUEUED) return 15;
+    if (story.queue_count || story.progress[1]!=RF_STORY_CANCELLED) return 15;
 
     /* Replaying a node, saving it, then loading into a fresh owner restores
      * stable content only. Actor identity is resolved on the next update. */
@@ -131,18 +131,32 @@ int rf_story_logic_test(void)
     actor->deployment_x = x + 2000;
     for (i = 0; i < 20; ++i) toy_game_update_ai_teammate(&session.game_state, 16);
     if (actor->x == x && actor->z == z) return 26;
-    /* Every authored branch reaches its own reply and needs an explicit
-     * final confirmation. This protects the graph, not screen layout. */
-    for (i = 0; i < 5; ++i) {
-        int which = i < 3 ? RF_STORY_OUTPOST : RF_STORY_LABS;
-        int choice = i < 3 ? i : i - 3;
+    /* Both linear performances advance by speech time, pause while hidden,
+     * release actor control at the end, and never queue twice in one game. */
+    if (rf_story_line_duration_ms("abcd") <= rf_story_line_duration_ms("ab") ||
+        rf_story_line_duration_ms("ab.") <= rf_story_line_duration_ms("ab")) return 27;
+    for (i = 0; i < 2; ++i) {
+        int which = i ? RF_STORY_LABS : RF_STORY_OUTPOST;
+        int duration;
         story_fixture(&story, &session);
-        if (!rf_story_replay(&story, &session, which)) return 27;
+        if (!story.collapsed || !rf_story_replay(&story, &session, which)) return 27;
         rf_story_update(&story, &session, 16, 0, 1);
-        if (!rf_story_answer(&story, &session, story.session_revision, story.node_revision, choice) ||
-            story.node_id != which * 10 + 1 + choice) return 28;
-        if (!rf_story_answer(&story, &session, story.session_revision, story.node_revision, -1) ||
-            story.active_story || story.progress[i < 3 ? 0 : 1] != RF_STORY_COMPLETED) return 29;
+        if (rf_story_current_node(&story)->choice_count) return 28;
+        duration = rf_story_line_duration_ms(rf_story_current_node(&story)->line);
+        rf_story_collapse(&story, 1);
+        rf_story_update(&story, &session, duration, 0, 1);
+        if (story.node_id != which * 10) return 28;
+        rf_story_collapse(&story, 0);
+        rf_story_update(&story, &session, duration - 17, 0, 1);
+        if (story.node_id != which * 10) return 28;
+        rf_story_update(&story, &session, 1, 0, 1);
+        if (story.node_id != (i ? 1021 : 1012) || story.line_elapsed_ms) return 28;
+        rf_story_update(&story, &session,
+            rf_story_line_duration_ms(rf_story_current_node(&story)->line), 0, 1);
+        if (story.active_story || !story.collapsed || story.progress[i] != RF_STORY_COMPLETED ||
+            session.game_state.actors[session.null_actor_index].movement_hold_token) return 29;
+        rf_story_emit(&story, i ? RF_STORY_EVENT_LABS_ENTER : RF_STORY_EVENT_OUTPOST_ENTER, NULL);
+        if (story.queue_count) return 29;
     }
     if (rf_story_save(&story, save) || rf_story_save(&story, save)) return 30;
     {
@@ -154,8 +168,8 @@ int rf_story_logic_test(void)
         before = story;
         if (rf_story_load(&story, save) != -1 || memcmp(&before, &story, sizeof(story))) return 33;
     }
-    /* Completed old saves repeat on entry, but remaining inside never loops.
-     * Leaving/re-entering and replacing the world re-arm the region edge. */
+    /* A new game may play completed saved content once; region re-entry and
+     * world replacement within the same game do not replay it. */
     story_fixture(&story,&session);
     if(rf_map_runtime_load(&session.map_ops.runtime,"rasterfall/assets/maps/outpost.map")<0)return 34;
     {
@@ -168,7 +182,7 @@ int rf_story_logic_test(void)
         if(rf_story_save(&story,save) || rf_story_load(&story,save))failed=36;
         rf_story_update(&story,&session,16,0,1);
         if(story.active_story!=RF_STORY_OUTPOST)failed=37;
-        rf_story_answer(&story,&session,story.session_revision,story.node_revision,0);
+        rf_story_answer(&story,&session,story.session_revision,story.node_revision,-1);
         rf_story_answer(&story,&session,story.session_revision,story.node_revision,-1);
         for(i=0;i<100;++i)rf_story_update(&story,&session,16,0,1);
         if(story.active_story || story.queue_count)failed=38;
@@ -176,21 +190,21 @@ int rf_story_logic_test(void)
         rf_story_update(&story,&session,16,0,1);
         p->x=0;
         rf_story_update(&story,&session,16,0,1);
-        if(story.active_story!=RF_STORY_OUTPOST)failed=39;
+        if(story.active_story || story.queue_count)failed=39;
         rf_story_close(&story,&session);
         rf_story_update(&story,&session,16,0,1);
         if(story.active_story || story.queue_count)failed=40;
         session.scene_local.world_generation++;
         rf_story_update(&story,&session,16,0,1);
-        if(story.active_story!=RF_STORY_OUTPOST)failed=41;
+        if(story.active_story || story.queue_count)failed=41;
         /* A full history still changes its revision when new text arrives. */
         for(i=0;i<RF_STORY_HISTORY_CAP;++i) {
             rf_story_replay(&story,&session,RF_STORY_OUTPOST);
             rf_story_update(&story,&session,16,0,1);
         }
         sr=story.history_revision;
-        rf_story_answer(&story,&session,story.session_revision,story.node_revision,0);
-        if(story.history_count!=RF_STORY_HISTORY_CAP || story.history_revision!=sr+2)failed=42;
+        rf_story_answer(&story,&session,story.session_revision,story.node_revision,-1);
+        if(story.history_count!=RF_STORY_HISTORY_CAP || story.history_revision!=sr+1)failed=42;
         rf_story_detach(&story,&session);
         rf_map_runtime_unload(&session.map_ops.runtime);
         if(failed)return failed;
