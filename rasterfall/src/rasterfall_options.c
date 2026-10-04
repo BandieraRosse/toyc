@@ -117,6 +117,7 @@ void rasterfall_options_usage(int fd)
         "  --gpu-scene-world-preview (diagnostic WORLD-only native Scene)\n"
         "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
         "  --gpu-scene-play (single-player native Scene renderer)\n"
+        "  --gpu-normal-scene frontier-entry|frontier-overview|frontier-workshop|frontier-energy 0 (formal station content)\n"
         "  --gpu-scene-pose-test (frozen rifleman palette/attachment resource regression)\n"
         "  --gpu-world-cycle-test  (diagnostic Outpost/Campaign/WHU/Campaign runtime cycle)\n"
         "  --gpu-normal-scene <near|near-heavy|enemy-cull-in|enemy-cull-out|enemy-cull-imported-in|enemy-cull-imported-out|mid|interior|thin-far|base|spawn|west-facility|host-racks|host-side|character-lab|walk-lab|actor-actions-lab|actor-walk-lab|map-wall|map-ramp|map-platform|map-label|map-sign|model-legacy|model-special|enemy-special|enemy-death|enemy-death-west|scene-effects-stress|enemy-fade|enemy-tongue|actor-procedural|frame-effects|model-infected|actor-rifleman|actor-standard|actor-assault|projectile|pickup|map-gate-on|map-gate-off|map-near|map-thin|whu-a18|whu-b-plaza|whu-library|whu-d-ef> <0|10|20|30|60|64>\n"
@@ -367,6 +368,10 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->gpu_normal_view=argv[++arg];
             o->gpu_normal_enemies=atoi(argv[++arg]);
             if ((strcmp(o->gpu_normal_view,"near") &&
+                 strcmp(o->gpu_normal_view,"frontier-entry") &&
+                 strcmp(o->gpu_normal_view,"frontier-overview") &&
+                 strcmp(o->gpu_normal_view,"frontier-workshop") &&
+                 strcmp(o->gpu_normal_view,"frontier-energy") &&
                  strcmp(o->gpu_normal_view,"near-heavy") &&
                  strcmp(o->gpu_normal_view,"enemy-cull-in") &&
                  strcmp(o->gpu_normal_view,"enemy-cull-out") &&
@@ -448,7 +453,8 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                   !strcmp(o->gpu_normal_view,"west-button-no-tank")) ?
                  (o->gpu_normal_enemies != 0 && o->gpu_normal_enemies != 16 &&
                   o->gpu_normal_enemies != 32 && o->gpu_normal_enemies != 64) :
-                 !strcmp(o->gpu_normal_view,"west-empty") ? o->gpu_normal_enemies != 0 :
+                 (!strcmp(o->gpu_normal_view,"west-empty") ||
+                  !strncmp(o->gpu_normal_view,"frontier-",9)) ? o->gpu_normal_enemies != 0 :
                  (!strcmp(o->gpu_normal_view,"enemy-cull-in") ||
                   !strcmp(o->gpu_normal_view,"enemy-cull-out") ||
                   !strcmp(o->gpu_normal_view,"enemy-cull-imported-in") ||

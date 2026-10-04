@@ -5,6 +5,8 @@
 #include "dev-tests/game_hitscan_test.inc"
 #include "dev-tests/combat_ai_test.inc"
 #include "dev-tests/rf_mesh_weaver_test.inc"
+#include "dev-tests/rf_frontier_mission_test.inc"
+#include "dev-tests/rf_frontier_session_test.inc"
 #include "rf_ui_font.h"
 #include "rf_device_commands.h"
 #define special_windup_ms ability.special_windup_ms
@@ -1624,6 +1626,8 @@ static int run_logic_test(void)
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
     if (rf_mesh_weaver_logic_test() != 0) return 694;
+    if (rf_frontier_mission_logic_test() != 0) return 697;
+    if (rf_frontier_session_logic_test() != 0) return 704;
     if (combat_capabilities_logic_test() != 0) return 279;
     {
         int combat_result = combat_evasion_logic_test();
@@ -2751,7 +2755,8 @@ static int run_logic_test(void)
             !toy_game_actor_by_id(&actor_test, 2) ||
             toy_game_actor_by_id(&actor_test, 2)->hp != 160 ||
             toy_game_actor_by_id(&actor_test, 2)->slots[0].reserve !=
-                TOY_GAME_AMMO_INFINITE) return 50;
+                toy_game_weapon_info(toy_game_actor_by_id(&actor_test, 2)->slots[0].weapon)
+                    ->reserve_max) return 50;
         actor_test.actors[0].state = TOY_GAME_ACTOR_DOWNED;
         actor_test.actors[0].hp = 0;
         for (i = 0; i < (TOY_GAME_REVIVE_MS + 15) / 16; i++)

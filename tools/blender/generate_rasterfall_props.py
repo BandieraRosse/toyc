@@ -332,7 +332,7 @@ class Builder:
         assert all(abs(a-b) < 1e-5 for a, b in
                    zip(lo + hi, expected_lo + expected_hi)), (name, lo, hi)
         hero = name in ('rf_research_terminal', 'rf_core_analysis_station', 'rf_research_prototype_bench')
-        assert (2 if name.startswith('rf_campus_') else 12 if name.startswith(('rf_arch_', 'rf_facility_', 'rf_host_', 'rf_research_')) else 200) <= triangles <= budget <= (6000 if name.startswith('rf_host_') else 2200 if hero else 1200), (name, triangles, budget)
+        assert (2 if name.startswith('rf_campus_') else 12 if name.startswith(('rf_arch_', 'rf_facility_', 'rf_host_', 'rf_research_', 'rf_frontier_')) else 200) <= triangles <= budget <= (6000 if name.startswith('rf_host_') else 2200 if hero else 1200), (name, triangles, budget)
         assert all(p.area > 1e-10 for p in obj.data.polygons), name
         assert not obj.modifiers and not obj.animation_data
         obj['dimensions_m'] = list(dimensions)

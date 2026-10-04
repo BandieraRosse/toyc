@@ -54,6 +54,7 @@ struct rf_player_ui_state {
 struct rf_player_ui_view {
     const struct rf_input_bindings *bindings;
     const char *region_name, *objective_title, *objective_detail;
+    char mission_title[128], mission_detail[128];
     int rts_active, rts_selected, rts_follow_player, comms_visible, hints, modal, phase_visible;
     int rts_move_active, rts_move_x, rts_move_z;
     int camera_x, camera_z, camera_sy, camera_cy;

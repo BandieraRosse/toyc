@@ -1,5 +1,5 @@
 /* Outpost command table: presentation state and map-file previews. */
-#define RF_TABLE_MAPS 3
+#define RF_TABLE_MAPS 4
 #define RF_TABLE_RECTS 192
 struct rf_table_rect { int x0, z0, x1, z1; unsigned int color; };
 struct rf_table_map {
@@ -96,6 +96,8 @@ static void rf_table_init(void)
     rf_table.maps[1].name = "CAMPAIGN 01";
     rf_table.maps[2].world = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
     rf_table.maps[2].name = "RETURN TO WHU";
+    rf_table.maps[3].world = RASTERFALL_WORLD_FRONTIER_STATION_01;
+    rf_table.maps[3].name = "边缘站点 01";
     for (int i = 0; i < RF_TABLE_MAPS; ++i)
         rf_table_read_map(&rf_table.maps[i]);
 }

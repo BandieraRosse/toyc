@@ -209,5 +209,29 @@ int rf_story_logic_test(void)
         rf_map_runtime_unload(&session.map_ops.runtime);
         if(failed)return failed;
     }
+    /* Mission communications work during combat without fabricating a remote
+     * actor or camera, and local retries never inherit old radio progress. */
+    story_fixture(&story,&session);
+    session.world_id=RASTERFALL_WORLD_FRONTIER_STATION_01;
+    session.frontier.mission_id=17;
+    rf_story_frontier_events(&story,&session,RF_FRONTIER_EVENT_ARRIVAL);
+    rf_story_frontier_events(&story,&session,RF_FRONTIER_EVENT_ARRIVAL);
+    if(story.queue_count!=1)return 43;
+    rf_story_update(&story,&session,16,1,1);
+    if(story.active_story!=RF_STORY_FRONTIER_ARRIVAL || story.link!=RF_STORY_LINK_UNAVAILABLE ||
+        story.camera.active || story.hold_token || story.actor_index!=-1 ||
+        !rf_story_subtitle_only(&story))return 44;
+    if(rf_story_save(&story,save))return 45;
+    rf_story_init(&loaded);
+    if(rf_story_load(&loaded,save) || loaded.active_story || loaded.queue_count)return 46;
+    rf_story_collapse(&story,1);rf_story_collapse(&story,0);
+    rf_story_update(&story,&session,60000,1,1);
+    if(story.active_story || story.progress[2]!=RF_STORY_COMPLETED)return 47;
+    session.frontier.mission_id=18;
+    rf_story_frontier_events(&story,&session,RF_FRONTIER_EVENT_ARRIVAL);
+    rf_story_update(&story,&session,16,1,1);
+    if(story.active_story!=RF_STORY_FRONTIER_ARRIVAL)return 48;
+    rf_story_detach(&story,&session);
+    if(story.active_story || story.queue_count || story.frontier_mission_id)return 49;
     return 0;
 }

@@ -22,6 +22,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 物理键、动作默认绑定与输入边沿 | [运行时架构](architecture/runtime.md#物理键与动作绑定) | `include/rf_input_bindings.h`、`src/rf_input_bindings.c`、`windows/src/window_sdl.c` |
 | Desktop、Application、GUI 与只读投影 | [Application Runtime](architecture/application-runtime.md) | feature gate、`rasterfall_app.c`、`rf_application_projection.c` |
 | 玩法、session、AI、战斗与无金钱拾取规则 | [玩法架构](architecture/gameplay.md) | `lib/game.c`、`src/rasterfall_session.c`；普通武器直接装备，旧商店及付费操作已移除 |
+| 首个边缘站点、三方战斗任务与设施回收 | [当前计划](plans/frontier-station-01.md)、[开发任务书](reference/frontier-station-01-task.md)、[操作与验证](guides/frontier-station-01.md)、[地图与世界内容](architecture/maps-and-world-content.md) | `assets/maps/frontier_station_01.map`、`assets/worlds/frontier_station_01.content`、`rf_frontier_mission.c`、`rf_frontier_session.inc`；任务权威与设施由 session 持有 |
 | 网格编织机、真实蓝图成本、四柱八头机构、出料与机器音频 | [普通机合同](reference/mesh-weaver.md)、[制造实验指南](guides/mesh-weaver.md)、[玩法架构](architecture/gameplay.md#网格编织机制造权威) | `lib/game_mesh_weaver.inc`、`src/rf_mesh_weaver_presentation.c`、`src/rf_mesh_weaver_runtime.inc`、`src/rasterfall_audio_weaver.inc`、`render/rf_mesh_weaver_gpu.inc`、`tools/mesh_weaver_blueprints.py`、`tools/mesh_weaver_assets.py` |
 | 战斗固定预设、现场 FPS/RTS 实验与种子结果 | [战斗实验场](guides/combat-lab.md)、[运行时架构](architecture/runtime.md) | `src/rf_combat_lab.inc`、`tools/combat_lab.ps1`；同一现场/脚本生命周期、owned 对象清理、真实伤害/回避统计与 native 规模采样 |
 | 共享等级技能与战斗原型 V0 | [共享战斗能力](architecture/combat.md)、[验收记录](archive/combat-v0-20261003.md) | `lib/game_combat.inc`、`include/toy_game.h`；玩家/队友统一能力、枪手与回避接入 |

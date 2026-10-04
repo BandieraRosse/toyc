@@ -50,6 +50,36 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_perf.ps1
 调度；固定站位稳态样本不能证明所有地图路线都无冷卡顿。最新多轮对照见
 [多视图优化现场](../archive/multiview-performance-20261004.md)。
 
+## 首图普通行动的阶段采样
+
+在正常 Windows GPU 进程启动前设置 `RF_FRONTIER_PHASE_PERF=1`，可观察同一玩家进程的
+ASSAULT 与 COUNTERATTACK，不生成实体、不驱动玩法、不改变呈现同步，也不自动退出。
+关闭该进程时集中输出 `FRONTIER-PERF-META` 和逐样本 `FRONTIER-PERF-SAMPLE`；采样中不逐帧
+写控制台或轮询文件。每个 world generation/mission 跳过最初 120 个原生渲染帧；整个进程每个
+阶段最多保留最早的 4096 帧，超出数量单独报告。这是有界阶段窗口，不是整场任务的所有帧。
+
+帧间隔在下一次 begin 确定并归属于前一张完成的画面，包含正常 120 FPS 节流。最终没有下一次 begin
+的待定帧明确省略。CPU 为当前线程的 OS CPU 时间，GPU 使用既有有效 Scene timestamp，包含天空。
+记录实际 active/存活 actor、存活/倒地感染者、任务剩余数、阶段时间、RTS、尺寸、present 模式、
+准备/录制/等待成本。实体计数只读取 Game/session，不修改任务或制造规则。
+
+为正常性能证据另运行一次普通玩家路线，关闭 `RF_FRONTIER_AUDIT`、`RF_UI_AUDIT`、capture、
+逐层/逐上传细分计时、validation 与游戏驱动。路线验收需要这些审计时，另保留验收进程；不能把
+它们的结果改名为正常性能。采样器将诊断、暂停、非 PLAYING、GPU 无效、bridge、capture 和
+游戏驱动标为无效；工具也拒绝将有审计的日志计入正常帧样本。GPU 时间为零不作为通过证据。
+
+退出后用独立工具解析实际 stdout/stderr 和退出码，不需要窗口：
+
+```powershell
+python tools/frontier_station_perf.py --read-phase-log tmp/frontier-normal-phase/stdout.log --stderr-log tmp/frontier-normal-phase/stderr.log --exit-code 0 --phase-report tmp/frontier-normal-phase/performance.json
+```
+
+JSON 保留全部原始样本，并按 world/mission/阶段/尺寸/present/RTS 分组报告有效样本数、实体范围与
+CPU/GPU/整帧及各成本的 P50/P95/P99。两个阶段均至少有 120 个有效样本才报告 `both_phases_valid`；
+这不代替路线或胜利验收。`collector_us` 的 metadata 值计观察器 begin/end 墙钟（含 CPU 时钟读取、
+复制和实体扫描），逐行值只计 end；关机输出不在样本内。记录该开销以评估扰动，不能从帧间隔中
+简单减掉来声称无测量开销。Windows 短帧 OS CPU 记账仍可能粗于帧间隔。
+
 ## 前哨站游戏内性能实验场
 
 Windows 原生 GPU Scene 单人前哨站的控制和结果终端并排放在性能横路北侧，靠近第三、四列之间的路口，

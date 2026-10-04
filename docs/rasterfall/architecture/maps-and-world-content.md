@@ -68,6 +68,21 @@ object，不声明交互终端；设备视觉不改变 Game 状态。既有 `sta
 映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变
 Runtime Map ownership。
 
+边缘站点 01 使用 identity `frontier_station_01`，配对 `assets/maps/frontier_station_01.map`
+与 `assets/worlds/frontier_station_01.content`。World Content 定义五名正式队员及编组；敌方守军、
+周期感染者和最终增援由 session 的局部任务模块创建。部署与返回沿用普通世界请求，入口只对离线运行开放。
+
+Runtime Map 的 `mission_guard`、`mission_entry` 与 `mission_route` region 提供稳定空间绑定，
+三设施通过 `frontier_workshop_terminal`、`frontier_storage_terminal`、`frontier_energy_terminal`
+object ID 绑定，真实普通机仍为 `mesh_weaver`。生成工具和地图元数据描述位置、路径与设备，
+不决定阶段、配额、接管或胜负。绑定时验证必要 ID、记录种类和守军的正式地面/身体碰撞，
+缺少引用或落点被阻挡时明确报告并拒绝半有效任务。
+
+设施控制和运行开关属于 session/Game；对象视觉和 renderer 只投影状态。仓库接管开放配置的 CPU/存储能力，
+能源接管开放既有供给，车间接管开放普通制造；接管与开关不重置有限材料、储能或待取成品。
+设备模型及 component collision 分别投影，货架空隙与门洞必须在正式导航和身体碰撞中成立。
+详细任务所有权见[玩法架构](gameplay.md#边缘站点-01-的局部任务权威)。
+
 Research BX18 使用同一 object → registry → static RMESH 路径；六个设备的粗盒由独立 component
 模板生成，壁挂件无碰撞，物理终端不声明 interaction。资产、摆放和预算见
 [Research V1](../reference/research-renovation-v1.md)。CPU 与 GPU Scene 都消费已有静态实例来源。

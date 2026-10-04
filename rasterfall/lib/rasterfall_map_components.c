@@ -39,6 +39,10 @@ static const struct collision_profile solids[] = {
     {"pipe_module", 819, 717, 410, 0},
     {"power_unit", 2458, 1331, 1229, 1},
     {"control_cabinet", 614, 922, 307, 0},
+    {"frontier_canopy", 3072, 205, 1536, 0},
+    {"frontier_cargo_rack", 2048, 1638, 922, 0},
+    {"frontier_rock", 1740, 737, 1229, 1},
+    {"frontier_bollard", 164, 614, 164, 0},
     {"arch_wall", 2048, 2150, 124, 0}
 };
 
@@ -98,6 +102,21 @@ int rf_map_component_collision_boxes(const char *kind, int length,
     int i;
     if (!kind || !out) return -1;
     if (!strcmp(kind, "boundary_wall")) return wall_parts(length, out, 0);
+    if (!strcmp(kind, "frontier_fence")) {
+        box(out, "lower_panel", -1495, 1495, 0, 553, -51, 51, 0, 0);
+        box(out+1, "left_post", -1536, -1454, 0, 1280, -82, 82, 0, 0);
+        box(out+2, "right_post", 1454, 1536, 0, 1280, -82, 82, 0, 0);
+        box(out+3, "upper_rail", -1495, 1495, 1193, 1265, -36, 36, 0, 0);
+        return 4;
+    }
+    if (!strcmp(kind, "frontier_collector")) {
+        box(out, "base", -1229, 1229, 0, 143, -870, 870, 0, 1);
+        box(out+1, "housing", -1062, 1062, 143, 1126, -832, 658, 0, 0);
+        box(out+2, "left_tower", -993, -215, 1126, 1905, -553, 225, 0, 0);
+        box(out+3, "right_tower", 215, 993, 1126, 1905, -553, 225, 0, 0);
+        box(out+4, "collector_head", -922, 922, 1797, 2304, -407, 80, 0, 0);
+        return 5;
+    }
     for (i = 0; i < (int)(sizeof(solids) / sizeof(solids[0])); i++) {
         const struct collision_profile *p = solids + i;
         if (strcmp(kind, p->kind)) continue;

@@ -96,6 +96,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_mesh_weaver.ps1 -B
 该独立原生 CPU 测试只生成和混合 PCM，不打开音频设备或 GPU；检查采样率、循环接缝、状态边沿、
 零增益、满队列停机、换图清理及线程交接。产物位于 `tmp/weaver-audio-test/`，近远距离和音量仍需实机试听。
 
+音量验收使用同一输出设备与系统音量，试听近处制造循环、启动/暂停/完成提示、远离机器及战斗音效
+叠加。当前混音沿用已有声音，降低音乐与战斗总线增益并提高机器声部，具体增益和峰值余量见
+[普通机合同](../reference/mesh-weaver.md)。原生音频启动日志只证明设备成功启动；离线 PCM 的
+无削顶、距离淡出和旧 API 字节一致性也不能代替实际听感，未试听时须明确保留此项。
+
 `tools/gpu_mesh_weaver_interaction.ps1` 在正常时钟中通过真实 Windows/SDL 按键操作控制台、
 断电恢复、领取和 Enter 射击。`MESH-WEAVER-INTERACTION` 仅作只读观测，不发送制造命令，
 脚本保存输入记录、状态、原生 GPU 截图与退出码。截图请求只读回当时实际呈现的冻结帧，

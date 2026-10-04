@@ -89,9 +89,16 @@ int toy_game_find_combat_target(struct toy_game *g,
             x = e->x; z = e->z;
             y = e->ground_y + e->airborne_y + RASTERFALL_HUMAN_HEIGHT_RFU * 64 / 100;
             kind = TOY_GAME_ENTITY_ENEMY; index = i - TOY_GAME_MAX_ACTORS;
+            generation = e->combat_generation;
         }
         dx = (long long)x - actor->x; dz = (long long)z - actor->z;
         distance2 = dx * dx + dz * dz;
+        if (actor->faction == TOY_GAME_FACTION_HOSTILE && actor->ai_guard_radius > 0) {
+            long long gx = (long long)x - actor->deployment_x;
+            long long gz = (long long)z - actor->deployment_z;
+            if (gx * gx + gz * gz >
+                (long long)actor->ai_guard_radius * actor->ai_guard_radius) continue;
+        }
         if (distance2 >= best || !enemy_positions_share_target_region(g,
             actor->x, actor->z, x, z) || !combat_visible(g, actor, x, y, z)) continue;
         best = distance2;

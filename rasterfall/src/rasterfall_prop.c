@@ -226,6 +226,24 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS, "mesh_weaver_service_links",
       "rasterfall/assets/models/props/mesh_weaver/rf_mesh_weaver_service_links.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_CANOPY, "frontier_canopy",
+      "rasterfall/assets/models/props/frontier/rf_frontier_canopy.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_CARGO_RACK, "frontier_cargo_rack",
+      "rasterfall/assets/models/props/frontier/rf_frontier_cargo_rack.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_FENCE, "frontier_fence",
+      "rasterfall/assets/models/props/frontier/rf_frontier_fence.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_COLLECTOR, "frontier_collector",
+      "rasterfall/assets/models/props/frontier/rf_frontier_collector.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_ROCK, "frontier_rock",
+      "rasterfall/assets/models/props/frontier/rf_frontier_rock.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_FRONTIER_BOLLARD, "frontier_bollard",
+      "rasterfall/assets/models/props/frontier/rf_frontier_bollard.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
@@ -679,7 +697,9 @@ int rasterfall_prop_asset_logic_test(void)
                         (asset->id>=RASTERFALL_PROP_ASSET_LAB_COMPUTER_CASE &&
                          asset->id<=RASTERFALL_PROP_ASSET_LAB_COMPUTER_COMPUTE) ||
                         asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_FRAME ||
-                        asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS;
+                        asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS ||
+                        (asset->id>=RASTERFALL_PROP_ASSET_FRONTIER_CANOPY &&
+                         asset->id<=RASTERFALL_PROP_ASSET_FRONTIER_BOLLARD);
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
             (!visual_only &&

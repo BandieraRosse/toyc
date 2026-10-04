@@ -219,6 +219,34 @@ Temporary Campus Kit V0安装到公开`props/campus/`；IDs 24–35的零碰撞�
 负责模型加载。新增组件时应先在 profile 中分配不复用的 ID，并同步检查
 `rasterfall_prop_asset_logic_test()`。
 
+## 边缘站点工业套件
+
+`tools/blender/generate_frontier_station.py` 复用工业套件 Builder，以真实米制生成六件原创静态组件；
+统一入口 `tools/frontier_station_assets.py` 调用 Blender、manifest importer 和原生转换器。
+公开 RMESH 位于 `assets/models/props/frontier/`，manifest 位于
+`tools/assets/manifests/props/frontier/`，本地 GLB/Blend 位于 private-assets/source。
+
+```powershell
+python tools/frontier_station_assets.py --generate --report tmp/frontier-assets/audit.json
+python tools/frontier_station_assets.py --capture
+python tools/frontier_station_map.py --write
+python tools/map_layout_export.py rasterfall/assets/maps/frontier_station_01.map --output-dir tmp/frontier-station-layout
+```
+
+生成前使用 `NativeCodex.ps1 asset-tools` 构建工具；`--capture` 使用已有 Windows staged exe
+输出每件模型四个离屏视图并等待真实退出，不自动构建游戏。不带 `--generate` 时只核对运行网格：
+RFM2 v2、232 units/m、米制 bounds、有效索引、三角形量化退化和材质数。
+站点地图生成器只写空间事实；不带 `--write` 时核对已提交地图是否与生成源一致。
+资产递归嵌入及 Windows package 复制沿用既有规则。
+套件合同见[环境资产约束](../reference/environment-art.md#边缘站点工业套件)。
+
+正式地图静态取景使用 `python tools/frontier_station_capture.py --output-dir tmp/frontier-review`。
+工具从已有 staged exe 的 `--help` 核对四个站点视角，串行运行隐藏窗口、等待真实退出，保存
+原图、逐次日志及 exe/map SHA256；GPU 路径要求 native Scene 来源和提交审计。
+`--backend cpu --frames 4` 可检查同一地图的 CPU 路径。先通过 NativeCodex 构建与暂存；
+输出目录必须尚不存在，避免覆盖证据。固定 overview 镜头不等于交互式 RTS 验收，
+诊断的逐帧日志也不能代替正常运行性能数据。
+
 ## PMX 转 RFM2/TTEX
 
 ```sh

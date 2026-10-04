@@ -45,6 +45,7 @@ static int session_is_developer_ai(const char *name)
 }
 static void session_interact(struct rasterfall_session *session,
                              struct rasterfall_interactable *it);
+#include "rf_frontier_session.inc"
 static int session_near_flag(const struct rasterfall_session *session,
                              const struct camera *camera);
 
@@ -189,6 +190,7 @@ static int session_content_character_id(const char *name)
     if (!strcmp(name, "HURD_MEDIC")) return RASTERFALL_CHARACTER_HURD_MEDIC;
     if (!strcmp(name, "HURD_GUARD")) return RASTERFALL_CHARACTER_HURD_GUARD;
     if (!strcmp(name, "RF_RIFLEMAN")) return RASTERFALL_CHARACTER_RF_RIFLEMAN;
+    if (!strcmp(name, "SQUAD_A_ENGINEER")) return RASTERFALL_CHARACTER_SQUAD_A_ENGINEER;
     if (!strcmp(name, "SQUAD_A_RECON")) return RASTERFALL_CHARACTER_SQUAD_A_RECON;
     if (!strcmp(name, "SQUAD_B_BREACHER")) return RASTERFALL_CHARACTER_SQUAD_B_BREACHER;
     return RASTERFALL_CHARACTER_NONE;
@@ -311,6 +313,8 @@ int rasterfall_session_load(struct rasterfall_session *session,
         const char *identity = rf_map_runtime_world_info(&session->map_ops.runtime)->identity;
         session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
         if (!strcmp(identity, "outpost")) session->world_id = RASTERFALL_WORLD_OUTPOST;
+        else if (!strcmp(identity, "frontier_station_01"))
+            session->world_id = RASTERFALL_WORLD_FRONTIER_STATION_01;
         else if (!strcmp(identity, "return_to_whu_v0"))
             session->world_id = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
         else if (!strcmp(identity, "performance_empty"))
@@ -329,6 +333,7 @@ int rasterfall_session_load(struct rasterfall_session *session,
     if (rasterfall_map_project_runtime(&session->map_ops) < 0) {
         __fprintf(2,"Map projection failed: %s\n",map_path);return -1;
     }
+    if(!session_frontier_bind(session))return -1;
     __printf("Loading world source: %s\n", map_path);
     __printf("Map runtime loaded: regions=%d interactions=%d\n",
              rf_map_runtime_region_count(&session->map_ops.runtime),
@@ -377,6 +382,8 @@ void rasterfall_session_unload(struct rasterfall_session *session)
 {
     if (!session) return;
     rf_gpu_scene_local_world(&session->scene_local);
+    memset(&session->frontier,0,sizeof(session->frontier));
+    memset(&session->frontier_config,0,sizeof(session->frontier_config));
     rasterfall_world_content_clear(&session->content);
     rasterfall_map_unload(&session->map_ops);
 }
@@ -387,6 +394,7 @@ int rasterfall_session_request_world(struct rasterfall_session *session,
     if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
                      world != RASTERFALL_WORLD_CAMPAIGN_01 &&
                      world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+                     world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
                      world != RASTERFALL_WORLD_PERF_EMPTY &&
                      world != RASTERFALL_WORLD_PERF_COMPONENTS)) return -1;
     session->world_request = world;
@@ -455,6 +463,11 @@ void rasterfall_session_reset(struct rasterfall_session *session,
      * are no safe rooms, capture stages, alarms, or objective transitions. */
     /* actor 0 is reserved for the local player; map-authored AI starts at 1. */
     session->null_actor_index = -1;
+    for (i = 0; i < 5; ++i) {
+        session->frontier_squad_indices[i] = -1;
+        session->frontier_squad_actor_ids[i] = -1;
+        session->frontier_squad_generations[i] = 0;
+    }
     for (i = 0; i < session->level.ai_spawn_count && i < TOY_GAME_MAX_ACTORS; i++) {
         const struct toy_map_ai_spawn *spawn = &session->level.ai_spawns[i];
         int actor_index;
@@ -540,10 +553,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
         }
     }
     /* World-authored road squads use the normal actor lifecycle and AI. */
-    if(session->world_id==RASTERFALL_WORLD_OUTPOST) {
+    if(session->world_id==RASTERFALL_WORLD_OUTPOST ||
+       session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
+        int frontier_member = 0;
         for(int f=0;f<session->content.formation_count;++f) {
             const struct rasterfall_content_formation *formation=&session->content.formations[f];
-            if(strncmp(formation->id,"rts_",4))continue;
+            if(strncmp(formation->id,session->world_id==RASTERFALL_WORLD_OUTPOST?
+                "rts_":"frontier_",session->world_id==RASTERFALL_WORLD_OUTPOST?4:9))continue;
             for(int n=0;n<formation->member_count;++n) {
                 const struct rasterfall_content_actor *def=session_content_actor(session,formation->member_ids[n]);
                 if(!def)continue;
@@ -555,6 +571,12 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                 if(weapon>=0)toy_game_set_ai_weapon(&session->game_state,id-1,weapon);
                 double yaw=def->yaw*3.141592653589793/180.0;
                 a->sy=(int)(sin(yaw)*1024);a->cy=(int)(cos(yaw)*1024);
+                if(session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 && frontier_member<5) {
+                    session->frontier_squad_indices[frontier_member]=id-1;
+                    session->frontier_squad_actor_ids[frontier_member]=a->actor_id;
+                    session->frontier_squad_generations[frontier_member++]=a->combat_generation;
+                    a->companion=1;
+                }
             }
         }
     }
@@ -725,6 +747,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     /* Formal modular roster members are session-owned and are not removed by
      * the hired-AI path. Their lifetimes end at reset/unload. */
     rf_gpu_scene_local_world(&session->scene_local);
+    session_frontier_reset(session);
     for (i=1;i<TOY_GAME_REMOTE_ACTOR_BASE;++i) {
         const struct toy_game_actor *a=&session->game_state.actors[i];
         if (a->active && !a->hired &&
@@ -784,7 +807,14 @@ static void session_move_player(struct rasterfall_session *session,
     if (actor->airborne_ms <= 0) {
         /* Ground movement must use the gameplay actor API so ramps update
          * ground_y and ramp/platform seams remain traversable. */
+        int before_x = actor->x, before_z = actor->z;
         toy_game_move_actor_sliding(&session->game_state, actor, dx, dz);
+        if (session->rts_active && session->rts_move_active &&
+            (actor->x != before_x + dx || actor->z != before_z + dz)) {
+            toy_game_actor_cancel_navigation(actor);
+            if (session->game_state.update_profile)
+                session->game_state.update_profile->actor_direct_blocked++;
+        }
         return;
     }
     {
@@ -1416,7 +1446,24 @@ static void session_interact(struct rasterfall_session *session,
             session->humanoid_debug_action == RASTERFALL_HUMANOID_DEBUG_AIM ?
                 "V2 ACTION: RIFLE AIM" : "V2 ACTION: AIM + RECOIL";
     } else if (it->kind == TOY_MAP_PICKUP_AMMO) {
-        toy_game_actor_refill_ammo(&session->game_state, player);
+        int supplied=toy_game_actor_refill_ammo(&session->game_state, player)>0;
+        if(session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
+            for(int n=0;n<5;++n) {
+                int index=session->frontier_squad_indices[n];
+                if(index<0 || index>=TOY_GAME_MAX_ACTORS)continue;
+                struct toy_game_actor *a=&session->game_state.actors[index];
+                long long dx=(long long)a->x-it->x,dz=(long long)a->z-it->z;
+                if(a->active && a->actor_id==session->frontier_squad_actor_ids[n] &&
+                   a->combat_generation==session->frontier_squad_generations[n] &&
+                   a->state==TOY_GAME_ACTOR_ALIVE &&
+                   a->faction==TOY_GAME_FACTION_ALLIED &&
+                   abs(a->ground_y-player->ground_y)<=512 && dx*dx+dz*dz<=1024LL*1024)
+                    supplied+=toy_game_actor_refill_ammo(&session->game_state,a)>0;
+            }
+            snprintf(session->supply_message,sizeof(session->supply_message),
+                "弹药补给：%d 人已补充；队友需靠近补给箱 2 米内",supplied);
+            session->banner_text=session->supply_message;session->banner_ms=2400;
+        }
     } else if (it->kind == TOY_MAP_PICKUP_WEAPON ||
         it->kind == TOY_MAP_PICKUP_THROWABLE ||
         it->kind == TOY_MAP_PICKUP_PILL) {
@@ -1532,6 +1579,8 @@ static int session_managed_ai_face(struct camera *camera, int x, int z,
 void rasterfall_session_set_rts(struct rasterfall_session *session, int active)
 {
     if (!session) return;
+    if (session->rts_active != (active != 0))
+        toy_game_actor_cancel_navigation(toy_game_local_player_actor(&session->game_state));
     session->rts_active = active != 0;
     /* A view switch does not cancel an already accepted order. FPS input
      * temporarily owns the local body; RTS resumes the same destination. */
@@ -1541,6 +1590,7 @@ void rasterfall_session_rts_move_player(struct rasterfall_session *session,
                                         int x, int z)
 {
     if (!session || !session->rts_active) return;
+    toy_game_actor_cancel_navigation(toy_game_local_player_actor(&session->game_state));
     session->rts_move_x = x;
     session->rts_move_z = z;
     session->rts_move_active = 1;
@@ -1574,6 +1624,7 @@ int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
     player->air_x = player->air_z = 0;
     player->knockback_x = player->knockback_z = 0;
     session->rts_move_active = 0;
+    toy_game_actor_cancel_navigation(player);
     session_sync_special_motion(session, camera);
     return 1;
 }
@@ -1615,9 +1666,12 @@ int rasterfall_session_rts_order_actor(struct rasterfall_session *s,
             x,z,RASTERFALL_PLAYER_RADIUS,ground.support_y))return 0;
     }
     if(a==toy_game_local_player_actor(&s->game_state)) {
+        toy_game_actor_cancel_navigation(a);
         if(stop)s->rts_move_active=0;
         else rasterfall_session_rts_move_player(s,x,z);
     } else {
+        toy_game_actor_cancel_rescue(&s->game_state,index);
+        toy_game_actor_cancel_navigation(a);
         a->command_destination_active=1;a->command_x=x;a->command_z=z;
         a->nav_active=0;
         if(stop)a->moving=0;
@@ -1630,11 +1684,26 @@ static void session_build_rts_command(struct rasterfall_session *session,
                                       struct rasterfall_command *command,
                                       int dt_ms)
 {
-    const struct toy_game_actor *player =
-        toy_game_local_player_actor_const(&session->game_state);
+    struct toy_game_actor *player = toy_game_local_player_actor(&session->game_state);
     struct toy_game_combat_target target;
+    int steer_x = session->rts_move_x, steer_z = session->rts_move_z;
+    int step, planned = 0;
     memset(command, 0, sizeof(*command));
     if (!player || player->state != TOY_GAME_ACTOR_ALIVE) return;
+    step = toy_game_actor_move_step(player, RASTERFALL_MOVE_STEP);
+    if (session->rts_move_active) {
+        long long dx = (long long)session->rts_move_x - player->x;
+        long long dz = (long long)session->rts_move_z - player->z;
+        if (dx * dx + dz * dz <= 250LL * 250LL) {
+            session->rts_move_active = 0;
+            toy_game_actor_cancel_navigation(player);
+        } else if (!player->control_disabled && !player->movement_hold_token &&
+                   player->airborne_ms <= 0) {
+            planned = toy_game_actor_navigation_target(&session->game_state,
+                player, session->rts_move_x, session->rts_move_z, step, dt_ms,
+                &steer_x, &steer_z);
+        } else toy_game_actor_cancel_navigation(player);
+    }
     if (toy_game_find_combat_target(&session->game_state, player, &target)) {
         int dx = target.x - player->x, dz = target.z - player->z;
         int distance = isqrt((long long)dx * dx + (long long)dz * dz);
@@ -1650,22 +1719,20 @@ static void session_build_rts_command(struct rasterfall_session *session,
         if (player->slots[player->current_slot].mag == 0)
             command->buttons |= RASTERFALL_CMD_RELOAD;
     } else if (session->rts_move_active) {
-        session_managed_ai_face(camera, session->rts_move_x,
-                                session->rts_move_z, dt_ms);
+        session_managed_ai_face(camera, steer_x, steer_z, dt_ms);
     }
-    if (session->rts_move_active) {
-        long long dx = (long long)session->rts_move_x - camera->x;
-        long long dz = (long long)session->rts_move_z - camera->z;
-        if (dx * dx + dz * dz <= 250LL * 250LL)
-            session->rts_move_active = 0;
-        else {
-            long long forward = dx * camera->sy + dz * camera->cy;
-            long long strafe = dx * camera->cy - dz * camera->sy;
-            if (forward > 160000) command->move_forward = 1;
-            else if (forward < -160000) command->move_forward = -1;
-            if (strafe > 160000) command->move_strafe = 1;
-            else if (strafe < -160000) command->move_strafe = -1;
-        }
+    if (session->rts_move_active && planned) {
+        long long dx = (long long)steer_x - player->x;
+        long long dz = (long long)steer_z - player->z;
+        /* A temporary waypoint must not get stuck outside Game's
+         * step+24 arrival radius in the larger final-goal input deadzone. */
+        long long threshold = player->nav_active ? (long long)step * 1024 / 2 : 160000;
+        long long forward = dx * camera->sy + dz * camera->cy;
+        long long strafe = dx * camera->cy - dz * camera->sy;
+        if (forward > threshold) command->move_forward = 1;
+        else if (forward < -threshold) command->move_forward = -1;
+        if (strafe > threshold) command->move_strafe = 1;
+        else if (strafe < -threshold) command->move_strafe = -1;
     }
 }
 
@@ -1761,6 +1828,116 @@ int rasterfall_session_rts_logic_test(void)
     a->state=TOY_GAME_ACTOR_DOWNED;
     if(rasterfall_session_rts_order_actor(&test,id-1,a->actor_id,a->combat_generation,3000,1000,0))return 15;
     test.game_state.primitives=NULL;
+    /* Local RTS shares planning but Session advances the body exactly once.
+     * A generic wall forces a route; temporary waypoints never finish the
+     * accepted final order or fall into the old larger input deadzone. */
+    memset(&test,0,sizeof(test));memset(&camera,0,sizeof(camera));
+    toy_game_init(&test.game_state,31);test.game_state.external_director=1;
+    struct toy_map_primitive route[2]={{0}};
+    route[0].shape=TOY_MAP_PRIMITIVE_FLAT;
+    route[0].minx=route[0].minz=-8000;route[0].maxx=route[0].maxz=8000;
+    route[0].flags=TOY_MAP_PRIMITIVE_WALKABLE|TOY_MAP_PRIMITIVE_COLLISION;
+    route[1].shape=TOY_MAP_PRIMITIVE_BOX;route[1].flags=TOY_MAP_PRIMITIVE_COLLISION;
+    route[1].minx=-350;route[1].maxx=350;route[1].minz=-1200;route[1].maxz=1200;
+    route[1].surface_y0=route[1].surface_y1=2000;
+    toy_game_set_primitives(&test.game_state,route,2,8000);
+    rasterfall_session_set_rts(&test,1);
+    if(!rasterfall_session_rts_teleport_player(&test,&camera,-2000,-900,0))return 16;
+    struct toy_game_actor *player=toy_game_local_player_actor(&test.game_state);
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,2000,0,0))return 17;
+    player->nav_generation=test.game_state.navigation_generation;
+    player->nav_active=1;player->nav_x=player->x+130;player->nav_z=player->z;
+    camera.sy=1024;camera.cy=0;camera.pitch_cy=1024;
+    session_build_rts_command(&test,&camera,&command,16);
+    if(command.move_forward!=1 || player->x!=-2000 || !test.rts_move_active ||
+        test.rts_move_x!=2000 || test.rts_move_z!=0)return 18;
+    struct rasterfall_command manual={0};
+    int max_step=toy_game_actor_move_step(player,RASTERFALL_MOVE_STEP);
+    for(int tick=0;tick<200 && test.rts_move_active;++tick) {
+        int old_x=player->x,old_z=player->z,old_time=test.game_state.combat_time_ms;
+        rasterfall_session_step(&test,&camera,&manual,16);
+        long long move_x=(long long)player->x-old_x,move_z=(long long)player->z-old_z;
+        if(move_x*move_x+move_z*move_z>2LL*max_step*max_step+4*max_step ||
+            test.game_state.combat_time_ms!=old_time+16 ||
+            toy_game_position_blocked_at_height(&test.game_state,player->x,player->z,TOY_GAME_PLAYER_RADIUS,0)) {
+            __printf("RTS local step failed tick=%d delta=%d,%d limit=%d clock=%d/%d position=%d,%d\n",
+                tick,player->x-old_x,player->z-old_z,max_step,test.game_state.combat_time_ms,
+                old_time+16,player->x,player->z);return 19;
+        }
+    }
+    if(test.rts_move_active || (long long)(player->x-2000)*(player->x-2000)+
+        (long long)player->z*player->z>250LL*250LL)return 20;
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,4000,0,0))return 21;
+    session_build_rts_command(&test,&camera,&command,16);
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,0,0,1) ||
+        test.rts_move_active || player->nav_active || player->nav_direct_valid)return 22;
+    int stopped_x=player->x,stopped_z=player->z;
+    rasterfall_session_step(&test,&camera,&manual,16);
+    if(player->x!=stopped_x || player->z!=stopped_z)return 23;
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,-4000,0,0))return 24;
+    session_build_rts_command(&test,&camera,&command,16);
+    rasterfall_session_set_rts(&test,0);
+    if(player->nav_active || player->nav_direct_valid || !test.rts_move_active)return 25;
+    camera.sy=0;camera.cy=1024;
+    manual.move_forward=1;manual.buttons=RASTERFALL_CMD_FIRE;manual.fire_held=1;
+    unsigned int before_fire=player->fire_seq;
+    rasterfall_session_step(&test,&camera,&manual,16);
+    if(player->z!=stopped_z+max_step || player->fire_seq!=before_fire+1 ||
+        !test.rts_move_active || test.rts_move_x!=-4000 || test.rts_move_z!=0)return 26;
+    rasterfall_session_set_rts(&test,1);
+    session_build_rts_command(&test,&camera,&command,16);
+    if(!test.rts_move_active || test.rts_move_x!=-4000 || test.rts_move_z!=0)return 27;
+    player->control_disabled=1;
+    session_build_rts_command(&test,&camera,&command,16);
+    if(player->nav_active || player->nav_direct_valid || command.move_forward ||
+        command.move_strafe || !test.rts_move_active || test.rts_move_x!=-4000)return 32;
+    player->control_disabled=0;
+    test.game_state.primitives=NULL;
+    /* Empty magazines already reload through the formal Game weapon step,
+     * including RTS with no visible target. Each timer advances once and
+     * completion consumes exactly the available reserve, without loops. */
+    for(int scenario=0;scenario<4;++scenario) {
+        memset(&test,0,sizeof(test));memset(&camera,0,sizeof(camera));
+        memset(&manual,0,sizeof(manual));toy_game_init(&test.game_state,42);
+        test.game_state.external_director=1;
+        toy_game_set_primitives(&test.game_state,route,1,8000);
+        rasterfall_session_set_rts(&test,1);camera.cy=camera.pitch_cy=1024;
+        player=toy_game_local_player_actor(&test.game_state);
+        int weapon=scenario==1?TOY_GAME_WEAPON_PISTOL:TOY_GAME_WEAPON_AK;
+        toy_game_actor_equip_weapon(&test.game_state,player,weapon);
+        player->weapon_switch_timer_ms=0;
+        struct toy_game_slot *slot=&player->slots[player->current_slot];
+        slot->mag=0;slot->reserve=scenario==1?TOY_GAME_AMMO_INFINITE:scenario==2?0:17;
+        if(scenario==3){player->reloading=1;player->reload_timer_ms=80;}
+        int starts=0,done=0;
+        for(int tick=0;tick<400;++tick) {
+            int was_reloading=player->reloading,old_timer=player->reload_timer_ms;
+            rasterfall_session_step(&test,&camera,&manual,16);
+            if(was_reloading && old_timer>16 && player->reload_timer_ms!=old_timer-16)return 28;
+            unsigned char events[TOY_GAME_MAX_EVENTS];
+            int count=toy_game_drain_events(&test.game_state,events,sizeof(events));
+            for(int e=0;e<count;++e) {
+                starts+=events[e]==TOY_GAME_EV_RELOAD_START;
+                done+=events[e]==TOY_GAME_EV_RELOAD_DONE;
+            }
+        }
+        int expected_mag=scenario==1?toy_game_weapon_info(weapon)->mag_size:scenario==2?0:17;
+        if(slot->mag!=expected_mag || slot->reserve!=(scenario==1?TOY_GAME_AMMO_INFINITE:0) ||
+            player->reloading || starts!=(scenario<2?1:0) || done!=(scenario==2?0:1))return 29;
+    }
+    /* A partial magazine in FPS still waits for the player's manual request. */
+    rasterfall_session_set_rts(&test,0);player->slots[player->current_slot].mag=1;
+    player->slots[player->current_slot].reserve=7;
+    for(int tick=0;tick<20;++tick)rasterfall_session_step(&test,&camera,&manual,16);
+    if(player->reloading || player->slots[player->current_slot].mag!=1)return 30;
+    manual.buttons=RASTERFALL_CMD_RELOAD;rasterfall_session_step(&test,&camera,&manual,16);
+    manual.buttons=0;
+    for(int tick=0;tick<400;++tick)rasterfall_session_step(&test,&camera,&manual,16);
+    if(player->reloading || player->slots[player->current_slot].mag!=8 ||
+        player->slots[player->current_slot].reserve!=0)return 31;
+    test.game_state.primitives=NULL;
+    __printf("RTS local shared-planning/waypoint/final-goal/single-step/STOP/FPS-fire passed\n");
+    __printf("RTS existing finite/infinite/dry/already-reloading/manual-FPS reload passed\n");
     return 0;
 }
 
@@ -2613,6 +2790,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
     }
     session_sync_special_motion(session, camera);
     session_update_manual_alarm(session, dt_ms);
+    session_frontier_step(session,dt_ms);
     if (session->banner_ms > 0) {
         session->banner_ms -= dt_ms;
         if (session->banner_ms <= 0) {

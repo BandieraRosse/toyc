@@ -84,7 +84,7 @@ GAME_SRCS += rasterfall/src/rf_player_ui.c rasterfall/src/rf_minimap.c \
 GAME_SRCS += gpu/src/rf_gpu_vulkan_backend.c \
              gpu/src/rf_gpu_resource_cache.c
 ANIMATION_SRCS := app/linux/glb_inspect.c rasterfall/src/rasterfall_vmd.c
-GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
+GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/rf_frontier_mission.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
                  rasterfall/lib/rasterfall_map_parser.c \
                  rasterfall/lib/rasterfall_map_runtime.c \
                  rasterfall/lib/rasterfall_map_components.c
@@ -284,6 +284,8 @@ $(BUILD)/win/%.o: %.c windows/Makefile rasterfall-rebuild | $(BUILD)
 	$(WIN_CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: CPPFLAGS += -DRF_COMBAT_BUILD_COMMIT='"$(shell git describe --always --dirty 2>/dev/null)"'
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_frontier_performance.inc
+$(BUILD)/win/rasterfall/lib/sfx.o $(BUILD)/win/rasterfall/src/rasterfall_audio.o: rasterfall/include/rasterfall_audio_mix.h
 
 -include $(DEPS)
 

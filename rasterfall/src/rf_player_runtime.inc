@@ -89,11 +89,40 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     v->objective_title=r->story.task.title;v->objective_detail=r->story.task.hint;
     v->objective_active=r->story.task.target_valid;v->objective_x=r->story.task.x;
     v->objective_y=r->story.task.y;v->objective_z=r->story.task.z;
+    if(r->session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
+        const struct rf_frontier_mission *m=&r->session->frontier;
+        v->region_name="边缘站点 01";v->objective_active=0;
+        if(m->phase==RF_FRONTIER_ASSAULT)
+            snprintf(v->mission_title,sizeof(v->mission_title),"攻占：初始守军 %d",m->guards_alive);
+        else if(m->phase==RF_FRONTIER_PREPARE)
+            snprintf(v->mission_title,sizeof(v->mission_title),"整备：%d 秒后增援",(45000-m->phase_ms+999)/1000);
+        else if(m->phase==RF_FRONTIER_COUNTERATTACK)
+            snprintf(v->mission_title,sizeof(v->mission_title),"反击：敌军 %d / 待入 %d",m->enemies_alive,m->pending_spawns);
+        else snprintf(v->mission_title,sizeof(v->mission_title),"%s",m->phase==RF_FRONTIER_SECURED?
+            "行动完成：站点已回收":m->phase==RF_FRONTIER_FAILED?"行动失败：可重试或返回":"准备行动");
+        snprintf(v->mission_detail,sizeof(v->mission_detail),"车间%s 仓库%s 能源%s",
+            m->captured[0]?"●":"○",m->captured[1]?"●":"○",m->captured[2]?"●":"○");
+        v->objective_title=v->mission_title;v->objective_detail=v->mission_detail;
+        for(int i=0;i<3;++i) {
+            const struct rf_frontier_facility_config *f=&m->config.facilities[i];
+            struct rf_minimap_marker mark={0};mark.id=1100+i;mark.kind=RF_MINIMAP_DEVICE;
+            mark.x=f->point.x;mark.z=f->point.z;
+            snprintf(mark.label,sizeof(mark.label),"%s%s",i==0?"车间":i==1?"仓库":"能源",m->captured[i]?"●":"○");
+            rf_minimap_marker_set(&r->player_ui.minimap,&mark);
+        }
+    }
     v->command_feedback=r->player_controls.last.message;
     v->comms_visible=r->story.active_story&&!r->story.collapsed;
     if(rf_weaver_terminal.near){v->interaction_title="网格编织机";v->interaction_action="打开设备";}
     else if(rf_render_terminal.near){v->interaction_title="渲染控制终端";v->interaction_action="打开设备";}
     else if(rf_table.near){v->interaction_title="前哨站指挥桌";v->interaction_action="部署行动";}
+    struct rf_player_facility_query facility;
+    rf_player_frontier_query(r,&facility);
+    if(facility.available && (!facility.captured || facility.index!=0)) {
+        v->interaction_title=facility.name;v->interaction_action=facility.action;
+        long long dx=(long long)facility.x-r->camera.x,dz=(long long)facility.z-r->camera.z;
+        v->interaction_distance_rfu=(int)isqrt(dx*dx+dz*dz);
+    }
     {
         const char *id=rf_weaver_terminal.near?"mesh_weaver":rf_render_terminal.near?"main_terminal":rf_table.near?"command_table":NULL;
         const struct rf_map_runtime_object *object=id?rf_map_runtime_find_object(&r->session->map_ops.runtime,id):NULL;
@@ -179,7 +208,8 @@ static void rf_player_device_input(struct rf_game_runtime *r,struct rasterfall_c
 {
     struct rf_device_query q;struct rf_player_device_rects rects;
     int order[RF_PLAYER_DEVICE_FEATURE_ROWS+3],count=0,at=0,hit=0;
-    rf_device_query(r,&q);rf_player_device_layout(&rects,width,height,&r->player_ui,kind);
+    rf_device_query(r,&q);rf_player_device_layout(&rects,width,height,&r->player_ui,kind,
+        kind==RF_PLAYER_DEVICE_TABLE?q.map_count:q.feature_count);
     if(kind==RF_PLAYER_DEVICE_RENDER)for(int i=0;i<q.feature_count&&i<RF_PLAYER_DEVICE_FEATURE_ROWS;++i)order[count++]=RF_DEVICE_HIT_FEATURE_BASE+i;
     else {
         for(int i=0;i<q.map_count&&i<RF_PLAYER_DEVICE_MAP_ROWS;++i)order[count++]=RF_DEVICE_HIT_MAP_BASE+i;
@@ -235,8 +265,63 @@ static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_con
 }
 #ifdef TOYC_WINDOWS
 static struct rf_gpu_scene_aux_view rf_player_aux,rf_player_unit_aux;
+static void rf_frontier_audit(const struct rf_game_runtime *r,int frame)
+{
+    if(!getenv("RF_FRONTIER_AUDIT") || frame%10)return;
+    const struct rasterfall_session *s=r->session;
+    const struct toy_game *g=&s->game_state;
+    const struct rf_frontier_mission *m=&s->frontier;
+    const struct toy_game_actor *p=toy_game_local_player_actor_const(g);
+    struct toy_surface *surface=rf_core_surface(r->core);
+    int width=surface?surface->width:0,height=surface?surface->height:0;
+    const struct toy_game_slot *slot=&p->slots[p->current_slot];
+    __printf("FRONTIER-AUDIT {\"frame\":%d,\"world\":%d,\"world_generation\":%llu,\"mission_id\":%u,\"state\":%d,\"paused\":%d,\"phase\":%d,\"phase_ms\":%d,\"logic_ms\":%d,\"guards_alive\":%d,\"enemies_alive\":%d,\"periodic_spawned\":%d,\"periodic_alive\":%d,\"final_infected_spawned\":%d,\"final_gunners_spawned\":%d,\"pending_spawns\":%d,\"captured\":[%d,%d,%d],\"spawn_failures\":%d,\"spawn_attempts\":%d,\"victory_count\":%d,\"normal_sim\":%d,\"driver\":%d,\"rts\":%d,\"extent\":[%d,%d],\"player\":{\"id\":%d,\"generation\":%u,\"state\":%d,\"hp\":%d,\"x\":%d,\"z\":%d,\"ground_y\":%d,\"weapon\":%d,\"mag\":%d,\"reserve\":%d,\"class_id\":%d,\"max_hp\":%d,\"reloading\":%d,\"reload_ms\":%d},\"camera\":[%d,%d,%d,%d,%d,%d,%d],\"facilities\":[",
+        frame,s->world_id,(unsigned long long)s->scene_local.world_generation,m->mission_id,g->state,r->lifecycle_paused,
+        m->phase,m->phase_ms,g->combat_time_ms,m->guards_alive,m->enemies_alive,m->periodic_spawned,m->periodic_alive,
+        m->final_infected_spawned,m->final_gunners_spawned,m->pending_spawns,m->captured[0],m->captured[1],m->captured[2],
+        m->spawn_failures,m->spawn_attempts,m->victory_count,!rf_weaver_diagnostic.enabled,
+        rf_weaver_diagnostic.enabled||rf_weaver_performance.mode,r->rts_active,width,height,
+        p->actor_id,p->combat_generation,p->state,p->hp,p->x,p->z,p->ground_y,toy_game_actor_current_weapon(p),slot->mag,slot->reserve,
+        p->class_id,p->max_hp,p->reloading,p->reload_timer_ms,
+        r->render_camera.x,r->render_camera.y,r->render_camera.z,r->render_camera.sy,r->render_camera.cy,
+        r->render_camera.pitch_sy,r->render_camera.pitch_cy);
+    if(s->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01)for(int n=0;n<3;++n) {
+        const struct rf_frontier_facility_config *f=&m->config.facilities[n];
+        int x=-1,y=-1;
+        rf_rts_project(&r->render_camera,width,height,f->point.x,RASTERFALL_WORLD_GROUND_Y,f->point.z,&x,&y);
+        __printf("%s{\"i\":%d,\"id\":\"%s\",\"identity\":%u,\"generation\":%u,\"captured\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"near\":%d}",
+            n?",":"",n,f->point.id,f->identity,f->generation,m->captured[n],f->point.x,f->point.z,x,y,
+            rasterfall_session_frontier_near(s,1)==n);
+    }
+    __printf("],\"landmarks\":[");int count=0;
+    for(int n=0;n<rf_map_runtime_region_count(&s->map_ops.runtime);++n) {
+        const struct rf_map_runtime_region *region=rf_map_runtime_region_at(&s->map_ops.runtime,n);
+        if(strcmp(region->kind,"mission_route"))continue;
+        int wx=region->bounds.min_x+(region->bounds.max_x-region->bounds.min_x)/2;
+        int wz=region->bounds.min_z+(region->bounds.max_z-region->bounds.min_z)/2,x=-1,y=-1;
+        rf_rts_project(&r->render_camera,width,height,wx,RASTERFALL_WORLD_GROUND_Y,wz,&x,&y);
+        __printf("%s{\"id\":\"%s\",\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d}",count++?",":"",region->id,wx,wz,x,y);
+    }
+    __printf("],\"actors\":[");count=0;
+    for(int n=0;n<TOY_GAME_MAX_ACTORS;++n) {
+        const struct toy_game_actor *a=&g->actors[n];if(!a->active)continue;
+        const struct toy_game_slot *aslot=&a->slots[a->current_slot];
+        __printf("%s{\"i\":%d,\"id\":%d,\"generation\":%u,\"faction\":%d,\"class_id\":%d,\"state\":%d,\"hp\":%d,\"max_hp\":%d,\"x\":%d,\"z\":%d,\"moving\":%d,\"fire_seq\":%u,\"command\":%d,\"goal_x\":%d,\"goal_z\":%d,\"weapon\":%d,\"mag\":%d,\"reserve\":%d,\"reloading\":%d,\"reload_ms\":%d,\"target_kind\":%d,\"target_index\":%d,\"target_generation\":%u,\"aim_ms\":%d,\"lost_ms\":%d,\"scan_ms\":%d}",
+            count++?",":"",n,a->actor_id,a->combat_generation,a->faction,a->class_id,a->state,a->hp,a->max_hp,a->x,a->z,a->moving,a->fire_seq,a->command_destination_active,a->command_x,a->command_z,
+            toy_game_actor_current_weapon(a),aslot->mag,aslot->reserve,a->reloading,a->reload_timer_ms,
+            a->combat_target.kind,a->combat_target.index,a->combat_target.generation,
+            a->combat_aim_ms,a->combat_lost_ms,a->combat_scan_ms);
+    }
+    __printf("],\"infected\":[");count=0;
+    for(int n=0;n<TOY_GAME_MAX_ENEMIES;++n) {
+        const struct toy_game_enemy *e=&g->enemies[n];if(!e->active)continue;
+        __printf("%s{\"i\":%d,\"generation\":%u,\"type\":%d,\"hp\":%d,\"x\":%d,\"z\":%d}",count++?",":"",n,e->combat_generation,e->type,e->hp,e->x,e->z);
+    }
+    __printf("]}\n");fflush(stdout);
+}
 static void rf_player_audit(const struct rf_game_runtime *r,int frame,const struct rf_gpu_scene_aux_status *video)
 {
+    rf_frontier_audit(r,frame);
     if(!getenv("RF_UI_AUDIT") || frame%10)return;
     if(r->rts_active) {
         const struct toy_game *g=&r->session->game_state;
@@ -364,6 +449,8 @@ static void rf_player_story_tick(struct rf_game_runtime *r,int dt,int allow_star
 {
     int had_focus=r->comms_focus;
     if(r->net.mode!=RASTERFALL_NET_OFF){rf_story_detach(&r->story,r->session);return;}
+    rf_story_frontier_events(&r->story,r->session,
+        rf_frontier_mission_drain_events(&r->session->frontier));
     rf_story_update(&r->story,r->session,dt,rf_player_combat(&r->session->game_state),allow_start);
     rf_player_subtitles_update(&r->player_ui,&r->story,dt);
     if(r->chat_history_revision!=r->story.history_revision) {

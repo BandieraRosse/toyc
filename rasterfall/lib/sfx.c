@@ -18,6 +18,7 @@
 #include "string.h"
 #include "math.h"
 #include "tlibc_compat.h"
+#include "rasterfall_audio_mix.h"
 
 #define SIN_TABLE_SIZE 1024
 
@@ -328,9 +329,13 @@ static int render_voice(struct toy_sfx_voice *v)
     return sample;
 }
 
-void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames)
+void toy_sfx_render_gained(struct toy_sfx *sfx, short *out, int frames,
+                          int effects_q8,int music_q8,int ceiling)
 {
     int f, v;
+    if(effects_q8<0)effects_q8=0;else if(effects_q8>256)effects_q8=256;
+    if(music_q8<0)music_q8=0;else if(music_q8>256)music_q8=256;
+    if(ceiling>32767)ceiling=32767;
     if (!sfx || !sfx->enabled || !out || frames <= 0) {
         if (out && frames > 0) memset(out, 0, (unsigned long)frames * 2 * 2);
         return;
@@ -338,17 +343,20 @@ void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames)
     for (f = 0; f < frames; f++) {
         int left = 0, right = 0;
         render_music(sfx, &left, &right);
+        left=left*music_q8/256;right=right*music_q8/256;
         for (v = 0; v < TOY_SFX_MAX_VOICES; v++) {
             struct toy_sfx_voice *voice = &sfx->voices[v];
             if (!voice->active) continue;
             {
                 int sample = render_voice(voice);
+                sample=sample*effects_q8/256;
                 left += sample;
                 right += sample;
             }
             voice->pos++;
             if (voice->pos >= voice->len) voice->active = 0;
         }
+        left=rf_audio_soft_peak(left,ceiling);right=rf_audio_soft_peak(right,ceiling);
         if (left > 32767) left = 32767;
         else if (left < -32768) left = -32768;
         if (right > 32767) right = 32767;
@@ -356,4 +364,10 @@ void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames)
         out[2 * f] = (short)left;
         out[2 * f + 1] = (short)right;
     }
+}
+
+/* Existing callers and offline asset generation retain their original mix. */
+void toy_sfx_render(struct toy_sfx *sfx,short *out,int frames)
+{
+    toy_sfx_render_gained(sfx,out,frames,256,256,0);
 }

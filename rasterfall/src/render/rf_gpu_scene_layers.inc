@@ -566,16 +566,18 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         int x,y,z;
         int64_t dx=(int64_t)actor->x-camera->x,dz=(int64_t)actor->z-camera->z;
         if (!actor->active || actor==player || actor->kind!=TOY_GAME_ACTOR_AI ||
+            actor->state==TOY_GAME_ACTOR_DEAD ||
             dx*dx+dz*dz>10800LL*10800LL) continue;
         int downed=actor->state==TOY_GAME_ACTOR_DOWNED;
         if (!scene_layer_project(camera,width,height,actor->x,
                 actor->ground_y+actor->airborne_y+(downed?-350:700),actor->z,&x,&y,&z)) continue;
-        uint32_t color=downed?0xff6060:0xb0e0ff;
-        rasterfall_canvas_text(&canvas,x-fb_string_width(actor->name)/2,y,actor->name,color);
+        int hostile=player && actor->faction!=player->faction;
+        uint32_t color=downed?0xff6060:hostile?0xf03030:0xb0e0ff;
+        rasterfall_canvas_text(&canvas,x-rasterfall_canvas_text_width(actor->name,1000)/2,y,actor->name,color);
         rasterfall_canvas_rect(&canvas,x-34,y+18,68,7,0x18202c,255);
         int hp=actor->max_hp>0?actor->hp*64/actor->max_hp:0;
         if (hp>64) hp=64;
-        rasterfall_canvas_rect(&canvas,x-32,y+20,hp,3,actor->hp<40?0xff8050:0x60cf80,255);
+        rasterfall_canvas_rect(&canvas,x-32,y+20,hp,3,hostile?0xf03030:actor->hp<40?0xff8050:0x60cf80,255);
         if (downed) {
             rasterfall_canvas_text(&canvas,x-24,y+29,"DOWNED",color);
             int revive=actor->revive_progress_ms*64/TOY_GAME_REVIVE_MS;

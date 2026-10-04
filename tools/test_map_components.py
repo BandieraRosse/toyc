@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """Exercise C Runtime Map collision expansion and its authoring failures."""
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-INSPECT = ROOT / "build/map-inspect"
+INSPECT = ROOT / ("build-windows/map-inspect.exe" if os.name == "nt" else "build/map-inspect")
 
 
 def inspect(path, success=True):
@@ -29,8 +30,10 @@ with tempfile.TemporaryDirectory() as tmp:
         "object id=wall kind=boundary_wall x=0 y=0 z=6000 yaw=0 scale=1000 attr.length=8192 attr.collision=boundary",
         "object id=decoration kind=arch_cable_tray x=0 y=1700 z=0 yaw=0 scale=1000 attr.collision=component",
         "object id=visual kind=power_unit x=-5000 y=0 z=0 yaw=0 scale=1000 attr.collision=none",
+        "object id=canopy kind=frontier_canopy x=8000 y=2150 z=0 yaw=90 scale=1000 attr.collision=component",
+        "object id=fence kind=frontier_fence x=8000 y=0 z=4000 yaw=0 scale=1000 attr.collision=component",
     ]
-    path.write_text(header + "\n".join(objects) + "\n")
+    path.write_text(header + "\n".join(objects) + "\n", encoding="utf-8")
     records = inspect(path)
     gate = [c for c in records if c["owner_id"] == "gate"]
     assert len(gate) == 3
@@ -43,7 +46,16 @@ with tempfile.TemporaryDirectory() as tmp:
     assert max(c["height"] for c in wall) == 2150
     assert next(c for c in records if c["owner_id"] == "decoration")["base_y"] == 1700
     assert all(c["owner_id"] != "visual" for c in records)
-    path.write_text(header + "\n".join(reversed(objects)) + "\n")
+    # Roof placement must not create a ground-to-roof invisible wall. Fence
+    # upper space is an open frame, represented separately from its low panel.
+    roof = [c for c in records if c["owner_id"] == "canopy"]
+    assert roof and all(c["base_y"] == 2150 for c in roof)
+    fence = [c for c in records if c["owner_id"] == "fence"]
+    assert len(fence) == 4
+    assert any(c["base_y"] > 1000 for c in fence)
+    assert not any(c["base_y"] == 0 and c["height"] > 1000 and
+                   c["max_x"]-c["min_x"] > 1000 for c in fence)
+    path.write_text(header + "\n".join(reversed(objects)) + "\n", encoding="utf-8")
     # Source lines change, but every stable ID, transform and flag must agree.
     without_lines = lambda values: [{k: v for k, v in c.items() if k != "line"} for c in values]
     assert without_lines(records) == without_lines(inspect(path))
@@ -60,11 +72,11 @@ with tempfile.TemporaryDirectory() as tmp:
         (objects[0] + "\n" + objects[1].replace("id=crate", "id=gate_col_0"), "conflicts"),
     ]
     for obj, message in invalid:
-        path.write_text(header + obj + "\n")
+        path.write_text(header + obj + "\n", encoding="utf-8")
         assert message in inspect(path, False)
     large_header = "map version=1 units=rfu\nworld min_x=-300000 max_x=300000 min_z=-300000 max_z=300000\n"
     many = [f"object id=wall_{i} kind=boundary_wall x=0 y=0 z=0 yaw=0 scale=1000 attr.length=100000 attr.collision=boundary" for i in range(30)]
-    path.write_text(large_header + "\n".join(many) + "\n")
+    path.write_text(large_header + "\n".join(many) + "\n", encoding="utf-8")
     assert "capacity" in inspect(path, False)
 
 production = inspect(ROOT / "rasterfall/assets/maps/rasterfall.map")

@@ -13,6 +13,7 @@
 #include "rasterfall_calibration.h"
 #include "rasterfall_roster.h"
 #include "rasterfall_world_content.h"
+#include "rf_frontier_mission.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -122,6 +123,12 @@ struct rasterfall_session {
     struct rasterfall_ai_registry ai_registry;
     int managed_ai_enabled;
     int null_actor_index; /* Resolved authored actor id=null; invalidated on session reset. */
+    int frontier_squad_indices[5]; /* Authored assault/support order, rebuilt on reset. */
+    int frontier_squad_actor_ids[5];
+    unsigned frontier_squad_generations[5];
+    struct rf_frontier_config frontier_config;
+    struct rf_frontier_mission frontier;
+    char supply_message[128];
     int rts_active;
     int rts_move_active;
     int rts_move_x, rts_move_z;
@@ -189,6 +196,12 @@ int rasterfall_session_rts_order_actor(struct rasterfall_session *session,
  * never replenishes energy or resets a job; normal session reset does. */
 void rasterfall_session_weaver_configure(struct rasterfall_session *session,
     int enabled, int output_x, int output_z, int output_y);
+int rasterfall_session_frontier_near(const struct rasterfall_session *session,
+    int facing);
+int rasterfall_session_frontier_capture(struct rasterfall_session *session,
+    int facility, unsigned identity, unsigned generation);
+int rasterfall_session_weaver_set_supply(struct rasterfall_session *session,
+    const struct toy_mesh_weaver_supply *supply);
 int rasterfall_session_weaver_start(struct rasterfall_session *session,
     const struct toy_mesh_blueprint *blueprint);
 void rasterfall_session_weaver_sync(struct rasterfall_session *session);

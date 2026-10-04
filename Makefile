@@ -89,7 +89,7 @@ win-rasterfall-package:
 win-app:
 	+$(MAKE) -f windows/Makefile app
 
-$(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h | $(BUILD)
+$(BUILD)/gen_sfx: tools/gen_sfx.c rasterfall/lib/sfx.c rasterfall/include/toy_game.h rasterfall/include/rasterfall_audio_mix.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  $<\n"
 	$(CC) -std=c11 -Wall -Wextra -O2 -D_GNU_SOURCE \
 	    -D__memset=memset -D__memmove=memmove \
@@ -819,6 +819,7 @@ APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_player_ui.o $(BUILD)/rf_minimap.o $(BUI
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_rts.o $(BUILD)/rf_rts_portrait.o
 RASTERFALL_OPT_DEP := $(BUILD)/.rasterfall-opt
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content.o
+APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_frontier_mission.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_gui.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_app.o
 APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_application_projection.o
@@ -1067,6 +1068,14 @@ $(BUILD)/rasterfall_world_content_self.o: $(RASTERFALL_SRC)/rasterfall_world_con
                                          $(RASTERFALL_INC)/rasterfall_world_content.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(SELF_LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rf_frontier_mission.o: $(RASTERFALL_LIB)/rf_frontier_mission.c $(RASTERFALL_INC)/rf_frontier_mission.h $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rf_frontier_mission_self.o: $(RASTERFALL_LIB)/rf_frontier_mission.c $(RASTERFALL_INC)/rf_frontier_mission.h $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
+	$(GCC) $(SELF_LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
+
+$(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_session_self.o: $(RASTERFALL_SRC)/rf_frontier_session.inc $(RASTERFALL_INC)/rf_frontier_mission.h
 
 $(BUILD)/rasterfall_ai.o: $(RASTERFALL_SRC)/rasterfall_ai.c \
                           $(RASTERFALL_INC)/rasterfall_ai.h \
@@ -1629,6 +1638,7 @@ SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_rifle_pose_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_gpu_scene_world_gpu_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rasterfall_world_content_self.o
+SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_frontier_mission_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_mesh_weaver_presentation_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_player_ui_self.o $(BUILD)/rf_minimap_self.o $(BUILD)/rf_player_commands_self.o $(BUILD)/rf_story_self.o $(BUILD)/rf_story_test_self.o $(BUILD)/rf_player_panels_self.o $(BUILD)/rf_device_commands_self.o $(BUILD)/rf_ui_font_self.o
 SELF_APP_EXTRA_OBJS_rasterfall += $(BUILD)/rf_rts_self.o $(BUILD)/rf_rts_portrait_self.o
@@ -2110,6 +2120,7 @@ $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_performance.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_mesh_weaver_audio.inc $(RASTERFALL_INC)/rasterfall_weaver_audio.h
 $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_audio_self.o: $(RASTERFALL_SRC)/rasterfall_audio_weaver.inc $(RASTERFALL_INC)/rasterfall_weaver_audio.h
+$(BUILD)/rasterfall_sfx.o $(BUILD)/rasterfall_sfx_self.o $(BUILD)/rasterfall_audio.o $(BUILD)/rasterfall_audio_self.o: $(RASTERFALL_INC)/rasterfall_audio_mix.h
 $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky.o $(BUILD)/rasterfall_sky_self.o: $(RASTERFALL_INC)/rasterfall_canvas.h
 
 # The presentation map value is embedded by session and frozen Scene records.
@@ -2131,5 +2142,6 @@ $(BUILD)/rf_rts_self.o $(BUILD)/rf_rts_portrait_self.o $(BUILD)/rf_player_ui_sel
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_aux.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_player_runtime.inc $(RASTERFALL_SRC)/rf_device_runtime.inc $(RASTERFALL_SRC)/rf_ui_performance.inc $(RASTERFALL_INC)/rf_player_ui.h $(RASTERFALL_INC)/rf_player_commands.h $(RASTERFALL_INC)/rf_player_panels.h $(RASTERFALL_INC)/rf_story.h $(RASTERFALL_INC)/rf_device_commands.h
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_frontier_performance.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_rts_runtime.inc $(RASTERFALL_INC)/rf_rts.h
 $(BUILD)/rf_player_ui.o $(BUILD)/rf_player_ui_self.o: $(RASTERFALL_SRC)/rf_rts_ui.inc $(RASTERFALL_INC)/rf_rts.h

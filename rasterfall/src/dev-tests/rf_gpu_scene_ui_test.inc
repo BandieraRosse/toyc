@@ -42,7 +42,7 @@ static int scene_ui_test(void)
     if (canvas.failed || sink.hash==initial) return 3;
     struct rasterfall_net net={0};
     draw_scoreboard(&canvas,&net);
-    draw_game_over_panel(&canvas,0);draw_level_won_panel(&canvas,0);
+    draw_game_over_panel(&canvas,0,0);draw_level_won_panel(&canvas,0);
     draw_crosshair(&canvas,&game);
     for (int i=0;i<RF_TABLE_MAPS;++i) {
         rf_table.selected=i;

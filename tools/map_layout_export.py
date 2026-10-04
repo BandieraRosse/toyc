@@ -9,7 +9,7 @@ except ImportError as exc:
     raise SystemExit("map layout export requires Pillow; run: make setup-map-layout") from exc
 
 BUTTONS={"button","button_air","button_alarm","button_heavy","button_fast","button_base1","button_base2","button_smoker","button_charger","button_tank","button_wave_skip","button_attack_x2","button_attack_x3","button_attack_x4","button_pose_reset","button_pose_right_arm","button_pose_arms","button_pose_body","button_anim_idle","button_anim_walk","button_anim_jog","button_glb_idle","button_glb_walk","button_glb_jog","button_vmd_walk","button_vmd_manjusaka","button_animation_composition","button_humanoid_pose_debug","button_west_corridor","button_west_corridor_no_tank","button_enemy_death_test"}
-PREFIX={"safe":"SF","base":"B","spawn":"SP","ai_spawn":"SP","ramp":"R","platform":"P","prop":"PR","button":"BTN","air_wall":"AW","box":"BX","model":"MD"}
+PREFIX={"safe":"SF","base":"B","spawn":"SP","ai_spawn":"SP","ramp":"R","platform":"P","prop":"PR","button":"BTN","air_wall":"AW","box":"BX","model":"MD","region":"RG"}
 LAYOUT_RECORDS={"world","safe","base","spawn","ai_spawn","prop","ramp","platform","platform_roof","box","model"}|BUTTONS
 def num(s):
     try:return int(s)
@@ -56,9 +56,9 @@ def parse_v1(path):
         if kind=="world":
             b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; doc["world"]={**b,"room_limit":num(f.get("room_limit","0")),"source":raw}; continue
         if kind=="region":
-            typ={"safe":"safe","spawn":"spawn","base":"base"}.get(f.get("kind"));
+            typ={"safe":"safe","spawn":"spawn","base":"base"}.get(f.get("kind"),"region");
             if typ:
-                b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"role":f.get("attr.role",f.get("role",f.get("id"))),"bounds":b,"center":centre(b)}
+                b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; o={"type":typ,"kind":f.get("kind"),"role":f.get("attr.role",f.get("role",f.get("id"))),"bounds":b,"center":centre(b)}
         elif kind=="actor_spawn":
             x,z=num(f.get("x","0")),num(f.get("z","0")); typ="ai_spawn"; o={"type":typ,"name":f.get("id",""),"base_id":num(f.get("base_id","0")),"class":f.get("class",f.get("type","")),"x":x,"z":z,"downed":bool(num(f.get("downed","1"))),"bounds":box([x,x,z,z]),"center":{"x":x,"z":z}}
         elif kind=="interaction":
@@ -75,7 +75,7 @@ def parse_v1(path):
         elif kind=="collision":
             b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; visible=f.get("visible","true")=="true"; collision=f.get("collision","true")=="true"; typ="air_wall" if collision and not visible else "box"; o={"type":typ,"height":num(f.get("height","0")),"color":f.get("color","000000"),"visible":visible,"collision":collision,"walkable":f.get("walkable","false")=="true","role":f.get("role"),"bounds":b,"center":centre(b)}
         if o:
-            family=PREFIX[typ]; counts[family]=counts.get(family,0)+1; o["export_id"]=family+str(counts[family]); o["source"]=raw; doc["objects"].append(o)
+            family=PREFIX[typ]; counts[family]=counts.get(family,0)+1; o["export_id"]=family+str(counts[family]); o["source_id"]=f.get("id",""); o["source"]=raw; doc["objects"].append(o)
             if typ=="box" and o.get("collision"): candidates.append((len(doc["objects"])-1,(o["bounds"]["max_x"]-o["bounds"]["min_x"])*(o["bounds"]["max_z"]-o["bounds"]["min_z"]),bool(o.get("role"))))
         elif kind not in {"map","world","region","interaction","actor_spawn","pickup","object","render","surface","collision"}:
             warnings.append(f"line {line_no}: ignored record '{kind}' (not represented in layout JSON)")
@@ -242,7 +242,7 @@ def render(doc,path,w,h):
     # box.  Keep it visually quiet so the semantic regions remain legible.
     ground_fill=(35,41,49)
     ground_stroke=None
-    pal={"box":((63,70,82),(158,169,184)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255)),"model":((67,88,99),(190,225,230))};order=list(pal)
+    pal={"box":((63,70,82),(158,169,184)),"air_wall":(None,(232,101,101)),"safe":((48,125,83),(110,231,159)),"base":((42,101,122),(84,205,235)),"spawn":((121,50,55),(240,108,108)),"ramp":((132,94,50),(244,177,91)),"platform":((74,80,127),(157,166,249)),"prop":((125,87,127),(232,160,238)),"button":((147,119,38),(255,220,94)),"ai_spawn":((77,117,146),(139,211,255)),"model":((67,88,99),(190,225,230)),"region":(None,(239,196,120))};order=list(pal)
     def is_ground(o):
         source=o.get("source",{})
         return o["type"]=="box" and source.get("record")=="render" and "kind=ground" in source.get("fields",[])
@@ -278,7 +278,7 @@ def render(doc,path,w,h):
         c.text(x+5,y+5,lab["id"].removesuffix("_area"),color)
     # Semantic areas win label space. Dense point clusters retain every ID in
     # JSON, while the PNG suppresses labels that would collide.
-    priority={"safe":0,"base":1,"spawn":2,"ramp":3,"platform":4,"prop":5,"model":6,"button":7,"ai_spawn":8,"air_wall":9,"box":10}; occupied=[]
+    priority={"safe":0,"base":1,"spawn":2,"ramp":3,"platform":4,"prop":5,"model":6,"button":7,"ai_spawn":8,"air_wall":9,"box":10,"region":2}; occupied=[]
     for o,x,y,u,v in sorted(placed,key=lambda q:priority[q[0]["type"]]):
         label=o.get("export_id")
         if not label:continue
@@ -288,7 +288,7 @@ def render(doc,path,w,h):
     lx=w-legend+20;c.text(lx,30,"RASTERFALL 地图",(240,244,248),2);c.text(lx,58,"X/Z 俯视图",(160,175,190),2)
     counts={typ:sum(1 for o in doc["objects"] if o["type"]==typ) for typ in pal}
     groups=[
-        ("区域 AREAS",[("安全区 SAFE","safe"),("刷怪区 SPAWN ZONE","spawn")]),
+        ("区域 AREAS",[("安全区 SAFE","safe"),("刷怪区 SPAWN ZONE","spawn"),("空间锚点 ANCHOR","region")]),
         ("角色 ACTORS",[("基地核心 BASE CORE","base"),("AI 出生点 AI SPAWN","ai_spawn")]),
         ("通行 TRAVERSAL",[("坡道 RAMP","ramp"),("平台 PLATFORM","platform")]),
         ("世界 WORLD",[("组件 COMPONENT","prop"),("模型展示 MODEL","model"),("空气墙 AIR WALL","air_wall"),("重点碰撞 KEY BOX","box")]),

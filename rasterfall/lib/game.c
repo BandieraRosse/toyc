@@ -178,7 +178,7 @@ static void actor_set_weapon(struct toy_game_actor *a, int weapon)
     actor_clear_weapons(a);
     a->slots[slot].weapon = weapon;
     a->slots[slot].mag = info->mag_size;
-    a->slots[slot].reserve = TOY_GAME_AMMO_INFINITE;
+    a->slots[slot].reserve = info->reserve_max;
     a->current_slot = slot;
 }
 
@@ -740,7 +740,7 @@ void toy_game_set_ai_teammate_class(struct toy_game *g, int active, int class_id
     a->fire_enabled = 1;
     a->slots[w->slot].weapon = ai_weapon;
     a->slots[w->slot].mag = w->mag_size;
-    a->slots[w->slot].reserve = TOY_GAME_AMMO_INFINITE;
+    a->slots[w->slot].reserve = w->reserve_max;
     a->current_slot = w->slot;
     copy_name(a->name, name ? name : "AI");
     g->ai_context_actor_index = 0;
@@ -880,6 +880,35 @@ int toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
     a->deployment_z = z;
     a->flag_index = flag_index;
     a->nav_active = 0;
+    return 1;
+}
+
+int toy_game_actor_set_guard(struct toy_game *g, int actor_index,
+                              int x, int z, int radius)
+{
+    struct toy_game_actor *a;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS || radius <= 0)
+        return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        a->faction != TOY_GAME_FACTION_HOSTILE) return 0;
+    a->deployment_x = x; a->deployment_z = z;
+    a->ai_guard_radius = radius; a->ai_assault_active = 0;
+    a->combat_target.kind = -1; a->combat_scan_ms = a->combat_lost_ms = 0;
+    toy_game_actor_cancel_navigation(a);
+    return 1;
+}
+
+int toy_game_actor_set_assault(struct toy_game *g, int actor_index, int x, int z)
+{
+    struct toy_game_actor *a;
+    if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) return 0;
+    a = &g->actors[actor_index];
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI ||
+        a->faction != TOY_GAME_FACTION_HOSTILE) return 0;
+    a->deployment_x = x; a->deployment_z = z;
+    a->ai_guard_radius = 0; a->ai_assault_active = 1;
+    toy_game_actor_cancel_navigation(a);
     return 1;
 }
 
@@ -1664,6 +1693,9 @@ static void rebuild_component_navigation(struct toy_game *g)
     g->nav_search_group = -1;
     g->nav_dispatch_cursor = -1;
     g->nav_group_generation++;
+    g->navigation_generation++;
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
+        toy_game_actor_cancel_navigation(&g->actors[i]);
     if (!g || g->room_limit <= 0) return;
     g->nav_origin = -g->room_limit;
     span = g->room_limit * 2;
@@ -1896,6 +1928,7 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
                              int type)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(type);
+    e->combat_generation = ++g->next_combat_generation;
     e->type = type >= 0 && type < TOY_GAME_ENEMY_TYPE_COUNT ? type :
               TOY_GAME_ENEMY_PURSUIT_COMMON;
     e->speed = rand_range(g, info->speed_min, info->speed_max);
@@ -1915,8 +1948,28 @@ static void init_enemy_stats(struct toy_game *g, struct toy_game_enemy *e,
     e->airborne_ms = 0;
     e->vertical_velocity = 0;
     e->airborne_y = 0;
+    e->ground_y = toy_game_query_ground(g, e->x, e->z, 0, 0).support_y;
     e->knockback_x = 0;
     e->knockback_z = 0;
+}
+
+int toy_game_spawn_enemy(struct toy_game *g, int enemy_type, int x, int z)
+{
+    struct toy_game_enemy *e;
+    int slot;
+    if (!g || g->state != TOY_GAME_PLAYING || enemy_type < 0 ||
+        enemy_type >= TOY_GAME_ENEMY_TYPE_COUNT ||
+        enemy_position_blocked(g, x, z, TOY_GAME_ENEMY_RADIUS)) return -1;
+    slot = find_free_slot(g);
+    if (slot < 0) return -1;
+    e = &g->enemies[slot];
+    memset(e, 0, sizeof(*e));
+    e->active = 1; e->x = x; e->z = z;
+    init_enemy_stats(g, e, enemy_type);
+    init_enemy_ai(g, e);
+    g->enemies_alive++;
+    push_event(g, TOY_GAME_EV_SPAWN);
+    return slot;
 }
 
 /* 在矩形区域内随机生成一个敌人；距玩家过近、压障碍或槽满返回 0。 */
@@ -3434,10 +3487,41 @@ static int enemy_nav_ramp_seam_connection(const struct toy_game *g,
     return 1;
 }
 
-static int nav_next_waypoint(const struct toy_game *g,
+/* A conservative grid cell can be blocked although the actual actor endpoint
+ * has room. Attach that endpoint to a nearby cell through a proved physical
+ * segment, rather than interpreting a whole-cell rejection as no route. */
+static int actor_nav_attach_cell(const struct toy_game *g, int x, int z,
+    int radius, int ground_y, int component)
+{
+    int cx = (x - g->nav_origin) / g->nav_cell_size;
+    int cz = (z - g->nav_origin) / g->nav_cell_size;
+    int range = (TOY_GAME_SHORT_CONNECTION_RANGE + g->nav_cell_size - 1) /
+                g->nav_cell_size;
+    int best = -1, dx, dz;
+    long long best_distance = (long long)TOY_GAME_SHORT_CONNECTION_RANGE *
+                              TOY_GAME_SHORT_CONNECTION_RANGE + 1;
+    for (dz = -range; dz <= range; dz++) for (dx = -range; dx <= range; dx++) {
+        int nx = cx + dx, nz = cz + dz, cell, px, pz, end_y;
+        long long offset_x, offset_z, distance;
+        if (nx < 0 || nz < 0 || nx >= g->nav_width || nz >= g->nav_height) continue;
+        cell = nz * g->nav_width + nx;
+        if (!g->nav_walkable[cell] || !g->nav_component[cell] ||
+            (component && g->nav_component[cell] != component)) continue;
+        px = g->nav_origin + nx * g->nav_cell_size + g->nav_cell_size / 2;
+        pz = g->nav_origin + nz * g->nav_cell_size + g->nav_cell_size / 2;
+        offset_x = (long long)px - x; offset_z = (long long)pz - z;
+        distance = offset_x * offset_x + offset_z * offset_z;
+        if (distance >= best_distance || !short_connection_height(g, x, z,
+            px, pz, radius, ground_y, &end_y) || end_y != g->nav_ground_y[cell]) continue;
+        best = cell; best_distance = distance;
+    }
+    return best;
+}
+
+static int nav_next_waypoint_impl(const struct toy_game *g,
                              int x, int z, int target_x, int target_z,
                              int radius, int ground_y,
-                             int *out_x, int *out_z)
+                             int *out_x, int *out_z, int attach_endpoints)
 {
     struct toy_game_update_profile *profile = g->update_profile;
     int64_t mark = 0;
@@ -3450,7 +3534,22 @@ static int nav_next_waypoint(const struct toy_game *g,
     int count = g->nav_width * g->nav_height;
     int head = 0, tail = 0, i, current, cx, cz, dx, dz, next;
     if (g->update_profile) g->update_profile->nav_queries++;
-    if (!g || g->nav_cell_size <= 0 || start < 0 || goal < 0 || start == goal ||
+    if (!g || g->nav_cell_size <= 0 || start < 0 || goal < 0) return 0;
+    if (attach_endpoints) {
+        int goal_component = g->nav_component[goal];
+        if (!g->nav_walkable[start]) start = actor_nav_attach_cell(g, x, z,
+            radius, ground_y, goal_component);
+        if (start < 0) return 0;
+        if (!g->nav_walkable[goal]) {
+            struct toy_game_ground_query ground = toy_game_query_ground(g,
+                target_x, target_z, radius, ground_y);
+            if (!ground.has_support) return 0;
+            goal = actor_nav_attach_cell(g, target_x, target_z, radius,
+                ground.support_y, g->nav_component[start]);
+        }
+        if (goal < 0) return 0;
+    }
+    if ((!attach_endpoints && start == goal) ||
         !g->nav_walkable[start] || !g->nav_walkable[goal] ||
         !g->nav_component[start] ||
         g->nav_component[start] != g->nav_component[goal]) return 0;
@@ -3486,7 +3585,7 @@ static int nav_next_waypoint(const struct toy_game *g,
         if (profile->clock_us) mark = profile->clock_us();
     }
     current = goal;
-    while (current != start) {
+    while (current != start || attach_endpoints) {
         if (profile) profile->nav_candidates++;
         int waypoint_x = g->nav_origin + (current % g->nav_width) *
                          g->nav_cell_size + g->nav_cell_size / 2;
@@ -3500,6 +3599,7 @@ static int nav_next_waypoint(const struct toy_game *g,
             found = 1;
             break;
         }
+        if (current == start) break;
         current = parent[current];
     }
     if (profile) {
@@ -3511,6 +3611,14 @@ static int nav_next_waypoint(const struct toy_game *g,
         }
     }
     return found;
+}
+
+static int nav_next_waypoint(const struct toy_game *g,
+    int x, int z, int target_x, int target_z, int radius, int ground_y,
+    int *out_x, int *out_z)
+{
+    return nav_next_waypoint_impl(g, x, z, target_x, target_z, radius,
+        ground_y, out_x, out_z, 0);
 }
 
 static int enemy_nav_group_valid(const struct toy_game *g,
@@ -4204,31 +4312,78 @@ static int enemy_nav_group_waypoint(struct toy_game *g,
 
 #include "game_navigation.inc"
 
-static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
-                              int target_x, int target_z, int speed)
+void toy_game_actor_cancel_navigation(struct toy_game_actor *actor)
 {
-    int dx, dz, distance;
+    if (!actor) return;
+    actor->nav_active = 0;
+    actor->nav_direct_valid = actor->nav_direct_ms = 0;
+}
+
+int toy_game_actor_navigation_target(struct toy_game *g, struct toy_game_actor *a,
+    int target_x, int target_z, int speed, int dt_ms, int *out_x, int *out_z)
+{
+    int dx, dz, direct = 0;
+    if (!g || !a || !out_x || !out_z || !a->active ||
+        a->state != TOY_GAME_ACTOR_ALIVE || dt_ms < 0 || speed <= 0 ||
+        speed > 2000000 || target_x < -2000000 || target_x > 2000000 ||
+        target_z < -2000000 || target_z > 2000000) return 0;
+    if (a->nav_generation != g->navigation_generation) {
+        toy_game_actor_cancel_navigation(a);
+        a->nav_generation = g->navigation_generation;
+    }
+    if (a->nav_goal_x != target_x || a->nav_goal_z != target_z ||
+        a->nav_direct_y != a->ground_y) a->nav_direct_valid = 0;
+    a->nav_direct_ms = combat_timer(a->nav_direct_ms, dt_ms);
     if (a->nav_active) {
         dx = a->nav_x - a->x; dz = a->nav_z - a->z;
         if ((long long)dx * dx + (long long)dz * dz <=
             (long long)(speed + 24) * (speed + 24))
             a->nav_active = 0;
     }
-    if (!a->nav_active &&
-        (actor_segment_blocked(g, a->x, a->z, target_x, target_z,
-                               TOY_GAME_PLAYER_RADIUS, a->ground_y) ||
-         !nav_segment_allowed(g, a->x, a->z, target_x, target_z,
-                              TOY_GAME_PLAYER_RADIUS, a->ground_y))) {
-        if (nav_next_waypoint(g, a->x, a->z, target_x, target_z,
-                              TOY_GAME_PLAYER_RADIUS, a->ground_y,
-                              &a->nav_x, &a->nav_z))
+    if (!a->nav_active) {
+        if (a->nav_direct_valid && a->nav_direct_ms > 0) {
+            direct = 1;
+            if (g->update_profile) g->update_profile->actor_direct_hits++;
+        } else {
+            if (g->update_profile) g->update_profile->actor_direct_queries++;
+            direct = !actor_segment_blocked(g, a->x, a->z, target_x, target_z,
+                                            TOY_GAME_PLAYER_RADIUS, a->ground_y) &&
+                nav_segment_allowed(g, a->x, a->z, target_x, target_z,
+                                    TOY_GAME_PLAYER_RADIUS, a->ground_y);
+            a->nav_direct_valid = direct;
+            a->nav_direct_ms = direct ? 256 : 0;
+            a->nav_goal_x = target_x; a->nav_goal_z = target_z;
+            a->nav_direct_y = a->ground_y;
+        }
+        if (!direct && nav_next_waypoint_impl(g, a->x, a->z, target_x, target_z,
+                                         TOY_GAME_PLAYER_RADIUS, a->ground_y,
+                                         &a->nav_x, &a->nav_z, 1))
             a->nav_active = 1;
     }
-    dx = (a->nav_active ? a->nav_x : target_x) - a->x;
-    dz = (a->nav_active ? a->nav_z : target_z) - a->z;
+    *out_x = a->nav_active ? a->nav_x : target_x;
+    *out_z = a->nav_active ? a->nav_z : target_z;
+    return direct || a->nav_active;
+}
+
+static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
+                              int target_x, int target_z, int speed, int dt_ms)
+{
+    int steer_x = target_x, steer_z = target_z;
+    int dx, dz, distance, start_x = a->x, start_z = a->z;
+    toy_game_actor_navigation_target(g, a, target_x, target_z, speed, dt_ms,
+        &steer_x, &steer_z);
+    dx = steer_x - a->x;
+    dz = steer_z - a->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (distance > 0)
-        move_actor_forced(g, a, dx * speed / distance, dz * speed / distance);
+    if (distance > 0) {
+        int step_x = (int)((long long)dx * speed / distance);
+        int step_z = (int)((long long)dz * speed / distance);
+        move_actor_forced(g, a, step_x, step_z);
+        if (a->x != start_x + step_x || a->z != start_z + step_z) {
+            a->nav_direct_valid = 0;
+            if (g->update_profile) g->update_profile->actor_direct_blocked++;
+        }
+    }
 }
 
 /* Upward movement sweeps the body's head against suspended box undersides.
@@ -6136,7 +6291,7 @@ int toy_game_execute_actor_command(
         was_moving = actor->x != command->move_x ||
                      actor->z != command->move_z;
         actor_path_toward(g, actor, command->move_x, command->move_z,
-                          command->move_speed);
+                          command->move_speed, dt_ms);
         actor->moving = was_moving &&
                         (actor->x != command->move_x ||
                          actor->z != command->move_z);
@@ -6295,8 +6450,10 @@ void toy_game_update_held(struct toy_game *g,
     update_actor_special_motion(g, dt_ms);
     separate_enemies(g);
     update_base_core(g, dt_ms);
-    if (g->campaign_mode) update_campaign(g, dt_ms);
-    else update_waves(g, dt_ms);
+    if (!g->external_director) {
+        if (g->campaign_mode) update_campaign(g, dt_ms);
+        else update_waves(g, dt_ms);
+    }
 }
 
 #include "game_mesh_weaver.inc"
@@ -6384,8 +6541,10 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
         mark = now;
     }
     update_base_core(g, dt_ms);
-    if (g->campaign_mode) update_campaign(g, dt_ms);
-    else update_waves(g, dt_ms);
+    if (!g->external_director) {
+        if (g->campaign_mode) update_campaign(g, dt_ms);
+        else update_waves(g, dt_ms);
+    }
     if (profile && profile->clock_us) {
         now = profile->clock_us();
         profile->other_us += now - mark;

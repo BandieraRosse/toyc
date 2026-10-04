@@ -107,6 +107,12 @@ PNG 使用 x/z 平面、RFU 网格、色块/线框和紧凑 ID；右侧图例按
 center/bounds：图片负责整体空间感，query 负责精确局部事实；不做路径规划、chokepoint 或自然语言区域识别。
 Exporter 会记录源 `.map` 文件指纹，源文件变化时 query 在 stderr 提醒。
 
+V1 自定义 `region`（例如任务的 `mission_guard`、`mission_entry`、`mission_route`）以
+`type=region` 导出，保留原 `kind`、`role`、bounds 和稳定 `source_id`；不会转换为 AI 出生记录。
+所有 V1 对象都保存 authored `source_id`，`get` 与 `near` 除图中短 ID 外也接受该稳定 ID。
+例如 `python tools/map_layout_query.py tmp/frontier-station-layout/output.json get frontier_spawn_north`。
+这允许关卡布局重排后继续核对同一任务锚点；query 仍只查询空间事实，不推导任务状态或导航。
+
 最小人工验收是在正式地图上运行 `make map-layout`，打开 `tmp/map-layout/output.png`，抽查 safe、
 spawn、button、prop 的相对位置，再用相同导出 ID 对照 `output.json` 的中心点与 bounds。当前正式地图
 没有 `base` 或 `safe goal` 记录；这两类由自动化覆盖用例验证，待正式地图实际声明后再加入人工抽查。

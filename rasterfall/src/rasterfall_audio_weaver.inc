@@ -3,6 +3,7 @@
  * Allocation/synthesis and publish run on the main thread; only mix mutates
  * voices, sample cursors and gain envelopes. No Game or platform audio calls. */
 #include "rasterfall_weaver_audio.h"
+#include "rasterfall_audio_mix.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -213,6 +214,9 @@ static void rf_weaver_audio_mix(struct rasterfall_weaver_audio_bus *b,short *ste
             sample+=pcm->samples[v->cursor++];
             if(v->cursor==pcm->frames)v->active=0;
         }
+        /* +6 dB relative to the original machine bus, with reserved headroom.
+         * Listener attenuation/pan and all existing fades apply afterward. */
+        sample=rf_audio_soft_peak(sample*2,4096);
         stereo[f*2]=rf_weaver_audio_add(stereo[f*2],sample*b->gain[0]/65536);
         stereo[f*2+1]=rf_weaver_audio_add(stereo[f*2+1],sample*b->gain[1]/65536);
     }

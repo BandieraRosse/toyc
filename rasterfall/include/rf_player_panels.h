@@ -62,7 +62,7 @@ struct rf_player_device_rects {
 /* Query/draw/hit contain no commands. The runtime checks the query's actual
  * count/support and executes through the shared device service. */
 void rf_player_device_layout(struct rf_player_device_rects *out,int width,int height,
-                             const struct rf_player_ui_state *ui,int kind);
+                             const struct rf_player_ui_state *ui,int kind,int row_count);
 int rf_player_device_hit(const struct rf_player_device_rects *rects,int x,int y);
 void rf_player_device_draw(struct rasterfall_canvas *canvas,const struct rf_game_runtime *runtime,
                            int kind,int focus);

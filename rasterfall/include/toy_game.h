@@ -35,6 +35,8 @@
 #define TOY_GAME_DAMAGE_FLASH_MS 100
 #define TOY_GAME_DYING_MS       1000
 #define TOY_GAME_REVIVE_MS      3000
+#define TOY_GAME_AI_RESCUE_RANGE 1000
+#define TOY_GAME_AI_RESCUE_SEARCH_RANGE 6000
 #define TOY_GAME_REVIVE_HP      100
 #define TOY_GAME_WAVE_FIRST_DELAY_MS 512000
 #define TOY_GAME_WAVE_PAUSE_MS  512000
@@ -582,6 +584,7 @@ struct toy_game_enemy_ability_state {
 
 struct toy_game_enemy {
     int active;         /* 0=空槽 1=存活 2=倒地中 */
+    unsigned int combat_generation; /* Slot lifetime; host-owned spawn identity. */
     int type;           /* enum toy_game_enemy_type */
     int x, z;           /* 世界坐标（xz 平面） */
     int speed;          /* 每 16ms 逻辑步移动单位 */
@@ -637,6 +640,10 @@ struct toy_game_actor {
     struct toy_game_combat_target combat_target;
     int combat_scan_ms, combat_aim_ms, combat_lost_ms;
     int combat_last_x, combat_last_z, combat_last_y;
+    int ai_guard_radius;       /* Hostile post radius; zero leaves perception unrestricted. */
+    int ai_assault_active;     /* Without a target, advance to deployment_x/z. */
+    int ai_rescue_active, ai_rescue_index;
+    unsigned int ai_rescue_generation;
     int character_id;           /* -1 ordinary; nonnegative IDs are explicit story identities */
     int base_core;              /* BASE: fixed defense objective */
     int hired;                  /* 运行时部署的普通 AI，计入波次战斗力 */
@@ -697,6 +704,10 @@ struct toy_game_actor {
     int nav_x, nav_z;
     int nav_active;
     int fire_enabled;
+    /* Planning cache only; every actual step still uses normal collision. */
+    int nav_direct_valid, nav_direct_ms;
+    int nav_goal_x, nav_goal_z, nav_direct_y;
+    unsigned int nav_generation;
     int hit_test_dummy;
     int animation_demo;
     int animation_demo_elapsed_ms;
@@ -761,6 +772,7 @@ struct toy_game_update_profile {
     int64_t enemy_type_us[6];
     unsigned int enemy_type_calls[6];
     unsigned int nav_queries;
+    unsigned int actor_direct_queries, actor_direct_hits, actor_direct_blocked;
     unsigned int ground_queries;
     int64_t nav_search_us, nav_paths_us, nav_paths_max_us;
     unsigned int nav_searches, nav_nodes, nav_candidates;
@@ -783,6 +795,7 @@ struct toy_game_update_profile {
 };
 
 struct toy_game {
+    int external_director; /* Local mission owns spawning and completion. */
     /* Offline experimental manufacturing authority; never a render clock. */
     struct toy_mesh_weaver weaver;
     int combat_time_ms;
@@ -842,6 +855,7 @@ struct toy_game {
     int room_limit;
 
     int nav_origin;
+    unsigned int navigation_generation;
     int nav_cell_size;
     int nav_width;
     int nav_height;
@@ -946,6 +960,19 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms);
 void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms);
 int  toy_game_assign_actor_deployment(struct toy_game *g, int actor_index,
                                       int x, int z, int flag_index);
+int  toy_game_actor_set_guard(struct toy_game *g, int actor_index,
+                              int x, int z, int radius);
+int  toy_game_actor_set_assault(struct toy_game *g, int actor_index, int x, int z);
+void toy_game_actor_cancel_rescue(struct toy_game *g, int actor_index);
+void toy_game_actor_cancel_navigation(struct toy_game_actor *actor);
+/* Plan a steering point only; no body/weapon/world advancement. Returns 1 for
+ * a proved direct segment or retained waypoint, 0 when no route is available.
+ * Explicit orders must cancel the previous navigation intent first. */
+int toy_game_actor_navigation_target(struct toy_game *g,
+    struct toy_game_actor *actor, int target_x, int target_z,
+    int move_step, int dt_ms, int *steer_x, int *steer_z);
+/* Exact authored spawn: no relocation, returns enemy slot or -1. */
+int  toy_game_spawn_enemy(struct toy_game *g, int enemy_type, int x, int z);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);
 int  toy_game_set_campaign_stage(struct toy_game *g, int stage);
 int  toy_game_move_ai_actor(struct toy_game *g, int actor_index, int x, int z);
@@ -1178,5 +1205,9 @@ void toy_sfx_set_sample(struct toy_sfx *sfx, int kind, const short *pcm, unsigne
                                                         /* 注册样本音色；pcm/frames 为空则回退程序合成 */
 void toy_sfx_music(struct toy_sfx *sfx, int enabled);
 void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames); /* 混音至 S16 立体声 */
+/* Presentation mix: 0..256 bus gains; positive ceiling softly bounds peaks.
+ * Does not alter voice state, assets, event production or music enable policy. */
+void toy_sfx_render_gained(struct toy_sfx *sfx, short *out, int frames,
+                          int effects_q8, int music_q8, int ceiling);
 
 #endif /* TOYC_TOY_GAME_H */

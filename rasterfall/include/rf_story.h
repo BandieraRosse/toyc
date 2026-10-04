@@ -7,7 +7,10 @@
 struct rasterfall_session;
 
 /* These IDs are persisted. Never renumber existing content. */
-enum rf_story_id { RF_STORY_NONE, RF_STORY_OUTPOST = 101, RF_STORY_LABS = 102 };
+enum rf_story_id { RF_STORY_NONE, RF_STORY_OUTPOST = 101, RF_STORY_LABS = 102,
+    RF_STORY_FRONTIER_ARRIVAL = 301, RF_STORY_FRONTIER_INFECTED = 302,
+    RF_STORY_FRONTIER_PREPARE = 303, RF_STORY_FRONTIER_COUNTERATTACK = 304,
+    RF_STORY_FRONTIER_SECURED = 305, RF_STORY_FRONTIER_FAILED = 306 };
 enum rf_story_progress { RF_STORY_UNSEEN, RF_STORY_QUEUED, RF_STORY_ACTIVE,
     RF_STORY_INTERRUPTED, RF_STORY_COMPLETED, RF_STORY_CANCELLED };
 enum rf_story_trigger_policy { RF_STORY_TRIGGER_EACH_ENTRY, RF_STORY_TRIGGER_ONCE,
@@ -60,7 +63,7 @@ struct rf_story_camera_entity {
     int anchor_x, anchor_z;
 };
 struct rf_story {
-    int progress[2], queue[RF_STORY_QUEUE_CAP], queue_count;
+    int progress[8], queue[RF_STORY_QUEUE_CAP], queue_count;
     int active_story, node_id, collapsed, link, enabled, combat;
     unsigned session_revision, node_revision, next_camera_generation;
     uint64_t world_generation;
@@ -73,6 +76,7 @@ struct rf_story {
     unsigned history_revision, region_presence;
     unsigned triggered_this_game;
     int line_elapsed_ms;
+    unsigned frontier_mission_id;
 };
 
 void rf_story_init(struct rf_story *story);
@@ -84,7 +88,12 @@ void rf_story_detach(struct rf_story *story, struct rasterfall_session *session)
 void rf_story_update(struct rf_story *story, struct rasterfall_session *session,
     int dt_ms, int combat, int allow_start);
 void rf_story_emit(struct rf_story *story, int event, const char *target_id);
+/* Local mission radio is transient. It never persists an in-progress world
+ * mission or simulates NULL in another map to provide a fictional video. */
+void rf_story_frontier_events(struct rf_story *story,
+    struct rasterfall_session *session,unsigned events);
 const struct rf_story_node *rf_story_current_node(const struct rf_story *story);
+int rf_story_subtitle_only(const struct rf_story *story);
 const struct rf_story_node *rf_story_find_node(int node_id);
 int rf_story_line_duration_ms(const char *line);
 /* choice=-1 confirms a terminal line. Both revisions must match the snapshot

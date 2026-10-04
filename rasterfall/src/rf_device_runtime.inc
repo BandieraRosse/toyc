@@ -4,7 +4,7 @@ static struct rf_game_runtime *rf_device_runtime_owner;
 static void rf_device_runtime_query(void *context,struct rf_device_query *q)
 {
     static const char *feature_ids[]={"outline","shadows","pbr","flashlight","character-material","linear-filter"};
-    static const char *map_ids[]={"outpost","campaign","whu"};
+    static const char *map_ids[]={"outpost","campaign","whu","frontier"};
     _Static_assert(sizeof(feature_ids)/sizeof(feature_ids[0])==RF_RENDER_FEATURE_COUNT,"render feature IDs must match catalog");
     _Static_assert(RF_RENDER_FEATURE_COUNT<=RF_DEVICE_FEATURE_CAP,"device feature query capacity");
     _Static_assert(sizeof(map_ids)/sizeof(map_ids[0])==RF_TABLE_MAPS,"map IDs must match catalog");

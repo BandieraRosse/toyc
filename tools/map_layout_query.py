@@ -94,6 +94,9 @@ def object_by_id(doc, export_id):
     for obj in doc["objects"]:
         if obj["export_id"] == export_id:
             return obj
+    for obj in doc["objects"]:
+        if obj.get("source_id") == export_id:
+            return obj
     fail(f"object ID not found: {export_id}")
 
 

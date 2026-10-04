@@ -57,7 +57,9 @@ static void *audio_thread_func(void *arg)
     while (!__atomic_load_n(&audio->quit, __ATOMIC_ACQUIRE)) {
         long ret;
         audio_drain_events(audio);
-        toy_sfx_render(&audio->sfx, play_buf, SFX_BLOCK_FRAMES);
+        /* Quieter combat/music bed leaves room for nearby machine feedback.
+         * SFX soft peak <28000 plus machine soft peak <4096 fits PCM16. */
+        toy_sfx_render_gained(&audio->sfx, play_buf, SFX_BLOCK_FRAMES,192,128,28000);
         rf_weaver_audio_mix(audio->weaver, play_buf, SFX_BLOCK_FRAMES);
         ret = toy_audio_write(audio->output, play_buf, SFX_BLOCK_FRAMES);
         if (ret < 0) break;

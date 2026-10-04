@@ -26,4 +26,13 @@ with tempfile.TemporaryDirectory() as tmp:
     coverage=json.loads((out/"coverage/output.json").read_text())["objects"]
     assert any(x["export_id"]=="B1" and x["map_id"]==7 for x in coverage)
     assert any(x["export_id"]=="SF1" and x["role"]=="goal" for x in coverage)
+    # Map-owned mission anchors must survive export without becoming actor
+    # spawns, and their authored identity must remain queryable after reordering.
+    sample.write_text("map version=1 units=rfu\nworld min_x=-100 max_x=100 min_z=-100 max_z=100 room_limit=100\nregion id=guard_anchor kind=mission_guard min_x=10 max_x=10 min_z=20 max_z=20 attr.role=guard\n",encoding="utf-8")
+    subprocess.run([PYTHON,str(ROOT/"tools/map_layout_export.py"),str(sample),"--output-dir",str(out/"anchors")],check=True)
+    anchors=json.loads((out/"anchors/output.json").read_text(encoding="utf-8"))["objects"]
+    assert anchors[0]["type"]=="region" and anchors[0]["kind"]=="mission_guard"
+    assert anchors[0]["source_id"]=="guard_anchor" and anchors[0]["center"]=={"x":10,"z":20}
+    queried=subprocess.run([PYTHON,str(ROOT/"tools/map_layout_query.py"),str(out/"anchors/output.json"),"get","guard_anchor"],check=True,capture_output=True,text=True)
+    assert json.loads(queried.stdout)["role"]=="guard"
 print("map layout export test: ok")

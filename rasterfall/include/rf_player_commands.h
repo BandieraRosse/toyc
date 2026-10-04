@@ -14,7 +14,8 @@ enum rf_player_operation {
     RF_PLAYER_RTS_SELECT, RF_PLAYER_RTS_MOVE, RF_PLAYER_RTS_STOP,
     RF_PLAYER_RTS_FOLLOW, RF_PLAYER_VIEW, RF_PLAYER_DIALOG_ANSWER,
     RF_PLAYER_DIALOG_COLLAPSE, RF_PLAYER_DIALOG_CLOSE,
-    RF_PLAYER_STORY_REPLAY, RF_PLAYER_STORY_RESET
+    RF_PLAYER_STORY_REPLAY, RF_PLAYER_STORY_RESET,
+    RF_PLAYER_FACILITY_CAPTURE
 };
 enum rf_player_result_code {
     RF_PLAYER_OK, RF_PLAYER_UNAVAILABLE, RF_PLAYER_PERMISSION, RF_PLAYER_RANGE,
@@ -27,6 +28,7 @@ struct rf_player_request {
     int operation, value, x, z, confirmed;
     uint64_t world_generation;
     unsigned serial, session_revision, node_revision;
+    unsigned device_identity, device_generation;
 };
 struct rf_player_result { int code, affected; char message[192]; };
 #define RF_PLAYER_NOTICE_CAP 16
@@ -50,6 +52,14 @@ struct rf_player_weaver_query {
     struct toy_mesh_weaver_cost cost;
     char name[64], id[32], status[96];
 };
+struct rf_player_facility_query {
+    uint64_t world_generation;
+    unsigned identity, generation;
+    int index, available, captured, can_capture, x, y, z;
+    const char *id, *name, *action;
+};
+void rf_player_frontier_query(const struct rf_game_runtime *runtime,
+    struct rf_player_facility_query *out);
 void rf_player_controls_init(struct rf_player_controls *state);
 int rf_player_weaver_near(const struct rasterfall_session *session,int x,int z,int facing);
 void rf_player_weaver_query(const struct rf_game_runtime *runtime,struct rf_player_weaver_query *out);

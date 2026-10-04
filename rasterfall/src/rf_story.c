@@ -22,7 +22,19 @@ static const struct rf_story_node nodes[] = {
     { 1021, RF_STORY_LABS, 10, "null", "NULL", "前哨站 / 远程",
       "找到网格编织机，打开蓝图库。选好物品后，界面会显示制造时间和能源需求。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
     { 1022, RF_STORY_LABS, 10, "null", "NULL", "前哨站 / 远程",
-      "好。需要操作设备时，靠近后查看交互提示。", "null_comms", 0, 0, 0, {{0}}, 0, 0 }
+      "好。需要操作设备时，靠近后查看交互提示。", "null_comms", 0, 0, 0, {{0}}, 0, 0 },
+    { 3010, RF_STORY_FRONTIER_ARRIVAL, 30, "null", "NULL", "前哨站 / 字幕通讯",
+      "这里曾由 RF 与另一组织共同使用。他们已经离开；按我们的回收判断，清除占领者并保住设施。", "", 0, 0, 0, {{0}}, 0, 0 },
+    { 3020, RF_STORY_FRONTIER_INFECTED, 40, "null", "NULL", "前哨站 / 字幕通讯",
+      "北侧和东侧发现感染者。它们也会攻击占领者，注意侧翼。", "", 0, 0, 0, {{0}}, 0, 0 },
+    { 3030, RF_STORY_FRONTIER_PREPARE, 50, "null", "NULL", "前哨站 / 字幕通讯",
+      "初始守军已肃清。还有新的部队在接近，45 秒整备；接管车间、仓库和能源设施。", "", 0, 0, 0, {{0}}, 0, 0 },
+    { 3040, RF_STORY_FRONTIER_COUNTERATTACK, 60, "null", "NULL", "前哨站 / 字幕通讯",
+      "感染者开始进场，西路也有枪手。他们会互相交火，保持小队协同并肃清全部增援。", "", 0, 0, 0, {{0}}, 0, 0 },
+    { 3050, RF_STORY_FRONTIER_SECURED, 70, "null", "NULL", "前哨站 / 字幕通讯",
+      "设施已接管，现场肃清。站点回收完成；可继续使用设备，或返回前哨站。", "", 0, 0, 0, {{0}}, 0, 0 },
+    { 3060, RF_STORY_FRONTIER_FAILED, 80, "null", "NULL", "前哨站 / 字幕通讯",
+      "小队已无法继续行动。重整后再来，或先返回前哨站。", "", 0, 0, 0, {{0}}, 0, 0 }
 };
 
 struct story_camera_profile {
@@ -40,6 +52,8 @@ static const struct story_camera_profile camera_profiles[] = {
 
 static int story_index(int id)
 {
+    if(id>=RF_STORY_FRONTIER_ARRIVAL && id<=RF_STORY_FRONTIER_FAILED)
+        return 2+id-RF_STORY_FRONTIER_ARRIVAL;
     return id == RF_STORY_OUTPOST ? 0 : id == RF_STORY_LABS ? 1 : -1;
 }
 
@@ -163,6 +177,33 @@ void rf_story_detach(struct rf_story *s, struct rasterfall_session *session)
     if (session) s->world_generation = session->scene_local.world_generation;
     s->link = s->active_story ? RF_STORY_LINK_CONNECTING : RF_STORY_LINK_OFF;
     s->retry_ms = 0;
+    if(s->frontier_mission_id) {
+        if(story_index(s->active_story)>=2)s->active_story=s->node_id=0;
+        int kept=0;
+        for(int i=0;i<s->queue_count;++i)
+            if(story_index(s->queue[i])<2)s->queue[kept++]=s->queue[i];
+        s->queue_count=kept;s->frontier_mission_id=0;s->collapsed=1;s->link=RF_STORY_LINK_OFF;
+        for(int i=2;i<8;++i)s->progress[i]=RF_STORY_UNSEEN;
+    }
+}
+
+void rf_story_frontier_events(struct rf_story *s,struct rasterfall_session *session,unsigned events)
+{
+    if(!s || !session || !s->enabled ||
+        session->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)return;
+    if(s->world_generation!=session->scene_local.world_generation)rf_story_detach(s,session);
+    if(s->frontier_mission_id!=session->frontier.mission_id) {
+        rf_story_close(s,session);
+        s->queue_count=0;
+        for(int i=2;i<8;++i)s->progress[i]=RF_STORY_UNSEEN;
+        s->frontier_mission_id=session->frontier.mission_id;
+        memset(&s->task,0,sizeof(s->task));
+    }
+    for(int bit=0;bit<6;++bit)if(events&(1u<<bit)) {
+        int id=RF_STORY_FRONTIER_ARRIVAL+bit,index=story_index(id);
+        if(s->progress[index]!=RF_STORY_UNSEEN || s->queue_count>=RF_STORY_QUEUE_CAP)continue;
+        s->progress[index]=RF_STORY_QUEUED;s->queue[s->queue_count++]=id;
+    }
 }
 
 static void queue_story(struct rf_story *s, int id)
@@ -397,6 +438,12 @@ static void face_camera(struct toy_game_actor *a, const struct camera *camera, i
     if (length) { a->sy = a->sy * 1024 / length; a->cy = a->cy * 1024 / length; }
 }
 
+int rf_story_subtitle_only(const struct rf_story *s)
+{
+    const struct rf_story_node *node=rf_story_current_node(s);
+    return node && (!node->camera_id || !node->camera_id[0]);
+}
+
 void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
     int dt_ms, int combat, int allow_start)
 {
@@ -406,6 +453,27 @@ void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
     if (s->world_generation != session->scene_local.world_generation)
         rf_story_detach(s, session);
     s->combat = combat != 0;
+    if(session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
+        if(!s->active_story && allow_start && s->queue_count) {
+            s->active_story=s->queue[0];
+            memmove(s->queue,s->queue+1,sizeof(s->queue[0])*(--s->queue_count));
+            s->node_id=s->active_story*10;s->session_revision++;s->node_revision++;
+            s->progress[story_index(s->active_story)]=RF_STORY_ACTIVE;
+            s->collapsed=0;s->link=RF_STORY_LINK_UNAVAILABLE;s->line_elapsed_ms=0;
+            s->camera.active=0;s->actor_index=-1;history_add(s,-1);
+        }
+        const struct rf_story_node *radio=rf_story_current_node(s);
+        if(radio && story_index(s->active_story)>=2 && !s->collapsed && dt_ms>0) {
+            s->link=RF_STORY_LINK_UNAVAILABLE;
+            s->line_elapsed_ms+=dt_ms;
+            if(s->line_elapsed_ms>=rf_story_line_duration_ms(radio->line))
+                rf_story_answer(s,session,s->session_revision,s->node_revision,-1);
+        }
+        return;
+    }
+    if(story_index(s->active_story)>=2) {
+        rf_story_close(s,session);s->queue_count=0;s->frontier_mission_id=0;
+    }
     detect_regions(s, session);
     task_target(s, session);
     if (!s->active_story && allow_start && !combat && s->queue_count &&
@@ -481,9 +549,11 @@ int rf_story_answer(struct rf_story *s, struct rasterfall_session *session,
     unsigned session_revision, unsigned node_revision, int choice)
 {
     const struct rf_story_node *n = rf_story_current_node(s);
-    if (!n || !session || s->collapsed || s->link != RF_STORY_LINK_LIVE ||
+    int radio=n && story_index(s->active_story)>=2;
+    if (!n || !session || s->collapsed ||
+        (radio?s->link!=RF_STORY_LINK_UNAVAILABLE:s->link!=RF_STORY_LINK_LIVE) ||
         session_revision != s->session_revision || node_revision != s->node_revision ||
-        !actor_available(bound_actor(s, session))) return 0;
+        (!radio && !actor_available(bound_actor(s, session)))) return 0;
     if (n->choice_count) {
         const struct rf_story_choice *c;
         if (choice < 0 || choice >= n->choice_count) return 0;
@@ -543,7 +613,7 @@ int rf_story_reset(struct rf_story *s, struct rasterfall_session *session, int i
     for (i = 0; i < s->queue_count; ++i)
         if (id && s->queue[i] != id) s->queue[n++] = s->queue[i];
     s->queue_count = n;
-    if (!id) s->progress[0] = s->progress[1] = RF_STORY_UNSEEN;
+    if (!id) memset(s->progress,0,sizeof(s->progress));
     else s->progress[index] = RF_STORY_UNSEEN;
     s->region_presence &= id ? ~(1u << index) : 0;
     s->triggered_this_game &= id ? ~(1u << index) : 0;
@@ -584,10 +654,11 @@ int rf_story_save(struct rf_story *s, const char *path)
     memset(values, 0, sizeof(values));
     values[0]=0x54534652u; values[1]=1;
     values[2]=s->progress[0]; values[3]=s->progress[1];
-    values[4]=s->active_story; values[5]=s->node_id; values[6]=s->collapsed;
+    if(story_index(s->active_story)<2) { values[4]=s->active_story;values[5]=s->node_id; }
+    values[6]=s->collapsed;
     values[7]=s->task.id; values[8]=s->task.state;
-    values[9]=s->queue_count;
-    for(i=0;i<s->queue_count && i<RF_STORY_QUEUE_CAP;++i) values[10+i]=s->queue[i];
+    for(i=0;i<s->queue_count && i<RF_STORY_QUEUE_CAP;++i)
+        if(story_index(s->queue[i])<2)values[10+values[9]++]=s->queue[i];
     for(i=0;i<STORY_SAVE_WORDS-1;++i) put_word(data+i*4,values[i]);
     put_word(data+(STORY_SAVE_WORDS-1)*4,save_hash(data,(STORY_SAVE_WORDS-1)*4));
     snprintf(temp,sizeof(temp),"%s.tmp",path);

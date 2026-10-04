@@ -385,7 +385,15 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
     scale=o.scale_milli;
     (void)bindings;
     if(node) {
-        if(story->collapsed) {
+        if(rf_story_subtitle_only(story) && !story->collapsed) {
+            struct rf_ui_rect identity=o.window;
+            identity.h=p_px(64,scale);
+            rf_ui_panel(c,identity,theme,0);
+            rf_ui_text(c,p_rect(identity.x+o.padding,identity.y+p_px(5,scale),
+                identity.w-o.padding*2,p_px(22,scale)),node->speaker,theme->accent,scale,1);
+            rf_ui_text(c,p_rect(identity.x+o.padding,identity.y+p_px(29,scale),
+                identity.w-o.padding*2,p_px(30,scale)),"远程视频不可用",theme->muted,scale*85/100,1);
+        } else if(story->collapsed) {
             rf_ui_text(c,o.window,"NULL 通讯已收起",theme->muted,scale,1);
         } else {
             p_panel_hole(c,o.window,o.video,theme);
@@ -393,6 +401,7 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
                 o.window.w,p_px(22,scale)),node->speaker,theme->accent,scale,1);
             if(!runtime->ui_video_live || story->link!=RF_STORY_LINK_LIVE) {
                 const char *status=runtime->ui_video_state==3?"视频不可用":
+                    node->story_id>=RF_STORY_FRONTIER_ARRIVAL?"字幕通讯：远程视频不可用":
                     story->link==RF_STORY_LINK_UNAVAILABLE?"镜头不可用":
                     story->link==RF_STORY_LINK_INTERRUPTED?"连接已中断":"正在连接真实镜头";
                 rasterfall_canvas_rect(c,o.video.x,o.video.y,o.video.w,o.video.h,theme->panel_raised,255);
@@ -526,7 +535,7 @@ void rf_player_notice_draw(struct rasterfall_canvas *c,const struct rf_game_runt
 }
 
 void rf_player_device_layout(struct rf_player_device_rects *o,int width,int height,
-                             const struct rf_player_ui_state *ui,int kind)
+                             const struct rf_player_ui_state *ui,int kind,int row_count)
 {
     struct rf_ui_layout shared;
     int scale,pad,gap,w,h,x,y,header,footer,row;
@@ -544,12 +553,16 @@ void rf_player_device_layout(struct rf_player_device_rects *o,int width,int heig
     o->content=p_rect(x+pad,y+header,w-pad*2,p_max(1,h-header-footer));
     o->status=p_rect(x+pad,y+h-p_px(58,scale),w-pad*2,p_px(48,scale));
     if (kind==RF_PLAYER_DEVICE_TABLE) {
-        row=o->content.h/3;
-        for (int i=0;i<3;++i) o->maps[i]=p_rect(o->content.x,o->content.y+i*row,o->content.w,row-gap);
+        row_count=p_max(1,p_min(row_count,RF_PLAYER_DEVICE_MAP_ROWS));
+        row=o->content.h/row_count;
+        for (int i=0;i<row_count;++i)
+            o->maps[i]=p_rect(o->content.x,o->content.y+i*row,o->content.w,row-gap);
         o->deploy=p_rect(x+pad,o->content.y+o->content.h+gap,p_min(w-pad*2,p_px(280,scale)),p_px(32,scale));
     } else {
-        row=o->content.h/6;
-        for (int i=0;i<6;++i) o->features[i]=p_rect(o->content.x,o->content.y+i*row,o->content.w,row-gap/2);
+        row_count=p_max(1,p_min(row_count,RF_PLAYER_DEVICE_FEATURE_ROWS));
+        row=o->content.h/row_count;
+        for (int i=0;i<row_count;++i)
+            o->features[i]=p_rect(o->content.x,o->content.y+i*row,o->content.w,row-gap/2);
     }
 }
 
@@ -586,8 +599,10 @@ void rf_player_device_draw(struct rasterfall_canvas *c,const struct rf_game_runt
     struct rf_ui_rect focused={0};
     int scale,pad;
     char line[224];
-    rf_player_device_layout(&o,c->width,c->height,&runtime->player_ui,kind);
-    rf_device_query(runtime,&q);scale=o.scale_milli;pad=o.padding;
+    rf_device_query(runtime,&q);
+    rf_player_device_layout(&o,c->width,c->height,&runtime->player_ui,kind,
+        kind==RF_PLAYER_DEVICE_TABLE?q.map_count:q.feature_count);
+    scale=o.scale_milli;pad=o.padding;
     rf_ui_panel(c,o.window,theme,0);
     rf_ui_text(c,p_rect(o.window.x+pad,o.window.y+pad,o.terminal.x-o.window.x-pad*2,p_px(28,scale)),
         kind==RF_PLAYER_DEVICE_TABLE?"指挥桌 / 部署":"画面设置 / 渲染终端",theme->text,scale,1);

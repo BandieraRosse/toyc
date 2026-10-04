@@ -9,6 +9,22 @@ static const char *world_path(enum rasterfall_world_id world)
     return rasterfall_world_map_path(world);
 }
 
+void rf_game_seed_world_groups(struct rf_game_runtime *runtime)
+{
+    struct rasterfall_session *s=runtime->session;
+    if(s->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)return;
+    rf_rts_sync(&runtime->rts,&s->game_state,s->scene_local.world_generation);
+    for(int group=0;group<3;++group) {
+        rf_rts_clear(&runtime->rts);
+        for(int n=0;n<5;++n) {
+            if((group==0 && n>=2) || (group==1 && n<2))continue;
+            rf_rts_select(&runtime->rts,&s->game_state,s->frontier_squad_indices[n],1);
+        }
+        rf_rts_group(&runtime->rts,&s->game_state,group,1);
+    }
+    rf_rts_clear(&runtime->rts);
+}
+
 static int rf_game_world_preflight(enum rasterfall_world_id world,const char *path)
 {
     struct rasterfall_session *probe=tlibc_malloc(sizeof(*probe));
@@ -30,8 +46,11 @@ static int rf_game_request_world_path(struct rf_game_runtime *runtime,
     if (world != RASTERFALL_WORLD_OUTPOST &&
         world != RASTERFALL_WORLD_CAMPAIGN_01 &&
         world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
         world != RASTERFALL_WORLD_PERF_EMPTY &&
         world != RASTERFALL_WORLD_PERF_COMPONENTS) return -1;
+    if (world == RASTERFALL_WORLD_FRONTIER_STATION_01 &&
+        runtime->net.mode != RASTERFALL_NET_OFF) return -1;
     /* Load/parse/project into an independent owner before detaching the live
      * story or unloading its map. Session contains self-references, so never
      * memcpy or swap the probe into the live owner. */
@@ -44,6 +63,7 @@ static int rf_game_request_world_path(struct rf_game_runtime *runtime,
     runtime->session->world_id = world;
     rasterfall_session_reset(runtime->session, &runtime->camera,
                              seed ? seed : 1);
+    rf_game_seed_world_groups(runtime);
     rasterfall_render_bake_lightmap();
     runtime->render_camera = runtime->camera;
     return 0;

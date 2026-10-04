@@ -6636,6 +6636,7 @@ static void render_actor_status(struct toy_renderer *renderer,
     if (bar_x + 64 >= renderer->surface.width) bar_x = renderer->surface.width - 66;
     fill_rect(&renderer->surface, bar_x - 2, bar_y - 2, 68, 7, RF_COLOR_UI_PANEL);
     if (is_base) hp_color = 0xFF2020;
+    else if (name_color == RF_COLOR_UI_DANGER) hp_color = RF_COLOR_UI_DANGER;
     else if (hp < 10) hp_color = RF_COLOR_UI_DANGER;
     else if (hp < 40) hp_color = RF_COLOR_UI_WARNING;
     else hp_color = RF_COLOR_UI_SUCCESS;
@@ -7484,7 +7485,10 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
         uint32_t color = actor->class_id == TOY_GAME_AI_LEVEL_3 ? RF_COLOR_UI_ACCENT :
                          actor->class_id == TOY_GAME_AI_LEVEL_2 ? RF_COLOR_UI_AI :
                          RF_COLOR_UI_PLAYER;
-        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        if(actor->faction!=toy_game_local_player_actor_const(&game)->faction)
+            color=RF_COLOR_UI_DANGER;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+            actor->state == TOY_GAME_ACTOR_DEAD) continue;
         dx = (long)actor->x - camera->x;
         dz = (long)actor->z - camera->z;
         d2 = dx * dx + dz * dz;

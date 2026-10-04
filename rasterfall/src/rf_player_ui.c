@@ -513,6 +513,10 @@ static void ui_map(struct rasterfall_canvas *canvas,const struct rasterfall_hud_
     else snprintf(line,sizeof(line),"自由探索");
     rf_ui_text(canvas,r,line,
         view->objective_active?theme->warning:theme->text,scale,1);
+    if(view->mission_title[0] && view->objective_detail) {
+        struct rf_ui_rect detail=r;detail.y-=ui_px(22,scale);
+        rf_ui_text(canvas,detail,view->objective_detail,theme->muted,scale,1);
+    }
 }
 
 #include "rf_rts_ui.inc"

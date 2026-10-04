@@ -29,6 +29,17 @@ Runtime Environment 的上层边界保持分层：Core 拥有平台资源及 ser
 
 当前 normal runtime 的 Desktop/Console feature gate 为关闭：Game 初始化不创建 GUI/app manager，主循环不打开、更新或渲染它们。保留的 console/gui/app/projection 源码与逻辑测试仅用于隔离诊断，不属于 normal GPU frame 的语义集合；F12、反引号和 station terminal 交互统一通过现有 HUD banner 报告暂时不可用。
 
+首个边缘站点由前哨指挥桌的正常部署请求进入，返回使用既有世界请求与完整 session load/reset/unload。
+Runtime 只处理输入、场景切换、HUD 和通讯投影；阶段、敌人配额和设备权限归 session 的局部任务导演，
+边界见[玩法架构](gameplay.md#边缘站点-01-的局部任务权威)。启动和运行中的世界请求均拒绝联机模式进入该站点。
+FPS/RTS 共享任务，切模式不重启整备、刷怪或通讯。暂停不调用权威 fixed step，因此不消耗任务和字幕逻辑时间。
+首图失败后 Esc 仍打开正常暂停菜单；暂停展示优先于结果面板，菜单导航不要求 Game 仍处于游玩状态。
+返回前哨沿同一世界切换链清理任务；恢复只关闭菜单，不撤销失败或恢复角色生命。
+
+换图与重试通过真实世界生命周期清除上一任务计时、待生成配额、实体代际、界面请求和通讯镜头请求。
+正常入口不依赖开发终端或任务驱动器。只读审计与截图请求可以观察正常运行，不能代替玩家命令、
+授予设施控制或改变任务结果；实机验证需区分正常输入、纯逻辑 fixture 与渲染诊断。
+
 V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runtime-design-v0/README.md)，不作为当前执行顺序。
 
 关键配套文件：

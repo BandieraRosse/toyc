@@ -32,7 +32,8 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
         rf_ui_rect_contains(ui.dock_toggle,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.resources,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.phase,pointer_x,pointer_y));
-    if(normal && r->story.active_story && !r->story.collapsed) {
+    if(normal && r->story.active_story && !r->story.collapsed &&
+        !rf_story_subtitle_only(&r->story)) {
         struct rf_player_comms_rects rects;
         rf_player_comms_layout(&rects,width,height,&r->player_ui,r->story.combat,0);
         blocked|=rf_ui_rect_contains(rects.window,pointer_x,pointer_y);

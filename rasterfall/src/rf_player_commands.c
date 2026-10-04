@@ -19,19 +19,40 @@ int rf_player_weaver_near(const struct rasterfall_session *s,int x,int z,int fac
     if(!s || !s->game_state.weaver.enabled)return 0;
     p=toy_game_local_player_actor_const(&s->game_state);
     if(!p || !p->active || p->state!=TOY_GAME_ACTOR_ALIVE || p->control_disabled)return 0;
-    for(int i=0;i<2;++i) {
-        m=rf_map_runtime_find_object(&s->map_ops.runtime,i?"mesh_weaver_rf1":"mesh_weaver");
+    for(int i=0;i<3;++i) {
+        if(i==2 && (s->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01 || !s->frontier.captured[0]))continue;
+        m=rf_map_runtime_find_object(&s->map_ops.runtime,i==2?"frontier_workshop_terminal":i?"mesh_weaver_rf1":"mesh_weaver");
         if(m) {
             long long dy=(long long)p->ground_y+p->airborne_y-m->y;
             if(dy<-750 || dy>750)continue;
-            long long dx=(long long)m->x+(i?130:-292)-x;
-            long long dz=(long long)m->z+(i?180:510)-z;
+            long long dx=(long long)m->x+(i==2?0:i?130:-292)-x;
+            long long dz=(long long)m->z+(i==2?0:i?180:510)-z;
             long long d2=dx*dx+dz*dz, dot=dx*p->sy+dz*p->cy;
             if(d2<=750LL*750 && (!facing || d2<160LL*160 ||
                (dot>0 && dot*dot>=d2*1024LL*1024/4)))return 1;
         }
     }
     return 0;
+}
+
+void rf_player_frontier_query(const struct rf_game_runtime *r,struct rf_player_facility_query *q)
+{
+    static const char *names[]={"编织车间","仓储计算设施","能源设施"};
+    if(!q)return;
+    memset(q,0,sizeof(*q));q->index=-1;
+    if(!r || !r->session || r->net.mode!=RASTERFALL_NET_OFF)return;
+    const struct rasterfall_session *s=r->session;
+    int index=rasterfall_session_frontier_near(s,1);
+    if(index<0)return;
+    const struct rf_frontier_facility_config *f=&s->frontier.config.facilities[index];
+    const struct rf_map_runtime_object *o=rf_map_runtime_find_object(&s->map_ops.runtime,f->point.id);
+    if(!o)return;
+    q->index=index;q->available=1;q->captured=s->frontier.captured[index];
+    q->world_generation=s->scene_local.world_generation;q->identity=f->identity;q->generation=f->generation;
+    q->id=f->point.id;q->name=names[index];q->x=o->x;q->y=o->y;q->z=o->z;
+    q->can_capture=!q->captured && (s->frontier.phase==RF_FRONTIER_PREPARE ||
+        s->frontier.phase==RF_FRONTIER_COUNTERATTACK);
+    q->action=q->captured?"已接管":q->can_capture?"接管设施":"先肃清初始守军";
 }
 void rf_player_weaver_query(const struct rf_game_runtime *r,struct rf_player_weaver_query *q)
 {
@@ -126,11 +147,33 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
         out=result(RF_PLAYER_PERMISSION,"命令权限无效");goto done;
     }
     p=toy_game_local_player_actor_const(&s->game_state);
+    if(op==RF_PLAYER_FACILITY_CAPTURE) {
+        struct rf_player_facility_query facility;
+        rf_player_frontier_query(r,&facility);
+        if(r->net.mode!=RASTERFALL_NET_OFF)out=result(RF_PLAYER_PERMISSION,"站点任务仅支持离线行动");
+        else if(a->world_generation!=s->scene_local.world_generation ||
+            !facility.available || a->value!=facility.index ||
+            a->device_identity!=facility.identity || a->device_generation!=facility.generation)
+            out=result(RF_PLAYER_STALE,"设备身份或位置已变化，请重新靠近");
+        else if(!facility.can_capture && !facility.captured)
+            out=result(RF_PLAYER_UNAVAILABLE,"先肃清初始守军，再接管设施");
+        else {
+            int captured=rasterfall_session_frontier_capture(s,a->value,a->device_identity,a->device_generation);
+            out=result(captured==RF_FRONTIER_CAPTURE_INVALID?RF_PLAYER_RANGE:RF_PLAYER_OK,
+                captured==RF_FRONTIER_CAPTURE_APPLIED?"设施已接管；供给已接入":
+                captured==RF_FRONTIER_CAPTURE_ALREADY?"设施已接管，库存与任务保持当前状态":"请靠近正确设施");
+        }
+        goto done;
+    }
     if(op>=RF_PLAYER_WEAVER_SELECT && op<=RF_PLAYER_RTS_STOP) {
+        int downed_command=op>=RF_PLAYER_RTS_SELECT &&
+            s->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 &&
+            s->frontier.phase>=RF_FRONTIER_ASSAULT && s->frontier.phase<=RF_FRONTIER_SECURED &&
+            p && p->state==TOY_GAME_ACTOR_DOWNED;
         if(r->net.mode!=RASTERFALL_NET_OFF)out=result(RF_PLAYER_PERMISSION,"此操作当前仅支持离线会话");
         else if(a->world_generation!=s->scene_local.world_generation)out=result(RF_PLAYER_STALE,"世界已变化，请刷新后重试");
         else if(s->game_state.state!=TOY_GAME_PLAYING || !p || !p->active ||
-            p->state!=TOY_GAME_ACTOR_ALIVE || p->control_disabled)
+            (p->state!=TOY_GAME_ACTOR_ALIVE && !downed_command) || p->control_disabled)
             out=result(RF_PLAYER_UNAVAILABLE,"角色目前无法执行此操作");
         if(out.code)goto done;
     }
@@ -182,7 +225,9 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
         if(op==RF_PLAYER_WEAVER_POWER)supply.power_on=a->value;
         if(op==RF_PLAYER_WEAVER_CPU)supply.cpu_on=a->value;
         if(op==RF_PLAYER_WEAVER_X1)supply.x1_on=a->value;
-        toy_game_weaver_set_supply(&s->game_state,&supply);break;
+        if(!rasterfall_session_weaver_set_supply(s,&supply))
+            out=result(RF_PLAYER_PERMISSION,"先接管对应的能源或仓储设施");
+        break;
     }
     case RF_PLAYER_WEAVER_COLLECT:
         if(!q.can_collect)out=result(RF_PLAYER_UNAVAILABLE,"当前没有可领取成品");
@@ -578,11 +623,78 @@ int rf_player_commands_logic_test(void)
     PLAYER_CHECK(!settings_decode("RFUI 1 0 999999999999999999 220 1 1",values));
     PLAYER_CHECK(!settings_decode("RFUI 1 0 100 220 1 9",values));
     PLAYER_CHECK(!integer("2147483648",&values[0]) && !integer("-",&values[0]));
+    /* A downed frontier commander can direct the surviving squad. Session
+     * still owns each recipient's life, identity, control and ground checks. */
+    toy_game_init(&s->game_state,71);s->game_state.external_director=1;
+    struct toy_map_primitive command_floor={0};
+    command_floor.shape=TOY_MAP_PRIMITIVE_FLAT;
+    command_floor.flags=TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE;
+    command_floor.minx=command_floor.minz=-10000;
+    command_floor.maxx=command_floor.maxz=10000;
+    toy_game_set_primitives(&s->game_state,&command_floor,1,10000);
+    s->world_id=RASTERFALL_WORLD_FRONTIER_STATION_01;s->frontier.phase=RF_FRONTIER_COUNTERATTACK;
+    r->rts_active=s->rts_active=1;rf_rts_clear(&r->rts);
+    player=toy_game_local_player_actor(&s->game_state);
+    player->state=TOY_GAME_ACTOR_DOWNED;player->hp=0;
+    int ally_id=toy_game_add_ai(&s->game_state,TOY_GAME_AI_LEVEL_2,1000,0,"DOWNED COMMAND");
+    struct toy_game_actor *ally=toy_game_actor_by_id(&s->game_state,ally_id);
+    PLAYER_CHECK(ally!=NULL);
+    int ally_index=(int)(ally-s->game_state.actors),px=player->x,pz=player->z;
+    request=(struct rf_player_request){0};request.world_generation=7;
+    request.operation=RF_PLAYER_RTS_SELECT;request.value=ally_index;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK);
+    request.operation=RF_PLAYER_RTS_MOVE;request.x=6000;request.z=0;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK &&
+        ally->command_destination_active && ally->command_x==6000 && ally->command_z==0);
+    toy_game_update_world(&s->game_state,16);
+    PLAYER_CHECK(ally->x>1000 && player->x==px && player->z==pz &&
+        player->state==TOY_GAME_ACTOR_DOWNED);
+    request.operation=RF_PLAYER_RTS_STOP;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK &&
+        ally->command_x==ally->x && ally->command_z==ally->z);
+    request.operation=RF_PLAYER_RTS_MOVE;request.world_generation=6;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_STALE);
+    request.world_generation=7;r->net.mode=RASTERFALL_NET_CLIENT;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_PERMISSION);
+    r->net.mode=RASTERFALL_NET_OFF;player->control_disabled=1;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    player->control_disabled=0;ally->control_disabled=1;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_INVALID);
+    ally->control_disabled=0;request.x=15000;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_INVALID);
+    request.x=6000;r->rts.selected[ally_index].generation++;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_INVALID);
+    request.operation=RF_PLAYER_RTS_SELECT;request.value=ally_index;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK);
+    ally->state=TOY_GAME_ACTOR_DOWNED;ally->hp=0;request.operation=RF_PLAYER_RTS_MOVE;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_INVALID);
+    ally->state=TOY_GAME_ACTOR_ALIVE;ally->hp=ally->max_hp;
+    request.operation=RF_PLAYER_RTS_SELECT;request.value=0;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK);
+    request.operation=RF_PLAYER_RTS_MOVE;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_INVALID &&
+        !s->rts_move_active && player->x==px && player->z==pz);
+    request.operation=RF_PLAYER_WEAVER_SELECT;request.value=pistol;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    request.operation=RF_PLAYER_FACILITY_CAPTURE;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code!=RF_PLAYER_OK);
+    request.operation=RF_PLAYER_RTS_SELECT;request.value=ally_index;
+    s->world_id=RASTERFALL_WORLD_OUTPOST;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    s->world_id=RASTERFALL_WORLD_FRONTIER_STATION_01;s->frontier.phase=RF_FRONTIER_FAILED;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    s->frontier.phase=RF_FRONTIER_COUNTERATTACK;s->game_state.state=TOY_GAME_OVER;
+    ally->state=TOY_GAME_ACTOR_DOWNED;ally->hp=0;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    s->game_state.state=TOY_GAME_PLAYING;player->state=TOY_GAME_ACTOR_DEAD;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    player->state=TOY_GAME_ACTOR_DOWNED;player->active=0;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
     status=0;
 done:
     if(s)rf_map_runtime_unload(&s->map_ops.runtime);
     tlibc_free(saved);tlibc_free(s);tlibc_free(r);
-    __printf("PLAYER-COMMANDS %s checks=%d query-only/authority/stale/repeat/confirmation/settings\n",
+    __printf("PLAYER-COMMANDS %s checks=%d query-only/authority/stale/repeat/confirmation/settings/downed-frontier-rts\n",
         status?"FAIL":"PASS",checks);
 #undef PLAYER_CHECK
     return status;

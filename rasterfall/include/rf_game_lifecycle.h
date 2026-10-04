@@ -133,6 +133,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
                    int dt_ms);
 int rf_game_request_world(struct rf_game_runtime *runtime,
                           enum rasterfall_world_id world);
+void rf_game_seed_world_groups(struct rf_game_runtime *runtime);
 int rf_game_world_request_logic_test(void);
 int rf_game_render(struct rf_game_runtime *runtime,
                    struct toy_renderer *renderer,

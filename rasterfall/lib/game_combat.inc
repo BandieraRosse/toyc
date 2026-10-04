@@ -111,6 +111,8 @@ void toy_game_actor_reset_combat(struct toy_game_actor *actor, int refill_evasio
     actor->evasion.reserve_milli = refill_evasion ? caps.evasion_capacity * 1000 : 0;
     actor->combat_scan_ms = actor->combat_aim_ms = actor->combat_lost_ms = 0;
     actor->combat_last_x = actor->combat_last_z = actor->combat_last_y = 0;
+    actor->ai_rescue_active = 0; actor->ai_rescue_index = -1;
+    actor->ai_rescue_generation = 0;
     actor->damage_remainder_milli = 0;
     actor->fire_cooldown_ms = actor->reload_timer_ms = actor->reloading = 0;
     actor->weapon_switch_timer_ms = actor->weapon_spread_heat = 0;
@@ -123,6 +125,7 @@ void toy_game_actor_reset_combat(struct toy_game_actor *actor, int refill_evasio
     for (i = 0; i < TOY_GAME_MAX_RAYS; i++)
         actor->rays[i].actor_index = actor->rays[i].enemy_index = -1;
     actor->nav_active = 0;
+    actor->nav_direct_valid = actor->nav_direct_ms = 0;
 }
 
 static int combat_timer(int value, int dt_ms)
