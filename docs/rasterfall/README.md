@@ -15,6 +15,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | --- | --- | --- |
 | 当前优先级与延期项 | [计划入口](plans/README.md) | 当前决策与活动计划；退役历史见[归档](archive/gpu-compute-retirement/README.md) |
 | Windows 原生环境、package、实机验收 | [Windows Native](guides/windows-native.md)、[构建与平台](guides/build-platforms.md) | `windows/NativeCodex.ps1`、`windows/Makefile` |
+| 按模块导出 AI 阅读源码集合 | [源码集合](guides/build-platforms.md#按模块导出源码集合) | `scripts/merge-rasterfall.sh`；总索引、七份源码集合与独立文档集合 |
 | 原生分辨率、无边框全屏、窗口切换与 UI 缩放 | [运行时架构](architecture/runtime.md)、[玩家界面](guides/player-ui-v2.md) | `rasterfall_options.c`、`rf_core_host.c`、`windows/src/window_sdl.c`；显示尺寸与玩家 UI 布局分离 |
 | 启动、参数、主循环、120 FPS 展示节流与 60 Hz 逻辑插值、Core Host | [运行时架构](architecture/runtime.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `src/rasterfall.c`、`src/rf_game_runtime.c`、`src/rasterfall_render.c`、`src/rf_core_host.c` |
 | Firmware、RF Boot Manager、Workbench、Shell 与 Diagnostics | [启动界面合同](reference/boot-interface.md)、[运行时架构](architecture/runtime.md) | `src/rf_boot_ui.c` 页面与操作、`src/rf_boot_canvas.c` 共享绘图元素与扫描合成；Core 初始化事件、GPU 独立启动计时及 Scene 首帧事件、自动/手动启动、硬件诊断与渲染器选择 |
