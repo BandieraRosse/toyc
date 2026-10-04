@@ -4,14 +4,22 @@ param(
     [ValidateSet('north','east','south','west','up','down','sun','atmosphere')][string]$View='north',
     [switch]$Capture,
     [ValidateRange(0,1000000)][double]$Time=0,
-    [string]$OutputDirectory='tmp/sky-v2-capture'
+    [string]$OutputDirectory='tmp/sky-v2-capture',
+    [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe'
 )
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
-$Exe=Join-Path $Package 'rasterfall.exe'
+$Exe=if([IO.Path]::IsPathRooted($Executable)) {
+    [IO.Path]::GetFullPath($Executable)
+} else { [IO.Path]::GetFullPath((Join-Path $Root $Executable)) }
 if (-not (Test-Path -LiteralPath $Exe)) { throw 'Run windows/NativeCodex.ps1 build first' }
-if (Get-Process rasterfall -ErrorAction SilentlyContinue) { throw 'Rasterfall is already running' }
+if ([IO.Path]::GetDirectoryName($Exe) -ne $Package) {
+    throw 'Place comparison executables alongside staged rasterfall.exe; native startup locates assets there.'
+}
+if (Get-Process -Name @('rasterfall',[IO.Path]::GetFileNameWithoutExtension($Exe)) -ErrorAction SilentlyContinue) {
+    throw 'Rasterfall is already running'
+}
 $SavedPreset=$env:RF_GPU_SKY_PRESET
 $SavedTime=$env:RF_GPU_SKY_TIME
 $SavedPath=$env:Path
@@ -31,6 +39,9 @@ try {
         if (Test-Path -LiteralPath "$Stem.out") { throw 'Use a new output directory for repeated evidence' }
         $Argv+=@('--frames','3','--gpu-normal-fixed-tick','--frame-audit',
             '--gpu-frame-capture',"$Stem.bmp",'--gpu-capture-frame','2')
+        $Record=[ordered]@{preset=$Preset;view=$View;time=$Time;arguments=$Argv;
+            exe=$Exe;exe_sha256=(Get-FileHash -LiteralPath $Exe -Algorithm SHA256).Hash;
+            sky_scale=$env:RF_GPU_SKY_SCALE;started_utc=[DateTime]::UtcNow.ToString('o')}
         $Process=Start-Process -FilePath $Exe -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
             -ArgumentList (($Argv | ForEach-Object {'"'+$_+'"'}) -join ' ') `
             -RedirectStandardOutput "$Stem.out" -RedirectStandardError "$Stem.err"
@@ -42,6 +53,10 @@ try {
                 throw 'Sky capture timed out'
             }
         }
+        $Process.WaitForExit()
+        $Record.exit_code=$Process.ExitCode
+        $Record.finished_utc=[DateTime]::UtcNow.ToString('o')
+        [IO.File]::WriteAllText("$Stem.json",($Record | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
         $Log=Get-Content -Encoding UTF8 "$Stem.out","$Stem.err" | Out-String
         if ($Process.ExitCode -ne 0 -or $Log -match 'Validation Error|SYNC-HAZARD|VUID-' -or
             -not (Test-Path -LiteralPath "$Stem.bmp.scene.ppm")) {

@@ -99,7 +99,7 @@ vec4 rf_sky(vec2 pixel) {
     float end=min(sky_shell_distance(ray,lighting.sky_cloud.z+lighting.sky_cloud.w),25.0);
     if(end<=start) return vec4(background,1.0-veil);
     // Quality is uniform for a dispatch: no per-row step-count discontinuities.
-    int steps=lighting.counts.y<1.5?64:(lighting.counts.y<3.0?40:32);
+    int steps=lighting.counts.y<1.5?64:40;
     float stride=(end-start)/float(steps),trans=1.0;
     // Midpoint quadrature is continuous under camera rotation. High-frequency
     // direction jitter changed the entire march phase between adjacent rays,
@@ -126,11 +126,14 @@ vec4 rf_sky(vec2 pixel) {
         if(density>0.001) {
             // Weather spans kilometres: reuse its local coverage for the short
             // light probes, while preserving each probe's shape and height.
-            float optical=sky_density(p+sun*0.10,group,detail)*0.25+sky_density(p+sun*0.35,group,detail)*0.45;
-            float visibility=exp(-optical*2.6);
+            float optical=sky_density(p+sun*0.10,group,detail)*0.30+sky_density(p+sun*0.45,group,detail)*0.60;
+            float visibility=exp(-optical*3.0);
             float height=clamp((sky_height(p)-lighting.sky_cloud.z)/lighting.sky_cloud.w,0.0,1.0);
-            vec3 fill=mix(vec3(0.16,0.21,0.29),vec3(0.38,0.44,0.51),height)*daylight;
-            vec3 light=fill+sunlit*(0.06+0.88*visibility)*phase;
+            // The lower mass receives cooler, weaker fill while exposed lobes
+            // retain the same shared sunlight. Reuse two probes, not more steps.
+            vec3 fill=mix(vec3(0.10,0.15,0.23),vec3(0.38,0.44,0.51),
+                smoothstep(0.08,0.85,height))*daylight;
+            vec3 light=fill+sunlit*(0.05+0.89*visibility)*phase;
             // Distant cloud fades into sky haze, not a white horizon wall.
             light=mix(light,background,1.0-exp(-length(p)*0.018));
             float alpha=1.0-exp(-density*stride*2.4);
