@@ -13,7 +13,7 @@ static int gfx_texture_set_bind(struct rf_gpu_graphics *g,
     struct rf_vk_descriptor_buffer_info info={0};
     struct rf_vk_write_descriptor_set write={0};
     if (!g || g->poisoned || g->scene_in_flight || !resource || resource->owner!=g ||
-        resource->shared_binding.owner || !set) return -1;
+        !gfx_resource_readers_idle(resource) || !set) return -1;
     info.buffer=set->buffer.buffer;info.range=set->buffer.size;
     write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     write.dst_set=resource->descriptor_set;write.dst_binding=0;write.descriptor_count=1;
@@ -76,7 +76,7 @@ int rf_gpu_graphics_resource_texture_set(struct rf_gpu_graphics *g,
     struct rf_vk_buffer_copy copy={0};struct rf_vk_memory_barrier barrier={0};
     uint32_t words=0,*data=NULL;void *mapped=NULL;int result=-1;
     if (!g || g->poisoned || g->scene_in_flight || !resource || resource->owner!=g ||
-        resource->shared_binding.owner || !(data=gfx_texture_set_pack(images,count,&words))) return -1;
+        !gfx_resource_readers_idle(resource) || !(data=gfx_texture_set_pack(images,count,&words))) return -1;
     set=calloc(1,sizeof(*set));if(!set)goto done;
     set->references=1;set->count=count;
     for(uint32_t i=0;i<count;++i){set->width[i]=images[i].width;set->height[i]=images[i].height;}

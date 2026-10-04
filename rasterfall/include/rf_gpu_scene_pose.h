@@ -38,9 +38,14 @@ int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
                              struct rf_gpu_scene_pose_v1 *out);
 int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
     uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out);
+/* Validate the common snapshot once, then sample every supported live actor.
+ * Downed actors belong to the procedural producer. Count commits on success;
+ * callers discard the batch on failure. */
+int rf_gpu_scene_pose_extract_all(const struct rf_gpu_scene_local_frame *frame,
+    struct rf_gpu_scene_pose_v1 *out,uint32_t capacity,uint32_t *count);
 int rf_gpu_scene_pose_logic_test(void);
 void rf_gpu_scene_pose_body_release(void);
-/* Catalog body preview: independent instance, authored colors, no gameplay ID. */
+/* Catalog body preview: reset serial scratch, authored colors, no gameplay ID. */
 int rf_gpu_scene_pose_body(int body_id, uint64_t frame, uint64_t world,
     uint64_t time_ms, int walk, int x, int y, int z, int cy,
     struct rf_gpu_scene_pose_v1 *out);

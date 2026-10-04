@@ -48,6 +48,7 @@ struct scene_layer_workspace {
     struct rf_gpu_graphics *graphics;
     struct scene_layer_packet *packets;
     unsigned retained_triangles;
+    struct scene_layer_workspace *shared;
 };
 static void scene_packet_clear(struct scene_layer_workspace *w,struct scene_layer_packet *p)
 {
@@ -398,9 +399,10 @@ done:
 }
 static int scene_display_emit(struct scene_layer_mesh *mesh,const struct toy_map_draw *d,unsigned index)
 {
-    if(mesh->retain && mesh->owner->packets && index<TOY_MAP_MAX_DRAW) {
-        struct scene_layer_packet *packet=&mesh->owner->packets[index];
-        int status=scene_packet_prepare(mesh->owner,packet,d);
+    struct scene_layer_workspace *owner=mesh->owner->shared?mesh->owner->shared:mesh->owner;
+    if(mesh->retain && owner->packets && index<TOY_MAP_MAX_DRAW) {
+        struct scene_layer_packet *packet=&owner->packets[index];
+        int status=scene_packet_prepare(owner,packet,d);
         if(status<0) return -1;
         if(!status) {
             if(!packet->triangles) return 0;
@@ -627,11 +629,12 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     struct scene_layer_mesh mesh=w->mesh;
     mesh.count=0;mesh.failed=0;
     w->graphics=probe->graphics;mesh.owner=w;
+    w->shared=probe->shared_parent?probe->shared_parent->layer_workspace:NULL;
     const char *legacy_retained=getenv("RF_GPU_SCENE_LEGACY_RETAINED_LAYERS");
     const char *legacy_colors_mode=getenv("RF_GPU_SCENE_LEGACY_LAYER_COLORS");
     mesh.retain=!(legacy_retained && !strcmp(legacy_retained,"1")) &&
         !(legacy_colors_mode && !strcmp(legacy_colors_mode,"1"));
-    if(mesh.retain && !w->packets) w->packets=calloc(TOY_MAP_MAX_DRAW,sizeof(*w->packets));
+    if(mesh.retain && !w->shared && !w->packets) w->packets=calloc(TOY_MAP_MAX_DRAW,sizeof(*w->packets));
     const char *profile=getenv("RF_GPU_SCENE_PROFILE_LAYERS");
     mesh.profile=profile && !strcmp(profile,"1");mesh.clip_us=0;mesh.culled=0;
     const char *legacy_display=getenv("RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY");
@@ -775,11 +778,12 @@ static int scene_layers_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             unsigned chunk=first/RF_GPU_SCENE_LAYER_CHUNK_TRIANGLES;
             const struct scene_layer_triangle *t=&mesh.triangles[first];
             if(t->retained) {
-                const struct scene_layer_packet *p=&w->packets[t->retained-1];
+                const struct scene_layer_packet *p=&(w->shared?w->shared:w)->packets[t->retained-1];
                 if(scene_batch_reserve(batch,&probe->batch_capacity,*count+p->run_count+mesh.count-first-1)<0) goto done;
                 for(unsigned j=0;j<p->run_count;++j) {
                     struct rf_gpu_graphics_batch_item *item=&(*batch)[(*count)++];
                     *item=p->runs[j];scene_draw_camera(&item->draw,camera,width,height);
+                    if(rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0)goto done;
                 }
                 ++first;continue;
             }

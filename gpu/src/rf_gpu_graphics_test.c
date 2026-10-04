@@ -275,6 +275,7 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
     struct rf_gpu_graphics *other=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics *second=rf_gpu_graphics_create(context);
     struct rf_gpu_graphics_resource *r[2]={0};
     struct rf_gpu_graphics_vertex v[3]={0},expected[3];
     uint32_t bind[66]={0},palette[15]={0},ix[3]={0,1,2},white=0xffffff;
@@ -289,7 +290,7 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
         memcpy(bind+i*22,&v[i],sizeof(v[i]));
         for (unsigned n=0;n<4;++n) bind[i*22+15+n*2]=65535;
     }
-    CHECK(g!=NULL && other!=NULL);
+    CHECK(g!=NULL && other!=NULL && second!=NULL);
     for (unsigned i=0;i<2;++i) {
         r[i]=rf_gpu_graphics_skinned_resource_create(g,NULL,3,ix,3,bind,66,palette,15,&white,1,1);
         CHECK(r[i]!=NULL);
@@ -325,6 +326,13 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
     CHECK(after.skin_reused==before.skin_reused+1);
     CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[0],expected,3,&pm,&nm,&um,&pd,&nd)==0);
     CHECK(!pm && !nm && !um);
+    /* Several cameras borrow one skinned allocation. Owner updates are legal
+     * after readers retire, including destruction/recreation of a reader. */
+    CHECK(rf_gpu_graphics_resource_bind(other,r[0])==0);
+    CHECK(rf_gpu_graphics_resource_bind(second,r[0])==0);
+    CHECK(rf_gpu_graphics_skinned_resource_update(other,r[0],3,NULL,0,palette,15)<0);
+    rf_gpu_graphics_destroy(other);other=rf_gpu_graphics_create(context);
+    CHECK(other!=NULL && rf_gpu_graphics_resource_bind(other,r[0])==0);
     /* A cancelled changed pose must never become a cache hit. */
     shift=20.0f;memcpy(&palette[9],&shift,4);
     for(unsigned i=0;i<3;++i) expected[i].position[0]+=8;
@@ -345,7 +353,8 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
 done:
     rf_gpu_graphics_destroy(other);
     rf_gpu_graphics_destroy(g);
-    printf("SCENE skin batch/duplicate/cancel/device vertices: %s\n",result?"FAIL":"PASS");
+    rf_gpu_graphics_destroy(second);
+    printf("SCENE skin batch/duplicate/cancel/shared readers/device vertices: %s\n",result?"FAIL":"PASS");
     return result;
 }
 
@@ -552,9 +561,10 @@ static int auxiliary_video_test(struct rf_gpu_vulkan_context *context)
         !rf_gpu_graphics_set_lighting(unit,&lighting));
     CHECK(!rf_gpu_graphics_scene_background(video,.018f,.030f,.045f));
     CHECK(rf_gpu_graphics_scene_background(video,-1,0,0)<0);
-    source.resource=rf_gpu_graphics_resource_create(video,vertices,4,quad,6,&white,1,1);
-    unit_source.resource=rf_gpu_graphics_resource_create(unit,vertices,4,quad,6,&white,1,1);
     items[0].resource=rf_gpu_graphics_resource_create(g,vertices,4,quad,6,&white,1,1);
+    source.resource=unit_source.resource=items[0].resource;
+    CHECK(!rf_gpu_graphics_resource_bind(video,source.resource));
+    CHECK(!rf_gpu_graphics_resource_bind(unit,source.resource));
     CHECK(source.resource && unit_source.resource && items[0].resource);
     source.draw=draw(64,64);source.draw.quality[2]=3;source.draw.material[0]=0xff0000;
     source.draw.texture[0]=source.draw.texture[1]=1;

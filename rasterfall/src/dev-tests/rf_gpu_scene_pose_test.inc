@@ -825,6 +825,22 @@ int rf_gpu_scene_pose_logic_test(void)
                     sizeof(moved.identity)) &&
                 moved.character_id==frame.presentations[i].character_id &&
                 moved.attachment_count>=3);
+        /* Batched extraction must preserve every single-actor result and the
+         * frozen input, skip downed actors, and reject undersized outputs. */
+        static struct rf_gpu_scene_pose_v1 batch[TOY_GAME_MAX_ACTORS];
+        uint32_t batch_count=1234;
+        POSE_CHECK(rf_gpu_scene_pose_extract_all(&frame,batch,0,&batch_count)<0 && batch_count==1234);
+        frozen=frame;
+        POSE_CHECK(!rf_gpu_scene_pose_extract_all(&frame,batch,TOY_GAME_MAX_ACTORS,&batch_count) &&
+            batch_count==frame.snapshot.actor_count && !memcmp(&frame,&frozen,sizeof(frame)));
+        for(uint32_t i=0;i<batch_count;++i)
+            POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,i,&moved) &&
+                !memcmp(&batch[i],&moved,sizeof(moved)));
+        frame.presentations[1].state=TOY_GAME_ACTOR_DOWNED;
+        POSE_CHECK(!rf_gpu_scene_pose_extract_all(&frame,batch,TOY_GAME_MAX_ACTORS,&batch_count) &&
+            batch_count==frame.snapshot.actor_count-1);
+        POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,2,&moved) && !memcmp(&batch[1],&moved,sizeof(moved)));
+        frame=frozen;
         rasterfall_session_unload(&owner);
         POSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&replacement) &&
             !memcmp(&repeat,&replacement,sizeof(repeat)));

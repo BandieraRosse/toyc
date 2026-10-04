@@ -96,6 +96,10 @@ struct rf_gpu_scene_world_gpu_probe {
     int native_present;
     int quiet;
     int offscreen_only;
+    /* Synchronous child borrows the parent frame; never owns its resources. */
+    struct rf_gpu_scene_world_gpu_probe *shared_parent;
+    uint32_t shared_actor_first,shared_actor_count;
+    uint64_t prewarmed_generation;
     struct rf_gpu_scene_aux_slot aux[2]; /* 0: story/device, 1: RTS unit. */
     struct rf_gpu_graphics_resource *lighting_lab_sphere;
     struct rf_mesh_weaver_gpu *weaver;

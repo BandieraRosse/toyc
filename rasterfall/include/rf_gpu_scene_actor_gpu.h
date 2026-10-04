@@ -24,6 +24,7 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     const struct rf_gpu_scene_pose_v1 *pose,const struct camera *camera,
     uint32_t width,uint32_t height,
     struct rf_gpu_graphics_batch_item *items,uint32_t capacity,uint32_t *count);
+void rf_gpu_scene_actor_gpu_set_quiet(struct rf_gpu_scene_actor_gpu *actor,int quiet);
 void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor);
 /* A cancelled skin batch may leave staging copies unsubmitted. */
 void rf_gpu_scene_actor_gpu_invalidate_bind(struct rf_gpu_scene_actor_gpu *actor);

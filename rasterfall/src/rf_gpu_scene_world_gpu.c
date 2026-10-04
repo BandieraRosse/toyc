@@ -823,7 +823,8 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
             draw->integer_depth=0;
             draw->index_count=info.index_count;
             draw->double_sided=material[7]&1u;
-            if (!item->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
+            if (!item->resource || rf_gpu_graphics_resource_bind(graphics,item->resource)<0 ||
+                rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
         }
     }
@@ -926,7 +927,8 @@ prop_ready:
             draw->double_sided=resolved.material.double_sided;
             draw->integer_depth=0;
             if (linear_filter) draw->quality[3]=1;
-            if (!entry->resource || rf_gpu_graphics_validate_draw(graphics,draw)<0)
+            if (!entry->resource || rf_gpu_graphics_resource_bind(graphics,entry->resource)<0 ||
+                rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
             owner->prop_draws++;
         }
@@ -1165,6 +1167,13 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             continue;
         }
         struct scene_enemy_cached *saved=probe->enemy_cached?&probe->enemy_cached[i]:NULL;
+        if(probe->shared_parent && probe->shared_parent->enemy_cached) {
+            struct scene_enemy_cached *shared=&probe->shared_parent->enemy_cached[i];
+            if(shared->valid && shared->generation==frame->world_generation &&
+                shared->is_actor==(actor!=NULL) && shared->vertex_color==vertex_color &&
+                (actor?!memcmp(&shared->actor,actor,sizeof(*actor)):!memcmp(&shared->enemy,source,sizeof(*source))))
+                saved=shared;
+        }
         unsigned first_draw=total;
         int eligible=cache && saved && !(actor?actor->vertex_lighting:frame->vertex_lighting);
         if(eligible && saved->valid && saved->generation==frame->world_generation &&
@@ -1173,6 +1182,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             if(saved->run_count>capacity-total) goto done;
             for(unsigned j=0;j<saved->run_count;++j) {
                 items[total]=saved->runs[j];
+                if(rf_gpu_graphics_resource_bind(probe->graphics,items[total].resource)<0)goto done;
                 struct rf_gpu_graphics_draw *d=&items[total++].draw;
                 d->camera[0]=camera->x;d->camera[1]=camera->y;d->camera[2]=camera->z;
                 d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
@@ -1328,6 +1338,32 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             if (!memcmp(&poses[i].identity,&poses[j].identity,
                     sizeof(poses[i].identity))) return -1;
     }
+    /* Finish the current map's primary uploads and render-target setup
+     * before exposing its first native image. This calls the normal producer
+     * on the exact frozen values, without advancing gameplay or animation. */
+    if(probe->native_present && !probe->offscreen_only &&
+        probe->prewarmed_generation!=owner->world_generation) {
+        int64_t start=rf_core_clock_now_us();
+        struct rf_gpu_scene_world_gpu_probe_stats warm={0};
+        probe->native_present=0;probe->offscreen_only=1;
+        int ok=rf_gpu_scene_world_gpu_probe_frame(probe,context,owner,camera,width,height,
+            poses,pose_count,flags,projectiles,interactables,enemies,model_texture,&warm,NULL);
+        probe->native_present=1;probe->offscreen_only=0;
+        if(ok<0)return -1;
+        for(unsigned i=0;i<2;++i) {
+            struct rf_gpu_scene_aux_slot *slot=&probe->aux[i];
+            if(!slot->owner)slot->owner=calloc(1,sizeof(*slot->owner));
+            if(!slot->owner)return -1;
+            slot->owner->offscreen_only=1;slot->owner->quiet=1;
+            if(!slot->owner->graphics)slot->owner->graphics=rf_gpu_graphics_create(context);
+            if(!slot->owner->graphics || rf_gpu_graphics_resize(slot->owner->graphics,240,360)<0)return -1;
+        }
+        probe->prewarmed_generation=owner->world_generation;
+        __printf("SCENE-PREWARM world=%llu cpu_us=%lld upload_bytes=%llu draws=%u aux_targets=2\n",
+            (unsigned long long)owner->world_generation,(long long)(rf_core_clock_now_us()-start),
+            (unsigned long long)warm.upload_bytes,warm.draws);
+        prepare_start=rf_core_clock_now_us();
+    }
     memset(stats,0,sizeof(*stats));
     if (!probe->graphics) {
         probe->graphics=rf_gpu_graphics_create(context);
@@ -1339,8 +1375,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     }
     if (!probe->cache || rf_gpu_graphics_resize(probe->graphics,width,height)<0)
         return -1;
-    scene_aux_prepare(probe,context,owner,camera,poses,pose_count,flags,
-        projectiles,interactables,enemies,model_texture);
+
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_before);
     if (!probe->flag_pole) {
         probe->flag_pole=flag_cube_resource(probe->graphics,-16,16,-900,2700,-16,16);
@@ -1372,7 +1407,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         if (pose_count>(UINT32_MAX-capacity)/RF_GPU_SCENE_ACTOR_MAX_DRAWS) return -1;
         capacity+=pose_count*RF_GPU_SCENE_ACTOR_MAX_DRAWS;
         for(uint32_t i=0;i<pose_count;++i) {
-            if (!probe->actor[i]) {
+            if (!probe->shared_parent && !probe->actor[i]) {
                 probe->actor[i]=rf_gpu_scene_actor_gpu_create(probe->graphics);
                 if (!probe->actor[i]) return -1;
             }
@@ -1396,21 +1431,44 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         depth=calloc(pixels,sizeof(*depth));
     }
     if (!items || (((!probe->native_present && !probe->offscreen_only) || capture_path) && (!color || !depth)) ||
-        rasterfall_resources_frame_begin(&owner->registry)<0) goto done;
-    frame_active=1;
+        (!probe->shared_parent && rasterfall_resources_frame_begin(&owner->registry)<0)) goto done;
+    frame_active=!probe->shared_parent;
     int64_t section_start=rf_core_clock_now_us();
-    if (rf_gpu_scene_world_gpu_prepare(owner,probe->cache,probe->graphics,
+    if (rf_gpu_scene_world_gpu_prepare(owner,probe->shared_parent?probe->shared_parent->cache:probe->cache,probe->graphics,
             camera,width,height,items,capacity,&draws)<0) goto done;
     stats->world_prepare_us=rf_core_clock_now_us()-section_start;
+    /* Child preparation uses the same registry; capture this view's counters
+     * before those independent camera queries overwrite the scratch values. */
+    stats->prop_draws=owner->prop_draws;stats->prop_deferred=owner->prop_deferred;
+    stats->prop_culled=owner->prop_culled;
+    stats->prop_numeric_deferred=owner->prop_numeric_deferred;
+    stats->prop_material_deferred=owner->prop_material_deferred;
+    stats->prop_transparent_deferred=owner->prop_transparent_deferred;
     section_start=rf_core_clock_now_us();
     stage="actors";
     const char *legacy_skin=getenv("RF_GPU_SCENE_LEGACY_SKIN_BATCH");
     const char *legacy_upload=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
     int skin_batch=!(legacy_skin && legacy_skin[0]=='1') &&
         !(legacy_upload && legacy_upload[0]=='1');
+    probe->shared_actor_first=draws;
+    if(probe->shared_parent) {
+        const struct rf_gpu_scene_world_gpu_probe *parent=probe->shared_parent;
+        if(parent->shared_actor_count>capacity-draws)goto done;
+        for(unsigned i=0;i<parent->shared_actor_count;++i) {
+            struct rf_gpu_graphics_batch_item *item=&items[draws++];
+            *item=parent->batch[parent->shared_actor_first+i];
+            struct rf_gpu_graphics_draw *d=&item->draw;
+            d->camera[0]=camera->x;d->camera[1]=camera->y;d->camera[2]=camera->z;
+            d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
+            d->projection[0]=width;d->projection[1]=height;d->projection[3]=width*3/4;
+            if(rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0)goto done;
+        }
+        actor_draws=parent->shared_actor_count;
+    }
     if (skin_batch && rf_gpu_graphics_skin_batch_begin(probe->graphics)<0) goto done;
-    for(uint32_t i=0;i<pose_count;++i) {
+    for(uint32_t i=0;!probe->shared_parent && i<pose_count;++i) {
         uint32_t count=0;
+        rf_gpu_scene_actor_gpu_set_quiet(probe->actor[i],probe->quiet);
         if (rf_gpu_scene_actor_gpu_prepare(probe->actor[i],&poses[i],camera,width,height,
                 items+draws,capacity-draws,&count)<0) goto done;
         actor_prepared++;
@@ -1420,6 +1478,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if (skin_batch && rf_gpu_graphics_skin_batch_end(probe->graphics)<0) goto done;
     stats->actor_batch_us=skin_batch ? rf_core_clock_now_us()-batch_start : 0;
     stats->actor_prepare_us=rf_core_clock_now_us()-section_start;
+    probe->shared_actor_count=actor_draws;
     stage="flags/projectiles/pickups";
     if (flag_draws_prepare(probe,flags,camera,width,height,items+draws,
             capacity-draws,&flag_draws,&flag_text_draws)<0) {
@@ -1465,6 +1524,12 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         (long long)stats->layer_clip_us,(long long)stats->layer_pack_us,
         (long long)stats->layer_upload_us,(long long)stats->layer_batch_us,
         stats->layer_triangles,stats->layer_culled);
+    /* All camera-independent uploads and skinning are complete before any
+     * child reads them. The parent keeps its registry/actor pins until every
+     * synchronous child and the native frame have retired. */
+    probe->batch=items;
+    scene_aux_prepare(probe,context,owner,camera,poses,pose_count,flags,
+        projectiles,interactables,enemies,model_texture);
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
     stats->misc_prepare_us=stats->prepare_us-stats->world_prepare_us-stats->actor_prepare_us-
         stats->enemy_prepare_us-stats->layer_prepare_us;
@@ -1562,11 +1627,6 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->pickup_procedural_items=pickup_procedural_items;
     stats->pickup_procedural_deferred=pickup_procedural_deferred;
     stats->covered_pixels=covered;
-    stats->prop_draws=owner->prop_draws;stats->prop_deferred=owner->prop_deferred;
-    stats->prop_culled=owner->prop_culled;
-    stats->prop_numeric_deferred=owner->prop_numeric_deferred;
-    stats->prop_material_deferred=owner->prop_material_deferred;
-    stats->prop_transparent_deferred=owner->prop_transparent_deferred;
     stats->uploads=after.uploads-before.uploads;
     stats->hits=after.hits-before.hits;
     result=0;
@@ -1651,7 +1711,7 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     }
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
-    probe->cache=NULL;probe->graphics=NULL;
+    probe->cache=NULL;probe->graphics=NULL;probe->shared_parent=NULL;probe->prewarmed_generation=0;
     probe->flag_pole=NULL;
     memset(probe->flag_label,0,sizeof(probe->flag_label));
     memset(probe->flag_label_text,0,sizeof(probe->flag_label_text));

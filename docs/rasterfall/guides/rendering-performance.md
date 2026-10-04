@@ -26,10 +26,10 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 ## 玩家界面与辅助镜头
 
 `tools/gpu_player_ui_perf.ps1` 在同一原生可执行文件、资产、地图、天空和呈现条件下，比较 player 与
-experiment 界面的 FPS/RTS，并采样真实武器预览、通讯显示/收起/关闭，以及实验区远程通讯。
+experiment 界面的 FPS/RTS，并采样真实武器预览、通讯显示/收起/关闭、实验区远程通讯，以及 `dual-view` 同时显示剧情和选中单位镜头。
 experiment 是同版本兼容界面基线；它不冒充改动前的二进制。比较旧二进制时须另存同环境证据。
 脚本按轮反转顺序，预热期通过类型化命令配置状态；采样期不反复覆盖 gameplay 或 camera。
-每项记录输入哈希、原始日志、退出码、`SCENE-PERF`、`SCENE-CPU`、`UI-PERF` 和 JSON。
+每项记录输入哈希、原始日志、退出码、`SCENE-PERF`、`SCENE-CPU`、`UI-PERF`、分槽 `UI-VIEW`、`SCENE-PREWARM` 和 JSON。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_perf.ps1 -Rounds 2 -Samples 360 -OutputDirectory tmp/player-ui/performance-round
@@ -39,6 +39,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_perf.ps1
 墙钟。辅助镜头只统计实际刷新的帧，分别报告 CPU 墙钟和 GPU 时间戳；其同步退休等待包含在辅助 CPU
 墙钟中，不能和主帧 GPU 分位数相加。隐藏/关闭要求采样期没有新的辅助帧。诊断 capture 与逐帧审计
 在本采样中关闭，GPU lane 必须串行。脚本和环境钩子仅为诊断，不改变正常游玩初始化。
+
+`-Executable` 可选择同一个暂存资产目录中的对照 exe，`-Width/-Height` 固定窗口尺寸。新旧二进制
+应交替顺序运行多轮，不能在采样时构建或运行另一 GPU 任务。`UI-VIEW together` 是两镜头同主帧刷新的
+采样次数；源切换后的首次刷新允许重合。FPS/RTS、单通讯和双镜头应分别报告，不能把辅助刷新耗时
+加到主帧分位数上。
+
+预热是进入地图前的准备时间，不计入稳态分位数；`SCENE-PREWARM upload_bytes` 是该次主准备的上传量，
+不代表 VRAM 总占用。观察首次移动卡顿时还需区分动态资源首次出现、CPU 几何生成、管线创建与系统
+调度；固定站位稳态样本不能证明所有地图路线都无冷卡顿。最新多轮对照见
+[多视图优化现场](../archive/multiview-performance-20261004.md)。
 
 ## 前哨站游戏内性能实验场
 

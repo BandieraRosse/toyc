@@ -124,11 +124,12 @@ static void scene_aux_prepare_one(struct rf_gpu_scene_world_gpu_probe *probe,uns
                 if(slot->owner->graphics)rf_gpu_graphics_scene_background(slot->owner->graphics,0,0,0);
                 layers.aux_view=layers.unit_view=NULL;layers.world_only=1;layers.show_viewmodel=0;
                 layers.ui_context=NULL;layers.ui_layout=NULL;layers.light_camera=main_camera;
+                slot->owner->shared_parent=probe;
                 slot->owner->layers=&layers;
                 result=rf_gpu_scene_world_gpu_probe_frame(slot->owner,context,world,
                     &view->camera,width,height,poses,pose_count,flags,projectiles,
                     interactables,enemies,texture,&stats,NULL);
-                slot->owner->layers=NULL;
+                slot->owner->layers=NULL;slot->owner->shared_parent=NULL;
             }
             rf_gpu_graphics_get_stats(slot->owner->graphics,&after);
         }
@@ -148,7 +149,12 @@ static void scene_aux_prepare_one(struct rf_gpu_scene_world_gpu_probe *probe,uns
         rf_gpu_graphics_scene_timing(slot->owner->graphics,&timing);
         slot->status.last_gpu_ms=timing.world_draw_ms;
         slot->status.gpu_time_valid=timing.valid;
-        slot->next_us=view->now_us+1000000/rate;
+        /* Absolute phases retain the requested rate without drifting back
+         * into simultaneous updates after a slow frame. Source changes still
+         * request their first fresh frame immediately. */
+        uint64_t period=1000000/rate;
+        slot->next_us=view->now_us-view->now_us%period+slot_index*(period/2);
+        if(slot->next_us<=view->now_us)slot->next_us+=period;
     }
     if(slot->status.state==RF_GPU_AUX_LIVE && slot->owner &&
         rf_gpu_graphics_scene_video_at(probe->graphics,slot_index,slot->owner->graphics,

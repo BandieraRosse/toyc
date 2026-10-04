@@ -127,8 +127,8 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_resource_create(
     const uint32_t *indices, uint32_t index_count,
     const uint32_t *rgb_texels, uint32_t texture_width, uint32_t texture_height);
 /* Immutable opaque sRGB images; <=8 images of <=1024 square, UV clamp and
- * linear-light mips. Copies inputs synchronously. Retired, private resources
- * only; descriptor mutation during a submitted frame is rejected. Chunks can
+ * linear-light mips. Copies inputs synchronously. The owner may update only
+ * after all borrowing views retire; in-flight mutation is rejected. Chunks can
  * share one set without copying images. Lifetime is reference-counted by the
  * graphics owner, independent of the resource used to create the set. */
 int rf_gpu_graphics_resource_texture_set(struct rf_gpu_graphics *g,
@@ -137,10 +137,10 @@ int rf_gpu_graphics_resource_texture_set(struct rf_gpu_graphics *g,
 int rf_gpu_graphics_resource_share_textures(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_resource *source);
-/* Update a private, retired triangle-list resource created with sequential
+/* Update an owned, retired triangle-list resource created with sequential
  * indices (0,1,...). Retains texture, indices and descriptors. Returns 1 if
  * capacity must grow, 0 on success, -1 on invalid input/failure. Caller must
- * retire every submission before updating; shared/skinned resources reject. */
+ * retire every borrowing view before updating; skinned resources reject. */
 int rf_gpu_graphics_triangle_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource,
     const struct rf_gpu_graphics_vertex *vertices, uint32_t vertex_count);
@@ -172,7 +172,7 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource, uint32_t vertex_count,
     const uint32_t *bind_words, uint32_t bind_word_count,
     const uint32_t *palette_words, uint32_t palette_word_count);
-/* Retired private resources only. Updates copy input immediately but defer
+/* Owner updates only, after all borrowing views retire. Updates copy input immediately but defer
  * dispatch until end, which submits and waits once. Cold creates remain
  * synchronous. No draw/readback or second update of a queued resource before
  * end. Cancel discards unsubmitted dispatches; caller must update again before

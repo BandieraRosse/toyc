@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall Core Host、Scene owner、Vulkan graphics
-> 最近核对：2026-09-26
+> 最近核对：2026-10-04
 
 Rasterfall 的渲染入口为 CPU 软件渲染和独立 GPU Scene。GPU Compute Raster、mixed executor 及 Draw/Raster bridge 已退役。旧实现和诊断合同见[退役归档](../archive/gpu-compute-retirement/README.md)，不能作为当前设计依据。
 
@@ -45,7 +45,7 @@ Scene layer workspace 将不随时间变化的显示几何保留为 GPU 资源�
 相机参数，不再逐三角形生成、遍历、打包和上传。内容变化重新生成该对象的几何，容量足够时原位
 更新颜色顶点，复用索引、缓冲及描述符；仅容量增长时重建 GPU 资源。相对动态来源的顺序、局部
 坐标原点和硬件近裁剪保持一致。动态光束、旋转信标和机器活动仍逐帧更新。
-每个 owner 的 GPU 显示缓存最多保留 131,072 个三角形，按实际分配容量而非当前可见数量计费；
+主 owner 的 GPU 显示缓存最多保留 131,072 个三角形；WORLD 子视图借用同一缓存。独立 owner 的上限也为 131,072 个三角形，按实际分配容量而非当前可见数量计费；
 CPU 缓存分配失败或超预算时回退原 CPU
 quad 路径（65,536 quad 上限，继续不足时直接生成）。GPU 资源创建失败仍传播帧错误。
 共享生成器位于 `render/rf_display_geometry_cache.h`；GPU packet 由 layer workspace 持有，owner 关闭
@@ -69,20 +69,43 @@ retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pip
 
 正常交互帧由 Game Runtime 以 120 FPS 节流。其 Vulkan swapchain 优先选 immediate，其次 mailbox，均不可用时退回必备的 FIFO；前两者允许在 60 Hz 显示器上继续采样并提交更多帧，immediate 可能出现画面撕裂。固定帧诊断仍用 FIFO。该呈现选择不改变 GPU service、资源退休或固定逻辑步。玩法状态的双 tick 展示插值见[运行时架构](runtime.md)。
 
+## 入图预热与多视图资源所有权
+
+每个 world generation 的首个 native Scene 帧前，主 probe 对同一冻结输入执行一次正常离屏准备和
+绘制，提前完成静态地图/prop、当前冻结角色及附件、显示几何、天空/光照管线与主目标的主要首次开销。
+随后创建两路持久辅助目标。预热不推进玩法和动作历史；runtime 重置固定步长累计器，加载耗时不补成
+一串游戏逻辑步。成功后才记录 `prewarmed_generation` 并显示该地图的第一张 native 画面。
+地图代际改变重新预热，关闭 probe 清除标记；失败按正常 Scene 错误链退出。
+
+`SCENE-PREWARM` 记录代际、墙钟、该次主准备的上传字节和 draw 数。上传字节不等于显存占用；
+辅助目标和驱动分配不包含在该字节计数中。这里是按地图及当前冻结来源预热，未出现的敌人类型、
+武器预览、后续开启的展示和新动态容量仍可能首次加载。应用持有 device-local 资源至失效/退休，
+物理显存驻留仍由驱动和操作系统管理，不把全部资产目录强行常驻。
+
+同一帧先完成主 owner 的上传、蒙皮和场景准备，再刷新到期的 WORLD 子镜头，最后提交主视图。
+子镜头借用主资源缓存、已经蒙皮的角色 draw、匹配完整冻结值的敌人/程序角色几何，以及常驻显示
+packet；只改镜头参数，保留各镜头独立的可见性、阴影和目标。仅子镜头需要的来源或不满足复用条件
+的动态内容仍由子 owner 准备。主 registry 和 actor 的 pin 保持到全部同步子提交及主帧退休。
+
+graphics resource 保留唯一创建 owner，多个同 device 消费者登记双向 reader 引用；各 graphics owner
+使用相同定义的 descriptor layout，借用原 camera-neutral descriptor set。资源更新、纹理修改和释放
+要求 owner 及所有 reader 退休；consumer 关闭解除引用，source 释放清除 consumer 的绑定。
+此共享针对同一来源的多个镜头，不自动合并不同 actor 实例的 bind/纹理缓冲。
+
 ## 通讯镜头、单位镜头与设备预览
 
 `rf_gpu_scene_layers_input.aux_view` 提交通讯/设备视图，`unit_view` 提交 RTS 单位视图，两路可同时显示。
 每路分别保存稳定来源 ID、generation、镜头变换、视频矩形、内部尺寸和刷新频率；UI 布局只改变最终合成矩形。
 `render/rf_gpu_scene_aux.inc` 按槽调度，Scene probe 的 `aux[2]` 各自持有持久子 owner、状态、刷新时刻与重试次数。
-默认刷新为 12 Hz，最多 15 Hz，子视图清除两路嵌套请求，不递归生成辅助视图。
+默认刷新为 12 Hz，最多 15 Hz；两槽按绝对周期错开半个周期，来源改变立即请求新帧。慢帧后回到各自相位，不累计补画。子视图清除两路嵌套请求，不递归生成辅助视图。
 通讯直接按 240×360 的 2:3 竖画面渲染，合成矩形保持同一比例，禁止把横画面非等比拉伸进竖框；
 设备预览默认从 320×180 开始，再按预览矩形调整内部高度。实际性能签收依实机采样，不把这些值视为性能保证。
 槽 0 在设备打开时优先显示设备预览，否则显示剧情；槽 1 独立显示 RTS 单位，不能抢占剧情画面。
 单位镜头复用剧情取景参数、
 240×360 竖画面及低频调度，来源身份切换后等新帧再标记 live，具体见 [RTS 核心指挥](rts-command.md)。
 
-WORLD 模式使用本帧同一份 world、actor、敌人、设备和 effects 冻结值，以实体镜头重新准备完整
-小画面；不二次推进动画历史，不缓存背景图像。天空、动态光照、制造动画、角色和特效继续更新。
+WORLD 模式使用本帧同一份 world、actor、敌人、设备和 effects 冻结值，复用上述主 owner 几何，
+以实体镜头绘制完整小画面；不二次推进动画历史，不缓存背景图像。天空、动态光照、制造动画、角色和特效继续更新。
 主玩家手电保留原玩家镜头的位置和方向。`rf_gpu_scene_enemy_aux_camera` 与 `rf_gpu_scene_enemy_unit_camera`
 在来源冻结前保留任一路镜头附近的敌人；普通 AI 来源本身不按主镜头裁掉，FPS 玩家额外身体只供辅助镜头消费。实体外壳按
 同一镜头轴向生成，在主场景可见，对其自身镜头排除；窗口收起时外壳仍可保留。
@@ -90,7 +113,7 @@ WORLD 模式使用本帧同一份 world、actor、敌人、设备和 effects 冻
 WEAPON 模式复用制造展示的真实武器模型、物理适配和材质，按完整资产 bounds 居中取景，旋转只改变
 展示变换，不创建成品或修改制造任务。初始采用侧面略偏三分之四的视角，按变换后的八个 bounds 角点
 适配横纵视域和近裁剪；独立均匀补光与 `rf_gpu_graphics_scene_background` 的暗蓝灰线性 HDR 清屏色
-只属于模型展示。WORLD 通讯镜头仍绘制真实现场背景。模型与世界几何按各自资源 owner 缓存；隐藏/恢复不重复创建
+只属于模型展示。WORLD 通讯镜头仍绘制真实现场背景。武器展示由子 owner 缓存，WORLD 按上述共享所有权缓存；隐藏/恢复不重复创建
 大型 GPU 资源。当前不提供任意角色、纹理模型或通用场景编辑器预览合同。
 
 Vulkan 的 `rf_gpu_graphics_scene_offscreen` 只写 device-local 颜色/深度/HDR attachment，不申请

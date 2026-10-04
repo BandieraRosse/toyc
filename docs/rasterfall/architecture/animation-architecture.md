@@ -10,6 +10,16 @@
 新角色骨架、rest pose、attachment 和 skinning 的离线输入规范由
 [`character-assets.md`](../reference/character-assets.md) 唯一拥有；本页拥有导入后的动画求值顺序。
 
+## Scene 批量求值与 IK 更新范围
+
+Scene 的 `rf_gpu_scene_pose_extract_all` 一次验证整个冻结 roster，串行提取存活角色并输出独立 palette、
+附件和武器 placement。模块角色与各 body 的临时 instance 保留分配，每次 composition 重置 pose 和 IK
+历史；冻结的无武器预览也显式 reset。该 scratch 只能在现有串行提取链使用，不能并发共享。
+批次失败不发布 count，调用者丢弃整批；单角色提取仍保持失败时不修改输出的合同。
+
+双骨 IK 修改 upper、forearm、hand 后只重算该骨骼的后代，保留原拓扑顺序和变换公式。持枪投影迭代仅在
+anchor、rotation、reach/clearance 累计量完全不变时提前结束，原迭代上限、骨长和约束容差保持不变。
+
 ## 数据流
 
 Humanoid Action Composition V1 的正式边界为：

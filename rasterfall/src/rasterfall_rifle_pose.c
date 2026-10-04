@@ -256,6 +256,9 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
     aim_target[1]=(RASTERFALL_HUMAN_EYE_HEIGHT_RFU+sin(pitch*M_PI/180)/cos(pitch*M_PI/180)*distance)*world_units;
     aim_target[2]=cos(yaw*M_PI/180)*distance*world_units;
     for(int iteration=0;iteration<(relaxed>0?32:12);++iteration) {
+        double previous_anchor[3],previous_rotation[9];
+        double previous_reach=result.reach_shift_rfu,previous_clearance=result.clearance_shift_rfu;
+        memcpy(previous_anchor,anchor,sizeof(anchor));memcpy(previous_rotation,weapon_r,sizeof(weapon_r));
         vector(weapon_r,local_stock,offset);
         for(int i=0;i<3;++i)origin[i]=anchor[i]-offset[i];
         double clearance=chest_clearance(p,weapon,origin,weapon_r,units,world_units,shoulder_width,armor,forward);
@@ -306,6 +309,11 @@ int rasterfall_rifle_pose_solve(struct rasterfall_model_instance *instance,
             double converge_yaw=atan2(v[0],v[2])*180/M_PI;
             hold_rotation(-pitch-track*(converge_pitch-pitch),yaw+track*(converge_yaw-yaw),single,weapon_r);
         }
+        /* An exact fixed point gives the same result as every remaining
+         * iteration, without relaxing grip/clearance or aiming tolerances. */
+        if(!memcmp(previous_anchor,anchor,sizeof(anchor)) &&
+            !memcmp(previous_rotation,weapon_r,sizeof(weapon_r)) &&
+            previous_reach==result.reach_shift_rfu && previous_clearance==result.clearance_shift_rfu)break;
     }
     /* Recoil rotates around shoulder contact, then both hands follow. */
     if(input->recoil_milli) {

@@ -57,6 +57,11 @@ struct rf_graphics_texture_set {
     struct rf_gpu_vulkan_buffer buffer;
     uint32_t references,count,width[RF_GPU_GRAPHICS_TEXTURES],height[RF_GPU_GRAPHICS_TEXTURES];
 };
+struct rf_graphics_reader {
+    struct rf_gpu_graphics *graphics;
+    struct rf_gpu_graphics_resource *resource;
+    struct rf_graphics_reader *resource_next,*graphics_next;
+};
 struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics *owner;
     struct rf_gpu_graphics_resource *next;
@@ -65,11 +70,7 @@ struct rf_gpu_graphics_resource {
     struct rf_graphics_texture_set *texture_set;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set descriptor_set;
-    struct {
-        struct rf_gpu_graphics *owner;
-        rf_vk_descriptor_pool pool;
-        rf_vk_descriptor_set set;
-    } shared_binding;
+    struct rf_graphics_reader *readers;
     struct rf_gpu_vulkan_buffer skin_bind, skin_palette;
     struct rf_gpu_vulkan_buffer skin_staging[2];
     uint32_t vertex_capacity, palette_word_capacity;
@@ -97,6 +98,9 @@ struct rf_gpu_graphics {
     struct rf_graphics_api api;
     struct rf_graphics_target target;
     struct rf_gpu_graphics_resource *resource, *resources;
+    struct rf_graphics_reader *borrowed;
+    int destroying;
+    int legacy_skin,staging_skin,reuse_pose;
     rf_vk_descriptor_set_layout set_layout;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
@@ -153,54 +157,48 @@ static int gfx_resource_compatible(const struct rf_gpu_graphics *g,
         resource->owner->owner == g->owner;
 }
 
-static rf_vk_descriptor_set gfx_resource_descriptor(
-    const struct rf_gpu_graphics *g, const struct rf_gpu_graphics_resource *resource)
+/* Every Scene owner uses the same three storage-buffer bindings. Descriptor
+ * layout definitions are identical; the resource descriptor is camera-neutral.
+ * Track every consumer so mutations cannot race a borrowed in-flight draw. */
+static int gfx_resource_readers_idle(const struct rf_gpu_graphics_resource *resource)
 {
-    if (!gfx_resource_compatible(g,resource)) return NULL;
-    if (resource->owner==g) return resource->descriptor_set;
-    return resource->shared_binding.owner==g ? resource->shared_binding.set : NULL;
+    for(const struct rf_graphics_reader *r=resource->readers;r;r=r->resource_next)
+        if(r->graphics->scene_in_flight) return 0;
+    return 1;
 }
-
-static int gfx_resource_share(struct rf_gpu_graphics *g,
-    struct rf_gpu_graphics_resource *resource)
+static void gfx_reader_release(struct rf_graphics_reader *r)
 {
-    struct rf_vk_descriptor_pool_size size = {RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 3};
-    struct rf_vk_descriptor_pool_create_info pool = {0};
-    struct rf_vk_descriptor_set_allocate_info set = {0};
-    struct rf_vk_descriptor_buffer_info buffer[3] = {{0}};
-    struct rf_vk_write_descriptor_set write[3] = {{0}};
-    if (!gfx_resource_compatible(g,resource)) return -1;
-    if (resource->skin_pending_vertices && resource->owner!=g) return -1;
-    if (resource->owner==g || resource->shared_binding.owner==g) return 0;
-    if (resource->shared_binding.owner) return -1;
-    pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool.max_sets=1;pool.pool_size_count=1;pool.pool_sizes=&size;
-    if (g->owner->api.create_descriptor_pool(g->owner->device,&pool,NULL,
-            &resource->shared_binding.pool)!=RF_VK_SUCCESS) return -1;
-    set.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    set.descriptor_pool=resource->shared_binding.pool;set.descriptor_set_count=1;
-    set.set_layouts=&g->set_layout;
-    if (g->owner->api.allocate_descriptor_sets(g->owner->device,&set,
-            &resource->shared_binding.set)!=RF_VK_SUCCESS) goto failed;
-    const struct rf_gpu_vulkan_buffer *texture=resource->texture_set ?
-        &resource->texture_set->buffer : &resource->texture;
-    buffer[0].buffer=texture->buffer;buffer[0].range=texture->size;
-    buffer[1].buffer=resource->vertices.buffer;buffer[1].range=resource->vertices.size;
-    buffer[2].buffer=resource->indices.buffer;buffer[2].range=resource->indices.size;
-    for(unsigned i=0;i<3;++i){
-        write[i].s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        write[i].dst_set=resource->shared_binding.set;write[i].dst_binding=i;
-        write[i].descriptor_count=1;write[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        write[i].buffer_info=&buffer[i];
-    }
-    g->owner->api.update_descriptor_sets(g->owner->device,3,write,0,NULL);
-    resource->shared_binding.owner=g;
+    if(r->graphics->resource==r->resource)r->graphics->resource=NULL;
+    struct rf_graphics_reader **p=&r->resource->readers;
+    while(*p && *p!=r)p=&(*p)->resource_next;
+    if(*p)*p=r->resource_next;
+    p=&r->graphics->borrowed;
+    while(*p && *p!=r)p=&(*p)->graphics_next;
+    if(*p)*p=r->graphics_next;
+    free(r);
+}
+static rf_vk_descriptor_set gfx_resource_descriptor(
+    const struct rf_gpu_graphics *g,const struct rf_gpu_graphics_resource *resource)
+{
+    if(!gfx_resource_compatible(g,resource))return NULL;
+    if(resource->owner==g)return resource->descriptor_set;
+    for(const struct rf_graphics_reader *r=resource->readers;r;r=r->resource_next)
+        if(r->graphics==g)return resource->descriptor_set;
+    return NULL;
+}
+static int gfx_resource_share(struct rf_gpu_graphics *g,struct rf_gpu_graphics_resource *resource)
+{
+    if(!gfx_resource_compatible(g,resource))return -1;
+    if(resource->owner==g)return 0;
+    if(resource->skin_pending_vertices || resource->owner->scene_in_flight)return -1;
+    for(struct rf_graphics_reader *r=resource->readers;r;r=r->resource_next)
+        if(r->graphics==g)return 0;
+    struct rf_graphics_reader *r=calloc(1,sizeof(*r));
+    if(!r)return -1;
+    r->graphics=g;r->resource=resource;
+    r->resource_next=resource->readers;resource->readers=r;
+    r->graphics_next=g->borrowed;g->borrowed=r;
     return 0;
-failed:
-    g->owner->api.destroy_descriptor_pool(g->owner->device,
-        resource->shared_binding.pool,NULL);
-    memset(&resource->shared_binding,0,sizeof(resource->shared_binding));
-    return -1;
 }
 
 _Static_assert(sizeof(struct rf_gpu_graphics_vertex) == 56, "HG vertex ABI");
@@ -273,7 +271,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     impl = g->owner;
     /* Also covers a failed submission/wait: never destroy pending resources. */
     impl->api.queue_wait_idle(impl->queue);
-    g->scene_in_flight=0;
+    g->scene_in_flight=0;g->destroying=1;
     rf_gpu_graphics_skin_batch_cancel(g);
     if (g->scene_acquire) impl->api.destroy_semaphore(impl->device,g->scene_acquire,NULL);
     if (g->scene_query_pool) impl->api.destroy_query_pool(impl->device,g->scene_query_pool,NULL);
@@ -289,6 +287,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     if (g->skin_set_layout) impl->api.destroy_descriptor_set_layout(impl->device,g->skin_set_layout,NULL);
     if (g->layout) impl->api.destroy_pipeline_layout(impl->device, g->layout, NULL);
     if (g->descriptor_pool) impl->api.destroy_descriptor_pool(impl->device, g->descriptor_pool, NULL);
+    while(g->borrowed)gfx_reader_release(g->borrowed);
     while (g->resources) rf_gpu_graphics_resource_destroy(g, g->resources);
     if (g->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->set_layout, NULL);
     free(g);
@@ -637,6 +636,11 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     if (!g) return NULL;
     g->owner = impl;
     {
+        const char *skin=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
+        const char *staging=getenv("RF_GPU_SKIN_STAGING_UPLOAD");
+        const char *pose=getenv("RF_GPU_SCENE_LEGACY_POSE_REUSE");
+        g->legacy_skin=skin && skin[0]=='1';g->staging_skin=staging && staging[0]=='1';
+        g->reuse_pose=!(pose && !strcmp(pose,"1"));
         const char *profile=getenv("RF_GPU_PROFILE_TRIANGLE_UPDATE");
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
@@ -1015,7 +1019,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
     double mark=0,validated=0,prepared=0,copied=0,flushed=0;
     uint64_t flush_bytes=0;
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g ||
-        r->shared_binding.owner || r->skin_descriptor_set || !r->sequential_triangles ||
+        !gfx_resource_readers_idle(r) || r->skin_descriptor_set || !r->sequential_triangles ||
         r->scene_vertex_color!=scene_color || !vertices || !vertex_count ||
         vertex_count>65536 || vertex_count%3) return -1;
     if (g->profile_triangle_update) mark=now_ms();
@@ -1305,19 +1309,16 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     void *mapped=NULL;
     unsigned mapped_index=0;
     int result=-1;
-    const char *legacy_env=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
-    int legacy=legacy_env && legacy_env[0]=='1';
-    const char *staging_env=getenv("RF_GPU_SKIN_STAGING_UPLOAD");
-    int force_staging=staging_env && staging_env[0]=='1';
+    int legacy=g && g->legacy_skin;
+    int force_staging=g && g->staging_skin;
     if (!g || g->poisoned || g->scene_in_flight || !r || r->owner!=g || !r->skin_descriptor_set ||
         !vertex_count || (bind_words ? bind_word_count!=(uint64_t)vertex_count*22 : bind_word_count!=0) ||
         !palette_word_count ||
         !palette_words || r->skin_pending_vertices ||
-        (g->skin_batch && (legacy || r->shared_binding.owner))) return -1;
+        !gfx_resource_readers_idle(r) || (g->skin_batch && legacy)) return -1;
     if (vertex_count>r->vertex_capacity ||
         palette_word_count>r->palette_word_capacity) return 1;
-    const char *legacy_pose=getenv("RF_GPU_SCENE_LEGACY_POSE_REUSE");
-    int reuse=!(legacy_pose && !strcmp(legacy_pose,"1"));
+    int reuse=g->reuse_pose;
     if(reuse && !bind_words && r->skin_cached && r->skin_last_vertices==vertex_count &&
         r->skin_last_words==palette_word_count &&
         !memcmp(r->skin_last_palette,palette_words,(size_t)palette_word_count*4)) {
@@ -1414,7 +1415,7 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
 {
     struct rf_gpu_graphics_resource **link;
     if (!g || g->scene_in_flight || !resource || resource->owner != g ||
-        resource->skin_pending_vertices) return -1;
+        resource->skin_pending_vertices || (!g->destroying && !gfx_resource_readers_idle(resource))) return -1;
     /* Successful submissions already waited. A failed wait may leave work. */
     if (g->poisoned) g->owner->api.queue_wait_idle(g->owner->queue);
     for (link = &g->resources; *link != resource; link = &(*link)->next)
@@ -1423,9 +1424,7 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     if (g->resource == resource) g->resource = NULL;
     if (resource->descriptor_pool)
         g->owner->api.destroy_descriptor_pool(g->owner->device, resource->descriptor_pool, NULL);
-    if (resource->shared_binding.pool)
-        g->owner->api.destroy_descriptor_pool(g->owner->device,
-            resource->shared_binding.pool,NULL);
+    while(resource->readers)gfx_reader_release(resource->readers);
     if (resource->skin_descriptor_pool)
         g->owner->api.destroy_descriptor_pool(g->owner->device,resource->skin_descriptor_pool,NULL);
     for(unsigned i=0;i<2;++i) if(resource->skin_mapped[i])

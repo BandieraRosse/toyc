@@ -14,7 +14,8 @@ Game/session 拥有 actor 身份、动作语义和权威位置。presentation ad
 profile/recipe，并向 renderer 提交 finalized pose、transform、材质 override 和附件 placement。renderer
 不得从 actor 读取资源路径、gear list 或临时资产参数，也不得从骨骼姿态反推动作语义。
 
-每个 actor 持有独立 `rasterfall_model_instance`；不可变 body、gear、weapon resource 可以共享。
+持续维护表现状态的 actor 持有独立 `rasterfall_model_instance`；不可变 body、gear、weapon resource 可以共享。
+Scene 从只读冻结值重新求值时，允许串行复用重置后的临时 instance；输出必须是独立值，不能把临时 pose 或历史交给下一个 actor。
 单次 shirt/pants 或 scene-light override 只影响本次 submission，不修改 resource material table。
 资产坐标、profile basis、bind pose、动画求值和末端渲染补偿保持分层。
 
@@ -190,7 +191,7 @@ asset identity 与 transform；registry/cache 共享模型，碰撞由 map profi
 
 `RF_MODEL_LAB` 的目录 body 预览由 `rf_outpost_actor_showcase.inc` 拥有可见性与独立时钟，
 `rf_gpu_scene_actor_source.inc` 按动作台位冻结角色 palette；`rf_gpu_scene_pose_body` 按 body resource ID
-解析不可变 RFCHAR，并在独立 instance 中采样已有 RFANIM。预览没有 gameplay character ID、
+解析不可变 RFCHAR，并在串行临时 instance 中重置、采样已有 RFANIM。预览没有 gameplay character ID、
 玩法 actor 或网络状态，不修改原材质颜色。隐藏和退出释放预览 CPU resource，GPU 资源沿 Scene
 owner 的既有退休规则管理。缺失资源显示安装错误，重新关闭/开启后重试，不用其他角色替代。
 `rf_gpu_scene_pose_body_action` 另外提供站立持枪、瞄准、低位移动持枪与行走射击，复用正式动作 composition、
@@ -237,7 +238,7 @@ Scene 在冻结后为本次实际插入展示副本的槽位写入同一展示�
 不借用其他台位的历史，也不让游戏时钟替代展示时钟。
 
 GPU Scene 的模块化队员 pose 求值由 `render/rf_gpu_scene_pose.inc` 拥有，公开入口为
-`rf_gpu_scene_pose_extract_at`（单 actor fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、
+`rf_gpu_scene_pose_extract_all`（整批）、`rf_gpu_scene_pose_extract_at`（单 actor；fixture 保留 `rf_gpu_scene_pose_extract`）。它只读 `rf_gpu_scene_local_frame` 的指定 actor sidecar，复用共享 body/gear resource、
 RFANIM composition、共享 rifle pose 和 finalized socket 求值，输出值类型的 body palette、
 body-to-world、finalized pose 的 bind-normal 策略、被动 rigid gear 及主动武器的 model-to-world。武器变换包含 authored centering、
 basis 和 PRIMARY_GRIP 对齐；consumer 不得再次补偿。资源标识是 character/weapon catalog ID，
@@ -247,9 +248,10 @@ basis 和 PRIMARY_GRIP 对齐；consumer 不得再次补偿。资源标识是 ch
 
 local source 为每名 actor 在成功 freeze 时分别累计 lower-body 展示时间，并把该时间复制进各自 sidecar；MOVE 回卷只累加
 delta，FIRE 保留 lower phase。来源销毁、world 切换及角色配置变化重置时间，slot 移动保留同一来源
-时间。提取不推进时钟，不读 session/game，不使用旧 renderer 的 slot pose cache；当前为隔离诊断
-每次创建独立 instance，以确保历史输入可重复求值，尚非正常帧分配策略。输出成功后才整体替换，
-空 actor 产生空 payload，unsupported/downed 或缺失资源显式失败，不做 procedural fallback。
+时间。提取不推进时钟，不读 session/game，不使用旧 renderer 的 slot pose cache；串行复用重置后的
+临时 instance，以完整冻结值确保历史输入可重复求值。单 actor 输出成功后才整体替换，空 actor 产生
+空 payload，unsupported/downed 或缺失资源显式失败，不做 procedural fallback。正常 runtime 使用整批
+入口，只验证一次 roster，跳过 downed；批次失败不发布 count，调用者丢弃整批。
 定向资源验证入口见 [GPU Scene fixture](../guides/gpu-scene-fixture.md)。
 
 Character Test Strip、action debug station、MODEL_DISPLAY 和 lineup 都是 renderer-only fixture，不进入

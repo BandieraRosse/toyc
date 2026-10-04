@@ -4,8 +4,10 @@ param(
     [ValidateRange(1,5)][int]$Rounds=2,
     [ValidateRange(120,4096)][int]$Samples=360,
     [string[]]$Cases=@('experiment-fps','player-fps','experiment-rts','player-rts','weaver-preview',
-        'comms-visible','comms-hidden','comms-closed','comms-remote','comms-remote-hidden'),
+        'comms-visible','comms-hidden','comms-closed','comms-remote','comms-remote-hidden','dual-view'),
     [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe',
+    [ValidateRange(640,7680)][int]$Width=1280,
+    [ValidateRange(480,4320)][int]$Height=720,
     [switch]$CheckOnly
 )
 $ErrorActionPreference='Stop'
@@ -13,7 +15,7 @@ $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
 $Exe=if([IO.Path]::IsPathRooted($Executable)){[IO.Path]::GetFullPath($Executable)}else{[IO.Path]::GetFullPath((Join-Path $Root $Executable))}
 $Allowed=@('experiment-fps','player-fps','experiment-rts','player-rts','weaver-preview',
-    'comms-visible','comms-hidden','comms-closed','comms-remote','comms-remote-hidden')
+    'comms-visible','comms-hidden','comms-closed','comms-remote','comms-remote-hidden','dual-view')
 $Cases=@($Cases|ForEach-Object {$_ -split ','})
 foreach($Case in $Cases){if($Case -notin $Allowed){throw "Unknown case: $Case"}}
 if($CheckOnly){Write-Output '[UI-PERF] Script parsed. GPU was not started.';exit 0}
@@ -48,8 +50,8 @@ foreach($Path in @($Exe,(Join-Path $Package 'rasterfall/assets/maps/outpost.map'
     (Join-Path $Package 'rasterfall/assets/models/pg_glock1.rmesh'),
     (Join-Path $Package 'rasterfall/assets/models/ar_ak47.rmesh'),
     (Join-Path $Package 'rasterfall/assets/manufacturing/blueprints.json'))){$Hashes[$Path]=(Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash}
-$Config=@{baseline='same executable experiment UI; historical pre-change binary is unavailable';hashes=$Hashes;
-    rounds=$Rounds;samples=$Samples;cases=$Cases;warmup=120;cap=120;clock='realtime';sky_time=0;sky_scale=4;
+$Config=@{executable=$Exe;comparison='same staged assets; use explicit Executable for binary A/B';hashes=$Hashes;
+    rounds=$Rounds;samples=$Samples;cases=$Cases;width=$Width;height=$Height;warmup=120;cap=120;clock='realtime';sky_time=0;sky_scale=4;
     gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;frame_cpu='main-thread OS CPU time; scheduling accounting can quantize short frames';
     auxiliary_cpu='wall time of real low-frequency update, includes its synchronous GPU retirement';
     auxiliary_gpu='GPU timestamp duration of real auxiliary render; not added to main-frame percentiles';
@@ -67,10 +69,10 @@ try {
         foreach($Case in $Sequence) {
             $Name="r$Round-$Case";$env:RF_UI_PERF_CASE=$Case
             $env:RF_UI_MODE=if($Case -like 'experiment-*'){'experiment'}else{'player'}
-            $env:RF_UI_STORY=if($Case -like 'comms-*'){'1'}else{'0'}
+            $env:RF_UI_STORY=if($Case -like 'comms-*' -or $Case -eq 'dual-view'){'1'}else{'0'}
             $View=if($Case -eq 'weaver-preview' -or $Case -like 'comms-remote*'){'mesh-weaver'}else{'sky-north'}
             $env:RF_WEAVER_VIEW='interaction'
-            $Argv=@('--skip-boot','--renderer','gpu-scene','--map','rasterfall/assets/maps/outpost.map','--gpu-normal-scene',$View,'0')
+            $Argv=@('--skip-boot','--window-size',[string]$Width,[string]$Height,'--renderer','gpu-scene','--map','rasterfall/assets/maps/outpost.map','--gpu-normal-scene',$View,'0')
             $Process=Start-Process -FilePath $Exe -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
                 -ArgumentList (($Argv|ForEach-Object {'"'+$_+'"'}) -join ' ') `
                 -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
@@ -83,8 +85,12 @@ try {
             $Frame=Parse-Fields $Log 'SCENE-PERF';$Cpu=Parse-Fields $Log 'SCENE-CPU';$Ui=Parse-Fields $Log 'UI-PERF'
             if($Frame.valid -ne '1' -or $Ui.valid -ne '1' -or [int]$Frame.samples -ne $Samples -or
                 [int]$Cpu.samples -ne $Samples -or [int]$Ui.samples -ne $Samples -or $Ui.case -ne $Case -or
+                $Frame.extent -ne ($Width.ToString()+'x'+$Height.ToString()) -or
                 [int]$Frame.gpu_p50_us -le 0){throw "$Name invalid workload or timing samples"}
-            $Runs.Add(@{round=$Round;case=$Case;view=$View;frame=$Frame;cpu=$Cpu;ui=$Ui;argv=$Argv;exit=$Process.ExitCode})
+            $Views=@([regex]::Matches($Log,'UI-VIEW [^\r\n]+') | ForEach-Object {Parse-Fields $_.Value 'UI-VIEW'})
+            $Prewarm=@([regex]::Matches($Log,'SCENE-PREWARM [^\r\n]+') | ForEach-Object {Parse-Fields $_.Value 'SCENE-PREWARM'})
+            $Runs.Add(@{round=$Round;case=$Case;view=$View;frame=$Frame;cpu=$Cpu;ui=$Ui;auxiliary=$Views;
+                prewarm=$Prewarm;argv=$Argv;exit=$Process.ExitCode})
             Write-Json @($Runs.ToArray()) 'report.json'
             Write-Output "$Name frame_p50/p95=$($Frame.p50_us)/$($Frame.p95_us) cpu_p50/p95=$($Cpu.thread_cpu_p50_us)/$($Cpu.thread_cpu_p95_us) gpu_p50/p95=$($Frame.gpu_p50_us)/$($Frame.gpu_p95_us) aux=$($Ui.aux_samples) us"
             $Process=$null

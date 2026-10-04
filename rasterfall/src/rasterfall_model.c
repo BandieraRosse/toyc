@@ -3510,12 +3510,17 @@ int rasterfall_model_sample_glb_rotation_clip(
     return rasterfall_model_update_bones(asset);
 }
 
-int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
+static int model_update_bones_subtree(struct rasterfall_model_asset *asset,int root)
 {
     unsigned int order;
     if (!asset || !asset->bone_count || !asset->bone_transforms) return -1;
     for (order = 0; order < asset->bone_count; order++) {
         unsigned int i = asset->bone_order[order];
+        if(root>=0) {
+            int ancestor=(int)i;
+            while(ancestor>=0 && ancestor!=root)ancestor=asset->bones[ancestor].parent;
+            if(ancestor<0)continue;
+        }
         struct rasterfall_model_bone *bone;
         struct rasterfall_model_bone_transform *transform;
         double local[9];
@@ -3555,6 +3560,9 @@ int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
     }
     return 0;
 }
+
+int rasterfall_model_update_bones(struct rasterfall_model_asset *asset)
+{ return model_update_bones_subtree(asset,-1); }
 
 int rasterfall_model_attachment_transform(
     const struct rasterfall_model_asset *asset, const char *bone_name,
@@ -3686,7 +3694,7 @@ int rasterfall_model_solve_two_bone_attachment(
     reference[2]=asset->bones[upper].rotate_z;
     model_matrix_to_euler_near(local,reference,&x,&y,&z);
     asset->bones[upper].rotate_x=x;asset->bones[upper].rotate_y=y;asset->bones[upper].rotate_z=z;
-    rasterfall_model_update_bones(asset);
+    model_update_bones_subtree(asset,upper);
 
     for(i=0;i<3;i++){
         current[i]=asset->bone_transforms[hand].position[i]-
@@ -3704,7 +3712,7 @@ int rasterfall_model_solve_two_bone_attachment(
     model_matrix_to_euler_near(local,reference,&x,&y,&z);
     asset->bones[forearm].rotate_x=x;asset->bones[forearm].rotate_y=y;
     asset->bones[forearm].rotate_z=z;
-    rasterfall_model_update_bones(asset);
+    model_update_bones_subtree(asset,forearm);
     diag->hand_error=model_vec_length((double[3]){
         asset->bone_transforms[hand].position[0]-diag->clamped_target[0],
         asset->bone_transforms[hand].position[1]-diag->clamped_target[1],
@@ -3753,7 +3761,7 @@ int rasterfall_model_solve_two_bone_attachment_pose(
     model_matrix_to_euler_near(local,reference,&x,&y,&z);
     asset->bones[hand].rotate_x=x;asset->bones[hand].rotate_y=y;
     asset->bones[hand].rotate_z=z;
-    return rasterfall_model_update_bones(asset);
+    return model_update_bones_subtree(asset,hand);
 }
 
 void rasterfall_model_print_two_bone_diagnostics(

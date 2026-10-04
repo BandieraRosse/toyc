@@ -42,6 +42,8 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     (void)actor;(void)pose;(void)camera;(void)width;(void)height;
     (void)items;(void)capacity;(void)count;return -1;
 }
+void rf_gpu_scene_actor_gpu_set_quiet(struct rf_gpu_scene_actor_gpu *actor,int quiet)
+{ (void)actor;(void)quiet; }
 void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor)
 { (void)actor; }
 void rf_gpu_scene_actor_gpu_invalidate_bind(struct rf_gpu_scene_actor_gpu *actor)
@@ -96,7 +98,7 @@ struct scene_slot {
 struct rf_gpu_scene_actor_gpu {
     struct scene_slot slot;
     struct rf_gpu_graphics *graphics;
-    int frame_active;
+    int frame_active,quiet;
 };
 static uint32_t scene_u32(const unsigned char *p)
 { return (uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24; }
@@ -589,7 +591,7 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     }
     actor->frame_active=1;
     t3=rf_core_clock_now_us();
-    __printf("SCENE-ACTOR-COST frame=%llu load_us=%lld pack_us=%lld upload_skin_wait_us=%lld meshes=%u\n",
+    if(!actor->quiet) __printf("SCENE-ACTOR-COST frame=%llu load_us=%lld pack_us=%lld upload_skin_wait_us=%lld meshes=%u\n",
         (unsigned long long)pose->frame_id,(long long)(t1-t0),(long long)(t2-t1),
         (long long)(t3-t2),actor->slot.mesh_count-1);
     memcpy(items,actor->slot.draws,
@@ -605,6 +607,8 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     *count=actor->slot.draw_count;
     return 0;
 }
+void rf_gpu_scene_actor_gpu_set_quiet(struct rf_gpu_scene_actor_gpu *actor,int quiet)
+{ if(actor)actor->quiet=quiet; }
 void rf_gpu_scene_actor_gpu_finish(struct rf_gpu_scene_actor_gpu *actor)
 {
     if (actor && actor->frame_active) {

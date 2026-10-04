@@ -6563,19 +6563,12 @@ startup_again:
                 session.scene_local.frame_id=audit_source->frame_id;
                 int64_t scene_freeze_us=rf_core_clock_now_us()-scene_freeze_start;
                 int64_t pose_extract_start=rf_core_clock_now_us();
-                for(uint32_t actor_index=0;
-                    actor_index<source_frame.snapshot.actor_count;++actor_index) {
-                    if (source_frame.presentations[actor_index].state==TOY_GAME_ACTOR_DOWNED)
-                        continue;
-                    if (rf_gpu_scene_pose_extract_at(&source_frame,actor_index,
-                            &actor_pose[pose_count])<0) {
-                        __fprintf(2,"SCENE-LOCAL actor pose extraction failed\n");
+                if(rf_gpu_scene_pose_extract_all(&source_frame,actor_pose,TOY_GAME_MAX_ACTORS,&pose_count)<0) {
+                    __fprintf(2,"SCENE-LOCAL actor pose extraction failed\n");
 #ifdef TOYC_WINDOWS
-                        rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+                    rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
 #endif
-                        scene_runtime_failed=1;goto scene_shutdown;
-                    }
-                    pose_count++;
+                    scene_runtime_failed=1;goto scene_shutdown;
                 }
                 for (unsigned i=0;i<enemy_render.modular_count;++i) {
                     if (pose_count>=TOY_GAME_MAX_ACTORS) {
@@ -6704,6 +6697,7 @@ startup_again:
                         options.gpu_scene_independent_preview && !options.gpu_frame_capture &&
                         ((options.frame_audit && options.gpu_normal_view && !strcmp(options.gpu_normal_view,"mesh-weaver") &&
                         !rf_weaver_performance.mode) || getenv("RF_UI_CAPTURE_DIRECTORY")),rendered_frames);
+                    uint64_t warm_generation=scene_world_probe.prewarmed_generation;
                     if (rf_gpu_scene_world_gpu_probe_frame(&scene_world_probe,
                             &gpu_vulkan_context,&scene_world_resources,
                             &game_runtime.render_camera,(uint32_t)renderer.surface.width,
@@ -6717,6 +6711,10 @@ startup_again:
                         __fprintf(2,"SCENE-WORLD-GPU normal audit failed\n");
                         rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
                         scene_runtime_failed=1;goto scene_shutdown;
+                    }
+                    if(warm_generation!=scene_world_probe.prewarmed_generation) {
+                        /* Map loading time is outside the fixed-step clock. */
+                        last_time=rf_core_begin_tick(&core);accumulator=0;
                     }
                     scene_world_probe.layers=NULL;
                     game_runtime.ui_video_live=rf_player_aux.visible && scene_world_probe.aux[0].status.state==RF_GPU_AUX_LIVE;
@@ -6750,7 +6748,7 @@ startup_again:
                     rf_perf_lab_sample_detail(probe_stats.layer_prepare_us,probe_stats.actor_prepare_us,
                         scene_freeze_us,audit_render_us,probe_stats.record_us,
                         (int64_t)(probe_stats.gpu_sky_ms*1000),probe_stats.enemy_prepare_us,&probe_stats);
-                    rf_ui_perf_sample(&game_runtime,&scene_world_probe.aux[rf_player_unit_aux.visible?1:0].status,rendered_frames);
+                    rf_ui_perf_sample(&game_runtime,scene_world_probe.aux,rendered_frames);
                     if (rf_scene_perf_sample(rendered_frames,audit_interval_us,&probe_stats,
                             renderer.surface.width,renderer.surface.height,paused)) running=0;
                     rf_scene_cost_end((uint64_t)rendered_frames,audit_update_us,audit_render_us,scene_freeze_us,

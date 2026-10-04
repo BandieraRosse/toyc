@@ -2,11 +2,18 @@
  * attachment evaluators. No game/session lookup or draw recording here. */
 #include "rf_gpu_scene_pose.h"
 static struct rasterfall_model_resource scene_body_resources[RASTERFALL_BODY_RESOURCE_COUNT];
+/* Serial scratch storage; action composition resets pose and IK history on
+ * every use. No mutable instance escapes in the frozen value frame. */
+static struct rasterfall_model_instance scene_body_instances[RASTERFALL_BODY_RESOURCE_COUNT];
+static struct rasterfall_model_instance scene_actor_instance;
 
 void rf_gpu_scene_pose_body_release(void)
 {
-    for (int i=0;i<RASTERFALL_BODY_RESOURCE_COUNT;++i)
+    for (int i=0;i<RASTERFALL_BODY_RESOURCE_COUNT;++i) {
+        rasterfall_model_instance_unload(&scene_body_instances[i]);
         rasterfall_model_resource_unload(&scene_body_resources[i]);
+    }
+    rasterfall_model_instance_unload(&scene_actor_instance);
 }
 
 static int scene_pose_weapon_from_instance(struct rf_gpu_scene_pose_v1 *next,
@@ -57,13 +64,12 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
         if (snprintf(path,sizeof(path),"%s",diagnostic_model)>=(int)sizeof(path)) return -1;
     }
     resource=&scene_body_resources[body_id];
-    instance=tlibc_malloc(sizeof(*instance));
-    if (!instance) return -1;
-    memset(instance,0,sizeof(*instance));
+    instance=&scene_body_instances[body_id];
     if ((!resource->definition.bone_count && rasterfall_model_resource_load(resource,path)<0) ||
         !resource->definition.bone_count ||
         resource->definition.bone_count>RF_GPU_SCENE_POSE_BONES ||
-        rasterfall_model_instance_init(instance,resource)<0) goto done;
+        (!instance->resource && rasterfall_model_instance_init(instance,resource)<0)) goto done;
+    if(freeze && !sample->armed && rasterfall_model_instance_reset_pose(instance)<0)goto done;
     composition.layers[0].clip=humanoid_action(sample->walk ?
         RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
     composition.layers[1].clip=humanoid_action(sample->rifle.aim_milli || sample->fire ?
@@ -97,8 +103,7 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
     result=rasterfall_model_build_skin_palette(rasterfall_model_instance_final_pose(instance),
         out->palette,out->bone_count);
 done:
-    rasterfall_model_instance_unload(instance);
-    tlibc_free(instance);return result;
+    return result;
 }
 
 int rf_gpu_scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
@@ -209,31 +214,23 @@ static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
     return 0;
 }
 
-int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
+static int scene_pose_extract_validated(const struct rf_gpu_scene_local_frame *frame,
     uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out)
 {
     const struct rf_gpu_scene_actor_v1 *actor;
     const struct rf_gpu_scene_local_presentation *p;
     const struct rasterfall_character_visual_recipe *recipe;
-    struct rf_gpu_scene_pose_v1 *next;
+    struct rf_gpu_scene_pose_v1 value,*next=&value;
     struct rasterfall_model_instance *instance;
     struct rasterfall_action_composition composition;
-    struct rf_gpu_scene_frozen_v1 *metadata;
     int result=-1;
-    if (!frame || !out) return -1;
-    metadata=tlibc_malloc(sizeof(*metadata));
-    if (!metadata) return -1;
-    result=rf_gpu_scene_extract_v1(&frame->snapshot,metadata);
-    tlibc_free(metadata);
-    if (result<0 || (actor_index>=frame->snapshot.actor_count &&
+    if (!frame || !out || (actor_index>=frame->snapshot.actor_count &&
         (frame->snapshot.actor_count || actor_index))) return -1;
-    next=tlibc_malloc(sizeof(*next));
-    if (!next) return -1;
     memset(next,0,sizeof(*next));
     next->abi_version=1; next->byte_size=sizeof(*next);
     next->frame_id=frame->snapshot.frame_id;
     next->world_generation=frame->snapshot.world_generation;
-    if (!frame->snapshot.actor_count) { *out=*next; tlibc_free(next); return 0; }
+    if (!frame->snapshot.actor_count) { *out=*next; return 0; }
     actor=&frame->snapshot.actors[actor_index];
     p=actor_index ? &frame->presentations[actor_index] : &frame->presentation;
     recipe=rasterfall_character_visual_recipe_for_character(p->character_id);
@@ -245,13 +242,11 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
         actor->animation_time_ms<0 || modular_actor_resources_init()<0 ||
         !modular_actor_runtime.body.definition.bone_count ||
         modular_actor_runtime.body.definition.bone_count>RF_GPU_SCENE_POSE_BONES) {
-        tlibc_free(next); return -1;
+        return -1;
     }
-    instance=tlibc_malloc(sizeof(*instance));
-    if (!instance) { tlibc_free(next); return -1; }
-    memset(instance,0,sizeof(*instance));
+    instance=&scene_actor_instance;
     result=-1;
-    if (rasterfall_model_instance_init(instance,&modular_actor_runtime.body)<0) goto done;
+    if (!instance->resource && rasterfall_model_instance_init(instance,&modular_actor_runtime.body)<0) goto done;
     memset(&composition,0,sizeof(composition));
     composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip=humanoid_action(
         p->lower_walk ? RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
@@ -282,9 +277,32 @@ int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
     if (scene_pose_from_instance(next,instance,recipe,actor,p)<0) goto done;
     *out=*next; result=0;
 done:
-    rasterfall_model_instance_unload(instance);
-    tlibc_free(instance); tlibc_free(next);
     return result;
+}
+
+int rf_gpu_scene_pose_extract_at(const struct rf_gpu_scene_local_frame *frame,
+    uint32_t actor_index,struct rf_gpu_scene_pose_v1 *out)
+{
+    struct rf_gpu_scene_frozen_v1 metadata;
+    if(!frame || !out || rf_gpu_scene_extract_v1(&frame->snapshot,&metadata)<0)return -1;
+    return scene_pose_extract_validated(frame,actor_index,out);
+}
+int rf_gpu_scene_pose_extract_all(const struct rf_gpu_scene_local_frame *frame,
+    struct rf_gpu_scene_pose_v1 *out,uint32_t capacity,uint32_t *count)
+{
+    struct rf_gpu_scene_frozen_v1 metadata;
+    if(!frame || !out || !count || rf_gpu_scene_extract_v1(&frame->snapshot,&metadata)<0)return -1;
+    unsigned needed=0;
+    for(unsigned i=0;i<frame->snapshot.actor_count;++i)
+        needed+=(i ? frame->presentations[i].state : frame->presentation.state)!=TOY_GAME_ACTOR_DOWNED;
+    if(needed>capacity)return -1;
+    unsigned n=0;
+    for(unsigned i=0;i<frame->snapshot.actor_count;++i) {
+        if((i ? frame->presentations[i].state : frame->presentation.state)==TOY_GAME_ACTOR_DOWNED)continue;
+        if(scene_pose_extract_validated(frame,i,&out[n])<0)return -1;
+        ++n;
+    }
+    *count=n;return 0;
 }
 
 int rf_gpu_scene_pose_extract(const struct rf_gpu_scene_local_frame *frame,
