@@ -62,20 +62,22 @@ static int combat_visible(const struct toy_game *g, const struct toy_game_actor 
         (int)((long long)dz * 1024 / distance), distance + 1) >= distance;
 }
 
-int toy_game_find_combat_target(struct toy_game *g,
-    const struct toy_game_actor *actor, struct toy_game_combat_target *out)
+static int combat_find_target(struct toy_game *g,
+    const struct toy_game_actor *actor, struct toy_game_combat_target *out,
+    int retain_current)
 {
     const struct toy_game_weapon_info *w;
-    long long best;
+    long long best, alert2;
     int i;
     if (!g || !actor || !out) return 0;
     memset(out, 0, sizeof(*out)); out->kind = -1; out->index = -1;
     w = toy_game_weapon_info(toy_game_actor_current_weapon(actor));
-    best = (long long)w->alert_range * w->alert_range + 1;
+    alert2 = (long long)w->alert_range * w->alert_range;
+    best = alert2 * (retain_current ? 5 : 1) + 1;
     for (i = 0; i < TOY_GAME_MAX_ACTORS + TOY_GAME_MAX_ENEMIES; i++) {
         int x, y, z, kind, index;
         unsigned int generation = 0;
-        long long dx, dz, distance2;
+        long long dx, dz, distance2, score;
         if (i < TOY_GAME_MAX_ACTORS) {
             const struct toy_game_actor *a = &g->actors[i];
             if (!a->active || a->state != TOY_GAME_ACTOR_ALIVE || a->hp <= 0 ||
@@ -93,19 +95,36 @@ int toy_game_find_combat_target(struct toy_game *g,
         }
         dx = (long long)x - actor->x; dz = (long long)z - actor->z;
         distance2 = dx * dx + dz * dz;
+        if (distance2 > alert2) continue;
+        score = distance2;
+        if (retain_current) {
+            int current = actor->combat_target.kind == kind &&
+                actor->combat_target.index == index &&
+                (unsigned int)actor->combat_target.generation == generation;
+            /* A near-equal candidate must not restart preparation at every
+             * sensory scan. Eligibility/LOS still apply to this candidate;
+             * the bias neither extends range nor adds another visibility pass. */
+            score *= current ? 4 : 5;
+        }
         if (actor->faction == TOY_GAME_FACTION_HOSTILE && actor->ai_guard_radius > 0) {
             long long gx = (long long)x - actor->deployment_x;
             long long gz = (long long)z - actor->deployment_z;
             if (gx * gx + gz * gz >
                 (long long)actor->ai_guard_radius * actor->ai_guard_radius) continue;
         }
-        if (distance2 >= best || !enemy_positions_share_target_region(g,
+        if (score >= best || !enemy_positions_share_target_region(g,
             actor->x, actor->z, x, z) || !combat_visible(g, actor, x, y, z)) continue;
-        best = distance2;
+        best = score;
         out->kind = kind; out->index = index; out->generation = generation;
         out->x = x; out->y = y; out->z = z;
     }
     return out->kind >= 0;
+}
+
+int toy_game_find_combat_target(struct toy_game *g,
+    const struct toy_game_actor *actor, struct toy_game_combat_target *out)
+{
+    return combat_find_target(g, actor, out, 0);
 }
 
 static void fire_ray(struct toy_game *g, struct toy_game_actor *actor,

@@ -263,6 +263,114 @@ static int actor_endpoint_navigation_logic_test(void)
     return 0;
 }
 
+static int combat_target_retention_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_game_actor *shooter, *targets[2];
+    struct toy_game_combat_target nearest;
+    struct toy_map_primitive world[2] = {{0}};
+    int i, id, near, switches = 0, previous, index;
+    unsigned int sequence, generation;
+    shooter = combat_ai_fixture(&g);
+    if (!shooter) return 1;
+    g.actors[0].active = 0;
+    shooter->faction = TOY_GAME_FACTION_ALLIED;
+    shooter->skills.mastery[TOY_GAME_SKILL_PRECISION] = 0;
+    shooter->command_destination_active = 1;
+    shooter->command_x = shooter->command_z = 0;
+    for (i = 0; i < 2; i++) {
+        id = toy_game_add_gunner(&g, 0, i ? 100 : -100, 3000, "FOCUS CONTRACT");
+        targets[i] = toy_game_actor_by_id(&g, id);
+        if (!targets[i]) return 2;
+        targets[i]->hit_test_dummy = 1; targets[i]->fire_enabled = 0;
+        targets[i]->hp = targets[i]->max_hp = 5000;
+    }
+    previous = -1;
+    /* Lv2 ordinary needs 300ms aim. Two continuously visible targets trade
+     * nearest distance each 256ms scan, without leaving its aiming cone. */
+    for (i = 0; i < 96; i++) {
+        near = (i / 16) % 2;
+        targets[near]->z = 2960; targets[1 - near]->z = 3040;
+        if (!toy_game_find_combat_target(&g, shooter, &nearest) ||
+            nearest.index != (int)(targets[near] - g.actors)) return 3;
+        toy_game_update_ai_teammates(&g, 16);
+        if (shooter->combat_target.index != previous) switches++;
+        previous = shooter->combat_target.index;
+    }
+    if (switches != 1 || !shooter->fire_seq || shooter->combat_aim_ms < 300 ||
+        shooter->x || shooter->z || !shooter->command_destination_active) return 4;
+    /* A substantially closer threat overrides the retained target on the
+     * same scan. Its fresh position is cached, rather than an old aim point. */
+    near = targets[0] - g.actors == shooter->combat_target.index ? 0 : 1;
+    targets[1 - near]->z = 1800; shooter->combat_scan_ms = 0;
+    toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.index != (int)(targets[1 - near] - g.actors) ||
+        shooter->combat_target.z != 1800) return 5;
+    /* A dead identity clears at once, even between sensory scans. */
+    targets[1 - near]->hp = 0; targets[1 - near]->state = TOY_GAME_ACTOR_DEAD;
+    shooter->combat_scan_ms = 200; sequence = shooter->fire_seq;
+    toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.kind != -1 || shooter->combat_aim_ms ||
+        shooter->fire_seq != sequence) return 6;
+    index = (int)(targets[1 - near] - g.actors);
+    generation = targets[1 - near]->combat_generation;
+    targets[1 - near]->active = 0;
+    id = toy_game_add_gunner(&g, 0, 100, 1800, "FOCUS REPLACEMENT");
+    targets[1 - near] = toy_game_actor_by_id(&g, id);
+    if (!targets[1 - near] || targets[1 - near] != &g.actors[index] ||
+        targets[1 - near]->combat_generation == generation) return 7;
+    targets[1 - near]->hit_test_dummy = 1; targets[1 - near]->fire_enabled = 0;
+    shooter->combat_scan_ms = 0;
+    toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.index != index ||
+        shooter->combat_target.generation != (int)targets[1 - near]->combat_generation ||
+        shooter->combat_aim_ms >= 300) return 8;
+    /* A biased target cannot extend physical alert range. */
+    targets[1 - near]->x = 0;
+    targets[1 - near]->z = toy_game_weapon_info(TOY_GAME_WEAPON_AK)->alert_range + 1;
+    targets[near]->z = toy_game_weapon_info(TOY_GAME_WEAPON_AK)->alert_range - 1;
+    shooter->combat_scan_ms = 0; toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.index != (int)(targets[near] - g.actors)) return 9;
+    /* Closing LOS drops the retained target despite its better score. */
+    world[0] = g.primitives[0];
+    world[1].shape = TOY_MAP_PRIMITIVE_BOX;
+    world[1].flags = TOY_MAP_PRIMITIVE_COLLISION;
+    world[1].minx = -250; world[1].maxx = 250;
+    world[1].minz = 1000; world[1].maxz = 1200;
+    world[1].surface_y0 = world[1].surface_y1 = 2000;
+    targets[near]->x = 0; targets[near]->z = 3000;
+    targets[1 - near]->x = 1800; targets[1 - near]->z = 2600;
+    toy_game_set_primitives(&g, world, 2, 20000);
+    shooter->combat_scan_ms = 0; toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.index != (int)(targets[1 - near] - g.actors)) return 10;
+    targets[1 - near]->faction = TOY_GAME_FACTION_ALLIED;
+    shooter->combat_scan_ms = 200; toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.kind != -1 || shooter->combat_aim_ms) return 18;
+    /* Hostile guards apply the same commitment only inside their guard area;
+     * infected lifetimes are checked just like human actor lifetimes. */
+    shooter = combat_ai_fixture(&g);
+    if (!shooter) return 11;
+    shooter->fire_enabled = 0; index = (int)(shooter - g.actors);
+    g.actors[0].z = 3000;
+    if (!toy_game_actor_set_guard(&g, index, 0, 0, 4000)) return 12;
+    toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.kind != TOY_GAME_ENTITY_ACTOR) return 13;
+    id = toy_game_spawn_enemy(&g, TOY_GAME_ENEMY_PURSUIT_COMMON, 0, 3100);
+    if (id < 0) return 14;
+    g.actors[0].z = 4500; shooter->combat_scan_ms = 0;
+    toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.kind != TOY_GAME_ENTITY_ENEMY ||
+        shooter->combat_target.index != id) return 15;
+    generation = g.enemies[id].combat_generation;
+    g.enemies[id].active = 0; g.enemies_alive--;
+    if (toy_game_spawn_enemy(&g, TOY_GAME_ENEMY_PURSUIT_COMMON, 0, 3100) != id ||
+        g.enemies[id].combat_generation == generation) return 16;
+    shooter->combat_scan_ms = 200; toy_game_update_ai_teammates(&g, 16);
+    if (shooter->combat_target.kind != -1 || shooter->combat_aim_ms) return 17;
+    __printf("COMBAT target-retention aim/fire/nearest/closer/death/lifetime/LOS/range/guard/faction/RTS passed\n");
+    return 0;
+}
+
 static int combat_ai_logic_test(void)
 {
     static struct toy_game g;
@@ -524,6 +632,8 @@ static int combat_ai_logic_test(void)
     if (i) { __printf("ACTOR-NAV cache contract failed: %d\n", i); return 43; }
     i = actor_endpoint_navigation_logic_test();
     if (i) { __printf("ACTOR-NAV endpoints contract failed: %d\n", i); return 44; }
+    i = combat_target_retention_logic_test();
+    if (i) { __printf("COMBAT target-retention contract failed: %d\n", i); return 45; }
     __printf("COMBAT AI aim/visibility/death/identity/finite-ammo/guard/assault/three-factions/RTS passed\n");
     return 0;
 }

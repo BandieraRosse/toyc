@@ -188,7 +188,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         struct toy_game_combat_target next;
         g->combat_scan_budget--;
         a->combat_scan_ms = 250;
-        if (toy_game_find_combat_target(g, a, &next)) {
+        if (combat_find_target(g, a, &next, 1)) {
             if (next.kind != a->combat_target.kind ||
                 next.index != a->combat_target.index ||
                 next.generation != a->combat_target.generation) a->combat_aim_ms = 0;
