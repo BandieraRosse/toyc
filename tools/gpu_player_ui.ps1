@@ -280,12 +280,11 @@ function Outpost-Route {
     [void](Wait-Ui 'terminal presentation selected before shutdown' {param($s) $s.ui_mode -eq 1 -and $s.terminal -eq 1} 20000 $done.frame)
 }
 function Resume-Route {
-    $loaded=Wait-Ui 'saved presentation and completed call restored' {param($s) $s.ui_mode -eq 1 -and $s.terminal -eq 1 -and $s.progress_a -eq 4 -and $s.story -eq 0 -and $s.hold -eq 0}
+    $loaded=Wait-Ui 'saved presentation restored with repeat call queued' {param($s) $s.ui_mode -eq 1 -and $s.terminal -eq 1 -and $s.progress_a -eq 1 -and $s.story -eq 0 -and $s.hold -eq 0}
     Assert-Ui ($loaded.task_id -eq 201 -and $loaded.task_state -eq 1) 'The persisted exploration task was not restored.'
     Key-Ui 27 'Escape inspect restored world'
-    $closed=Wait-Ui 'restored terminal closes without replay' {param($s) $s.terminal -eq 0 -and $s.progress_a -eq 4 -and $s.story -eq 0} 20000 $loaded.frame
-    $settled=Wait-Ui 'completed outpost trigger stays consumed' {param($s) $s.story -eq 0 -and $s.progress_a -eq 4 -and $s.hold -eq 0} 20000 ($closed.frame+90)
-    Assert-Ui ($settled.queue -eq 0 -and $settled.link -eq 0 -and $settled.video_frames -eq 0) 'Reload replayed a completed communication or refreshed its hidden video.'
+    $settled=Wait-Ui 'outpost introduction repeats after process restart' {param($s) $s.terminal -eq 0 -and $s.story -eq 101 -and $s.node -eq 1010 -and $s.link -eq 2} 20000 $loaded.frame
+    Assert-Ui ($settled.queue -eq 0 -and $settled.progress_a -eq 2 -and $settled.hold -ne 0) 'Reload did not reconnect the repeat introduction.'
     Screen-Ui 'persisted-outpost-restored'
 }
 function Weaver-FocusStart {
@@ -394,7 +393,7 @@ function Boundary-OutpostRoute {
     Key-Ui 192 'Backquote open terminal for held-input boundary'
     [void](Wait-Ui 'held-input terminal opened' {param($s) $s.terminal -eq 1} 20000 $first.frame)
     Held-CloseCheck 'terminal'
-    Key-Ui 67 'C enter deliberate communications pointer focus'
+    Key-Ui 13 'Enter open chat without answering or firing'
     [void](Wait-Ui 'communications focus opened' {param($s) $s.focus -eq 1} 20000 $script:UiRun.latest.frame)
     Held-CloseCheck 'communications'
     Video-CycleCheck

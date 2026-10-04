@@ -260,7 +260,7 @@ void rf_player_weaver_card(struct rasterfall_canvas *c,const struct rf_game_runt
     if (!q.available || q.phase==TOY_WEAVER_IDLE) return;
     rf_ui_layout_resolve(&layout,&runtime->player_ui,c->width,c->height,runtime->rts_active);
     r=p_rect(c->width-layout.margin-p_px(260,layout.scale_milli),
-        c->height-p_px(runtime->rts_active?300:252,layout.scale_milli),
+        (runtime->rts_active?layout.selection.y:layout.weapon.y)-layout.gap-p_px(102,layout.scale_milli),
         p_px(260,layout.scale_milli),p_px(102,layout.scale_milli));
     rf_ui_panel(c,r,theme,0);
     p_value(c,r,0,layout.text_scale_milli,"网格编织机",theme->text);
@@ -274,49 +274,43 @@ void rf_player_comms_layout(struct rf_player_comms_rects *o,int width,int height
                             const struct rf_player_ui_state *ui,int compact,int collapsed)
 {
     struct rf_ui_layout layout;
-    int scale,geometry,pad,gap,w,x,y,header,video_w,video_h,text_w,choice_h,available,footer_h,content_h;
+    int scale,pad,gap,w,x,y,video_w,video_h,choice_h;
     memset(o,0,sizeof(*o));
     rf_ui_layout_resolve(&layout,ui,width,height,0);
     scale=layout.text_scale_milli;o->scale_milli=scale;
-    y=layout.margin+p_px(48,scale);
-    available=p_max(240,p_min(layout.weapon.y,
-        height-layout.margin-p_min(p_px(ui->layout.rts_height,scale),height/3))-y-layout.gap);
-    geometry=p_min(scale,available*1000/340);
-    pad=o->padding=p_px(12,geometry);gap=p_px(12,geometry);
-    header=p_max(p_px(36,geometry),p_px(30,scale));
-    w=p_min(width-layout.margin*2,p_px(compact?350:560,scale));
-    if (compact) w=p_min(w,width/2-layout.margin);
-    else w=p_min(w,width-layout.margin-layout.map.x-
-        p_min(layout.map.w,p_px(ui->layout.map_size,layout.scale_milli))-layout.gap);
-    x=width-layout.margin-w;
-    if (collapsed) {
-        w=p_min(w,p_px(350,scale));x=width-layout.margin-w;
-        o->window=p_rect(x,y,w,p_px(40,scale));
-        o->collapse=o->window;return;
-    }
-    video_w=p_px(compact?128:224,geometry);
-    if (!compact && w<p_px(560,scale)) video_w=p_min(video_w,w/3);
+    pad=o->padding=layout.padding;gap=layout.gap;
+    x=layout.margin;y=layout.margin+p_px(48,scale);
+    video_w=p_min(p_px(compact?200:272,scale),width/3);
     video_h=video_w*9/16;
-    choice_h=p_max(p_px(compact?29:33,geometry),p_px(24,scale));
-    footer_h=p_max(p_px(36,geometry),p_px(24,scale));
-    content_h=p_max(p_px(20,scale),available-header-choice_h*3-p_px(5,geometry)*2-gap*2-footer_h-pad);
-    if (video_h>content_h) {video_h=content_h;video_w=video_h*16/9;}
-    text_w=w-video_w-pad*2-gap;
-    o->video=p_rect(x+pad,y+header,video_w,video_h);
-    o->text=p_rect(o->video.x+video_w+gap,y+header,text_w,p_min(content_h,p_max(video_h,p_px(60,scale))));
-    if (text_w<p_px(150,scale) && !compact) {
-        o->video.w=p_min(w-pad*2,p_px(288,scale));o->video.h=o->video.w*9/16;
-        o->text=p_rect(x+pad,o->video.y+o->video.h+gap,w-pad*2,p_px(72,scale));
+    o->window=p_rect(x,y,video_w,video_h+p_px(34,scale));
+    o->video=p_rect(x,y+p_px(34,scale),video_w,video_h);
+    o->close=p_rect(x+video_w-p_px(28,scale),y,p_px(28,scale),p_px(26,scale));
+    o->collapse=p_rect(o->close.x-p_px(28,scale)-gap,y,p_px(28,scale),p_px(26,scale));
+    if (collapsed) {
+        o->window.h=p_px(34,scale);o->video=p_rect(0,0,0,0);
+        o->collapse=o->window;
     }
-    {
-        int choices_y=p_max(o->video.y+o->video.h,o->text.y+o->text.h)+gap;
-        for (int i=0;i<3;++i) o->choices[i]=p_rect(x+pad,choices_y+i*(choice_h+p_px(5,geometry)),w-pad*2,choice_h);
-        o->footer=p_rect(x+pad,o->choices[2].y+choice_h+gap,w-pad*2,footer_h);
-        o->window=p_rect(x,y,w,o->footer.y+o->footer.h+pad-y);
+    /* Chat sits between the corner HUDs, above the bottom command strip. */
+    x=layout.map.x+layout.map.w+gap;
+    w=p_max(160,layout.vitals.x-gap-x);
+    w=p_min(w,p_px(620,scale));
+    x=p_max(x,(width-w)/2);
+    if(x+w>layout.vitals.x-gap)x=layout.vitals.x-gap-w;
+    choice_h=p_px(28,scale);
+    y=p_min(height*78/100,height-layout.margin-p_px(ui->layout.rts_height,scale)-gap);
+    o->text=p_rect(x,y-p_px(128,scale),w,p_px(128,scale));
+    if(o->window.x+o->window.w+gap>o->text.x) {
+        video_w=p_max(p_px(120,scale),o->text.x-o->window.x-gap);
+        o->window.w=o->video.w=video_w;
+        o->video.h=collapsed?0:video_w*9/16;
+        o->window.h=p_px(34,scale)+o->video.h;
+        o->close.x=o->window.x+video_w-o->close.w;
+        if(!collapsed)o->collapse.x=o->close.x-gap-o->collapse.w;
+        else o->collapse=o->window;
     }
-    o->close=p_rect(x+w-pad-p_px(32,scale),y+p_px(6,scale),p_px(32,scale),p_px(24,scale));
-    o->collapse=p_rect(o->close.x-gap-p_px(32,scale),o->close.y,p_px(32,scale),p_px(24,scale));
-    o->history=p_rect(o->collapse.x-gap-p_px(56,scale),o->close.y,p_px(56,scale),p_px(24,scale));
+    for(int i=0;i<3;++i)o->choices[i]=p_rect(x,y+i*choice_h,w,choice_h);
+    o->footer=p_rect(x,y+3*choice_h,w,p_px(24,scale));
+    (void)pad;
 }
 
 int rf_player_comms_hit(const struct rf_player_comms_rects *o,int x,int y,int choice_count)
@@ -337,6 +331,42 @@ static void p_key(const struct rf_input_bindings *bindings,int action,char *key,
     rf_input_action_label(bindings,(enum rf_input_action)action,key,capacity);
 }
 
+static void p_chat_message(const struct rf_story_history_entry *entry,char *text,unsigned capacity)
+{
+    const struct rf_story_node *n=rf_story_find_node(entry->node_id);
+    if(!n){text[0]=0;return;}
+    if(entry->choice>=0 && entry->choice<n->choice_count)
+        snprintf(text,capacity,"YOU: %s",n->choices[entry->choice].text);
+    else snprintf(text,capacity,"%s: %s",n->speaker,n->line);
+}
+
+static int p_chat_lines(const struct rf_story *story,struct rf_ui_rect rect,int scale)
+{
+    int lines=0;char text[512];
+    for(int i=0;i<story->history_count;++i) {
+        p_chat_message(&story->history[i],text,sizeof(text));
+        lines+=rf_ui_font_text_wrap(NULL,0,0,rect.w,32,text,0,scale);
+    }
+    return lines;
+}
+
+int rf_player_chat_scroll_max(const struct rf_game_runtime *r,int width,int height)
+{
+    struct rf_player_comms_rects o;
+    rf_player_comms_layout(&o,width,height,&r->player_ui,r->story.combat,r->story.collapsed);
+    return p_max(0,p_chat_lines(&r->story,o.text,o.scale_milli)-o.text.h/p_px(22,o.scale_milli));
+}
+
+struct p_chat_clip { struct rasterfall_canvas *target;struct rf_ui_rect rect; };
+static int p_chat_rectangle(void *context,int x,int y,int w,int h,unsigned color,int alpha)
+{
+    struct p_chat_clip *clip=context;
+    int right=p_min(x+w,clip->rect.x+clip->rect.w),bottom=p_min(y+h,clip->rect.y+clip->rect.h);
+    x=p_max(x,clip->rect.x);y=p_max(y,clip->rect.y);
+    rasterfall_canvas_rect(clip->target,x,y,right-x,bottom-y,color,alpha);
+    return clip->target->failed?-1:0;
+}
+
 void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runtime *runtime,
                           const struct rf_input_bindings *bindings)
 {
@@ -344,47 +374,72 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
     const struct rf_story_node *node=rf_story_current_node(story);
     const struct rf_ui_theme *theme=&runtime->player_ui.theme;
     struct rf_player_comms_rects o;
-    char line[256],key[24],hide[24],answer[24];
+    char line[512],key[24],answer[24];
     int scale;
-    if (!node) return;
     rf_player_comms_layout(&o,c->width,c->height,&runtime->player_ui,story->combat,story->collapsed);
     scale=o.scale_milli;
-    if (!story->collapsed && node->choice_count<3) {
-        int rows=node->choice_count>0?node->choice_count:1;
-        int spare=(3-rows)*(o.choices[1].y-o.choices[0].y);
-        o.footer.y-=spare;o.window.h-=spare;
-    }
     p_key(bindings,RF_ACTION_COMMS_FOCUS,key,sizeof(key));
-    p_key(bindings,RF_ACTION_COMMS_HIDE,hide,sizeof(hide));
     p_key(bindings,RF_ACTION_COMMS_ANSWER,answer,sizeof(answer));
-    if (story->collapsed) {
-        rf_ui_panel(c,o.window,theme,0);
-        snprintf(line,sizeof(line),"NULL 通讯已收起  [%s] 恢复",hide);
-        rf_ui_text(c,p_rect(o.window.x+o.padding,o.window.y+o.padding,
-            o.window.w-o.padding*2,p_px(18,scale)),line,theme->accent,scale,1);return;
+    if(node) {
+        if(story->collapsed) {
+            rf_ui_text(c,o.window,"NULL 通讯已收起",theme->muted,scale,1);
+        } else {
+            p_panel_hole(c,o.window,o.video,theme);
+            rf_ui_text(c,p_rect(o.window.x,o.window.y+p_px(5,scale),
+                o.collapse.x-o.window.x,p_px(22,scale)),node->speaker,theme->accent,scale,1);
+            rf_ui_button(c,o.collapse,theme,"-",scale,0,1);
+            rf_ui_button(c,o.close,theme,"X",scale,0,1);
+            if(!runtime->ui_video_live || story->link!=RF_STORY_LINK_LIVE) {
+                const char *status=runtime->ui_video_state==3?"视频不可用":
+                    story->link==RF_STORY_LINK_UNAVAILABLE?"镜头不可用":
+                    story->link==RF_STORY_LINK_INTERRUPTED?"连接已中断":"正在连接真实镜头";
+                rasterfall_canvas_rect(c,o.video.x,o.video.y,o.video.w,o.video.h,theme->panel_raised,255);
+                rf_ui_text(c,p_rect(o.video.x+o.padding,o.video.y+o.video.h/2-p_px(10,scale),
+                    o.video.w-o.padding*2,p_px(44,scale)),status,theme->muted,scale,2);
+            }
+        }
     }
-    p_panel_hole(c,o.window,o.video,theme);
-    snprintf(line,sizeof(line),"NULL / %s",node->location);
-    rf_ui_text(c,p_rect(o.window.x+o.padding,o.window.y+p_px(10,scale),
-        o.history.x-o.window.x-o.padding-p_px(8,scale),p_px(18,scale)),line,theme->text,scale,1);
-    rf_ui_button(c,o.collapse,theme,"-",scale,0,1);
-    rf_ui_button(c,o.close,theme,"X",scale,0,1);
-    rf_ui_button(c,o.history,theme,"记录",scale,0,1);
-    if (!runtime->ui_video_live || story->link!=RF_STORY_LINK_LIVE) {
-        const char *status=runtime->ui_video_state==3?"视频不可用\n对话仍可继续":
-            story->link==RF_STORY_LINK_UNAVAILABLE?"镜头不可用":
-            story->link==RF_STORY_LINK_INTERRUPTED?"连接已中断":"正在连接真实镜头";
-        rasterfall_canvas_rect(c,o.video.x,o.video.y,o.video.w,o.video.h,theme->panel_raised,255);
-        rf_ui_text(c,p_rect(o.video.x+o.padding,o.video.y+o.video.h/2-p_px(10,scale),
-            o.video.w-o.padding*2,p_px(44,scale)),status,theme->muted,scale,2);
+    if(!runtime->comms_focus && (!story->history_count || runtime->chat_idle_ms>=10000))return;
+    {
+        int leading=p_px(22,scale),lines=p_chat_lines(story,o.text,scale);
+        int scroll=p_min(runtime->chat_scroll,p_max(0,lines-o.text.h/leading));
+        int y=o.text.y+o.text.h-lines*leading+scroll*leading;
+        struct p_chat_clip clip={c,o.text};
+        struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle};
+        rasterfall_canvas_rect(c,o.text.x-o.padding,o.text.y-o.padding,
+            o.text.w+2*o.padding,o.text.h+2*o.padding,theme->panel,runtime->comms_focus?170:16);
+        for(int i=0;i<story->history_count;++i) {
+            p_chat_message(&story->history[i],line,sizeof(line));
+            int rows=rf_ui_font_text_wrap(NULL,0,0,o.text.w,32,line,0,scale);
+            if(y+rows*leading>o.text.y && y<o.text.y+o.text.h)
+                rf_ui_font_text_wrap(&chat,o.text.x,y,o.text.w,32,line,
+                    story->history[i].choice>=0?theme->accent:theme->text,scale);
+            y+=rows*leading;
+        }
+        if(!story->history_count)rf_ui_text(c,o.text,"暂无聊天记录",theme->muted,scale,1);
     }
-    rf_ui_text(c,o.text,node->line,theme->text,scale,story->combat?4:6);
-    for (int i=0;i<node->choice_count;++i)
-        rf_ui_button(c,o.choices[i],theme,node->choices[i].text,scale,
-            runtime->comms_choice==i,runtime->comms_focus || story->combat);
-    if (!node->choice_count) rf_ui_button(c,o.choices[0],theme,"继续",scale,runtime->comms_focus,1);
-    snprintf(line,sizeof(line),"[%s] 回应  [%s] 确认  [%s] 收起",key,answer,hide);
-    rf_ui_text(c,o.footer,line,theme->muted,scale,2);
+    if(runtime->comms_focus && node && !story->collapsed) {
+        struct rf_ui_theme choice_theme=*theme;choice_theme.panel_alpha=170;
+        for(int i=0;i<node->choice_count;++i)
+            rf_ui_button(c,o.choices[i],&choice_theme,node->choices[i].text,scale,runtime->comms_choice==i,1);
+        if(!node->choice_count)rf_ui_button(c,o.choices[0],&choice_theme,"继续",scale,1,1);
+    }
+    if(o.footer.w<p_px(360,scale)) {
+        o.footer.h=p_px(44,scale);
+        if(runtime->comms_focus && node && !story->collapsed)
+            snprintf(line,sizeof(line),"[%s] 收起\n[%s]回答 ↑↓记录",key,answer);
+        else if(runtime->comms_focus)
+            snprintf(line,sizeof(line),"[%s] 收起\n↑↓ / 滚轮记录",key);
+        else snprintf(line,sizeof(line),"[%s] 聊天",key);
+        rf_ui_text(c,o.footer,line,theme->muted,scale,2);
+    } else {
+        if(runtime->comms_focus && node && !story->collapsed)
+            snprintf(line,sizeof(line),"[%s] 收起  ↑↓ / 滚轮 记录  ←→ / Tab 选择  [%s] 回答",key,answer);
+        else if(runtime->comms_focus)
+            snprintf(line,sizeof(line),"[%s] 收起  ↑↓ / 滚轮 查看记录",key);
+        else snprintf(line,sizeof(line),"[%s] 打开聊天记录",key);
+        rf_ui_text(c,o.footer,line,theme->muted,scale,1);
+    }
 }
 
 void rf_player_terminal_draw(struct rasterfall_canvas *c,const struct rf_game_runtime *runtime,
@@ -442,6 +497,8 @@ void rf_player_notice_draw(struct rasterfall_canvas *c,const struct rf_game_runt
     width=p_min(c->width-layout.margin*2,p_px(360,layout.scale_milli));
     height=p_px(96,layout.scale_milli);
     top=(runtime->rts_active?layout.selection.y:layout.weapon.y)-layout.gap-height;
+    if(runtime->session->game_state.weaver.phase!=TOY_WEAVER_IDLE)
+        top-=p_px(102,layout.scale_milli)+layout.gap;
     if (runtime->rts_active && runtime->player_ui.rts_collapsed)
         top=layout.dock_toggle.y-layout.gap-height;
     rect=p_rect(c->width-layout.margin-width,top,width,height);

@@ -92,6 +92,7 @@ int rf_ui_font_text_width(const char *text,int scale_milli)
 static void f_draw(struct rasterfall_canvas *canvas,int x,int y,int max_right,
                    struct rf_ui_font_glyph glyph,unsigned color,int scale)
 {
+    if (!canvas) return;
     for (unsigned i=0;i<glyph.count;++i) {
         const unsigned char *s=ui_font.blob+ui_font.spans+(glyph.first+i)*5;
         int left=x+s[0]*scale/1000,top=y+s[1]*scale/1000;

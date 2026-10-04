@@ -44,6 +44,19 @@ static int story_index(int id)
     return id == RF_STORY_OUTPOST ? 0 : id == RF_STORY_LABS ? 1 : -1;
 }
 
+int rf_story_trigger_policy(int id)
+{
+    /* Content policy is separate from saved progress. Both current stories
+     * repeat; future one-shot content can opt into RF_STORY_TRIGGER_ONCE. */
+    static const struct { int id, policy; } triggers[] = {
+        { RF_STORY_OUTPOST, RF_STORY_TRIGGER_EACH_ENTRY },
+        { RF_STORY_LABS, RF_STORY_TRIGGER_EACH_ENTRY }
+    };
+    for (unsigned i=0;i<sizeof(triggers)/sizeof(triggers[0]);++i)
+        if (triggers[i].id==id) return triggers[i].policy;
+    return RF_STORY_TRIGGER_ONCE;
+}
+
 const struct rf_story_node *rf_story_find_node(int id)
 {
     unsigned i;
@@ -124,6 +137,8 @@ void rf_story_detach(struct rf_story *s, struct rasterfall_session *session)
     release_hold(s, session);
     s->actor_index = -1;
     s->camera.active = 0;
+    if (!session || s->world_generation != session->scene_local.world_generation)
+        s->region_presence = 0;
     if (session) s->world_generation = session->scene_local.world_generation;
     s->link = s->active_story ? RF_STORY_LINK_CONNECTING : RF_STORY_LINK_OFF;
     s->retry_ms = 0;
@@ -132,7 +147,9 @@ void rf_story_detach(struct rf_story *s, struct rasterfall_session *session)
 static void queue_story(struct rf_story *s, int id)
 {
     int i = story_index(id);
-    if (i < 0 || s->progress[i] != RF_STORY_UNSEEN ||
+    if (i < 0 || (s->progress[i] != RF_STORY_UNSEEN &&
+        !(rf_story_trigger_policy(id)==RF_STORY_TRIGGER_EACH_ENTRY &&
+          (s->progress[i]==RF_STORY_COMPLETED || s->progress[i]==RF_STORY_CANCELLED))) ||
         s->queue_count >= RF_STORY_QUEUE_CAP) return;
     s->progress[i] = RF_STORY_QUEUED;
     s->queue[s->queue_count++] = id;
@@ -173,6 +190,7 @@ static void history_add(struct rf_story *s, int choice)
     h = &s->history[s->history_count++];
     h->story_id = s->active_story; h->node_id = s->node_id;
     h->choice = choice; h->revision = s->node_revision;
+    s->history_revision++;
 }
 
 static int actor_available(const struct toy_game_actor *a)
@@ -277,20 +295,26 @@ static void detect_regions(struct rf_story *s, const struct rasterfall_session *
     const struct toy_game_actor *p = toy_game_local_player_actor_const(&session->game_state);
     const struct rf_map_runtime_region *r;
     int i;
+    unsigned presence=0;
     if (!p || p->state != TOY_GAME_ACTOR_ALIVE || session->world_id != RASTERFALL_WORLD_OUTPOST)
         return;
     r = rf_map_runtime_find_region(&session->map_ops.runtime, "outpost_safe");
     if (r && p->x >= r->bounds.min_x && p->x <= r->bounds.max_x &&
         p->z >= r->bounds.min_z && p->z <= r->bounds.max_z)
-        rf_story_emit(s, RF_STORY_EVENT_OUTPOST_ENTER, NULL);
+        presence |= 1;
     for (i = 0; i < rf_map_runtime_region_count(&session->map_ops.runtime); ++i) {
         r = rf_map_runtime_region_at(&session->map_ops.runtime, i);
         if (!r || strcmp(r->kind, "experiment")) continue;
         if (p->x >= r->bounds.min_x && p->x <= r->bounds.max_x &&
             p->z >= r->bounds.min_z && p->z <= r->bounds.max_z) {
-            rf_story_emit(s, RF_STORY_EVENT_LABS_ENTER, NULL); break;
+            presence |= 2; break;
         }
     }
+    if ((presence & 1) && !(s->region_presence & 1))
+        rf_story_emit(s, RF_STORY_EVENT_OUTPOST_ENTER, NULL);
+    if ((presence & 2) && !(s->region_presence & 2))
+        rf_story_emit(s, RF_STORY_EVENT_LABS_ENTER, NULL);
+    s->region_presence=presence;
 }
 
 static void interrupt_call(struct rf_story *s, struct rasterfall_session *session)
@@ -446,6 +470,7 @@ int rf_story_reset(struct rf_story *s, struct rasterfall_session *session, int i
     s->queue_count = n;
     if (!id) s->progress[0] = s->progress[1] = RF_STORY_UNSEEN;
     else s->progress[index] = RF_STORY_UNSEEN;
+    s->region_presence &= id ? ~(1u << index) : 0;
     task_set(s, RF_STORY_TASK_NONE);
     s->session_revision++; s->node_revision++; s->dirty = 1;
     return 1;

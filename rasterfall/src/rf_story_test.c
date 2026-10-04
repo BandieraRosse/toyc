@@ -69,7 +69,8 @@ int rf_story_logic_test(void)
     rf_story_emit(&story, RF_STORY_EVENT_BLUEPRINT_VIEW, "mesh_weaver");
     if (story.task.state != RF_STORY_TASK_DONE) return 14;
     rf_story_emit(&story, RF_STORY_EVENT_LABS_ENTER, NULL);
-    if (story.queue_count) return 15;
+    rf_story_emit(&story, RF_STORY_EVENT_LABS_ENTER, NULL);
+    if (story.queue_count!=1 || story.progress[1]!=RF_STORY_QUEUED) return 15;
 
     /* Replaying a node, saving it, then loading into a fresh owner restores
      * stable content only. Actor identity is resolved on the next update. */
@@ -152,6 +153,47 @@ int rf_story_logic_test(void)
         __close(fd);
         before = story;
         if (rf_story_load(&story, save) != -1 || memcmp(&before, &story, sizeof(story))) return 33;
+    }
+    /* Completed old saves repeat on entry, but remaining inside never loops.
+     * Leaving/re-entering and replacing the world re-arm the region edge. */
+    story_fixture(&story,&session);
+    if(rf_map_runtime_load(&session.map_ops.runtime,"rasterfall/assets/maps/outpost.map")<0)return 34;
+    {
+        int failed=0;
+        struct toy_game_actor *p=toy_game_local_player_actor(&session.game_state);
+        const struct rf_map_runtime_region *region=rf_map_runtime_find_region(&session.map_ops.runtime,"outpost_safe");
+        if(!region){rf_map_runtime_unload(&session.map_ops.runtime);return 35;}
+        p->x=0;p->z=0;
+        story.progress[0]=RF_STORY_COMPLETED;
+        if(rf_story_save(&story,save) || rf_story_load(&story,save))failed=36;
+        rf_story_update(&story,&session,16,0,1);
+        if(story.active_story!=RF_STORY_OUTPOST)failed=37;
+        rf_story_answer(&story,&session,story.session_revision,story.node_revision,0);
+        rf_story_answer(&story,&session,story.session_revision,story.node_revision,-1);
+        for(i=0;i<100;++i)rf_story_update(&story,&session,16,0,1);
+        if(story.active_story || story.queue_count)failed=38;
+        p->x=region->bounds.max_x+1000;
+        rf_story_update(&story,&session,16,0,1);
+        p->x=0;
+        rf_story_update(&story,&session,16,0,1);
+        if(story.active_story!=RF_STORY_OUTPOST)failed=39;
+        rf_story_close(&story,&session);
+        rf_story_update(&story,&session,16,0,1);
+        if(story.active_story || story.queue_count)failed=40;
+        session.scene_local.world_generation++;
+        rf_story_update(&story,&session,16,0,1);
+        if(story.active_story!=RF_STORY_OUTPOST)failed=41;
+        /* A full history still changes its revision when new text arrives. */
+        for(i=0;i<RF_STORY_HISTORY_CAP;++i) {
+            rf_story_replay(&story,&session,RF_STORY_OUTPOST);
+            rf_story_update(&story,&session,16,0,1);
+        }
+        sr=story.history_revision;
+        rf_story_answer(&story,&session,story.session_revision,story.node_revision,0);
+        if(story.history_count!=RF_STORY_HISTORY_CAP || story.history_revision!=sr+2)failed=42;
+        rf_story_detach(&story,&session);
+        rf_map_runtime_unload(&session.map_ops.runtime);
+        if(failed)return failed;
     }
     return 0;
 }

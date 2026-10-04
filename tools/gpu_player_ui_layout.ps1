@@ -12,6 +12,7 @@ param(
     [ValidateSet('All','720p','1080p','Narrow')][string]$Case='All',
     [switch]$OutpostOnly,
     [switch]$CommsOnly,
+    [switch]$HudOnly,
     [switch]$CheckOnly
 )
 $ErrorActionPreference='Stop'
@@ -75,6 +76,7 @@ public static class PlayerUiLayoutWindow {
     }
     public static void Key(IntPtr window,int code,bool down) {
         long bits=1L|((long)MapVirtualKey((uint)code,0)<<16);
+        if(code>=37 && code<=40)bits|=0x01000000L;
         if(!down)bits|=0xC0000000L;
         PostMessage(window,down?0x100u:0x101u,new IntPtr(code),new IntPtr(bits));
     }
@@ -126,11 +128,14 @@ $EnvKeys=@('RF_UI_AUDIT','RF_UI_STORY','RF_UI_NO_SAVE','RF_UI_CAPTURE_DIRECTORY'
 $Saved=@{};foreach($Name in $EnvKeys){$Saved[$Name]=[Environment]::GetEnvironmentVariable($Name,'Process')}
 $SavedPath=$env:PATH;$Records=[Collections.Generic.List[object]]::new()
 function Key-Layout([IntPtr]$Window,[int]$Code) {
+    [void][PlayerUiLayoutWindow]::SetForegroundWindow($Window)
     [PlayerUiLayoutWindow]::Key($Window,$Code,$true)
     try{Start-Sleep -Milliseconds 140}finally{[PlayerUiLayoutWindow]::Key($Window,$Code,$false)}
     Start-Sleep -Milliseconds 240
 }
 function Click-Layout([IntPtr]$Window,[int]$PointX,[int]$PointY,[string]$AuditPath) {
+    [void][PlayerUiLayoutWindow]::SetForegroundWindow($Window)
+    Start-Sleep -Milliseconds 150
     $Before=@(Select-String -LiteralPath $AuditPath -Pattern '^PLAYER-UI-POINTER ' -Encoding UTF8).Count
     [PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$true)
     try{Start-Sleep -Milliseconds 140}finally{[PlayerUiLayoutWindow]::Button($Window,$PointX,$PointY,$false)}
@@ -154,6 +159,47 @@ function Wait-LayoutVideo($Run,[string]$Stdout) {
     }
     throw 'The real video did not become ready before V05 capture.'
 }
+function Read-LayoutState([string]$Stdout,[string]$Prefix) {
+    $Line=Get-Content -LiteralPath $Stdout -Encoding UTF8 -Tail 2048 |
+        Where-Object { $_.StartsWith($Prefix+' ') -and $_.TrimEnd().EndsWith('}') } | Select-Object -Last 1
+    if($Line){return $Line.Substring($Prefix.Length+1)|ConvertFrom-Json}
+    return $null
+}
+function Check-LayoutChat($Run,[IntPtr]$Window,[string]$Stdout) {
+    $Before=Read-LayoutState $Stdout 'PLAYER-UI-AUDIT'
+    Key-Layout $Window 13
+    Start-Sleep -Milliseconds 300
+    $Opened=Read-LayoutState $Stdout 'PLAYER-UI-AUDIT'
+    if($Opened.focus -ne 1 -or $Opened.node -ne $Before.node -or $Opened.fire_seq -ne $Before.fire_seq) {
+        throw 'Enter did not open chat without answering/firing.'
+    }
+    Capture-Layout $Run 'chat-open'
+    Key-Layout $Window 38
+    $Scrolled=Read-LayoutState $Stdout 'PLAYER-UI-CHAT'
+    Capture-Layout $Run 'chat-scrolled-up'
+    Key-Layout $Window 40
+    $Returned=Read-LayoutState $Stdout 'PLAYER-UI-CHAT'
+    if($Returned.scroll -ne 0){throw 'Down did not return chat to the newest line.'}
+    Capture-Layout $Run 'chat-scrolled'
+    Key-Layout $Window 13
+    $Until=[DateTime]::UtcNow.AddSeconds(13)
+    $Hidden=$false
+    while([DateTime]::UtcNow -lt $Until) {
+        if($Run.process.HasExited){throw 'Native process exited before chat timeout.'}
+        $Chat=Read-LayoutState $Stdout 'PLAYER-UI-CHAT'
+        if($Chat -and $Chat.open -eq 0 -and $Chat.idle_ms -eq 10000 -and $Chat.visible -eq 0) {$Hidden=$true;break}
+        Start-Sleep -Milliseconds 100
+    }
+    if(-not $Hidden){throw 'Passive chat did not hide after ten seconds without new content.'}
+    Capture-Layout $Run 'chat-idle-hidden'
+    Key-Layout $Window 13
+    $Reopened=Read-LayoutState $Stdout 'PLAYER-UI-CHAT'
+    if($Reopened.open -ne 1 -or $Reopened.visible -ne 1 -or $Reopened.history -lt 1) {
+        throw 'Enter did not restore expired chat history.'
+    }
+    Capture-Layout $Run 'chat-history-restored'
+    Key-Layout $Window 27
+}
 function Capture-Layout($Run,[string]$Name) {
     $Run.sequence++
     $pending=Join-Path $Run.frames 'capture.pending'
@@ -163,7 +209,8 @@ function Capture-Layout($Run,[string]$Name) {
     while([DateTime]::UtcNow -lt $until) {
         if($Run.process.HasExited){throw 'Native process exited while waiting for a capture.'}
         if(Test-Path -LiteralPath $ack) {
-            $value=[IO.File]::ReadAllText($ack,[Text.Encoding]::UTF8)
+            try {$value=[IO.File]::ReadAllText($ack,[Text.Encoding]::UTF8)}
+            catch [IO.IOException] {Start-Sleep -Milliseconds 60;continue}
             if($value -match '^(\d+) (\d+)' -and [int]$Matches[1] -eq $Run.sequence) {
                 $path=Join-Path $Run.frames ('frame-{0:D6}.scene.ppm' -f $Run.sequence)
                 if(-not (Test-Path -LiteralPath $path)){throw 'Capture acknowledgement has no image.'}
@@ -203,7 +250,7 @@ try {
             if($Scene -eq 'Weaver'){$LaunchArgs+=' --gpu-normal-scene mesh-weaver 0';$env:RF_WEAVER_VIEW='interaction'}
             $Run=[pscustomobject]@{name=$Name;frames=$Frames;width=$Spec.width;height=$Spec.height;sequence=0;process=$null;screens=[Collections.Generic.List[object]]::new()}
             $Record=[ordered]@{case=$Name;width=$Spec.width;height=$Spec.height;scale=$Spec.scale;status='started';
-                mouse_route='verified-native-cursor-and-Win32-posted-button';
+                mouse_route=$(if($HudOnly){'not-run-keyboard-hud-route'}else{'verified-native-cursor-and-Win32-posted-button'});
                 stdout=$Stdout;stderr=$Stderr;exe_sha256=(Get-FileHash -LiteralPath $Exe -Algorithm SHA256).Hash}
             $Window=[IntPtr]::Zero
             try {
@@ -227,9 +274,11 @@ try {
                 } else {
                     Wait-LayoutVideo $Run $Stdout
                     Capture-Layout $Run 'fps-comms'
+                    Check-LayoutChat $Run $Window $Stdout
                     if(-not $CommsOnly) {
                     Key-Layout $Window 72;Capture-Layout $Run 'fps-player'
                     Key-Layout $Window 77;Capture-Layout $Run 'rts-player'
+                    if(-not $HudOnly) {
                     # UI-only fold affordance; no selection or gameplay command.
                     $Scale=[Math]::Max(1.0,$Spec.height/720.0)*$Spec.scale/100.0
                     $Margin=[Math]::Round(18*$Scale);$Gap=[Math]::Round(10*$Scale)
@@ -239,9 +288,24 @@ try {
                     Capture-Layout $Run 'rts-collapsed'
                     Click-Layout $Window $ToggleX ($Spec.height-$Margin-[Math]::Round(13*$Scale)) $Stdout
                     Capture-Layout $Run 'rts-restored'
+                    }
                     Key-Layout $Window 72;Capture-Layout $Run 'rts-comms'
                     Key-Layout $Window 77;Key-Layout $Window 192;Capture-Layout $Run 'terminal'
                     Key-Layout $Window 192;Key-Layout $Window 112;Capture-Layout $Run 'render-device'
+                    Key-Layout $Window 27
+                    Key-Layout $Window 13
+                    Key-Layout $Window 90
+                    Key-Layout $Window 90
+                    $Finished=Read-LayoutState $Stdout 'PLAYER-UI-AUDIT'
+                    if($Finished.story -ne 0 -or $Finished.focus -ne 1){throw 'Ending a story lost the open chat history.'}
+                    Key-Layout $Window 38
+                    $Scrolled=Read-LayoutState $Stdout 'PLAYER-UI-CHAT'
+                    if($Run.width -eq 960 -and $Scrolled.scroll -le 0){throw 'Up did not scroll completed narrow-window chat history.'}
+                    Capture-Layout $Run 'chat-completed-scrolled-up'
+                    Key-Layout $Window 40
+                    Key-Layout $Window 13
+                    Key-Layout $Window 13
+                    Capture-Layout $Run 'chat-finished-history'
                     }
                 }
                 [void][PlayerUiLayoutWindow]::PostMessage($Window,0x10,[IntPtr]::Zero,[IntPtr]::Zero)

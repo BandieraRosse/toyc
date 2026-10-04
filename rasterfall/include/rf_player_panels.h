@@ -40,6 +40,7 @@ void rf_player_comms_layout(struct rf_player_comms_rects *out,int width,int heig
 int rf_player_comms_hit(const struct rf_player_comms_rects *rects,int x,int y,int choice_count);
 void rf_player_comms_draw(struct rasterfall_canvas *canvas,const struct rf_game_runtime *runtime,
                           const struct rf_input_bindings *bindings);
+int rf_player_chat_scroll_max(const struct rf_game_runtime *runtime,int width,int height);
 void rf_player_terminal_draw(struct rasterfall_canvas *canvas,const struct rf_game_runtime *runtime,
                              const struct rf_input_bindings *bindings);
 void rf_player_notice_draw(struct rasterfall_canvas *canvas,const struct rf_game_runtime *runtime);

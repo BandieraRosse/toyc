@@ -186,48 +186,42 @@ static int rf_player_comms_input(struct rf_game_runtime *r,struct rasterfall_con
     const struct rf_story_node *node=rf_story_current_node(&r->story);
     struct rf_player_comms_rects rects;
     int before=r->comms_focus,hit=0;
-    if(!node)return 0;
-    if(action_pressed(in,RF_ACTION_COMMS_HIDE)) {
+    int toggle=action_pressed(in,RF_ACTION_COMMS_FOCUS);
+    if(node && action_pressed(in,RF_ACTION_COMMS_HIDE)) {
         rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,!r->story.collapsed,0,0);
         if(r->story.collapsed)r->comms_focus=0;
     }
-    if(action_pressed(in,RF_ACTION_COMMS_FOCUS)) {
+    if(toggle) {
         r->comms_focus=!r->comms_focus;
-        if(r->comms_focus)rf_story_collapse(&r->story,0);
+        if(r->comms_focus) {rf_story_collapse(&r->story,0);r->chat_scroll=0;}
     }
-    if(r->comms_choice>=node->choice_count)r->comms_choice=0;
+    if(node && r->comms_choice>=node->choice_count)r->comms_choice=0;
     if(r->comms_focus) {
-        if(node->choice_count && (action_pressed(in,RF_ACTION_UI_DOWN)||action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD)))
+        int scroll=in->wheel_y;
+        if(action_pressed(in,RF_ACTION_UI_UP))scroll++;
+        if(action_pressed(in,RF_ACTION_UI_DOWN))scroll--;
+        r->chat_scroll+=scroll;
+        if(r->chat_scroll<0)r->chat_scroll=0;
+        int scroll_max=rf_player_chat_scroll_max(r,width,height);
+        if(r->chat_scroll>scroll_max)r->chat_scroll=scroll_max;
+        if(node && node->choice_count && (action_pressed(in,RF_ACTION_UI_RIGHT)||action_pressed(in,RF_ACTION_TEXT_NEXT_FIELD)))
             r->comms_choice=(r->comms_choice+1)%node->choice_count;
-        if(node->choice_count && action_pressed(in,RF_ACTION_UI_UP))
+        if(node && node->choice_count && action_pressed(in,RF_ACTION_UI_LEFT))
             r->comms_choice=(r->comms_choice+node->choice_count-1)%node->choice_count;
         if(action_pressed(in,RF_ACTION_CANCEL))r->comms_focus=0;
         rf_player_comms_layout(&rects,width,height,&r->player_ui,r->story.combat,r->story.collapsed);
-        if(events->button_pressed && events->button==BTN_LEFT)
+        if(node && events->button_pressed && events->button==BTN_LEFT)
             hit=rf_player_comms_hit(&rects,in->pointer_x,in->pointer_y,node->choice_count);
         if(hit==RF_COMMS_HIT_COLLAPSE) {rf_player_request(r,RF_PLAYER_DIALOG_COLLAPSE,1,0,0);r->comms_focus=0;}
         if(hit==RF_COMMS_HIT_CLOSE)rf_player_request(r,RF_PLAYER_DIALOG_CLOSE,0,0,0);
-        if(hit==RF_COMMS_HIT_HISTORY) {
-            console->open=1;console->was_paused=0;r->comms_focus=0;
-            for(int i=0;i<r->story.history_count;++i) {
-                const struct rf_story_history_entry *entry=&r->story.history[i];
-                const struct rf_story_node *past=rf_story_find_node(entry->node_id);
-                char text[512];if(!past)continue;
-                if(entry->choice>=0 && entry->choice<past->choice_count)
-                    snprintf(text,sizeof(text),"YOU: %s",past->choices[entry->choice].text);
-                else snprintf(text,sizeof(text),"%s: %s",past->speaker,past->line);
-                rasterfall_console_log(console,RASTERFALL_CONSOLE_INFO,text);
-            }
-            rf_core_set_pointer_lock(r->core,0);
-        }
+        if(hit==RF_COMMS_HIT_HISTORY)r->chat_scroll=0;
         if(hit>=RF_COMMS_HIT_CHOICE_BASE)r->comms_choice=hit-RF_COMMS_HIT_CHOICE_BASE;
     }
-    if(!r->story.collapsed && (action_pressed(in,RF_ACTION_COMMS_ANSWER) ||
-       (r->comms_focus&&action_pressed(in,RF_ACTION_CONFIRM)) || hit>=RF_COMMS_HIT_CHOICE_BASE || hit==RF_COMMS_HIT_CONTINUE)) {
+    if(node && !toggle && !r->story.collapsed && (action_pressed(in,RF_ACTION_COMMS_ANSWER) ||
+       hit>=RF_COMMS_HIT_CHOICE_BASE || hit==RF_COMMS_HIT_CONTINUE)) {
         rf_player_request(r,RF_PLAYER_DIALOG_ANSWER,node->choice_count?r->comms_choice:-1,0,0);
         r->comms_choice=0;
     }
-    if(!r->story.active_story)r->comms_focus=0;
     if(before!=r->comms_focus)rf_core_set_pointer_lock(r->core,!r->comms_focus&&!r->rts_active&&!console->open);
     return before||r->comms_focus||console->open;
 }
@@ -236,6 +230,9 @@ static struct rf_gpu_scene_aux_view rf_player_aux;
 static void rf_player_audit(const struct rf_game_runtime *r,int frame,const struct rf_gpu_scene_aux_status *video)
 {
     if(!getenv("RF_UI_AUDIT") || frame%10)return;
+    __printf("PLAYER-UI-CHAT {\"frame\":%d,\"open\":%d,\"idle_ms\":%d,\"scroll\":%d,\"history\":%d,\"revision\":%u,\"visible\":%d}\n",
+        frame,r->comms_focus,r->chat_idle_ms,r->chat_scroll,r->story.history_count,
+        r->story.history_revision,r->comms_focus||(r->story.history_count&&r->chat_idle_ms<10000));
     const struct toy_game_actor *p=toy_game_local_player_actor_const(&r->session->game_state);
     const struct toy_mesh_weaver *w=&r->session->game_state.weaver;
     const struct rf_story_camera_entity *c=rf_story_camera(&r->story,r->session);
@@ -301,8 +298,16 @@ static void rf_player_story_tick(struct rf_game_runtime *r,int dt,int allow_star
     int had_focus=r->comms_focus;
     if(r->net.mode!=RASTERFALL_NET_OFF){rf_story_detach(&r->story,r->session);return;}
     rf_story_update(&r->story,r->session,dt,rf_player_combat(&r->session->game_state),allow_start);
+    if(r->chat_history_revision!=r->story.history_revision) {
+        r->chat_history_revision=r->story.history_revision;
+        r->chat_idle_ms=0;
+        r->chat_last_content_us=rf_core_time_us(r->core);
+        if(!r->comms_focus)r->chat_scroll=0;
+    } else if(r->chat_idle_ms<10000) {
+        r->chat_idle_ms=(int)((rf_core_time_us(r->core)-r->chat_last_content_us)/1000);
+        if(r->chat_idle_ms>10000)r->chat_idle_ms=10000;
+    }
     rf_player_controls_observe(r,dt);
-    if(!r->story.active_story || r->story.collapsed)r->comms_focus=0;
     if(had_focus&&!r->comms_focus)rf_core_set_pointer_lock(r->core,!r->rts_active&&!r->console.open);
     if(r->persistence_retry_ms>0)r->persistence_retry_ms-=dt;
     if(r->player_persistence && r->persistence_retry_ms<=0) {

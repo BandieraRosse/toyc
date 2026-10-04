@@ -68,46 +68,35 @@ void rf_ui_layout_resolve(struct rf_ui_layout *out,const struct rf_player_ui_sta
     out->resources=ui_rect(width-margin-resource_width,margin,resource_width,ui_px(38,scale));
     if (out->phase.x+out->phase.w+gap>out->resources.x)
         out->phase.x=out->resources.x-gap-out->phase.w;
-    out->map=ui_rect(margin,margin+ui_px(24,scale),map_size,map_size);
-    if (out->map.x+out->map.w+gap>out->phase.x)
-        out->map.y=out->phase.y+out->phase.h+gap;
-    out->objective=ui_rect(margin,out->map.y+map_size+gap,
-        ui_min(ui_px(config->objective_width,scale),width/2-margin),ui_px(56,scale));
-    if (width<ui_px(1000,scale)) out->objective.w=map_size;
+    if (rts_active && !state->map_expanded)
+        map_size=ui_min(ui_px(220,scale),ui_min(width/3,height/3));
+    out->map=ui_rect(margin,height-margin-map_size,map_size,map_size);
+    out->objective=ui_rect(margin,out->map.y-ui_px(24,scale)-gap-ui_px(56,scale),
+        map_size,ui_px(56,scale));
     vital_width=ui_min(ui_px(config->vital_width,scale),(width-margin*2-gap)/2);
     weapon_width=ui_min(ui_px(config->weapon_width,scale),(width-margin*2-gap)/2);
-    out->vitals=ui_rect(margin,height-margin-ui_px(config->vital_height,scale),
+    out->vitals=ui_rect(width-margin-vital_width,height-margin-ui_px(config->vital_height,scale),
         vital_width,ui_px(config->vital_height,scale));
-    out->weapon=ui_rect(width-margin-weapon_width,height-margin-ui_px(config->weapon_height,scale),
+    out->weapon=ui_rect(width-margin-weapon_width,out->vitals.y-gap-ui_px(config->weapon_height,scale),
         weapon_width,ui_px(config->weapon_height,scale));
-    out->hints=ui_rect(out->vitals.x+out->vitals.w+gap,height-margin-ui_px(30,scale),
-        out->weapon.x-out->vitals.x-out->vitals.w-gap*2,ui_px(30,scale));
-    if (out->hints.w<ui_px(200,scale)) out->hints=ui_rect(width/4,
-        ui_min(out->vitals.y,out->weapon.y)-gap-ui_px(26,scale),width/2,ui_px(26,scale));
+    out->hints=ui_rect(out->map.x+out->map.w+gap,height-margin-ui_px(30,scale),
+        out->vitals.x-out->map.x-out->map.w-gap*2,ui_px(30,scale));
     if (rts_active) {
         int dock_h=ui_min(ui_px(config->rts_height,scale),height/3);
         int dock_y=height-margin-dock_h;
-        int map_width=ui_min(ui_px(190,scale),width/4);
+        int map_width=map_size;
         int commands_width=ui_min(ui_px(278,scale),width/3);
         int selection_x=margin+map_width+gap;
-        out->map=ui_rect(margin,dock_y,map_width,ui_max(44,dock_h-ui_px(50,scale)-gap));
-        out->objective=ui_rect(margin,out->map.y+out->map.h+gap,map_width,
-            dock_h-out->map.h-gap);
         out->commands=ui_rect(width-margin-commands_width,dock_y,commands_width,dock_h);
         out->selection=ui_rect(selection_x,dock_y,
             out->commands.x-selection_x-gap,dock_h);
-        out->hints=ui_rect(width/4,dock_y-gap-ui_px(26,scale),width/2,ui_px(26,scale));
+        out->hints=ui_rect(selection_x,dock_y-gap-ui_px(26,scale),
+            ui_max(0,out->commands.x-selection_x-gap),ui_px(26,scale));
         out->dock_toggle=ui_rect(width-margin-ui_px(100,scale),
             (state->rts_collapsed?height-margin:dock_y-gap)-ui_px(26,scale),
             ui_px(100,scale),ui_px(26,scale));
-        if (state->map_expanded) {
-            out->map=ui_rect(margin,margin+ui_px(48,scale),map_size,map_size);
-            out->objective.y=out->map.y+map_size+gap;
-            out->objective.w=map_size;out->objective.h=ui_px(44,scale);
-        }
         if (state->rts_collapsed) {
             out->selection=out->commands=out->hints=ui_rect(0,0,0,0);
-            if (!state->map_expanded) out->map=out->objective=ui_rect(0,0,0,0);
         }
     }
     (void)pad;
@@ -436,15 +425,16 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     if (view->rts_active) {
         rf_ui_button(canvas,layout.dock_toggle,theme,hud->player_ui->rts_collapsed?"展开底栏":"收起底栏",
             layout.text_scale_milli,0,1);
-        if (!hud->player_ui->rts_collapsed) {ui_map(canvas,hud,&layout);ui_rts(canvas,hud,&layout);}
-        else if (hud->player_ui->map_expanded) ui_map(canvas,hud,&layout);
+        ui_map(canvas,hud,&layout);
+        if (!hud->player_ui->rts_collapsed) ui_rts(canvas,hud,&layout);
     } else { ui_map(canvas,hud,&layout);ui_vitals(canvas,hud,&layout);ui_weapon(canvas,hud,&layout); }
     ui_label(view,RF_ACTION_COMMAND_MODE,mode,sizeof(mode));
     ui_label(view,RF_ACTION_CONSOLE,terminal,sizeof(terminal));
     ui_label(view,RF_ACTION_UI_MODE,map,sizeof(map));
     snprintf(line,sizeof(line),"[%s] %s  [%s] 终端  [%s] 界面",mode,
         view->rts_active?"FPS":"战术视角",terminal,map);
-    if (view->hints && !(view->rts_active && hud->player_ui->rts_collapsed)) {
+    if (view->hints && layout.hints.w>ui_px(200,layout.text_scale_milli) &&
+        !(view->rts_active && hud->player_ui->rts_collapsed)) {
     rf_ui_panel(canvas,layout.hints,theme,0);
     rf_ui_text(canvas,ui_rect(layout.hints.x+layout.padding,
         layout.hints.y+(layout.hints.h-ui_px(16,layout.text_scale_milli))/2,
@@ -460,8 +450,7 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     }
     if (hud->horde_banner_ms>0 && hud->interaction_banner) {
         int scale=layout.text_scale_milli,width=ui_min(canvas->width/2,ui_px(460,scale));
-        struct rf_ui_rect r=ui_rect(view->comms_visible?layout.margin:canvas->width-width-layout.margin,
-            view->comms_visible?layout.objective.y+layout.objective.h+layout.gap:
+        struct rf_ui_rect r=ui_rect(canvas->width-width-layout.margin,
             layout.resources.y+layout.resources.h+layout.gap+ui_px(28,scale),width,ui_px(54,scale));
         rf_ui_panel(canvas,r,theme,0);
         rf_ui_text(canvas,ui_rect(r.x+layout.padding,r.y+layout.padding,

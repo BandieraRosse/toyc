@@ -10,6 +10,8 @@ struct rasterfall_session;
 enum rf_story_id { RF_STORY_NONE, RF_STORY_OUTPOST = 101, RF_STORY_LABS = 102 };
 enum rf_story_progress { RF_STORY_UNSEEN, RF_STORY_QUEUED, RF_STORY_ACTIVE,
     RF_STORY_INTERRUPTED, RF_STORY_COMPLETED, RF_STORY_CANCELLED };
+enum rf_story_trigger_policy { RF_STORY_TRIGGER_EACH_ENTRY, RF_STORY_TRIGGER_ONCE };
+int rf_story_trigger_policy(int story_id);
 enum rf_story_task_id { RF_STORY_TASK_NONE, RF_STORY_TASK_EXPLORE = 201,
     RF_STORY_TASK_LABS = 202, RF_STORY_TASK_WEAVER = 203,
     RF_STORY_TASK_BLUEPRINT = 204 };
@@ -66,6 +68,7 @@ struct rf_story {
     struct rf_story_task task;
     struct rf_story_history_entry history[RF_STORY_HISTORY_CAP];
     int history_count, dirty, persistence_error;
+    unsigned history_revision, region_presence;
 };
 
 void rf_story_init(struct rf_story *story);

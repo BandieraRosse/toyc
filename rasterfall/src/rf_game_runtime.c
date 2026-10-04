@@ -5241,7 +5241,12 @@ startup_again:
             }
         }
         rf_weaver_configure(&session, net.mode == RASTERFALL_NET_OFF);
-        if(!paused && !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open) {
+        if(game.state!=TOY_GAME_PLAYING || session.shop_open || session.pose_editor.active)
+            game_runtime.comms_focus=0;
+        if(!paused && !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
+           !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open &&
+           game.state==TOY_GAME_PLAYING && !session.shop_open && !session.pose_editor.active &&
+           !rf_combat_modal() && !rf_perf_lab.menu_open && !rf_perf_lab.result_open) {
             if(rf_player_comms_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height)) {
                 rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
                 resumed=1;fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;

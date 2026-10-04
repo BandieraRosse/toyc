@@ -62,6 +62,9 @@ struct rf_game_runtime {
     struct rf_player_controls player_controls;
     struct rf_story story;
     int player_persistence, comms_focus, comms_choice, persistence_retry_ms;
+    int chat_idle_ms, chat_scroll;
+    unsigned chat_history_revision;
+    int64_t chat_last_content_us;
     const char *ui_settings_path,*story_save_path;
     int ui_pointer_capture, ui_video_live, ui_video_state;
     unsigned char ui_suppressed_physical[RF_INPUT_PHYSICAL_KEY_COUNT];

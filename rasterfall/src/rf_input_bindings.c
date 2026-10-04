@@ -10,7 +10,7 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     58, 53, 59, 42, 43, 225, 54, 55, 13, 15, 19,
     24, 18, 12, 25, 27, 28, 29, 17, 5, 45, 46,
     21, 41, 21, 69, 43, 43, 28, 23,
-    60, 10, 6, 11, 29, 27
+    60, 10, 40, 11, 29, 27
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {
     [RF_ACTION_FIRE_KEY] = 88,
@@ -31,7 +31,7 @@ static const unsigned short default_physical[RF_ACTION_COUNT] = {
     59, 41, 60, 14, 15, 42, 51, 52, 36, 38, 25,
     22, 24, 23, 47, 45, 21, 44, 49, 48, 12, 13,
     19, 1, 19, 88, 15, 15, 21, 20,
-    61, 34, 46, 35, 44, 45
+    61, 34, 28, 35, 44, 45
 };
 static const unsigned short default_secondary[RF_ACTION_COUNT] = {0};
 #endif
