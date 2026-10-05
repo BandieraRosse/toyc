@@ -113,6 +113,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_mesh_weaver.ps1 -B
 没有插帧或概念图。它包含显式读回，不能用录像运行的墙钟耗时推断性能。
 
 `tools/gpu_mesh_weaver_perf.ps1` 做三状态正常呈现对照，使用独立临时地图移除机器作为 absent 基线，
+默认固定 1920×1080 窗口，`-Width/-Height` 可覆盖，并校验采样日志中的实际尺寸。
 保留相同地块、RF1、电源、镜头和天空。active 在预热中开始真实 AK 任务，进入采样前已有动态资源；
 如果任务提前结束或暂停，样本无效。报告分别保存整帧、GPU、准备阶段、绘制数和上传量，
 多轮交替运行，不能把单次差值当作全园区保证。

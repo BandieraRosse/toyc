@@ -9,6 +9,16 @@
 共享等级与精通的确定性能力映射由 `lib/game_combat.inc` 拥有，规则见[共享战斗能力](combat.md)。
 actor 的等级、个人精通和生命进入主机快照；动作资源和渲染状态不进入该能力层。
 
+## 启动玩法配置
+
+`rasterfall/config/gameplay.cfg` 提供波次、基地回血、推搡、药丸治疗距离、斧头、投掷物和回避的
+可编辑参数，见[玩法配置](../guides/gameplay-config.md)。启动层只负责磁盘读取，
+`game_gameplay_config.inc` 以纯解析器完成整份验证；`toy_gameplay_fields.inc` 统一声明字段、内置默认值
+及范围。Game 的 `gameplay_config` 保存当前实例规则，不使用可变全局参数或文件 I/O。
+session 保存启动配置，在 normal/legacy 换图及重试后、世界 actor 创建前应用到 Game，
+同时初始化首波与回血计时；基地出生生命和 HUD 总波数均读取该规则。
+独立 Game fixture 仍从内置默认值初始化。数组容量、内容 ID、协议与碰撞/导航结构常量保持编译期定义。
+
 ## World Content V1
 
 空间地图（Spatial Map）remains authoritative for terrain, collision and neutral spatial

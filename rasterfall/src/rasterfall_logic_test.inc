@@ -1049,6 +1049,8 @@ static int stair_motion_logic_test(void)
     return 0;
 }
 
+#include "dev-tests/gameplay_config_test.inc"
+
 /* Config parsing is transactional; custom rules affect movement and survive
  * a real session map replacement/reset without mutating built-in defaults. */
 static int player_movement_config_logic_test(void)
@@ -2447,6 +2449,9 @@ static int run_logic_test(void)
     { int code=player_movement_config_logic_test();
       if(code){__printf("player movement config failure: %d\n",code);return 318;}
       __printf("PLAYER MOVEMENT CONFIG parsing/atomic rejection/SI units/custom motion/zero tolerance/session reload/client prediction: PASS\n"); }
+    { int code=gameplay_config_logic_test();
+      if(code){__printf("gameplay config failure: %d\n",code);return 319;}
+      __printf("GAMEPLAY CONFIG atomic parsing/instance isolation/waves/shove/melee/throwables/evasion/base regen/session reload: PASS\n"); }
     { int code=player_jump_and_aim_logic_test();
       if(code){__printf("player jump/aim failure: %d\n",code);return 315;}
       __printf("PLAYER JUMP/AIM single horizontal step and current camera pitch in offline/client paths: PASS\n"); }

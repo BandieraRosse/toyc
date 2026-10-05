@@ -17,7 +17,7 @@
 .\windows\NativeCodex.ps1 gpu-test
 ```
 
-`test` 在 package 中运行 CPU 逻辑回归；`gpu-test` 在真实 Vulkan 窗口中以 `--renderer gpu-scene --gpu-normal-scene near 0 --frame-audit --frames 120` 提交硬件 Scene。检查进程退出码、日志中的帧数和 `SCENE-SOURCE`、`SCENE-NATIVE` 审计；旧命令、mixed draw、bridge、常规读回必须为零。不能只凭启动成功或单张截图签收。
+`test` 在 package 中运行 CPU 逻辑回归；`gpu-test` 在真实 Vulkan 窗口中以 `--renderer gpu-scene --gpu-normal-scene near 0 --frame-audit --frames 120 --window-size 1920 1080` 提交硬件 Scene。检查进程退出码、日志中的帧数和 `SCENE-SOURCE`、`SCENE-NATIVE` 审计；旧命令、mixed draw、bridge、常规读回必须为零。不能只凭启动成功或单张截图签收。
 
 ## 场景和生命周期
 
@@ -29,4 +29,4 @@
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-该入口执行 120 帧 Scene smoke、normal-frame audit BMP 和确定性视觉 capture。性能判断使用[GPU 性能标准](../reference/gpu-performance-standards.md)及当前 Scene 成本日志，不沿用历史 mixed baseline。
+该入口执行 1920×1080 的 120 帧 Scene smoke、同尺寸 normal-frame audit BMP 和确定性视觉 capture；专用角色 capture 保留自身尺寸。性能判断使用[GPU 性能标准](../reference/gpu-performance-standards.md)及当前 Scene 成本日志，不沿用历史 mixed baseline。

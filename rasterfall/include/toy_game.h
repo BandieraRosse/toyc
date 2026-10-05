@@ -858,7 +858,15 @@ struct toy_game_player_movement {
     int coyote_steps, buffer_steps;
 };
 
+/* Runtime tuning; IDs, storage capacities and geometry contracts stay fixed. */
+struct toy_game_gameplay_config {
+#define TOY_GAMEPLAY_FIELD(name, fallback, minimum, maximum) int name;
+#include "toy_gameplay_fields.inc"
+#undef TOY_GAMEPLAY_FIELD
+};
+
 struct toy_game {
+    struct toy_game_gameplay_config gameplay_config;
     struct toy_game_player_movement player_movement;
     int external_director; /* Local mission owns spawning and completion. */
     /* Offline experimental manufacturing authority; never a render clock. */
@@ -1008,6 +1016,12 @@ const struct toy_game_actor *toy_game_local_player_actor_const(
     const struct toy_game *g);
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
+void toy_game_gameplay_defaults(struct toy_game_gameplay_config *out);
+int toy_game_gameplay_parse(const char *text, int size,
+    struct toy_game_gameplay_config *out, int *error_line, const char **error);
+/* Startup/reset only: also initializes the first-wave and base-regen timers. */
+void toy_game_apply_gameplay_config(struct toy_game *g,
+    const struct toy_game_gameplay_config *config);
 void toy_game_player_movement_defaults(struct toy_game_player_movement *out);
 int toy_game_player_movement_parse(const char *text, int size,
     struct toy_game_player_movement *out, int *error_line, const char **error);

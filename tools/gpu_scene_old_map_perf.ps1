@@ -3,6 +3,8 @@ param([string]$OutputDirectory='tmp/scene-old-map-perf',
       [ValidateRange(120,10000)][int]$Frames=360,
       [ValidateRange(480,10000)][int]$AutoFrames=960,
       [ValidateRange(1,5)][int]$Rounds=3,
+      [ValidateRange(640,7680)][int]$Width=1920,
+      [ValidateRange(480,4320)][int]$Height=1080,
       [switch]$CompareNavGround,
       [switch]$ProfileTriangleUpdate,
       [ValidateSet(16,32,64)][int[]]$CorridorEnemies=@(32,64),
@@ -74,7 +76,7 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     Get-FileHash "$Package/rasterfall.exe" | ConvertTo-Json | Set-Content -Encoding UTF8 "$Out/executable.json"
     Get-FileHash "$Package/rasterfall/assets/maps/rasterfall.map" | ConvertTo-Json | Set-Content -Encoding UTF8 "$Out/map.json"
-    @{rounds=$Rounds;cases=@($Cases | ForEach-Object {$_.name});stage=$Stage;compare_nav_ground=[bool]$CompareNavGround;profile_triangle_update=[bool]$ProfileTriangleUpdate} |
+    @{rounds=$Rounds;cases=@($Cases | ForEach-Object {$_.name});stage=$Stage;width=$Width;height=$Height;compare_nav_ground=[bool]$CompareNavGround;profile_triangle_update=[bool]$ProfileTriangleUpdate} |
         ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 "$Out/config.json"
     for ($Round=1;$Round -le $Rounds;$Round++) {
         $Ordered=@($Cases)
@@ -84,7 +86,7 @@ try {
             $Name="r$Round-$($Case.name)"
             $env:RF_GAME_LEGACY_NAV_GROUND=if ($Case.legacy_nav_ground) {'1'} else {'0'}
             $Argv=@('--gpu-scene-play','--map','rasterfall/assets/maps/rasterfall.map',
-                '--frame-audit','--frames',"$($Case.frames)")
+                '--frame-audit','--frames',"$($Case.frames)",'--window-size',[string]$Width,[string]$Height)
             if ($Case.auto) { $Argv+=@('--auto','--gpu-wave-repro') }
             else { $Argv+=@('--gpu-normal-scene',$Case.view,"$($Case.enemies)") }
             if ($Case.clock -eq 'fixed') { $Argv+='--gpu-normal-fixed-tick' }

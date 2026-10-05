@@ -3945,6 +3945,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
     boot_task_started = rf_core_clock_now_us();
+    memcpy(&session.gameplay_config,&options.gameplay_config,sizeof(session.gameplay_config));
     memcpy(&session.player_movement,&options.player_movement,
         sizeof(session.player_movement));
     if (rf_game_init(&game_runtime, &core, &session,

@@ -3,6 +3,9 @@
 #include "toy_game.h"
 
 struct rasterfall_options {
+    const char *gameplay_config_path;
+    int gameplay_config_explicit, gameplay_config_check;
+    struct toy_game_gameplay_config gameplay_config;
     const char *movement_config_path;
     int movement_config_explicit, movement_config_check;
     struct toy_game_player_movement player_movement;
@@ -86,6 +89,7 @@ void rasterfall_options_init(struct rasterfall_options *options,
                              int textures_enabled);
 int rasterfall_options_default_textures_enabled(void);
 int rasterfall_options_load_movement(struct rasterfall_options *options);
+int rasterfall_options_load_gameplay(struct rasterfall_options *options);
 int rasterfall_options_parse(struct rasterfall_options *options,
                              int argc, char **argv);
 void rasterfall_options_usage(int fd);

@@ -147,7 +147,17 @@ $(BUILD)/map-inspect.exe: app/linux/map_inspect.c rasterfall/lib/rasterfall_map_
 # 防止依赖文件缺失或切换工作区状态时复用与头文件不一致的旧对象。
 rasterfall-rebuild:
 
+# Keep editable configuration next to both executable locations. Copy contents
+# into the existing directory so repeated builds do not nest config/config.
+define sync-runtime-config
+	@mkdir -p "$(1)/rasterfall/config"
+	@cp -R rasterfall/config/. "$(1)/rasterfall/config/"
+endef
+
 all: $(TARGET)
+	$(call sync-runtime-config,$(BUILD))
+	$(call sync-runtime-config,$(PACKAGE_DIR))
+	@printf '  WIN-CONFIG build and package configuration refreshed\n'
 
 app: $(WINDOWS_APP_TARGETS)
 
@@ -204,7 +214,7 @@ $(TARGET): $(OBJS) | $(BUILD)
 	$(WIN_CC) $(LDFLAGS) -o $@ $(OBJS) $(LDLIBS)
 
 # Included gameplay/test units must invalidate their owning translation unit.
-$(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc
+$(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc rasterfall/lib/game_gameplay_config.inc rasterfall/include/toy_gameplay_fields.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_squad_test.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_corner_test.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_performance_live.inc rasterfall/src/rf_performance_lab.inc
@@ -263,7 +273,8 @@ stage: $(TARGET)
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
-	@cp -R rasterfall/config "$(PACKAGE_DIR)/rasterfall/config"
+	$(call sync-runtime-config,$(BUILD))
+	$(call sync-runtime-config,$(PACKAGE_DIR))
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/tests"
 	@cp rasterfall/tests/map_v1_lab*.map "$(PACKAGE_DIR)/rasterfall/tests/"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/private-assets"

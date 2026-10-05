@@ -175,7 +175,7 @@ struct toy_game_damage_result toy_game_damage_actor(
         target->state != TOY_GAME_ACTOR_ALIVE || target->hp <= 0 ||
         attack->base_damage_milli <= 0 || attack->health_damage_milli <= 0)
         return result;
-    target->evasion.pressure_ms = TOY_CONFIG_EVASION_RECOVERY_DELAY_MS;
+    target->evasion.pressure_ms = g->gameplay_config.evasion_recovery_delay_ms;
     health_milli = attack->health_damage_milli;
     eligible = attack->kind == TOY_GAME_ATTACK_BULLET ||
                attack->kind == TOY_GAME_ATTACK_BITE ||
@@ -185,11 +185,11 @@ struct toy_game_damage_result toy_game_damage_actor(
         int was_window = target->evasion.window_ms > 0;
         cost = attack->base_damage_milli;
         if (attack->kind != TOY_GAME_ATTACK_BULLET)
-            cost = cost * TOY_CONFIG_EVASION_MELEE_COST_PERCENT / 100;
-        if (was_window) cost = cost *
+            cost = (int)((long long)cost * g->gameplay_config.evasion_melee_cost_percent / 100);
+        if (was_window) cost = (int)((long long)cost *
             (attack->kind == TOY_GAME_ATTACK_BULLET ?
-             TOY_CONFIG_EVASION_BULLET_WINDOW_PERCENT :
-             TOY_CONFIG_EVASION_MELEE_WINDOW_PERCENT) / 100;
+             g->gameplay_config.evasion_bullet_window_percent :
+             g->gameplay_config.evasion_melee_window_percent) / 100);
         if (cost < 1) cost = 1;
         spent = target->evasion.reserve_milli < cost ?
             target->evasion.reserve_milli : cost;
@@ -200,8 +200,8 @@ struct toy_game_damage_result toy_game_damage_actor(
         if (!target->evasion.reserve_milli)
             target->combat_stats.evasion_exhaustions++;
         if (!was_window && !target->evasion.retrigger_ms) {
-            target->evasion.window_ms = TOY_CONFIG_EVASION_WINDOW_MS;
-            target->evasion.retrigger_ms = TOY_CONFIG_EVASION_RETRIGGER_MS;
+            target->evasion.window_ms = g->gameplay_config.evasion_window_ms;
+            target->evasion.retrigger_ms = g->gameplay_config.evasion_retrigger_ms;
             target->evasion.animation_ms = TOY_CONFIG_EVASION_ANIMATION_MS;
             target->evasion.trigger_time_ms = g->combat_time_ms;
             target->evasion.sequence++;

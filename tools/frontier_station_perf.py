@@ -372,7 +372,7 @@ def check_only():
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--read-log", type=Path, help="Parse existing completed stdout without a window")
     parser.add_argument("--read-phase-log", type=Path, help="Parse completed RF_FRONTIER_PHASE_PERF ordinary-run stdout")
@@ -383,8 +383,8 @@ def main():
     parser.add_argument("--views", nargs="+", choices=VIEWS, default=["entry", "overview", "energy"])
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--samples", type=int, default=360)
-    parser.add_argument("--width", type=int, default=1280)
-    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--width", type=int, default=1920, help="Native sampling window width")
+    parser.add_argument("--height", type=int, default=1080, help="Native sampling window height")
     parser.add_argument("--timeout", type=float, default=240)
     parser.add_argument("--output-dir", type=Path)
     args = parser.parse_args()

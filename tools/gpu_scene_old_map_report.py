@@ -14,6 +14,13 @@ def rows(text, prefix):
 
 def analyze(root, run):
     name, case = run['name'], run['case']
+    # Historical runs without an explicit size used the 720p diagnostic window.
+    extent = (1280, 720)
+    argv = run.get('argv', [])
+    for index, argument in enumerate(argv):
+        if argument == '--window-size':
+            extent = tuple(map(int, argv[index+1:index+3]))
+            assert len(extent) == 2 and min(extent) > 0, (name, 'invalid requested extent')
     text = (root / (name+'.out')).read_text(encoding='utf-8')
     errors = (root / (name+'.err')).read_text(encoding='utf-8')
     assert run['exit_code'] == 0 and not re.search(r'Validation Error|SYNC-HAZARD|VUID-', errors), name
@@ -53,7 +60,7 @@ def analyze(root, run):
                for x in groups['SCENE-SOURCE']), name
     runtime = groups['SCENE-RUNTIME']
     assert all(x['fixed_tick'] == (case['clock'] == 'fixed') and x['auto'] == case['auto']
-               and x['world'] == 1 and x['width'] == 1280 and x['height'] == 720 for x in runtime), name
+               and x['world'] == 1 and (x['width'], x['height']) == extent for x in runtime), name
     assert all(x['prop_payload'] == 134 for x in groups['SCENE-LOCAL']), (name, 'map content')
     if case['auto']:
         assert 'auto teleport' in text and len({(x['camera_x'], x['camera_z']) for x in runtime}) > 8, name
@@ -144,7 +151,7 @@ def analyze(root, run):
                        process_cores=(b['process_ms']-a['process_ms'])/wall,
                        busiest_thread_cores=thread_deltas[0][0]/wall,
                        busiest_thread_id=thread_deltas[0][1])
-    return dict(name=name,case=case,round=run['round'],warmup=warm,metrics=metrics,
+    return dict(name=name,case=case,round=run['round'],extent=list(extent),warmup=warm,metrics=metrics,
                 logic_profiles=logic_profiles,
                 triangle_updates=triangle_updates,
                 fps=1000/metrics['interval_ms']['mean'],

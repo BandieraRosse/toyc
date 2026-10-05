@@ -20,7 +20,7 @@ int toy_game_player_move_step(const struct toy_game *g,
     return toy_game_actor_move_step(actor, g->player_movement.move_step);
 }
 
-static char *movement_trim(char *text)
+static char *game_config_trim(char *text)
 {
     char *end;
     while (*text==' ' || *text=='\t' || *text=='\r') text++;
@@ -86,10 +86,10 @@ int toy_game_player_movement_parse(const char *text, int size,
         if (position<size) position++;
         line[count]=0;
         comment=strchr(line,'#');if(comment)*comment=0;
-        key=movement_trim(line);if(!*key)continue;
+        key=game_config_trim(line);if(!*key)continue;
         equal=strchr(key,'=');
         if(!equal){reason="expected key = value";goto invalid;}
-        *equal=0;key=movement_trim(key);value_text=movement_trim(equal+1);
+        *equal=0;key=game_config_trim(key);value_text=game_config_trim(equal+1);
         for(index=0;index<10;++index)if(!strcmp(key,keys[index]))break;
         if(index==10){reason="unknown parameter";goto invalid;}
         if(seen&(1<<index)){reason="duplicate parameter";goto invalid;}

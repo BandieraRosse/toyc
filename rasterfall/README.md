@@ -19,6 +19,8 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 玩家跑速、地面加减速、空中控制、跳跃与起跳容错可在
 [`config/player-movement.cfg`](config/player-movement.cfg) 中修改，重启游戏生效，无需重新编译。
 配置文件选择、单位与检查命令见[玩家移动配置](../docs/rasterfall/guides/player-movement-config.md)。
+波次、基地回血、推搡/近战、投掷物及回避可在 [`config/gameplay.cfg`](config/gameplay.cfg)
+中修改，启动检查及单位说明见[玩法配置](../docs/rasterfall/guides/gameplay-config.md)。
 
 当前推荐从仓库根目录使用 Windows 原生 PowerShell：
 

@@ -18,28 +18,42 @@ static int positive_int(const char *text, int fallback)
     return *text || value <= 0 ? fallback : value;
 }
 
-/* User tuning is always read from disk, never from embedded assets. */
-int rasterfall_options_load_movement(struct rasterfall_options *o)
+/* User tuning is always read from disk, never from embedded assets.
+ * -2 means an optional default file is unavailable; -1 is a hard error. */
+static int startup_config_read(const char *path, const char *kind, int required,
+                                char *text, int capacity)
 {
-    char text[8193];
-    int fd, size=0, count, line=0, result;
-    const char *error=NULL;
-    fd=openat(AT_FDCWD,o->movement_config_path,O_RDONLY,0);
+    int fd, size=0, count;
+    fd=openat(AT_FDCWD,path,O_RDONLY,0);
     if(fd<0) {
-        if(o->movement_config_explicit || o->movement_config_check) {
-            __fprintf(2,"rasterfall: cannot read movement config %s\n",o->movement_config_path);
+        if(required) {
+            __fprintf(2,"rasterfall: cannot read %s config %s\n",kind,path);
             return -1;
         }
-        __printf("MOVEMENT config=%s unavailable; using built-in defaults\n",o->movement_config_path);
-        return 0;
+        __printf("CONFIG %s=%s unavailable; using built-in defaults\n",kind,path);
+        return -2;
     }
-    while(size<(int)sizeof(text)) {
-        count=read(fd,text+size,(int)sizeof(text)-size);
-        if(count<0) { close(fd);__fprintf(2,"rasterfall: movement config read failed\n");return -1; }
+    while(size<capacity) {
+        count=read(fd,text+size,capacity-size);
+        if(count<0) {
+            close(fd);__fprintf(2,"rasterfall: %s config read failed: %s\n",kind,path);
+            return -1;
+        }
         if(!count)break;
         size+=count;
     }
     close(fd);
+    return size;
+}
+
+int rasterfall_options_load_movement(struct rasterfall_options *o)
+{
+    char text[8193];
+    int size, line=0, result;
+    const char *error=NULL;
+    size=startup_config_read(o->movement_config_path,"movement",
+        o->movement_config_explicit || o->movement_config_check,text,sizeof(text));
+    if(size<0) return size==-2 ? 0 : -1;
     result=toy_game_player_movement_parse(text,size,&o->player_movement,&line,&error);
     if(result<0) {
         __fprintf(2,"rasterfall: movement config %s:%d: %s\n",o->movement_config_path,line,error);
@@ -52,6 +66,28 @@ int rasterfall_options_load_movement(struct rasterfall_options *o)
         o->player_movement.jump_velocity,o->player_movement.gravity,
         o->player_movement.fall_terminal,o->player_movement.coyote_steps,
         o->player_movement.buffer_steps);
+    return 0;
+}
+
+int rasterfall_options_load_gameplay(struct rasterfall_options *o)
+{
+    char text[8193];
+    int size, line=0;
+    const char *error=NULL;
+    size=startup_config_read(o->gameplay_config_path,"gameplay",
+        o->gameplay_config_explicit || o->gameplay_config_check,text,sizeof(text));
+    if(size<0) return size==-2 ? 0 : -1;
+    if(toy_game_gameplay_parse(text,size,&o->gameplay_config,&line,&error)<0) {
+        __fprintf(2,"rasterfall: gameplay config %s:%d: %s\n",o->gameplay_config_path,line,error);
+        return -1;
+    }
+    __printf("GAMEPLAY config=%s\n",o->gameplay_config_path);
+    if(o->gameplay_config_check) {
+#define TOY_GAMEPLAY_FIELD(name, fallback, minimum, maximum) \
+        __printf("  " #name "=%d (range %d..%d)\n",o->gameplay_config.name,minimum,maximum);
+#include "toy_gameplay_fields.inc"
+#undef TOY_GAMEPLAY_FIELD
+    }
     return 0;
 }
 
@@ -105,6 +141,8 @@ void rasterfall_options_init(struct rasterfall_options *o,
     memset(o, 0, sizeof(*o));
     o->movement_config_path = "rasterfall/config/player-movement.cfg";
     toy_game_player_movement_defaults(&o->player_movement);
+    o->gameplay_config_path = "rasterfall/config/gameplay.cfg";
+    toy_game_gameplay_defaults(&o->gameplay_config);
     o->requested_net_mode = RASTERFALL_NET_OFF;
     o->combat_lab = -1;
     o->combat_lab_seed = 1337;
@@ -140,6 +178,8 @@ void rasterfall_options_usage(int fd)
         "  --ui-scale <75..175>  (percent of automatic 720p-based player UI scale)\n"
         "  --movement-config <path>  (default: rasterfall/config/player-movement.cfg; read at startup)\n"
         "  --movement-config-check  (validate and print resolved 60 Hz movement settings, then exit)\n"
+        "  --gameplay-config <path>  (default: rasterfall/config/gameplay.cfg; read at startup)\n"
+        "  --gameplay-config-check  (validate and print gameplay settings and ranges, then exit)\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
@@ -243,6 +283,11 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->movement_config_path=argv[++arg];o->movement_config_explicit=1;
         }
         else if (!strcmp(option, "--movement-config-check")) o->movement_config_check=1;
+        else if (!strcmp(option, "--gameplay-config")) {
+            if (require_arguments(argc,argv,arg,1,option)<0) return -1;
+            o->gameplay_config_path=argv[++arg];o->gameplay_config_explicit=1;
+        }
+        else if (!strcmp(option, "--gameplay-config-check")) o->gameplay_config_check=1;
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;

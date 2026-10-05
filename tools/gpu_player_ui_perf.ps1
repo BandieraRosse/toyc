@@ -6,8 +6,8 @@ param(
     [string[]]$Cases=@('experiment-fps','player-fps','experiment-rts','player-rts','weaver-preview',
         'comms-visible','comms-hidden','comms-closed','comms-remote','comms-remote-hidden','dual-view'),
     [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe',
-    [ValidateRange(640,7680)][int]$Width=1280,
-    [ValidateRange(480,4320)][int]$Height=720,
+    [ValidateRange(640,7680)][int]$Width=1920,
+    [ValidateRange(480,4320)][int]$Height=1080,
     [switch]$CheckOnly
 )
 $ErrorActionPreference='Stop'

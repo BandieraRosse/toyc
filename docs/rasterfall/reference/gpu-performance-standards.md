@@ -2,7 +2,7 @@
 
 > 状态：当前 reference
 > 所有者：Rasterfall GPU 性能标准
-> 最近核对：2026-09-23
+> 最近核对：2026-10-05
 > 测量证据：[2026-09-22 冻结审计](../archive/gpu-2026-09-22/gpu-performance-baseline.md)
 
 本文定义 Rasterfall Windows 物理 GPU 的正式测量标准。2026-09-26 用户确认旧地图实机游玩流畅、Scene 性能达到本阶段预期；该使用判断不等同于下文的低扰动五轮指标记录。当前状态见[计划入口](../plans/README.md)，采样工作流见[GPU 验收指南](../guides/gpu-validation.md)。
@@ -20,7 +20,7 @@ CPU framebuffer copy、降低 workload 或删除应见内容达成绩效数字�
 
 ## 高性能目标
 
-初期产品目标是在 1280×720 下让绝大多数正常游戏情况稳定 60 FPS。固定验证场景为 near 0、near 30、
+当前产品性能主基准为固定 1920×1080 原生窗口，让绝大多数正常游戏情况稳定 60 FPS。固定验证场景为 near 0、near 30、
 near 60、Campaign，并保留 resize、world-cycle 与 thin-far 正确性门禁。
 
 | 场景级别 | whole-loop median | whole-loop P95 | whole-loop P99 | 解释 |
@@ -30,3 +30,7 @@ near 60、Campaign，并保留 resize、world-cycle 与 thin-far 正确性门禁
 
 这些值是目标，不是当前成绩。正式结论取同 package、交流电、固定电源方案、固定 workload 的低扰动
 五轮 AB/BA 采样；报告五个单轮指标的中位数，同时保留各轮范围，不把 audit 墙钟与低扰动帧率混用。
+
+正常窗口性能脚本默认显式请求 1920×1080；720p 仅通过尺寸参数选择，作为分辨率敏感度对照。
+两侧固定相同窗口模式、present、镜头、资产、实体规模与采样条件，分别保留实际尺寸和结果。
+既有 720p 历史成绩不改写为 1080p，也不能代替当前主基准签收；专用离屏和多尺寸布局回归保留各自合同。

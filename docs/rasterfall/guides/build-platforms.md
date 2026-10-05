@@ -16,7 +16,7 @@ Rasterfall 的主开发和验收环境是 Windows 原生 PowerShell、MSYS2/MinG
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-`build` 生成 Windows 玩家程序，并在已有运行目录时同步其中的 exe；`run`、`test`、`gpu-test` 和 `acceptance` 更新运行目录的 exe 与资源，不创建 zip。仅显式执行 `package` 才生成 `build-windows/rasterfall-windows.zip`。`test` 运行逻辑回归；`gpu-test` 在运行目录中执行 120 帧硬件 Scene；`acceptance` 增加 normal-frame 与视觉 capture。`run` 可把额外参数传给运行目录中的 `rasterfall.exe`。命令可用性和具体参数以脚本 `help` 与程序 `--help` 为准。
+`build` 生成 Windows 玩家程序，同步仓库配置到构建 exe 和运行目录的 `rasterfall/config/`，并在已有运行目录时更新其中的 exe；`run`、`test`、`gpu-test` 和 `acceptance` 更新运行目录的 exe 与资源，不创建 zip。仅显式执行 `package` 才生成 `build-windows/rasterfall-windows.zip`。`test` 运行逻辑回归；`gpu-test` 在运行目录中执行 120 帧硬件 Scene；`acceptance` 增加 normal-frame 与视觉 capture。`run` 可把额外参数传给运行目录中的 `rasterfall.exe`。命令可用性和具体参数以脚本 `help` 与程序 `--help` 为准。
 
 ## GPU service 与测试
 

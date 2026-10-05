@@ -294,10 +294,13 @@ int rasterfall_session_load(struct rasterfall_session *session,
     {
         struct rf_gpu_scene_local_source source = session->scene_local;
         struct toy_game_player_movement movement;
+        struct toy_game_gameplay_config gameplay;
         memcpy(&movement,&session->player_movement,sizeof(movement));
+        memcpy(&gameplay,&session->gameplay_config,sizeof(gameplay));
         memset(session, 0, sizeof(struct rasterfall_session));
         session->scene_local = source;
         memcpy(&session->player_movement,&movement,sizeof(movement));
+        memcpy(&session->gameplay_config,&gameplay,sizeof(gameplay));
     }
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
@@ -352,10 +355,13 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
     {
         struct rf_gpu_scene_local_source source = session->scene_local;
         struct toy_game_player_movement movement;
+        struct toy_game_gameplay_config gameplay;
         memcpy(&movement,&session->player_movement,sizeof(movement));
+        memcpy(&gameplay,&session->gameplay_config,sizeof(gameplay));
         memset(session, 0, sizeof(struct rasterfall_session));
         session->scene_local = source;
         memcpy(&session->player_movement,&movement,sizeof(movement));
+        memcpy(&session->gameplay_config,&gameplay,sizeof(gameplay));
     }
     session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
     if (rasterfall_world_content_load(&session->content, session->world_id,
@@ -450,6 +456,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->hit_pose.rotation[0][2]=-8;
     rasterfall_calibration_init(&session->pose_editor);
     toy_game_init(&session->game_state, session->seed);
+    if(session->gameplay_config.base_hp>0)
+        toy_game_apply_gameplay_config(&session->game_state,&session->gameplay_config);
     if(session->player_movement.move_step>0)
         memcpy(&session->game_state.player_movement,&session->player_movement,
             sizeof(session->player_movement));
@@ -504,8 +512,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             const struct toy_game_weapon_info *pistol =
                 toy_game_weapon_info(TOY_GAME_WEAPON_PISTOL);
             base->base_core = 1;
-            base->max_hp = TOY_CONFIG_BASE_HP;
-            base->hp = TOY_CONFIG_BASE_HP;
+            base->max_hp = session->game_state.gameplay_config.base_hp;
+            base->hp = session->game_state.gameplay_config.base_hp;
             base->state = TOY_GAME_ACTOR_ALIVE;
             base->slots[0].weapon = TOY_GAME_WEAPON_PISTOL;
             base->slots[0].mag = pistol->mag_size;
@@ -513,7 +521,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
             base->current_slot = 0;
             session->game_state.base_actor_index = actor_index;
             session->game_state.base_regen_timer_ms =
-                TOY_CONFIG_BASE_REGEN_MS;
+                session->game_state.gameplay_config.base_regen_ms;
         }
         if (!strcmp(spawn->name, "HIT_TEST")) {
             session->game_state.actors[actor_index].fire_enabled = 0;
@@ -2796,7 +2804,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
         int i;
         for (i = 0; i < session->game_state.event_count; i++)
             if (session->game_state.events[i] == TOY_GAME_EV_WAVE_START) {
-                session->banner_ms = TOY_GAME_WAVE_ANNOUNCE_MS;
+                session->banner_ms = session->game_state.gameplay_config.wave_announce_ms;
                 session->banner_success = 1;
                 session->banner_text = "WAVE STARTING";
                 break;

@@ -21,8 +21,9 @@
 #include "stdlib.h"
 #include "tlibc_compat.h"
 
-#include "game_combat.inc"
 #include "game_player_movement.inc"
+#include "game_gameplay_config.inc"
+#include "game_combat.inc"
 
 static int enemy_target_valid(const struct toy_game *g,
                               const struct toy_game_enemy *e,
@@ -524,7 +525,7 @@ static int wave_enemy_cost(int type)
 static void wave_build_plan(struct toy_game *g)
 {
     int points = (g->wave * 50 + wave_combat_power(g)) *
-                 TOY_GAME_WAVE_SCALE_PERCENT / 100;
+                 g->gameplay_config.wave_scale_percent / 100;
     points *= g->wave_attack_multiplier > 0 ? g->wave_attack_multiplier : 1;
     int remaining = points, i, count = 0, bucket;
     int common = 0, fast = 0, heavy = 0, special = 0, tank = 0;
@@ -582,7 +583,7 @@ static void wave_build_plan(struct toy_game *g)
     g->wave_waiting_special = special;
     g->wave_waiting_tank = tank;
     g->wave_spawn_interval_ms = count > 0 ?
-        TOY_CONFIG_WAVE_SPAWN_DURATION_MS / count : 0;
+        g->gameplay_config.wave_spawn_duration_ms / count : 0;
 }
 
 void toy_game_init(struct toy_game *g, uint64_t seed)
@@ -591,6 +592,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     const struct toy_game_weapon_info *w;
     memset(g, 0, sizeof(struct toy_game));
     toy_game_player_movement_defaults(&g->player_movement);
+    toy_game_gameplay_defaults(&g->gameplay_config);
     toy_game_squad_reset(g);
     toy_mesh_weaver_defaults(&g->weaver);
     g->nav_group_enabled = 1;
@@ -598,7 +600,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     g->flow_repair_cell = -1;
     player = &g->actors[TOY_GAME_PLAYER_ACTOR_INDEX];
     g->base_actor_index = -1;
-    g->base_regen_timer_ms = TOY_CONFIG_BASE_REGEN_MS;
+    g->base_regen_timer_ms = g->gameplay_config.base_regen_ms;
     g->rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
     g->state = TOY_GAME_PLAYING;
     player->active = 1;
@@ -623,7 +625,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     player->current_slot = 1;
     g->wave = 0;
     g->to_spawn = 0;
-    g->spawn_timer_ms = TOY_GAME_WAVE_FIRST_DELAY_MS;
+    g->spawn_timer_ms = g->gameplay_config.wave_first_delay_ms;
     g->campaign_phase = TOY_GAME_PHASE_CALM;
     g->wave_attack_multiplier = 1;
     /* World-specific actors are instantiated by the Game/session content
@@ -2224,14 +2226,14 @@ void toy_game_place_enemy(struct toy_game *g, int x, int z)
 }
 
 /* 推开面前敌人（L4D 式近战）：检测面朝方向（sy,cy，1024 定点）前
- * 120° 扇形、半径 TOY_CONFIG_SHOVE_RANGE 内所有存活敌人，沿面朝方向
- * 击退 TOY_GAME_SHOVE_PUSH 单位（撞到障碍依次退让 3/4、1/2、1/4），
- * 并让其僵直 TOY_CONFIG_SHOVE_STUN_MS 不移动不攻击。返回推开的数量。 */
+ * 120° 扇形内所有存活敌人，沿面朝方向击退（撞到障碍依次退让
+ * 3/4、1/2、1/4），并让其僵直；距离与时长读取 Game 配置。 */
 static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
                              int sy, int cy)
 {
     int i, pushed = 0;
-    long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE * TOY_CONFIG_SHOVE_RANGE;
+    long long range2 = (long long)g->gameplay_config.shove_range_rfu *
+                       g->gameplay_config.shove_range_rfu;
     if (g->state != TOY_GAME_PLAYING) return 0;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
@@ -2249,10 +2251,10 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
         if (dist <= 0) continue;
         dot = dx * sy + dz * cy;
         if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
-        push[0] = TOY_GAME_SHOVE_PUSH;
-        push[1] = TOY_GAME_SHOVE_PUSH * 3 / 4;
-        push[2] = TOY_GAME_SHOVE_PUSH / 2;
-        push[3] = TOY_GAME_SHOVE_PUSH / 4;
+        push[0] = g->gameplay_config.shove_push_rfu;
+        push[1] = g->gameplay_config.shove_push_rfu * 3 / 4;
+        push[2] = g->gameplay_config.shove_push_rfu / 2;
+        push[3] = g->gameplay_config.shove_push_rfu / 4;
         for (s = 0; s < 4; s++) {
             nx = e->x + (int)((long long)sy * push[s] / 1024);
             nz = e->z + (int)((long long)cy * push[s] / 1024);
@@ -2261,8 +2263,8 @@ static int toy_game_shove_at(struct toy_game *g, int origin_x, int origin_z,
             }
         }
         e->shove_stun_ms = e->type == TOY_GAME_ENEMY_CHARGER ?
-                           TOY_CONFIG_CHARGER_SHOVE_STUN_MS :
-                           TOY_CONFIG_SHOVE_STUN_MS;
+                           g->gameplay_config.charger_shove_stun_ms :
+                           g->gameplay_config.shove_stun_ms;
         e->flash = 200;          /* 被推开瞬间闪白 */
         pushed++;
     }
@@ -2292,9 +2294,10 @@ static int toy_game_actor_pill_heal(struct toy_game *g,
     struct toy_game_slot *slot;
     int i, best = -1;
     long long best_d2 = 0;
-    long long range2 = (long long)TOY_CONFIG_SHOVE_RANGE *
-                       TOY_CONFIG_SHOVE_RANGE;
+    long long range2;
     if (!g || !actor || actor->current_slot != 3) return 0;
+    range2 = (long long)g->gameplay_config.pill_heal_range_rfu *
+              g->gameplay_config.pill_heal_range_rfu;
     slot = &actor->slots[3];
     if (slot->weapon != TOY_GAME_WEAPON_PILL || slot->mag <= 0) return 0;
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
@@ -2364,11 +2367,11 @@ static void update_waves(struct toy_game *g, int dt_ms)
     if (g->campaign_phase == TOY_GAME_PHASE_CALM) {
         g->spawn_timer_ms -= dt_ms;
         if (g->spawn_timer_ms <= 0) {
-            if (g->wave >= TOY_GAME_WAVE_MAX) return;
+            if (g->wave >= g->gameplay_config.wave_max) return;
             g->wave++;
             wave_build_plan(g);
             g->campaign_phase = TOY_GAME_PHASE_BUILDUP;
-            g->phase_timer_ms = TOY_GAME_WAVE_ANNOUNCE_MS;
+            g->phase_timer_ms = g->gameplay_config.wave_announce_ms;
             push_event(g, TOY_GAME_EV_WAVE_START);
         }
     } else if (g->campaign_phase == TOY_GAME_PHASE_BUILDUP) {
@@ -2401,12 +2404,12 @@ static void update_waves(struct toy_game *g, int dt_ms)
                 g->wave_spawn_interval_ms : 1;
         }
     } else if (g->campaign_phase == TOY_GAME_PHASE_HORDE && g->enemies_alive == 0) {
-        if (g->wave >= TOY_GAME_WAVE_MAX) {
+        if (g->wave >= g->gameplay_config.wave_max) {
             g->state = TOY_GAME_WON;
             push_event(g, TOY_GAME_EV_LEVEL_WON);
         } else {
             g->campaign_phase = TOY_GAME_PHASE_CALM;
-            g->spawn_timer_ms = TOY_GAME_WAVE_PAUSE_MS;
+            g->spawn_timer_ms = g->gameplay_config.wave_pause_ms;
         }
     }
 }
@@ -2672,7 +2675,7 @@ static void update_base_core(struct toy_game *g, int dt_ms)
         g->base_regen_timer_ms -= dt_ms;
         while (g->base_regen_timer_ms <= 0) {
             if (base->hp < base->max_hp) base->hp++;
-            g->base_regen_timer_ms += TOY_CONFIG_BASE_REGEN_MS;
+            g->base_regen_timer_ms += g->gameplay_config.base_regen_ms;
         }
     }
     if (base->hp <= 0 || base->state != TOY_GAME_ACTOR_ALIVE) {
@@ -5726,8 +5729,7 @@ int toy_game_actor_use_special(struct toy_game *g,
 {
     struct toy_game_slot *s;
     int i, hit = 0;
-    long long range2 = (long long)TOY_CONFIG_MELEE_RANGE *
-                       TOY_CONFIG_MELEE_RANGE;
+    long long range2;
     if (!g || !actor || !actor->active ||
         actor->state != TOY_GAME_ACTOR_ALIVE ||
         g->state != TOY_GAME_PLAYING || actor->current_slot < 0 ||
@@ -5744,6 +5746,8 @@ int toy_game_actor_use_special(struct toy_game *g,
     if (s->weapon != TOY_GAME_WEAPON_AXE || actor->reloading ||
         actor->weapon_switch_timer_ms > 0 || actor->melee_timer_ms > 0)
         return 0;
+    range2 = (long long)g->gameplay_config.melee_range_rfu *
+              g->gameplay_config.melee_range_rfu;
     actor->melee_timer_ms = TOY_CONFIG_MELEE_SWING_MS;
     toy_game_actor_set_animation(actor, TOY_GAME_ANIM_MELEE);
     interrupt_smoker_for_actor(g, actor);
@@ -5759,12 +5763,12 @@ int toy_game_actor_use_special(struct toy_game *g,
         dist = isqrt(dist2);
         dot = dx * sy + dz * cy;
         if (dot * TOY_GAME_SHOVE_CONE < dist * 1024) continue;
-        inflicted = TOY_CONFIG_MELEE_DAMAGE < e->hp ?
-            TOY_CONFIG_MELEE_DAMAGE : e->hp;
-        e->hp -= TOY_CONFIG_MELEE_DAMAGE;
+        inflicted = g->gameplay_config.melee_damage < e->hp ?
+            g->gameplay_config.melee_damage : e->hp;
+        e->hp -= g->gameplay_config.melee_damage;
         actor->damage_dealt += inflicted;
         actor->combat_stats.health_damage += inflicted;
-        actor->combat_stats.overkill += TOY_CONFIG_MELEE_DAMAGE - inflicted;
+        actor->combat_stats.overkill += g->gameplay_config.melee_damage - inflicted;
         e->hurt = 150;
         hit = 1;
         if (e->hp <= 0) {
@@ -5791,7 +5795,7 @@ int toy_game_actor_use_special(struct toy_game *g,
             continue;
         attack.kind = TOY_GAME_ATTACK_MELEE;
         attack.base_damage_milli = attack.health_damage_milli =
-            TOY_CONFIG_MELEE_DAMAGE * 1000;
+            g->gameplay_config.melee_damage * 1000;
         attack.source_x = actor->x; attack.source_z = actor->z;
         toy_game_damage_actor(g, actor, target, &attack);
         hit = 1;
@@ -5831,11 +5835,11 @@ int toy_game_actor_throwable(struct toy_game *g,
     p->owner_actor_id = actor->actor_id;
     p->x = actor->x + (long long)sy * pitch_cy * 250 / (1024 * 1024);
     p->z = actor->z + (long long)cy * pitch_cy * 250 / (1024 * 1024);
-    p->vx = (int)((long long)sy * pitch_cy * TOY_CONFIG_THROW_SPEED /
+    p->vx = (int)((long long)sy * pitch_cy * g->gameplay_config.throw_speed_rfu_per_second /
                   (1024 * 1024));
-    p->vz = (int)((long long)cy * pitch_cy * TOY_CONFIG_THROW_SPEED /
+    p->vz = (int)((long long)cy * pitch_cy * g->gameplay_config.throw_speed_rfu_per_second /
                   (1024 * 1024));
-    p->vy = (int)((long long)pitch_sy * TOY_CONFIG_THROW_SPEED / 1024);
+    p->vy = (int)((long long)pitch_sy * g->gameplay_config.throw_speed_rfu_per_second / 1024);
     p->y = view_y + 900 + pitch_sy * 250 / 1024;
     toy_game_actor_set_animation(actor, TOY_GAME_ANIM_THROW);
     push_event(g, TOY_GAME_EV_SHOOT);
@@ -5890,16 +5894,16 @@ static void toy_game_start_burn(struct toy_game *g, int x, int z,
     zone->active = 1;
     zone->owner_actor_id = owner_actor_id;
     zone->x = x; zone->z = z;
-    zone->remaining_ms = TOY_CONFIG_MOLOTOV_BURN_MS;
-    zone->tick_ms = TOY_CONFIG_MOLOTOV_TICK_MS;
+    zone->remaining_ms = g->gameplay_config.molotov_burn_ms;
+    zone->tick_ms = g->gameplay_config.molotov_tick_ms;
     zone->elapsed_ms = 0;
 }
 
 static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
 {
     int i, j;
-    long long radius2 = (long long)TOY_CONFIG_MOLOTOV_BURN_RADIUS *
-                        TOY_CONFIG_MOLOTOV_BURN_RADIUS;
+    long long radius2 = (long long)g->gameplay_config.molotov_burn_radius_rfu *
+                        g->gameplay_config.molotov_burn_radius_rfu;
     for (i = 0; i < TOY_CONFIG_MAX_BURN_ZONES; i++) {
         struct toy_game_burn_zone *zone = &g->burn_zones[i];
         if (!zone->active) continue;
@@ -5914,9 +5918,9 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
                 if (e->active != 1) continue;
                 dx = e->x - zone->x; dz = e->z - zone->z;
                 if (dx * dx + dz * dz > radius2) continue;
-                inflicted = e->hp < TOY_CONFIG_MOLOTOV_DAMAGE ?
-                            e->hp : TOY_CONFIG_MOLOTOV_DAMAGE;
-                e->hp -= TOY_CONFIG_MOLOTOV_DAMAGE;
+                inflicted = e->hp < g->gameplay_config.molotov_damage ?
+                            e->hp : g->gameplay_config.molotov_damage;
+                e->hp -= g->gameplay_config.molotov_damage;
                 e->hurt = 180;
                 toy_game_add_throwable_stats(g, zone->owner_actor_id,
                                               inflicted, 0);
@@ -5944,12 +5948,12 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
                     dx * dx + dz * dz > radius2) continue;
                 attack.kind = TOY_GAME_ATTACK_BURN;
                 attack.base_damage_milli = attack.health_damage_milli =
-                    TOY_CONFIG_MOLOTOV_DAMAGE * 1000;
+                    g->gameplay_config.molotov_damage * 1000;
                 attack.source_x = zone->x; attack.source_z = zone->z;
                 result = toy_game_damage_actor(g, owner, target, &attack);
                 if (owner) owner->throwable_damage_dealt += result.health_damage;
             }
-            zone->tick_ms += TOY_CONFIG_MOLOTOV_TICK_MS;
+            zone->tick_ms += g->gameplay_config.molotov_tick_ms;
         }
         if (zone->remaining_ms <= 0) zone->active = 0;
     }
@@ -5959,9 +5963,8 @@ static void toy_game_explode(struct toy_game *g, int x, int z, int bomb,
                              int owner_actor_id)
 {
     int i;
-    int damage = bomb ? TOY_CONFIG_BOMB_DAMAGE : TOY_CONFIG_MELEE_DAMAGE;
-    int radius = bomb ? TOY_CONFIG_EXPLOSIVE_RADIUS :
-                       TOY_CONFIG_MOLOTOV_RADIUS;
+    int damage = g->gameplay_config.bomb_damage;
+    int radius = g->gameplay_config.bomb_radius_rfu;
     long long radius2 = (long long)radius * radius;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
@@ -6031,7 +6034,7 @@ skip_local_player:
 static int toy_game_projectile_blocked(const struct toy_game *g, int x, int z)
 {
     return toy_game_position_blocked(g, x, z,
-                                     TOY_CONFIG_THROW_COLLISION_RADIUS);
+                                     g->gameplay_config.throw_collision_radius_rfu);
 }
 
 static int toy_game_projectile_move(struct toy_game *g,
@@ -6056,19 +6059,19 @@ static int toy_game_projectile_move(struct toy_game *g,
             continue;
         }
         if (!can_x) {
-            p->vx = -p->vx * TOY_CONFIG_THROW_BOUNCE_RESTITUTION / 1000;
+            p->vx = -p->vx * g->gameplay_config.throw_bounce_per_mille / 1000;
             p->x = old_x;
         } else {
             p->x = next_x;
         }
         if (!can_z) {
-            p->vz = -p->vz * TOY_CONFIG_THROW_BOUNCE_RESTITUTION / 1000;
+            p->vz = -p->vz * g->gameplay_config.throw_bounce_per_mille / 1000;
             p->z = old_z;
         } else {
             p->z = next_z;
         }
         p->bounces++;
-        if (p->bounces >= TOY_CONFIG_THROW_MAX_BOUNCES) {
+        if (p->bounces >= g->gameplay_config.throw_max_bounces) {
             return 1;
         }
     }
@@ -6086,14 +6089,14 @@ static void toy_game_update_projectiles(struct toy_game *g, int dt_ms)
                 p->y = 0;
             } else {
                 p->y += p->vy * dt_ms / 1000;
-                p->vy -= TOY_CONFIG_THROW_GRAVITY * dt_ms / 1000;
+                p->vy -= g->gameplay_config.throw_gravity_rfu_per_second2 * dt_ms / 1000;
                 p->age_ms += dt_ms;
                 if (p->y > 0) continue;
                 p->y = 0;
             }
             p->landed = 1;
             p->fuse_ms = p->kind == TOY_GAME_WEAPON_BOMB ?
-                TOY_CONFIG_BOMB_FUSE_MS : 0;
+                g->gameplay_config.bomb_fuse_ms : 0;
             p->blink_timer_ms = 500;
             p->flash_ms = 0;
         }

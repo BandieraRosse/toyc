@@ -137,6 +137,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_layout.p
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_player_ui_perf.ps1 -Rounds 2 -Samples 360 -OutputDirectory tmp/player-ui/performance-new
 ```
 
+性能脚本默认固定 1920×1080 窗口；`-Width 1280 -Height 720` 可作分辨率辅助对照，布局矩阵仍保留多尺寸覆盖。
+
 | 入口 | 实际范围与输出 |
 | --- | --- |
 | `gpu_player_ui.ps1 -Stage All` | Outpost、复用存档的 Resume、Weaver、Remote、三条 Boundaries；逐路线保存审计、真实输入、退出码与截图 |

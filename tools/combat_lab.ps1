@@ -6,8 +6,8 @@ param(
     [ValidateRange(1,980000)][int]$Seed=1337,
     [string]$OutputDirectory='tmp/combat-lab',
     [switch]$Observe,
-    [int]$Width=0,
-    [int]$Height=0
+    [int]$Width=1920,
+    [int]$Height=1080
 )
 $ErrorActionPreference='Stop'
 if(($Width -ne 0 -or $Height -ne 0) -and ($Width -lt 640 -or $Width -gt 7680 -or $Height -lt 480 -or $Height -gt 4320)) {
@@ -77,6 +77,17 @@ try {
         $TaskProcess.WaitForExit()
         if(Test-Path -LiteralPath "$Package/rasterfall.log"){Copy-Item -LiteralPath "$Package/rasterfall.log" -Destination "$Out/$Name.rasterfall.log"}
         if($TaskProcess.ExitCode -ne 0){throw "$Name failed: exit $($TaskProcess.ExitCode)"}
+        if($Stage -eq 'Scale' -and $Width) {
+            $DisplayLog=[IO.File]::ReadAllText("$Out/$Name.out",$Utf8)+[IO.File]::ReadAllText("$Out/$Name.err",$Utf8)
+            $Displays=[regex]::Matches($DisplayLog,'DISPLAY mode=(\w+) width=(\d+) height=(\d+)')
+            if(!$Displays.Count){throw "$Name missing actual display size"}
+            foreach($Display in $Displays) {
+                if($Display.Groups[1].Value -ne 'windowed' -or
+                    [int]$Display.Groups[2].Value -ne $Width -or [int]$Display.Groups[3].Value -ne $Height) {
+                    throw "$Name display differs from requested window size"
+                }
+            }
+        }
         if(!(Test-Path -LiteralPath $Csv)){throw "$Name did not produce a CSV"}
         $Rows=@(Import-Csv -LiteralPath $Csv -Encoding UTF8)
         $Expected=if($Stage -eq 'Suite'){$Repeats*$(if($Case -lt 0){21}else{1})}else{1}

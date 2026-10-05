@@ -4,7 +4,9 @@ param(
     [ValidateRange(1,5)][int]$Rounds=3,
     [ValidateRange(120,720)][int]$Samples=240,
     [ValidateSet('quarter','front','rear','gun','wide')][string]$View='quarter',
-    [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe'
+    [string]$Executable='build-windows/rasterfall-windows/rasterfall.exe',
+    [ValidateRange(640,7680)][int]$Width=1920,
+    [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -59,7 +61,7 @@ foreach($Asset in $AssetPaths){$AssetHashes[$Asset]=(Get-FileHash -LiteralPath (
 Write-Json @{exe=$Hash;exe_path=$Exe;map=(Get-FileHash -LiteralPath $MapPath).Hash;
     assets=$AssetHashes;
     absent_map=(Get-FileHash -LiteralPath $AbsentMap).Hash;removed_records=@($Removed | ForEach-Object {$_.Value.Trim()});
-    rounds=$Rounds;samples=$Samples;view=$View;warmup=120;sky_time=0;sky_scale=4;
+    rounds=$Rounds;samples=$Samples;view=$View;width=$Width;height=$Height;warmup=120;sky_time=0;sky_scale=4;
     clock='realtime';cap=120;active='real AK task starts at warmup frame 60 with one second accounted preroll; sampling starts after 120';
     gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID} 'config.json'
 try {
@@ -76,7 +78,8 @@ try {
             $Name="r$Round-$Mode"
             $env:RF_WEAVER_PERF_MODE=$Mode
             $RunMap=if($Mode -eq 'absent'){$AbsentMap}else{$MapPath}
-            $Argv=@('--skip-boot','--renderer','gpu-scene','--map',$RunMap,'--gpu-normal-scene','mesh-weaver','0')
+            $Argv=@('--skip-boot','--renderer','gpu-scene','--map',$RunMap,'--gpu-normal-scene','mesh-weaver','0',
+                '--window-size',[string]$Width,[string]$Height)
             $Process=Start-Process -FilePath $Exe -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
                 -ArgumentList (($Argv | ForEach-Object {'"'+$_+'"'}) -join ' ') `
                 -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
@@ -93,6 +96,7 @@ try {
             }
             $Result=Parse-Fields $Log 'SCENE-PERF'
             $Work=Parse-Fields $Log 'MESH-WEAVER-PERF'
+            if($Result.extent -ne "${Width}x${Height}"){throw "$Name extent differs from requested window size"}
             if($Result.valid -ne '1' -or [int]$Result.samples -ne $Samples -or
                 [int]$Result.gpu_p50_us -le 0 -or $Work.valid -ne '1' -or $Work.mode -ne $Mode){
                 throw "$Name invalid sample or job finished before sample ended"

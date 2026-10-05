@@ -48,6 +48,9 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
   玩家运动启动配置从磁盘读取，提交 Game 纯解析器验证，进程入口在进入 runtime 前拒绝非法配置；
   `--movement-config-check` 打印解析结果后退出。session 保存启动 policy，地图重建不会丢失，见
   [玩家移动配置](../guides/player-movement-config.md)。
+  通用玩法配置 `gameplay.cfg` 由相同启动层读取，`--gameplay-config` 选择文件，
+  `--gameplay-config-check` 输出全部解析值与范围后退出。Game 纯解析器验证整份配置，
+  session 保存 policy，换图与重试在世界 actor 创建前应用；见[玩法配置](../guides/gameplay-config.md)。
 - `include/rf_game_lifecycle.h` / `src/rf_game_lifecycle.c`：`rf_game_runtime` 状态上下文及
   `rf_game_init/update/render/shutdown` facade。
 - `src/rf_game_runtime.c`：fixed-step facade 的 gameplay/session/network/effects 更新、world/HUD/debug

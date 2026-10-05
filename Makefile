@@ -959,7 +959,7 @@ $(LIBC_OBJS) $(APP_OBJS) $(APP_EXTRA_OBJS_rasterfall) \
 $(APP_EXTRA_OBJS_vmd_inspect) $(APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
-$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_gameplay_config.inc $(RASTERFALL_INC)/toy_gameplay_fields.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1694,7 +1694,7 @@ $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_game_self.o: \
 $(BUILD)/rf_mesh_weaver_presentation.o $(BUILD)/rf_mesh_weaver_presentation_self.o: \
     $(RASTERFALL_INC)/rf_mesh_weaver_layout_generated.h $(RASTERFALL_INC)/toy_mesh_weaver.h
 
-$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_gameplay_config.inc $(RASTERFALL_INC)/toy_gameplay_fields.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

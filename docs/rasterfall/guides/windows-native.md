@@ -35,7 +35,10 @@ present、物理 GPU 驱动、Win32/SDL 窗口生命周期和性能证据。
 .\windows\NativeCodex.ps1 acceptance
 ```
 
-`build` 构建 `build-windows/rasterfall.exe`，已有运行目录时同步其中的 `rasterfall.exe`；首次创建运行目录仍用 `run` 或其他暂存命令。`run`、`test`、`gpu-test` 和
+`build` 构建 `build-windows/rasterfall.exe`，并将仓库 `rasterfall/config/` 同步到
+`build-windows/rasterfall/config/` 和 `build-windows/rasterfall-windows/rasterfall/config/`；
+已有运行目录时同时更新其中的 `rasterfall.exe`。每次构建会覆盖输出目录中同名配置，调参应修改仓库文件，
+或用程序配置参数选择输出目录外的个人文件。完整资源首次暂存仍用 `run` 或其他暂存命令。`run`、`test`、`gpu-test` 和
 `acceptance` 会更新 `build-windows/rasterfall-windows/` 中的 exe 与资源，但不生成压缩包。
 需要交付压缩包时，显式运行 `.\windows\NativeCodex.ps1 package`，生成
 `build-windows/rasterfall-windows.zip`。
@@ -71,6 +74,9 @@ watchdog/skipped 日志不足以证明可玩，即使进程退出 0。非取消 
 ```powershell
 .\windows\NativeCodex.ps1 run --help
 ```
+
+`gpu-test` 默认显式使用 1920×1080 窗口，可追加 `--window-size 1280 720` 作较低分辨率检查。
+`acceptance` 的 Scene smoke 和 normal-frame audit 同步使用 1080p；专用角色 capture 保留自身尺寸。
 
 系统 GPU 枚举可能因 CIM/PnP 权限不可用；`doctor` 会将其报告为非致命的枚举缺口，不以此推断 Vulkan
 不可用。物理 GPU 事实仍以 required native GPU 测试打印的 adapter、退出码和帧审计为准。

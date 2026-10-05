@@ -8,8 +8,8 @@ param(
     [switch]$CompareGeometry,
     [switch]$CompareBackend,
     [switch]$ProfileSlow,
-    [int]$Width=0,
-    [int]$Height=0
+    [int]$Width=1920,
+    [int]$Height=1080
 )
 $ErrorActionPreference='Stop'
 if(($Width -ne 0 -or $Height -ne 0) -and ($Width -lt 640 -or $Width -gt 7680 -or $Height -lt 480 -or $Height -gt 4320)) {

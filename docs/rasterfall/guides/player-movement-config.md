@@ -5,11 +5,13 @@
 > 事实入口：`rasterfall/config/player-movement.cfg`、`rasterfall/lib/game_player_movement.inc`
 
 玩家运动在启动时读取 `rasterfall/config/player-movement.cfg`，修改后重启游戏即可生效，无需重新编译。
-在源码工作区修改仓库中的文件；Windows `NativeCodex.ps1 run/test/package` 暂存时会复制它。
-直接运行分发目录里的 exe 时，修改分发目录中同一路径的文件。再次暂存会以仓库版本替换分发目录配置。
+在源码工作区修改仓库中的文件；Windows `NativeCodex.ps1 build` 及各暂存命令都会复制它。
+配置同时位于 `build-windows/rasterfall/config/` 和 `build-windows/rasterfall-windows/rasterfall/config/`，
+各自供同目录的 exe 读取。直接运行分发目录里的 exe 时可修改分发目录中同一路径的文件，
+再次构建或暂存会以仓库版本覆盖同名配置。
 
-个人调参文件可以放在暂存目录外，通过 `--movement-config <path>` 指定；相对路径以程序工作目录为准，
-Windows 包装脚本在 `build-windows/rasterfall-windows` 中运行，所以个人文件建议使用绝对路径。
+个人调参文件可以放在暂存目录外，通过 `--movement-config <path>` 指定；Windows 原生程序将相对文件
+路径定位到 exe 所在目录，其他平台以程序工作目录为准，所以个人文件建议使用绝对路径。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --movement-config C:\path\player-movement.cfg

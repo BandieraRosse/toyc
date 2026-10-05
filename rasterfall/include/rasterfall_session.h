@@ -111,6 +111,7 @@ struct rasterfall_session {
     struct toy_game game_state;
     /* Startup rules retained across map load/reset; Game owns the live copy. */
     struct toy_game_player_movement player_movement;
+    struct toy_game_gameplay_config gameplay_config;
     /* Gameplay-facing projection arrays retained until gameplay migrates. */
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];

@@ -6,7 +6,9 @@ param(
     [string[]]$Views=@('sky-north','lab-computer-side','electronics-lab','lighting-lab'),
     [switch]$Compare,
     [switch]$ComparePreparation,
-    [switch]$AllLabs
+    [switch]$AllLabs,
+    [ValidateRange(640,7680)][int]$Width=1920,
+    [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
 if($Compare -and $ComparePreparation){throw 'Choose one comparison axis'}
@@ -39,7 +41,7 @@ $Hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash
 Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
     rounds=$Rounds;samples=$Samples;views=$Views;all_labs=[bool]$AllLabs;compare=[bool]$Compare;
     compare_preparation=[bool]$ComparePreparation;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;
-    warmup=120;sky_scale=4;sky_time=0;clock='realtime';cap=120} 'config.json'
+    width=$Width;height=$Height;warmup=120;sky_scale=4;sky_time=0;clock='realtime';cap=120} 'config.json'
 try {
     [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
     [Environment]::SetEnvironmentVariable('Path',$SavedPath,'Process')
@@ -62,7 +64,7 @@ try {
                     [Environment]::SetEnvironmentVariable($Key,$(if($ComparePreparation -and $Mode -eq 'reference'){'1'}else{'0'}),'Process')
                 }
                 $Argv=@('--skip-boot','--renderer','gpu-scene','--map','rasterfall/assets/maps/outpost.map',
-                    '--gpu-normal-scene',$View,'0')
+                    '--gpu-normal-scene',$View,'0','--window-size',[string]$Width,[string]$Height)
                 $Process=Start-Process -FilePath "$Package/rasterfall.exe" -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
                     -ArgumentList (($Argv | ForEach-Object {'"'+$_+'"'}) -join ' ') `
                     -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
@@ -83,6 +85,7 @@ try {
                     $Result[$Field.Groups[1].Value]=$Field.Groups[2].Value
                 }
                 if($Result.valid -ne '1' -or [int]$Result.samples -ne $Samples -or [int]$Result.gpu_p50_us -le 0){throw "$Name invalid samples"}
+                if($Result.extent -ne "${Width}x${Height}"){throw "$Name extent differs from requested window size"}
                 $Runs.Add(@{round=$Round;view=$View;mode=$Mode;result=$Result;argv=$Argv;exit=$Process.ExitCode})
                 Write-Json @($Runs.ToArray()) 'report.json'
                 Write-Output "$Name p50=$($Result.p50_us) p95=$($Result.p95_us) p99=$($Result.p99_us) us; GPU=$($Result.gpu_p50_us) us"

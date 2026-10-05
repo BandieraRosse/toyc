@@ -362,12 +362,12 @@ static void render_wave_hud(struct rasterfall_canvas *surface,
     else if (game->campaign_phase == TOY_GAME_PHASE_BUILDUP)
         status = "STARTING";
     else
-        status = game->wave >= TOY_GAME_WAVE_MAX ? "COMPLETE" : "REST";
+        status = game->wave >= game->gameplay_config.wave_max ? "COMPLETE" : "REST";
     hud_value_y = 8;
     x = draw_hud_value(surface, x, "WAVE ", status,
                        game->campaign_phase == TOY_GAME_PHASE_HORDE ?
                        0xFFD040 : RF_COLOR_UI_SECONDARY);
-    snprintf(value, sizeof(value), "%d/%d", game->wave, TOY_GAME_WAVE_MAX);
+    snprintf(value, sizeof(value), "%d/%d", game->wave, game->gameplay_config.wave_max);
     x = draw_hud_value(surface, x, "NUMBER ", value, 0xFFD070);
     if (game->campaign_phase == TOY_GAME_PHASE_HORDE ||
         game->campaign_phase == TOY_GAME_PHASE_BUILDUP) {

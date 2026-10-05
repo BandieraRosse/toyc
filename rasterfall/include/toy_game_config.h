@@ -1,4 +1,6 @@
-/* Rasterfall gameplay tuning; distances use world units and timers use ms. */
+/* Rasterfall built-in gameplay defaults; distances use RFU and timers use ms.
+ * Runtime fields listed in toy_gameplay_fields.inc are overridden by gameplay.cfg;
+ * player-movement.cfg overrides resolved player motion. Capacities stay fixed. */
 #ifndef RASTERFALL_TOY_GAME_CONFIG_H
 #define RASTERFALL_TOY_GAME_CONFIG_H  /* 防止配置头重复包含 */
 

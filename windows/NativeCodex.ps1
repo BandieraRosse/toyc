@@ -142,7 +142,7 @@ if ($Command -eq 'help') {
     @'
 Windows Native Codex
   doctor      Check the fixed MSYS2/MinGW lane, SDL2, Vulkan, package and GPU.
-  build       Build into build-windows/ and refresh an existing staged executable.
+  build       Build, sync configuration to both exe directories, and refresh an existing staged executable.
   asset-tools Build native GLB, RFCHAR, RFANIM and map diagnostics.
   package     Build the executable, stage assets, and create a ZIP archive.
   test        Run staged rasterfall.exe --logic-test.
@@ -186,14 +186,14 @@ switch ($Command) {
     'test' { Ensure-Staged; Invoke-Staged @('--logic-test') }
     'gpu-test' {
         Ensure-Staged
-        $gpuArgs = @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120') + $ExtraArgs
+        $gpuArgs = @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120', '--window-size', '1920', '1080') + $ExtraArgs
         Invoke-Staged $gpuArgs
     }
     'run' { Ensure-Staged; Invoke-Staged $ExtraArgs }
     'acceptance' {
         Ensure-Staged
-        Invoke-Staged @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120')
-        Invoke-Staged @('--normal-frame-audit', '0', '0', '0', '1', '0', '1', '1280', '720', 'windows-native-normal.bmp')
+        Invoke-Staged @('--renderer', 'gpu-scene', '--gpu-normal-scene', 'near', '0', '--frame-audit', '--frames', '120', '--window-size', '1920', '1080')
+        Invoke-Staged @('--normal-frame-audit', '0', '0', '0', '1', '0', '1', '1920', '1080', 'windows-native-normal.bmp')
         Invoke-Staged @('--visual-capture', 'procedural-humanoid', '--visual-output', 'windows-native-procedural-humanoid.bmp')
     }
 }
