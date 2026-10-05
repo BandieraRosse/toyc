@@ -303,6 +303,57 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights) && !rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
     for(unsigned p=0;p<64*64;++p) if(a[p]!=b[p]) ++moving_pixels;
     LIGHT_CHECK(moving_pixels>100);
+    /* Static building visibility also covers point lights and spots outside
+     * the two dynamic shadow slots. Camera visibility is deliberately absent. */
+    {
+        struct rf_gpu_occlusion_primitive wall[2]={
+            {{{-10000,-10000,3400},{10000,-10000,3400},{10000,10000,3400}},0},
+            {{{-10000,-10000,3400},{10000,10000,3400},{-10000,10000,3400}},0}};
+        lights.lights[0].position_radius[0]=0;
+        lights.lights[0].position_radius[2]=2800;
+        for(unsigned mode=0;mode<3;++mode) {
+            lights.count=mode==1?3:1;
+            lights.sun_color[3]=mode==2?2.9f:0;
+            for(unsigned i=0;i<lights.count;++i) {
+                lights.lights[i]=lights.lights[0];
+                lights.lights[i].direction_outer[2]=1;
+                lights.lights[i].direction_outer[3]=mode==1?0.1f:-1;
+                lights.lights[i].inner_shadow[0]=0.5f;
+                lights.lights[i].color_intensity[3]=mode==2?0:5;
+            }
+            LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+            LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+            LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+            LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,wall,2));
+            LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
+            unsigned darker=0;
+            for(unsigned p=0;p<64*64;++p)if(da[p]>0 && da[p]==db[p] &&
+                lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15)++darker;
+            LIGHT_CHECK(darker>100);
+            struct rf_gpu_occlusion_primitive solid={{{-10000,-10000,3390},{10000,10000,3410},{0,0,0}},1};
+            LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,&solid,1));
+            LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+            unsigned differences=0,max_error=0;
+            for(unsigned p=0;p<64*64;++p) {
+                if(a[p]!=b[p])++differences;
+                unsigned av=lighting_test_rgb(a[p]),bv=lighting_test_rgb(b[p]);
+                unsigned error=av>bv?av-bv:bv-av;
+                if(error>max_error)max_error=error;
+            }
+            fprintf(stdout,"ARCHITECTURE BOX mode=%u changed=%u max_error=%u\n",mode,differences,max_error);
+            LIGHT_CHECK(max_error<=3);
+        }
+        /* A blocker behind the receiver must not shadow a finite light ray. */
+        lights.sun_color[3]=0;lights.count=1;lights.lights[0].color_intensity[3]=5;
+        LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+        for(unsigned i=0;i<2;++i)for(unsigned vtx=0;vtx<3;++vtx)wall[i].p[vtx][2]=5000;
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,wall,2));
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
+        LIGHT_CHECK(!memcmp(a,b,64*64*4));
+        fprintf(stdout,"ARCHITECTURE LIGHT PASS point=1 spot_over_budget=1 sun=1 exact_box=1 finite_segment=1 reset=1\n");
+    }
     lights.lights[0].position_radius[0]=-700;lights.lights[0].position_radius[2]=0;lights.lights[0].color_intensity[3]=30;
     lights.lights[0].direction_outer[2]=1;lights.lights[0].direction_outer[3]=0.5f;
     lights.lights[0].inner_shadow[0]=0.8f;

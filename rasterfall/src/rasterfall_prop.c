@@ -244,7 +244,24 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
     { RASTERFALL_PROP_ASSET_FRONTIER_BOLLARD, "frontier_bollard",
       "rasterfall/assets/models/props/frontier/rf_frontier_bollard.rmesh",
       RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LIGHT_CEILING, "light_ceiling",
+      "rasterfall/assets/models/props/lighting/rf_light_ceiling.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
+    { RASTERFALL_PROP_ASSET_LIGHT_WALL, "light_wall",
+      "rasterfall/assets/models/props/lighting/rf_light_wall.rmesh",
+      RASTERFALL_PROP_RENDER_SCALE_MILLI, { 0, 0, 0 } },
 };
+
+const struct rasterfall_prop_light_profile *rasterfall_prop_light_profile(int asset)
+{
+    static const struct rasterfall_prop_light_profile ceiling={
+        {0,-12,0},{0,-1,0},{0.88f,0.95f,1.0f},4608,48,0.20f,0.65f,2};
+    static const struct rasterfall_prop_light_profile wall={
+        {0,82,78},{0,-0.8f,0.6f},{1.0f,0.83f,0.64f},3584,24,0.15f,0.7f,2};
+    if(asset==RASTERFALL_PROP_ASSET_LIGHT_CEILING)return &ceiling;
+    if(asset==RASTERFALL_PROP_ASSET_LIGHT_WALL)return &wall;
+    return NULL;
+}
 
 static const struct rasterfall_prop_asset_profile *find_id(int id)
 {
@@ -699,7 +716,7 @@ int rasterfall_prop_asset_logic_test(void)
                         asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_FRAME ||
                         asset->id==RASTERFALL_PROP_ASSET_MESH_WEAVER_SERVICE_LINKS ||
                         (asset->id>=RASTERFALL_PROP_ASSET_FRONTIER_CANOPY &&
-                         asset->id<=RASTERFALL_PROP_ASSET_FRONTIER_BOLLARD);
+                         asset->id<=RASTERFALL_PROP_ASSET_LIGHT_WALL);
         if (asset->id != i + 1 || !asset->name || !asset->model_path ||
             asset->render_scale_milli != RASTERFALL_PROP_RENDER_SCALE_MILLI ||
             (!visual_only &&

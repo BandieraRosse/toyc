@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "rf_light_ceiling",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/lighting/rf_light_ceiling.glb",
+  "dimensions_m": [
+    1.4,
+    0.7,
+    0.16
+  ]
+}

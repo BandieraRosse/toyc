@@ -74,6 +74,7 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->light_pool) p->api.destroy_descriptor_pool(p->device,g->light_pool,NULL);
     if(g->light_layout) p->api.destroy_descriptor_set_layout(p->device,g->light_layout,NULL);
     gpu_buffer_destroy(p,&g->light_buffer);gpu_buffer_destroy(p,&g->shadow_buffer);
+    gpu_buffer_destroy(p,&g->architecture_buffer);
     gpu_buffer_destroy(p,&g->sky_buffer);
     gfx_image_destroy(g,&g->sky_noise);
     if(g->sky_sampler) g->api.DestroySampler(p->device,g->sky_sampler,NULL);
@@ -81,9 +82,9 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[7]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[8]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,3},{3,3},
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,4},{3,3},
         {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
@@ -104,7 +105,9 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
         if(i==5) b[i].descriptor_type=RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         b[i].stage_flags=(i<2 || i==4)?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT:VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=7;layout.bindings=b;
+    b[7].binding=7;b[7].descriptor_count=1;b[7].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT;
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=8;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
     pool.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;pool.max_sets=1;pool.pool_size_count=3;pool.pool_sizes=sizes;
     if(p->api.create_descriptor_pool(p->device,&pool,NULL,&g->light_pool)!=RF_VK_SUCCESS) return -1;
@@ -140,7 +143,7 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
         writes[i+2].image_info=&images[i];
     }
     p->api.update_descriptor_sets(p->device,4,writes,0,NULL);
-    return 0;
+    return rf_gpu_graphics_set_architecture(g,NULL,0);
 }
 static void gfx_lighting_images(struct rf_gpu_graphics *g)
 {

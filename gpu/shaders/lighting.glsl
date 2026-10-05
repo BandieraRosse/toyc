@@ -6,6 +6,39 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     vec4 cutaway_bounds; vec4 cutaway_height;
 } lighting;
 layout(set=1,binding=1,std430) readonly buffer Shadows { float depth[]; } shadows;
+struct ArchitectureNode { vec4 lo; vec4 hi; vec4 a; vec4 b; vec4 c; };
+layout(set=1,binding=7,std430) readonly buffer Architecture {
+    uvec4 header; ArchitectureNode nodes[];
+} architecture;
+/* Ray/triangle visibility in world units, two-sided. A small origin offset
+ * avoids self hits without jumping through thin floors or door lintels. */
+float architecture_visibility(vec3 origin,vec3 direction,float limit) {
+    vec3 safe_dir=mix(direction,vec3(1e-8),lessThan(abs(direction),vec3(1e-8)));
+    vec3 inv=1.0/safe_dir;
+    uint i=0u;
+    while(i<architecture.header.x) {
+        vec4 lo=architecture.nodes[i].lo,hi=architecture.nodes[i].hi;
+        vec3 t0=(lo.xyz-origin)*inv,t1=(hi.xyz-origin)*inv;
+        vec3 near_t=min(t0,t1),far_t=max(t0,t1);
+        if(max(max(near_t.x,near_t.y),max(near_t.z,0.0))>
+           min(min(far_t.x,far_t.y),min(far_t.z,limit))) { i=uint(lo.w);continue; }
+        if(hi.w>0.0) {
+            if(hi.w>1.5)return 0.0;
+            vec3 a=architecture.nodes[i].a.xyz,b=architecture.nodes[i].b.xyz,c=architecture.nodes[i].c.xyz;
+            vec3 h=cross(direction,c);float det=dot(b,h);
+            if(abs(det)>1e-6) {
+                vec3 s=origin-a;float u=dot(s,h)/det;
+                vec3 q=cross(s,b);float v=dot(direction,q)/det;
+                float t=dot(c,q)/det;
+                // Include the shared edge in both triangles. Roundoff must
+                // not open a bright diagonal crack through a closed wall.
+                if(u>=-1e-6 && v>=-1e-6 && u+v<=1.000001 && t>0.5 && t<limit)return 0.0;
+            }
+        }
+        ++i;
+    }
+    return 1.0;
+}
 vec3 decode_srgb(vec3 c) {
     return mix(c/12.92,pow((c+0.055)/1.055,vec3(2.4)),greaterThan(c,vec3(0.04045)));
 }

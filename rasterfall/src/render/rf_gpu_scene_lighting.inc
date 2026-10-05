@@ -18,9 +18,75 @@ static void scene_light_insert(struct rf_gpu_lighting *out,const struct rf_gpu_l
     out->count=count<RF_GPU_LIGHT_CAP?count+1:count;
     memcpy(out->lights,candidates,out->count*sizeof(*candidates));
 }
+static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
+    const struct rf_gpu_scene_world_resources *world)
+{
+    if(probe->lighting_world_generation==world->world_generation &&
+       probe->lighting_map_generation==world->map_generation)return 0;
+    uint32_t count=0,at=0;
+    /* These are the same opaque meshes submitted to WORLD, including finite
+     * slabs, stair treads and doorway lintels. Never consume collision boxes. */
+    for(unsigned kind=0;kind<=RF_GPU_SCENE_WORLD_BOUNDARY;++kind) {
+        if(kind==RF_GPU_SCENE_WORLD_BOX)continue;
+        if(!world->opaque[kind].generation)continue;
+        const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(&world->registry,world->opaque[kind]);
+        if(!m || m->index_count%3 || count+m->index_count/3>65536)return -1;
+        count+=m->index_count/3;
+    }
+    if(count+world->render_count>65536)return -1;
+    count+=world->render_count;
+    struct rf_gpu_occlusion_primitive *triangles=count?calloc(count,sizeof(*triangles)):NULL;
+    if(count && !triangles)return -1;
+    int result=-1;
+    for(unsigned kind=0;kind<=RF_GPU_SCENE_WORLD_BOUNDARY;++kind) {
+        if(kind==RF_GPU_SCENE_WORLD_BOX)continue;
+        if(!world->opaque[kind].generation)continue;
+        const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(&world->registry,world->opaque[kind]);
+        if(!m || m->material_bytes<32 || m->vertex_bytes<12 ||
+           !world_range(m,m->indices,(uint64_t)m->index_count*4) ||
+           !world_range(m,m->vertices,(uint64_t)m->vertex_count*m->vertex_bytes) ||
+           !world_range(m,m->primitives,(uint64_t)m->primitive_count*16) ||
+           !world_range(m,m->materials,(uint64_t)m->material_count*m->material_bytes))goto done;
+        for(unsigned p=0;p<m->primitive_count;++p) {
+            const unsigned char *primitive=m->primitives+p*16;
+            unsigned first=world_u32(primitive),n=world_u32(primitive+4),mat=world_u32(primitive+8);
+            if(n%3 || first>m->index_count || n>m->index_count-first || mat>=m->material_count)goto done;
+            const unsigned char *material=m->materials+mat*m->material_bytes;
+            float x=(int32_t)world_u32(material+24),z=(int32_t)world_u32(material+28);
+            for(unsigned i=0;i<n;i+=3) {
+                if(at>=count)goto done;
+                for(unsigned v=0;v<3;++v) {
+                    unsigned id=world_u32(m->indices+(first+i+v)*4);
+                    if(id>=m->vertex_count)goto done;
+                    const unsigned char *point=m->vertices+id*m->vertex_bytes;
+                    for(unsigned k=0;k<3;++k)triangles[at].p[v][k]=(int32_t)world_u32(point+k*4);
+                    triangles[at].p[v][0]+=x;triangles[at].p[v][2]+=z;
+                }
+                ++at;
+            }
+        }
+    }
+    /* An authored BOX is already an exact solid. Avoid tracing its subdivided
+     * faces: the analytic slab intersection is the same geometry, with doors
+     * still represented by separate jambs/lintels, never a room-sized proxy. */
+    for(unsigned i=0;i<world->render_count;++i) {
+        const struct rf_gpu_scene_world_render_item_v1 *item=&world->render_items[i];
+        const struct toy_map_draw *d=&item->draw;
+        if(!item->visible || item->alpha!=255 || d->type!=TOY_MAP_DRAW_BOX ||
+           !strncmp(d->text,"air_gate_",9) || d->a>=d->b || d->c>=d->d || d->f>=d->e)continue;
+        struct rf_gpu_occlusion_primitive *t=&triangles[at++];t->solid_box=1;
+        t->p[0][0]=d->a;t->p[0][1]=d->f-900;t->p[0][2]=d->c;
+        t->p[1][0]=d->b;t->p[1][1]=d->e-900;t->p[1][2]=d->d;
+    }
+    result=rf_gpu_graphics_set_architecture(probe->graphics,triangles,at);
+    if(!result){probe->lighting_world_generation=world->world_generation;probe->lighting_map_generation=world->map_generation;}
+done:
+    free(triangles);return result;
+}
 static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world,const struct camera *camera)
 {
+    if(scene_architecture_prepare(probe,world)<0)return -1;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
     if(probe->layers && !probe->layers->world_only) {
         memcpy(lights.cutaway_bounds,probe->layers->cutaway_bounds,sizeof(lights.cutaway_bounds));
@@ -50,6 +116,23 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     lights.sky_weather[1]=(float)(seconds*0.0015);
     for(unsigned i=0;!(probe->layers && probe->layers->fixed_lighting) && i<world->prop_count;++i) {
         const struct toy_map_prop *p=&world->prop_items[i].prop;
+        const struct rasterfall_prop_light_profile *profile=rasterfall_prop_light_profile(p->asset_id);
+        if(profile) {
+            struct rf_gpu_light light={0};
+            double yaw=p->yaw_degrees*3.141592653589793/180.0;
+            float s=(float)sin(yaw),c=(float)cos(yaw),scale=p->scale_milli/1000.0f;
+            light.position_radius[0]=p->x+scale*(c*profile->position[0]+s*profile->position[2]);
+            light.position_radius[1]=-900+p->y+scale*profile->position[1];
+            light.position_radius[2]=p->z+scale*(-s*profile->position[0]+c*profile->position[2]);
+            light.position_radius[3]=profile->radius*scale;
+            for(unsigned k=0;k<3;++k)light.color_intensity[k]=profile->color[k];
+            light.color_intensity[3]=profile->intensity;
+            light.direction_outer[0]=c*profile->direction[0]+s*profile->direction[2];
+            light.direction_outer[1]=profile->direction[1];
+            light.direction_outer[2]=-s*profile->direction[0]+c*profile->direction[2];
+            light.direction_outer[3]=profile->outer_cosine;light.inner_shadow[0]=profile->inner_cosine;
+            scene_light_insert(&lights,&light,camera);continue;
+        }
         if(p->asset_id!=RASTERFALL_PROP_ASSET_LAMP_POST) continue;
         struct rf_gpu_light light={0};
         light.position_radius[0]=(float)p->x;light.position_radius[1]=(float)(-900+p->y+2300*p->scale_milli/1000);

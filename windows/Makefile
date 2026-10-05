@@ -257,7 +257,7 @@ $(BUILD)/rf-gpu-scene-frame-test.exe: tools/rf_gpu_scene_frame_test.c rasterfall
 
 # GPU-GRAPHICS hosted diagnostic: independent of SDL and player package/assets.
 GPU_GRAPHICS_SRCS := gpu/src/rf_gpu_graphics_test.c gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
-GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_lighting_test.inc) \
+GPU_GRAPHICS_DEPS := $(wildcard gpu/include/*.h gpu/src/*spirv.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_architecture_light.inc gpu/src/rf_gpu_lighting_test.inc) \
     $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_sky* gpu/shaders/*.glsl) \
     gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_texture_set.inc gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
     gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp \

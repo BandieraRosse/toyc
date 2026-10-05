@@ -20,7 +20,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_lighting_lab.ps1
 
 ## 自动与实机检查
 
+前哨站三层固定视图：先用 `NativeCodex.ps1 test` 或 `run` 完成构建和资源暂存，再运行
+`python tools/outpost_lighting_check.py --output tmp/outpost-lighting-review`。
+该工具逐个等待真实子进程，检查退出码、日志及 GPU 捕获，并保存 B1、一层、二层、楼梯和研究翼 PNG。
+固定镜头通过 `--gpu-normal-scene outpost-light-b1|outpost-light-1f|outpost-light-2f|outpost-light-stairs|outpost-light-research 0`
+进入，地图需选择 `rasterfall/assets/maps/outpost.map`。截图不作为性能结论；成本使用
+`tools/gpu_outpost_perf.ps1 -Views outpost-light-1f -Rounds 3 -Samples 240` 单独采样。
+
+两件原创灯具通过 `python tools/outpost_lights_assets.py` 沿 Blender → GLB → 原生导入器重建；
+机器需安装脚本所配置的 Blender 路径，原生 asset-tools 已构建。源模型不提交，运行 RMESH、manifest
+和生成器共同维护。重建布局用 `python tools/outpost_storeys.py --write`。
+检查灯具的发光面、锥体方向、门洞通光、楼板隔光和转向时的连续性；RTS 剖切仍保留完整建筑遮挡。
+
 `rasterfall.exe --gpu-lighting-test` 在物理 Vulkan GPU 上做离屏行为回归，检查太阳/聚光灯遮挡、移动点光源、粗糙度、风格化响应、旧烘焙乘数无效和 resize。它有显式诊断 readback，不能代替 native present。
+
+`ARCHITECTURE LIGHT PASS` 另外检查 point、超过两个动态阴影名额的 spot、太阳、有限光线段
+和清空旧世界遮挡；BOX 与三角形对照保护实体解析求交及共边遮挡。静态 BVH 只包含实际建筑几何，
+不能据此声称所有动态物体均已投射局部灯阴影。限定原生证据见[本轮现场](../archive/outpost-lighting-20261005.md)。
 
 同一入口的 `LIGHTING RANGE PASS` 检查无太阳/局部灯时，仅改变法线朝向就能区分天空与地面填充，
 并验证自发光 HDR 4/8 经真实 half-float 目标与色调映射后仍有亮度顺序，未同时裁成纯白。

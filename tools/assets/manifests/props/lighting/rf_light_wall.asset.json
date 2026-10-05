@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "id": "rf_light_wall",
+  "type": "static_prop",
+  "source": "../../../../../rasterfall/private-assets/source/props/lighting/rf_light_wall.glb",
+  "dimensions_m": [
+    0.65,
+    0.25,
+    0.45
+  ]
+}

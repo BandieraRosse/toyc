@@ -44,7 +44,6 @@ object id=service_tray_right kind=arch_cable_tray x=3200 y=1485 z=3953 yaw=180 s
 object id=control_left kind=control_cabinet x=-2176 y=0 z=3712 yaw=180 scale=1000 attr.collision=component
 object id=maintenance_hatch kind=arch_floor_hatch x=-3174 y=0 z=3405 yaw=0 scale=1000 attr.collision=none
 object id=service_pipe kind=arch_pipe_straight x=-3098 y=282 z=3840 yaw=0 scale=1000 attr.collision=none
-object id=light_west kind=lamp_post x=-4301 y=0 z=2714 yaw=90 scale=1000 attr.collision=component
 render id=null_mark kind=sign min_x=2500 max_x=3350 min_z=-4030 max_z=-4000 height=100 color=779BAA attr.height2=410 attr.style=1 attr.text=RF attr.facing=+z
 render id=null_status kind=sign min_x=3450 max_x=4150 min_z=-4030 max_z=-4000 height=100 color=81B4B5 attr.height2=410 attr.style=1 attr.text=ON attr.facing=+z
 render id=north_identity kind=sign min_x=-1200 max_x=1200 min_z=3955 max_z=3985 height=940 color=596F7C attr.height2=1220 attr.style=1 attr.text=INFRA attr.facing=-z
@@ -210,8 +209,6 @@ object id=yard_cover_a kind=barrier x=-1800 y=0 z=-9100 yaw=0 scale=1000 attr.co
 object id=yard_cover_b kind=barrier x=1800 y=0 z=-9100 yaw=0 scale=1000 attr.collision=component
 object id=yard_target kind=barrier x=0 y=0 z=-10450 yaw=0 scale=1000 attr.collision=component
 object id=yard_power kind=power_unit x=3270 y=0 z=-10000 yaw=90 scale=1000 attr.collision=component
-object id=yard_lamp_west kind=lamp_post x=-4200 y=0 z=-5950 yaw=0 scale=1000 attr.collision=component
-object id=yard_lamp_east kind=lamp_post x=4200 y=0 z=-5950 yaw=0 scale=1000 attr.collision=component
 render id=yard_sign kind=sign min_x=-1000 max_x=1000 min_z=-11525 max_z=-11495 height=950 color=596F7C attr.height2=1200 attr.style=1 attr.text=TEST_YARD attr.facing=+z
 
 # Standard open experiment plot: 20 x 18 m; 6 m cross-road to the north.
@@ -1131,8 +1128,6 @@ render id=outpost_b1_wall_nw kind=box min_x=-4608 max_x=-3072 min_z=10163 max_z=
 collision id=outpost_b1_wall_ne_col shape=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_b1_wall_ne kind=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526670
 render id=outpost_b1_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=-2158 attr.height2=-1858 color=9AC5CF attr.style=1 attr.facing=-z attr.text=B1_STORAGE_/_STAIRS
-object id=outpost_b1_hall_light kind=lamp_post x=-4200 y=-2458 z=0 yaw=0 scale=800 attr.collision=none
-object id=outpost_b1_infra_light kind=lamp_post x=4200 y=-2458 z=7168 yaw=0 scale=800 attr.collision=none
 collision id=outpost_1f_wall_s_pier_0_col shape=box min_x=-4608 max_x=-1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 collision=true visible=false walkable=false
 render id=outpost_1f_wall_s_pier_0 kind=box min_x=-4608 max_x=-1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 color=526875
 collision id=outpost_1f_wall_s_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
@@ -1232,8 +1227,6 @@ render id=outpost_2f_wall_operations_s kind=box min_x=4608 max_x=10240 min_z=-31
 collision id=outpost_2f_wall_operations_n_col shape=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
 render id=outpost_2f_wall_operations_n kind=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=4762 attr.base_y=2458 color=526875
 render id=outpost_2f_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=2758 attr.height2=3058 color=9AC5CF attr.style=1 attr.facing=-z attr.text=2F_/_STAIRS
-object id=outpost_2f_hall_light kind=lamp_post x=-4200 y=2458 z=0 yaw=0 scale=800 attr.collision=none
-object id=outpost_2f_infra_light kind=lamp_post x=4200 y=2458 z=7168 yaw=0 scale=800 attr.collision=none
 collision id=outpost_roof_hall_col shape=box min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=4916 attr.base_y=4762 collision=true visible=false walkable=true
 render id=outpost_roof_hall kind=box min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=4916 attr.base_y=4762 color=637A86
 surface id=outpost_roof_hall_surface kind=platform min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=4916 material=637A86 attr.collision_id=outpost_roof_hall_col
@@ -1286,6 +1279,40 @@ collision id=outpost_roof_wall_operations_n_col shape=box min_x=4608 max_x=10240
 render id=outpost_roof_wall_operations_n kind=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 color=526875
 surface id=outpost_roof_wall_operations_n_surface kind=platform min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 material=526875 attr.collision_id=outpost_roof_wall_operations_n_col
 render id=outpost_roof_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=5216 attr.height2=5516 color=9AC5CF attr.style=1 attr.facing=-z attr.text=ROOF_/_STAIRS
+object id=outpost_b1_ceiling_-2304_-2304 kind=light_ceiling x=-2304 y=-236 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_-2304_2048 kind=light_ceiling x=-2304 y=-236 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_-2304_6656 kind=light_ceiling x=-2304 y=-236 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_-2304_9216 kind=light_ceiling x=-2304 y=-236 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_2304_-2304 kind=light_ceiling x=2304 y=-236 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_2304_2048 kind=light_ceiling x=2304 y=-236 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_2304_6656 kind=light_ceiling x=2304 y=-236 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_b1_ceiling_2304_9216 kind=light_ceiling x=2304 y=-236 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_-2304_-2304 kind=light_ceiling x=-2304 y=2222 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_-2304_2048 kind=light_ceiling x=-2304 y=2222 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_-2304_6656 kind=light_ceiling x=-2304 y=2222 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_-2304_9216 kind=light_ceiling x=-2304 y=2222 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_2304_-2304 kind=light_ceiling x=2304 y=2222 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_2304_2048 kind=light_ceiling x=2304 y=2222 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_2304_6656 kind=light_ceiling x=2304 y=2222 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_ceiling_2304_9216 kind=light_ceiling x=2304 y=2222 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_wing_-7424_-1536 kind=light_ceiling x=-7424 y=2222 z=-1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_wing_-7424_1536 kind=light_ceiling x=-7424 y=2222 z=1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_wing_7424_-1536 kind=light_ceiling x=7424 y=2222 z=-1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_wing_7424_1536 kind=light_ceiling x=7424 y=2222 z=1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_corridor_5632 kind=light_ceiling x=0 y=2222 z=5632 yaw=0 scale=1000 attr.collision=none
+object id=outpost_1f_corridor_8704 kind=light_ceiling x=0 y=2222 z=8704 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_-2304_-2304 kind=light_ceiling x=-2304 y=4680 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_-2304_2048 kind=light_ceiling x=-2304 y=4680 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_-2304_6656 kind=light_ceiling x=-2304 y=4680 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_-2304_9216 kind=light_ceiling x=-2304 y=4680 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_2304_-2304 kind=light_ceiling x=2304 y=4680 z=-2304 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_2304_2048 kind=light_ceiling x=2304 y=4680 z=2048 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_2304_6656 kind=light_ceiling x=2304 y=4680 z=6656 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_ceiling_2304_9216 kind=light_ceiling x=2304 y=4680 z=9216 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_wing_-7424_-1536 kind=light_ceiling x=-7424 y=4680 z=-1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_wing_-7424_1536 kind=light_ceiling x=-7424 y=4680 z=1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_wing_7424_-1536 kind=light_ceiling x=7424 y=4680 z=-1536 yaw=0 scale=1000 attr.collision=none
+object id=outpost_2f_wing_7424_1536 kind=light_ceiling x=7424 y=4680 z=1536 yaw=0 scale=1000 attr.collision=none
 collision id=outpost_stair_b1_door_pier_0_col shape=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_stair_b1_door_pier_0 kind=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526875
 collision id=outpost_stair_b1_door_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-615 collision=true visible=false walkable=false
@@ -1363,12 +1390,20 @@ render id=outpost_stair_wall_spine kind=box min_x=-256 max_x=256 min_z=12288 max
 collision id=outpost_stair_cap_col shape=box min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 attr.base_y=7220 collision=true visible=false walkable=true
 render id=outpost_stair_cap kind=box min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 attr.base_y=7220 color=526875
 surface id=outpost_stair_cap_surface kind=platform min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 material=526875 attr.collision_id=outpost_stair_cap_col
-object id=outpost_stair_b1_light kind=lamp_post x=2750 y=-2458 z=11264 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_b1_half_light kind=lamp_post x=2750 y=-1229 z=18432 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_1f_light kind=lamp_post x=2750 y=0 z=11264 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_1f_half_light kind=lamp_post x=2750 y=1229 z=18432 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_2f_light kind=lamp_post x=2750 y=2458 z=11264 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_2f_half_light kind=lamp_post x=2750 y=3687 z=18432 yaw=0 scale=800 attr.collision=none
-object id=outpost_stair_roof_light kind=lamp_post x=2750 y=4916 z=11264 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_b1_light kind=light_wall x=2928 y=-808 z=11264 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_b1_half_light kind=light_wall x=2928 y=421 z=18432 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_b1_flight_light kind=light_wall x=-2928 y=-258 z=15360 yaw=90 scale=1000 attr.collision=none
+object id=outpost_stair_b1_return_light kind=light_wall x=2928 y=942 z=15360 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_1f_light kind=light_wall x=2928 y=1650 z=11264 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_1f_half_light kind=light_wall x=2928 y=2879 z=18432 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_1f_flight_light kind=light_wall x=-2928 y=2200 z=15360 yaw=90 scale=1000 attr.collision=none
+object id=outpost_stair_1f_return_light kind=light_wall x=2928 y=3400 z=15360 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_2f_light kind=light_wall x=2928 y=4108 z=11264 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_2f_half_light kind=light_wall x=2928 y=5337 z=18432 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_2f_flight_light kind=light_wall x=-2928 y=4658 z=15360 yaw=90 scale=1000 attr.collision=none
+object id=outpost_stair_2f_return_light kind=light_wall x=2928 y=5858 z=15360 yaw=270 scale=1000 attr.collision=none
+object id=outpost_stair_roof_light kind=light_wall x=2928 y=6566 z=11264 yaw=270 scale=1000 attr.collision=none
+object id=outpost_entry_light_-3000 kind=light_wall x=-3000 y=1550 z=-4237 yaw=180 scale=1000 attr.collision=none
+object id=outpost_entry_light_3000 kind=light_wall x=3000 y=1550 z=-4237 yaw=180 scale=1000 attr.collision=none
 render id=outpost_stair_entry_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=300 attr.height2=600 color=9AC5CF attr.style=1 attr.facing=-z attr.text=STAIRS_B1_/_2F_/_ROOF
 # END OUTPOST STOREYS

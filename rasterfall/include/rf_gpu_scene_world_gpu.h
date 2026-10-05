@@ -105,6 +105,7 @@ struct rf_gpu_scene_world_gpu_probe {
     struct rf_gpu_scene_world_gpu_probe *shared_parent;
     uint32_t shared_actor_first,shared_actor_count;
     uint64_t prewarmed_generation;
+    uint64_t lighting_world_generation,lighting_map_generation;
     /* Transient first-frame observer; negative return cancels startup. */
     int (*startup_event)(void *, const char *, int, int64_t);
     void *startup_event_context;

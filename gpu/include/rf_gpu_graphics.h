@@ -98,6 +98,17 @@ struct rf_gpu_graphics_stats {
 };
 struct rf_gpu_graphics;
 struct rf_gpu_graphics_resource;
+/* Static, opaque architectural primitives in world RFU. Copies synchronously;
+ * rebuild only on world changes, never from collision or camera visibility.
+ * Empty input clears the previous world. In-flight replacement is rejected. */
+struct rf_gpu_occlusion_primitive {
+    float p[3][3];
+    /* Nonzero: exact authored opaque cuboid, p[0]/p[1] = min/max.
+     * This is not a mesh's approximate bounding box or a collision proxy. */
+    uint32_t solid_box;
+};
+int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
+    const struct rf_gpu_occlusion_primitive *triangles,uint32_t count);
 #define RF_GPU_GRAPHICS_TEXTURES 8
 struct rf_gpu_graphics_texture_image {
     const uint32_t *rgb;

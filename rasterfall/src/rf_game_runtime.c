@@ -4261,6 +4261,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
           (options.environment_capture_dir || options.normal_frame_audit_output ||
            (options.gpu_normal_view && (!strncmp(options.gpu_normal_view,"host-",5) ||
+               !strncmp(options.gpu_normal_view,"outpost-light-",14) ||
                !strcmp(options.gpu_normal_view,"research-bx18") ||
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab") ||
@@ -4331,6 +4332,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.x = 0; camera.z = -3400; camera.cy = 1024;
         } else if (!strcmp(options.gpu_normal_view, "spawn")) {
             camera.x = 0; camera.z = -4850; camera.cy = 1024;
+        } else if (!strncmp(options.gpu_normal_view,"outpost-light-",14)) {
+            camera.x=-1400;camera.z=-2900;camera.cy=1024;
+            camera.y=RASTERFALL_STANDING_CAMERA_Y;camera.pitch_sy=120;camera.pitch_cy=1017;
+            if(!strcmp(options.gpu_normal_view,"outpost-light-b1"))camera.y-=2458;
+            if(!strcmp(options.gpu_normal_view,"outpost-light-2f"))camera.y+=2458;
+            if(!strcmp(options.gpu_normal_view,"outpost-light-stairs")){
+                camera.x=-1700;camera.z=11264;camera.pitch_sy=160;camera.pitch_cy=1011;
+            }
+            if(!strcmp(options.gpu_normal_view,"outpost-light-research")){
+                camera.x=-5400;camera.z=-1600;camera.sy=-900;camera.cy=488;
+            }
         } else if (!strcmp(options.gpu_normal_view, "host-racks")) {
             camera.x=1600;camera.z=1800;camera.sy=650;camera.cy=791;
             camera.pitch_sy=-140;camera.pitch_cy=1014;
@@ -4452,8 +4464,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.z = !strcmp(options.gpu_normal_view, "mid") ? -8400 : -3400;
             camera.cy = 1024;
         }
-        camera.y = -350;
-        camera.pitch_cy = 1024;
+        if(strncmp(options.gpu_normal_view,"outpost-light-",14)) {
+            camera.y = -350;
+            camera.pitch_cy = 1024;
+        }
         if(!strncmp(options.gpu_normal_view,"frontier-",9)) {
             camera.x=0;camera.z=-8192;camera.y=RASTERFALL_STANDING_CAMERA_Y;camera.sy=0;camera.cy=1024;
             if(!strcmp(options.gpu_normal_view,"frontier-overview")) {
@@ -4494,6 +4508,10 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         local_actor->z = camera.z;
         local_actor->sy = camera.sy;
         local_actor->cy = camera.cy;
+        if(!strncmp(options.gpu_normal_view,"outpost-light-",14)) {
+            local_actor->ground_y=camera.y-RASTERFALL_STANDING_CAMERA_Y;
+            local_actor->airborne_y=0;
+        }
         for (enemy = 0; enemy < options.gpu_normal_enemies &&
              strcmp(options.gpu_normal_view,"west-button") &&
              strcmp(options.gpu_normal_view,"west-button-no-tank"); ++enemy) {

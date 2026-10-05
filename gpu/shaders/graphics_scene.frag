@@ -83,9 +83,14 @@ void main() {
     float metal=float((d.material.y>>8)&255u)/255.0;
     float emissive=float((d.material.y>>16)&255u)/16.0;
     bool stylized=d.quality.z==2;
-    vec3 radiance=base*(1.0-metal)*environment_irradiance(n)+base*emissive;
+    vec3 origin=world_position+n*1.5;
+    // A roof blocks outdoor fill even in RTS cutaway. Retain a small artistic
+    // interior floor; this is visibility, not GI or bounced artificial light.
+    float sky_access=architecture_visibility(origin,vec3(0,1,0),131072.0);
+    vec3 radiance=base*(1.0-metal)*environment_irradiance(n)*mix(0.10,1.0,sky_access)+base*emissive;
     vec3 l=lighting.sun_direction.xyz;
-    if(lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0))
+    if(lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0) &&
+       architecture_visibility(origin,l,131072.0)>0.0)
       radiance+=brdf(base,n,v,l,rough,metal,stylized)*lighting.sun_color.rgb*
         lighting.sun_color.w*sun_visibility(world_position,n);
     for(int i=0;i<int(lighting.counts.x);++i) {
@@ -98,6 +103,7 @@ void main() {
         float spot=light.direction_outer.w<0.0 ? 1.0 : smoothstep(light.direction_outer.w,
             light.inner_shadow.x,dot(-l,light.direction_outer.xyz));
         if(spot<=0.0 || (!stylized && dot(n,l)<=0.0)) continue;
+        if(architecture_visibility(origin,l,max(sqrt(distance_squared)-2.0,0.0))==0.0)continue;
         float attenuation=fade*fade/max(distance_squared/(512.0*512.0),0.04);
         radiance+=brdf(base,n,v,l,rough,metal,stylized)*light.color_intensity.rgb*
             light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);

@@ -1,6 +1,6 @@
 # Static World Lighting V2 架构
 
-> 状态：当前
+> 状态：遗产；2026-10-05 用户决策停止维护
 > 所有者：Static World Lighting
 > 最近核对：2026-09-21
 

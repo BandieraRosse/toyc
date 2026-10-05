@@ -194,6 +194,7 @@ void rasterfall_options_usage(int fd)
         "  GPU sky: RF_GPU_SKY_PRESET=clear|rain|warm; RF_GPU_SKY_TIME=seconds (optional frozen time)\n"
         "    RF_GPU_SKY_SCALE=1|2|4 (resolution divisor, default 4); RF_GPU_SKY_BENCH=1 with --gpu-lighting-test\n"
         "  --gpu-normal-scene sky-north|sky-east|sky-south|sky-west|sky-up|sky-down|sky-sun|atmosphere-lab 0\n"
+        "  --gpu-normal-scene outpost-light-b1|outpost-light-1f|outpost-light-2f|outpost-light-stairs|outpost-light-research 0\n"
         "  --gpu-scene-native-fixture (isolated frozen map/body/head native Scene)\n"
         "  --gpu-scene-world-preview (diagnostic WORLD-only native Scene)\n"
         "  --gpu-scene-independent-preview (diagnostic independent layered Scene)\n"
@@ -459,6 +460,11 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             o->gpu_normal_view=argv[++arg];
             o->gpu_normal_enemies=atoi(argv[++arg]);
             if ((strcmp(o->gpu_normal_view,"near") &&
+                 strcmp(o->gpu_normal_view,"outpost-light-b1") &&
+                 strcmp(o->gpu_normal_view,"outpost-light-1f") &&
+                 strcmp(o->gpu_normal_view,"outpost-light-2f") &&
+                 strcmp(o->gpu_normal_view,"outpost-light-stairs") &&
+                 strcmp(o->gpu_normal_view,"outpost-light-research") &&
                  strcmp(o->gpu_normal_view,"frontier-entry") &&
                  strcmp(o->gpu_normal_view,"frontier-overview") &&
                  strcmp(o->gpu_normal_view,"frontier-floor-1") &&

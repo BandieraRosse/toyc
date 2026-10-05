@@ -107,6 +107,7 @@ struct rf_gpu_graphics {
     rf_vk_pipeline_layout layout;
     rf_vk_pipeline pipelines[32];
     struct rf_gpu_lighting lighting;
+    struct rf_gpu_vulkan_buffer architecture_buffer;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
@@ -380,6 +381,7 @@ static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item
     }
     return 0;
 }
+#include "rf_gpu_architecture_light.inc"
 #include "rf_gpu_lighting.inc"
 
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height)

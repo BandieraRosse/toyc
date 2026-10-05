@@ -9,6 +9,11 @@
 
 ## 角色模型
 
+前哨照明 `rf_light_ceiling`、`rf_light_wall` 为项目内
+`tools/blender/generate_outpost_lights.py` 原创参数化几何，无外部模型或贴图。
+公开运行资产位于 `assets/models/props/lighting/`，GLB 源在私有生成目录，
+重建见[光照指南](../guides/gpu-lighting.md)。
+
 实验计算机 `rf_lab_computer_*` 六件由项目内 `tools/blender/generate_lab_computer.py` 原创程序生成，
 无外部几何或纹理。公开资源位于 `assets/models/props/lab/`，玻璃与屏幕为项目内参数化几何；
 重建、组合与私有创作源边界见[实验区合同](experiment-labs.md#模块化控制计算机)。字体复用已有 RF 字库。

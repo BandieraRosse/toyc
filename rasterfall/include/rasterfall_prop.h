@@ -85,9 +85,19 @@ enum rasterfall_prop_asset_id {
     RASTERFALL_PROP_ASSET_FRONTIER_COLLECTOR = 75,
     RASTERFALL_PROP_ASSET_FRONTIER_ROCK = 76,
     RASTERFALL_PROP_ASSET_FRONTIER_BOLLARD = 77,
-    RASTERFALL_PROP_ASSET_COUNT = 77
+    RASTERFALL_PROP_ASSET_LIGHT_CEILING = 78,
+    RASTERFALL_PROP_ASSET_LIGHT_WALL = 79,
+    RASTERFALL_PROP_ASSET_COUNT = 79
 };
 
+/* Socket coordinates are RFU at authored scale, bottom-centred, +Z front.
+ * Both the aperture's material and emitted light use this single profile. */
+struct rasterfall_prop_light_profile {
+    float position[3],direction[3],color[3];
+    float radius,intensity,outer_cosine,inner_cosine;
+    unsigned emissive_material;
+};
+const struct rasterfall_prop_light_profile *rasterfall_prop_light_profile(int asset);
 struct rasterfall_prop_dimensions {
     int x;
     int y;

@@ -1405,7 +1405,7 @@ GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_grap
     gpu/include/rf_vulkan_sky_min.h \
     $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_sky* gpu/shaders/*.glsl) \
     gpu/include/rf_gpu_vulkan_backend.h gpu/include/rf_gpu_graphics.h \
-    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_texture_set.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_lighting_test.inc gpu/src/rf_gpu_graphics_spirv.inc \
+    gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_texture_set.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_architecture_light.inc gpu/src/rf_gpu_lighting_test.inc gpu/src/rf_gpu_graphics_spirv.inc \
     gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
     gpu/shaders/graphics_compat.vert gpu/shaders/graphics_compat.frag gpu/shaders/graphics_skin.comp
 

@@ -25,8 +25,9 @@ def geometry():
     def sign(name, x, z, y, text):
         add(f"render id={name} kind=sign min_x={x-600} max_x={x+600} min_z={z} max_z={z} height={y+300} attr.height2={y+600} color=9AC5CF attr.style=1 attr.facing=-z attr.text={text}")
 
-    def lamp(name,x,z,y):
-        add(f"object id={name} kind=lamp_post x={x} y={y} z={z} yaw=0 scale=800 attr.collision=none")
+    def lamp(name,x,z,y,wall=False,yaw=0):
+        kind="light_wall" if wall else "light_ceiling"
+        add(f"object id={name} kind={kind} x={x} y={y} z={z} yaw={yaw} scale=1000 attr.collision=none")
 
     add(f"region id=outpost_bounds kind=area {bounds(-41216,41216,-41472,19533)}")
 
@@ -50,8 +51,6 @@ def geometry():
     ):
         kit.wall("outpost_b1_wall_"+name,axis,at,start,end,-2458,-154,"526670",doors)
     sign("outpost_b1_sign",0,10140,-2458,"B1_STORAGE_/_STAIRS")
-    lamp("outpost_b1_hall_light",-4200,0,-2458)
-    lamp("outpost_b1_infra_light",4200,7168,-2458)
 
     # Second floor follows the existing cross-shaped building footprint.
     footprint = (
@@ -92,18 +91,34 @@ def geometry():
                 kit.wall(f"outpost_1f_{side}_partition","z",x,4096,10240,0,2304,"526875",((5939,8397,1843),))
             continue
         sign(f"outpost_{floor}_sign",0,10140,y,"2F_/_STAIRS" if floor=="2f" else "ROOF_/_STAIRS")
-        if floor=="2f":
-            lamp("outpost_2f_hall_light",-4200,0,y)
-            lamp("outpost_2f_infra_light",4200,7168,y)
+
+    # Three indoor storeys. Ceiling fixtures finish at the slab underside;
+    # the emission socket sits below the lens, never inside the floor above.
+    for floor,y in (("b1",-2458),("1f",0),("2f",2458)):
+        for x in (-2304,2304):
+            for z in (-2304,2048,6656,9216):
+                lamp(f"outpost_{floor}_ceiling_{x}_{z}",x,z,y+2222)
+        if floor!="b1":
+            for x in (-7424,7424):
+                for z in (-1536,1536):
+                    lamp(f"outpost_{floor}_wing_{x}_{z}",x,z,y+2222)
+        if floor=="1f":
+            # Separate central service corridor from the Power/Control rooms.
+            for z in (5632,8704):lamp(f"outpost_1f_corridor_{z}",0,z,y+2222)
 
     storeys=(("b1",-2458),("1f",0),("2f",2458),("roof",4916))
     kit.switchback("outpost_stair",(-3072,3072,10240,19456),storeys,7220)
     for name, y in storeys:
-        lamp(f"outpost_stair_{name}_light",2750,11264,y)
+        # East wall, aperture faces west and down. Keep below the next landing.
+        lamp(f"outpost_stair_{name}_light",2928,11264,y+1650,True,270)
         if name=="roof":
             continue
         mid=y+1229
-        lamp(f"outpost_stair_{name}_half_light",2750,18432,mid)
+        lamp(f"outpost_stair_{name}_half_light",2928,18432,mid+1650,True,270)
+        lamp(f"outpost_stair_{name}_flight_light",-2928,15360,y+2200,True,90)
+        lamp(f"outpost_stair_{name}_return_light",2928,15360,y+3400,True,270)
+    # Replace the two forecourt poles with facade-mounted warm downlights.
+    for x in (-3000,3000):lamp(f"outpost_entry_light_{x}",x,-4237,1550,True,180)
     # East-side ledge over the lower flight is deliberately absent at every
     # half landing: the two flights join across the full north landing.
     sign("outpost_stair_entry_sign",0,10140,0,"STAIRS_B1_/_2F_/_ROOF")
@@ -127,6 +142,8 @@ def update_map(path):
         words=line.split()
         fields=dict(w.split("=",1) for w in words[1:] if "=" in w)
         name=fields.get("id","")
+        if words and words[0]=="object" and fields.get("kind")=="lamp_post":
+            continue
         if words and words[0]=="region" and fields.get("kind")=="safe":
             continue
         if name=="service_spine_pillar":
