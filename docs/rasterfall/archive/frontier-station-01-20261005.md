@@ -7,8 +7,9 @@
 
 当前合同见[开发任务书](../reference/frontier-station-01-task.md)，当前优先级见
 [活动计划](../plans/frontier-station-01.md)，进入与操作见[玩家指南](../guides/frontier-station-01.md)。
-首图正式普通完整玩家路线已由 R13 无输入失败闭环通过；普通 ASSAULT / COUNTERATTACK
-阶段性能样本另行保留，稳定 60 FPS 与完整 CPU 路线未签收。
+首图正式普通完整玩家路线已由 R13 首轮、R15/R16 后续及最终版本 R18 闭环通过；
+最终 R18 原116动作连续完成、正常返回和实际退出0，战败 R17 同时保留。
+普通 ASSAULT / COUNTERATTACK 阶段性能样本另行保留，稳定60FPS、完整CPU路线与平衡未签收。
 后续现场必须保留自己的版本、日志与退出码，不能用下述旧样本替代。
 
 ## 原生构建与稳定合同
@@ -633,3 +634,122 @@ R16 PID2392以原目标连续跑至肃清，再做胜利后的独立自然救援
 证据。该窗口在动作34仓库前移动时玩家倒地，到达timeout，保留原失败；正常返回/实际退出0。
 `tmp/frontier-normal-cpu-full-01/`名称只是请求意图，stdout明确selected backend=gpu-scene。
 仍只有之前CPU05的有限普通冒烟通过，CPU完整行动与CPU性能结论未扩展。
+
+### 最终敌人稳定资源槽与原生检查
+
+敌人冻结来源使用已有 `source_slot` 索引 GPU 容量和完整几何缓存，避免较早来源消失后，
+后续未变身体因压紧 draw ordinal 而重新提取、搬入容量不足的资源并重建。程序角色仍位于
+敌人容量之后的独立 ordinal 区域，不把槽当永久身份；范围、严格递增顺序、完整冻结值、
+world generation、顶点格式和光照模式继续校验。透明与 draw 顺序、裁剪、玩法均不变。
+主视图和 shared_parent 使用相同索引，借用不转移所有权，所有 reader 退休及完整槽清理
+沿原路径。没有增加数组、跨帧在途资源或新的 GPU 同步模式。
+
+真实源码叶函数合同在 `tmp/frontier-enemy-slot-20261005-082608/`：旧版退出99，删除较早
+小身体后错误重建后续大身体；修复版退出0，同一未变来源提取0、创建0、资源指针相同。
+稀疏来源、最大数量、越界/重复/倒序拒绝、透明零 alpha、增长/缩小、shared_parent 借用、
+live reader 退休、代际失效、缓存关闭和完整关闭清理均通过。几何/驱动接口是显式 mock，
+该合同不替代物理 GPU，也不是普通性能测量。旧/新 run 日志 SHA-256 为
+`ded42384b62d6e6969333374e7e5ee97ba71baad695b4f385572f46a49ee45aa`、
+`95e87693df2489fba1c3c0c2d008784bf979452b211c8d1e2d3b260455868781`。
+四个真实翻译单元语法检查通过，临时编译失败亦保留，没有包装成通过。
+
+稀疏槽可保留更多当前闲置资源；既有143槽、每槽4096三角形的顶点/索引理论 payload
+上界约40.22MiB/owner，还需另计 staging、cached runs、对齐、纹理及描述符。这不是实际
+驻留量；代际改变使键失效，不保证释放所有容量。不以本合同宣称整体 FPS 或显存收益。
+
+`tmp/frontier-checks-enemy-stable-slots/` 最终 Windows build/test/gpu-test 实际退出0，
+耗时27.467/45.367/40.226秒，官方 GPU 完成120帧；最终 executable SHA-256为
+`afa2f50a5d3bfd1945935ca5cda60d9c6e55de5984c9358d104671aa9952fa8a`。
+三个原始日志 SHA-256为
+`56fd88652ffeb191bfd3ca2b09550561cbb01e04134f15121643dc4bad32d31f`、
+`5937afd9fad8ce77db9b0daff540bb94f9940342c57b2c328c5fa7cf60dea93e`、
+`a06090f7ff635a59cfc67f0c0dd158431631acf16a77ad831b0e5b68f7c589fd`。
+
+同版 `tools/gpu_scene_play.ps1 -Stage Combat -Frames 240` 三个串行原生场景完成：
+west-death100帧、effects-capacity4帧、continuous240帧，子进程与脚本均实际退出0，
+证据在 `tmp/frontier-enemy-slots-combat-01/`。它验证真实 GPU 战斗生命周期与容量压力，
+是固定步诊断，不作为普通路线、实时帧率或 validation layer 已开启的结论。
+
+West 实际死亡来源由16逐步移除至0，continuous 进入实际活波；SOURCE/NATIVE frame ID
+都连续且 bridges/readback/mixed 为0。effects 实例2048与1交替，属于效果容量压力，
+不冒充逐敌人身体容量测量。三个 stdout SHA-256依次为
+`23f2abee7eb33348c38fcdcc35ee0e731328fc5f468f5c93f1245a47e0664534`、
+`ef88f17096695fd4043a309c7fb6c33c6e19c6b814defb40b57c3520d7be05b1`、
+`13e86c65a7e4f6f0c46cce7618f45c3279809c69d7d90e1544d8d53ff1849d47`。
+汇总日志没有逐槽资源指针/容量，不能用它声称旧上传峰全部消除。
+
+### 最终版本普通路线 R17 的合法战败
+
+同版 R17 PID32916保持原116动作的目标和到达门槛，完成部署、周期感染者、整备接管、
+真实制造领取及全数36+6反击增援。反击39792ms、总逻辑116752ms时六名友方全部倒地，
+剩四名敌人，任务合法进入FAILED；没有渲染或 GPU 错误。肃清 expect 因此超时，原失败
+动作、审计和画面均保留，不将合法战败改写成完整路线通过。
+随后单独执行原返回菜单，正常回前哨并WM_CLOSE实际退出0。
+`tmp/frontier-normal-r17/report.json` full_route_verified=false、input_failure_observed=true。
+这轮实际包含主视图与开启的单位镜头，以及来源增减和世界返回；它不是完整胜利验收。
+此前 R15/R16胜利记录仍各自有效；战斗路线不是相同种子与wall时序的确定性宏，胜败波动
+属于本轮未签收的平衡范围，不能用后续复跑抹去失败。
+
+### 最终版本 R18 连续正式路线通过
+
+同一最终 executable、地图和原116动作的普通 R18 PID27056连续完成全部操作，没有
+玩法driver、固定tick、远程命令或状态写入，没有放宽目标/到达门槛。三设施接管、真实制造
+开始/领取、36感染者与6枪手全数入场、pending0、敌人0、captured111与victory_count1齐全。
+反击39760ms、总逻辑121984ms观察到SECURED；玩家倒地，五名队友中三人存活，HP为
+89/120/115。它是合法胜利，不作全员存活或平衡签收。
+
+正常返回前哨并WM_CLOSE实际退出0；`tmp/frontier-normal-r18/report.json`
+full_route_verified=true、input_failure_observed=false，五类checkpoint齐全，116动作无error。
+root直接审阅真实 `frame-000011.scene.ppm`：五名友军标签、倒地状态和血条整体避开等待
+提示，开启的单位镜头正常显示。路线包括主/子视图、敌人来源变化和世界返回；没有借此
+宣称逐槽借用命中率、显存变化或完整同步验证。R17战败仍单独保留。
+
+| R18原始文件 | SHA-256 |
+| --- | --- |
+| stdout.log | `d75b2c4f69aa7ccc8832aa3907d3654437723ca44d4c1065b731b65f215a4adc` |
+| stderr.log | `f7670e17c91a55d516a1de9729c1c7245d979255cf54f7d8b63c2f5b35740450` |
+| actions.json | `a71224808f122116d10003597d8e00218e285539f777aabfda662734a9b0270c` |
+| process.json | `6ba942d50c76aac211449f9a57782191b7f888326208a3df54716d4e42116766` |
+| report.json | `c88184512be266219f7878498caa534e292cdbecd6a1147870e795bba509e137` |
+
+该战斗复跑不等同于相同种子、相同wall时序的性能A/B。R17只读审计显示玩家先到庭院时
+队友仍落后约4.8–5.9k RFU；最后一名队友倒地才触发FAILED，感染者已清、仍剩四枪手。
+AK换弹期间仍有充足reserve，不是总弹药耗尽。操作指南补充同步推进和等待支援建议，
+单次失败不量化胜率、不据此改配额或削弱失败条件。
+
+### 最终版本普通性能采样06与收尾边界
+
+`tmp/frontier-phase-ordinary-05/` 启动后过早送入普通W/E，鼠标仍被捕获，脚本安全取消
+点击。root保存真实OS入口图并WM_CLOSE实际退出0；两阶段均0样本，报告器拒绝缺失样本，
+没有通过或帧率结论。没有继续复用该目录；06在同版新窗口把启动等待增至30秒，后续
+普通键鼠序列相同，关闭逐帧审计、Scene capture、slow诊断、固定tick及玩法driver。
+
+06 PID28524正常WM_CLOSE实际退出0，无GPU错误；只有只读 phase observer及两个有记录
+开销的OS截图。1280×720 RTS、immediate、RTX3050 Laptop，ASSAULT/COUNTER各4096
+有效帧、invalid0、startup contamination0；COUNTER记录逻辑0–66.912秒的首个有界窗口。
+actor18–24、alive4–10、infected0–18、mission enemies6–24、pending0–30。
+
+| 06最终版本独立采样，毫秒 | P50 | P95 | P99 | 最大 |
+| --- | --- | --- | --- | --- |
+| ASSAULT interval | 12.768 | 18.363 | 20.771 | 29.222 |
+| COUNTER interval | 16.327 | 22.620 | 25.242 | 71.881 |
+| COUNTER prepare | 6.814 | 12.954 | 14.503 | 62.522 |
+| COUNTER actor | 2.919 | 4.244 | 4.910 | 56.102 |
+| COUNTER enemy | 1.329 | 2.847 | 3.304 | 17.920 |
+| COUNTER GPU | 4.063 | 4.336 | 4.462 | 4.649 |
+
+反击P95仍大于16.667ms，稳定60FPS未签收。该窗口与04的种子、镜头时序、友军存活及
+其他负载不同，不能把分位数差异归因于稳定槽或AI，也不能给最慢actor帧虚构具体原因。
+collector总92977µs覆盖完整观察及丢弃记录，不除以8192伪称平均开销。
+最终同版普通行动与性能证据各自成立，不用性能序列替代完整胜利路线。
+
+06 stdout/runtime/actions/report SHA-256分别为
+`ba2d567b50375d4de8f5f4c3dbe38c17f1eb4d2b9550fa6c12d5f7c740a9c93b`、
+`b05e5fd4ab526af0ac9228ca915db7db574a168f60cee3e95bb3d5e4264aada4`、
+`c069540a0dc75a5bcdb6cee0ed42822e21b61d7a340073fcbee8a4d634e30547`、
+`8d2d7b3b6e46541bdef6ebc3f69fe39f7932fe500e937f6d38ebd49e044eb42a`；
+stderr与此前清洁窗口相同。最终地图/content哈希未变化，原始输入三文件保留未提交。
+
+本轮完成首图普通闭环、六类Astra工业资产、任务设施与真实制造，以及有预算的小队、
+目标身份迟滞、转角寻路和渲染资源/帧生命周期改进。完整CPU行动、稳定60FPS、听感和
+战斗平衡仍是后续验收边界；没有扩展无限波、联网任务或跨帧GPU工程。

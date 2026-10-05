@@ -1206,6 +1206,8 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     uint32_t *reused,uint32_t *created,uint32_t *triangles,
     uint32_t *prepare_culled,uint32_t *geometry_reused)
 {
+    if(frame->count>RF_GPU_SCENE_ENEMY_CAPACITY ||
+            frame->procedural_count>TOY_GAME_MAX_ACTORS)return -1;
     struct scene_enemy_mesh *mesh=NULL;
     uint32_t total=0,white=0xffffff;
     int result=-1;
@@ -1225,8 +1227,9 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     *upload_us=0;
     *draw_prepare_us=0;
     *prepare_culled=0;
-    /* The single Scene slot has retired before prepare. These are capacity
-     * slots, not actor identities: all active vertices/materials are replaced.
+    /* The single Scene slot has retired before prepare. Preserve capacity
+     * by validated source slot, not the compact current draw ordinal. Full
+     * source/world keys still guard slot reuse; these are not persistent IDs.
      * Keep inactive capacity until owner close/world change. */
     if (!frame->count && !frame->procedural_count) { *count=0;return 0; }
     if (!probe->enemy_workspace) probe->enemy_workspace=calloc(1,sizeof(*mesh));
@@ -1241,11 +1244,15 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         struct rf_gpu_scene_enemy_item_v1 procedural_source={0};
         const struct rf_gpu_scene_enemy_item_v1 *source;
         const struct rf_gpu_scene_procedural_item_v1 *actor=NULL;
+        unsigned slot;
         if (i<frame->count) {
             source=&frame->items[i];
-            if (i && source->source_slot<=frame->items[i-1].source_slot) goto done;
+            if (source->source_slot>=RF_GPU_SCENE_ENEMY_CAPACITY ||
+                (i && source->source_slot<=frame->items[i-1].source_slot)) goto done;
+            slot=source->source_slot;
             if (source->transparent && source->alpha<=0) continue;
         } else {
+            slot=RF_GPU_SCENE_ENEMY_CAPACITY+(i-frame->count);
             actor=&frame->procedural[i-frame->count];
             if(actor->auxiliary_only && !probe->offscreen_only)continue;
             procedural_source.x=actor->state.x;procedural_source.z=actor->state.z;
@@ -1259,9 +1266,9 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             (*prepare_culled)++;
             continue;
         }
-        struct scene_enemy_cached *saved=probe->enemy_cached?&probe->enemy_cached[i]:NULL;
+        struct scene_enemy_cached *saved=probe->enemy_cached?&probe->enemy_cached[slot]:NULL;
         if(probe->shared_parent && probe->shared_parent->enemy_cached) {
-            struct scene_enemy_cached *shared=&probe->shared_parent->enemy_cached[i];
+            struct scene_enemy_cached *shared=&probe->shared_parent->enemy_cached[slot];
             if(shared->valid && shared->generation==frame->world_generation &&
                 shared->is_actor==(actor!=NULL) && shared->vertex_color==vertex_color &&
                 (actor?!memcmp(&shared->actor,actor,sizeof(*actor)):!memcmp(&shared->enemy,source,sizeof(*source))))
@@ -1307,10 +1314,10 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         }
         *triangles+=mesh->count;
         start=rf_core_clock_now_us();
-        int updated=probe->enemy[i] && !rebuild ? (vertex_color ?
-            rf_gpu_graphics_scene_color_resource_update(probe->graphics,probe->enemy[i],
+        int updated=probe->enemy[slot] && !rebuild ? (vertex_color ?
+            rf_gpu_graphics_scene_color_resource_update(probe->graphics,probe->enemy[slot],
                 mesh->vertices.color,mesh->count*3) :
-            rf_gpu_graphics_triangle_resource_update(probe->graphics,probe->enemy[i],
+            rf_gpu_graphics_triangle_resource_update(probe->graphics,probe->enemy[slot],
                 mesh->vertices.legacy,mesh->count*3)) : 1;
         if (updated<0) goto done;
         if (updated) {
@@ -1320,10 +1327,10 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
                 rf_gpu_graphics_resource_create(probe->graphics,
                     mesh->vertices.legacy,mesh->count*3,mesh->indices,mesh->count*3,&white,1,1);
             if (!next) goto done;
-            if (probe->enemy[i] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[i])<0) {
+            if (probe->enemy[slot] && rf_gpu_graphics_resource_destroy(probe->graphics,probe->enemy[slot])<0) {
                 rf_gpu_graphics_resource_destroy(probe->graphics,next);goto done;
             }
-            probe->enemy[i]=next;(*created)++;
+            probe->enemy[slot]=next;(*created)++;
         } else (*reused)++;
         *upload_us+=rf_core_clock_now_us()-start;
         start=rf_core_clock_now_us();
@@ -1334,7 +1341,7 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             struct rf_gpu_graphics_draw *draw=&entry->draw;
             while (end<mesh->count && (vertex_color || mesh->colors[end]==mesh->colors[first]) &&
                 mesh->double_sided[end]==mesh->double_sided[first]) end++;
-            memset(entry,0,sizeof(*entry));entry->resource=probe->enemy[i];
+            memset(entry,0,sizeof(*entry));entry->resource=probe->enemy[slot];
             draw->translation_scale[0]=source->x;
             draw->translation_scale[1]=source->lift;
             draw->translation_scale[2]=source->z;

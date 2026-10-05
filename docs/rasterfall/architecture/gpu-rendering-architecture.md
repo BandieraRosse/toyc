@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall Core Host、Scene owner、Vulkan graphics
-> 最近核对：2026-10-04
+> 最近核对：2026-10-05
 
 Rasterfall 的渲染入口为 CPU 软件渲染和独立 GPU Scene。GPU Compute Raster、mixed executor 及 Draw/Raster bridge 已退役。旧实现和诊断合同见[退役归档](../archive/gpu-compute-retirement/README.md)，不能作为当前设计依据。
 
@@ -56,6 +56,19 @@ quad 路径（65,536 quad 上限，继续不足时直接生成）。GPU 资源�
 历史照常推进，主视图与阴影仍各自剔除。GPU 蒙皮仅在 bind 未变、palette 和顶点数完全一致且上次
 提交成功时跳过重复上传与 dispatch；取消的更新不能成为有效缓存。可映射的 bind/palette 缓冲保持
 映射至资源销毁，非 coherent 内存仍显式 flush。没有跨实例共享姿态或放宽角色包围盒规则。
+
+敌人几何和 GPU 容量槽按经过范围及严格递增校验的 `source_slot` 索引，避免前一来源消失后，
+未变的后续 body 因压紧序号改变而搬入其他容量槽。程序角色使用 `RF_GPU_SCENE_ENEMY_CAPACITY`
+加当前程序来源 ordinal 的独立区域；该区域内部仍可压紧，不将 ordinal 当作永久角色身份。
+主视图与 `shared_parent` 查询使用相同索引，完整冻结键仍验证槽复用和世界变化。当前来源顺序、
+透明顺序及裁剪不变；容量增长沿原接口重建，缩小时只更新活动顶点/索引数。借用资源仍属于创建
+owner，全部 reader 退休后才能更新或释放；关闭路径遍历原有完整槽数组及 cached runs。
+稀疏索引不增加数组或缓存结构，但可能比压紧序号保留更多已用而当前闲置的资源，沿现有 probe
+关闭路径统一释放；仅 world generation 改变会使冻结键失效，不承诺释放全部容量槽。
+每 owner 的顶点及索引理论 payload 上界为槽数乘现有最大三角形数乘
+`3 * (sizeof(struct rf_gpu_scene_color_vertex) + sizeof(uint32_t))`：当前143槽、每槽4096三角形约40.22MiB。
+这是理论 payload 界限，不是实测驻留量；还需另计可选 staging、cached runs、分配对齐、纹理和
+描述符，独立拥有资源的子 owner 也各自计费。本合同不声明普通帧毫秒或 FPS 收益。
 
 Runtime 持有 world freeze cache，以 Runtime Map/level owner、world generation 和完整 authored draw/prop
 值校验静态结果，跳过重复 projection 查找、静态校验及重建。终端通道文本和 prop presentation 每帧
