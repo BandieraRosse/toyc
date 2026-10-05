@@ -1,6 +1,7 @@
 /* Hosted, SDK-free persistent Vulkan backend for the RF Core GPU service. */
 
 #include "rf_vulkan_min.h"
+#include "rf_vulkan_ray_min.h"
 #include "rf_gpu.h"
 #include "rf_gpu_vulkan_backend.h"
 
@@ -592,6 +593,9 @@ struct rf_gpu_vulkan_present_image {
 
 struct rf_gpu_vulkan_impl {
     struct rf_vk_api api;
+    struct rf_rt_api rt;
+    struct rf_rt_properties rt_properties;
+    int ray_query_enabled;
     rf_vk_instance instance;
     rf_vk_physical_device physical_device;
     rf_vk_device device;
@@ -998,6 +1002,8 @@ static int gpu_buffer_create(struct rf_gpu_vulkan_impl *impl,
     allocation.s_type = RF_VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocation.allocation_size = requirements.size;
     allocation.memory_type_index = (uint32_t)memory_type;
+    struct rf_rt_allocate_flags address_flags = {1000060000,NULL,2,0};
+    if (usage & RF_RT_ADDRESS_USAGE) allocation.next = &address_flags;
     if (impl->api.allocate_memory(impl->device, &allocation, NULL,
                                   &out->memory) != RF_VK_SUCCESS) return -1;
     if (impl->api.bind_buffer_memory(impl->device, out->buffer, out->memory, 0) !=
@@ -1275,6 +1281,69 @@ static void backend_cleanup(struct rf_gpu_vulkan_impl *impl)
     free(impl);
 }
 
+/* Capability policy is fixed for the device lifetime; never silently replace a
+ * requested hardware run with software when collecting comparative evidence. */
+static int ray_query_support(struct rf_gpu_vulkan_impl *p,rf_vk_physical_device device,
+                             uint32_t instance_version)
+{
+    struct rf_vk_api *api=&p->api;
+    const char *mode=getenv("RF_GPU_ARCHITECTURE");
+    int required=mode && !strcmp(mode,"hardware"),supported=0;
+    if(mode && strcmp(mode,"auto") && strcmp(mode,"software") && !required) {
+        fprintf(stderr,"rf-gpu-ray: invalid RF_GPU_ARCHITECTURE (auto/software/hardware)\n");return -1;
+    }
+    if(mode && !strcmp(mode,"software"))goto done;
+    struct rf_vk_physical_device_properties props={0};
+    api->get_physical_device_properties(device,&props);
+    if(instance_version<RF_VK_MAKE_VERSION(1,2,0) || props.api_version<RF_VK_MAKE_VERSION(1,2,0))goto done;
+    RF_LOAD(p->rt.extensions,load_instance,p->instance,"vkEnumerateDeviceExtensionProperties");
+    RF_LOAD(p->rt.features,load_instance,p->instance,"vkGetPhysicalDeviceFeatures2");
+    RF_LOAD(p->rt.properties,load_instance,p->instance,"vkGetPhysicalDeviceProperties2");
+    uint32_t count=0,found=0;
+    if(p->rt.extensions(device,NULL,&count,NULL)!=RF_VK_SUCCESS) return -1;
+    struct rf_rt_extensions *ext=calloc(count,sizeof(*ext));
+    if(!ext)return -1;
+    rf_vk_result result=p->rt.extensions(device,NULL,&count,ext);
+    if(result==RF_VK_SUCCESS)for(uint32_t i=0;i<count;++i) {
+        if(!strcmp(ext[i].name,"VK_KHR_acceleration_structure"))found|=1;
+        if(!strcmp(ext[i].name,"VK_KHR_ray_query"))found|=2;
+        if(!strcmp(ext[i].name,"VK_KHR_deferred_host_operations"))found|=4;
+    }
+    free(ext);
+    if(result!=RF_VK_SUCCESS)return -1;
+    if(found!=7)goto done;
+    struct rf_rt_query_features query={1000348013,NULL,0};
+    struct rf_rt_as_features acceleration={1000150013,&query,0,0,0,0,0};
+    struct rf_rt_address_features address={1000257000,&acceleration,0,0,0};
+    struct rf_rt_features2 features={0};features.s_type=1000059000;features.next=&address;
+    p->rt.features(device,&features);
+    p->rt_properties.s_type=1000150014;
+    struct rf_rt_properties2 properties={0};properties.s_type=1000059001;properties.next=&p->rt_properties;
+    p->rt.properties(device,&properties);
+    supported=query.enabled && acceleration.enabled && address.enabled &&
+        p->rt_properties.scratch_alignment && p->rt_properties.per_stage && p->rt_properties.set_count;
+done:
+    p->ray_query_enabled=supported;
+    fprintf(stderr,"rf-gpu-ray: requested=%s selected=%s\n",mode?mode:"auto",supported?"hardware":"software");
+    if(required && !supported){fprintf(stderr,"rf-gpu-ray: required hardware ray query unavailable\n");return -1;}
+    return 0;
+}
+
+static int ray_query_load(struct rf_gpu_vulkan_impl *p)
+{
+    if(!p->ray_query_enabled)return 0;
+    struct rf_vk_api *api=&p->api;
+    RF_LOAD(p->rt.buffer_address,load_instance,p->instance,"vkGetBufferDeviceAddress");
+    RF_LOAD(p->rt.as_address,load_instance,p->instance,"vkGetAccelerationStructureDeviceAddressKHR");
+    RF_LOAD(p->rt.sizes,load_instance,p->instance,"vkGetAccelerationStructureBuildSizesKHR");
+    RF_LOAD(p->rt.create,load_instance,p->instance,"vkCreateAccelerationStructureKHR");
+    RF_LOAD(p->rt.destroy,load_instance,p->instance,"vkDestroyAccelerationStructureKHR");
+    RF_LOAD(p->rt.build,load_instance,p->instance,"vkCmdBuildAccelerationStructuresKHR");
+    fprintf(stderr,"rf-gpu-ray: enabled rayQuery+accelerationStructure+bufferDeviceAddress scratch-alignment=%u\n",
+            p->rt_properties.scratch_alignment);
+    return 0;
+}
+
 static int backend_init(void *context, struct rf_gpu_backend_info *info,
                         char *message, unsigned long message_capacity)
 {
@@ -1342,7 +1411,8 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
     app_info.application_version = RF_VK_MAKE_VERSION(0, 1, 0);
     app_info.engine_name = "Rasterfall";
     app_info.engine_version = RF_VK_MAKE_VERSION(0, 1, 0);
-    app_info.api_version = RF_VK_MAKE_VERSION(1, 0, 0);
+    app_info.api_version = loader_version>=RF_VK_MAKE_VERSION(1,2,0) ?
+        RF_VK_MAKE_VERSION(1,2,0) : RF_VK_MAKE_VERSION(1,0,0);
     memset(&instance_info, 0, sizeof(instance_info));
     instance_info.s_type = RF_VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     instance_info.application_info = &app_info;
@@ -1470,6 +1540,7 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
             !supported)
             want_present = 0;
     }
+    if(ray_query_support(impl,selected_device,app_info.api_version)<0)goto done;
     {
         float priority = 1.0f;
         struct rf_vk_device_queue_create_info queue_info;
@@ -1490,22 +1561,30 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         device_info.queue_create_info_count = 1;
         device_info.queue_create_infos = &queue_info;
         device_info.enabled_features = &enabled_features;
-        if (want_present) {
-            static const char *extensions[] = { "VK_KHR_swapchain" };
-            device_info.enabled_extension_count = 1;
-            device_info.enabled_extension_names = extensions;
+        struct rf_rt_query_features query={1000348013,NULL,1};
+        struct rf_rt_as_features acceleration={1000150013,&query,1,0,0,0,0};
+        struct rf_rt_address_features address={1000257000,&acceleration,1,0,0};
+        const char *extensions[4];uint32_t extension_count=0;
+        if(impl->ray_query_enabled) {
+            extensions[extension_count++]="VK_KHR_acceleration_structure";
+            extensions[extension_count++]="VK_KHR_ray_query";
+            extensions[extension_count++]="VK_KHR_deferred_host_operations";
+            device_info.next=&address;
         }
+        if(want_present)extensions[extension_count++]="VK_KHR_swapchain";
+        device_info.enabled_extension_count=extension_count;
+        device_info.enabled_extension_names=extensions;
         result = api->create_device(selected_device, &device_info, NULL,
                                     &impl->device);
         if ((result != RF_VK_SUCCESS || !impl->device) && want_present) {
             want_present = 0;
-            device_info.enabled_extension_count = 0;
-            device_info.enabled_extension_names = NULL;
+            device_info.enabled_extension_count = --extension_count;
             impl->device = NULL;
             result = api->create_device(selected_device, &device_info, NULL,
                                         &impl->device);
         }
         if (result != RF_VK_SUCCESS || !impl->device) goto done;
+        if(ray_query_load(impl)<0)goto done;
         api->get_device_queue(impl->device, selected_family, 0, &impl->queue);
         if (!impl->queue) goto done;
         impl->shader_int64_enabled = enabled_features.shader_int64 != 0;

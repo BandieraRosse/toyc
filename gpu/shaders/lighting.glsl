@@ -6,6 +6,18 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     vec4 cutaway_bounds; vec4 cutaway_height;
 } lighting;
 layout(set=1,binding=1,std430) readonly buffer Shadows { float depth[]; } shadows;
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+layout(set=1,binding=7) uniform accelerationStructureEXT architecture;
+float architecture_visibility(vec3 origin,vec3 direction,float limit) {
+    if(limit<=0.5)return 1.0;
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query,architecture,
+        gl_RayFlagsOpaqueEXT|gl_RayFlagsTerminateOnFirstHitEXT,
+        255,origin,0.5,direction,limit);
+    while(rayQueryProceedEXT(query)) {}
+    return rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT?1.0:0.0;
+}
+#else
 struct ArchitectureNode { vec4 lo; vec4 hi; vec4 a; vec4 b; vec4 c; };
 layout(set=1,binding=7,std430) readonly buffer Architecture {
     uvec4 header; ArchitectureNode nodes[];
@@ -39,6 +51,7 @@ float architecture_visibility(vec3 origin,vec3 direction,float limit) {
     }
     return 1.0;
 }
+#endif
 vec3 decode_srgb(vec3 c) {
     return mix(c/12.92,pow((c+0.055)/1.055,vec3(2.4)),greaterThan(c,vec3(0.04045)));
 }

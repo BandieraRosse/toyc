@@ -23,17 +23,37 @@ GPU Scene 使用独立实时光照。CPU 静态光照路径保留为遗产，按
 灯罩材质自发光与照亮世界的 spot light 分别提交，但使用同一模型 profile；无游离世界坐标灯。
 
 Scene 在 world/map generation 改变时，从实际 WORLD 的 wall、box、ramp、platform、floor、boundary
-不透明几何重建 BVH；应用 primitive 的真实世界平移，不从碰撞盒猜测遮挡，不按主相机剔除。
-普通 BOX render 直接按其真实上下界解析求交，避免重复查询细分后的平面三角形；这不是模型包围盒，
+不透明几何重建遮挡结构；应用 primitive 的真实世界平移，不从碰撞盒猜测遮挡，不按主相机剔除。
+软件路径对普通 BOX render 直接按其真实上下界解析求交，避免重复查询细分后的平面三角形；这不是模型包围盒，
 门洞仍由独立墙段与过梁组成。其他建筑使用实际三角形，包括楼梯踏步。
-`gpu/src/rf_gpu_architecture_light.inc` 拥有每个 graphics owner 的有界静态缓冲，最多 65536 个图元，
+`gpu/src/rf_gpu_architecture_light.inc` 验证公共输入并路由硬件/软件路径，最多 65536 个输入图元，
 超限明确失败；帧在途时禁止替换，resize 保留，空世界清除，关闭排空后释放。辅镜头拥有独立缓冲。
-片元通过双面三角形和实体盒求交检查太阳、所有 spot/point 到表面的可见性，因此建筑遮挡不受两个动态
+片元通过双面建筑求交检查太阳、所有 spot/point 到表面的可见性，因此建筑遮挡不受两个动态
 聚光灯阴影名额限制。门洞保留真实开口，有限楼板和楼梯使用真实网格，RTS 切顶不移除遮挡。
 
 向上可见性将有顶室内的室外半球填充压到 10%，其余亮度由灯具承担；这是保留可读性的近似，
-不是 GI 或人工灯反弹。静态道具、角色和透明物不进入本 BVH；原太阳和两个 spot shadow map
+不是 GI 或人工灯反弹。静态道具、角色和透明物不进入本建筑结构；原太阳和两个 spot shadow map
 继续承担不透明模型与角色的投影，其他局部灯仍不具备这些动态物体的完整遮挡。
+
+### 可选硬件 Ray Query
+
+后端在 loader 和设备均支持 Vulkan 1.2 时，查询 `VK_KHR_acceleration_structure`、
+`VK_KHR_ray_query`、`VK_KHR_deferred_host_operations` 及 `accelerationStructure`、
+`rayQuery`、`bufferDeviceAddress` 特性。默认自动启用；不支持时保留原软件 BVH 着色器。
+`RF_GPU_ARCHITECTURE=software` 强制对照，`hardware` 要求能力存在，否则初始化失败，不能静默替换。
+此处软件仍是 GPU 片元查询，不是已停维的 CPU renderer。旧设备保留原 Vulkan 1.0 shader 路径。
+
+`gpu/src/rf_gpu_architecture_ray.inc` 从同一建筑输入构建一个静态 BLAS 和 identity-instance TLAS；
+真实 BOX 转为十二个表面三角形，其他建筑沿用原三角形。驱动构建使用 `PREFER_FAST_TRACE`，
+scratch 地址按设备属性对齐；host coherent 输入、临时命令池和 fence 只存在于生成阶段。
+BLAS 写入到 TLAS 读取、TLAS 写入到片元读取均有显式 barrier。成功提交并等待后才更新描述符，
+原结构随之释放；失败返回错误，已提交资源排空后回收。空地图绑定已构建的零实例 TLAS。
+BLAS/TLAS 和存储由各 graphics owner 保留，resize 不重建；不逐帧构建，不共享跨视图可变所有权。
+
+硬件片元变体使用 GLSL 460 / Vulkan 1.2 SPIR-V，binding 7 为 acceleration-structure descriptor，
+软件变体同一 binding 为 SSBO。射线保留法线起点偏移和有限光源距离，双面、不透明、首个命中终止。
+只替换建筑可见性（太阳、局部灯、顶部填充），未引入光追 pipeline、SBT、动态 BLAS、GI 或软阴影。
+两种路径在几何边界的浮点求交可有少量像素差异，不能假定所有场景逐位一致。
 
 ### 提交与合成
 
@@ -65,7 +85,7 @@ GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值�
   近级每纹素覆盖 15.625 mm，法线偏移保持为该级纹素宽度的 0.4 倍；光空间中心按整纹素对齐。
   每级光空间边缘向后续有效级别连续混合；
   零权重级别不读取阴影，内区剩余权重归零后停止。过渡带可能采样两级，预算不能只按单次 16 tap 估算。
-- 最多两个聚光灯动态阴影名额按灯列表顺序分配；所有局部灯另有建筑 BVH 遮挡，点光源不再穿过已纳入的实体墙板或楼板。
+- 最多两个聚光灯动态阴影名额按灯列表顺序分配；所有局部灯另有建筑 Ray Query / BVH 遮挡，点光源不再穿过已纳入的实体墙板或楼板。
 - 半透明、粒子和 viewmodel 不投射 WORLD 阴影；不透明角色、静态物与实验区球体参与投影。
 - 环境填充为法线相关半球颜色与顶部可见性近似，没有反射探针；金属只反射当前直接光。
 - 旧 `light_q8` 等字段在部分几何存储中暂时保留，但 GPU shader 不消费烘焙亮度；旧整数兼容 draw 被拒绝，兼容索引上传已删除，旧 shader 不再编入 SPIR-V。

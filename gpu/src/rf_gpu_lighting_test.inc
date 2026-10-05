@@ -330,6 +330,22 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             for(unsigned p=0;p<64*64;++p)if(da[p]>0 && da[p]==db[p] &&
                 lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15)++darker;
             LIGHT_CHECK(darker>100);
+            /* Resizing must retain architecture, including the AS descriptor;
+             * rejected replacements must leave the previous scene usable. */
+            if(mode==1) {
+                LIGHT_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0);
+                LIGHT_CHECK(!rf_gpu_graphics_resize(g,96,96));
+                LIGHT_CHECK(!rf_gpu_graphics_resize(g,64,64));
+                LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+                LIGHT_CHECK(!memcmp(a,b,64*64*4));
+                /* Reversed triangle winding must remain opaque. */
+                for(unsigned j=0;j<2;++j)for(unsigned k=0;k<3;++k) {
+                    float tmp=wall[j].p[1][k];wall[j].p[1][k]=wall[j].p[2][k];wall[j].p[2][k]=tmp;
+                }
+                LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,wall,2));
+                LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+                LIGHT_CHECK(!memcmp(a,b,64*64*4));
+            }
             struct rf_gpu_occlusion_primitive solid={{{-10000,-10000,3390},{10000,10000,3410},{0,0,0}},1};
             LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,&solid,1));
             LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
@@ -352,7 +368,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
         LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
         LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
         LIGHT_CHECK(!memcmp(a,b,64*64*4));
-        fprintf(stdout,"ARCHITECTURE LIGHT PASS point=1 spot_over_budget=1 sun=1 exact_box=1 finite_segment=1 reset=1\n");
+        fprintf(stdout,"ARCHITECTURE LIGHT PASS point=1 spot_over_budget=1 sun=1 exact_box=1 finite_segment=1 reset=1 retained_resize=1 double_sided=1\n");
     }
     lights.lights[0].position_radius[0]=-700;lights.lights[0].position_radius[2]=0;lights.lights[0].color_intensity[3]=30;
     lights.lights[0].direction_outer[2]=1;lights.lights[0].direction_outer[3]=0.5f;

@@ -3,6 +3,30 @@
 > 状态：当前操作指南
 > 所有者：GPU Scene
 
+## 建筑硬件光追与对照
+
+默认自动探测设备能力，在支持 Vulkan 1.2 和 KHR Ray Query 时启用静态建筑硬件遮挡。
+`RF_GPU_ARCHITECTURE` 可设为 `auto`、`hardware` 或 `software`；进程初始化时读取，切换需重启。
+`hardware` 在不支持的设备上明确失败。日志须出现 `rf-gpu-ray: requested=... selected=...`，
+硬件路径还会打印启用特性及建筑构建的三角形数、耗时、保留字节数。
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-lighting-test
+python tools/outpost_lighting_check.py --output tmp/outpost-ray-hardware
+$env:RF_GPU_ARCHITECTURE='software'
+python tools/outpost_lighting_check.py --output tmp/outpost-ray-software
+Remove-Item Env:RF_GPU_ARCHITECTURE
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareArchitecture -Views outpost-light-1f -Rounds 3 -Samples 240 -OutputDirectory tmp/outpost-ray-perf
+```
+
+捕获脚本当前固定 NVIDIA；跨厂商回退验证使用原生 `--gpu-lighting-test` 并指定 vendor。
+性能脚本交替软件/硬件顺序，要求实际选中的后端匹配请求，保存同一 EXE/map 哈希。
+性能采样关闭 validation，不开截图；同步与生命周期验证另行开启 validation layer，不能混算耗时。
+光照回归包含空结构、替换、有限射线、双面、resize 后遮挡保留和无效输入不破坏旧结构。
+只验证静态建筑加速，不据该结果宣称动态光追、间接光或全场景稳定帧率。
+
 实现边界见[GPU 实时光照](../architecture/gpu-lighting.md)。先运行 Windows native build，再启动：
 
 ```powershell

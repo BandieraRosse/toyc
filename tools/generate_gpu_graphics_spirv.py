@@ -9,11 +9,14 @@ import tempfile
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
 output = ['/* Generated from gpu/shaders/graphics_scene, graphics_sky, graphics_shadow, graphics_tonemap and graphics_skin. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
+    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('scene_ray','frag'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
-        source_variant = 'scene' if variant == 'color' else variant
+        source_variant = 'scene' if variant in ('color', 'scene_ray') else variant
         defines = ['-DRF_SCENE_COLOR=1'] if variant == 'color' else []
-        subprocess.run([compiler, '-V', '--target-env', 'vulkan1.0', '-o', str(path)] + defines +
+        if variant == 'scene_ray':
+            defines = ['-DRF_ARCHITECTURE_RAY_QUERY=1']
+        target_env = 'vulkan1.2' if variant == 'scene_ray' else 'vulkan1.0'
+        subprocess.run([compiler, '-V', '--target-env', target_env, '-o', str(path)] + defines +
                        ['gpu/shaders/graphics_' + source_variant + '.' + stage], check=True)
         data = path.read_bytes()
         words = struct.unpack('<' + 'I' * (len(data)//4), data)

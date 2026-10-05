@@ -1,5 +1,8 @@
-#version 450
+#version 460
 #extension GL_GOOGLE_include_directive : require
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+#extension GL_EXT_ray_query : require
+#endif
 #include "lighting.glsl"
 layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;

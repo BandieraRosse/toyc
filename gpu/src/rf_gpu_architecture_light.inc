@@ -43,6 +43,7 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
         if(!__builtin_isfinite(triangles[i].p[v][k]) || fabs(triangles[i].p[v][k])>1e8)return -1;
     for(uint32_t i=0;i<count;++i)if(triangles[i].solid_box)
         for(unsigned k=0;k<3;++k)if(triangles[i].p[0][k]>=triangles[i].p[1][k])return -1;
+    if(g->owner->ray_query_enabled)return architecture_ray_set(g,triangles,count);
     size_t bytes=16+(count?2*count-1:0)*sizeof(struct rf_arch_node);
     unsigned char *data=calloc(1,bytes);
     struct rf_gpu_occlusion_primitive *copy=count?malloc(count*sizeof(*copy)):NULL;

@@ -108,6 +108,8 @@ struct rf_gpu_graphics {
     rf_vk_pipeline pipelines[32];
     struct rf_gpu_lighting lighting;
     struct rf_gpu_vulkan_buffer architecture_buffer;
+    struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
+    rf_rt_as architecture_blas,architecture_tlas;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
@@ -381,6 +383,7 @@ static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item
     }
     return 0;
 }
+#include "rf_gpu_architecture_ray.inc"
 #include "rf_gpu_architecture_light.inc"
 #include "rf_gpu_lighting.inc"
 
@@ -517,6 +520,10 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         if(shadow && i) break;
         shader_info.code_size=i?sizeof(rf_graphics_scene_frag_spirv):sizeof(rf_graphics_scene_vert_spirv);
         shader_info.code=i?rf_graphics_scene_frag_spirv:rf_graphics_scene_vert_spirv;
+        if(i && impl->ray_query_enabled) {
+            shader_info.code=rf_graphics_scene_ray_frag_spirv;
+            shader_info.code_size=sizeof(rf_graphics_scene_ray_frag_spirv);
+        }
         if(color_vertex && !i) {shader_info.code_size=sizeof(rf_graphics_color_vert_spirv);shader_info.code=rf_graphics_color_vert_spirv;}
         if(shadow) {shader_info.code_size=sizeof(rf_graphics_shadow_vert_spirv);shader_info.code=rf_graphics_shadow_vert_spirv;}
         if (impl->api.create_shader_module(impl->device, &shader_info, NULL, &shaders[i]) != RF_VK_SUCCESS) goto done;

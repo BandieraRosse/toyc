@@ -16,6 +16,10 @@ Rasterfall 的渲染入口为 CPU 软件渲染和独立 GPU Scene。GPU Compute 
 
 GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting.md)，CPU 保留静态烘焙且不承担高级功能。两后端内容与游戏内控制终端的配置边界由[渲染 baseline 清点](../reference/rendering-baseline.md)定义；后端的绘制原语和资源优化可以不同。
 
+静态建筑遮挡由 Vulkan 后端查询设备能力，在支持时启用 KHR Ray Query，并在 graphics owner
+保留 BLAS/TLAS；其他设备使用 GPU 软件 BVH。实例/设备版本协商、资源与 shader 变体的稳定边界
+见[建筑硬件查询](gpu-lighting.md#可选硬件-ray-query)，不改变 Scene 光栅呈现或 Game 状态所有权。
+
 ## 帧所有权
 
 `rasterfall/src/rf_core_host.c` 管理窗口、输入、固定步长循环的宿主边界，以及 CPU 或 Scene 模式的初始化、呈现和关闭。`rasterfall/src/rf_game_runtime.c` 组织 session、只读 Scene 来源冻结和帧提交。玩法真值由 Game/session 持有；渲染和 HUD 不写入玩法状态。
