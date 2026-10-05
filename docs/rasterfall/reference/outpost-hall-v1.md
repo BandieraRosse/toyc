@@ -4,13 +4,19 @@
 > 所有者：前哨站空间与设施家具
 > 事实入口：`assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/blender/generate_rasterfall_props.py`
 
-## 单层基地合同
+## 基地与楼层合同
 
 现有实验场已采用 `lab` 复合定义和区域相对坐标，标题、试样牌与大小状态屏统一为科幻投影组件。
 用途颜色、分类图形、围合类型和新增区域流程由[实验区合同](experiment-labs.md)维护；
 下述世界坐标描述对应当前原点，移动区域时以地图定义为准。
 
-地图边界为 162 × 130 m，开放屋顶，所有楼层均为高度 0 的相邻 ground surface。大厅原点居中，北为正 Z；西翼 Research、东翼 Operations、北翼 Infrastructure、南侧测试场都从大厅直接到达。测试场南门接入[园区 V3](outpost-lab-layout-v3.md)入口横路，中央南向通道贯穿四列三排；北门外原浅平台已并入基础设施地面。
+大厅原点居中，北为正 Z；西翼 Research、东翼 Operations、北翼 Infrastructure、南侧测试场都从一层大厅直接到达。测试场南门接入[园区 V3](outpost-lab-layout-v3.md)入口横路，中央南向通道贯穿四列三排。建筑现有 B1、一层、二层和可行走屋顶，支撑高度分别为 -2458、0、2458、4916 RFU；层高约 4.8 m，楼板厚 154 RFU。二层和屋顶覆盖大厅及三个翼楼；地下室位于大厅和基础设施下方。二层外墙封闭，屋顶设矮护墙。
+
+北侧服务走廊尽头通过门洞连接楼梯间，范围 X ±3072、Z 10240～19456 RFU。每层南端为楼层平台，北端为半层折返平台，左右两段踏步连接相邻楼层；连续碰撞坡面配有限厚度底面，避免上层楼梯封住下层空间。楼梯间连接 B1 到屋顶并有独立顶盖。一层地面改为有限厚度实体楼板，防止地下角色误吸附到地面层。前哨站地图不再声明安全区。
+
+楼层由 `outpost_base` 的四条 `building_floor` region 登记，使用通用 RTS 楼层选择、切顶和高度目标。地下室、二层及楼梯的楼层平台和折返平台配基础照明，复用现有 lamp_post 光源。结构维护工具为 `python tools/outpost_storeys.py --write`；它更新命名的一层连接并重建地图中标记的结构段，其余家具和园区仍直接由地图维护。
+
+Windows 原生构建和暂存后，`python tools/rts_floors_check.py --outpost --output tmp/outpost-floors` 用正常窗口输入检查四层按钮、右键目标高度、楼梯往返和 FPS 入口画面，保存截图及真实退出码。
 
 西、东侧门使用 `arch_doorway` 组件的两肩与架空过梁碰撞；其余翼楼外墙和设施分隔使用 `boundary_wall` 组件。北侧服务走廊通过两扇横向门进入 Power 与 Control。各房间外墙、地面和对象均为地图事实；家具不声明玩法终端。
 
@@ -100,7 +106,7 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 离线暂停菜单倒数第二项 `RETURN TO OUTPOST` 通过完整 world 重载回到前哨站出生点，并重置当前局的玩法与特效状态；联机时不执行本地单方面地图重载。
 旧 Station / Operations / Super 和武大传送点从本大厅撤下，已有动作词汇仍保留供其他内容使用。
 指挥桌地图屏幕提供 Campaign 与 WHU 部署入口；不提供 Station GUI，也不制作三套专用终端资产。
-研究翼和 Infrastructure 房间已有静态空间。无动态门、多层、切顶、RTS 桌面交互、其他设备功能、武器测试交互或 NPC 工作行为。
+研究翼和 Infrastructure 房间已有静态空间；新增二层和地下室目前提供可通行建筑空间。动态门、其他设备功能、武器测试交互和 NPC 工作行为尚未实现。
 
 运行时所有权沿用[地图与世界内容架构](../architecture/maps-and-world-content.md)。
 生成、Windows 工具与截图见[设施家具指南](../guides/facility-assets.md)。
@@ -110,4 +116,4 @@ GLB 米制、RMESH 232 units/m、展示边界 512 RFU/m，实例默认 scale=100
 实验区统一登记、开关、后端能力和隔离合同见[实验区合同](experiment-labs.md)。光照区已补独立终端和 64 RFU 边线，普通启动默认关闭。
 
 
-园区第三排的四个测试场从西至东为低压力、多敌人、多组件、复合，由性能横路连接。每场由 650 RFU 高的四面实体矮墙围住，西侧地块内部保留 4 m 观察支带和独立安全区。场地使用可见地板、橙色边线和场景标题牌；可行走 surface/collision 与绘制记录分别声明。控制终端和结果终端并排位于性能横路北侧，分别使用地图对象 `perf_control_terminal` 与 `perf_result_terminal`；路侧布置和投影见[园区总平面](outpost-lab-layout-v3.md)。功能由 Game Runtime 根据对象 ID 绑定。多组件和复合场景各放置 24 个静态 crate；敌人在测试开始时才生成。地图只定义地形、碰撞和静态物件，不保存测试结果。四场地支持 OUTPOST 环境实测及 FULL SCENE 完整背景；另有当前/全开两种五视角全景巡检。控制终端默认选择 ISOLATED，经 session 加载独立基准世界，结束后返回原站位。操作与口径见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。
+园区第三排的四个测试场从西至东为低压力、多敌人、多组件、复合，由性能横路连接。每场由 650 RFU 高的四面实体矮墙围住，西侧地块内部保留 4 m 观察支带。场地使用可见地板、橙色边线和场景标题牌；可行走 surface/collision 与绘制记录分别声明。控制终端和结果终端并排位于性能横路北侧，分别使用地图对象 `perf_control_terminal` 与 `perf_result_terminal`；路侧布置和投影见[园区总平面](outpost-lab-layout-v3.md)。功能由 Game Runtime 根据对象 ID 绑定。多组件和复合场景各放置 24 个静态 crate；敌人在测试开始时才生成。地图只定义地形、碰撞和静态物件，不保存测试结果。四场地支持 OUTPOST 环境实测及 FULL SCENE 完整背景；另有当前/全开两种五视角全景巡检。控制终端默认选择 ISOLATED，经 session 加载独立基准世界，结束后返回原站位。操作与口径见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。

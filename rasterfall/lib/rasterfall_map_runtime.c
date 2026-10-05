@@ -425,6 +425,29 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
                           parsed->collisions[i].attribute_count, "legacy_index",
                           &impl->collisions[i].legacy_index) == 0)
             impl->collisions[i].has_legacy_index = 1;
+        {
+            int result=extension_int(parsed->collisions[i].attributes,
+                parsed->collisions[i].attribute_count,"base_y",&impl->collisions[i].base_y);
+            if(result<0 || impl->collisions[i].base_y<-1000000 ||
+                impl->collisions[i].base_y>1000000 ||
+                (result==0 && (impl->collisions[i].base_y>impl->collisions[i].height ||
+                 strcmp(impl->collisions[i].shape,"box")))) {
+                runtime->error_line=parsed->collisions[i].line;
+                copy_string(runtime->error,sizeof(runtime->error),"invalid collision base_y");
+                tlibc_free(impl);tlibc_free(parsed);return -1;
+            }
+            /* A finite ramp has a parallel underside, allowing stacked stairs. */
+            result=extension_int(parsed->collisions[i].attributes,
+                parsed->collisions[i].attribute_count,"thickness",&impl->collisions[i].ramp_thickness);
+            if(result<0 || (result==0 && (impl->collisions[i].ramp_thickness<=0 ||
+                impl->collisions[i].ramp_thickness>1000000 ||
+                (strcmp(impl->collisions[i].shape,"ramp_x") &&
+                 strcmp(impl->collisions[i].shape,"ramp_z"))))) {
+                runtime->error_line=parsed->collisions[i].line;
+                copy_string(runtime->error,sizeof(runtime->error),"invalid ramp thickness");
+                tlibc_free(impl);tlibc_free(parsed);return -1;
+            }
+        }
         impl->collisions[i].line = parsed->collisions[i].line;
     }
     for (i = 0; i < impl->surface_count; i++) {
@@ -468,6 +491,7 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         impl->surfaces[i].line = parsed->surfaces[i].line;
     }
     impl->region_count = parsed->region_count;
+    int building_floor_count=0;
     for (i = 0; i < impl->region_count; i++) {
         copy_string(impl->regions[i].id, RF_MAP_RUNTIME_ID_CAP,
                     parsed->regions[i].id);
@@ -478,6 +502,44 @@ int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path)
         impl->regions[i].bounds.min_z = parsed->regions[i].bounds.min_z;
         impl->regions[i].bounds.max_z = parsed->regions[i].bounds.max_z;
         impl->regions[i].start_cy = 1024;
+        {
+            const struct rasterfall_map_ir_region *r=&parsed->regions[i];
+            struct rf_map_runtime_region *out=&impl->regions[i];
+            int result=extension_int(r->attributes,r->attribute_count,"y",&out->floor_y);
+            out->authored_y=result==0;
+            if(result<0 || out->floor_y<-1000000 || out->floor_y>1000000) {
+                runtime->error_line=r->line;
+                copy_string(runtime->error,sizeof(runtime->error),"invalid region y");
+                tlibc_free(impl);tlibc_free(parsed);return -1;
+            }
+            if(!strcmp(r->kind,"building_floor")) {
+                const char *building=extension_text(r->attributes,r->attribute_count,"building");
+                const char *name=extension_text(r->attributes,r->attribute_count,"name");
+                int level=extension_int(r->attributes,r->attribute_count,"level",&out->floor_level);
+                int ceiling=extension_int(r->attributes,r->attribute_count,"ceiling",&out->ceiling_y);
+                int roof=extension_int(r->attributes,r->attribute_count,"roof",&out->is_roof);
+                if(!building || !*building || strlen(building)>=sizeof(out->building) ||
+                    ++building_floor_count>RF_MAP_RUNTIME_MAX_BUILDING_FLOORS ||
+                    !out->authored_y || level!=0 || ceiling!=0 ||
+                    roof<0 || out->floor_level<-16 || !out->floor_level || out->floor_level>16 ||
+                    out->ceiling_y<=out->floor_y || out->ceiling_y>1000000 ||
+                    out->is_roof<0 || out->is_roof>1 ||
+                    out->bounds.min_x>=out->bounds.max_x || out->bounds.min_z>=out->bounds.max_z) {
+                    runtime->error_line=r->line;
+                    copy_string(runtime->error,sizeof(runtime->error),"invalid building_floor metadata");
+                    tlibc_free(impl);tlibc_free(parsed);return -1;
+                }
+                copy_string(out->building,sizeof(out->building),building);
+                copy_string(out->floor_name,sizeof(out->floor_name),name?name:r->id);
+                for(int j=0;j<i;++j)if(!strcmp(impl->regions[j].building,building) &&
+                    (impl->regions[j].floor_level==out->floor_level ||
+                     impl->regions[j].floor_y==out->floor_y)) {
+                    runtime->error_line=r->line;
+                    copy_string(runtime->error,sizeof(runtime->error),"duplicate building floor");
+                    tlibc_free(impl);tlibc_free(parsed);return -1;
+                }
+            }
+        }
         {
             const struct rasterfall_map_ir_region *r=&parsed->regions[i];
             const char *text=extension_text(r->attributes,r->attribute_count,"category");

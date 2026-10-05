@@ -145,8 +145,15 @@ int rf_frontier_mission_begin(struct rf_frontier_mission *m, struct toy_game *g,
     if (!m || !g || !mission_id || !frontier_config_valid(c)) return 0;
     for (i = 0; i < RF_FRONTIER_GUARDS; i++) {
         const struct rf_frontier_point *p = &c->guards[i].point;
+        struct toy_game_ground_query ground=toy_game_query_ground(g,p->x,p->z,
+            TOY_GAME_PLAYER_RADIUS,p->y);
+        if((g->primitives && (!ground.has_support || ground.support_y!=p->y)) ||
+            (!g->primitives && p->y)) {
+            __fprintf(2,"FRONTIER defender support invalid: id=%s expected_y=%d support=%d support_y=%d\n",
+                p->id,p->y,ground.has_support,ground.support_y);return 0;
+        }
         if (toy_game_position_blocked_at_height(g, p->x, p->z,
-                                                TOY_GAME_PLAYER_RADIUS, 0)) {
+                                                TOY_GAME_PLAYER_RADIUS, p->y)) {
             __fprintf(2, "FRONTIER defender binding blocked: id=%s x=%d z=%d\n",
                       p->id, p->x, p->z);
             return 0;
@@ -163,6 +170,8 @@ int rf_frontier_mission_begin(struct rf_frontier_mission *m, struct toy_game *g,
                                     guard->point.z, guard->elite ? "精英守卫" : "守卫枪手");
         int index = frontier_actor_index(g, id);
         if (index < 0) { rf_frontier_mission_reset(m, g); return 0; }
+        g->actors[index].ground_y=guard->point.y;
+        g->actors[index].ai_stationary=guard->point.y>0;
         frontier_record(m, g, i, 1, index, RF_FRONTIER_GUARD, i);
         if (!toy_game_set_ai_weapon(g, index, guard->weapon)) {
             rf_frontier_mission_reset(m, g); return 0;

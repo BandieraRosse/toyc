@@ -56,7 +56,7 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     v->rts_active=r->rts_active;v->rts_selected=r->rts_selected;v->rts_follow_player=r->rts_follow_player;
     v->rts=&r->rts;v->rts_camera=&r->render_camera;
     if(r->rts_active)rf_rts_portraits_prepare(&r->rts,&r->session->game_state);
-    v->rts_move_active=r->session->rts_move_active;v->rts_move_x=r->session->rts_move_x;v->rts_move_z=r->session->rts_move_z;
+    v->rts_move_active=r->session->rts_move_active;v->rts_move_x=r->session->rts_move_x;v->rts_move_z=r->session->rts_move_z;v->rts_move_y=r->session->rts_move_y;
     v->camera_x=r->render_camera.x;v->camera_z=r->render_camera.z;v->camera_sy=r->camera.sy;v->camera_cy=r->camera.cy;
     v->map_sight_count=0;
     if(r->rts_active && width>1 && height>1) {
@@ -333,14 +333,24 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
             frame,rf_rts_count(&r->rts,g),r->rts.primary,r->rts.hovered,r->rts.drag_active,
             r->rts.video_live,r->ui_video_live,width,height,ui.selection.x,ui.selection.y,ui.selection.w,ui.selection.h);
         for(int n=0;n<RF_RTS_GROUPS;++n)__printf("%s%d",n?",":"",rf_rts_group_count(&r->rts,g,n));
+        __printf("],\"floor\":%d,\"cutaway\":%.3f,\"distance\":%d,\"camera\":[%d,%d,%d],\"floor_buttons\":[",
+            r->rts.focus_floor,r->rts.cutaway_amount,r->rts_camera_distance,
+            r->render_camera.x,r->render_camera.y,r->render_camera.z);
+        for(int n=0;n<r->rts.floor_count+2;++n) {
+            struct rf_ui_rect rect=rf_player_ui_floor_rect(&ui,&r->rts,n);
+            __printf("%s[%d,%d,%d,%d]",n?",":"",rect.x,rect.y,rect.w,rect.h);
+        }
         __printf("],\"actors\":[");int count=0;
         for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(rf_rts_selectable(g,i)) {
             const struct toy_game_actor *a=&g->actors[i];int x=-1,y=-1;
             rf_rts_project(&r->render_camera,width,height,a->x,RASTERFALL_WORLD_GROUND_Y+a->ground_y+
                 a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU/2,a->z,&x,&y);
-            __printf("%s{\"i\":%d,\"id\":%d,\"selected\":%d,\"weapon\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"moving\":%d,\"goal_x\":%d,\"goal_z\":%d}",
+            __printf("%s{\"i\":%d,\"id\":%d,\"selected\":%d,\"weapon\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"moving\":%d,\"goal_x\":%d,\"goal_z\":%d,\"y\":%d,\"goal_y\":%d}",
                 count++?",":"",i,a->actor_id,rf_rts_member_valid(&r->rts.selected[i],g,i),
-                toy_game_actor_current_weapon(a),a->x,a->z,x,y,a->moving,a->command_x,a->command_z);
+                toy_game_actor_current_weapon(a),a->x,a->z,x,y,a->moving,
+                a==toy_game_local_player_actor_const(g)?r->session->rts_move_x:a->command_x,
+                a==toy_game_local_player_actor_const(g)?r->session->rts_move_z:a->command_z,
+                a->ground_y,a==toy_game_local_player_actor_const(g)?r->session->rts_move_y:a->command_y);
         }
         __printf("]}\n");
     }

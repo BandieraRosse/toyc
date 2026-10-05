@@ -2232,6 +2232,14 @@ static int host_cpu_quad(void *context,const int p[4][3],unsigned color)
     return 0;
 }
 
+static int cpu_cutaway_point(int x,int y,int z)
+{
+    if(!render_ctx || render_ctx->gpu_scene_lighting || !render_ctx->cutaway_active)return 0;
+    const struct rf_map_runtime_region *f=&render_ctx->cutaway_floor;
+    return x>=f->bounds.min_x && x<=f->bounds.max_x &&
+        z>=f->bounds.min_z && z<=f->bounds.max_z && y>=f->ceiling_y-2;
+}
+
 static int render_static_props(struct toy_renderer *renderer,
                                const struct camera *camera)
 {
@@ -2243,6 +2251,7 @@ static int render_static_props(struct toy_renderer *renderer,
     for (i = 0; i < level_map.prop_count; i++)
     {
         const struct toy_map_prop *map_prop = &level_map.props[i];
+        if(cpu_cutaway_point(map_prop->x,map_prop->y,map_prop->z))continue;
         struct rasterfall_prop_instance instance;
         int previous_scene_light = active_scene_light_override_q8;
         instance.asset_id = rasterfall_prop_presented_asset(map_prop->asset_id, map_prop->length);
@@ -4459,7 +4468,7 @@ static int persistent_map_build_draw(int kind,const struct toy_map_draw *x,
             else v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->a,-900,x->d},v[2]=(struct vec3){x->a,x->e,x->d},v[3]=(struct vec3){x->a,x->e,x->c};
             if(persistent_map_mesh_add_quad(build,v,x->color)<0)return -1;
         } else if(kind==PERSISTENT_MAP_MAP_BOX) {
-            if(persistent_map_mesh_add_box(build,x->a,x->b,-900,x->e-900,x->c,x->d,x->color,0)<0)return -1;
+            if(persistent_map_mesh_add_box(build,x->a,x->b,x->f-900,x->e-900,x->c,x->d,x->color,0)<0)return -1;
         } else if(kind==RF_GPU_SCENE_WORLD_MODEL_BOX) {
             if(persistent_map_mesh_add_box(build,x->a,x->b,x->e,x->f,
                 x->c,x->d,x->color,0)<0)return -1;
@@ -4479,14 +4488,38 @@ static int persistent_map_build_draw(int kind,const struct toy_map_draw *x,
         } else if(kind==PERSISTENT_MAP_MAP_RAMP) {
             struct vec3 a,b,c,d,ba,bb,bc,bd;
             int low=-900+x->e, high=-900+x->f;
+            if(x->ramp_steps) {
+                int n=x->ramp_steps;
+                for(int i=0;i<n;++i) {
+                    int h0=low+(int)((long long)(high-low)*i/n);
+                    int h1=low+(int)((long long)(high-low)*(i+1)/n);
+                    int bottom=(h0<h1?h0:h1)-x->ramp_thickness;
+                    int top=h0>h1?h0:h1;
+                    int x0=x->a,x1=x->b,z0=x->c,z1=x->d;
+                    if(x->style==TOY_MAP_PRIMITIVE_RAMP_X) {
+                        x0=x->a+(int)((long long)(x->b-x->a)*i/n);
+                        x1=x->a+(int)((long long)(x->b-x->a)*(i+1)/n);
+                    } else {
+                        z0=x->c+(int)((long long)(x->d-x->c)*i/n);
+                        z1=x->c+(int)((long long)(x->d-x->c)*(i+1)/n);
+                    }
+                    if(persistent_map_mesh_add_box(build,x0,x1,bottom,top,z0,z1,x->color,0)<0)return -1;
+                }
+                return 0;
+            }
             a=(struct vec3){x->a,low,x->c}; b=(struct vec3){x->b,low,x->c};
             c=(struct vec3){x->b,high,x->d}; d=(struct vec3){x->a,high,x->d};
             if(x->style==TOY_MAP_PRIMITIVE_RAMP_X) {
                 a.y=d.y=low; b.y=c.y=high;
             }
             ba=a;bb=b;bc=c;bd=d;ba.y=bb.y=bc.y=bd.y=-900;
+            if(x->ramp_thickness) {
+                ba.y=a.y-x->ramp_thickness;bb.y=b.y-x->ramp_thickness;
+                bc.y=c.y-x->ramp_thickness;bd.y=d.y-x->ramp_thickness;
+            }
 #define PERSISTENT_MAP_ADD4(p0,p1,p2,p3,co) do { v[0]=p0;v[1]=p1;v[2]=p2;v[3]=p3;if(persistent_map_mesh_add_quad(build,v,co)<0)return -1;} while(0)
             PERSISTENT_MAP_ADD4(a,b,c,d,x->color);
+            if(x->ramp_thickness) PERSISTENT_MAP_ADD4(bd,bc,bb,ba,x->color);
             PERSISTENT_MAP_ADD4(ba,bb,b,a,mix_color(x->color,0x10151D,1,3));
             PERSISTENT_MAP_ADD4(bb,bc,c,b,mix_color(x->color,0x10151D,1,3));
             PERSISTENT_MAP_ADD4(bc,bd,d,c,mix_color(x->color,0x10151D,1,3));
@@ -5557,6 +5590,25 @@ static int render_ramp(struct toy_renderer *renderer,
 {
     struct vec3 a, b, c, d, base_a, base_b, base_c, base_d;
     int low = -900 + ramp->e, high = -900 + ramp->f;
+    if (ramp->ramp_steps) {
+        int pixels=0,n=ramp->ramp_steps;
+        for(int i=0;i<n;++i) {
+            int h0=low+(int)((long long)(high-low)*i/n);
+            int h1=low+(int)((long long)(high-low)*(i+1)/n);
+            int bottom=(h0<h1?h0:h1)-ramp->ramp_thickness;
+            int top=h0>h1?h0:h1;
+            int x0=ramp->a,x1=ramp->b,z0=ramp->c,z1=ramp->d;
+            if(ramp->style==TOY_MAP_PRIMITIVE_RAMP_X) {
+                x0=ramp->a+(int)((long long)(ramp->b-ramp->a)*i/n);
+                x1=ramp->a+(int)((long long)(ramp->b-ramp->a)*(i+1)/n);
+            } else {
+                z0=ramp->c+(int)((long long)(ramp->d-ramp->c)*i/n);
+                z1=ramp->c+(int)((long long)(ramp->d-ramp->c)*(i+1)/n);
+            }
+            pixels+=draw_cuboid(renderer,camera,x0,x1,bottom,top,z0,z1,ramp->color);
+        }
+        return pixels;
+    }
     a.x = ramp->a; a.z = ramp->c;
     b.x = ramp->b; b.z = ramp->c;
     c.x = ramp->b; c.z = ramp->d;
@@ -5570,7 +5622,12 @@ static int render_ramp(struct toy_renderer *renderer,
     base_b = b; base_b.y = -900;
     base_c = c; base_c.y = -900;
     base_d = d; base_d.y = -900;
+    if(ramp->ramp_thickness) {
+        base_a.y=a.y-ramp->ramp_thickness;base_b.y=b.y-ramp->ramp_thickness;
+        base_c.y=c.y-ramp->ramp_thickness;base_d.y=d.y-ramp->ramp_thickness;
+    }
     return draw_quad(renderer, camera, &a, &b, &c, &d, ramp->color) +
+           (ramp->ramp_thickness ? draw_quad(renderer,camera,&base_d,&base_c,&base_b,&base_a,ramp->color) : 0) +
            draw_quad(renderer, camera, &base_a, &base_b, &b, &a,
                      mix_color(ramp->color, 0x10151D, 1, 3)) +
            draw_quad(renderer, camera, &base_b, &base_c, &c, &b,
@@ -5694,12 +5751,13 @@ static int map_draw_visible(const struct toy_surface *surface,
     case TOY_MAP_DRAW_TEXTURE:
     case TOY_MAP_DRAW_BOX:
         maxy = draw->e;
-        if (draw->type == TOY_MAP_DRAW_BOX) maxy -= 900;
+        if (draw->type == TOY_MAP_DRAW_BOX) {maxy -= 900;miny=draw->f-900;}
         break;
     case TOY_MAP_DRAW_RAMP:
         miny = -900 + (draw->e < draw->f ? draw->e : draw->f);
         maxy = -900 + (draw->e > draw->f ? draw->e : draw->f);
-        if (miny > -900) miny = -900; /* side faces extend to ground */
+        if(draw->ramp_thickness) miny-=draw->ramp_thickness;
+        else if (miny > -900) miny = -900; /* legacy sides extend to ground */
         break;
     case TOY_MAP_DRAW_PLATFORM:
         miny = maxy = -900 + draw->e;
@@ -5735,8 +5793,17 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
     scene_stats.sky_floor_us = render_monotonic_us() - phase_start;
     phase_start = render_monotonic_us();
     for (int i=0; i<level_map.draw_count; i++) {
-        struct toy_map_draw *x=&level_map.draw[i];
+        struct toy_map_draw clipped_draw=level_map.draw[i];
+        struct toy_map_draw *x=&clipped_draw;
         scene_stats.map_command_begin[i] = renderer->cmd_count;
+        if(cpu_cutaway_point((x->a+x->b)/2,
+            x->type==TOY_MAP_DRAW_BOX?x->f:x->e,(x->c+x->d)/2))goto map_record_done;
+        if(render_ctx && !render_ctx->gpu_scene_lighting && render_ctx->cutaway_active &&
+            x->type==TOY_MAP_DRAW_BOX && x->a>=render_ctx->cutaway_floor.bounds.min_x &&
+            x->b<=render_ctx->cutaway_floor.bounds.max_x &&
+            x->c>=render_ctx->cutaway_floor.bounds.min_z && x->d<=render_ctx->cutaway_floor.bounds.max_z &&
+            x->e>=render_ctx->cutaway_floor.ceiling_y)
+            x->e=render_ctx->cutaway_floor.ceiling_y-2;
         if (!map_draw_visible(&renderer->surface, camera, x))
             goto map_record_done;
         active_world_light_v2 = !diagnostic_no_planar_v2 && active_session->map_ops.runtime_loaded &&
@@ -5808,7 +5875,9 @@ static int render_scene(struct toy_renderer *renderer, const struct camera *came
                 if (active_session->air_walls_enabled)
                     pixels += draw_box_alpha(renderer, camera, &obstacle, 48);
             } else {
-                pixels += draw_box(renderer,camera,&obstacle);
+                if(!x->f)pixels += draw_box(renderer,camera,&obstacle);
+                else pixels += draw_cuboid(renderer,camera,x->a,x->b,x->f-900,
+                    x->e-900,x->c,x->d,x->color);
             }
         } else if (x->type==TOY_MAP_DRAW_LABEL) {
             /* Screen labels are emitted after the world/viewmodel flush. */
@@ -7493,6 +7562,8 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
             color=RF_COLOR_UI_DANGER;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
             actor->state == TOY_GAME_ACTOR_DEAD) continue;
+        if(rts_active && render_ctx &&
+            !rf_rts_label_allows(render_ctx->rts_view,actor,hostile))continue;
         int friendly_rts=rts_active && !hostile && strcmp(actor->name,"BASE");
         dx = (long)actor->x - camera->x;
         dz = (long)actor->z - camera->z;
@@ -8606,6 +8677,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         struct vec3 center, view;
         uint32_t color;
         if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        if(cpu_cutaway_point(actor->x,actor->ground_y+actor->airborne_y,actor->z))continue;
         ai_submission_stats.active_actors++;
         center.x = actor->x; center.y = 0; center.z = actor->z;
         world_to_view(camera, &center, &view);

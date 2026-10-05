@@ -3,6 +3,7 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     vec4 sun_direction; vec4 sun_color; vec4 environment; vec4 counts;
     mat4 shadow_matrix[5]; vec4 cascade_center[3]; Light lights[32];
     vec4 sky_cloud; vec4 sky_weather;
+    vec4 cutaway_bounds; vec4 cutaway_height;
 } lighting;
 layout(set=1,binding=1,std430) readonly buffer Shadows { float depth[]; } shadows;
 vec3 decode_srgb(vec3 c) {

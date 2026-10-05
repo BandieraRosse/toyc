@@ -5,6 +5,7 @@ struct rf_lighting_upload {
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16],cascade_center[3][4];
     struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
     float sky_cloud[4],sky_weather[4];
+    float cutaway_bounds[4],cutaway_height[4];
 };
 _Static_assert(offsetof(struct rf_lighting_upload,lights)==432,"lighting std430 ABI");
 _Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==2480,"sky std430 ABI");
@@ -23,6 +24,9 @@ int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,const struct rf_gpu_l
     if(!g || !l || g->scene_in_flight || g->poisoned || l->count>RF_GPU_LIGHT_CAP) return -1;
     for(unsigned k=0;k<4;++k)
         if(!__builtin_isfinite(l->sky_cloud[k]) || !__builtin_isfinite(l->sky_weather[k])) return -1;
+    for(unsigned k=0;k<4;++k)
+        if(!__builtin_isfinite(l->cutaway_bounds[k]) || !__builtin_isfinite(l->cutaway_height[k]))return -1;
+    if(l->cutaway_height[1]<0 || l->cutaway_height[1]>1)return -1;
     if(l->sky_cloud[0]<0 || l->sky_cloud[0]>1 || l->sky_cloud[1]<0 || l->sky_cloud[1]>8 ||
         l->sky_cloud[2]<0.1f || l->sky_cloud[2]>10 || l->sky_cloud[3]<0.1f || l->sky_cloud[3]>5 ||
         l->sky_weather[3]<0.1f || l->sky_weather[3]>8) return -1;
@@ -250,6 +254,8 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;
     memcpy(u.lights,g->lighting.lights,sizeof(u.lights));
     memcpy(u.sky_cloud,g->lighting.sky_cloud,16);memcpy(u.sky_weather,g->lighting.sky_weather,16);
+    memcpy(u.cutaway_bounds,g->lighting.cutaway_bounds,16);
+    memcpy(u.cutaway_height,g->lighting.cutaway_height,16);
     float *l=u.sun_direction,right[3]={l[2],0,-l[0]},up[3];
     float length=(float)sqrt(right[0]*right[0]+right[2]*right[2]);
     if(length<0.01f) {right[0]=1;right[2]=0;} else {right[0]/=length;right[2]/=length;}

@@ -134,7 +134,7 @@ struct rasterfall_session {
     char supply_message[128];
     int rts_active;
     int rts_move_active;
-    int rts_move_x, rts_move_z;
+    int rts_move_x, rts_move_z, rts_move_y;
     int managed_ai_route_phase;
     int managed_ai_target_index;
     int managed_ai_retarget_ms;
@@ -193,6 +193,8 @@ int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z);
 int rasterfall_session_rts_logic_test(void);
+int rasterfall_session_rts_order_actor_height(struct rasterfall_session *session,
+    int index,int actor_id,unsigned generation,int x,int y,int z,int stop,int height_active);
 int rasterfall_session_rts_order_actor(struct rasterfall_session *session,
     int index,int actor_id,unsigned generation,int x,int z,int stop);
 /* Offline experimental manufacturing. Reconfiguration is idempotent and

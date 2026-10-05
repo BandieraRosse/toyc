@@ -44,6 +44,31 @@ Map IR 包含 world、regions、collisions、surfaces、renders、interactions�
 
 ## Surface V1
 
+### 楼层与有限厚度楼板
+
+`region kind=building_floor` 使用 `attr.building` 稳定建筑 ID、`attr.level`（-16～-1 或 1～16）、
+`attr.y` 支撑高度、`attr.ceiling` 层顶高度、可选 `attr.roof=0|1` 和 `attr.name` 显示名。
+XZ bounds 必须非空，Y 支持 ±1000000 RFU，ceiling 大于 Y；同建筑不能重复 level 或 Y，每张地图最多 32 个楼层。
+高度相对地面 0 表示；负 level 为地下层，RTS 显示 B1、B2 等标签。
+这是供 RTS 选择、拾取和显示使用的元数据，本身不产生楼板、门或通行连接。
+普通 region 的可选 `attr.y` 也支持高处任务出生点，未指定时保持地面 0。
+
+`collision shape=box attr.base_y=<RFU>` 指定底面，省略时为 0；显式底面支持负值并要求 base_y≤height。
+显式底面只允许 BOX。渲染用对应 `render kind=box attr.base_y`，`height` 为顶面。
+楼板需显式 walkable，并以 platform surface 的 `attr.collision_id` 引用，投影保持有限 BOX。
+楼梯使用既有 ramp surface；楼层 region 不替代物理楼梯。collision 的 height/height2 支持负值。
+`collision shape=ramp_x|ramp_z attr.thickness=<正RFU>` 声明平行底面的有限厚度坡道，允许从其下方通过，
+支撑、头顶碰撞和射线均消费该厚度。省略时保留旧坡道语义。
+对应 `render kind=ramp attr.thickness` 可加 `attr.steps=1..64` 绘制踏步，碰撞仍为连续坡面；steps 要求显式厚度。
+坡道 render 的 `attr.style=2` 沿 X 起伏，`attr.style=3` 沿 Z 起伏，须与关联 surface/collision 轴一致。
+
+```text
+region id=workshop_2f kind=building_floor min_x=0 max_x=8000 min_z=0 max_z=8000 attr.building=workshop attr.level=2 attr.y=2150 attr.ceiling=4198 attr.roof=0 attr.name=Workshop_2F
+collision id=upper_slab shape=box min_x=0 max_x=8000 min_z=0 max_z=8000 height=2150 attr.base_y=2048 visible=false walkable=true
+surface id=upper_surface kind=platform min_x=0 max_x=8000 min_z=0 max_z=8000 height=2150 material=87989F attr.collision_id=upper_slab
+render id=upper_draw kind=box min_x=0 max_x=8000 min_z=0 max_z=8000 height=2150 attr.base_y=2048 color=87989F
+```
+
 ### 实验区域复合定义
 
 ```text
@@ -186,7 +211,7 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 基础字段是稳定 `id`、`kind`、bounds、可选 `height` 和 `color`；位置由 bounds 的中心表达。
 `render kind=floor` 的 `attr.style=10/11/12` 分别选择实验检修板、带浅色边带的道路板、低对比填充板；
 省略时保留通用地板。三个样式仅在共享地面分区中改变接缝及边带颜色，不改变 surface 或 collision。
-道路按矩形较长轴确定方向，交叉口仍由总平面道路并集拥有。地板与标识数量上限为 512 条 render，
+道路按矩形较长轴确定方向，交叉口仍由总平面道路并集拥有。地板与标识数量上限为 640 条 render，
 Parser、Runtime、玩法投影和 Scene 按同一容量合同接收。
 
 `render kind=sign attr.style=7` 为固定尺寸四角投影信标，bounds 中心决定 X/Z，
@@ -213,7 +238,7 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 `min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，
 不带文字；双水平跨度非零或同时为零均无效。其他 sign 样式继续沿 X 展开。
 
-地图 IR 与玩法绘制投影的 render 容量均为 512，object/prop 容量均为 384；GPU Scene world snapshot
+地图 IR 与玩法绘制投影的 render 容量均为 640，authored collision 容量为 256，object/prop 容量均为 384；GPU Scene world snapshot
 直接沿用绘制投影容量。各边界必须同步，避免新展区通过解析后在投影时截断或无法冻结。
 RF 电子组件的 `attr.length` 展示组定义见[实验区合同](experiment-labs.md#产品展区风扇与状态灯)。
 

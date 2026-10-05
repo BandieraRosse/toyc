@@ -2,12 +2,12 @@
 
 static void frontier_test_config(struct rf_frontier_config *c)
 {
-    static const char *guards[12] = { "gate0", "gate1", "gate2", "store0",
-        "store1", "store2", "work0", "work1", "work2", "power0", "power1", "power2" };
+    static const char *guards[RF_FRONTIER_GUARDS] = { "gate0", "gate1", "gate2", "store0",
+        "store1", "store2", "work0", "work1", "work2", "power0", "power1", "power2", "upper" };
     static const char *facilities[3] = { "workshop", "storage", "energy" };
     int i;
     memset(c, 0, sizeof(*c)); c->offline_authority = 1;
-    for (i = 0; i < 12; i++) {
+    for (i = 0; i < RF_FRONTIER_GUARDS; i++) {
         strcpy(c->guards[i].point.id, guards[i]);
         c->guards[i].point.x = (i % 4 - 2) * 3000;
         c->guards[i].point.z = 3000 + i / 4 * 3000;
@@ -84,7 +84,7 @@ static int rf_frontier_mission_logic_test(void)
         if (rf_frontier_mission_begin(&m, &mission_game, &c, 1) || m.mission_id) return 50;
         c.guards[0].point.x = saved_x;
     }
-    if (!rf_frontier_mission_begin(&m, &mission_game, &c, 1) || m.guards_alive != 12 ||
+    if (!rf_frontier_mission_begin(&m, &mission_game, &c, 1) || m.guards_alive != RF_FRONTIER_GUARDS ||
         m.phase_ms || m.periodic_spawned) return 3;
     if (rf_frontier_mission_drain_events(&m) != RF_FRONTIER_EVENT_ARRIVAL ||
         rf_frontier_mission_drain_events(&m)) return 4;
@@ -112,7 +112,7 @@ static int rf_frontier_mission_logic_test(void)
     if (id != m.entities[0].stable_id ||
         mission_game.actors[slot].combat_generation == old_generation) return 11;
     rf_frontier_mission_step(&m, &mission_game, 1);
-    if (m.guards_alive != 11) return 12;
+    if (m.guards_alive != RF_FRONTIER_GUARDS-1) return 12;
     frontier_test_remove_role(&m, &mission_game, RF_FRONTIER_GUARD, 0);
     /* A periodic deadline coincident with the last defender's death is cancelled. */
     before = m.periodic_spawned;

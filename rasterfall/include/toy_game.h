@@ -347,6 +347,7 @@ struct toy_map_primitive {
     int shape;
     int minx, maxx, minz, maxz;
     int base_y, surface_y0, surface_y1;
+    int ramp_thickness; /* zero: legacy wedge; positive: finite sloping slab */
     unsigned int flags, color;
     char role[32];
 };
@@ -700,7 +701,7 @@ struct toy_game_actor {
     int deployment_x, deployment_z;
     /* Explicit allied command overrides deployment/companion following until
      * replaced. Arrival retains the post; it never changes flag membership. */
-    int command_destination_active, command_x, command_z;
+    int command_destination_active, command_x, command_z, command_y, command_height_active;
     int flag_index;
     int nav_x, nav_z;
     int nav_active;
@@ -709,6 +710,8 @@ struct toy_game_actor {
     int nav_direct_valid, nav_direct_ms;
     int nav_goal_x, nav_goal_z, nav_direct_y;
     unsigned int nav_generation;
+    unsigned short nav_layer_path[64];
+    int nav_layer_count, nav_layer_cursor, nav_layer_y, nav_layer_retry_ms;
     int hit_test_dummy;
     int animation_demo;
     int animation_demo_elapsed_ms;
@@ -911,6 +914,10 @@ struct toy_game {
     unsigned char flow_refined[TOY_GAME_NAV_MAX_CELLS];
     unsigned short flow_cells[TOY_GAME_NAV_MAX_CELLS];
     struct toy_game_flow_node flow_nodes[TOY_GAME_FLOW_MAX_NODES + 1];
+    /* Bounded actor planner scratch shares the Game-owned layered geometry. */
+    unsigned short actor_layer_parent[TOY_GAME_FLOW_MAX_NODES + 1];
+    unsigned actor_layer_priority[TOY_GAME_FLOW_MAX_NODES + 1];
+    unsigned short actor_layer_queue[TOY_GAME_FLOW_MAX_NODES + 1];
     struct toy_game_flow_edge flow_edges[TOY_GAME_FLOW_EDGE_CACHE];
     struct toy_game_flow_field flow_fields[TOY_GAME_FLOW_FIELDS];
     int nav_group_enabled;
@@ -1025,6 +1032,8 @@ void toy_game_actor_cancel_navigation(struct toy_game_actor *actor);
 int toy_game_actor_navigation_target(struct toy_game *g,
     struct toy_game_actor *actor, int target_x, int target_z,
     int move_step, int dt_ms, int *steer_x, int *steer_z);
+int toy_game_actor_navigation_target_height(struct toy_game *g,struct toy_game_actor *actor,
+    int target_x,int target_y,int target_z,int speed,int dt_ms,int *out_x,int *out_z);
 /* Exact authored spawn: no relocation, returns enemy slot or -1. */
 int  toy_game_spawn_enemy(struct toy_game *g, int enemy_type, int x, int z);
 int  toy_game_revive_actor(struct toy_game *g, int actor_index, int dt_ms);

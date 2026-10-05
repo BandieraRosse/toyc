@@ -26,6 +26,7 @@ struct rf_player_request {
     /* COLLECT confirmation binds value to the weapon the user approved
      * replacing (-1 empty); all device requests carry world/job generations. */
     int operation, value, x, z, confirmed;
+    int y, height_active; /* RTS destination support height, above ground. */
     uint64_t world_generation;
     unsigned serial, session_revision, node_revision;
     unsigned device_identity, device_generation;

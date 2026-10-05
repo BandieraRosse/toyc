@@ -63,6 +63,9 @@ struct rf_gpu_lighting {
     /* Presentation-only sky: coverage, density, base/thickness in km;
      * wind offset x/z in km, fixed seed, haze. Zero density disables clouds. */
     float sky_cloud[4],sky_weather[4];
+    /* Per-view XZ cutaway rectangle, world ceiling and dissolve amount.
+     * Shadow geometry is never clipped by this presentation operation. */
+    float cutaway_bounds[4],cutaway_height[4];
 };
 enum rf_gpu_graphics_scene_layer {
     RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,

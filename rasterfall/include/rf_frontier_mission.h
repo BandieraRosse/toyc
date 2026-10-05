@@ -4,7 +4,7 @@
 #include "toy_game.h"
 
 #define RF_FRONTIER_ID_CAP 64
-#define RF_FRONTIER_GUARDS 12
+#define RF_FRONTIER_GUARDS 13
 #define RF_FRONTIER_FACILITIES 3
 #define RF_FRONTIER_TRACKED 96
 
@@ -30,7 +30,7 @@ enum rf_frontier_capture_result {
 };
 struct rf_frontier_point {
     char id[RF_FRONTIER_ID_CAP];
-    int x, z;
+    int x, z, y;
 };
 struct rf_frontier_guard_config {
     struct rf_frontier_point point;

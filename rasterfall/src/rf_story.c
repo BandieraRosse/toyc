@@ -391,7 +391,7 @@ static void detect_regions(struct rf_story *s, const struct rasterfall_session *
     unsigned presence=0;
     if (!p || p->state != TOY_GAME_ACTOR_ALIVE || session->world_id != RASTERFALL_WORLD_OUTPOST)
         return;
-    r = rf_map_runtime_find_region(&session->map_ops.runtime, "outpost_safe");
+    r = rf_map_runtime_find_region(&session->map_ops.runtime, "outpost_bounds");
     if (r && p->x >= r->bounds.min_x && p->x <= r->bounds.max_x &&
         p->z >= r->bounds.min_z && p->z <= r->bounds.max_z)
         presence |= 1;

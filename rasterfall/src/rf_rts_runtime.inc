@@ -1,3 +1,143 @@
+static void rf_rts_move_request(struct rf_game_runtime *r,int x,int y,int z)
+{
+    struct rf_player_request request={0};request.operation=RF_PLAYER_RTS_MOVE;
+    request.x=x;request.y=y;request.z=z;request.height_active=1;
+    request.world_generation=r->session->scene_local.world_generation;
+    rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER);
+}
+static void rf_rts_station_overview(struct rf_game_runtime *r,int width,int height)
+{
+    const struct rf_map_runtime_region *area=rf_map_runtime_find_region(
+        &r->session->map_ops.runtime,"frontier_station_bounds");
+    if(!area || width<=0 || height<=0)return;
+    struct rf_ui_layout ui;rf_ui_layout_resolve(&ui,&r->player_ui,width,height,1);
+    int top=ui.phase.y+ui.phase.h+ui.gap+30;
+    int bottom=ui.groups.y>top?ui.groups.y:height;
+    int usable=bottom-top-24;if(usable<height/3)usable=height/3;
+    int distance=(area->bounds.max_z-area->bounds.min_z)*(width*3/4)/usable+6000;
+    int across=(area->bounds.max_x-area->bounds.min_x)*3/4+6000;
+    if(distance<across)distance=across;
+    if(distance>RTS_CAMERA_MAX_DISTANCE)distance=RTS_CAMERA_MAX_DISTANCE;
+    r->rts_camera_distance=distance;r->rts_follow_player=0;
+    r->rts_camera_x=(area->bounds.min_x+area->bounds.max_x)/2;
+    r->rts_camera_z=(area->bounds.min_z+area->bounds.max_z)/2-distance*90/1020-
+        (height/2-(top+bottom)/2)*distance/(width*3/4);
+}
+static void rf_rts_floor_focus(struct rf_game_runtime *r,int index,int manual)
+{
+    struct rf_rts_state *s=&r->rts;
+    if(index<0) {
+        if(s->focus_floor>=0) {
+            r->rts_camera_x=s->saved_x;r->rts_camera_z=s->saved_z;
+            r->rts_camera_distance=s->saved_distance;
+        }
+        s->focus_floor=-1;s->floor_manual=0;r->rts_follow_player=0;return;
+    }
+    if(index>=s->floor_count)return;
+    const struct rf_map_runtime_region *f=&s->floors[index];
+    if(s->focus_floor<0) {
+        s->saved_x=r->rts_camera_x;s->saved_z=r->rts_camera_z;
+        s->saved_distance=r->rts_camera_distance;
+    }
+    if(s->focus_floor!=index && !f->is_roof) {
+        s->cutaway_floor=index;s->cutaway_amount=0;
+    }
+    s->focus_floor=index;s->floor_manual=manual;r->rts_follow_player=0;
+    r->rts_camera_x=f->bounds.min_x+(f->bounds.max_x-f->bounds.min_x)/2;
+    r->rts_camera_z=f->bounds.min_z+(f->bounds.max_z-f->bounds.min_z)/2-
+        r->rts_camera_distance*90/1020;
+    struct toy_surface *surface=rf_core_surface(r->core);
+    if(surface && surface->width>0 && surface->height>0) {
+        struct rf_ui_layout ui;
+        rf_ui_layout_resolve(&ui,&r->player_ui,surface->width,surface->height,1);
+        int top=ui.phase.y+ui.phase.h+ui.gap+30;
+        int bottom=ui.groups.y>top?ui.groups.y:surface->height;
+        r->rts_camera_z-=(surface->height/2-(top+bottom)/2)*r->rts_camera_distance/
+            (surface->width*3/4);
+    }
+}
+static void rf_rts_floor_button(struct rf_game_runtime *r,int button)
+{
+    if(button==0){rf_rts_floor_focus(r,-1,0);return;}
+    if(button<=r->rts.floor_count) {
+        int overview=r->rts.focus_floor<0;
+        rf_rts_floor_focus(r,button-1,1);
+        if(overview) {
+            r->rts_camera_distance=24000;
+            rf_rts_floor_focus(r,button-1,1);
+        }
+        return;
+    }
+    int unit=r->rts.primary;
+    if(unit>=0 && rf_rts_member_valid(&r->rts.selected[unit],&r->session->game_state,unit)) {
+        const struct toy_game_actor *a=&r->session->game_state.actors[unit];
+        int floor=rf_rts_floor_at(&r->rts,a->x,a->ground_y+a->airborne_y,a->z);
+        /* Save the overview before adjusting the zoom. */
+        rf_rts_floor_focus(r,floor,0);
+        r->rts_camera_distance=6000;r->rts_follow_player=1;
+    }
+}
+static void rf_rts_focus_pick(struct rf_game_runtime *r,const struct camera *camera,
+    int w,int h,int sx,int sy,int entering)
+{
+    int x,y,z;
+    if(!rts_surface_pick(&r->session->level,camera,w,h,sx,sy,
+        r->session->air_walls_enabled,&x,&y,&z))return;
+    int floor=rf_rts_floor_at(&r->rts,x,y+900,z);
+    if(floor<0)return;
+    if(!entering) {
+        const char *building=r->rts.floors[floor].building;
+        for(int i=0;i<r->rts.floor_count;++i)
+            if(!strcmp(r->rts.floors[i].building,building) && r->rts.floors[i].is_roof)floor=i;
+    }
+    rf_rts_floor_focus(r,floor,entering);
+}
+static void rf_rts_floor_zoom(struct rf_game_runtime *r,const struct rf_input_frame *input,
+    struct camera *camera,int w,int h)
+{
+    struct rf_rts_state *s=&r->rts;
+    if(r->rts_camera_distance>=36000 && s->focus_floor>=0) {
+        int distance=r->rts_camera_distance;
+        rf_rts_floor_focus(r,-1,0);r->rts_camera_distance=distance;
+    } else if(input->wheel_y>0 && r->rts_camera_distance<18000 && !s->floor_manual) {
+        if(s->focus_floor<0)rf_rts_focus_pick(r,camera,w,h,input->pointer_x,input->pointer_y,1);
+        if(s->focus_floor>=0 && s->floors[s->focus_floor].is_roof) {
+            const char *building=s->floors[s->focus_floor].building;
+            for(int i=0;i<s->floor_count;++i)if(!strcmp(s->floors[i].building,building)) {
+                rf_rts_floor_focus(r,i,0);break;
+            }
+        }
+    }
+    if(r->rts_follow_player && s->primary>=0) {
+        const struct toy_game_actor *a=&r->session->game_state.actors[s->primary];
+        int floor=rf_rts_floor_at(s,a->x,a->ground_y+a->airborne_y,a->z);
+        if(floor!=s->focus_floor) {
+            int distance=r->rts_camera_distance;
+            rf_rts_floor_focus(r,floor,0);r->rts_camera_distance=distance;
+        }
+        r->rts_follow_player=1;
+    }
+}
+static void rf_rts_cutaway_update(struct rf_game_runtime *r,struct rf_gpu_scene_layers_input *layers)
+{
+    struct rf_rts_state *s=&r->rts;
+    int64_t now=rf_core_clock_now_us(),elapsed=now-s->cutaway_time_us;
+    s->cutaway_time_us=now;
+    if(elapsed<0)elapsed=0;
+    if(elapsed>50000)elapsed=50000;
+    float target=r->rts_active && s->focus_floor>=0 && !s->floors[s->focus_floor].is_roof?1:0;
+    float step=(float)elapsed/220000.0f;
+    if(s->cutaway_amount<target){s->cutaway_amount+=step;if(s->cutaway_amount>target)s->cutaway_amount=target;}
+    else {s->cutaway_amount-=step;if(s->cutaway_amount<target)s->cutaway_amount=target;}
+    if(!r->rts_active)s->cutaway_amount=0;
+    if(s->cutaway_amount>0 && s->cutaway_floor>=0 && s->cutaway_floor<s->floor_count) {
+        const struct rf_map_runtime_region *f=&s->floors[s->cutaway_floor];
+        layers->cutaway_bounds[0]=f->bounds.min_x;layers->cutaway_bounds[1]=f->bounds.max_x;
+        layers->cutaway_bounds[2]=f->bounds.min_z;layers->cutaway_bounds[3]=f->bounds.max_z;
+        layers->cutaway_height[0]=RASTERFALL_WORLD_GROUND_Y+f->ceiling_y-2;
+        layers->cutaway_height[1]=s->cutaway_amount;
+    }
+}
 static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame *in,
     struct toy_window_events *events,unsigned char *physical,unsigned char *keys,
     struct camera *camera,int width,int height)
@@ -19,11 +159,12 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
             r->session->banner_text=r->player_controls.last.message;r->session->banner_ms=1500;
         }
     }
+    int floor_hit=rf_player_ui_floor_hit(&ui,s,pointer_x,pointer_y);
     int hit=rf_player_ui_rts_hit(&ui,s,g,pointer_x,pointer_y);
     int normal=r->player_ui.mode<RF_PLAYER_UI_EXPERIMENT;
     int hover=rf_player_ui_rts_hit(&ui,s,g,in->pointer_x,in->pointer_y);
     s->hovered=normal && hover>=RF_PLAYER_UI_HIT_UNIT_BASE?hover-RF_PLAYER_UI_HIT_UNIT_BASE:-1;
-    int blocked=normal && (rf_ui_rect_contains(ui.map,pointer_x,pointer_y) ||
+    int blocked=normal && (floor_hit>=0 || rf_ui_rect_contains(ui.map,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.objective,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.selection,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.commands,pointer_x,pointer_y) ||
@@ -46,6 +187,7 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
     if(events->button_pressed && blocked) {
         s->drag_active=0;
         if(events->button==BTN_LEFT) {
+            if(floor_hit>=0)rf_rts_floor_button(r,floor_hit);
             int button=rf_player_ui_hit_test(&r->player_ui,width,height,1,pointer_x,pointer_y);
             if(hit>=RF_PLAYER_UI_HIT_UNIT_BASE)rf_rts_select(s,g,hit-RF_PLAYER_UI_HIT_UNIT_BASE,0);
             else if(hit>=RF_PLAYER_UI_HIT_GROUP_BASE && hit<RF_PLAYER_UI_HIT_GROUP_BASE+RF_RTS_GROUPS)
@@ -71,11 +213,11 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
         int x,y,z;
         if(events->button==BTN_RIGHT) {
             s->drag_active=0;
-            if(rts_surface_pick(&r->session->level,camera,width,height,pointer_x,pointer_y,
-                r->session->air_walls_enabled,&x,&y,&z))rf_player_request(r,RF_PLAYER_RTS_MOVE,0,x,z);
+            if(rts_surface_pick_floor(&r->session->level,camera,width,height,pointer_x,pointer_y,
+                r->session->air_walls_enabled,s->focus_floor>=0?&s->floors[s->focus_floor]:NULL,&x,&y,&z))rf_rts_move_request(r,x,y+900,z);
         } else if(events->button==BTN_LEFT && r->rts_teleport_pending) {
-            if(rts_surface_pick(&r->session->level,camera,width,height,pointer_x,pointer_y,
-                r->session->air_walls_enabled,&x,&y,&z) &&
+            if(rts_surface_pick_floor(&r->session->level,camera,width,height,pointer_x,pointer_y,
+                r->session->air_walls_enabled,s->focus_floor>=0?&s->floors[s->focus_floor]:NULL,&x,&y,&z) &&
                 rasterfall_session_rts_teleport_player(r->session,&r->camera,x,y,z)) {
                 r->rts_teleport_pending=0;rf_player_request(r,RF_PLAYER_RTS_SELECT,0,0,0);
             }
@@ -91,7 +233,11 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
         if(!(in->mouse_buttons&1)) {
             if(s->drag_started)rf_rts_box(s,g,camera,width,height,s->drag_x,s->drag_y,
                 s->pointer_x,s->pointer_y,s->drag_add);
-            else if(!blocked)rf_rts_select(s,g,rf_rts_pick(g,camera,width,height,s->pointer_x,s->pointer_y),s->drag_add);
+            else if(!blocked) {
+                int unit=rf_rts_pick_floor(s,g,camera,width,height,s->pointer_x,s->pointer_y);
+                rf_rts_select(s,g,unit,s->drag_add);
+                if(unit<0 && !s->drag_add)rf_rts_focus_pick(r,camera,width,height,s->pointer_x,s->pointer_y,0);
+            }
             s->drag_active=0;
         }
     }

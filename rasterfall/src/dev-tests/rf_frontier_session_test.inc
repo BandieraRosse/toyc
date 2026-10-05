@@ -29,6 +29,51 @@ static struct rf_player_request frontier_session_test_request(
     return a;
 }
 
+/* Traverse authored storeys using normal footprint collision and retained RTS
+ * routes. The probe is independent of mission actors and advances no clock. */
+static int frontier_session_test_storeys(struct rasterfall_session *s)
+{
+    struct toy_game *g=&s->game_state;
+    const struct rf_frontier_point *upper=&s->frontier.config.guards[RF_FRONTIER_GUARDS-1].point;
+    const struct rf_map_runtime_region *roof=rf_map_runtime_find_region(
+        &s->map_ops.runtime,"frontier_workshop_floor_3");
+    const struct rf_map_runtime_region *first=rf_map_runtime_find_region(
+        &s->map_ops.runtime,"frontier_workshop_floor_1");
+    struct toy_game_actor probe=*toy_game_local_player_actor(g);
+    if(!roof || !first || upper->y<=0 ||
+        toy_game_query_ground(g,upper->x,upper->z,TOY_GAME_PLAYER_RADIUS,0).support_y!=0 ||
+        toy_game_query_ground(g,upper->x,upper->z,TOY_GAME_PLAYER_RADIUS,upper->y).support_y!=upper->y)
+        return 1;
+    probe.x=s->level.start_x;probe.z=s->level.start_z;
+    probe.ground_y=0;probe.airborne_y=probe.airborne_ms=0;
+    toy_game_actor_cancel_navigation(&probe);
+    for(int leg=0;leg<4;++leg) {
+        int tx=upper->x,tz=upper->z,ty=upper->y,arrived=0;
+        if(leg==1){tx=(roof->bounds.min_x+roof->bounds.max_x)/2;
+            tz=(roof->bounds.min_z+roof->bounds.max_z)/2;ty=roof->floor_y;}
+        if(leg==3){tx=first->bounds.max_x-7*512;tz=first->bounds.min_z;ty=0;}
+        for(int tick=0;tick<3000;++tick) {
+            int x,z;
+            long long dx=(long long)tx-probe.x,dz=(long long)tz-probe.z;
+            if(dx*dx+dz*dz<=180LL*180 && abs(probe.ground_y-ty)<=2){arrived=1;break;}
+            if(toy_game_actor_navigation_target_height(g,&probe,tx,ty,tz,64,16,&x,&z)) {
+                dx=(long long)x-probe.x;dz=(long long)z-probe.z;
+                int length=isqrt(dx*dx+dz*dz);
+                if(length)toy_game_move_actor_sliding(g,&probe,
+                    (int)(dx*(length<64?length:64)/length),
+                    (int)(dz*(length<64?length:64)/length));
+                if(probe.airborne_ms){__printf("STOREY unexpected fall leg=%d next=%d,%d delta=%d,%d feet=%d air=%d cursor=%d\n",
+                    leg,x,z,(int)dx,(int)dz,probe.ground_y,probe.airborne_y,probe.nav_layer_cursor);break;}
+            }
+        }
+        if(!arrived){__printf("STOREY route leg=%d position=%d,%d,%d goal=%d,%d,%d nodes=%d cursor=%d\n",
+            leg,probe.x,probe.ground_y,probe.z,tx,ty,tz,probe.nav_layer_count,probe.nav_layer_cursor);
+            for(int n=0;n<probe.nav_layer_count;++n){const struct toy_game_flow_node *p=&g->flow_nodes[probe.nav_layer_path[n]];
+                __printf("STOREY node %d: %d,%d,%d\n",n,p->x,p->y,p->z);}return leg+2;}
+    }
+    return 0;
+}
+
 static int rf_frontier_session_logic_test(void)
 {
     static struct rasterfall_session fixture;
@@ -54,7 +99,8 @@ static int rf_frontier_session_logic_test(void)
     rasterfall_session_reset(&fixture, &view, 7913);
     player = toy_game_local_player_actor(g);
     FRONTIER_SESSION_CHECK(g->state == TOY_GAME_PLAYING &&
-        fixture.frontier.phase == RF_FRONTIER_ASSAULT && fixture.frontier.guards_alive == 12);
+        fixture.frontier.phase == RF_FRONTIER_ASSAULT && fixture.frontier.guards_alive == RF_FRONTIER_GUARDS);
+    FRONTIER_SESSION_CHECK(!frontier_session_test_storeys(&fixture));
     FRONTIER_SESSION_CHECK(fixture.frontier_autonomous_squad.index>=0 &&
         g->squads[fixture.frontier_autonomous_squad.index].count==5 &&
         g->squads[fixture.frontier_autonomous_squad.index].mode==TOY_GAME_SQUAD_FOLLOW);

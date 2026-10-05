@@ -111,7 +111,7 @@ void rf_player_weaver_query(const struct rf_game_runtime *r,struct rf_player_wea
         if(w->phase==TOY_WEAVER_READY)q->rounds=w->cost.initial_rounds;
     }
 }
-static int rts_order_selection(struct rf_game_runtime *r,int x,int z,int stop)
+static int rts_order_selection(struct rf_game_runtime *r,int x,int y,int z,int stop,int height_active)
 {
     struct rasterfall_session *s=r->session;
     int count=rf_rts_count(&r->rts,&s->game_state),columns=1,ordinal=0,accepted=0;
@@ -123,11 +123,11 @@ static int rts_order_selection(struct rf_game_runtime *r,int x,int z,int stop)
         int tx=x,tz=z;
         if(!rf_rts_member_valid(m,&s->game_state,i))continue;
         if(count>1){tx+=(2*(ordinal%columns)-columns+1)*300;tz+=(2*(ordinal/columns)-rows+1)*300;}
-        int moved=rasterfall_session_rts_order_actor(s,i,m->actor_id,m->generation,tx,tz,stop);
+        int moved=rasterfall_session_rts_order_actor_height(s,i,m->actor_id,m->generation,tx,y,tz,stop,height_active);
         /* At a wall/ledge retain the valid clicked ground rather than drop a
          * member merely because its formation offset cannot fit. */
         if(!moved && !stop && (tx!=x || tz!=z))
-            moved=rasterfall_session_rts_order_actor(s,i,m->actor_id,m->generation,x,z,0);
+            moved=rasterfall_session_rts_order_actor_height(s,i,m->actor_id,m->generation,x,y,z,0,height_active);
         accepted+=moved;ordinal++;
     }
     return accepted;
@@ -249,7 +249,7 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
         if(!r->rts_active || !s->rts_active || !rf_rts_count(&r->rts,&s->game_state))
             out=result(RF_PLAYER_INVALID,"请先选择单位");
         else {
-            out.affected=rts_order_selection(r,a->x,a->z,0);
+            out.affected=rts_order_selection(r,a->x,a->y,a->z,0,a->height_active);
             out.code=out.affected?RF_PLAYER_OK:RF_PLAYER_INVALID;
             snprintf(out.message,sizeof(out.message),"%d / %d 单位接受移动指令",out.affected,rf_rts_count(&r->rts,&s->game_state));
         }
@@ -257,7 +257,7 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
     case RF_PLAYER_RTS_STOP:
         if(!r->rts_active || !s->rts_active)out=result(RF_PLAYER_INVALID,"请先进入 RTS");
         else {
-            out.affected=rts_order_selection(r,0,0,1);
+            out.affected=rts_order_selection(r,0,0,0,1,0);
             out.code=out.affected?RF_PLAYER_OK:RF_PLAYER_INVALID;
             snprintf(out.message,sizeof(out.message),"%d 单位停止移动",out.affected);
         }

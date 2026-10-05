@@ -30,6 +30,10 @@ region id=frontier_guard_workshop_2 kind=mission_guard min_x=5120 max_x=5120 min
 region id=frontier_guard_energy_0 kind=mission_guard min_x=-11776 max_x=-11776 min_z=28160 max_z=28160 attr.role=frontier_guard
 region id=frontier_guard_energy_1 kind=mission_guard min_x=-15360 max_x=-15360 min_z=31744 max_z=31744 attr.role=frontier_guard
 region id=frontier_guard_energy_2 kind=mission_guard min_x=-8704 max_x=-8704 min_z=33280 max_z=33280 attr.role=frontier_guard
+region id=frontier_guard_workshop_upper kind=mission_guard min_x=6144 max_x=6144 min_z=25344 max_z=25344 attr.role=frontier_guard attr.y=2150
+region id=frontier_workshop_floor_1 kind=building_floor min_x=2816 max_x=22528 min_z=23040 max_z=36352 attr.building=frontier_workshop attr.level=1 attr.y=0 attr.ceiling=2048 attr.name=车间一层 attr.roof=0
+region id=frontier_workshop_floor_2 kind=building_floor min_x=2816 max_x=22528 min_z=23040 max_z=36352 attr.building=frontier_workshop attr.level=2 attr.y=2150 attr.ceiling=4198 attr.name=车间二层 attr.roof=0
+region id=frontier_workshop_floor_3 kind=building_floor min_x=2816 max_x=22528 min_z=23040 max_z=36352 attr.building=frontier_workshop attr.level=3 attr.y=4301 attr.ceiling=6349 attr.name=车间屋顶 attr.roof=1
 region id=frontier_station_bounds kind=mission_area min_x=-23040 max_x=23040 min_z=0 max_z=40960 attr.role=frontier_station
 
 # One continuous, navigable ground surface; paint only divides materials.
@@ -149,18 +153,56 @@ object id=workshop_bench_n kind=workbench x=14336 y=0 z=33280 yaw=180 scale=1000
 object id=workshop_supply_0 kind=crate x=15872 y=0 z=26112 yaw=0 scale=1000 attr.collision=component
 object id=workshop_supply_1 kind=crate x=15872 y=0 z=32768 yaw=0 scale=1000 attr.collision=component
 object id=workshop_supply_2 kind=crate x=4608 y=0 z=33280 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_s_0 kind=frontier_canopy x=4608 y=2150 z=25344 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_s_1 kind=frontier_canopy x=7680 y=2150 z=25344 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_s_2 kind=frontier_canopy x=10752 y=2150 z=25344 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_s_3 kind=frontier_canopy x=13824 y=2150 z=25344 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_n_0 kind=frontier_canopy x=4608 y=2150 z=34048 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_n_1 kind=frontier_canopy x=7680 y=2150 z=34048 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_n_2 kind=frontier_canopy x=10752 y=2150 z=34048 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_n_3 kind=frontier_canopy x=13824 y=2150 z=34048 yaw=0 scale=1000 attr.collision=component
-object id=workshop_roof_w_0 kind=frontier_canopy x=3840 y=2150 z=27648 yaw=90 scale=1000 attr.collision=component
-object id=workshop_roof_w_1 kind=frontier_canopy x=3840 y=2150 z=30720 yaw=90 scale=1000 attr.collision=component
-object id=workshop_roof_e_0 kind=frontier_canopy x=16640 y=2150 z=27648 yaw=90 scale=1000 attr.collision=component
-object id=workshop_roof_e_1 kind=frontier_canopy x=16640 y=2150 z=30720 yaw=90 scale=1000 attr.collision=component
+collision id=workshop_upper_slab_col shape=box min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=2150 attr.base_y=2048 collision=true visible=false walkable=true
+render id=workshop_upper_slab kind=box min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=2150 attr.base_y=2048 color=87989F
+surface id=workshop_upper_slab_surface kind=platform min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=2150 material=87989F attr.collision_id=workshop_upper_slab_col
+collision id=workshop_roof_slab_col shape=box min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=4301 attr.base_y=4198 collision=true visible=false walkable=true
+render id=workshop_roof_slab kind=box min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=4301 attr.base_y=4198 color=697A84
+surface id=workshop_roof_slab_surface kind=platform min_x=3072 max_x=17408 min_z=24576 max_z=34816 height=4301 material=697A84 attr.collision_id=workshop_roof_slab_col
+collision id=workshop_upper_w_col shape=box min_x=2995 max_x=3149 min_z=24576 max_z=34816 height=4198 attr.base_y=2150 collision=true visible=false walkable=false
+render id=workshop_upper_w kind=box min_x=2995 max_x=3149 min_z=24576 max_z=34816 height=4198 attr.base_y=2150 color=64717A
+collision id=workshop_upper_n_col shape=box min_x=3072 max_x=17408 min_z=34739 max_z=34893 height=4198 attr.base_y=2150 collision=true visible=false walkable=false
+render id=workshop_upper_n kind=box min_x=3072 max_x=17408 min_z=34739 max_z=34893 height=4198 attr.base_y=2150 color=64717A
+collision id=workshop_upper_e_col shape=box min_x=17331 max_x=17485 min_z=24576 max_z=32256 height=4198 attr.base_y=2150 collision=true visible=false walkable=false
+render id=workshop_upper_e kind=box min_x=17331 max_x=17485 min_z=24576 max_z=32256 height=4198 attr.base_y=2150 color=64717A
+collision id=workshop_upper_s_sill_col shape=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=2560 attr.base_y=2150 collision=true visible=false walkable=false
+render id=workshop_upper_s_sill kind=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=2560 attr.base_y=2150 color=64717A
+collision id=workshop_upper_s_head_col shape=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=4198 attr.base_y=3686 collision=true visible=false walkable=false
+render id=workshop_upper_s_head kind=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=4198 attr.base_y=3686 color=64717A
+collision id=workshop_upper_s_pier_0_col shape=box min_x=3072 max_x=5120 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 collision=true visible=false walkable=false
+render id=workshop_upper_s_pier_0 kind=box min_x=3072 max_x=5120 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 color=64717A
+collision id=workshop_upper_s_pier_1_col shape=box min_x=7168 max_x=12800 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 collision=true visible=false walkable=false
+render id=workshop_upper_s_pier_1 kind=box min_x=7168 max_x=12800 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 color=64717A
+collision id=workshop_upper_s_pier_2_col shape=box min_x=14848 max_x=17408 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 collision=true visible=false walkable=false
+render id=workshop_upper_s_pier_2 kind=box min_x=14848 max_x=17408 min_z=24499 max_z=24653 height=3686 attr.base_y=2560 color=64717A
+collision id=workshop_stair_lower_col shape=ramp_z min_x=17920 max_x=19968 min_z=25088 max_z=33280 height=0 height2=2150 collision=true visible=false walkable=true
+surface id=workshop_stair_lower_surface kind=ramp min_x=17920 max_x=19968 min_z=25088 max_z=33280 height=0 height2=2150 axis=z material=788B94 attr.collision_id=workshop_stair_lower_col
+render id=workshop_stair_lower kind=ramp min_x=17920 max_x=19968 min_z=25088 max_z=33280 height=0 attr.height2=2150 attr.style=2 color=788B94
+collision id=workshop_stair_landing_col shape=box min_x=16896 max_x=22528 min_z=33280 max_z=36352 height=2150 attr.base_y=2048 collision=true visible=false walkable=true
+render id=workshop_stair_landing kind=box min_x=16896 max_x=22528 min_z=33280 max_z=36352 height=2150 attr.base_y=2048 color=87989F
+surface id=workshop_stair_landing_surface kind=platform min_x=16896 max_x=22528 min_z=33280 max_z=36352 height=2150 material=87989F attr.collision_id=workshop_stair_landing_col
+collision id=workshop_stair_upper_col shape=ramp_z min_x=20480 max_x=22528 min_z=25088 max_z=33280 height=4301 height2=2150 collision=true visible=false walkable=true
+surface id=workshop_stair_upper_surface kind=ramp min_x=20480 max_x=22528 min_z=25088 max_z=33280 height=4301 height2=2150 axis=z material=788B94 attr.collision_id=workshop_stair_upper_col
+render id=workshop_stair_upper kind=ramp min_x=20480 max_x=22528 min_z=25088 max_z=33280 height=4301 attr.height2=2150 attr.style=2 color=788B94
+collision id=workshop_roof_landing_col shape=box min_x=16896 max_x=22528 min_z=23040 max_z=25088 height=4301 attr.base_y=4198 collision=true visible=false walkable=true
+render id=workshop_roof_landing kind=box min_x=16896 max_x=22528 min_z=23040 max_z=25088 height=4301 attr.base_y=4198 color=697A84
+surface id=workshop_roof_landing_surface kind=platform min_x=16896 max_x=22528 min_z=23040 max_z=25088 height=4301 material=697A84 attr.collision_id=workshop_roof_landing_col
+collision id=workshop_roof_rail_s_col shape=box min_x=3072 max_x=16896 min_z=24499 max_z=24653 height=4787 attr.base_y=4301 collision=true visible=false walkable=false
+render id=workshop_roof_rail_s kind=box min_x=3072 max_x=16896 min_z=24499 max_z=24653 height=4787 attr.base_y=4301 color=536771
+collision id=workshop_roof_rail_n_col shape=box min_x=3072 max_x=17408 min_z=34739 max_z=34893 height=4787 attr.base_y=4301 collision=true visible=false walkable=false
+render id=workshop_roof_rail_n kind=box min_x=3072 max_x=17408 min_z=34739 max_z=34893 height=4787 attr.base_y=4301 color=536771
+collision id=workshop_roof_rail_w_col shape=box min_x=2995 max_x=3149 min_z=24576 max_z=34816 height=4787 attr.base_y=4301 collision=true visible=false walkable=false
+render id=workshop_roof_rail_w kind=box min_x=2995 max_x=3149 min_z=24576 max_z=34816 height=4787 attr.base_y=4301 color=536771
+collision id=workshop_roof_rail_e_col shape=box min_x=17331 max_x=17485 min_z=25088 max_z=34816 height=4787 attr.base_y=4301 collision=true visible=false walkable=false
+render id=workshop_roof_rail_e kind=box min_x=17331 max_x=17485 min_z=25088 max_z=34816 height=4787 attr.base_y=4301 color=536771
+object id=workshop_upper_column_0 kind=industrial_pillar x=4096 y=2150 z=25600 yaw=0 scale=1000 attr.collision=component
+object id=workshop_upper_column_1 kind=industrial_pillar x=4096 y=2150 z=33792 yaw=0 scale=1000 attr.collision=component
+object id=workshop_upper_column_2 kind=industrial_pillar x=16384 y=2150 z=25600 yaw=0 scale=1000 attr.collision=component
+object id=workshop_upper_column_3 kind=industrial_pillar x=16384 y=2150 z=33792 yaw=0 scale=1000 attr.collision=component
+object id=workshop_upper_desk kind=workbench x=10752 y=2150 z=32768 yaw=180 scale=1000 attr.collision=component
+object id=workshop_upper_cover kind=crate x=13312 y=2150 z=26624 yaw=0 scale=1000 attr.collision=component
+render id=workshop_upper_sign kind=sign min_x=8704 max_x=11776 min_z=24422 max_z=24422 height=2863 color=C2D2D8 attr.height2=3094 attr.style=1 attr.text=WORKSHOP_2F attr.facing=-z
+render id=workshop_stair_sign kind=sign min_x=17664 max_x=19200 min_z=25088 max_z=25088 height=73 color=C2D2D8 attr.height2=278 attr.style=1 attr.text=2F_/_ROOF attr.facing=-z
 object id=workshop_loading_canopy kind=frontier_canopy x=10240 y=2150 z=24064 yaw=0 scale=1000 attr.collision=component
 object id=workshop_bollard_0 kind=frontier_bollard x=8499 y=0 z=24064 yaw=0 scale=1000 attr.collision=component
 object id=workshop_bollard_1 kind=frontier_bollard x=11981 y=0 z=24064 yaw=0 scale=1000 attr.collision=component

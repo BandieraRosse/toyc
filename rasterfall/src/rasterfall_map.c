@@ -495,7 +495,14 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         draw->c = render->bounds.min_z;
         draw->d = render->bounds.max_z;
         draw->e = render->has_height ? render->height : 0;
-        draw->f = runtime_render_int(render, "height2", 0);
+        draw->f = runtime_render_int(render, type == TOY_MAP_DRAW_BOX ? "base_y" : "height2", 0);
+        if (type == TOY_MAP_DRAW_RAMP) {
+            draw->ramp_thickness = runtime_render_int(render, "thickness", 0);
+            draw->ramp_steps = runtime_render_int(render, "steps", 0);
+            if (draw->ramp_thickness < 0 || draw->ramp_thickness > 1000000 ||
+                draw->ramp_steps < 0 || draw->ramp_steps > 64 ||
+                (draw->ramp_steps && !draw->ramp_thickness)) return -1;
+        }
         draw->color = render->has_color ?
             (unsigned int)strtol(render->color, NULL, 16) : 0;
         draw->style = runtime_render_int(render, "style", 0);
@@ -549,6 +556,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         primitive->minz = collision->bounds.min_z;
         primitive->maxz = collision->bounds.max_z;
         primitive->base_y = collision->base_y;
+        primitive->ramp_thickness = collision->ramp_thickness;
         primitive->surface_y0 = collision->height;
         primitive->surface_y1 = collision->has_height2 ?
             collision->height2 : collision->height;
@@ -580,7 +588,7 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
                     primitive->shape = TOY_MAP_PRIMITIVE_RAMP_X;
                 else if (!strcmp(surface->axis, "z"))
                     primitive->shape = TOY_MAP_PRIMITIVE_RAMP_Z;
-            } else {
+            } else if (primitive->shape != TOY_MAP_PRIMITIVE_BOX) {
                 primitive->shape = TOY_MAP_PRIMITIVE_FLAT;
             }
             if (primitive->minx != surface->bounds.min_x ||

@@ -24,7 +24,7 @@ void rf_rts_clear(struct rf_rts_state *s)
 void rf_rts_sync(struct rf_rts_state *s,const struct toy_game *g,uint64_t world)
 {
     if(s->world_generation!=world) {
-        memset(s,0,sizeof(*s));s->world_generation=world;rf_rts_clear(s);
+        memset(s,0,sizeof(*s));s->world_generation=world;s->focus_floor=-1;rf_rts_clear(s);
     }
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         if(!rf_rts_member_valid(&s->selected[i],g,i))s->selected[i].active=0;
@@ -92,13 +92,55 @@ static int actor_screen(const struct toy_game_actor *a,const struct camera *c,in
     return rf_rts_project(c,w,h,a->x,RASTERFALL_WORLD_GROUND_Y+a->ground_y+
         a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU/2,a->z,x,y);
 }
-int rf_rts_pick(const struct toy_game *g,const struct camera *c,int w,int h,int x,int y)
+void rf_rts_floors_load(struct rf_rts_state *s,const struct rf_map_runtime *map,uint64_t world)
+{
+    if(s->floors_world==world)return;
+    s->floors_world=world;s->floor_count=0;s->focus_floor=-1;s->cutaway_amount=0;
+    for(int i=0;i<rf_map_runtime_region_count(map);++i) {
+        const struct rf_map_runtime_region *r=rf_map_runtime_region_at(map,i);
+        if(strcmp(r->kind,"building_floor"))continue;
+        if(s->floor_count<RF_RTS_FLOORS)s->floors[s->floor_count++]=*r;
+    }
+    for(int i=1;i<s->floor_count;++i)for(int j=i;j>0;--j) {
+        struct rf_map_runtime_region *a=&s->floors[j-1],*b=&s->floors[j];
+        int order=strcmp(a->building,b->building);
+        if(order<0 || (!order && a->floor_level<b->floor_level))break;
+        struct rf_map_runtime_region swap=*a;*a=*b;*b=swap;
+    }
+}
+int rf_rts_floor_at(const struct rf_rts_state *s,int x,int y,int z)
+{
+    for(int i=0;i<s->floor_count;++i) {
+        const struct rf_map_runtime_region *f=&s->floors[i];
+        if(x>=f->bounds.min_x && x<=f->bounds.max_x && z>=f->bounds.min_z &&
+            z<=f->bounds.max_z && y>=f->floor_y-2 && y<f->ceiling_y)return i;
+    }
+    return -1;
+}
+int rf_rts_floor_allows(const struct rf_rts_state *s,const struct toy_game_actor *a)
+{
+    if(!s || s->focus_floor<0 || s->focus_floor>=s->floor_count)return 1;
+    const struct rf_map_runtime_region *f=&s->floors[s->focus_floor];
+    if(a->x<f->bounds.min_x || a->x>f->bounds.max_x ||
+        a->z<f->bounds.min_z || a->z>f->bounds.max_z)return 1;
+    int y=a->ground_y+a->airborne_y;
+    return y>=f->floor_y-2 && y<f->ceiling_y;
+}
+int rf_rts_label_allows(const struct rf_rts_state *s,const struct toy_game_actor *a,int hostile)
+{
+    if(!s)return 1;
+    if(!rf_rts_floor_allows(s,a))return 0;
+    if(s->focus_floor>=0 || !hostile)return 1;
+    int floor=rf_rts_floor_at(s,a->x,a->ground_y+a->airborne_y,a->z);
+    return floor<0 || s->floors[floor].is_roof;
+}
+int rf_rts_pick_floor(const struct rf_rts_state *s,const struct toy_game *g,const struct camera *c,int w,int h,int x,int y)
 {
     int best=-1;long long distance=0;
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         int sx,sy,tx,ty,radius=12;
         const struct toy_game_actor *a=&g->actors[i];
-        if(!rf_rts_selectable(g,i) || !actor_screen(a,c,w,h,&sx,&sy))continue;
+        if(!rf_rts_selectable(g,i) || !rf_rts_floor_allows(s,a) || !actor_screen(a,c,w,h,&sx,&sy))continue;
         if(rf_rts_project(c,w,h,a->x,RASTERFALL_WORLD_GROUND_Y+a->ground_y+
             a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU,a->z,&tx,&ty)) {
             int d=abs(tx-sx)+abs(ty-sy);if(d>radius)radius=d;
@@ -108,6 +150,8 @@ int rf_rts_pick(const struct toy_game *g,const struct camera *c,int w,int h,int 
     }
     return best;
 }
+int rf_rts_pick(const struct toy_game *g,const struct camera *c,int w,int h,int x,int y)
+{ return rf_rts_pick_floor(NULL,g,c,w,h,x,y); }
 void rf_rts_box(struct rf_rts_state *s,const struct toy_game *g,const struct camera *c,
     int w,int h,int x0,int y0,int x1,int y1,int add)
 {
@@ -115,7 +159,7 @@ void rf_rts_box(struct rf_rts_state *s,const struct toy_game *g,const struct cam
     if(!add)rf_rts_clear(s);
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         int x,y;
-        if(rf_rts_selectable(g,i) && actor_screen(&g->actors[i],c,w,h,&x,&y) &&
+        if(rf_rts_selectable(g,i) && rf_rts_floor_allows(s,&g->actors[i]) && actor_screen(&g->actors[i],c,w,h,&x,&y) &&
             x>=0 && x<w && y>=0 && y<h && x>=x0 && x<=x1 && y>=y0 && y<=y1)
             rf_rts_select(s,g,i,1);
     }
@@ -153,5 +197,24 @@ int rf_rts_logic_test(void)
     rf_rts_box(&s,&g,&c,1280,720,700,400,600,300,0);
     if(rf_rts_count(&s,&g)!=1 || rf_rts_nth(&s,&g,0)!=2 ||
         rf_rts_pick(&g,&c,1280,720,640,360)!=2)return 6;
+    s.floor_count=2;s.focus_floor=1;
+    for(int i=0;i<2;++i) {
+        struct rf_map_runtime_region *f=&s.floors[i];
+        strcpy(f->building,"test_building");f->bounds.min_x=f->bounds.min_z=-2000;
+        f->bounds.max_x=f->bounds.max_z=2000;f->floor_level=i+1;
+        f->floor_y=i*2000;f->ceiling_y=(i+1)*2000;
+    }
+    g.actors[5]=g.actors[2];g.actors[5].actor_id=105;g.actors[5].ground_y=2000;
+    if(rf_rts_floor_at(&s,0,0,0)!=0 || rf_rts_floor_at(&s,0,2000,0)!=1 ||
+        rf_rts_floor_at(&s,3000,2000,0)!=-1)return 8;
+    rf_rts_box(&s,&g,&c,1280,720,0,0,1280,720,0);
+    if(rf_rts_count(&s,&g)!=1 || rf_rts_nth(&s,&g,0)!=5)return 9;
+    s.focus_floor=-1;
+    if(rf_rts_label_allows(&s,&g.actors[5],1) ||
+        !rf_rts_label_allows(&s,&g.actors[5],0))return 12;
+    rf_rts_box(&s,&g,&c,1280,720,0,0,1280,720,0);
+    if(rf_rts_count(&s,&g)!=2)return 10;
+    rf_rts_sync(&s,&g,3);
+    if(s.floor_count || s.focus_floor!=-1)return 11;
     return 0;
 }

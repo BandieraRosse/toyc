@@ -127,16 +127,62 @@ static void rts_unit_details(struct rasterfall_canvas *c,struct rf_ui_rect r,
         rf_ui_text(c,ui_rect(r.x,r.y+i*step,r.w,step),rows[i],
             i==2?rts_health_color(t,a):i==0?t->text:t->muted,scale,1);
 }
+struct rf_ui_rect rf_player_ui_floor_rect(const struct rf_ui_layout *l,const struct rf_rts_state *s,int n)
+{
+    int extent=l->resources.x+l->resources.w+l->margin;
+    int count=s->floor_count+2,width=ui_min(ui_px(560,l->scale_milli),extent-2*l->margin);
+    int cell=width/count;
+    return ui_rect((extent-width)/2+n*cell,l->phase.y+l->phase.h+l->gap,
+        cell-ui_max(2,l->gap/2),ui_px(30,l->scale_milli));
+}
+int rf_player_ui_floor_hit(const struct rf_ui_layout *l,const struct rf_rts_state *s,int x,int y)
+{
+    if(!s || !s->floor_count)return -1;
+    for(int n=0;n<s->floor_count+2;++n)
+        if(rf_ui_rect_contains(rf_player_ui_floor_rect(l,s,n),x,y))return n;
+    return -1;
+}
+static void rts_floor_panel(struct rasterfall_canvas *c,const struct rasterfall_hud_state *h,
+    const struct rf_ui_layout *l)
+{
+    const struct rf_rts_state *s=h->player_ui_view.rts;
+    const struct rf_ui_theme *t=&h->player_ui->theme;
+    if(!s || !s->floor_count)return;
+    for(int n=0;n<s->floor_count+2;++n) {
+        struct rf_ui_rect rect=rf_player_ui_floor_rect(l,s,n);
+        const char *text=n==0?"全貌":n==s->floor_count+1?"聚焦单位":s->floors[n-1].floor_name;
+        int scale=ui_min(l->text_scale_milli,ui_max(650,(rect.w-8)*1000/
+            ui_max(1,rf_ui_font_text_width(text,1000))));
+        rf_ui_button(c,rect,t,text,scale,n==s->focus_floor+1,
+            n<=s->floor_count || s->primary>=0);
+    }
+}
 static void rts_world_feedback(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *h,
     const struct rf_ui_layout *l)
 {
     const struct rf_rts_state *s=h->player_ui_view.rts;
     const struct camera *camera=h->player_ui_view.rts_camera;
     if(!s || !camera)return;
+    rts_floor_panel(canvas,h,l);
+    const struct rf_ui_theme *t=&h->player_ui->theme;
     struct rasterfall_canvas c=*canvas;
     /* Never draw tactical world marks over transparent video or dock areas. */
     if(l->selection.w>0)c.height=ui_min(c.height,l->groups.y);
     const struct toy_game_actor *player=toy_game_local_player_actor_const(h->game);
+    /* Interior allied markers remain readable in overview and on other
+     * floors. Hostile actors do not gain an overlay through solid roofs. */
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct toy_game_actor *a=&h->game->actors[i];
+        if(!rf_rts_selectable(h->game,i))continue;
+        int floor=rf_rts_floor_at(s,a->x,a->ground_y+a->airborne_y,a->z),sx,sy;
+        if(floor<0 || (s->focus_floor>=0 && rf_rts_floor_allows(s,a)))continue;
+        if(!rf_rts_project(camera,canvas->width,canvas->height,a->x,
+            RASTERFALL_WORLD_GROUND_Y+a->ground_y+RASTERFALL_HUMAN_HEIGHT_RFU/2,a->z,&sx,&sy))continue;
+        char label[16];int level=s->floors[floor].floor_level;
+        snprintf(label,sizeof(label),s->floors[floor].is_roof?"屋顶":level<0?"B%d":"%dF",level<0?-level:level);
+        rasterfall_canvas_rect(&c,sx-4,sy-4,8,8,t->success,s->focus_floor<0?230:110);
+        rf_ui_text(&c,ui_rect(sx+7,sy-9,50,18),label,t->muted,750,1);
+    }
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *a=&h->game->actors[i];
         if(!rf_rts_member_valid(&s->selected[i],h->game,i))continue;
@@ -146,7 +192,9 @@ static void rts_world_feedback(struct rasterfall_canvas *canvas,const struct ras
         long long dx=(long long)tx-a->x,dz=(long long)tz-a->z;
         if(move && dx*dx+dz*dz>250LL*250) {
             int ax,ay,bx,by;
-            struct toy_game_ground_query ground=toy_game_query_ground(h->game,tx,tz,RASTERFALL_PLAYER_RADIUS,a->ground_y);
+            int target_y=a==player?h->player_ui_view.rts_move_y:
+                a->command_height_active?a->command_y:a->ground_y;
+            struct toy_game_ground_query ground=toy_game_query_ground(h->game,tx,tz,RASTERFALL_PLAYER_RADIUS,target_y);
             int gy=RASTERFALL_WORLD_GROUND_Y+(ground.has_support?ground.support_y:a->ground_y)+14;
             if(rf_rts_project(camera,canvas->width,canvas->height,a->x,y,a->z,&ax,&ay) &&
                 rf_rts_project(camera,canvas->width,canvas->height,tx,gy,tz,&bx,&by)) {
@@ -244,7 +292,7 @@ static void ui_rts(struct rasterfall_canvas *c,const struct rasterfall_hud_state
         r.w<ui_px(200,scale)?"右键移动":"右键移动 · 数字选组",t->muted,command_scale,1);
     ui_label(v,RF_ACTION_RTS_STOP,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 停止移动",key);
     rf_ui_button(c,ui_rts_button(l,0),t,line,command_scale,0,count>0);
-    ui_label(v,RF_ACTION_RTS_FOLLOW,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 跟随玩家",key);
+    ui_label(v,RF_ACTION_RTS_FOLLOW,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 跟随单位",key);
     rf_ui_button(c,ui_rts_button(l,1),t,line,command_scale,v->rts_follow_player,1);
     ui_label(v,RF_ACTION_COMMAND_MODE,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 返回 FPS",key);
     rf_ui_button(c,ui_rts_button(l,2),t,line,command_scale,0,1);

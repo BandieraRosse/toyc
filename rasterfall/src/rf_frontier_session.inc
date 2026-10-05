@@ -21,6 +21,7 @@ static int frontier_bind_region(const struct rasterfall_session *s,
     snprintf(point->id,sizeof(point->id),"%s",id);
     point->x=r->bounds.min_x+(r->bounds.max_x-r->bounds.min_x)/2;
     point->z=r->bounds.min_z+(r->bounds.max_z-r->bounds.min_z)/2;
+    point->y=r->floor_y;
     return 1;
 }
 
@@ -43,6 +44,8 @@ static int session_frontier_bind(struct rasterfall_session *s)
         c->guards[i].weapon=weapons[i];c->guards[i].elite=i==8 || i==11;
         c->guards[i].guard_radius=i<3?6144:7168;
     }
+    if(!frontier_bind_region(s,"frontier_guard_workshop_upper","mission_guard",&c->guards[12].point))return 0;
+    c->guards[12].weapon=TOY_GAME_WEAPON_AK;c->guards[12].guard_radius=12000;
     if(!frontier_bind_region(s,"frontier_spawn_north","mission_entry",&c->north) ||
        !frontier_bind_region(s,"frontier_spawn_east","mission_entry",&c->east) ||
        !frontier_bind_region(s,"frontier_spawn_west","mission_entry",&c->west) ||

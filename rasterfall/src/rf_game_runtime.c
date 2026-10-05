@@ -349,9 +349,10 @@ static int rts_visual_ground_y(const struct toy_map *map,
     return (int)(top + (top >= 0 ? 0.5 : -0.5));
 }
 
-static int rts_surface_pick(const struct toy_map *map,
+static int rts_surface_pick_floor(const struct toy_map *map,
                             const struct camera *camera, int width, int height,
                             int sx, int sy, int air_walls_enabled,
+                            const struct rf_map_runtime_region *floor,
                             int *x, int *y, int *z)
 {
     double vx, vy, wz, dx, dy, dz, best, px = 0, pz = 0, py = 0;
@@ -369,7 +370,9 @@ static int rts_surface_pick(const struct toy_map *map,
     {
         double t = (-900.0 - camera->y) / dy;
         double gx = camera->x + t * dx, gz = camera->z + t * dz;
-        if (t > 0 && gx >= map->minx && gx <= map->maxx &&
+        int hidden=floor && floor->floor_y!=0 && gx>=floor->bounds.min_x &&
+            gx<=floor->bounds.max_x && gz>=floor->bounds.min_z && gz<=floor->bounds.max_z;
+        if (!hidden && t > 0 && gx >= map->minx && gx <= map->maxx &&
             gz >= map->minz && gz <= map->maxz) {
             best = t; px = gx; py = -900.0; pz = gz;
         }
@@ -397,6 +400,10 @@ static int rts_surface_pick(const struct toy_map *map,
         gz = camera->z + t * dz;
         if (gx < draw->a || gx > draw->b || gz < draw->c || gz > draw->d)
             continue;
+        double surface=rts_surface_y(draw,gx,gz)+900;
+        if(floor && gx>=floor->bounds.min_x && gx<=floor->bounds.max_x &&
+            gz>=floor->bounds.min_z && gz<=floor->bounds.max_z &&
+            (surface>floor->ceiling_y || surface<floor->floor_y-2))continue;
         best = t; px = gx; py = rts_surface_y(draw, gx, gz); pz = gz;
     }
     if (best == 1.0e30) return 0;
@@ -405,6 +412,10 @@ static int rts_surface_pick(const struct toy_map *map,
     *z = (int)(pz + (pz >= 0 ? 0.5 : -0.5));
     return 1;
 }
+
+static int rts_surface_pick(const struct toy_map *map,const struct camera *camera,
+    int width,int height,int sx,int sy,int air,int *x,int *y,int *z)
+{ return rts_surface_pick_floor(map,camera,width,height,sx,sy,air,NULL,x,y,z); }
 
 static int rts_world_screen(const struct camera *camera, int width, int height,
                             int x, int y, int z, int *sx, int *sy)
@@ -454,15 +465,20 @@ static void rts_setup_camera(struct camera *camera,
     camera->x = runtime->rts_camera_x;
     camera->z = runtime->rts_camera_z;
     if (runtime->rts_follow_player) {
-        const struct toy_game_actor *player =
-            toy_game_local_player_actor_const(&runtime->session->game_state);
+        const struct toy_game *g=&runtime->session->game_state;
+        const struct toy_game_actor *player=runtime->rts.primary>=0 &&
+            rf_rts_member_valid(&runtime->rts.selected[runtime->rts.primary],g,runtime->rts.primary)?
+            &g->actors[runtime->rts.primary]:toy_game_local_player_actor_const(g);
         camera->x = player->x;
         /* Offset by the fixed view slope to put the player's feet at center. */
         camera->z = player->z - runtime->rts_camera_distance * 90 / 1020;
         camera->y = -900 + player->ground_y + player->airborne_y +
                     runtime->rts_camera_distance;
     } else {
-        camera->y = rts_visual_ground_y(&runtime->session->level,
+        if(runtime->rts.focus_floor>=0 && runtime->rts.focus_floor<runtime->rts.floor_count) {
+            camera->y=-900+runtime->rts.floors[runtime->rts.focus_floor].floor_y+
+                runtime->rts_camera_distance;
+        } else camera->y = rts_visual_ground_y(&runtime->session->level,
             runtime->session->air_walls_enabled, camera->x, camera->z) +
             runtime->rts_camera_distance;
     }
@@ -573,6 +589,21 @@ int rasterfall_rts_projection_logic_test(void)
             !rts_world_screen(&camera, 1280, 720,
                 x, y, z, &sx, &sy) ||
             abs(sx - 700) > 2 || abs(sy - 360) > 2) return 9;
+    }
+    /* The virtual outdoor ground must not intercept a basement order. */
+    {
+        struct rf_map_runtime_region floor={0};
+        int x,y,z;
+        floor.bounds.min_x=floor.bounds.min_z=-1000000;
+        floor.bounds.max_x=floor.bounds.max_z=1000000;
+        floor.floor_y=-2400;floor.ceiling_y=-100;
+        ground->type=TOY_MAP_DRAW_BOX;
+        ground->a=ground->c=-1000000;ground->b=ground->d=1000000;
+        ground->e=-2400;ground->f=-2500;
+        map.draw[1]=*ground;map.draw[1].e=0;map.draw[1].f=-100;
+        map.draw_count=2;
+        if(!rts_surface_pick_floor(&map,&camera,1280,720,640,360,1,&floor,&x,&y,&z) ||
+            y!=-3300)return 13;
     }
     return 0;
 }
@@ -4419,6 +4450,17 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 game_runtime.rts_camera_x=0;game_runtime.rts_camera_z=17408;
                 game_runtime.rts_camera_distance=33000;
                 camera.x=0;camera.z=-8192;
+            } else if(!strncmp(options.gpu_normal_view,"frontier-floor-",15) ||
+                !strcmp(options.gpu_normal_view,"frontier-roof")) {
+                int level=!strcmp(options.gpu_normal_view,"frontier-roof")?3:
+                    !strcmp(options.gpu_normal_view,"frontier-floor-2")?2:1;
+                rf_rts_sync(&game_runtime.rts,&game,session.scene_local.world_generation);
+                rf_rts_floors_load(&game_runtime.rts,&session.map_ops.runtime,session.scene_local.world_generation);
+                game_runtime.rts_active=1;game_runtime.rts_camera_distance=16000;
+                rasterfall_session_set_rts(&session,1);
+                for(int i=0;i<game_runtime.rts.floor_count;++i)
+                    if(game_runtime.rts.floors[i].floor_level==level)rf_rts_floor_focus(&game_runtime,i,1);
+                game_runtime.rts.cutaway_amount=level<3?1:0;
             } else if(!strcmp(options.gpu_normal_view,"frontier-workshop")) {
                 camera.x=10240;camera.z=26112;camera.sy=420;camera.cy=934;
             } else if(!strcmp(options.gpu_normal_view,"frontier-energy")) {
@@ -5761,6 +5803,7 @@ startup_again:
                 rf_rts_sync(&game_runtime.rts,&game,session.scene_local.world_generation);
                 if (game_runtime.rts_active) {
                     if(!rf_rts_count(&game_runtime.rts,&game))rf_player_request(&game_runtime,RF_PLAYER_RTS_SELECT,0,0,0);
+                    game_runtime.rts.focus_floor=-1;game_runtime.rts.cutaway_amount=0;
                     game_runtime.rts_saved_pitch_sy = camera.pitch_sy;
                     game_runtime.rts_saved_pitch_cy = camera.pitch_cy;
                     camera.pitch_sy = 0;
@@ -5768,6 +5811,7 @@ startup_again:
                     game_runtime.rts_camera_x = camera.x;
                     game_runtime.rts_camera_z = camera.z - RTS_CAMERA_DEFAULT_DISTANCE * 90 / 1020;
                     game_runtime.rts_camera_distance = RTS_CAMERA_DEFAULT_DISTANCE;
+                    rf_rts_station_overview(&game_runtime,renderer.surface.width,renderer.surface.height);
                     game_runtime.rts_pan_last_us = rf_core_time_us(&core);
                     rf_core_set_pointer_lock(&core, 0);
                     pointer_lock_requested = 0;
@@ -5788,6 +5832,7 @@ startup_again:
         if(game_runtime.rts.world_generation!=session.scene_local.world_generation)
             rf_game_seed_world_groups(&game_runtime);
         rf_rts_sync(&game_runtime.rts,&game,session.scene_local.world_generation);
+        rf_rts_floors_load(&game_runtime.rts,&session.map_ops.runtime,session.scene_local.world_generation);
         if(!game_runtime.rts_active || paused || rf_combat_modal() || developer_console.open ||
             game_runtime.comms_focus || !input.keyboard_focused)
             game_runtime.rts.drag_active=0;
@@ -5833,8 +5878,10 @@ startup_again:
                  action_down(&input, RF_ACTION_BACK));
             struct rf_ui_layout rts_ui;
             rf_ui_layout_resolve(&rts_ui,&game_runtime.player_ui,renderer.surface.width,renderer.surface.height,1);
-            if(!rf_ui_rect_contains(rts_ui.selection,input.pointer_x,input.pointer_y))
+            if(rf_player_ui_floor_hit(&rts_ui,&game_runtime.rts,input.pointer_x,input.pointer_y)<0 &&
+                !rf_ui_rect_contains(rts_ui.selection,input.pointer_x,input.pointer_y))
                 game_runtime.rts_camera_distance = rts_zoom_distance(game_runtime.rts_camera_distance, input.wheel_y);
+            rf_rts_floor_zoom(&game_runtime,&input,&rts_camera,renderer.surface.width,renderer.surface.height);
             rts_setup_camera(&rts_camera, &game_runtime);
             rf_rts_runtime_input(&game_runtime,&input,&events,pending_physical_edges,pending_key_edges,
                 &rts_camera,renderer.surface.width,renderer.surface.height);
@@ -6397,6 +6444,15 @@ startup_again:
 #endif
             game_runtime.render_context.character_gpu_skinning =
                 options.gpu_character_skinning;
+            game_runtime.render_context.floor_view_active=game_runtime.rts_active &&
+                game_runtime.rts.focus_floor>=0;
+            game_runtime.render_context.rts_view=game_runtime.rts_active?&game_runtime.rts:NULL;
+            game_runtime.render_context.cutaway_active=game_runtime.rts_active &&
+                game_runtime.rts.focus_floor>=0 &&
+                !game_runtime.rts.floors[game_runtime.rts.focus_floor].is_roof;
+            if(game_runtime.render_context.floor_view_active)
+                game_runtime.render_context.cutaway_floor=
+                    game_runtime.rts.floors[game_runtime.rts.focus_floor];
             rf_labs_tick(session.world_id,paused ||
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play,
                 options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
@@ -6721,6 +6777,7 @@ startup_again:
                         layers.flashlight=!layers.fixed_lighting && rf_render_terminal.flashlight;
                         layers.lighting_lab=rf_lab_effective(RF_LAB_LIGHTING,session.world_id,
                             rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play);
+                        rf_rts_cutaway_update(&game_runtime,&layers);
                         layers.props=&prop_render;
                         layers.electronics=rasterfall_electronics_get_frame();
                         rf_weaver_frame(&session, &layers.weaver);

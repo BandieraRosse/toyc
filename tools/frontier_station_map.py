@@ -41,6 +41,17 @@ def generate():
     def box(name, x0, x1, z0, z1, height, walkable=False, visible=False, color="64717A"):
         add(f"collision id={name} shape=box {bounds(x0,x1,z0,z1)} height={rfu(height)} collision=true visible={str(visible).lower()} walkable={str(walkable).lower()} color={color}")
 
+    def solid(name, x0, x1, z0, z1, bottom, top, color="64717A", walkable=False):
+        add(f"collision id={name}_col shape=box {bounds(x0,x1,z0,z1)} height={rfu(top)} attr.base_y={rfu(bottom)} collision=true visible=false walkable={str(walkable).lower()}")
+        add(f"render id={name} kind=box {bounds(x0,x1,z0,z1)} height={rfu(top)} attr.base_y={rfu(bottom)} color={color}")
+        if walkable:
+            add(f"surface id={name}_surface kind=platform {bounds(x0,x1,z0,z1)} height={rfu(top)} material={color} attr.collision_id={name}_col")
+
+    def ramp(name, x0, x1, z0, z1, low, high):
+        add(f"collision id={name}_col shape=ramp_z {bounds(x0,x1,z0,z1)} height={rfu(low)} height2={rfu(high)} collision=true visible=false walkable=true")
+        add(f"surface id={name}_surface kind=ramp {bounds(x0,x1,z0,z1)} height={rfu(low)} height2={rfu(high)} axis=z material=788B94 attr.collision_id={name}_col")
+        add(f"render id={name} kind=ramp {bounds(x0,x1,z0,z1)} height={rfu(low)} attr.height2={rfu(high)} attr.style=2 color=788B94")
+
     def paint(name, x0, x1, z0, z1, color, style=0):
         floor_layers.append((name,rfu(x0),rfu(x1),rfu(z0),rfu(z1),color,style))
 
@@ -126,6 +137,13 @@ def generate():
         for i,(x,z) in enumerate(positions):
             region(f"frontier_guard_{zone}_{i}","mission_guard",x,z,
                    attrs=" attr.role=frontier_guard")
+    region("frontier_guard_workshop_upper","mission_guard",12,49.5,
+           attrs=f" attr.role=frontier_guard attr.y={rfu(4.2)}")
+    for level, y, ceiling, label, roof in [(1,0,4.0,"车间一层",0),
+            (2,4.2,8.2,"车间二层",0),(3,8.4,12.4,"车间屋顶",1)]:
+        region(f"frontier_workshop_floor_{level}","building_floor",24.75,58,38.5,26,
+               f" attr.building=frontier_workshop attr.level={level} attr.y={rfu(y)}"
+               f" attr.ceiling={rfu(ceiling)} attr.name={label} attr.roof={roof}")
     region("frontier_station_bounds","mission_area",0,40,90,80," attr.role=frontier_station")
 
     add("\n# One continuous, navigable ground surface; paint only divides materials.")
@@ -212,14 +230,33 @@ def generate():
     obj("workshop_bench_n","workbench",28,65,yaw=180)
     for i,(x,z) in enumerate([(31,51),(31,64),(9,65)]):
         obj(f"workshop_supply_{i}","crate",x,z)
-    # Peripheral roofed service bays, with a generous central skylight over
-    # the real machine and the unit-command floor. No camera-dependent truth.
-    for side,z in [("s",49.5),("n",66.5)]:
-        for i,x in enumerate([9,15,21,27]):
-            obj(f"workshop_roof_{side}_{i}","frontier_canopy",x,z,y=4.2)
-    for side,x in [("w",7.5),("e",32.5)]:
-        for i,z in enumerate([54,60]):
-            obj(f"workshop_roof_{side}_{i}","frontier_canopy",x,z,yaw=90,y=4.2)
+    # Two real storeys, with solid slabs and a broad external switchback stair.
+    # Each flight uses continuous walkable ramp collision.
+    solid("workshop_upper_slab",6,34,48,68,4.0,4.2,"87989F",True)
+    solid("workshop_roof_slab",6,34,48,68,8.2,8.4,"697A84",True)
+    solid("workshop_upper_w",5.85,6.15,48,68,4.2,8.2)
+    solid("workshop_upper_n",6,34,67.85,68.15,4.2,8.2)
+    solid("workshop_upper_e",33.85,34.15,48,63,4.2,8.2)
+    # South-facing windows afford real cross-height fire over the courtyard.
+    solid("workshop_upper_s_sill",6,34,47.85,48.15,4.2,5.0)
+    solid("workshop_upper_s_head",6,34,47.85,48.15,7.2,8.2)
+    for i,(x0,x1) in enumerate([(6,10),(14,25),(29,34)]):
+        solid(f"workshop_upper_s_pier_{i}",x0,x1,47.85,48.15,5.0,7.2)
+    ramp("workshop_stair_lower",35,39,49,65,0,4.2)
+    solid("workshop_stair_landing",33,44,65,71,4.0,4.2,"87989F",True)
+    ramp("workshop_stair_upper",40,44,49,65,8.4,4.2)
+    solid("workshop_roof_landing",33,44,45,49,8.2,8.4,"697A84",True)
+    # Parapets and stair-edge rails are finite boxes, traversable underneath.
+    for name,x0,x1,z0,z1 in [("s",6,33,47.85,48.15),
+            ("n",6,34,67.85,68.15),("w",5.85,6.15,48,68),
+            ("e",33.85,34.15,49,68)]:
+        solid("workshop_roof_rail_"+name,x0,x1,z0,z1,8.4,9.35,"536771")
+    for i,(x,z) in enumerate([(8,50),(8,66),(32,50),(32,66)]):
+        obj(f"workshop_upper_column_{i}","industrial_pillar",x,z,y=4.2)
+    obj("workshop_upper_desk","workbench",21,64,yaw=180,y=4.2)
+    obj("workshop_upper_cover","crate",26,52,y=4.2)
+    sign("workshop_upper_sign",20,47.7,"WORKSHOP_2F",width=6,y=7.35,height=.45)
+    sign("workshop_stair_sign",36,49,"2F_/_ROOF",width=3,y=1.9,height=.4)
     obj("workshop_loading_canopy","frontier_canopy",20,47,y=4.2)
     for i,x in enumerate([16.6,23.4]):
         obj(f"workshop_bollard_{i}","frontier_bollard",x,47)

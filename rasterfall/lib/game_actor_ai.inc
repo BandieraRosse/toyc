@@ -162,6 +162,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     a = &g->actors[g->ai_context_actor_index];
     if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return;
     a->nav_direct_ms = combat_timer(a->nav_direct_ms, dt_ms);
+    a->nav_layer_retry_ms=combat_timer(a->nav_layer_retry_ms,dt_ms);
     a->ai_shove_cooldown_ms = combat_timer(a->ai_shove_cooldown_ms, dt_ms);
     /* A dead/downed body still finishes an impulse already in flight. The
      * life-state gate below disables intent, not deterministic falling. */
@@ -260,9 +261,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         desired_x = rescue->x; desired_z = rescue->z;
     }
     sx = a->x; sz = a->z;
-    if (!a->control_disabled && !a->base_core && !a->movement_hold_token) {
+    if (!a->control_disabled && !a->base_core && !a->movement_hold_token && !a->ai_stationary) {
         long long dx = (long long)desired_x - a->x, dz = (long long)desired_z - a->z;
-        if (dx * dx + dz * dz > TOY_GAME_AI_DEPLOY_RADIUS * TOY_GAME_AI_DEPLOY_RADIUS)
+        if (dx * dx + dz * dz > TOY_GAME_AI_DEPLOY_RADIUS * TOY_GAME_AI_DEPLOY_RADIUS ||
+            (a->command_destination_active && a->command_height_active &&
+             abs(a->ground_y-a->command_y)>2))
             actor_path_toward(g, a, desired_x, desired_z,
                 toy_game_actor_move_step(a, TOY_CONFIG_AI_RETURN_SPEED), 0);
         else a->nav_active = 0;

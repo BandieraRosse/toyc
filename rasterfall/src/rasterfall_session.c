@@ -1593,6 +1593,9 @@ void rasterfall_session_rts_move_player(struct rasterfall_session *session,
     toy_game_actor_cancel_navigation(toy_game_local_player_actor(&session->game_state));
     session->rts_move_x = x;
     session->rts_move_z = z;
+    struct toy_game_actor *actor=toy_game_local_player_actor(&session->game_state);
+    session->rts_move_y=toy_game_query_ground(&session->game_state,x,z,
+        RASTERFALL_PLAYER_RADIUS,actor->ground_y).support_y;
     session->rts_move_active = 1;
 }
 
@@ -1645,8 +1648,8 @@ int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
     return 1;
 }
 
-int rasterfall_session_rts_order_actor(struct rasterfall_session *s,
-    int index,int actor_id,unsigned generation,int x,int z,int stop)
+int rasterfall_session_rts_order_actor_height(struct rasterfall_session *s,
+    int index,int actor_id,unsigned generation,int x,int y,int z,int stop,int height_active)
 {
     struct toy_game_actor *a;
     struct toy_game_ground_query ground;
@@ -1658,26 +1661,34 @@ int rasterfall_session_rts_order_actor(struct rasterfall_session *s,
         a->developer_only || a->base_core || a->animation_demo || a->control_disabled ||
         a->movement_hold_token)return 0;
     if(a!=toy_game_local_player_actor(&s->game_state) && a->kind!=TOY_GAME_ACTOR_AI)return 0;
-    if(stop){x=a->x;z=a->z;}
+    if(stop){x=a->x;z=a->z;y=a->ground_y;}
     else {
         if(x<-2000000 || x>2000000 || z<-2000000 || z>2000000)return 0;
-        ground=toy_game_query_ground(&s->game_state,x,z,RASTERFALL_PLAYER_RADIUS,a->ground_y);
-        if(!ground.has_support || toy_game_position_blocked_at_height(&s->game_state,
+        if(height_active && (y<-1000000 || y>1000000))return 0;
+        ground=toy_game_query_ground(&s->game_state,x,z,RASTERFALL_PLAYER_RADIUS,height_active?y:a->ground_y);
+        if(!ground.has_support || (height_active && abs(ground.support_y-y)>2) ||
+            toy_game_position_blocked_at_height(&s->game_state,
             x,z,RASTERFALL_PLAYER_RADIUS,ground.support_y))return 0;
+        y=ground.support_y;
     }
     if(a==toy_game_local_player_actor(&s->game_state)) {
         toy_game_actor_cancel_navigation(a);
         if(stop)s->rts_move_active=0;
-        else rasterfall_session_rts_move_player(s,x,z);
+        else {rasterfall_session_rts_move_player(s,x,z);s->rts_move_y=y;}
     } else {
         toy_game_actor_cancel_rescue(&s->game_state,index);
         toy_game_actor_cancel_navigation(a);
         a->command_destination_active=1;a->command_x=x;a->command_z=z;
+        a->command_y=y;a->command_height_active=1;
         a->nav_active=0;
         if(stop)a->moving=0;
     }
     return 1;
 }
+
+int rasterfall_session_rts_order_actor(struct rasterfall_session *s,
+    int index,int actor_id,unsigned generation,int x,int z,int stop)
+{ return rasterfall_session_rts_order_actor_height(s,index,actor_id,generation,x,0,z,stop,0); }
 
 static void session_build_rts_command(struct rasterfall_session *session,
                                       struct camera *camera,
@@ -1694,13 +1705,14 @@ static void session_build_rts_command(struct rasterfall_session *session,
     if (session->rts_move_active) {
         long long dx = (long long)session->rts_move_x - player->x;
         long long dz = (long long)session->rts_move_z - player->z;
-        if (dx * dx + dz * dz <= 250LL * 250LL) {
+        if (dx * dx + dz * dz <= 250LL * 250LL &&
+            abs(player->ground_y-session->rts_move_y)<=2) {
             session->rts_move_active = 0;
             toy_game_actor_cancel_navigation(player);
         } else if (!player->control_disabled && !player->movement_hold_token &&
                    player->airborne_ms <= 0) {
-            planned = toy_game_actor_navigation_target(&session->game_state,
-                player, session->rts_move_x, session->rts_move_z, step, dt_ms,
+            planned = toy_game_actor_navigation_target_height(&session->game_state,
+                player, session->rts_move_x,session->rts_move_y,session->rts_move_z, step, dt_ms,
                 &steer_x, &steer_z);
         } else toy_game_actor_cancel_navigation(player);
     }

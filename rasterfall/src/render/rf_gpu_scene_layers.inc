@@ -4,6 +4,7 @@
 #include "rasterfall_lab_terminal.h"
 #include "rf_display_geometry_cache.h"
 #include "rasterfall_actor_labels.h"
+#include "rf_rts.h"
 struct scene_layer_triangle {
     struct rf_gpu_graphics_vertex vertex[3];
     uint32_t color;
@@ -535,7 +536,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         if (d->type==TOY_MAP_DRAW_SIGN && d->style==6) {
             if (rf_lab_terminal_emit(d,scene_glass_quad,mesh)<0) return -1;
         } else if (d->type==TOY_MAP_DRAW_BOX)
-            scene_layer_box(mesh,d->a,d->b,-900,d->e-900,d->c,d->d,d->color,item->alpha);
+            scene_layer_box(mesh,d->a,d->b,d->f-900,d->e-900,d->c,d->d,d->color,item->alpha);
         else if (d->type==TOY_MAP_DRAW_PLATFORM) {
             struct rf_gpu_graphics_vertex v[4]={0};
             for (int k=0;k<4;++k) {
@@ -570,6 +571,9 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         if (!actor->active || actor==player || actor->kind!=TOY_GAME_ACTOR_AI ||
             actor->state==TOY_GAME_ACTOR_DEAD ||
             dx*dx+dz*dz>10800LL*10800LL) continue;
+        if(input->hud.player_ui_view.rts_active &&
+            !rf_rts_label_allows(input->hud.player_ui_view.rts,actor,
+                player && actor->faction!=player->faction))continue;
         int downed=actor->state==TOY_GAME_ACTOR_DOWNED;
         if (!scene_layer_project(camera,width,height,actor->x,
                 actor->ground_y+actor->airborne_y+(downed?-350:700),actor->z,&x,&y,&z)) continue;

@@ -9,6 +9,7 @@
 #define RF_MAP_RUNTIME_ACTION_CAP 32
 #define RF_MAP_RUNTIME_VALUE_CAP 96
 #define RF_MAP_RUNTIME_MAX_ATTRIBUTES 8
+#define RF_MAP_RUNTIME_MAX_BUILDING_FLOORS 32
 
 struct rf_map_runtime_bounds {
     int min_x, max_x, min_z, max_z;
@@ -26,7 +27,8 @@ struct rf_map_runtime_collision {
     char owner_id[RF_MAP_RUNTIME_ID_CAP]; /* empty for explicit records */
     char shape[RF_MAP_RUNTIME_KIND_CAP];
     struct rf_map_runtime_bounds bounds;
-    int base_y; /* RFU above ground; generated component lower face */
+    int base_y; /* signed RFU relative to ground; component lower face */
+    int ramp_thickness;
     int height;
     int height2;
     int has_height2;
@@ -65,6 +67,10 @@ struct rf_map_runtime_region {
     char category[RF_MAP_RUNTIME_KIND_CAP], enclosure[RF_MAP_RUNTIME_KIND_CAP];
     int origin_x, origin_z; /* experiment authoring origin, ground plane */
     int start_sy, start_cy;
+    /* Authored vertical space, above ground. building_floor is presentation
+     * metadata; physical support remains an independent surface/collision. */
+    char building[RF_MAP_RUNTIME_ID_CAP], floor_name[RF_MAP_RUNTIME_KIND_CAP];
+    int floor_level, floor_y, ceiling_y, is_roof, authored_y;
     int legacy_index;
     int has_legacy_index;
     int line;

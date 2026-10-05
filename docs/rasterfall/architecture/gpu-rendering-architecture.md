@@ -1,5 +1,13 @@
 # GPU 渲染架构
 
+RTS 楼层 V1 在 lighting upload 尾部增加建筑 X/Z bounds 与世界层顶 Y/amount；普通 Scene
+fragment 按这份只读主镜头状态执行有序抖动 discard，天空和屏幕 HUD 跳过，地下层也保留完整 UI。shadow shader 不剖切，静态实例及
+深度仍使用既有世界资源。AUX 的 world_only lighting 不复制主视图剖切参数，因此单位与通讯镜头
+保留完整空间。细则见 [RTS 楼层](rts-command.md#建筑与楼层-v1)，生成 shader 同步维护 SPIR-V。
+
+静态 ramp mesh 与 CPU 绘制共同消费 `thickness`、`steps`：悬空楼梯只生成有限厚度的踏步或斜板，
+底面随坡面移动，不能把上层楼梯侧面延伸到地面。未设置厚度的旧地图保留原有实心坡道。
+
 > 状态：当前
 > 所有者：Rasterfall Core Host、Scene owner、Vulkan graphics
 > 最近核对：2026-10-05

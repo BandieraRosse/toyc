@@ -22,6 +22,10 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world,const struct camera *camera)
 {
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    if(probe->layers && !probe->layers->world_only) {
+        memcpy(lights.cutaway_bounds,probe->layers->cutaway_bounds,sizeof(lights.cutaway_bounds));
+        memcpy(lights.cutaway_height,probe->layers->cutaway_height,sizeof(lights.cutaway_height));
+    }
     /* Sky variants change the one shared sun, including WORLD shadows. */
     const char *sky=getenv("RF_GPU_SKY_PRESET"),*sky_time=getenv("RF_GPU_SKY_TIME");
     if(sky && !strcmp(sky,"rain")) {

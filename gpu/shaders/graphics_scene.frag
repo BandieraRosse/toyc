@@ -52,6 +52,15 @@ vec3 texture_filtered(uint index,vec2 uv) {
 }
 void main() {
     if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
+    if((d.quality.x&16)==0 && lighting.cutaway_height.y>0.0 && world_position.y>lighting.cutaway_height.x &&
+       world_position.x>=lighting.cutaway_bounds.x && world_position.x<=lighting.cutaway_bounds.y &&
+       world_position.z>=lighting.cutaway_bounds.z && world_position.z<=lighting.cutaway_bounds.w) {
+        /* Deterministic ordered dissolve keeps opaque depth correct. The
+         * independent shadow pass continues to draw the complete building. */
+        const int pattern[16]=int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
+        ivec2 pixel=ivec2(gl_FragCoord.xy)&3;
+        if(lighting.cutaway_height.y>(float(pattern[pixel.y*4+pixel.x])+0.5)/16.0)discard;
+    }
     float alpha=d.texture_info.z==256 ? triangle_alpha : d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
     vec3 base=decode_srgb(rgb(triangle_color));
     if(d.material.z!=0u) {

@@ -448,6 +448,29 @@ static int scene_local_source_test(void)
                     rasterfall_model_unload(models[kind]);tlibc_free(models[kind]);
                 }
         }
+        /* Suspended ramp meshes must leave the space underneath empty in
+         * Scene, including negative floors and descending stepped flights. */
+        for(int stepped=0;stepped<2;++stepped) {
+            struct rasterfall_model_asset *models[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT]={0};
+            uint32_t opaque=0,deferred=0,transparent=0,prop_accepted=0;
+            int ramps=0;
+            for(uint32_t i=0;i<world_render.count;++i) {
+                struct toy_map_draw *draw=&world_render.items[i].draw;
+                if(draw->type!=TOY_MAP_DRAW_RAMP)continue;
+                ++ramps;
+                draw->e=stepped?3000:-2000;draw->f=stepped?2000:-1000;
+                draw->ramp_thickness=100;draw->ramp_steps=stepped?4:0;
+            }
+            LOCAL_CHECK(ramps && rf_gpu_scene_world_opaque_mesh_build(&frame.snapshot,
+                &world_render,&floor_render,&prop_render,models,&opaque,&deferred,
+                &transparent,&prop_accepted)==0 && models[RF_GPU_SCENE_WORLD_RAMP] &&
+                models[RF_GPU_SCENE_WORLD_RAMP]->min_y==(stepped?1000:-3000) &&
+                models[RF_GPU_SCENE_WORLD_RAMP]->max_y==(stepped?2100:-1900));
+            for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind)
+                if(models[kind]) {
+                    rasterfall_model_unload(models[kind]);tlibc_free(models[kind]);
+                }
+        }
         LOCAL_CHECK(rasterfall_session_load(&owner,
             "rasterfall/assets/maps/gpu_scene_render_fixture.map")==0);
         rasterfall_session_reset(&owner,&camera,1);

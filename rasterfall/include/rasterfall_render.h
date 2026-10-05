@@ -30,6 +30,10 @@ struct rasterfall_render_context {
     struct toy_texture_view *wall_texture;
     const struct toy_texture_view *model_texture;
     int gpu_scene_lighting;
+    int cutaway_active;
+    int floor_view_active;
+    const struct rf_rts_state *rts_view;
+    struct rf_map_runtime_region cutaway_floor; /* Main CPU view only; read-only. */
     struct rasterfall_world_lighting world_lighting;
     uint64_t world_light_generation;
     int textures_enabled;

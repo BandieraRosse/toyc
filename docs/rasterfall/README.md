@@ -11,6 +11,9 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
+[地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
+
 | 任务 | 先读 | 主要代码或工具入口 |
 | --- | --- | --- |
 | 当前优先级与延期项 | [计划入口](plans/README.md) | 当前决策与活动计划；退役历史见[归档](archive/gpu-compute-retirement/README.md) |
@@ -29,6 +32,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 共享等级技能与战斗原型 V0 | [共享战斗能力](architecture/combat.md)、[验收记录](archive/combat-v0-20261003.md) | `lib/game_combat.inc`、`include/toy_game.h`；玩家/队友统一能力、枪手与回避接入 |
 | 敌人共享导航场、复杂地形与逻辑帧时间 | [玩法架构](architecture/gameplay.md#敌人共享目标导航场)、[历史计划](archive/gpu-scene-renderer.md#共享目标导航场) | `lib/game_navigation.inc`、`lib/game.c`、`include/toy_game.h`；分层节点、共享指路记录、持续移动与低预算搜索纠错；旧集团仅作诊断对照 |
 | FPS/RTS 切换、俯视相机、玩家跟随与地面传送 | [运行时架构](architecture/runtime.md)、[玩法架构](architecture/gameplay.md) | `src/rf_game_runtime.c`、`src/rasterfall_session.c`；runtime 拥有跟随/选点，session 验证地面并更新 actor |
+| RTS 楼层、屋顶剖切、跨层指令与车间二层 | [楼层架构](architecture/rts-command.md#建筑与楼层-v1)、[地图格式](reference/map-format.md#楼层与有限厚度楼板)、[首图操作](guides/frontier-station-01.md#车间楼层-v1) | `rf_rts.h/.c`、`rf_rts_runtime.inc`、`game_navigation.inc`、`tools/frontier_station_map.py`；主视图楼层状态只读，有限楼板、真实楼梯及高处任务枪手 |
 | RTS 核心指挥、全屏框选编组、双路镜头与独立队友 | [RTS 指挥架构](architecture/rts-command.md)、[操作与验收](guides/player-ui-v2.md#rts-核心指挥)、[辅助视图](architecture/gpu-rendering-architecture.md#通讯镜头单位镜头与设备预览) | `rf_rts.h/.c`、`rf_rts_runtime.inc`、`rf_rts_ui.inc`、`rf_rts_portrait.c`；正式 actor 个体命令、剧情/单位镜头独立，前哨道路三组测试队员，旗帜不控制部署 |
 | 地图格式、Runtime Map、World Content | [地图与世界内容](architecture/maps-and-world-content.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | map parser/runtime、projection adapter、布局工具 |
 | 世界渲染与帧分层 | [渲染架构](architecture/rendering-architecture.md) | `src/rasterfall_render.c`、Core layer/flush |

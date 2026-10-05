@@ -16,13 +16,13 @@ import time
 from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
-VIEWS=("entry","overview","workshop","energy")
+VIEWS=("entry","overview","workshop","energy","floor-1","floor-2","roof")
 
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend",choices=("cpu","gpu-scene"),default="gpu-scene")
-    parser.add_argument("--views",nargs="+",choices=VIEWS,default=VIEWS)
+    parser.add_argument("--views",nargs="+",choices=VIEWS,default=VIEWS[:4])
     parser.add_argument("--frames",type=int,default=40)
     parser.add_argument("--output-dir",type=Path,required=True)
     parser.add_argument("--timeout",type=int,default=120)

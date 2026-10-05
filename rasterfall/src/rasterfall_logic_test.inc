@@ -911,6 +911,89 @@ static int primitive_gameplay_logic_test(void)
     return 0;
 }
 
+/* Signed storeys and finite stairs must resolve their own support, headroom
+ * and landing, without snapping a basement actor onto an overhead floor. */
+static int signed_storey_primitive_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[3]={
+        test_box_primitive(-3000,3000,-3000,3000,-2500,-2400,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-3000,3000,-3000,3000,-100,0,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-1200,1200,-1200,1200,2000,2600)
+    };
+    struct toy_game_ground_query q;
+    toy_game_init(&g,313);g.to_spawn=0;
+    world[2].ramp_thickness=100;
+    toy_game_set_primitives(&g,world,3,4000);
+    struct toy_game_actor *a=toy_game_local_player_actor(&g);
+    a->x=a->z=0;a->ground_y=-2400;
+    q=toy_game_query_ground(&g,0,0,TOY_GAME_PLAYER_RADIUS,-2400);
+    if(!q.has_support || q.support_y!=-2400 || !q.has_landing || q.landing_y!=-2400 ||
+        toy_game_position_blocked_at_height(&g,0,0,TOY_GAME_PLAYER_RADIUS,-2400))return 1;
+    if(!toy_game_try_move_actor(&g,a,100,0) || a->ground_y!=-2400)return 2;
+    a->airborne_ms=1000;a->airborne_y=1000;a->vertical_velocity=1000;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->ground_y+a->airborne_y!=-100-RASTERFALL_HUMAN_HEIGHT_RFU ||
+        a->vertical_velocity>0)return 3;
+    for(int i=0;i<200 && a->airborne_ms;++i)
+        toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=-2400)return 4;
+    q=toy_game_query_ground(&g,0,0,TOY_GAME_PLAYER_RADIUS,0);
+    if(q.support_y!=0 || toy_game_position_blocked_at_height(&g,0,0,TOY_GAME_PLAYER_RADIUS,0))return 5;
+    q=toy_game_query_ground(&g,0,0,TOY_GAME_PLAYER_RADIUS,2300);
+    if(!q.has_support || q.support_y!=2300)return 6;
+    /* Post-move support refresh must not replace a partial ramp footprint
+     * with the default zero height, particularly on basement stairs. */
+    world[2]=test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-1200,1200,1000,2000,-2400,-1200);
+    world[2].ramp_thickness=100;
+    toy_game_set_primitives(&g,world,3,4000);
+    a->x=0;a->z=1100;a->ground_y=-1800;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(a->ground_y!=-1800 || a->airborne_ms)return 7;
+    a->x=3500;a->ground_y=-2400;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(!a->airborne_ms || a->ground_y+a->airborne_y!=-2400)return 8;
+    return 0;
+}
+
+/* Authored heights through the ordinary RTS session command, fixed step,
+ * movement and post-move support refresh. Targets follow the actual slabs. */
+static int outpost_storey_route_logic_test(struct rasterfall_session *s)
+{
+    struct toy_game *g=&s->game_state;
+    const char *slabs[]={"outpost_basement_surface","outpost_2f_hall_surface",
+        "outpost_roof_hall_surface"};
+    struct toy_game_actor *probe=toy_game_local_player_actor(g);
+    struct camera camera={0};
+    struct rasterfall_command input={0};
+    camera.cy=camera.pitch_cy=1024;
+    rasterfall_session_set_rts(s,1);
+    for(int leg=0;leg<4;++leg) {
+        int tx=s->level.start_x,tz=s->level.start_z,ty=0,arrived=0;
+        if(leg<3) {
+            const struct rf_map_runtime_surface *f=rf_map_runtime_find_surface(&s->map_ops.runtime,slabs[leg]);
+            if(!f)return 1;
+            tx=(f->bounds.min_x+f->bounds.max_x)/2;
+            tz=(f->bounds.min_z+f->bounds.max_z)/2;ty=f->height;
+        }
+        if(!rasterfall_session_rts_order_actor_height(s,TOY_GAME_PLAYER_ACTOR_INDEX,
+            probe->actor_id,probe->combat_generation,tx,ty,tz,0,1))return 6;
+        for(int tick=0;tick<5000;++tick) {
+            rasterfall_session_step(s,&camera,&input,16);
+            long long dx=(long long)tx-probe->x,dz=(long long)tz-probe->z;
+            if(!s->rts_move_active && dx*dx+dz*dz<=250LL*250 && abs(probe->ground_y-ty)<=2){arrived=1;break;}
+        }
+        if(!arrived){__printf("OUTPOST STOREY leg=%d position=%d,%d,%d goal=%d,%d,%d nodes=%d cursor=%d fall=%d\n",
+            leg,probe->x,probe->ground_y,probe->z,tx,ty,tz,probe->nav_layer_count,probe->nav_layer_cursor,probe->airborne_ms);
+            return leg+2;}
+    }
+    rasterfall_session_set_rts(s,0);
+    rasterfall_session_reset(s,&camera,1);
+    return 0;
+}
+
 static int enemy_short_connection_logic_test(void)
 {
     static struct toy_game nav_game;
@@ -1628,7 +1711,8 @@ static int run_logic_test(void)
 #endif
     if (physical_input_boundary_logic_test() != 0) return 278;
     if (rf_mesh_weaver_logic_test() != 0) return 694;
-    if (rf_frontier_mission_logic_test() != 0) return 697;
+    { int result=rf_frontier_mission_logic_test();
+      if(result){__fprintf(2,"FRONTIER mission regression failed: %d\n",result);return 697;} }
     if (rf_frontier_session_logic_test() != 0) return 704;
     if (game_actor_squad_logic_test() != 0) return 705;
     if (actor_corner_logic_test() != 0) return 706;
@@ -1746,6 +1830,8 @@ static int run_logic_test(void)
     { int primitive_result=primitive_gameplay_logic_test();
       if(primitive_result){__printf("primitive gameplay failure: %d\n",primitive_result);return 211;} }
     __printf("rasterfall: primitive gameplay test passed\n");
+    { int code=signed_storey_primitive_logic_test();
+      if(code){__printf("signed storey primitive failure: %d\n",code);return 311;} }
     if (map_component_gameplay_logic_test() != 0) return 240;
     __printf("rasterfall: component collision gameplay test passed\n");
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
@@ -1830,6 +1916,9 @@ static int run_logic_test(void)
         !rasterfall_map_projection_counts_match(&session.map_ops))
         return 234;
     rasterfall_session_reset(&session, &camera, 1);
+    { int code=outpost_storey_route_logic_test(&session);
+      if(code){__printf("outpost storey route failure: %d\n",code);return 312;}
+      __printf("OUTPOST STOREY B1/2F/roof/ground normal navigation and movement: PASS\n"); }
     {
         int has_null = 0, has_station = 0, has_operations = 0,
             has_super = 0, i;

@@ -4,6 +4,8 @@
 #define FLOW_INF 0xffffffffu
 #define FLOW_SETTLED 65535
 
+static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,int tz,int ty);
+
 static int flow_cell(const struct toy_game *g, int x, int z)
 {
     if (g->nav_cell_size <= 0 || x < g->nav_origin || z < g->nav_origin ||
@@ -121,10 +123,10 @@ static void enemy_flow_rebuild(struct toy_game *g)
  * deliberately stronger than sampling: one floor covers the complete swept
  * footprint and no relevant solid overlaps it. Ambiguous ramps, steps and
  * overlapping platforms always use the ordinary movement sweep below. */
-static int flow_flat_corridor(const struct toy_game *g, int x, int z, int y,
-                              int tx, int tz, int ty)
+static int flow_flat_corridor_radius(const struct toy_game *g, int x, int z, int y,
+                              int tx, int tz, int ty, int radius)
 {
-    int radius = TOY_GAME_ENEMY_RADIUS, i, supported = !g->primitives;
+    int i, supported = !g->primitives;
     int minx = (x < tx ? x : tx) - radius, maxx = (x > tx ? x : tx) + radius;
     int minz = (z < tz ? z : tz) - radius, maxz = (z > tz ? z : tz) + radius;
     if (y != ty || minx < -g->room_limit || minz < -g->room_limit ||
@@ -157,6 +159,8 @@ static int flow_flat_corridor(const struct toy_game *g, int x, int z, int y,
     }
     return supported;
 }
+static int flow_flat_corridor(const struct toy_game *g,int x,int z,int y,int tx,int tz,int ty)
+{ return flow_flat_corridor_radius(g,x,z,y,tx,tz,ty,TOY_GAME_ENEMY_RADIUS); }
 
 /* -1 is deferred, never interpreted as blocked/unreachable. Reserve samples
  * before entering a bounded sweep; local connectors have a separate reserve
@@ -328,6 +332,174 @@ static int flow_neighbor(const struct toy_game *g, int cell, int slot)
     int z = cell / g->nav_width + slot / 3 - 1;
     if (x < 0 || z < 0 || x >= g->nav_width || z >= g->nav_height) return -1;
     return z * g->nav_width + x;
+}
+
+/* Explicit actor orders use the existing layered nodes, but prove each edge
+ * with the actual actor footprint and normal transactional movement. Retained
+ * routes avoid a new search at every waypoint. Scratch and routes are Game-owned. */
+static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,int tz,int ty)
+{
+    int dx=tx-x,dz=tz-z,length=isqrt((long long)dx*dx+(long long)dz*dz);
+    if(length>TOY_GAME_SHORT_CONNECTION_RANGE)return 0;
+    if(flow_flat_corridor_radius(g,x,z,y,tx,tz,ty,TOY_GAME_PLAYER_RADIUS))return 1;
+    struct toy_game_actor probe={0};
+    probe.active=1;probe.x=x;probe.z=z;probe.ground_y=y;
+    int radius=TOY_GAME_PLAYER_RADIUS,steps=length/32+1,result=0;
+    int minx=(x<tx?x:tx)-radius,maxx=(x>tx?x:tx)+radius;
+    int minz=(z<tz?z:tz)-radius,maxz=(z>tz?z:tz)+radius;
+    g->flow_probe_count=0;
+    for(int i=0;i<g->primitive_count;++i) {
+        const struct toy_map_primitive *p=&g->primitives[i];
+        if(p->maxx<minx || p->minx>maxx || p->maxz<minz || p->minz>maxz)continue;
+        g->flow_probe_indices[g->flow_probe_count++]=(unsigned short)i;
+    }
+    g->flow_probe_active=1;
+    for(int i=1;i<=steps;++i) {
+        int nx=x+(int)((long long)dx*i/steps),nz=z+(int)((long long)dz*i/steps);
+        if(!toy_game_try_move_actor(g,&probe,nx,nz) || probe.airborne_ms)goto done;
+        struct toy_game_ground_query center=toy_game_query_ground(g,nx,nz,0,probe.ground_y);
+        if(!center.has_support || abs(center.support_y-probe.ground_y)>TOY_CONFIG_GROUND_STEP_HEIGHT)goto done;
+    }
+    result=abs(probe.ground_y-ty)<=2;
+done:
+    memset(g->flow_probe_indices,0,g->flow_probe_count*sizeof(g->flow_probe_indices[0]));
+    g->flow_probe_active=0;g->flow_probe_count=0;
+    return result;
+}
+static int actor_layer_attach(struct toy_game *g,int x,int z,int y,int departing)
+{
+    int cell=flow_cell(g,x,z),best=0;
+    long long distance=(long long)TOY_GAME_SHORT_CONNECTION_RANGE*TOY_GAME_SHORT_CONNECTION_RANGE+1;
+    if(cell<0)return 0;
+    for(int i=0;i<9;++i) {
+        int c=flow_neighbor(g,cell,i);
+        if(c<0)continue;
+        for(int n=g->flow_cells[c];n;n=g->flow_nodes[n].sibling) {
+            const struct toy_game_flow_node *p=&g->flow_nodes[n];
+            long long dx=(long long)p->x-x,dz=(long long)p->z-z,d=dx*dx+dz*dz;
+            if(d>=distance)continue;
+            int allowed=departing?actor_layer_connection(g,x,z,y,p->x,p->z,p->y):
+                actor_layer_connection(g,p->x,p->z,p->y,x,z,y);
+            if(allowed){best=n;distance=d;}
+        }
+    }
+    return best;
+}
+static unsigned actor_layer_heuristic(const struct toy_game_flow_node *p,int x,int y,int z)
+{
+    long long dx=(long long)x-p->x,dz=(long long)z-p->z;
+    return (unsigned)isqrt(dx*dx+dz*dz)+(unsigned)abs(y-p->y);
+}
+static void actor_layer_push(unsigned short *heap,int *count,const unsigned *priority,int node)
+{
+    int child=(*count)++;
+    while(child>0) {
+        int parent=(child-1)/2;
+        if(priority[heap[parent]]<=priority[node])break;
+        heap[child]=heap[parent];child=parent;
+    }
+    heap[child]=(unsigned short)node;
+}
+static int actor_layer_pop(unsigned short *heap,int *count,const unsigned *priority)
+{
+    int result=heap[0],node=heap[--*count],parent=0;
+    while(parent*2+1<*count) {
+        int child=parent*2+1;
+        if(child+1<*count && priority[heap[child+1]]<priority[heap[child]])child++;
+        if(priority[node]<=priority[heap[child]])break;
+        heap[parent]=heap[child];parent=child;
+    }
+    if(*count)heap[parent]=(unsigned short)node;
+    return result;
+}
+int toy_game_actor_navigation_target_height(struct toy_game *g,struct toy_game_actor *a,
+    int tx,int ty,int tz,int speed,int dt_ms,int *out_x,int *out_z)
+{
+    if(!g || !a || !out_x || !out_z || !a->active || a->state!=TOY_GAME_ACTOR_ALIVE ||
+        speed<=0 || dt_ms<0 || tx<-2000000 || tx>2000000 || tz<-2000000 || tz>2000000 ||
+        ty<-1000000 || ty>1000000)return 0;
+    int start_cell=flow_cell(g,a->x,a->z),goal_cell=flow_cell(g,tx,tz);
+    if(ty==a->ground_y && (!g->primitive_count || (start_cell>=0 && goal_cell>=0 &&
+        g->nav_ground_y[start_cell]==ty && g->nav_ground_y[goal_cell]==ty)) &&
+        !a->nav_layer_count &&
+        toy_game_actor_navigation_target(g,a,tx,tz,speed,dt_ms,out_x,out_z))return 1;
+    if(a->nav_generation!=g->navigation_generation || a->nav_goal_x!=tx ||
+        a->nav_goal_z!=tz || a->nav_layer_y!=ty) {
+        toy_game_actor_cancel_navigation(a);
+        a->nav_generation=g->navigation_generation;
+        a->nav_goal_x=tx;a->nav_goal_z=tz;a->nav_layer_y=ty;
+    }
+    a->nav_layer_retry_ms=combat_timer(a->nav_layer_retry_ms,dt_ms);
+    if(actor_layer_connection(g,a->x,a->z,a->ground_y,tx,tz,ty)) {
+        a->nav_layer_count=a->nav_layer_cursor=0;a->nav_active=0;
+        *out_x=tx;*out_z=tz;return 1;
+    }
+    while(a->nav_layer_cursor<a->nav_layer_count) {
+        const struct toy_game_flow_node *p=&g->flow_nodes[a->nav_layer_path[a->nav_layer_cursor]];
+        long long dx=(long long)p->x-a->x,dz=(long long)p->z-a->z;
+        if(dx*dx+dz*dz>(long long)(speed+24)*(speed+24) ||
+            abs(p->y-a->ground_y)>TOY_CONFIG_GROUND_STEP_HEIGHT)break;
+        if(a->nav_layer_cursor+1<a->nav_layer_count) {
+            const struct toy_game_flow_node *next=&g->flow_nodes[a->nav_layer_path[a->nav_layer_cursor+1]];
+            if(!actor_layer_connection(g,a->x,a->z,a->ground_y,next->x,next->z,next->y))break;
+        }
+        a->nav_layer_cursor++;
+    }
+    if(a->nav_layer_cursor>=a->nav_layer_count && !a->nav_layer_retry_ms) {
+        int start=actor_layer_attach(g,a->x,a->z,a->ground_y,1);
+        int goal=actor_layer_attach(g,tx,tz,ty,0),head=0,tail=0;
+        unsigned short *parent=g->actor_layer_parent,*queue=g->actor_layer_queue;
+        unsigned *priority=g->actor_layer_priority;
+        memset(parent,0,(g->flow_count+1)*sizeof(*parent));
+        if(start && goal) {
+            parent[start]=(unsigned short)start;
+            priority[start]=actor_layer_heuristic(&g->flow_nodes[start],tx,ty,tz);
+            actor_layer_push(queue,&tail,priority,start);
+            while(tail && head++<4096 && !parent[goal]) {
+                int from=actor_layer_pop(queue,&tail,priority);
+                const struct toy_game_flow_node *p=&g->flow_nodes[from];
+                unsigned travelled=priority[from]-actor_layer_heuristic(p,tx,ty,tz);
+                for(int i=0;i<9;++i) {
+                    int cell=flow_neighbor(g,p->cell,i);
+                    if(cell<0)continue;
+                    for(int to=g->flow_cells[cell];to;to=g->flow_nodes[to].sibling) {
+                        const struct toy_game_flow_node *q=&g->flow_nodes[to];
+                        /* Staircases can be far from vertically aligned
+                         * targets. The expansion budget bounds search work. */
+                        if(parent[to])continue;
+                        if(!actor_layer_connection(g,p->x,p->z,p->y,q->x,q->z,q->y))continue;
+                        parent[to]=(unsigned short)from;
+                        priority[to]=travelled+actor_layer_heuristic(q,p->x,p->y,p->z)+
+                            actor_layer_heuristic(q,tx,ty,tz);
+                        actor_layer_push(queue,&tail,priority,to);
+                    }
+                }
+            }
+        }
+        a->nav_layer_count=a->nav_layer_cursor=0;
+        if(goal && parent[goal]) {
+            int node=goal,total=1;
+            for(int n=goal;n!=start;n=parent[n])total++;
+            while(total>64){node=parent[node];total--;}
+            while(a->nav_layer_count<64) {
+                a->nav_layer_path[a->nav_layer_count++]=(unsigned short)node;
+                if(node==start)break;
+                node=parent[node];
+            }
+            if(node!=start)a->nav_layer_count=0;
+            for(int i=0;i<a->nav_layer_count/2;++i) {
+                unsigned short swap=a->nav_layer_path[i];
+                a->nav_layer_path[i]=a->nav_layer_path[a->nav_layer_count-1-i];
+                a->nav_layer_path[a->nav_layer_count-1-i]=swap;
+            }
+        }
+        a->nav_layer_retry_ms=a->nav_layer_count?0:1000;
+    }
+    if(a->nav_layer_cursor<a->nav_layer_count) {
+        const struct toy_game_flow_node *p=&g->flow_nodes[a->nav_layer_path[a->nav_layer_cursor]];
+        a->nav_x=*out_x=p->x;a->nav_z=*out_z=p->z;a->nav_active=1;return 1;
+    }
+    a->nav_active=0;*out_x=a->x;*out_z=a->z;return 0;
 }
 
 static void flow_work(struct toy_game *g, struct toy_game_flow_field *f,

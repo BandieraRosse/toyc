@@ -5,7 +5,7 @@
 
 #define TOY_MAP_MAX_PRIMITIVES 512
 #define TOY_MAP_MAX_ZONES 16
-#define TOY_MAP_MAX_DRAW 512
+#define TOY_MAP_MAX_DRAW 640
 #define TOY_MAP_MAX_PICKUPS 48
 #define TOY_MAP_MAX_BASES 8
 #define TOY_MAP_MAX_AI_SPAWNS 32
@@ -94,6 +94,7 @@ struct toy_map_prop { int asset_id; int x, y, z, yaw_degrees, scale_milli, lengt
 struct toy_map_draw {
     int type;
     int a, b, c, d, e, f;
+    int ramp_thickness, ramp_steps;
     unsigned int color;
     int texture_u, texture_v;
     int style;

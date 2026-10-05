@@ -259,8 +259,8 @@ static int parse_record(struct rasterfall_map_ir *ir, int line, struct map_line 
             const char *keys[] = {"id", "shape", "min_x", "max_x", "min_z", "max_z", "height", "height2", "collision", "visible", "walkable", "blocks_airborne", "color", "role"}; struct rasterfall_map_ir_collision *o; int height, height2 = 0, collision = 1, visible = 1, walkable = 0, airborne = 0;
             if (allowed(ir, line, record, keys, 14) < 0) return -1;
             if (!value_of(record, "shape", &value) || !valid_name(value, 1)) return fail(ir, line, "collision missing or invalid shape");
-            if (!value_of(record, "height", &value) || int_value(value, &height) < 0 || height < 0) return fail(ir, line, "collision missing or invalid height");
-            if (value_of(record, "height2", &value) && (int_value(value, &height2) < 0 || height2 < 0)) return fail(ir, line, "invalid collision height2");
+            if (!value_of(record, "height", &value) || int_value(value, &height) < 0 || height < -1000000 || height > 1000000) return fail(ir, line, "collision missing or invalid height");
+            if (value_of(record, "height2", &value) && (int_value(value, &height2) < 0 || height2 < -1000000 || height2 > 1000000)) return fail(ir, line, "invalid collision height2");
             if (value_of(record, "collision", &value) && bool_value(value, &collision) < 0) return fail(ir, line, "collision must be true or false");
             if (value_of(record, "visible", &value) && bool_value(value, &visible) < 0) return fail(ir, line, "visible must be true or false");
             if (value_of(record, "walkable", &value) && bool_value(value, &walkable) < 0) return fail(ir, line, "walkable must be true or false");

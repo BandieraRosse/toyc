@@ -18,6 +18,7 @@
 #include "rasterfall_character.h"
 #include "string.h"
 #include "math.h"
+#include "stdlib.h"
 #include "tlibc_compat.h"
 
 #include "game_combat.inc"
@@ -1105,11 +1106,16 @@ struct toy_game_ground_query toy_game_query_ground(
         if (!overlaps && !supported) continue;
         /* A suspended solid's top is not the floor beneath it. It becomes
          * a candidate once the query reaches the solid's lower elevation. */
-        if (p->shape == TOY_MAP_PRIMITIVE_BOX && p->base_y > 0 &&
+        if (p->shape == TOY_MAP_PRIMITIVE_BOX &&
             current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT < p->base_y)
             continue;
         if (g->update_profile) g->update_profile->ground_heights++;
         height = primitive_surface_height(p, x, z);
+        if (p->ramp_thickness &&
+            current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT < height - p->ramp_thickness)
+            continue;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) &&
+            height > current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT) continue;
         if (supported &&
             ((p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
              height <= current_ground_y + TOY_CONFIG_GROUND_STEP_HEIGHT) &&
@@ -1278,6 +1284,8 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape == TOY_MAP_PRIMITIVE_BOX) continue;
         if (p->shape != TOY_MAP_PRIMITIVE_FLAT) {
+            if (p->ramp_thickness && primitive_surface_height(p,x,z) - p->ramp_thickness >=
+                collision_height + RASTERFALL_HUMAN_HEIGHT_RFU) continue;
             if (x + radius > p->minx && x - radius < p->maxx &&
                 z + radius > p->minz && z - radius < p->maxz &&
                 primitive_surface_height(p, x, z) >
@@ -3387,6 +3395,8 @@ static int actor_segment_blocked(const struct toy_game *g,
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
             p->shape != TOY_MAP_PRIMITIVE_BOX) continue;
         if (p->base_y > ground_y + RASTERFALL_HUMAN_HEIGHT_RFU) continue;
+        if(!(p->flags & TOY_MAP_PRIMITIVE_BLOCKS_AIRBORNE) &&
+            p->surface_y0>p->base_y && p->surface_y0<=ground_y)continue;
         box.minx=p->minx; box.maxx=p->maxx; box.minz=p->minz; box.maxz=p->maxz;
         box.miny=p->base_y; box.maxy=p->surface_y0;
         box.minx -= padding; box.maxx += padding;
@@ -4393,6 +4403,7 @@ void toy_game_actor_cancel_navigation(struct toy_game_actor *actor)
     if (!actor) return;
     actor->nav_active = 0;
     actor->nav_direct_valid = actor->nav_direct_ms = 0;
+    actor->nav_layer_count=actor->nav_layer_cursor=actor->nav_layer_retry_ms=0;
 }
 
 int toy_game_actor_navigation_target(struct toy_game *g, struct toy_game_actor *a,
@@ -4446,7 +4457,11 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
 {
     int steer_x = target_x, steer_z = target_z;
     int dx, dz, distance, start_x = a->x, start_z = a->z;
-    toy_game_actor_navigation_target(g, a, target_x, target_z, speed, dt_ms,
+    if(a->command_destination_active && a->command_height_active &&
+        target_x==a->command_x && target_z==a->command_z) {
+        if(!toy_game_actor_navigation_target_height(g,a,target_x,a->command_y,target_z,
+            speed,dt_ms,&steer_x,&steer_z))return;
+    } else toy_game_actor_navigation_target(g, a, target_x, target_z, speed, dt_ms,
         &steer_x, &steer_z);
     dx = steer_x - a->x;
     dz = steer_z - a->z;
@@ -4457,6 +4472,7 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
         move_actor_forced(g, a, step_x, step_z);
         if (a->x != start_x + step_x || a->z != start_z + step_z) {
             a->nav_direct_valid = 0;
+            if(a->nav_layer_count)toy_game_actor_cancel_navigation(a);
             if (g->update_profile) g->update_profile->actor_direct_blocked++;
         }
     }
@@ -4473,8 +4489,15 @@ static int resolve_motion_ceiling(const struct toy_game *g, int x, int z,
     for (i = 0; i < g->primitive_count; i++) {
         const struct toy_map_primitive *p = g->primitives + i;
         int limit = p->base_y - RASTERFALL_HUMAN_HEIGHT_RFU;
+        if (p->ramp_thickness) {
+            int px=x, pz=z;
+            if(p->shape==TOY_MAP_PRIMITIVE_RAMP_X)
+                px+=p->surface_y1>=p->surface_y0?-radius:radius;
+            else pz+=p->surface_y1>=p->surface_y0?-radius:radius;
+            limit=primitive_surface_height(p,px,pz)-p->ramp_thickness-RASTERFALL_HUMAN_HEIGHT_RFU;
+        }
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
-            p->shape != TOY_MAP_PRIMITIVE_BOX || p->base_y <= 0 ||
+            (p->shape != TOY_MAP_PRIMITIVE_BOX && !p->ramp_thickness) ||
             old_height > limit || proposed <= limit) continue;
         if (x + radius > p->minx && x - radius < p->maxx &&
             z + radius > p->minz && z - radius < p->maxz && limit < result)
@@ -4690,6 +4713,21 @@ void toy_game_update_actor_ground(struct toy_game *g, int actor_index)
     if (actor->airborne_ms > 0) return;
     ground = toy_game_query_ground(g, actor->x, actor->z,
                                    TOY_GAME_PLAYER_RADIUS, actor->ground_y);
+    /* Ramp seams permit partial footprint support during ordinary movement.
+     * Preserve that height in the post-move refresh, including below zero. */
+    if (!ground.has_support && ground.touches_current_support) {
+        struct toy_game_ground_query center=toy_game_query_ground(
+            g,actor->x,actor->z,0,actor->ground_y);
+        if(center.has_support && center.support_is_ramp &&
+            abs(center.support_y-actor->ground_y)<=TOY_CONFIG_GROUND_STEP_HEIGHT)
+            ground=center;
+    }
+    if (!ground.has_support && g->primitives) {
+        if(ground.touches_current_support)return;
+        actor->airborne_ms=TOY_GAME_JUMP_MS;
+        actor->airborne_y=0;actor->vertical_velocity=0;
+        return;
+    }
     next_ground = ground.support_y;
     if (ground.support_is_ramp) {
         actor->ground_y = next_ground;

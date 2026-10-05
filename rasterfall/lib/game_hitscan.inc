@@ -22,11 +22,13 @@ static int combat_world_distance(const struct toy_game *g, int x, int y, int z,
         const struct toy_map_primitive *p = &g->primitives[i];
         long long lo = 0, hi = best;
         int top = p->surface_y0 > p->surface_y1 ? p->surface_y0 : p->surface_y1;
+        int bottom = p->ramp_thickness ?
+            (p->surface_y0 < p->surface_y1 ? p->surface_y0 : p->surface_y1) - p->ramp_thickness : p->base_y;
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION)) continue;
-        if (top < p->base_y) top = p->base_y;
+        if (top < bottom) top = bottom;
         if (!combat_ray_slab(x, sy, p->minx, p->maxx, &lo, &hi) ||
             !combat_ray_slab(z, cy, p->minz, p->maxz, &lo, &hi) ||
-            !combat_ray_slab(y, vy, p->base_y, top, &lo, &hi)) continue;
+            !combat_ray_slab(y, vy, bottom, top, &lo, &hi)) continue;
         if (p->shape == TOY_MAP_PRIMITIVE_RAMP_X ||
             p->shape == TOY_MAP_PRIMITIVE_RAMP_Z) {
             int along = p->shape == TOY_MAP_PRIMITIVE_RAMP_X ? x : z;
@@ -39,7 +41,8 @@ static int combat_world_distance(const struct toy_game *g, int x, int y, int z,
             if (span <= 0) continue;
             plane_y = p->surface_y0 + (int)((long long)(along - start) * rise / span);
             plane_v = (int)((long long)direction * rise / span);
-            if (!combat_ray_slab(y - plane_y, vy - plane_v, -1000000, 0, &lo, &hi))
+            if (!combat_ray_slab(y - plane_y, vy - plane_v,
+                p->ramp_thickness ? -p->ramp_thickness : -1000000, 0, &lo, &hi))
                 continue;
         }
         if (hi < 0 || lo > best) continue;

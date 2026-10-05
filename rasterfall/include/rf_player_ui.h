@@ -56,7 +56,7 @@ struct rf_player_ui_view {
     const char *region_name, *objective_title, *objective_detail;
     char mission_title[128], mission_detail[128];
     int rts_active, rts_selected, rts_follow_player, comms_visible, hints, modal, phase_visible;
-    int rts_move_active, rts_move_x, rts_move_z;
+    int rts_move_active, rts_move_x, rts_move_z, rts_move_y;
     int camera_x, camera_z, camera_sy, camera_cy;
     int map_sight_count, map_sight_x[4], map_sight_z[4];
     int objective_active, objective_x, objective_y, objective_z;
@@ -87,6 +87,8 @@ int rf_player_ui_hit_test(const struct rf_player_ui_state *state,
 int rf_player_ui_rts_hit(const struct rf_ui_layout *layout,const struct rf_rts_state *rts,
     const struct toy_game *game,int x,int y);
 int rf_player_ui_rts_page_size(const struct rf_ui_layout *layout);
+int rf_player_ui_floor_hit(const struct rf_ui_layout *layout,const struct rf_rts_state *state,int x,int y);
+struct rf_ui_rect rf_player_ui_floor_rect(const struct rf_ui_layout *layout,const struct rf_rts_state *state,int n);
 void rf_ui_panel(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,
                  const struct rf_ui_theme *theme, int selected);
 void rf_ui_button(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,

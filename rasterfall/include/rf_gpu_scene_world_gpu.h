@@ -46,6 +46,7 @@ struct rf_gpu_scene_layers_input {
     int flashlight,lighting_lab,fixed_lighting;
     /* Explicit session hints; renderer never infers or changes mission truth. */
     int frontier_actor_prewarm,frontier_actor_warm_activate;
+    float cutaway_bounds[4],cutaway_height[4];
     void *ui_context;
     void (*ui_layout)(void *, struct rasterfall_canvas *);
     const struct rf_gpu_scene_aux_view *aux_view;

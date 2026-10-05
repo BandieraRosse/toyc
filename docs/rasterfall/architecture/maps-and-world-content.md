@@ -1,5 +1,14 @@
 # 地图与世界内容架构
 
+多层建筑以 Runtime Map 的 `building_floor` region 提供楼层空间语义，有限厚度楼板使用
+`collision shape=box attr.base_y`，平台 surface 关联该 collision 时保留 BOX，不能降为延伸到地面的
+FLAT。支撑、碰撞和渲染分别消费同一 authored 高度；显式 BOX render 的 `attr.base_y` 映射 draw.f。
+地下层使用相对地面 0 的负高度及负 level。叠放楼梯的 collision ramp 可声明 `attr.thickness`，
+底面与坡面平行；Game 支撑、头顶碰撞和射线使用真实厚度，render 可用 `attr.steps` 绘制踏步。
+前哨站 B1、一层、二层、屋顶及北侧折返楼梯由 [前哨站合同](../reference/outpost-hall-v1.md)维护。
+楼层及屋顶元数据不生成隐式碰撞或自动敌人。首图二楼枪手由 session 按守军 region 的 `attr.y`
+校验真实支撑后创建，计入本任务初始守军。楼层视图的只读规则见 [RTS 指挥](rts-command.md#建筑与楼层-v1)。
+
 > 状态：当前
 > 所有者：Rasterfall Map Runtime 与 session 世界生命周期
 > 事实入口：`rasterfall/lib/rasterfall_map_parser.c`、`rasterfall/lib/rasterfall_map_runtime.c`、`rasterfall/src/rasterfall_map.c`、`rasterfall/src/rasterfall_session.c`

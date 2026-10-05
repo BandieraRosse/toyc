@@ -175,7 +175,7 @@ int rf_story_logic_test(void)
     {
         int failed=0;
         struct toy_game_actor *p=toy_game_local_player_actor(&session.game_state);
-        const struct rf_map_runtime_region *region=rf_map_runtime_find_region(&session.map_ops.runtime,"outpost_safe");
+        const struct rf_map_runtime_region *region=rf_map_runtime_find_region(&session.map_ops.runtime,"outpost_bounds");
         if(!region){rf_map_runtime_unload(&session.map_ops.runtime);return 35;}
         p->x=0;p->z=0;
         story.progress[0]=RF_STORY_COMPLETED;
