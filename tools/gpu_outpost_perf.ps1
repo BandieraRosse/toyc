@@ -7,12 +7,13 @@ param(
     [switch]$Compare,
     [switch]$ComparePreparation,
     [switch]$CompareArchitecture,
+    [switch]$CompareArchitectureShadows,
     [switch]$AllLabs,
     [ValidateRange(640,7680)][int]$Width=1920,
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows) -gt 1){throw 'Choose one comparison axis'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
 }
@@ -33,7 +34,8 @@ $SavedPath=$env:Path
 $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
-    'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE')
+    'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
@@ -42,6 +44,7 @@ $Hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash
 Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
     rounds=$Rounds;samples=$Samples;views=$Views;all_labs=[bool]$AllLabs;compare=[bool]$Compare;
     compare_preparation=[bool]$ComparePreparation;compare_architecture=[bool]$CompareArchitecture;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;
+    compare_architecture_shadows=[bool]$CompareArchitectureShadows;architecture=$env:RF_GPU_ARCHITECTURE;
     width=$Width;height=$Height;warmup=120;sky_scale=4;sky_time=0;clock='realtime';cap=120} 'config.json'
 try {
     [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
@@ -53,12 +56,13 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare -or $ComparePreparation){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($Round%2 -eq 0){[array]::Reverse($Modes)}
             foreach($Mode in $Modes) {
                 $Name="r$Round-$View-$Mode"
                 if($CompareArchitecture){$env:RF_GPU_ARCHITECTURE=$Mode}
+                $env:RF_GPU_ARCHITECTURE_SHADOW_MAPS=if($CompareArchitectureShadows -and $Mode -eq 'reference'){'1'}else{'0'}
                 foreach($Key in @('RF_GPU_SCENE_LEGACY_LAYER_COLORS','RF_GPU_SCENE_DISABLE_LAYER_CULL',
                     'RF_GPU_SCENE_DISABLE_DRAW_CULL')) {
                     [Environment]::SetEnvironmentVariable($Key,$(if($Compare -and $Mode -eq 'reference'){'1'}else{'0'}),'Process')
@@ -94,7 +98,7 @@ try {
                 if($Result.extent -ne "${Width}x${Height}"){throw "$Name extent differs from requested window size"}
                 $Runs.Add(@{round=$Round;view=$View;mode=$Mode;result=$Result;argv=$Argv;exit=$Process.ExitCode})
                 Write-Json @($Runs.ToArray()) 'report.json'
-                Write-Output "$Name p50=$($Result.p50_us) p95=$($Result.p95_us) p99=$($Result.p99_us) us; GPU=$($Result.gpu_p50_us) us"
+                Write-Output "$Name p50=$($Result.p50_us) p95=$($Result.p95_us) p99=$($Result.p99_us) us; GPU=$($Result.gpu_p50_us) shadow=$($Result.shadow_p50_us) main=$($Result.main_p50_us) us; shadow_draws=$($Result.shadow_draws)"
                 $Process=$null
             }
         }

@@ -42,6 +42,9 @@ struct rf_gpu_graphics_draw {
     uint32_t scene_layer;
     /* Linear-light material; zero roughness selects the neutral 0.65 default. */
     float roughness, metallic, emissive;
+    /* Host-only: caller guarantees this entire draw is represented in the
+     * current architecture input. Zero keeps ordinary shadow-map casting. */
+    uint32_t architecture_occluder;
 };
 
 #define RF_GPU_LIGHT_CAP 32
@@ -123,6 +126,9 @@ struct rf_gpu_scene_timing {
     int supported, valid;
     double world_draw_ms, present_blit_ms;
     double sky_compute_ms; /* Included in world_draw_ms; excludes HDR composite. */
+    /* Together with sky_compute_ms partition world_draw_ms. Shadow includes
+     * depth copies; main includes WORLD shading, HDR composite, tonemap/HUD. */
+    double shadow_ms, main_scene_ms;
     /* CPU walls within native submit; separate from completed GPU queries. */
     double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };

@@ -868,6 +868,16 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
     /* Presentation settings are stable for this frozen frame. Reading the
      * process environment per submesh is expensive on the native CRT. */
     int linear_filter=rf_gpu_scene_linear_filter_enabled();
+    /* The analytic architecture input excludes degenerate/reversed BOXes.
+     * If any exist, retain the whole BOX mesh in ordinary shadow maps. */
+    int architecture_boxes_complete=1;
+    for(uint32_t i=0;i<owner->render_count;++i) {
+        const struct rf_gpu_scene_world_render_item_v1 *item=&owner->render_items[i];
+        const struct toy_map_draw *d=&item->draw;
+        if(item->visible && item->alpha==255 && d->type==TOY_MAP_DRAW_BOX &&
+           strncmp(d->text,"air_gate_",9) &&
+           (d->a>=d->b || d->c>=d->d || d->f>=d->e))architecture_boxes_complete=0;
+    }
     for(uint32_t kind=0;kind<RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT;++kind) {
         struct rasterfall_resource_handle handle=owner->opaque[kind];
         const struct rasterfall_model_asset *model;
@@ -914,6 +924,8 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
             draw->texture[0]=draw->texture[1]=1;
             /* Base-colour geometry; lighting is evaluated per fragment. */
             draw->integer_depth=0;
+            draw->architecture_occluder=kind<=RF_GPU_SCENE_WORLD_BOUNDARY &&
+                (kind!=RF_GPU_SCENE_WORLD_BOX || architecture_boxes_complete);
             draw->index_count=info.index_count;
             draw->double_sided=material[7]&1u;
             if (!item->resource || rf_gpu_graphics_resource_bind(graphics,item->resource)<0 ||
@@ -1727,6 +1739,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->gpu_draw_ms=timing.world_draw_ms;stats->gpu_time_valid=timing.valid;
     if(probe->slow_profile_state==2)stats->gpu_query_frame=timing.frame_id;
     stats->gpu_sky_ms=timing.sky_compute_ms;
+    stats->gpu_shadow_ms=timing.shadow_ms;
+    stats->gpu_main_ms=timing.main_scene_ms;
     stats->record_us=(int64_t)(timing.record_ms*1000);
     stats->acquire_us=(int64_t)(timing.acquire_ms*1000);
     stats->queue_submit_us=(int64_t)(timing.queue_submit_ms*1000);

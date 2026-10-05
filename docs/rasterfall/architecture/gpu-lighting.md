@@ -35,6 +35,14 @@ Scene 在 world/map generation 改变时，从实际 WORLD 的 wall、box、ramp
 不是 GI 或人工灯反弹。静态道具、角色和透明物不进入本建筑结构；原太阳和两个 spot shadow map
 继续承担不透明模型与角色的投影，其他局部灯仍不具备这些动态物体的完整遮挡。
 
+WORLD producer 将已完整纳入当前建筑输入的 draw 标为 `architecture_occluder`（host metadata，
+不进入 shader push constants）。非空建筑结构成功安装后，这些 draw 退出传统阴影图；硬件与软件
+查询都适用。其余道具、角色和模型类别仍照常投影；BOX 类若存在解析输入未覆盖的退化或反向区间，
+整类保留原投影。标记来源和建筑输入必须属于同一冻结世界；正常帧在提交前完成代际校验与结构替换，
+替换失败不能继续提交该帧。清空结构恢复传统投影，无效替换保留原状态，resize 不清除覆盖状态。
+`RF_GPU_ARCHITECTURE_SHADOW_MAPS=1` 在 graphics 初始化时恢复重复投影，仅用于同版本对照。
+建筑仍由原先的二值射线遮挡决定阴影；移除重复 PCF 后，其阴影边缘不再叠加阴影贴图的过滤暗边。
+
 ### 可选硬件 Ray Query
 
 后端在 loader 和设备均支持 Vulkan 1.2 时，查询 `VK_KHR_acceleration_structure`、
@@ -59,7 +67,7 @@ BLAS/TLAS 和存储由各 graphics owner 保留，resize 不重建；不逐帧�
 
 GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值、HDR 合成与资源边界见[GPU 天空](gpu-sky.md)。CPU 继续使用旧天空。
 
-1. 不透明 WORLD 几何绘制阴影：太阳采用三个相机附近的稳定正交范围；最多两盏聚光灯使用透视阴影。
+1. 未由当前建筑查询完整覆盖的不透明 WORLD 几何绘制阴影：太阳采用三个相机附近的稳定正交范围；最多两盏聚光灯使用透视阴影。
    每张阴影图用独立光空间包围盒剔除，复用连续绘制的 pipeline/vertex/index 绑定；不套用相机可见性。
 2. 阴影为 1024×1024 D32，深度在 GPU 内复制到 storage buffer；片元以 16 次深度比较求值连续移动的 tent PCF 核。
    权重随 texel 内的小数坐标变化，跨 texel 边界连续，不依赖硬件深度过滤扩展或随机抖动。
@@ -67,6 +75,10 @@ GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值�
 3. WORLD、天空、透明、特效与 viewmodel 写入 RGBA16F 线性 HDR；世界深度为 D32 reversed Z。纹理先由 sRGB 解码，再参与过滤和着色。
 4. compute 执行曝光与 ACES fitted 色调映射，将曲线肩部按其渐近值归一化，避免中高 HDR 值提前越过显示白而被硬裁切；
    最后编码为 sRGB RGBA8。极高亮度仍受八位输出量化限制。HUD 随后合成，保持界面颜色。正常帧直接 native present。
+
+GPU timestamp 将 `world_draw_ms` 按命令区间拆为 `sky_compute_ms`、`shadow_ms`、`main_scene_ms`。
+阴影区间含深度复制；主场景区间含 WORLD 光照、天空合成、透明、viewmodel、后处理及 HUD，
+不能把它直接称为 Ray Query 耗时。native、离屏和 capture 共用读回解释，离屏不等待未写入的 present 查询。
 
 材质使用 GGX 镜面、Schlick Fresnel、粗糙度、金属度和标量自发光。平滑法线来自资源；无显式法线时用几何法线。风格化材质调整漫反射响应，仍消费同一组实时灯和阴影。当前粗糙度/金属度为 draw 标量；没有承诺 normal/ORM 纹理、IBL、GI 或完整动漫材质。
 

@@ -113,6 +113,7 @@ static struct {
     int enabled,target,count,invalid,width,height;
     unsigned present_mode;
     int64_t interval[4096],gpu[4096],sky[4096],prepare[4096],cpu[4096];
+    int64_t shadow[4096],main[4096];
     uint64_t draws,shadows,uploads,world_us,layers_us,actors_us,enemies_us,skin_us,weaver_us;
 } rf_scene_perf;
 static void rf_scene_perf_init(int allowed)
@@ -155,6 +156,8 @@ static int rf_scene_perf_sample(int frame,int64_t interval,
     rf_scene_perf.interval[n]=interval;
     rf_scene_perf.gpu[n]=(int64_t)(s->gpu_draw_ms*1000);
     rf_scene_perf.sky[n]=(int64_t)(s->gpu_sky_ms*1000);
+    rf_scene_perf.shadow[n]=(int64_t)(s->gpu_shadow_ms*1000);
+    rf_scene_perf.main[n]=(int64_t)(s->gpu_main_ms*1000);
     rf_scene_perf.prepare[n]=s->prepare_us;
     rf_scene_perf.cpu[n]=(int64_t)toy_platform_thread_cpu_us()-rf_scene_cost.cpu_begin;
     rf_scene_perf.world_us+=s->world_prepare_us;rf_scene_perf.layers_us+=s->layer_prepare_us;
@@ -169,14 +172,18 @@ static int rf_scene_perf_sample(int frame,int64_t interval,
     qsort(rf_scene_perf.interval,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.gpu,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.sky,count,sizeof(int64_t),rf_scene_perf_compare);
+    qsort(rf_scene_perf.shadow,count,sizeof(int64_t),rf_scene_perf_compare);
+    qsort(rf_scene_perf.main,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.prepare,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.cpu,count,sizeof(int64_t),rf_scene_perf_compare);
-    __printf("SCENE-PERF valid=%d samples=%d warmup=120 extent=%dx%d present_mode=%u mean_us=%lld p50_us=%lld p95_us=%lld p99_us=%lld gpu_p50_us=%lld gpu_p95_us=%lld sky_p50_us=%lld sky_p95_us=%lld draws=%llu shadow_draws=%llu upload_bytes=%llu prepare_p50_us=%lld prepare_p95_us=%lld world_mean_us=%llu layers_mean_us=%llu actors_mean_us=%llu enemies_mean_us=%llu skin_mean_us=%llu weaver_mean_us=%llu\n",
+    __printf("SCENE-PERF valid=%d samples=%d warmup=120 extent=%dx%d present_mode=%u mean_us=%lld p50_us=%lld p95_us=%lld p99_us=%lld gpu_p50_us=%lld gpu_p95_us=%lld sky_p50_us=%lld sky_p95_us=%lld shadow_p50_us=%lld shadow_p95_us=%lld main_p50_us=%lld main_p95_us=%lld draws=%llu shadow_draws=%llu upload_bytes=%llu prepare_p50_us=%lld prepare_p95_us=%lld world_mean_us=%llu layers_mean_us=%llu actors_mean_us=%llu enemies_mean_us=%llu skin_mean_us=%llu weaver_mean_us=%llu\n",
         !rf_scene_perf.invalid,count,width,height,s->present_mode,(long long)(sum/count),
         (long long)rf_scene_perf.interval[count/2],(long long)rf_scene_perf.interval[(count*95+99)/100-1],
         (long long)rf_scene_perf.interval[(count*99+99)/100-1],
         (long long)rf_scene_perf.gpu[count/2],(long long)rf_scene_perf.gpu[(count*95+99)/100-1],
         (long long)rf_scene_perf.sky[count/2],(long long)rf_scene_perf.sky[(count*95+99)/100-1],
+        (long long)rf_scene_perf.shadow[count/2],(long long)rf_scene_perf.shadow[(count*95+99)/100-1],
+        (long long)rf_scene_perf.main[count/2],(long long)rf_scene_perf.main[(count*95+99)/100-1],
         (unsigned long long)(rf_scene_perf.draws/count),(unsigned long long)(rf_scene_perf.shadows/count),
         (unsigned long long)(rf_scene_perf.uploads/count),
         (long long)rf_scene_perf.prepare[count/2],

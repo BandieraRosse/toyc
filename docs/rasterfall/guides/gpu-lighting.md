@@ -27,6 +27,22 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 光照回归包含空结构、替换、有限射线、双面、resize 后遮挡保留和无效输入不破坏旧结构。
 只验证静态建筑加速，不据该结果宣称动态光追、间接光或全场景稳定帧率。
 
+建筑查询已覆盖的 draw 默认不再重复绘制到传统阴影图。对照重复投影的成本：
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareArchitectureShadows -Views outpost-light-1f -Rounds 3 -Samples 240 -OutputDirectory tmp/outpost-shadow-perf
+```
+
+此轴交替设置 `RF_GPU_ARCHITECTURE_SHADOW_MAPS=1/0`，两种模式使用同一建筑查询后端。
+截图对照可手动设置该变量后分别运行捕获脚本；除建筑阴影边缘的重复 PCF 暗边消失外，
+须检查墙板、楼板、楼梯和门洞遮挡，以及道具/角色投影。`ARCHITECTURE SHADOW PASS`
+保护清空后的回退、未标记物体投影、resize/失败替换和离屏计时区间。
+`SCENE-PERF` 的 `shadow_p50_us/p95_us` 包含阴影绘制与深度复制，
+`main_p50_us/p95_us` 包含主场景着色与合成；它们是各自分位数，不与天空分位数相加推导整帧。
+限定设备的五轮结果见[建筑重复阴影剔除现场](../archive/architecture-shadow-dedup-20261005.md)。
+
 实现边界见[GPU 实时光照](../architecture/gpu-lighting.md)。先运行 Windows native build，再启动：
 
 ```powershell

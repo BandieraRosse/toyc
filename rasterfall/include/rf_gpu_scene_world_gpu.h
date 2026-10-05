@@ -174,6 +174,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint64_t upload_bytes,bridge_transfers;
     double gpu_draw_ms;
     double gpu_sky_ms;
+    double gpu_shadow_ms,gpu_main_ms;
     uint32_t native_draws;
     int gpu_time_valid;
 };

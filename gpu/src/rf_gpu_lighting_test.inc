@@ -273,6 +273,57 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     for(unsigned p=0;p<64*64;++p) if(da[p]>0 && da[p]==db[p] &&
         lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15) ++shadow_pixels;
     LIGHT_CHECK(shadow_pixels>8);
+    /* Only sources fully covered by the current architecture may leave the
+     * shadow maps. Clearing/rejecting input and resize preserve that contract;
+     * unmarked receiver/prop geometry must still cast. */
+    {
+        struct rf_gpu_occlusion_primitive caster[2]={0};
+        int saved_legacy=g->legacy_architecture_shadows;
+        for(unsigned t=0;t<2;++t)for(unsigned j=0;j<3;++j)for(unsigned k=0;k<3;++k)
+            caster[t].p[j][k]=v[6+t*3+j].position[k];
+        items[1].draw.architecture_occluder=1;
+        uint64_t before=g->stats.shadow_draws;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,a,da,96*96));
+        uint64_t ordinary=g->stats.shadow_draws-before;
+        LIGHT_CHECK(ordinary>0 && !memcmp(a,b,64*64*4));
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,caster,2));
+        g->legacy_architecture_shadows=1;before=g->stats.shadow_draws;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
+        LIGHT_CHECK(g->stats.shadow_draws-before==ordinary);
+        g->legacy_architecture_shadows=0;before=g->stats.shadow_draws;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
+        uint64_t reduced=g->stats.shadow_draws-before;
+        LIGHT_CHECK(reduced>0 && reduced<ordinary);
+        /* Architecture alone must still shadow visible receiver pixels. */
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
+        unsigned covered=0;
+        for(unsigned p=0;p<64*64;++p)if(da[p]>0 && da[p]==db[p] &&
+            lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15)++covered;
+        LIGHT_CHECK(covered>8);
+        before=g->stats.shadow_draws;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,a,da,96*96));
+        LIGHT_CHECK(g->stats.shadow_draws-before==ordinary);
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,caster,2));
+        LIGHT_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0);
+        LIGHT_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_resize(g,64,64));
+        before=g->stats.shadow_draws;
+        LIGHT_CHECK(!rf_gpu_graphics_scene_capture_at(g,items,2,a,da,96*96,7));
+        LIGHT_CHECK(g->stats.shadow_draws-before==reduced && !memcmp(a,b,64*64*4));
+        for(unsigned offscreen=0;offscreen<2;++offscreen) {
+            if(offscreen)LIGHT_CHECK(!rf_gpu_graphics_scene_offscreen(g,items,2,8));
+            struct rf_gpu_scene_timing timing;rf_gpu_graphics_scene_timing(g,&timing);
+            if(timing.supported) {
+                LIGHT_CHECK(timing.valid && timing.frame_id==7+offscreen);
+                LIGHT_CHECK(timing.sky_compute_ms>=0 && timing.shadow_ms>=0 && timing.main_scene_ms>=0);
+                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+            }
+        }
+        LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+        items[1].draw.architecture_occluder=0;g->legacy_architecture_shadows=saved_legacy;
+        fprintf(stdout,"ARCHITECTURE SHADOW PASS ordinary=%llu reduced=%llu covered=%u reset=1 retained_resize=1 timing_partition=1\n",
+            (unsigned long long)ordinary,(unsigned long long)reduced,covered);
+    }
     /* Camera and light frusta are independent. Keep shadows from an offscreen
      * caster; compare pixels and depth with the uncullable reference across
      * translations, yaw, scale, near crossings and far cascade boundaries. */

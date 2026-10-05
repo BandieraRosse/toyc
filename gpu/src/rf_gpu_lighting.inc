@@ -330,6 +330,10 @@ static void gfx_shadow_record(struct rf_gpu_graphics *g,const struct rf_gpu_grap
         for(unsigned i=0;i<count;++i) {
             struct rf_gpu_graphics_draw d=items[i].draw;
             if(d.scene_layer!=RF_GPU_SCENE_WORLD || d.texture[2] || d.texture[3]) continue;
+            /* The current architectural query already covers this source for
+             * every light. Props/actors remain unmarked and cast normally. */
+            if(d.architecture_occluder && g->architecture_count &&
+               !g->legacy_architecture_shadows)continue;
             /* Cull in light clip space, independently of the camera: an
              * offscreen building can still cast an onscreen shadow. */
             float center[3],extent[3];int outside=0;

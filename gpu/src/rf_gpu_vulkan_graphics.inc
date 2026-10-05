@@ -110,6 +110,8 @@ struct rf_gpu_graphics {
     struct rf_gpu_vulkan_buffer architecture_buffer;
     struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
     rf_rt_as architecture_blas,architecture_tlas;
+    uint32_t architecture_count;
+    int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
@@ -654,6 +656,8 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
         g->disable_draw_cull=no_cull && no_cull[0]=='1';
+        const char *legacy_shadows=getenv("RF_GPU_ARCHITECTURE_SHADOW_MAPS");
+        g->legacy_architecture_shadows=legacy_shadows && !strcmp(legacy_shadows,"1");
         const char *legacy_bounds=getenv("RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS");
         g->legacy_origin_bounds=legacy_bounds && !strcmp(legacy_bounds,"1");
     }
@@ -1638,13 +1642,15 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
-        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,5);
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,6);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
     gfx_sky_record(g,items,count);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,4);
     gfx_shadow_record(g,items,count);
+    if (g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,5);
     for(unsigned channel=0;channel<3;++channel)clear[0].color.float32[channel]=g->background[channel];
     clear[0].color.float32[3] = 1.0f;
     begin.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1738,12 +1744,35 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 }
 #undef RF_GFX_FUNCTIONS
 
+/* Read only queries written by this submission. Offscreen/capture never write
+ * the present pair (2,3); waiting on those would wait indefinitely. */
+static int gfx_scene_timing_read(struct rf_gpu_graphics *g,int presented)
+{
+    struct rf_gpu_vulkan_impl *p=g->owner;
+    uint64_t ticks[6]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
+        ((1ULL<<p->timestamp_valid_bits)-1ULL);
+    unsigned count=presented?6:2;
+    if(p->api.get_query_pool_results(p->device,g->scene_query_pool,0,count,
+        count*sizeof(ticks[0]),ticks,sizeof(ticks[0]),
+        RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
+    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,2,
+        2*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
+        RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
+    double ms=p->timestamp_period/1000000.0;
+    g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*ms;
+    g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*ms;
+    g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*ms;
+    g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[4])&mask)*ms;
+    g->scene_timing.main_scene_ms=(double)((ticks[1]-ticks[5])&mask)*ms;
+    g->scene_timing.valid=1;
+    return 0;
+}
+
 /* Scene owns its command/fence/acquire semaphore. The backend still owns the
  * unique swapchain and image-indexed present semaphores. */
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
 {
     double start;
-    uint64_t ticks[5],mask;
     if (!g) return -1;
     if (!g->scene_in_flight) return g->poisoned ? -1 : 0;
     start=now_ms();
@@ -1753,16 +1782,7 @@ int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
     g->stats.fence_wait_wall_ms+=now_ms()-start;
     g->scene_in_flight=0;
     if (g->scene_query_active) {
-        if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-                0,5,sizeof(ticks),ticks,sizeof(ticks[0]),
-                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)==RF_VK_SUCCESS) {
-            mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
-                ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
-            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
-            g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*g->owner->timestamp_period/1000000.0;
-            g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
-            g->scene_timing.valid=1;
-        }
+        gfx_scene_timing_read(g,1);
         g->scene_query_active=0;
     }
     return 0;
@@ -1808,7 +1828,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (impl->timestamp_supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
         if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -1918,7 +1938,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     if(g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
         if(g->owner->api.create_query_pool(g->owner->device,&query,NULL,
             &g->scene_query_pool)!=RF_VK_SUCCESS)return -1;
     }
@@ -1930,19 +1950,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
      * existing single-slot resource mutation contract, never maps the target. */
     int result=gfx_submit(g,1,RF_GPU_SUBMIT_DRAW);
     if(!result && g->scene_query_active) {
-        uint64_t ticks[2],sky_end,mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
-            ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
-        if(g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-            0,2,sizeof(ticks),ticks,sizeof(ticks[0]),
-            RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS ||
-            g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-            4,1,sizeof(sky_end),&sky_end,sizeof(sky_end),
-            RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)result=-1;
-        else {
-            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
-            g->scene_timing.sky_compute_ms=(double)((sky_end-ticks[0])&mask)*g->owner->timestamp_period/1000000.0;
-            g->scene_timing.valid=1;
-        }
+        result=gfx_scene_timing_read(g,0);
     }
     g->scene_query_active=0;return result;
 }
@@ -1969,7 +1977,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     if (g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=5;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
         if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
                 &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
@@ -1994,22 +2002,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
             g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
     int result=gpu_buffer_invalidate(g->owner,&g->target.readback);
     if (g->scene_query_active) {
-        uint64_t ticks[2],sky_end,mask=g->owner->timestamp_valid_bits>=64 ? UINT64_MAX :
-            ((1ULL<<g->owner->timestamp_valid_bits)-1ULL);
-        if (g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-                0,2,sizeof(ticks),ticks,sizeof(ticks[0]),
-                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS ||
-            g->owner->api.get_query_pool_results(g->owner->device,g->scene_query_pool,
-                4,1,sizeof(sky_end),&sky_end,sizeof(sky_end),
-                RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)
-            result=-1;
-        else {
-            g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*
-                g->owner->timestamp_period/1000000.0;
-            g->scene_timing.sky_compute_ms=(double)((sky_end-ticks[0])&mask)*
-                g->owner->timestamp_period/1000000.0;
-            g->scene_timing.valid=1;
-        }
+        if(gfx_scene_timing_read(g,0)<0)result=-1;
         g->scene_query_active=0;
     }
     if (!result) { memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes); }
