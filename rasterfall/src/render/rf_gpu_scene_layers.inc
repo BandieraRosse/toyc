@@ -602,7 +602,15 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
             rasterfall_canvas_rect(&canvas,x-32,y+46,revive,3,0xffd060,255);
         }
     }
-    rf_actor_labels_place(&labels,width,height);
+    struct rf_actor_label_reserved keep={0};
+    if(!input->paused && input->source_game->state==TOY_GAME_PLAYING &&
+            player && player->state==TOY_GAME_ACTOR_DOWNED) {
+        struct rasterfall_hud_wait_panel geometry;
+        rasterfall_hud_wait_for_rescue_geometry(width,height,&geometry);
+        keep=(struct rf_actor_label_reserved){geometry.panel.x,geometry.panel.y,
+            geometry.panel.w,geometry.panel.h};
+    }
+    rf_actor_labels_place_reserved(&labels,width,height,&keep);
     rf_actor_labels_paint(&labels,&canvas);
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct toy_map_draw *d=&input->map->items[i].draw;

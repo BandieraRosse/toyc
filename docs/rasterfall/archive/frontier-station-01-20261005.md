@@ -541,3 +541,95 @@ victory_count1。玩家此时倒地但仍有存活队友，按既定规则合法
 | actions.json | `c5d6b74056329d167563b51988eaa85b017a97eb94c8c1a23cddd6d27ed4ba1a` |
 | process.json | `3db63a1aec273d731a6be5ef9264f5abc2af408259ede11929d09e13bf07c66e` |
 | report.json | `fcfbf94cd45de0ef5dbb31e8cd412bfebd5bed4ba6a81aeb90667dc68ec37fb6` |
+
+### 单位镜头开启的真实 AUX 归因
+
+已提交的 `86706cb` 版本以同一 `deb7688…` executable 普通键鼠启动，开启
+`RF_GPU_SCENE_PROFILE_SLOW=1` 与 `frontier-counter` 筛选，关闭 phase observer、审计、
+Scene capture、固定 tick 和玩法 driver。这是带诊断开销的最慢16帧归因，不能用于总体
+分位数或稳定FPS签收。第一轮RTS切换后过早点击遇到鼠标仍锁定，原失败sequence保留；
+正常按键、等待解锁后的恢复路线独立记录。它不作为完整行动或相同负载对照。
+
+`tmp/frontier-aux-ordinary-open-01/` PID10160实际WM_CLOSE退出0，主帧身份、COUNTER至少
+16秒、每个世界至少120成功Scene帧、子镜头刷新计数及有效GPU查询合同通过，无GPU错误。
+真实OS画面显示单位镜头开启，2752个合格interval中保留最慢16条：15条刷新slot1，
+一次slot1 CPU wall为6.349–8.977ms、GPU为3.095–3.843ms，AUX几乎解释这些帧的misc；
+另1条未刷新帧interval35.890ms但AUX仅2µs，不能把全部长帧归给单位镜头。
+父视图weaver仅30–194µs，现有证据不支持将机器准备当成AUX主因。CPU scope包含等待，
+与GPU时间不能相加；最慢16条的刷新占比不能估计通常刷新频率。
+
+原始stdout SHA-256为 `adbef2021441de4976e9b47404fc54ab214b6daf8dad3d486b3765df555cbc53`，
+stderr `6f2ed69e82599bf27fb3ac898530a0a24d9a835d47804b78d7204daf776ce8a0`，
+runtime `1cd09c51e28cd690ea14a6388a2adad3ba25ae5b831e706baf972aa616aa5ed3`，
+actions `02e185f6487a7dcdd14d91cecfb1ba2aa832a4deabbca7f8cd236bffb9a3b053`。
+同目录diagnostic-receipt与parser结果保留实际进程、设置、环境及过滤范围。
+
+底栏收起的独立 `tmp/frontier-aux-ordinary-collapsed-01/` PID29828也实际退出0、无GPU错误、
+16条诊断合同通过。真实OS图确认单位镜头隐藏；3268条合格interval选出的最慢16条全部
+refresh mask0，slot1 before/after恒为1038，CPU/GPU/valid均0；AUX总scope为0–1µs。
+这验证收起时不刷新、不重复归因缓存耗时。仍有23.511–27.555ms长帧，五条有enemy resource
+created；收起还会改变单位镜头附近的敌人来源保留，两个窗口的种子和负载未对齐，不能
+据此宣称总体帧率提升幅度。stdout/runtime/actions SHA-256依次为
+`a1b0764b566911c826e9773f0b79fe74eb414cef746b2a6cb133edbf79386559`、
+`eaef426ff0eca71990531957d98827aa675deeffa03038a0e40d9a3e4e48c7c2`、
+`52249803a495a52c0768efb52cfedb240c8a94742553f8b8657af633079472aa`；stderr与开启轮相同。
+
+源码核对确认child总GPU包含独立天空、相机相关三张太阳阴影和世界绘制，并同步退休。
+父阴影矩阵与child视线不同；现有计时不能细分child阶段，不在本轮盲目共享这些结果或降低
+刷新率、质量。机器资源借用没有足够主因证据，暂缓。
+
+### 合并 AI 后的普通阶段采样04
+
+同一 `deb7688…` executable 普通窗口，关闭slow、逐帧审计、Scene capture、固定tick与玩法
+driver，仅使用只读 phase observer。采样03实际退出0，但COUNTER只有3644有效帧，不冒充
+4096；独立04延长普通等待，PID31000实际退出0，ASSAULT/COUNTER各4096有效帧、invalid0、
+startup contamination0，1280×720 RTS、immediate，显卡仍为RTX3050 Laptop。
+
+| 04独立采样，毫秒 | P50 | P95 | P99 | 最大 |
+| --- | --- | --- | --- | --- |
+| ASSAULT interval | 13.159 | 19.749 | 22.718 | 43.903 |
+| COUNTER interval | 17.667 | 25.018 | 28.885 | 42.205 |
+| COUNTER prepare | 7.138 | 13.855 | 16.007 | 25.297 |
+| COUNTER actor | 3.701 | 5.243 | 6.170 | 9.364 |
+| COUNTER GPU | 4.454 | 4.838 | 4.900 | 4.947 |
+
+COUNTER actor18–24、alive6–12、infected0–16、mission enemies4–21、pending0–30。
+它与旧窗口的种子、相机时序和存活负载未对齐，不作整体A/B收益；反攻P95大于16.667ms，
+稳定60FPS尚未签收。采样不包含后来WAIT提示源码。collector总95416µs覆盖完整观察窗口及
+丢弃记录，不能简单除以8192当平均开销。`tmp/frontier-phase-ordinary-04/` 的stdout、runtime、
+actions SHA-256分别为 `a769b28d7394f2f6d2ae4d2b8f67b6d42cb282cc0f1d1d89c0cdbb2b5339e5c3`、
+`ed2903656d4734db6c4453c2b095d4781821ea925b02cce3bc3f499b04eac36f`、
+`a4a2187d3c44c0a2605b6146226454d4ef3c8873d33b6cbf8d52f6550faf8066`；stderr与AUX轮相同。
+
+### 提示板避让、小队公开查询与 R16
+
+HUD提供等待救援板的唯一几何，CPU/Scene友军标签整体避让，普通无提示仍使用原九候选。
+共享字体/布局333通用合同通过，四真实编译单元syntax通过；完整日志在
+`tmp/frontier-wait-panel-contract-20261005-081312/`，run SHA-256为
+`ac5406bfde962a9a4e54c1437f5d1f28301203c16f75d014f003640304dd2411`。
+三次临时合同缺链接/签名的编译失败已分别保留，没有运行，也不是生产源码失败。
+公开小队goal查询增加FOLLOW anchor ID/generation即时校验，防未tick的同阵营槽复用读旧goal；
+内部AI路径和预算不变，既有小队合同及三个身份边界断言通过。
+枪手展示名缩成守卫枪手、精英守卫、增援枪手、精英增援；权威身份与配额不使用名字。
+
+`tmp/frontier-checks-wait-identity-names/` build/test/gpu-test实际退出0，31.852/52.812/44.916秒，
+官方GPU检查120帧；新 executable SHA-256为
+`dbf18509547758181015120191d415a49f4ec53dc9689a9eac273c7622094628`。
+原始日志SHA-256为 `8231c1502d5fa1d8ed8a902793b5360220de5a0827c3e68f715cccf33ffb54c5`、
+`6955e1986a0cba4d07203c5e3336981d376e9c0f1a32ffebc3fe4488821967cd`、
+`c1b77ca117fa7b354db8b9a1575525e4f8e6f80f099ddb4971f64637f51981c9`。
+
+R16 PID2392以原目标连续跑至肃清，再做胜利后的独立自然救援观察，随后正常返回前哨和实际退出0。
+正式116动作齐全，report为full_route_verified=true、input_failure_observed=false；不是另一条
+绕路。`06-secured-proof.png`显示自然倒地玩家和友军，姓名/HP/DOWNED完整避开中央提示。
+额外救援MOVE只发一次，友军真实到点frame18720，首个玩家ALIVE100HP审计frame18990，
+逻辑时间相差3008ms；相邻审计有128ms间隔，不伪称精确复活tick或wall UTC。
+原观察宏要求距指定world点180RFU，但点击反投影目标偏约57RFU，友军在真实目标161RFU处
+停止，距指定点208.5RFU，因此宏到达timeout。这个失败addon完整保留；它没有阻止真实
+救援成功。之后只读新鲜身份、500RFU附近位置及截图观察独立通过，不再发MOVE/STOP。
+同一玩家id0/gen1恢复100HP，友军保留命令；`08-natural-player-rescue-observed.png`留存。
+
+随后一次请求CPU的boot全路线尝试按已确认Start Rasterfall合同自动选择GPU，因此不算CPU
+证据。该窗口在动作34仓库前移动时玩家倒地，到达timeout，保留原失败；正常返回/实际退出0。
+`tmp/frontier-normal-cpu-full-01/`名称只是请求意图，stdout明确selected backend=gpu-scene。
+仍只有之前CPU05的有限普通冒烟通过，CPU完整行动与CPU性能结论未扩展。

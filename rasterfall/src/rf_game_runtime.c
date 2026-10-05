@@ -3348,7 +3348,16 @@ static int rf_game_render_profiled(struct rf_game_runtime *runtime,
     managed_terminal.open = runtime->managed_terminal_open;
     strcpy(managed_terminal.line, runtime->managed_terminal_line);
     strcpy(managed_terminal.message, runtime->managed_terminal_message);
-    rasterfall_render_ai_teammate_name(renderer, render_camera,runtime->rts_active);
+    struct rasterfall_hud_wait_panel wait_panel;
+    const struct rf_ui_rect *label_reserved=0;
+    const struct toy_game_actor *hud_player=
+        toy_game_local_player_actor_const(&game_session->game_state);
+    if(!runtime->lifecycle_paused && game_session->game_state.state==TOY_GAME_PLAYING &&
+            hud_player && hud_player->state==TOY_GAME_ACTOR_DOWNED) {
+        rasterfall_hud_wait_for_rescue_geometry(ui_canvas.width,ui_canvas.height,&wait_panel);
+        label_reserved=&wait_panel.panel;
+    }
+    rasterfall_render_ai_teammate_name(renderer,render_camera,runtime->rts_active,label_reserved);
     rasterfall_render_network_teammate_status(
         renderer, render_camera, &runtime->net, &game_session->game_state);
     if (!runtime->lifecycle_paused &&

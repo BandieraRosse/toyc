@@ -133,6 +133,18 @@ static int game_actor_squad_logic_test(void)
     squad_game.actors[0].faction=TOY_GAME_FACTION_ALLIED;
     for(i=0;i<20;i++)toy_game_update_ai_teammates(&squad_game,16);
     SQUAD_CHECK(toy_game_squad_actor_goal(&squad_game,refs[5].index,&x,&z),44);
+    /* Public queries cannot use a reused FOLLOW anchor before the next tick.
+     * Check each identity component independently, preserving output on failure. */
+    px=x;pz=z;squad_game.actors[0].combat_generation++;
+    x=123;z=456;
+    SQUAD_CHECK(!toy_game_squad_actor_goal(&squad_game,refs[5].index,&x,&z) &&
+        x==123 && z==456,45);
+    squad_game.actors[0].combat_generation--;squad_game.actors[0].actor_id++;
+    SQUAD_CHECK(!toy_game_squad_actor_goal(&squad_game,refs[5].index,&x,&z) &&
+        x==123 && z==456,46);
+    squad_game.actors[0].actor_id--;
+    SQUAD_CHECK(toy_game_squad_actor_goal(&squad_game,refs[5].index,&x,&z) &&
+        x==px && z==pz,47);
     squad_game.actors[0].combat_generation++;
     toy_game_update_ai_teammates(&squad_game,16);
     SQUAD_CHECK(!toy_game_squad_actor_goal(&squad_game,refs[5].index,&x,&z),34);

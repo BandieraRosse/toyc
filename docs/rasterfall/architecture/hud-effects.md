@@ -28,6 +28,14 @@ UTF-8 点阵字形 run；`rasterfall_sky_layout`、`rasterfall_hud_layout` 和 p
 叶子不读取 Game、资源、时钟或输入，不分配堆内存；hostile、BASE 与 network 继续原标签路径。
 RTS 身体/脚底及卡片命中仍由原输入 owner 处理，移位标签没有点击代理，也不改变世界位置或敌人可见性。
 
+玩家倒地且 PLAYING、未暂停时，HUD 的 `rasterfall_hud_wait_for_rescue_geometry` 同时提供
+WAIT FOR RESCUE 板及文字的原始几何；提示绘制和 CPU/Scene 友军标签消费同一矩形，提示不移位。
+标签将该板作为只读保留区，先最小化保留区交叠，再最小化标签之间的交叠；姓名、HP、倒地状态
+仍整体移动。有保留区时才增加下一行三个候选，最多十二个位置、24960 次矩形比较；没有保留区
+保持原九候选与18144次比较上界。极小视口或拥挤候选仍可能交叠，保留最小交叠回退和原锚点连接线。
+保留区只覆盖 WAIT FOR RESCUE 背景板，其他 REVIVING 文本及可选进度条保持原路径；连接线可以
+从提示板后经过。该合同不承诺任意密度无交叠，也不建立标签点击代理。
+
 CPU 标签入口显式消费 runtime 的 `rts_active`。仅 RTS 友军非 BASE 标签跳过旧 FPS 水平朝向和
 24k view-Z 远距门，以支持高处俯视相机；仍保留 10800 XZ 距离、near 和实际姓名投影/离屏裁切。
 FPS、hostile、BASE、network 及身体可见性维持原路径，不根据 pitch 推测模式。

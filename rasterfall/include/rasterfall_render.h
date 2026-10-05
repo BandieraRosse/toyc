@@ -309,8 +309,9 @@ int rasterfall_render_network_teammate(struct toy_renderer *renderer,
                                        const struct camera *camera,
                                        const struct rasterfall_net *net,
                                        const struct toy_game *game);
+struct rf_ui_rect;
 void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
-                                        const struct camera *camera,int rts_active);
+    const struct camera *camera,int rts_active,const struct rf_ui_rect *reserved);
 void rasterfall_render_network_teammate_status(
     struct toy_renderer *renderer, const struct camera *camera,
     const struct rasterfall_net *net, const struct toy_game *game);

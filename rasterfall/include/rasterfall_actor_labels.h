@@ -13,6 +13,8 @@ struct rf_actor_label {
     uint32_t name_color,hp_color,panel_color;
     char name[RF_ACTOR_LABEL_TEXT_BYTES];
 };
+/* Generic presentation reservation; no HUD/Game dependency. */
+struct rf_actor_label_reserved { int x,y,width,height; };
 struct rf_actor_labels {
     struct rf_actor_label entry[RF_ACTOR_LABEL_CAPACITY];
     unsigned order[RF_ACTOR_LABEL_CAPACITY],count,rect_tests;
@@ -60,11 +62,14 @@ static inline int rf_actor_label_before(const struct rf_actor_label *a,
     if(a->anchor_y!=b->anchor_y)return a->anchor_y<b->anchor_y;
     return a->anchor_x<b->anchor_x;
 }
-static inline void rf_actor_labels_place(struct rf_actor_labels *labels,int width,int height)
+static inline void rf_actor_labels_place_reserved(struct rf_actor_labels *labels,
+    int width,int height,const struct rf_actor_label_reserved *reserved)
 {
-    static const int offsets[9][2]={
-        {0,0},{-1,0},{1,0},{0,-1},{-1,-1},{1,-1},{0,-2},{-1,-2},{1,-2}
+    static const int offsets[12][2]={
+        {0,0},{-1,0},{1,0},{0,-1},{-1,-1},{1,-1},{0,-2},{-1,-2},{1,-2},
+        {0,1},{-1,1},{1,1}
     };
+    int has_reserved=reserved && reserved->width>0 && reserved->height>0;
     labels->rect_tests=0;
     for(unsigned i=0;i<labels->count;++i) {
         unsigned at=i;
@@ -78,16 +83,27 @@ static inline void rf_actor_labels_place(struct rf_actor_labels *labels,int widt
         struct rf_actor_label *e=&labels->entry[labels->order[i]];
         int origin_x=e->anchor_x-e->width/2,origin_y=e->anchor_y;
         int step_x=e->width+4;if(step_x>128)step_x=128;
-        int64_t best=-1;
+        int64_t best=-1,best_reserved=-1;
         int best_x=origin_x,best_y=origin_y;
-        for(unsigned candidate=0;candidate<9;++candidate) {
+        for(unsigned candidate=0;candidate<(has_reserved?12U:9U);++candidate) {
             int x=origin_x+offsets[candidate][0]*step_x;
             int y=origin_y+offsets[candidate][1]*(e->height+4);
             /* Ordinary eligible anchors remain visible; at edges, clamp
              * the complete block instead of dropping a wounded friend. */
             x=rf_actor_label_clamp(x,0,width>e->width?width-e->width:0);
             y=rf_actor_label_clamp(y,0,height>e->height?height-e->height:0);
-            int64_t overlap=0;
+            int64_t overlap=0,reserved_overlap=0;
+            if(has_reserved) {
+                int left=x>reserved->x-2?x:reserved->x-2;
+                int top=y>reserved->y-2?y:reserved->y-2;
+                int right=x+e->width<reserved->x+reserved->width+2?
+                    x+e->width:reserved->x+reserved->width+2;
+                int bottom=y+e->height<reserved->y+reserved->height+2?
+                    y+e->height:reserved->y+reserved->height+2;
+                ++labels->rect_tests;
+                if(right>left && bottom>top)
+                    reserved_overlap=(int64_t)(right-left)*(bottom-top);
+            }
             for(unsigned j=0;j<i;++j) {
                 const struct rf_actor_label *p=&labels->entry[labels->order[j]];
                 int left=x>p->x-2?x:p->x-2;
@@ -97,13 +113,20 @@ static inline void rf_actor_labels_place(struct rf_actor_labels *labels,int widt
                 ++labels->rect_tests;
                 if(right>left && bottom>top)overlap+=(int64_t)(right-left)*(bottom-top);
             }
-            if(best<0 || overlap<best) {best=overlap;best_x=x;best_y=y;}
-            if(!overlap)break;
+            /* The actual prompt takes priority over peer label packing.
+             * With no reservation this is exactly the original ordering. */
+            if(best<0 || reserved_overlap<best_reserved ||
+                    (reserved_overlap==best_reserved && overlap<best)) {
+                best=overlap;best_reserved=reserved_overlap;best_x=x;best_y=y;
+            }
+            if(!reserved_overlap && !overlap)break;
         }
         e->x=best_x;e->y=best_y;
         e->moved=e->x!=origin_x || e->y!=origin_y;
     }
 }
+static inline void rf_actor_labels_place(struct rf_actor_labels *labels,int width,int height)
+{ rf_actor_labels_place_reserved(labels,width,height,0); }
 static inline void rf_actor_labels_paint(struct rf_actor_labels *labels,
     struct rasterfall_canvas *canvas)
 {

@@ -163,6 +163,16 @@ static int actor_squad_idle_goal(struct toy_game *g, int actor_index, int *x, in
 
 int toy_game_squad_actor_goal(struct toy_game *g, int actor_index, int *x, int *z)
 {
+    struct toy_game_squad *s;
+    int lookup;
+    if (!g || !x || !z || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS)
+        return 0;
+    lookup = g->squad_lookup[actor_index];
+    if (!lookup || lookup > TOY_GAME_SQUAD_GROUPS * TOY_GAME_SQUAD_MEMBERS) return 0;
+    s = &g->squads[(lookup - 1) / TOY_GAME_SQUAD_MEMBERS];
+    /* Public callers may query between ticks, after an anchor slot is reused. */
+    if (s->mode == TOY_GAME_SQUAD_FOLLOW && !actor_squad_identity(g, s->anchor))
+        return 0;
     return actor_squad_idle_goal(g, actor_index, x, z);
 }
 

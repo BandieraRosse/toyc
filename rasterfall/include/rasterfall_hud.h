@@ -47,6 +47,14 @@ struct rasterfall_hud_state {
 };
 
 #include "rasterfall_canvas.h"
+#define RASTERFALL_HUD_WAIT_FOR_RESCUE "WAIT FOR RESCUE"
+/* Authoritative raw panel/text geometry, clipped by the canvas at paint. */
+struct rasterfall_hud_wait_panel {
+    struct rf_ui_rect panel;
+    int text_x,text_y;
+};
+void rasterfall_hud_wait_for_rescue_geometry(int width,int height,
+    struct rasterfall_hud_wait_panel *out);
 void rasterfall_hud_player_status(struct rasterfall_canvas *,const struct toy_game *,
     const char *player_name,int x,int y);
 void rasterfall_hud_layout(struct rasterfall_canvas *,int,

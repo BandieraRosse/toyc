@@ -160,7 +160,7 @@ int rf_frontier_mission_begin(struct rf_frontier_mission *m, struct toy_game *g,
     for (i = 0; i < RF_FRONTIER_GUARDS; i++) {
         const struct rf_frontier_guard_config *guard = &config.guards[i];
         int id = toy_game_add_gunner(g, guard->elite, guard->point.x,
-                                    guard->point.z, "Station defender");
+                                    guard->point.z, guard->elite ? "精英守卫" : "守卫枪手");
         int index = frontier_actor_index(g, id);
         if (index < 0) { rf_frontier_mission_reset(m, g); return 0; }
         frontier_record(m, g, i, 1, index, RF_FRONTIER_GUARD, i);
@@ -200,7 +200,7 @@ static int frontier_spawn_gunner(struct rf_frontier_mission *m,
     m->spawn_attempts++;
     id = toy_game_add_gunner(g, ordinal == 5,
         m->config.west.x + (ordinal % 3 - 1) * 640,
-        m->config.west.z + ordinal / 3 * 640, "Station reinforcement");
+        m->config.west.z + ordinal / 3 * 640, ordinal == 5 ? "精英增援" : "增援枪手");
     index = frontier_actor_index(g, id);
     if (index < 0) { m->spawn_failures++; return 0; }
     frontier_record(m, g, record, 1, index, RF_FRONTIER_REINFORCEMENT_GUNNER, ordinal);

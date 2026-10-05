@@ -7475,7 +7475,7 @@ static int network_actor_lift(int x, int z, int airborne_y)
 }
 
 static void render_ai_teammate_name(struct toy_renderer *renderer,
-                                    const struct camera *camera,int rts_active)
+    const struct camera *camera,int rts_active,const struct rf_ui_rect *reserved)
 {
     int i;
     struct rf_actor_labels labels={0};
@@ -7534,7 +7534,10 @@ static void render_ai_teammate_name(struct toy_renderer *renderer,
             actor->revive_progress_ms*64/TOY_GAME_REVIVE_MS,
             downed?0xff6060:color,hp_color,RF_COLOR_UI_PANEL);
     }
-    rf_actor_labels_place(&labels,canvas.width,canvas.height);
+    struct rf_actor_label_reserved keep={0};
+    if(reserved)keep=(struct rf_actor_label_reserved){reserved->x,reserved->y,
+        reserved->w,reserved->h};
+    rf_actor_labels_place_reserved(&labels,canvas.width,canvas.height,&keep);
     rf_actor_labels_paint(&labels,&canvas);
 }
 
@@ -10170,9 +10173,9 @@ int rasterfall_render_network_teammate(struct toy_renderer *renderer,
 }
 
 void rasterfall_render_ai_teammate_name(struct toy_renderer *renderer,
-                                        const struct camera *camera,int rts_active)
+    const struct camera *camera,int rts_active,const struct rf_ui_rect *reserved)
 {
-    render_ai_teammate_name(renderer, camera,rts_active);
+    render_ai_teammate_name(renderer,camera,rts_active,reserved);
 }
 
 void rasterfall_render_network_teammate_status(

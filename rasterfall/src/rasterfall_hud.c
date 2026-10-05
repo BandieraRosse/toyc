@@ -186,6 +186,15 @@ void rasterfall_hud_player_status(struct rasterfall_canvas *surface,
     }
 }
 
+void rasterfall_hud_wait_for_rescue_geometry(int width,int height,
+    struct rasterfall_hud_wait_panel *out)
+{
+    int text_width=rasterfall_canvas_text_width(RASTERFALL_HUD_WAIT_FOR_RESCUE,1000);
+    out->text_x=(width-text_width)/2;out->text_y=height/2+24;
+    out->panel=(struct rf_ui_rect){out->text_x-8,out->text_y-5,
+        text_width+16,FB_FONT_H+10};
+}
+
 static void render_revive_prompt(struct rasterfall_canvas *surface,
                                  const struct rasterfall_hud_state *state)
 {
@@ -194,11 +203,12 @@ static void render_revive_prompt(struct rasterfall_canvas *surface,
         toy_game_local_player_actor_const(game);
     char line[96],interact_key[24]="E";
     int width, x, y = surface->height / 2 + 24;
+    int wait_for_rescue=player && player->state==TOY_GAME_ACTOR_DOWNED;
     if (state->player_ui_view.bindings) {
         rf_input_action_label(state->player_ui_view.bindings,RF_ACTION_INTERACT,interact_key,sizeof(interact_key));
     }
-    if (player && player->state == TOY_GAME_ACTOR_DOWNED) {
-        snprintf(line, sizeof(line), "WAIT FOR RESCUE");
+    if (wait_for_rescue) {
+        snprintf(line, sizeof(line), RASTERFALL_HUD_WAIT_FOR_RESCUE);
     } else if (!state->ai_revive_available &&
                               !state->ai_revive_active &&
                               !state->player_revive_available &&
@@ -220,8 +230,15 @@ static void render_revive_prompt(struct rasterfall_canvas *surface,
     }
     width = rasterfall_canvas_text_width(line,1000);
     x = (surface->width - width) / 2;
-    hud_fill_rect(surface, x - 8, y - 5, width + 16, FB_FONT_H + 10,
-                  RF_COLOR_UI_BACKGROUND);
+    if (wait_for_rescue) {
+        struct rasterfall_hud_wait_panel geometry;
+        rasterfall_hud_wait_for_rescue_geometry(surface->width,surface->height,&geometry);
+        x=geometry.text_x;y=geometry.text_y;
+        hud_fill_rect(surface,geometry.panel.x,geometry.panel.y,geometry.panel.w,
+            geometry.panel.h,RF_COLOR_UI_BACKGROUND);
+    } else {
+        hud_fill_rect(surface,x-8,y-5,width+16,FB_FONT_H+10,RF_COLOR_UI_BACKGROUND);
+    }
     rasterfall_canvas_text(surface, x, y, line,
                    RF_COLOR_UI_PLAYER);
     if (state->player_revive_active || state->ai_revive_active) {
