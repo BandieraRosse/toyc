@@ -45,6 +45,9 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 关键配套文件：
 
 - `src/rasterfall_options.c` / `include/rasterfall_options.h`：命令行默认值、解析和 usage。
+  玩家运动启动配置从磁盘读取，提交 Game 纯解析器验证，进程入口在进入 runtime 前拒绝非法配置；
+  `--movement-config-check` 打印解析结果后退出。session 保存启动 policy，地图重建不会丢失，见
+  [玩家移动配置](../guides/player-movement-config.md)。
 - `include/rf_game_lifecycle.h` / `src/rf_game_lifecycle.c`：`rf_game_runtime` 状态上下文及
   `rf_game_init/update/render/shutdown` facade。
 - `src/rf_game_runtime.c`：fixed-step facade 的 gameplay/session/network/effects 更新、world/HUD/debug
@@ -83,6 +86,11 @@ Game Runtime 的 `rf_experiment_labs.inc` 统一持有展示请求、后端能�
 RF 电子产品控制台复用交互边沿，按 E 循环关闭和三个转速档；控制器积分连续转子相位，
 发布只读电子设备帧，暂停/隔离冻结时间。几何与灯色由共享展示发射器消费，状态不进入 Game 或网络快照。
 `rf_performance_lab.inc` 持有单轮测试、结果和返回状态；session 仍拥有基准地图加载、投影和 reset。
+`rf_performance_live.inc` 为同一性能 owner 配置真实战斗、五人跨层与正式首图巡检。它只加载世界、
+复用战斗预设初始化、提交普通 RTS 高度指令和改变观察相机；所有 AI、伤害、死亡与运动仍由正常
+`rf_game_update()` / session 固定步结算。它不运行战斗实验的死亡槽位保留，不把观察相机写回参与者身体。
+诊断 profile 在运行期间借用、完成/取消/退出时解除；实际存活范围、交战帧分布、每步峰值和路线完成
+进入只读结果。LIVE 结束或取消重建前哨站并恢复玩家、相机、种子及展示请求；现场和 autorun 共用整个生命周期。
 `rf_scene_performance.inc` 是显式启用的正常场景采样器，保留当前世界、展示请求、真实时钟及正常呈现策略，
 预热后在内存记录完整帧间隔和 GPU/天空时间，结束时一次输出。它不借用性能实验场的隔离状态。
 正常无界运行关闭逐帧 Scene 审计输出；`--frame-audit` 和有限帧诊断仍保留完整日志。
@@ -327,7 +335,7 @@ X/Y/Z 和骨骼调试的 N/B、减号/等号保留原有功能。具体默认物
 
 ## 常见任务落点
 
-前哨站性能实验场由 `rf_game_runtime.c` 中的 `rf_performance_lab.inc` 持有一次测试的状态、固定视角、采样和单面板结果。开始时清空上一结果、固定随机种子和玩家站位，关闭选择菜单；10 秒墙钟测试的前 2 秒预热，不计入结果。运行期间继续推进固定步长玩法，但忽略玩家操作并将玩家固定在观察道路上；结束时清除全部测试敌人，恢复玩家和相机并解除控制锁。地图仅提供终端、地面、矮墙和静态组件；结果是运行时展示状态，不进入 `toy_game`、session 权威状态或网络快照。测试只允许前哨站离线单人且当前没有敌人。采样字段来自 GPU Scene 正常帧 probe，GPU 绘制时间与 CPU 阶段重叠，不能相加。
+前哨站性能实验场由 `rf_performance_lab.inc` 持有测试、相机、采样和只读结果。基础四项固定十秒、前两秒预热，固定玩家观察站位，结束清理敌人并恢复玩家和相机。全景巡检拥有分段相机；LIVE 则由 `rf_performance_live.inc` 配置真实战斗、五人跨层或正式首图，沿正常 session 规则更新，观察相机不写参与者身体。操作与返回合同见[实验区合同](../reference/experiment-labs.md#性能独占与基准世界)。测试只允许前哨站离线单人且当前没有敌人。结果不进入 `toy_game`、session 权威状态或网络快照；GPU 时间与 CPU 阶段重叠，不能相加。
 
 - 新增启动参数：options 头文件字段、`rasterfall_options_init/parse/usage`，在 `main()` 解析后
   通过 `rf_game_config` 传给 runtime。

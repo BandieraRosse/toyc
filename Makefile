@@ -920,7 +920,7 @@ $(BUILD)/rf_game_lifecycle.o: rasterfall/src/rf_game_lifecycle.c rasterfall/incl
 
 $(BUILD)/rf_game_runtime.o: rasterfall/src/rf_game_runtime.c rasterfall/include/rf_game_lifecycle.h rasterfall/include/rf_gpu_scene_enemy.h rasterfall/src/dev-tests/rf_gpu_scene_ui_test.inc \
     rasterfall/src/rasterfall_logic_test.inc rasterfall/src/dev-tests/game_combat_test.inc rasterfall/src/dev-tests/combat_evasion_test.inc rasterfall/src/dev-tests/game_hitscan_test.inc rasterfall/src/dev-tests/combat_ai_test.inc rasterfall/src/dev-tests/game_actor_squad_test.inc rasterfall/src/dev-tests/game_actor_corner_test.inc \
-    rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/rf_combat_lab.inc rasterfall/src/rf_idle_rifle_lab.inc rasterfall/src/dev-tests/rf_idle_rifle_lab_test.inc rasterfall/src/dev-tests/rf_combat_lab_test.inc rasterfall/src/rf_scene_performance.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc \
+    rasterfall/src/rf_experiment_labs.inc rasterfall/src/rf_performance_lab.inc rasterfall/src/rf_performance_live.inc rasterfall/src/rf_combat_lab.inc rasterfall/src/rf_idle_rifle_lab.inc rasterfall/src/dev-tests/rf_idle_rifle_lab_test.inc rasterfall/src/dev-tests/rf_combat_lab_test.inc rasterfall/src/rf_scene_performance.inc rasterfall/src/dev-tests/rf_experiment_lab_test.inc \
     rasterfall/src/render/rasterfall_machine_screen.h rasterfall/src/render/rf_display_geometry_cache.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -DRF_COMBAT_BUILD_COMMIT='"$(shell git describe --always --dirty 2>/dev/null)"' -I $(RASTERFALL_INC) -c $< -o $@
@@ -959,7 +959,7 @@ $(LIBC_OBJS) $(APP_OBJS) $(APP_EXTRA_OBJS_rasterfall) \
 $(APP_EXTRA_OBJS_vmd_inspect) $(APP_EXTRA_OBJS_glb_inspect): rasterfall-rebuild
 
 # Rasterfall 地图模块作为独立编译单元参与主程序链接。
-$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
+$(BUILD)/rasterfall_game.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h | $(BUILD)
 	@printf "  $(BLUE)  GCC$(RESET)  %s\n" "$<"
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 
@@ -1694,7 +1694,7 @@ $(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_game_self.o: \
 $(BUILD)/rf_mesh_weaver_presentation.o $(BUILD)/rf_mesh_weaver_presentation_self.o: \
     $(RASTERFALL_INC)/rf_mesh_weaver_layout_generated.h $(RASTERFALL_INC)/toy_mesh_weaver.h
 
-$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
+$(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game.c $(RASTERFALL_LIB)/game_player_movement.inc $(RASTERFALL_LIB)/game_combat.inc $(RASTERFALL_LIB)/game_hitscan.inc $(RASTERFALL_LIB)/game_actor_ai.inc $(RASTERFALL_LIB)/game_actor_squad.inc $(RASTERFALL_LIB)/game_navigation.inc $(RASTERFALL_INC)/toy_game.h $(SELF_CC) | $(BUILD)
 	@printf "  $(BLUE)  CC(s)  %s\n" "$<"
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 

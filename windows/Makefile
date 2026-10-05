@@ -207,6 +207,7 @@ $(TARGET): $(OBJS) | $(BUILD)
 $(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_squad_test.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_corner_test.inc
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_performance_live.inc rasterfall/src/rf_performance_lab.inc
 $(BUILD)/win/rasterfall/src/rf_core_host.o: rasterfall/src/dev-tests/rf_core_frame_lifecycle_test.inc
 
 # Hosted resource lifecycle integration, excluded from the player package.
@@ -262,6 +263,7 @@ stage: $(TARGET)
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
+	@cp -R rasterfall/config "$(PACKAGE_DIR)/rasterfall/config"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/tests"
 	@cp rasterfall/tests/map_v1_lab*.map "$(PACKAGE_DIR)/rasterfall/tests/"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/private-assets"

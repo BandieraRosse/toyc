@@ -2321,6 +2321,8 @@ static void net_apply_client(struct rasterfall_net *net,
     actor->z = client->camera.z;
     actor->sy = client->camera.sy;
     actor->cy = client->camera.cy;
+    actor->pitch_sy = client->camera.pitch_sy;
+    actor->pitch_cy = client->camera.pitch_cy;
     actor->airborne_ms = client->latest_input.airborne_ms;
     actor->airborne_y = client->latest_input.airborne_y;
     actor->vertical_velocity = client->latest_input.airborne_velocity;

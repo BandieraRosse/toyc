@@ -2,23 +2,30 @@
 param(
     [string]$OutputDirectory='tmp/performance-lab',
     [ValidateRange(1,10)][int]$Rounds=3,
-    [ValidateSet('Isolated','Interference','Full','Panorama','All')][string]$Stage='Isolated',
-    [ValidateRange(1,6)][int[]]$Scenes=@(1,2,3,4),
+    [ValidateSet('Isolated','Interference','Full','Panorama','Live','All')][string]$Stage='Isolated',
+    [ValidateRange(1,10)][int[]]$Scenes=@(1,2,3,4),
     [switch]$Capped,
     [switch]$CompareGeometry,
     [switch]$CompareBackend,
-    [switch]$ProfileSlow
+    [switch]$ProfileSlow,
+    [int]$Width=0,
+    [int]$Height=0
 )
 $ErrorActionPreference='Stop'
+if(($Width -ne 0 -or $Height -ne 0) -and ($Width -lt 640 -or $Width -gt 7680 -or $Height -lt 480 -or $Height -gt 4320)) {
+    throw 'Specify both Width (640..7680) and Height (480..4320), or leave both zero for the native display default'
+}
 if($CompareGeometry -and $CompareBackend) {throw 'Choose one comparison axis'}
 if(!$PSBoundParameters.ContainsKey('Scenes')) {
     if($Stage -eq 'Panorama') {$Scenes=@(5,6)}
-    elseif($Stage -eq 'All') {$Scenes=@(1,2,3,4,5,6)}
+    elseif($Stage -eq 'Live') {$Scenes=@(7,8,9,10)}
+    elseif($Stage -eq 'All') {$Scenes=@(1,2,3,4,5,6,7,8,9,10)}
 }
 if($Stage -in @('Isolated','Interference') -and @($Scenes | Where-Object {$_ -gt 4}).Count) {
-    throw 'Panorama scenes require Panorama, Full or All stage'
+    throw 'Panorama/live scenes require Panorama, Live, Full or All stage'
 }
-if($Stage -eq 'Panorama' -and @($Scenes | Where-Object {$_ -lt 5}).Count) {throw 'Panorama stage accepts scenes 5 and 6'}
+if($Stage -eq 'Panorama' -and @($Scenes | Where-Object {$_ -lt 5 -or $_ -gt 6}).Count) {throw 'Panorama stage accepts scenes 5 and 6'}
+if($Stage -eq 'Live' -and @($Scenes | Where-Object {$_ -lt 7}).Count) {throw 'Live stage accepts scenes 7 through 10'}
 $TaskPath=[Environment]::GetEnvironmentVariable('Path','Process')
 [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
 [Environment]::SetEnvironmentVariable('Path',$TaskPath,'Process')
@@ -44,10 +51,13 @@ $Runs=[Collections.Generic.List[object]]::new()
 $Process=$null
 $Files=@('rasterfall.exe','rasterfall/assets/maps/outpost.map',
     'rasterfall/assets/maps/performance_empty.map','rasterfall/assets/maps/performance_components.map',
-    'rasterfall/assets/worlds/performance.content')
+    'rasterfall/assets/worlds/performance.content','rasterfall/assets/worlds/outpost.content',
+    'rasterfall/assets/maps/frontier_station_01.map','rasterfall/assets/worlds/frontier_station_01.content')
 $Hashes=@($Files | ForEach-Object { Get-FileHash -LiteralPath (Join-Path $Package $_) })
 Write-Json $Hashes 'hashes.json'
-Write-Json @{rounds=$Rounds;stage=$Stage;scenes=$Scenes;capped=[bool]$Capped;compare_geometry=[bool]$CompareGeometry;compare_backend=[bool]$CompareBackend;profile_slow=[bool]$ProfileSlow;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;sky_time=$env:RF_GPU_SKY_TIME;sky_scale=$env:RF_GPU_SKY_SCALE;argv=@('--skip-boot','--gpu-scene-play','--map','rasterfall/assets/maps/outpost.map');validation=$false} 'config.json'
+$Argv=@('--skip-boot','--gpu-scene-play','--map','rasterfall/assets/maps/outpost.map')
+if($Width) {$Argv+=@('--window-size',[string]$Width,[string]$Height)}
+Write-Json @{rounds=$Rounds;stage=$Stage;scenes=$Scenes;capped=[bool]$Capped;compare_geometry=[bool]$CompareGeometry;compare_backend=[bool]$CompareBackend;profile_slow=[bool]$ProfileSlow;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;sky_time=$env:RF_GPU_SKY_TIME;sky_scale=$env:RF_GPU_SKY_SCALE;argv=$Argv;validation=$false} 'config.json'
 $Cases=[Collections.Generic.List[object]]::new()
 foreach ($Scene in ($Scenes | Select-Object -Unique)) {
     if($Scene -gt 4) {$Cases.Add(@{scene=$Scene;scope='full';interference=0});continue}
@@ -88,7 +98,7 @@ try {
             }
             Write-Host "[PERF-LAB] $Name starting"
             $Process=Start-Process -FilePath "$Package/rasterfall.exe" -WorkingDirectory $Package `
-                -ArgumentList @('--skip-boot','--gpu-scene-play','--map','rasterfall/assets/maps/outpost.map') -PassThru -WindowStyle Hidden `
+                -ArgumentList $Argv -PassThru -WindowStyle Hidden `
                 -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
             $Handle=$Process.Handle
             $Timer=[Diagnostics.Stopwatch]::StartNew()
@@ -113,7 +123,8 @@ try {
             $Values=@{}
             $Stages=[regex]::Match($Log,'PERF-LAB stages ([^\r\n]+)')
             $Preparation=[regex]::Match($Log,'PERF-LAB preparation ([^\r\n]+)')
-            foreach ($Match in [regex]::Matches($Result.Value+' '+$Config.Value+' '+$Stages.Value+' '+$Preparation.Value,'(\w+)=([^\s]+)')) {
+            $Live=[regex]::Match($Log,'PERF-LAB live ([^\r\n]+)')
+            foreach ($Match in [regex]::Matches($Result.Value+' '+$Config.Value+' '+$Stages.Value+' '+$Preparation.Value+' '+$Live.Value,'(\w+)=([^\s]+)')) {
                 $Values[$Match.Groups[1].Value]=$Match.Groups[2].Value
             }
             $Points=@([regex]::Matches($Log,'PERF-LAB point ([^\r\n]+)') | ForEach-Object {
@@ -123,14 +134,19 @@ try {
                 }
                 $Point
             })
-            if($Case.scene -gt 4 -and ($Points.Count -ne 5 -or
+            if($Case.scene -in @(5,6,10) -and ($Points.Count -ne 5 -or
                 @($Points | Where-Object {[int]$_.frames -lt 1}).Count -or $Values.scope -ne 'full')) {
                 throw "$Name incomplete panorama"
             }
+            if($Case.scene -ge 7 -and (!$Live.Success -or [int]$Values.ticks -lt 1 -or
+                [int]$Values.remaining_actors -ne 0 -or $Values.scope -ne 'full')) {throw "$Name missing live trial/cleanup evidence"}
+            if($Case.scene -in @(7,8) -and [int]$Values.combat_frames -lt 1) {throw "$Name never sampled active combat"}
+            if($Case.scene -eq 9 -and ($Values.route_done -ne '1' -or $Values.route_legs -ne '4')) {throw "$Name route did not complete"}
             if ($Values.valid -ne '1' -or [int]$Values.frames -lt 1 -or
                 [int]$Values.remaining -ne 0 -or [int]$Values.gpu_samples -lt 1) {
                 throw "$Name invalid workload or missing GPU timing"
             }
+            if($Width -and $Values.extent -ne "${Width}x${Height}") {throw "$Name extent differs from requested window size"}
             if ($Case.scope -eq 'isolated' -and ($Values.lights -ne '0' -or $Values.shadow_maps -ne '3')) {
                 throw "$Name isolated lighting contract failed"
             }

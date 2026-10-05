@@ -87,7 +87,8 @@ struct rasterfall_command {
     int fire_held;
     int interact_kind; /* Highlighted pickup kind + 1; zero means unspecified. */
     unsigned int action_request_id;
-    /* Captured once when a jump command is built. */
+    /* World-space input direction captured for jump replay; launch speed
+     * is derived from the actor's actual ground velocity. */
     int jump_dx;
     int jump_dz;
     int pose_debug_action;
@@ -108,6 +109,8 @@ struct rasterfall_session {
      * this toy_map storage as the authoritative map representation. */
     struct toy_map level;
     struct toy_game game_state;
+    /* Startup rules retained across map load/reset; Game owns the live copy. */
+    struct toy_game_player_movement player_movement;
     /* Gameplay-facing projection arrays retained until gameplay migrates. */
     struct toy_game_box safe_rooms[TOY_MAP_MAX_ZONES];
     struct toy_game_box spawn_zones[TOY_MAP_MAX_ZONES];

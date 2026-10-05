@@ -126,6 +126,7 @@ void toy_game_actor_reset_combat(struct toy_game_actor *actor, int refill_evasio
         actor->rays[i].actor_index = actor->rays[i].enemy_index = -1;
     actor->nav_active = 0;
     actor->nav_direct_valid = actor->nav_direct_ms = 0;
+    actor->jump_coyote_steps = actor->jump_buffer_steps = 0;
 }
 
 static int combat_timer(int value, int dt_ms)

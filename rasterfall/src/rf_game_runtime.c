@@ -98,6 +98,7 @@
 #define KEY_2     3
 #define KEY_3     4
 #define KEY_4     5
+#define KEY_0     11
 #define KEY_MINUS 12
 #define KEY_EQUAL 13
 #define KEY_E     18
@@ -1005,11 +1006,9 @@ static void capture_jump_vector(struct rasterfall_command *command,
         return;
     }
     command->jump_dx = (camera->sy * command->move_forward +
-                        camera->cy * command->move_strafe) *
-                       RASTERFALL_MOVE_STEP / 1024;
+                        camera->cy * command->move_strafe);
     command->jump_dz = (camera->cy * command->move_forward -
-                        camera->sy * command->move_strafe) *
-                       RASTERFALL_MOVE_STEP / 1024;
+                        camera->sy * command->move_strafe);
 }
 
 static void consume_game_command_edges(struct rf_input_frame *input,
@@ -1230,6 +1229,7 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_player_panels.h"
 #include "rf_player_runtime.inc"
 #include "rf_rts_runtime.inc"
+#include "rf_performance_live.inc"
 #include "rf_ui_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
 
@@ -2869,7 +2869,12 @@ int rf_game_update(struct rf_game_runtime *runtime,
     game_effects = &runtime->effects;
     game_camera = &runtime->camera;
     is_client = game_net->mode == RASTERFALL_NET_CLIENT;
-    int64_t combat_step_started=0;
+    int64_t combat_step_started=0,perf_step_started=0;
+    if(rf_perf_lab.running && rf_perf_lab_live() && !runtime->lifecycle_paused) {
+        perf_step_started=rf_core_clock_now_us();
+        game_session->game_state.update_profile=&rf_perf_live.profile;
+        rf_perf_live_before_step(runtime);
+    }
     rf_idle_lab_step(runtime,dt_ms);
     if(rf_combat_lab.running && !runtime->lifecycle_paused) {
         combat_step_started=rf_core_clock_now_us();
@@ -3007,6 +3012,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
     }
     if(combat_step_started)rf_combat_after_step(runtime,dt_ms,
         rf_core_clock_now_us()-combat_step_started);
+    if(perf_step_started)rf_perf_live_after_step(runtime,rf_core_clock_now_us()-perf_step_started);
     return 0;
 }
 
@@ -3526,11 +3532,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     options = *config->options;
     {
         const char *auto_lab = getenv("RF_PERF_LAB_AUTORUN");
-        if (auto_lab && auto_lab[0] >= '1' && auto_lab[0] <= '6' &&
-            auto_lab[1] == 0 && options.renderer_mode &&
+        int auto_scene=auto_lab?atoi(auto_lab):0;
+        char canonical[16];snprintf(canonical,sizeof(canonical),"%d",auto_scene);
+        if (auto_lab && auto_scene>=1 && auto_scene<=RF_PERF_LAB_SCENES &&
+            !strcmp(auto_lab,canonical) && options.renderer_mode &&
             !options.frame_audit && !frame_limit &&
             requested_net_mode == RASTERFALL_NET_OFF)
-            perf_lab_autorun_scene = auto_lab[0]-'1';
+            perf_lab_autorun_scene = auto_scene-1;
     }
     memset(&boot_journal, 0, sizeof(boot_journal));
     interactive_boot = !options.skip_boot && !logic_test &&
@@ -3937,6 +3945,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     strcpy(host_address, "127.0.0.1");
     memset(&game_runtime, 0, sizeof(game_runtime));
     boot_task_started = rf_core_clock_now_us();
+    memcpy(&session.player_movement,&options.player_movement,
+        sizeof(session.player_movement));
     if (rf_game_init(&game_runtime, &core, &session,
                      config->options && config->options->legacy_map ?
                      "rasterfall/assets/maps/rasterfall_legacy.map" :
@@ -4966,7 +4976,8 @@ startup_again:
                 rf_perf_lab.selected,rf_perf_lab.spawned);
         }
         if (rf_perf_lab.running &&
-            rf_core_clock_now_us()-rf_perf_lab.started_us >= rf_perf_lab_duration()) {
+            (rf_core_clock_now_us()-rf_perf_lab.started_us >= rf_perf_lab_duration() ||
+             (rf_perf_lab.selected==8 && rf_perf_live_result.done))) {
             if (rf_perf_lab_finish(&game_runtime,0) < 0) {
                 scene_runtime_failed=1;goto scene_shutdown;
             }
@@ -4982,10 +4993,11 @@ startup_again:
                     (long long)r->geometry_us,(long long)r->upload_us,
                     (long long)r->world_us,(long long)r->submit_us,
                     r->gpu_draw_ms,r->draws,game.enemies_alive);
-                __printf("PERF-LAB config scope=%s uncapped=%d interference=%d extent=%dx%d present_mode=%u lights=%u shadow_maps=%u shadow_draws=%u gpu_samples=%d logic_us=%lld map=%s seed=504552464c414231 flashlight=%d lighting=%s filter=%d stylized=%d\n",
+                __printf("PERF-LAB config scope=%s uncapped=%d interference=%d extent=%dx%d present_mode=%u lights=%u shadow_maps=%u shadow_draws=%u gpu_samples=%d logic_us=%lld map=%s seed=0x%llx flashlight=%d lighting=%s filter=%d stylized=%d\n",
                     r->isolated?"isolated":r->background?"full":"outpost",r->uncapped,r->background,
                     r->width,r->height,r->present_mode,r->lights,r->shadow_maps,r->shadow_draws,
                     r->gpu_samples,(long long)r->logic_us,r->map,
+                    (unsigned long long)(r->scene==6 || r->scene==7?1337ULL:0x504552464c414231ULL),
                     r->background && rf_render_terminal.flashlight,r->background?"scene":"fixed",
                     rf_gpu_scene_linear_filter_enabled(),rf_gpu_scene_character_material_enabled());
                 __printf("PERF-LAB stages layers_us=%lld actors_us=%lld freeze_us=%lld source_us=%lld record_us=%lld sky_us=%lld lab_mask=%u points=%d lights_min=%u lights_max=%u shadows_min=%u shadows_max=%u\n",
@@ -5006,6 +5018,13 @@ startup_again:
                         (long long)p->median_us,(long long)p->p95_us,(long long)p->p99_us,
                         (long long)p->layer_us,(long long)p->actor_us,(long long)p->enemy_us,(long long)p->freeze_us);
                 }
+                if(r->scene>=6) __printf("PERF-LAB live ticks=%d step_mean_us=%lld step_max_us=%lld ai_us=%lld enemy_logic_us=%lld allies_min=%d allies_max=%d gunners_min=%d gunners_max=%d route_legs=%d route_done=%d layer_queries=%u layer_nodes=%u ground_scans=%u body_scans=%u waiting=%u combat_frames=%d combat_p50_us=%lld combat_p95_us=%lld combat_p99_us=%lld combat_seed=%d remaining_actors=%d\n",
+                    r->live_ticks,(long long)r->step_mean,(long long)r->step_max,(long long)r->ai_us,
+                    (long long)r->enemy_logic_us,r->allies_min,r->allies_max,r->gunners_min,r->gunners_max,
+                    r->live_legs,r->live_done,r->layer_queries,r->layer_nodes,r->ground_scans,r->body_scans,
+                    r->waiting,r->combat_frames,(long long)r->combat_p50,(long long)r->combat_p95,
+                    (long long)r->combat_p99,r->scene<=7?1337:0,
+                    rf_combat_lab.member_count);
                 running = 0;
             }
         }
@@ -5515,8 +5534,17 @@ startup_again:
                         pending_key_edges[KEY_1+i] = 0;
                     }
                 }
-                for(int i=4;i<RF_PERF_LAB_SCENES;++i) if(toy_input_pressed(&input,KEY_1+i)) {
+                for(int i=4;i<9;++i) if(toy_input_pressed(&input,KEY_1+i)) {
                     rf_perf_lab.selected=i;pending_key_edges[KEY_1+i]=0;input.key_pressed[KEY_1+i]=0;
+                }
+                if(toy_input_pressed(&input,KEY_0)) {
+                    rf_perf_lab.selected=9;pending_key_edges[KEY_0]=0;input.key_pressed[KEY_0]=0;
+                }
+                if(toy_input_pressed(&input,KEY_UP) || toy_input_pressed(&input,KEY_DOWN)) {
+                    rf_perf_lab.selected=(rf_perf_lab.selected+
+                        (toy_input_pressed(&input,KEY_UP)?RF_PERF_LAB_SCENES-1:1))%RF_PERF_LAB_SCENES;
+                    pending_key_edges[KEY_UP]=pending_key_edges[KEY_DOWN]=0;
+                    input.key_pressed[KEY_UP]=input.key_pressed[KEY_DOWN]=0;
                 }
                 if (action_pressed(&input, RF_ACTION_CONFIRM)) {
                     action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
@@ -6122,8 +6150,10 @@ startup_again:
                             toy_game_local_player_actor(&game);
                         rf_perf_lab_camera(&game_runtime,rf_core_clock_now_us());
                         camera=game_runtime.camera;
-                        test_player->x = camera.x;
-                        test_player->z = camera.z;
+                        if(!rf_perf_lab_live()) {
+                            test_player->x = camera.x;
+                            test_player->z = camera.z;
+                        }
                         game_runtime.camera = camera;
                     }
                     if (game_runtime.gui.active) {
@@ -6873,6 +6903,7 @@ startup_again:
                         }
                     }
                     if (rf_perf_lab.running && probe_stats.bridge_transfers) rf_perf_lab.invalid=1;
+                    int perf_samples_before=rf_perf_lab.samples;
                     rf_perf_lab_sample(rf_core_clock_now_us(), audit_interval_us,
                         probe_stats.enemy_prepare_us, probe_stats.geometry_extract_us,
                         probe_stats.enemy_upload_us, probe_stats.world_prepare_us,
@@ -6882,6 +6913,8 @@ startup_again:
                         probe_stats.gpu_time_valid,probe_stats.lights,probe_stats.shadow_maps,
                         probe_stats.shadow_draws,probe_stats.present_mode,
                         renderer.surface.width,renderer.surface.height);
+                    if(rf_perf_lab.running && rf_perf_lab_live() && rf_perf_lab.samples!=perf_samples_before)
+                        rf_perf_live_collect(&game_runtime,audit_interval_us);
                     rf_perf_lab_sample_detail(probe_stats.layer_prepare_us,probe_stats.actor_prepare_us,
                         scene_freeze_us,audit_render_us,probe_stats.record_us,
                         (int64_t)(probe_stats.gpu_sky_ms*1000),probe_stats.enemy_prepare_us,&probe_stats);
@@ -7343,6 +7376,12 @@ scene_shutdown:
     rf_weaver_diag_audit(&session,"shutdown",rendered_frames);
     rasterfall_mesh_weaver_cpu_shutdown();
     if(rf_combat_lab.running)rf_combat_finish(&game_runtime,3);
+    if(rf_perf_lab.running && rf_perf_lab_live()) {
+        /* Shutdown releases borrowed profiling and trial identities without
+         * rebuilding a world or waiting for a result UI. */
+        if(rf_combat_lab.member_count)rf_combat_cleanup(&game_runtime);
+        session.game_state.update_profile=NULL;
+    }
     rf_idle_lab_clear(&session);
     rf_perf_lab.running=0;
     rf_labs_reset();

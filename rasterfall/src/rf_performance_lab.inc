@@ -1,5 +1,5 @@
 /* Outpost performance lab: runtime-owned trial and read-only result UI. */
-#define RF_PERF_LAB_SCENES 6
+#define RF_PERF_LAB_SCENES 10
 #define RF_PERF_LAB_POINTS 5
 #define RF_PERF_LAB_POINT_US 6000000LL
 #define RF_PERF_LAB_SAMPLES 65536
@@ -14,6 +14,19 @@ struct rf_perf_lab_point {
     int64_t sum,median_us,p95_us,p99_us;
     int64_t layer_us,actor_us,enemy_us,freeze_us;
 };
+struct rf_perf_lab_live_result {
+    int ticks, legs, done, allies_min, allies_max, gunners_min, gunners_max;
+    int combat_frames;
+    int64_t step_sum, step_max, ai_us, enemy_us;
+    int64_t combat_intervals[RF_PERF_LAB_SAMPLES];
+    unsigned layer_queries, layer_nodes, ground_scans, body_scans, waiting;
+};
+static int rf_perf_live_start(struct rf_game_runtime *runtime);
+static int rf_perf_live_return(struct rf_game_runtime *runtime);
+static void rf_perf_live_camera(struct rf_game_runtime *runtime,int64_t now);
+static void rf_perf_live_collect(struct rf_game_runtime *runtime,int64_t interval);
+static void rf_perf_live_dump_route(struct rf_game_runtime *runtime);
+static struct rf_perf_lab_live_result rf_perf_live_result;
 struct rf_perf_lab_result {
     int valid, scene, samples, spawned, min_alive, max_alive;
     int isolated, uncapped, gpu_samples, width, height, aborted;
@@ -30,6 +43,11 @@ struct rf_perf_lab_result {
     int64_t layer_us,actor_us,freeze_us,source_us,record_us,sky_us;
     struct rf_perf_lab_preparation preparation;
     struct rf_perf_lab_point point[RF_PERF_LAB_POINTS];
+    /* The full interval buffer stays in the live owner, outside the UI result. */
+    int live_ticks, live_legs, live_done, combat_frames;
+    int allies_min,allies_max,gunners_min,gunners_max;
+    int64_t step_mean,step_max,ai_us,enemy_logic_us,combat_p50,combat_p95,combat_p99;
+    unsigned layer_queries,layer_nodes,ground_scans,body_scans,waiting;
 };
 struct rf_perf_lab_state {
     int control_near, result_near, menu_open, result_open, selected, running;
@@ -49,7 +67,7 @@ struct rf_perf_lab_state {
     struct camera previous_camera;
     uint64_t previous_rng;
     struct rf_perf_lab_result result;
-    int point,detail_samples,result_page,saved_isolated,saved_interference;
+    int point,detail_samples,result_page,saved_isolated,saved_interference,presented;
     int previous_requested[RF_LAB_COUNT],previous_rpm;
     unsigned lab_mask;
     int64_t layer_sum,actor_sum,freeze_sum,source_sum,record_sum,sky_sum;
@@ -58,18 +76,41 @@ struct rf_perf_lab_state {
 };
 static struct rf_perf_lab_state rf_perf_lab;
 static const char *rf_perf_lab_names[RF_PERF_LAB_SCENES] = {
-    "LOW PRESSURE", "64 ENEMIES", "DENSE COMPONENTS", "ENEMIES + COMPONENTS",
-    "PANORAMA / CURRENT EXHIBITS", "PANORAMA / ALL EXHIBITS"
+    "基础负载", "64 名感染体", "24 个密集组件", "感染体与组件叠加",
+    "园区巡检：当前展示", "园区巡检：全部展示",
+    "实战基线", "枪手混战", "五人跨层通行", "边缘站点巡检"
+};
+static const char *rf_perf_lab_descriptions[RF_PERF_LAB_SCENES] = {
+    "无额外敌人和组件，用作性能对照。",
+    "固定 64 名感染体，观察敌人准备与绘制开销。",
+    "集中布置 24 个静态组件，观察场景处理开销。",
+    "64 名感染体与 24 个组件叠加，测试复合压力。",
+    "保留当前展示状态，依次采样园区五个视角。",
+    "开启全部展示，巡查五个视角，观察展示叠加负载。",
+    "4 名友军对抗 16 名感染体，正常战斗、受伤与死亡。",
+    "在实战基线中加入 4 名枪手，对比混战负载。",
+    "5 人依次穿行地下层、二层、屋顶和一层，检查导航负载。",
+    "采样正式边缘站点进攻阶段的入口、全景、各层与屋顶。"
 };
 static const char *rf_perf_lab_areas[RF_PERF_LAB_SCENES] = {
     "perf_low_area", "perf_enemy_area", "perf_components_area", "perf_mixed_area",
+    "perf_low_area", "perf_low_area", "perf_low_area", "perf_low_area",
     "perf_low_area", "perf_low_area"
 };
 static const char *rf_perf_lab_point_names[RF_PERF_LAB_POINTS]={
     "PARK ENTRANCE","COMPUTER CLOSE","ELECTRONICS","LIGHTING","HALL AND SKY"
 };
-static int rf_perf_lab_panorama(void) { return rf_perf_lab.selected>=4; }
+static int rf_perf_lab_live(void) { return rf_perf_lab.selected>=6; }
+static int rf_perf_lab_panorama(void) {
+    return rf_perf_lab.selected==4 || rf_perf_lab.selected==5 || rf_perf_lab.selected==9;
+}
+static const char *rf_perf_lab_point_name(int scene,int point) {
+    static const char *frontier[]={"ENTRY","OVERVIEW","WORKSHOP 1F","WORKSHOP 2F","ROOF"};
+    return scene==9?frontier[point]:rf_perf_lab_point_names[point];
+}
 static int64_t rf_perf_lab_duration(void) {
+    if(rf_perf_lab.selected==8)return 120000000LL;
+    if(rf_perf_lab.selected==6 || rf_perf_lab.selected==7)return 30000000LL;
     return rf_perf_lab_panorama()?RF_PERF_LAB_POINTS*RF_PERF_LAB_POINT_US:RF_PERF_LAB_DURATION_US;
 }
 static unsigned rf_perf_lab_mask(void) {
@@ -84,6 +125,7 @@ static const char *rf_perf_lab_scope(int isolated,int background) {
  * suspend other exhibits; the regular renderer decides visibility. */
 static void rf_perf_lab_camera(struct rf_game_runtime *runtime,int64_t now)
 {
+    if(rf_perf_lab_live()) {rf_perf_live_camera(runtime,now);return;}
     struct camera *c=&runtime->camera;
     struct toy_game_actor *p=toy_game_local_player_actor(&runtime->session->game_state);
     c->x=rf_perf_lab.observe_x;c->z=rf_perf_lab.observe_z;
@@ -135,6 +177,7 @@ static void rf_perf_lab_clear(void)
     rf_perf_lab.min_alive = TOY_GAME_MAX_ENEMIES;
     rf_perf_lab.max_alive = 0;
     rf_perf_lab.point=rf_perf_lab.detail_samples=rf_perf_lab.result_page=0;
+    rf_perf_lab.presented=0;
     rf_perf_lab.layer_sum=rf_perf_lab.actor_sum=rf_perf_lab.freeze_sum=0;
     memset(&rf_perf_lab.preparation,0,sizeof(rf_perf_lab.preparation));
     rf_perf_lab.source_sum=rf_perf_lab.record_sum=rf_perf_lab.sky_sum=0;
@@ -169,6 +212,21 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
     rf_perf_lab.saved_interference=rf_perf_lab.interference;
     memcpy(rf_perf_lab.previous_requested,rf_labs.requested,sizeof(rf_labs.requested));
     rf_perf_lab.previous_rpm=rf_labs.fan_rpm;
+    if(rf_perf_lab_live()) {
+        rf_perf_lab.isolated=0;rf_perf_lab.interference=1;
+        rf_perf_lab.menu_open=0;
+        if(rf_perf_live_start(runtime)<0) {
+            if(rf_perf_live_return(runtime)<0)return -2;
+            rf_perf_lab.isolated=rf_perf_lab.saved_isolated;
+            rf_perf_lab.interference=rf_perf_lab.saved_interference;
+            return -1;
+        }
+        rf_perf_lab.lab_mask=rf_perf_lab_mask();
+        rf_perf_lab.started_us=rf_core_clock_now_us();
+        rf_perf_lab.running=1;rf_perf_lab.result_open=0;
+        rf_perf_lab_camera(runtime,rf_perf_lab.started_us);
+        return 0;
+    }
     if(rf_perf_lab_panorama()) {rf_perf_lab.isolated=0;rf_perf_lab.interference=1;}
     if (rf_perf_lab.isolated) {
         enum rasterfall_world_id world = scene >= 2 ?
@@ -267,8 +325,9 @@ static int rf_perf_lab_finish(struct rf_game_runtime *runtime, int aborted)
         qsort(rf_perf_lab.intervals, (size_t)n, sizeof(rf_perf_lab.intervals[0]),
               rf_perf_lab_compare_intervals);
         r->valid = !aborted && !rf_perf_lab.invalid &&
-            rf_perf_lab.min_alive == rf_perf_lab.spawned &&
-            rf_perf_lab.max_alive == rf_perf_lab.spawned ? 1 : 2;
+            (rf_perf_lab_live() ? (rf_perf_lab.selected!=8 || rf_perf_live_result.done) :
+            (rf_perf_lab.min_alive == rf_perf_lab.spawned &&
+            rf_perf_lab.max_alive == rf_perf_lab.spawned)) ? 1 : 2;
         r->isolated = rf_perf_lab.isolated;r->uncapped = rf_perf_lab.uncapped;
         r->aborted = aborted;r->gpu_samples = rf_perf_lab.gpu_samples;
         r->width=rf_perf_lab.width;r->height=rf_perf_lab.height;
@@ -301,6 +360,31 @@ static int rf_perf_lab_finish(struct rf_game_runtime *runtime, int aborted)
         r->freeze_us=rf_perf_lab.freeze_sum/n;r->source_us=rf_perf_lab.source_sum/n;
         r->record_us=rf_perf_lab.record_sum/n;r->sky_us=rf_perf_lab.sky_sum/n;
         r->preparation=rf_perf_lab.preparation;
+        if(rf_perf_lab_live()) {
+            struct rf_perf_lab_live_result *l=&rf_perf_live_result;
+            r->live_ticks=l->ticks;r->live_legs=l->legs;r->live_done=l->done;
+            r->allies_min=l->allies_min;r->allies_max=l->allies_max;
+            r->gunners_min=l->gunners_min;r->gunners_max=l->gunners_max;
+            r->step_mean=l->ticks?l->step_sum/l->ticks:0;r->step_max=l->step_max;
+            r->ai_us=l->ticks?l->ai_us/l->ticks:0;r->enemy_logic_us=l->ticks?l->enemy_us/l->ticks:0;
+            r->layer_queries=l->layer_queries;r->layer_nodes=l->layer_nodes;
+            r->ground_scans=l->ground_scans;r->body_scans=l->body_scans;r->waiting=l->waiting;
+            int k=l->combat_frames;r->combat_frames=k;
+            if(k) {
+                qsort(l->combat_intervals,(size_t)k,sizeof(int64_t),rf_perf_lab_compare_intervals);
+                r->combat_p50=l->combat_intervals[k/2];
+                r->combat_p95=l->combat_intervals[(k*95+99)/100-1];
+                r->combat_p99=l->combat_intervals[(k*99+99)/100-1];
+            }
+        }
+    }
+    if(rf_perf_lab_live()) {
+        if(rf_perf_lab.selected==8 && !rf_perf_live_result.done)rf_perf_live_dump_route(runtime);
+        if(rf_perf_live_return(runtime)<0)return -2;
+        rf_perf_lab.isolated=rf_perf_lab.saved_isolated;
+        rf_perf_lab.interference=rf_perf_lab.saved_interference;
+        rf_perf_lab.menu_open=0;
+        return 0;
     }
     if (rf_perf_lab.isolated) {
         session->seed = rf_perf_lab.previous_seed;
@@ -336,6 +420,12 @@ static void rf_perf_lab_sample(int64_t now, int64_t interval_us,
     unsigned present_mode, int width, int height)
 {
     int n = rf_perf_lab.samples;
+    if(rf_perf_lab.running && rf_perf_lab_live() && !rf_perf_lab.presented) {
+        /* Loading a formal world can synchronously prewarm GPU resources.
+         * Start the steady trial clock after that first successful present. */
+        rf_perf_lab.presented=1;rf_perf_lab.started_us=now;
+        return;
+    }
     if (!rf_perf_lab.running || now-rf_perf_lab.started_us < RF_PERF_LAB_WARMUP_US ||
         interval_us <= 0) return;
     if(rf_perf_lab_panorama()) {
@@ -402,29 +492,52 @@ static void rf_perf_lab_sample_detail(int64_t layers,int64_t actors,int64_t free
 
 static void rf_perf_lab_draw(struct rasterfall_canvas *c, int64_t now)
 {
-    char line[128];
+    char line[256];
     int x = (c->width-850)/2, y = (c->height-590)/2;
     const struct rf_perf_lab_result *r = &rf_perf_lab.result;
     if (rf_perf_lab.running) {
         int remain = (int)((rf_perf_lab_duration()-(now-rf_perf_lab.started_us)+999999)/1000000);
         if (remain < 0) remain = 0;
-        snprintf(line,sizeof(line),"PERFORMANCE TEST  %s  %ds",rf_perf_lab_names[rf_perf_lab.selected],remain);
+        snprintf(line,sizeof(line),"性能实验  %s  剩余 %d 秒",rf_perf_lab_names[rf_perf_lab.selected],remain);
         rasterfall_canvas_text(c, 30, 35, line, 0xC7F2EE);
         if(rf_perf_lab_panorama()) {
-            snprintf(line,sizeof(line),"%d/5  %s",rf_perf_lab.point+1,rf_perf_lab_point_names[rf_perf_lab.point]);
+            snprintf(line,sizeof(line),"%d/5  %s",rf_perf_lab.point+1,rf_perf_lab_point_name(rf_perf_lab.selected,rf_perf_lab.point));
             rasterfall_canvas_text(c,30,60,line,0xFFFFFF);
         }
         return;
     }
     rasterfall_canvas_rect(c,x,y,850,590,0x172530,230);
     rasterfall_canvas_text(c,x+25,y+22,rf_perf_lab.result_open ?
-        "PERFORMANCE RESULTS" : "PERFORMANCE TEST",0xC7F2EE);
+        "性能实验结果" : "性能实验",0xC7F2EE);
     if (rf_perf_lab.result_open) {
+        if(r->valid && rf_perf_lab.result_page && r->scene>=6 && !r->points) {
+            snprintf(line,sizeof(line),"LIVE ALLIES %d..%d  GUNNERS %d..%d  INFECTED %d..%d",
+                r->allies_min,r->allies_max,r->gunners_min,r->gunners_max,r->min_alive,r->max_alive);
+            rasterfall_canvas_text(c,x+25,y+80,line,0xFFFFFF);
+            snprintf(line,sizeof(line),"ACTIVE COMBAT %d FRAMES  P50/P95/P99 %.2f / %.2f / %.2f ms",
+                r->combat_frames,r->combat_p50/1000.0,r->combat_p95/1000.0,r->combat_p99/1000.0);
+            rasterfall_canvas_text(c,x+25,y+130,line,0xFFFFFF);
+            snprintf(line,sizeof(line),"FIXED STEPS %d  AVG/MAX %.3f / %.3f ms",r->live_ticks,
+                r->step_mean/1000.0,r->step_max/1000.0);
+            rasterfall_canvas_text(c,x+25,y+180,line,0xFFFFFF);
+            snprintf(line,sizeof(line),"AI %.3f  INFECTED LOGIC %.3f ms / STEP",r->ai_us/1000.0,r->enemy_logic_us/1000.0);
+            rasterfall_canvas_text(c,x+25,y+230,line,0xFFFFFF);
+            snprintf(line,sizeof(line),"ROUTE %d/4  COMPLETE %d  LAYER QUERIES %u  NODES %u",
+                r->live_legs,r->live_done,r->layer_queries,r->layer_nodes);
+            rasterfall_canvas_text(c,x+25,y+280,line,0xFFFFFF);
+            snprintf(line,sizeof(line),"GROUND SCANS %u  BODY SCANS %u  NAV WAIT %u",
+                r->ground_scans,r->body_scans,r->waiting);
+            rasterfall_canvas_text(c,x+25,y+330,line,0xFFFFFF);
+            rasterfall_canvas_text(c,x+25,y+395,"STEPS INCLUDE WARMUP; COMBAT FRAMES USE LIVE COUNTS",0x9FB7C5);
+            if(r->valid==2)rasterfall_canvas_text(c,x+25,y+450,"ABORTED OR INCOMPLETE: INVALID",0xFFBE8A);
+            rasterfall_canvas_text(c,x+25,y+550,"F2 OVERVIEW   ESC CLOSE",0xC7F2EE);
+            return;
+        }
         if(r->valid && rf_perf_lab.result_page && r->points) {
             rasterfall_canvas_text(c,x+25,y+66,"VIEW                    MEDIAN / P95 / P99 ms",0x9FB7C5);
             for(int i=0;i<r->points;++i) {
                 const struct rf_perf_lab_point *p=&r->point[i];
-                snprintf(line,sizeof(line),"%s   %.2f / %.2f / %.2f",rf_perf_lab_point_names[i],
+                snprintf(line,sizeof(line),"%s   %.2f / %.2f / %.2f",rf_perf_lab_point_name(r->scene,i),
                     p->median_us/1000.0,p->p95_us/1000.0,p->p99_us/1000.0);
                 rasterfall_canvas_text(c,x+25,y+110+i*77,line,0xFFFFFF);
                 snprintf(line,sizeof(line),"LAYERS %.2f  ACTORS %.2f  ENEMY %.2f  FREEZE %.2f",
@@ -436,7 +549,7 @@ static void rf_perf_lab_draw(struct rasterfall_canvas *c, int64_t now)
         }
         if (!r->valid) rasterfall_canvas_text(c,x+25,y+80,"NO TEST RESULT",0xFFBE8A);
         else {
-            snprintf(line,sizeof(line),"SCENE  %s",rf_perf_lab_names[r->scene]);
+            snprintf(line,sizeof(line),"实验：%s",rf_perf_lab_names[r->scene]);
             rasterfall_canvas_text(c,x+25,y+72,line,0xFFFFFF);
             snprintf(line,sizeof(line),"FRAMES %d   FPS %.1f   INTERVAL %.2f ms",
                 r->samples,r->mean_us ? 1000000.0/r->mean_us : 0.0,r->mean_us/1000.0);
@@ -473,25 +586,39 @@ static void rf_perf_lab_draw(struct rasterfall_canvas *c, int64_t now)
             rasterfall_canvas_text(c,x+25,y+465,"GPU TIME OVERLAPS CPU; STAGES DO NOT SUM",0x9FB7C5);
             snprintf(line,sizeof(line),"GPU SAMPLES %d / %d   EXHIBITS %02X",r->gpu_samples,r->samples,r->lab_mask);
             rasterfall_canvas_text(c,x+25,y+500,line,0x9FB7C5);
+            if(r->scene>=6 && r->valid==1) {
+                snprintf(line,sizeof(line),"LIVE ALLIES %d..%d  GUNNERS %d..%d  ROUTE %d/4",
+                    r->allies_min,r->allies_max,r->gunners_min,r->gunners_max,r->live_legs);
+                rasterfall_canvas_text(c,x+25,y+430,line,0xC7F2EE);
+            }
         }
-        rasterfall_canvas_text(c,x+25,y+550,r->points?"F2 VIEW BREAKDOWN   ESC CLOSE":"ESC CLOSE",0xC7F2EE);
+        rasterfall_canvas_text(c,x+25,y+550,r->points?"F2 VIEW BREAKDOWN   ESC CLOSE":
+            r->scene>=6?"F2 LIVE DETAIL   ESC CLOSE":"ESC CLOSE",0xC7F2EE);
     } else {
-        for (int i=0;i<RF_PERF_LAB_SCENES;++i) {
-            snprintf(line,sizeof(line),"%c  %d  %s",i==rf_perf_lab.selected?'>':' ',i+1,
+        int first=rf_perf_lab.selected<6?0:6,last=first?RF_PERF_LAB_SCENES:6;
+        rasterfall_canvas_text(c,x+350,y+22,first?"实战与地图实验  2/2":"基础与园区实验  1/2",0x9FB7C5);
+        for (int i=first;i<last;++i) {
+            snprintf(line,sizeof(line),"%c  %d  %s",i==rf_perf_lab.selected?'>':' ',i==9?0:i+1,
                 rf_perf_lab_names[i]);
-            rasterfall_canvas_text(c,x+40,y+75+i*43,line,
+            rasterfall_canvas_text(c,x+40,y+75+(i-first)*43,line,
                 i==rf_perf_lab.selected?0xC7F2EE:0xFFFFFF);
+            rasterfall_canvas_text(c,x+96,y+95+(i-first)*43,rf_perf_lab_descriptions[i],0x9FB7C5);
         }
-        snprintf(line,sizeof(line),"F2 SCOPE: %s    T TIMING: %s",
-            rf_perf_lab_panorama()?"FULL SCENE":rf_perf_lab_scope(rf_perf_lab.isolated,rf_perf_lab.interference),
-            rf_perf_lab.uncapped?"UNCAPPED":"120 FPS CAP");
+        snprintf(line,sizeof(line),"F2 场景范围：%s    T 帧率：%s",
+            rf_perf_lab_panorama() || rf_perf_lab_live()?"完整场景":
+                rf_perf_lab.isolated?"隔离场地":rf_perf_lab.interference?"完整场景":"前哨站背景",
+            rf_perf_lab.uncapped?"不限帧":"上限 120 帧");
         rasterfall_canvas_text(c,x+25,y+365,line,0xC7F2EE);
-        rasterfall_canvas_text(c,x+25,y+410,rf_perf_lab_panorama()?
-            "5 VIEWS / 30s   EACH VIEW: 2s WARMUP + 4s SAMPLE":
-            "10s TRIAL / 2s WARMUP   ESC DURING TEST: ABORT",0x9FB7C5);
-        rasterfall_canvas_text(c,x+25,y+455,rf_perf_lab_panorama() || rf_perf_lab.interference?
-            "FULL BACKGROUND / EXHIBITS / LIGHTS CONTINUE":
-            "NON-TEST EXHIBITS AND DYNAMIC LIGHTS SUSPENDED",0x9FB7C5);
-        rasterfall_canvas_text(c,x+25,y+550,"1-6 SELECT   ENTER START   ESC CLOSE",0xC7F2EE);
+        rasterfall_canvas_text(c,x+25,y+410,rf_perf_lab_live()?
+            rf_perf_lab.selected==8?"五人完成四段通行后结束，最长 120 秒；Esc 取消。":
+                rf_perf_lab.selected==9?"五个视角共 30 秒，每段预热 2 秒、采样 4 秒；Esc 取消。":
+                "实战持续 30 秒，预热 2 秒后采样；Esc 取消。":rf_perf_lab_panorama()?
+            "五个视角共 30 秒，每段预热 2 秒、采样 4 秒；Esc 取消。":
+            "实验持续 10 秒，预热 2 秒后采样；Esc 取消。",0x9FB7C5);
+        rasterfall_canvas_text(c,x+25,y+455,rf_perf_lab_live()?
+            "结束或取消后重建前哨站，恢复玩家、视角和展示设置。":rf_perf_lab_panorama() || rf_perf_lab.interference?
+            "保留完整背景，展示与灯光继续运行。":
+            "暂停非测试展示与动态灯光。",0x9FB7C5);
+        rasterfall_canvas_text(c,x+25,y+550,"上下键或数字 1-9/0 选择   Enter 开始   Esc 关闭",0xC7F2EE);
     }
 }

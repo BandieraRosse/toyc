@@ -5,7 +5,13 @@
 /* General health and movement. */
 #define TOY_CONFIG_PLAYER_HP                  120  /* Lv2 普通耐力模板；能力映射见 game_combat.inc */
 #define TOY_CONFIG_SECONDARY_PLAYER_HP        120  /* 与本地主玩家相同模板 */
-#define TOY_CONFIG_PLAYER_MOVE_STEP            76  /* 玩家每逻辑步移动量 */
+#define TOY_CONFIG_PLAYER_MOVE_STEP            76  /* 60 Hz: 约 8.91 m/s */
+#define TOY_CONFIG_PLAYER_MOVE_ACCEL           60  /* 地面加速度，m/s^2 */
+#define TOY_CONFIG_PLAYER_MOVE_BRAKE           75  /* 松键减速度，m/s^2 */
+#define TOY_CONFIG_PLAYER_MOVE_TURN_ACCEL      90  /* 反向输入加速度，m/s^2 */
+#define TOY_CONFIG_PLAYER_AIR_MOVE_ACCEL       10  /* 空中微调加速度，m/s^2；总速度仍受移动上限约束 */
+#define TOY_CONFIG_PLAYER_JUMP_COYOTE_STEPS     6  /* 离边起跳宽限，60 Hz 下约 100 ms */
+#define TOY_CONFIG_PLAYER_JUMP_BUFFER_STEPS     6  /* 落地前跳跃输入缓冲，约 100 ms */
 #define TOY_CONFIG_GROUND_STEP_HEIGHT          120 /* 可直接跨越的最大地面高差 */
 #define TOY_CONFIG_BASE_HP                     500 /* 基地核心初始/最大生命 */
 #define TOY_CONFIG_BASE_REGEN_MS               1000 /* 基地核心每秒回复 */
@@ -61,14 +67,16 @@
 #define TOY_CONFIG_CHARGER_SHOVE_STUN_MS     400  /* Charger 推搡僵直时长 */
 
 /* Jump and forced motion. */
-#define TOY_CONFIG_JUMP_MS                    900  /* 跳跃持续时间 */
-#define TOY_CONFIG_JUMP_VELOCITY              110  /* 跳跃初速度 */
+#define TOY_CONFIG_JUMP_MS                    900  /* 名义状态计时；实际触地结束跳跃 */
+#define TOY_CONFIG_JUMP_VELOCITY               64  /* 60 Hz: 约 7.50 m/s，离散峰高约 1.40 m */
 #define TOY_CONFIG_AIRBORNE_MS                700  /* 击飞持续时间 */
 #define TOY_CONFIG_AIRBORNE_VELOCITY         220  /* 击飞初速度 */
-#define TOY_CONFIG_AIRBORNE_GRAVITY            10  /* 空中重力 */
-#define TOY_CONFIG_FALL_TERMINAL_VELOCITY     120  /* 最大单逻辑步下落速度 */
+#define TOY_CONFIG_AIRBORNE_GRAVITY             3  /* 普通玩家跳跃/掉落，约 21.09 m/s^2 */
+#define TOY_CONFIG_FALL_TERMINAL_VELOCITY     341  /* 普通玩家最大下落速度，约 40 m/s */
+#define TOY_CONFIG_FORCED_MOTION_GRAVITY       10  /* 击飞和非玩家运动的原有重力 */
+#define TOY_CONFIG_FORCED_MOTION_TERMINAL     120
 #define TOY_CONFIG_AIRBORNE_FLIGHT_STEPS \
-    (TOY_CONFIG_AIRBORNE_VELOCITY * 2 / TOY_CONFIG_AIRBORNE_GRAVITY + 1)
+    (TOY_CONFIG_AIRBORNE_VELOCITY * 2 / TOY_CONFIG_FORCED_MOTION_GRAVITY + 1)
 #define TOY_CONFIG_CHARGER_KNOCKBACK_DISTANCE 4608 /* 目标水平距离：9m */
 #define TOY_CONFIG_CHARGER_KNOCKBACK_SPEED \
     ((TOY_CONFIG_CHARGER_KNOCKBACK_DISTANCE + \

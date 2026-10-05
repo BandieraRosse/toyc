@@ -72,7 +72,8 @@ class BuildingKit:
 
         X/Z footprint denotes outer wall centerlines. Flights fill the span
         between the inner wall faces and the spine. Y is a floor TOP, so all
-        landings and flight undersides share the slab thickness.
+        landings and flight undersides share the slab thickness. The lowest
+        storey has a complete floor beneath both flights and the half landing.
         """
         x0,x1,z0,z1 = footprint
         self.bounds(*footprint)
@@ -103,6 +104,9 @@ class BuildingKit:
             self.flight(f"{name}_{label}_w",(inside_left,left,near,far),y,mid,color)
             self.flight(f"{name}_{label}_e",(right,inside_right,near,far),next_y,mid,color)
         bottom=storeys[0][1]
+        # The south landing already covers z0..near. Close the remaining
+        # lowest-storey footprint beneath the stairs without filling upper voids.
+        self.slab(f"{name}_base",(x0,x1,near,z1),bottom,color)
         self.wall(f"{name}_wall_w","z",x0,z0,z1,bottom,ceiling,wall_color)
         self.wall(f"{name}_wall_e","z",x1,z0,z1,bottom,ceiling,wall_color)
         self.wall(f"{name}_wall_n","x",z1,x0,x1,bottom,ceiling,wall_color)

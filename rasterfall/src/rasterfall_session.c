@@ -293,8 +293,11 @@ int rasterfall_session_load(struct rasterfall_session *session,
     rasterfall_session_unload(session);
     {
         struct rf_gpu_scene_local_source source = session->scene_local;
+        struct toy_game_player_movement movement;
+        memcpy(&movement,&session->player_movement,sizeof(movement));
         memset(session, 0, sizeof(struct rasterfall_session));
         session->scene_local = source;
+        memcpy(&session->player_movement,&movement,sizeof(movement));
     }
     session->air_walls_enabled = 1;
     session->highlight_index = -1;
@@ -348,8 +351,11 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
     rasterfall_session_unload(session);
     {
         struct rf_gpu_scene_local_source source = session->scene_local;
+        struct toy_game_player_movement movement;
+        memcpy(&movement,&session->player_movement,sizeof(movement));
         memset(session, 0, sizeof(struct rasterfall_session));
         session->scene_local = source;
+        memcpy(&session->player_movement,&movement,sizeof(movement));
     }
     session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
     if (rasterfall_world_content_load(&session->content, session->world_id,
@@ -444,6 +450,9 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session->hit_pose.rotation[0][2]=-8;
     rasterfall_calibration_init(&session->pose_editor);
     toy_game_init(&session->game_state, session->seed);
+    if(session->player_movement.move_step>0)
+        memcpy(&session->game_state.player_movement,&session->player_movement,
+            sizeof(session->player_movement));
     /* 环境变量不依赖 libc；HOSTNAME 是最稳定的本机身份来源，缺失时
      * toy_game_init 的 PLAYER 保底仍可用。名字只用于身份展示/未来快照。 */
     if (global_envp && get_env_var(global_envp, "HOSTNAME"))
@@ -797,45 +806,22 @@ static void session_move_player(struct rasterfall_session *session,
                                 const struct rasterfall_command *command)
 {
     struct toy_game_actor *actor = toy_game_local_player_actor(&session->game_state);
-    if (!actor || actor->control_disabled)
-        return;
-    int step = toy_game_actor_move_step(actor, RASTERFALL_MOVE_STEP);
-    int dx = (camera->sy * command->move_forward +
-              camera->cy * command->move_strafe) * step / 1024;
-    int dz = (camera->cy * command->move_forward -
-              camera->sy * command->move_strafe) * step / 1024;
-    if (actor->airborne_ms <= 0) {
-        /* Ground movement must use the gameplay actor API so ramps update
-         * ground_y and ramp/platform seams remain traversable. */
-        int before_x = actor->x, before_z = actor->z;
-        toy_game_move_actor_sliding(&session->game_state, actor, dx, dz);
-        if (session->rts_active && session->rts_move_active &&
-            (actor->x != before_x + dx || actor->z != before_z + dz)) {
-            toy_game_actor_cancel_navigation(actor);
-            if (session->game_state.update_profile)
-                session->game_state.update_profile->actor_direct_blocked++;
-        }
-        return;
+    int jump = (command->buttons & RASTERFALL_CMD_JUMP) != 0;
+    int dx = camera->sy * command->move_forward + camera->cy * command->move_strafe;
+    int dz = camera->cy * command->move_forward - camera->sy * command->move_strafe;
+    if (!actor) return;
+    if (jump) {
+        /* Capture the input direction for replay; launch speed comes from
+         * actual ground acceleration, never a second airborne input step. */
+        dx = command->jump_dx; dz = command->jump_dz;
     }
-    {
-        int next_x = actor->x + dx;
-        int next_z = actor->z + dz;
-        int height = actor->ground_y + actor->airborne_y;
-    if (!toy_game_position_blocked_at_height(&session->game_state, next_x,
-                                              next_z, RASTERFALL_PLAYER_RADIUS,
-                                              height)) {
-        actor->x = next_x; actor->z = next_z;
+    if (!toy_game_move_player_input(&session->game_state,
+            TOY_GAME_PLAYER_ACTOR_INDEX, dx, dz, jump) &&
+        session->rts_active && session->rts_move_active) {
+        toy_game_actor_cancel_navigation(actor);
+        if (session->game_state.update_profile)
+            session->game_state.update_profile->actor_direct_blocked++;
     }
-    }
-}
-
-static void session_jump_player(struct rasterfall_session *session,
-                                struct camera *camera,
-                                const struct rasterfall_command *command)
-{
-    (void)camera;
-    toy_game_jump_actor(&session->game_state, TOY_GAME_PLAYER_ACTOR_INDEX,
-                        command->jump_dx, command->jump_dz);
 }
 
 static void session_sync_special_motion(struct rasterfall_session *session,
@@ -1625,6 +1611,11 @@ int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
     player->ground_y = ground.support_y;
     player->airborne_ms = player->airborne_y = player->vertical_velocity = 0;
     player->air_x = player->air_z = 0;
+    player->air_skip_horizontal_step = 0;
+    player->air_velocity_remainder_x = player->air_velocity_remainder_z = 0;
+    player->move_velocity_x = player->move_velocity_z = 0;
+    player->move_remainder_x = player->move_remainder_z = 0;
+    player->jump_coyote_steps = player->jump_buffer_steps = 0;
     player->knockback_x = player->knockback_z = 0;
     session->rts_move_active = 0;
     toy_game_actor_cancel_navigation(player);
@@ -1673,7 +1664,11 @@ int rasterfall_session_rts_order_actor_height(struct rasterfall_session *s,
     }
     if(a==toy_game_local_player_actor(&s->game_state)) {
         toy_game_actor_cancel_navigation(a);
-        if(stop)s->rts_move_active=0;
+        if(stop) {
+            s->rts_move_active=0;a->moving=0;
+            a->move_velocity_x=a->move_velocity_z=0;
+            a->move_remainder_x=a->move_remainder_z=0;
+        }
         else {rasterfall_session_rts_move_player(s,x,z);s->rts_move_y=y;}
     } else {
         toy_game_actor_cancel_rescue(&s->game_state,index);
@@ -1681,7 +1676,11 @@ int rasterfall_session_rts_order_actor_height(struct rasterfall_session *s,
         a->command_destination_active=1;a->command_x=x;a->command_z=z;
         a->command_y=y;a->command_height_active=1;
         a->nav_active=0;
-        if(stop)a->moving=0;
+        if(stop) {
+            a->moving=0;
+            a->move_velocity_x=a->move_velocity_z=0;
+            a->move_remainder_x=a->move_remainder_z=0;
+        }
     }
     return 1;
 }
@@ -1701,7 +1700,7 @@ static void session_build_rts_command(struct rasterfall_session *session,
     int step, planned = 0;
     memset(command, 0, sizeof(*command));
     if (!player || player->state != TOY_GAME_ACTOR_ALIVE) return;
-    step = toy_game_actor_move_step(player, RASTERFALL_MOVE_STEP);
+    step = toy_game_player_move_step(&session->game_state,player);
     if (session->rts_move_active) {
         long long dx = (long long)session->rts_move_x - player->x;
         long long dz = (long long)session->rts_move_z - player->z;
@@ -1709,6 +1708,8 @@ static void session_build_rts_command(struct rasterfall_session *session,
             abs(player->ground_y-session->rts_move_y)<=2) {
             session->rts_move_active = 0;
             toy_game_actor_cancel_navigation(player);
+            player->move_velocity_x = player->move_velocity_z = 0;
+            player->move_remainder_x = player->move_remainder_z = 0;
         } else if (!player->control_disabled && !player->movement_hold_token &&
                    player->airborne_ms <= 0) {
             planned = toy_game_actor_navigation_target_height(&session->game_state,
@@ -1865,7 +1866,7 @@ int rasterfall_session_rts_logic_test(void)
         test.rts_move_x!=2000 || test.rts_move_z!=0)return 18;
     struct rasterfall_command manual={0};
     int max_step=toy_game_actor_move_step(player,RASTERFALL_MOVE_STEP);
-    for(int tick=0;tick<200 && test.rts_move_active;++tick) {
+    for(int tick=0;tick<12000/max_step+60 && test.rts_move_active;++tick) {
         int old_x=player->x,old_z=player->z,old_time=test.game_state.combat_time_ms;
         rasterfall_session_step(&test,&camera,&manual,16);
         long long move_x=(long long)player->x-old_x,move_z=(long long)player->z-old_z;
@@ -1878,7 +1879,11 @@ int rasterfall_session_rts_logic_test(void)
         }
     }
     if(test.rts_move_active || (long long)(player->x-2000)*(player->x-2000)+
-        (long long)player->z*player->z>250LL*250LL)return 20;
+        (long long)player->z*player->z>250LL*250LL) {
+        __printf("RTS local arrival failed position=%d,%d active=%d nav=%d,%d velocity=%d,%d\n",
+            player->x,player->z,test.rts_move_active,player->nav_x,player->nav_z,
+            player->move_velocity_x,player->move_velocity_z);return 20;
+    }
     if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,4000,0,0))return 21;
     session_build_rts_command(&test,&camera,&command,16);
     if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,0,0,1) ||
@@ -1894,7 +1899,7 @@ int rasterfall_session_rts_logic_test(void)
     manual.move_forward=1;manual.buttons=RASTERFALL_CMD_FIRE;manual.fire_held=1;
     unsigned int before_fire=player->fire_seq;
     rasterfall_session_step(&test,&camera,&manual,16);
-    if(player->z!=stopped_z+max_step || player->fire_seq!=before_fire+1 ||
+    if(player->z<=stopped_z || player->z>=stopped_z+max_step || player->fire_seq!=before_fire+1 ||
         !test.rts_move_active || test.rts_move_x!=-4000 || test.rts_move_z!=0)return 26;
     rasterfall_session_set_rts(&test,1);
     session_build_rts_command(&test,&camera,&command,16);
@@ -1983,6 +1988,11 @@ int rasterfall_session_recover_managed_actor(
         player->vertical_velocity = 0;
         player->air_x = 0;
         player->air_z = 0;
+        player->air_skip_horizontal_step = 0;
+        player->air_velocity_remainder_x = player->air_velocity_remainder_z = 0;
+        player->move_velocity_x = player->move_velocity_z = 0;
+        player->move_remainder_x = player->move_remainder_z = 0;
+        player->jump_coyote_steps = player->jump_buffer_steps = 0;
         player->knockback_x = 0;
         player->knockback_z = 0;
     }
@@ -2665,8 +2675,6 @@ void rasterfall_session_step(struct rasterfall_session *session,
     if (session->game_state.state != TOY_GAME_PLAYING) return;
     if (command->buttons & RASTERFALL_CMD_FLAG)
         session_toggle_flag(session, camera);
-    if (command->buttons & RASTERFALL_CMD_JUMP)
-        session_jump_player(session, camera, command);
     if (toy_game_local_player_actor_const(&session->game_state)->state ==
         TOY_GAME_ACTOR_ALIVE)
         session_move_player(session, camera, command);
@@ -2678,7 +2686,10 @@ void rasterfall_session_step(struct rasterfall_session *session,
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);
         player->sy = camera->sy; player->cy = camera->cy;
-        player->moving = command->move_forward || command->move_strafe;
+        player->pitch_sy = camera->pitch_sy;
+        player->pitch_cy = camera->pitch_cy;
+        player->moving = player->move_velocity_x || player->move_velocity_z ||
+                         player->air_x || player->air_z;
         toy_game_update_actor_ground(&session->game_state,
                                      TOY_GAME_PLAYER_ACTOR_INDEX);
     }
@@ -2858,8 +2869,6 @@ static void session_step_client_mode(struct rasterfall_session *session,
         return;
     }
     if (session->game_state.state != TOY_GAME_PLAYING) return;
-    if (command->buttons & RASTERFALL_CMD_JUMP)
-        session_jump_player(session, camera, command);
     session_move_player(session, camera, command);
     if (command->turn || command->pitch)
         rasterfall_camera_rotate(camera, command->turn, command->pitch);
@@ -2868,7 +2877,10 @@ static void session_step_client_mode(struct rasterfall_session *session,
         struct toy_game_actor *player =
             toy_game_local_player_actor(&session->game_state);
         player->sy = camera->sy; player->cy = camera->cy;
-        player->moving = command->move_forward || command->move_strafe;
+        player->pitch_sy = camera->pitch_sy;
+        player->pitch_cy = camera->pitch_cy;
+        player->moving = player->move_velocity_x || player->move_velocity_z ||
+                         player->air_x || player->air_z;
         toy_game_update_actor_ground(&session->game_state,
                                      TOY_GAME_PLAYER_ACTOR_INDEX);
     }

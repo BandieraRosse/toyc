@@ -681,6 +681,12 @@ struct toy_game_actor {
     int airborne_y;
     int ground_y;
     int air_x, air_z;
+    int air_velocity_remainder_x, air_velocity_remainder_z; /* 1/1024 RFU/step. */
+    int air_skip_horizontal_step; /* The ledge transition already moved this tick. */
+    /* Ground input velocity: 1/1024 RFU per 60 Hz step, in world axes. */
+    int move_velocity_x, move_velocity_z;
+    int move_remainder_x, move_remainder_z;
+    int jump_coyote_steps, jump_buffer_steps; /* Player input ticks; consumed by a jump. */
     int knockback_x, knockback_z;
     int knockback_cooldown_ms;
     int control_disabled;       /* special attack currently owns movement */
@@ -844,7 +850,16 @@ struct toy_game_squad_profile {
     int leader_changes, goal_changes, column_entries, column_exits, no_valid_goal;
 };
 
+/* Resolved 60 Hz player tuning. Accelerations use 1/1024 RFU/tick^2;
+ * speeds/gravity use RFU/tick and RFU/tick^2. No file I/O in Game. */
+struct toy_game_player_movement {
+    int move_step, move_accel, move_brake, turn_accel, air_accel;
+    int jump_velocity, gravity, fall_terminal;
+    int coyote_steps, buffer_steps;
+};
+
 struct toy_game {
+    struct toy_game_player_movement player_movement;
     int external_director; /* Local mission owns spawning and completion. */
     /* Offline experimental manufacturing authority; never a render clock. */
     struct toy_mesh_weaver weaver;
@@ -993,6 +1008,11 @@ const struct toy_game_actor *toy_game_local_player_actor_const(
     const struct toy_game *g);
 
 void toy_game_init(struct toy_game *g, uint64_t seed);      /* 初始化/重开共用 */
+void toy_game_player_movement_defaults(struct toy_game_player_movement *out);
+int toy_game_player_movement_parse(const char *text, int size,
+    struct toy_game_player_movement *out, int *error_line, const char **error);
+int toy_game_player_move_step(const struct toy_game *g,
+    const struct toy_game_actor *actor);
 void toy_game_emit_event(struct toy_game *g, int event);
 void toy_game_set_actor_name(struct toy_game_actor *actor, const char *name);
 int  toy_game_ai_observe(const struct toy_game *g, int actor_index,
@@ -1111,6 +1131,11 @@ int  toy_game_point_in_box(int x, int z, const struct toy_game_box *box);
 int  toy_game_position_blocked(const struct toy_game *g,
                                int x, int z, int radius);
 int  toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz);
+/* Normalize the input direction, accelerate/brake, then move or launch.
+ * Airborne input only steers velocity; motion owns the single body sweep.
+ * Returns whether the complete requested ground displacement succeeded. */
+int  toy_game_move_player_input(struct toy_game *g, int actor_index,
+                                int direction_x, int direction_z, int jump);
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
 void toy_game_update_actor_ground(struct toy_game *g, int actor_index);
 void toy_game_update_held(struct toy_game *g,

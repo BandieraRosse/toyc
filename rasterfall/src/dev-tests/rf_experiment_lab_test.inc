@@ -369,7 +369,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     }
     /* Full-scene tours preserve the map and restore exhibit requests even on abort.
      * Point warmups cannot leak into measurements; every point needs samples. */
-    for(int scene=4;scene<RF_PERF_LAB_SCENES;++scene) {
+    for(int scene=4;scene<6;++scene) {
         rf_labs_reset();rf_labs.requested[RF_LAB_LIGHTING]=1;
         rf_perf_lab.isolated=1;rf_perf_lab.interference=0;rf_perf_lab.selected=scene;
         if(rf_perf_lab_start(runtime)<0 || rf_perf_lab.isolated || !rf_perf_lab.interference ||
@@ -389,6 +389,30 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             rf_perf_lab.result.point[4].p95_us!=14000 || rf_perf_lab.result.layer_us!=300 ||
             rf_perf_lab_mask()!=(1u<<RF_LAB_LIGHTING) || !rf_perf_lab.isolated ||
             runtime->camera.x!=origin.x || runtime->camera.z!=origin.z) return -22;
+    }
+    /* Live trials borrow the normal update path and must release profiling,
+     * participants, camera and presentation on every cancellation. */
+    for(int scene=6;scene<RF_PERF_LAB_SCENES;++scene) {
+        rf_perf_lab.selected=scene;rf_perf_lab.isolated=1;
+        struct rasterfall_command input={0};
+        if(rf_perf_lab_start(runtime)<0)return -26;
+        if(runtime->session->game_state.update_profile!=&rf_perf_live.profile ||
+            rf_perf_lab.isolated || !rf_perf_lab.interference)return -27;
+        for(int step=0;step<8;++step)if(rf_game_update(runtime,&input,16)<0)return -28;
+        if(rf_perf_live_result.ticks!=8)return -29;
+        if(scene==8) {
+            for(int step=8;step<7500 && !rf_perf_live_result.done;++step)
+                if(rf_game_update(runtime,&input,16)<0)return -31;
+            if(!rf_perf_live_result.done) {
+                rf_perf_live_dump_route(runtime);return -32;
+            }
+        }
+        if(rf_perf_lab_finish(runtime,1)<0)return -29;
+        if(runtime->session->game_state.update_profile || rf_combat_lab.member_count ||
+            runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST ||
+            runtime->session->game_state.enemies_alive || runtime->session->seed!=seed ||
+            runtime->camera.x!=origin.x || runtime->camera.z!=origin.z ||
+            !rf_labs.requested[RF_LAB_LIGHTING])return -30;
     }
     rf_perf_lab.isolated=1;
     /* Any workload growth, including a previously empty scene, invalidates it. */

@@ -958,6 +958,455 @@ static int signed_storey_primitive_logic_test(void)
     return 0;
 }
 
+/* Stair contacts must preserve the reached layer through jumps and ledges. */
+static int stair_motion_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[4]={
+        test_box_primitive(-3000,3000,-3000,8000,-2612,-2458,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_Z,0,1200,0,6000,0,1200),
+        test_box_primitive(-3000,3000,-1000,0,2246,2400,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_Z,0,1200,0,6000,2400,3600)
+    };
+    struct toy_game_actor *a;
+    toy_game_init(&g,315);g.to_spawn=0;
+    world[1].ramp_thickness=world[3].ramp_thickness=154;
+    toy_game_set_primitives(&g,world,4,10000);
+    a=toy_game_local_player_actor(&g);
+    /* A lower full-footprint floor cannot replace a partial stair contact. */
+    a->x=90;a->z=3000;a->ground_y=600;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(a->ground_y!=600 || a->airborne_ms)return 1;
+    a->z=3100;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(a->ground_y!=620 || a->airborne_ms)return 11;
+    a->z=3000;a->ground_y=600;
+    if(!toy_game_jump_actor(&g,TOY_GAME_PLAYER_ACTOR_INDEX,0,0))return 2;
+    for(int i=0;i<100 && a->airborne_ms;++i)
+        toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=600)return 3;
+    /* Walking off the wrong flight at the top starts a fall at the old Y. */
+    toy_game_set_primitives(&g,world,3,10000);
+    a->x=600;a->z=-200;a->ground_y=2400;
+    if(!toy_game_try_move_actor(&g,a,600,100) || a->ground_y!=2400 ||
+        a->airborne_ms)return 4;
+    if(!toy_game_try_move_actor(&g,a,600,220) || !a->airborne_ms ||
+        a->ground_y+a->airborne_y!=2400)return 5;
+    /* A stationary support refresh has the same ledge/fall contract. */
+    a->airborne_ms=a->airborne_y=0;a->ground_y=2400;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(!a->airborne_ms || a->ground_y+a->airborne_y!=2400)return 6;
+    /* An actually connected descending flight is an ordinary walk. */
+    world[1].surface_y0=2400;world[1].surface_y1=1200;
+    toy_game_set_primitives(&g,world,3,10000);
+    a->x=600;a->z=-200;a->ground_y=2400;
+    a->airborne_ms=a->airborne_y=0;
+    for(int z=-100;z<=500;z+=100) {
+        if(!toy_game_try_move_actor(&g,a,600,z))return 7;
+        toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+        if(a->airborne_ms || abs(a->ground_y-(2400-(z>0?z:0)/5))>40)return 8;
+    }
+    /* Moving into a rising ramp must sweep against its previous local Y. */
+    world[1].surface_y0=0;world[1].surface_y1=1200;
+    toy_game_set_primitives(&g,world,4,10000);
+    a->x=600;a->z=3000;a->ground_y=600;
+    a->airborne_ms=1000;a->airborne_y=30;a->vertical_velocity=-10;
+    a->air_x=0;a->air_z=300;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->z<=3000 || a->z>3300 || a->ground_y!=a->z/5)return 9;
+    /* The same motion below the ramp must not attach to its upper side. */
+    a->x=600;a->z=3000;a->ground_y=0;
+    a->airborne_ms=1000;a->airborne_y=550;a->vertical_velocity=-10;
+    a->air_x=0;a->air_z=300;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(!a->airborne_ms || a->ground_y+a->airborne_y!=540)return 10;
+    /* Near the jump apex, the feet can rise slower than the slope does. */
+    a->x=600;a->z=3000;a->ground_y=600;
+    a->airborne_ms=1000;a->airborne_y=30;a->vertical_velocity=10;
+    a->air_x=0;a->air_z=300;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->z<=3000 || a->z>3300 || a->ground_y!=a->z/5)return 12;
+    /* Both authored ramp axes use the same relative-height sweep. */
+    world[1]=test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,0,6000,0,1200,0,1200);
+    world[1].ramp_thickness=154;
+    toy_game_set_primitives(&g,world,2,10000);
+    a->x=3000;a->z=600;a->ground_y=600;
+    a->airborne_ms=1000;a->airborne_y=30;a->vertical_velocity=-10;
+    a->air_x=300;a->air_z=0;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->x<=3000 || a->x>3300 || a->ground_y!=a->x/5)return 13;
+    /* Catch a flight crossed entirely during one high-speed airborne tick. */
+    world[1]=test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_Z,0,1200,0,6000,0,1200);
+    world[1].ramp_thickness=154;
+    toy_game_set_primitives(&g,world,2,10000);
+    a->x=600;a->z=3000;a->ground_y=600;
+    a->airborne_ms=1000;a->airborne_y=20;a->vertical_velocity=-120;
+    a->air_x=2000;a->air_z=0;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=600 || a->x<=600 || a->x>=1380)return 14;
+    return 0;
+}
+
+/* Config parsing is transactional; custom rules affect movement and survive
+ * a real session map replacement/reset without mutating built-in defaults. */
+static int player_movement_config_logic_test(void)
+{
+    static struct toy_game g;
+    static struct rasterfall_session s;
+    struct toy_map_primitive floor=test_box_primitive(-20000,20000,-20000,20000,-154,0,
+        TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE);
+    struct toy_game_player_movement defaults, parsed, before;
+    struct camera camera={0};
+    const char *error=NULL;
+    const char custom[]="\xEF\xBB\xBF# custom tuning\r\n"
+        "move_speed_mps = 6.0 # SI units\r\n"
+        "jump_speed_mps = 9\r\nair_accel_mps2 = 0\r\n"
+        "coyote_ms = 0\r\njump_buffer_ms = 0\r\n";
+    const char *bad[]={"move_speed_mps=6\nmisspelled=3\n",
+        "move_speed_mps=6\nmove_speed_mps=7\n", "move_speed_mps=0\n",
+        "gravity_mps2=0\n", "coyote_ms=100.5\n", "move_speed_mps=6.1234\n",
+        "move_speed_mps=-6\n", "move_speed_mps=9999999999999\n",
+        "move_speed_mps=6oops\n", "ground_accel_mps2=\n"};
+    int line=0,start_z,peak=0,ticks=0;
+    toy_game_player_movement_defaults(&defaults);
+    if(toy_game_player_movement_parse("",0,&parsed,&line,&error)<0 ||
+       memcmp(&defaults,&parsed,sizeof(parsed)))return 1;
+    if(toy_game_player_movement_parse(custom,sizeof(custom)-1,&parsed,&line,&error)<0 ||
+       parsed.move_step>=defaults.move_step || parsed.jump_velocity<=defaults.jump_velocity ||
+       parsed.air_accel || parsed.coyote_steps || parsed.buffer_steps)return 2;
+    memcpy(&before,&parsed,sizeof(before));
+    for(int i=0;i<(int)(sizeof(bad)/sizeof(bad[0]));++i) {
+        if(toy_game_player_movement_parse(bad[i],strlen(bad[i]),&parsed,&line,&error)>=0 ||
+           !error || line!=(i<2?2:1) || memcmp(&before,&parsed,sizeof(parsed)))return 3;
+    }
+    toy_game_init(&g,323);g.to_spawn=0;g.room_limit=20000;
+    g.primitives=&floor;g.primitive_count=1;
+    memcpy(&g.player_movement,&parsed,sizeof(parsed));
+    struct toy_game_actor *a=toy_game_local_player_actor(&g);
+    for(int i=0;i<20;++i)toy_game_move_player_input(&g,0,0,1024,0);
+    start_z=a->z;
+    for(int i=0;i<60;++i)toy_game_move_player_input(&g,0,0,1024,0);
+    if(a->z-start_z>=defaults.move_step*60 ||
+       a->z-start_z!=toy_game_player_move_step(&g,a)*60)return 4;
+    /* Zero buffering disables tolerance, while the grounded jump still works. */
+    if(!toy_game_move_player_input(&g,0,0,1024,1) ||
+       a->vertical_velocity!=parsed.jump_velocity)return 5;
+    toy_game_update_actor_motion(&g,0,16);
+    int vertical=a->vertical_velocity,air_x=a->air_x,air_z=a->air_z;
+    toy_game_move_player_input(&g,0,1024,0,1);
+    if(a->vertical_velocity!=vertical || a->air_x!=air_x || a->air_z!=air_z)return 6;
+    while(a->airborne_ms && ticks++<100) {
+        toy_game_move_player_input(&g,0,0,0,0);
+        toy_game_update_actor_motion(&g,0,16);
+        if(a->airborne_y>peak)peak=a->airborne_y;
+    }
+    if(a->airborne_ms || peak<=768)return 7;
+    memset(&s,0,sizeof(s));
+    memcpy(&s.player_movement,&parsed,sizeof(parsed));
+    for(int i=0;i<2;++i) {
+        if(rasterfall_session_load(&s,"rasterfall/assets/maps/performance_empty.map")<0)return 8;
+        rasterfall_session_reset(&s,&camera,324);
+        camera.sy=0;camera.cy=1024;
+        if(memcmp(&s.game_state.player_movement,&parsed,sizeof(parsed))) {
+            rasterfall_session_unload(&s);return 9;
+        }
+        /* Predictions consume the same configured player speed. */
+        struct rasterfall_command command={0};command.move_forward=1;
+        for(int tick=0;tick<20;++tick)
+            rasterfall_session_step_client(&s,&camera,&command,16);
+        a=toy_game_local_player_actor(&s.game_state);start_z=a->z;
+        for(int tick=0;tick<60;++tick)
+            rasterfall_session_step_client(&s,&camera,&command,16);
+        if(a->z-start_z!=toy_game_player_move_step(&s.game_state,a)*60) {
+            rasterfall_session_unload(&s);return 10;
+        }
+    }
+    rasterfall_session_unload(&s);
+    toy_game_init(&g,325);
+    if(memcmp(&g.player_movement,&defaults,sizeof(defaults)))return 11;
+    return 0;
+}
+
+/* Stable input contracts: bounded acceleration, normalized speed, braking,
+ * launch momentum and collision response, independent of map content. */
+static int player_locomotion_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[2]={
+        test_box_primitive(-20000,20000,-20000,20000,-154,0,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-20000,20000,2000,2154,0,6000,
+            TOY_MAP_PRIMITIVE_COLLISION)
+    };
+    int distances[2];
+    for(int diagonal=0;diagonal<2;++diagonal) {
+        toy_game_init(&g,318);g.to_spawn=0;
+        g.primitives=world;g.primitive_count=1;g.room_limit=25000;
+        struct toy_game_actor *a=toy_game_local_player_actor(&g);
+        int step=toy_game_actor_move_step(a,TOY_CONFIG_PLAYER_MOVE_STEP);
+        int previous=0;
+        for(int tick=0;tick<20;++tick) {
+            if(!toy_game_move_player_input(&g,0,diagonal?1024:0,1024,0))return 1;
+            int speed=isqrt((long long)a->move_velocity_x*a->move_velocity_x+
+                            (long long)a->move_velocity_z*a->move_velocity_z);
+            if(speed<previous || speed>step*1024 ||
+               (tick==0 && (speed<=0 || speed>=step*1024)))return 2;
+            previous=speed;
+        }
+        int start_x=a->x,start_z=a->z;
+        for(int tick=0;tick<60;++tick)
+            toy_game_move_player_input(&g,0,diagonal?1024:0,1024,0);
+        long long dx=(long long)a->x-start_x,dz=(long long)a->z-start_z;
+        distances[diagonal]=isqrt(dx*dx+dz*dz);
+        for(int tick=0;tick<12;++tick) {
+            start_x=a->x;start_z=a->z;
+            toy_game_move_player_input(&g,0,0,0,0);
+            int speed=isqrt((long long)a->move_velocity_x*a->move_velocity_x+
+                            (long long)a->move_velocity_z*a->move_velocity_z);
+            if(speed>previous || a->x<start_x || a->z<start_z)return 3;
+            previous=speed;
+        }
+        if(a->move_velocity_x || a->move_velocity_z)return 4;
+        start_x=a->x;start_z=a->z;
+        for(int tick=0;tick<12;++tick)toy_game_move_player_input(&g,0,0,0,0);
+        if(a->x!=start_x || a->z!=start_z)return 5;
+    }
+    if(abs(distances[0]-distances[1])>2)return 6;
+    toy_game_init(&g,319);g.to_spawn=0;
+    g.primitives=world;g.primitive_count=1;g.room_limit=25000;
+    struct toy_game_actor *a=toy_game_local_player_actor(&g);
+    for(int tick=0;tick<20;++tick)toy_game_move_player_input(&g,0,0,1024,0);
+    int launch=a->move_velocity_z/1024,start_z=a->z;
+    if(!toy_game_move_player_input(&g,0,0,1024,1) || a->z!=start_z ||
+       a->air_z!=launch || !a->airborne_ms)return 7;
+    int peak=0,ticks=0;
+    while(a->airborne_ms && ticks<120) {
+        int before_z=a->z;
+        toy_game_move_player_input(&g,0,0,0,0);
+        if(a->z!=before_z || a->air_z!=launch || a->air_x)return 8;
+        toy_game_update_actor_motion(&g,0,16);
+        if(a->airborne_y>peak)peak=a->airborne_y;
+        ticks++;
+    }
+    /* Preserve the agreed traversal envelope: 1.3-1.5m high, 6-7m far,
+     * with one horizontal advance and a readable ascent/descent. */
+    if(a->airborne_ms || peak<665 || peak>768 || ticks<42 || ticks>48 ||
+       a->z-start_z<3072 || a->z-start_z>3584 ||
+       a->z!=start_z+launch*ticks || a->ground_y!=0 ||
+       a->move_velocity_z!=launch*1024)return 9;
+    __printf("PLAYER MOVEMENT measured speed=%d RFU/step peak=%d RFU flight=%d ticks range=%d RFU\n",
+        launch,peak,ticks,a->z-start_z);
+    /* Reversal must cross zero sooner than starting from rest reaches cap. */
+    int reverse_ticks=0;
+    while(a->move_velocity_z>0 && reverse_ticks<20) {
+        toy_game_move_player_input(&g,0,0,-1024,0);reverse_ticks++;
+    }
+    if(a->move_velocity_z>0 || reverse_ticks>7)return 19;
+    g.primitive_count=2;a->x=0;a->z=1000;
+    for(int tick=0;tick<100;++tick)toy_game_move_player_input(&g,0,0,1024,0);
+    if(a->z>2000-TOY_GAME_PLAYER_RADIUS || a->move_velocity_z)return 10;
+    int wall_z=a->z;
+    for(int tick=0;tick<20;++tick)toy_game_move_player_input(&g,0,1024,1024,0);
+    if(a->x<=0 || a->z!=wall_z || a->move_velocity_z)return 11;
+    /* Air input changes velocity gradually without moving the body or
+     * changing the vertical jump trajectory at the input boundary. */
+    g.primitive_count=1;a->x=a->z=0;
+    if(!toy_game_jump_actor(&g,0,0,0))return 14;
+    int airborne_y=a->airborne_y,vertical_velocity=a->vertical_velocity;
+    for(int tick=0;tick<8;++tick) {
+        toy_game_move_player_input(&g,0,1024,1024,0);
+        if(a->x || a->z || a->airborne_y!=airborne_y ||
+           a->vertical_velocity!=vertical_velocity)return 15;
+    }
+    int air_speed=isqrt((long long)a->air_x*a->air_x+(long long)a->air_z*a->air_z);
+    if(a->air_x<=0 || a->air_z<=0 || air_speed>=launch)return 16;
+    int steer_x=a->air_x,steer_z=a->air_z;
+    toy_game_move_player_input(&g,0,0,0,0);
+    if(a->air_x!=steer_x || a->air_z!=steer_z)return 17;
+    toy_game_update_actor_motion(&g,0,16);
+    if(a->x!=steer_x || a->z!=steer_z)return 18;
+    /* A high fall reaches the cap and stays capped. */
+    g.primitive_count=1;a->x=a->z=0;
+    a->airborne_ms=900;a->airborne_y=100000;a->vertical_velocity=0;
+    a->air_x=a->air_z=0;
+    for(int tick=0;tick<180;++tick)toy_game_update_actor_motion(&g,0,16);
+    if(!a->airborne_ms || a->vertical_velocity!=-TOY_CONFIG_FALL_TERMINAL_VELOCITY)return 12;
+    int before_y=a->airborne_y;
+    toy_game_update_actor_motion(&g,0,16);
+    if(before_y-a->airborne_y!=TOY_CONFIG_FALL_TERMINAL_VELOCITY)return 13;
+    return 0;
+}
+
+/* Synthetic geometry tests reach and timing contracts without tying them
+ * to coordinates or props in a mutable authored map. */
+static int player_jump_tolerance_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[2]={
+        test_box_primitive(-20000,20000,-20000,20000,-154,0,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-5000,5000,1200,4000,0,614,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE)
+    };
+    struct toy_game_actor *a;
+    int ticks,height,launch_z;
+    /* A 1.2m obstacle is blocked on foot, reachable with a run-up and
+     * with forward+jump pressed together from rest near the side. */
+    for(int short_press=0;short_press<2;++short_press) {
+        toy_game_init(&g,320);g.to_spawn=0;g.room_limit=25000;
+        g.primitives=world;g.primitive_count=1;
+        a=toy_game_local_player_actor(&g);
+        if(!short_press)
+            for(int i=0;i<20;++i)toy_game_move_player_input(&g,0,0,1024,0);
+        a->z=short_press?900:0;g.primitive_count=2;
+        if(toy_game_try_move_actor(&g,a,0,1300))return 1;
+        if(!toy_game_move_player_input(&g,0,0,1024,1))return 2;
+        ticks=0;
+        while(a->airborne_ms && ticks++<80) {
+            toy_game_move_player_input(&g,0,0,1024,0);
+            toy_game_update_actor_motion(&g,0,16);
+        }
+        if(a->airborne_ms || a->ground_y!=614)return 3;
+    }
+    /* Walk off a raised ledge using the real ground/air handoff. */
+    world[1]=test_box_primitive(-5000,5000,-5000,1000,870,1024,
+        TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE);
+    for(int expired=0;expired<2;++expired) {
+        toy_game_init(&g,321);g.to_spawn=0;g.room_limit=25000;
+        g.primitives=world;g.primitive_count=1;
+        a=toy_game_local_player_actor(&g);
+        for(int i=0;i<20;++i)toy_game_move_player_input(&g,0,0,1024,0);
+        a->z=1140;a->ground_y=1024;g.primitive_count=2;
+        toy_game_move_player_input(&g,0,0,1024,0);
+        if(!a->airborne_ms || !a->air_skip_horizontal_step)return 4;
+        toy_game_update_actor_motion(&g,0,16);
+        for(int i=0;i<(expired?7:3);++i) {
+            toy_game_move_player_input(&g,0,0,1024,0);
+            toy_game_update_actor_motion(&g,0,16);
+        }
+        height=a->ground_y+a->airborne_y;launch_z=a->z;
+        toy_game_move_player_input(&g,0,0,1024,1);
+        if(a->z!=launch_z || a->ground_y+a->airborne_y!=height)return 5;
+        if(expired) {
+            if(a->vertical_velocity>=0 || a->jump_coyote_steps)return 6;
+        } else {
+            if(a->vertical_velocity!=TOY_GAME_JUMP_VELOCITY ||
+               a->jump_coyote_steps || a->jump_buffer_steps ||
+               toy_game_jump_actor(&g,0,0,0))return 7;
+        }
+    }
+    /* Early airborne presses expire, including at release with no direction. */
+    toy_game_init(&g,322);g.to_spawn=0;g.primitives=world;g.primitive_count=1;
+    a=toy_game_local_player_actor(&g);
+    toy_game_move_player_input(&g,0,0,0,1);
+    toy_game_update_actor_motion(&g,0,16);
+    toy_game_move_player_input(&g,0,0,0,1);
+    ticks=0;
+    while(a->airborne_ms && ticks++<80) {
+        toy_game_move_player_input(&g,0,0,0,0);
+        toy_game_update_actor_motion(&g,0,16);
+    }
+    toy_game_move_player_input(&g,0,0,0,0);
+    if(a->airborne_ms || a->jump_buffer_steps)return 8;
+    /* Control owners and respawn must discard all pending jump permission. */
+    a->jump_coyote_steps=a->jump_buffer_steps=6;
+    toy_game_apply_actor_impulse(a,20,0,40,700,0);
+    if(a->jump_coyote_steps || a->jump_buffer_steps ||
+       toy_game_jump_actor(&g,0,0,0))return 9;
+    a->jump_coyote_steps=a->jump_buffer_steps=6;
+    a->control_disabled=0;a->movement_hold_token=1;
+    toy_game_move_player_input(&g,0,0,0,1);
+    if(a->jump_coyote_steps || a->jump_buffer_steps)return 10;
+    a->jump_coyote_steps=a->jump_buffer_steps=6;
+    toy_game_actor_reset_combat(a,1);
+    if(a->jump_coyote_steps || a->jump_buffer_steps)return 11;
+    return 0;
+}
+
+/* Exercise the real session input boundary in offline and prediction modes. */
+static int player_jump_and_aim_logic_test(void)
+{
+    static struct rasterfall_session s;
+    struct toy_map_primitive world[2]={
+        test_box_primitive(-8000,8000,-8000,8000,-154,0,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-8000,8000,4000,4154,-6000,6000,
+            TOY_MAP_PRIMITIVE_COLLISION)
+    };
+    for(int client=0;client<2;++client) {
+        struct camera camera={0};
+        struct rasterfall_command command={0};
+        memset(&s,0,sizeof(s));toy_game_init(&s.game_state,316);
+        s.game_state.external_director=1;s.game_state.to_spawn=0;
+        s.game_state.primitives=world;s.game_state.primitive_count=2;
+        s.game_state.room_limit=10000;
+        camera.cy=camera.pitch_cy=1024;
+        struct toy_game_actor *a=toy_game_local_player_actor(&s.game_state);
+        int step=toy_game_actor_move_step(a,RASTERFALL_MOVE_STEP);
+        command.move_forward=1;
+        /* Build real ground speed before launching; holding movement in air
+         * must then advance only the captured momentum once per tick. */
+        for(int tick=0;tick<20;++tick) {
+            if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+            else rasterfall_session_step(&s,&camera,&command,16);
+        }
+        int start_z=a->z;
+        command.jump_dz=1024;
+        command.buttons=RASTERFALL_CMD_JUMP;
+        for(int tick=0;tick<6;++tick) {
+            if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+            else rasterfall_session_step(&s,&camera,&command,16);
+            if(a->z!=start_z+step*(tick+1) || !a->airborne_ms)return 1+client;
+            command.buttons=0;
+        }
+        /* Press shortly before landing, then release: both session modes
+         * launch the buffered jump on the next grounded input tick. */
+        memset(&command,0,sizeof(command));
+        int wait_ticks=0;
+        while(a->airborne_ms && (a->vertical_velocity>=0 || a->airborne_y>100) &&
+              wait_ticks++<80) {
+            if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+            else rasterfall_session_step(&s,&camera,&command,16);
+        }
+        if(!a->airborne_ms || wait_ticks>=80)return 7+client;
+        command.buttons=RASTERFALL_CMD_JUMP;
+        if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+        else rasterfall_session_step(&s,&camera,&command,16);
+        command.buttons=0;wait_ticks=0;
+        while(a->vertical_velocity<=0 && wait_ticks++<6) {
+            if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+            else rasterfall_session_step(&s,&camera,&command,16);
+        }
+        if(!a->airborne_ms || a->vertical_velocity<=0 ||
+           a->jump_buffer_steps || a->jump_coyote_steps)return 9+client;
+        /* Aim changes and fire on the same tick use the post-input camera. */
+        for(int pitch=-512;pitch<=512;pitch+=512) {
+            memset(&s,0,sizeof(s));toy_game_init(&s.game_state,317);
+            s.game_state.external_director=1;s.game_state.to_spawn=0;
+            s.game_state.primitives=world;s.game_state.primitive_count=2;
+            s.game_state.room_limit=10000;
+            memset(&camera,0,sizeof(camera));camera.cy=1024;
+            camera.pitch_sy=pitch;camera.pitch_cy=pitch?887:1024;
+            memset(&command,0,sizeof(command));
+            command.pitch=pitch<0?-16:16;command.buttons=RASTERFALL_CMD_FIRE;
+            a=toy_game_local_player_actor(&s.game_state);
+            if(client)rasterfall_session_step_client(&s,&camera,&command,16);
+            else rasterfall_session_step(&s,&camera,&command,16);
+            if(a->pitch_sy!=camera.pitch_sy || a->pitch_cy!=camera.pitch_cy ||
+                a->fire_seq!=1 || a->ray_count!=1)return 3+client;
+            const struct toy_game_ray *ray=&a->rays[0];
+            long long dx=(long long)ray->ex-a->x,dz=(long long)ray->ez-a->z;
+            int distance=isqrt(dx*dx+dz*dz);
+            int expected=a->ground_y+a->airborne_y+RASTERFALL_HUMAN_EYE_HEIGHT_RFU+
+                (int)((long long)distance*camera.pitch_sy/camera.pitch_cy);
+            if(!ray->hit_world || abs(ray->hit_y-expected)>100)return 5+client;
+        }
+    }
+    return 0;
+}
+
 /* Landing contracts are independent of temporary building dimensions. */
 static int swept_landing_logic_test(void)
 {
@@ -1989,6 +2438,21 @@ static int run_logic_test(void)
     __printf("rasterfall: primitive gameplay test passed\n");
     { int code=signed_storey_primitive_logic_test();
       if(code){__printf("signed storey primitive failure: %d\n",code);return 311;} }
+    { int code=stair_motion_logic_test();
+      if(code){__printf("stair motion failure: %d\n",code);return 314;}
+      __printf("STAIR MOTION edge jump, descending connection, ledge fall and moving landing: PASS\n"); }
+    { int code=player_locomotion_logic_test();
+      if(code){__printf("player locomotion failure: %d\n",code);return 316;}
+      __printf("PLAYER LOCOMOTION acceleration, braking, diagonal cap, jump momentum, wall slide and fall cap: PASS\n"); }
+    { int code=player_movement_config_logic_test();
+      if(code){__printf("player movement config failure: %d\n",code);return 318;}
+      __printf("PLAYER MOVEMENT CONFIG parsing/atomic rejection/SI units/custom motion/zero tolerance/session reload/client prediction: PASS\n"); }
+    { int code=player_jump_and_aim_logic_test();
+      if(code){__printf("player jump/aim failure: %d\n",code);return 315;}
+      __printf("PLAYER JUMP/AIM single horizontal step and current camera pitch in offline/client paths: PASS\n"); }
+    { int code=player_jump_tolerance_logic_test();
+      if(code){__printf("player jump tolerance failure: %d\n",code);return 317;}
+      __printf("PLAYER JUMP TOLERANCE raised platform, ledge grace, expiry, no double jump and control reset: PASS\n"); }
     { int code=swept_landing_logic_test();
       if(code){__printf("swept landing failure: %d\n",code);return 313;}
       __printf("SWEPT LANDING thin floors, underside, narrow caps, corners and chair seat: PASS\n"); }
@@ -3078,9 +3542,12 @@ static int run_logic_test(void)
     command.move_forward = 1;
     for (int i = 0; i < 10; i++)
         rasterfall_session_step(&session, &camera, &command, 16);
-    if (camera.x != session.level.start_x + session.level.start_sy * 760 / 1024 ||
-        camera.z != session.level.start_z + session.level.start_cy * 760 / 1024)
-        return 1;
+    {
+        long long dx=(long long)camera.x-session.level.start_x;
+        long long dz=(long long)camera.z-session.level.start_z;
+        int distance=isqrt(dx*dx+dz*dz);
+        if(distance<=0 || distance>=10*RASTERFALL_MOVE_STEP) return 1;
+    }
 
     /* 死亡重开仍须恢复世界碰撞配置并能推进首波。 */
     game.state = TOY_GAME_OVER;
@@ -4636,8 +5103,11 @@ death_fixture_done:
             player->z = 0;
             player->ground_y = 500;
             toy_game_update_actor_ground(&game, TOY_GAME_PLAYER_ACTOR_INDEX);
-            if (player->ground_y != 300 || player->airborne_ms != 0)
+            if (!player->airborne_ms || player->ground_y+player->airborne_y != 500)
                 return 175;
+            for(int i=0;i<100 && player->airborne_ms;++i)
+                toy_game_update_actor_motion(&game,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+            if(player->airborne_ms || player->ground_y!=300)return 175;
             game.actors[0].x = 300;
             game.actors[0].z = 0;
             game.actors[0].ground_y = 0;
@@ -4704,11 +5174,19 @@ death_fixture_done:
             player->x = 0; player->z = 0; player->ground_y = 0;
         }
     }
+        /* This momentum-only fixture needs room to clear the platform side.
+         * Contact clears horizontal velocity; no later input is supplied. */
+        player->x = -200;
         if (!toy_game_jump_actor(&game, TOY_GAME_PLAYER_ACTOR_INDEX, 20, 0)) return 87;
         for (int i = 0; i < 70; i++)
             toy_game_update_actor_motion(&game, TOY_GAME_PLAYER_ACTOR_INDEX, 16);
         if (player->airborne_ms != 0 || player->ground_y != 500 ||
-            player->airborne_y != 0) return 88;
+            player->airborne_y != 0) {
+            __printf("platform landing failure position=%d,%d ground=%d airborne=%d height=%d velocity=%d\n",
+                player->x,player->z,player->ground_y,player->airborne_ms,
+                player->airborne_y,player->vertical_velocity);
+            return 88;
+        }
         /* 从边缘原地起跳时，碰撞圆仍压着台面就应落回台顶，
          * 不能落到地面高度后卡在平台侧面。 */
         player->x = 2300;
@@ -4797,7 +5275,7 @@ death_fixture_done:
         game.primitive_count = 0;
         game.room_limit = 12000;
         toy_game_set_primitives(&game,terrain,2,12000);
-        if (toy_game_set_remote_actor(&game, 2, 1, 0, 0, "REMOTE") !=
+        if (toy_game_set_remote_actor(&game, 2, 1, -200, 0, "REMOTE") !=
             actor_index) return 103;
         if (!toy_game_jump_actor(&game, actor_index, 20, 0)) return 104;
         for (int i = 0; i < 70; i++)
@@ -4923,8 +5401,8 @@ death_fixture_done:
         if (camera.sy != authoritative.sy || camera.cy != authoritative.cy)
             return 144;
     }
-    /* A replayed jump uses the vector captured by its command, even when the
-     * camera restored from the snapshot has a different orientation. */
+    /* Replayed ground acceleration at launch uses the captured direction,
+     * even when the restored camera has a different orientation. */
     {
         struct rasterfall_session live_session;
         struct rasterfall_session replay_session;
@@ -4945,11 +5423,11 @@ death_fixture_done:
                                        &jump_command, 16);
         rasterfall_session_replay_client(&replay_session, &replay_camera,
                                          &jump_command, 16);
-        if (live_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_x != 37 ||
-            live_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_z != -29 ||
-            replay_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_x != 37 ||
-            replay_session.game_state.actors[TOY_GAME_PLAYER_ACTOR_INDEX].air_z != -29)
-            return 145;
+        const struct toy_game_actor *live=toy_game_local_player_actor_const(&live_session.game_state);
+        const struct toy_game_actor *replay=toy_game_local_player_actor_const(&replay_session.game_state);
+        if(live->air_x<=0 || live->air_z>=0 || live->air_x>=37 ||
+            live->air_x!=replay->air_x || live->air_z!=replay->air_z ||
+            live->x!=replay->x || live->z!=replay->z)return 145;
     }
 
     /* 玩家互救必须同时更新网络槽和 actor，且主机倒地不能禁用远端移动。 */

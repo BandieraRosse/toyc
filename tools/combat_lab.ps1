@@ -5,9 +5,14 @@ param(
     [ValidateRange(1,3)][int]$Repeats=3,
     [ValidateRange(1,980000)][int]$Seed=1337,
     [string]$OutputDirectory='tmp/combat-lab',
-    [switch]$Observe
+    [switch]$Observe,
+    [int]$Width=0,
+    [int]$Height=0
 )
 $ErrorActionPreference='Stop'
+if(($Width -ne 0 -or $Height -ne 0) -and ($Width -lt 640 -or $Width -gt 7680 -or $Height -lt 480 -or $Height -gt 4320)) {
+    throw 'Specify both Width (640..7680) and Height (480..4320), or leave both zero for the native display default'
+}
 $TaskPath=[Environment]::GetEnvironmentVariable('Path','Process')
 [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
 [Environment]::SetEnvironmentVariable('Path',$TaskPath,'Process')
@@ -31,7 +36,7 @@ function Write-Json($Value,[string]$Name) {
     [IO.File]::WriteAllText((Join-Path $Out $Name),(ConvertTo-Json -InputObject $Value -Depth 8),$Utf8)
 }
 try {
-    Write-Json @{started=$Started.ToString('o');timezone=[TimeZoneInfo]::Local.Id;commit=$Commit;status=$Status;stage=$Stage;preset=$Preset;seed=$Seed;repeats=$Repeats;observe=[bool]$Observe;exe_hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash;map_hash=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash} 'manifest.json'
+    Write-Json @{started=$Started.ToString('o');timezone=[TimeZoneInfo]::Local.Id;commit=$Commit;status=$Status;stage=$Stage;preset=$Preset;seed=$Seed;repeats=$Repeats;observe=[bool]$Observe;window_width=$Width;window_height=$Height;exe_hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash;map_hash=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash} 'manifest.json'
     $Cases=if($Stage -eq 'Scale'){@(for($Round=0;$Round -lt $Repeats;$Round++){19;20})}elseif($Preset -ge 0){@($Preset)}else{@(-1)}
     $Trial=0
     foreach($Case in $Cases) {
@@ -44,6 +49,7 @@ try {
         }
         $Csv=Join-Path $Out "$Name.csv"
         $Arguments=@('--skip-boot','--map','rasterfall/assets/maps/outpost.map','--combat-lab-output',('"'+$Csv+'"'),'--combat-lab-seed',[string]$RunSeed,'--combat-lab-repeat',[string]$Repeats)
+        if($Width) {$Arguments+=@('--window-size',[string]$Width,[string]$Height)}
         if($Stage -eq 'Suite') {
             $Arguments+='--combat-lab-suite'
             if($Case -ge 0){$Arguments+=@('--combat-lab',[string]$Case)}

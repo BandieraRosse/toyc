@@ -1349,6 +1349,9 @@ render id=outpost_stair_roof_door_pier_end kind=box min_x=1229 max_x=3072 min_z=
 collision id=outpost_stair_roof_landing_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 attr.base_y=4762 collision=true visible=false walkable=true
 render id=outpost_stair_roof_landing kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 attr.base_y=4762 color=8296A0
 surface id=outpost_stair_roof_landing_surface kind=platform min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 material=8296A0 attr.collision_id=outpost_stair_roof_landing_col
+collision id=outpost_stair_base_col shape=box min_x=-3072 max_x=3072 min_z=12288 max_z=19456 height=-2458 attr.base_y=-2612 collision=true visible=false walkable=true
+render id=outpost_stair_base kind=box min_x=-3072 max_x=3072 min_z=12288 max_z=19456 height=-2458 attr.base_y=-2612 color=8296A0
+surface id=outpost_stair_base_surface kind=platform min_x=-3072 max_x=3072 min_z=12288 max_z=19456 height=-2458 material=8296A0 attr.collision_id=outpost_stair_base_col
 collision id=outpost_stair_wall_w_col shape=box min_x=-3149 max_x=-2995 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_stair_wall_w kind=box min_x=-3149 max_x=-2995 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 color=526875
 collision id=outpost_stair_wall_e_col shape=box min_x=2995 max_x=3149 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 collision=true visible=false walkable=false

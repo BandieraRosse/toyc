@@ -18,6 +18,43 @@ static int positive_int(const char *text, int fallback)
     return *text || value <= 0 ? fallback : value;
 }
 
+/* User tuning is always read from disk, never from embedded assets. */
+int rasterfall_options_load_movement(struct rasterfall_options *o)
+{
+    char text[8193];
+    int fd, size=0, count, line=0, result;
+    const char *error=NULL;
+    fd=openat(AT_FDCWD,o->movement_config_path,O_RDONLY,0);
+    if(fd<0) {
+        if(o->movement_config_explicit || o->movement_config_check) {
+            __fprintf(2,"rasterfall: cannot read movement config %s\n",o->movement_config_path);
+            return -1;
+        }
+        __printf("MOVEMENT config=%s unavailable; using built-in defaults\n",o->movement_config_path);
+        return 0;
+    }
+    while(size<(int)sizeof(text)) {
+        count=read(fd,text+size,(int)sizeof(text)-size);
+        if(count<0) { close(fd);__fprintf(2,"rasterfall: movement config read failed\n");return -1; }
+        if(!count)break;
+        size+=count;
+    }
+    close(fd);
+    result=toy_game_player_movement_parse(text,size,&o->player_movement,&line,&error);
+    if(result<0) {
+        __fprintf(2,"rasterfall: movement config %s:%d: %s\n",o->movement_config_path,line,error);
+        return -1;
+    }
+    __printf("MOVEMENT config=%s move=%d RFU/tick accel=%d brake=%d turn=%d air=%d (1/1024 RFU/tick^2) jump=%d gravity=%d terminal=%d coyote=%d ticks buffer=%d ticks\n",
+        o->movement_config_path,o->player_movement.move_step,
+        o->player_movement.move_accel,o->player_movement.move_brake,
+        o->player_movement.turn_accel,o->player_movement.air_accel,
+        o->player_movement.jump_velocity,o->player_movement.gravity,
+        o->player_movement.fall_terminal,o->player_movement.coyote_steps,
+        o->player_movement.buffer_steps);
+    return 0;
+}
+
 static int signed_int(const char *text, int *value)
 {
     int sign = 1, result = 0;
@@ -66,6 +103,8 @@ void rasterfall_options_init(struct rasterfall_options *o,
                              int textures_enabled)
 {
     memset(o, 0, sizeof(*o));
+    o->movement_config_path = "rasterfall/config/player-movement.cfg";
+    toy_game_player_movement_defaults(&o->player_movement);
     o->requested_net_mode = RASTERFALL_NET_OFF;
     o->combat_lab = -1;
     o->combat_lab_seed = 1337;
@@ -99,6 +138,8 @@ void rasterfall_options_usage(int fd)
         "    Windows default: desktop fullscreen; frame/Scene diagnostics use a 1280x720 window\n"
         "  --window-size <width> <height>  (640..7680 x 480..4320; also selects windowed mode)\n"
         "  --ui-scale <75..175>  (percent of automatic 720p-based player UI scale)\n"
+        "  --movement-config <path>  (default: rasterfall/config/player-movement.cfg; read at startup)\n"
+        "  --movement-config-check  (validate and print resolved 60 Hz movement settings, then exit)\n"
         "  --gpu-present-fault <acquire-out-of-date|record-failure|submit-failure|present-out-of-date|present-suboptimal> [frame]\n"
         "  --legacy-map  (force legacy map loader)\n"
         "  --map <path>  (load an explicit V1 map for local inspection)\n"
@@ -197,6 +238,11 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
             if (require_arguments(argc, argv, arg, 1, option) < 0) return -1;
             o->map_path = argv[++arg];
         }
+        else if (!strcmp(option, "--movement-config")) {
+            if (require_arguments(argc,argv,arg,1,option)<0) return -1;
+            o->movement_config_path=argv[++arg];o->movement_config_explicit=1;
+        }
+        else if (!strcmp(option, "--movement-config-check")) o->movement_config_check=1;
         else if (!strcmp(option, "--action-runtime-debug")) o->action_runtime_debug = 1;
         else if (!strcmp(option, "--frame-audit")) o->frame_audit = 1;
         else if (!strcmp(option, "--gpu-world-cycle-test")) o->world_cycle_gate = 1;

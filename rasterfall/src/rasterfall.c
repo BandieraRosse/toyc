@@ -15,6 +15,8 @@ int main(int argc, char **argv)
                             rasterfall_options_default_textures_enabled());
     result = rasterfall_options_parse(&options, argc, argv);
     if (result != 0) return result < 0 ? 2 : 0;
+    if (rasterfall_options_load_movement(&options)<0) return 2;
+    if (options.movement_config_check) return 0;
 
     game_config.options = &options;
     game_config.map_path = "rasterfall/assets/maps/outpost.map";

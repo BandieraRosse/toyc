@@ -28,7 +28,7 @@ V1 冻结可复用建筑资产、连接尺度和表面语言；关卡与碰撞�
 - `slab(name, footprint, y, color)`：`footprint=(min_x,max_x,min_z,max_z)`，Y 为板顶，底面为 Y 减统一厚度。
 - `wall(name, axis, at, start, end, bottom, top, color, openings=(), walk=False)`：轴向为 X 或 Z，`at` 是墙中心线；每个开口为 `(start,end,clear_height)`，自动生成两侧墙段及过梁。开口不得重叠或超出墙段。
 - `flight(name, footprint, h0, h1, color, steps=12)`：沿 Z 的有限厚度连续碰撞坡面，附踏步表现。
-- `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
+- `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。最底层南平台与底板共同铺满楼梯间，覆盖双跑踏步和半层平台下方；底板同步生成可见实体、有限厚度碰撞和可站立面，上层保留楼梯井开口。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
 
 标准层高由作者给定，墙顶必须等于下一层楼板底；不要独立指定一套不相符的视觉墙高。
 相邻房间共享同一墙中心线，一条共享墙只生成一次，门口使用同一开口区间。

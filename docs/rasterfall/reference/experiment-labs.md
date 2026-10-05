@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Game Runtime 展示控制、session 基准世界生命周期
-> 事实入口：`src/rf_experiment_labs.inc`、`src/rf_performance_lab.inc`、`assets/maps/outpost.map`
+> 事实入口：`src/rf_experiment_labs.inc`、`src/rf_performance_lab.inc`、`src/rf_performance_live.inc`、`assets/maps/outpost.map`
 
 ## 登记与展示
 
@@ -225,6 +225,18 @@ surface、collision 和可见绘制分别声明；边线与内部地面不重叠
 区域标题说明用途；试样标签说明类型与参数，地图对象 ID 保持稳定。
 
 ## 性能独占与基准世界
+
+LIVE 预设由 `rf_performance_live.inc` 配置正式世界与普通 RTS 命令，沿用性能实验 owner 的菜单、
+GPU probe 采样、结果和返回路径。枪手对照只借用战斗实验 19/20 的初始化，不运行其死亡姿态保留或
+CSV 收集；后续全部由正常 `rf_game_update()` / session 固定步结算。真实跨层预设使用正式前哨站
+surface 和五名真实 actor，逐段确认五人到达；首图巡检加载正式地图和 mission content，按普通 RTS
+楼层焦点和剖切控制观察。相机控制不写参与者坐标，不跳过 AI、碰撞、阴影或世界背景。
+
+这些实验固定 FULL SCENE、使用新世界，完成/取消返回重新初始化的前哨站，恢复玩家、相机、种子与
+展示请求。进程退出只解除 profile 借用、清理对象并正常退休资源，不加载返回地图。
+计时诊断仍是 runtime 展示数据；actor 与任务真值属于 Game/session。除全程统计外，结果记录实际
+存活范围和交战帧分布；跨层未完成、外部地图代际变化、画面配置变化或用户取消均不能作为有效结果。
+操作与参数见[真实负载预设](../guides/rendering-performance.md#live-真实负载预设)。
 
 性能控制和结果终端仍位于前哨站。默认 ISOLATED 经 `rf_game_request_world()` 加载专用地图，
 完成或 Esc 取消后经同一 session 生命周期重载前哨站，恢复本地玩家状态、位置、视角、种子和展示请求。

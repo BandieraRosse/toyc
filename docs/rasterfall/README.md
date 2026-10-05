@@ -14,7 +14,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
 [地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
 标准房屋、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
-入口为 `tools/building_kit.py`；物体顶面、窄护墙和下落扫掠见[碰撞高度区间](architecture/gameplay.md#component-collision-高度区间)。
+入口为 `tools/building_kit.py`；物体顶面、窄护墙、楼梯跳跃与跨层落地见[碰撞高度区间](architecture/gameplay.md#component-collision-高度区间)，玩法判定入口为 `lib/game.c`。
+玩家速度、地面加减速、反向变向、斜向限速、跳跃惯性、离边/落地起跳容错及空中微调见[玩家地面移动与跳跃](architecture/gameplay.md#玩家地面移动与跳跃)；可编辑参数见[玩家移动配置](guides/player-movement-config.md)，由 Game actor 持有运动状态，session 只提交方向输入并保留启动配置。
 
 | 任务 | 先读 | 主要代码或工具入口 |
 | --- | --- | --- |
@@ -54,7 +55,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 实验园区多模型、投影合批与正常帧性能 | [GPU 架构](architecture/gpu-rendering-architecture.md)、[园区采样](guides/rendering-performance.md#实验园区正常场景采样) | `tools/gpu_outpost_perf.ps1`、`src/rf_scene_performance.inc`、`render/rf_gpu_scene_layers.inc`；逐面颜色/透明度、独立主视图/阴影剔除、正常 native 呈现下五轮对照 |
 | 实验区复合定义、RF 第一代电子组件与产品展区、像素屏幕、分区导视与展示独占 | [实验区合同](reference/experiment-labs.md)、[渲染架构](architecture/rendering-architecture.md)、[地图格式](reference/map-format.md)、[地图编辑](guides/map-authoring.md) | `tools/experiment_lab.py`、`tools/lab_computer.py`、`tools/rf_electronics_lab.py`、`tools/blender/generate_lab_computer.py`、`src/rf_experiment_labs.inc`、`src/render/rf_electronics_geometry.inc`、`src/render/rasterfall_machine_screen.h`、`src/render/rasterfall_lab_terminal.h`；B1/C1/M1/X1 装配、可调转速与闪灯、产品展台、透明侧板、后部接口、固定 RFU 像素 |
 | 前哨站实验区总平面、道路、填充铺装与四角投影 | [实验园区 V3](reference/outpost-lab-layout-v3.md)、[标准地块铺装](reference/experiment-labs.md#标准地块铺装与角标) | `assets/maps/outpost.map`、`tools/experiment_lab.py`、`src/render/rasterfall_lab_terminal.h`；工作区与规划地块分离、三类铺装、信标底座碰撞与投影旋转浮动、道路并集与性能观察支带 |
-| 前哨站游戏内性能实验场与全景巡检 | [实验场操作](guides/rendering-performance.md#前哨站游戏内性能实验场)、[Outpost V1](reference/outpost-hall-v1.md)、[运行时架构](architecture/runtime.md) | `assets/maps/outpost.map`、`assets/maps/performance_*.map`、`src/rf_performance_lab.inc`、`tools/gpu_performance_lab.ps1`；独立/环境/完整背景、五视角当前/全开巡检、分阶段结果与路侧终端 |
+| 前哨站性能实验、真实枪手对照、五人跨层与首图巡检 | [实验场操作](guides/rendering-performance.md#前哨站游戏内性能实验场)、[真实负载](guides/rendering-performance.md#live-真实负载预设)、[运行时架构](architecture/runtime.md) | `src/rf_performance_lab.inc`、`src/rf_performance_live.inc`、`tools/gpu_performance_lab.ps1`；独立/环境/完整背景、同一现场与脚本固定步、交战帧与路线完成结果、正式地图和 content |
 | 通用 Scene 准备优化、多视图共享、入图预热与快照缓存 | [GPU 架构](architecture/gpu-rendering-architecture.md)、[性能诊断](guides/rendering-performance.md) | `src/render/rf_gpu_scene_layers.inc`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/rf_gpu_scene_native.c`、`gpu/src/rf_gpu_vulkan_graphics.inc`；多 reader 退休、地图代际预热、首图六份增援资源备用池、双镜头错峰、有界显示缓存、姿态/敌人几何复用、校验来源槽的敌人容量保留及其稀疏驻留取舍；`tools/gpu_player_ui_perf.ps1` 双镜头对照与预热记录 |
 | GPU Scene/present 架构与退役边界 | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[活动计划](plans/README.md) | `gpu/`、Scene graphics、Core Host |
 | GPU Scene 只读 snapshot | [GPU 渲染架构](architecture/gpu-rendering-architecture.md)、[历史迁移接口](archive/gpu-scene-interface.md)、[角色表现](architecture/character-presentation.md) | `src/rf_gpu_scene_identity.c`、`src/rf_gpu_scene_frame.c`、`src/rf_gpu_scene_extract.c`、`src/rf_gpu_scene_local.c`、`src/rf_gpu_scene_world.c`、`src/rf_gpu_scene_world_gpu.c`、`src/render/rf_gpu_scene_pose.inc`、`src/rf_gpu_scene_native.c`；独立 Scene 冻结 world、角色与动态来源；旧正常帧审计记录见历史迁移接口 |

@@ -22,7 +22,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "build-windows/rasterfall-windows"
-VIEWS = ("entry", "overview", "energy")
+VIEWS = ("entry", "overview", "energy", "workshop", "floor-1", "floor-2", "roof")
 SCOPE = ("Stationary normal native fixed-view sampling of early ASSAULT workload. "
          "Mission phases and live counts are not audited by this low-perturbation collector; "
          "it does not establish COUNTERATTACK performance or ordinary route acceptance.")
@@ -208,7 +208,19 @@ def cpu_info():
 
 def require_idle():
     result = subprocess.run(["tasklist", "/FI", "IMAGENAME eq rasterfall.exe", "/FO", "CSV", "/NH"],
-                            capture_output=True, check=True, **native_options())
+                            capture_output=True, **native_options())
+    if result.returncode:
+        # tasklist can require unavailable WMI access in a restricted native
+        # session. Get-Process reads the local process table without WMI.
+        result = subprocess.run(["powershell", "-NoProfile", "-Command",
+            "try { if (Get-Process -ErrorAction Stop | Where-Object { $_.ProcessName -eq 'rasterfall' }) "
+            "{ exit 1 }; exit 0 } catch { exit 2 }"],
+            capture_output=True, **native_options())
+        if result.returncode == 1:
+            raise RuntimeError("Rasterfall already running; keep the GPU lane serial")
+        if result.returncode:
+            raise RuntimeError("Cannot verify that the native GPU lane is idle")
+        return
     for row in csv.reader(io.StringIO(result.stdout.decode(errors="replace"))):
         if row and row[0].lower() == "rasterfall.exe":
             raise RuntimeError("Rasterfall already running; keep the GPU lane serial")
@@ -368,7 +380,7 @@ def main():
     parser.add_argument("--stderr-log", type=Path)
     parser.add_argument("--runtime-log", type=Path)
     parser.add_argument("--exit-code", type=int, help="Actual completed process exit code for --read-log")
-    parser.add_argument("--views", nargs="+", choices=VIEWS, default=list(VIEWS))
+    parser.add_argument("--views", nargs="+", choices=VIEWS, default=["entry", "overview", "energy"])
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--samples", type=int, default=360)
     parser.add_argument("--width", type=int, default=1280)
