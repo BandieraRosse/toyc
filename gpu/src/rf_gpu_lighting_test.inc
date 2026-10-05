@@ -236,6 +236,58 @@ done:
     rf_gpu_lighting_default(&lights);rf_gpu_graphics_set_lighting(g,&lights);return result;
 #undef RANGE_CHECK
 }
+static int lighting_tiles_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item source[2],const struct rf_gpu_lighting *restore,
+    uint32_t *a,uint32_t *b,float *da,float *db)
+{
+    int result=-1,saved=g->light_tiles_enabled;
+    struct rf_gpu_lighting lights=*restore;
+#define TILE_CHECK(x) do {if(!(x)){fprintf(stderr,"LIGHT TILES FAIL line=%d\n",__LINE__);goto done;}}while(0)
+    lights.sun_color[3]=0;
+    for(unsigned sample=0;sample<12;++sample) {
+        unsigned width=sample&1?79:64,height=sample&1?63:64;
+        lights.count=sample==0?0:sample==1?1:32;
+        for(unsigned i=0;i<lights.count;++i) {
+            struct rf_gpu_light *l=&lights.lights[i];memset(l,0,sizeof(*l));
+            l->position_radius[0]=((int)(i%8)-4)*1500;
+            l->position_radius[1]=((int)(i/8)-2)*1500;
+            l->position_radius[2]=i%3?1200:-3000;
+            l->position_radius[3]=i%4?5000:12000;
+            l->color_intensity[0]=l->color_intensity[1]=l->color_intensity[2]=1;
+            l->color_intensity[3]=3;
+            l->direction_outer[1]=sample&2?0.3f:0;
+            l->direction_outer[2]=sample&4?-1:1;
+            l->direction_outer[3]=i%2?(sample&8?0.92f:0.05f):-1;
+            l->inner_shadow[0]=0.97f;
+        }
+        /* Exercise the high mask bit with a definitely contributing light. */
+        if(lights.count==32) {
+            lights.lights[31].position_radius[0]=lights.lights[31].position_radius[1]=0;
+            lights.lights[31].position_radius[2]=1500;lights.lights[31].direction_outer[3]=-1;
+        }
+        struct rf_gpu_graphics_batch_item pair[2]={source[0],source[1]};
+        for(unsigned j=0;j<2;++j) {
+            struct rf_gpu_graphics_draw *d=&pair[j].draw;
+            d->projection[0]=width;d->projection[1]=height;d->projection[3]=width*3/4;
+            d->camera[0]=(int)(sample%3)*150-150;d->camera[1]=(int)(sample%4)*120-240;
+            d->camera[2]=sample&4?2000:-100;
+            d->view[0]=sample&2?199:0;d->view[1]=sample&2?1004:1024;
+            d->view[2]=sample&1?-199:0;d->view[3]=sample&1?1004:1024;
+        }
+        if(sample>=6) {pair[1].draw.camera[0]+=200;pair[1].draw.view[0]=-pair[1].draw.view[0];}
+        TILE_CHECK(!rf_gpu_graphics_resize(g,width,height) && !rf_gpu_graphics_set_lighting(g,&lights));
+        g->light_tiles_enabled=0;TILE_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,a,da,96*96));
+        g->light_tiles_enabled=1;TILE_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,b,db,96*96));
+        TILE_CHECK(!memcmp(a,b,width*height*4) && !memcmp(da,db,width*height*4));
+    }
+    fprintf(stdout,"LIGHT TILES PASS samples=12 empty=1 bit31=1 near_camera=1 wide_narrow_spot=1 mixed_view=1 resize=1 pixel_depth_equal=1\n");
+    result=0;
+done:
+    g->light_tiles_enabled=saved;
+    if(rf_gpu_graphics_resize(g,64,64)<0 || rf_gpu_graphics_set_lighting(g,restore)<0)result=-1;
+    return result;
+#undef TILE_CHECK
+}
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_graphics_vertex v[12]={0};
@@ -273,6 +325,8 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     for(unsigned p=0;p<64*64;++p) if(da[p]>0 && da[p]==db[p] &&
         lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15) ++shadow_pixels;
     LIGHT_CHECK(shadow_pixels>8);
+    LIGHT_CHECK(!lighting_tiles_regression(g,items,&lights,a,b,da,db));
+    LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
     /* Only sources fully covered by the current architecture may leave the
      * shadow maps. Clearing/rejecting input and resize preserve that contract;
      * unmarked receiver/prop geometry must still cast. */
@@ -316,7 +370,10 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             if(timing.supported) {
                 LIGHT_CHECK(timing.valid && timing.frame_id==7+offscreen);
                 LIGHT_CHECK(timing.sky_compute_ms>=0 && timing.shadow_ms>=0 && timing.main_scene_ms>=0);
-                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+                double sum=0;
+                for(unsigned i=1;i<6;++i){LIGHT_CHECK(timing.detail_ms[i]>=0);sum+=timing.detail_ms[i];}
+                LIGHT_CHECK(fabs(timing.main_scene_ms-sum)<0.00001);
             }
         }
         LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));

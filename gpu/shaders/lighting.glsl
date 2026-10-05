@@ -4,7 +4,13 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     mat4 shadow_matrix[5]; vec4 cascade_center[3]; Light lights[32];
     vec4 sky_cloud; vec4 sky_weather;
     vec4 cutaway_bounds; vec4 cutaway_height;
+    uvec4 tile_grid; // width, height, enabled, diagnostic counters
+    ivec4 tile_camera; ivec4 tile_view; ivec4 tile_projection;
+    uvec4 light_control; // diagnostic ablation mask
 } lighting;
+#ifdef RF_LIGHT_PROFILE
+uint profile_pcf=0u;
+#endif
 layout(set=1,binding=1,std430) readonly buffer Shadows { float depth[]; } shadows;
 #ifdef RF_ARCHITECTURE_RAY_QUERY
 layout(set=1,binding=7) uniform accelerationStructureEXT architecture;
@@ -58,6 +64,10 @@ vec3 decode_srgb(vec3 c) {
 /* Bilinearly translated tent kernel: continuous sub-texel coverage from
  * sixteen depth loads, without depth filtering extensions or random noise. */
 float shadow_filter(int map,vec3 uv,float bias) {
+    if((lighting.light_control.x&8u)!=0u)return 1.0;
+#ifdef RF_LIGHT_PROFILE
+    ++profile_pcf;
+#endif
     vec2 at=uv.xy*1024.0-0.5;ivec2 lo=ivec2(floor(at));vec2 f=fract(at);
     vec4 wx=vec4(1.0-f.x,2.0-f.x,1.0+f.x,f.x);
     vec4 wy=vec4(1.0-f.y,2.0-f.y,1.0+f.y,f.y);
@@ -102,6 +112,7 @@ vec3 environment_irradiance(vec3 n) {
     return mix(ground,lighting.environment.rgb*1.3,sky);
 }
 vec3 brdf(vec3 base, vec3 n, vec3 v, vec3 l, float rough, float metal, bool stylized) {
+    if((lighting.light_control.x&16u)!=0u)return base*max(dot(n,l),0.0);
     float nl=max(dot(n,l),0.0),nv=max(dot(n,v),0.001);
     vec3 h=normalize(v+l+vec3(0.000001));
     float nh=max(dot(n,h),0.0),vh=max(dot(v,h),0.0);

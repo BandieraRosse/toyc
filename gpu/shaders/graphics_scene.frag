@@ -28,6 +28,23 @@ layout(location=2) in vec3 world_normal;
 layout(location=3) flat in uint triangle_color;
 layout(location=4) flat in float triangle_alpha;
 layout(location=0) out vec4 color;
+layout(set=1,binding=8,std430) readonly buffer Tiles { uint masks[]; } tiles;
+#ifdef RF_LIGHT_PROFILE
+layout(set=1,binding=9,std430) buffer Profile { uint counts[]; } profile;
+#endif
+uint light_tile_index() {
+    uvec2 tile=min(uvec2(gl_FragCoord.xy)/16u,lighting.tile_grid.xy-1u);
+    return tile.y*lighting.tile_grid.x+tile.x;
+}
+uint light_mask() {
+    uint count=uint(lighting.counts.x);
+    // Screen-space viewmodels reconstruct world coordinates differently.
+    // Mixed cameras/projections in the public batch API use the complete list.
+    if(lighting.tile_grid.z!=0u && d.texture_info.w==0 &&
+       all(equal(d.camera.xyz,lighting.tile_camera.xyz)) && all(equal(d.view,lighting.tile_view)) &&
+       all(equal(d.projection,lighting.tile_projection)))return tiles.masks[light_tile_index()];
+    return count==32u?0xffffffffu:((1u<<count)-1u);
+}
 vec3 rgb(uint c) { return vec3((c>>16)&255u,(c>>8)&255u,c&255u)/255.0; }
 vec3 fetch_repeat(ivec2 p) {
     p=(p%d.texture_info.xy+d.texture_info.xy)%d.texture_info.xy;
@@ -89,14 +106,20 @@ void main() {
     vec3 origin=world_position+n*1.5;
     // A roof blocks outdoor fill even in RTS cutaway. Retain a small artistic
     // interior floor; this is visibility, not GI or bounced artificial light.
-    float sky_access=architecture_visibility(origin,vec3(0,1,0),131072.0);
+    uint ablation=lighting.light_control.x;
+    float sky_access=(ablation&1u)!=0u?1.0:architecture_visibility(origin,vec3(0,1,0),131072.0);
     vec3 radiance=base*(1.0-metal)*environment_irradiance(n)*mix(0.10,1.0,sky_access)+base*emissive;
     vec3 l=lighting.sun_direction.xyz;
-    if(lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0) &&
-       architecture_visibility(origin,l,131072.0)>0.0)
+    bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
+    if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0))
       radiance+=brdf(base,n,v,l,rough,metal,stylized)*lighting.sun_color.rgb*
         lighting.sun_color.w*sun_visibility(world_position,n);
-    for(int i=0;i<int(lighting.counts.x);++i) {
+    uint mask=light_mask();
+#ifdef RF_LIGHT_PROFILE
+    uint candidates=uint(bitCount(mask)),local_rays=0u,local_visible=0u;
+#endif
+    while(mask!=0u) {
+        int i=findLSB(mask);mask&=mask-1u;
         Light light=lighting.lights[i];vec3 delta=light.position_radius.xyz-world_position;
         float distance_squared=dot(delta,delta),radius_squared=light.position_radius.w*light.position_radius.w;
         if(distance_squared>=radius_squared) continue;
@@ -106,10 +129,26 @@ void main() {
         float spot=light.direction_outer.w<0.0 ? 1.0 : smoothstep(light.direction_outer.w,
             light.inner_shadow.x,dot(-l,light.direction_outer.xyz));
         if(spot<=0.0 || (!stylized && dot(n,l)<=0.0)) continue;
-        if(architecture_visibility(origin,l,max(sqrt(distance_squared)-2.0,0.0))==0.0)continue;
+#ifdef RF_LIGHT_PROFILE
+        if((ablation&4u)==0u)++local_rays;
+#endif
+        if((ablation&4u)==0u && architecture_visibility(origin,l,max(sqrt(distance_squared)-2.0,0.0))==0.0)continue;
+#ifdef RF_LIGHT_PROFILE
+        ++local_visible;
+#endif
         float attenuation=fade*fade/max(distance_squared/(512.0*512.0),0.04);
         radiance+=brdf(base,n,v,l,rough,metal,stylized)*light.color_intensity.rgb*
             light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);
     }
     color=vec4(radiance,alpha);
+#ifdef RF_LIGHT_PROFILE
+    uint at=light_tile_index()*7u;
+    atomicAdd(profile.counts[at],1u);
+    atomicAdd(profile.counts[at+1u],candidates);
+    atomicAdd(profile.counts[at+2u],(ablation&1u)==0u?1u:0u);
+    atomicAdd(profile.counts[at+3u],sun_test && (ablation&2u)==0u?1u:0u);
+    atomicAdd(profile.counts[at+4u],local_rays);
+    atomicAdd(profile.counts[at+5u],local_visible);
+    atomicAdd(profile.counts[at+6u],profile_pcf);
+#endif
 }

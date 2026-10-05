@@ -67,6 +67,14 @@ BLAS/TLAS 和存储由各 graphics owner 保留，resize 不重建；不逐帧�
 
 GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值、HDR 合成与资源边界见[GPU 天空](gpu-sky.md)。CPU 继续使用旧天空。
 
+天空 compute 后、阴影绘制前，`graphics_light_tiles.comp` 为每个 16×16 屏幕块生成一个 32 位候选灯掩码。
+point 使用有限球体，spot 使用有限球扇形，对块视锥的四个侧平面及相机前平面做保守相交测试；
+保留像素与世界空间容差，不消费深度、房间身份、接收面法线或建筑可见性。
+因此透明物和楼梯开口沿用真实光源；精确半径、锥角、背光面和遮挡判断仍在片元执行。
+片元按原灯索引顺序消费位掩码，不重排光照累加。混合相机/投影的 draw 和屏幕空间 viewmodel
+退回完整灯表。各 graphics slot 独占掩码缓冲，resize 在退休后重建；compute 写入到片元读取有显式 barrier。
+`RF_GPU_LIGHT_TILES=0` 在初始化时禁用筛选，供同版本画面和性能对照；默认启用。
+
 1. 未由当前建筑查询完整覆盖的不透明 WORLD 几何绘制阴影：太阳采用三个相机附近的稳定正交范围；最多两盏聚光灯使用透视阴影。
    每张阴影图用独立光空间包围盒剔除，复用连续绘制的 pipeline/vertex/index 绑定；不套用相机可见性。
 2. 阴影为 1024×1024 D32，深度在 GPU 内复制到 storage buffer；片元以 16 次深度比较求值连续移动的 tent PCF 核。
@@ -76,9 +84,17 @@ GPU 独立程序天空与体积云消费本页的同一太阳，compute 求值�
 4. compute 执行曝光与 ACES fitted 色调映射，将曲线肩部按其渐近值归一化，避免中高 HDR 值提前越过显示白而被硬裁切；
    最后编码为 sRGB RGBA8。极高亮度仍受八位输出量化限制。HUD 随后合成，保持界面颜色。正常帧直接 native present。
 
-GPU timestamp 将 `world_draw_ms` 按命令区间拆为 `sky_compute_ms`、`shadow_ms`、`main_scene_ms`。
-阴影区间含深度复制；主场景区间含 WORLD 光照、天空合成、透明、viewmodel、后处理及 HUD，
-不能把它直接称为 Ray Query 耗时。native、离屏和 capture 共用读回解释，离屏不等待未写入的 present 查询。
+GPU timestamp 将 `world_draw_ms` 按命令区间拆为天空 compute、灯表 compute、阴影和主场景。
+阴影区间含深度复制；主场景再拆为 WORLD/天空合成、透明/特效、viewmodel、后处理/视频合成及 HUD。
+`detail_ms[0..5]` 依次保存灯表及这五个主场景区间；没有 draw 的层也写入边界时间戳。
+这些区间不能直接称为 Ray Query 耗时。native、离屏和 capture 共用读回解释，离屏不等待未写入的 present 查询。
+
+光照计数只在 `RF_GPU_LIGHT_PROFILE=1` 的独立片元变体中启用，同时要求设备的
+`fragmentStoresAndAtomics`。计数缓冲按块累加已着色调用、候选灯、顶部/太阳/局部可见性调用、
+局部可见结果及 PCF 核调用，GPU 完成后才读回。它包含 overdraw，且存储副作用可能改变早期深度优化；
+不是最终可见像素数或 RT 硬件计数。普通 shader 没有这些原子操作，计数运行不得作为正常性能证据。
+诊断消融可以分别跳过 roof/sun/local 可见性、PCF 或替换 BRDF，明确改变画面；
+所得时间差只代表该改动后的边际成本，不是可相加的独立子系统耗时。
 
 材质使用 GGX 镜面、Schlick Fresnel、粗糙度、金属度和标量自发光。平滑法线来自资源；无显式法线时用几何法线。风格化材质调整漫反射响应，仍消费同一组实时灯和阴影。当前粗糙度/金属度为 draw 标量；没有承诺 normal/ORM 纹理、IBL、GI 或完整动漫材质。
 

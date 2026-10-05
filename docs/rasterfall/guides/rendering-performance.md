@@ -303,9 +303,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 预热 120 帧后收集指定数量，结束自动退出。`SCENE-PERF` 报告整个 begin-to-begin 帧间隔分位数、
 GPU、天空 compute、阴影绘制及主场景分位数、实际主绘制/阴影绘制和上传量。
 `shadow_p50_us/p95_us` 包括阴影深度复制；`main_p50_us/p95_us` 包括主场景、HDR 合成和后处理/HUD，
-不是独立的光追耗时。三个区间属于 GPU 总时间，各自分位数不能相加。
+不是独立的光追耗时。`SCENE-GPU-STAGES` 另列灯表 compute、WORLD/天空合成、透明/特效、
+viewmodel、后处理/视频合成与 HUD；各区间属于 GPU 总时间，各自分位数不能相加。
 `-CompareArchitecture` 比较软件/硬件建筑查询；`-CompareArchitectureShadows` 比较是否重复绘制建筑阴影，
 详见[光照对照指南](gpu-lighting.md#建筑硬件光追与对照)。所有比较轴互斥。
+`-CompareLightTiles` 比较保守分块灯表；`-ProfileLights` 使用独立片元计数变体，性能结果显式标为无效，
+仅用于工作量定位；`-LightAblations` 分别改变可见性/PCF/BRDF 路径，只作成本线索，
+详见[光照成本定位](gpu-lighting.md#分块灯表与光照成本定位)。
 暂停、尺寸/present 模式改变、无效 GPU 时间或 bridge 会使结果无效；仍须检查完整进程退出与错误日志。
 
 脚本默认五轮，轮间反转 reference/optimized 顺序，保存参数、exe/map hash、原始日志和 `report.json`。

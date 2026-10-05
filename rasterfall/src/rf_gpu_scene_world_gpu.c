@@ -1741,11 +1741,15 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->gpu_sky_ms=timing.sky_compute_ms;
     stats->gpu_shadow_ms=timing.shadow_ms;
     stats->gpu_main_ms=timing.main_scene_ms;
+    memcpy(stats->gpu_detail_ms,timing.detail_ms,sizeof(stats->gpu_detail_ms));
     stats->record_us=(int64_t)(timing.record_ms*1000);
     stats->acquire_us=(int64_t)(timing.acquire_ms*1000);
     stats->queue_submit_us=(int64_t)(timing.queue_submit_ms*1000);
     stats->present_us=(int64_t)(timing.present_ms*1000);
     rf_gpu_graphics_get_stats(probe->graphics,&graphics_after);
+    stats->light_profile=graphics_after.light_profile;stats->light_ablation=graphics_after.light_ablation;
+    stats->light_tiles=graphics_after.light_tiles;
+    memcpy(stats->light_counts,graphics_after.light_counts,sizeof(stats->light_counts));
     stats->skin_reused=(uint32_t)(graphics_after.skin_reused-graphics_before.skin_reused);
     if (!probe->quiet && graphics_after.triangle_updates!=graphics_before.triangle_updates)
         __printf("SCENE-TRIANGLE-UPDATE frame=%llu validate_us=%lld map_us=%lld copy_us=%lld flush_us=%lld transfer_us=%lld updates=%llu bytes=%llu flush_bytes=%llu staging=%llu direct_flags=%llu staging_flags=%llu\n",

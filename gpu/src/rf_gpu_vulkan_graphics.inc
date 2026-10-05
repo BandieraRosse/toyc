@@ -113,6 +113,10 @@ struct rf_gpu_graphics {
     uint32_t architecture_count;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
+    struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;
+    rf_vk_pipeline light_tiles_pipeline;
+    unsigned light_tiles_width,light_tiles_height,light_ablation;
+    int light_tiles_enabled;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
     unsigned sky_scale,sky_width,sky_height;
@@ -525,6 +529,10 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         if(i && impl->ray_query_enabled) {
             shader_info.code=rf_graphics_scene_ray_frag_spirv;
             shader_info.code_size=sizeof(rf_graphics_scene_ray_frag_spirv);
+        }
+        if(i && impl->light_profile_enabled) {
+            shader_info.code=impl->ray_query_enabled?rf_graphics_scene_ray_profile_frag_spirv:rf_graphics_scene_profile_frag_spirv;
+            shader_info.code_size=impl->ray_query_enabled?sizeof(rf_graphics_scene_ray_profile_frag_spirv):sizeof(rf_graphics_scene_profile_frag_spirv);
         }
         if(color_vertex && !i) {shader_info.code_size=sizeof(rf_graphics_color_vert_spirv);shader_info.code=rf_graphics_color_vert_spirv;}
         if(shadow) {shader_info.code_size=sizeof(rf_graphics_shadow_vert_spirv);shader_info.code=rf_graphics_shadow_vert_spirv;}
@@ -1604,6 +1612,14 @@ static void gfx_video_record(struct rf_gpu_graphics *g)
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,NULL,0,NULL,1,&barrier);
 }
 
+static void gfx_main_timestamps(struct rf_gpu_graphics *g,unsigned *next,unsigned through)
+{
+    while(*next<=through) {
+        if(g->scene_query_active)g->owner->api.cmd_write_timestamp(g->cmd,
+            RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,*next);
+        ++*next;
+    }
+}
 static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count)
 {
@@ -1642,12 +1658,15 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
-        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,6);
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,11);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
     gfx_sky_record(g,items,count);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,4);
+    gfx_light_tiles_record(g);
+    if(g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,6);
     gfx_shadow_record(g,items,count);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,5);
@@ -1668,12 +1687,17 @@ static int gfx_render(struct rf_gpu_graphics *g,
     const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
     int reuse_bind=!(legacy_bind && !strcmp(legacy_bind,"1"));
     unsigned drawn=0;
+    unsigned next_timestamp=7;
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = &items[i].draw;
+        if(d->scene_layer>=RF_GPU_SCENE_TRANSPARENT)gfx_main_timestamps(g,&next_timestamp,7);
+        if(d->scene_layer>=RF_GPU_SCENE_VIEWMODEL)gfx_main_timestamps(g,&next_timestamp,8);
+        if(d->scene_layer>=RF_GPU_SCENE_OVERLAY)gfx_main_timestamps(g,&next_timestamp,9);
         if (!g->disable_draw_cull && (d->scene_layer==RF_GPU_SCENE_WORLD || d->scene_layer==RF_GPU_SCENE_TRANSPARENT) &&
             gfx_draw_camera_outside(&items[i])) continue;
         if(d->scene_layer==RF_GPU_SCENE_OVERLAY && !overlay_started) {
             g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);gfx_video_record(g);
+            gfx_main_timestamps(g,&next_timestamp,10);
             begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
             g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);
             impl->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
@@ -1721,13 +1745,21 @@ static int gfx_render(struct rf_gpu_graphics *g,
         g->api.CmdDrawIndexed(g->cmd, d->index_count*factor, 1, d->first_index*factor, 0, 0);
         drawn++;
     }
+    gfx_main_timestamps(g,&next_timestamp,9);
     g->api.CmdEndRenderPass(g->cmd);
     if(!overlay_started) {
-        gfx_tonemap_record(g);gfx_video_record(g);begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
+        gfx_tonemap_record(g);gfx_video_record(g);gfx_main_timestamps(g,&next_timestamp,10);
+        begin.renderPass=g->overlay_pass;begin.framebuffer=g->target.overlay_framebuffer;
         g->api.CmdBeginRenderPass(g->cmd,&begin,VK_SUBPASS_CONTENTS_INLINE);g->api.CmdEndRenderPass(g->cmd);
     }
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,1);
+    if(impl->light_profile_enabled) {
+        struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
+        impl->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT,0,1,&barrier,0,NULL,0,NULL);
+    }
     g->stats.instance_upload_bytes += (uint64_t)drawn*128;
     g->stats.indexed_draws += drawn; g->stats.frames++;
     g->target.valid=1;
@@ -1749,21 +1781,23 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 static int gfx_scene_timing_read(struct rf_gpu_graphics *g,int presented)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    uint64_t ticks[6]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
+    uint64_t ticks[11]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
         ((1ULL<<p->timestamp_valid_bits)-1ULL);
-    unsigned count=presented?6:2;
+    unsigned count=presented?11:2;
     if(p->api.get_query_pool_results(p->device,g->scene_query_pool,0,count,
         count*sizeof(ticks[0]),ticks,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
-    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,2,
-        2*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
+    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,7,
+        7*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
     double ms=p->timestamp_period/1000000.0;
     g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*ms;
     g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*ms;
     g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*ms;
-    g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[4])&mask)*ms;
+    g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[6])&mask)*ms;
     g->scene_timing.main_scene_ms=(double)((ticks[1]-ticks[5])&mask)*ms;
+    const unsigned starts[6]={4,5,7,8,9,10},ends[6]={6,7,8,9,10,1};
+    for(unsigned i=0;i<6;++i)g->scene_timing.detail_ms[i]=(double)((ticks[ends[i]]-ticks[starts[i]])&mask)*ms;
     g->scene_timing.valid=1;
     return 0;
 }
@@ -1785,7 +1819,7 @@ int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g)
         gfx_scene_timing_read(g,1);
         g->scene_query_active=0;
     }
-    return 0;
+    return gfx_light_profile_read(g);
 }
 
 void rf_gpu_graphics_scene_timing(const struct rf_gpu_graphics *g,
@@ -1828,7 +1862,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (impl->timestamp_supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
         if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -1938,7 +1972,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     if(g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
         if(g->owner->api.create_query_pool(g->owner->device,&query,NULL,
             &g->scene_query_pool)!=RF_VK_SUCCESS)return -1;
     }
@@ -1952,6 +1986,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     if(!result && g->scene_query_active) {
         result=gfx_scene_timing_read(g,0);
     }
+    if(!result)result=gfx_light_profile_read(g);
     g->scene_query_active=0;return result;
 }
 
@@ -1977,7 +2012,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     if (g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=6;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
         if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
                 &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
@@ -2007,6 +2042,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     }
     if (!result) { memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes); }
     g->owner->api.unmap_memory(g->owner->device,g->target.readback.memory);
+    if(!result)result=gfx_light_profile_read(g);
     return result;
 }
 

@@ -191,7 +191,9 @@ struct rf_vk_device_create_info {
 };
 
 struct rf_vk_physical_device_features {
-    rf_vk_bool32 values_before_shader_int64[40];
+    rf_vk_bool32 values_before_fragment_stores[26];
+    rf_vk_bool32 fragment_stores_and_atomics;
+    rf_vk_bool32 values_before_shader_int64[13];
     rf_vk_bool32 shader_int64;
     rf_vk_bool32 values_after_shader_int64[14];
 };

@@ -43,6 +43,41 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 `main_p50_us/p95_us` 包含主场景着色与合成；它们是各自分位数，不与天空分位数相加推导整帧。
 限定设备的五轮结果见[建筑重复阴影剔除现场](../archive/architecture-shadow-dedup-20261005.md)。
 
+## 分块灯表与光照成本定位
+
+正常帧默认按 16×16 屏幕块筛选局部灯；手动 `RF_GPU_LIGHT_TILES=0/1` 可做捕获对照。
+性能脚本提供同包交替开关、独立计数和逐项消融：
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLightTiles -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/light-tiles-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLightTiles -ProfileLights -Views outpost-light-1f -Rounds 1 -Samples 120 -OutputDirectory tmp/light-tiles-counts
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -LightAblations -Views outpost-light-1f -Rounds 3 -Samples 240 -OutputDirectory tmp/light-ablations
+```
+
+比较轴互斥；计数与消融不能混用。脚本在 `config.json` 保存模式和 EXE/map 哈希，
+原始日志与 `report.json` 保留每次结果；切换任何模式都重启进程，按 Windows native 规则等待真实退出。
+普通采样自动关闭计数和 validation，不开启 capture；带计数的运行显式标为 `valid=0`、`diagnostic=1`。
+
+`SCENE-GPU-STAGES` 增加 tiles、world、transparent、viewmodel、post、hud 的 P50/P95，单位微秒。
+world 含天空合成，transparent 含特效，post 含视频合成；`diagnostic` 表示片元计数已开启，
+`light_ablation` 单独记录消融掩码。各区间分位数不能相加推导整帧分位数。
+`SCENE-LIGHT-PROFILE` 记录逐帧均值：shaded 为通过材质早退后的着色调用，candidates 为候选灯循环次数，
+roof/sun/local 为可见性函数逻辑调用，visible 为局部光通过遮挡后的次数，pcf 为完整过滤核次数。
+计数包含 overdraw，也可能因原子操作改变早期深度行为；不能当作普通运行的可见像素或实际硬件射线数。
+
+`RF_GPU_LIGHT_ABLATION` 只用于诊断：`none` 为正常路径；`roof`、`sun`、`local` 分别跳过对应建筑遮挡；
+`rays` 同时跳过三者；`pcf` 跳过阴影过滤；`brdf` 用简单漫反射替代原 BRDF。
+遮挡消融会使原先被挡住的光继续执行 BRDF/PCF，时间可能反而增加；不得据差值宣称某项真实独占成本，
+也不能把这些模式作为视觉或正式性能签收。普通运行应清除变量或设为 `none`。
+
+`LIGHT TILES PASS` 回归按开关逐像素比较颜色和深度，覆盖空灯表、32 位高位、宽窄 spot、
+近相机光源、混合视角和非整块 resize；建筑遮挡及原有光照回归仍共同运行。
+限定设备的像素对照、五轮开关采样及三轮消融见[分块灯表现场](../archive/light-tiles-20261005.md)。
+
+## 实验区
+
 实现边界见[GPU 实时光照](../architecture/gpu-lighting.md)。先运行 Windows native build，再启动：
 
 ```powershell

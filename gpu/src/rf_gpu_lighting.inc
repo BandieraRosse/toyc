@@ -6,9 +6,13 @@ struct rf_lighting_upload {
     struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
     float sky_cloud[4],sky_weather[4];
     float cutaway_bounds[4],cutaway_height[4];
+    uint32_t tile_grid[4];
+    int32_t tile_camera[4],tile_view[4],tile_projection[4];
+    uint32_t light_control[4];
 };
 _Static_assert(offsetof(struct rf_lighting_upload,lights)==432,"lighting std430 ABI");
 _Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==2480,"sky std430 ABI");
+_Static_assert(offsetof(struct rf_lighting_upload,tile_grid)==2544,"light tiles std430 ABI");
 
 void rf_gpu_lighting_default(struct rf_gpu_lighting *l)
 {
@@ -67,6 +71,7 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->shadow_pass) g->api.DestroyRenderPass(p->device,g->shadow_pass,NULL);
     if(g->overlay_pass) g->api.DestroyRenderPass(p->device,g->overlay_pass,NULL);
     if(g->tonemap) p->api.destroy_pipeline(p->device,g->tonemap,NULL);
+    if(g->light_tiles_pipeline)p->api.destroy_pipeline(p->device,g->light_tiles_pipeline,NULL);
     if(g->sky_pipeline) p->api.destroy_pipeline(p->device,g->sky_pipeline,NULL);
     if(g->sky_noise_pipeline) p->api.destroy_pipeline(p->device,g->sky_noise_pipeline,NULL);
     if(g->sky_layout) p->api.destroy_pipeline_layout(p->device,g->sky_layout,NULL);
@@ -77,21 +82,34 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     gpu_buffer_destroy(p,&g->architecture_buffer);
     architecture_ray_destroy(g);
     gpu_buffer_destroy(p,&g->sky_buffer);
+    gpu_buffer_destroy(p,&g->light_tiles_buffer);gpu_buffer_destroy(p,&g->light_profile_buffer);
     gfx_image_destroy(g,&g->sky_noise);
     if(g->sky_sampler) g->api.DestroySampler(p->device,g->sky_sampler,NULL);
 }
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[8]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[10]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,4},{3,3},
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6},{3,3},
         {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
     struct rf_vk_descriptor_buffer_info buffers[2]={{0}};
     struct rf_vk_write_descriptor_set writes[4]={{0}};
     rf_gpu_lighting_default(&g->lighting);
+    const char *tiles=getenv("RF_GPU_LIGHT_TILES"),*ablation=getenv("RF_GPU_LIGHT_ABLATION");
+    if(tiles && strcmp(tiles,"0") && strcmp(tiles,"1"))return -1;
+    g->light_tiles_enabled=!(tiles && !strcmp(tiles,"0"));
+    const char *modes[]={"none","roof","sun","local","pcf","brdf","rays"};
+    const unsigned masks[]={0,1,2,4,8,16,7};
+    if(ablation && *ablation) {
+        unsigned i=0;for(;i<7 && strcmp(ablation,modes[i]);++i){}
+        if(i==7)return -1;
+        g->light_ablation=masks[i];
+    }
+    fprintf(stderr,"rf-gpu-light: tiles=%d profile=%d ablation=%u\n",
+        g->light_tiles_enabled,p->light_profile_enabled,g->light_ablation);
     g->sky_scale=4;
     const char *reference=getenv("RF_GPU_SKY_REFERENCE_SCAN");
     // Keep the measured baseline until empty-space skipping wins reliably.
@@ -110,9 +128,13 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT;
     if(p->ray_query_enabled) {
         b[7].descriptor_type=RF_RT_DESCRIPTOR;
-        sizes[0].descriptor_count=3;
+        sizes[0].descriptor_count=5;
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=8;layout.bindings=b;
+    for(unsigned i=8;i<10;++i) {
+        b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[i].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=10;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
     struct rf_vk_descriptor_pool_size rt_sizes[4];memcpy(rt_sizes,sizes,sizeof(sizes));
     rt_sizes[3].type=RF_RT_DESCRIPTOR;rt_sizes[3].descriptor_count=1;
@@ -194,6 +216,12 @@ static int gfx_lighting_pipelines(struct rf_gpu_graphics *g)
     int result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->tonemap);
     p->api.destroy_shader_module(p->device,module,NULL);
     if(result!=RF_VK_SUCCESS) return -1;
+    shader.code_size=sizeof(rf_graphics_light_tiles_comp_spirv);shader.code=rf_graphics_light_tiles_comp_spirv;
+    if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS)return -1;
+    pipeline.stage.module=module;
+    result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->light_tiles_pipeline);
+    p->api.destroy_shader_module(p->device,module,NULL);
+    if(result!=RF_VK_SUCCESS)return -1;
     push.size=128;
     if(p->api.create_pipeline_layout(p->device,&layout,NULL,&g->sky_layout)!=RF_VK_SUCCESS) return -1;
     shader.code_size=sizeof(rf_graphics_sky_comp_spirv);shader.code=rf_graphics_sky_comp_spirv;
@@ -209,13 +237,35 @@ static int gfx_lighting_pipelines(struct rf_gpu_graphics *g)
     p->api.destroy_shader_module(p->device,module,NULL);
     return result==RF_VK_SUCCESS?0:-1;
 }
-/* Per-slot target: retired before resize, no temporal history or CPU readback. */
+/* Per-slot targets: retired before resize. Only diagnostic counters read back.
+ * Allocate every buffer before replacing any live descriptor/extent. */
 static int gfx_sky_resize(struct rf_gpu_graphics *g,unsigned width,unsigned height)
 {
-    struct rf_gpu_vulkan_buffer next={0};
+    struct rf_gpu_vulkan_buffer tiles={0},profile={0},next={0};
+    unsigned tw=(width+15)/16,th=(height+15)/16;
+    if(gpu_buffer_create(g->owner,(uint64_t)tw*th*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+        RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&tiles)<0)return -1;
+    if(gpu_buffer_create(g->owner,g->owner->light_profile_enabled?(uint64_t)tw*th*7*4:4,
+        RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
+        RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,0,&profile)<0) {
+        gpu_buffer_destroy(g->owner,&tiles);return -1;
+    }
     unsigned w=(width+g->sky_scale-1)/g->sky_scale,h=(height+g->sky_scale-1)/g->sky_scale;
     if(gpu_buffer_create(g->owner,(uint64_t)w*h*16,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-        RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&next)<0) return -1;
+        RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&next)<0) {
+        gpu_buffer_destroy(g->owner,&tiles);gpu_buffer_destroy(g->owner,&profile);return -1;
+    }
+    gpu_buffer_destroy(g->owner,&g->light_tiles_buffer);g->light_tiles_buffer=tiles;
+    gpu_buffer_destroy(g->owner,&g->light_profile_buffer);g->light_profile_buffer=profile;
+    g->light_tiles_width=tw;g->light_tiles_height=th;
+    for(unsigned i=0;i<2;++i) {
+        struct rf_gpu_vulkan_buffer *b=i?&profile:&tiles;
+        struct rf_vk_descriptor_buffer_info info={0};info.buffer=b->buffer;info.range=b->size;
+        struct rf_vk_write_descriptor_set write={0};write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dst_set=g->light_set;write.dst_binding=8+i;write.descriptor_count=1;
+        write.descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;write.buffer_info=&info;
+        g->owner->api.update_descriptor_sets(g->owner->device,1,&write,0,NULL);
+    }
     gpu_buffer_destroy(g->owner,&g->sky_buffer);g->sky_buffer=next;g->sky_width=w;g->sky_height=h;
     struct rf_vk_descriptor_buffer_info buffer={0};struct rf_vk_write_descriptor_set write={0};
     buffer.buffer=next.buffer;buffer.range=next.size;
@@ -260,6 +310,11 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     struct rf_lighting_upload u={0};void *mapped=NULL;
     const struct rf_gpu_graphics_draw *camera=&items[0].draw;
     for(unsigned i=0;i<count;++i) if(!items[i].draw.texture[3]) {camera=&items[i].draw;break;}
+    u.tile_grid[0]=g->light_tiles_width;u.tile_grid[1]=g->light_tiles_height;
+    u.tile_grid[2]=g->light_tiles_enabled && camera->projection[3]>0;
+    u.tile_grid[3]=g->owner->light_profile_enabled;
+    memcpy(u.tile_camera,camera->camera,16);memcpy(u.tile_view,camera->view,16);
+    memcpy(u.tile_projection,camera->projection,16);u.light_control[0]=g->light_ablation;
     memcpy(u.sun_direction,g->lighting.sun_direction,16);memcpy(u.sun_color,g->lighting.sun_color,16);
     memcpy(u.environment,g->lighting.environment,16);u.counts[0]=(float)g->lighting.count;
     u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;
@@ -309,6 +364,33 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     memcpy(g->shadow_matrix,u.shadow_matrix,sizeof(g->shadow_matrix));
     if(g->owner->api.map_memory(g->owner->device,g->light_buffer.memory,0,g->light_buffer.allocation_size,0,&mapped)!=RF_VK_SUCCESS) return -1;
     memcpy(mapped,&u,sizeof(u));g->owner->api.unmap_memory(g->owner->device,g->light_buffer.memory);
+    return 0;
+}
+static void gfx_light_tiles_record(struct rf_gpu_graphics *g)
+{
+    if(!g->light_tiles_enabled && !g->owner->light_profile_enabled)return;
+    struct rf_gpu_vulkan_impl *p=g->owner;
+    p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->light_tiles_pipeline);
+    p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
+    p->api.cmd_dispatch(g->cmd,(g->light_tiles_width+7)/8,(g->light_tiles_height+7)/8,1);
+    struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
+    p->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+}
+static int gfx_light_profile_read(struct rf_gpu_graphics *g)
+{
+    g->stats.light_profile=g->owner->light_profile_enabled;
+    g->stats.light_tiles=g->light_tiles_enabled;g->stats.light_ablation=g->light_ablation;
+    memset(g->stats.light_counts,0,sizeof(g->stats.light_counts));
+    if(!g->owner->light_profile_enabled)return 0;
+    void *mapped=NULL;struct rf_gpu_vulkan_impl *p=g->owner;
+    if(p->api.map_memory(p->device,g->light_profile_buffer.memory,0,
+        g->light_profile_buffer.allocation_size,0,&mapped)!=RF_VK_SUCCESS)return -1;
+    const uint32_t *data=mapped;
+    for(unsigned i=0;i<g->light_tiles_width*g->light_tiles_height;++i)
+        for(unsigned k=0;k<7;++k)g->stats.light_counts[k]+=data[i*7+k];
+    p->api.unmap_memory(p->device,g->light_profile_buffer.memory);
     return 0;
 }
 static void gfx_shadow_record(struct rf_gpu_graphics *g,const struct rf_gpu_graphics_batch_item *items,uint32_t count)

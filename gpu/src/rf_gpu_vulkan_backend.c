@@ -603,6 +603,7 @@ struct rf_gpu_vulkan_impl {
     uint32_t queue_family;
     uint32_t queue_flags;
     uint32_t shader_int64_enabled;
+    int light_profile_enabled;
     uint64_t max_storage_buffer_range;
     uint64_t non_coherent_atom_size;
     float timestamp_period;
@@ -1557,6 +1558,14 @@ static int backend_init(void *context, struct rf_gpu_backend_info *info,
         memset(&enabled_features, 0, sizeof(enabled_features));
         api->get_physical_device_features(selected_device, &supported_features);
         enabled_features.shader_int64 = supported_features.shader_int64;
+        const char *light_profile=getenv("RF_GPU_LIGHT_PROFILE");
+        impl->light_profile_enabled=light_profile && !strcmp(light_profile,"1");
+        if(impl->light_profile_enabled) {
+            if(!supported_features.fragment_stores_and_atomics) {
+                fprintf(stderr,"rf-gpu-light: profiling requires fragmentStoresAndAtomics\n");goto done;
+            }
+            enabled_features.fragment_stores_and_atomics=RF_VK_TRUE;
+        }
         device_info.s_type = RF_VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
         device_info.queue_create_info_count = 1;
         device_info.queue_create_infos = &queue_info;
