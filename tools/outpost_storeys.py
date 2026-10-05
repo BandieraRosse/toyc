@@ -2,10 +2,11 @@
 """Author the outpost's B1 / 1F / 2F / roof and north switchback stair.
 
 The existing map remains the source for ground-floor furniture and the park.
-Maintains the marked structure, named ground-floor connections and safe regions.
+Maintains the marked building shell, ground-floor connections and safe regions.
 """
 from pathlib import Path
 import argparse
+from building_kit import BuildingKit
 
 BEGIN = "# BEGIN OUTPOST STOREYS"
 END = "# END OUTPOST STOREYS"
@@ -18,12 +19,8 @@ def geometry():
     def bounds(x0, x1, z0, z1):
         return f"min_x={x0} max_x={x1} min_z={z0} max_z={z1}"
 
-    def solid(name, x0, x1, z0, z1, bottom, top, color, walk=False):
-        b = bounds(x0, x1, z0, z1)
-        add(f"collision id={name}_col shape=box {b} height={top} attr.base_y={bottom} collision=true visible=false walkable={str(walk).lower()}")
-        add(f"render id={name} kind=box {b} height={top} attr.base_y={bottom} color={color}")
-        if walk:
-            add(f"surface id={name}_surface kind=platform {b} height={top} material={color} attr.collision_id={name}_col")
+    kit = BuildingKit(lines)
+    solid = kit.solid
 
     def sign(name, x, z, y, text):
         add(f"render id={name} kind=sign min_x={x-600} max_x={x+600} min_z={z} max_z={z} height={y+300} attr.height2={y+600} color=9AC5CF attr.style=1 attr.facing=-z attr.text={text}")
@@ -44,14 +41,14 @@ def geometry():
 
     # The basement extends under the hall and infrastructure, with one entry.
     solid("outpost_basement", -4608,4608,-4096,10240,-2612,-2458,"485A64",True)
-    for name, b in (
-        ("w",(-4685,-4531,-4096,10240)),
-        ("e",(4531,4685,-4096,10240)),
-        ("s",(-4608,4608,-4173,-4019)),
-        ("nw",(-4608,-1536,10163,10317)),
-        ("ne",(1536,4608,10163,10317)),
+    for name, axis, at, start, end, doors in (
+        ("w","z",-4608,-4096,10240,()),
+        ("e","z",4608,-4096,10240,()),
+        ("s","x",-4096,-4608,4608,()),
+        ("nw","x",10240,-4608,-3072,()),
+        ("ne","x",10240,3072,4608,()),
     ):
-        solid("outpost_b1_wall_"+name,*b,-2458,-154,"526670")
+        kit.wall("outpost_b1_wall_"+name,axis,at,start,end,-2458,-154,"526670",doors)
     sign("outpost_b1_sign",0,10140,-2458,"B1_STORAGE_/_STAIRS")
     lamp("outpost_b1_hall_light",-4200,0,-2458)
     lamp("outpost_b1_infra_light",4200,7168,-2458)
@@ -64,54 +61,49 @@ def geometry():
         ("operations",(4608,10240,-3072,3072)),
     )
     outline = (
-        ("s",(-4608,4608,-4173,-4019)),
-        ("nw",(-4608,-1536,10163,10317)),
-        ("ne",(1536,4608,10163,10317)),
-        ("w",(-4685,-4531,3072,10240)),
-        ("e",(4531,4685,3072,10240)),
-        ("sw",(-4685,-4531,-4096,-3072)),
-        ("se",(4531,4685,-4096,-3072)),
-        ("research_w",(-10317,-10163,-3072,3072)),
-        ("research_s",(-10240,-4608,-3149,-2995)),
-        ("research_n",(-10240,-4608,2995,3149)),
-        ("operations_e",(10163,10317,-3072,3072)),
-        ("operations_s",(4608,10240,-3149,-2995)),
-        ("operations_n",(4608,10240,2995,3149)),
+        ("s","x",-4096,-4608,4608),
+        ("nw","x",10240,-4608,-3072),
+        ("ne","x",10240,3072,4608),
+        ("w","z",-4608,3072,10240),
+        ("e","z",4608,3072,10240),
+        ("sw","z",-4608,-4096,-3072),
+        ("se","z",4608,-4096,-3072),
+        ("research_w","z",-10240,-3072,3072),
+        ("research_s","x",-3072,-10240,-4608),
+        ("research_n","x",3072,-10240,-4608),
+        ("operations_e","z",10240,-3072,3072),
+        ("operations_s","x",-3072,4608,10240),
+        ("operations_n","x",3072,4608,10240),
     )
-    for floor, y, color in (("2f",2458,"758995"),("roof",4916,"637A86")):
-        for name, b in footprint:
-            solid(f"outpost_{floor}_{name}",*b,y-154,y,color,True)
-        for name, b in outline:
-            solid(f"outpost_{floor}_wall_{name}",*b,y,y+(2304 if floor=="2f" else 512),"526875")
+    for floor, y, color in (("1f",0,"64717A"),("2f",2458,"758995"),("roof",4916,"637A86")):
+        if floor != "1f":
+            for name, b in footprint:
+                kit.slab(f"outpost_{floor}_{name}",b,y,color)
+        for name, axis, at, start, end in outline:
+            doors = ()
+            if name=="s" and floor=="1f":
+                doors=((-1229,1229,1843),)
+            kit.wall(f"outpost_{floor}_wall_{name}",axis,at,start,end,y,y+(512 if floor=="roof" else 2304),"526875",doors,walk=floor=="roof")
+        if floor=="1f":
+            for side, x in (("w",-4608),("e",4608)):
+                kit.wall(f"outpost_1f_wing_{side}","z",x,-3072,3072,0,2304,"526875",((-1229,1229,1843),))
+            kit.wall("outpost_1f_hall_n","x",4096,-4608,4608,0,2304,"526875",((-1229,1229,1843),))
+            for side,x in (("power",-1536),("control",1536)):
+                kit.wall(f"outpost_1f_{side}_partition","z",x,4096,10240,0,2304,"526875",((5939,8397,1843),))
+            continue
         sign(f"outpost_{floor}_sign",0,10140,y,"2F_/_STAIRS" if floor=="2f" else "ROOF_/_STAIRS")
         if floor=="2f":
             lamp("outpost_2f_hall_light",-4200,0,y)
             lamp("outpost_2f_infra_light",4200,7168,y)
 
-    # Floor landings are south; half-storey landings are north. Both flights
-    # occupy the same X/Z on successive storeys, with a real parallel underside.
-    for name, y in (("b1",-2458),("1f",0),("2f",2458),("roof",4916)):
-        solid(f"outpost_stair_{name}_landing",-3072,3072,10240,12288,y-154,y,"8296A0",True)
+    storeys=(("b1",-2458),("1f",0),("2f",2458),("roof",4916))
+    kit.switchback("outpost_stair",(-3072,3072,10240,19456),storeys,7220)
+    for name, y in storeys:
         lamp(f"outpost_stair_{name}_light",2750,11264,y)
         if name=="roof":
             continue
         mid=y+1229
-        solid(f"outpost_stair_{name}_half",-3072,3072,17408,19456,mid-154,mid,"8296A0",True)
         lamp(f"outpost_stair_{name}_half_light",2750,18432,mid)
-        for side, x0, x1, h0, h1 in (("w",-2560,-512,y,mid),("e",512,2560,y+2458,mid)):
-            prefix=f"outpost_stair_{name}_{side}"
-            b=bounds(x0,x1,12288,17408)
-            add(f"collision id={prefix}_col shape=ramp_z {b} height={h0} height2={h1} attr.thickness=154 collision=true visible=false walkable=true")
-            add(f"surface id={prefix}_surface kind=ramp {b} height={h0} height2={h1} axis=z material=8BA0AA attr.collision_id={prefix}_col")
-            add(f"render id={prefix} kind=ramp {b} height={h0} attr.height2={h1} attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA")
-
-    # Continuous outer walls and the central spine keep actors off stair edges.
-    for name, b in (("w",(-3149,-2995,10240,19456)),
-                    ("e",(2995,3149,10240,19456)),
-                    ("n",(-3072,3072,19379,19533)),
-                    ("spine",(-256,256,12288,17408))):
-        solid("outpost_stair_wall_"+name,*b,-2458,7220,"526875")
-    solid("outpost_stair_cap",-3072,3072,10240,19456,7220,7374,"637A86")
     # East-side ledge over the lower flight is deliberately absent at every
     # half landing: the two flights join across the full north landing.
     sign("outpost_stair_entry_sign",0,10140,0,"STAIRS_B1_/_2F_/_ROOF")
@@ -140,10 +132,11 @@ def update_map(path):
         if name=="service_spine_pillar":
             continue
         if name=="infrastructure_north":
-            for side,x in (("left",-3072),("right",3072)):
-                lines.append(f"object id=infrastructure_north_{side} kind=boundary_wall x={x} y=0 z=10240 yaw=0 scale=1000 attr.collision=component attr.length=3072")
-            lines.append("object id=infrastructure_stair_door kind=arch_doorway x=0 y=0 z=10240 yaw=0 scale=1000 attr.collision=component")
             continue
+        if words and words[0]=="object" and fields.get("kind") in {"boundary_wall","arch_doorway","arch_beam","arch_wall"}:
+            # BuildingKit now owns the indoor shell; retain the outdoor yard.
+            if not name.startswith("yard_") and "attr.lab" not in fields:
+                continue
         if words and words[0]=="world":
             line=line.replace("max_z=10752","max_z=19968")
         if name in indoor and words[0]=="surface":

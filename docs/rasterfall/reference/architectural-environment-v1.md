@@ -19,6 +19,37 @@ V1 冻结可复用建筑资产、连接尺度和表面语言；关卡与碰撞�
 墙壳适度提高灰色明度；功能颜色仍由既有机组、控制柜、灯柱和编号承担。
 建筑大面没有纹理，环境设备仍使用既有局部 Hybrid sign。
 
+## 标准房屋生成语法
+
+`tools/building_kit.py` 提供离线 Python 编写语法，输出普通 V1 `collision`、`surface` 和
+`render` 记录；地图解析器不读取 Python，也不从可见模型推断碰撞。前哨站的调用示例在
+`tools/outpost_storeys.py`。墙、楼板和楼梯由同一参数同时生成可见实体、碰撞与可站立面。
+
+- `slab(name, footprint, y, color)`：`footprint=(min_x,max_x,min_z,max_z)`，Y 为板顶，底面为 Y 减统一厚度。
+- `wall(name, axis, at, start, end, bottom, top, color, openings=(), walk=False)`：轴向为 X 或 Z，`at` 是墙中心线；每个开口为 `(start,end,clear_height)`，自动生成两侧墙段及过梁。开口不得重叠或超出墙段。
+- `flight(name, footprint, h0, h1, color, steps=12)`：沿 Z 的有限厚度连续碰撞坡面，附踏步表现。
+- `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
+
+标准层高由作者给定，墙顶必须等于下一层楼板底；不要独立指定一套不相符的视觉墙高。
+相邻房间共享同一墙中心线，一条共享墙只生成一次，门口使用同一开口区间。
+折返楼梯根据外墙内侧与中间隔墙计算踏步宽度，不预留无支撑窄槽；各跑的端点高度和平台高度一致。
+护墙使用 `walk=True`，窄墙顶允许角色部分足迹支撑；外场空气墙继续使用独立的 boundary 规则。
+楼层元数据、灯具与家具由调用方分别声明，不隐式生成角色、交互或楼层权限。
+
+```python
+from building_kit import BuildingKit
+
+records = []
+house = BuildingKit(records, thickness=154)
+house.slab("home_1f", (-4096,4096,-3072,3072), 0, "758995")
+house.wall("home_south", "x", -3072, -4096, 4096, 0, 2304,
+           "526875", openings=((-614,614,1843),))
+house.slab("home_roof", (-4096,4096,-3072,3072), 2458, "637A86")
+```
+
+其余三面墙按相同边界补齐；写入既有地图时保留 UTF-8 BOM 和换行，参照前哨站维护工具。
+该语法负责建筑实体连接，既有资产套件仍可用于独立设备、服务带和有明确承重位置的梁。
+
 ## Canonical kit
 
 以下 `rf_arch_*` 均为 **CANONICAL**；registry 名称省略 `rf_`。尺寸顺序为 Blender X/Y/Z 米。

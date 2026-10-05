@@ -9,40 +9,38 @@ struct collision_profile {
 };
 
 static const struct collision_profile solids[] = {
-    {"lab_computer_stand", 920, 1040, 500, 0},
-    {"research_compute_rack", 512, 1075, 461, 0},
-    {"research_build_rack", 512, 1075, 461, 0},
-    {"research_power_cooling", 333, 947, 461, 0},
-    {"research_terminal", 589, 922, 435, 0},
-    {"core_analysis_station", 1229, 998, 589, 0},
-    {"research_prototype_bench", 1075, 819, 512, 0},
+    {"lab_computer_stand", 920, 1040, 500, 1},
+    {"research_compute_rack", 512, 1075, 461, 1},
+    {"research_build_rack", 512, 1075, 461, 1},
+    {"research_power_cooling", 333, 947, 461, 1},
+    {"research_terminal", 589, 922, 435, 1},
+    {"core_analysis_station", 1229, 998, 589, 1},
+    {"research_prototype_bench", 1075, 819, 512, 1},
 
-    {"host_rack_frame", 410, 1126, 543, 0},
+    {"host_rack_frame", 410, 1126, 543, 1},
     {"facility_desk", 922, 384, 384, 1},
-    {"facility_chair", 307, 512, 307, 0},
     {"facility_monitor", 333, 230, 77, 0},
     {"facility_command_table", 2048, 461, 1229, 1},
     {"facility_low_cabinet", 614, 410, 230, 1},
     {"facility_bench", 922, 256, 282, 1},
-    {"facility_terminal", 512, 768, 307, 0},
 
     {"crate", 614, 512, 512, 1},
     {"barrier", 1229, 512, 410, 1},
     /* Lamp envelope follows the grounded stem/base, not the light arm. */
     {"lamp_post", 184, 1434, 184, 0},
     {"short_wall", 1229, 717, 256, 1},
-    {"railing", 1229, 563, 154, 0},
+    {"railing", 1229, 563, 154, 1},
     {"vent_unit", 717, 614, 461, 1},
     {"workbench", 922, 461, 410, 1},
     {"ammo_container", 461, 307, 256, 1},
-    {"industrial_pillar", 410, 1434, 410, 0},
+    {"industrial_pillar", 410, 1434, 410, 1},
     {"pipe_module", 819, 717, 410, 0},
     {"power_unit", 2458, 1331, 1229, 1},
-    {"control_cabinet", 614, 922, 307, 0},
-    {"frontier_canopy", 3072, 205, 1536, 0},
-    {"frontier_cargo_rack", 2048, 1638, 922, 0},
+    {"control_cabinet", 614, 922, 307, 1},
+    {"frontier_canopy", 3072, 205, 1536, 1},
+    {"frontier_cargo_rack", 2048, 1638, 922, 1},
     {"frontier_rock", 1740, 737, 1229, 1},
-    {"frontier_bollard", 164, 614, 164, 0},
+    {"frontier_bollard", 164, 614, 164, 1},
     {"arch_wall", 2048, 2150, 124, 0}
 };
 
@@ -102,6 +100,20 @@ int rf_map_component_collision_boxes(const char *kind, int length,
     int i;
     if (!kind || !out) return -1;
     if (!strcmp(kind, "boundary_wall")) return wall_parts(length, out, 0);
+    /* Furniture keeps the seat/base and the elevated back/screen separate.
+     * A full-height envelope would make the actor stand in empty space. */
+    if (!strcmp(kind, "facility_chair")) {
+        box(out, "seat", -154, 154, 0, 266, -154, 154, 0, 1);
+        box(out+1, "back", -154, 154, 266, 512, -154, -92, 0, 1);
+        return 2;
+    }
+    if (!strcmp(kind, "facility_terminal")) {
+        box(out, "base", -256, 256, 0, 61, -154, 154, 0, 1);
+        box(out+1, "column", -169, 169, 61, 522, -138, 77, 0, 1);
+        box(out+2, "screen", -256, 256, 512, 768, -67, 67, 0, 1);
+        box(out+3, "shelf", -220, 220, 486, 522, 31, 154, 0, 1);
+        return 4;
+    }
     if (!strcmp(kind, "frontier_fence")) {
         box(out, "lower_panel", -1495, 1495, 0, 553, -51, 51, 0, 0);
         box(out+1, "left_post", -1536, -1454, 0, 1280, -82, 82, 0, 0);

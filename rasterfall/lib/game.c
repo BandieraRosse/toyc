@@ -1077,6 +1077,18 @@ static int ground_candidate_index(const struct toy_game *g, int candidate)
     return g->flow_probe_active ? g->flow_probe_indices[candidate] : candidate;
 }
 
+/* A landing footprint is circular. Do not keep an actor hanging on the empty
+ * square beyond a platform corner. Full-support navigation remains conservative. */
+static int footprint_overlaps_primitive(const struct toy_map_primitive *p,
+                                        int x, int z, int radius)
+{
+    int dx = x < p->minx ? p->minx-x : x > p->maxx ? x-p->maxx : 0;
+    int dz = z < p->minz ? p->minz-z : z > p->maxz ? z-p->maxz : 0;
+    if (!radius) return x > p->minx && x < p->maxx &&
+                        z > p->minz && z < p->maxz;
+    return (long long)dx*dx + (long long)dz*dz < (long long)radius*radius;
+}
+
 struct toy_game_ground_query toy_game_query_ground(
     const struct toy_game *g, int x, int z, int radius, int current_ground_y)
 {
@@ -1097,8 +1109,7 @@ struct toy_game_ground_query toy_game_query_ground(
         i = ground_candidate_index(g, candidate);
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
-        int overlaps = x + radius > p->minx && x - radius < p->maxx &&
-                       z + radius > p->minz && z - radius < p->maxz;
+        int overlaps = footprint_overlaps_primitive(p, x, z, radius);
         int supported = x - radius >= p->minx && x + radius <= p->maxx &&
                         z - radius >= p->minz && z + radius <= p->maxz;
         int height;
@@ -4507,10 +4518,36 @@ static int resolve_motion_ceiling(const struct toy_game *g, int x, int z,
     return result;
 }
 
+/* Descending feet sweep from the previous height to the proposed height.
+ * Sampling only the destination can miss a thin slab, or select the top of
+ * a solid that the actor approached from underneath. Edges may support only
+ * part of the footprint, including a parapet narrower than the body. */
+static int resolve_motion_landing(const struct toy_game *g, int x, int z,
+                                  int radius, int old_height, int new_height,
+                                  int *landing_y)
+{
+    int found = 0, result = 0;
+    if (new_height > old_height) return 0;
+    if (!g->primitives) {
+        if (old_height >= 0 && new_height <= 0) { *landing_y = 0; return 1; }
+        return 0;
+    }
+    for (int i = 0; i < g->primitive_count; ++i) {
+        const struct toy_map_primitive *p = g->primitives+i;
+        int height;
+        if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE) ||
+            !footprint_overlaps_primitive(p, x, z, radius)) continue;
+        height = primitive_surface_height(p, x, z);
+        if (height > old_height || height < new_height) continue;
+        if (!found || height > result) { found = 1; result = height; }
+    }
+    if (found) *landing_y = result;
+    return found;
+}
+
 static void update_motion_values(struct toy_game *g,
                                  struct toy_game_actor *actor, int dt_ms)
 {
-    struct toy_game_ground_query ground;
     int landing_ground, old_height, new_height, blocked;
     if (actor->airborne_ms <= 0) return;
     old_height = actor->ground_y + actor->airborne_y;
@@ -4533,19 +4570,15 @@ static void update_motion_values(struct toy_game *g,
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) actor->knockback_x = 0;
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) actor->knockback_z = 0;
     }
-    ground = toy_game_query_ground(g, actor->x, actor->z,
-                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y + actor->airborne_y);
-    landing_ground = ground.landing_y;
     /* A fall can end on a ramp above the actor's previous ground_y.  Landing
      * at absolute height zero leaves the actor inside the ramp and the next
      * grounded step sees it as an impassable wall. */
-    if (actor->vertical_velocity < 0 &&
-        ((!g->primitives && actor->airborne_y <= 0) ||
-         (g->primitives && ground.has_landing &&
-          actor->airborne_y <= landing_ground - actor->ground_y))) {
+    if (actor->vertical_velocity < 0 && resolve_motion_landing(g,
+            actor->x, actor->z, TOY_GAME_PLAYER_RADIUS, old_height,
+            actor->ground_y+actor->airborne_y, &landing_ground)) {
         actor->airborne_y = 0;
         actor->airborne_ms = 0;
-        if (g->primitives) actor->ground_y = landing_ground;
+        actor->ground_y = landing_ground;
     }
     if (actor->airborne_ms == 0) {
         actor->vertical_velocity = 0;
@@ -4565,7 +4598,6 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
         actor->control_disabled = 1;
     update_actor_knockback_cooldown(actor, dt_ms);
     if (actor->airborne_ms > 0) {
-        struct toy_game_ground_query ground;
         int landing_ground, old_height, new_height, blocked;
         old_height = actor->ground_y + actor->airborne_y;
         actor->airborne_ms -= dt_ms;
@@ -4586,13 +4618,9 @@ static void update_actor_special_motion(struct toy_game *g, int dt_ms)
         /* Descending onto even a partially covered edge must land on the
          * platform top.  Otherwise the player reaches ground height while the
          * collision circle still intersects the platform side and gets stuck. */
-        ground = toy_game_query_ground(g, actor->x, actor->z,
-                                       TOY_GAME_PLAYER_RADIUS,
-                                       actor->ground_y + actor->airborne_y);
-        landing_ground = ground.landing_y;
-        if ((!g->primitives || ground.has_landing) &&
-            actor->vertical_velocity < 0 &&
-            actor->airborne_y <= landing_ground - actor->ground_y) {
+        if (actor->vertical_velocity < 0 && resolve_motion_landing(g,
+                actor->x, actor->z, TOY_GAME_PLAYER_RADIUS, old_height,
+                actor->ground_y+actor->airborne_y, &landing_ground)) {
             actor->airborne_y = 0;
             actor->airborne_ms = 0;
             actor->ground_y = landing_ground;
@@ -4623,7 +4651,6 @@ static void update_remote_player_motion(struct toy_game *g,
                                         struct toy_game_actor *actor,
                                         int dt_ms)
 {
-    struct toy_game_ground_query ground;
     int landing_ground, old_height, new_height, blocked;
     if (actor->airborne_ms <= 0) return;
     old_height = actor->ground_y + actor->airborne_y;
@@ -4638,11 +4665,9 @@ static void update_remote_player_motion(struct toy_game *g,
     if (actor->air_x || actor->air_z)
         toy_game_move_actor_forced_swept(g, actor, actor->air_x, actor->air_z,
                                           old_height, new_height);
-    ground = toy_game_query_ground(g, actor->x, actor->z,
-                                   TOY_GAME_PLAYER_RADIUS, actor->ground_y + actor->airborne_y);
-    landing_ground = ground.landing_y;
-    if (actor->vertical_velocity < 0 &&
-        actor->airborne_y <= landing_ground - actor->ground_y) {
+    if (actor->vertical_velocity < 0 && resolve_motion_landing(g,
+            actor->x, actor->z, TOY_GAME_PLAYER_RADIUS, old_height,
+            actor->ground_y+actor->airborne_y, &landing_ground)) {
         actor->airborne_y = 0;
         actor->airborne_ms = 0;
         actor->ground_y = landing_ground;
@@ -5078,7 +5103,6 @@ static int charger_hit_entities(struct toy_game *g,
 static void update_enemy_airborne(struct toy_game *g,
                                   struct toy_game_enemy *e, int dt_ms)
 {
-    struct toy_game_ground_query ground;
     int landing_ground, old_height, new_height, blocked;
     old_height = e->ground_y + e->airborne_y;
     e->airborne_ms -= dt_ms;
@@ -5096,11 +5120,9 @@ static void update_enemy_airborne(struct toy_game *g,
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) e->knockback_x = 0;
         if (blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) e->knockback_z = 0;
     }
-    ground = toy_game_query_ground(g, e->x, e->z, enemy_radius(e),
-                                   e->ground_y + e->airborne_y);
-    landing_ground = ground.landing_y;
-    if (e->vertical_velocity < 0 &&
-        e->airborne_y <= landing_ground - e->ground_y) {
+    if (e->vertical_velocity < 0 && resolve_motion_landing(g,
+            e->x, e->z, enemy_radius(e), old_height,
+            e->ground_y+e->airborne_y, &landing_ground)) {
         e->airborne_y = 0;
         e->airborne_ms = 0;
         e->ground_y = landing_ground;

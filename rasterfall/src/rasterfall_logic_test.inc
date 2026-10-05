@@ -958,6 +958,85 @@ static int signed_storey_primitive_logic_test(void)
     return 0;
 }
 
+/* Landing contracts are independent of temporary building dimensions. */
+static int swept_landing_logic_test(void)
+{
+    static struct toy_game g;
+    struct toy_map_primitive world[3] = {
+        test_box_primitive(-3000,3000,-3000,3000,-2500,-2400,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-77,77,-1000,1000,1000,1016,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE),
+        test_box_primitive(-3000,3000,-3000,3000,3000,3016,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE)
+    };
+    struct toy_game_actor *a;
+    struct rf_map_component_box parts[RF_MAP_COMPONENT_MAX_PARTS];
+    toy_game_init(&g,314); g.to_spawn=0;
+    toy_game_set_primitives(&g,world,3,4000);
+    a=toy_game_local_player_actor(&g);
+    a->x=a->z=0; a->ground_y=0;
+    a->airborne_ms=1000; a->airborne_y=1040; a->vertical_velocity=-120;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=1016) return 1;
+    /* A cap narrower than the body remains a stable perch, allows movement
+     * along its edge, and releases the actor once the circle leaves it. */
+    if(!toy_game_try_move_actor(&g,a,0,100) || a->ground_y!=1016) return 2;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(a->airborne_ms || a->ground_y!=1016) return 3;
+    if(!toy_game_try_move_actor(&g,a,300,100) || !a->airborne_ms) return 4;
+    /* A lower actor cannot land on a suspended slab's top from underneath. */
+    a->x=a->z=0; a->ground_y=0;
+    a->airborne_ms=1000; a->airborne_y=900; a->vertical_velocity=-120;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(!a->airborne_ms || a->ground_y+a->airborne_y!=780) return 5;
+    /* Crossing more than one thin floor resolves the highest crossed top. */
+    a->airborne_y=3100; a->vertical_velocity=-2200;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=3016) return 6;
+    /* Circle outside a corner cannot borrow support from its square bounds. */
+    a->x=77+150; a->z=1000+150; a->ground_y=1016;
+    toy_game_update_actor_ground(&g,TOY_GAME_PLAYER_ACTOR_INDEX);
+    if(!a->airborne_ms) return 7;
+    a->x=a->z=0; a->ground_y=0;
+    a->airborne_ms=1000; a->airborne_y=1040; a->vertical_velocity=-120;
+    toy_game_update_world(&g,16);
+    if(a->airborne_ms || a->ground_y!=1016) return 10;
+    int actor_id=toy_game_add_ai(&g,TOY_GAME_AI_LEVEL_1,0,0,"LANDING");
+    if(actor_id<0) return 11;
+    struct toy_game_actor *ai=toy_game_actor_by_id(&g,actor_id);
+    ai->ground_y=0; ai->airborne_ms=1000;
+    ai->airborne_y=1040; ai->vertical_velocity=-120;
+    toy_game_update_ai_teammates(&g,16);
+    if(ai->airborne_ms || ai->ground_y!=1016) return 12;
+    struct toy_game_enemy *e=&g.enemies[0];
+    e->active=1; e->type=TOY_GAME_ENEMY_PURSUIT_COMMON; e->hp=1000;
+    e->x=e->z=e->ground_y=0; e->airborne_ms=1000;
+    e->airborne_y=1040; e->vertical_velocity=-120;
+    toy_game_update_held(&g,NULL,0,0,0,1024,16);
+    if(e->airborne_ms || e->ground_y!=1016) return 13;
+    memset(e,0,sizeof(*e)); ai->active=0;
+    /* The chair seat and back provide their own physical top heights. */
+    int n=rf_map_component_collision_boxes("facility_chair",0,parts);
+    if(n!=2) return 8;
+    for(int i=0;i<n;++i)
+        world[i+1]=test_box_primitive(parts[i].min_x,parts[i].max_x,
+            parts[i].min_z,parts[i].max_z,parts[i].min_y,parts[i].max_y,
+            TOY_MAP_PRIMITIVE_COLLISION|TOY_MAP_PRIMITIVE_WALKABLE);
+    toy_game_set_primitives(&g,world,n+1,4000);
+    a->x=0; a->z=150; a->ground_y=0;
+    a->airborne_ms=1000; a->airborne_y=550; a->vertical_velocity=-120;
+    for(int i=0;i<8 && a->airborne_ms;++i)
+        toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(a->airborne_ms || a->ground_y!=266) return 9;
+    g.primitive_count=0; /* A loaded void is not the standalone implicit floor. */
+    a->ground_y=0; a->airborne_ms=1000;
+    a->airborne_y=50; a->vertical_velocity=-120;
+    toy_game_update_actor_motion(&g,TOY_GAME_PLAYER_ACTOR_INDEX,16);
+    if(!a->airborne_ms || a->airborne_y!=-70) return 14;
+    return 0;
+}
+
 /* Authored heights through the ordinary RTS session command, fixed step,
  * movement and post-move support refresh. Targets follow the actual slabs. */
 static int outpost_storey_route_logic_test(struct rasterfall_session *s)
@@ -1832,6 +1911,9 @@ static int run_logic_test(void)
     __printf("rasterfall: primitive gameplay test passed\n");
     { int code=signed_storey_primitive_logic_test();
       if(code){__printf("signed storey primitive failure: %d\n",code);return 311;} }
+    { int code=swept_landing_logic_test();
+      if(code){__printf("swept landing failure: %d\n",code);return 313;}
+      __printf("SWEPT LANDING thin floors, underside, narrow caps, corners and chair seat: PASS\n"); }
     if (map_component_gameplay_logic_test() != 0) return 240;
     __printf("rasterfall: component collision gameplay test passed\n");
     if (rasterfall_model_skinning_logic_test() != 0) return 157;
@@ -4117,6 +4199,10 @@ death_fixture_done:
     /* 特感里程碑：Smoker 锁住移动但不锁住武器，持续把玩家拉向自身。 */
     {
         int start_z;
+        /* Standalone combat fixture: do not inherit a loaded map, airborne
+         * state or weapon cooldown from the preceding movement tests. */
+        toy_game_init(&game, 43);
+        game.room_limit = 12000;
         struct toy_game_actor *player =
             toy_game_local_player_actor(&game);
         memset(game.enemies, 0, sizeof(game.enemies));

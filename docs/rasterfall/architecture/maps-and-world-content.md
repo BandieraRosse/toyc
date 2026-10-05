@@ -6,6 +6,9 @@ FLAT。支撑、碰撞和渲染分别消费同一 authored 高度；显式 BOX r
 地下层使用相对地面 0 的负高度及负 level。叠放楼梯的 collision ramp 可声明 `attr.thickness`，
 底面与坡面平行；Game 支撑、头顶碰撞和射线使用真实厚度，render 可用 `attr.steps` 绘制踏步。
 前哨站 B1、一层、二层、屋顶及北侧折返楼梯由 [前哨站合同](../reference/outpost-hall-v1.md)维护。
+建筑离线编写语法由 `tools/building_kit.py` 拥有，墙体、门洞、有限楼板与封闭折返楼梯降为普通
+V1 记录；前哨站使用同一生成器同时生产可见结构和独立碰撞声明。连接约束见
+[建筑套件规范](../reference/architectural-environment-v1.md#标准房屋生成语法)，Runtime Map 无新增隐式建筑规则。
 楼层及屋顶元数据不生成隐式碰撞或自动敌人。首图二楼枪手由 session 按守军 region 的 `attr.y`
 校验真实支撑后创建，计入本任务初始守军。楼层视图的只读规则见 [RTS 指挥](rts-command.md#建筑与楼层-v1)。
 
@@ -70,7 +73,7 @@ Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须
 
 显式启动地图只覆盖本次进程；地图 `attr.identity` 决定本次 session 的既有 world/content policy，无 identity 时沿用 Campaign policy。实验命令见[地图编辑指南](../guides/map-authoring.md)。
 
-Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`；单层开放屋顶基地、四向大厅与七件家具的
+Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`；多层基地、四向大厅与七件家具的
 空间合同见 [Outpost V1](../reference/outpost-hall-v1.md)。当前 content 只放置 Null，家具为地图
 object，不声明交互终端；设备视觉不改变 Game 状态。既有 `station_terminal`、
 `operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别

@@ -23,18 +23,6 @@ render id=hall_north_paint kind=box min_x=-4608 max_x=4608 min_z=1792 max_z=3328
 surface id=service_strip kind=platform min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 material=505D66 attr.collision_id=service_strip_col
 collision id=service_strip_col shape=box min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 collision=true visible=false walkable=true color=505D66 attr.base_y=-154
 render id=service_strip_paint kind=box min_x=-4608 max_x=4608 min_z=3328 max_z=4096 height=0 color=505D66 attr.base_y=-154
-object id=south_door kind=arch_doorway x=0 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component
-object id=south_left kind=boundary_wall x=-3072 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component attr.length=3072
-object id=south_right kind=boundary_wall x=3072 y=0 z=-4096 yaw=0 scale=1000 attr.collision=component attr.length=3072
-object id=south_beam_0 kind=arch_beam x=-3072 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
-object id=south_beam_1 kind=arch_beam x=0 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
-object id=south_beam_2 kind=arch_beam x=3072 y=2150 z=-4096 yaw=0 scale=1000 attr.collision=none
-object id=north_door kind=arch_doorway x=0 y=0 z=4096 yaw=180 scale=1000 attr.collision=component
-object id=north_left kind=boundary_wall x=-3072 y=0 z=4096 yaw=180 scale=1000 attr.collision=component attr.length=3072
-object id=north_right kind=boundary_wall x=3072 y=0 z=4096 yaw=180 scale=1000 attr.collision=component attr.length=3072
-object id=north_beam_0 kind=arch_beam x=-3072 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
-object id=north_beam_1 kind=arch_beam x=0 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
-object id=north_beam_2 kind=arch_beam x=3072 y=2150 z=4096 yaw=0 scale=1000 attr.collision=none
 object id=command_table kind=facility_command_table x=0 y=0 z=0 yaw=0 scale=1000 attr.collision=component
 object id=command_map_screen kind=facility_monitor x=0 y=461 z=-100 yaw=180 scale=1000 attr.collision=none
 object id=null_desk kind=facility_desk x=3149 y=0 z=-896 yaw=90 scale=1000 attr.collision=component
@@ -178,17 +166,6 @@ render id=yard_west_ground_paint kind=ground min_x=-5120 max_x=-4608 min_z=-5632
 surface id=yard_east_ground kind=ground min_x=4608 max_x=5120 min_z=-5632 max_z=-4096 height=0 material=485860 attr.collision_id=yard_east_ground_col
 collision id=yard_east_ground_col shape=flat min_x=4608 max_x=5120 min_z=-5632 max_z=-4096 height=0 collision=false visible=true walkable=true color=485860
 render id=yard_east_ground_paint kind=ground min_x=4608 max_x=5120 min_z=-5632 max_z=-4096 height=0 color=485860
-object id=west_wing_door kind=arch_doorway x=-4608 y=0 z=0 yaw=90 scale=1000 attr.collision=component
-object id=west_wing_south kind=boundary_wall x=-4608 y=0 z=-2816 yaw=90 scale=1000 attr.collision=component attr.length=2560
-object id=west_wing_north kind=boundary_wall x=-4608 y=0 z=2816 yaw=90 scale=1000 attr.collision=component attr.length=2560
-object id=west_wing_beam kind=arch_beam x=-4608 y=2150 z=0 yaw=90 scale=1000 attr.collision=none
-object id=east_wing_door kind=arch_doorway x=4608 y=0 z=0 yaw=270 scale=1000 attr.collision=component
-object id=east_wing_south kind=boundary_wall x=4608 y=0 z=-2816 yaw=90 scale=1000 attr.collision=component attr.length=2560
-object id=east_wing_north kind=boundary_wall x=4608 y=0 z=2816 yaw=90 scale=1000 attr.collision=component attr.length=2560
-object id=east_wing_beam kind=arch_beam x=4608 y=2150 z=0 yaw=90 scale=1000 attr.collision=none
-object id=research_outer kind=boundary_wall x=-10240 y=0 z=0 yaw=90 scale=1000 attr.collision=component attr.length=6144
-object id=research_south kind=boundary_wall x=-7424 y=0 z=-3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
-object id=research_north kind=boundary_wall x=-7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=research_hatch kind=arch_floor_hatch x=-8704 y=0 z=2048 yaw=0 scale=1000 attr.collision=none
 # Research V1: east entry / open center / west analysis / north compute / south prototype.
 object id=research_bx18_compute kind=research_compute_rack x=-9250 y=0 z=2520 yaw=180 scale=1000 attr.collision=component
@@ -200,9 +177,6 @@ object id=research_bx18_terminal kind=research_terminal x=-5330 y=0 z=-2170 yaw=
 object id=research_bx18_status kind=research_status_panel x=-4766 y=650 z=2320 yaw=270 scale=1000 attr.collision=none
 object id=research_bx18_service_prototype kind=research_wall_service x=-8200 y=960 z=-2904 yaw=0 scale=1000 attr.collision=none
 object id=research_bx18_service_cluster kind=research_wall_service x=-9120 y=1230 z=2950 yaw=180 scale=1000 attr.collision=none
-object id=operations_outer kind=boundary_wall x=10240 y=0 z=0 yaw=90 scale=1000 attr.collision=component attr.length=6144
-object id=operations_south kind=boundary_wall x=7424 y=0 z=-3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
-object id=operations_north kind=boundary_wall x=7424 y=0 z=3072 yaw=0 scale=1000 attr.collision=component attr.length=5632
 object id=operations_bench_a kind=workbench x=7620 y=0 z=-2590 yaw=0 scale=1000 attr.collision=component
 object id=operations_bench_b kind=workbench x=9060 y=0 z=-2590 yaw=0 scale=1000 attr.collision=component
 object id=operations_crate_a kind=crate x=9300 y=0 z=1800 yaw=0 scale=1000 attr.collision=component
@@ -210,19 +184,6 @@ object id=operations_crate_b kind=crate x=9300 y=0 z=1000 yaw=0 scale=1000 attr.
 object id=operations_ammo kind=ammo_container x=7600 y=0 z=2500 yaw=0 scale=1000 attr.collision=component
 object id=operations_cabinet kind=control_cabinet x=9940 y=0 z=-1800 yaw=270 scale=1000 attr.collision=component
 render id=operations_sign kind=sign min_x=6500 max_x=9200 min_z=2960 max_z=2990 height=250 color=596F7C attr.height2=600 attr.style=1 attr.text=OPERATIONS attr.facing=-z
-object id=infrastructure_west kind=boundary_wall x=-4608 y=0 z=7168 yaw=90 scale=1000 attr.collision=component attr.length=6144
-object id=infrastructure_east kind=boundary_wall x=4608 y=0 z=7168 yaw=90 scale=1000 attr.collision=component attr.length=6144
-object id=infrastructure_north_left kind=boundary_wall x=-3072 y=0 z=10240 yaw=0 scale=1000 attr.collision=component attr.length=3072
-object id=infrastructure_north_right kind=boundary_wall x=3072 y=0 z=10240 yaw=0 scale=1000 attr.collision=component attr.length=3072
-object id=infrastructure_stair_door kind=arch_doorway x=0 y=0 z=10240 yaw=0 scale=1000 attr.collision=component
-object id=power_door kind=arch_doorway x=-1536 y=0 z=7168 yaw=90 scale=1000 attr.collision=component
-object id=power_partition_south kind=boundary_wall x=-1536 y=0 z=4864 yaw=90 scale=1000 attr.collision=component attr.length=1536
-object id=power_partition_north kind=boundary_wall x=-1536 y=0 z=9472 yaw=90 scale=1000 attr.collision=component attr.length=1536
-object id=power_partition_beam kind=arch_beam x=-1536 y=2150 z=7168 yaw=90 scale=1000 attr.collision=none
-object id=control_door kind=arch_doorway x=1536 y=0 z=7168 yaw=270 scale=1000 attr.collision=component
-object id=control_partition_south kind=boundary_wall x=1536 y=0 z=4864 yaw=90 scale=1000 attr.collision=component attr.length=1536
-object id=control_partition_north kind=boundary_wall x=1536 y=0 z=9472 yaw=90 scale=1000 attr.collision=component attr.length=1536
-object id=control_partition_beam kind=arch_beam x=1536 y=2150 z=7168 yaw=90 scale=1000 attr.collision=none
 object id=power_main kind=power_unit x=-3300 y=0 z=8192 yaw=90 scale=1000 attr.collision=component
 object id=power_vent kind=vent_unit x=-4060 y=0 z=5200 yaw=90 scale=1000 attr.collision=component
 object id=power_pipe kind=arch_pipe_straight x=-3330 y=420 z=9770 yaw=0 scale=1000 attr.collision=none
@@ -1165,13 +1126,73 @@ collision id=outpost_b1_wall_e_col shape=box min_x=4531 max_x=4685 min_z=-4096 m
 render id=outpost_b1_wall_e kind=box min_x=4531 max_x=4685 min_z=-4096 max_z=10240 height=-154 attr.base_y=-2458 color=526670
 collision id=outpost_b1_wall_s_col shape=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_b1_wall_s kind=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=-154 attr.base_y=-2458 color=526670
-collision id=outpost_b1_wall_nw_col shape=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
-render id=outpost_b1_wall_nw kind=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526670
-collision id=outpost_b1_wall_ne_col shape=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
-render id=outpost_b1_wall_ne kind=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526670
+collision id=outpost_b1_wall_nw_col shape=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
+render id=outpost_b1_wall_nw kind=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526670
+collision id=outpost_b1_wall_ne_col shape=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
+render id=outpost_b1_wall_ne kind=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526670
 render id=outpost_b1_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=-2158 attr.height2=-1858 color=9AC5CF attr.style=1 attr.facing=-z attr.text=B1_STORAGE_/_STAIRS
 object id=outpost_b1_hall_light kind=lamp_post x=-4200 y=-2458 z=0 yaw=0 scale=800 attr.collision=none
 object id=outpost_b1_infra_light kind=lamp_post x=4200 y=-2458 z=7168 yaw=0 scale=800 attr.collision=none
+collision id=outpost_1f_wall_s_pier_0_col shape=box min_x=-4608 max_x=-1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_s_pier_0 kind=box min_x=-4608 max_x=-1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_s_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_wall_s_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=-4173 max_z=-4019 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_wall_s_pier_end_col shape=box min_x=1229 max_x=4608 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_s_pier_end kind=box min_x=1229 max_x=4608 min_z=-4173 max_z=-4019 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_nw_col shape=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_nw kind=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_ne_col shape=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_ne kind=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_w_col shape=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_w kind=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_e_col shape=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_e kind=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_sw_col shape=box min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_sw kind=box min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_se_col shape=box min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_se kind=box min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_research_w_col shape=box min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_research_w kind=box min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_research_s_col shape=box min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_research_s kind=box min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_research_n_col shape=box min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_research_n kind=box min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_operations_e_col shape=box min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_operations_e kind=box min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_operations_s_col shape=box min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_operations_s kind=box min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wall_operations_n_col shape=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wall_operations_n kind=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wing_w_pier_0_col shape=box min_x=-4685 max_x=-4531 min_z=-3072 max_z=-1229 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wing_w_pier_0 kind=box min_x=-4685 max_x=-4531 min_z=-3072 max_z=-1229 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wing_w_lintel_0_col shape=box min_x=-4685 max_x=-4531 min_z=-1229 max_z=1229 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_wing_w_lintel_0 kind=box min_x=-4685 max_x=-4531 min_z=-1229 max_z=1229 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_wing_w_pier_end_col shape=box min_x=-4685 max_x=-4531 min_z=1229 max_z=3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wing_w_pier_end kind=box min_x=-4685 max_x=-4531 min_z=1229 max_z=3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wing_e_pier_0_col shape=box min_x=4531 max_x=4685 min_z=-3072 max_z=-1229 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wing_e_pier_0 kind=box min_x=4531 max_x=4685 min_z=-3072 max_z=-1229 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_wing_e_lintel_0_col shape=box min_x=4531 max_x=4685 min_z=-1229 max_z=1229 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_wing_e_lintel_0 kind=box min_x=4531 max_x=4685 min_z=-1229 max_z=1229 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_wing_e_pier_end_col shape=box min_x=4531 max_x=4685 min_z=1229 max_z=3072 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_wing_e_pier_end kind=box min_x=4531 max_x=4685 min_z=1229 max_z=3072 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_hall_n_pier_0_col shape=box min_x=-4608 max_x=-1229 min_z=4019 max_z=4173 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_hall_n_pier_0 kind=box min_x=-4608 max_x=-1229 min_z=4019 max_z=4173 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_hall_n_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=4019 max_z=4173 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_hall_n_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=4019 max_z=4173 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_hall_n_pier_end_col shape=box min_x=1229 max_x=4608 min_z=4019 max_z=4173 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_hall_n_pier_end kind=box min_x=1229 max_x=4608 min_z=4019 max_z=4173 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_power_partition_pier_0_col shape=box min_x=-1613 max_x=-1459 min_z=4096 max_z=5939 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_power_partition_pier_0 kind=box min_x=-1613 max_x=-1459 min_z=4096 max_z=5939 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_power_partition_lintel_0_col shape=box min_x=-1613 max_x=-1459 min_z=5939 max_z=8397 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_power_partition_lintel_0 kind=box min_x=-1613 max_x=-1459 min_z=5939 max_z=8397 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_power_partition_pier_end_col shape=box min_x=-1613 max_x=-1459 min_z=8397 max_z=10240 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_power_partition_pier_end kind=box min_x=-1613 max_x=-1459 min_z=8397 max_z=10240 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_control_partition_pier_0_col shape=box min_x=1459 max_x=1613 min_z=4096 max_z=5939 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_control_partition_pier_0 kind=box min_x=1459 max_x=1613 min_z=4096 max_z=5939 height=2304 attr.base_y=0 color=526875
+collision id=outpost_1f_control_partition_lintel_0_col shape=box min_x=1459 max_x=1613 min_z=5939 max_z=8397 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_1f_control_partition_lintel_0 kind=box min_x=1459 max_x=1613 min_z=5939 max_z=8397 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_1f_control_partition_pier_end_col shape=box min_x=1459 max_x=1613 min_z=8397 max_z=10240 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_1f_control_partition_pier_end kind=box min_x=1459 max_x=1613 min_z=8397 max_z=10240 height=2304 attr.base_y=0 color=526875
 collision id=outpost_2f_hall_col shape=box min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=2458 attr.base_y=2304 collision=true visible=false walkable=true
 render id=outpost_2f_hall kind=box min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=2458 attr.base_y=2304 color=758995
 surface id=outpost_2f_hall_surface kind=platform min_x=-4608 max_x=4608 min_z=-4096 max_z=4096 height=2458 material=758995 attr.collision_id=outpost_2f_hall_col
@@ -1186,10 +1207,10 @@ render id=outpost_2f_operations kind=box min_x=4608 max_x=10240 min_z=-3072 max_
 surface id=outpost_2f_operations_surface kind=platform min_x=4608 max_x=10240 min_z=-3072 max_z=3072 height=2458 material=758995 attr.collision_id=outpost_2f_operations_col
 collision id=outpost_2f_wall_s_col shape=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
 render id=outpost_2f_wall_s kind=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=4762 attr.base_y=2458 color=526875
-collision id=outpost_2f_wall_nw_col shape=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
-render id=outpost_2f_wall_nw kind=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
-collision id=outpost_2f_wall_ne_col shape=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
-render id=outpost_2f_wall_ne kind=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
+collision id=outpost_2f_wall_nw_col shape=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
+render id=outpost_2f_wall_nw kind=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
+collision id=outpost_2f_wall_ne_col shape=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
+render id=outpost_2f_wall_ne kind=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
 collision id=outpost_2f_wall_w_col shape=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
 render id=outpost_2f_wall_w kind=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=4762 attr.base_y=2458 color=526875
 collision id=outpost_2f_wall_e_col shape=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
@@ -1225,79 +1246,109 @@ surface id=outpost_roof_research_surface kind=platform min_x=-10240 max_x=-4608 
 collision id=outpost_roof_operations_col shape=box min_x=4608 max_x=10240 min_z=-3072 max_z=3072 height=4916 attr.base_y=4762 collision=true visible=false walkable=true
 render id=outpost_roof_operations kind=box min_x=4608 max_x=10240 min_z=-3072 max_z=3072 height=4916 attr.base_y=4762 color=637A86
 surface id=outpost_roof_operations_surface kind=platform min_x=4608 max_x=10240 min_z=-3072 max_z=3072 height=4916 material=637A86 attr.collision_id=outpost_roof_operations_col
-collision id=outpost_roof_wall_s_col shape=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+collision id=outpost_roof_wall_s_col shape=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_s kind=box min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_nw_col shape=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
-render id=outpost_roof_wall_nw kind=box min_x=-4608 max_x=-1536 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_ne_col shape=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
-render id=outpost_roof_wall_ne kind=box min_x=1536 max_x=4608 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_w_col shape=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_s_surface kind=platform min_x=-4608 max_x=4608 min_z=-4173 max_z=-4019 height=5428 material=526875 attr.collision_id=outpost_roof_wall_s_col
+collision id=outpost_roof_wall_nw_col shape=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
+render id=outpost_roof_wall_nw kind=box min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 color=526875
+surface id=outpost_roof_wall_nw_surface kind=platform min_x=-4608 max_x=-3072 min_z=10163 max_z=10317 height=5428 material=526875 attr.collision_id=outpost_roof_wall_nw_col
+collision id=outpost_roof_wall_ne_col shape=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
+render id=outpost_roof_wall_ne kind=box min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=5428 attr.base_y=4916 color=526875
+surface id=outpost_roof_wall_ne_surface kind=platform min_x=3072 max_x=4608 min_z=10163 max_z=10317 height=5428 material=526875 attr.collision_id=outpost_roof_wall_ne_col
+collision id=outpost_roof_wall_w_col shape=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_w kind=box min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_e_col shape=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_w_surface kind=platform min_x=-4685 max_x=-4531 min_z=3072 max_z=10240 height=5428 material=526875 attr.collision_id=outpost_roof_wall_w_col
+collision id=outpost_roof_wall_e_col shape=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_e kind=box min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_sw_col shape=box min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_e_surface kind=platform min_x=4531 max_x=4685 min_z=3072 max_z=10240 height=5428 material=526875 attr.collision_id=outpost_roof_wall_e_col
+collision id=outpost_roof_wall_sw_col shape=box min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_sw kind=box min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_se_col shape=box min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_sw_surface kind=platform min_x=-4685 max_x=-4531 min_z=-4096 max_z=-3072 height=5428 material=526875 attr.collision_id=outpost_roof_wall_sw_col
+collision id=outpost_roof_wall_se_col shape=box min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_se kind=box min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_research_w_col shape=box min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_se_surface kind=platform min_x=4531 max_x=4685 min_z=-4096 max_z=-3072 height=5428 material=526875 attr.collision_id=outpost_roof_wall_se_col
+collision id=outpost_roof_wall_research_w_col shape=box min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_research_w kind=box min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_research_s_col shape=box min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_research_w_surface kind=platform min_x=-10317 max_x=-10163 min_z=-3072 max_z=3072 height=5428 material=526875 attr.collision_id=outpost_roof_wall_research_w_col
+collision id=outpost_roof_wall_research_s_col shape=box min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_research_s kind=box min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_research_n_col shape=box min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_research_s_surface kind=platform min_x=-10240 max_x=-4608 min_z=-3149 max_z=-2995 height=5428 material=526875 attr.collision_id=outpost_roof_wall_research_s_col
+collision id=outpost_roof_wall_research_n_col shape=box min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_research_n kind=box min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_operations_e_col shape=box min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_research_n_surface kind=platform min_x=-10240 max_x=-4608 min_z=2995 max_z=3149 height=5428 material=526875 attr.collision_id=outpost_roof_wall_research_n_col
+collision id=outpost_roof_wall_operations_e_col shape=box min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_operations_e kind=box min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_operations_s_col shape=box min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_operations_e_surface kind=platform min_x=10163 max_x=10317 min_z=-3072 max_z=3072 height=5428 material=526875 attr.collision_id=outpost_roof_wall_operations_e_col
+collision id=outpost_roof_wall_operations_s_col shape=box min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_operations_s kind=box min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=5428 attr.base_y=4916 color=526875
-collision id=outpost_roof_wall_operations_n_col shape=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 collision=true visible=false walkable=false
+surface id=outpost_roof_wall_operations_s_surface kind=platform min_x=4608 max_x=10240 min_z=-3149 max_z=-2995 height=5428 material=526875 attr.collision_id=outpost_roof_wall_operations_s_col
+collision id=outpost_roof_wall_operations_n_col shape=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 collision=true visible=false walkable=true
 render id=outpost_roof_wall_operations_n kind=box min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 attr.base_y=4916 color=526875
+surface id=outpost_roof_wall_operations_n_surface kind=platform min_x=4608 max_x=10240 min_z=2995 max_z=3149 height=5428 material=526875 attr.collision_id=outpost_roof_wall_operations_n_col
 render id=outpost_roof_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=5216 attr.height2=5516 color=9AC5CF attr.style=1 attr.facing=-z attr.text=ROOF_/_STAIRS
+collision id=outpost_stair_b1_door_pier_0_col shape=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
+render id=outpost_stair_b1_door_pier_0 kind=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526875
+collision id=outpost_stair_b1_door_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-615 collision=true visible=false walkable=false
+render id=outpost_stair_b1_door_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=-154 attr.base_y=-615 color=526875
+collision id=outpost_stair_b1_door_pier_end_col shape=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 collision=true visible=false walkable=false
+render id=outpost_stair_b1_door_pier_end kind=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=-154 attr.base_y=-2458 color=526875
 collision id=outpost_stair_b1_landing_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=-2458 attr.base_y=-2612 collision=true visible=false walkable=true
 render id=outpost_stair_b1_landing kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=-2458 attr.base_y=-2612 color=8296A0
 surface id=outpost_stair_b1_landing_surface kind=platform min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=-2458 material=8296A0 attr.collision_id=outpost_stair_b1_landing_col
-object id=outpost_stair_b1_light kind=lamp_post x=2750 y=-2458 z=11264 yaw=0 scale=800 attr.collision=none
 collision id=outpost_stair_b1_half_col shape=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=-1229 attr.base_y=-1383 collision=true visible=false walkable=true
 render id=outpost_stair_b1_half kind=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=-1229 attr.base_y=-1383 color=8296A0
 surface id=outpost_stair_b1_half_surface kind=platform min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=-1229 material=8296A0 attr.collision_id=outpost_stair_b1_half_col
-object id=outpost_stair_b1_half_light kind=lamp_post x=2750 y=-1229 z=18432 yaw=0 scale=800 attr.collision=none
-collision id=outpost_stair_b1_w_col shape=ramp_z min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=-2458 height2=-1229 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_b1_w_surface kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=-2458 height2=-1229 axis=z material=8BA0AA attr.collision_id=outpost_stair_b1_w_col
-render id=outpost_stair_b1_w kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=-2458 attr.height2=-1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
-collision id=outpost_stair_b1_e_col shape=ramp_z min_x=512 max_x=2560 min_z=12288 max_z=17408 height=0 height2=-1229 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_b1_e_surface kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=0 height2=-1229 axis=z material=8BA0AA attr.collision_id=outpost_stair_b1_e_col
-render id=outpost_stair_b1_e kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=0 attr.height2=-1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
+collision id=outpost_stair_b1_w_col shape=ramp_z min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=-2458 height2=-1229 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_b1_w_surface kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=-2458 height2=-1229 axis=z material=8296A0 attr.collision_id=outpost_stair_b1_w_col
+render id=outpost_stair_b1_w kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=-2458 attr.height2=-1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_b1_e_col shape=ramp_z min_x=256 max_x=2995 min_z=12288 max_z=17408 height=0 height2=-1229 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_b1_e_surface kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=0 height2=-1229 axis=z material=8296A0 attr.collision_id=outpost_stair_b1_e_col
+render id=outpost_stair_b1_e kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=0 attr.height2=-1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_1f_door_pier_0_col shape=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_stair_1f_door_pier_0 kind=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=2304 attr.base_y=0 color=526875
+collision id=outpost_stair_1f_door_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=2304 attr.base_y=1843 collision=true visible=false walkable=false
+render id=outpost_stair_1f_door_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=2304 attr.base_y=1843 color=526875
+collision id=outpost_stair_1f_door_pier_end_col shape=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=2304 attr.base_y=0 collision=true visible=false walkable=false
+render id=outpost_stair_1f_door_pier_end kind=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=2304 attr.base_y=0 color=526875
 collision id=outpost_stair_1f_landing_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=0 attr.base_y=-154 collision=true visible=false walkable=true
 render id=outpost_stair_1f_landing kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=0 attr.base_y=-154 color=8296A0
 surface id=outpost_stair_1f_landing_surface kind=platform min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=0 material=8296A0 attr.collision_id=outpost_stair_1f_landing_col
-object id=outpost_stair_1f_light kind=lamp_post x=2750 y=0 z=11264 yaw=0 scale=800 attr.collision=none
 collision id=outpost_stair_1f_half_col shape=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=1229 attr.base_y=1075 collision=true visible=false walkable=true
 render id=outpost_stair_1f_half kind=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=1229 attr.base_y=1075 color=8296A0
 surface id=outpost_stair_1f_half_surface kind=platform min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=1229 material=8296A0 attr.collision_id=outpost_stair_1f_half_col
-object id=outpost_stair_1f_half_light kind=lamp_post x=2750 y=1229 z=18432 yaw=0 scale=800 attr.collision=none
-collision id=outpost_stair_1f_w_col shape=ramp_z min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=0 height2=1229 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_1f_w_surface kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=0 height2=1229 axis=z material=8BA0AA attr.collision_id=outpost_stair_1f_w_col
-render id=outpost_stair_1f_w kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=0 attr.height2=1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
-collision id=outpost_stair_1f_e_col shape=ramp_z min_x=512 max_x=2560 min_z=12288 max_z=17408 height=2458 height2=1229 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_1f_e_surface kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=2458 height2=1229 axis=z material=8BA0AA attr.collision_id=outpost_stair_1f_e_col
-render id=outpost_stair_1f_e kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=2458 attr.height2=1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
+collision id=outpost_stair_1f_w_col shape=ramp_z min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=0 height2=1229 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_1f_w_surface kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=0 height2=1229 axis=z material=8296A0 attr.collision_id=outpost_stair_1f_w_col
+render id=outpost_stair_1f_w kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=0 attr.height2=1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_1f_e_col shape=ramp_z min_x=256 max_x=2995 min_z=12288 max_z=17408 height=2458 height2=1229 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_1f_e_surface kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=2458 height2=1229 axis=z material=8296A0 attr.collision_id=outpost_stair_1f_e_col
+render id=outpost_stair_1f_e kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=2458 attr.height2=1229 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_2f_door_pier_0_col shape=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
+render id=outpost_stair_2f_door_pier_0 kind=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
+collision id=outpost_stair_2f_door_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=4762 attr.base_y=4301 collision=true visible=false walkable=false
+render id=outpost_stair_2f_door_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=4762 attr.base_y=4301 color=526875
+collision id=outpost_stair_2f_door_pier_end_col shape=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 collision=true visible=false walkable=false
+render id=outpost_stair_2f_door_pier_end kind=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=4762 attr.base_y=2458 color=526875
 collision id=outpost_stair_2f_landing_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=2458 attr.base_y=2304 collision=true visible=false walkable=true
 render id=outpost_stair_2f_landing kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=2458 attr.base_y=2304 color=8296A0
 surface id=outpost_stair_2f_landing_surface kind=platform min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=2458 material=8296A0 attr.collision_id=outpost_stair_2f_landing_col
-object id=outpost_stair_2f_light kind=lamp_post x=2750 y=2458 z=11264 yaw=0 scale=800 attr.collision=none
 collision id=outpost_stair_2f_half_col shape=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=3687 attr.base_y=3533 collision=true visible=false walkable=true
 render id=outpost_stair_2f_half kind=box min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=3687 attr.base_y=3533 color=8296A0
 surface id=outpost_stair_2f_half_surface kind=platform min_x=-3072 max_x=3072 min_z=17408 max_z=19456 height=3687 material=8296A0 attr.collision_id=outpost_stair_2f_half_col
-object id=outpost_stair_2f_half_light kind=lamp_post x=2750 y=3687 z=18432 yaw=0 scale=800 attr.collision=none
-collision id=outpost_stair_2f_w_col shape=ramp_z min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=2458 height2=3687 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_2f_w_surface kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=2458 height2=3687 axis=z material=8BA0AA attr.collision_id=outpost_stair_2f_w_col
-render id=outpost_stair_2f_w kind=ramp min_x=-2560 max_x=-512 min_z=12288 max_z=17408 height=2458 attr.height2=3687 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
-collision id=outpost_stair_2f_e_col shape=ramp_z min_x=512 max_x=2560 min_z=12288 max_z=17408 height=4916 height2=3687 attr.thickness=154 collision=true visible=false walkable=true
-surface id=outpost_stair_2f_e_surface kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=4916 height2=3687 axis=z material=8BA0AA attr.collision_id=outpost_stair_2f_e_col
-render id=outpost_stair_2f_e kind=ramp min_x=512 max_x=2560 min_z=12288 max_z=17408 height=4916 attr.height2=3687 attr.style=3 attr.thickness=154 attr.steps=12 color=8BA0AA
+collision id=outpost_stair_2f_w_col shape=ramp_z min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=2458 height2=3687 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_2f_w_surface kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=2458 height2=3687 axis=z material=8296A0 attr.collision_id=outpost_stair_2f_w_col
+render id=outpost_stair_2f_w kind=ramp min_x=-2995 max_x=-256 min_z=12288 max_z=17408 height=2458 attr.height2=3687 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_2f_e_col shape=ramp_z min_x=256 max_x=2995 min_z=12288 max_z=17408 height=4916 height2=3687 attr.thickness=154 collision=true visible=false walkable=true
+surface id=outpost_stair_2f_e_surface kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=4916 height2=3687 axis=z material=8296A0 attr.collision_id=outpost_stair_2f_e_col
+render id=outpost_stair_2f_e kind=ramp min_x=256 max_x=2995 min_z=12288 max_z=17408 height=4916 attr.height2=3687 attr.style=3 attr.thickness=154 attr.steps=12 color=8296A0
+collision id=outpost_stair_roof_door_pier_0_col shape=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=7220 attr.base_y=4916 collision=true visible=false walkable=false
+render id=outpost_stair_roof_door_pier_0 kind=box min_x=-3072 max_x=-1229 min_z=10163 max_z=10317 height=7220 attr.base_y=4916 color=526875
+collision id=outpost_stair_roof_door_lintel_0_col shape=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=7220 attr.base_y=6759 collision=true visible=false walkable=false
+render id=outpost_stair_roof_door_lintel_0 kind=box min_x=-1229 max_x=1229 min_z=10163 max_z=10317 height=7220 attr.base_y=6759 color=526875
+collision id=outpost_stair_roof_door_pier_end_col shape=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=7220 attr.base_y=4916 collision=true visible=false walkable=false
+render id=outpost_stair_roof_door_pier_end kind=box min_x=1229 max_x=3072 min_z=10163 max_z=10317 height=7220 attr.base_y=4916 color=526875
 collision id=outpost_stair_roof_landing_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 attr.base_y=4762 collision=true visible=false walkable=true
 render id=outpost_stair_roof_landing kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 attr.base_y=4762 color=8296A0
 surface id=outpost_stair_roof_landing_surface kind=platform min_x=-3072 max_x=3072 min_z=10240 max_z=12288 height=4916 material=8296A0 attr.collision_id=outpost_stair_roof_landing_col
-object id=outpost_stair_roof_light kind=lamp_post x=2750 y=4916 z=11264 yaw=0 scale=800 attr.collision=none
 collision id=outpost_stair_wall_w_col shape=box min_x=-3149 max_x=-2995 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_stair_wall_w kind=box min_x=-3149 max_x=-2995 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 color=526875
 collision id=outpost_stair_wall_e_col shape=box min_x=2995 max_x=3149 min_z=10240 max_z=19456 height=7220 attr.base_y=-2458 collision=true visible=false walkable=false
@@ -1306,7 +1357,15 @@ collision id=outpost_stair_wall_n_col shape=box min_x=-3072 max_x=3072 min_z=193
 render id=outpost_stair_wall_n kind=box min_x=-3072 max_x=3072 min_z=19379 max_z=19533 height=7220 attr.base_y=-2458 color=526875
 collision id=outpost_stair_wall_spine_col shape=box min_x=-256 max_x=256 min_z=12288 max_z=17408 height=7220 attr.base_y=-2458 collision=true visible=false walkable=false
 render id=outpost_stair_wall_spine kind=box min_x=-256 max_x=256 min_z=12288 max_z=17408 height=7220 attr.base_y=-2458 color=526875
-collision id=outpost_stair_cap_col shape=box min_x=-3072 max_x=3072 min_z=10240 max_z=19456 height=7374 attr.base_y=7220 collision=true visible=false walkable=false
-render id=outpost_stair_cap kind=box min_x=-3072 max_x=3072 min_z=10240 max_z=19456 height=7374 attr.base_y=7220 color=637A86
+collision id=outpost_stair_cap_col shape=box min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 attr.base_y=7220 collision=true visible=false walkable=true
+render id=outpost_stair_cap kind=box min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 attr.base_y=7220 color=526875
+surface id=outpost_stair_cap_surface kind=platform min_x=-3149 max_x=3149 min_z=10163 max_z=19533 height=7374 material=526875 attr.collision_id=outpost_stair_cap_col
+object id=outpost_stair_b1_light kind=lamp_post x=2750 y=-2458 z=11264 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_b1_half_light kind=lamp_post x=2750 y=-1229 z=18432 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_1f_light kind=lamp_post x=2750 y=0 z=11264 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_1f_half_light kind=lamp_post x=2750 y=1229 z=18432 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_2f_light kind=lamp_post x=2750 y=2458 z=11264 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_2f_half_light kind=lamp_post x=2750 y=3687 z=18432 yaw=0 scale=800 attr.collision=none
+object id=outpost_stair_roof_light kind=lamp_post x=2750 y=4916 z=11264 yaw=0 scale=800 attr.collision=none
 render id=outpost_stair_entry_sign kind=sign min_x=-600 max_x=600 min_z=10140 max_z=10140 height=300 attr.height2=600 color=9AC5CF attr.style=1 attr.facing=-z attr.text=STAIRS_B1_/_2F_/_ROOF
 # END OUTPOST STOREYS

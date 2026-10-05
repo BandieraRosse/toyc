@@ -13,6 +13,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
 [地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
+标准房屋、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
+入口为 `tools/building_kit.py`；物体顶面、窄护墙和下落扫掠见[碰撞高度区间](architecture/gameplay.md#component-collision-高度区间)。
 
 | 任务 | 先读 | 主要代码或工具入口 |
 | --- | --- | --- |
@@ -76,7 +78,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
 | 环境资产创作风格、材质与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、纯色常量 PBR 与局部标牌、能力边界、预算和生成入口 |
 | 建筑套件、管线端口和墙地表面 | [建筑套件规范](reference/architectural-environment-v1.md)、[生成指南](guides/architectural-environment-v1.md) | 建筑资产、连接合同与复现入口 |
-| 前哨站单层基地与设施家具 | [Outpost V1](reference/outpost-hall-v1.md)、[活动计划](plans/README.md)、[生成与验证](guides/facility-assets.md) | `assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/facility_round.py`；四向大厅、设施翼、测试场与 FPS/RTS 构图 |
+| 前哨站多层基地与设施家具 | [Outpost V1](reference/outpost-hall-v1.md)、[活动计划](plans/README.md)、[生成与验证](guides/facility-assets.md) | `assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/outpost_storeys.py`、`tools/building_kit.py`、`tools/facility_round.py`；墙板与门洞连接、封闭折返楼梯、护墙顶面、四向大厅与设施翼 |
 | 前哨站指挥桌互动与地图屏幕 | [Outpost V1](reference/outpost-hall-v1.md)、[运行时架构](architecture/runtime.md) | `src/rf_outpost_table.inc`、`src/rf_game_runtime.c`；地图文件预览、鼠标部署与暂停菜单回站 |
 | 南侧矩形露天实验区、展示开关与六类感染体 | [Outpost V1](reference/outpost-hall-v1.md)、[角色表现](architecture/character-presentation.md) | `assets/maps/outpost.map`、`src/rf_game_runtime.c`、`src/render/rf_outpost_showcase.inc`、`src/render/rf_gpu_scene_enemy_source.inc`；共享实机步态、12 台静止/原地移动展示及 3 条 Humanoid 往返步行线，CPU/Scene 共用冻结值 |
 | 东侧 AI 队友动作台位、实机闲置切换与六条往返线 | [Outpost V1](reference/outpost-hall-v1.md)、[角色表现](architecture/character-presentation.md) | `assets/maps/outpost.map`、`src/render/rf_outpost_actor_showcase.inc`、`src/render/rf_gpu_scene_actor_source.inc`；Block 全动作、Humanoid 已有动作、逐台位持枪历史与两种外观乘三级 AI 的往返展示 |
