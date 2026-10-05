@@ -8,8 +8,9 @@ Builder、flat 材质与 GLB 检查，不使用第二套模型格式。GLB/Blend
 
 ## Windows 生成
 
-先按 [Windows Native](windows-native.md) 确认 MSYS2 lane。当前原生离线工具目标用于无纹理
-GLB 导入与 Runtime Map 检查，不包含有纹理资产所需的 toyasset 转换器。
+先按 [Windows Native](windows-native.md) 确认 MSYS2 lane。原生 `asset-tools` 包含 GLB、
+TTEX 与 Runtime Map 工具。家具复用 `tools/assets/prop_surface_profiles.py` 的常量表面绑定：
+桌面、椅面、金属框架、塑料外壳与不透明屏幕表面分别声明粗糙度和金属度；不新增发光或透明语义。
 
 ```powershell
 $env:Path = "C:\msys64\mingw64\bin;C:\msys64\usr\bin;$env:Path"

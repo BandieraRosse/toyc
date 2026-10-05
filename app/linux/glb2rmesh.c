@@ -196,7 +196,8 @@ static struct material read_material(struct slice materials, int index)
     out.color = (unsigned int)linear_to_srgb8(r) << 16 |
                 (unsigned int)linear_to_srgb8(g) << 8 |
                 (unsigned int)linear_to_srgb8(b);
-    fixed = json_fixed(raw_value(pbr, "metallicFactor"), 0);
+    /* glTF defaults metallicFactor to 1; Blender omits an authored 1. */
+    fixed = json_fixed(raw_value(pbr, "metallicFactor"), 1000);
     out.metallic = clamp_i(fixed * 65535 / 1000, 0, 65535);
     fixed = json_fixed(raw_value(pbr, "roughnessFactor"), 1000);
     out.roughness = clamp_i(fixed * 65535 / 1000, 0, 65535);

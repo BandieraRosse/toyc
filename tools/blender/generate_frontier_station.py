@@ -1,4 +1,4 @@
-"""Frontier Station industrial kit: metres, flat materials, sparse readable forms.
+"""Frontier Station industrial kit: metres, constant PBR, sparse readable forms.
 
 The existing Builder/export boundary owns normalization to GLB. No external
 textures, downloaded meshes, or baked lighting are used by this kit.
@@ -25,11 +25,16 @@ SPECS = {
 
 def build(kind):
     colors = [(124, 140, 148), (46, 58, 64), (101, 118, 104), (192, 148, 79)]
+    # Painted panels, exposed steel, cargo coating, safety paint. Keep the
+    # existing palette/primitive boundaries; metal reflects direct lights only.
+    surfaces = [(0.0, .48), (.85, .36), (0.0, .78), (0.0, .58)]
     if kind == "frontier_rock":
         colors = [(119, 128, 125), (87, 101, 103), (141, 143, 127), (111, 119, 110)]
+        surfaces = [(0.0, .95), (0.0, .88), (0.0, .98), (0.0, .92)]
     def linear(rgb):
         return tuple(c/255/12.92 if c<=10 else ((c/255+.055)/1.055)**2.4 for c in rgb)
-    mats=[material(kind+str(i),linear(c)) for i,c in enumerate(colors)]
+    mats=[material(kind+str(i),linear(c),metallic=surfaces[i][0],roughness=surfaces[i][1])
+          for i,c in enumerate(colors)]
     b=Builder(mats)
     def box(center,size,role=0):
         return b.box(center,size,role,bevel=0)

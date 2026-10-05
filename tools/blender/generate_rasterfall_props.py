@@ -16,6 +16,8 @@ import zlib
 import bpy
 from mathutils import Vector
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'assets'))
+from prop_surface_profiles import linear_rgb, material_profile
 
 # name, width/depth/height in metres, recommended maximum triangles
 SPECS = [
@@ -243,16 +245,38 @@ def select_only(objects):
     bpy.context.view_layer.objects.active = objects[0]
 
 
-def material(name, rgb):
+def material(name, rgb, *, metallic=None, roughness=None):
+    profile = material_profile(name)
+    if profile is not None:
+        default_metallic, default_roughness, color = profile
+        if color is not None:
+            rgb = linear_rgb(color)
+    else:
+        default_metallic, default_roughness = 0.0, .9
+    metallic = default_metallic if metallic is None else metallic
+    roughness = default_roughness if roughness is None else roughness
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
     rgba = (*rgb, 1.0)
     mat.diffuse_color = rgba
     bsdf = mat.node_tree.nodes.get('Principled BSDF')
     bsdf.inputs['Base Color'].default_value = rgba
-    bsdf.inputs['Metallic'].default_value = 0.0
-    bsdf.inputs['Roughness'].default_value = .9
+    bsdf.inputs['Metallic'].default_value = metallic
+    bsdf.inputs['Roughness'].default_value = roughness
     return mat
+
+
+def material_pbr_constants(mat):
+    bsdf = mat.node_tree.nodes.get('Principled BSDF') if mat.use_nodes else None
+    if bsdf is None:
+        raise ValueError(f'{mat.name}: static PBR requires Principled BSDF')
+    factors = {}
+    for socket, field in (('Metallic', 'metallicFactor'), ('Roughness', 'roughnessFactor')):
+        value = float(bsdf.inputs[socket].default_value)
+        if bsdf.inputs[socket].is_linked or not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError(f'{mat.name}: {socket} must be a finite constant in [0,1]')
+        factors[field] = value
+    return factors
 
 
 class Builder:
@@ -278,7 +302,8 @@ class Builder:
                 axis = max(range(3), key=lambda i: abs(poly.normal[i]))
                 axes = ((1, 2), (0, 2), (0, 1))[axis]
                 chosen = (1 if accent else 0) if tile is None else tile
-                if face is not None and (axis, 1 if poly.normal[axis] > 0 else -1) != face:
+                if face is not None and ((axis, 1 if poly.normal[axis] > 0 else -1) != face
+                                         or abs(poly.normal[axis]) < .999):
                     chosen = 1 if accent else 0
                 for li in poly.loop_indices:
                     v = obj.data.vertices[obj.data.loops[li].vertex_index].co
@@ -754,8 +779,7 @@ def write_static_glb(path, objects):
             if mat.name in material_ids:
                 continue
             material_ids[mat.name] = len(materials)
-            pbr = {'baseColorFactor': list(mat.diffuse_color),
-                   'metallicFactor': 0.0, 'roughnessFactor': .9}
+            pbr = {'baseColorFactor': list(mat.diffuse_color), **material_pbr_constants(mat)}
             if 'albedo_path' in mat:
                 payload = Path(mat['albedo_path']).read_bytes()
                 views.append({'buffer': 0, 'byteOffset': len(binary), 'byteLength': len(payload)})
@@ -846,11 +870,14 @@ def write_static_glb(path, objects):
         output.write(binary)
 
 
-def export(path, objects):
+def export(path, objects, *, static_writer=False):
+    for obj in objects:
+        for mat in obj.data.materials:
+            material_pbr_constants(mat)
     select_only(objects)
     try:
         import numpy  # noqa: F401
-        use_native_exporter = True
+        use_native_exporter = not static_writer
     except ModuleNotFoundError:
         use_native_exporter = False
     if use_native_exporter:
@@ -876,6 +903,8 @@ def main():
                         default=Path(__file__).resolve().parents[2] / 'tmp/rasterfall-props')
     parser.add_argument('--all-glb', action='store_true', help='Also export overlapping asset library')
     parser.add_argument('--overwrite', action='store_true')
+    parser.add_argument('--static-writer', action='store_true',
+                        help='Use the minimal writer to preserve the original industrial vertex layout')
     parser.add_argument('--crate-material', choices=('full', 'hybrid'), default='hybrid',
                         help='Crate-only material prototype; identical V2 geometry')
     parser.add_argument('--assets', nargs='+', choices=[s[0] for s in SPECS],
@@ -928,9 +957,9 @@ def main():
                 hybrid_prop(obj)
         obj.data.name = name
         objects.append(obj)
-        export(out / (name + '.glb'), [obj])
+        export(out / (name + '.glb'), [obj], static_writer=args.static_writer)
     if args.all_glb:
-        export(out / 'rasterfall_props_all.glb', objects)
+        export(out / 'rasterfall_props_all.glb', objects, static_writer=args.static_writer)
     # Separate collections + local view make an origin-aligned library inspectable.
     for obj in objects:
         collection = bpy.data.collections.new(obj.name)

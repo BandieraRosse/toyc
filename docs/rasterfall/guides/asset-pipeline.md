@@ -188,6 +188,32 @@ tools/assets/import_asset.py prop.asset.json
 baseColorTexture 索引和常见三角形索引，合并 primitive 并修正索引基址。importer 从 GLB bufferView、
 base64 data URI 或受源目录约束的相对 URI 提取所引用的 PNG/JPEG，再调用 `toyasset` 解码并转换为
 TTEX；`glb2rmesh` 本身不实现图片解码。运行时仍只读 RMESH/TTEX，不解析 glTF JSON。
+底色 palette 与图像按 sRGB 创作，Blender/GLB 的 `baseColorFactor` 使用线性值；转换器编码成
+sRGB RGB24，GPU 再解码到线性光照空间。不要重复转换或把受光后的截图像素当成底色。
+当前静态 v2 纹理 draw 直接采样图像颜色，标牌的 `baseColorFactor` 保持白色；不靠该因子
+染色纹理。角色 v15 的 clamp/mip 表面另有 factor × texture 路径，两者不能混用假设。
+普通静态转换器仅消费基础色图与金属度/粗糙度常量；normal、metallicRoughness/ORM、
+occlusion、emissive 贴图及通用 alpha 材质未贯通，不将任意 GLB 导出成功当成材质保真证明。
+工业 Builder 的 `material(..., metallic=..., roughness=...)` 声明常量 PBR；工业、建筑、家具与
+实验电脑的具名材质默认使用 `tools/assets/prop_surface_profiles.py` 中的显式表面绑定；
+其他材质未指定时保持非金属、粗糙度 0.9。静态 GLB exporter 读取 Principled BSDF 的实际常量，拒绝链接输入，
+不将节点图静默降级为默认值。Scene 静态道具按 primitive 的 RFM2 v2 材质记录传递金属度与
+粗糙度，粗糙度下限与既有角色路径一致为 0.06；此路径不新增纹理种类或格式版本。
+原生转换器按 glTF 规则将省略的 `metallicFactor` 解释为 1，避免 Blender 导出纯金属时
+省略默认字段而丢失金属度；显式声明的非金属 0 不受影响。
+合成资产的导出/原生转换合同检查使用 Blender 执行 `tools/blender/test_static_pbr.py`，
+在 `--` 后传 `--converter <glb2rmesh.exe>`；产物仅保留在临时目录，不重生成已安装资产。
+现役套件的常量材质可在已有私有 GLB 上批量刷新并走统一 importer：
+
+```powershell
+python tools/assets/refresh_prop_surfaces.py --tool-dir build-windows --report tmp/prop-surfaces.json
+```
+
+首次缺少源 GLB 时先用对应 Blender 生成器补齐；`--assets ID ...` 限定范围。
+旧工业 Hybrid 十件使用 `generate_rasterfall_props.py --static-writer` 保持原始顶点展开布局；
+该参数只选择已有 minimal GLB writer，不改变模型或材质内容。
+工具只改 GLB 材质因子，拒绝未绑定的材质；重新导入后检查 RMESH 除材质底色、金属度、
+粗糙度之外的所有字节及 TTEX 内容一致，才安装该资产。可重复执行，不改变地图或资源身份。
 静态转换路径不导入 GLB 骨架和动画，不能替代 GLB 动画预览路径。
 当前仅处理第一个 mesh，忽略 node transform；每个组件必须单独导出、应用变换。
 位置默认按 232 量化，极小模型另有自动放大，不等于米到 512 RFU 的玩法换算；
@@ -236,6 +262,8 @@ python tools/map_layout_export.py rasterfall/assets/maps/frontier_station_01.map
 生成前使用 `NativeCodex.ps1 asset-tools` 构建工具；`--capture` 使用已有 Windows staged exe
 输出每件模型四个离屏视图并等待真实退出，不自动构建游戏。不带 `--generate` 时只核对运行网格：
 RFM2 v2、232 units/m、米制 bounds、有效索引、三角形量化退化和材质数。
+审计同时输出每个材质的底色、金属度、粗糙度和纹理引用检查；六件资产使用常量 PBR，
+区分涂漆面、金属框架、货物涂层与岩石，无新增贴图。
 站点地图生成器只写空间事实；不带 `--write` 时核对已提交地图是否与生成源一致。
 资产递归嵌入及 Windows package 复制沿用既有规则。
 套件合同见[环境资产约束](../reference/environment-art.md#边缘站点工业套件)。

@@ -13,7 +13,8 @@ Blender source → Character GLB Contract V1 → offline importer/validator
 
 新角色包、材质载体、能力矩阵与版本迁移设计见[角色包与材质 V1 草案](character-package-v1.md)。
 草案尚未实现，不扩大本文 V1 的已支持范围。当前 RFCHAR converter 保存双面标志，
-对 MASK 和未实现的 RF 材质元数据明确报错；Scene 角色纹理材质仍未接通，接入前先运行能力审计。
+对 MASK 和未实现的 RF 材质元数据明确报错；显式 v15 MAT1 已贯通不透明基础色图、clamp/mip
+采样与粗糙度/金属度常量，见下文表面扩展。完整角色包与动漫材质能力接入前仍须运行能力审计。
 
 Blender 是离线创作与生成环境，GLB 是主要交换格式，RFM2 是当前运行时格式。runtime 不依赖
 Blender；PMX/VMD 仅是兼容输入，不定义 canonical 名称、空间或附件。玩法只认识 actor、character、

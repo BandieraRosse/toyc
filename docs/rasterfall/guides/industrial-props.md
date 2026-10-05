@@ -32,7 +32,7 @@ done
 
 生成时加 `--assets rf_crate --crate-material hybrid`。`hybrid_crate()` 在原 V2 几何完成后
 按现有面 UV 分区重分配材质，不改变位置、法线、三角形或空间契约。主体和凹盖使用灰绿
-flat 材质，框架使用暗灰 flat 材质，只有铭牌正面使用纹理；共三个材质/primitive。
+常量 PBR 材质，框架使用裸钢反射底色，只有铭牌正面使用纹理；共三个材质/primitive。
 编号 tile 独立裁为 32×32，保持原 texel 密度和留边。取消全表面纹理面板边线、底缘磨损、
 积尘与盖板油迹；保留几何凹盖、粗箍、护角和编号。没有新增警示图案或几何。
 `--crate-material full` 仍可生成 full-texture 对照，默认是 `hybrid`；其他资产不受该选项影响。
@@ -47,7 +47,8 @@ flat 材质，框架使用暗灰 flat 材质，只有铭牌正面使用纹理；
 blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props.py
 ```
 
-默认输出 `tmp/rasterfall-props/`：一个 `rasterfall_props.blend` 和十个独立 GLB。
+默认输出 `tmp/rasterfall-props/`：一个 `rasterfall_props.blend` 和当前 `SPECS` 全部独立 GLB，
+包括工业 13 件、建筑 10 件与设施家具 7 件；只重建首批十件时用 `--assets` 限定范围。
 `--python-exit-code 1` 让自动化任务能够检测脚本断言或导出失败。
 可选参数位于 Blender 的 `--` 之后：
 
@@ -59,7 +60,9 @@ blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props
 脚本会清空当前场景，适合在单独的 background 进程中运行。
 所有部件合并为独立 mesh，倒角固定一段并应用，显式三角化、flat normals，
 无灯光、相机、动画、骨骼或压缩扩展。按用途分配低饱和主体色与暗框、局部功能色；
-使用不透明 Base Color、metallic=0、roughness=0.9，不依赖 PBR 效果。
+使用不透明 Base Color 与常量 PBR；表面绑定由 `tools/assets/prop_surface_profiles.py` 持有，
+区分涂漆、裸钢、木面、矿物和标牌。裸金属采用对应反射底色，涂漆保留主体 palette。
+指定单一标牌正面时排除倒角斜面，避免 Blender 版本间法线归轴差异扩大纹理区域。
 大面颜色形成分区，倒角贡献轮廓与明暗变化，纹理仅提供粗编号、箭头或单个安全符号。
 不做螺丝、细字或密集格栅。V2 light upgrade 的颜色、几何、纹理预算、逐件改造要点
 和验收标准以 [环境资产艺术约束](../reference/environment-art.md) 为准。V2 不改变本页记录的尺寸、pivot、用途、
@@ -70,7 +73,7 @@ blender -b --python-exit-code 1 --python tools/blender/generate_rasterfall_props
 GLB 单 mesh、identity node transform、材质 primitive 数和导出后的 Y-up 边界。
 这些检查失败会终止；已经完成的输出可能保留，下次应换输出目录或显式覆盖。
 
-总 blend 中十件资产保持地面原点重合、各自一个 collection；默认仅显示 crate，
+总 blend 中所选资产保持地面原点重合、各自一个 collection；默认仅显示所选清单首件，
 在 Outliner 切换眼睛图标查看其他组件。这样库中每件资产的 transform 均为 identity。
 可选总 GLB 同样原点重合，用于资产库交换，不是陈列场景。
 现有转换器只读取第一个 mesh，**仅将独立 GLB 交给转换器**：
@@ -83,7 +86,7 @@ build/glb2rmesh tmp/rasterfall-props/rf_crate.glb tmp/rasterfall-props/rf_crate.
 导出选项依据 [Blender glTF API](https://docs.blender.org/api/3.0/bpy.ops.export_scene.html)。
 生成器不需要第三方插件，也不更改构建、地图、碰撞或运行时格式。
 
-生成后的十个 manifest 位于 `tools/assets/manifests/props/industrial/`，公开运行时产物统一安装到
+工业、建筑与设施家具 manifest 位于 `tools/assets/manifests/props/industrial/`，公开运行时产物统一安装到
 分类目录：
 
 ```sh

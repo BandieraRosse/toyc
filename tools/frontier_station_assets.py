@@ -50,9 +50,17 @@ def audit():
             a,b,c=[points[i] for i in tris[at:at+3]]
             u=[b[k]-a[k] for k in range(3)];v=[c[k]-a[k] for k in range(3)]
             assert any(u[(k+1)%3]*v[(k+2)%3]-u[(k+2)%3]*v[(k+1)%3] for k in range(3)),(name,"collapsed triangle")
+        surfaces=[]
+        for index in range(materials):
+            color,metallic,roughness,texture=struct.unpack_from("<IHHI",data,mo+index*16)
+            assert texture==0xffffffff,(name,"unexpected texture")
+            surfaces.append({"color":f"{color&0xffffff:06X}",
+                             "metallic":round(metallic/65535,4),
+                             "roughness":round(roughness/65535,4)})
         metrics[part]={"triangles":indices//3,"vertices":vertices,"materials":materials,
-                       "bounds":bounds,"sha256":hashlib.sha256(data).hexdigest()}
+                       "surfaces":surfaces,"bounds":bounds,"sha256":hashlib.sha256(data).hexdigest()}
         print(f"{name}: {indices//3} triangles / {materials} materials / pivot and quantization OK")
+        print("  PBR",json.dumps(surfaces,separators=(",",":")))
     return metrics
 
 

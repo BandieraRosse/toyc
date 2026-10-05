@@ -1014,6 +1014,16 @@ prop_ready:
             draw->material[0]=resolved.material.color;
             draw->material[1]=instance.scene_light_q8;
             draw->material[2]=texture!=RF_GPU_CACHE_FLAT_TEXTURE;
+            /* RFM2 v2 stores metallic/roughness u16 here. Later legacy
+             * versions reuse these bytes for alpha/toon: keep their defaults. */
+            if (model->format_version==2) {
+                uint32_t material_index=world_u32(model->primitives+p*16+8);
+                const unsigned char *material=model->materials+
+                    (size_t)material_index*model->material_bytes;
+                draw->metallic=projectile_u16(material+4)/65535.0f;
+                draw->roughness=projectile_u16(material+6)/65535.0f;
+                if(draw->roughness<0.06f)draw->roughness=0.06f;
+            }
             draw->texture[0]=info.texture_width;
             draw->texture[1]=info.texture_height;
             draw->index_count=info.index_count;

@@ -60,7 +60,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | GPU Scene 专用渲染地图与定向复现 | [渲染 fixture](guides/gpu-scene-fixture.md) | `assets/maps/gpu_scene_render_fixture.map`；显式选择，不替换正式地图 |
 | 模型、蒙皮、动画求值 | [动画架构](architecture/animation-architecture.md) | `src/rasterfall_model.c`、RFANIM/RFCHAR runtime |
 | Block 方块身体、标准骨架与动作迁移 | [Block 标准骨架](architecture/character-presentation.md#block-标准骨架)、[资产导入](guides/asset-pipeline.md#block-队友身体) | `render/rasterfall_block_character.inc`、`tools/blender/generate_rasterfall_block.py`；完整人形骨架、固定骨长、CPU/Scene 共用求值 |
-| 资产导入、LOD、检查器 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断 |
+| 资产导入、LOD、检查器与静态道具 PBR 常量 | [资产导入与诊断](guides/asset-pipeline.md) | `tools/assets/`、inspect CLI、离屏诊断、`tools/blender/test_static_pbr.py`；`prop_surface_profiles.py` 与 `refresh_prop_surfaces.py` 持有现役套件表面绑定和刷新；RFM2 v2 金属度/粗糙度进入 Scene 静态道具 draw |
 | Blender/RF 角色保真、单表面眼球、基础色贴图与材质对照 | [保真诊断](guides/character-fidelity.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `tools/gpu_character_fidelity.ps1`、`rfchar_precision_audit.py`、RFM2 v15/MAT1 与 clamp/mip 纹理；目录动作台位及左右侧握持检查 |
 | 武器真实尺寸、文件轴向与握点适配 | [武器模型适配](reference/weapon-model-adapter.md)、[动画架构](architecture/animation-architecture.md) | `rasterfall_calibration.c` 的物理长度、模型 adapter 与接触帧；CPU/Scene 共用转换 |
 | 角色与附件资产合同 | [character-assets.md](reference/character-assets.md) | RFCHAR、RFM2、attachment、skinning validator |
@@ -70,7 +70,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | 新一代角色体系、私有动漫内容与 GPU 实验场接入 | [暂停的角色计划](plans/private-anime-character-gpu.md)、[实验场预览](guides/gpu-scene-fixture.md#rf_model_lab-角色预览)、[角色资产合同](reference/character-assets.md)、[GPU 架构](architecture/gpu-rendering-architecture.md) | `--gpu-normal-scene model-lab 0`；分块 GPU 蒙皮、不透明贴图和双手持枪已接通；完整角色包、morph、透明发片与 LOD 按活动计划控制 |
 | 联机协议、快照、预测与测试 | [联机架构](architecture/network-architecture.md)、[网络测试](guides/network-testing.md) | `src/rasterfall_net.c` |
 | 资源来源、许可、发布 | [资源来源台账](reference/asset-sources.md) | 资源台账和发布前检查 |
-| 环境资产美术约束与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、预算、规格与生成入口 |
+| 环境资产创作风格、材质与工业组件 | [环境资产艺术约束](reference/environment-art.md)、[工业组件规格](reference/industrial-props.md)、[生成指南](guides/industrial-props.md) | 调色、轮廓、纯色常量 PBR 与局部标牌、能力边界、预算和生成入口 |
 | 建筑套件、管线端口和墙地表面 | [建筑套件规范](reference/architectural-environment-v1.md)、[生成指南](guides/architectural-environment-v1.md) | 建筑资产、连接合同与复现入口 |
 | 前哨站单层基地与设施家具 | [Outpost V1](reference/outpost-hall-v1.md)、[活动计划](plans/README.md)、[生成与验证](guides/facility-assets.md) | `assets/maps/outpost.map`、`assets/worlds/outpost.content`、`tools/facility_round.py`；四向大厅、设施翼、测试场与 FPS/RTS 构图 |
 | 前哨站指挥桌互动与地图屏幕 | [Outpost V1](reference/outpost-hall-v1.md)、[运行时架构](architecture/runtime.md) | `src/rf_outpost_table.inc`、`src/rf_game_runtime.c`；地图文件预览、鼠标部署与暂停菜单回站 |
