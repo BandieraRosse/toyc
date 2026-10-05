@@ -133,6 +133,7 @@ static int actor_navigation_cache_logic_test(void)
     ca.nav_direct_valid=cb.nav_direct_valid;ca.nav_direct_ms=cb.nav_direct_ms;
     ca.nav_goal_x=cb.nav_goal_x;ca.nav_goal_z=cb.nav_goal_z;
     ca.nav_direct_y=cb.nav_direct_y;ca.nav_generation=cb.nav_generation;
+    ca.nav_layer_serial=cb.nav_layer_serial;
     if(memcmp(&ca,&cb,sizeof(ca)) || g.rng!=before_rng ||
         g.event_count!=before_events || g.combat_time_ms!=before_time)return 13;
     if(toy_game_actor_navigation_target(&g,a,2000001,0,64,16,&steer_x,&steer_z) ||

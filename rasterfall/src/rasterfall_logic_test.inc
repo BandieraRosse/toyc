@@ -1037,6 +1037,50 @@ static int swept_landing_logic_test(void)
     return 0;
 }
 
+/* Exercise the pending search through requests from two ordinary actors. */
+static int outpost_layer_search_lifecycle_logic_test(struct rasterfall_session *s)
+{
+    struct toy_game *g=&s->game_state;
+    const struct rf_map_runtime_surface *roof=rf_map_runtime_find_surface(&s->map_ops.runtime,"outpost_roof_hall_surface");
+    const struct rf_map_runtime_surface *basement=rf_map_runtime_find_surface(&s->map_ops.runtime,"outpost_basement_surface");
+    if(!roof || !basement)return 1;
+    int tx=(roof->bounds.min_x+roof->bounds.max_x)/2,tz=(roof->bounds.min_z+roof->bounds.max_z)/2,x,z;
+    struct toy_game_actor *a=toy_game_local_player_actor(g);
+    toy_game_actor_navigation_target_height(g,a,tx,roof->height,tz,64,16,&x,&z);
+    if(!g->actor_layer_search.active || a->nav_layer_count || a->x!=s->level.start_x ||
+        a->z!=s->level.start_z || g->actor_layer_search.samples>
+            TOY_GAME_ACTOR_LAYER_SAMPLES_PER_QUERY+TOY_GAME_SHORT_CONNECTION_RANGE/32+1)return 2;
+    int id=toy_game_add_ai(g,TOY_GAME_AI_LEVEL_2,a->x,a->z,"LAYER QUEUE");
+    struct toy_game_actor *b=toy_game_actor_by_id(g,id);
+    if(!b)return 3;
+    int owner=g->actor_layer_search.owner_slot;
+    toy_game_actor_navigation_target_height(g,b,tx,basement->height,tz,64,16,&x,&z);
+    if(g->actor_layer_search.owner_slot!=owner || b->nav_layer_count)return 4;
+    toy_game_actor_cancel_navigation(a);
+    toy_game_actor_navigation_target_height(g,b,tx,basement->height,tz,64,16,&x,&z);
+    if(!g->actor_layer_search.active || g->actor_layer_search.owner_slot!=(int)(b-g->actors))return 5;
+    toy_game_actor_navigation_target_height(g,b,tx,roof->height,tz,64,16,&x,&z);
+    if(g->actor_layer_search.ty!=roof->height || g->actor_layer_search.request_serial!=b->nav_layer_serial)return 6;
+    b->combat_generation++;
+    toy_game_actor_navigation_target_height(g,b,tx,roof->height,tz,64,16,&x,&z);
+    if(g->actor_layer_search.actor_generation!=b->combat_generation)return 7;
+    for(int tick=0;tick<1000 && !b->nav_layer_count;++tick) {
+        toy_game_actor_navigation_target_height(g,b,tx,roof->height,tz,64,16,&x,&z);
+        if(g->actor_layer_search.samples>
+            TOY_GAME_ACTOR_LAYER_SAMPLES_PER_QUERY+TOY_GAME_SHORT_CONNECTION_RANGE/32+1)return 8;
+    }
+    if(!b->nav_layer_count || g->actor_layer_search.active)return 9;
+    int cached=0;
+    for(int i=0;i<TOY_GAME_FLOW_EDGE_CACHE;++i)cached+=g->actor_layer_edges[i].result!=0;
+    if(!cached)return 10;
+    toy_game_set_primitives(g,s->level.primitives,s->level.primitive_count,s->level.room_limit);
+    if(g->actor_layer_search.active || b->nav_layer_count)return 11;
+    for(int i=0;i<TOY_GAME_FLOW_EDGE_CACHE;++i)if(g->actor_layer_edges[i].result)return 12;
+    struct camera view={0};
+    rasterfall_session_reset(s,&view,1);
+    return 0;
+}
+
 /* Authored heights through the ordinary RTS session command, fixed step,
  * movement and post-move support refresh. Targets follow the actual slabs. */
 static int outpost_storey_route_logic_test(struct rasterfall_session *s)
@@ -1047,10 +1091,16 @@ static int outpost_storey_route_logic_test(struct rasterfall_session *s)
     struct toy_game_actor *probe=toy_game_local_player_actor(g);
     struct camera camera={0};
     struct rasterfall_command input={0};
+    int benchmark=getenv("RF_STOREY_BENCH")!=NULL;
     camera.cy=camera.pitch_cy=1024;
     rasterfall_session_set_rts(s,1);
     for(int leg=0;leg<4;++leg) {
         int tx=s->level.start_x,tz=s->level.start_z,ty=0,arrived=0;
+        struct toy_game_update_profile profile={0};
+        int64_t total=0,maximum=0;
+        int maximum_tick=0,ticks=0;
+        uint64_t trace=1469598103934665603ULL;
+        if(benchmark)g->update_profile=&profile;
         if(leg<3) {
             const struct rf_map_runtime_surface *f=rf_map_runtime_find_surface(&s->map_ops.runtime,slabs[leg]);
             if(!f)return 1;
@@ -1060,10 +1110,26 @@ static int outpost_storey_route_logic_test(struct rasterfall_session *s)
         if(!rasterfall_session_rts_order_actor_height(s,TOY_GAME_PLAYER_ACTOR_INDEX,
             probe->actor_id,probe->combat_generation,tx,ty,tz,0,1))return 6;
         for(int tick=0;tick<5000;++tick) {
+            int64_t started=benchmark?rf_core_clock_now_us():0;
             rasterfall_session_step(s,&camera,&input,16);
+            if(benchmark) {
+                int64_t elapsed=rf_core_clock_now_us()-started;
+                total+=elapsed;
+                if(elapsed>maximum){maximum=elapsed;maximum_tick=tick;}
+                ticks++;
+                trace=(trace^(uint32_t)probe->x)*1099511628211ULL;
+                trace=(trace^(uint32_t)probe->ground_y)*1099511628211ULL;
+                trace=(trace^(uint32_t)probe->z)*1099511628211ULL;
+            }
             long long dx=(long long)tx-probe->x,dz=(long long)tz-probe->z;
             if(!s->rts_move_active && dx*dx+dz*dz<=250LL*250 && abs(probe->ground_y-ty)<=2){arrived=1;break;}
         }
+        g->update_profile=NULL;
+        if(benchmark)__printf("STOREY-BENCH leg=%d ticks=%d total_us=%lld max_us=%lld max_tick=%d trace=%llu queries=%u samples=%u searches=%u nodes=%u hits=%u ground_scans=%u body_scans=%u ramp_scans=%u\n",
+            leg,ticks,(long long)total,(long long)maximum,maximum_tick,(unsigned long long)trace,
+            profile.actor_layer_queries,profile.actor_layer_samples,profile.actor_layer_searches,
+            profile.actor_layer_nodes,profile.actor_layer_hits,profile.ground_scans,
+            profile.body_scans,profile.ramp_transition_scans);
         if(!arrived){__printf("OUTPOST STOREY leg=%d position=%d,%d,%d goal=%d,%d,%d nodes=%d cursor=%d fall=%d\n",
             leg,probe->x,probe->ground_y,probe->z,tx,ty,tz,probe->nav_layer_count,probe->nav_layer_cursor,probe->airborne_ms);
             return leg+2;}
@@ -1768,6 +1834,18 @@ static int enemy_flow_corridor_logic_test(void)
 
 static int run_logic_test(void)
 {
+    if(getenv("RF_STOREY_BENCH")) {
+        struct camera benchmark_camera={0};
+        rasterfall_host_set_active_slots(24,24);
+        if(rasterfall_session_load(&session,"rasterfall/assets/maps/outpost.map")<0)return 50;
+        rasterfall_session_reset(&session,&benchmark_camera,1);
+        for(int round=0;round<3;++round) {
+            __printf("STOREY-BENCH round=%d\n",round+1);
+            int result=outpost_storey_route_logic_test(&session);
+            if(result)return result;
+        }
+        return 0;
+    }
     if (getenv("RF_FLOW_TEST")) {
         int result = enemy_flow_logic_test();
         if (result) return result;
@@ -1998,6 +2076,9 @@ static int run_logic_test(void)
         !rasterfall_map_projection_counts_match(&session.map_ops))
         return 234;
     rasterfall_session_reset(&session, &camera, 1);
+    { int code=outpost_layer_search_lifecycle_logic_test(&session);
+      if(code){__printf("layer search lifecycle failure: %d\n",code);return 313;}
+      __printf("ACTOR-LAYER bounded work, queued owner, cancellation, identity and map invalidation: PASS\n"); }
     { int code=outpost_storey_route_logic_test(&session);
       if(code){__printf("outpost storey route failure: %d\n",code);return 312;}
       __printf("OUTPOST STOREY B1/2F/roof/ground normal navigation and movement: PASS\n"); }

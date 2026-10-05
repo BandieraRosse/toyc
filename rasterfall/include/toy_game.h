@@ -381,6 +381,8 @@ struct toy_game_ground_query {
 #define TOY_GAME_FLOW_SAMPLES_PER_TICK 2048
 #define TOY_GAME_FLOW_LOCAL_PER_TICK 512
 #define TOY_GAME_FLOW_EDGE_CACHE 8192
+#define TOY_GAME_ACTOR_LAYER_CANDIDATES_PER_QUERY 4096
+#define TOY_GAME_ACTOR_LAYER_SAMPLES_PER_QUERY 4096
 #define TOY_GAME_FLOW_HINTS 256
 struct toy_game_flow_hint {
     int cell, y;
@@ -393,6 +395,16 @@ struct toy_game_flow_node {
 struct toy_game_flow_edge {
     unsigned short from, to;
     unsigned char result;
+};
+/* One coalesced explicit-order search. Each query advances bounded work;
+ * other actors wait without replacing the owner's unfinished search. */
+struct toy_game_actor_layer_search {
+    int active, owner_slot, actor_id;
+    unsigned int actor_generation, request_serial, navigation_generation;
+    int x, y, z, tx, ty, tz;
+    int stage, slot, next, best, start, goal;
+    long long best_distance;
+    int expanded, queued, current, samples, known_nodes;
 };
 struct toy_game_flow_field {
     int active, generation, actor, actor_id;
@@ -712,6 +724,7 @@ struct toy_game_actor {
     unsigned int nav_generation;
     unsigned short nav_layer_path[64];
     int nav_layer_count, nav_layer_cursor, nav_layer_y, nav_layer_retry_ms;
+    unsigned int nav_layer_serial;
     int hit_test_dummy;
     int animation_demo;
     int animation_demo_elapsed_ms;
@@ -777,6 +790,8 @@ struct toy_game_update_profile {
     unsigned int enemy_type_calls[6];
     unsigned int nav_queries;
     unsigned int actor_direct_queries, actor_direct_hits, actor_direct_blocked;
+    unsigned int actor_layer_queries, actor_layer_samples, actor_layer_searches;
+    unsigned int actor_layer_nodes, actor_layer_hits;
     unsigned int ground_queries;
     int64_t nav_search_us, nav_paths_us, nav_paths_max_us;
     unsigned int nav_searches, nav_nodes, nav_candidates;
@@ -918,6 +933,8 @@ struct toy_game {
     unsigned short actor_layer_parent[TOY_GAME_FLOW_MAX_NODES + 1];
     unsigned actor_layer_priority[TOY_GAME_FLOW_MAX_NODES + 1];
     unsigned short actor_layer_queue[TOY_GAME_FLOW_MAX_NODES + 1];
+    struct toy_game_actor_layer_search actor_layer_search;
+    struct toy_game_flow_edge actor_layer_edges[TOY_GAME_FLOW_EDGE_CACHE];
     struct toy_game_flow_edge flow_edges[TOY_GAME_FLOW_EDGE_CACHE];
     struct toy_game_flow_field flow_fields[TOY_GAME_FLOW_FIELDS];
     int nav_group_enabled;

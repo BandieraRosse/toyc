@@ -23,6 +23,25 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 不要把不同入口的累计计时、wall time 或分位数相加。
 
+## 前哨站跨层逻辑卡顿
+
+`RF_STOREY_BENCH=1` 配合 `--logic-test` 只在诊断入口执行三轮正式前哨站的
+1F→B1→2F→屋顶→1F RTS 命令，复用正常 session、固定步、规划及碰撞。
+每段输出实际 tick 数、逻辑累计/最长步耗时、最长步序号、位置轨迹哈希及候选/试走/扫描统计。
+诊断 sink 不读取计时来决定路径；关闭环境变量时不会计时或输出这些样本。
+它没有 GPU/呈现阶段，不能用来宣布普通窗口 FPS 或手操路线通过。
+
+```powershell
+python tools/storey_performance.py --baseline build-windows/rasterfall-windows/rasterfall-baseline.exe --output tmp/storey-performance
+```
+
+先暂存当前 native build；对照 exe 必须含同一诊断入口，并与当前 exe 位于同一暂存资产目录。
+`test/gpu-test` 会重新暂存并清空包目录，对照备份应放在包外，暂存完成后再复制进包内。
+脚本交替新旧执行顺序，保存 exe/map SHA-256、真实退出码、每轮原始日志和 JSON。
+比较最长固定步与累计成本时也报告命令完成 tick 数：分摊搜索允许角色等待规划，不能省略等待
+而声称整段移动更快。每版本的重复轨迹须一致；新旧等待 tick 不同，完整轨迹哈希不应强求相同。
+本轮证据与原生验收边界见[前哨站跨层性能现场](../archive/outpost-storey-performance-20261005.md)。
+
 ## 玩家界面与辅助镜头
 
 `tools/gpu_player_ui_perf.ps1` 在同一原生可执行文件、资产、地图、天空和呈现条件下，比较 player 与

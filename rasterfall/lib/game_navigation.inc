@@ -67,6 +67,8 @@ static void enemy_flow_rebuild(struct toy_game *g)
     g->flow_repair_cell = -1;
     memset(g->flow_cells, 0, sizeof(g->flow_cells));
     memset(g->flow_edges, 0, sizeof(g->flow_edges));
+    memset(g->actor_layer_edges,0,sizeof(g->actor_layer_edges));
+    memset(&g->actor_layer_search,0,sizeof(g->actor_layer_search));
     memset(g->flow_refined, 0, sizeof(g->flow_refined));
     for (i = 0; i < TOY_GAME_FLOW_FIELDS; ++i) g->flow_fields[i].active = 0;
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
@@ -339,6 +341,7 @@ static int flow_neighbor(const struct toy_game *g, int cell, int slot)
  * routes avoid a new search at every waypoint. Scratch and routes are Game-owned. */
 static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,int tz,int ty)
 {
+    if(g->update_profile)g->update_profile->actor_layer_queries++;
     int dx=tx-x,dz=tz-z,length=isqrt((long long)dx*dx+(long long)dz*dz);
     if(length>TOY_GAME_SHORT_CONNECTION_RANGE)return 0;
     if(flow_flat_corridor_radius(g,x,z,y,tx,tz,ty,TOY_GAME_PLAYER_RADIUS))return 1;
@@ -353,8 +356,33 @@ static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,in
         if(p->maxx<minx || p->minx>maxx || p->maxz<minz || p->minz>maxz)continue;
         g->flow_probe_indices[g->flow_probe_count++]=(unsigned short)i;
     }
+    /* A grounded walk can only move between top-height ranges separated by
+     * a normal step. Use the entire corridor's ranges (including full ramp
+     * ranges) as a conservative superset. Disconnected storeys cannot form
+     * an edge even when they share X/Z; avoid proving that with 75 moves. */
+    int low=y,high=y,changed,passes=0;
+    do {
+        changed=0;
+        for(int i=0;i<g->flow_probe_count;++i) {
+            const struct toy_map_primitive *p=&g->primitives[g->flow_probe_indices[i]];
+            if(!(p->flags&TOY_MAP_PRIMITIVE_WALKABLE))continue;
+            int lo=p->surface_y0,hi=lo;
+            if(p->shape==TOY_MAP_PRIMITIVE_RAMP_X || p->shape==TOY_MAP_PRIMITIVE_RAMP_Z) {
+                if(p->surface_y1<lo)lo=p->surface_y1;
+                if(p->surface_y1>hi)hi=p->surface_y1;
+            }
+            if(lo>high+TOY_CONFIG_GROUND_STEP_HEIGHT || hi<low-TOY_CONFIG_GROUND_STEP_HEIGHT)continue;
+            if(lo<low){low=lo;changed=1;}
+            if(hi>high){high=hi;changed=1;}
+        }
+    } while(changed && ++passes<4);
+    /* If the bounded union pass has not converged, keep the candidate and
+     * prove it normally. Incomplete analysis never means unreachable. */
+    if(!changed && (ty<low-2 || ty>high+2))goto done;
     g->flow_probe_active=1;
     for(int i=1;i<=steps;++i) {
+        if(g->actor_layer_search.active)g->actor_layer_search.samples++;
+        if(g->update_profile)g->update_profile->actor_layer_samples++;
         int nx=x+(int)((long long)dx*i/steps),nz=z+(int)((long long)dz*i/steps);
         if(!toy_game_try_move_actor(g,&probe,nx,nz) || probe.airborne_ms)goto done;
         struct toy_game_ground_query center=toy_game_query_ground(g,nx,nz,0,probe.ground_y);
@@ -365,25 +393,6 @@ done:
     memset(g->flow_probe_indices,0,g->flow_probe_count*sizeof(g->flow_probe_indices[0]));
     g->flow_probe_active=0;g->flow_probe_count=0;
     return result;
-}
-static int actor_layer_attach(struct toy_game *g,int x,int z,int y,int departing)
-{
-    int cell=flow_cell(g,x,z),best=0;
-    long long distance=(long long)TOY_GAME_SHORT_CONNECTION_RANGE*TOY_GAME_SHORT_CONNECTION_RANGE+1;
-    if(cell<0)return 0;
-    for(int i=0;i<9;++i) {
-        int c=flow_neighbor(g,cell,i);
-        if(c<0)continue;
-        for(int n=g->flow_cells[c];n;n=g->flow_nodes[n].sibling) {
-            const struct toy_game_flow_node *p=&g->flow_nodes[n];
-            long long dx=(long long)p->x-x,dz=(long long)p->z-z,d=dx*dx+dz*dz;
-            if(d>=distance)continue;
-            int allowed=departing?actor_layer_connection(g,x,z,y,p->x,p->z,p->y):
-                actor_layer_connection(g,p->x,p->z,p->y,x,z,y);
-            if(allowed){best=n;distance=d;}
-        }
-    }
-    return best;
 }
 static unsigned actor_layer_heuristic(const struct toy_game_flow_node *p,int x,int y,int z)
 {
@@ -411,6 +420,151 @@ static int actor_layer_pop(unsigned short *heap,int *count,const unsigned *prior
     }
     if(*count)heap[parent]=(unsigned short)node;
     return result;
+}
+
+static int actor_layer_search_matches(const struct toy_game *g,
+    const struct toy_game_actor_layer_search *s,const struct toy_game_actor *a)
+{
+    return a->active && a->state==TOY_GAME_ACTOR_ALIVE && !a->airborne_ms &&
+        s->actor_id==a->actor_id && s->actor_generation==a->combat_generation &&
+        s->request_serial==a->nav_layer_serial &&
+        s->navigation_generation==g->navigation_generation &&
+        s->x==a->x && s->y==a->ground_y && s->z==a->z &&
+        s->tx==a->nav_goal_x && s->ty==a->nav_layer_y && s->tz==a->nav_goal_z;
+}
+
+static int actor_layer_edge(struct toy_game *g,int from,int to)
+{
+    struct toy_game_flow_edge *cache=&g->actor_layer_edges[
+        ((unsigned)from*73856093u^(unsigned)to*19349663u)%TOY_GAME_FLOW_EDGE_CACHE];
+    if(cache->from==from && cache->to==to && cache->result) {
+        if(g->update_profile)g->update_profile->actor_layer_hits++;
+        return cache->result==2;
+    }
+    const struct toy_game_flow_node *p=&g->flow_nodes[from],*q=&g->flow_nodes[to];
+    int allowed=actor_layer_connection(g,p->x,p->z,p->y,q->x,q->z,q->y);
+    cache->from=(unsigned short)from;cache->to=(unsigned short)to;
+    cache->result=allowed?2:1;
+    return allowed;
+}
+
+/* Resume even in the middle of a dense cell. Budgets count candidates and
+ * actual movement samples, never elapsed time, so host/client decisions agree.
+ * One final connector may exceed the sample budget by at most 76 samples. */
+static void actor_layer_search_work(struct toy_game *g,struct toy_game_actor *a)
+{
+    struct toy_game_actor_layer_search *s=&g->actor_layer_search;
+    unsigned short *parent=g->actor_layer_parent,*queue=g->actor_layer_queue;
+    unsigned *priority=g->actor_layer_priority;
+    int quota=TOY_GAME_ACTOR_LAYER_CANDIDATES_PER_QUERY;
+    s->samples=0;
+    if(s->stage==2 && g->flow_count>s->known_nodes) {
+        memset(parent+s->known_nodes+1,0,(g->flow_count-s->known_nodes)*sizeof(*parent));
+        s->known_nodes=g->flow_count;
+    }
+    while(quota>0 && s->samples<TOY_GAME_ACTOR_LAYER_SAMPLES_PER_QUERY) {
+        if(s->stage<2) {
+            int x=s->stage?s->tx:s->x,z=s->stage?s->tz:s->z,y=s->stage?s->ty:s->y;
+            int cell=flow_cell(g,x,z);
+            if(cell<0)break;
+            if(s->slot>=9) {
+                if(!s->best)break;
+                if(!s->stage) {
+                    s->start=s->best;s->stage=1;s->slot=0;s->next=-1;s->best=0;
+                    s->best_distance=(long long)TOY_GAME_SHORT_CONNECTION_RANGE*TOY_GAME_SHORT_CONNECTION_RANGE+1;
+                } else {
+                    s->goal=s->best;s->stage=2;s->slot=0;s->next=-1;
+                    memset(parent,0,(g->flow_count+1)*sizeof(*parent));
+                    s->known_nodes=g->flow_count;
+                    parent[s->start]=(unsigned short)s->start;
+                    priority[s->start]=actor_layer_heuristic(&g->flow_nodes[s->start],s->tx,s->ty,s->tz);
+                    actor_layer_push(queue,&s->queued,priority,s->start);
+                }
+                continue;
+            }
+            if(s->next<0) {
+                int c=flow_neighbor(g,cell,s->slot);
+                s->next=c<0?0:g->flow_cells[c];
+            }
+            if(!s->next){s->slot++;s->next=-1;continue;}
+            int n=s->next;
+            const struct toy_game_flow_node *p=&g->flow_nodes[n];
+            s->next=p->sibling;quota--;
+            long long dx=(long long)p->x-x,dz=(long long)p->z-z,d=dx*dx+dz*dz;
+            if(d>=s->best_distance)continue;
+            int allowed=s->stage?actor_layer_connection(g,p->x,p->z,p->y,x,z,y):
+                actor_layer_connection(g,x,z,y,p->x,p->z,p->y);
+            if(allowed){s->best=n;s->best_distance=d;}
+            continue;
+        }
+        if(parent[s->goal])break;
+        if(!s->current) {
+            if(!s->queued || s->expanded>=4096)break;
+            s->current=actor_layer_pop(queue,&s->queued,priority);
+            s->expanded++;s->slot=0;s->next=-1;
+            if(g->update_profile)g->update_profile->actor_layer_nodes++;
+        }
+        if(s->slot>=9){s->current=0;continue;}
+        const struct toy_game_flow_node *p=&g->flow_nodes[s->current];
+        if(s->next<0) {
+            int c=flow_neighbor(g,p->cell,s->slot);
+            s->next=c<0?0:g->flow_cells[c];
+        }
+        if(!s->next){s->slot++;s->next=-1;continue;}
+        int to=s->next;
+        const struct toy_game_flow_node *q=&g->flow_nodes[to];
+        s->next=q->sibling;quota--;
+        if(parent[to] || !actor_layer_edge(g,s->current,to))continue;
+        unsigned travelled=priority[s->current]-actor_layer_heuristic(p,s->tx,s->ty,s->tz);
+        parent[to]=(unsigned short)s->current;
+        priority[to]=travelled+actor_layer_heuristic(q,p->x,p->y,p->z)+
+            actor_layer_heuristic(q,s->tx,s->ty,s->tz);
+        actor_layer_push(queue,&s->queued,priority,to);
+    }
+    if(s->stage<2 && s->slot<9 && flow_cell(g,s->stage?s->tx:s->x,s->stage?s->tz:s->z)>=0)return;
+    if(s->stage==2 && !parent[s->goal] && (s->current || s->queued) &&
+        (s->current || s->expanded<4096))return;
+    a->nav_layer_count=a->nav_layer_cursor=0;
+    if(s->stage==2 && parent[s->goal]) {
+        int node=s->goal,total=1;
+        for(int n=s->goal;n!=s->start;n=parent[n])total++;
+        while(total>64){node=parent[node];total--;}
+        do {
+            a->nav_layer_path[a->nav_layer_count++]=(unsigned short)node;
+            if(node==s->start)break;
+            node=parent[node];
+        } while(a->nav_layer_count<64);
+        if(node!=s->start)a->nav_layer_count=0;
+        for(int i=0;i<a->nav_layer_count/2;++i) {
+            unsigned short swap=a->nav_layer_path[i];
+            a->nav_layer_path[i]=a->nav_layer_path[a->nav_layer_count-1-i];
+            a->nav_layer_path[a->nav_layer_count-1-i]=swap;
+        }
+    }
+    a->nav_layer_retry_ms=a->nav_layer_count?0:1000;
+    memset(s,0,sizeof(*s));
+}
+
+static void actor_layer_search_step(struct toy_game *g,struct toy_game_actor *a)
+{
+    struct toy_game_actor_layer_search *s=&g->actor_layer_search;
+    int owner=-1;
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(a==&g->actors[i]){owner=i;break;}
+    if(s->active && ((s->owner_slot<0 && owner>=0) || (s->owner_slot>=0 &&
+        !actor_layer_search_matches(g,s,&g->actors[s->owner_slot])) ||
+        (s->owner_slot==owner && !actor_layer_search_matches(g,s,a))))
+        memset(s,0,sizeof(*s));
+    if(s->active && s->owner_slot!=owner)return;
+    if(!s->active) {
+        s->active=1;s->owner_slot=owner;s->actor_id=a->actor_id;
+        s->actor_generation=a->combat_generation;s->request_serial=a->nav_layer_serial;
+        s->navigation_generation=g->navigation_generation;
+        s->x=a->x;s->y=a->ground_y;s->z=a->z;
+        s->tx=a->nav_goal_x;s->ty=a->nav_layer_y;s->tz=a->nav_goal_z;s->next=-1;
+        s->best_distance=(long long)TOY_GAME_SHORT_CONNECTION_RANGE*TOY_GAME_SHORT_CONNECTION_RANGE+1;
+        if(g->update_profile)g->update_profile->actor_layer_searches++;
+    }
+    actor_layer_search_work(g,a);
 }
 int toy_game_actor_navigation_target_height(struct toy_game *g,struct toy_game_actor *a,
     int tx,int ty,int tz,int speed,int dt_ms,int *out_x,int *out_z)
@@ -446,54 +600,7 @@ int toy_game_actor_navigation_target_height(struct toy_game *g,struct toy_game_a
         a->nav_layer_cursor++;
     }
     if(a->nav_layer_cursor>=a->nav_layer_count && !a->nav_layer_retry_ms) {
-        int start=actor_layer_attach(g,a->x,a->z,a->ground_y,1);
-        int goal=actor_layer_attach(g,tx,tz,ty,0),head=0,tail=0;
-        unsigned short *parent=g->actor_layer_parent,*queue=g->actor_layer_queue;
-        unsigned *priority=g->actor_layer_priority;
-        memset(parent,0,(g->flow_count+1)*sizeof(*parent));
-        if(start && goal) {
-            parent[start]=(unsigned short)start;
-            priority[start]=actor_layer_heuristic(&g->flow_nodes[start],tx,ty,tz);
-            actor_layer_push(queue,&tail,priority,start);
-            while(tail && head++<4096 && !parent[goal]) {
-                int from=actor_layer_pop(queue,&tail,priority);
-                const struct toy_game_flow_node *p=&g->flow_nodes[from];
-                unsigned travelled=priority[from]-actor_layer_heuristic(p,tx,ty,tz);
-                for(int i=0;i<9;++i) {
-                    int cell=flow_neighbor(g,p->cell,i);
-                    if(cell<0)continue;
-                    for(int to=g->flow_cells[cell];to;to=g->flow_nodes[to].sibling) {
-                        const struct toy_game_flow_node *q=&g->flow_nodes[to];
-                        /* Staircases can be far from vertically aligned
-                         * targets. The expansion budget bounds search work. */
-                        if(parent[to])continue;
-                        if(!actor_layer_connection(g,p->x,p->z,p->y,q->x,q->z,q->y))continue;
-                        parent[to]=(unsigned short)from;
-                        priority[to]=travelled+actor_layer_heuristic(q,p->x,p->y,p->z)+
-                            actor_layer_heuristic(q,tx,ty,tz);
-                        actor_layer_push(queue,&tail,priority,to);
-                    }
-                }
-            }
-        }
-        a->nav_layer_count=a->nav_layer_cursor=0;
-        if(goal && parent[goal]) {
-            int node=goal,total=1;
-            for(int n=goal;n!=start;n=parent[n])total++;
-            while(total>64){node=parent[node];total--;}
-            while(a->nav_layer_count<64) {
-                a->nav_layer_path[a->nav_layer_count++]=(unsigned short)node;
-                if(node==start)break;
-                node=parent[node];
-            }
-            if(node!=start)a->nav_layer_count=0;
-            for(int i=0;i<a->nav_layer_count/2;++i) {
-                unsigned short swap=a->nav_layer_path[i];
-                a->nav_layer_path[i]=a->nav_layer_path[a->nav_layer_count-1-i];
-                a->nav_layer_path[a->nav_layer_count-1-i]=swap;
-            }
-        }
-        a->nav_layer_retry_ms=a->nav_layer_count?0:1000;
+        actor_layer_search_step(g,a);
     }
     if(a->nav_layer_cursor<a->nav_layer_count) {
         const struct toy_game_flow_node *p=&g->flow_nodes[a->nav_layer_path[a->nav_layer_cursor]];

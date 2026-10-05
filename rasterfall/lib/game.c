@@ -4415,6 +4415,7 @@ void toy_game_actor_cancel_navigation(struct toy_game_actor *actor)
     actor->nav_active = 0;
     actor->nav_direct_valid = actor->nav_direct_ms = 0;
     actor->nav_layer_count=actor->nav_layer_cursor=actor->nav_layer_retry_ms=0;
+    actor->nav_layer_serial++;
 }
 
 int toy_game_actor_navigation_target(struct toy_game *g, struct toy_game_actor *a,
