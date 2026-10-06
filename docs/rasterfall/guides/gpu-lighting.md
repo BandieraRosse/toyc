@@ -115,6 +115,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 后续嵌灯、墙角和两次反弹的原生证据见[本轮优化现场](../archive/ddgi-corners-ceiling-20261006.md)。
 室内材质、配光与亮度对照见[室内亮度校准现场](../archive/indoor-lighting-calibration-20261006.md)。
 
+## 天空、太阳反弹与车间自然光
+
+正常 Scene 默认启用 `RF_GPU_DAYLIGHT=1`。该路径从程序天空采样漫反射环境并由独立建筑探针
+传输天空和太阳反弹，替代旧艺术填充；`0` 恢复旧画面以便对照。它不等于镜面 IBL 或 GTAO。
+`RF_GPU_GI=0` 关闭两种探针场，但仍以建筑射线检查直接天空；`disable_indirect` 的固定光照实验
+维持旧合同。详细范围见[自然光架构](../architecture/gpu-lighting.md#天空漫反射与太阳反弹)。
+
+```powershell
+python tools/gpu_daylight_check.py --output tmp/daylight-capture --meter
+python tools/gpu_daylight_check.py --output tmp/daylight-legacy --daylight 0
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareDaylight -Views atmosphere-lab -Rounds 3 -Samples 240 -OutputDirectory tmp/daylight-perf
+```
+
+捕获脚本使用源地图、当前暂存 exe，固定天空时间和逻辑步，保存哈希、native 审计与 PNG；
+`--meter` 另行读取曝光前的直接/GI/艺术填充通道，不能用其运行耗时代表普通帧性能。
+性能轴交替关闭/开启自然光；frontier 镜头自动选正式站点地图。`-CompareRoofCache` 固定自然光关闭，
+确保实际执行旧顶部可见性路径。天空时间段包含环境生成，GI 时间段包含灯具和自然光两场更新，
+探针插值的片元成本计入 WORLD；不得把不同区间的分位数直接相加。
+
+`DAYLIGHT PASS` 覆盖无灯开敞天空、入室天空、纯太阳反弹、封闭房间、超过反弹半径的远处遮挡、
+曝光/相机平移不改变测量、切顶、resize、无效替换、清空和隔离实验。硬件与软件路径分别验证。
+正常图检同时看建筑背光面、门窗和室内深处；车间内真实吸顶灯、楼梯壁灯由地图生成器维护。
+
 ## 物理单位检查与照度读取
 
 单位合同见[光照架构](../architecture/gpu-lighting.md#光度单位与显示合同)。固定灯用流明创作，

@@ -16,7 +16,7 @@ import time
 from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
-VIEWS=("entry","overview","workshop","energy","floor-1","floor-2","roof")
+VIEWS=("entry","overview","workshop","energy","floor-1","floor-2","roof","exterior","stairs","stairs-upper")
 
 
 def main():

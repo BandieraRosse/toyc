@@ -289,6 +289,95 @@ done:
     return result;
 #undef TILE_CHECK
 }
+static int lighting_daylight_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *source,uint32_t *rgba,float *depth)
+{
+    int result=-1,saved_debug=g->indirect_debug,saved_enabled=g->daylight_enabled;
+    int saved_gi=g->indirect_enabled;
+    float *hdr=malloc(65*65*4*sizeof(float));
+    struct rf_gpu_graphics_batch_item face=*source;
+    struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    const unsigned center=(32*65+32)*4;
+    float open_sky=0,room_sky=0,sun_bounce=0;
+#define DAY_CHECK(x) do {if(!(x)){fprintf(stderr,"DAYLIGHT FAIL line=%d\n",__LINE__);goto done;}}while(0)
+#define DAY_CAPTURE() do { \
+    DAY_CHECK(!rf_gpu_graphics_set_lighting(g,&lights)); \
+    DAY_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96)); \
+    DAY_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65)); \
+}while(0)
+    DAY_CHECK(hdr);g->daylight_enabled=g->indirect_enabled=1;g->indirect_debug=3;
+    lights.sun_color[3]=0;lights.sky_illuminance=120;
+    lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
+    face.draw.projection[0]=face.draw.projection[1]=65;face.draw.projection[3]=48;
+    face.draw.material[0]=0xffffff;face.draw.metallic=face.draw.emissive=0;
+    DAY_CHECK(!rf_gpu_graphics_resize(g,65,65));
+    DAY_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+    DAY_CAPTURE();open_sky=hdr[center+1]*100;
+    DAY_CHECK(open_sky>20 && hdr[center]==0 && hdr[center+2]==0);
+    // Environment is world-directional; neither exposure nor camera translation
+    // nor surface reflectance changes its measured incident illumination.
+    lights.environment[3]=4;face.draw.camera[0]=128;face.draw.material[0]=0x203040;
+    DAY_CAPTURE();DAY_CHECK(fabs(hdr[center+1]*100-open_sky)<0.05);
+    lights.sky_illuminance=240;DAY_CAPTURE();
+    DAY_CHECK(fabs(hdr[center+1]*100-2*open_sky)<0.1);
+    lights.sky_illuminance=-1;DAY_CHECK(rf_gpu_graphics_set_lighting(g,&lights)<0);
+    lights.sky_illuminance=120;lights.environment[3]=1;face.draw.camera[0]=0;
+    face.draw.material[0]=0xffffff;
+    struct rf_gpu_occlusion_primitive room[6]={
+        {{{-4096,-4250,0},{4096,-4096,8192},{0,0,0}},1,0xcccccc,0},
+        {{{-4096,4096,0},{4096,4250,8192},{0,0,0}},1,0xcccccc,0},
+        {{{-4250,-4250,0},{-4096,4250,8192},{0,0,0}},1,0xcccccc,0},
+        {{{4096,-4250,0},{4250,4250,8192},{0,0,0}},1,0xcccccc,0},
+        {{{-4250,-4250,8192},{4250,4250,8346},{0,0,0}},1,0xcccccc,0},
+        {{{-4250,-4250,-154},{4250,4250,0},{0,0,0}},1,0xcccccc,0}};
+    face.draw.translation_scale[1]=face.draw.camera[1]=-3000;
+    DAY_CHECK(!rf_gpu_graphics_set_architecture(g,room,5));
+    DAY_CHECK(!rf_gpu_graphics_prepare_daylight(g) && g->daylight_probe_count>0 && g->indirect_probe_count==0);
+    DAY_CAPTURE();room_sky=hdr[center+1]*100;DAY_CHECK(room_sky>1 && room_sky<open_sky);
+    unsigned probes=g->daylight_probe_count;
+    DAY_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0 && g->daylight_probe_count==probes);
+    DAY_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_resize(g,65,65));
+    DAY_CAPTURE();DAY_CHECK(fabs(hdr[center+1]*100-room_sky)<0.1);
+    lights.sky_illuminance=0.001f;lights.sun_color[3]=10000;
+    g->daylight_warmed=0;DAY_CHECK(!rf_gpu_graphics_prepare_daylight(g));
+    DAY_CAPTURE();sun_bounce=hdr[center+1]*100;
+    fprintf(stdout,"DAYLIGHT solar receiver direct=%.3f indirect=%.3f\n",hdr[center]*100,sun_bounce);
+    DAY_CHECK(sun_bounce>1 && hdr[center]==0);
+    // Closing the aperture removes BOTH direct sky and reflected sunlight.
+    DAY_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
+    DAY_CHECK(!rf_gpu_graphics_prepare_daylight(g));DAY_CAPTURE();
+    DAY_CHECK(hdr[center]==0 && hdr[center+1]==0 && hdr[center+2]==0);
+    lights.cutaway_bounds[0]=-5000;lights.cutaway_bounds[1]=5000;
+    lights.cutaway_bounds[2]=-5000;lights.cutaway_bounds[3]=10000;
+    lights.cutaway_height[0]=3000;lights.cutaway_height[1]=1;
+    DAY_CAPTURE();DAY_CHECK(hdr[center+1]==0); // presentation cutaway keeps the roof
+    memset(lights.cutaway_height,0,sizeof(lights.cutaway_height));
+    // All enclosing walls are beyond the old 16 m bounce limit. A nearby dark
+    // slab seeds interior probes; a bounce miss must still see the distant roof.
+    for(unsigned i=0;i<6;++i)for(unsigned v=0;v<2;++v)for(unsigned k=0;k<3;++k)
+        room[i].p[v][k]=(room[i].p[v][k]-(k==2?4096:0))*3+(k==2?4096:0);
+    struct rf_gpu_occlusion_primitive distant[7];memcpy(distant,room,sizeof(room));
+    distant[6]=(struct rf_gpu_occlusion_primitive){{{-1536,-4100,2500},{1536,-4000,6000},{0,0,0}},1,0,0};
+    DAY_CHECK(!rf_gpu_graphics_set_architecture(g,distant,7));
+    DAY_CHECK(!rf_gpu_graphics_prepare_daylight(g));
+    lights.sky_illuminance=120;g->indirect_debug=2;DAY_CAPTURE();
+    DAY_CHECK(hdr[center+1]>0); // a real interior probe, not the fallback, was used
+    g->indirect_debug=3;DAY_CAPTURE();DAY_CHECK(hdr[center+1]==0);
+    // Empty world retires both fields, then the calibrated open sky returns.
+    DAY_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0) && !g->daylight_probe_count && !g->indirect_probe_count);
+    lights.sun_color[3]=0;DAY_CAPTURE();DAY_CHECK(fabs(hdr[center+1]*100-open_sky)<0.05);
+    lights.disable_indirect=1;DAY_CAPTURE();DAY_CHECK(hdr[center+1]==0);
+    fprintf(stdout,"DAYLIGHT PASS open_sky_lux=%.3f room_sky_lux=%.3f solar_bounce_lux=%.3f camera_independent=1 exposure_independent=1 lamp_free=1 sealed=1 distant_roof=1 cutaway=1 resize=1 clear=1 invalid=1 isolated=1\n",open_sky,room_sky,sun_bounce);
+    result=0;
+done:
+    free(hdr);g->indirect_debug=saved_debug;g->daylight_enabled=saved_enabled;g->indirect_enabled=saved_gi;
+    rf_gpu_graphics_set_architecture(g,NULL,0);rf_gpu_graphics_resize(g,64,64);
+    rf_gpu_lighting_default(&lights);rf_gpu_graphics_set_lighting(g,&lights);
+    return result;
+#undef DAY_CAPTURE
+#undef DAY_CHECK
+}
+
 static int lighting_indirect_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *receiver,uint32_t *a,uint32_t *b,float *da,float *db)
 {
@@ -582,6 +671,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(shadow_pixels>8);
     LIGHT_CHECK(!lighting_tiles_regression(g,items,&lights,a,b,da,db));
     LIGHT_CHECK(!lighting_indirect_regression(g,items,a,b,da,db));
+    LIGHT_CHECK(!lighting_daylight_regression(g,items,a,da));
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
     /* Only sources fully covered by the current architecture may leave the

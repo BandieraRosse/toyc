@@ -32,13 +32,33 @@ def main():
             b.box((0,0,.013),(1.13,.43,.026),2,bevel=0)
             for x in (-.65,.65):b.box((x,0,.035),(.08,.64,.07),0,bevel=0)
         else:
-            # Blender -Y exports to runtime +Z. A wall mount, hood and lens.
+            # Blender -Y exports to runtime +Z. The front lens normal is
+            # (0,-.6,-.8), matching the runtime socket's forward/down axis.
             b.box((0,.08,.225),(.65,.09,.45),0,bevel=0)
-            b.box((0,-.02,.22),(.57,.2,.28),1,bevel=0)
-            b.box((0,-.113,.16),(.48,.024,.16),2,bevel=0)
+            vertices=[(-.285,.011,.109),(.285,.011,.109),
+                      (.285,-.125,.211),(-.285,-.125,.211),
+                      (-.285,.07,.109),(.285,.07,.109),
+                      (.285,.07,.33),(-.285,.07,.33)]
+            mesh=bpy.data.meshes.new('wall_optical_housing')
+            mesh.from_pydata(vertices,[],[(0,1,2,3),(4,7,6,5),(0,4,5,1),
+                                         (3,2,6,7),(0,3,7,4),(1,5,6,2)])
+            housing=bpy.data.objects.new('wall_optical_housing',mesh)
+            bpy.context.collection.objects.link(housing)
+            housing.data.materials.append(mats[1]);b.parts.append(housing)
+            # One luminous face, inset within the dark frame. No luminous
+            # backside/edges and no coplanar white/dark polygons.
+            lens=bpy.data.meshes.new('wall_aperture')
+            lens.from_pydata([(x,-.057-.8*t-.0006,.16+.6*t-.0008)
+                              for x,t in ((-.24,-.065),(.24,-.065),(.24,.065),(-.24,.065))],[],[(0,1,2,3)])
+            aperture=bpy.data.objects.new('wall_aperture',lens)
+            bpy.context.collection.objects.link(aperture)
+            aperture.data.materials.append(mats[2]);b.parts.append(aperture)
             b.box((0,-.025,.38),(.65,.20,.07),0,bevel=0)
         obj=b.finish('rf_light_'+kind,dims,240)
         obj['hybrid']=True
         obj.data.name=obj.name
+        if kind=='wall':
+            emitting=[p for p in obj.data.polygons if p.material_index==2]
+            assert len(emitting)==2 and all(p.normal.y<-.599 and p.normal.z<-.799 for p in emitting)
         export(args.output/(obj.name+'.glb'),[obj])
 if __name__=='__main__':main()

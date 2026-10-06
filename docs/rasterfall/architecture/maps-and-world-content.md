@@ -9,7 +9,8 @@ BOX 的 `attr.bottom_color` 经 IR/Runtime attribute 进入绘制投影的可选
 可见网格和静态建筑 DDGI 消费，不进入碰撞或玩法材质。格式与缺省行为见[地图格式](../reference/map-format.md#v1-render-记录)。
 前哨站 B1、一层、二层、屋顶及北侧折返楼梯由 [前哨站合同](../reference/outpost-hall-v1.md)维护。
 建筑离线编写语法由 `tools/building_kit.py` 拥有，墙体、门洞、有限楼板与封闭折返楼梯降为普通
-V1 记录；前哨站使用同一生成器同时生产可见结构和独立碰撞声明。连接约束见
+V1 记录；前哨站与边缘站点车间使用同一生成器同时生产可见结构和独立碰撞声明。车间东北角
+内部楼梯的通行开口由主楼板分区显式留出，楼梯 base 独占地面显示，避免与园区铺装共面。连接约束见
 [建筑套件规范](../reference/architectural-environment-v1.md#标准房屋生成语法)，Runtime Map 无新增隐式建筑规则。
 楼层及屋顶元数据不生成隐式碰撞或自动敌人。首图二楼枪手由 session 按守军 region 的 `attr.y`
 校验真实支撑后创建，计入本任务初始守军。楼层视图的只读规则见 [RTS 指挥](rts-command.md#建筑与楼层-v1)。

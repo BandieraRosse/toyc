@@ -126,6 +126,7 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
             fixtures[lamps++]=light;
         }
         result=rf_gpu_graphics_set_indirect_lights(probe->graphics,fixtures,lamps);
+        if(!result)result=rf_gpu_graphics_prepare_daylight(probe->graphics);
     }
     if(!result){probe->lighting_world_generation=world->world_generation;probe->lighting_map_generation=world->map_generation;}
 done:
@@ -137,6 +138,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     if(scene_architecture_prepare(probe,world)<0)return -1;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
     lights.disable_indirect=probe->layers && probe->layers->fixed_lighting;
+    lights.sky_illuminance=lights.disable_indirect?0:120;
     if(probe->layers && !probe->layers->world_only) {
         memcpy(lights.cutaway_bounds,probe->layers->cutaway_bounds,sizeof(lights.cutaway_bounds));
         memcpy(lights.cutaway_height,probe->layers->cutaway_height,sizeof(lights.cutaway_height));

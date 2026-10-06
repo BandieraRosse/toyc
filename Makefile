@@ -1403,7 +1403,7 @@ win-gpu-resource-cache-test:
 GPU_GRAPHICS_TEST_SRCS := gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_graphics_min.h \
     gpu/include/rf_vulkan_sky_min.h gpu/include/rf_vulkan_ray_min.h gpu/src/rf_gpu_architecture_ray.inc gpu/src/rf_gpu_indirect.inc \
-    $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_sky* gpu/shaders/graphics_light_tiles.comp gpu/shaders/graphics_indirect.comp gpu/shaders/*.glsl) \
+    $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_sky* gpu/shaders/graphics_environment.comp gpu/shaders/graphics_light_tiles.comp gpu/shaders/graphics_indirect.comp gpu/shaders/*.glsl) \
     gpu/include/rf_gpu_vulkan_backend.h gpu/include/rf_gpu_graphics.h \
     gpu/src/rf_gpu_vulkan_graphics.inc gpu/src/rf_gpu_texture_set.inc gpu/src/rf_gpu_lighting.inc gpu/src/rf_gpu_architecture_light.inc gpu/src/rf_gpu_lighting_test.inc gpu/src/rf_gpu_graphics_spirv.inc \
     gpu/shaders/graphics_v0.vert gpu/shaders/graphics_v0.frag \
@@ -1411,7 +1411,7 @@ GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_grap
 
 $(BUILD)/rf-gpu-graphics-test: gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I include -I include/tlibc -I rasterfall/include \
-		gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
+		gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -lm -o $@
 
 $(BUILD)/rf-gpu-graphics-test.exe: gpu/src/rf_gpu_graphics_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include -I include -I include/tlibc -I rasterfall/include \
@@ -1423,7 +1423,7 @@ $(BUILD)/rf-gpu-service-test: gpu/src/rf_gpu_service_test.c rasterfall/src/rf_gp
 
 $(BUILD)/rf-gpu-probe: gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
-		gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
+		gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -lm -o $@
 
 $(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
@@ -1432,7 +1432,7 @@ $(BUILD)/rf-gpu-probe.exe: gpu/src/rf_gpu_probe.c $(GPU_GRAPHICS_TEST_SRCS) $(GP
 
 $(BUILD)/rf-gpu-framebuffer-test: gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	$(GCC) -std=c11 -O2 -Wall -Wextra -Werror -I include -I include/tlibc -I gpu/include -I rasterfall/include \
-		gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -o $@
+		gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) -ldl -lm -o $@
 
 $(BUILD)/rf-gpu-framebuffer-test.exe: gpu/src/rf_gpu_framebuffer_test.c $(GPU_GRAPHICS_TEST_SRCS) $(GPU_GRAPHICS_TEST_DEPS) | $(BUILD)
 	x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \

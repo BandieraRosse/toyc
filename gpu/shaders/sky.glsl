@@ -2,7 +2,9 @@
  * Analytic single-scattering atmosphere (not the Hillaire LUT implementation),
  * curved cumulus volume and a separate thin cirrus layer, in linear HDR. */
 layout(set=1,binding=5) uniform sampler3D noise_volume;
+#ifndef RF_SKY_DIRECTION_ONLY
 #include "sky_view.glsl"
+#endif
 vec2 sky_noise(vec3 p) {
     return textureLod(noise_volume,p/8.0+vec3(0.5/64.0),0.0).rg;
 }
@@ -79,8 +81,8 @@ float sky_shell_distance(vec3 ray,float height) {
     // Rationalized positive root for upward rays.
     return c/(sqrt(b*b+c)+b);
 }
-vec4 rf_sky(vec2 pixel) {
-    vec3 ray=sky_ray(pixel),sun=lighting.sun_direction.xyz;
+vec4 sky_direction(vec3 ray,int steps,bool reference_scan) {
+    vec3 sun=lighting.sun_direction.xyz;
     vec3 background=sky_atmosphere(ray);
     if(ray.y<=0.0) return vec4(background,1);
     float daylight=smoothstep(-0.08,0.15,sun.y);
@@ -99,7 +101,6 @@ vec4 rf_sky(vec2 pixel) {
     float end=min(sky_shell_distance(ray,lighting.sky_cloud.z+lighting.sky_cloud.w),25.0);
     if(end<=start) return vec4(background,1.0-veil);
     // Quality is uniform for a dispatch: no per-row step-count discontinuities.
-    int steps=lighting.counts.y<1.5?64:40;
     float stride=(end-start)/float(steps),trans=1.0;
     // Midpoint quadrature is continuous under camera rotation. High-frequency
     // direction jitter changed the entire march phase between adjacent rays,
@@ -116,7 +117,7 @@ vec4 rf_sky(vec2 pixel) {
         float weather=sky_weather_at(p);
         // Skip only provably empty sample positions, keeping the exact original
         // march lattice. Bit 128 is an internal reference-scan diagnostic.
-        if((d.quality.x&128)==0 && weather+3.0*weather_step_bound+0.001<1.0-lighting.sky_cloud.x-0.18) {
+        if(!reference_scan && weather+3.0*weather_step_bound+0.001<1.0-lighting.sky_cloud.x-0.18) {
             i+=3;
             continue;
         }
@@ -145,3 +146,8 @@ vec4 rf_sky(vec2 pixel) {
     // Alpha carries solar visibility, not opacity of the final SKY draw.
     return vec4(scattered+trans*background,trans*(1.0-veil));
 }
+#ifndef RF_SKY_DIRECTION_ONLY
+vec4 rf_sky(vec2 pixel) {
+    return sky_direction(sky_ray(pixel),lighting.counts.y<1.5?64:40,(d.quality.x&128)!=0);
+}
+#endif

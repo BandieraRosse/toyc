@@ -21,7 +21,8 @@ GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting
 见[建筑硬件查询](gpu-lighting.md#可选硬件-ray-query)，不改变 Scene 光栅呈现或 Game 状态所有权。
 
 顶部可见性列缓存与 DDGI 探针也由各 graphics owner 独占；地图代际变化时重建，resize 保留。
-探针 compute 使用同一建筑结构，在灯表后、阴影前更新，随后由场景片元读取一次漫反射。
+灯具与自然光分别持有探针场，自然光布局依据建筑表面。天空环境 compute 先生成不含太阳盘的
+方向缓存；两场使用同一建筑结构，在灯表后、阴影前更新，随后由片元各读取一次并合成漫反射。
 它不写入 Game 或旧 CPU 静态光场；布局、更新预算与已知限制见[DDGI 原型](gpu-lighting.md#ddgi-漫反射原型)。
 
 ## 帧所有权

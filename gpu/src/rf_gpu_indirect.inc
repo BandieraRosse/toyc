@@ -1,7 +1,8 @@
 /* DDGI probe placement, exact local-segment visibility and upward visibility.
  * Radiance is updated on the GPU; moments remain only for diagnostic comparison. */
 #define RF_GI_PROBES 16384u
-#define RF_GI_HASH 32768u
+#define RF_GI_DAYLIGHT_PROBES 32768u
+#define RF_GI_HASH 65536u
 #define RF_GI_RAYS 128u
 #define RF_GI_STRIDE 39u /* six irradiance lobes + 64 pairs of distance moments */
 struct rf_gi_slot { int32_t cell[3];uint32_t index; };
@@ -125,13 +126,13 @@ static int architecture_roof_build(struct rf_gpu_graphics *g,
 }
 static uint32_t gi_hash(int32_t x,int32_t y,int32_t z)
 {uint32_t h=(uint32_t)x*73856093u^(uint32_t)y*19349663u^(uint32_t)z*83492791u;return h^(h>>16);}
-static int gi_insert(struct rf_gi_slot *slots,int32_t (*coords)[3],unsigned *count,int x,int y,int z)
+static int gi_insert(struct rf_gi_slot *slots,int32_t (*coords)[3],unsigned *count,unsigned limit,int x,int y,int z)
 {
     unsigned at=gi_hash(x,y,z)&(RF_GI_HASH-1);
     for(unsigned n=0;n<RF_GI_HASH;++n,at=(at+1)&(RF_GI_HASH-1)) {
         struct rf_gi_slot *s=&slots[at];
         if(!s->index) {
-            if(*count==RF_GI_PROBES)return -1;
+            if(*count==limit)return -1;
             s->cell[0]=x;s->cell[1]=y;s->cell[2]=z;s->index=++*count;
             memcpy(coords[*count-1],s->cell,12);return 0;
         }
@@ -143,7 +144,7 @@ static int gi_insert(struct rf_gi_slot *slots,int32_t (*coords)[3],unsigned *cou
  * contained in this expanded box. Store every overlapping solid, or fall back
  * to the complete architecture query if a triangle/large list is encountered.
  * This is a conservative geometric proof, never a sampled visibility mask. */
-#define RF_GI_CELL_BOXES 8u
+#define RF_GI_CELL_BOXES 32u
 static unsigned gi_cell_boxes(struct rf_gpu_graphics *g,const int32_t *cell,float spacing,uint32_t *ids)
 {
     const struct rf_gi_arch_node *nodes=g->indirect_architecture;
@@ -177,8 +178,8 @@ static void gfx_indirect_record(struct rf_gpu_graphics *g)
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
     g->indirect_cursor=(g->indirect_cursor+budget)%g->indirect_probe_count;g->indirect_warmed=1;
 }
-int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
-    const struct rf_gpu_light *sources,uint32_t count)
+static int indirect_field_build(struct rf_gpu_graphics *g,
+    const struct rf_gpu_light *sources,uint32_t count,int daylight)
 {
     if(!g || g->scene_in_flight || g->poisoned || count>RF_GPU_INDIRECT_LIGHT_CAP || (count && !sources))return -1;
     struct rf_gpu_light lights[RF_GPU_INDIRECT_LIGHT_CAP];
@@ -197,16 +198,21 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
     struct rf_gi_header header={0};struct rf_gpu_vulkan_buffer next={0},source_buffer={0};
     unsigned char source_data[16+RF_GPU_INDIRECT_LIGHT_CAP*sizeof(struct rf_gpu_light)]={0};
     memcpy(source_data,&count,4);memcpy(source_data+16,lights,count*sizeof(*lights));
-    if(indirect_upload(g,source_data,16+count*sizeof(*lights),&source_buffer)<0)return -1;
-    if(!count || !g->indirect_enabled || !g->architecture_count) {
+    if(!daylight && indirect_upload(g,source_data,16+count*sizeof(*lights),&source_buffer)<0)return -1;
+    unsigned binding=daylight?15:11;
+    struct rf_gpu_vulkan_buffer *field=daylight?&g->daylight_buffer:&g->indirect_buffer;
+    if((!count && !daylight) || !g->indirect_enabled || !g->architecture_count || (daylight && !g->daylight_enabled)) {
         if(indirect_upload(g,&header,sizeof(header),&next)<0){gpu_buffer_destroy(g->owner,&source_buffer);return -1;}
-        indirect_bind(g,11,&g->indirect_buffer,&next);
-        indirect_bind(g,13,&g->indirect_sources,&source_buffer);
-        g->indirect_probe_count=0;g->indirect_cursor=0;g->indirect_warmed=0;return 0;
+        indirect_bind(g,binding,field,&next);
+        if(daylight){g->daylight_probe_count=0;g->daylight_cursor=0;g->daylight_warmed=0;}
+        else {indirect_bind(g,13,&g->indirect_sources,&source_buffer);
+            g->indirect_probe_count=0;g->indirect_cursor=0;g->indirect_warmed=0;}
+        return 0;
     }
     double started=now_ms();unsigned probes=0;float spacing=768;
     struct rf_gi_slot *slots=calloc(RF_GI_HASH,sizeof(*slots));
-    int32_t (*coords)[3]=malloc(RF_GI_PROBES*sizeof(*coords));
+    unsigned limit=daylight?RF_GI_DAYLIGHT_PROBES:RF_GI_PROBES;
+    int32_t (*coords)[3]=malloc(limit*sizeof(*coords));
     struct rf_gi_slot *cell_slots=NULL;struct rf_gi_cell *cells=NULL;
     unsigned char *data=NULL;int result=-1;if(!slots || !coords)goto done;
     /* Budget applies to the whole stable source list. Coarsen uniformly if a
@@ -220,7 +226,28 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
                 float dx=(x+0.37f)*spacing-lights[i].position_radius[0],dy=(y+0.37f)*spacing-lights[i].position_radius[1];
                 float dz=(z+0.37f)*spacing-lights[i].position_radius[2];
                 if(dx*dx+dy*dy+dz*dz>radius*radius)continue;
-                if(gi_insert(slots,coords,&probes,x,y,z)<0){overflow=1;break;}
+                if(gi_insert(slots,coords,&probes,limit,x,y,z)<0){overflow=1;break;}
+            }
+        }
+        /* Daylight has an independent budget, seeded around actual architectural
+         * surfaces (including floors/slabs), never lamps, rooms or camera bounds.
+         * A coarse outdoor field therefore cannot reduce fixture-GI resolution. */
+        for(unsigned i=0;daylight && i<g->indirect_architecture_nodes && !overflow;++i) {
+            const struct rf_gi_arch_node *n=&g->indirect_architecture[i];
+            if(n->hi[3]==0)continue;
+            int lo[3],hi[3];
+            for(unsigned k=0;k<3;++k) {
+                lo[k]=(int)__builtin_floorf(n->lo[k]/spacing-1.37f);
+                hi[k]=(int)__builtin_ceilf(n->hi[k]/spacing+0.63f);
+            }
+            for(int z=lo[2];z<=hi[2] && !overflow;++z)for(int y=lo[1];y<=hi[1] && !overflow;++y)for(int x=lo[0];x<=hi[0];++x) {
+                int c[3]={x,y,z};int inside=n->hi[3]>1.5f;
+                for(unsigned k=0;k<3;++k) {
+                    float p=(c[k]+0.37f)*spacing;
+                    if(p<=n->lo[k] || p>=n->hi[k])inside=0;
+                }
+                if(inside)continue;
+                if(gi_insert(slots,coords,&probes,limit,x,y,z)<0){overflow=1;break;}
             }
         }
         if(!overflow)break;
@@ -284,13 +311,38 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
     }
     memcpy(data,&header,sizeof(header));
     if(indirect_upload(g,data,bytes,&next)<0)goto done;
-    indirect_bind(g,11,&g->indirect_buffer,&next);
-    indirect_bind(g,13,&g->indirect_sources,&source_buffer);
-    g->indirect_probe_count=probes;g->indirect_cursor=0;g->indirect_warmed=0;
-    fprintf(stderr,"rf-gpu-gi: static-lights=%u probes=%u spacing=%.0f rays=%u prepare-ms=%.3f bytes=%llu cached-cells=%u/%u visibility=%d cpu-index-bytes=%llu\n",
-        count,probes,spacing,RF_GI_RAYS,now_ms()-started,(unsigned long long)bytes,cached_cells,cell_count,g->indirect_visibility,
+    indirect_bind(g,binding,field,&next);
+    if(daylight){g->daylight_probe_count=probes;g->daylight_cursor=0;g->daylight_warmed=0;}
+    else {indirect_bind(g,13,&g->indirect_sources,&source_buffer);
+        g->indirect_probe_count=probes;g->indirect_cursor=0;g->indirect_warmed=0;}
+    fprintf(stderr,"rf-gpu-gi: field=%s static-lights=%u probes=%u spacing=%.0f rays=%u prepare-ms=%.3f bytes=%llu cached-cells=%u/%u visibility=%d cpu-index-bytes=%llu\n",
+        daylight?"daylight":"fixtures",count,probes,spacing,RF_GI_RAYS,now_ms()-started,(unsigned long long)bytes,cached_cells,cell_count,g->indirect_visibility,
         (unsigned long long)g->indirect_architecture_nodes*sizeof(struct rf_gi_arch_node));
     result=0;
 done:
     free(data);free(cells);free(cell_slots);free(coords);free(slots);gpu_buffer_destroy(g->owner,&next);gpu_buffer_destroy(g->owner,&source_buffer);return result;
+}
+
+int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
+    const struct rf_gpu_light *sources,uint32_t count)
+{ return indirect_field_build(g,sources,count,0); }
+int rf_gpu_graphics_prepare_daylight(struct rf_gpu_graphics *g)
+{ return indirect_field_build(g,NULL,0,1); }
+
+static void gfx_daylight_record(struct rf_gpu_graphics *g)
+{
+    if(!g->daylight_enabled || !g->indirect_enabled || g->lighting.disable_indirect ||
+       g->lighting.sky_illuminance<=0 || !g->daylight_probe_count)return;
+    struct rf_gpu_vulkan_impl *p=g->owner;
+    uint32_t budget=g->daylight_warmed?128:g->daylight_probe_count;
+    if(budget>g->daylight_probe_count)budget=g->daylight_probe_count;
+    p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
+    p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->daylight_pipeline);
+    g->api.CmdPushConstants(g->cmd,g->post_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&g->daylight_cursor);
+    p->api.cmd_dispatch(g->cmd,budget,1,1);
+    struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
+    p->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+    g->daylight_cursor=(g->daylight_cursor+budget)%g->daylight_probe_count;g->daylight_warmed=1;
 }

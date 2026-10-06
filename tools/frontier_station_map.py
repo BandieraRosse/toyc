@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 
 from lab_computer import generate as computer
+from building_kit import BuildingKit
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "rasterfall/assets/maps/frontier_station_01.map"
@@ -41,9 +42,10 @@ def generate():
     def box(name, x0, x1, z0, z1, height, walkable=False, visible=False, color="64717A"):
         add(f"collision id={name} shape=box {bounds(x0,x1,z0,z1)} height={rfu(height)} collision=true visible={str(visible).lower()} walkable={str(walkable).lower()} color={color}")
 
-    def solid(name, x0, x1, z0, z1, bottom, top, color="64717A", walkable=False):
+    def solid(name, x0, x1, z0, z1, bottom, top, color="64717A", walkable=False, *, ceiling_color=None):
         add(f"collision id={name}_col shape=box {bounds(x0,x1,z0,z1)} height={rfu(top)} attr.base_y={rfu(bottom)} collision=true visible=false walkable={str(walkable).lower()}")
-        add(f"render id={name} kind=box {bounds(x0,x1,z0,z1)} height={rfu(top)} attr.base_y={rfu(bottom)} color={color}")
+        finish = f" attr.bottom_color={ceiling_color}" if ceiling_color else ""
+        add(f"render id={name} kind=box {bounds(x0,x1,z0,z1)} height={rfu(top)} attr.base_y={rfu(bottom)} color={color}{finish}")
         if walkable:
             add(f"surface id={name}_surface kind=platform {bounds(x0,x1,z0,z1)} height={rfu(top)} material={color} attr.collision_id={name}_col")
 
@@ -66,7 +68,7 @@ def generate():
             for x0,x1 in zip(xs,xs[1:]):
                 owner=next((row for row in reversed(floor_layers)
                             if row[1]<=x0 and row[2]>=x1 and row[3]<=z0 and row[4]>=z1),None)
-                if owner is None:continue
+                if owner is None or owner[5] is None:continue
                 key=(owner[0],owner[5],owner[6])
                 if runs and runs[-1][0]==key and runs[-1][2]==x0:
                     runs[-1]=(key,runs[-1][1],x1)
@@ -131,7 +133,7 @@ def generate():
     region("frontier_rally_courtyard","mission_route",0,31,4,4," attr.role=frontier_rally")
     guards = {"gate":[(-4,5),(9,4),(3,13)],
               "storage":[(-24,24),(-30,31),(-15,34)],
-              "workshop":[(20,50),(28,59),(10,61)],
+              "workshop":[(20,50),(18,60),(10,61)],
               "energy":[(-23,55),(-30,62),(-17,65)]}
     for zone, positions in guards.items():
         for i,(x,z) in enumerate(positions):
@@ -141,7 +143,7 @@ def generate():
            attrs=f" attr.role=frontier_guard attr.y={rfu(4.2)}")
     for level, y, ceiling, label, roof in [(1,0,4.0,"车间一层",0),
             (2,4.2,8.2,"车间二层",0),(3,8.4,12.4,"车间屋顶",1)]:
-        region(f"frontier_workshop_floor_{level}","building_floor",24.75,58,38.5,26,
+        region(f"frontier_workshop_floor_{level}","building_floor",20,58,28.3,20.3,
                f" attr.building=frontier_workshop attr.level={level} attr.y={rfu(y)}"
                f" attr.ceiling={rfu(ceiling)} attr.name={label} attr.roof={roof}")
     region("frontier_station_bounds","mission_area",0,40,90,80," attr.role=frontier_station")
@@ -214,10 +216,16 @@ def generate():
 
     add("\n# Workshop: south loading door, west door, east flank and north service door.")
     paint("workshop_floor",6,34,48,68,"818C91")
-    door_wall("workshop_s",6,48,34,48,20)
-    door_wall("workshop_w",6,48,6,68,57)
-    door_wall("workshop_e",34,48,34,68,57)
-    door_wall("workshop_n",6,68,34,68,20)
+    # The stair's finite base owns this floor, without coplanar yard paint.
+    paint("workshop_stair_void",26,34,56,68,None)
+    kit = BuildingKit(lines,thickness=rfu(.2))
+    def workshop_wall(name,axis,at,start,end,bottom,top,door=None):
+        openings=() if door is None else ((rfu(door-2.4),rfu(door+2.4),rfu(3.6)),)
+        kit.wall("workshop_"+name,axis,rfu(at),rfu(start),rfu(end),rfu(bottom),rfu(top),"8B9AA2",openings)
+    workshop_wall("s","x",48,6,34,0,4.0,20)
+    workshop_wall("w","z",6,48,68,0,4.0,57)
+    workshop_wall("e","z",34,48,56,0,4.0,52)
+    workshop_wall("n","x",68,6,26,0,4.0,20)
     sign("workshop_sign",20,47.75,"01_WORKSHOP",width=8,y=3.1,height=.65)
     obj("frontier_workshop_terminal","research_terminal",18,54)
     obj("mesh_weaver","mesh_weaver_frame",23,58,collision=False)
@@ -227,36 +235,49 @@ def generate():
         box(f"mesh_weaver_post_{i}",23+(x-45)/512,23+(x+45)/512,58+(z-45)/512,58+(z+45)/512,922/512)
     lines.extend(computer("frontier_workshop_computer",rfu(14),rfu(64),"frontier_workshop","79DDE8").strip().splitlines())
     obj("workshop_bench_w","workbench",9,51,yaw=90)
-    obj("workshop_bench_n","workbench",28,65,yaw=180)
-    for i,(x,z) in enumerate([(31,51),(31,64),(9,65)]):
+    obj("workshop_bench_n","workbench",22,65,yaw=180)
+    for i,(x,z) in enumerate([(31,51),(24,64),(9,65)]):
         obj(f"workshop_supply_{i}","crate",x,z)
-    # Two real storeys, with solid slabs and a broad external switchback stair.
-    # Each flight uses continuous walkable ramp collision.
-    solid("workshop_upper_slab",6,34,48,68,4.0,4.2,"87989F",True)
-    solid("workshop_roof_slab",6,34,48,68,8.2,8.4,"697A84",True)
-    solid("workshop_upper_w",5.85,6.15,48,68,4.2,8.2)
-    solid("workshop_upper_n",6,34,67.85,68.15,4.2,8.2)
-    solid("workshop_upper_e",33.85,34.15,48,63,4.2,8.2)
+    # Two occupied floors and a roof, with an internal northeast stair opening.
+    for name, bottom, top, color in (("upper",4.0,4.2,"87989F"),("roof",8.2,8.4,"697A84")):
+        solid(f"workshop_{name}_slab",6,34,48,56,bottom,top,color,True,ceiling_color="C8CDD0")
+        solid(f"workshop_{name}_slab_w",6,26,56,68,bottom,top,color,True,ceiling_color="C8CDD0")
+    # Real model sockets provide direct light and fixture GI on both floors.
+    # Flush mounting cuts only render recesses; collision and slab caps stay sealed.
+    for level, ceiling in ((1,4.0),(2,8.2)):
+        for column, x in enumerate((9,14.5,20,24.5,31)):
+            for row, z in enumerate((51.5,58,64.5)):
+                if x>26 and z>56:continue
+                kit.ceiling_light(f"workshop_{level}f_ceiling_{column}_{row}",rfu(x),rfu(z),rfu(ceiling))
+    workshop_wall("upper_w","z",6,48,68,4.2,8.2)
+    workshop_wall("upper_n","x",68,6,26,4.2,8.2)
+    workshop_wall("upper_e","z",34,48,56,4.2,8.2)
     # South-facing windows afford real cross-height fire over the courtyard.
     solid("workshop_upper_s_sill",6,34,47.85,48.15,4.2,5.0)
     solid("workshop_upper_s_head",6,34,47.85,48.15,7.2,8.2)
     for i,(x0,x1) in enumerate([(6,10),(14,25),(29,34)]):
         solid(f"workshop_upper_s_pier_{i}",x0,x1,47.85,48.15,5.0,7.2)
-    ramp("workshop_stair_lower",35,39,49,65,0,4.2)
-    solid("workshop_stair_landing",33,44,65,71,4.0,4.2,"87989F",True)
-    ramp("workshop_stair_upper",40,44,49,65,8.4,4.2)
-    solid("workshop_roof_landing",33,44,45,49,8.2,8.4,"697A84",True)
-    # Parapets and stair-edge rails are finite boxes, traversable underneath.
-    for name,x0,x1,z0,z1 in [("s",6,33,47.85,48.15),
-            ("n",6,34,67.85,68.15),("w",5.85,6.15,48,68),
-            ("e",33.85,34.15,49,68)]:
+    storeys=(("1f",0),("2f",rfu(4.2)),("roof",rfu(8.4)))
+    kit.switchback("workshop_stair",tuple(rfu(v) for v in (26,34,56,68)),storeys,rfu(12.4),
+                   landing_depth=rfu(3),spine_width=rfu(.6),wall_color="AAB9C0",ceiling_color="C8CDD0")
+    for label, y in storeys:
+        obj(f"workshop_stair_{label}_light","light_wall",33.76,57.5,y=y/512+2.65,yaw=270,collision=False)
+        if label=="roof":continue
+        obj(f"workshop_stair_{label}_half_light","light_wall",33.76,66.5,y=y/512+4.75,yaw=270,collision=False)
+        obj(f"workshop_stair_{label}_flight_light","light_wall",26.24,62,y=y/512+3.5,yaw=90,collision=False)
+        obj(f"workshop_stair_{label}_return_light","light_wall",33.76,62,y=y/512+5.6,yaw=270,collision=False)
+    # Parapets terminate against the stair enclosure; its south portal opens onto the roof.
+    for name,x0,x1,z0,z1 in [("s",6,34,47.85,48.15),
+            ("n",6,26,67.85,68.15),("w",5.85,6.15,48,68),
+            ("e",33.85,34.15,48,56)]:
         solid("workshop_roof_rail_"+name,x0,x1,z0,z1,8.4,9.35,"536771")
-    for i,(x,z) in enumerate([(8,50),(8,66),(32,50),(32,66)]):
+    for i,(x,z) in enumerate([(8,50),(8,66),(32,50)]):
         obj(f"workshop_upper_column_{i}","industrial_pillar",x,z,y=4.2)
     obj("workshop_upper_desk","workbench",21,64,yaw=180,y=4.2)
     obj("workshop_upper_cover","crate",26,52,y=4.2)
     sign("workshop_upper_sign",20,47.7,"WORKSHOP_2F",width=6,y=7.35,height=.45)
-    sign("workshop_stair_sign",36,49,"2F_/_ROOF",width=3,y=1.9,height=.4)
+    for level,y in (("1f",0),("2f",4.2),("roof",8.4)):
+        sign("workshop_stair_sign_"+level,30,55.75,"STAIRS_/_2F_/_ROOF",width=3,y=y+3.7,height=.25)
     obj("workshop_loading_canopy","frontier_canopy",20,47,y=4.2)
     for i,x in enumerate([16.6,23.4]):
         obj(f"workshop_bollard_{i}","frontier_bollard",x,47)
@@ -299,6 +320,7 @@ def generate():
             (-31,90,173,1800),(23,89,45,2300),(40,88,12,1400),(-18,83,75,1000)]):
         obj(f"terrain_rock_{i}","frontier_rock",x,z,yaw=yaw,scale=scale)
     write_floor_partition()
+    kit.finish()
     return "\n".join(lines)+"\n"
 
 
@@ -308,10 +330,13 @@ def main():
     args=parser.parse_args()
     content=generate()
     if args.write:
-        OUTPUT.write_text(content,encoding="utf-8",newline="\n")
+        raw=OUTPUT.read_bytes() if OUTPUT.exists() else b""
+        bom=b"\xef\xbb\xbf" if raw.startswith(b"\xef\xbb\xbf") else b""
+        newline="\r\n" if b"\r\n" in raw else "\n"
+        OUTPUT.write_bytes(bom+content.replace("\n",newline).encode("utf-8"))
         print(f"Wrote {OUTPUT.relative_to(ROOT)} ({len(content.splitlines())} lines)")
     else:
-        if OUTPUT.read_text(encoding="utf-8")!=content:
+        if OUTPUT.read_text(encoding="utf-8-sig")!=content:
             raise SystemExit("Map differs from generator; inspect before overwriting.")
         print("Frontier Station 01 map matches its source.")
 

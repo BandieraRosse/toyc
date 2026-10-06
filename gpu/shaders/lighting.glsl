@@ -7,6 +7,7 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     uvec4 tile_grid; // width, height, enabled, diagnostic counters
     ivec4 tile_camera; ivec4 tile_view; ivec4 tile_projection;
     uvec4 light_control; // diagnostic ablation mask
+    vec4 daylight; // horizontal sky lux / 100, architecture escape distance
 } lighting;
 #ifdef RF_LIGHT_PROFILE
 uint profile_pcf=0u;

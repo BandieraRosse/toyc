@@ -118,6 +118,10 @@ struct rf_gpu_graphics {
     rf_vk_pipeline indirect_pipeline;
     uint32_t indirect_probe_count,indirect_cursor;
     int indirect_warmed;
+    struct rf_gpu_vulkan_buffer daylight_buffer,environment_buffer;
+    rf_vk_pipeline daylight_pipeline,environment_pipeline;
+    uint32_t daylight_probe_count,daylight_cursor;
+    int daylight_warmed,daylight_enabled;
     int roof_cache_enabled,indirect_enabled,indirect_bounces,indirect_debug,indirect_visibility;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
@@ -1674,12 +1678,14 @@ static int gfx_render(struct rf_gpu_graphics *g,
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
     gfx_sky_record(g,items,count);
+    gfx_environment_record(g);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,4);
     gfx_light_tiles_record(g);
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,6);
     gfx_indirect_record(g);
+    gfx_daylight_record(g);
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,11);
     gfx_shadow_record(g,items,count);

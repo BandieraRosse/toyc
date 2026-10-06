@@ -51,7 +51,7 @@ static int frontier_session_test_storeys(struct rasterfall_session *s)
         int tx=upper->x,tz=upper->z,ty=upper->y,arrived=0;
         if(leg==1){tx=(roof->bounds.min_x+roof->bounds.max_x)/2;
             tz=(roof->bounds.min_z+roof->bounds.max_z)/2;ty=roof->floor_y;}
-        if(leg==3){tx=first->bounds.max_x-7*512;tz=first->bounds.min_z;ty=0;}
+        if(leg==3){tx=s->level.start_x;tz=s->level.start_z;ty=0;}
         for(int tick=0;tick<3000;++tick) {
             int x,z;
             long long dx=(long long)tx-probe.x,dz=(long long)tz-probe.z;

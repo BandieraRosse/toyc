@@ -75,6 +75,9 @@ struct rf_gpu_lighting {
     float cutaway_bounds[4],cutaway_height[4];
     /* Presentation-only suppression for isolated diagnostic/model views. */
     uint32_t disable_indirect;
+    /* Unoccluded horizontal sky illuminance (lux); zero retains legacy fill.
+     * The procedural sky supplies direction/color, without its solar disc. */
+    float sky_illuminance;
 };
 enum rf_gpu_graphics_scene_layer {
     RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,
@@ -130,6 +133,9 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
 #define RF_GPU_INDIRECT_LIGHT_CAP 128
 int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
     const struct rf_gpu_light *lights,uint32_t count);
+/* Geometry-based daylight coverage, independent of fixture locations.
+ * Call after installing architecture; replacing architecture clears both fields. */
+int rf_gpu_graphics_prepare_daylight(struct rf_gpu_graphics *g);
 #define RF_GPU_GRAPHICS_TEXTURES 8
 struct rf_gpu_graphics_texture_image {
     const uint32_t *rgb;

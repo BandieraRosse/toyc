@@ -4488,6 +4488,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                 game_runtime.rts.cutaway_amount=level<3?1:0;
             } else if(!strcmp(options.gpu_normal_view,"frontier-workshop")) {
                 camera.x=10240;camera.z=26112;camera.sy=420;camera.cy=934;
+            } else if(!strcmp(options.gpu_normal_view,"frontier-exterior")) {
+                camera.x=21504;camera.z=22016;camera.sy=-760;camera.cy=687;
+                camera.pitch_sy=185;camera.pitch_cy=1007;
+            } else if(!strncmp(options.gpu_normal_view,"frontier-stairs",15)) {
+                camera.x=14336;camera.z=29696;camera.sy=0;camera.cy=1024;
+                camera.pitch_sy=200;camera.pitch_cy=1004;
+                if(!strcmp(options.gpu_normal_view,"frontier-stairs-upper"))camera.y+=2150;
             } else if(!strcmp(options.gpu_normal_view,"frontier-energy")) {
                 camera.x=-11776;camera.z=26624;camera.sy=-240;camera.cy=995;
             }
@@ -4508,7 +4515,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         local_actor->z = camera.z;
         local_actor->sy = camera.sy;
         local_actor->cy = camera.cy;
-        if(!strncmp(options.gpu_normal_view,"outpost-light-",14)) {
+        if(!strncmp(options.gpu_normal_view,"outpost-light-",14) ||
+           !strncmp(options.gpu_normal_view,"frontier-stairs",15)) {
             local_actor->ground_y=camera.y-RASTERFALL_STANDING_CAMERA_Y;
             local_actor->airborne_y=0;
         }

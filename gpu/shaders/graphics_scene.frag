@@ -4,6 +4,7 @@
 #extension GL_EXT_ray_query : require
 #endif
 #include "lighting.glsl"
+#include "environment.glsl"
 #include "indirect.glsl"
 layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
@@ -113,10 +114,14 @@ void main() {
     // interior floor; this is visibility, not GI or bounced artificial light.
     uint ablation=lighting.light_control.x;
     bool roof_traced=false;
-    float sky_access=(ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
-    vec3 fill=environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
+    bool daylight=lighting.daylight.x>0.0;
+    float sky_access=daylight || (ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
+    vec3 fill=daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
     vec3 radiance=base*(1.0-metal)*fill+base*emissive;
-    if(metal<1.0 || meter)indirect=probe_irradiance(world_position,n,v);
+    if(metal<1.0 || meter) {
+        indirect=probe_irradiance(world_position,n,v);
+        if(daylight)indirect+=daylight_irradiance(world_position,n,v);
+    }
     radiance+=base*(1.0-metal)*indirect;
     const vec3 photopic=vec3(0.2126,0.7152,0.0722);
     float direct_lux=0.0;
