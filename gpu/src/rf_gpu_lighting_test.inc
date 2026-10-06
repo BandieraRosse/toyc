@@ -412,6 +412,82 @@ done:
 #undef DAY_CHECK
 }
 
+static int lighting_receiver_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *source,uint32_t *rgba,float *depth)
+{
+    int result=-1,saved_mode=g->indirect_mode,saved_debug=g->indirect_debug;
+    int saved_gi=g->indirect_enabled,saved_daylight=g->daylight_enabled;
+    struct rf_gpu_graphics_batch_item face=*source;
+    struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    float hdr[65*65*4];unsigned center=(32*65+32)*4;
+    struct rf_gpu_occlusion_primitive room[7]={
+        {{{-2048,-1152,0},{2048,-1024,6144},{0,0,0}},1,0xcccccc,0},
+        {{{-2048,1024,0},{2048,1152,6144},{0,0,0}},1,0xcccccc,0},
+        {{{-2176,-1152,0},{-2048,1152,6144},{0,0,0}},1,0xcccccc,0},
+        {{{2048,-1152,0},{2176,1152,6144},{0,0,0}},1,0xcccccc,0},
+        {{{-2176,-1152,6144},{2176,1152,6272},{0,0,0}},1,0xcccccc,0},
+        {{{-2176,-1152,-128},{2176,1152,0},{0,0,0}},1,0xcccccc,0},
+        {{{-2176,-1152,3000},{2176,1152,3020},{0,0,0}},1,0,0}};
+#define RC_CHECK(x) do {if(!(x)){fprintf(stderr,"RECEIVER CACHE FAIL line=%d\n",__LINE__);goto done;}}while(0)
+#define RC_CAPTURE() do {RC_CHECK(!rf_gpu_graphics_set_lighting(g,&lights)); \
+    RC_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96)); \
+    RC_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));}while(0)
+    g->indirect_mode=1;g->indirect_debug=3;g->indirect_enabled=g->daylight_enabled=1;
+    lights.sun_color[3]=0;lights.sky_illuminance=120;
+    lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
+    face.draw.projection[0]=face.draw.projection[1]=65;face.draw.projection[3]=48;
+    face.draw.material[0]=0xffffff;face.draw.emissive=face.draw.metallic=0;
+    RC_CHECK(!rf_gpu_graphics_resize(g,65,65));
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
+    RC_CHECK(!rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
+    RC_CHECK(depth[32*65+32]>0 && hdr[center+1]==0); // valid zero, sealed room
+    struct rf_gpu_light lamp={0};lamp.position_radius[2]=1024;lamp.position_radius[3]=7000;
+    lamp.direction_outer[3]=-1;lamp.color_intensity[0]=lamp.color_intensity[1]=lamp.color_intensity[2]=1;
+    lamp.inner_shadow[2]=1;
+    lamp.color_intensity[3]=3000;
+    lights.count=1;lights.lights[0]=lamp;
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();
+    float lit=hdr[center+1],direct=hdr[center];RC_CHECK(lit>0 && direct>0);
+    rf_vk_buffer relation=g->indirect_buffer.buffer,cache=g->receiver_buffer.buffer;
+    lamp.color_intensity[0]=4;lamp.color_intensity[1]=0.1f;lamp.color_intensity[2]=0.1f;
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();
+    RC_CHECK(g->indirect_buffer.buffer==relation && g->receiver_buffer.buffer==cache && g->receiver_ready);
+    g->indirect_debug=0;RC_CAPTURE();RC_CHECK(hdr[center]>hdr[center+1]);g->indirect_debug=3;
+    lamp.color_intensity[3]=0;
+    lights.lights[0].color_intensity[3]=0;double changed=now_ms();
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();RC_CHECK(hdr[center+1]==0 && hdr[center]==0);
+    double off_response=now_ms()-changed;
+    lamp.color_intensity[3]=3000;
+    lights.lights[0].color_intensity[3]=3000;
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();RC_CHECK(hdr[center+1]>0);
+    g->indirect_mode=2;RC_CAPTURE();RC_CHECK(hdr[center+1]==0 && hdr[center]==direct);
+    g->indirect_mode=1;
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,7));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
+    RC_CHECK(hdr[center+1]==0); // 20 RFU wall must isolate the adjacent room
+    cache=g->receiver_buffer.buffer;
+    RC_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0 && g->receiver_buffer.buffer==cache);
+    RC_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_resize(g,65,65));RC_CAPTURE();
+    RC_CHECK(hdr[center+1]==0 && g->receiver_buffer.buffer==cache);
+    lights.cutaway_bounds[0]=-3000;lights.cutaway_bounds[1]=3000;
+    lights.cutaway_bounds[2]=-3000;lights.cutaway_bounds[3]=7000;
+    lights.cutaway_height[0]=800;lights.cutaway_height[1]=1;RC_CAPTURE();RC_CHECK(hdr[center+1]==0);
+    memset(lights.cutaway_height,0,sizeof(lights.cutaway_height));
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0) && g->receiver_samples==0);
+    RC_CAPTURE();RC_CHECK(hdr[center+1]>0); // empty world is proven open
+    lights.disable_indirect=1;RC_CAPTURE();RC_CHECK(hdr[center+1]==0);
+    fprintf(stdout,"RECEIVER CACHE PASS lit_lux=%.3f lamp_off_response_ms=%.3f sealed=1 thin_wall=1 valid_zero=1 source_update_retains_geometry=1 lamp_off=1 direct_only=1 cutaway=1 resize=1 invalid=1 clear=1 isolated=1\n",lit*100,off_response);
+    result=0;
+done:
+    g->indirect_mode=saved_mode;g->indirect_debug=saved_debug;
+    g->indirect_enabled=saved_gi;g->daylight_enabled=saved_daylight;
+    if(rf_gpu_graphics_set_architecture(g,NULL,0)<0)result=-1;
+    if(rf_gpu_graphics_resize(g,64,64)<0)result=-1;
+    rf_gpu_lighting_default(&lights);if(rf_gpu_graphics_set_lighting(g,&lights)<0)result=-1;
+    return result;
+#undef RC_CAPTURE
+#undef RC_CHECK
+}
 static int lighting_indirect_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *receiver,uint32_t *a,uint32_t *b,float *da,float *db)
 {
@@ -747,6 +823,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!lighting_tiles_regression(g,items,&lights,a,b,da,db));
     LIGHT_CHECK(!lighting_indirect_regression(g,items,a,b,da,db));
     LIGHT_CHECK(!lighting_daylight_regression(g,items,a,da));
+    LIGHT_CHECK(!lighting_receiver_regression(g,items,a,da));
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
     /* Only sources fully covered by the current architecture may leave the
@@ -792,7 +869,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             if(timing.supported) {
                 LIGHT_CHECK(timing.valid && timing.frame_id==7+offscreen);
                 LIGHT_CHECK(timing.sky_compute_ms>=0 && timing.shadow_ms>=0 && timing.main_scene_ms>=0);
-                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.detail_ms[6]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.detail_ms[6]-timing.detail_ms[7]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
                 double sum=0;
                 for(unsigned i=1;i<6;++i){LIGHT_CHECK(timing.detail_ms[i]>=0);sum+=timing.detail_ms[i];}
                 LIGHT_CHECK(fabs(timing.main_scene_ms-sum)<0.00001);

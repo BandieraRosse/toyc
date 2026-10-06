@@ -13,6 +13,9 @@ static void indirect_bind(struct rf_gpu_graphics *g,unsigned binding,
 static int indirect_geometry_build(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count,
     struct rf_gpu_vulkan_buffer *next);
+static int receiver_cache_build(struct rf_gpu_graphics *g,
+    const struct rf_gpu_occlusion_primitive *geometry,unsigned count,struct rf_gpu_vulkan_buffer *next,
+    unsigned *sample_count);
 static float arch_center(const struct rf_gpu_occlusion_primitive *t,unsigned axis)
 { return t->solid_box?1.5f*(t->p[0][axis]+t->p[1][axis]):t->p[0][axis]+t->p[1][axis]+t->p[2][axis]; }
 static void arch_sort(struct rf_gpu_occlusion_primitive *t,int lo,int hi,unsigned axis)
@@ -60,7 +63,8 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     size_t bytes=16+(software_count?2*software_count-1:0)*sizeof(struct rf_arch_node);
     unsigned char *data=calloc(1,bytes);
     struct rf_gpu_occlusion_primitive *copy=software_count?malloc(software_count*sizeof(*copy)):NULL;
-    struct rf_gpu_vulkan_buffer next={0},roof={0},empty_gi={0},geometry={0},sources={0},daylight={0};void *mapped=NULL;
+    struct rf_gpu_vulkan_buffer next={0},roof={0},empty_gi={0},geometry={0},sources={0},daylight={0},receiver={0};void *mapped=NULL;
+    unsigned receiver_samples=0;
     if(!data || (software_count && !copy)){free(data);free(copy);return -1;}
     uint32_t used=0;
     if(software_count){memcpy(copy,triangles,count*sizeof(*copy));arch_build((struct rf_arch_node *)(data+16),&used,copy,count);}
@@ -79,7 +83,8 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
        indirect_upload(g,empty,sizeof(empty),&empty_gi)<0 ||
        indirect_upload(g,empty,sizeof(empty),&daylight)<0 ||
        indirect_upload(g,empty,16,&sources)<0 ||
-       indirect_geometry_build(g,triangles,count,&geometry)<0)goto fail;
+       indirect_geometry_build(g,triangles,count,&geometry)<0 ||
+       receiver_cache_build(g,triangles,count,&receiver,&receiver_samples)<0)goto fail;
     if(g->owner->ray_query_enabled) {
         if(architecture_ray_set(g,triangles,count)<0)goto fail;
     } else {
@@ -105,8 +110,12 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     indirect_bind(g,15,&g->daylight_buffer,&daylight);
     g->daylight_probe_count=g->daylight_cursor=0;g->daylight_warmed=0;
     g->architecture_count=count;
+    indirect_bind(g,16,&g->receiver_buffer,&receiver);
+    g->receiver_samples=receiver_samples;g->receiver_ready=0;
+    g->indirect_source_count=0;
     return 0;
 fail:
+    gpu_buffer_destroy(p,&receiver);
     gpu_buffer_destroy(p,&daylight);
     free(cell_nodes);free(data);gpu_buffer_destroy(p,&next);gpu_buffer_destroy(p,&roof);
     gpu_buffer_destroy(p,&empty_gi);gpu_buffer_destroy(p,&geometry);gpu_buffer_destroy(p,&sources);return -1;

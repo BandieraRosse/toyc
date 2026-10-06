@@ -161,6 +161,42 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 `DEPTH PREPASS PASS` 比较开关前后的颜色和深度。以上均在 `--gpu-lighting-test` 中运行。
 限定设备的图检、同步与五轮对照见[光照性能优化现场](../archive/lighting-performance-20261006.md)。
 
+## 低成本间接光候选对照
+
+默认使用 reference。fast 候选可通过进程环境选择，CPU renderer 不消费此配置：
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+$env:RF_GPU_INDIRECT_MODE='fast'
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --skip-boot --renderer gpu-scene
+```
+
+设置 `RF_GPU_INDIRECT_MODE=reference` 恢复现有照明；`direct_only_diag` 仅用于关闭整个间接
+漫反射链的消融，不是可发布方案。模式在启动时读取；灯光配置、曝光、材质、直接阴影和
+分辨率不随模式改变。fast 的空间表示、未覆盖回退和失效边界见[接收空间缓存](../architecture/gpu-lighting.md#可选接收空间缓存)。
+
+先 build，确认没有其他 GUI/性能任务，再分别采样两张地图：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareIndirectMode -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/fast-workshop-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareIndirectMode -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/fast-outpost-perf
+python tools/gpu_daylight_check.py --indirect-mode reference --views frontier-floor-2 frontier-workshop outpost-light-1f frontier-stairs frontier-stairs-upper --output tmp/fast-reference-images
+python tools/gpu_daylight_check.py --indirect-mode fast --views frontier-floor-2 frontier-workshop outpost-light-1f frontier-stairs frontier-stairs-upper --output tmp/fast-candidate-images
+```
+
+模式轴与其他比较轴互斥，轮换 reference/fast/direct_only_diag 顺序，核对激活日志，
+保存 EXE、SPIR-V、HEAD、地图哈希及 NVIDIA 温度/时钟/限频采样。截图默认 1280×720，
+可用 `--width 1920 --height 1080` 对照性能分辨率；
+性能默认 1920×1080、120 帧预热，不开启 capture、计数或 validation。运行过程中不构建。
+`SCENE-GPU-STAGES` 的 `receiver` 是缓存 pass，`gi` 是探针 pass，各提供 P50/P95/P99；
+总 GPU 和 WORLD 也提供 P99。不同阶段分位数不能相加；模式差值只是配对消融的边际成本。
+首次进入、换图和灯状态变化的峰值要另跑 frame audit，不能用稳态样本隐藏初始化成本。
+
+`--gpu-lighting-test` 的 `RECEIVER CACHE PASS` 检查真实 HDR 中的补光、封闭零照度、薄隔墙、
+保留几何的固定灯改色/关灯、直接光消融、切顶、resize、拒绝无效替换、清空和隔离。
+受控用例响应不代表全地图灯光变化；运动、人物过门洞和楼梯仍需独立实机检查。
+
 ## 物理单位检查与照度读取
 
 单位合同见[光照架构](../architecture/gpu-lighting.md#光度单位与显示合同)。固定灯用流明创作，

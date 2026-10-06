@@ -189,10 +189,11 @@ vec2 distance_moments(uint texel) {
     return sum/max(total,0.000001);
 }
 void main() {
-    uint lane=gl_LocalInvocationID.x,id=(update.first+gl_WorkGroupID.x)%probes.header.y;
+    uint lane=gl_LocalInvocationID.x,id=((update.first&0x7fffffffu)+gl_WorkGroupID.x)%probes.header.y;
     uint base=probes.header.w+id*probes.header.z;
     if(lane==0u) {
         history=uintBitsToFloat(probes.data[base]).w>0.0?probes.params.w:0.0;
+        if((update.first&0x80000000u)!=0u)history=0.0;
         near_hits=0u;
         vec4 state=uintBitsToFloat(probes.data[base+probes.header.z-1u]);
         probe_origin=state.xyz;probe_valid=state.w<0.0?0.0:1.0;

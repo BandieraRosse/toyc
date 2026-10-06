@@ -9,19 +9,21 @@ import tempfile
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
 output = ['/* Generated from gpu/shaders/graphics_scene, graphics_sky, graphics_shadow, graphics_tonemap and graphics_skin. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('scene_ray','frag'), ('scene_profile','frag'), ('scene_ray_profile','frag'), ('depth','frag'), ('light_tiles','comp'), ('indirect','comp'), ('indirect_ray','comp'), ('daylight','comp'), ('daylight_ray','comp'), ('environment','comp'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
+    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('scene_ray','frag'), ('scene_profile','frag'), ('scene_ray_profile','frag'), ('depth','frag'), ('light_tiles','comp'), ('indirect','comp'), ('indirect_ray','comp'), ('daylight','comp'), ('daylight_ray','comp'), ('receiver','comp'), ('receiver_ray','comp'), ('environment','comp'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
         source_variant = 'scene' if variant == 'color' or variant.startswith('scene') else variant
         if variant in ('indirect_ray', 'daylight', 'daylight_ray'):
             source_variant = 'indirect'
         defines = ['-DRF_SCENE_COLOR=1'] if variant == 'color' else []
-        if variant.startswith('scene_ray') or variant in ('indirect_ray', 'daylight_ray'):
+        if variant == 'receiver_ray':
+            source_variant = 'receiver'
+        if variant.startswith('scene_ray') or variant in ('indirect_ray', 'daylight_ray', 'receiver_ray'):
             defines = ['-DRF_ARCHITECTURE_RAY_QUERY=1']
         if variant.startswith('daylight'):
             defines.append('-DRF_DAYLIGHT_PROBES=1')
         if variant.endswith('_profile'):
             defines.append('-DRF_LIGHT_PROFILE=1')
-        target_env = 'vulkan1.2' if variant.startswith('scene_ray') or variant in ('indirect_ray', 'daylight_ray') else 'vulkan1.0'
+        target_env = 'vulkan1.2' if variant.startswith('scene_ray') or variant in ('indirect_ray', 'daylight_ray', 'receiver_ray') else 'vulkan1.0'
         subprocess.run([compiler, '-V', '--target-env', target_env, '-o', str(path)] + defines +
                        ['gpu/shaders/graphics_' + source_variant + '.' + stage], check=True)
         data = path.read_bytes()

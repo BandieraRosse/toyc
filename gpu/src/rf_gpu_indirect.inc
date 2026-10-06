@@ -170,13 +170,15 @@ static void gfx_indirect_record(struct rf_gpu_graphics *g)
     if(budget>g->indirect_probe_count)budget=g->indirect_probe_count;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
     p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->indirect_pipeline);
-    g->api.CmdPushConstants(g->cmd,g->post_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&g->indirect_cursor);
+    uint32_t control=g->indirect_cursor|(g->indirect_reset_history?0x80000000u:0u);
+    g->api.CmdPushConstants(g->cmd,g->post_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&control);
     p->api.cmd_dispatch(g->cmd,budget,1,1);
     struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;
     p->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT|RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
     g->indirect_cursor=(g->indirect_cursor+budget)%g->indirect_probe_count;g->indirect_warmed=1;
+    g->indirect_reset_history=0;
 }
 static int indirect_field_build(struct rf_gpu_graphics *g,
     const struct rf_gpu_light *sources,uint32_t count,int daylight)
@@ -199,11 +201,22 @@ static int indirect_field_build(struct rf_gpu_graphics *g,
     unsigned char source_data[16+RF_GPU_INDIRECT_LIGHT_CAP*sizeof(struct rf_gpu_light)]={0};
     memcpy(source_data,&count,4);memcpy(source_data+16,lights,count*sizeof(*lights));
     if(!daylight && indirect_upload(g,source_data,16+count*sizeof(*lights),&source_buffer)<0)return -1;
+    if(!daylight && g->indirect_mode==1 && g->indirect_probe_count && count==g->indirect_source_count) {
+        int same_layout=1;
+        for(unsigned i=0;i<count;++i)if(memcmp(lights[i].position_radius,g->indirect_source_snapshot[i].position_radius,16))same_layout=0;
+        if(same_layout) {
+            indirect_bind(g,13,&g->indirect_sources,&source_buffer);
+            memcpy(g->indirect_source_snapshot,lights,count*sizeof(*lights));
+            g->indirect_warmed=0;g->indirect_reset_history=1;g->receiver_full_refresh=1;
+            return 0;
+        }
+    }
     unsigned binding=daylight?15:11;
     struct rf_gpu_vulkan_buffer *field=daylight?&g->daylight_buffer:&g->indirect_buffer;
     if((!count && !daylight) || !g->indirect_enabled || !g->architecture_count || (daylight && !g->daylight_enabled)) {
         if(indirect_upload(g,&header,sizeof(header),&next)<0){gpu_buffer_destroy(g->owner,&source_buffer);return -1;}
         indirect_bind(g,binding,field,&next);
+        g->receiver_ready=0;
         if(daylight){g->daylight_probe_count=0;g->daylight_cursor=0;g->daylight_warmed=0;}
         else {indirect_bind(g,13,&g->indirect_sources,&source_buffer);
             g->indirect_probe_count=0;g->indirect_cursor=0;g->indirect_warmed=0;}
@@ -318,6 +331,8 @@ static int indirect_field_build(struct rf_gpu_graphics *g,
     fprintf(stderr,"rf-gpu-gi: field=%s static-lights=%u probes=%u spacing=%.0f rays=%u prepare-ms=%.3f bytes=%llu cached-cells=%u/%u visibility=%d cpu-index-bytes=%llu\n",
         daylight?"daylight":"fixtures",count,probes,spacing,RF_GI_RAYS,now_ms()-started,(unsigned long long)bytes,cached_cells,cell_count,g->indirect_visibility,
         (unsigned long long)g->indirect_architecture_nodes*sizeof(struct rf_gi_arch_node));
+    g->receiver_ready=0;
+    if(!daylight){g->indirect_source_count=count;memcpy(g->indirect_source_snapshot,lights,count*sizeof(*lights));}
     result=0;
 done:
     free(data);free(cells);free(cell_slots);free(coords);free(slots);gpu_buffer_destroy(g->owner,&next);gpu_buffer_destroy(g->owner,&source_buffer);return result;

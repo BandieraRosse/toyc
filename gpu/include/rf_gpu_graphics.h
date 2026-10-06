@@ -150,11 +150,11 @@ struct rf_gpu_scene_timing {
     int supported, valid;
     double world_draw_ms, present_blit_ms;
     double sky_compute_ms; /* Included in world_draw_ms; excludes HDR composite. */
-    /* Together with sky_compute_ms and detail_ms[0,6] partition world_draw_ms. Shadow includes
+    /* Together with sky_compute_ms and detail_ms[0,6,7] partition world_draw_ms. Shadow includes
      * depth copies; main includes WORLD shading, HDR composite, tonemap/HUD. */
     double shadow_ms, main_scene_ms;
     /* tiles; WORLD+sky composite; transparent/effects; viewmodel; post; HUD. */
-    double detail_ms[7]; /* final entry: DDGI probe update */
+    double detail_ms[8]; /* final entries: DDGI probe update, receiver cache */
     /* CPU walls within native submit; separate from completed GPU queries. */
     double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };

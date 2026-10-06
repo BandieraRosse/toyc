@@ -6,6 +6,7 @@
 #include "lighting.glsl"
 #include "environment.glsl"
 #include "indirect.glsl"
+#include "receiver_cache.glsl"
 layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
@@ -118,11 +119,13 @@ void main() {
     uint ablation=lighting.light_control.x;
     bool roof_traced=false;
     bool daylight=lighting.daylight.x>0.0;
-    float sky_access=daylight || (ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
-    vec3 fill=daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
+    uint indirect_mode=(lighting.light_control.w>>11)&3u;
+    float sky_access=indirect_mode!=0u || daylight || (ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
+    vec3 fill=indirect_mode!=0u || daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
     vec3 radiance=base*(1.0-metal)*fill+base*emissive;
     if(metal<1.0 || meter) {
-        indirect=combined_irradiance(world_position,n,v);
+        if(indirect_mode==1u)indirect=cached_receiver_irradiance(world_position,n);
+        else if(indirect_mode==0u)indirect=combined_irradiance(world_position,n,v);
     }
     radiance+=base*(1.0-metal)*indirect;
     const vec3 photopic=vec3(0.2126,0.7152,0.0722);

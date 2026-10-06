@@ -18,6 +18,7 @@ param(
     [switch]$CompareGIVisibility,
     [switch]$CompareDaylight,
     [switch]$CompareIndirect,
+    [switch]$CompareIndirectMode,
     [switch]$LightAblations,
     [switch]$ProfileLights,
     [switch]$AllLabs,
@@ -25,7 +26,7 @@ param(
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$CompareIndirectMode+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
 if($ProfileLights -and $LightAblations){throw 'Keep fragment counters separate from timing ablations'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
@@ -48,7 +49,7 @@ $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
-    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS')
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS','RF_GPU_INDIRECT_MODE')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
@@ -64,6 +65,9 @@ Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/asset
     compare_depth_prepass=[bool]$CompareDepthPrepass;depth_prepass=$env:RF_GPU_DEPTH_PREPASS;
     light_depth=$env:RF_GPU_LIGHT_DEPTH;gi_reuse=$env:RF_GPU_GI_REUSE;
     daylight=$env:RF_GPU_DAYLIGHT;compare_daylight=[bool]$CompareDaylight;
+    indirect_mode=$env:RF_GPU_INDIRECT_MODE;compare_indirect_mode=[bool]$CompareIndirectMode;
+    spirv=(Get-FileHash -LiteralPath (Join-Path $Root 'gpu/src/rf_gpu_graphics_spirv.inc')).Hash;
+    source_head=(& git -C $Root rev-parse HEAD);
     gi_bounces=$env:RF_GPU_GI_BOUNCES;
     gi_visibility=$env:RF_GPU_GI_VISIBILITY;compare_gi_visibility=[bool]$CompareGIVisibility;
     roof_cache=$env:RF_GPU_ROOF_CACHE;gi=$env:RF_GPU_GI;
@@ -77,6 +81,7 @@ try {
     $env:RF_GPU_GI_DEBUG='0'
     if($CompareGIReuse){$env:RF_GPU_GI='1';$env:RF_GPU_DAYLIGHT='1';$env:RF_GPU_GI_VISIBILITY='1'}
     if($CompareRoofCache){$env:RF_GPU_DAYLIGHT='0'}
+    if($CompareIndirectMode){$env:RF_GPU_GI='1';$env:RF_GPU_DAYLIGHT='1';$env:RF_GPU_GI_VISIBILITY='1'}
     [Environment]::SetEnvironmentVariable('RF_GPU_HDR_CAPTURE',$null,'Process')
     $env:RF_GPU_SCENE_LEGACY_BIND='0'
     $env:RF_GPU_LIGHT_PROFILE=if($ProfileLights){'1'}else{'0'}
@@ -86,9 +91,15 @@ try {
             $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($LightAblations){$Modes=@('none','roof','sun','local','pcf','brdf','rays')}
+            if($CompareIndirectMode){
+                $Cycle=@('reference','fast','direct_only_diag');$Modes=@()
+                for($Offset=0;$Offset -lt 3;$Offset++){$Modes+=$Cycle[($Round-1+$Offset)%3]}
+            }
             if($Round%2 -eq 0){[array]::Reverse($Modes)}
             foreach($Mode in $Modes) {
                 $Name="r$Round-$View-$Mode"
+                if($CompareIndirectMode){$env:RF_GPU_INDIRECT_MODE=$Mode}
+                $Thermal=[Collections.Generic.List[string]]::new();$LastThermal=-2
                 if($CompareLightDepth){$env:RF_GPU_LIGHT_DEPTH=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareDepthPrepass){$env:RF_GPU_DEPTH_PREPASS=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareGIReuse){$env:RF_GPU_GI_REUSE=if($Mode -eq 'reference'){'0'}else{'1'}}
@@ -124,6 +135,10 @@ try {
                 $Handle=$Process.Handle
                 $Timer=[Diagnostics.Stopwatch]::StartNew()
                 while(-not $Process.WaitForExit(500)) {
+                    if((Get-Command nvidia-smi -ErrorAction SilentlyContinue) -and $Timer.Elapsed.TotalSeconds-$LastThermal -ge 2) {
+                        $Thermal.Add([string]((& nvidia-smi --query-gpu=timestamp,temperature.gpu,power.draw,clocks.current.graphics,utilization.gpu,clocks_event_reasons.sw_thermal_slowdown --format=csv,noheader) -join '; '))
+                        $LastThermal=$Timer.Elapsed.TotalSeconds
+                    }
                     if($Timer.Elapsed.TotalSeconds -gt 240){throw "$Name timed out"}
                 }
                 $Process.WaitForExit()
@@ -155,8 +170,9 @@ try {
                 if($CompareDaylight -and $Errors -notmatch "rf-gpu-daylight: enabled=$($env:RF_GPU_DAYLIGHT)"){throw "$Name did not activate requested daylight mode"}
                 if($CompareGIBounces -and $Errors -notmatch "rf-gpu-indirect: roof-cache=1 probe-gi=1 bounces=$($env:RF_GPU_GI_BOUNCES)"){throw "$Name did not activate requested bounce count"}
                 if($CompareGIVisibility -and $Errors -notmatch "rf-gpu-gi: [^\r\n]*visibility=$($env:RF_GPU_GI_VISIBILITY)"){throw "$Name did not activate requested visibility mode"}
+                if($CompareIndirectMode -and $Errors -notmatch "rf-gpu-indirect-mode: $Mode\b"){throw "$Name did not activate requested indirect mode"}
                 if($Result.extent -ne "${Width}x${Height}"){throw "$Name extent differs from requested window size"}
-                $Runs.Add(@{round=$Round;view=$View;mode=$Mode;result=$Result;argv=$Argv;map_sha256=(Get-FileHash -LiteralPath (Join-Path $Package $Map)).Hash;exit=$Process.ExitCode})
+                $Runs.Add(@{round=$Round;view=$View;mode=$Mode;result=$Result;argv=$Argv;map_sha256=(Get-FileHash -LiteralPath (Join-Path $Package $Map)).Hash;thermal=@($Thermal.ToArray());exit=$Process.ExitCode})
                 Write-Json @($Runs.ToArray()) 'report.json'
                 Write-Output "$Name p50=$($Result.p50_us) p95=$($Result.p95_us) p99=$($Result.p99_us) us; GPU=$($Result.gpu_p50_us) shadow=$($Result.shadow_p50_us) main=$($Result.main_p50_us) us; shadow_draws=$($Result.shadow_draws)"
                 $Process=$null

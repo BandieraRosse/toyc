@@ -25,10 +25,16 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--views', nargs='+', choices=VIEWS, default=VIEWS[:3])
     parser.add_argument('--daylight', choices=('0', '1'), default='1')
+    parser.add_argument('--indirect-mode', choices=('reference', 'fast', 'direct_only_diag'),
+                        default=os.environ.get('RF_GPU_INDIRECT_MODE', 'reference'))
     parser.add_argument('--meter', action='store_true')
+    parser.add_argument('--width', type=int, default=1280)
+    parser.add_argument('--height', type=int, default=720)
     parser.add_argument('--executable', type=Path,
                         default=ROOT/'build-windows/rasterfall-windows/rasterfall.exe')
     args = parser.parse_args()
+    if args.width<1 or args.height<1:
+        parser.error('Capture extent must be positive')
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     executable = args.executable.resolve()
@@ -40,7 +46,8 @@ def main():
         options = dict(startupinfo=startup, creationflags=subprocess.CREATE_NO_WINDOW)
     report = dict(executable=str(executable),
                   executable_sha256=hashlib.sha256(executable.read_bytes()).hexdigest(),
-                  daylight=args.daylight, runs=[])
+                  daylight=args.daylight, indirect_mode=args.indirect_mode,
+                  extent=[args.width,args.height], runs=[])
     for view in args.views:
         map_name = 'frontier_station_01' if view.startswith('frontier-') else 'outpost'
         map_path = ROOT/f'rasterfall/assets/maps/{map_name}.map'
@@ -50,12 +57,13 @@ def main():
             folder.mkdir()
             env = dict(os.environ, RF_GPU_SKY_PRESET='clear', RF_GPU_SKY_TIME='0',
                        RF_GPU_DAYLIGHT=args.daylight, RF_GPU_LIGHT_PROFILE='0',
+                       RF_GPU_INDIRECT_MODE=args.indirect_mode,
                        RF_GPU_LIGHT_ABLATION='none', RF_GPU_GI_DEBUG='3' if meter else '0')
             env.pop('RF_GPU_HDR_CAPTURE', None)
             if meter:
                 env['RF_GPU_HDR_CAPTURE'] = str(folder/'meter.hdr')
             argv = [str(executable), '--renderer', 'gpu-scene', '--gpu-required', '--skip-boot',
-                    '--map', str(map_path), '--window-size', '1280', '720',
+                    '--map', str(map_path), '--window-size', str(args.width), str(args.height),
                     '--gpu-normal-scene', view, '0', '--gpu-normal-fixed-tick',
                     '--frames', '8', '--frame-audit', '--gpu-frame-capture',
                     str(folder/'capture'), '--gpu-capture-frame', '6']
@@ -69,7 +77,10 @@ def main():
             if process.returncode or not ppm.is_file() or 'SCENE-NATIVE' not in logs or any(
                     error in logs for error in ('VUID-', 'SYNC-HAZARD', 'Validation Error')):
                 raise RuntimeError(f'{name}: exit={process.returncode}; inspect {folder}')
-            Image.open(ppm).save(ppm.with_suffix('.png'))
+            captured=Image.open(ppm)
+            if captured.size!=(args.width,args.height):
+                raise RuntimeError(f'{name}: unexpected capture extent {captured.size}')
+            captured.save(ppm.with_suffix('.png'))
             if meter:
                 read_hdr(folder/'meter.hdr')
             report['runs'].append(dict(view=view, meter=meter, exit_code=process.returncode,

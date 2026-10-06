@@ -25,6 +25,11 @@ GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting
 方向缓存；两场使用同一建筑结构，在灯表后、阴影前更新，随后由片元各读取一次并合成漫反射。
 它不写入 Game 或旧 CPU 静态光场；布局、更新预算与已知限制见[DDGI 原型](gpu-lighting.md#ddgi-漫反射原型)。
 
+可选 fast 间接照明在两场探针之后增加接收空间缓存 compute，binding 16 由各 graphics owner
+持有；geometry/field generation 更新时初始化几何关系，正常帧只轮转刷新缓存值，resize 保留。
+compute 读写与 fragment 读取之间显式同步；独立 `receiver` timestamp 不混入 `gi`。
+reference 仍为默认，数据合同和覆盖限制见[接收空间缓存](gpu-lighting.md#可选接收空间缓存)。
+
 ## 帧所有权
 
 `rasterfall/src/rf_core_host.c` 管理窗口、输入、固定步长循环的宿主边界，以及 CPU 或 Scene 模式的初始化、呈现和关闭。`rasterfall/src/rf_game_runtime.c` 组织 session、只读 Scene 来源冻结和帧提交。玩法真值由 Game/session 持有；渲染和 HUD 不写入玩法状态。

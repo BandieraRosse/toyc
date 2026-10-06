@@ -1,0 +1,97 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+#extension GL_EXT_ray_query : require
+#endif
+#include "lighting.glsl"
+#include "environment.glsl"
+#include "indirect.glsl"
+layout(local_size_x=64) in;
+layout(push_constant) uniform Update {uint pass;} update;
+layout(set=1,binding=16,std430) buffer ReceiverCache {uvec4 header;uvec4 data[];} cache;
+
+// Geometry is initialized once per field generation, after probe relocation.
+// Ordinary refreshes perform only weighted buffer reads, including dark data.
+void prepare_field(uint at,vec3 p,bool daylight) {
+    vec4 params=daylight?daylight_probes.params:probes.params;
+    uint count=daylight?daylight_probes.header.y:probes.header.y;
+    vec3 grid=p/max(params.x,1.0)-0.37,f=fract(grid);ivec3 lo=ivec3(floor(grid));
+    uint cell=count==0u?0u:(daylight?daylight_probe_find(lo):fixture_probe_find(lo));
+    uvec4 n0=uvec4(0),n1=uvec4(0);uvec2 geometry=uvec2(0);
+    if(cell!=0u) {
+        n0=daylight?daylight_probe_load(cell):fixture_probe_load(cell);
+        n1=daylight?daylight_probe_load(cell+1u):fixture_probe_load(cell+1u);
+        geometry=daylight?daylight_probe_load(cell+2u).xy:fixture_probe_load(cell+2u).xy;
+    }
+    for(uint corner=0u;corner<8u;++corner) {
+        uint id=corner<4u?n0[corner]:n1[corner-4u],base=0u;float weight=0.0;
+        if(id!=0u) {
+            uvec4 h=daylight?daylight_probes.header:probes.header;
+            base=h.w+(id-1u)*h.z;
+            vec4 valid=uintBitsToFloat(daylight?daylight_probe_load(base):fixture_probe_load(base));
+            if(valid.w!=0.0) {
+                vec3 position=uintBitsToFloat(daylight?daylight_probe_load(base+h.z-1u):fixture_probe_load(base+h.z-1u)).xyz;
+                vec3 delta=p-position;float distance=length(delta);
+                float visible=distance<1.0?1.0:(daylight?daylight_probe_visibility(geometry,position,delta/distance,distance-1.0):
+                    fixture_probe_visibility(geometry,position,delta/distance,distance-1.0));
+                vec3 t=mix(1.0-f,f,vec3(ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u))));
+                weight=t.x*t.y*t.z*visible;
+            }
+        }
+        if(daylight){cache.data[at+2u+corner].y=base;cache.data[at+2u+corner].w=floatBitsToUint(weight);}
+        else {cache.data[at+2u+corner].x=base;cache.data[at+2u+corner].z=floatBitsToUint(weight);}
+    }
+}
+vec3 cache_normal(uint lobe) {vec3 n=vec3(0);n[lobe/2u]=(lobe&1u)==0u?1.0:-1.0;return n;}
+vec3 cache_sky_direction(vec3 n,uint i) {
+    vec3 tangent=normalize(cross(abs(n.y)<0.9?vec3(0,1,0):vec3(1,0,0),n)),bitangent=cross(n,tangent);
+    float u=(float(i)+0.5)/8.0,phi=float(i)*2.39996323;
+    return tangent*(sqrt(u)*cos(phi))+bitangent*(sqrt(u)*sin(phi))+n*sqrt(1.0-u);
+}
+vec3 refresh_field(uint at,vec3 p,vec3 n,uint lobe,bool daylight,out float total) {
+    total=0.0;vec3 sum=vec3(0);
+    uvec4 h=daylight?daylight_probes.header:probes.header;
+    float bias=daylight?daylight_probes.params.y:probes.params.y;
+    if(h.y==0u)return sum;
+    for(uint corner=0u;corner<8u;++corner) {
+        uvec4 entry=cache.data[at+2u+corner];uint base=daylight?entry.y:entry.x;
+        float weight=uintBitsToFloat(daylight?entry.w:entry.z);if(weight==0.0)continue;
+        vec3 pos=uintBitsToFloat(daylight?daylight_probe_load(base+h.z-1u):fixture_probe_load(base+h.z-1u)).xyz;
+        vec3 delta=pos-p;
+        float side=smoothstep(-max(bias,0.001),0.0,dot(n,delta));
+        float normal_weight=max(0.05,0.5+0.5*dot(n,normalize(delta+vec3(1e-6))));
+        weight*=side*normal_weight*normal_weight;
+        sum+=uintBitsToFloat(daylight?daylight_probe_load(base+lobe):fixture_probe_load(base+lobe)).rgb*weight;total+=weight;
+    }
+    return sum/max(total,1e-8);
+}
+void main() {
+    uint budget=(update.pass&2u)!=0u?min(8192u,cache.header.y):cache.header.y;
+    uint invocation=gl_GlobalInvocationID.x;if(invocation>=budget)return;
+    uint sample_id=((update.pass>>2)+invocation)%cache.header.y;
+    uint at=cache.header.z+sample_id*22u;vec3 p=uintBitsToFloat(cache.data[at]).xyz;
+    if((update.pass&1u)==0u) {
+        prepare_field(at,p,false);prepare_field(at,p,true);
+        uvec2 masks=uvec2(0);
+        for(uint lobe=0u;lobe<6u;++lobe)for(uint i=0u;i<8u;++i) {
+            vec3 d=cache_sky_direction(cache_normal(lobe),i);
+            if(d.y>0.0 && architecture_visibility(p,d,lighting.daylight.y)>0.0) {
+                uint bit=lobe*8u+i;masks[bit/32u]|=1u<<(bit%32u);
+            }
+        }
+        cache.data[at+1u]=uvec4(masks,1u,0u);return;
+    }
+    for(uint lobe=0u;lobe<6u;++lobe) {
+        vec3 n=cache_normal(lobe);float total;
+        vec3 fixtures=refresh_field(at,p,n,lobe,false,total);
+        vec3 daylight=refresh_field(at,p,n,lobe,true,total);
+        if(total<=1e-8 && lighting.daylight.x>0.0) {
+            for(uint i=0u;i<8u;++i) {
+                uint bit=lobe*8u+i;
+                if((cache.data[at+1u][bit/32u]&(1u<<(bit%32u)))!=0u)daylight+=environment_direction(cache_sky_direction(n,i))*0.125;
+            }
+        }
+        cache.data[at+10u+lobe]=floatBitsToUint(vec4(fixtures,1));
+        cache.data[at+16u+lobe]=floatBitsToUint(vec4(daylight,1));
+    }
+}
