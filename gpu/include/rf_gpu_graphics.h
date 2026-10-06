@@ -40,20 +40,22 @@ struct rf_gpu_graphics_draw {
     uint32_t integer_depth; /* Retired; nonzero is rejected. */
     /* Scene-only ordered pass. Zero preserves existing WORLD callers. */
     uint32_t scene_layer;
-    /* Linear-light material; zero roughness selects the neutral 0.65 default. */
+    /* Linear-light material; emissive is cd/m^2 times the linear base colour.
+     * Zero roughness selects the neutral 0.65 default. */
     float roughness, metallic, emissive;
     /* Host-only: caller guarantees this entire draw is represented in the
      * current architecture input. Zero keeps ordinary shadow-map casting. */
     uint32_t architecture_occluder;
 };
 
-#define RF_GPU_LIGHT_CAP 32
+#define RF_GPU_LIGHT_CAP 160 /* 128 persistent fixtures plus 32 transient lights */
+#define RF_GPU_LIGHT_WORDS 5
 #define RF_GPU_SHADOW_CASCADES 3
 #define RF_GPU_SHADOW_MAPS 5
 #define RF_GPU_SHADOW_SIZE 1024
 struct rf_gpu_light {
     float position_radius[4]; /* RFU position and finite influence radius */
-    float color_intensity[4]; /* linear RGB, intensity at one metre */
+    float color_intensity[4]; /* linear chromaticity (normalized to Y=1 on submission), peak cd */
     float direction_outer[4]; /* spot direction and outer cosine; -1 point */
     /* Inner cone cosine; owner-assigned shadow index; 1 = also in the stable
      * indirect source list (prevents duplicate injection); reserved. */
@@ -61,8 +63,8 @@ struct rf_gpu_light {
 };
 struct rf_gpu_lighting {
     float sun_direction[4];
-    float sun_color[4];
-    float environment[4]; /* linear diffuse fill, exposure in w */
+    float sun_color[4]; /* linear chromaticity, normal-plane illuminance in lux */
+    float environment[4]; /* RGB equivalent diffuse-fill lux; display exposure in w */
     uint32_t count;
     struct rf_gpu_light lights[RF_GPU_LIGHT_CAP];
     /* Presentation-only sky: coverage, density, base/thickness in km;
@@ -239,6 +241,11 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
  * the explicitly retired Scene submission below.
  * Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);
+/* Smoothstep spot flux integral; a negative outer cosine denotes a point. */
+float rf_gpu_light_peak_candela(float lumens,float outer_cosine,float inner_cosine);
+/* Read the last explicit capture's linear RGBA16F values as floats. RGB is
+ * cd/m^2 / 100, or direct/GI/fill lux / 100 with RF_GPU_GI_DEBUG=3. */
+int rf_gpu_graphics_capture_hdr(struct rf_gpu_graphics *g,float *rgba,uint32_t capacity);
 void rf_gpu_lighting_default(struct rf_gpu_lighting *lighting);
 int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,
     const struct rf_gpu_lighting *lighting);

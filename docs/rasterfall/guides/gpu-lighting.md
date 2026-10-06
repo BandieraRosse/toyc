@@ -72,7 +72,7 @@ roof 为顶部缓存后的回退射线调用，sun/local 为可见性函数逻�
 遮挡消融会使原先被挡住的光继续执行 BRDF/PCF，时间可能反而增加；不得据差值宣称某项真实独占成本，
 也不能把这些模式作为视觉或正式性能签收。普通运行应清除变量或设为 `none`。
 
-`LIGHT TILES PASS` 回归按开关逐像素比较颜色和深度，覆盖空灯表、32 位高位、宽窄 spot、
+`LIGHT TILES PASS` 回归按开关逐像素比较颜色和深度，覆盖空灯表、第 31/64/159 位、宽窄 spot、
 近相机光源、混合视角和非整块 resize；建筑遮挡及原有光照回归仍共同运行。
 限定设备的像素对照、五轮开关采样及三轮消融见[分块灯表现场](../archive/light-tiles-20261005.md)。
 
@@ -114,6 +114,46 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 限定镜头结果与原型限制见[顶部缓存与 DDGI 现场](../archive/ddgi-prototype-20261006.md)。
 后续嵌灯、墙角和两次反弹的原生证据见[本轮优化现场](../archive/ddgi-corners-ceiling-20261006.md)。
 室内材质、配光与亮度对照见[室内亮度校准现场](../archive/indoor-lighting-calibration-20261006.md)。
+
+## 物理单位检查与照度读取
+
+单位合同见[光照架构](../architecture/gpu-lighting.md#光度单位与显示合同)。固定灯用流明创作，
+配光转换为峰值 cd，太阳输入 lux，自发光输入 cd/m²。曝光只是显示倍率。旧相对强度不能
+直接加上单位标签；当前前哨站参数是迁移初值，真实房间的照度需要另行检查。
+
+`--gpu-lighting-test` 的 `PHOTOMETRY PASS` 使用真实 RGBA16F 读回验证：
+
+- 1000 lm 点光与两种锥角积分后仍为 1000 lm。
+- 100 cd 光源在 1、2、4 m 的正入射照度为 100、25、6.25 lux；2 m、60° 入射为 12.5 lux。
+- 改颜色、接收面反射率与显示曝光不改变指定照度；半径中点保留明确的范围衰减。
+- 100 lux 太阳、0/100/10000 cd/m² 自发光，以及白色 Lambert 的 `100/π cd/m²` 输出。
+
+在已暂存的 Windows native 包上读取可见表面的照度：
+
+```powershell
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+python tools/gpu_light_meter.py --view outpost-light-1f --output tmp/light-meter
+```
+
+默认测中心单像素；`--region X0 Y0 X1 Y1` 指定 1280×720 捕获中的接收面矩形。
+工具保存曝光前的 `meter.hdr`、运行日志和 `report.json`；报告分开给出直接光、GI、艺术填充，
+`total` 只含直接光加 GI，`with_artistic_fill` 另加艺术填充。区域统计按屏幕像素加权，
+不能冒充工作平面面积平均照度或照明规范合格报告。选择同一平面并避开边缘、天空、HUD、
+viewmodel 和透明物；需要正式室内均匀度目标时，应增设明确高度和面积采样的工作平面。
+照度诊断画面不是正常颜色截图，也不用于性能采样。
+
+墙角可见性对照：默认 `RF_GPU_GI_VISIBILITY=1` 使用局部实体缓存；`2` 强制完整建筑查询，
+应保持画面；`0` 恢复旧距离矩以复现误差。`RF_GPU_GI_DEBUG=1/2/3` 分别是完整查询、权重、
+照度诊断，正常画面设 `0`。前哨站五镜头截图和性能必须分开：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareGIVisibility -Views outpost-light-1f -Rounds 3 -Samples 240
+```
+
+该比较交替完整查询和局部缓存，关闭诊断显示、HDR 捕获与 validation。两种模式都采用修正后的
+几何可见性，不能把它们的时间差称为相对于旧距离矩版本的净收益。160 灯表回归覆盖第 31、64、
+159 位及混合相机，固定灯不再随观察位置被截断。当前实现与限定实机证据见
+[墙角与物理定标现场](../archive/photometric-lighting-20261006.md)。
 
 ## 实验区
 

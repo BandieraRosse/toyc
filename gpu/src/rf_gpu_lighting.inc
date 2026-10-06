@@ -11,15 +11,36 @@ struct rf_lighting_upload {
     uint32_t light_control[4];
 };
 _Static_assert(offsetof(struct rf_lighting_upload,lights)==432,"lighting std430 ABI");
-_Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==2480,"sky std430 ABI");
-_Static_assert(offsetof(struct rf_lighting_upload,tile_grid)==2544,"light tiles std430 ABI");
+_Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==10672,"sky std430 ABI");
+_Static_assert(offsetof(struct rf_lighting_upload,tile_grid)==10736,"light tiles std430 ABI");
+
+/* One internal linear-radiance unit represents 100 cd/m^2. All lighting,
+ * including the persistent GI field, uses this same exposure-independent scale. */
+static float light_luminance(const float *rgb)
+{ return rgb[0]*0.2126f+rgb[1]*0.7152f+rgb[2]*0.0722f; }
+static void light_chromaticity(float *rgb)
+{
+    float y=light_luminance(rgb);
+    if(y>0.0f)for(unsigned k=0;k<3;++k)rgb[k]/=y;
+}
+float rf_gpu_light_peak_candela(float lumens,float outer_cosine,float inner_cosine)
+{
+    if(!__builtin_isfinite(lumens) || lumens<0 || !__builtin_isfinite(outer_cosine) ||
+       !__builtin_isfinite(inner_cosine))return -1;
+    if(outer_cosine<0)return lumens/(4.0f*3.14159265359f);
+    if(outer_cosine>=1 || inner_cosine<=outer_cosine || inner_cosine>1)return -1;
+    float peak=lumens/(3.14159265359f*(2.0f-inner_cosine-outer_cosine));
+    return __builtin_isfinite(peak)?peak:-1;
+}
 
 void rf_gpu_lighting_default(struct rf_gpu_lighting *l)
 {
     memset(l,0,sizeof(*l));
     l->sun_direction[0]=-0.4082483f;l->sun_direction[1]=0.8164966f;l->sun_direction[2]=-0.4082483f;
-    l->sun_color[0]=1.0f;l->sun_color[1]=0.94f;l->sun_color[2]=0.84f;l->sun_color[3]=2.9f;
-    l->environment[0]=0.16f;l->environment[1]=0.19f;l->environment[2]=0.24f;l->environment[3]=1.0f;
+    l->sun_color[0]=1.0f;l->sun_color[1]=0.94f;l->sun_color[2]=0.84f;
+    /* Authored low-contrast outdoor preset, not a clear-sky solar measurement. */
+    l->sun_color[3]=290.0f*light_luminance(l->sun_color);
+    l->environment[0]=50.265482f;l->environment[1]=59.690260f;l->environment[2]=75.398224f;l->environment[3]=1.0f;
     l->sky_cloud[0]=0.42f;l->sky_cloud[1]=1.3f;l->sky_cloud[2]=1.5f;l->sky_cloud[3]=1.1f;
     l->sky_weather[2]=11.0f;l->sky_weather[3]=1.0f;
 }
@@ -41,11 +62,13 @@ int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,const struct rf_gpu_l
             !__builtin_isfinite(l->environment[k]) || l->sun_color[k]<0 || l->environment[k]<0) return -1;
     float length=0;for(unsigned k=0;k<3;++k) length+=l->sun_direction[k]*l->sun_direction[k];
     if(!__builtin_isfinite(length) || length<0.01f || l->environment[3]<=0) return -1;
+    if(l->sun_color[3]>0 && light_luminance(l->sun_color)<=0)return -1;
     for(unsigned i=0;i<l->count;++i) {
         const float *p=(const float *)&l->lights[i];
         for(unsigned k=0;k<16;++k) if(!__builtin_isfinite(p[k])) return -1;
         if(l->lights[i].position_radius[3]<=0 || l->lights[i].color_intensity[3]<0) return -1;
         for(unsigned k=0;k<3;++k) if(l->lights[i].color_intensity[k]<0) return -1;
+        if(l->lights[i].color_intensity[3]>0 && light_luminance(l->lights[i].color_intensity)<=0)return -1;
         if(l->lights[i].direction_outer[3]>=0) {
             float norm=0;for(unsigned k=0;k<3;++k) norm+=l->lights[i].direction_outer[k]*l->lights[i].direction_outer[k];
             if(norm<0.01f || l->lights[i].direction_outer[3]>=1 ||
@@ -54,9 +77,11 @@ int rf_gpu_graphics_set_lighting(struct rf_gpu_graphics *g,const struct rf_gpu_l
         }
     }
     g->lighting=*l;length=(float)sqrt(length);
+    light_chromaticity(g->lighting.sun_color);
     for(unsigned k=0;k<3;++k) g->lighting.sun_direction[k]/=length;
     for(unsigned i=0;i<g->lighting.count;++i) {
         struct rf_gpu_light *light=&g->lighting.lights[i];
+        light_chromaticity(light->color_intensity);
         if(light->direction_outer[3]<0) continue;
         float norm=0;for(unsigned k=0;k<3;++k) norm+=light->direction_outer[k]*light->direction_outer[k];
         norm=(float)sqrt(norm);for(unsigned k=0;k<3;++k) light->direction_outer[k]/=norm;
@@ -83,6 +108,7 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     gpu_buffer_destroy(p,&g->architecture_buffer);
     gpu_buffer_destroy(p,&g->roof_buffer);gpu_buffer_destroy(p,&g->indirect_buffer);
     gpu_buffer_destroy(p,&g->indirect_geometry);gpu_buffer_destroy(p,&g->indirect_sources);
+    free(g->indirect_architecture);g->indirect_architecture=NULL;
     architecture_ray_destroy(g);
     gpu_buffer_destroy(p,&g->sky_buffer);
     gpu_buffer_destroy(p,&g->light_tiles_buffer);gpu_buffer_destroy(p,&g->light_profile_buffer);
@@ -111,6 +137,12 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     const char *bounces=getenv("RF_GPU_GI_BOUNCES");
     if(bounces && strcmp(bounces,"1") && strcmp(bounces,"2"))return -1;
     g->indirect_bounces=bounces && !strcmp(bounces,"1")?1:2;
+    const char *gi_debug=getenv("RF_GPU_GI_DEBUG");
+    if(gi_debug && strcmp(gi_debug,"0") && strcmp(gi_debug,"1") && strcmp(gi_debug,"2") && strcmp(gi_debug,"3"))return -1;
+    g->indirect_debug=gi_debug?atoi(gi_debug):0;
+    const char *visibility=getenv("RF_GPU_GI_VISIBILITY");
+    if(visibility && strcmp(visibility,"0") && strcmp(visibility,"1") && strcmp(visibility,"2"))return -1;
+    g->indirect_visibility=visibility?atoi(visibility):1;
     fprintf(stderr,"rf-gpu-indirect: roof-cache=%d probe-gi=%d bounces=%d\n",g->roof_cache_enabled,g->indirect_enabled,g->indirect_bounces);
     const char *modes[]={"none","roof","sun","local","pcf","brdf","rays"};
     const unsigned masks[]={0,1,2,4,8,16,7};
@@ -261,7 +293,7 @@ static int gfx_sky_resize(struct rf_gpu_graphics *g,unsigned width,unsigned heig
 {
     struct rf_gpu_vulkan_buffer tiles={0},profile={0},next={0};
     unsigned tw=(width+15)/16,th=(height+15)/16;
-    if(gpu_buffer_create(g->owner,(uint64_t)tw*th*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    if(gpu_buffer_create(g->owner,(uint64_t)tw*th*RF_GPU_LIGHT_WORDS*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&tiles)<0)return -1;
     if(gpu_buffer_create(g->owner,g->owner->light_profile_enabled?(uint64_t)tw*th*7*4:4,
         RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
@@ -335,10 +367,15 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     memcpy(u.tile_projection,camera->projection,16);u.light_control[0]=g->light_ablation;
     u.light_control[1]=g->roof_cache_enabled;
     u.light_control[2]=g->indirect_enabled && !g->lighting.disable_indirect;
+    u.light_control[3]=(uint32_t)g->indirect_debug|(g->indirect_visibility?256u:0u)|
+        (g->indirect_visibility==1?512u:0u);
     memcpy(u.sun_direction,g->lighting.sun_direction,16);memcpy(u.sun_color,g->lighting.sun_color,16);
     memcpy(u.environment,g->lighting.environment,16);u.counts[0]=(float)g->lighting.count;
     u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;
     memcpy(u.lights,g->lighting.lights,sizeof(u.lights));
+    u.sun_color[3]/=RF_PHOTOMETRIC_SCALE;
+    for(unsigned k=0;k<3;++k)u.environment[k]/=3.14159265359f*RF_PHOTOMETRIC_SCALE;
+    for(unsigned i=0;i<g->lighting.count;++i)u.lights[i].color_intensity[3]/=RF_PHOTOMETRIC_SCALE;
     memcpy(u.sky_cloud,g->lighting.sky_cloud,16);memcpy(u.sky_weather,g->lighting.sky_weather,16);
     memcpy(u.cutaway_bounds,g->lighting.cutaway_bounds,16);
     memcpy(u.cutaway_height,g->lighting.cutaway_height,16);
@@ -359,9 +396,21 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
         u.cascade_center[c][3]=r;
     }
     g->shadow_count=3;
-    for(unsigned i=0;i<g->lighting.count;++i) {
-        struct rf_gpu_light *light=&u.lights[i];light->inner_shadow[1]=0;
-        if(light->direction_outer[3]<0 || g->shadow_count>=RF_GPU_SHADOW_MAPS) continue;
+    for(unsigned i=0;i<g->lighting.count;++i)u.lights[i].inner_shadow[1]=0;
+    /* Only dynamic shadow-map ownership follows the camera. Every fixed
+     * fixture remains in the direct and indirect source sets on every floor. */
+    for(unsigned slot_index=3;slot_index<RF_GPU_SHADOW_MAPS;++slot_index) {
+        unsigned selected=RF_GPU_LIGHT_CAP;float best=-1;
+        for(unsigned i=0;i<g->lighting.count;++i) {
+            const struct rf_gpu_light *candidate=&u.lights[i];float r2=0;
+            if(candidate->direction_outer[3]<0 || candidate->inner_shadow[1]!=0 ||
+                candidate->position_radius[3]<=16 || candidate->color_intensity[3]<=0)continue;
+            for(unsigned k=0;k<3;++k){float d=candidate->position_radius[k]-camera->camera[k];r2+=d*d;}
+            float score=candidate->color_intensity[3]/(r2+512.0f*512.0f);
+            if(score>best){best=score;selected=i;}
+        }
+        if(selected==RF_GPU_LIGHT_CAP)break;
+        struct rf_gpu_light *light=&u.lights[selected];
         float f[3],r[3],v[3],len=0;
         for(unsigned k=0;k<3;++k) len+=light->direction_outer[k]*light->direction_outer[k];
         if(len<0.01f) continue;

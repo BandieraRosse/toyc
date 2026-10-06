@@ -1,3 +1,4 @@
+#include "probe_layout.glsl"
 layout(set=1,binding=10,std430) readonly buffer RoofCache {
     vec4 grid; uvec4 extent; vec4 cells[];
 } roof_cache;
@@ -36,10 +37,7 @@ uint probe_find(ivec3 cell) {
 vec2 probe_moments(uint base,ivec2 p) {
     // Octahedron edges fold onto the opposite edge with reversed tangent.
     // Clamping duplicates an unrelated direction and creates visibility seams.
-    if(p.x<0){p.x=-p.x-1;p.y=7-p.y;}
-    else if(p.x>7){p.x=15-p.x;p.y=7-p.y;}
-    if(p.y<0){p.y=-p.y-1;p.x=7-p.x;}
-    else if(p.y>7){p.y=15-p.y;p.x=7-p.x;}
+    p=probe_fold(p);
     uint index=uint(p.y*8+p.x);
     vec4 value=uintBitsToFloat(probes.data[base+6u+index/2u]);
     return (index&1u)==0u?value.xy:value.zw;
@@ -52,6 +50,29 @@ vec2 probe_depth(uint base,vec3 direction) {
     return mix(mix(probe_moments(base,lo),probe_moments(base,lo+ivec2(1,0)),f.x),
         mix(probe_moments(base,lo+ivec2(0,1)),probe_moments(base,lo+ivec2(1,1)),f.x),f.y);
 }
+float probe_visibility(uvec2 geometry,vec3 origin,vec3 direction,float limit) {
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+    if(limit<=0.5)return 1.0;
+#endif
+    if(geometry.y==0xffffffffu || (lighting.light_control.w&512u)==0u ||
+        (lighting.light_control.w&255u)==1u)return architecture_visibility(origin,direction,limit);
+    vec3 inverse=1.0/mix(direction,vec3(1e-8),lessThan(abs(direction),vec3(1e-8)));
+    for(uint i=0u;i<geometry.y;++i) {
+        vec3 lo=uintBitsToFloat(probes.data[geometry.x+i*2u]).xyz;
+        vec3 hi=uintBitsToFloat(probes.data[geometry.x+i*2u+1u]).xyz;
+        vec3 a=(lo-origin)*inverse,b=(hi-origin)*inverse;
+        vec3 near_t=min(a,b),far_t=max(a,b);
+        float near_hit=max(max(near_t.x,near_t.y),near_t.z);
+        float far_hit=min(min(far_t.x,far_t.y),far_t.z);
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+        if(near_hit<=far_hit && ((near_hit>0.5 && near_hit<limit) ||
+            (far_hit>0.5 && far_hit<limit)))return 0.0;
+#else
+        if(max(near_hit,0.0)<=min(far_hit,limit))return 0.0;
+#endif
+    }
+    return 1.0;
+}
 vec3 probe_irradiance(vec3 p,vec3 n,vec3 view_direction) {
     if(lighting.light_control.z==0u || probes.header.y==0u ||
        any(lessThan(p,probes.minimum.xyz)) || any(greaterThan(p,probes.maximum.xyz)))return vec3(0);
@@ -62,24 +83,33 @@ vec3 probe_irradiance(vec3 p,vec3 n,vec3 view_direction) {
     vec3 grid=receiver/probes.params.x-0.37,f=fract(grid);ivec3 lo=ivec3(floor(grid));
     uint cell=probe_find(lo);if(cell==0u)return vec3(0);
     uvec4 neighbors0=probes.data[cell],neighbors1=probes.data[cell+1u];
+    uvec2 geometry=probes.data[cell+2u].xy;
     vec3 sum=vec3(0);float total=0.0;
     for(uint corner=0u;corner<8u;++corner) {
         ivec3 offset=ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u));
         uint id=corner<4u?neighbors0[corner]:neighbors1[corner-4u];if(id==0u)continue;
         uint base=probes.header.w+(id-1u)*probes.header.z;
         if(uintBitsToFloat(probes.data[base]).w==0.0)continue;
-        vec3 position=uintBitsToFloat(probes.data[base+38u]).xyz;
+        vec3 position=uintBitsToFloat(probes.data[base+probes.header.z-1u]).xyz;
         // Do not blend irradiance from the back of this receiving plane. This
         // is particularly important at thin storey slabs where both floors
         // have valid probes but very different incident radiance.
         float side=smoothstep(-probes.params.y,0.0,dot(n,position-p));
         if(side==0.0)continue;
         vec3 delta=receiver-position;float distance=max(length(delta),0.001);
-        vec2 moments=probe_depth(base,delta/distance);
-        float difference=max(0.0,distance-moments.x-4.0);
-        float variance=max(1.0,moments.y-moments.x*moments.x);
-        float visibility=variance/(variance+difference*difference);
-        visibility=visibility*visibility*visibility;
+        float visibility;
+        // Filtered moments cannot prove either visibility or occlusion at an
+        // intersecting wall. Query the actual short segment; the default field
+        // therefore needs no distance moments or their filtering bandwidth.
+        if((lighting.light_control.w&255u)==1u || (lighting.light_control.w&256u)!=0u)
+            visibility=probe_visibility(geometry,position,delta/distance,max(distance-1.0,0.0));
+        else {
+            vec2 moments=probe_depth(base,delta/distance);
+            float difference=max(0.0,distance-moments.x-4.0);
+            float variance=max(1.0,moments.y-moments.x*moments.x);
+            visibility=variance/(variance+difference*difference);
+            visibility=visibility*visibility*visibility;
+        }
         // Suppress tiny leaking tails; directional weighting favours probes
         // on the receiving side of a surface. No room IDs or cutaway inputs.
         if(visibility<1e-5)continue;
@@ -97,5 +127,6 @@ vec3 probe_irradiance(vec3 p,vec3 n,vec3 view_direction) {
     // Visibility already rejects occluded neighbours. Normalize the surviving
     // weights even near a slab: a fixed denominator floor stamps the probe
     // lattice into ceilings as their trilinear weights approach zero.
+    if((lighting.light_control.w&255u)==2u)return vec3(total*8.0);
     return sum/max(total,1e-8);
 }

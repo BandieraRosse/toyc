@@ -1040,7 +1040,7 @@ prop_ready:
                 draw->roughness=projectile_u16(material+6)/65535.0f;
                 if(draw->roughness<0.06f)draw->roughness=0.06f;
                 const struct rasterfall_prop_light_profile *lamp=rasterfall_prop_light_profile(asset);
-                if(lamp && material_index==lamp->emissive_material)draw->emissive=2.5f;
+                if(lamp && material_index==lamp->emissive_material)draw->emissive=250.0f;
             }
             draw->texture[0]=info.texture_width;
             draw->texture[1]=info.texture_height;

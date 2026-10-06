@@ -223,7 +223,7 @@ static int lighting_range_regression(struct rf_gpu_graphics *g)
     lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
     RANGE_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));d->material[0]=white;
     for(unsigned i=0;i<2;++i) {
-        d->emissive=i?8.0f:4.0f;
+        d->emissive=i?800.0f:400.0f;
         RANGE_CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,rgba,depth,64*64));
         uint32_t c=rgba[32*64+32];highlight[i]=lighting_test_rgb(c);
         RANGE_CHECK(depth[32*64+32]>0 && (c&255)<255 && ((c>>8)&255)<255 && ((c>>16)&255)<255);
@@ -246,7 +246,7 @@ static int lighting_tiles_regression(struct rf_gpu_graphics *g,
     lights.sun_color[3]=0;
     for(unsigned sample=0;sample<12;++sample) {
         unsigned width=sample&1?79:64,height=sample&1?63:64;
-        lights.count=sample==0?0:sample==1?1:32;
+        lights.count=sample==0?0:sample==1?1:sample<6?32:sample<9?65:RF_GPU_LIGHT_CAP;
         for(unsigned i=0;i<lights.count;++i) {
             struct rf_gpu_light *l=&lights.lights[i];memset(l,0,sizeof(*l));
             l->position_radius[0]=((int)(i%8)-4)*1500;
@@ -254,16 +254,17 @@ static int lighting_tiles_regression(struct rf_gpu_graphics *g,
             l->position_radius[2]=i%3?1200:-3000;
             l->position_radius[3]=i%4?5000:12000;
             l->color_intensity[0]=l->color_intensity[1]=l->color_intensity[2]=1;
-            l->color_intensity[3]=3;
+            l->color_intensity[3]=300;
             l->direction_outer[1]=sample&2?0.3f:0;
             l->direction_outer[2]=sample&4?-1:1;
             l->direction_outer[3]=i%2?(sample&8?0.92f:0.05f):-1;
             l->inner_shadow[0]=0.97f;
         }
         /* Exercise the high mask bit with a definitely contributing light. */
-        if(lights.count==32) {
-            lights.lights[31].position_radius[0]=lights.lights[31].position_radius[1]=0;
-            lights.lights[31].position_radius[2]=1500;lights.lights[31].direction_outer[3]=-1;
+        if(lights.count>=32) {
+            unsigned last=lights.count-1;
+            lights.lights[last].position_radius[0]=lights.lights[last].position_radius[1]=0;
+            lights.lights[last].position_radius[2]=1500;lights.lights[last].direction_outer[3]=-1;
         }
         struct rf_gpu_graphics_batch_item pair[2]={source[0],source[1]};
         for(unsigned j=0;j<2;++j) {
@@ -280,7 +281,7 @@ static int lighting_tiles_regression(struct rf_gpu_graphics *g,
         g->light_tiles_enabled=1;TILE_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,b,db,96*96));
         TILE_CHECK(!memcmp(a,b,width*height*4) && !memcmp(da,db,width*height*4));
     }
-    fprintf(stdout,"LIGHT TILES PASS samples=12 empty=1 bit31=1 near_camera=1 wide_narrow_spot=1 mixed_view=1 resize=1 pixel_depth_equal=1\n");
+    fprintf(stdout,"LIGHT TILES PASS samples=12 empty=1 bit31=1 bit64=1 bit159=1 near_camera=1 wide_narrow_spot=1 mixed_view=1 resize=1 pixel_depth_equal=1\n");
     result=0;
 done:
     g->light_tiles_enabled=saved;
@@ -292,7 +293,7 @@ static int lighting_indirect_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *receiver,uint32_t *a,uint32_t *b,float *da,float *db)
 {
     int result=-1,saved_roof=g->roof_cache_enabled,saved_gi=g->indirect_enabled;
-    int saved_bounces=g->indirect_bounces;
+    int saved_bounces=g->indirect_bounces,saved_visibility=g->indirect_visibility;
     struct rf_gpu_lighting lights;
     struct rf_gpu_occlusion_primitive geometry[2]={
         {{{-10000,-10000,500},{10000,10000,512},{0,0,0}},1,0xcccccc,0},
@@ -329,7 +330,7 @@ static int lighting_indirect_regression(struct rf_gpu_graphics *g,
     GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
     lamp.position_radius[2]=2300;lamp.position_radius[3]=4000;
     lamp.color_intensity[0]=lamp.color_intensity[1]=lamp.color_intensity[2]=1;
-    lamp.color_intensity[3]=35;lamp.direction_outer[2]=-1;
+    lamp.color_intensity[3]=3500;lamp.direction_outer[2]=-1;
     lamp.direction_outer[3]=0.1f;lamp.inner_shadow[0]=0.5f;
     GI_CHECK(!rf_gpu_graphics_set_architecture(g,geometry,1));
     GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
@@ -396,6 +397,12 @@ static int lighting_indirect_regression(struct rf_gpu_graphics *g,
         GI_CHECK(!rf_gpu_graphics_set_architecture(g,room,4));
         GI_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&source,1));
         GI_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,a,da,96*96));
+        if(g->indirect_visibility) {
+            g->indirect_visibility=2;
+            GI_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,b,db,96*96));
+            GI_CHECK(!memcmp(a,b,64*64*4) && !memcmp(da,db,64*64*4));
+            g->indirect_visibility=saved_visibility;
+        }
         unsigned bright=0;
         for(unsigned y=10;y<18;++y)for(unsigned x=46;x<54;++x)
             if(da[y*64+x]>0 && lighting_test_rgb(a[y*64+x])>3)++bright;
@@ -434,10 +441,107 @@ static int lighting_indirect_regression(struct rf_gpu_graphics *g,
     fprintf(stdout,"INDIRECT PASS roof_equal=7 bounced=%u black_reflectance=1 sealed_slab=1 leaked=%u resize=1 rejected_update=1 reset=1 dynamic=1 history=1 fixed_duplicate=1 isolated=1 corner_phases=3 corner_min=%u second_bounce_gain_milli=%u\n",bounced,leaked,corner_min,bounce_gain_min);
     result=0;
 done:
-    g->roof_cache_enabled=saved_roof;g->indirect_enabled=saved_gi;g->indirect_bounces=saved_bounces;
+    g->roof_cache_enabled=saved_roof;g->indirect_enabled=saved_gi;g->indirect_bounces=saved_bounces;g->indirect_visibility=saved_visibility;
     rf_gpu_graphics_set_architecture(g,NULL,0);
     rf_gpu_lighting_default(&lights);rf_gpu_graphics_set_lighting(g,&lights);return result;
 #undef GI_CHECK
+}
+static int photometry_regression(struct rf_gpu_graphics *g,const struct rf_gpu_graphics_batch_item *source,
+    uint32_t *rgba,float *depth)
+{
+    int result=-1,saved_debug=g->indirect_debug;unsigned saved_ablation=g->light_ablation;
+    float *hdr=malloc(65*65*4*sizeof(float));
+    struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    struct rf_gpu_graphics_batch_item face=*source;
+    const unsigned center=(32*65+32)*4;
+#define PHOTO_CHECK(x) do {if(!(x)){fprintf(stderr,"PHOTOMETRY FAIL line=%d\n",__LINE__);goto done;}}while(0)
+    PHOTO_CHECK(hdr);
+    PHOTO_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+    PHOTO_CHECK(!rf_gpu_graphics_set_indirect_lights(g,NULL,0));
+    PHOTO_CHECK(!rf_gpu_graphics_resize(g,65,65));
+    /* Integrate authored flux over the sphere, including the penumbra. */
+    for(unsigned shape=0;shape<3;++shape) {
+        float outer=shape?0.05f:0.85f,inner=shape?0.50f:0.94f;
+        if(shape==2)outer=-1;
+        float peak=rf_gpu_light_peak_candela(1000,outer,inner),flux=0;
+        for(unsigned j=0;j<4096;++j) {
+            float cosine=-1.0f+2.0f*(j+0.5f)/4096.0f;
+            float t=(cosine-outer)/(inner-outer);if(t<0)t=0;if(t>1)t=1;
+            flux+=peak*(outer<0?1.0f:t*t*(3.0f-2.0f*t))*(4.0f*3.14159265359f/4096.0f);
+        }
+        PHOTO_CHECK(fabs(flux-1000)<0.15f);
+    }
+    PHOTO_CHECK(rf_gpu_light_peak_candela(-1,0.1f,0.5f)<0 && rf_gpu_light_peak_candela(1,0.8f,0.5f)<0);
+    lights.sun_color[3]=0;lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
+    lights.count=1;lights.disable_indirect=1;
+    struct rf_gpu_light *lamp=&lights.lights[0];memset(lamp,0,sizeof(*lamp));
+    lamp->position_radius[3]=1000000;lamp->direction_outer[3]=-1;
+    lamp->color_intensity[0]=lamp->color_intensity[1]=lamp->color_intensity[2]=1;
+    lamp->color_intensity[3]=100;
+    face.draw.projection[0]=face.draw.projection[1]=65;face.draw.projection[3]=48;
+    face.draw.material[0]=0xffffff;face.draw.metallic=0;face.draw.emissive=0;
+    face.draw.quality[2]=1;
+    g->indirect_debug=3;g->light_ablation=0;
+    for(unsigned i=0;i<3;++i) {
+        unsigned meters=1u<<i;face.draw.translation_scale[2]=(int)(meters*512)-4096;
+        PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+        PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+        PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+        float lux=hdr[center]*100,expected=100.0f/(meters*meters);
+        PHOTO_CHECK(fabs(lux-expected)<expected*0.001 && hdr[center+1]==0 && hdr[center+2]==0);
+    }
+    face.draw.translation_scale[2]=512-4096;
+    lamp->position_radius[0]=512.0f*(float)sqrt(3.0);
+    PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+    PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+    PHOTO_CHECK(fabs(hdr[center]*100-12.5f)<0.03f); /* 2 m, incidence 60 degrees. */
+    lamp->position_radius[0]=0;
+    for(unsigned i=0;i<3;++i) {
+        lights.environment[3]=i?8.0f:0.1f;
+        face.draw.material[0]=i?0x2080c0:0xffffff;
+        lamp->color_intensity[1]=0.8f;lamp->color_intensity[2]=0.5f;
+        PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+        PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+        PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+        PHOTO_CHECK(fabs(hdr[center]*100-100)<0.1f);
+    }
+    /* Runtime range fade has an explicit, separately tested error relative to
+     * the ideal inverse-square source: (1 - (r/R)^4)^2 at r/R=1/2. */
+    lamp->position_radius[3]=1024;
+    PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+    PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+    PHOTO_CHECK(fabs(hdr[center]*100-87.890625f)<0.1f);
+    lamp->position_radius[3]=1000000;
+    lamp->color_intensity[0]=lamp->color_intensity[1]=lamp->color_intensity[2]=1;
+    face.draw.material[0]=0xffffff;g->indirect_debug=0;g->light_ablation=16;
+    PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+    PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+    PHOTO_CHECK(fabs(hdr[center]*100-100.0f/3.14159265359f)<0.04f);
+    float white_luminance=hdr[center]*100;
+    lights.count=0;lights.sun_direction[0]=lights.sun_direction[1]=0;lights.sun_direction[2]=-1;
+    lights.sun_color[0]=lights.sun_color[1]=lights.sun_color[2]=1;lights.sun_color[3]=100;
+    g->indirect_debug=3;
+    PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+    PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+    PHOTO_CHECK(fabs(hdr[center]*100-100)<0.1f);
+    lights.sun_color[3]=0;g->indirect_debug=0;
+    PHOTO_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    for(unsigned i=0;i<3;++i) {
+        face.draw.emissive=i==0?0:i==1?100:10000;
+        PHOTO_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96));
+        PHOTO_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));
+        PHOTO_CHECK(fabs(hdr[center]*100-face.draw.emissive)<0.01f+face.draw.emissive*0.002f);
+    }
+    fprintf(stdout,"PHOTOMETRY PASS flux_integral_lm=1000 distances_m=1,2,4 illuminance_lux=100,25,6.25 incidence60_lux=12.5 color_normalized=1 reflectance_independent=1 exposure_independent=1 range_fade=1 sun_lux=100 emission_cd_m2=0,100,10000 white_lambert_cd_m2=%.4f\n",white_luminance);
+    result=0;
+done:
+    free(hdr);g->indirect_debug=saved_debug;g->light_ablation=saved_ablation;
+    return result;
+#undef PHOTO_CHECK
 }
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
@@ -554,11 +658,11 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
     d->material[1]=32;LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
     LIGHT_CHECK(!memcmp(a,b,64*64*4));d->material[1]=256;
-    lights.sun_color[3]=0;lights.environment[0]=lights.environment[1]=lights.environment[2]=0.01f;
+    lights.sun_color[3]=0;lights.environment[0]=lights.environment[1]=lights.environment[2]=3.14159265f;
     lights.count=1;lights.lights[0].position_radius[0]=-1000;lights.lights[0].position_radius[2]=2800;
     lights.lights[0].position_radius[3]=6000;
     lights.lights[0].color_intensity[0]=lights.lights[0].color_intensity[1]=lights.lights[0].color_intensity[2]=1;
-    lights.lights[0].color_intensity[3]=5;lights.lights[0].direction_outer[3]=-1;
+    lights.lights[0].color_intensity[3]=500;lights.lights[0].direction_outer[3]=-1;
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights) && !rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
     lights.lights[0].position_radius[0]=1000;
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights) && !rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
@@ -574,13 +678,13 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
         lights.lights[0].position_radius[2]=2800;
         for(unsigned mode=0;mode<3;++mode) {
             lights.count=mode==1?3:1;
-            lights.sun_color[3]=mode==2?2.9f:0;
+            lights.sun_color[3]=mode==2?290.0f:0;
             for(unsigned i=0;i<lights.count;++i) {
                 lights.lights[i]=lights.lights[0];
                 lights.lights[i].direction_outer[2]=1;
                 lights.lights[i].direction_outer[3]=mode==1?0.1f:-1;
                 lights.lights[i].inner_shadow[0]=0.5f;
-                lights.lights[i].color_intensity[3]=mode==2?0:5;
+                lights.lights[i].color_intensity[3]=mode==2?0:500;
             }
             LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
             LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
@@ -621,7 +725,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             LIGHT_CHECK(max_error<=3);
         }
         /* A blocker behind the receiver must not shadow a finite light ray. */
-        lights.sun_color[3]=0;lights.count=1;lights.lights[0].color_intensity[3]=5;
+        lights.sun_color[3]=0;lights.count=1;lights.lights[0].color_intensity[3]=500;
         LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
         for(unsigned i=0;i<2;++i)for(unsigned vtx=0;vtx<3;++vtx)wall[i].p[vtx][2]=5000;
         LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,wall,2));
@@ -631,7 +735,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
         LIGHT_CHECK(!memcmp(a,b,64*64*4));
         fprintf(stdout,"ARCHITECTURE LIGHT PASS point=1 spot_over_budget=1 sun=1 exact_box=1 finite_segment=1 reset=1 retained_resize=1 double_sided=1\n");
     }
-    lights.lights[0].position_radius[0]=-700;lights.lights[0].position_radius[2]=0;lights.lights[0].color_intensity[3]=30;
+    lights.lights[0].position_radius[0]=-700;lights.lights[0].position_radius[2]=0;lights.lights[0].color_intensity[3]=3000;
     lights.lights[0].direction_outer[2]=1;lights.lights[0].direction_outer[3]=0.5f;
     lights.lights[0].inner_shadow[0]=0.8f;
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
@@ -656,6 +760,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!rf_gpu_graphics_resize(g,96,96));d->projection[0]=d->projection[1]=96;d->projection[3]=72;
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,b,db,96*96));
     lights.count=RF_GPU_LIGHT_CAP+1;LIGHT_CHECK(rf_gpu_graphics_set_lighting(g,&lights)<0);
+    LIGHT_CHECK(!photometry_regression(g,items,a,da));
     LIGHT_CHECK(!lighting_range_regression(g));
     LIGHT_CHECK(!sky_regression(g));
     if(getenv("RF_GPU_SKY_BENCH")) LIGHT_CHECK(!sky_benchmark(g));

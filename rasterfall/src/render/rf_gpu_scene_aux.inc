@@ -56,16 +56,16 @@ static int scene_aux_weapon(struct rf_gpu_scene_world_gpu_probe *probe,
             &run->material,run->first,run->count,run->material.color,0,0,0,&draws)<0)return -1;
     }
     rf_gpu_lighting_default(&lighting);
-    lighting.environment[0]=.48f;lighting.environment[1]=.52f;lighting.environment[2]=.60f;
+    lighting.environment[0]=150.796447f;lighting.environment[1]=163.362818f;lighting.environment[2]=188.495559f;
     lighting.sun_direction[0]=-.35f;lighting.sun_direction[1]=.65f;lighting.sun_direction[2]=-.68f;
-    lighting.sun_color[0]=lighting.sun_color[1]=lighting.sun_color[2]=1.0f;lighting.sun_color[3]=1.8f;
+    lighting.sun_color[0]=lighting.sun_color[1]=lighting.sun_color[2]=1.0f;lighting.sun_color[3]=180.0f;
     lighting.count=2;
     for(unsigned i=0;i<lighting.count;++i) {
         struct rf_gpu_light *fill=&lighting.lights[i];
         fill->position_radius[0]=i?512:-512;fill->position_radius[1]=256;
         fill->position_radius[2]=-768;fill->position_radius[3]=4096;
         fill->color_intensity[0]=fill->color_intensity[1]=fill->color_intensity[2]=1;
-        fill->color_intensity[3]=1.2f;fill->direction_outer[3]=-1;
+        fill->color_intensity[3]=120.0f;fill->direction_outer[3]=-1;
     }
     if(rf_gpu_graphics_set_lighting(probe->graphics,&lighting)<0 ||
         rf_gpu_graphics_scene_background(probe->graphics,.018f,.030f,.045f)<0)return -1;

@@ -414,7 +414,7 @@ static int rf_weaver_gpu_append(struct rf_gpu_scene_world_gpu_probe *probe,
     d->material[0]=color;d->material[1]=256;d->quality[1]=RF_WEAVER_LOCAL_UNITS;
     d->quality[2]=unlit?3:1;d->texture[0]=d->texture[1]=1;d->texture[2]=alpha;
     d->roughness=material->roughness<.06f?.06f:material->roughness;d->metallic=material->metallic;
-    d->emissive=emissive;d->first_index=first;d->index_count=count;d->double_sided=1;
+    d->emissive=emissive*100.0f;d->first_index=first;d->index_count=count;d->double_sided=1;
     d->scene_layer=alpha?RF_GPU_SCENE_TRANSPARENT:RF_GPU_SCENE_WORLD;
     if(rf_gpu_graphics_resource_bind(probe->graphics,resource)<0 ||
         rf_gpu_graphics_validate_draw(probe->graphics,d)<0)return -1;

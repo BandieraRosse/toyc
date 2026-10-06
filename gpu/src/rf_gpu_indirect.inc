@@ -1,5 +1,5 @@
-/* DDGI probe placement and conservative upward visibility. Probe radiance and
- * distance moments are updated on the GPU; no CPU renderer light field is used. */
+/* DDGI probe placement, exact local-segment visibility and upward visibility.
+ * Radiance is updated on the GPU; moments remain only for diagnostic comparison. */
 #define RF_GI_PROBES 16384u
 #define RF_GI_HASH 32768u
 #define RF_GI_RAYS 128u
@@ -139,10 +139,32 @@ static int gi_insert(struct rf_gi_slot *slots,int32_t (*coords)[3],unsigned *cou
     }
     return -1;
 }
+/* A segment between a relocated corner probe and any receiver in the cell is
+ * contained in this expanded box. Store every overlapping solid, or fall back
+ * to the complete architecture query if a triangle/large list is encountered.
+ * This is a conservative geometric proof, never a sampled visibility mask. */
+#define RF_GI_CELL_BOXES 8u
+static unsigned gi_cell_boxes(struct rf_gpu_graphics *g,const int32_t *cell,float spacing,uint32_t *ids)
+{
+    const struct rf_gi_arch_node *nodes=g->indirect_architecture;
+    float lo[3],hi[3];unsigned found=0;
+    for(unsigned k=0;k<3;++k){lo[k]=(cell[k]+0.37f-0.45f)*spacing-0.1f;hi[k]=(cell[k]+1.37f+0.45f)*spacing+0.1f;}
+    for(unsigned i=0;i<g->indirect_architecture_nodes;) {
+        const struct rf_gi_arch_node *n=&nodes[i];int overlaps=1;
+        for(unsigned k=0;k<3;++k)if(n->hi[k]<lo[k] || n->lo[k]>hi[k])overlaps=0;
+        if(!overlaps){i=(unsigned)n->lo[3];continue;}
+        if(n->hi[3]>0) {
+            if(n->hi[3]<1.5f || found==RF_GI_CELL_BOXES)return UINT32_MAX;
+            ids[found++]=i;
+        }
+        ++i;
+    }
+    return found;
+}
 static void gfx_indirect_record(struct rf_gpu_graphics *g)
 {
-    if(!g->indirect_enabled || g->lighting.disable_indirect || !g->indirect_probe_count)return;
     struct rf_gpu_vulkan_impl *p=g->owner;
+    if(!g->indirect_enabled || g->lighting.disable_indirect || !g->indirect_probe_count)return;
     uint32_t budget=g->indirect_warmed?256:g->indirect_probe_count;
     if(budget>g->indirect_probe_count)budget=g->indirect_probe_count;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
@@ -165,9 +187,12 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
         for(unsigned k=0;k<16;++k)if(!__builtin_isfinite(f[k]))return -1;
         if(lights[i].position_radius[3]<=0 || lights[i].position_radius[3]>65536 || lights[i].color_intensity[3]<0)return -1;
         for(unsigned k=0;k<3;++k)if(fabs(lights[i].position_radius[k])>1e8 || lights[i].color_intensity[k]<0)return -1;
+        if(lights[i].color_intensity[3]>0 && light_luminance(lights[i].color_intensity)<=0)return -1;
         if(lights[i].direction_outer[3]>=0 &&
             (lights[i].direction_outer[3]>=1 || lights[i].inner_shadow[0]<=lights[i].direction_outer[3] ||
              lights[i].inner_shadow[0]>1 || indirect_normalize(lights[i].direction_outer)<0.01f))return -1;
+        light_chromaticity(lights[i].color_intensity);
+        lights[i].color_intensity[3]/=RF_PHOTOMETRIC_SCALE;
     }
     struct rf_gi_header header={0};struct rf_gpu_vulkan_buffer next={0},source_buffer={0};
     unsigned char source_data[16+RF_GPU_INDIRECT_LIGHT_CAP*sizeof(struct rf_gpu_light)]={0};
@@ -219,24 +244,41 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
         cells[cell_slots[at].index-1].probes[corner]=i+1;
     }
     unsigned compact_hash=1;while(compact_hash<cell_count*2u)compact_hash*=2;
-    unsigned probe_offset=compact_hash+cell_count*2;
-    size_t bytes=sizeof(header)+(size_t)probe_offset*16+probes*sizeof(struct rf_gi_probe);
+    unsigned box_vectors=0,cached_cells=0;uint32_t boxes[RF_GI_CELL_BOXES];
+    for(unsigned i=0;i<cell_count;++i) {
+        unsigned n=gi_cell_boxes(g,cells[i].cell,spacing,boxes);
+        if(n!=UINT32_MAX){box_vectors+=n*2;++cached_cells;}
+    }
+    unsigned boxes_offset=compact_hash+cell_count*3;
+    unsigned probe_offset=boxes_offset+box_vectors;
+    unsigned stride=g->indirect_visibility?7:RF_GI_STRIDE;
+    size_t bytes=sizeof(header)+(size_t)probe_offset*16+(size_t)probes*stride*16;
     data=calloc(1,bytes);if(!data)goto done;
-    header.layout[0]=compact_hash;header.layout[1]=probes;header.layout[2]=RF_GI_STRIDE;header.layout[3]=probe_offset;
+    header.layout[0]=compact_hash;header.layout[1]=probes;header.layout[2]=stride;header.layout[3]=probe_offset;
     header.params[0]=spacing;header.params[1]=32;header.params[2]=8192;header.params[3]=0.85f;
     header.minimum[3]=(float)g->indirect_bounces;
+    header.maximum[3]=(float)g->indirect_visibility;
     for(unsigned k=0;k<3;++k){header.minimum[k]=1e30f;header.maximum[k]=-1e30f;}
     struct rf_gi_slot *lookup=(struct rf_gi_slot *)(data+sizeof(header));
-    uint32_t (*neighbors)[8]=(uint32_t (*)[8])(lookup+compact_hash);
+    uint32_t (*neighbors)[12]=(uint32_t (*)[12])(lookup+compact_hash);
+    float (*box_data)[4]=(float (*)[4])(data+sizeof(header));
+    const struct rf_gi_arch_node *nodes=g->indirect_architecture;
+    unsigned box_at=boxes_offset;
     for(unsigned i=0;i<cell_count;++i) {
         int32_t *c=cells[i].cell;unsigned at=gi_hash(c[0],c[1],c[2])&(compact_hash-1);
         while(lookup[at].index)at=(at+1)&(compact_hash-1);
-        memcpy(lookup[at].cell,c,12);lookup[at].index=compact_hash+i*2;
+        memcpy(lookup[at].cell,c,12);lookup[at].index=compact_hash+i*3;
         memcpy(neighbors[i],cells[i].probes,32);
+        unsigned n=gi_cell_boxes(g,c,spacing,boxes);
+        neighbors[i][8]=box_at;neighbors[i][9]=n;
+        if(n!=UINT32_MAX)for(unsigned j=0;j<n;++j) {
+            memcpy(box_data[box_at++],nodes[boxes[j]].lo,16);
+            memcpy(box_data[box_at++],nodes[boxes[j]].hi,16);
+        }
     }
-    struct rf_gi_probe *output=(struct rf_gi_probe *)(data+sizeof(header)+(size_t)probe_offset*16);
+    float *output=(float *)(data+sizeof(header)+(size_t)probe_offset*16);
     for(unsigned i=0;i<probes;++i)for(unsigned k=0;k<3;++k) {
-        float p=(coords[i][k]+0.37f)*spacing;output[i].position[k]=p;
+        float p=(coords[i][k]+0.37f)*spacing;output[i*stride*4+(stride-1)*4+k]=p;
         header.minimum[k]=__builtin_fminf(header.minimum[k],p-spacing);
         header.maximum[k]=__builtin_fmaxf(header.maximum[k],p+spacing);
     }
@@ -245,8 +287,9 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
     indirect_bind(g,11,&g->indirect_buffer,&next);
     indirect_bind(g,13,&g->indirect_sources,&source_buffer);
     g->indirect_probe_count=probes;g->indirect_cursor=0;g->indirect_warmed=0;
-    fprintf(stderr,"rf-gpu-gi: static-lights=%u probes=%u spacing=%.0f rays=%u prepare-ms=%.3f bytes=%llu\n",
-        count,probes,spacing,RF_GI_RAYS,now_ms()-started,(unsigned long long)bytes);
+    fprintf(stderr,"rf-gpu-gi: static-lights=%u probes=%u spacing=%.0f rays=%u prepare-ms=%.3f bytes=%llu cached-cells=%u/%u visibility=%d cpu-index-bytes=%llu\n",
+        count,probes,spacing,RF_GI_RAYS,now_ms()-started,(unsigned long long)bytes,cached_cells,cell_count,g->indirect_visibility,
+        (unsigned long long)g->indirect_architecture_nodes*sizeof(struct rf_gi_arch_node));
     result=0;
 done:
     free(data);free(cells);free(cell_slots);free(coords);free(slots);gpu_buffer_destroy(g->owner,&next);gpu_buffer_destroy(g->owner,&source_buffer);return result;

@@ -1,6 +1,7 @@
 /* Stackless, pre-order BVH of actual opaque building triangles and solids. The
  * buffers are per graphics owner and survive resize. No hardware RT required. */
 struct rf_arch_node { float lo[4],hi[4],a[4],b[4],c[4]; };
+struct rf_gi_arch_node { float lo[4],hi[4]; };
 _Static_assert(sizeof(struct rf_arch_node)==80,"architecture std430 ABI");
 static int architecture_roof_build(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count,
@@ -55,7 +56,7 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
         if(!__builtin_isfinite(triangles[i].p[v][k]) || fabs(triangles[i].p[v][k])>1e8)return -1;
     for(uint32_t i=0;i<count;++i)if(triangles[i].solid_box)
         for(unsigned k=0;k<3;++k)if(triangles[i].p[0][k]>=triangles[i].p[1][k])return -1;
-    uint32_t software_count=g->owner->ray_query_enabled?0:count;
+    uint32_t software_count=count;
     size_t bytes=16+(software_count?2*software_count-1:0)*sizeof(struct rf_arch_node);
     unsigned char *data=calloc(1,bytes);
     struct rf_gpu_occlusion_primitive *copy=software_count?malloc(software_count*sizeof(*copy)):NULL;
@@ -64,6 +65,14 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     uint32_t used=0;
     if(software_count){memcpy(copy,triangles,count*sizeof(*copy));arch_build((struct rf_arch_node *)(data+16),&used,copy,count);}
     ((uint32_t *)data)[0]=used;free(copy);
+    /* The cell builder needs only bounds, type and subtree skip, not triangle
+     * vertices or reflectance. Retain the compact CPU index on both backends. */
+    struct rf_gi_arch_node *cell_nodes=used?malloc((size_t)used*sizeof(*cell_nodes)):NULL;
+    if(used && !cell_nodes){free(data);return -1;}
+    for(unsigned i=0;i<used;++i) {
+        const struct rf_arch_node *n=&((const struct rf_arch_node *)(data+16))[i];
+        memcpy(cell_nodes[i].lo,n->lo,16);memcpy(cell_nodes[i].hi,n->hi,16);
+    }
     struct rf_gpu_vulkan_impl *p=g->owner;
     uint32_t empty[16]={0};
     if(architecture_roof_build(g,triangles,count,&roof)<0 ||
@@ -84,7 +93,9 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
         p->api.update_descriptor_sets(p->device,1,&write,0,NULL);
         gpu_buffer_destroy(p,&g->architecture_buffer);g->architecture_buffer=next;
     }
-    free(data);
+    free(g->indirect_architecture);
+    g->indirect_architecture=cell_nodes;free(data);
+    g->indirect_architecture_nodes=used;
     indirect_bind(g,10,&g->roof_buffer,&roof);
     indirect_bind(g,11,&g->indirect_buffer,&empty_gi);
     indirect_bind(g,12,&g->indirect_geometry,&geometry);
@@ -93,6 +104,6 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     g->architecture_count=count;
     return 0;
 fail:
-    free(data);gpu_buffer_destroy(p,&next);gpu_buffer_destroy(p,&roof);
+    free(cell_nodes);free(data);gpu_buffer_destroy(p,&next);gpu_buffer_destroy(p,&roof);
     gpu_buffer_destroy(p,&empty_gi);gpu_buffer_destroy(p,&geometry);gpu_buffer_destroy(p,&sources);return -1;
 }

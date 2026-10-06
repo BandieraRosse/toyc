@@ -111,12 +111,14 @@ struct rf_gpu_graphics {
     struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
     rf_rt_as architecture_blas,architecture_tlas;
     uint32_t architecture_count;
+    struct rf_gi_arch_node *indirect_architecture;
+    uint32_t indirect_architecture_nodes;
     struct rf_gpu_vulkan_buffer roof_buffer,indirect_buffer;
     struct rf_gpu_vulkan_buffer indirect_geometry,indirect_sources;
     rf_vk_pipeline indirect_pipeline;
     uint32_t indirect_probe_count,indirect_cursor;
     int indirect_warmed;
-    int roof_cache_enabled,indirect_enabled,indirect_bounces;
+    int roof_cache_enabled,indirect_enabled,indirect_bounces,indirect_debug,indirect_visibility;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;
@@ -397,6 +399,9 @@ static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item
 }
 #include "rf_gpu_architecture_ray.inc"
 #include "rf_gpu_architecture_light.inc"
+#define RF_PHOTOMETRIC_SCALE 100.0f
+static float light_luminance(const float *rgb);
+static void light_chromaticity(float *rgb);
 #include "rf_gpu_indirect.inc"
 #include "rf_gpu_lighting.inc"
 
@@ -1744,8 +1749,11 @@ static int gfx_render(struct rf_gpu_graphics *g,
         struct rf_gpu_graphics_draw modern=*d;
         float rough=d->roughness>0?d->roughness:0.65f;
         float metal=d->metallic<0?0:d->metallic>1?1:d->metallic;
-        float emission=d->emissive<0?0:d->emissive>15?15:d->emissive;
-        modern.material[1]=(uint32_t)((rough>1?1:rough)*255)|((uint32_t)(metal*255)<<8)|((uint32_t)(emission*16)<<16);
+        /* Sixteen-bit logarithmic luminance: zero is exactly dark. Encoding
+         * happens on submission, independently of display exposure. */
+        float emission=__builtin_log2f(1.0f+__builtin_fmaxf(0.0f,d->emissive));
+        if(emission>31.999f)emission=31.999f;
+        modern.material[1]=(uint32_t)((rough>1?1:rough)*255)|((uint32_t)(metal*255)<<8)|((uint32_t)(emission*2048.0f+0.5f)<<16);
         if(resource->scene_vertex_color && modern.quality[2]!=3) modern.quality[2]=0;
         if(d->scene_layer==RF_GPU_SCENE_EFFECTS) modern.quality[2]=3;
         if(d->scene_layer==RF_GPU_SCENE_VIEWMODEL) modern.quality[0]|=32;
@@ -2014,7 +2022,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     /* Normal main/auxiliary targets allocate only device-local attachments.
      * Explicit capture is the sole owner of this diagnostic staging buffer. */
     if(!g->target.readback.buffer && gpu_buffer_create(g->owner,
-        (uint64_t)g->target.width*g->target.height*8,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        (uint64_t)g->target.width*g->target.height*16,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         &g->target.readback)<0)return -1;
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -2040,6 +2048,12 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     g->api.CmdCopyImageToBuffer(g->cmd,g->target.depth.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         g->target.readback.buffer,1,&copy);
     barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_TRANSFER_READ_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0,1,&barrier,0,NULL,0,NULL);
+    copy.bufferOffset=bytes*2;copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;
+    g->api.CmdCopyImageToBuffer(g->cmd,g->target.hdr.image,VK_IMAGE_LAYOUT_GENERAL,g->target.readback.buffer,1,&copy);
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
     g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
         0,1,&barrier,0,NULL,0,NULL);
@@ -2051,7 +2065,20 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
         if(gfx_scene_timing_read(g,0)<0)result=-1;
         g->scene_query_active=0;
     }
-    if (!result) { memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes); }
+    if (!result) {
+        memcpy(rgba,mapped,(size_t)bytes);memcpy(depth,(unsigned char *)mapped+bytes,(size_t)bytes);
+        const char *path=getenv("RF_GPU_HDR_CAPTURE");
+        if(path && *path) {
+            FILE *file=fopen(path,"wb");
+            uint32_t header[4]={0x31484452u,g->target.width,g->target.height,(uint32_t)g->indirect_debug};
+            if(!file)result=-1;
+            else {
+                int written=fwrite(header,sizeof(header),1,file)==1 &&
+                    fwrite((unsigned char *)mapped+bytes*2,(size_t)bytes*2,1,file)==1;
+                if(fclose(file) || !written)result=-1;
+            }
+        }
+    }
     g->owner->api.unmap_memory(g->owner->device,g->target.readback.memory);
     if(!result)result=gfx_light_profile_read(g);
     return result;
@@ -2062,6 +2089,25 @@ int rf_gpu_graphics_scene_capture(struct rf_gpu_graphics *g,
     uint32_t *rgba,float *depth,uint32_t capacity)
 {
     return rf_gpu_graphics_scene_capture_at(g,items,count,rgba,depth,capacity,0);
+}
+
+/* Explicit diagnostic read of the most recent capture, never a normal-frame
+ * readback. Values precede exposure and tone mapping; see the public contract. */
+int rf_gpu_graphics_capture_hdr(struct rf_gpu_graphics *g,float *rgba,uint32_t capacity)
+{
+    if(!g || !rgba || g->scene_in_flight || g->poisoned || !g->target.readback.buffer ||
+       (uint64_t)g->target.width*g->target.height>capacity)return -1;
+    void *mapped=NULL;struct rf_gpu_vulkan_impl *p=g->owner;
+    if(p->api.map_memory(p->device,g->target.readback.memory,0,g->target.readback.allocation_size,0,&mapped)!=RF_VK_SUCCESS)return -1;
+    int result=gpu_buffer_invalidate(p,&g->target.readback);
+    const uint16_t *half=(const uint16_t *)((const unsigned char *)mapped+(size_t)g->target.width*g->target.height*8);
+    if(!result)for(size_t i=0;i<(size_t)g->target.width*g->target.height*4;++i) {
+        unsigned bits=half[i],mantissa=bits&1023u,exponent=(bits>>10)&31u;
+        float value=exponent?__builtin_ldexpf((float)(mantissa+1024u),(int)exponent-25):__builtin_ldexpf((float)mantissa,-24);
+        if(exponent==31)value=mantissa?__builtin_nanf(""):__builtin_inff();
+        rgba[i]=(bits&32768u)?-value:value;
+    }
+    p->api.unmap_memory(p->device,g->target.readback.memory);return result;
 }
 
 #include "rf_gpu_lighting_test.inc"

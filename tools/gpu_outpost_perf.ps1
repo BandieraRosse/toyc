@@ -12,6 +12,7 @@ param(
     [switch]$CompareRoofCache,
     [switch]$CompareGI,
     [switch]$CompareGIBounces,
+    [switch]$CompareGIVisibility,
     [switch]$CompareIndirect,
     [switch]$LightAblations,
     [switch]$ProfileLights,
@@ -20,7 +21,7 @@ param(
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareIndirect+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareIndirect+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
 if($ProfileLights -and $LightAblations){throw 'Keep fragment counters separate from timing ablations'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
@@ -43,7 +44,7 @@ $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
-    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES')
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
@@ -56,6 +57,7 @@ Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/asset
     compare_light_tiles=[bool]$CompareLightTiles;light_ablations=[bool]$LightAblations;profile_lights=[bool]$ProfileLights;
     compare_roof_cache=[bool]$CompareRoofCache;compare_gi=[bool]$CompareGI;compare_gi_bounces=[bool]$CompareGIBounces;compare_indirect=[bool]$CompareIndirect;
     gi_bounces=$env:RF_GPU_GI_BOUNCES;
+    gi_visibility=$env:RF_GPU_GI_VISIBILITY;compare_gi_visibility=[bool]$CompareGIVisibility;
     roof_cache=$env:RF_GPU_ROOF_CACHE;gi=$env:RF_GPU_GI;
     width=$Width;height=$Height;warmup=120;sky_scale=4;sky_time=0;clock='realtime';cap=120} 'config.json'
 try {
@@ -64,12 +66,14 @@ try {
     $env:RF_SCENE_PERF_FRAMES=[string]$Samples
     $env:RF_LABS_ALL=if($AllLabs){'1'}else{'0'}
     $env:RF_GPU_SKY_TIME='0';$env:RF_GPU_SKY_SCALE='4'
+    $env:RF_GPU_GI_DEBUG='0'
+    [Environment]::SetEnvironmentVariable('RF_GPU_HDR_CAPTURE',$null,'Process')
     $env:RF_GPU_SCENE_LEGACY_BIND='0'
     $env:RF_GPU_LIGHT_PROFILE=if($ProfileLights){'1'}else{'0'}
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($LightAblations){$Modes=@('none','roof','sun','local','pcf','brdf','rays')}
             if($Round%2 -eq 0){[array]::Reverse($Modes)}
@@ -86,6 +90,9 @@ try {
                 if($CompareGIBounces) {
                     $env:RF_GPU_GI='1';$env:RF_GPU_ROOF_CACHE='1'
                     $env:RF_GPU_GI_BOUNCES=if($Mode -eq 'reference'){'1'}else{'2'}
+                }
+                if($CompareGIVisibility) {
+                    $env:RF_GPU_GI='1';$env:RF_GPU_GI_VISIBILITY=if($Mode -eq 'reference'){'2'}else{'1'}
                 }
                 foreach($Key in @('RF_GPU_SCENE_LEGACY_LAYER_COLORS','RF_GPU_SCENE_DISABLE_LAYER_CULL',
                     'RF_GPU_SCENE_DISABLE_DRAW_CULL')) {
@@ -128,6 +135,7 @@ try {
                 if($Errors -notmatch "rf-gpu-light: tiles=$($env:RF_GPU_LIGHT_TILES) profile=$($env:RF_GPU_LIGHT_PROFILE)"){throw "$Name did not activate requested light mode"}
                 if(($CompareRoofCache -or $CompareGI -or $CompareIndirect) -and $Errors -notmatch "rf-gpu-indirect: roof-cache=$($env:RF_GPU_ROOF_CACHE) probe-gi=$($env:RF_GPU_GI)"){throw "$Name did not activate requested indirect mode"}
                 if($CompareGIBounces -and $Errors -notmatch "rf-gpu-indirect: roof-cache=1 probe-gi=1 bounces=$($env:RF_GPU_GI_BOUNCES)"){throw "$Name did not activate requested bounce count"}
+                if($CompareGIVisibility -and $Errors -notmatch "rf-gpu-gi: [^\r\n]*visibility=$($env:RF_GPU_GI_VISIBILITY)"){throw "$Name did not activate requested visibility mode"}
                 if($Result.extent -ne "${Width}x${Height}"){throw "$Name extent differs from requested window size"}
                 $Runs.Add(@{round=$Round;view=$View;mode=$Mode;result=$Result;argv=$Argv;exit=$Process.ExitCode})
                 Write-Json @($Runs.ToArray()) 'report.json'

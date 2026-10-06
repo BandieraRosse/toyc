@@ -94,7 +94,7 @@ enum rasterfall_prop_asset_id {
  * Both the aperture's material and emitted light use this single profile. */
 struct rasterfall_prop_light_profile {
     float position[3],direction[3],color[3];
-    float radius,intensity,outer_cosine,inner_cosine;
+    float radius,luminous_flux_lm,outer_cosine,inner_cosine;
     unsigned emissive_material;
 };
 const struct rasterfall_prop_light_profile *rasterfall_prop_light_profile(int asset);

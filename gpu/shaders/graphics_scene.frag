@@ -37,13 +37,13 @@ uint light_tile_index() {
     uvec2 tile=min(uvec2(gl_FragCoord.xy)/16u,lighting.tile_grid.xy-1u);
     return tile.y*lighting.tile_grid.x+tile.x;
 }
-uint light_mask() {
-    uint count=uint(lighting.counts.x);
+uint light_mask(uint word) {
+    uint count=min(32u,uint(max(0.0,lighting.counts.x-float(word*32u))));
     // Screen-space viewmodels reconstruct world coordinates differently.
     // Mixed cameras/projections in the public batch API use the complete list.
     if(lighting.tile_grid.z!=0u && d.texture_info.w==0 &&
        all(equal(d.camera.xyz,lighting.tile_camera.xyz)) && all(equal(d.view,lighting.tile_view)) &&
-       all(equal(d.projection,lighting.tile_projection)))return tiles.masks[light_tile_index()];
+       all(equal(d.projection,lighting.tile_projection)))return tiles.masks[light_tile_index()*5u+word];
     return count==32u?0xffffffffu:((1u<<count)-1u);
 }
 vec3 rgb(uint c) { return vec3((c>>16)&255u,(c>>8)&255u,c&255u)/255.0; }
@@ -72,6 +72,10 @@ vec3 texture_filtered(uint index,vec2 uv) {
     return mix(texture_mip(entry,lo,uv),texture_mip(entry,hi,uv),fract(level));
 }
 void main() {
+    bool meter=(lighting.light_control.w&255u)==3u;
+    if(meter && ((d.quality.x&(64|16))!=0 || d.texture_info.w!=0 || d.quality.z==3)) {
+        color=vec4(-1);return;
+    }
     if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
     if((d.quality.x&16)==0 && lighting.cutaway_height.y>0.0 && world_position.y>lighting.cutaway_height.x &&
        world_position.x>=lighting.cutaway_bounds.x && world_position.x<=lighting.cutaway_bounds.y &&
@@ -102,7 +106,7 @@ void main() {
     vec3 v=normalize(vec3(d.camera.xyz)-world_position);if(dot(n,v)<0) n=-n;
     float rough=max(float(d.material.y&255u)/255.0,0.06);
     float metal=float((d.material.y>>8)&255u)/255.0;
-    float emissive=float((d.material.y>>16)&255u)/16.0;
+    float emissive=(exp2(float(d.material.y>>16)/2048.0)-1.0)/100.0;
     bool stylized=d.quality.z==2;
     vec3 origin=world_position+n*1.5;
     // A roof blocks outdoor fill even in RTS cutaway. Retain a small artistic
@@ -110,19 +114,29 @@ void main() {
     uint ablation=lighting.light_control.x;
     bool roof_traced=false;
     float sky_access=(ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
-    vec3 radiance=base*(1.0-metal)*environment_irradiance(n)*mix(0.10,1.0,sky_access)+base*emissive;
-    if(metal<1.0)radiance+=base*(1.0-metal)*probe_irradiance(world_position,n,v);
+    vec3 fill=environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
+    vec3 radiance=base*(1.0-metal)*fill+base*emissive;
+    if(metal<1.0 || meter)indirect=probe_irradiance(world_position,n,v);
+    radiance+=base*(1.0-metal)*indirect;
+    const vec3 photopic=vec3(0.2126,0.7152,0.0722);
+    float direct_lux=0.0;
     vec3 l=lighting.sun_direction.xyz;
     bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
-    if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0))
-      radiance+=brdf(base,n,v,l,rough,metal,stylized)*lighting.sun_color.rgb*
-        lighting.sun_color.w*sun_visibility(world_position,n);
-    uint mask=light_mask();
+    if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0)) {
+        vec3 incident=lighting.sun_color.rgb*lighting.sun_color.w*sun_visibility(world_position,n);
+        radiance+=brdf(base,n,v,l,rough,metal,stylized)*incident;
+        if(meter)direct_lux+=dot(incident,photopic)*max(dot(n,l),0.0);
+    }
 #ifdef RF_LIGHT_PROFILE
-    uint candidates=uint(bitCount(mask)),local_rays=0u,local_visible=0u;
+    uint candidates=0u,local_rays=0u,local_visible=0u;
+#endif
+    for(uint word=0u;word<(uint(lighting.counts.x)+31u)/32u;++word) {
+    uint mask=light_mask(word);
+#ifdef RF_LIGHT_PROFILE
+    candidates+=uint(bitCount(mask));
 #endif
     while(mask!=0u) {
-        int i=findLSB(mask);mask&=mask-1u;
+        int i=findLSB(mask)+int(word*32u);mask&=mask-1u;
         Light light=lighting.lights[i];vec3 delta=light.position_radius.xyz-world_position;
         float distance_squared=dot(delta,delta),radius_squared=light.position_radius.w*light.position_radius.w;
         if(distance_squared>=radius_squared) continue;
@@ -140,10 +154,14 @@ void main() {
         ++local_visible;
 #endif
         float attenuation=fade*fade/max(distance_squared/(512.0*512.0),0.04);
-        radiance+=brdf(base,n,v,l,rough,metal,stylized)*light.color_intensity.rgb*
-            light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);
+        vec3 incident=light.color_intensity.rgb*light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);
+        radiance+=brdf(base,n,v,l,rough,metal,stylized)*incident;
+        if(meter)direct_lux+=dot(incident,photopic)*max(dot(n,l),0.0);
     }
-    color=vec4(radiance,alpha);
+    }
+    // Diagnostic HDR channels are direct / GI / artistic-fill lux divided by
+    // the same 100-unit storage scale. Reflectance and exposure do not enter.
+    color=meter?vec4(direct_lux,3.14159265*dot(indirect,photopic),3.14159265*dot(fill,photopic),1):vec4(radiance,alpha);
 #ifdef RF_LIGHT_PROFILE
     uint at=light_tile_index()*7u;
     atomicAdd(profile.counts[at],1u);

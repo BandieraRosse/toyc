@@ -21,9 +21,13 @@ void main() {
     if(any(greaterThanEqual(tile,lighting.tile_grid.xy)))return;
     uint at=tile.y*lighting.tile_grid.x+tile.x;
     if(lighting.tile_grid.w!=0u)for(uint k=0u;k<7u;++k)profile.counts[at*7u+k]=0u;
-    uint count=uint(lighting.counts.x),mask=0u;
+    uint count=uint(lighting.counts.x);uint mask[5]=uint[5](0u,0u,0u,0u,0u);
     if(lighting.tile_grid.z==0u) {
-        tiles.masks[at]=count==32u?0xffffffffu:((1u<<count)-1u);return;
+        for(uint word=0u;word<5u;++word) {
+            uint n=min(32u,uint(max(0,int(count)-int(word*32u))));
+            tiles.masks[at*5u+word]=n==32u?0xffffffffu:((1u<<n)-1u);
+        }
+        return;
     }
     vec4 view=vec4(lighting.tile_view)/1024.0;
     vec3 right=vec3(view.y,0,-view.x);
@@ -44,7 +48,7 @@ void main() {
         for(int p=0;p<5;++p)if(dot(planes[p],delta)+support(light,planes[p]) < -margin) {
             outside=true;break;
         }
-        if(!outside)mask|=1u<<i;
+        if(!outside)mask[i/32u]|=1u<<(i%32u);
     }
-    tiles.masks[at]=mask;
+    for(uint word=0u;word<5u;++word)tiles.masks[at*5u+word]=mask[word];
 }

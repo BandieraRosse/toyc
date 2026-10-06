@@ -152,11 +152,11 @@ void main() {
     if(lane==0u) {
         history=uintBitsToFloat(probes.data[base]).w>0.0?probes.params.w:0.0;
         near_hits=0u;
-        vec4 state=uintBitsToFloat(probes.data[base+38u]);
+        vec4 state=uintBitsToFloat(probes.data[base+probes.header.z-1u]);
         probe_origin=state.xyz;probe_valid=state.w<0.0?0.0:1.0;
         if(state.w==0.0) {
             probe_origin=relocate_probe(state.xyz,probe_valid);
-            probes.data[base+38u]=floatBitsToUint(vec4(probe_origin,probe_valid>0.0?1.0:-1.0));
+            probes.data[base+probes.header.z-1u]=floatBitsToUint(vec4(probe_origin,probe_valid>0.0?1.0:-1.0));
         }
     }
     barrier();
@@ -185,7 +185,7 @@ void main() {
         float h=length(old-irradiance)>max(0.05,length(old)*0.25)?min(history,0.5):history;
         probes.data[base+lane]=floatBitsToUint(vec4(mix(irradiance,old,h),valid));
     }
-    if(lane<32u) {
+    if(probes.maximum.w<0.5 && lane<32u) {
         vec4 moments=vec4(distance_moments(lane*2u),distance_moments(lane*2u+1u));
         probes.data[base+6u+lane]=floatBitsToUint(moments);
     }

@@ -1,7 +1,7 @@
 struct Light { vec4 position_radius; vec4 color_intensity; vec4 direction_outer; vec4 inner_shadow; };
 layout(set=1,binding=0,std430) readonly buffer Lighting {
     vec4 sun_direction; vec4 sun_color; vec4 environment; vec4 counts;
-    mat4 shadow_matrix[5]; vec4 cascade_center[3]; Light lights[32];
+    mat4 shadow_matrix[5]; vec4 cascade_center[3]; Light lights[160];
     vec4 sky_cloud; vec4 sky_weather;
     vec4 cutaway_bounds; vec4 cutaway_height;
     uvec4 tile_grid; // width, height, enabled, diagnostic counters
@@ -112,7 +112,7 @@ vec3 environment_irradiance(vec3 n) {
     return mix(ground,lighting.environment.rgb*1.3,sky);
 }
 vec3 brdf(vec3 base, vec3 n, vec3 v, vec3 l, float rough, float metal, bool stylized) {
-    if((lighting.light_control.x&16u)!=0u)return base*max(dot(n,l),0.0);
+    if((lighting.light_control.x&16u)!=0u)return base*max(dot(n,l),0.0)/3.14159265;
     float nl=max(dot(n,l),0.0),nv=max(dot(n,v),0.001);
     vec3 h=normalize(v+l+vec3(0.000001));
     float nh=max(dot(n,h),0.0),vh=max(dot(v,h),0.0);
