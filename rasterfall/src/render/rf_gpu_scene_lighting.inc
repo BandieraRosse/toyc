@@ -1,4 +1,29 @@
 /* Presentation light extraction, independent of CPU world-light fields. */
+static int scene_fixture_light(const struct toy_map_prop *p,struct rf_gpu_light *light)
+{
+    const struct rasterfall_prop_light_profile *profile=rasterfall_prop_light_profile(p->asset_id);
+    if(!profile && p->asset_id!=RASTERFALL_PROP_ASSET_LAMP_POST)return 0;
+    memset(light,0,sizeof(*light));
+    light->inner_shadow[2]=1; /* Also present in the stable DDGI fixture list. */
+    if(!profile) {
+        light->position_radius[0]=(float)p->x;light->position_radius[1]=(float)(-900+p->y+2300*p->scale_milli/1000);
+        light->position_radius[2]=(float)p->z;light->position_radius[3]=6144;
+        light->color_intensity[0]=1;light->color_intensity[1]=0.76f;light->color_intensity[2]=0.46f;light->color_intensity[3]=28;
+        light->direction_outer[1]=-1;light->direction_outer[3]=0.35f;light->inner_shadow[0]=0.7f;return 1;
+    }
+    double yaw=p->yaw_degrees*3.141592653589793/180.0;
+    float s=(float)sin(yaw),c=(float)cos(yaw),scale=p->scale_milli/1000.0f;
+    light->position_radius[0]=p->x+scale*(c*profile->position[0]+s*profile->position[2]);
+    light->position_radius[1]=-900+p->y+scale*profile->position[1];
+    light->position_radius[2]=p->z+scale*(-s*profile->position[0]+c*profile->position[2]);
+    light->position_radius[3]=profile->radius*scale;
+    for(unsigned k=0;k<3;++k)light->color_intensity[k]=profile->color[k];
+    light->color_intensity[3]=profile->intensity;
+    light->direction_outer[0]=c*profile->direction[0]+s*profile->direction[2];
+    light->direction_outer[1]=profile->direction[1];
+    light->direction_outer[2]=-s*profile->direction[0]+c*profile->direction[2];
+    light->direction_outer[3]=profile->outer_cosine;light->inner_shadow[0]=profile->inner_cosine;return 1;
+}
 static void scene_light_insert(struct rf_gpu_lighting *out,const struct rf_gpu_light *light,
     const struct camera *camera)
 {
@@ -55,6 +80,7 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
             float x=(int32_t)world_u32(material+24),z=(int32_t)world_u32(material+28);
             for(unsigned i=0;i<n;i+=3) {
                 if(at>=count)goto done;
+                triangles[at].diffuse_rgb=world_u32(material)&0xffffffu;
                 for(unsigned v=0;v<3;++v) {
                     unsigned id=world_u32(m->indices+(first+i+v)*4);
                     if(id>=m->vertex_count)goto done;
@@ -75,10 +101,21 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
         if(!item->visible || item->alpha!=255 || d->type!=TOY_MAP_DRAW_BOX ||
            !strncmp(d->text,"air_gate_",9) || d->a>=d->b || d->c>=d->d || d->f>=d->e)continue;
         struct rf_gpu_occlusion_primitive *t=&triangles[at++];t->solid_box=1;
+        t->diffuse_rgb=d->color&0xffffffu;
         t->p[0][0]=d->a;t->p[0][1]=d->f-900;t->p[0][2]=d->c;
         t->p[1][0]=d->b;t->p[1][1]=d->e-900;t->p[1][2]=d->d;
     }
     result=rf_gpu_graphics_set_architecture(probe->graphics,triangles,at);
+    if(!result) {
+        struct rf_gpu_light fixtures[RF_GPU_INDIRECT_LIGHT_CAP];unsigned lamps=0;
+        for(unsigned i=0;i<world->prop_count;++i) {
+            struct rf_gpu_light light;
+            if(!scene_fixture_light(&world->prop_items[i].prop,&light))continue;
+            if(lamps==RF_GPU_INDIRECT_LIGHT_CAP){result=-1;goto done;}
+            fixtures[lamps++]=light;
+        }
+        result=rf_gpu_graphics_set_indirect_lights(probe->graphics,fixtures,lamps);
+    }
     if(!result){probe->lighting_world_generation=world->world_generation;probe->lighting_map_generation=world->map_generation;}
 done:
     free(triangles);return result;
@@ -88,6 +125,7 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
 {
     if(scene_architecture_prepare(probe,world)<0)return -1;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
+    lights.disable_indirect=probe->layers && probe->layers->fixed_lighting;
     if(probe->layers && !probe->layers->world_only) {
         memcpy(lights.cutaway_bounds,probe->layers->cutaway_bounds,sizeof(lights.cutaway_bounds));
         memcpy(lights.cutaway_height,probe->layers->cutaway_height,sizeof(lights.cutaway_height));
@@ -116,30 +154,8 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     lights.sky_weather[1]=(float)(seconds*0.0015);
     for(unsigned i=0;!(probe->layers && probe->layers->fixed_lighting) && i<world->prop_count;++i) {
         const struct toy_map_prop *p=&world->prop_items[i].prop;
-        const struct rasterfall_prop_light_profile *profile=rasterfall_prop_light_profile(p->asset_id);
-        if(profile) {
-            struct rf_gpu_light light={0};
-            double yaw=p->yaw_degrees*3.141592653589793/180.0;
-            float s=(float)sin(yaw),c=(float)cos(yaw),scale=p->scale_milli/1000.0f;
-            light.position_radius[0]=p->x+scale*(c*profile->position[0]+s*profile->position[2]);
-            light.position_radius[1]=-900+p->y+scale*profile->position[1];
-            light.position_radius[2]=p->z+scale*(-s*profile->position[0]+c*profile->position[2]);
-            light.position_radius[3]=profile->radius*scale;
-            for(unsigned k=0;k<3;++k)light.color_intensity[k]=profile->color[k];
-            light.color_intensity[3]=profile->intensity;
-            light.direction_outer[0]=c*profile->direction[0]+s*profile->direction[2];
-            light.direction_outer[1]=profile->direction[1];
-            light.direction_outer[2]=-s*profile->direction[0]+c*profile->direction[2];
-            light.direction_outer[3]=profile->outer_cosine;light.inner_shadow[0]=profile->inner_cosine;
-            scene_light_insert(&lights,&light,camera);continue;
-        }
-        if(p->asset_id!=RASTERFALL_PROP_ASSET_LAMP_POST) continue;
-        struct rf_gpu_light light={0};
-        light.position_radius[0]=(float)p->x;light.position_radius[1]=(float)(-900+p->y+2300*p->scale_milli/1000);
-        light.position_radius[2]=(float)p->z;light.position_radius[3]=6144;
-        light.color_intensity[0]=1;light.color_intensity[1]=0.76f;light.color_intensity[2]=0.46f;light.color_intensity[3]=28;
-        light.direction_outer[1]=-1;light.direction_outer[3]=0.35f;light.inner_shadow[0]=0.7f;
-        scene_light_insert(&lights,&light,camera);
+        struct rf_gpu_light light;
+        if(scene_fixture_light(p,&light))scene_light_insert(&lights,&light,camera);
     }
     if(probe->layers && !probe->layers->fixed_lighting && probe->layers->source_effects) {
         const struct rasterfall_effects *effects=probe->layers->source_effects;

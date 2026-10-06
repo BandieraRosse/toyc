@@ -4,6 +4,7 @@
 #extension GL_EXT_ray_query : require
 #endif
 #include "lighting.glsl"
+#include "indirect.glsl"
 layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
@@ -107,8 +108,10 @@ void main() {
     // A roof blocks outdoor fill even in RTS cutaway. Retain a small artistic
     // interior floor; this is visibility, not GI or bounced artificial light.
     uint ablation=lighting.light_control.x;
-    float sky_access=(ablation&1u)!=0u?1.0:architecture_visibility(origin,vec3(0,1,0),131072.0);
+    bool roof_traced=false;
+    float sky_access=(ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
     vec3 radiance=base*(1.0-metal)*environment_irradiance(n)*mix(0.10,1.0,sky_access)+base*emissive;
+    if(metal<1.0)radiance+=base*(1.0-metal)*probe_irradiance(world_position,n);
     vec3 l=lighting.sun_direction.xyz;
     bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
     if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0))
@@ -145,7 +148,7 @@ void main() {
     uint at=light_tile_index()*7u;
     atomicAdd(profile.counts[at],1u);
     atomicAdd(profile.counts[at+1u],candidates);
-    atomicAdd(profile.counts[at+2u],(ablation&1u)==0u?1u:0u);
+    atomicAdd(profile.counts[at+2u],roof_traced?1u:0u);
     atomicAdd(profile.counts[at+3u],sun_test && (ablation&2u)==0u?1u:0u);
     atomicAdd(profile.counts[at+4u],local_rays);
     atomicAdd(profile.counts[at+5u],local_visible);

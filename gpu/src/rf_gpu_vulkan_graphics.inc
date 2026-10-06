@@ -111,6 +111,12 @@ struct rf_gpu_graphics {
     struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
     rf_rt_as architecture_blas,architecture_tlas;
     uint32_t architecture_count;
+    struct rf_gpu_vulkan_buffer roof_buffer,indirect_buffer;
+    struct rf_gpu_vulkan_buffer indirect_geometry,indirect_sources;
+    rf_vk_pipeline indirect_pipeline;
+    uint32_t indirect_probe_count,indirect_cursor;
+    int indirect_warmed;
+    int roof_cache_enabled,indirect_enabled;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;
@@ -391,6 +397,7 @@ static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item
 }
 #include "rf_gpu_architecture_ray.inc"
 #include "rf_gpu_architecture_light.inc"
+#include "rf_gpu_indirect.inc"
 #include "rf_gpu_lighting.inc"
 
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height)
@@ -1658,7 +1665,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
-        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,11);
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,12);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
     gfx_sky_record(g,items,count);
@@ -1667,6 +1674,9 @@ static int gfx_render(struct rf_gpu_graphics *g,
     gfx_light_tiles_record(g);
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,6);
+    gfx_indirect_record(g);
+    if(g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,11);
     gfx_shadow_record(g,items,count);
     if (g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,5);
@@ -1781,23 +1791,24 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 static int gfx_scene_timing_read(struct rf_gpu_graphics *g,int presented)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    uint64_t ticks[11]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
+    uint64_t ticks[12]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
         ((1ULL<<p->timestamp_valid_bits)-1ULL);
-    unsigned count=presented?11:2;
+    unsigned count=presented?12:2;
     if(p->api.get_query_pool_results(p->device,g->scene_query_pool,0,count,
         count*sizeof(ticks[0]),ticks,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
-    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,7,
-        7*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
+    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,8,
+        8*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
     double ms=p->timestamp_period/1000000.0;
     g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*ms;
     g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*ms;
     g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*ms;
-    g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[6])&mask)*ms;
+    g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[11])&mask)*ms;
     g->scene_timing.main_scene_ms=(double)((ticks[1]-ticks[5])&mask)*ms;
     const unsigned starts[6]={4,5,7,8,9,10},ends[6]={6,7,8,9,10,1};
     for(unsigned i=0;i<6;++i)g->scene_timing.detail_ms[i]=(double)((ticks[ends[i]]-ticks[starts[i]])&mask)*ms;
+    g->scene_timing.detail_ms[6]=(double)((ticks[11]-ticks[6])&mask)*ms;
     g->scene_timing.valid=1;
     return 0;
 }
@@ -1862,7 +1873,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (impl->timestamp_supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=12;
         if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -1972,7 +1983,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     if(g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=12;
         if(g->owner->api.create_query_pool(g->owner->device,&query,NULL,
             &g->scene_query_pool)!=RF_VK_SUCCESS)return -1;
     }
@@ -2012,7 +2023,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     if (g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=11;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=12;
         if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
                 &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }

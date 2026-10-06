@@ -72,6 +72,7 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->overlay_pass) g->api.DestroyRenderPass(p->device,g->overlay_pass,NULL);
     if(g->tonemap) p->api.destroy_pipeline(p->device,g->tonemap,NULL);
     if(g->light_tiles_pipeline)p->api.destroy_pipeline(p->device,g->light_tiles_pipeline,NULL);
+    if(g->indirect_pipeline)p->api.destroy_pipeline(p->device,g->indirect_pipeline,NULL);
     if(g->sky_pipeline) p->api.destroy_pipeline(p->device,g->sky_pipeline,NULL);
     if(g->sky_noise_pipeline) p->api.destroy_pipeline(p->device,g->sky_noise_pipeline,NULL);
     if(g->sky_layout) p->api.destroy_pipeline_layout(p->device,g->sky_layout,NULL);
@@ -80,6 +81,8 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->light_layout) p->api.destroy_descriptor_set_layout(p->device,g->light_layout,NULL);
     gpu_buffer_destroy(p,&g->light_buffer);gpu_buffer_destroy(p,&g->shadow_buffer);
     gpu_buffer_destroy(p,&g->architecture_buffer);
+    gpu_buffer_destroy(p,&g->roof_buffer);gpu_buffer_destroy(p,&g->indirect_buffer);
+    gpu_buffer_destroy(p,&g->indirect_geometry);gpu_buffer_destroy(p,&g->indirect_sources);
     architecture_ray_destroy(g);
     gpu_buffer_destroy(p,&g->sky_buffer);
     gpu_buffer_destroy(p,&g->light_tiles_buffer);gpu_buffer_destroy(p,&g->light_profile_buffer);
@@ -89,9 +92,9 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[10]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[14]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,6},{3,3},
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,10},{3,3},
         {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
@@ -101,6 +104,11 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     const char *tiles=getenv("RF_GPU_LIGHT_TILES"),*ablation=getenv("RF_GPU_LIGHT_ABLATION");
     if(tiles && strcmp(tiles,"0") && strcmp(tiles,"1"))return -1;
     g->light_tiles_enabled=!(tiles && !strcmp(tiles,"0"));
+    const char *roof=getenv("RF_GPU_ROOF_CACHE"),*gi=getenv("RF_GPU_GI");
+    if((roof && strcmp(roof,"0") && strcmp(roof,"1")) || (gi && strcmp(gi,"0") && strcmp(gi,"1")))return -1;
+    g->roof_cache_enabled=!(roof && !strcmp(roof,"0"));
+    g->indirect_enabled=!(gi && !strcmp(gi,"0"));
+    fprintf(stderr,"rf-gpu-indirect: roof-cache=%d probe-gi=%d\n",g->roof_cache_enabled,g->indirect_enabled);
     const char *modes[]={"none","roof","sun","local","pcf","brdf","rays"};
     const unsigned masks[]={0,1,2,4,8,16,7};
     if(ablation && *ablation) {
@@ -125,16 +133,16 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
         b[i].stage_flags=(i<2 || i==4)?VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT:VK_SHADER_STAGE_COMPUTE_BIT;
     }
     b[7].binding=7;b[7].descriptor_count=1;b[7].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT;
+    b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     if(p->ray_query_enabled) {
         b[7].descriptor_type=RF_RT_DESCRIPTOR;
-        sizes[0].descriptor_count=5;
+        sizes[0].descriptor_count=9;
     }
-    for(unsigned i=8;i<10;++i) {
+    for(unsigned i=8;i<14;++i) {
         b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[i].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=10;layout.bindings=b;
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=14;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
     struct rf_vk_descriptor_pool_size rt_sizes[4];memcpy(rt_sizes,sizes,sizeof(sizes));
     rt_sizes[3].type=RF_RT_DESCRIPTOR;rt_sizes[3].descriptor_count=1;
@@ -220,6 +228,13 @@ static int gfx_lighting_pipelines(struct rf_gpu_graphics *g)
     if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS)return -1;
     pipeline.stage.module=module;
     result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->light_tiles_pipeline);
+    p->api.destroy_shader_module(p->device,module,NULL);
+    if(result!=RF_VK_SUCCESS)return -1;
+    shader.code_size=p->ray_query_enabled?sizeof(rf_graphics_indirect_ray_comp_spirv):sizeof(rf_graphics_indirect_comp_spirv);
+    shader.code=p->ray_query_enabled?rf_graphics_indirect_ray_comp_spirv:rf_graphics_indirect_comp_spirv;
+    if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS)return -1;
+    pipeline.stage.module=module;
+    result=p->api.create_compute_pipelines(p->device,NULL,1,&pipeline,NULL,&g->indirect_pipeline);
     p->api.destroy_shader_module(p->device,module,NULL);
     if(result!=RF_VK_SUCCESS)return -1;
     push.size=128;
@@ -315,6 +330,8 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     u.tile_grid[3]=g->owner->light_profile_enabled;
     memcpy(u.tile_camera,camera->camera,16);memcpy(u.tile_view,camera->view,16);
     memcpy(u.tile_projection,camera->projection,16);u.light_control[0]=g->light_ablation;
+    u.light_control[1]=g->roof_cache_enabled;
+    u.light_control[2]=g->indirect_enabled && !g->lighting.disable_indirect;
     memcpy(u.sun_direction,g->lighting.sun_direction,16);memcpy(u.sun_color,g->lighting.sun_color,16);
     memcpy(u.environment,g->lighting.environment,16);u.counts[0]=(float)g->lighting.count;
     u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;

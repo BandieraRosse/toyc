@@ -113,7 +113,7 @@ static int architecture_ray_set(struct rf_gpu_graphics *g,
         p->api.cmd_pipeline_barrier(cmd,RF_RT_BUILD_STAGE,RF_RT_BUILD_STAGE,0,1,&barrier,0,NULL,0,NULL);
     }
     const struct rf_rt_range *range=&ranges[1];p->rt.build(cmd,1,&build[1],&range);
-    p->api.cmd_pipeline_barrier(cmd,RF_RT_BUILD_STAGE,0x80,0,1,&barrier,0,NULL,0,NULL); /* FRAGMENT_SHADER */
+    p->api.cmd_pipeline_barrier(cmd,RF_RT_BUILD_STAGE,0x880,0,1,&barrier,0,NULL,0,NULL); /* FRAGMENT | COMPUTE */
     if(p->api.end_command_buffer(cmd)!=RF_VK_SUCCESS)goto done;
     struct rf_vk_fence_create_info fence_info={0};fence_info.s_type=RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     if(p->api.create_fence(p->device,&fence_info,NULL,&fence)!=RF_VK_SUCCESS)goto done;

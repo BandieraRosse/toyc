@@ -1,0 +1,123 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+#extension GL_EXT_ray_query : require
+#endif
+#include "lighting.glsl"
+layout(local_size_x=64) in;
+layout(push_constant) uniform Update { uint first; } update;
+layout(set=1,binding=11,std430) buffer ProbeOutput {
+    uvec4 header; vec4 params; vec4 minimum; vec4 maximum; uvec4 data[];
+} probes;
+layout(set=1,binding=12,std430) readonly buffer Surfaces { vec4 vertices[]; } surfaces;
+layout(set=1,binding=13,std430) readonly buffer FixtureLights { uvec4 header; Light lights[]; } fixtures;
+shared vec4 samples[128]; // reflected radiance, first-hit distance
+shared vec3 directions[128];
+shared uint near_hits;
+shared float history;
+bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,out uint rgb) {
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query,architecture,gl_RayFlagsOpaqueEXT,255,origin,0.5,direction,limit);
+    while(rayQueryProceedEXT(query)) {}
+    if(rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT)return false;
+    limit=rayQueryGetIntersectionTEXT(query,true);
+    uint triangle=rayQueryGetIntersectionPrimitiveIndexEXT(query,true)*3u;
+    vec3 a=surfaces.vertices[triangle].xyz,b=surfaces.vertices[triangle+1u].xyz,c=surfaces.vertices[triangle+2u].xyz;
+    normal=normalize(cross(b-a,c-a));rgb=uint(surfaces.vertices[triangle+2u].w);
+    if(dot(normal,direction)>0.0)normal=-normal;return true;
+#else
+    vec3 safe=mix(direction,vec3(1e-8),lessThan(abs(direction),vec3(1e-8))),inv=1.0/safe;
+    uint i=0u;bool hit=false;
+    while(i<architecture.header.x) {
+        ArchitectureNode node=architecture.nodes[i];
+        vec3 a=(node.lo.xyz-origin)*inv,b=(node.hi.xyz-origin)*inv;
+        vec3 lo=min(a,b),hi=max(a,b);
+        float near=max(max(lo.x,lo.y),lo.z),far=min(min(hi.x,hi.y),hi.z);
+        if(max(near,0.5)>min(far,limit)){i=uint(node.lo.w);continue;}
+        float t=limit;vec3 n=vec3(0);
+        if(node.hi.w>1.5) {
+            t=near>0.5?near:far;vec3 plane=near>0.5?lo:hi;
+            int axis=abs(plane.x-t)<0.01?0:abs(plane.y-t)<0.01?1:2;n[axis]=1.0;
+        } else if(node.hi.w>0.0) {
+            vec3 h=cross(direction,node.c.xyz);float det=dot(node.b.xyz,h);
+            if(abs(det)>1e-6) {
+                vec3 s=origin-node.a.xyz,q=cross(s,node.b.xyz);
+                float u=dot(s,h)/det,v=dot(direction,q)/det;
+                if(u>=-1e-6 && v>=-1e-6 && u+v<=1.000001) {
+                    t=dot(node.c.xyz,q)/det;n=cross(node.b.xyz,node.c.xyz);
+                }
+            }
+        }
+        if(t>0.5 && t<limit && dot(n,n)>1e-12) {
+            limit=t;normal=normalize(n);if(dot(normal,direction)>0.0)normal=-normal;
+            rgb=uint(node.c.w);hit=true;
+        }
+        ++i;
+    }
+    return hit;
+#endif
+}
+vec3 surface_fixture(Light light,vec3 p,vec3 n) {
+    vec3 delta=light.position_radius.xyz-p;float r2=dot(delta,delta),radius2=light.position_radius.w*light.position_radius.w;
+    if(r2>=radius2 || light.color_intensity.w<=0.0)return vec3(0);
+    vec3 l=delta*inversesqrt(max(r2,0.000001));float cosine=dot(n,l);
+    if(cosine<=0.0)return vec3(0);
+    float spot=light.direction_outer.w<0.0?1.0:smoothstep(light.direction_outer.w,light.inner_shadow.x,dot(-l,light.direction_outer.xyz));
+    if(spot<=0.0 || architecture_visibility(p+n*1.5,l,max(sqrt(r2)-2.0,0.0))==0.0)return vec3(0);
+    float fade=1.0-(r2/radius2)*(r2/radius2);
+    return light.color_intensity.rgb*(light.color_intensity.w*cosine*spot*fade*fade/max(r2/(512.0*512.0),0.04));
+}
+vec3 oct_direction(uint texel) {
+    vec2 f=(vec2(texel%8u,texel/8u)+0.5)*0.25-1.0;vec3 d=vec3(f,1.0-abs(f.x)-abs(f.y));
+    if(d.z<0.0)d.xy=(1.0-abs(d.yx))*mix(vec2(-1),vec2(1),greaterThanEqual(d.xy,vec2(0)));
+    return normalize(d);
+}
+vec2 distance_moments(uint texel) {
+    vec3 axis=oct_direction(texel);vec2 sum=vec2(0);float total=0;
+    for(uint j=0u;j<128u;++j) {
+        float w=max(0.0,dot(axis,directions[j]));w*=w;w*=w;w*=w;w*=w;w*=w;w*=w;
+        sum+=vec2(samples[j].w,samples[j].w*samples[j].w)*w;total+=w;
+    }
+    return sum/max(total,0.000001);
+}
+void main() {
+    uint lane=gl_LocalInvocationID.x,id=(update.first+gl_WorkGroupID.x)%probes.header.y;
+    uint base=probes.header.x+id*probes.header.z;
+    vec3 origin=uintBitsToFloat(probes.data[base+38u]).xyz;
+    if(lane==0u) {
+        history=uintBitsToFloat(probes.data[base]).w>0.0?probes.params.w:0.0;
+        near_hits=0u;
+    }
+    barrier();
+    for(uint j=lane;j<128u;j+=64u) {
+        float y=1.0-2.0*(float(j)+0.5)/128.0,r=sqrt(max(0.0,1.0-y*y)),phi=float(j)*2.39996323;
+        vec3 direction=vec3(r*cos(phi),y,r*sin(phi)),normal;uint rgb;
+        float distance=probes.params.z;vec3 radiance=vec3(0);
+        if(probe_trace(origin,direction,distance,normal,rgb)) {
+            if(distance<probes.params.x*0.08)atomicAdd(near_hits,1u);
+            vec3 p=origin+direction*distance,incident=vec3(0);
+            for(uint i=0u;i<fixtures.header.x;++i)incident+=surface_fixture(fixtures.lights[i],p,normal);
+            for(uint i=0u;i<uint(lighting.counts.x);++i)
+                if(lighting.lights[i].inner_shadow.z<0.5)incident+=surface_fixture(lighting.lights[i],p,normal);
+            vec3 albedo=decode_srgb(vec3((rgb>>16u)&255u,(rgb>>8u)&255u,rgb&255u)/255.0);
+            radiance=albedo*incident/3.14159265;
+        }
+        samples[j]=vec4(radiance,distance);directions[j]=direction;
+    }
+    barrier();
+    float valid=near_hits>42u?0.0:1.0;
+    if(lane<6u) {
+        vec3 irradiance=vec3(0);
+        for(uint j=0u;j<128u;++j)irradiance+=samples[j].rgb*max(0.0,directions[j][lane/2u]*((lane&1u)==0u?1.0:-1.0))*(4.0/128.0);
+        vec3 old=uintBitsToFloat(probes.data[base+lane]).rgb;
+        // Faster response to a large lighting change; static probes converge
+        // without adding noise or oscillating directions to the normal frame.
+        float h=length(old-irradiance)>max(0.05,length(old)*0.25)?min(history,0.5):history;
+        probes.data[base+lane]=floatBitsToUint(vec4(mix(irradiance,old,h),valid));
+    }
+    if(lane<32u) {
+        vec4 moments=vec4(distance_moments(lane*2u),distance_moments(lane*2u+1u));
+        probes.data[base+6u+lane]=floatBitsToUint(moments);
+    }
+}

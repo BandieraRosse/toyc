@@ -55,7 +55,9 @@ struct rf_gpu_light {
     float position_radius[4]; /* RFU position and finite influence radius */
     float color_intensity[4]; /* linear RGB, intensity at one metre */
     float direction_outer[4]; /* spot direction and outer cosine; -1 point */
-    float inner_shadow[4]; /* inner cone cosine; shadow index assigned by GPU owner */
+    /* Inner cone cosine; owner-assigned shadow index; 1 = also in the stable
+     * indirect source list (prevents duplicate injection); reserved. */
+    float inner_shadow[4];
 };
 struct rf_gpu_lighting {
     float sun_direction[4];
@@ -69,6 +71,8 @@ struct rf_gpu_lighting {
     /* Per-view XZ cutaway rectangle, world ceiling and dissolve amount.
      * Shadow geometry is never clipped by this presentation operation. */
     float cutaway_bounds[4],cutaway_height[4];
+    /* Presentation-only suppression for isolated diagnostic/model views. */
+    uint32_t disable_indirect;
 };
 enum rf_gpu_graphics_scene_layer {
     RF_GPU_SCENE_WORLD, RF_GPU_SCENE_SKY, RF_GPU_SCENE_TRANSPARENT,
@@ -113,9 +117,16 @@ struct rf_gpu_occlusion_primitive {
     /* Nonzero: exact authored opaque cuboid, p[0]/p[1] = min/max.
      * This is not a mesh's approximate bounding box or a collision proxy. */
     uint32_t solid_box;
+    uint32_t diffuse_rgb; /* sRGB architectural reflectance for probe GI. */
 };
 int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count);
+/* DDGI volume placement and persistent fixture sources. GPU updates one-bounce
+ * irradiance/distance moments in batches; transient direct lights also inject.
+ * Sources are camera-independent. Empty input clears the volume. */
+#define RF_GPU_INDIRECT_LIGHT_CAP 128
+int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
+    const struct rf_gpu_light *lights,uint32_t count);
 #define RF_GPU_GRAPHICS_TEXTURES 8
 struct rf_gpu_graphics_texture_image {
     const uint32_t *rgb;
@@ -130,11 +141,11 @@ struct rf_gpu_scene_timing {
     int supported, valid;
     double world_draw_ms, present_blit_ms;
     double sky_compute_ms; /* Included in world_draw_ms; excludes HDR composite. */
-    /* Together with sky_compute_ms and detail_ms[0] partition world_draw_ms. Shadow includes
+    /* Together with sky_compute_ms and detail_ms[0,6] partition world_draw_ms. Shadow includes
      * depth copies; main includes WORLD shading, HDR composite, tonemap/HUD. */
     double shadow_ms, main_scene_ms;
     /* tiles; WORLD+sky composite; transparent/effects; viewmodel; post; HUD. */
-    double detail_ms[6];
+    double detail_ms[7]; /* final entry: DDGI probe update */
     /* CPU walls within native submit; separate from completed GPU queries. */
     double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };

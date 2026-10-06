@@ -25,7 +25,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 性能脚本交替软件/硬件顺序，要求实际选中的后端匹配请求，保存同一 EXE/map 哈希。
 性能采样关闭 validation，不开截图；同步与生命周期验证另行开启 validation layer，不能混算耗时。
 光照回归包含空结构、替换、有限射线、双面、resize 后遮挡保留和无效输入不破坏旧结构。
-只验证静态建筑加速，不据该结果宣称动态光追、间接光或全场景稳定帧率。
+硬件/软件对照验证建筑加速；间接光另按下述 DDGI 用例与同包开关检查，不据短帧诊断宣称全场景稳定帧率。
 
 建筑查询已覆盖的 draw 默认不再重复绘制到传统阴影图。对照重复投影的成本：
 
@@ -60,11 +60,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 原始日志与 `report.json` 保留每次结果；切换任何模式都重启进程，按 Windows native 规则等待真实退出。
 普通采样自动关闭计数和 validation，不开启 capture；带计数的运行显式标为 `valid=0`、`diagnostic=1`。
 
-`SCENE-GPU-STAGES` 增加 tiles、world、transparent、viewmodel、post、hud 的 P50/P95，单位微秒。
+`SCENE-GPU-STAGES` 增加 tiles、world、transparent、viewmodel、post、hud、gi 的 P50/P95，单位微秒。
 world 含天空合成，transparent 含特效，post 含视频合成；`diagnostic` 表示片元计数已开启，
 `light_ablation` 单独记录消融掩码。各区间分位数不能相加推导整帧分位数。
 `SCENE-LIGHT-PROFILE` 记录逐帧均值：shaded 为通过材质早退后的着色调用，candidates 为候选灯循环次数，
-roof/sun/local 为可见性函数逻辑调用，visible 为局部光通过遮挡后的次数，pcf 为完整过滤核次数。
+roof 为顶部缓存后的回退射线调用，sun/local 为可见性函数逻辑调用，visible 为局部光通过遮挡后的次数，pcf 为完整过滤核次数。
 计数包含 overdraw，也可能因原子操作改变早期深度行为；不能当作普通运行的可见像素或实际硬件射线数。
 
 `RF_GPU_LIGHT_ABLATION` 只用于诊断：`none` 为正常路径；`roof`、`sun`、`local` 分别跳过对应建筑遮挡；
@@ -75,6 +75,32 @@ roof/sun/local 为可见性函数逻辑调用，visible 为局部光通过遮挡
 `LIGHT TILES PASS` 回归按开关逐像素比较颜色和深度，覆盖空灯表、32 位高位、宽窄 spot、
 近相机光源、混合视角和非整块 resize；建筑遮挡及原有光照回归仍共同运行。
 限定设备的像素对照、五轮开关采样及三轮消融见[分块灯表现场](../archive/light-tiles-20261005.md)。
+
+## 顶部缓存与 DDGI 原型
+
+默认同时启用 `RF_GPU_ROOF_CACHE=1` 与 `RF_GPU_GI=1`，进程启动时读取，日志打印
+`rf-gpu-indirect: roof-cache=... probe-gi=...`。GI 布置另外打印完整固定灯数、探针数、间距与缓冲大小。
+先完成 build/stage，再启动捕获或采样；不要在 GUI 进程仍运行时执行会重建 package 的 `test/run`。
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareRoofCache -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/roof-cache-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareGI -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/ddgi-cost
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareIndirect -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/indirect-total
+```
+
+三个比较轴互斥：顶部缓存轴固定 GI 关闭；GI 轴固定顶部缓存开启；组合轴从两者关闭切换到两者开启。
+`gi_p50_us/p95_us` 仅包含探针 compute 更新，片元插值成本仍在 world/viewmodel 等绘制区间内。
+首次完整探针预热与后续有界更新分开，不把启动成本藏入稳态结论；固定灯变化及动态灯影响范围等限制见
+[DDGI 架构](../architecture/gpu-lighting.md#ddgi-漫反射原型)。
+
+截图可分别设置 `RF_GPU_GI=0/1` 后运行 `outpost_lighting_check.py`，重点看 B1/一层/二层天花板、
+上部墙面、门洞和楼板边缘。只比较顶部缓存时关闭 GI，要求颜色与深度保持一致。
+`--gpu-lighting-test` 的 `INDIRECT PASS` 覆盖顶部缓存精确对照、纯反弹、黑反射率、封闭楼板、
+静态来源去重、动态灯注入和历史衰减、隔离视图关闭、resize、拒绝无效更新及清空光场；
+硬件、软件 BVH 和未支持 Ray Query 的设备均须检查。正常帧的原生截图与同步验证独立进行。
+限定镜头结果与原型限制见[顶部缓存与 DDGI 现场](../archive/ddgi-prototype-20261006.md)。
 
 ## 实验区
 

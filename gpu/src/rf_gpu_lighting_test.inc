@@ -288,6 +288,99 @@ done:
     return result;
 #undef TILE_CHECK
 }
+static int lighting_indirect_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *receiver,uint32_t *a,uint32_t *b,float *da,float *db)
+{
+    int result=-1,saved_roof=g->roof_cache_enabled,saved_gi=g->indirect_enabled;
+    struct rf_gpu_lighting lights;
+    struct rf_gpu_occlusion_primitive geometry[2]={
+        {{{-10000,-10000,500},{10000,10000,512},{0,0,0}},1,0xcccccc},
+        {{{-10000,-10000,3072},{10000,10000,3100},{0,0,0}},1,0xcccccc}};
+    struct rf_gpu_light lamp={0};
+    unsigned bounced=0,leaked=0;
+#define GI_CHECK(x) do {if(!(x)){fprintf(stderr,"INDIRECT FAIL line=%d\n",__LINE__);goto done;}}while(0)
+    g->roof_cache_enabled=g->indirect_enabled=1;
+    rf_gpu_lighting_default(&lights);lights.sun_color[3]=0;
+    GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    /* Compare the optimized roof classification to the original ray, including
+     * partial, sloped, thin, finite-range and stacked coverage. */
+    for(unsigned sample=0;sample<7;++sample) {
+        struct rf_gpu_occlusion_primitive roof[2]={
+            {{{-600,700,3800},{900,750,4400},{0,0,0}},1,0},
+            {{{-3000,1300,3000},{3000,1300,3000},{0,1800,6000}},0,0}};
+        unsigned count=sample==0?0:sample==5?2:1;
+        if(sample==2)roof[0]=roof[1];
+        if(sample==3){roof[0].p[0][0]=1;roof[0].p[1][0]=2;}
+        if(sample==4){roof[0].p[0][1]=132000;roof[0].p[1][1]=132010;}
+        /* Pixel row 32 lies at y=-4096/(2*48). The box exits within
+         * triangle tMin: retain each backend's original inside-box rule. */
+        if(sample==6){roof[0].p[0][1]=-43;roof[0].p[1][1]=-4096.0f/96.0f+0.25f;}
+        g->roof_cache_enabled=1;GI_CHECK(!rf_gpu_graphics_set_architecture(g,roof,count));
+        GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+        GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+        g->roof_cache_enabled=0;GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+        GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,b,db,96*96));
+        GI_CHECK(!memcmp(a,b,64*64*4) && !memcmp(da,db,64*64*4));
+    }
+    g->roof_cache_enabled=1;
+    lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
+    GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    lamp.position_radius[2]=2300;lamp.position_radius[3]=4000;
+    lamp.color_intensity[0]=lamp.color_intensity[1]=lamp.color_intensity[2]=1;
+    lamp.color_intensity[3]=35;lamp.direction_outer[2]=-1;
+    lamp.direction_outer[3]=0.1f;lamp.inner_shadow[0]=0.5f;
+    GI_CHECK(!rf_gpu_graphics_set_architecture(g,geometry,1));
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+    GI_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,b,db,96*96));
+    for(unsigned p=0;p<64*64;++p)if(da[p]>0 && lighting_test_rgb(b[p])>lighting_test_rgb(a[p])+12)++bounced;
+    GI_CHECK(bounced>100);
+    /* Invalid updates and resize retain the converged field. */
+    GI_CHECK(rf_gpu_graphics_set_indirect_lights(g,NULL,1)<0);
+    GI_CHECK(rf_gpu_graphics_set_indirect_lights(g,&lamp,RF_GPU_INDIRECT_LIGHT_CAP+1)<0);
+    GI_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_resize(g,64,64));
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+    GI_CHECK(!memcmp(a,b,64*64*4));
+    lights.count=1;lights.lights[0]=lamp;lights.lights[0].inner_shadow[2]=1;
+    GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    g->indirect_warmed=0;
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+    GI_CHECK(!memcmp(a,b,64*64*4)); /* Fixed sources must not inject twice. */
+    lights.disable_indirect=1;GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+    for(unsigned p=0;p<64*64;++p)GI_CHECK(da[p]==0 || lighting_test_rgb(a[p])==0);
+    lights.disable_indirect=0;lights.count=0;GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    /* Black reflectance removes the bounce. A sealed slab prevents the lit
+     * surface on its opposite side from bleeding into the receiver. */
+    for(unsigned sample=0;sample<2;++sample) {
+        geometry[0].diffuse_rgb=sample?0xcccccc:0;
+        GI_CHECK(!rf_gpu_graphics_set_architecture(g,geometry,sample?2:1));
+        GI_CHECK(g->indirect_probe_count==0);
+        GI_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));
+        GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+        for(unsigned p=0;p<64*64;++p)if(da[p]>0 && lighting_test_rgb(a[p])>3)++leaked;
+    }
+    GI_CHECK(leaked==0);
+    GI_CHECK(!rf_gpu_graphics_set_architecture(g,geometry,1));
+    struct rf_gpu_light unlit=lamp;unlit.color_intensity[3]=0;
+    GI_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&unlit,1));
+    lights.count=1;lights.lights[0]=lamp;GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,a,da,96*96));
+    GI_CHECK(!memcmp(a,b,64*64*4)); /* The same moving source gives the same bounce. */
+    lights.count=0;GI_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));g->indirect_warmed=0;
+    GI_CHECK(!rf_gpu_graphics_scene_capture(g,receiver,1,b,db,96*96));
+    unsigned bright_sum=0,dim_sum=0;
+    for(unsigned p=0;p<64*64;++p)if(da[p]>0){bright_sum+=lighting_test_rgb(a[p]);dim_sum+=lighting_test_rgb(b[p]);}
+    GI_CHECK(dim_sum>0 && dim_sum<bright_sum); /* Temporal history decays after switch-off. */
+    GI_CHECK(!rf_gpu_graphics_set_indirect_lights(g,NULL,0) && !g->indirect_probe_count);
+    fprintf(stdout,"INDIRECT PASS roof_equal=7 bounced=%u black_reflectance=1 sealed_slab=1 leaked=%u resize=1 rejected_update=1 reset=1 dynamic=1 history=1 fixed_duplicate=1 isolated=1\n",bounced,leaked);
+    result=0;
+done:
+    g->roof_cache_enabled=saved_roof;g->indirect_enabled=saved_gi;
+    rf_gpu_graphics_set_architecture(g,NULL,0);
+    rf_gpu_lighting_default(&lights);rf_gpu_graphics_set_lighting(g,&lights);return result;
+#undef GI_CHECK
+}
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_graphics_vertex v[12]={0};
@@ -326,6 +419,8 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
         lighting_test_rgb(a[p])>lighting_test_rgb(b[p])+15) ++shadow_pixels;
     LIGHT_CHECK(shadow_pixels>8);
     LIGHT_CHECK(!lighting_tiles_regression(g,items,&lights,a,b,da,db));
+    LIGHT_CHECK(!lighting_indirect_regression(g,items,a,b,da,db));
+    LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
     /* Only sources fully covered by the current architecture may leave the
      * shadow maps. Clearing/rejecting input and resize preserve that contract;
@@ -370,7 +465,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             if(timing.supported) {
                 LIGHT_CHECK(timing.valid && timing.frame_id==7+offscreen);
                 LIGHT_CHECK(timing.sky_compute_ms>=0 && timing.shadow_ms>=0 && timing.main_scene_ms>=0);
-                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.detail_ms[6]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
                 double sum=0;
                 for(unsigned i=1;i<6;++i){LIGHT_CHECK(timing.detail_ms[i]>=0);sum+=timing.detail_ms[i];}
                 LIGHT_CHECK(fabs(timing.main_scene_ms-sum)<0.00001);
@@ -415,8 +510,8 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
      * the two dynamic shadow slots. Camera visibility is deliberately absent. */
     {
         struct rf_gpu_occlusion_primitive wall[2]={
-            {{{-10000,-10000,3400},{10000,-10000,3400},{10000,10000,3400}},0},
-            {{{-10000,-10000,3400},{10000,10000,3400},{-10000,10000,3400}},0}};
+            {{{-10000,-10000,3400},{10000,-10000,3400},{10000,10000,3400}},0,0},
+            {{{-10000,-10000,3400},{10000,10000,3400},{-10000,10000,3400}},0,0}};
         lights.lights[0].position_radius[0]=0;
         lights.lights[0].position_radius[2]=2800;
         for(unsigned mode=0;mode<3;++mode) {
@@ -454,7 +549,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
                 LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
                 LIGHT_CHECK(!memcmp(a,b,64*64*4));
             }
-            struct rf_gpu_occlusion_primitive solid={{{-10000,-10000,3390},{10000,10000,3410},{0,0,0}},1};
+            struct rf_gpu_occlusion_primitive solid={{{-10000,-10000,3390},{10000,10000,3410},{0,0,0}},1,0};
             LIGHT_CHECK(!rf_gpu_graphics_set_architecture(g,&solid,1));
             LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,1,a,da,96*96));
             unsigned differences=0,max_error=0;

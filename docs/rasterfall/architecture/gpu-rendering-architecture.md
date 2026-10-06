@@ -10,7 +10,7 @@ fragment 按这份只读主镜头状态执行有序抖动 discard，天空和屏
 
 > 状态：当前
 > 所有者：Rasterfall Core Host、Scene owner、Vulkan graphics
-> 最近核对：2026-10-05
+> 最近核对：2026-10-06
 
 Rasterfall 的渲染入口为 CPU 软件渲染和独立 GPU Scene。GPU Compute Raster、mixed executor 及 Draw/Raster bridge 已退役。旧实现和诊断合同见[退役归档](../archive/gpu-compute-retirement/README.md)，不能作为当前设计依据。
 
@@ -19,6 +19,10 @@ GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting
 静态建筑遮挡由 Vulkan 后端查询设备能力，在支持时启用 KHR Ray Query，并在 graphics owner
 保留 BLAS/TLAS；其他设备使用 GPU 软件 BVH。实例/设备版本协商、资源与 shader 变体的稳定边界
 见[建筑硬件查询](gpu-lighting.md#可选硬件-ray-query)，不改变 Scene 光栅呈现或 Game 状态所有权。
+
+顶部可见性列缓存与 DDGI 探针也由各 graphics owner 独占；地图代际变化时重建，resize 保留。
+探针 compute 使用同一建筑结构，在灯表后、阴影前更新，随后由场景片元读取一次漫反射。
+它不写入 Game 或旧 CPU 静态光场；布局、更新预算与已知限制见[DDGI 原型](gpu-lighting.md#ddgi-漫反射原型)。
 
 ## 帧所有权
 
