@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check switchback floor coverage independently of any authored map layout."""
+"""Check building floors and recessed fixture volumes independently of map layout."""
 import unittest
 
 from building_kit import BuildingKit
@@ -52,6 +52,50 @@ class SwitchbackFloorTest(unittest.TestCase):
                     if bottom < int(slab["height"]) <= storeys[-1][1]:
                         self.assertTrue(int(slab["max_z"]) <= z0 + depth or
                                         int(slab["min_z"]) >= z1 - depth)
+
+
+class CeilingMountTest(unittest.TestCase):
+    def test_flush_fixture_replaces_volume_but_keeps_floor_and_sealed_cap(self):
+        for yaw in (0, 90, 180, 270):
+            lines = []
+            kit = BuildingKit(lines)
+            # A mount on a shared slab edge exercises clipping on both sides.
+            kit.slab("left", (-2000, 0, -1500, 1500), 154, "808080", ceiling_color="E3E6E8")
+            kit.slab("right", (0, 2000, -1500, 1500), 154, "808080")
+            kit.ceiling_light("light", 0, 0, 0, yaw)
+            gameplay = [s for s in lines if s.startswith(("collision ", "surface "))]
+            kit.finish()
+            self.assertEqual(gameplay, [s for s in lines if s.startswith(("collision ", "surface "))])
+            boxes = []
+            for line in lines:
+                if line.startswith("render "):
+                    f = dict(w.split("=", 1) for w in line.split()[1:])
+                    self.assertEqual(f["color"], "808080")
+                    self.assertEqual(f.get("attr.bottom_color"), "E3E6E8" if f["id"].startswith("left") else None)
+                    boxes.append(tuple(int(f[k]) for k in ("min_x", "max_x", "min_z", "max_z", "attr.base_y", "height")))
+            hx,hz = (359,180) if yaw % 180 == 0 else (180,359)
+            # Partition every output/cut edge, then independently assert union
+            # volume and absence of overlaps, including the intact upper cap.
+            axes = [sorted({b[k] for b in boxes for k in (axis,axis+1)} | extra)
+                    for axis,extra in ((0,{-hx,hx}),(2,{-hz,hz}),(4,{0,84,154}))]
+            for x0,x1 in zip(axes[0],axes[0][1:]):
+                for z0,z1 in zip(axes[1],axes[1][1:]):
+                    for y0,y1 in zip(axes[2],axes[2][1:]):
+                        x,z,y = (x0+x1)/2,(z0+z1)/2,(y0+y1)/2
+                        coverage = sum(a<x<b and c<z<d and e<y<f for a,b,c,d,e,f in boxes)
+                        expected = 0 if -hx<x<hx and -hz<z<hz and y<84 else 1
+                        self.assertEqual(coverage, expected, (yaw,x,z,y))
+
+    def test_hanging_fixture_keeps_slab_and_invalid_recess_is_rejected(self):
+        lines=[]; kit=BuildingKit(lines)
+        kit.slab("slab",(-1000,1000,-1000,1000),154,"808080")
+        kit.ceiling_light("hanging",0,0,-82)
+        before=list(lines);kit.finish();self.assertEqual(before,lines)
+        lines=[];kit=BuildingKit(lines,thickness=80)
+        kit.slab("thin",(-1000,1000,-1000,1000),80,"808080")
+        kit.ceiling_light("invalid",0,0,0)
+        with self.assertRaises(ValueError):kit.finish()
+        with self.assertRaises(ValueError):kit.ceiling_light("diagonal",0,0,0,45)
 
 
 if __name__ == "__main__":

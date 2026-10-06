@@ -928,6 +928,10 @@ int rf_gpu_scene_world_gpu_prepare(struct rf_gpu_scene_world_resources *owner,
                 (kind!=RF_GPU_SCENE_WORLD_BOX || architecture_boxes_complete);
             draw->index_count=info.index_count;
             draw->double_sided=material[7]&1u;
+            /* Complete BOXes have outward closed surfaces. Avoid shading the
+             * far slab face before the nearer ceiling/floor rejects it. Keep
+             * arbitrary sheets and malformed legacy intervals two-sided. */
+            if(kind==RF_GPU_SCENE_WORLD_BOX && architecture_boxes_complete)draw->double_sided=0;
             if (!item->resource || rf_gpu_graphics_resource_bind(graphics,item->resource)<0 ||
                 rf_gpu_graphics_validate_draw(graphics,draw)<0)
                 return -1;
@@ -1606,6 +1610,11 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     int64_t section_start=rf_core_clock_now_us();
     if (rf_gpu_scene_world_gpu_prepare(owner,probe->shared_parent?probe->shared_parent->cache:probe->cache,probe->graphics,
             camera,width,height,items,capacity,&draws)<0) goto done;
+    /* The cutaway shader opens otherwise closed buildings. Preserve the
+     * interior faces while clipping/dissolving; AUX keeps its uncut world. */
+    if(probe->layers && !probe->layers->world_only && probe->layers->cutaway_height[1]>0.0f)
+        for(uint32_t i=0;i<draws;++i)
+            if(items[i].draw.architecture_occluder)items[i].draw.double_sided=1;
     stats->world_prepare_us=rf_core_clock_now_us()-section_start;
     /* Child preparation uses the same registry; capture this view's counters
      * before those independent camera queries overwrite the scratch values. */

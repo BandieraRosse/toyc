@@ -102,6 +102,7 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
            !strncmp(d->text,"air_gate_",9) || d->a>=d->b || d->c>=d->d || d->f>=d->e)continue;
         struct rf_gpu_occlusion_primitive *t=&triangles[at++];t->solid_box=1;
         t->diffuse_rgb=d->color&0xffffffu;
+        t->bottom_rgb=d->bottom_color;
         t->p[0][0]=d->a;t->p[0][1]=d->f-900;t->p[0][2]=d->c;
         t->p[1][0]=d->b;t->p[1][1]=d->e-900;t->p[1][2]=d->d;
     }

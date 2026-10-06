@@ -4468,7 +4468,26 @@ static int persistent_map_build_draw(int kind,const struct toy_map_draw *x,
             else v[0]=(struct vec3){x->a,-900,x->c},v[1]=(struct vec3){x->a,-900,x->d},v[2]=(struct vec3){x->a,x->e,x->d},v[3]=(struct vec3){x->a,x->e,x->c};
             if(persistent_map_mesh_add_quad(build,v,x->color)<0)return -1;
         } else if(kind==PERSISTENT_MAP_MAP_BOX) {
-            if(persistent_map_mesh_add_box(build,x->a,x->b,x->f-900,x->e-900,x->c,x->d,x->color,0)<0)return -1;
+            /* Finite slabs are visible from below. Omitting this face makes
+             * the receiver lie on the far side, inside the analytic solid,
+             * and exposes internal partition faces around recessed fixtures. */
+            unsigned long first=build->count;
+            if(persistent_map_mesh_add_box(build,x->a,x->b,x->f-900,x->e-900,x->c,x->d,x->color,1)<0)return -1;
+            if(x->bottom_color & 0x1000000u)
+                for(unsigned long i=first;i<build->count;++i) {
+                    struct persistent_map_quad_patch *patch=&build->patches[i];
+                    if(patch->v[0].y==x->f-900 && patch->v[1].y==x->f-900 &&
+                       patch->v[2].y==x->f-900 && patch->v[3].y==x->f-900)
+                        patch->color=x->bottom_color & 0xffffffu;
+                }
+            /* Closed solids can cull their hidden interior faces. The shared
+             * legacy box helper winds inward; reverse only valid Scene BOXes
+             * to the outward winding consumed by the graphics backface cull. */
+            if(x->a<x->b && x->c<x->d && x->f<x->e)
+                for(unsigned long i=first;i<build->count;++i) {
+                    struct vec3 t=build->patches[i].v[1];
+                    build->patches[i].v[1]=build->patches[i].v[3];build->patches[i].v[3]=t;
+                }
         } else if(kind==RF_GPU_SCENE_WORLD_MODEL_BOX) {
             if(persistent_map_mesh_add_box(build,x->a,x->b,x->e,x->f,
                 x->c,x->d,x->color,0)<0)return -1;

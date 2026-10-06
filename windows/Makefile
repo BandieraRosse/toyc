@@ -276,7 +276,7 @@ stage: $(TARGET)
 	$(call sync-runtime-config,$(BUILD))
 	$(call sync-runtime-config,$(PACKAGE_DIR))
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/tests"
-	@cp rasterfall/tests/map_v1_lab*.map "$(PACKAGE_DIR)/rasterfall/tests/"
+	@cp rasterfall/tests/map_v1_lab*.map rasterfall/tests/map_v1_box_finishes.map "$(PACKAGE_DIR)/rasterfall/tests/"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall/private-assets"
 	@for entry in rasterfall/private-assets/*; do \
 	    [ -e "$$entry" ] || continue; \

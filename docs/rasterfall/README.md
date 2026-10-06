@@ -13,7 +13,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
 [地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
-标准房屋、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
+标准房屋、天花板独立底面颜色、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
 入口为 `tools/building_kit.py`；物体顶面、窄护墙、楼梯跳跃与跨层落地见[碰撞高度区间](architecture/gameplay.md#component-collision-高度区间)，玩法判定入口为 `lib/game.c`。
 玩家速度、地面加减速、反向变向、斜向限速、跳跃惯性、离边/落地起跳容错及空中微调见[玩家地面移动与跳跃](architecture/gameplay.md#玩家地面移动与跳跃)；可编辑参数见[玩家移动配置](guides/player-movement-config.md)，由 Game actor 持有运动状态，session 只提交方向输入并保留启动配置。
 
@@ -43,7 +43,7 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 | GPU 天空、体积云与前哨站气氛实验区 | [GPU 天空架构](architecture/gpu-sky.md)、[天空验证](guides/gpu-sky.md)、[设计研究](reference/sky-v2-design-study.md) | `gpu/shaders/sky.glsl`、`graphics_sky.comp`、`render/rf_gpu_scene_lighting.inc`、`tools/gpu_sky_study.ps1`；`atmosphere-lab` 固定镜头与园区静态建筑，CPU 旧天空保留在 `src/rasterfall_sky.c` |
 | CPU/Scene 默认功能、高级能力与大厅渲染控制终端 | [正常帧渲染 baseline](reference/rendering-baseline.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Outpost V1](reference/outpost-hall-v1.md) | `src/rf_render_terminal.inc`、`src/rf_game_runtime.c`、`src/rf_core_host.c` |
 | 独立 GPU Scene 与直接来源预览 | [计划入口](plans/README.md)、[GPU 架构](architecture/gpu-rendering-architecture.md)、[Scene 工作流](guides/gpu-scene-fixture.md) | `--gpu-scene-independent-preview`、`rf_core_begin_scene_frame`、`render/rf_gpu_scene_enemy_source.inc`、`render/rf_gpu_scene_actor_source.inc`、`render/rf_gpu_scene_layers.inc`；直接冻结 WORLD 与分层几何 |
-| GPU 实时光照、前哨三层布光、建筑遮挡与 DDGI 原型 | [GPU 光照架构](architecture/gpu-lighting.md)、[实验与验证](guides/gpu-lighting.md) | `gpu/src/rf_gpu_lighting.inc`、`rf_gpu_architecture_ray.inc`、`rf_gpu_architecture_light.inc`、`rf_gpu_indirect.inc`、`gpu/shaders/graphics_indirect.comp`、`graphics_light_tiles.comp`、`render/rf_gpu_scene_lighting.inc`；模型灯插口、硬件 Ray Query / 软件 BVH、顶部缓存、探针漫反射、分块灯表与分段/计数诊断 |
+| GPU 实时光照、前哨三层布光、建筑遮挡与 DDGI 原型 | [GPU 光照架构](architecture/gpu-lighting.md)、[实验与验证](guides/gpu-lighting.md)、[嵌灯生成语法](reference/architectural-environment-v1.md#标准房屋生成语法) | `gpu/src/rf_gpu_lighting.inc`、`rf_gpu_architecture_ray.inc`、`rf_gpu_architecture_light.inc`、`rf_gpu_indirect.inc`、`gpu/shaders/graphics_indirect.comp`、`graphics_light_tiles.comp`、`render/rf_gpu_scene_lighting.inc`；完整楼板底面、嵌灯凹槽、硬件 Ray Query / 软件 BVH、顶部缓存、有限探针重定位、两次漫反射、插值格邻居表与分段/计数诊断 |
 | CPU 静态世界光照遗产（停止维护） | [光照架构](architecture/static-world-lighting.md)、[验证指南](guides/static-world-lighting.md) | 保留旧实现，不作为新增光照或视觉验收目标 |
 | 角色、敌人与附件表现、AI 随机静止持枪、肩托瞄准与低位移动持枪、双臂握点、反冲与回避叠加 | [角色表现](architecture/character-presentation.md)、[动画架构](architecture/animation-architecture.md) | character/enemy presentation adapters；`rasterfall_rifle_pose.c` 共享待机轮换/瞄准/移动持枪/避让/双臂 IK、modular additive、可选指节链、目录动作展示与 Scene 冻结姿态 |
 | 敌人资源、姿态与固定截图 | [敌人视觉合同](reference/enemy-visuals.md)、[生成验收](guides/enemy-visuals.md) | 感染体家族、特感刚性 profile 与复现入口 |

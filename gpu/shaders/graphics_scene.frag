@@ -111,7 +111,7 @@ void main() {
     bool roof_traced=false;
     float sky_access=(ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
     vec3 radiance=base*(1.0-metal)*environment_irradiance(n)*mix(0.10,1.0,sky_access)+base*emissive;
-    if(metal<1.0)radiance+=base*(1.0-metal)*probe_irradiance(world_position,n);
+    if(metal<1.0)radiance+=base*(1.0-metal)*probe_irradiance(world_position,n,v);
     vec3 l=lighting.sun_direction.xyz;
     bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
     if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0))

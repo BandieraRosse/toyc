@@ -22,7 +22,13 @@ def main():
         b=Builder(mats)
         if kind=='ceiling':
             b.box((0,0,.10),(1.4,.7,.12),0,bevel=0)
-            b.box((0,0,.035),(1.27,.57,.07),1,bevel=0)
+            # The lens owns its bottom plane. A full dark box behind it used
+            # to share z=0 with the luminous face and flicker black at angles.
+            b.box((0,0,.033),(1.22,.57,.014),1,bevel=0)
+            for x in (-.5875,.5875):
+                b.box((x,0,.013),(.045,.57,.026),1,bevel=0)
+            for y in (-.25,.25):
+                b.box((0,y,.013),(1.13,.07,.026),1,bevel=0)
             b.box((0,0,.013),(1.13,.43,.026),2,bevel=0)
             for x in (-.65,.65):b.box((x,0,.035),(.08,.64,.07),0,bevel=0)
         else:

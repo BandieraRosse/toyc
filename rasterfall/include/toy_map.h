@@ -103,6 +103,8 @@ struct toy_map_draw {
     /* Explicit presentation opt-out; zero keeps the existing scattering beams.
      * This map/render value is not a network or serialized asset wire record. */
     int projection_no_beams;
+    /* BOX underside sRGB: bit 24 marks an override, including explicit black. */
+    unsigned int bottom_color;
 };
 
 struct toy_map {

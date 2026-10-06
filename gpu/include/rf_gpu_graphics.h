@@ -118,10 +118,11 @@ struct rf_gpu_occlusion_primitive {
      * This is not a mesh's approximate bounding box or a collision proxy. */
     uint32_t solid_box;
     uint32_t diffuse_rgb; /* sRGB architectural reflectance for probe GI. */
+    uint32_t bottom_rgb; /* BOX -Y override, bit 24 present; zero inherits diffuse_rgb. */
 };
 int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count);
-/* DDGI volume placement and persistent fixture sources. GPU updates one-bounce
+/* DDGI volume placement and persistent fixture sources. GPU updates diffuse
  * irradiance/distance moments in batches; transient direct lights also inject.
  * Sources are camera-independent. Empty input clears the volume. */
 #define RF_GPU_INDIRECT_LIGHT_CAP 128

@@ -57,6 +57,30 @@ static int rf_projection_test_quad(void *context,const int p[4][3],unsigned colo
     int *count=context;
     (void)p;(void)color;(void)alpha;(*count)++;return 0;
 }
+static int rf_box_finish_contract_test(void)
+{
+    struct toy_map *level=calloc(1,sizeof(*level));
+    struct rasterfall_map_state map={0};
+    struct toy_game_box spawn[TOY_MAP_MAX_ZONES];struct rasterfall_interactable unused;
+    int spawn_count=0,air=0,item_count=0,result=-1,seen=0;
+    if(!level)return -1;
+    rasterfall_map_bind(&map,level,level->safe_rooms,spawn,&spawn_count,&air,&unused,&item_count);
+    if(rasterfall_map_load_runtime_overlay(&map,"rasterfall/tests/map_v1_box_finishes.map")<0 ||
+       rasterfall_map_project_runtime(&map)<0)goto done;
+    for(int i=0;i<level->draw_count;++i) {
+        const struct rf_map_runtime_render *source=rasterfall_map_render_projection_at(&map,i);
+        const struct toy_map_draw *d=&level->draw[i];
+        unsigned expected=!strcmp(source->id,"painted_slab")?0x1e3e6e8:
+            !strcmp(source->id,"black_slab")?0x1000000:0;
+        if(d->bottom_color!=expected || d->color!=0x758995 || d->f!=2304 || d->e!=2458)goto done;
+        seen|=expected==0?1:expected==0x1000000?2:4;
+    }
+    if(seen==7)result=0;
+done:
+    rasterfall_map_unload(&map);free(level);
+    if(!result)__printf("BOX-FINISH parser/runtime/projection/default/black passed\n");
+    return result;
+}
 static int rf_projection_beams_contract_test(void)
 {
     struct toy_map *level=calloc(1,sizeof(*level));
@@ -310,6 +334,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     if (rf_machine_screen_contract_test()<0) return -13;
     if (rf_display_geometry_test()<0) return -23;
     if (rf_projection_beams_contract_test()<0) return -25;
+    if (rf_box_finish_contract_test()<0) return -26;
     if (rf_pane_contract_test()<0) return -14;
     if (rf_electronics_contract_test()<0) return -15;
     if (rf_game_request_world(runtime,RASTERFALL_WORLD_OUTPOST)<0) return -10;

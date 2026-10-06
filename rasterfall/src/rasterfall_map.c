@@ -505,6 +505,19 @@ int rasterfall_map_project_runtime(struct rasterfall_map_state *map)
         }
         draw->color = render->has_color ?
             (unsigned int)strtol(render->color, NULL, 16) : 0;
+        const char *bottom_color = rf_map_runtime_render_attribute(render, "bottom_color");
+        if (bottom_color) {
+            if (type != TOY_MAP_DRAW_BOX || strlen(bottom_color) != 6) return -1;
+            unsigned value = 0;
+            for (unsigned k = 0; k < 6; ++k) {
+                char c = bottom_color[k];
+                int digit = c >= '0' && c <= '9' ? c-'0' :
+                    c >= 'a' && c <= 'f' ? c-'a'+10 : c >= 'A' && c <= 'F' ? c-'A'+10 : -1;
+                if (digit < 0) return -1;
+                value = value*16 + (unsigned)digit;
+            }
+            draw->bottom_color = 0x1000000u | value;
+        }
         draw->style = runtime_render_int(render, "style", 0);
         if (type == TOY_MAP_DRAW_SIGN) {
             const char *facing = rf_map_runtime_render_attribute(render, "facing");

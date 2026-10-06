@@ -108,7 +108,10 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     if((roof && strcmp(roof,"0") && strcmp(roof,"1")) || (gi && strcmp(gi,"0") && strcmp(gi,"1")))return -1;
     g->roof_cache_enabled=!(roof && !strcmp(roof,"0"));
     g->indirect_enabled=!(gi && !strcmp(gi,"0"));
-    fprintf(stderr,"rf-gpu-indirect: roof-cache=%d probe-gi=%d\n",g->roof_cache_enabled,g->indirect_enabled);
+    const char *bounces=getenv("RF_GPU_GI_BOUNCES");
+    if(bounces && strcmp(bounces,"1") && strcmp(bounces,"2"))return -1;
+    g->indirect_bounces=bounces && !strcmp(bounces,"1")?1:2;
+    fprintf(stderr,"rf-gpu-indirect: roof-cache=%d probe-gi=%d bounces=%d\n",g->roof_cache_enabled,g->indirect_enabled,g->indirect_bounces);
     const char *modes[]={"none","roof","sun","local","pcf","brdf","rays"};
     const unsigned masks[]={0,1,2,4,8,16,7};
     if(ablation && *ablation) {

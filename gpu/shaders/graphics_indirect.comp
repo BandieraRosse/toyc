@@ -15,7 +15,9 @@ shared vec4 samples[128]; // reflected radiance, first-hit distance
 shared vec3 directions[128];
 shared uint near_hits;
 shared float history;
-bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,out uint rgb) {
+shared vec3 probe_origin;
+shared float probe_valid;
+bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,out uint rgb,out bool backface) {
 #ifdef RF_ARCHITECTURE_RAY_QUERY
     rayQueryEXT query;
     rayQueryInitializeEXT(query,architecture,gl_RayFlagsOpaqueEXT,255,origin,0.5,direction,limit);
@@ -25,6 +27,7 @@ bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,ou
     uint triangle=rayQueryGetIntersectionPrimitiveIndexEXT(query,true)*3u;
     vec3 a=surfaces.vertices[triangle].xyz,b=surfaces.vertices[triangle+1u].xyz,c=surfaces.vertices[triangle+2u].xyz;
     normal=normalize(cross(b-a,c-a));rgb=uint(surfaces.vertices[triangle+2u].w);
+    backface=surfaces.vertices[triangle].w>0.5 && dot(normal,direction)>0.0;
     if(dot(normal,direction)>0.0)normal=-normal;return true;
 #else
     vec3 safe=mix(direction,vec3(1e-8),lessThan(abs(direction),vec3(1e-8))),inv=1.0/safe;
@@ -35,10 +38,12 @@ bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,ou
         vec3 lo=min(a,b),hi=max(a,b);
         float near=max(max(lo.x,lo.y),lo.z),far=min(min(hi.x,hi.y),hi.z);
         if(max(near,0.5)>min(far,limit)){i=uint(node.lo.w);continue;}
-        float t=limit;vec3 n=vec3(0);
+        float t=limit;vec3 n=vec3(0);bool back=false,bottom=false;
         if(node.hi.w>1.5) {
             t=near>0.5?near:far;vec3 plane=near>0.5?lo:hi;
-            int axis=abs(plane.x-t)<0.01?0:abs(plane.y-t)<0.01?1:2;n[axis]=1.0;
+            int axis=abs(plane.x-t)<0.01?0:abs(plane.y-t)<0.01?1:2;
+            back=near<=0.5;n[axis]=direction[axis]>0.0?-1.0:1.0;
+            bottom=axis==1 && (back?direction.y<0.0:direction.y>0.0);
         } else if(node.hi.w>0.0) {
             vec3 h=cross(direction,node.c.xyz);float det=dot(node.b.xyz,h);
             if(abs(det)>1e-6) {
@@ -51,12 +56,44 @@ bool probe_trace(vec3 origin,vec3 direction,inout float limit,out vec3 normal,ou
         }
         if(t>0.5 && t<limit && dot(n,n)>1e-12) {
             limit=t;normal=normalize(n);if(dot(normal,direction)>0.0)normal=-normal;
-            rgb=uint(node.c.w);hit=true;
+            rgb=uint(bottom?node.a.w:node.c.w);backface=back;hit=true;
         }
         ++i;
     }
     return hit;
 #endif
+}
+// Static geometry: settle once, before accumulating any radiance or moments.
+// Axis rays preserve two-sided triangle visibility while closed solids allow
+// inside probes to escape. Offsets stay within their original interpolation cell.
+vec3 relocate_probe(vec3 anchor,out float valid) {
+    vec3 p=anchor;float clearance=probes.params.x*0.18;
+    valid=1.0;
+    for(int attempt=0;attempt<4;++attempt) {
+        vec3 push=vec3(0),escape=vec3(0);float nearest=1e30;uint backs=0u;
+        for(int axis=0;axis<3;++axis)for(int sign_index=0;sign_index<2;++sign_index) {
+            vec3 d=vec3(0),normal;d[axis]=sign_index==0?1.0:-1.0;
+            float distance=probes.params.z;uint rgb;bool back;
+            if(!probe_trace(p,d,distance,normal,rgb,back))continue;
+            if(back) {
+                ++backs;
+                if(distance<nearest){nearest=distance;escape=d*(distance+clearance);}
+            } else if(distance<clearance)push-=d*(clearance-distance);
+        }
+        vec3 move=backs>=2u?escape:push;
+        if(dot(move,move)<0.01)return p;
+        vec3 next=p+move,offset=next-anchor;
+        if(length(offset)>probes.params.x*0.45) {valid=backs>=2u?0.0:1.0;return p;}
+        p=next;
+    }
+    // Recheck the final candidate, never mark an embedded position usable.
+    uint backs=0u;
+    for(int axis=0;axis<3;++axis)for(int s=0;s<2;++s) {
+        vec3 d=vec3(0),n;d[axis]=s==0?1.0:-1.0;
+        float distance=probes.params.z;uint rgb;bool back;
+        if(probe_trace(p,d,distance,n,rgb,back) && back)++backs;
+    }
+    valid=backs>=2u?0.0:1.0;return p;
 }
 vec3 surface_fixture(Light light,vec3 p,vec3 n) {
     vec3 delta=light.position_radius.xyz-p;float r2=dot(delta,delta),radius2=light.position_radius.w*light.position_radius.w;
@@ -67,6 +104,34 @@ vec3 surface_fixture(Light light,vec3 p,vec3 n) {
     if(spot<=0.0 || architecture_visibility(p+n*1.5,l,max(sqrt(r2)-2.0,0.0))==0.0)return vec3(0);
     float fade=1.0-(r2/radius2)*(r2/radius2);
     return light.color_intensity.rgb*(light.color_intensity.w*cosine*spot*fade*fade/max(r2/(512.0*512.0),0.04));
+}
+vec3 surface_incident(vec3 p,vec3 n) {
+    vec3 incident=vec3(0);
+    for(uint i=0u;i<fixtures.header.x;++i)incident+=surface_fixture(fixtures.lights[i],p,n);
+    for(uint i=0u;i<uint(lighting.counts.x);++i)
+        if(lighting.lights[i].inner_shadow.z<0.5)incident+=surface_fixture(lighting.lights[i],p,n);
+    return incident;
+}
+vec3 surface_albedo(uint rgb) {
+    return decode_srgb(vec3((rgb>>16u)&255u,(rgb>>8u)&255u,rgb&255u)/255.0);
+}
+// Two cosine-weighted secondary samples add a bounded second diffuse bounce.
+// Never read the field being updated: no inter-workgroup feedback, dispatch
+// order dependence, or unbounded energy accumulation through probe history.
+vec3 secondary_bounce(vec3 p,vec3 n,uint seed) {
+    vec3 tangent=normalize(cross(abs(n.y)<0.9?vec3(0,1,0):vec3(1,0,0),n));
+    vec3 bitangent=cross(n,tangent),sum=vec3(0);
+    for(uint sample_index=0u;sample_index<2u;++sample_index) {
+        uint bits=seed*747796405u+sample_index*2891336453u+277803737u;
+        bits=((bits>>((bits>>28u)+4u))^bits)*277803737u;bits=(bits>>22u)^bits;
+        float u=(float(bits&65535u)+0.5)/65536.0;
+        float phi=(float(bits>>16u)+0.5)*(6.28318530718/65536.0);
+        vec3 direction=tangent*(sqrt(u)*cos(phi))+bitangent*(sqrt(u)*sin(phi))+n*sqrt(1.0-u);
+        vec3 origin=p+n*2.0,normal;float distance=probes.params.z;uint rgb;bool back;
+        if(probe_trace(origin,direction,distance,normal,rgb,back))
+            sum+=surface_albedo(rgb)*surface_incident(origin+direction*distance,normal)/3.14159265;
+    }
+    return sum*0.5;
 }
 vec3 oct_direction(uint texel) {
     vec2 f=(vec2(texel%8u,texel/8u)+0.5)*0.25-1.0;vec3 d=vec3(f,1.0-abs(f.x)-abs(f.y));
@@ -83,30 +148,34 @@ vec2 distance_moments(uint texel) {
 }
 void main() {
     uint lane=gl_LocalInvocationID.x,id=(update.first+gl_WorkGroupID.x)%probes.header.y;
-    uint base=probes.header.x+id*probes.header.z;
-    vec3 origin=uintBitsToFloat(probes.data[base+38u]).xyz;
+    uint base=probes.header.w+id*probes.header.z;
     if(lane==0u) {
         history=uintBitsToFloat(probes.data[base]).w>0.0?probes.params.w:0.0;
         near_hits=0u;
+        vec4 state=uintBitsToFloat(probes.data[base+38u]);
+        probe_origin=state.xyz;probe_valid=state.w<0.0?0.0:1.0;
+        if(state.w==0.0) {
+            probe_origin=relocate_probe(state.xyz,probe_valid);
+            probes.data[base+38u]=floatBitsToUint(vec4(probe_origin,probe_valid>0.0?1.0:-1.0));
+        }
     }
     barrier();
+    vec3 origin=probe_origin;
     for(uint j=lane;j<128u;j+=64u) {
         float y=1.0-2.0*(float(j)+0.5)/128.0,r=sqrt(max(0.0,1.0-y*y)),phi=float(j)*2.39996323;
-        vec3 direction=vec3(r*cos(phi),y,r*sin(phi)),normal;uint rgb;
+        vec3 direction=vec3(r*cos(phi),y,r*sin(phi)),normal;uint rgb;bool backface;
         float distance=probes.params.z;vec3 radiance=vec3(0);
-        if(probe_trace(origin,direction,distance,normal,rgb)) {
+        if(probe_valid>0.0 && probe_trace(origin,direction,distance,normal,rgb,backface)) {
             if(distance<probes.params.x*0.08)atomicAdd(near_hits,1u);
-            vec3 p=origin+direction*distance,incident=vec3(0);
-            for(uint i=0u;i<fixtures.header.x;++i)incident+=surface_fixture(fixtures.lights[i],p,normal);
-            for(uint i=0u;i<uint(lighting.counts.x);++i)
-                if(lighting.lights[i].inner_shadow.z<0.5)incident+=surface_fixture(lighting.lights[i],p,normal);
-            vec3 albedo=decode_srgb(vec3((rgb>>16u)&255u,(rgb>>8u)&255u,rgb&255u)/255.0);
-            radiance=albedo*incident/3.14159265;
+            vec3 p=origin+direction*distance,albedo=surface_albedo(rgb);
+            vec3 incident=surface_incident(p,normal)/3.14159265;
+            if(probes.minimum.w>1.5)incident+=secondary_bounce(p,normal,id*128u+j);
+            radiance=albedo*incident;
         }
         samples[j]=vec4(radiance,distance);directions[j]=direction;
     }
     barrier();
-    float valid=near_hits>42u?0.0:1.0;
+    float valid=near_hits>42u?0.0:probe_valid;
     if(lane<6u) {
         vec3 irradiance=vec3(0);
         for(uint j=0u;j<128u;++j)irradiance+=samples[j].rgb*max(0.0,directions[j][lane/2u]*((lane&1u)==0u?1.0:-1.0))*(4.0/128.0);

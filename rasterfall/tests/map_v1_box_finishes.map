@@ -1,0 +1,6 @@
+map version=1 units=rfu
+world min_x=-4096 max_x=4096 min_z=-4096 max_z=4096
+region id=player_start kind=start min_x=0 max_x=0 min_z=0 max_z=0 attr.sy=0 attr.cy=1024
+render id=default_slab kind=box min_x=-2000 max_x=-1000 min_z=-1000 max_z=1000 height=2458 attr.base_y=2304 color=758995
+render id=painted_slab kind=box min_x=-500 max_x=500 min_z=-1000 max_z=1000 height=2458 attr.base_y=2304 color=758995 attr.bottom_color=E3e6E8
+render id=black_slab kind=box min_x=1000 max_x=2000 min_z=-1000 max_z=1000 height=2458 attr.base_y=2304 color=758995 attr.bottom_color=000000

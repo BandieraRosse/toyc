@@ -107,6 +107,47 @@ static int actor_range_logic_test(void)
     return failed;
 }
 
+/* A slab must expose both boundary planes, with outward winding so hidden
+ * interior faces can be culled without removing any exterior surface. */
+static int persistent_map_closed_box_test(void)
+{
+    struct toy_map_draw slab={0};struct persistent_map_mesh_build build={0};
+    struct rasterfall_model_asset *model=NULL;
+    int failed=1;long long bottom_area2=0,top_area2=0;
+    slab.a=-1700;slab.b=2100;slab.c=-1200;slab.d=2600;
+    slab.f=2304;slab.e=2458;slab.color=0x758995;slab.bottom_color=0x1e3e6e8;
+    if(persistent_map_build_draw(PERSISTENT_MAP_MAP_BOX,&slab,&build)<0)goto done;
+    for(unsigned long i=0;i<build.count;++i) {
+        struct vec3 *p=build.patches[i].v;
+        int bottom=p[0].y==slab.f-900 && p[1].y==slab.f-900 && p[2].y==slab.f-900 && p[3].y==slab.f-900;
+        if(build.patches[i].color!=(bottom?(slab.bottom_color&0xffffffu):slab.color))goto done;
+        long long ax=p[1].x-p[0].x,ay=p[1].y-p[0].y,az=p[1].z-p[0].z;
+        long long bx=p[2].x-p[0].x,by=p[2].y-p[0].y,bz=p[2].z-p[0].z;
+        long long x=2LL*p[0].x-slab.a-slab.b,y=2LL*p[0].y-slab.f-slab.e+1800,z=2LL*p[0].z-slab.c-slab.d;
+        if((ay*bz-az*by)*x+(az*bx-ax*bz)*y+(ax*by-ay*bx)*z<=0)goto done;
+    }
+    model=persistent_map_mesh_finish(&build);if(!model)goto done;
+    for(unsigned i=0;i<model->index_count;i+=3) {
+        struct vec3 p[3];
+        for(unsigned k=0;k<3;++k) {
+            unsigned id=model_u32(model->indices+(i+k)*4);
+            const unsigned char *v=model->vertices+id*model->vertex_bytes;
+            p[k]=(struct vec3){(int)model_u32(v),(int)model_u32(v+4),(int)model_u32(v+8)};
+        }
+        if(p[0].y!=p[1].y || p[1].y!=p[2].y)continue;
+        long long area=(long long)(p[1].x-p[0].x)*(p[2].z-p[0].z)-
+            (long long)(p[1].z-p[0].z)*(p[2].x-p[0].x);
+        if(area<0)area=-area;
+        if(p[0].y==slab.f-900)bottom_area2+=area;
+        if(p[0].y==slab.e-900)top_area2+=area;
+    }
+    failed=bottom_area2!=2LL*(slab.b-slab.a)*(slab.d-slab.c) || top_area2!=bottom_area2;
+done:
+    tlibc_free(build.patches);
+    if(model){rasterfall_model_unload(model);tlibc_free(model);}
+    __printf("persistent closed slab: %s\n",failed?"FAIL":"PASS");return failed;
+}
+
 /* Exercise real mesh packing and the production placement, then independently
  * decode the Draw transform against authored world coordinates. Zero tolerance
  * on world/view/screen coordinates; hardware edge coverage is a separate test. */
@@ -185,7 +226,7 @@ int rasterfall_render_draw_reference_logic_test(void)
     int saved_gallery = active_gallery_lighting, saved_scene = active_scene_light_override_q8;
     int saved_v2 = active_world_light_v2, saved_floor = active_floor_submission;
     int saved_form = active_model_form_lighting, saved_material = active_disable_material_light;
-    int result = actor_range_logic_test() | persistent_map_projection_test(), tested = 0, commands = 0, touched = 0;
+    int result = actor_range_logic_test() | persistent_map_projection_test() | persistent_map_closed_box_test(), tested = 0, commands = 0, touched = 0;
     if (!model) return 1;
     memset(model, 0, sizeof(*model));
     memset(states, 0, sizeof(states)); memset(surfaces, 0, sizeof(surfaces));

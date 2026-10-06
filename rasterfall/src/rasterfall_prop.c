@@ -255,9 +255,9 @@ static const struct rasterfall_prop_asset_profile prop_assets[] = {
 const struct rasterfall_prop_light_profile *rasterfall_prop_light_profile(int asset)
 {
     static const struct rasterfall_prop_light_profile ceiling={
-        {0,-12,0},{0,-1,0},{0.88f,0.95f,1.0f},4608,48,0.20f,0.65f,2};
+        {0,-12,0},{0,-1,0},{0.95f,0.98f,1.0f},4608,72,0.05f,0.50f,2};
     static const struct rasterfall_prop_light_profile wall={
-        {0,82,78},{0,-0.8f,0.6f},{1.0f,0.83f,0.64f},3584,24,0.15f,0.7f,2};
+        {0,82,78},{0,-0.8f,0.6f},{1.0f,0.90f,0.78f},3584,48,0.02f,0.45f,2};
     if(asset==RASTERFALL_PROP_ASSET_LIGHT_CEILING)return &ceiling;
     if(asset==RASTERFALL_PROP_ASSET_LIGHT_WALL)return &wall;
     return NULL;

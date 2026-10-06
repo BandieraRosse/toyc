@@ -382,7 +382,7 @@ static int scene_world_item_same(
         a->visible==b->visible && a->alpha==b->alpha &&
         x->type==y->type && x->a==y->a && x->b==y->b &&
         x->c==y->c && x->d==y->d && x->e==y->e && x->f==y->f &&
-        x->color==y->color && x->texture_u==y->texture_u &&
+        x->color==y->color && x->bottom_color==y->bottom_color && x->texture_u==y->texture_u &&
         x->texture_v==y->texture_v && x->style==y->style &&
         x->projection_no_beams==y->projection_no_beams &&
         ((x->type==TOY_MAP_DRAW_SIGN && (x->style==4 || x->style==5)) ||

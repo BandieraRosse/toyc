@@ -38,6 +38,7 @@ static void arch_build(struct rf_arch_node *nodes,uint32_t *used,
         n->hi[3]=t->solid_box?2:1;
         for(unsigned k=0;k<3;++k){n->a[k]=t->p[0][k];n->b[k]=t->p[1][k]-t->p[0][k];n->c[k]=t->p[2][k]-t->p[0][k];}
         n->c[3]=(float)(t->diffuse_rgb&0xffffffu);
+        n->a[3]=(float)(((t->bottom_rgb&0x1000000u)?t->bottom_rgb:t->diffuse_rgb)&0xffffffu);
     } else {
         unsigned axis=0;
         for(unsigned k=1;k<3;++k)if(n->hi[k]-n->lo[k]>n->hi[axis]-n->lo[axis])axis=k;

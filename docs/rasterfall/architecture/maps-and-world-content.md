@@ -5,6 +5,8 @@
 FLAT。支撑、碰撞和渲染分别消费同一 authored 高度；显式 BOX render 的 `attr.base_y` 映射 draw.f。
 地下层使用相对地面 0 的负高度及负 level。叠放楼梯的 collision ramp 可声明 `attr.thickness`，
 底面与坡面平行；Game 支撑、头顶碰撞和射线使用真实厚度，render 可用 `attr.steps` 绘制踏步。
+BOX 的 `attr.bottom_color` 经 IR/Runtime attribute 进入绘制投影的可选底面基础色；仅由 Scene
+可见网格和静态建筑 DDGI 消费，不进入碰撞或玩法材质。格式与缺省行为见[地图格式](../reference/map-format.md#v1-render-记录)。
 前哨站 B1、一层、二层、屋顶及北侧折返楼梯由 [前哨站合同](../reference/outpost-hall-v1.md)维护。
 建筑离线编写语法由 `tools/building_kit.py` 拥有，墙体、门洞、有限楼板与封闭折返楼梯降为普通
 V1 记录；前哨站使用同一生成器同时生产可见结构和独立碰撞声明。连接约束见

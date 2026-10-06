@@ -25,7 +25,8 @@ V1 冻结可复用建筑资产、连接尺度和表面语言；关卡与碰撞�
 `render` 记录；地图解析器不读取 Python，也不从可见模型推断碰撞。前哨站的调用示例在
 `tools/outpost_storeys.py`。墙、楼板和楼梯由同一参数同时生成可见实体、碰撞与可站立面。
 
-- `slab(name, footprint, y, color)`：`footprint=(min_x,max_x,min_z,max_z)`，Y 为板顶，底面为 Y 减统一厚度。
+- `slab(name, footprint, y, color, ceiling_color=None)`：`footprint=(min_x,max_x,min_z,max_z)`，Y 为板顶，底面为 Y 减统一厚度。可选关键字 `ceiling_color` 独立指定底面基础色，省略则沿用 `color`；`solid` 和 `switchback` 也接受此关键字。
+- `ceiling_light(name, x, z, ceiling, yaw=0)`：透光面位于天花板底面 Y，支持四个正交朝向。完成建筑记录后调用 `finish()`，把同高灯体体积从楼板 render BOX 扣除；生成普通 V1 记录，不扩展运行时解析器。
 - `wall(name, axis, at, start, end, bottom, top, color, openings=(), walk=False)`：轴向为 X 或 Z，`at` 是墙中心线；每个开口为 `(start,end,clear_height)`，自动生成两侧墙段及过梁。开口不得重叠或超出墙段。
 - `flight(name, footprint, h0, h1, color, steps=12)`：沿 Z 的有限厚度连续碰撞坡面，附踏步表现。
 - `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。最底层南平台与底板共同铺满楼梯间，覆盖双跑踏步和半层平台下方；底板同步生成可见实体、有限厚度碰撞和可站立面，上层保留楼梯井开口。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
@@ -44,11 +45,21 @@ house = BuildingKit(records, thickness=154)
 house.slab("home_1f", (-4096,4096,-3072,3072), 0, "758995")
 house.wall("home_south", "x", -3072, -4096, 4096, 0, 2304,
            "526875", openings=((-614,614,1843),))
-house.slab("home_roof", (-4096,4096,-3072,3072), 2458, "637A86")
+house.slab("home_roof", (-4096,4096,-3072,3072), 2458, "637A86", ceiling_color="E3E6E8")
+house.ceiling_light("home_light", 0, 0, 2304)
+house.finish()
 ```
 
 其余三面墙按相同边界补齐；写入既有地图时保留 UTF-8 BOM 和换行，参照前哨站维护工具。
 该语法负责建筑实体连接，既有资产套件仍可用于独立设备、服务带和有明确承重位置的梁。
+
+`finish()` 按 `light_ceiling` 的安装包络生成浅凹槽，允许跨相邻楼板边界；凹槽顶部必须低于板顶，
+否则报错，避免打穿上层地面造成漏光。灯体后有少量装配净空，凹槽之外的楼板体积相邻且不重叠。
+碰撞和 surface 保持完整，灯具不增加碰撞。若底部锚点低于天花板（挂装），不自动切割。
+生成器使用灯具 RFU 安装尺寸，而非 runtime 碰撞包围盒；尺寸变更须同步资产生成器与安装包络。
+前哨站生成器每次从稳定碰撞 footprint 恢复原楼板再切割，移灯/删灯不会留下旧洞；重复运行输出不变。
+凹槽裁分保留底面颜色。前哨站室内使用浅色天花板与较亮蓝灰墙面，地板仍有独立的较暗基础色；
+颜色按 sRGB 解码后参与真实反弹，不使用只影响 GI 的反射率倍增。此为当前视觉校准，非实测照度认证。
 
 ## Canonical kit
 

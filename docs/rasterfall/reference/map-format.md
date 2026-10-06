@@ -214,6 +214,15 @@ render id=outer_wall kind=wall min_x=-45000 max_x=33000 min_z=-45000 max_z=-4500
 道路按矩形较长轴确定方向，交叉口仍由总平面道路并集拥有。地板与标识数量上限为 640 条 render，
 Parser、Runtime、玩法投影和 Scene 按同一容量合同接收。
 
+嵌入天花板的灯具由[建筑生成语法](architectural-environment-v1.md#标准房屋生成语法)离线降级为
+普通 `object kind=light_ceiling` 和凹槽周围的有限厚度 `render kind=box`；runtime 不做隐式模型布尔运算。
+楼板保留封闭背板、原 collision 和 surface，Scene BOX 必须绘制完整底面。
+
+`render kind=box attr.bottom_color=E3E6E8` 可独立指定底面（世界 -Y）的六位 sRGB 基础色；
+省略时沿用 `color`，`000000` 表示真实黑色，不等于省略。其他面仍用 `color`。
+仅 BOX 接受此扩展，非法十六进制值在绘制投影时拒绝。该颜色同时进入 Scene 可见网格与 DDGI
+反射率，不能只改显示而保留旧反弹颜色；它不改变几何、collision 或 surface。
+
 `render kind=sign attr.style=7` 为固定尺寸四角投影信标，bounds 中心决定 X/Z，
 底座占地 360×240 RFU，含动画投影的水平包络为 360×280 RFU，高度范围为世界 Y=-896 到 -52；
 `color` 为光学槽与交叉菱形框颜色。

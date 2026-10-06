@@ -116,7 +116,7 @@ struct rf_gpu_graphics {
     rf_vk_pipeline indirect_pipeline;
     uint32_t indirect_probe_count,indirect_cursor;
     int indirect_warmed;
-    int roof_cache_enabled,indirect_enabled;
+    int roof_cache_enabled,indirect_enabled,indirect_bounces;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;

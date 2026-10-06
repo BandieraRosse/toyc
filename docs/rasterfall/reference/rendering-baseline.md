@@ -30,7 +30,7 @@
 | 联机画面 | CPU runtime 支持 host/client；`--renderer gpu-scene` 参数检查限定单人 Runtime Map。 | Scene 联机覆盖完成前，不宣称跨后端共同功能。 |
 | 旧动漫高模、PMX/VMD 正常帧表现 | `RASTERFALL_LEGACY_ANIME_RENDERING_ENABLED=0`；CPU 旧实现和离屏诊断仍在，Scene 独立来源将无模块化 recipe 的 AI 当程序角色。 | 旧路径保持遗产状态。当前[活动计划](../plans/private-anime-character-gpu.md)创作原创 RF 骨架角色，只接入单人 GPU Scene，不以两后端共同功能验收。 |
 | Desktop/Console | `RASTERFALL_DESKTOP_RUNTIME_ENABLED=0`；正常帧只显示暂不可用提示。 | 与渲染 baseline 分开恢复。 |
-| 额外画质 | GPU 已接入实时阴影、动态灯、PBR/风格化材质及默认开启的 DDGI 一次漫反射原型；SSAO、normal map、完整 outline 尚未实现。 | 探针范围与实验限制见[实时光照](../architecture/gpu-lighting.md#ddgi-漫反射原型)；不作为 CPU 共同功能。 |
+| 额外画质 | GPU 已接入实时阴影、动态灯、PBR/风格化材质及默认开启的 DDGI 漫反射原型，最多两次反弹；SSAO、normal map、完整 outline 尚未实现。 | 探针范围与实验限制见[实时光照](../architecture/gpu-lighting.md#ddgi-漫反射原型)；不作为 CPU 共同功能。 |
 | 开发入口 | WORLD-only preview、frame audit、模型/角色验收与离屏 fixture 有专用来源或画面范围。 | 只用来验证明确的局部合同，不当作正常帧功能清单。 |
 
 ## 当前实现关系与能力差异
@@ -63,7 +63,8 @@
 | `--gpu-character-skinning-off`、`--gpu-character-vertex-diff`、`--frame-audit` | GPU 回退/差分/审计入口。 | 诊断或实现选择，不作为玩家可见的高级功能。 |
 | 角色柔和材质、纹理线性过滤 | Scene 实验支持，默认关闭；前哨站渲染终端可独立切换。前者消费 body 的既有 visual role，后者作用于静态纹理。角色 v15 基础色图另按 clamp/mip 固定合同采样。 | [保真诊断](../guides/character-fidelity.md)拥有范围；本轮角色支持 OPAQUE，MASK 尚未实现。 |
 | `--input-test`、`--no-stats`、坐标轴/FPS 调试显示 | 输入、性能或开发者观察入口；坐标轴当前在 CPU 旧画面层单独绘制。 | 调试功能，排除在默认画质和高级画质清单之外；未来若要跨后端显示需另定合同。 |
-| `RF_GPU_GI=0/1` | GPU DDGI 一次漫反射原型，默认开启；随固定灯布置探针，距离矩抑制穿墙，动态光延迟更新。 | 环境变量用于同包诊断；动态遮挡、完整重定位和多次反弹尚未实现，CPU 不支持。 |
+| `RF_GPU_GI=0/1` | GPU DDGI 漫反射原型，默认开启；固定灯布局、有限探针重定位、距离矩抑制穿墙，动态光延迟更新。 | 环境变量用于同包诊断；动态遮挡、任意网格内部重定位和两次以上反弹尚未实现，CPU 不支持。 |
+| `RF_GPU_GI_BOUNCES=1/2` | 漫反射路径长度上限，默认 2；补充地面经墙面的间接照明。 | 仅影响探针 compute；1 用于同版本画面与性能对照。 |
 | PMX/VMD、完整 toon/anime outline 等 | 旧动漫正常帧关闭；CPU 有限的模型边线由上面的 `--edge-pass` 表示，完整效果及后列项目尚未构成当前正常帧功能。 | 私有原创 RF 角色的 GPU toon、边线与 sphere 材质能力按[活动计划](../plans/private-anime-character-gpu.md)单独实现和验收；PMX/VMD 恢复与其他效果不在该计划内。 |
 
 ## 选择与验收

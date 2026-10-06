@@ -87,10 +87,12 @@ $env:RF_GPU_ARCHITECTURE='hardware'
 $env:RF_GPU_VULKAN_VENDOR_ID='10de'
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareRoofCache -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/roof-cache-perf
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareGI -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/ddgi-cost
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareGIBounces -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/ddgi-bounces
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareIndirect -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/indirect-total
 ```
 
-三个比较轴互斥：顶部缓存轴固定 GI 关闭；GI 轴固定顶部缓存开启；组合轴从两者关闭切换到两者开启。
+各比较轴互斥：顶部缓存轴固定 GI 关闭；GI 轴固定顶部缓存开启；组合轴从两者关闭切换到两者开启。
+反弹轴固定顶部缓存和 GI 开启，交替 `RF_GPU_GI_BOUNCES=1/2`，验证默认第二次反弹的成本。
 `gi_p50_us/p95_us` 仅包含探针 compute 更新，片元插值成本仍在 world/viewmodel 等绘制区间内。
 首次完整探针预热与后续有界更新分开，不把启动成本藏入稳态结论；固定灯变化及动态灯影响范围等限制见
 [DDGI 架构](../architecture/gpu-lighting.md#ddgi-漫反射原型)。
@@ -100,7 +102,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 `--gpu-lighting-test` 的 `INDIRECT PASS` 覆盖顶部缓存精确对照、纯反弹、黑反射率、封闭楼板、
 静态来源去重、动态灯注入和历史衰减、隔离视图关闭、resize、拒绝无效更新及清空光场；
 硬件、软件 BVH 和未支持 Ray Query 的设备均须检查。正常帧的原生截图与同步验证独立进行。
+墙角用例把同一封闭腔体相对探针格移动，检查靠侧墙和顶面的接收面仍获得反弹；同时保留封闭隔板零漏光检查。
+同一腔体对照一次/二次反弹，要求墙角进一步受光且深度不变；黑反射率、固定灯去重及历史衰减都覆盖默认两次反弹。
+`python tools/test_building_kit.py` 保护嵌灯跨板边界、四向安装、凹槽无重叠、封闭背板和碰撞不变；
+逻辑回归的 `persistent closed slab` 核对 Scene 楼板上下表面完整面积。实机再观察近处和远处灯面，
+避免只看正视图遗漏模型共面暗纹。
+`BOX-FINISH` 逻辑检查保护底面颜色经 Parser/Runtime/投影后的缺省、显式黑色与独立地板色；
+`BOX REFLECTANCE PASS` 在真实 GPU 上检查白底面产生反弹、显式黑底面保持黑以及其他面颜色不串入底面。
+调整室内亮度先检查表面反射率和灯具 profile，再核对曝光；同时检查天花板、上部墙面、受光地面和
+家具细节，不能仅用灯面已经发白来推断照度。截图属于视觉校准，不等于真实 lux 测量。
 限定镜头结果与原型限制见[顶部缓存与 DDGI 现场](../archive/ddgi-prototype-20261006.md)。
+后续嵌灯、墙角和两次反弹的原生证据见[本轮优化现场](../archive/ddgi-corners-ceiling-20261006.md)。
+室内材质、配光与亮度对照见[室内亮度校准现场](../archive/indoor-lighting-calibration-20261006.md)。
 
 ## 实验区
 

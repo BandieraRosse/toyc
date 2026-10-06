@@ -34,7 +34,13 @@ uint probe_find(ivec3 cell) {
     return 0u;
 }
 vec2 probe_moments(uint base,ivec2 p) {
-    p=clamp(p,ivec2(0),ivec2(7));uint index=uint(p.y*8+p.x);
+    // Octahedron edges fold onto the opposite edge with reversed tangent.
+    // Clamping duplicates an unrelated direction and creates visibility seams.
+    if(p.x<0){p.x=-p.x-1;p.y=7-p.y;}
+    else if(p.x>7){p.x=15-p.x;p.y=7-p.y;}
+    if(p.y<0){p.y=-p.y-1;p.x=7-p.x;}
+    else if(p.y>7){p.y=15-p.y;p.x=7-p.x;}
+    uint index=uint(p.y*8+p.x);
     vec4 value=uintBitsToFloat(probes.data[base+6u+index/2u]);
     return (index&1u)==0u?value.xy:value.zw;
 }
@@ -46,18 +52,23 @@ vec2 probe_depth(uint base,vec3 direction) {
     return mix(mix(probe_moments(base,lo),probe_moments(base,lo+ivec2(1,0)),f.x),
         mix(probe_moments(base,lo+ivec2(0,1)),probe_moments(base,lo+ivec2(1,1)),f.x),f.y);
 }
-vec3 probe_irradiance(vec3 p,vec3 n) {
+vec3 probe_irradiance(vec3 p,vec3 n,vec3 view_direction) {
     if(lighting.light_control.z==0u || probes.header.y==0u ||
        any(lessThan(p,probes.minimum.xyz)) || any(greaterThan(p,probes.maximum.xyz)))return vec3(0);
-    vec3 receiver=p+n*probes.params.y;
+    // Normal bias alone remains on the neighbouring wall/ceiling at a corner.
+    // A small bias toward the visible free space keeps filtered distance
+    // moments from treating the receiving edge itself as an occluder.
+    vec3 receiver=p+n*probes.params.y+view_direction*(probes.params.x*0.08);
     vec3 grid=receiver/probes.params.x-0.37,f=fract(grid);ivec3 lo=ivec3(floor(grid));
+    uint cell=probe_find(lo);if(cell==0u)return vec3(0);
+    uvec4 neighbors0=probes.data[cell],neighbors1=probes.data[cell+1u];
     vec3 sum=vec3(0);float total=0.0;
     for(uint corner=0u;corner<8u;++corner) {
         ivec3 offset=ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u));
-        uint id=probe_find(lo+offset);if(id==0u)continue;
-        uint base=probes.header.x+(id-1u)*probes.header.z;
+        uint id=corner<4u?neighbors0[corner]:neighbors1[corner-4u];if(id==0u)continue;
+        uint base=probes.header.w+(id-1u)*probes.header.z;
         if(uintBitsToFloat(probes.data[base]).w==0.0)continue;
-        vec3 position=(vec3(lo+offset)+0.37)*probes.params.x;
+        vec3 position=uintBitsToFloat(probes.data[base+38u]).xyz;
         // Do not blend irradiance from the back of this receiving plane. This
         // is particularly important at thin storey slabs where both floors
         // have valid probes but very different incident radiance.
