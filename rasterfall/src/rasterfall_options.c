@@ -191,7 +191,7 @@ void rasterfall_options_usage(int fd)
         "  --combat-lab-auto-exit (close after one native trial; wall-clock frame sample)\n"
         "  --combat-character-capture <directory> (shared body / gunner components and motion views)\n"
         "  --gpu-lighting-test (hardware shadow, dynamic light, material and HDR regression)\n"
-        "    RF_GPU_INDIRECT_MODE=reference|fast|direct_only_diag (default reference; fast uses receiver cache)\n"
+        "    RF_GPU_INDIRECT_MODE=reference|fast|direct_only_diag (default fast; fast uses receiver cache)\n"
         "  GPU sky: RF_GPU_SKY_PRESET=clear|rain|warm; RF_GPU_SKY_TIME=seconds (optional frozen time)\n"
         "    RF_GPU_SKY_SCALE=1|2|4 (resolution divisor, default 4); RF_GPU_SKY_BENCH=1 with --gpu-lighting-test\n"
         "  --gpu-normal-scene sky-north|sky-east|sky-south|sky-west|sky-up|sky-down|sky-sun|atmosphere-lab 0\n"

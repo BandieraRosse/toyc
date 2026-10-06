@@ -163,16 +163,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 
 ## 低成本间接光候选对照
 
-默认使用 reference。fast 候选可通过进程环境选择，CPU renderer 不消费此配置：
+默认使用 fast，普通 GPU 游玩无需设置模式变量。移除已有覆盖后启动，CPU renderer 不消费此配置：
 
 ```powershell
 $env:RF_GPU_ARCHITECTURE='hardware'
 $env:RF_GPU_VULKAN_VENDOR_ID='10de'
-$env:RF_GPU_INDIRECT_MODE='fast'
+Remove-Item Env:RF_GPU_INDIRECT_MODE -ErrorAction SilentlyContinue
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --skip-boot --renderer gpu-scene
 ```
 
-设置 `RF_GPU_INDIRECT_MODE=reference` 恢复现有照明；`direct_only_diag` 仅用于关闭整个间接
+设置 `RF_GPU_INDIRECT_MODE=reference` 切换原照明对照路径；设为 `fast` 或移除变量恢复默认。
+`direct_only_diag` 仅用于关闭整个间接
 漫反射链的消融，不是可发布方案。模式在启动时读取；灯光配置、曝光、材质、直接阴影和
 分辨率不随模式改变。fast 的空间表示、未覆盖回退和失效边界见[接收空间缓存](../architecture/gpu-lighting.md#可选接收空间缓存)。
 
@@ -195,6 +196,7 @@ python tools/gpu_daylight_check.py --indirect-mode fast --views frontier-floor-2
 
 `--gpu-lighting-test` 的 `RECEIVER CACHE PASS` 检查真实 HDR 中的补光、封闭零照度、薄隔墙、
 保留几何的固定灯改色/关灯、直接光消融、切顶、resize、拒绝无效替换、清空和隔离。
+旧探针/环境合同显式使用 reference，接收缓存专项显式选择 fast/direct_only_diag，测试不随默认模式改变。
 受控用例响应不代表全地图灯光变化；运动、人物过门洞和楼梯仍需独立实机检查。
 
 ## 物理单位检查与照度读取

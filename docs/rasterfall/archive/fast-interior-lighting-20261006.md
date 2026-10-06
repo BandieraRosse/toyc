@@ -4,6 +4,15 @@
 > 归档原因：保存本轮候选实现、限定设备测量与未完成签收项，不作为稳定设计合同
 > 当前入口：[光照架构](../architecture/gpu-lighting.md)、[对照指南](../guides/gpu-lighting.md#低成本间接光候选对照)
 
+2026-10-06 后续决定：用户实际游玩确认 fast 提升明显，并要求并入主线作为默认。
+以下候选阶段的性能、画质与验证记录保留；默认切换不代表原记录中的全部未测项已完成。
+默认切换的 Windows native 构建通过；未设置模式变量与显式 reference 各完成 8 帧 native smoke。
+光照回归明确区分 reference 合同与 fast/direct_only_diag 缓存专项，最终整套通过，
+Core/Synchronization validation 无 VUID 或同步错误。初次回归暴露了旧探针用例隐式依赖默认模式，
+已改为显式选择其测试算法，未放宽图像或 HDR 断言。
+该次最终 EXE SHA-256 为 `d83d6ad87de508683ee2b1388a35fba7be6ff644304b217e2924c288aa629ab7`；
+证据为同一临时根的 `build-default-r2.log`、`default-fast-smoke`、`explicit-reference-smoke`、`default-lighting-r2`。
+
 ## 实现与交付边界
 
 本轮采用世界空间、建筑几何分区的方向辐照度接收缓存。BSP 分区来自实际建筑 BOX 与三角形，

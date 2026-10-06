@@ -14,8 +14,8 @@ GPU Scene 使用独立实时光照。CPU 静态光照路径保留为遗产，按
 
 ## 可选接收空间缓存
 
-`RF_GPU_INDIRECT_MODE=reference|fast|direct_only_diag` 在 graphics 初始化时读取；默认仍为
-`reference`。reference 保留上述探针与逐表面几何可见性路径。fast 复用灯具和自然光探针作为
+`RF_GPU_INDIRECT_MODE=reference|fast|direct_only_diag` 在 graphics 初始化时读取；默认采用
+`fast`。reference 保留探针与逐表面几何可见性对照路径。fast 复用灯具和自然光探针作为
 数据来源，但将接收位置到探针的可见性移到缓存初始化。direct_only_diag 跳过间接漫反射、
 旧环境填充、天空环境生成和探针更新，保留直接光、阴影、材质及可见天空，仅用于消融。
 
@@ -47,7 +47,7 @@ binding 16 由 graphics owner 独占；每个接收点占 22 个 vec4：位置�
 镜头命中率。远离建筑的空间不分配叶；未覆盖/实体/退化区域只采用顶部列缓存能证明开放
 时的廉价天空近似，否则保守为零，不回退 reference 查询。空建筑明确开放。
 该回退未证明整个天空半球无遮挡；大空间中央、复杂斜面和缓存边界仍需专项视觉检查，
-不能宣称任意地图均已覆盖或任意运动连续。默认保留 reference，具体候选签收边界由
+不能宣称任意地图均已覆盖或任意运动连续。reference 保留为显式对照入口，具体验证边界由
 [本轮现场](../archive/fast-interior-lighting-20261006.md)记录。未增加门、破坏、动态建筑或镜面 GI。
 
 ## 光度单位与显示合同

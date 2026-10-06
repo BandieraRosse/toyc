@@ -784,6 +784,12 @@ done:
 }
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
+    int saved_mode=g->indirect_mode;
+    /* Probe/environment contracts below target reference. The receiver
+     * regression explicitly checks fast and direct_only_diag separately. */
+    g->indirect_mode=0;
+    fprintf(stdout,"LIGHTING REGRESSION startup_mode=%s baseline=reference\n",
+        saved_mode==1?"fast":saved_mode==2?"direct_only_diag":"reference");
     struct rf_gpu_graphics_vertex v[12]={0};
     const int corners[6][2]={{-1,-1},{1,-1},{1,1},{-1,-1},{1,1},{-1,1}};
     uint32_t indices[12],white=0xffffff;
@@ -1011,6 +1017,6 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     result=0;
 done:
     if(r) rf_gpu_graphics_resource_destroy(g,r);
-    free(a);free(b);free(da);free(db);return result;
+    free(a);free(b);free(da);free(db);g->indirect_mode=saved_mode;return result;
 #undef LIGHT_CHECK
 }

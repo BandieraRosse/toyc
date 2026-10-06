@@ -33,6 +33,9 @@ Rasterfall 当前处于 GPU 渲染持续开发阶段。Windows 原生 PowerShell
 ```
 
 实验性独立 GPU 单人入口：`./windows/NativeCodex.ps1 run --renderer gpu-scene`（`--gpu-scene-play` 为等价入口）。
+GPU 间接照明默认使用 fast 接收空间缓存，无需设置环境变量；可通过
+`RF_GPU_INDIRECT_MODE=reference` 切换原路径对照，移除变量恢复默认。说明见
+[光照模式指南](../docs/rasterfall/guides/gpu-lighting.md#低成本间接光候选对照)。
 Windows 普通游玩默认以桌面原生分辨率无边框全屏，F11 切换窗口；窗口尺寸和 UI 缩放设置见
 [玩家界面指南](../docs/rasterfall/guides/player-ui-v2.md#分辨率与显示模式)。
 默认进入前哨站，使用正常游戏操作；当前资源复用与性能优化尚未完成，帧率可能很低。

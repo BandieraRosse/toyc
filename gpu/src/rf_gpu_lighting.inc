@@ -148,7 +148,7 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     g->indirect_enabled=!(gi && !strcmp(gi,"0"));
     const char *indirect_mode=getenv("RF_GPU_INDIRECT_MODE");
     if(indirect_mode && strcmp(indirect_mode,"reference") && strcmp(indirect_mode,"fast") && strcmp(indirect_mode,"direct_only_diag"))return -1;
-    g->indirect_mode=indirect_mode && !strcmp(indirect_mode,"fast")?1:
+    g->indirect_mode=!indirect_mode || !strcmp(indirect_mode,"fast")?1:
         indirect_mode && !strcmp(indirect_mode,"direct_only_diag")?2:0;
     if(g->indirect_mode==2)g->indirect_enabled=0;
     fprintf(stderr,"rf-gpu-indirect-mode: %s\n",g->indirect_mode==1?"fast":g->indirect_mode==2?"direct_only_diag":"reference");

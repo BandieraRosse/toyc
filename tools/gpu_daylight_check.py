@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--views', nargs='+', choices=VIEWS, default=VIEWS[:3])
     parser.add_argument('--daylight', choices=('0', '1'), default='1')
     parser.add_argument('--indirect-mode', choices=('reference', 'fast', 'direct_only_diag'),
-                        default=os.environ.get('RF_GPU_INDIRECT_MODE', 'reference'))
+                        default=os.environ.get('RF_GPU_INDIRECT_MODE', 'fast'))
     parser.add_argument('--meter', action='store_true')
     parser.add_argument('--width', type=int, default=1280)
     parser.add_argument('--height', type=int, default=720)
