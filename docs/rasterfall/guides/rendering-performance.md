@@ -244,6 +244,8 @@ ID 哈希校验两侧共用，因此参考侧不等于旧版本二进制。`PERF
 `-ProfileSlow`（运行时 `RF_GPU_SCENE_PROFILE_SLOW=1`）保留启动 120 帧后最慢的 16 帧，退出时集中
 打印 `SCENE-SLOW`，避免逐帧控制台输出。begin-to-begin 间隔对应前一帧的实际阶段，包括线程 CPU
 时间、提交、acquire、present 和 retire；蒙皮批次计时包含记录及等待，不是纯 GPU 执行时间。
+`lighting_us` 包含同帧建筑/探针安装及光照准备，并计入 `prepare_us`；它原先位于准备结束和
+提交开始之间，不能继续归入未归因差值。嵌套上传/蒙皮与 GPU 时间仍不能直接相加。
 线程 CPU 时间粒度受 Windows 计时影响，墙钟差只能提示等待或调度，不足以证明系统抢占。
 
 默认 slow profile 仍按全进程 `frame>120` 的 begin-to-begin 间隔保留最大 16 条，满槽相同间隔

@@ -13,6 +13,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 光照性能优化从[同包对照指南](guides/gpu-lighting.md#保持画面的光照性能对照)进入，探针权重复用与
 深度分段灯表归[光照架构](architecture/gpu-lighting.md)，WORLD 深度预通道归[GPU 渲染架构](architecture/gpu-rendering-architecture.md#scene-资源与同步)。
+fast 楼梯缓存边界、地面遮挡合并与换图失败诊断由[光照架构](architecture/gpu-lighting.md)维护；
+真实运动和整图灯具改色/关闭/恢复见[原生运动与固定灯变化](guides/gpu-lighting.md#原生运动与固定灯变化)。
 低成本室内照明的默认 fast 与显式 reference 从[三模式对照](guides/gpu-lighting.md#低成本间接光候选对照)进入；
 接收空间缓存、几何归属和失效由[光照架构](architecture/gpu-lighting.md#可选接收空间缓存)维护。
 

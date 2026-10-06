@@ -460,6 +460,25 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     lamp.color_intensity[3]=3000;
     lights.lights[0].color_intensity[3]=3000;
     RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();RC_CHECK(hdr[center+1]>0);
+    /* An axial triangle can have either winding. A suspended ceiling splits
+     * the free-space cache identically in both cases, including dark lanes. */
+    struct rf_gpu_occlusion_primitive ceiling[8];memcpy(ceiling,room,6*sizeof(*room));
+    ceiling[6]=(struct rf_gpu_occlusion_primitive){
+        {{-2048,768,0},{2048,768,0},{2048,768,6144}},0,0xcccccc,0};
+    ceiling[7]=(struct rf_gpu_occlusion_primitive){
+        {{-2048,768,0},{2048,768,6144},{-2048,768,6144}},0,0xcccccc,0};
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,ceiling,8));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
+    float winding_lit=hdr[center+1];unsigned winding_samples=g->receiver_samples;
+    RC_CHECK(winding_lit>0);
+    for(unsigned i=6;i<8;++i)for(unsigned k=0;k<3;++k) {
+        float t=ceiling[i].p[1][k];ceiling[i].p[1][k]=ceiling[i].p[2][k];ceiling[i].p[2][k]=t;
+    }
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,ceiling,8));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
+    RC_CHECK(g->receiver_samples==winding_samples && __builtin_fabsf(hdr[center+1]-winding_lit)<0.001f);
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
     g->indirect_mode=2;RC_CAPTURE();RC_CHECK(hdr[center+1]==0 && hdr[center]==direct);
     g->indirect_mode=1;
     RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,7));
@@ -476,7 +495,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     RC_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0) && g->receiver_samples==0);
     RC_CAPTURE();RC_CHECK(hdr[center+1]>0); // empty world is proven open
     lights.disable_indirect=1;RC_CAPTURE();RC_CHECK(hdr[center+1]==0);
-    fprintf(stdout,"RECEIVER CACHE PASS lit_lux=%.3f lamp_off_response_ms=%.3f sealed=1 thin_wall=1 valid_zero=1 source_update_retains_geometry=1 lamp_off=1 direct_only=1 cutaway=1 resize=1 invalid=1 clear=1 isolated=1\n",lit*100,off_response);
+    fprintf(stdout,"RECEIVER CACHE PASS lit_lux=%.3f lamp_off_response_ms=%.3f axial_winding=1 sealed=1 thin_wall=1 valid_zero=1 source_update_retains_geometry=1 lamp_off=1 direct_only=1 cutaway=1 resize=1 invalid=1 clear=1 isolated=1\n",lit*100,off_response);
     result=0;
 done:
     g->indirect_mode=saved_mode;g->indirect_debug=saved_debug;

@@ -106,6 +106,7 @@ struct rf_gpu_scene_world_gpu_probe {
     uint32_t shared_actor_first,shared_actor_count;
     uint64_t prewarmed_generation;
     uint64_t lighting_world_generation,lighting_map_generation;
+    unsigned lighting_fixture_sequence_phase;
     /* Transient first-frame observer; negative return cancels startup. */
     int (*startup_event)(void *, const char *, int, int64_t);
     void *startup_event_context;
@@ -162,7 +163,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     int64_t submit_present_us,retire_us;
     int64_t record_us,acquire_us,queue_submit_us,present_us;
     int64_t actor_batch_us,misc_prepare_us;
-    int64_t weaver_prepare_us;
+    int64_t weaver_prepare_us,lighting_prepare_us;
     /* Opt-in slow profile: only completed fresh child frames have timings. */
     int64_t aux_prepare_us;
     uint32_t aux_refresh_mask,aux_gpu_valid_mask;

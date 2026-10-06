@@ -199,6 +199,32 @@ python tools/gpu_daylight_check.py --indirect-mode fast --views frontier-floor-2
 旧探针/环境合同显式使用 reference，接收缓存专项显式选择 fast/direct_only_diag，测试不随默认模式改变。
 受控用例响应不代表全地图灯光变化；运动、人物过门洞和楼梯仍需独立实机检查。
 
+## 原生运动与固定灯变化
+
+先 build/stage，再分别运行两种模式的原生运动；不要与其他 GPU 或构建任务并发：
+
+```powershell
+python tools/gpu_indirect_motion.py --indirect-mode fast --output tmp/indirect-motion-fast
+python tools/gpu_indirect_motion.py --indirect-mode reference --output tmp/indirect-motion-reference
+python tools/gpu_indirect_motion.py --fixture-only --view outpost-light-1f --indirect-mode fast --output tmp/fixture-outpost-fast
+python tools/gpu_indirect_motion.py --fixture-only --view frontier-floor-2 --indirect-mode fast --output tmp/fixture-workshop-fast
+```
+
+运动只通过现有 Win32/SDL 键鼠链路控制玩家，要求实际取得窗口焦点，保存玩家坐标、地面高度、
+捕获帧号和 PNG；脚本拒绝仅有输入或坐标变化、却没有明显画面移动的结果。检查楼梯往返、
+门洞和自由转向时的接收面、视角武器和明暗变化，FPS/RTS 切换独立记录。Windows 前台限制
+必须先解决，不能用隐藏窗口收到键消息替代真实鼠标旋转。
+
+`RF_GPU_FIXTURE_SEQUENCE=N` 是显式正常地图诊断：每 N 个冻结帧依次固定灯原色、红色、关闭、
+恢复，再循环。它只改 presentation 的直接/间接固定光源，经正式 API 安装；不改 Game、碰撞、
+太阳、天空、曝光和灯具自发光表面。首次安装、换图或阶段变化才更新固定光源，AUX 各自观察阶段。
+`--fixture-only` 使用该轴保存四个实际呈现批次，核对接收面改色、关闭和恢复；reference 也应单独运行。
+查看 `SCENE-FIXTURE-SEQUENCE`、建筑/探针初始化日志和生成的 `report.json`，区分状态切换峰值与稳态。
+
+两项都含显式诊断读回，不能用于 FPS 或普通帧性能结论。性能采样必须清除
+`RF_GPU_FIXTURE_SEQUENCE`、`RF_UI_CAPTURE_DIRECTORY`、HDR/计数及 validation，再跑正常同包对照。
+换图使用 `tools/gpu_scene_play.ps1 -Stage World`，按 Windows Native 的进程退出与日志规则验收。
+
 ## 物理单位检查与照度读取
 
 单位合同见[光照架构](../architecture/gpu-lighting.md#光度单位与显示合同)。固定灯用流明创作，

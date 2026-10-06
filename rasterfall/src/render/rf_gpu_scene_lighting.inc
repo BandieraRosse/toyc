@@ -53,28 +53,116 @@ static void scene_light_insert(struct rf_gpu_lighting *out,const struct rf_gpu_l
     out->count=count<cap?count+1:count;
     memcpy(out->lights,candidates,out->count*sizeof(*candidates));
 }
+struct scene_arch_floor_rect { int x0,x1,z0,z1,y;uint32_t color; };
+static int scene_arch_floor_horizontal(const void *a,const void *b)
+{
+    const struct scene_arch_floor_rect *p=a,*q=b;
+#define RECT_COMPARE(field) if(p->field!=q->field)return p->field<q->field?-1:1
+    RECT_COMPARE(y);RECT_COMPARE(color);RECT_COMPARE(z0);RECT_COMPARE(z1);
+    RECT_COMPARE(x0);RECT_COMPARE(x1);
+    return 0;
+#undef RECT_COMPARE
+}
+static int scene_arch_floor_vertical(const void *a,const void *b)
+{
+    const struct scene_arch_floor_rect *p=a,*q=b;
+#define RECT_COMPARE(field) if(p->field!=q->field)return p->field<q->field?-1:1
+    RECT_COMPARE(y);RECT_COMPARE(color);RECT_COMPARE(x0);RECT_COMPARE(x1);
+    RECT_COMPARE(z0);RECT_COMPARE(z1);
+    return 0;
+#undef RECT_COMPARE
+}
+/* The floor producer subdivides planar rectangles for local render origins.
+ * Recover those exact quads from the frozen mesh, then join only touching
+ * rectangles with identical spans and reflectance. No holes are filled and
+ * no render geometry, material boundary or collision input is changed. */
+static int scene_architecture_floor(const struct rf_gpu_scene_world_resources *world,
+    struct scene_arch_floor_rect **out,unsigned *count)
+{
+    *out=NULL;*count=0;
+    if(!world->opaque[RF_GPU_SCENE_WORLD_FLOOR].generation)return 0;
+    const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(
+        &world->registry,world->opaque[RF_GPU_SCENE_WORLD_FLOOR]);
+    if(!m || m->index_count%6 || m->material_bytes<32 || m->vertex_bytes<12 ||
+       !world_range(m,m->indices,(uint64_t)m->index_count*4) ||
+       !world_range(m,m->vertices,(uint64_t)m->vertex_count*m->vertex_bytes) ||
+       !world_range(m,m->primitives,(uint64_t)m->primitive_count*16) ||
+       !world_range(m,m->materials,(uint64_t)m->material_count*m->material_bytes))return -1;
+    unsigned capacity=m->index_count/6,n=0;
+    struct scene_arch_floor_rect *rects=capacity?malloc((size_t)capacity*sizeof(*rects)):NULL;
+    if(capacity && !rects)return -1;
+    for(unsigned p=0;p<m->primitive_count;++p) {
+        const unsigned char *primitive=m->primitives+p*16;
+        unsigned first=world_u32(primitive),indices=world_u32(primitive+4),mat=world_u32(primitive+8);
+        if(indices%6 || first>m->index_count || indices>m->index_count-first || mat>=m->material_count)goto fail;
+        const unsigned char *material=m->materials+mat*m->material_bytes;
+        int ox=(int32_t)world_u32(material+24),oz=(int32_t)world_u32(material+28);
+        for(unsigned i=0;i<indices;i+=6) {
+            unsigned ids[6];int v[4][3];
+            for(unsigned k=0;k<6;++k)ids[k]=world_u32(m->indices+(first+i+k)*4);
+            if(ids[0]!=ids[3] || ids[2]!=ids[4] || n==capacity)goto fail;
+            for(unsigned k=0;k<4;++k) {
+                unsigned id=ids[k==3?5:k];if(id>=m->vertex_count)goto fail;
+                for(unsigned a=0;a<3;++a)v[k][a]=(int32_t)world_u32(m->vertices+id*m->vertex_bytes+a*4);
+            }
+            if(v[0][1]!=v[1][1] || v[0][1]!=v[2][1] || v[0][1]!=v[3][1] ||
+               v[0][0]!=v[3][0] || v[1][0]!=v[2][0] || v[0][2]!=v[1][2] ||
+               v[2][2]!=v[3][2] || v[0][0]>=v[1][0] || v[0][2]>=v[2][2])goto fail;
+            rects[n++]=(struct scene_arch_floor_rect){v[0][0]+ox,v[1][0]+ox,
+                v[0][2]+oz,v[2][2]+oz,v[0][1],world_u32(material)&0xffffffu};
+        }
+    }
+    if(n!=capacity)goto fail;
+    qsort(rects,n,sizeof(*rects),scene_arch_floor_horizontal);
+    unsigned joined=0;
+    for(unsigned i=0;i<n;++i) {
+        struct scene_arch_floor_rect *last=joined?&rects[joined-1]:NULL,*r=&rects[i];
+        if(last && last->y==r->y && last->color==r->color && last->z0==r->z0 &&
+           last->z1==r->z1 && last->x1==r->x0)last->x1=r->x1;
+        else rects[joined++]=*r;
+    }
+    qsort(rects,joined,sizeof(*rects),scene_arch_floor_vertical);n=0;
+    for(unsigned i=0;i<joined;++i) {
+        struct scene_arch_floor_rect *last=n?&rects[n-1]:NULL,*r=&rects[i];
+        if(last && last->y==r->y && last->color==r->color && last->x0==r->x0 &&
+           last->x1==r->x1 && last->z1==r->z0)last->z1=r->z1;
+        else rects[n++]=*r;
+    }
+    fprintf(stderr,"SCENE-ARCHITECTURE floor triangles=%u compact=%u exact_rectangles=1\n",m->index_count/3,n*2);
+    *out=rects;*count=n;return 0;
+fail:
+    free(rects);fprintf(stderr,"SCENE-ARCHITECTURE invalid floor quad\n");return -1;
+}
 static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world)
 {
     if(probe->lighting_world_generation==world->world_generation &&
        probe->lighting_map_generation==world->map_generation)return 0;
+    struct scene_arch_floor_rect *floor=NULL;unsigned floor_count=0;
+    if(scene_architecture_floor(world,&floor,&floor_count)<0)return -1;
     uint32_t count=0,at=0;
     /* These are the same opaque meshes submitted to WORLD, including finite
      * slabs, stair treads and doorway lintels. Never consume collision boxes. */
     for(unsigned kind=0;kind<=RF_GPU_SCENE_WORLD_BOUNDARY;++kind) {
-        if(kind==RF_GPU_SCENE_WORLD_BOX)continue;
+        if(kind==RF_GPU_SCENE_WORLD_BOX || kind==RF_GPU_SCENE_WORLD_FLOOR)continue;
         if(!world->opaque[kind].generation)continue;
         const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(&world->registry,world->opaque[kind]);
-        if(!m || m->index_count%3 || count+m->index_count/3>65536)return -1;
+        if(!m || m->index_count%3 || count+m->index_count/3>65536) {
+            fprintf(stderr,"SCENE-ARCHITECTURE invalid/capacity kind=%u triangles=%u accumulated=%u limit=65536\n",
+                kind,m?m->index_count/3:0,count);free(floor);return -1;
+        }
         count+=m->index_count/3;
     }
-    if(count+world->render_count>65536)return -1;
-    count+=world->render_count;
+    if(count+world->render_count+(uint64_t)floor_count*2>65536) {
+        fprintf(stderr,"SCENE-ARCHITECTURE capacity triangles=%u render-items=%u limit=65536\n",
+            count+floor_count*2,world->render_count);free(floor);return -1;
+    }
+    count+=world->render_count+floor_count*2;
     struct rf_gpu_occlusion_primitive *triangles=count?calloc(count,sizeof(*triangles)):NULL;
-    if(count && !triangles)return -1;
+    if(count && !triangles){free(floor);return -1;}
     int result=-1;
     for(unsigned kind=0;kind<=RF_GPU_SCENE_WORLD_BOUNDARY;++kind) {
-        if(kind==RF_GPU_SCENE_WORLD_BOX)continue;
+        if(kind==RF_GPU_SCENE_WORLD_BOX || kind==RF_GPU_SCENE_WORLD_FLOOR)continue;
         if(!world->opaque[kind].generation)continue;
         const struct rasterfall_model_asset *m=rasterfall_resources_resolve_active(&world->registry,world->opaque[kind]);
         if(!m || m->material_bytes<32 || m->vertex_bytes<12 ||
@@ -100,6 +188,17 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
                 }
                 ++at;
             }
+        }
+    }
+    for(unsigned i=0;i<floor_count;++i) {
+        const struct scene_arch_floor_rect *r=&floor[i];
+        float vertices[4][3]={{r->x0,r->y,r->z0},{r->x1,r->y,r->z0},
+            {r->x1,r->y,r->z1},{r->x0,r->y,r->z1}};
+        const unsigned corners[2][3]={{0,1,2},{0,2,3}};
+        for(unsigned t=0;t<2;++t) {
+            triangles[at].diffuse_rgb=r->color;
+            for(unsigned v=0;v<3;++v)memcpy(triangles[at].p[v],vertices[corners[t][v]],12);
+            ++at;
         }
     }
     /* An authored BOX is already an exact solid. Avoid tracing its subdivided
@@ -130,11 +229,13 @@ static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe
     }
     if(!result){probe->lighting_world_generation=world->world_generation;probe->lighting_map_generation=world->map_generation;}
 done:
-    free(triangles);return result;
+    free(floor);free(triangles);return result;
 }
 static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
-    const struct rf_gpu_scene_world_resources *world,const struct camera *camera)
+    const struct rf_gpu_scene_world_resources *world,const struct camera *camera,uint64_t frame)
 {
+    int architecture_changed=probe->lighting_world_generation!=world->world_generation ||
+        probe->lighting_map_generation!=world->map_generation;
     if(scene_architecture_prepare(probe,world)<0)return -1;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
     lights.disable_indirect=probe->layers && probe->layers->fixed_lighting;
@@ -218,6 +319,31 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             light.color_intensity[3]=rf_gpu_light_peak_candela(i?30000.0f:45000.0f,0.3f,0.65f);light.direction_outer[1]=-1;
             light.direction_outer[3]=0.3f;light.inner_shadow[0]=0.65f;
             scene_light_insert(&lights,&light,camera);
+        }
+    }
+    /* Explicit normal-map diagnostic: change the fixed sources in place,
+     * through the production light APIs. Geometry, camera and gameplay stay
+     * on their ordinary paths. Emissive lamp surfaces are not a lux reading. */
+    const char *sequence=getenv("RF_GPU_FIXTURE_SEQUENCE");
+    if(sequence && sequence[0]) {
+        char *end=NULL;unsigned long interval=strtoul(sequence,&end,10);
+        if(!end || *end || interval<1 || interval>100000 || !frame) {
+            fprintf(stderr,"Invalid RF_GPU_FIXTURE_SEQUENCE (frames 1..100000)\n");return -1;
+        }
+        unsigned phase=(unsigned)(((frame-1)/interval)%4),count=0;
+        struct rf_gpu_light fixtures[RF_GPU_INDIRECT_LIGHT_CAP];
+        for(unsigned i=0;i<lights.count;++i)if(lights.lights[i].inner_shadow[2]>0.5f) {
+            struct rf_gpu_light *light=&lights.lights[i];
+            if(phase==1) {light->color_intensity[0]=4;light->color_intensity[1]=light->color_intensity[2]=0.05f;}
+            if(phase==2)light->color_intensity[3]=0;
+            if(count==RF_GPU_INDIRECT_LIGHT_CAP)return -1;
+            fixtures[count++]=*light;
+        }
+        if(architecture_changed || probe->lighting_fixture_sequence_phase!=phase+1) {
+            if(rf_gpu_graphics_set_indirect_lights(probe->graphics,fixtures,count)<0)return -1;
+            probe->lighting_fixture_sequence_phase=phase+1;
+            fprintf(stdout,"SCENE-FIXTURE-SEQUENCE frame=%llu phase=%u lights=%u diagnostic=1\n",
+                (unsigned long long)frame,phase,count);
         }
     }
     return rf_gpu_graphics_set_lighting(probe->graphics,&lights);

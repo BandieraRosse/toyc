@@ -108,6 +108,9 @@ Runtime 持有 world freeze cache，以 Runtime Map/level owner、world generati
 
 当前 Scene 仍为单槽：上一帧退休后才能改写资源；蒙皮批次提交后等待完成，native present 后立即
 retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pipeline。
+准备计时包含主视图建筑/探针初始化和普通光照准备，单独记录 `lighting_prepare_us`；
+不能将其遗漏到未归因墙钟。上传、蒙皮批次、录制、acquire、queue submit、present、retire
+按同一冻结帧观察，嵌套区间和 GPU 时间不相加；整帧减 GPU 不是可直接消除的 CPU 工作。
 
 启动环境切到 GPU Scene 时保留 Win32/SDL 窗口句柄，先释放 SDL 硬件呈现器并建立软件呈现器，再为同一窗口创建 Vulkan surface；启动页仍由软件画布呈现，进入游戏后由 GPU Scene 接管。窗口 resize、swapchain 重建及错误注入必须按 graphics owner 的完成/退休顺序处理。失败时传播帧错误，不把残缺 Scene 帧解释为成功。实现边界与复现入口见[Scene 工作流](../guides/gpu-scene-fixture.md)和[Windows Native](../guides/windows-native.md)。
 

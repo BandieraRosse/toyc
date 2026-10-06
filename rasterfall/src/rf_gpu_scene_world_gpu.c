@@ -1719,11 +1719,14 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         stats->aux_prepare_us=rf_core_clock_now_us()-aux_start;
         scene_aux_profile_end(probe,aux_before,enemies->frame_id,stats);
     }
+    stage="lighting";
+    section_start=rf_core_clock_now_us();
+    if (scene_lighting_prepare(probe,owner,camera,enemies->frame_id)<0) goto done;
+    stats->lighting_prepare_us=rf_core_clock_now_us()-section_start;
     stats->prepare_us=rf_core_clock_now_us()-prepare_start;
     stats->misc_prepare_us=stats->prepare_us-stats->world_prepare_us-stats->actor_prepare_us-
-        stats->enemy_prepare_us-stats->layer_prepare_us;
+        stats->enemy_prepare_us-stats->layer_prepare_us-stats->lighting_prepare_us;
     stage="submit/retire";
-    if (scene_lighting_prepare(probe,owner,camera)<0) goto done;
     section_start=rf_core_clock_now_us();
     if (probe->native_present) {
         /* Explicit diagnostic capture reads the same frozen batch before its
@@ -1838,9 +1841,11 @@ done:
         for(uint32_t i=0;i<actor_prepared;++i)
             rf_gpu_scene_actor_gpu_invalidate_bind(probe->actor[i]);
     }
-    if (result<0 && probe->native_present) {
+    if (result<0) {
         fprintf(stderr,"SCENE preparation/submit failed stage=%s frame=%llu\n",
             stage,(unsigned long long)enemies->frame_id);
+    }
+    if (result<0 && probe->native_present) {
         /* Failed submit/retire can retain device references. The poisoned
          * graphics owner drains before resource destruction and CPU unpin. */
         rf_gpu_scene_world_gpu_probe_close(probe);
@@ -1914,6 +1919,8 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     memset(probe->enemy,0,sizeof(probe->enemy));
     memset(probe->actor,0,sizeof(probe->actor));
     probe->cache=NULL;probe->graphics=NULL;probe->shared_parent=NULL;probe->prewarmed_generation=0;
+    probe->lighting_world_generation=probe->lighting_map_generation=0;
+    probe->lighting_fixture_sequence_phase=0;
     probe->slow_profile_state=0;
     probe->flag_pole=NULL;
     memset(probe->flag_label,0,sizeof(probe->flag_label));

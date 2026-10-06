@@ -69,12 +69,23 @@ static unsigned rc_build_node(struct rf_rc_builder *b,const float *lo,const floa
     if(split) {
         if(depth==RF_RC_DEPTH){free(local);++b->unresolved;return id;}
         memcpy(node->plane,plane,16);
-        float left_hi[3],right_lo[3];memcpy(left_hi,hi,12);memcpy(right_lo,lo,12);
-        for(unsigned k=0;k<3;++k)if(plane[k]==1 && plane[(k+1)%3]==0 && plane[(k+2)%3]==0)left_hi[k]=right_lo[k]=plane[3];
+        float left_lo[3],left_hi[3],right_lo[3],right_hi[3];
+        memcpy(left_lo,lo,12);memcpy(left_hi,hi,12);
+        memcpy(right_lo,lo,12);memcpy(right_hi,hi,12);
+        /* Triangle winding can produce either sign of an axial normal. Both
+         * signs must tighten the child bounds, especially stair undersides.
+         * Keeping the parent AABB for a negative normal creates unreachable
+         * corners and dark unresolved leaves next to otherwise valid leaves. */
+        for(unsigned k=0;k<3;++k)if(__builtin_fabsf(plane[k])==1 &&
+            plane[(k+1)%3]==0 && plane[(k+2)%3]==0) {
+            float at=plane[3]/plane[k];
+            if(plane[k]>0)left_hi[k]=right_lo[k]=at;
+            else left_lo[k]=right_hi[k]=at;
+        }
         memcpy(b->planes[depth],plane,16);
-        node->child[0]=rc_build_node(b,lo,left_hi,depth+1,local,local_count)+1;
+        node->child[0]=rc_build_node(b,left_lo,left_hi,depth+1,local,local_count)+1;
         for(unsigned k=0;k<4;++k)b->planes[depth][k]=-plane[k];
-        node->child[1]=rc_build_node(b,right_lo,hi,depth+1,local,local_count)+1;
+        node->child[1]=rc_build_node(b,right_lo,right_hi,depth+1,local,local_count)+1;
         free(local);
         return id;
     }

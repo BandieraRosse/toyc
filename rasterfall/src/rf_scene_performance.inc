@@ -87,13 +87,13 @@ static void rf_scene_cost_report(void)
     for(int i=0;i<rf_scene_cost.count;++i) {
         const struct rf_scene_cost_sample *s=&rf_scene_cost.worst[i];
         const struct rf_gpu_scene_world_gpu_probe_stats *g=&s->gpu;
-        __printf("SCENE-SLOW frame=%llu scene_frame=%llu world=%llu mission=%u phase=%d phase_ms=%d scene_warmup=%u main_query_frame=%llu interval_us=%lld active_us=%lld thread_cpu_us=%lld logic_us=%lld source_us=%lld freeze_us=%lld pose_us=%lld world_us=%lld actors_us=%lld enemy_us=%lld layers_us=%lld extract_us=%lld clip_us=%lld pack_us=%lld upload_us=%lld batch_us=%lld skin_batch_us=%lld record_us=%lld acquire_us=%lld queue_us=%lld present_us=%lld retire_us=%lld gpu_us=%lld bytes=%llu enemy_reused=%u skin_reused=%u misc_us=%lld weaver_us=%lld aux_us=%lld aux_refresh_mask=%u aux_gpu_valid_mask=%u aux0_before=%llu aux0_after=%llu aux0_cpu_us=%lld aux0_gpu_us=%lld aux1_before=%llu aux1_after=%llu aux1_cpu_us=%lld aux1_gpu_us=%lld enemy_extract_us=%lld enemy_upload_us=%lld enemy_draw_us=%lld enemy_created=%u enemy_triangles=%u\n",
+        __printf("SCENE-SLOW frame=%llu scene_frame=%llu world=%llu mission=%u phase=%d phase_ms=%d scene_warmup=%u main_query_frame=%llu interval_us=%lld active_us=%lld thread_cpu_us=%lld logic_us=%lld source_us=%lld freeze_us=%lld pose_us=%lld world_us=%lld actors_us=%lld enemy_us=%lld layers_us=%lld lighting_us=%lld extract_us=%lld clip_us=%lld pack_us=%lld upload_us=%lld batch_us=%lld skin_batch_us=%lld record_us=%lld acquire_us=%lld queue_us=%lld present_us=%lld retire_us=%lld gpu_us=%lld bytes=%llu enemy_reused=%u skin_reused=%u misc_us=%lld weaver_us=%lld aux_us=%lld aux_refresh_mask=%u aux_gpu_valid_mask=%u aux0_before=%llu aux0_after=%llu aux0_cpu_us=%lld aux0_gpu_us=%lld aux1_before=%llu aux1_after=%llu aux1_cpu_us=%lld aux1_gpu_us=%lld enemy_extract_us=%lld enemy_upload_us=%lld enemy_draw_us=%lld enemy_created=%u enemy_triangles=%u\n",
             (unsigned long long)s->frame,(unsigned long long)s->scene_frame,
             (unsigned long long)s->world,s->mission,s->phase,s->phase_ms,s->scene_warmup,
             (unsigned long long)g->gpu_query_frame,(long long)s->interval,(long long)s->active,(long long)s->cpu,
             (long long)s->logic,(long long)s->source,(long long)s->freeze,(long long)s->pose,
             (long long)g->world_prepare_us,(long long)g->actor_prepare_us,(long long)g->enemy_prepare_us,
-            (long long)g->layer_prepare_us,(long long)g->layer_extract_us,(long long)g->layer_clip_us,
+            (long long)g->layer_prepare_us,(long long)g->lighting_prepare_us,(long long)g->layer_extract_us,(long long)g->layer_clip_us,
             (long long)g->layer_pack_us,(long long)g->layer_upload_us,(long long)g->layer_batch_us,
             (long long)g->actor_batch_us,(long long)g->record_us,(long long)g->acquire_us,
             (long long)g->queue_submit_us,(long long)g->present_us,(long long)g->retire_us,
