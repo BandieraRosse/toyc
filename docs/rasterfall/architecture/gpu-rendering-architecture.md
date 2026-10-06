@@ -187,7 +187,7 @@ packet；只改镜头参数，保留各镜头独立的可见性、阴影和目�
 辅助绘制仍同步退休；失败/关闭先排空 GPU，再解除 reader 和资源引用。
 
 WORLD AUX 首次准备优先调用 `rf_gpu_graphics_clone_lighting`，从同设备、同配置且已退休的
-主 graphics 在 GPU 上复制已初始化的顶部缓存、两场探针、静态布局和接收缓存到独立缓冲，
+主 graphics 在 GPU 上复制已初始化的顶部缓存、两场探针、静态布局、接收缓存和固定灯遮挡掩码到独立缓冲，
 保留更新游标及初始化状态；compute 写入到 transfer 读取、transfer 写入到 shader 消费均有
 屏障。只有不可变建筑 AS/BVH 借用主 owner，并登记 reader。源建筑替换要求所有 reader 退休，
 替换/关闭解除引用、恢复子 owner 空查询结构并使旧 GI 失效；子关闭也解除引用。照明缓冲、

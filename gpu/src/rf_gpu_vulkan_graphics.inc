@@ -63,6 +63,7 @@ struct rf_graphics_reader {
     struct rf_graphics_reader *resource_next,*graphics_next;
 };
 struct rf_skin_bone_box { int lo[3],hi[3],used; };
+struct rf_rc_leaf { float lo[3],hi[3]; };
 struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics *owner;
     struct rf_gpu_graphics_resource *next;
@@ -136,6 +137,11 @@ struct rf_gpu_graphics {
     struct rf_gpu_light indirect_source_snapshot[RF_GPU_INDIRECT_LIGHT_CAP];
     uint32_t receiver_samples,receiver_cursor;
     struct rf_gpu_vulkan_buffer receiver_buffer;
+    struct rf_gpu_vulkan_buffer local_block_buffer;
+    struct rf_rc_leaf *receiver_leaves;
+    unsigned local_block_count;
+    float local_block_keys[RF_GPU_INDIRECT_LIGHT_CAP][4];
+    int local_block_enabled;
     rf_vk_pipeline receiver_pipeline;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
@@ -316,6 +322,7 @@ static void gfx_architecture_unshare(struct rf_gpu_graphics *g)
     gfx_architecture_bind(g,g);
     g->architecture_count=g->indirect_probe_count=g->daylight_probe_count=g->receiver_samples=0;
     g->lighting_clone_invalid=1;
+    g->local_block_count=0;
 }
 static int gfx_architecture_readers_retired(const struct rf_gpu_graphics *g)
 {

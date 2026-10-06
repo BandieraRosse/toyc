@@ -116,9 +116,9 @@ static unsigned rc_build_node(struct rf_rc_builder *b,const float *lo,const floa
 }
 static int receiver_cache_build(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *geometry,unsigned count,struct rf_gpu_vulkan_buffer *next,
-    unsigned *sample_count)
+    unsigned *sample_count,struct rf_rc_leaf **leaves)
 {
-    uint32_t header[4]={0};*sample_count=0;
+    uint32_t header[4]={0};*sample_count=0;*leaves=NULL;
     if(g->indirect_mode!=1 || !g->indirect_enabled || !count)return indirect_upload(g,header,16,next);
     struct rf_rc_builder b={0};b.geometry=geometry;b.count=count;b.spacing=512;
     const char *fixed=getenv("RF_GPU_RECEIVER_PROJECTION_FIXED");
@@ -144,17 +144,119 @@ static int receiver_cache_build(struct rf_gpu_graphics *g,
     unsigned light_vectors=g->receiver_fp32?12u:RF_RC_LIGHT_VECTORS;
     size_t bytes=16+(size_t)header[3]*16+(size_t)header[1]*light_vectors*16;
     if(g->receiver_fp32)header[0]|=0x80000000u;
+    struct rf_rc_leaf *bounds=g->local_block_enabled && b.leaves?calloc(b.leaves,sizeof(*bounds)):NULL;
+    if(g->local_block_enabled && b.leaves && !bounds){free(b.nodes);free(b.positions);return -1;}
+    if(bounds)for(unsigned i=0;i<b.used;++i)if(b.nodes[i].child[3]) {
+        struct rf_rc_leaf *leaf=&bounds[(b.nodes[i].child[3]-1)/8];
+        memcpy(leaf->lo,b.nodes[i].lo,12);memcpy(leaf->hi,b.nodes[i].hi,12);
+    }
     unsigned char *data=calloc(1,bytes);int result=-1;
     if(data) {
         memcpy(data,header,16);memcpy(data+16,b.nodes,(size_t)b.used*sizeof(*b.nodes));
         for(unsigned i=0;i<header[1];++i)memcpy(data+16+(size_t)header[2]*16+(size_t)i*RF_RC_STATIC_VECTORS*16,b.positions[i],12);
-        result=indirect_upload(g,data,bytes,next);if(!result)*sample_count=header[1];
+        result=indirect_upload(g,data,bytes,next);
+        if(!result){*sample_count=header[1];*leaves=bounds;bounds=NULL;}
     }
     fprintf(stderr,"rf-gpu-receiver-cache: leaves=%u nodes=%u samples=%u spacing=%.0f bytes=%llu prepare-ms=%.3f unresolved=%u sample-bytes=%u precision=%s projection-sweeps=%llu\n",
         b.leaves,b.used,header[1],b.spacing,(unsigned long long)bytes,now_ms()-started,b.unresolved,
         (RF_RC_STATIC_VECTORS+light_vectors)*16,g->receiver_fp32?"fp32":"fp16",
         (unsigned long long)b.projection_iterations);
-    free(data);free(b.nodes);free(b.positions);return result;
+    free(bounds);free(data);free(b.nodes);free(b.positions);return result;
+}
+/* A whole AABB lies in one real BOX's shadow only if its entire perspective
+ * projection falls strictly inside a BOX cross-section. Interval bounds cover
+ * every receiver, not sampled visibility. The source cube includes the 1.5 RFU
+ * normal shift: the existing ray aims along light-p from origin p+n*1.5.
+ * Separation/margins keep a surface hit inside the existing finite interval. */
+static int rc_box_blocks_leaf(const struct rf_gi_arch_node *box,
+    const struct rf_rc_leaf *leaf,const float *light)
+{
+    double magnitude=0;
+    for(unsigned k=0;k<3;++k) {
+        magnitude=__builtin_fmax(magnitude,__builtin_fabs(light[k]));
+        magnitude=__builtin_fmax(magnitude,__builtin_fabs(leaf->lo[k]));
+        magnitude=__builtin_fmax(magnitude,__builtin_fabs(leaf->hi[k]));
+        magnitude=__builtin_fmax(magnitude,__builtin_fabs(box->lo[k]));
+        magnitude=__builtin_fmax(magnitude,__builtin_fabs(box->hi[k]));
+    }
+    double margin=8.0+magnitude*0.000002;
+    for(unsigned axis=0;axis<3;++axis) {
+        double sign;
+        if(light[axis]+2<box->lo[axis]-margin)sign=1;
+        else if(light[axis]-2>box->hi[axis]+margin)sign=-1;
+        else continue;
+        double plane=sign*((double)box->lo[axis]+box->hi[axis])*0.5;
+        double a=sign*light[axis]-2,b=sign*light[axis]+2;
+        double qlo=sign*(sign>0?leaf->lo[axis]:leaf->hi[axis]);
+        double qhi=sign*(sign>0?leaf->hi[axis]:leaf->lo[axis]);
+        if(qlo<=plane+margin)continue;
+        double tlo=(plane-b)/(qhi-b),thi=(plane-a)/(qlo-a);
+        int covered=1;
+        for(unsigned k=0;k<3 && covered;++k)if(k!=axis) {
+            double s0=light[k]-2,s1=light[k]+2;
+            double lo=__builtin_fmin(s0+(leaf->lo[k]-s0)*tlo,s0+(leaf->lo[k]-s0)*thi);
+            double hi=__builtin_fmax(s1+(leaf->hi[k]-s1)*tlo,s1+(leaf->hi[k]-s1)*thi);
+            covered=lo>box->lo[k]+margin && hi<box->hi[k]-margin;
+        }
+        if(covered)return 1;
+    }
+    return 0;
+}
+static int rc_leaf_blocked(struct rf_gpu_graphics *g,const struct rf_rc_leaf *leaf,
+    const float *light,unsigned *visits)
+{
+    float lo[3],hi[3];
+    for(unsigned k=0;k<3;++k) {
+        lo[k]=__builtin_fminf(leaf->lo[k],light[k]-2);
+        hi[k]=__builtin_fmaxf(leaf->hi[k],light[k]+2);
+    }
+    unsigned i=0;
+    while(i<g->indirect_architecture_nodes && *visits<262144u) {
+        const struct rf_gi_arch_node *node=&g->indirect_architecture[i];
+        ++*visits;int outside=0;
+        for(unsigned k=0;k<3;++k)if(node->lo[k]>hi[k] || node->hi[k]<lo[k])outside=1;
+        if(outside){i=(unsigned)node->lo[3];continue;}
+        if(node->hi[3]>1.5f && rc_box_blocks_leaf(node,leaf,light))return 1;
+        ++i;
+    }
+    return 0;
+}
+static int receiver_block_cache_update(struct rf_gpu_graphics *g,
+    const struct rf_gpu_light *lights,unsigned count)
+{
+    if(!g->local_block_enabled || !g->receiver_leaves || !g->receiver_samples || !count) {
+        g->local_block_count=0;return 0;
+    }
+    int same=count==g->local_block_count;
+    for(unsigned i=0;same && i<count;++i)
+        if(memcmp(lights[i].position_radius,g->local_block_keys[i],16))same=0;
+    if(same)return 0;
+    double started=now_ms();unsigned leaves=g->receiver_samples/8,blocked=0,limited=0;
+    size_t bytes=16+(size_t)leaves*16;
+    uint32_t *data=calloc(1,bytes);struct rf_gpu_vulkan_buffer next={0};
+    if(!data)return -1;
+    data[0]=count;data[1]=leaves;
+    uint32_t *masks=data+4;
+    uint64_t visited=0;
+    for(unsigned i=0;i<count;++i) {
+        const float *light=lights[i].position_radius;unsigned visits=0;
+        for(unsigned j=0;j<leaves && visits<262144u;++j) {
+            const struct rf_rc_leaf *leaf=&g->receiver_leaves[j];float r2=0;
+            for(unsigned k=0;k<3;++k) {
+                float d=__builtin_fmaxf(leaf->lo[k]-light[k],__builtin_fmaxf(light[k]-leaf->hi[k],0));r2+=d*d;
+            }
+            if(r2>(light[3]+2)*(light[3]+2))continue;
+            if(rc_leaf_blocked(g,leaf,light,&visits)){masks[j*4+i/32]|=1u<<(i%32);++blocked;}
+        }
+        visited+=visits;limited+=visits>=262144u;
+    }
+    int result=indirect_upload(g,data,bytes,&next);free(data);
+    if(result)return result;
+    indirect_bind(g,17,&g->local_block_buffer,&next);g->local_block_count=count;
+    for(unsigned i=0;i<count;++i)memcpy(g->local_block_keys[i],lights[i].position_radius,16);
+    fprintf(stderr,"rf-gpu-local-block: leaves=%u lights=%u blocked-pairs=%u visits=%llu limited-lights=%u bytes=%llu prepare-ms=%.3f\n",
+        leaves,count,blocked,(unsigned long long)visited,limited,(unsigned long long)bytes,now_ms()-started);
+    return 0;
 }
 static void gfx_receiver_cache_record(struct rf_gpu_graphics *g)
 {

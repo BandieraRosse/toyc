@@ -462,11 +462,15 @@ static int lighting_clone_regression(struct rf_gpu_graphics *g,
     child->indirect_mode=g->indirect_mode;child->indirect_debug=g->indirect_debug;
     child->indirect_enabled=g->indirect_enabled;child->daylight_enabled=g->daylight_enabled;
     child->receiver_fp32=g->receiver_fp32;child->indirect_bounces=g->indirect_bounces;
+    child->local_block_enabled=g->local_block_enabled;
     CLONE_CHECK(!rf_gpu_graphics_resize(child,65,65) && !rf_gpu_graphics_set_lighting(child,lights));
     CLONE_CHECK(!rf_gpu_graphics_resource_bind(child,face->resource));
     CLONE_CHECK(!rf_gpu_graphics_clone_lighting(child,g));
     CLONE_CHECK(child->receiver_samples==g->receiver_samples && child->receiver_ready &&
-        child->receiver_buffer.buffer!=g->receiver_buffer.buffer && child->architecture_source==g);
+        child->receiver_buffer.buffer!=g->receiver_buffer.buffer && child->architecture_source==g &&
+        child->local_block_buffer.buffer!=g->local_block_buffer.buffer &&
+        child->local_block_count==g->local_block_count &&
+        !memcmp(child->local_block_keys,g->local_block_keys,sizeof(g->local_block_keys)));
     rf_gpu_graphics_get_stats(child,&before);
     CLONE_CHECK(!rf_gpu_graphics_clone_lighting(child,g));
     rf_gpu_graphics_get_stats(child,&after);CLONE_CHECK(after.queue_submits==before.queue_submits);
@@ -492,6 +496,45 @@ done:
 #undef CLONE_CHECK
 }
 
+static int lighting_block_proof_regression(void)
+{
+    unsigned checked=0;
+    for(unsigned axis=0;axis<3;++axis)for(int sign=-1;sign<=1;sign+=2) {
+        struct rf_gi_arch_node box={{-1000,-1000,-1000,0},{1000,1000,1000,2}};
+        struct rf_rc_leaf leaf={{-200,-200,-200},{200,200,200}};
+        float light[4]={0,0,0,7000};light[axis]=-sign*2000;
+        box.lo[axis]=-10;box.hi[axis]=10;
+        leaf.lo[axis]=sign>0?1500:-2000;leaf.hi[axis]=sign>0?2000:-1500;
+        if(!rc_box_blocks_leaf(&box,&leaf,light))return -1;
+        /* Independent slab intersection on a grid of receivers/source offsets,
+         * including the original finite ray interval and both ray directions. */
+        for(unsigned p=0;p<125;++p)for(unsigned s=0;s<27;++s) {
+            double t_min=0.5,t_max=1e30,length=0,d[3],origin[3];unsigned pi=p,si=s;
+            for(unsigned k=0;k<3;++k) {
+                origin[k]=leaf.lo[k]+(leaf.hi[k]-leaf.lo[k])*(pi%5)/4.0;pi/=5;
+                d[k]=light[k]+((int)(si%3)-1)*1.5-origin[k];si/=3;length+=d[k]*d[k];
+            }
+            length=__builtin_sqrt(length);t_max=length-3.5;
+            for(unsigned k=0;k<3;++k) {
+                if(__builtin_fabs(d[k])<1e-10) {
+                    if(origin[k]<box.lo[k] || origin[k]>box.hi[k])return -1;
+                } else {
+                    double a=(box.lo[k]-origin[k])*length/d[k],b=(box.hi[k]-origin[k])*length/d[k];
+                    t_min=__builtin_fmax(t_min,__builtin_fmin(a,b));t_max=__builtin_fmin(t_max,__builtin_fmax(a,b));
+                }
+            }
+            if(t_min>t_max)return -1;
+            ++checked;
+        }
+        unsigned side=(axis+1)%3;
+        box.lo[side]=300;box.hi[side]=1000; // a door jamb cannot cover the opening
+        if(rc_box_blocks_leaf(&box,&leaf,light))return -1;
+        box.lo[side]=-1000;box.hi[side]=1000;light[axis]=0; // source inside the solid
+        if(rc_box_blocks_leaf(&box,&leaf,light))return -1;
+    }
+    fprintf(stdout,"LOCAL BLOCK PROOF PASS finite_segments=%u axes=3 reverse=1 opening=1 source_inside=1\n",checked);
+    return 0;
+}
 static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *source,uint32_t *rgba,float *depth)
 {
@@ -500,7 +543,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_batch_item face=*source;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
     float hdr[65*65*4];unsigned center=(32*65+32)*4;
-    int saved_fp32=g->receiver_fp32;g->receiver_fp32=0;
+    int saved_fp32=g->receiver_fp32,saved_block=g->local_block_enabled;g->receiver_fp32=0;
     struct rf_gpu_occlusion_primitive room[7]={
         {{{-2048,-1152,0},{2048,-1024,6144},{0,0,0}},1,0xcccccc,0},
         {{{-2048,1024,0},{2048,1152,6144},{0,0,0}},1,0xcccccc,0},
@@ -513,6 +556,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
 #define RC_CAPTURE() do {RC_CHECK(!rf_gpu_graphics_set_lighting(g,&lights)); \
     RC_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,rgba,depth,96*96)); \
     RC_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));}while(0)
+    RC_CHECK(!lighting_block_proof_regression());g->local_block_enabled=1;
     g->indirect_mode=1;g->indirect_debug=3;g->indirect_enabled=g->daylight_enabled=1;
     lights.sun_color[3]=0;lights.sky_illuminance=120;
     lights.environment[0]=lights.environment[1]=lights.environment[2]=0;
@@ -586,6 +630,19 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,7));
     RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
     RC_CHECK(hdr[center+1]==0); // 20 RFU wall must isolate the adjacent room
+    RC_CHECK(g->local_block_count==1 && g->local_block_buffer.size>2064);
+    uint32_t block_rgba[65*65];float block_depth[65*65],block_hdr[65*65*4];
+    memcpy(block_rgba,rgba,sizeof(block_rgba));memcpy(block_depth,depth,sizeof(block_depth));
+    memcpy(block_hdr,hdr,sizeof(block_hdr));
+    g->local_block_enabled=0;RC_CAPTURE();
+    RC_CHECK(!memcmp(block_rgba,rgba,sizeof(block_rgba)) && !memcmp(block_depth,depth,sizeof(block_depth)) &&
+        !memcmp(block_hdr,hdr,sizeof(block_hdr)));
+    /* A direct-only lamp relocation must reject the old cache key immediately. */
+    lights.lights[0].position_radius[2]=3500;RC_CAPTURE();RC_CHECK(hdr[center]>0);
+    memcpy(block_hdr,hdr,sizeof(block_hdr));g->local_block_enabled=1;RC_CAPTURE();
+    RC_CHECK(!memcmp(block_hdr,hdr,sizeof(block_hdr)));
+    lights.lights[0]=lamp;RC_CAPTURE();
+    fprintf(stdout,"LOCAL BLOCK CACHE PASS rgba_depth_hdr_equal=1 moved_direct_key=1 thin_wall=1\n");
     cache=g->receiver_buffer.buffer;
     RC_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0 && g->receiver_buffer.buffer==cache);
     RC_CHECK(!rf_gpu_graphics_resize(g,96,96) && !rf_gpu_graphics_resize(g,65,65));RC_CAPTURE();
@@ -601,7 +658,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     result=0;
 done:
     g->indirect_mode=saved_mode;g->indirect_debug=saved_debug;
-    g->receiver_fp32=saved_fp32;
+    g->receiver_fp32=saved_fp32;g->local_block_enabled=saved_block;
     g->indirect_enabled=saved_gi;g->daylight_enabled=saved_daylight;
     if(rf_gpu_graphics_set_architecture(g,NULL,0)<0)result=-1;
     if(rf_gpu_graphics_resize(g,64,64)<0)result=-1;

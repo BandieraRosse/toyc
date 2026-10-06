@@ -341,7 +341,10 @@ done:
 
 int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
     const struct rf_gpu_light *sources,uint32_t count)
-{ return indirect_field_build(g,sources,count,0); }
+{
+    int result=indirect_field_build(g,sources,count,0);
+    return result?result:receiver_block_cache_update(g,sources,count);
+}
 int rf_gpu_graphics_prepare_daylight(struct rf_gpu_graphics *g)
 { return indirect_field_build(g,NULL,0,1); }
 
@@ -355,24 +358,30 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
         g->daylight_enabled!=source->daylight_enabled || g->indirect_bounces!=source->indirect_bounces ||
         g->roof_cache_enabled!=source->roof_cache_enabled || g->indirect_reuse!=source->indirect_reuse ||
         g->indirect_visibility!=source->indirect_visibility || g->receiver_fp32!=source->receiver_fp32 ||
+        g->local_block_enabled!=source->local_block_enabled ||
         (source->indirect_probe_count && !source->indirect_warmed) ||
         (source->daylight_probe_count && !source->daylight_warmed) ||
         (source->receiver_samples && !source->receiver_ready))return -1;
     if(g->architecture_source==source)return 0;
     if(g->architecture_count && !g->architecture_source)return -1;
     double started=now_ms();
-    const unsigned bindings[6]={10,11,12,13,15,16};
-    struct rf_gpu_vulkan_buffer *fields[6]={&g->roof_buffer,&g->indirect_buffer,&g->indirect_geometry,
-        &g->indirect_sources,&g->daylight_buffer,&g->receiver_buffer};
-    const struct rf_gpu_vulkan_buffer *inputs[6]={&source->roof_buffer,&source->indirect_buffer,&source->indirect_geometry,
-        &source->indirect_sources,&source->daylight_buffer,&source->receiver_buffer};
-    struct rf_gpu_vulkan_buffer next[6]={{0}};struct rf_gi_arch_node *nodes=NULL;
+    const unsigned bindings[7]={10,11,12,13,15,16,17};
+    struct rf_gpu_vulkan_buffer *fields[7]={&g->roof_buffer,&g->indirect_buffer,&g->indirect_geometry,
+        &g->indirect_sources,&g->daylight_buffer,&g->receiver_buffer,&g->local_block_buffer};
+    const struct rf_gpu_vulkan_buffer *inputs[7]={&source->roof_buffer,&source->indirect_buffer,&source->indirect_geometry,
+        &source->indirect_sources,&source->daylight_buffer,&source->receiver_buffer,&source->local_block_buffer};
+    struct rf_gpu_vulkan_buffer next[7]={{0}};struct rf_gi_arch_node *nodes=NULL;
+    struct rf_rc_leaf *leaves=NULL;
     int result=-1;uint64_t bytes=0;
     if(source->indirect_architecture_nodes) {
         size_t size=(size_t)source->indirect_architecture_nodes*sizeof(*nodes);
         nodes=malloc(size);if(!nodes)goto done;memcpy(nodes,source->indirect_architecture,size);
     }
-    for(unsigned i=0;i<6;++i) {
+    if(source->receiver_leaves && source->receiver_samples) {
+        size_t size=(size_t)(source->receiver_samples/8)*sizeof(*leaves);
+        leaves=malloc(size);if(!leaves)goto done;memcpy(leaves,source->receiver_leaves,size);
+    }
+    for(unsigned i=0;i<7;++i) {
         if(!inputs[i]->buffer || gpu_buffer_create(g->owner,inputs[i]->size,
             RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT|RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&next[i])<0)goto done;
@@ -383,7 +392,7 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
     barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=RF_VK_ACCESS_TRANSFER_READ_BIT;
     g->owner->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
-    for(unsigned i=0;i<6;++i) {
+    for(unsigned i=0;i<7;++i) {
         struct rf_vk_buffer_copy copy={0};copy.size=inputs[i]->size;
         g->owner->api.cmd_copy_buffer(g->cmd,inputs[i]->buffer,next[i].buffer,1,&copy);
     }
@@ -393,7 +402,10 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
         RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
     if(gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0)goto done;
     gfx_architecture_unshare(g);
-    for(unsigned i=0;i<6;++i)indirect_bind(g,bindings[i],fields[i],&next[i]);
+    for(unsigned i=0;i<7;++i)indirect_bind(g,bindings[i],fields[i],&next[i]);
+    free(g->receiver_leaves);g->receiver_leaves=leaves;leaves=NULL;
+    g->local_block_count=source->local_block_count;
+    memcpy(g->local_block_keys,source->local_block_keys,sizeof(g->local_block_keys));
     free(g->indirect_architecture);g->indirect_architecture=nodes;nodes=NULL;
     g->indirect_architecture_nodes=source->indirect_architecture_nodes;
     g->architecture_count=source->architecture_count;g->lighting_clone_invalid=0;
@@ -412,8 +424,8 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
     result=0;
 done:
     if(result<0 && g->poisoned)g->owner->api.queue_wait_idle(g->owner->queue);
-    for(unsigned i=0;i<6;++i)gpu_buffer_destroy(g->owner,&next[i]);
-    free(nodes);return result;
+    for(unsigned i=0;i<7;++i)gpu_buffer_destroy(g->owner,&next[i]);
+    free(leaves);free(nodes);return result;
 }
 
 static void gfx_daylight_record(struct rf_gpu_graphics *g)

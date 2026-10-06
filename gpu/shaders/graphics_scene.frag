@@ -33,6 +33,9 @@ layout(location=3) flat in uint triangle_color;
 layout(location=4) flat in float triangle_alpha;
 layout(location=0) out vec4 color;
 layout(set=1,binding=8,std430) readonly buffer Tiles { uint masks[]; } tiles;
+layout(set=1,binding=17,std430) readonly buffer LocalBlocks {
+    uvec4 header;uvec4 masks[];
+} local_blocks;
 #ifdef RF_LIGHT_PROFILE
 layout(set=1,binding=9,std430) buffer Profile { uint counts[]; } profile;
 #endif
@@ -125,12 +128,17 @@ void main() {
     float sky_access=indirect_mode!=0u || daylight || (ablation&1u)!=0u?1.0:roof_visibility(origin,roof_traced);
     vec3 fill=indirect_mode!=0u || daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
     vec3 radiance=base*(1.0-metal)*fill+base*emissive;
+    uint receiver_region=0u;
     if(metal<1.0 || meter) {
-        if(indirect_mode==1u)indirect=cached_receiver_irradiance(world_position,n);
+        if(indirect_mode==1u)indirect=cached_receiver_irradiance(world_position,n,receiver_region);
         else if(indirect_mode==0u)indirect=combined_irradiance(world_position,n,v);
     }
     radiance+=base*(1.0-metal)*indirect;
     const vec3 photopic=vec3(0.2126,0.7152,0.0722);
+    uvec4 blocked=uvec4(0);
+    if(receiver_region!=0u && (lighting.light_control.w&16384u)!=0u &&
+       (receiver_region-1u)/8u<local_blocks.header.y)
+        blocked=local_blocks.masks[(receiver_region-1u)/8u]&lighting.local_block_valid;
     float direct_lux=0.0;
     vec3 l=lighting.sun_direction.xyz;
     bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
@@ -147,9 +155,11 @@ void main() {
 #ifdef RF_LIGHT_PROFILE
     candidates+=uint(bitCount(mask));
 #endif
+    if(word<4u && (ablation&4u)==0u)mask&=~blocked[word];
     while(mask!=0u) {
         int i=findLSB(mask)+int(word*32u);mask&=mask-1u;
         Light light=lighting.lights[i];vec3 delta=light.position_radius.xyz-world_position;
+        if(light.color_intensity.w<=0.0)continue;
         float distance_squared=dot(delta,delta),radius_squared=light.position_radius.w*light.position_radius.w;
         if(distance_squared>=radius_squared) continue;
         float normalized_squared=distance_squared/radius_squared;

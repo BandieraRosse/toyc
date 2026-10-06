@@ -11,6 +11,7 @@ struct rf_lighting_upload {
     int32_t tile_camera[4],tile_view[4],tile_projection[4];
     uint32_t light_control[4];
     float daylight[4];
+    uint32_t local_block_valid[4];
 };
 _Static_assert(offsetof(struct rf_lighting_upload,lights)==432,"lighting std430 ABI");
 _Static_assert(offsetof(struct rf_lighting_upload,sky_cloud)==10672,"sky std430 ABI");
@@ -104,6 +105,8 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->daylight_pipeline)p->api.destroy_pipeline(p->device,g->daylight_pipeline,NULL);
     if(g->receiver_pipeline)p->api.destroy_pipeline(p->device,g->receiver_pipeline,NULL);
     gpu_buffer_destroy(p,&g->receiver_buffer);
+    gpu_buffer_destroy(p,&g->local_block_buffer);
+    free(g->receiver_leaves);g->receiver_leaves=NULL;
     if(g->environment_pipeline)p->api.destroy_pipeline(p->device,g->environment_pipeline,NULL);
     gpu_buffer_destroy(p,&g->daylight_buffer);gpu_buffer_destroy(p,&g->environment_buffer);
     if(g->sky_pipeline) p->api.destroy_pipeline(p->device,g->sky_pipeline,NULL);
@@ -126,9 +129,9 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[17]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[18]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,13},{3,3},
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,14},{3,3},
         {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
@@ -149,6 +152,10 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     if(single && strcmp(single,"0") && strcmp(single,"1"))return -1;
     g->ray_single=!(single && !strcmp(single,"0"));
     fprintf(stderr,"rf-gpu-light: ray-single=%d\n",g->ray_single);
+    const char *blocks=getenv("RF_GPU_LOCAL_BLOCK_CACHE");
+    if(blocks && strcmp(blocks,"0") && strcmp(blocks,"1"))return -1;
+    g->local_block_enabled=!(blocks && !strcmp(blocks,"0"));
+    fprintf(stderr,"rf-gpu-light: local-block-cache=%d\n",g->local_block_enabled);
     const char *fp32=getenv("RF_GPU_RECEIVER_FP32");
     if(fp32 && strcmp(fp32,"0") && strcmp(fp32,"1"))return -1;
     g->receiver_fp32=fp32 && !strcmp(fp32,"1");
@@ -208,13 +215,13 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     if(p->ray_query_enabled) {
         b[7].descriptor_type=RF_RT_DESCRIPTOR;
-        sizes[0].descriptor_count=12;
+        sizes[0].descriptor_count=13;
     }
-    for(unsigned i=8;i<17;++i) {
+    for(unsigned i=8;i<18;++i) {
         b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[i].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=17;layout.bindings=b;
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=18;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
     struct rf_vk_descriptor_pool_size rt_sizes[4];memcpy(rt_sizes,sizes,sizeof(sizes));
     rt_sizes[3].type=RF_RT_DESCRIPTOR;rt_sizes[3].descriptor_count=1;
@@ -454,7 +461,8 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     u.light_control[1]=g->roof_cache_enabled;
     u.light_control[2]=g->indirect_enabled && !g->lighting.disable_indirect && !g->lighting_clone_invalid;
     u.light_control[3]=(uint32_t)g->indirect_debug|(g->indirect_visibility?256u:0u)|
-        (g->indirect_visibility==1?512u:0u)|(g->indirect_reuse?1024u:0u)|((uint32_t)g->indirect_mode<<11);
+        (g->indirect_visibility==1?512u:0u)|(g->indirect_reuse?1024u:0u)|((uint32_t)g->indirect_mode<<11)|
+        (g->local_block_enabled && g->local_block_count?16384u:0u);
     u.daylight[0]=g->daylight_enabled && !g->lighting.disable_indirect?g->lighting.sky_illuminance/RF_PHOTOMETRIC_SCALE:0;
     u.daylight[1]=131072.0f;u.daylight[2]=(float)g->architecture_count;
     if(g->indirect_architecture_nodes) {
@@ -466,6 +474,10 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     memcpy(u.environment,g->lighting.environment,16);u.counts[0]=(float)g->lighting.count;
     u.counts[1]=(float)g->sky_scale;u.counts[2]=(float)g->sky_width;u.counts[3]=(float)g->sky_height;
     memcpy(u.lights,g->lighting.lights,sizeof(u.lights));
+    for(unsigned i=0;i<g->local_block_count && i<g->lighting.count;++i)
+        if(g->lighting.lights[i].inner_shadow[2]>0.5f &&
+           !memcmp(g->lighting.lights[i].position_radius,g->local_block_keys[i],16))
+            u.local_block_valid[i/32]|=1u<<(i%32);
     u.sun_color[3]/=RF_PHOTOMETRIC_SCALE;
     for(unsigned k=0;k<3;++k)u.environment[k]/=3.14159265359f*RF_PHOTOMETRIC_SCALE;
     for(unsigned i=0;i<g->lighting.count;++i)u.lights[i].color_intensity[3]/=RF_PHOTOMETRIC_SCALE;

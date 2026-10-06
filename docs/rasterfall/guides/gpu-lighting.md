@@ -154,6 +154,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLightDepth -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/light-depth-perf
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareDepthPrepass -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/depth-prepass-perf
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareRaySingle -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/ray-single-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLocalBlockCache -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/local-block-perf
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareDynamicCull -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/dynamic-cull-perf
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -ComparePoseReuse -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/pose-reuse-perf
 ```
@@ -165,7 +166,11 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 完整灯表、二维和深度分段，覆盖段边界、远距离、小尺寸、混合相机及高灯索引；
 `DEPTH PREPASS PASS` 比较开关前后的颜色和深度。以上均在 `--gpu-lighting-test` 中运行。
 限定设备的图检、同步与五轮对照见[光照性能优化现场](../archive/lighting-performance-20261006.md)。
-后三轴分别恢复片元循环查询、关闭当前蒙皮边界裁剪、关闭 CPU 完整输入求值复用。
+`-CompareRaySingle` 恢复片元循环查询，`-CompareLocalBlockCache` 交替关闭/开启固定灯整接收域
+遮挡掩码，`-CompareDynamicCull` 关闭当前蒙皮边界裁剪，`-ComparePoseReuse` 关闭 CPU 完整输入求值复用。
+固定灯轴可另行加 `-ProfileLights` 检查实际局部查询和可见计数，诊断耗时不能作为普通性能。
+`LOCAL BLOCK PROOF PASS` 检查三轴/反向有限线段、开口及源位于实体内；`LOCAL BLOCK CACHE PASS`
+比较颜色、深度、HDR 并检查只更新直射灯位置时旧键失效；已有 clone 回归检查独立缓冲与失效。
 裁剪位图共用和材质录制准备属于默认路径；这些单轴不能代表整组 CPU 修改的全部收益。
 主/AUX 与镜头外投影合同见 GPU 渲染架构，CPU 姿态合同见动画架构。
 完整版本对照可用 `-Executable` 指向基线或候选程序；相对路径从仓库根解析，绝对路径也可用。

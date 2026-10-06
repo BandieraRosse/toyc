@@ -15,6 +15,7 @@ param(
     [switch]$CompareDynamicCull,
     [switch]$ComparePoseReuse,
     [switch]$CompareRaySingle,
+    [switch]$CompareLocalBlockCache,
     [switch]$CompareLightClusters,
     [switch]$CompareSkinFusion,
     [switch]$CompareReceiverFP16,
@@ -36,7 +37,7 @@ param(
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDynamicCull+[int][bool]$ComparePoseReuse+[int][bool]$CompareRaySingle+[int][bool]$CompareLightClusters+[int][bool]$CompareSkinFusion+[int][bool]$CompareReceiverFP16+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$CompareIndirectMode+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDynamicCull+[int][bool]$ComparePoseReuse+[int][bool]$CompareRaySingle+[int][bool]$CompareLocalBlockCache+[int][bool]$CompareLightClusters+[int][bool]$CompareSkinFusion+[int][bool]$CompareReceiverFP16+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$CompareIndirectMode+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
 if($ProfileLights -and $LightAblations){throw 'Keep fragment counters separate from timing ablations'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
@@ -64,7 +65,7 @@ $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
-    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS','RF_GPU_INDIRECT_MODE','RF_GPU_DYNAMIC_CULL','RF_GPU_CPU_POSE_REUSE','RF_GPU_RAY_SINGLE','RF_GPU_LIGHT_CLUSTERS','RF_GPU_SKIN_FUSED','RF_GPU_RECEIVER_FP32')
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS','RF_GPU_INDIRECT_MODE','RF_GPU_DYNAMIC_CULL','RF_GPU_CPU_POSE_REUSE','RF_GPU_RAY_SINGLE','RF_GPU_LOCAL_BLOCK_CACHE','RF_GPU_LIGHT_CLUSTERS','RF_GPU_SKIN_FUSED','RF_GPU_RECEIVER_FP32')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
@@ -82,6 +83,7 @@ Write-Json @{exe=$Hash;executable=$Exe;map=(Get-FileHash -LiteralPath "$Package/
     compare_dynamic_cull=[bool]$CompareDynamicCull;dynamic_cull=$env:RF_GPU_DYNAMIC_CULL;
     compare_pose_reuse=[bool]$ComparePoseReuse;pose_reuse=$env:RF_GPU_CPU_POSE_REUSE;
     compare_ray_single=[bool]$CompareRaySingle;ray_single=$env:RF_GPU_RAY_SINGLE;
+    compare_local_block_cache=[bool]$CompareLocalBlockCache;local_block_cache=$env:RF_GPU_LOCAL_BLOCK_CACHE;
     compare_light_clusters=[bool]$CompareLightClusters;compare_skin_fusion=[bool]$CompareSkinFusion;compare_receiver_fp16=[bool]$CompareReceiverFP16;
     light_clusters=$env:RF_GPU_LIGHT_CLUSTERS;skin_fused=$env:RF_GPU_SKIN_FUSED;receiver_fp32=$env:RF_GPU_RECEIVER_FP32;
     light_depth=$env:RF_GPU_LIGHT_DEPTH;gi_reuse=$env:RF_GPU_GI_REUSE;
@@ -109,7 +111,7 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareDynamicCull -or $ComparePoseReuse -or $CompareRaySingle -or $CompareLightClusters -or $CompareSkinFusion -or $CompareReceiverFP16 -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareDynamicCull -or $ComparePoseReuse -or $CompareRaySingle -or $CompareLocalBlockCache -or $CompareLightClusters -or $CompareSkinFusion -or $CompareReceiverFP16 -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($LightAblations){$Modes=@($AblationModes)}
             if($CompareIndirectMode){
@@ -127,6 +129,7 @@ try {
                 if($CompareDynamicCull){$env:RF_GPU_DYNAMIC_CULL=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($ComparePoseReuse){$env:RF_GPU_CPU_POSE_REUSE=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareRaySingle){$env:RF_GPU_RAY_SINGLE=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($CompareLocalBlockCache){$env:RF_GPU_LOCAL_BLOCK_CACHE=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareLightClusters){$env:RF_GPU_LIGHT_DEPTH='1';$env:RF_GPU_LIGHT_CLUSTERS=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareSkinFusion){$env:RF_GPU_SKIN_FUSED=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareReceiverFP16){$env:RF_GPU_INDIRECT_MODE='fast';$env:RF_GPU_RECEIVER_FP32=if($Mode -eq 'reference'){'1'}else{'0'}}
@@ -198,6 +201,7 @@ try {
                 if($CompareDynamicCull -and $Errors -notmatch "rf-gpu-scene: dynamic-cull=$($env:RF_GPU_DYNAMIC_CULL)"){throw "$Name did not activate requested dynamic_cull"}
                 if($ComparePoseReuse -and $Errors -notmatch "SCENE-POSE reuse=$($env:RF_GPU_CPU_POSE_REUSE)"){throw "$Name did not activate requested CPU pose reuse"}
                 if($CompareRaySingle -and $Errors -notmatch "rf-gpu-light: ray-single=$($env:RF_GPU_RAY_SINGLE)"){throw "$Name did not activate requested single ray traversal"}
+                if($CompareLocalBlockCache -and $Errors -notmatch "rf-gpu-light: local-block-cache=$($env:RF_GPU_LOCAL_BLOCK_CACHE)"){throw "$Name did not activate requested local block cache"}
                 if($CompareSkinFusion -and $Errors -notmatch "rf-gpu-skin: fused=$($env:RF_GPU_SKIN_FUSED)"){throw "$Name did not activate requested skin fusion"}
                 if($CompareReceiverFP16 -and $Errors -notmatch "rf-gpu-receiver-cache: [^\r\n]*precision=$(if($Mode -eq 'reference'){'fp32'}else{'fp16'})"){throw "$Name did not activate requested receiver format"}
                 if($CompareGIReuse -and $Errors -notmatch "rf-gpu-gi: shared-visibility=$($env:RF_GPU_GI_REUSE)"){throw "$Name did not activate requested GI reuse"}

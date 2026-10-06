@@ -3,7 +3,8 @@
 layout(set=1,binding=16,std430) readonly buffer ReceiverCache {
     uvec4 header;uvec4 data[];
 } receiver_cache;
-vec3 cached_receiver_irradiance(vec3 p,vec3 n) {
+vec3 cached_receiver_irradiance(vec3 p,vec3 n,out uint region) {
+    region=0u;
     if((lighting.light_control.x&32u)!=0u)return vec3(0);
     if(lighting.light_control.z==0u)return vec3(0);
     if(lighting.daylight.x>0.0 && lighting.daylight.z==0.0)return (lighting.light_control.x&64u)!=0u?vec3(0):environment_diffuse(n);
@@ -19,6 +20,7 @@ vec3 cached_receiver_irradiance(vec3 p,vec3 n) {
             uvec4 children=receiver_cache.data[at+1u];
             if(children.x!=0u) {node=(dot(plane.xyz,q)<=plane.w?children.x:children.y)-1u;continue;}
             if(children.w==0u)break;
+            region=children.w;
             // Diagnostic: keep BSP lookup, omit interpolation/data reads.
             if((lighting.light_control.x&64u)!=0u)return vec3(0);
             vec3 lo=uintBitsToFloat(receiver_cache.data[at+2u]).xyz;

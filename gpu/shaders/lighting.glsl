@@ -9,6 +9,7 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     ivec4 tile_view; ivec4 tile_projection;
     uvec4 light_control; // diagnostic ablation mask
     vec4 daylight; // horizontal sky lux / 100, architecture escape distance
+    uvec4 local_block_valid; // current fixed-lamp positions/radii match the cached keys
 } lighting;
 #ifdef RF_LIGHT_PROFILE
 uint profile_pcf=0u;
