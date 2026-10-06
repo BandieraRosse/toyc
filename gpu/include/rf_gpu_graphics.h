@@ -136,6 +136,13 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
 /* Geometry-based daylight coverage, independent of fixture locations.
  * Call after installing architecture; replacing architecture clears both fields. */
 int rf_gpu_graphics_prepare_daylight(struct rf_gpu_graphics *g);
+/* Same-device views may seed empty lighting from a retired, initialized owner.
+ * Fields are copied GPU-to-GPU and thereafter update independently. Only the
+ * immutable architecture query structure is borrowed; source replacement or
+ * destruction detaches readers, which must seed/install a world again. Both
+ * views must be retired and use the same GI configuration. Repeated calls for
+ * the same source reuse the initialized fields. NULL detaches the source. */
+int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graphics *source);
 #define RF_GPU_GRAPHICS_TEXTURES 8
 struct rf_gpu_graphics_texture_image {
     const uint32_t *rgb;
@@ -150,11 +157,11 @@ struct rf_gpu_scene_timing {
     int supported, valid;
     double world_draw_ms, present_blit_ms;
     double sky_compute_ms; /* Included in world_draw_ms; excludes HDR composite. */
-    /* Together with sky_compute_ms and detail_ms[0,6,7] partition world_draw_ms. Shadow includes
+    /* Together with sky_compute_ms and detail_ms[0,6,7,8] partition world_draw_ms. Shadow includes
      * depth copies; main includes WORLD shading, HDR composite, tonemap/HUD. */
     double shadow_ms, main_scene_ms;
     /* tiles; WORLD+sky composite; transparent/effects; viewmodel; post; HUD. */
-    double detail_ms[8]; /* final entries: DDGI probe update, receiver cache */
+    double detail_ms[9]; /* final entries: DDGI probe update, receiver cache, fused skin */
     /* CPU walls within native submit; separate from completed GPU queries. */
     double record_ms,acquire_ms,queue_submit_ms,present_ms;
 };
@@ -218,11 +225,14 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_resource *resource, uint32_t vertex_count,
     const uint32_t *bind_words, uint32_t bind_word_count,
     const uint32_t *palette_words, uint32_t palette_word_count);
-/* Owner updates only, after all borrowing views retire. Updates copy input immediately but defer
- * dispatch until end, which submits and waits once. Cold creates remain
- * synchronous. No draw/readback or second update of a queued resource before
- * end. Cancel discards unsubmitted dispatches; caller must update again before
- * using those resources. Failed end requires owner teardown. */
+/* Owner updates only, after all borrowing views retire. Updates copy input
+ * immediately; end seals the batch. The first main/AUX drawing consumer records
+ * skinning before its draws with compute-to-vertex/transfer barriers, without
+ * a separate CPU wait. Diagnostic vertex readback can also consume a sealed
+ * batch. Cold creates remain synchronous. A queued resource cannot be updated
+ * or destroyed until consumed or cancelled. Cancel invalidates unsubmitted
+ * results; caller must update again before use. RF_GPU_SKIN_FUSED=0 restores
+ * the separate submitting/waiting end for same-build comparison. */
 int rf_gpu_graphics_skin_batch_begin(struct rf_gpu_graphics *g);
 int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g);
 void rf_gpu_graphics_skin_batch_cancel(struct rf_gpu_graphics *g);
@@ -243,7 +253,7 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     uint32_t *max_normal_delta);
 
 /* Caller shuts graphics down before its shared backend context. Calls are
- * synchronous except updates inside an explicit skin batch (end waits), and
+ * synchronous except updates inside an explicit skin batch (end seals), and
  * the explicitly retired Scene submission below.
  * Failure never invokes CPU lowering. */
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx);

@@ -69,6 +69,8 @@ roof 为顶部缓存后的回退射线调用，sun/local 为可见性函数逻�
 
 `RF_GPU_LIGHT_ABLATION` 只用于诊断：`none` 为正常路径；`roof`、`sun`、`local` 分别跳过对应建筑遮挡；
 `rays` 同时跳过三者；`pcf` 跳过阴影过滤；`brdf` 用简单漫反射替代原 BRDF。
+fast 下的 `receiver` 跳过接收缓存读取；`receiver_read` 保留 BSP 定位，跳过八角点照明读取与插值。
+它们不关闭缓存刷新 compute，用于定位 WORLD 内的查找和读取边际成本，同样改变画面。
 遮挡消融会使原先被挡住的光继续执行 BRDF/PCF，时间可能反而增加；不得据差值宣称某项真实独占成本，
 也不能把这些模式作为视觉或正式性能签收。普通运行应清除变量或设为 `none`。
 
@@ -161,7 +163,41 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 `DEPTH PREPASS PASS` 比较开关前后的颜色和深度。以上均在 `--gpu-lighting-test` 中运行。
 限定设备的图检、同步与五轮对照见[光照性能优化现场](../archive/lighting-performance-20261006.md)。
 
+## 加载与首次辅助镜头准备
+
+先区分首次编译与缓存命中：日志 `rf-gpu-pipeline-cache` 报告启用状态、读入字节和退出保存结果，
+`rf-gpu-graphics` 报告 graphics 创建耗时；默认在运行目录 `build/` 保存设备专用缓存。
+`RF_GPU_PIPELINE_CACHE=0` 关闭，`RF_GPU_PIPELINE_CACHE_PATH=-` 仅保留同设备内存复用。
+缓存丢失、损坏或驱动改变后首次启动需要重新生成；不可写目录仍可启动，但不能跨启动复用。
+
+使用相同 package、地图、窗口、时钟与帧数对照 `SCENE-PREWARM`，不运行 validation 或同时构建。
+`RF_GPU_RECEIVER_PROJECTION_FIXED=1` 单独恢复 64 轮角点投影；
+`RF_GPU_AUX_LIGHTING_CLONE=0` 单独恢复 WORLD AUX 冷初始化。正常路径复制主场已初始化的
+GI 到独立缓冲，`rf-gpu-lighting-clone` 报告实际复制字节与准备时间。对照首次镜头时检查实际
+剧情/单位来源及刷新帧；稳态 120 帧预热后的性能不能证明首次卡顿消失。
+回归入口仍为 `--gpu-lighting-test`，包括逐位投影、GPU 复制颜色/深度、灯具独立更新及源失效。
+限定现场和余下加载成本见[加载缓存优化记录](../archive/loading-cache-20261006.md)。
+
 ## 低成本间接光候选对照
+
+接收缓存和提交链的定向对照使用同一 package，各轴互斥；采样期间不要运行其他 GPU 程序或构建：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareReceiverFP16 -Views frontier-floor-2 -Rounds 3 -Samples 240 -OutputDirectory tmp/receiver-fp16-ab
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareSkinFusion -Views frontier-floor-2 -Rounds 3 -Samples 240 -OutputDirectory tmp/skin-fusion-ab
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLightClusters -Views frontier-floor-2 -Rounds 3 -Samples 240 -OutputDirectory tmp/light-clusters-ab
+```
+
+FP16 轴保持拓扑和采样数一致，reference 只恢复照明 FP32；不恢复旧邻居冗余。
+蒙皮轴的 reference 单独提交并等待，optimized 纳入首个消费者绘制；`skin_p50_us/p95_us/p99_us`
+为合并后的 GPU 区间，`skin_mean_us` 仍是 CPU batch end 墙钟，两者不可互换。
+总 GPU 时间包括合并蒙皮，因此应同时比较整帧和准备成本；reference 的独立蒙皮不在主绘制 query 内。
+三维灯表轴保留深度预通道、屏幕表和深度表；另外用 `-ProfileLights -CompareLightClusters`
+比较候选数，计数运行仍不能作性能证据。树查找/缓存读取成本用 `-LightAblations` 单独定位。
+`-AblationModes receiver` 可只检查单个模式；PowerShell 中调用脚本时也可传字符串数组选择子集。
+`-CooldownSeconds 45` 在每次启动前留出冷却时间；仍须检查热限频记录，等待不保证温度或时钟一致。
+三维表默认关闭，保留 `RF_GPU_LIGHT_CLUSTERS=1` 与比较轴；当前车间对照未证明稳定净收益。
+本轮实现、缓存容量与限定验证见[紧凑缓存与 GPU 提交现场](../archive/compact-receiver-skin-20261006.md)。
 
 默认使用 fast，普通 GPU 游玩无需设置模式变量。移除已有覆盖后启动，CPU renderer 不消费此配置：
 

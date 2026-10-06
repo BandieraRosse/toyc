@@ -3,7 +3,8 @@
  * Camera/cutaway never enter the topology. No fragment visibility queries. */
 #define RF_RC_LEAVES 32768u
 #define RF_RC_DEPTH 48u
-#define RF_RC_SAMPLE_VECTORS 22u
+#define RF_RC_STATIC_VECTORS 2u
+#define RF_RC_LIGHT_VECTORS 6u
 struct rf_rc_node { float plane[4];uint32_t child[4];float lo[4],hi[4]; };
 struct rf_rc_builder {
     const struct rf_gpu_occlusion_primitive *geometry;
@@ -12,6 +13,8 @@ struct rf_rc_builder {
     struct rf_rc_node *nodes;
     float (*positions)[4];
     float planes[RF_RC_DEPTH][4];
+    int fixed_projection;
+    uint64_t projection_iterations;
 };
 static float rc_dot(const float *a,const float *b)
 {return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
@@ -97,9 +100,15 @@ static unsigned rc_build_node(struct rf_rc_builder *b,const float *lo,const floa
         for(unsigned k=0;k<3;++k)p[k]=(corner&(1u<<k))?hi[k]-__builtin_fminf(1.5f,(hi[k]-lo[k])*0.1f):lo[k]+__builtin_fminf(1.5f,(hi[k]-lo[k])*0.1f);
         /* Project corners into the convex BSP region; unlike a voxel filter,
          * samples across a thin wall or storey can never share a leaf. */
-        for(unsigned iteration=0;iteration<64;++iteration)for(unsigned j=0;j<depth;++j) {
-            const float *q=b->planes[j];float d=rc_dot(q,p)-q[3]+0.01f;
-            if(d>0)for(unsigned k=0;k<3;++k)p[k]-=q[k]*d;
+        for(unsigned iteration=0;iteration<64;++iteration) {
+            float before[3];memcpy(before,p,12);++b->projection_iterations;
+            for(unsigned j=0;j<depth;++j) {
+                const float *q=b->planes[j];float d=rc_dot(q,p)-q[3]+0.01f;
+                if(d>0)for(unsigned k=0;k<3;++k)p[k]-=q[k]*d;
+            }
+            /* A full sweep leaving every coordinate bit-identical is a fixed
+             * point. Further identical sweeps cannot change the sample. */
+            if(!b->fixed_projection && !memcmp(before,p,12))break;
         }
         for(unsigned j=0;j<depth;++j)if(rc_dot(b->planes[j],p)>b->planes[j][3]+0.02f){++b->unresolved;return id;}
     }
@@ -112,6 +121,8 @@ static int receiver_cache_build(struct rf_gpu_graphics *g,
     uint32_t header[4]={0};*sample_count=0;
     if(g->indirect_mode!=1 || !g->indirect_enabled || !count)return indirect_upload(g,header,16,next);
     struct rf_rc_builder b={0};b.geometry=geometry;b.count=count;b.spacing=512;
+    const char *fixed=getenv("RF_GPU_RECEIVER_PROJECTION_FIXED");
+    b.fixed_projection=fixed && !strcmp(fixed,"1");
     b.nodes=calloc(RF_RC_LEAVES*4u,sizeof(*b.nodes));b.positions=calloc(RF_RC_LEAVES*8u,16);
     unsigned *ids=malloc((size_t)count*sizeof(*ids));
     if(!b.nodes || !b.positions || !ids){free(ids);free(b.nodes);free(b.positions);return -1;}
@@ -127,15 +138,22 @@ static int receiver_cache_build(struct rf_gpu_graphics *g,
     free(ids);
     if(b.failed){fprintf(stderr,"rf-gpu-receiver-cache: topology exceeded budget nodes=%u leaves=%u\n",b.used,b.leaves);free(b.nodes);free(b.positions);return -1;}
     header[0]=b.used;header[1]=b.leaves*8;header[2]=b.used*4;
-    size_t bytes=16+(size_t)b.used*sizeof(*b.nodes)+(size_t)header[1]*RF_RC_SAMPLE_VECTORS*16;
+    header[3]=header[2]+header[1]*RF_RC_STATIC_VECTORS;
+    /* Static positions/cell references precede dynamic FP16 irradiance. No
+     * per-sample copies of eight probe indices or trilinear weights. */
+    unsigned light_vectors=g->receiver_fp32?12u:RF_RC_LIGHT_VECTORS;
+    size_t bytes=16+(size_t)header[3]*16+(size_t)header[1]*light_vectors*16;
+    if(g->receiver_fp32)header[0]|=0x80000000u;
     unsigned char *data=calloc(1,bytes);int result=-1;
     if(data) {
         memcpy(data,header,16);memcpy(data+16,b.nodes,(size_t)b.used*sizeof(*b.nodes));
-        for(unsigned i=0;i<header[1];++i)memcpy(data+16+(size_t)header[2]*16+(size_t)i*RF_RC_SAMPLE_VECTORS*16,b.positions[i],16);
+        for(unsigned i=0;i<header[1];++i)memcpy(data+16+(size_t)header[2]*16+(size_t)i*RF_RC_STATIC_VECTORS*16,b.positions[i],12);
         result=indirect_upload(g,data,bytes,next);if(!result)*sample_count=header[1];
     }
-    fprintf(stderr,"rf-gpu-receiver-cache: leaves=%u nodes=%u samples=%u spacing=%.0f bytes=%llu prepare-ms=%.3f unresolved=%u\n",
-        b.leaves,b.used,header[1],b.spacing,(unsigned long long)bytes,now_ms()-started,b.unresolved);
+    fprintf(stderr,"rf-gpu-receiver-cache: leaves=%u nodes=%u samples=%u spacing=%.0f bytes=%llu prepare-ms=%.3f unresolved=%u sample-bytes=%u precision=%s projection-sweeps=%llu\n",
+        b.leaves,b.used,header[1],b.spacing,(unsigned long long)bytes,now_ms()-started,b.unresolved,
+        (RF_RC_STATIC_VECTORS+light_vectors)*16,g->receiver_fp32?"fp32":"fp16",
+        (unsigned long long)b.projection_iterations);
     free(data);free(b.nodes);free(b.positions);return result;
 }
 static void gfx_receiver_cache_record(struct rf_gpu_graphics *g)

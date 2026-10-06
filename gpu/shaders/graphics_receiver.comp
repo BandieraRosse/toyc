@@ -23,8 +23,9 @@ void prepare_field(uint at,vec3 p,bool daylight) {
         n1=daylight?daylight_probe_load(cell+1u):fixture_probe_load(cell+1u);
         geometry=daylight?daylight_probe_load(cell+2u).xy:fixture_probe_load(cell+2u).xy;
     }
+    uint visible_mask=0u;
     for(uint corner=0u;corner<8u;++corner) {
-        uint id=corner<4u?n0[corner]:n1[corner-4u],base=0u;float weight=0.0;
+        uint id=corner<4u?n0[corner]:n1[corner-4u],base=0u;
         if(id!=0u) {
             uvec4 h=daylight?daylight_probes.header:probes.header;
             base=h.w+(id-1u)*h.z;
@@ -34,13 +35,14 @@ void prepare_field(uint at,vec3 p,bool daylight) {
                 vec3 delta=p-position;float distance=length(delta);
                 float visible=distance<1.0?1.0:(daylight?daylight_probe_visibility(geometry,position,delta/distance,distance-1.0):
                     fixture_probe_visibility(geometry,position,delta/distance,distance-1.0));
-                vec3 t=mix(1.0-f,f,vec3(ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u))));
-                weight=t.x*t.y*t.z*visible;
+                if(visible>0.0)visible_mask|=1u<<corner;
             }
         }
-        if(daylight){cache.data[at+2u+corner].y=base;cache.data[at+2u+corner].w=floatBitsToUint(weight);}
-        else {cache.data[at+2u+corner].x=base;cache.data[at+2u+corner].z=floatBitsToUint(weight);}
     }
+    if(daylight)cache.data[at+1u].z=cell;
+    else cache.data[at].w=cell;
+    uint shift=daylight?8u:0u;
+    cache.data[at+1u].w=(cache.data[at+1u].w&~(255u<<shift))|(visible_mask<<shift);
 }
 vec3 cache_normal(uint lobe) {vec3 n=vec3(0);n[lobe/2u]=(lobe&1u)==0u?1.0:-1.0;return n;}
 vec3 cache_sky_direction(vec3 n,uint i) {
@@ -53,9 +55,18 @@ vec3 refresh_field(uint at,vec3 p,vec3 n,uint lobe,bool daylight,out float total
     uvec4 h=daylight?daylight_probes.header:probes.header;
     float bias=daylight?daylight_probes.params.y:probes.params.y;
     if(h.y==0u)return sum;
+    uint cell=daylight?cache.data[at+1u].z:cache.data[at].w;
+    if(cell==0u)return sum;
+    uvec4 n0=daylight?daylight_probe_load(cell):fixture_probe_load(cell);
+    uvec4 n1=daylight?daylight_probe_load(cell+1u):fixture_probe_load(cell+1u);
+    float spacing=daylight?daylight_probes.params.x:probes.params.x;
+    vec3 f=fract(p/max(spacing,1.0)-0.37);
+    uint visible_mask=(cache.data[at+1u].w>>(daylight?8u:0u))&255u;
     for(uint corner=0u;corner<8u;++corner) {
-        uvec4 entry=cache.data[at+2u+corner];uint base=daylight?entry.y:entry.x;
-        float weight=uintBitsToFloat(daylight?entry.w:entry.z);if(weight==0.0)continue;
+        if((visible_mask&(1u<<corner))==0u)continue;
+        uint id=corner<4u?n0[corner]:n1[corner-4u],base=h.w+(id-1u)*h.z;
+        vec3 t=mix(1.0-f,f,vec3(ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u))));
+        float weight=t.x*t.y*t.z;if(weight==0.0)continue;
         vec3 pos=uintBitsToFloat(daylight?daylight_probe_load(base+h.z-1u):fixture_probe_load(base+h.z-1u)).xyz;
         vec3 delta=pos-p;
         float side=smoothstep(-max(bias,0.001),0.0,dot(n,delta));
@@ -69,7 +80,7 @@ void main() {
     uint budget=(update.pass&2u)!=0u?min(8192u,cache.header.y):cache.header.y;
     uint invocation=gl_GlobalInvocationID.x;if(invocation>=budget)return;
     uint sample_id=((update.pass>>2)+invocation)%cache.header.y;
-    uint at=cache.header.z+sample_id*22u;vec3 p=uintBitsToFloat(cache.data[at]).xyz;
+    uint at=cache.header.z+sample_id*2u;vec3 p=uintBitsToFloat(cache.data[at]).xyz;
     if((update.pass&1u)==0u) {
         prepare_field(at,p,false);prepare_field(at,p,true);
         uvec2 masks=uvec2(0);
@@ -79,7 +90,7 @@ void main() {
                 uint bit=lobe*8u+i;masks[bit/32u]|=1u<<(bit%32u);
             }
         }
-        cache.data[at+1u]=uvec4(masks,1u,0u);return;
+        cache.data[at+1u].xy=masks;return;
     }
     for(uint lobe=0u;lobe<6u;++lobe) {
         vec3 n=cache_normal(lobe);float total;
@@ -91,7 +102,16 @@ void main() {
                 if((cache.data[at+1u][bit/32u]&(1u<<(bit%32u)))!=0u)daylight+=environment_direction(cache_sky_direction(n,i))*0.125;
             }
         }
-        cache.data[at+10u+lobe]=floatBitsToUint(vec4(fixtures,1));
-        cache.data[at+16u+lobe]=floatBitsToUint(vec4(daylight,1));
+        if((cache.header.x&0x80000000u)!=0u) {
+            uint dst=cache.header.w+sample_id*12u;
+            cache.data[dst+lobe]=floatBitsToUint(vec4(fixtures,0));
+            cache.data[dst+6u+lobe]=floatBitsToUint(vec4(daylight,0));continue;
+        }
+        // Vulkan 1.0 pack/unpack: no optional 16-bit storage feature required.
+        // Clamp finite HDR overflow rather than encoding FP16 infinity.
+        fixtures=clamp(fixtures,vec3(0),vec3(65504));daylight=clamp(daylight,vec3(0),vec3(65504));
+        cache.data[cache.header.w+sample_id*6u+lobe]=uvec4(
+            packHalf2x16(fixtures.rg),packHalf2x16(vec2(fixtures.b,0)),
+            packHalf2x16(daylight.rg),packHalf2x16(vec2(daylight.b,0)));
     }
 }

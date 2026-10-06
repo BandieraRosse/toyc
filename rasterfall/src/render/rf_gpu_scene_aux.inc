@@ -13,7 +13,8 @@ static int scene_aux_weapon(struct rf_gpu_scene_world_gpu_probe *probe,
     struct rf_gpu_lighting lighting;
     if(view->weapon<0 || view->weapon>=TOY_GAME_WEAPON_COUNT)return -1;
     if(!probe->graphics)probe->graphics=rf_gpu_graphics_create(context);
-    if(!probe->graphics || rf_gpu_graphics_resize(probe->graphics,width,height)<0)return -1;
+    if(!probe->graphics || rf_gpu_graphics_clone_lighting(probe->graphics,NULL)<0 ||
+        rf_gpu_graphics_resize(probe->graphics,width,height)<0)return -1;
     if(!probe->weaver)probe->weaver=calloc(1,sizeof(*probe->weaver));
     if(!probe->weaver)return -1;
     struct rf_weaver_gpu_mesh *mesh=&probe->weaver->weapons[view->weapon];
@@ -56,6 +57,7 @@ static int scene_aux_weapon(struct rf_gpu_scene_world_gpu_probe *probe,
             &run->material,run->first,run->count,run->material.color,0,0,0,&draws)<0)return -1;
     }
     rf_gpu_lighting_default(&lighting);
+    lighting.disable_indirect=1;
     lighting.environment[0]=150.796447f;lighting.environment[1]=163.362818f;lighting.environment[2]=188.495559f;
     lighting.sun_direction[0]=-.35f;lighting.sun_direction[1]=.65f;lighting.sun_direction[2]=-.68f;
     lighting.sun_color[0]=lighting.sun_color[1]=lighting.sun_color[2]=1.0f;lighting.sun_color[3]=180.0f;

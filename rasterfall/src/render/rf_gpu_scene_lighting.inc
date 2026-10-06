@@ -136,6 +136,12 @@ fail:
 static int scene_architecture_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_world_resources *world)
 {
+    const char *clone=getenv("RF_GPU_AUX_LIGHTING_CLONE");
+    if(probe->shared_parent && !(clone && !strcmp(clone,"0")) &&
+        !rf_gpu_graphics_clone_lighting(probe->graphics,probe->shared_parent->graphics)) {
+        probe->lighting_world_generation=world->world_generation;
+        probe->lighting_map_generation=world->map_generation;return 0;
+    }
     if(probe->lighting_world_generation==world->world_generation &&
        probe->lighting_map_generation==world->map_generation)return 0;
     struct scene_arch_floor_rect *floor=NULL;unsigned floor_count=0;

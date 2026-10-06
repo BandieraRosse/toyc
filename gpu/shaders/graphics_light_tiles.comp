@@ -2,8 +2,9 @@
 #extension GL_GOOGLE_include_directive : require
 #include "lighting.glsl"
 layout(local_size_x=8,local_size_y=8) in;
-layout(set=1,binding=8,std430) writeonly buffer Tiles { uint masks[]; } tiles;
+layout(set=1,binding=8,std430) buffer Tiles { uint masks[]; } tiles;
 layout(set=1,binding=9,std430) buffer Profile { uint counts[]; } profile;
+layout(push_constant) uniform Build {uint pass;} build;
 
 // Maximum projection of a finite spherical spot sector onto a unit plane
 // normal. Testing its five frustum half-spaces only rejects disjoint lights;
@@ -16,7 +17,52 @@ float support(Light light,vec3 n) {
     if(a>=c)return radius;
     return radius*max(0.0,a*c+sqrt(max(0.0,(1.0-a*a)*(1.0-c*c))));
 }
+void cluster_build(uvec3 cluster) {
+    if(any(greaterThanEqual(cluster.xy,lighting.tile_grid.xy)) || cluster.z>=lighting.tile_grid.z)return;
+    uint screen_count=lighting.tile_grid.x*lighting.tile_grid.y;
+    uint tile=cluster.y*lighting.tile_grid.x+cluster.x;
+    vec4 view=vec4(lighting.tile_view)/1024.0;
+    vec3 right=vec3(view.y,0,-view.x),up=vec3(-view.x*view.z,view.w,-view.y*view.z);
+    vec3 forward=vec3(view.x*view.w,view.z,view.y*view.w);
+    // Invert the actual quantized camera basis; assuming an orthonormal basis
+    // can shave lights at steep pitch and tile/depth boundaries.
+    float determinant=dot(right,cross(up,forward));
+    bool bounded=cluster.z+1u<lighting.tile_grid.z && abs(determinant)>1e-5;
+    vec3 lo=vec3(1e30),hi=vec3(-1e30);
+    if(bounded) {
+        vec3 rx=cross(up,forward)/determinant,uy=cross(forward,right)/determinant,fz=cross(right,up)/determinant;
+        vec2 half_size=vec2(lighting.tile_projection.xy)*0.5;
+        vec2 xy0=(vec2(cluster.xy*16u)-1.0-half_size)/float(lighting.tile_projection.w);
+        vec2 xy1=(vec2((cluster.xy+1u)*16u)+1.0-half_size)/float(lighting.tile_projection.w);
+        for(uint corner=0u;corner<8u;++corner) {
+            float z=float((cluster.z+((corner>>2u)&1u))*uint(lighting.tile_camera.w));
+            float x=(corner&1u)==0u?xy0.x:xy1.x,y=(corner&2u)==0u?xy0.y:xy1.y;
+            vec3 p=(rx*x-uy*y+fz)*z;lo=min(lo,p);hi=max(hi,p);
+        }
+    }
+    for(uint word=0u;word<5u;++word) {
+        uint candidates=tiles.masks[tile*5u+word]&tiles.masks[(screen_count+cluster.z)*5u+word],mask=0u;
+        while(candidates!=0u) {
+            uint bit=uint(findLSB(candidates));candidates&=candidates-1u;
+            Light light=lighting.lights[word*32u+bit];
+            vec3 center=light.position_radius.xyz-vec3(lighting.tile_camera.xyz);
+            float radius=light.position_radius.w,c=light.direction_outer.w;
+            // A conservative sphere of the finite spot sector is tighter
+            // than the range sphere. Test it against the joint 3D cell AABB.
+            if(c>=0.0) {
+                float shift=c>=0.70710678?radius/(2.0*c):radius*c;
+                radius=c>=0.70710678?shift:radius*sqrt(max(0.0,1.0-c*c));
+                center+=light.direction_outer.xyz*shift;
+            }
+            float margin=2.0+1e-5*(length(center)+light.position_radius.w);
+            vec3 delta=center-clamp(center,lo,hi);
+            if(!bounded || dot(delta,delta)<=(radius+margin)*(radius+margin))mask|=1u<<bit;
+        }
+        tiles.masks[(screen_count+32u+cluster.z*screen_count+tile)*5u+word]=mask;
+    }
+}
 void main() {
+    if(build.pass!=0u){cluster_build(gl_GlobalInvocationID);return;}
     uvec2 tile=gl_GlobalInvocationID.xy;
     // Factorized 3D light masks: screen tile AND camera-depth band. Each band
     // is built once, not once per screen tile; no depth prepass is required.
@@ -43,7 +89,7 @@ void main() {
     }
     if(any(greaterThanEqual(tile,lighting.tile_grid.xy)))return;
     uint at=tile.y*lighting.tile_grid.x+tile.x;
-    if(lighting.tile_grid.w!=0u)for(uint k=0u;k<7u;++k)profile.counts[at*7u+k]=0u;
+    if((lighting.tile_grid.w&1u)!=0u)for(uint k=0u;k<7u;++k)profile.counts[at*7u+k]=0u;
     uint count=uint(lighting.counts.x);uint mask[5]=uint[5](0u,0u,0u,0u,0u);
     if(lighting.tile_grid.z==0u) {
         for(uint word=0u;word<5u;++word) {

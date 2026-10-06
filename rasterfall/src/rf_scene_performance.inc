@@ -114,7 +114,7 @@ static struct {
     unsigned present_mode;
     int64_t interval[4096],gpu[4096],sky[4096],prepare[4096],cpu[4096];
     int64_t shadow[4096],main[4096];
-    int64_t detail[8][4096];
+    int64_t detail[9][4096];
     uint64_t light_counts[7];
     uint64_t draws,shadows,uploads,world_us,layers_us,actors_us,enemies_us,skin_us,weaver_us;
 } rf_scene_perf;
@@ -156,7 +156,7 @@ static int rf_scene_perf_sample(int frame,int64_t interval,
         s->present_mode!=rf_scene_perf.present_mode || !s->gpu_time_valid ||
         interval<=0 || paused || s->bridge_transfers) rf_scene_perf.invalid=1;
     if(s->light_profile)rf_scene_perf.invalid=1; /* Instrumented fragment shader. */
-    for(unsigned i=0;i<8;++i)rf_scene_perf.detail[i][n]=(int64_t)(s->gpu_detail_ms[i]*1000);
+    for(unsigned i=0;i<9;++i)rf_scene_perf.detail[i][n]=(int64_t)(s->gpu_detail_ms[i]*1000);
     for(unsigned i=0;i<7;++i)rf_scene_perf.light_counts[i]+=s->light_counts[i];
     rf_scene_perf.interval[n]=interval;
     rf_scene_perf.gpu[n]=(int64_t)(s->gpu_draw_ms*1000);
@@ -181,7 +181,7 @@ static int rf_scene_perf_sample(int frame,int64_t interval,
     qsort(rf_scene_perf.main,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.prepare,count,sizeof(int64_t),rf_scene_perf_compare);
     qsort(rf_scene_perf.cpu,count,sizeof(int64_t),rf_scene_perf_compare);
-    for(unsigned i=0;i<8;++i)qsort(rf_scene_perf.detail[i],count,sizeof(int64_t),rf_scene_perf_compare);
+    for(unsigned i=0;i<9;++i)qsort(rf_scene_perf.detail[i],count,sizeof(int64_t),rf_scene_perf_compare);
     __printf("SCENE-PERF valid=%d samples=%d warmup=120 extent=%dx%d present_mode=%u mean_us=%lld p50_us=%lld p95_us=%lld p99_us=%lld gpu_p50_us=%lld gpu_p95_us=%lld sky_p50_us=%lld sky_p95_us=%lld shadow_p50_us=%lld shadow_p95_us=%lld main_p50_us=%lld main_p95_us=%lld draws=%llu shadow_draws=%llu upload_bytes=%llu prepare_p50_us=%lld prepare_p95_us=%lld world_mean_us=%llu layers_mean_us=%llu actors_mean_us=%llu enemies_mean_us=%llu skin_mean_us=%llu weaver_mean_us=%llu\n",
         !rf_scene_perf.invalid,count,width,height,s->present_mode,(long long)(sum/count),
         (long long)rf_scene_perf.interval[count/2],(long long)rf_scene_perf.interval[(count*95+99)/100-1],
@@ -199,10 +199,10 @@ static int rf_scene_perf_sample(int frame,int64_t interval,
         (unsigned long long)(rf_scene_perf.skin_us/count),(unsigned long long)(rf_scene_perf.weaver_us/count));
     __printf("SCENE-CPU samples=%d thread_cpu_p50_us=%lld thread_cpu_p95_us=%lld\n",count,
         (long long)rf_scene_perf.cpu[count/2],(long long)rf_scene_perf.cpu[(count*95+99)/100-1]);
-    const char *stages[]={"tiles","world","transparent","viewmodel","post","hud","gi","receiver"};
+    const char *stages[]={"tiles","world","transparent","viewmodel","post","hud","gi","receiver","skin"};
     __printf("SCENE-GPU-STAGES diagnostic=%u light_tiles=%u light_ablation=%u gpu_p99_us=%lld",s->light_profile,s->light_tiles,s->light_ablation,
         (long long)rf_scene_perf.gpu[(count*99+99)/100-1]);
-    for(unsigned i=0;i<8;++i)__printf(" %s_p50_us=%lld %s_p95_us=%lld %s_p99_us=%lld",stages[i],
+    for(unsigned i=0;i<9;++i)__printf(" %s_p50_us=%lld %s_p95_us=%lld %s_p99_us=%lld",stages[i],
         (long long)rf_scene_perf.detail[i][count/2],stages[i],
         (long long)rf_scene_perf.detail[i][(count*95+99)/100-1],stages[i],
         (long long)rf_scene_perf.detail[i][(count*99+99)/100-1]);

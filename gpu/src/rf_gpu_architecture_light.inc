@@ -54,7 +54,7 @@ static void arch_build(struct rf_arch_node *nodes,uint32_t *used,
 int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count)
 {
-    if(!g || g->scene_in_flight || g->poisoned || count>65536 || (count && !triangles))return -1;
+    if(!g || g->scene_in_flight || g->poisoned || !gfx_architecture_readers_retired(g) || count>65536 || (count && !triangles))return -1;
     for(uint32_t i=0;i<count;++i)for(unsigned v=0;v<3;++v)for(unsigned k=0;k<3;++k)
         if(!__builtin_isfinite(triangles[i].p[v][k]) || fabs(triangles[i].p[v][k])>1e8)return -1;
     for(uint32_t i=0;i<count;++i)if(triangles[i].solid_box)
@@ -85,6 +85,8 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
        indirect_upload(g,empty,16,&sources)<0 ||
        indirect_geometry_build(g,triangles,count,&geometry)<0 ||
        receiver_cache_build(g,triangles,count,&receiver,&receiver_samples)<0)goto fail;
+    gfx_architecture_unshare(g);
+    gfx_architecture_release_readers(g);
     if(g->owner->ray_query_enabled) {
         if(architecture_ray_set(g,triangles,count)<0)goto fail;
     } else {
@@ -110,6 +112,7 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     indirect_bind(g,15,&g->daylight_buffer,&daylight);
     g->daylight_probe_count=g->daylight_cursor=0;g->daylight_warmed=0;
     g->architecture_count=count;
+    g->lighting_clone_invalid=0;
     indirect_bind(g,16,&g->receiver_buffer,&receiver);
     g->receiver_samples=receiver_samples;g->receiver_ready=0;
     g->indirect_source_count=0;

@@ -1511,6 +1511,7 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
                 "scene-prewarm", -1, rf_core_clock_now_us()-start);
             return -1;
         }
+        int64_t aux_create_start=rf_core_clock_now_us();
         for(unsigned i=0;i<2;++i) {
             struct rf_gpu_scene_aux_slot *slot=&probe->aux[i];
             if(!slot->owner)slot->owner=calloc(1,sizeof(*slot->owner));
@@ -1524,11 +1525,16 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
                 "scene-prewarm", -1, rf_core_clock_now_us()-start);
             return -1;
         }
+        int64_t aux_create_us=rf_core_clock_now_us()-aux_create_start;
+        int64_t actor_pool_start=rf_core_clock_now_us();
         scene_actor_warm_prepare(probe,owner->world_generation,poses,pose_count,camera,width,height);
         probe->prewarmed_generation=owner->world_generation;
-        __printf("SCENE-PREWARM world=%llu cpu_us=%lld upload_bytes=%llu draws=%u aux_targets=2\n",
+        __printf("SCENE-PREWARM world=%llu cpu_us=%lld upload_bytes=%llu draws=%u aux_targets=2 prepare_us=%lld lighting_us=%lld gpu_us=%lld gi_us=%lld receiver_us=%lld aux_create_us=%lld actor_pool_us=%lld\n",
             (unsigned long long)owner->world_generation,(long long)(rf_core_clock_now_us()-start),
-            (unsigned long long)warm.upload_bytes,warm.draws);
+            (unsigned long long)warm.upload_bytes,warm.draws,(long long)warm.prepare_us,
+            (long long)warm.lighting_prepare_us,(long long)(warm.gpu_draw_ms*1000),
+            (long long)(warm.gpu_detail_ms[6]*1000),(long long)(warm.gpu_detail_ms[7]*1000),
+            (long long)aux_create_us,(long long)(rf_core_clock_now_us()-actor_pool_start));
         if(probe->startup_event && probe->startup_event(probe->startup_event_context,
                 "scene-prewarm", 0, rf_core_clock_now_us()-start)<0)return -1;
         prepare_start=rf_core_clock_now_us();
@@ -1703,9 +1709,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         (long long)stats->layer_clip_us,(long long)stats->layer_pack_us,
         (long long)stats->layer_upload_us,(long long)stats->layer_batch_us,
         stats->layer_triangles,stats->layer_culled);
-    /* All camera-independent uploads and skinning are complete before any
-     * child reads them. The parent keeps its registry/actor pins until every
-     * synchronous child and the native frame have retired. */
+    /* Host uploads are sealed. The first main/AUX consumer records pending
+     * skinning and its draw together; the parent keeps registry/actor pins
+     * until every synchronous child and the native frame have retired. */
     probe->batch=items;
     uint64_t aux_before[2]={0};
     int64_t aux_start=0;

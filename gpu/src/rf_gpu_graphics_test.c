@@ -282,6 +282,7 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
     struct rf_gpu_graphics_stats before,after;
     uint64_t pm,nm,um;uint32_t pd,nd;
     float one=1.0f,shift=12.0f;
+    int fused=!getenv("RF_GPU_SKIN_FUSED") || strcmp(getenv("RF_GPU_SKIN_FUSED"),"0");
     int result=-1;
     memcpy(&palette[0],&one,4);memcpy(&palette[4],&one,4);memcpy(&palette[8],&one,4);
     for (unsigned i=0;i<3;++i) {
@@ -311,7 +312,23 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
     CHECK(after.queue_submits==before.queue_submits);
     CHECK(rf_gpu_graphics_skin_batch_end(g)==0);
     rf_gpu_graphics_get_stats(g,&after);
-    CHECK(after.queue_submits==before.queue_submits+1 && after.fence_waits==before.fence_waits+1);
+    CHECK(after.queue_submits==before.queue_submits+(fused?0:1) && after.fence_waits==before.fence_waits+(fused?0:1));
+    /* The first auxiliary view consumes sealed owner skinning in its drawing
+     * submit. A second camera sees the same result without another dispatch. */
+    CHECK(rf_gpu_graphics_resize(other,32,32)==0);
+    CHECK(rf_gpu_graphics_resize(second,32,32)==0);
+    CHECK(rf_gpu_graphics_resource_bind(other,r[0])==0);
+    CHECK(rf_gpu_graphics_resource_bind(second,r[0])==0);
+    struct rf_gpu_graphics_batch_item item={0};item.resource=r[0];item.draw=draw(32,32);
+    item.draw.index_count=3;item.draw.texture[0]=item.draw.texture[1]=1;
+    item.draw.scene_layer=RF_GPU_SCENE_WORLD;
+    struct rf_gpu_graphics_stats aux_before,aux_after;
+    rf_gpu_graphics_get_stats(other,&aux_before);
+    CHECK(rf_gpu_graphics_scene_offscreen(other,&item,1,1)==0);
+    rf_gpu_graphics_get_stats(other,&aux_after);
+    CHECK(aux_after.queue_submits==aux_before.queue_submits+1);
+    CHECK(aux_after.submits_by_kind[RF_GPU_SUBMIT_SKINNING]==aux_before.submits_by_kind[RF_GPU_SUBMIT_SKINNING]);
+    CHECK(rf_gpu_graphics_scene_offscreen(second,&item,1,1)==0);
     for (unsigned i=0;i<2;++i) {
         CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[i],expected,3,&pm,&nm,&um,&pd,&nd)==0);
         CHECK(!pm && !nm && !um);
@@ -345,7 +362,7 @@ static int skin_batch_test(struct rf_gpu_vulkan_context *context)
     CHECK(rf_gpu_graphics_skinned_resource_update(g,r[0],3,NULL,0,palette,15)==0);
     CHECK(rf_gpu_graphics_skin_batch_end(g)==0);
     rf_gpu_graphics_get_stats(g,&after);
-    CHECK(after.queue_submits==before.queue_submits+1);
+    CHECK(after.queue_submits==before.queue_submits+(fused?0:1));
     CHECK(after.mesh_upload_bytes-before.mesh_upload_bytes==sizeof(palette));
     CHECK(rf_gpu_graphics_resource_diff_vertices(g,r[0],expected,3,&pm,&nm,&um,&pd,&nd)==0);
     CHECK(!pm && !nm && !um);

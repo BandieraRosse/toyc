@@ -16,7 +16,8 @@ static int indirect_upload(struct rf_gpu_graphics *g,const void *data,size_t byt
     struct rf_gpu_vulkan_buffer *next)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;void *mapped=NULL;
-    if(gpu_buffer_create(p,bytes,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    if(gpu_buffer_create(p,bytes,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|
+        RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT|RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
         RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,next)<0){gpu_buffer_destroy(p,next);return -1;}
     if(p->api.map_memory(p->device,next->memory,0,next->allocation_size,0,&mapped)!=RF_VK_SUCCESS) {
@@ -343,6 +344,77 @@ int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,
 { return indirect_field_build(g,sources,count,0); }
 int rf_gpu_graphics_prepare_daylight(struct rf_gpu_graphics *g)
 { return indirect_field_build(g,NULL,0,1); }
+
+int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graphics *source)
+{
+    if(!g || g->poisoned || g->scene_in_flight)return -1;
+    if(!source){gfx_architecture_unshare(g);return 0;}
+    if(source==g || source->owner!=g->owner || source->poisoned || source->scene_in_flight ||
+        source->architecture_source || !source->architecture_count ||
+        g->indirect_mode!=source->indirect_mode || g->indirect_enabled!=source->indirect_enabled ||
+        g->daylight_enabled!=source->daylight_enabled || g->indirect_bounces!=source->indirect_bounces ||
+        g->roof_cache_enabled!=source->roof_cache_enabled || g->indirect_reuse!=source->indirect_reuse ||
+        g->indirect_visibility!=source->indirect_visibility || g->receiver_fp32!=source->receiver_fp32 ||
+        (source->indirect_probe_count && !source->indirect_warmed) ||
+        (source->daylight_probe_count && !source->daylight_warmed) ||
+        (source->receiver_samples && !source->receiver_ready))return -1;
+    if(g->architecture_source==source)return 0;
+    if(g->architecture_count && !g->architecture_source)return -1;
+    double started=now_ms();
+    const unsigned bindings[6]={10,11,12,13,15,16};
+    struct rf_gpu_vulkan_buffer *fields[6]={&g->roof_buffer,&g->indirect_buffer,&g->indirect_geometry,
+        &g->indirect_sources,&g->daylight_buffer,&g->receiver_buffer};
+    const struct rf_gpu_vulkan_buffer *inputs[6]={&source->roof_buffer,&source->indirect_buffer,&source->indirect_geometry,
+        &source->indirect_sources,&source->daylight_buffer,&source->receiver_buffer};
+    struct rf_gpu_vulkan_buffer next[6]={{0}};struct rf_gi_arch_node *nodes=NULL;
+    int result=-1;uint64_t bytes=0;
+    if(source->indirect_architecture_nodes) {
+        size_t size=(size_t)source->indirect_architecture_nodes*sizeof(*nodes);
+        nodes=malloc(size);if(!nodes)goto done;memcpy(nodes,source->indirect_architecture,size);
+    }
+    for(unsigned i=0;i<6;++i) {
+        if(!inputs[i]->buffer || gpu_buffer_create(g->owner,inputs[i]->size,
+            RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT|RF_VK_BUFFER_USAGE_TRANSFER_SRC_BIT|RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&next[i])<0)goto done;
+        bytes+=inputs[i]->size;
+    }
+    if(gfx_begin(g)<0)goto done;
+    struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=RF_VK_ACCESS_TRANSFER_READ_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        RF_VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
+    for(unsigned i=0;i<6;++i) {
+        struct rf_vk_buffer_copy copy={0};copy.size=inputs[i]->size;
+        g->owner->api.cmd_copy_buffer(g->cmd,inputs[i]->buffer,next[i].buffer,1,&copy);
+    }
+    barrier.src_access_mask=RF_VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,RF_VK_PIPELINE_STAGE_TRANSFER_BIT,
+        RF_VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT|VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,1,&barrier,0,NULL,0,NULL);
+    if(gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0)goto done;
+    gfx_architecture_unshare(g);
+    for(unsigned i=0;i<6;++i)indirect_bind(g,bindings[i],fields[i],&next[i]);
+    free(g->indirect_architecture);g->indirect_architecture=nodes;nodes=NULL;
+    g->indirect_architecture_nodes=source->indirect_architecture_nodes;
+    g->architecture_count=source->architecture_count;g->lighting_clone_invalid=0;
+    g->indirect_probe_count=source->indirect_probe_count;g->indirect_cursor=source->indirect_cursor;
+    g->indirect_warmed=source->indirect_warmed;g->indirect_reset_history=source->indirect_reset_history;
+    g->daylight_probe_count=source->daylight_probe_count;g->daylight_cursor=source->daylight_cursor;
+    g->daylight_warmed=source->daylight_warmed;
+    g->receiver_samples=source->receiver_samples;g->receiver_cursor=source->receiver_cursor;
+    g->receiver_ready=source->receiver_ready;g->receiver_full_refresh=source->receiver_full_refresh;
+    g->indirect_source_count=source->indirect_source_count;
+    memcpy(g->indirect_source_snapshot,source->indirect_source_snapshot,sizeof(g->indirect_source_snapshot));
+    gfx_architecture_bind(g,source);g->architecture_source=source;
+    g->architecture_next=source->architecture_readers;source->architecture_readers=g;
+    fprintf(stderr,"rf-gpu-lighting-clone: bytes=%llu prepare-ms=%.3f gpu-copy=1 initialized=1\n",
+        (unsigned long long)bytes,now_ms()-started);
+    result=0;
+done:
+    if(result<0 && g->poisoned)g->owner->api.queue_wait_idle(g->owner->queue);
+    for(unsigned i=0;i<6;++i)gpu_buffer_destroy(g->owner,&next[i]);
+    free(nodes);return result;
+}
 
 static void gfx_daylight_record(struct rf_gpu_graphics *g)
 {

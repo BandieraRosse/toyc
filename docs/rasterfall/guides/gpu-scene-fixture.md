@@ -368,7 +368,10 @@ camera 固定为 `(-3850,-420,1800)` 朝 +Z，actor 固定为 `(-3840,-900,3300)
 
 首帧在 native 提交前运行 palette/generation/material 拒绝测试、body GPU vertex diff，以及 composite
 与三件单独绘制的 color/depth 对照。capture 写入 package 下 `scene-native.ppm` 和三张 object PPM，
-脚本复制到证据目录。等深度遵循实际 GREATER_OR_EQUAL 的后提交覆盖；三件必须可见且 body/map、body/head
+脚本复制到证据目录。
+body 位置对照允许 CPU double palette 与 GPU FP32 palette 在整数舍入边界相差一个模型存储格，
+保留实际 mismatch 和最大差值日志；法线及 UV 必须精确相同。该容差不适用于颜色、深度或其他资源合同。
+等深度遵循实际 GREATER_OR_EQUAL 的后提交覆盖；三件必须可见且 body/map、body/head
 存在交叠，完整 composite 必须逐像素选择相应最近深度与颜色。诊断有显式 readback；后续 native 帧不做
 readback 或 CPU framebuffer copy，也没有 Raster bridge。
 

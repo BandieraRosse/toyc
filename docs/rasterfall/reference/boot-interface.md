@@ -128,6 +128,10 @@ Shell 的 `devices` 命令另可按需记录 `vulkan-adapter-probe`，它不属�
 菜单就绪、后端选择和运行中切换等无 `elapsed_us` 的标记也不作为耗时项。
 GPU 首帧准备、预热和 native present 已覆盖；上传字节仍由 `SCENE-PREWARM` 诊断日志提供，
 不将墙钟耗时解释为纯 GPU 执行时间。
+`SCENE-PREWARM` 的 `prepare_us` 包含主准备和光照 CPU 工作，`lighting_us` 是其中的光照区间；
+`gpu_us` 包含该次完整 GPU 绘制，`gi_us`/`receiver_us` 是其中的子区间；`aux_create_us` 和
+`actor_pool_us` 分别覆盖两路目标创建与可选备用角色池。管线持久缓存命中/未命中分别比较，
+进程从启动到退出的墙钟还包含诊断帧和关闭，不能用来代替 `gpu-startup-total`。
 
 进度表示已完成的实际任务或可测量的工作量。若采用阶段计数，应明确显示“启动阶段”，
 不把等权阶段比例描述为资源字节百分比或剩余时间。没有已知总量时显示工作中和当前任务，

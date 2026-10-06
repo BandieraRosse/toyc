@@ -37,6 +37,7 @@
 #define RF_VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO 12
 #define RF_VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO 16
 #define RF_VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO 18
+#define RF_VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO 17
 #define RF_VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO 29
 #define RF_VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO 30
 #define RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO 32
@@ -491,6 +492,19 @@ typedef rf_vk_result (RF_VK_CALL *rf_vk_create_pipeline_layout_fn)(rf_vk_device,
     rf_vk_pipeline_layout *);
 typedef void (RF_VK_CALL *rf_vk_destroy_pipeline_layout_fn)(rf_vk_device,
     rf_vk_pipeline_layout, const void *);
+struct rf_vk_pipeline_cache_create_info {
+    uint32_t s_type;
+    const void *next;
+    rf_vk_flags flags;
+    size_t initial_data_size;
+    const void *initial_data;
+};
+typedef rf_vk_result (RF_VK_CALL *rf_vk_create_pipeline_cache_fn)(rf_vk_device,
+    const struct rf_vk_pipeline_cache_create_info *, const void *, rf_vk_pipeline_cache *);
+typedef void (RF_VK_CALL *rf_vk_destroy_pipeline_cache_fn)(rf_vk_device,
+    rf_vk_pipeline_cache, const void *);
+typedef rf_vk_result (RF_VK_CALL *rf_vk_get_pipeline_cache_data_fn)(rf_vk_device,
+    rf_vk_pipeline_cache, size_t *, void *);
 typedef rf_vk_result (RF_VK_CALL *rf_vk_create_compute_pipelines_fn)(rf_vk_device,
     rf_vk_pipeline_cache, uint32_t,
     const struct rf_vk_compute_pipeline_create_info *, const void *, rf_vk_pipeline *);

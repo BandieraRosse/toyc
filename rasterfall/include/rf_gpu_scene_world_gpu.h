@@ -176,7 +176,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     double gpu_draw_ms;
     double gpu_sky_ms;
     double gpu_shadow_ms,gpu_main_ms;
-    double gpu_detail_ms[8];
+    double gpu_detail_ms[9];
     uint32_t light_profile,light_ablation,light_tiles;
     uint64_t light_counts[7];
     uint32_t native_draws;

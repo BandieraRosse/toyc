@@ -20,7 +20,8 @@ GPU 实时阴影、动态灯与 PBR/HDR 管线见[GPU 光照架构](gpu-lighting
 保留 BLAS/TLAS；其他设备使用 GPU 软件 BVH。实例/设备版本协商、资源与 shader 变体的稳定边界
 见[建筑硬件查询](gpu-lighting.md#可选硬件-ray-query)，不改变 Scene 光栅呈现或 Game 状态所有权。
 
-顶部可见性列缓存与 DDGI 探针也由各 graphics owner 独占；地图代际变化时重建，resize 保留。
+顶部可见性列缓存与 DDGI 探针由各 graphics owner 独占；WORLD AUX 可从已初始化的主场复制，
+借用主场静态建筑查询结构，后续照明更新仍独立。地图代际变化时重建，resize 保留。
 灯具与自然光分别持有探针场，自然光布局依据建筑表面。天空环境 compute 先生成不含太阳盘的
 方向缓存；两场使用同一建筑结构，在灯表后、阴影前更新，随后由片元各读取一次并合成漫反射。
 它不写入 Game 或旧 CPU 静态光场；布局、更新预算与已知限制见[DDGI 原型](gpu-lighting.md#ddgi-漫反射原型)。
@@ -87,6 +88,10 @@ quad 路径（65,536 quad 上限，继续不足时直接生成）。GPU 资源�
 历史照常推进，主视图与阴影仍各自剔除。GPU 蒙皮仅在 bind 未变、palette 和顶点数完全一致且上次
 提交成功时跳过重复上传与 dispatch；取消的更新不能成为有效缓存。可映射的 bind/palette 缓冲保持
 映射至资源销毁，非 coherent 内存仍显式 flush。没有跨实例共享姿态或放宽角色包围盒规则。
+角色资源 generation 决定静态材质支持、纹理使用集合和衣服/身体骨架兼容校验的失效；
+这些结果成功校验后复用，姿态、变换、索引范围和最终提交批次仍按当前帧验证。
+同一角色衣物复制身体已打包的 palette，避免重复逐骨转换；静态显示仍按完整内容键缓存，
+文字、样式或位置改变必须重新生成，动态光束、信标与 HUD 继续使用逐帧来源。
 
 敌人几何和 GPU 容量槽按经过范围及严格递增校验的 `source_slot` 索引，避免前一来源消失后，
 未变的后续 body 因压紧序号改变而搬入其他容量槽。程序角色使用 `RF_GPU_SCENE_ENEMY_CAPACITY`
@@ -106,8 +111,12 @@ Runtime 持有 world freeze cache，以 Runtime Map/level owner、world generati
 刷新；消费者仍得到独立值快照，不持有缓存或地图指针。WORLD/prop ID 唯一性使用有界哈希表和完整
 字符串冲突比较。缓存随 runtime 关闭释放，世界身份改变后失效，分配失败回退无缓存冻结。
 
-当前 Scene 仍为单槽：上一帧退休后才能改写资源；蒙皮批次提交后等待完成，native present 后立即
-retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pipeline。
+当前 Scene 仍为单槽：上一帧退休后才能改写资源。蒙皮批次 end 只封存已复制的输入；第一个
+主/AUX 绘制消费者在同一 command buffer 中执行蒙皮和后续绘制，保留 transfer→compute、
+compute→vertex/transfer 屏障。只有 queue submit 成功才认可姿态缓存；封存而未消费的资源
+不能再更新或释放，cancel 使其结果无效。冷创建仍同步；`RF_GPU_SKIN_FUSED=0` 恢复独立
+蒙皮提交及等待，以便同包对照。native present 后立即 retire 等待帧 fence；没有多帧 pipeline。
+合并蒙皮纳入总 GPU 时间并单列 `detail_ms[8]`，不混到 SKY/WORLD 阶段。
 准备计时包含主视图建筑/探针初始化和普通光照准备，单独记录 `lighting_prepare_us`；
 不能将其遗漏到未归因墙钟。上传、蒙皮批次、录制、acquire、queue submit、present、retire
 按同一冻结帧观察，嵌套区间和 GPU 时间不相加；整帧减 GPU 不是可直接消除的 CPU 工作。
@@ -118,13 +127,24 @@ retire 等待帧 fence。本节的复用不引入跨帧在途资源或多帧 pip
 
 ## 入图预热与多视图资源所有权
 
+Vulkan backend 持有一个 device 级 `VkPipelineCache`，同设备的主/AUX graphics 与 compute
+管线创建共用它。首次 graphics 创建按 vendor/device、driver version、pipeline cache UUID、
+文件长度与校验和检查持久缓存；失配、损坏或加载失败回退空缓存。正常后端关闭时有界读取
+驱动数据，写入进程独立临时文件并原子替换；写失败只影响下次启动复用。默认位置是运行目录
+`build/rf-gpu-pipelines-<vendor>-<device>.bin`，不进入源码或 package 资产。新设备、驱动变化
+和首次运行仍有编译成本。`RF_GPU_PIPELINE_CACHE=0` 关闭缓存；
+`RF_GPU_PIPELINE_CACHE_PATH` 指定文件，`-` 仅使用内存缓存。缓存由 backend 生命周期管理，
+不替代 GPU 屏障、提交或退休。接口合同见 [Vulkan pipeline cache](https://docs.vulkan.org/refpages/latest/refpages/source/vkCreatePipelineCache.html)。
+
 每个 world generation 的首个 native Scene 帧前，主 probe 对同一冻结输入执行一次正常离屏准备和
 绘制，提前完成静态地图/prop、当前冻结角色及附件、显示几何、天空/光照管线与主目标的主要首次开销。
 随后创建两路持久辅助目标。预热不推进玩法和动作历史；runtime 重置固定步长累计器，加载耗时不补成
 一串游戏逻辑步。成功后才记录 `prewarmed_generation` 并显示该地图的第一张 native 画面。
 地图代际改变重新预热，关闭 probe 清除标记；失败按正常 Scene 错误链退出。
 
-`SCENE-PREWARM` 记录代际、墙钟、该次主准备的上传字节和 draw 数。上传字节不等于显存占用；
+`SCENE-PREWARM` 记录代际、墙钟、该次主准备的上传字节和 draw 数，另分开主准备、光照准备、
+主 GPU 绘制、GI/receiver GPU 区间、两路 AUX 创建与备用角色池准备。嵌套区间不能相加，
+这些计时不等于完整启动时间。上传字节不等于显存占用；
 辅助目标和驱动分配不包含在该字节计数中。这里是按地图及当前冻结来源预热，未出现的敌人类型、
 武器预览、后续开启的展示和新动态容量仍可能首次加载。应用持有 device-local 资源至失效/退休，
 物理显存驻留仍由驱动和操作系统管理，不把全部资产目录强行常驻。
@@ -146,10 +166,22 @@ character/body/bone、装备及 socket、衣裤、隐藏材料、颜色、武器
 实际耗时；运行时将结果加入独立 GPU 启动事件表，预热后刷新待呈现状态，成功呈现后解除观察者。
 启动总计覆盖后端选择至首帧成功，计量边界见[启动界面合同](../reference/boot-interface.md)。
 
-同一帧先完成主 owner 的上传、蒙皮和场景准备，再刷新到期的 WORLD 子镜头，最后提交主视图。
-子镜头借用主资源缓存、已经蒙皮的角色 draw、匹配完整冻结值的敌人/程序角色几何，以及常驻显示
+同一帧先完成主 owner 的上传封存和场景准备，再刷新到期的 WORLD 子镜头，最后提交主视图。
+子镜头借用主资源缓存、封存或已经蒙皮的角色 draw、匹配完整冻结值的敌人/程序角色几何，以及常驻显示
 packet；只改镜头参数，保留各镜头独立的可见性、阴影和目标。仅子镜头需要的来源或不满足复用条件
 的动态内容仍由子 owner 准备。主 registry 和 actor 的 pin 保持到全部同步子提交及主帧退休。
+借用只在生产者 batch 封存后允许。第一个到期 AUX 可在自己的 command buffer 中完成共享蒙皮；
+成功提交后从生产者 pending 队列移除，后续 AUX/main 沿同一 GPU queue 消费结果，不再重复 dispatch。
+辅助绘制仍同步退休；失败/关闭先排空 GPU，再解除 reader 和资源引用。
+
+WORLD AUX 首次准备优先调用 `rf_gpu_graphics_clone_lighting`，从同设备、同配置且已退休的
+主 graphics 在 GPU 上复制已初始化的顶部缓存、两场探针、静态布局和接收缓存到独立缓冲，
+保留更新游标及初始化状态；compute 写入到 transfer 读取、transfer 写入到 shader 消费均有
+屏障。只有不可变建筑 AS/BVH 借用主 owner，并登记 reader。源建筑替换要求所有 reader 退休，
+替换/关闭解除引用、恢复子 owner 空查询结构并使旧 GI 失效；子关闭也解除引用。照明缓冲、
+镜头、天空环境和阴影目标不共享，灯具更新继续各自执行。配置不匹配或主场未准备好回退
+独立初始化；`RF_GPU_AUX_LIGHTING_CLONE=0` 提供对照。WEAPON 预览解除建筑借用并关闭
+间接光，重新进入 WORLD 时重新复制。该路径减少首次初始化，未引入多帧并行。
 
 graphics resource 保留唯一创建 owner，多个同 device 消费者登记双向 reader 引用；各 graphics owner
 使用相同定义的 descriptor layout，借用原 camera-neutral descriptor set。资源更新、纹理修改和释放

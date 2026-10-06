@@ -15,6 +15,8 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #endif
 
 struct rf_vk_api {
@@ -53,6 +55,9 @@ struct rf_vk_api {
     rf_vk_create_pipeline_layout_fn create_pipeline_layout;
     rf_vk_destroy_pipeline_layout_fn destroy_pipeline_layout;
     rf_vk_create_compute_pipelines_fn create_compute_pipelines;
+    rf_vk_create_pipeline_cache_fn create_pipeline_cache;
+    rf_vk_destroy_pipeline_cache_fn destroy_pipeline_cache;
+    rf_vk_get_pipeline_cache_data_fn get_pipeline_cache_data;
     rf_vk_destroy_pipeline_fn destroy_pipeline;
     rf_vk_create_command_pool_fn create_command_pool;
     rf_vk_destroy_command_pool_fn destroy_command_pool;
@@ -225,6 +230,9 @@ static int api_load_instance(struct rf_vk_api *api, rf_vk_instance instance)
     RF_LOAD_DEVICE(create_pipeline_layout, "vkCreatePipelineLayout");
     RF_LOAD_DEVICE(destroy_pipeline_layout, "vkDestroyPipelineLayout");
     RF_LOAD_DEVICE(create_compute_pipelines, "vkCreateComputePipelines");
+    RF_LOAD_DEVICE(create_pipeline_cache, "vkCreatePipelineCache");
+    RF_LOAD_DEVICE(destroy_pipeline_cache, "vkDestroyPipelineCache");
+    RF_LOAD_DEVICE(get_pipeline_cache_data, "vkGetPipelineCacheData");
     RF_LOAD_DEVICE(destroy_pipeline, "vkDestroyPipeline");
     RF_LOAD_DEVICE(create_command_pool, "vkCreateCommandPool");
     RF_LOAD_DEVICE(destroy_command_pool, "vkDestroyCommandPool");
@@ -591,6 +599,10 @@ struct rf_gpu_vulkan_present_image {
     uint32_t state, render_finished_state;
 };
 
+struct rf_pipeline_cache_disk {
+    uint32_t magic,version,bytes,checksum,vendor,device,driver;
+    uint8_t uuid[16];
+};
 struct rf_gpu_vulkan_impl {
     struct rf_vk_api api;
     struct rf_rt_api rt;
@@ -599,6 +611,10 @@ struct rf_gpu_vulkan_impl {
     rf_vk_instance instance;
     rf_vk_physical_device physical_device;
     rf_vk_device device;
+    rf_vk_pipeline_cache pipeline_cache;
+    int pipeline_cache_attempted;
+    struct rf_pipeline_cache_disk pipeline_cache_identity;
+    char pipeline_cache_path[1024];
     rf_vk_queue queue;
     uint32_t queue_family;
     uint32_t queue_flags;
@@ -626,6 +642,98 @@ struct rf_gpu_vulkan_impl {
     uint64_t present_attempt;
     int present_fault_triggered;
 };
+
+static uint32_t pipeline_cache_checksum(const unsigned char *bytes,size_t count)
+{
+    uint32_t hash=2166136261u;
+    for(size_t i=0;i<count;++i)hash=(hash^bytes[i])*16777619u;
+    return hash;
+}
+static void pipeline_cache_prepare(struct rf_gpu_vulkan_impl *p)
+{
+    if(p->pipeline_cache_attempted)return;
+    p->pipeline_cache_attempted=1;
+    const char *enabled=getenv("RF_GPU_PIPELINE_CACHE"),*path=getenv("RF_GPU_PIPELINE_CACHE_PATH");
+    if(enabled && !strcmp(enabled,"0")) {
+        fprintf(stderr,"rf-gpu-pipeline-cache: enabled=0 loaded-bytes=0\n");return;
+    }
+    struct rf_vk_physical_device_properties properties={0};
+    p->api.get_physical_device_properties(p->physical_device,&properties);
+    struct rf_pipeline_cache_disk *identity=&p->pipeline_cache_identity;
+    identity->magic=0x43504652u;identity->version=1;
+    identity->vendor=properties.vendor_id;identity->device=properties.device_id;
+    identity->driver=properties.driver_version;memcpy(identity->uuid,properties.pipeline_cache_uuid,16);
+    if(!path)snprintf(p->pipeline_cache_path,sizeof(p->pipeline_cache_path),
+        "build/rf-gpu-pipelines-%08x-%08x.bin",identity->vendor,identity->device);
+    else if(strcmp(path,"-") && strlen(path)<sizeof(p->pipeline_cache_path))
+        memcpy(p->pipeline_cache_path,path,strlen(path)+1);
+    struct rf_vk_pipeline_cache_create_info info={0};
+    info.s_type=RF_VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    struct rf_pipeline_cache_disk disk={0};unsigned char *data=NULL;
+    FILE *file=p->pipeline_cache_path[0]?fopen(p->pipeline_cache_path,"rb"):NULL;
+    if(file) {
+        if(fread(&disk,sizeof(disk),1,file)==1 && disk.magic==identity->magic && disk.version==1 &&
+            disk.vendor==identity->vendor && disk.device==identity->device && disk.driver==identity->driver &&
+            !memcmp(disk.uuid,identity->uuid,16) && disk.bytes>=32 && disk.bytes<=64u*1024u*1024u) {
+            data=malloc(disk.bytes);
+            if(data && fread(data,1,disk.bytes,file)==disk.bytes && fgetc(file)==EOF &&
+                pipeline_cache_checksum(data,disk.bytes)==disk.checksum) {
+                uint32_t header[4];memcpy(header,data,16);
+                if(header[0]==32 && header[1]==1 && header[2]==identity->vendor && header[3]==identity->device &&
+                    !memcmp(data+16,identity->uuid,16)) {info.initial_data_size=disk.bytes;info.initial_data=data;}
+            }
+        }
+        fclose(file);
+    }
+    if(p->api.create_pipeline_cache(p->device,&info,NULL,&p->pipeline_cache)!=RF_VK_SUCCESS && info.initial_data_size) {
+        info.initial_data_size=0;info.initial_data=NULL;
+        p->api.create_pipeline_cache(p->device,&info,NULL,&p->pipeline_cache);
+    }
+    fprintf(stderr,"rf-gpu-pipeline-cache: enabled=%d loaded-bytes=%llu persistent=%d\n",
+        p->pipeline_cache!=NULL,(unsigned long long)info.initial_data_size,p->pipeline_cache_path[0]!=0);
+    free(data);
+}
+static void pipeline_cache_save(struct rf_gpu_vulkan_impl *p)
+{
+    if(!p->pipeline_cache || !p->pipeline_cache_path[0])return;
+    size_t bytes=0;
+    if(p->api.get_pipeline_cache_data(p->device,p->pipeline_cache,&bytes,NULL)!=RF_VK_SUCCESS ||
+        bytes<32 || bytes>64u*1024u*1024u)return;
+    unsigned char *data=malloc(bytes);if(!data)return;
+    if(p->api.get_pipeline_cache_data(p->device,p->pipeline_cache,&bytes,data)!=RF_VK_SUCCESS){free(data);return;}
+    struct rf_pipeline_cache_disk disk=p->pipeline_cache_identity;
+    disk.bytes=(uint32_t)bytes;disk.checksum=pipeline_cache_checksum(data,bytes);
+    if(!getenv("RF_GPU_PIPELINE_CACHE_PATH")) {
+#if defined(_WIN32)
+        CreateDirectoryA("build",NULL);
+#else
+        mkdir("build",0700);
+#endif
+    }
+    char temporary[1088];
+#if defined(_WIN32)
+    unsigned long process=(unsigned long)GetCurrentProcessId();
+#else
+    unsigned long process=(unsigned long)getpid();
+#endif
+    snprintf(temporary,sizeof(temporary),"%s.%lu.tmp",p->pipeline_cache_path,process);
+    FILE *file=fopen(temporary,"wb");int ok=0;
+    if(file) {
+        ok=fwrite(&disk,sizeof(disk),1,file)==1 && fwrite(data,1,bytes,file)==bytes;
+        if(fclose(file))ok=0;
+        if(ok) {
+#if defined(_WIN32)
+            ok=MoveFileExA(temporary,p->pipeline_cache_path,MOVEFILE_REPLACE_EXISTING)!=0;
+#else
+            ok=rename(temporary,p->pipeline_cache_path)==0;
+#endif
+        }
+        if(!ok)remove(temporary);
+    }
+    fprintf(stderr,"rf-gpu-pipeline-cache: saved-bytes=%llu result=%s\n",
+        (unsigned long long)bytes,ok?"ok":"unavailable");
+    free(data);
+}
 
 struct rf_gpu_vulkan_framebuffer {
     struct rf_gpu_vulkan_impl *owner;
@@ -1272,6 +1380,9 @@ static void backend_cleanup(struct rf_gpu_vulkan_impl *impl)
 {
     if (!impl) return;
     if (impl->device) presenter_swapchain_destroy(impl);
+    pipeline_cache_save(impl);
+    if (impl->pipeline_cache)
+        impl->api.destroy_pipeline_cache(impl->device,impl->pipeline_cache,NULL);
     if (impl->device && impl->api.destroy_device)
         impl->api.destroy_device(impl->device, NULL);
     if (impl->surface && impl->api.destroy_surface)

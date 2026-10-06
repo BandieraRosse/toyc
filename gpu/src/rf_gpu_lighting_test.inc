@@ -240,7 +240,7 @@ static int lighting_tiles_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item source[2],const struct rf_gpu_lighting *restore,
     uint32_t *a,uint32_t *b,float *da,float *db)
 {
-    int result=-1,saved=g->light_tiles_enabled,saved_depth=g->light_depth_enabled;
+    int result=-1,saved=g->light_tiles_enabled,saved_depth=g->light_depth_enabled,saved_clusters=g->light_clusters_enabled;
     struct rf_gpu_lighting lights=*restore;
 #define TILE_CHECK(x) do {if(!(x)){fprintf(stderr,"LIGHT TILES FAIL line=%d\n",__LINE__);goto done;}}while(0)
     lights.sun_color[3]=0;
@@ -290,18 +290,26 @@ static int lighting_tiles_regression(struct rf_gpu_graphics *g,
             }
             for(unsigned i=0;i<lights.count;++i)lights.lights[i].position_radius[2]+=shift;
         }
-        TILE_CHECK(!rf_gpu_graphics_resize(g,width,height) && !rf_gpu_graphics_set_lighting(g,&lights));
+        g->light_clusters_enabled=1;
+        TILE_CHECK(!rf_gpu_graphics_resize(g,width,height) && !gfx_sky_resize(g,width,height) &&
+            !rf_gpu_graphics_set_lighting(g,&lights));
         g->light_tiles_enabled=0;TILE_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,a,da,96*96));
-        for(unsigned mode=0;mode<2;++mode) {
-            g->light_tiles_enabled=1;g->light_depth_enabled=(int)mode;
+        for(unsigned mode=0;mode<3;++mode) {
+            g->light_tiles_enabled=1;g->light_depth_enabled=mode!=0;g->light_clusters_enabled=mode==2;
             TILE_CHECK(!rf_gpu_graphics_scene_capture(g,pair,2,b,db,96*96));
+            if(memcmp(a,b,width*height*4) || memcmp(da,db,width*height*4))
+                for(unsigned pixel=0;pixel<width*height;++pixel)if(a[pixel]!=b[pixel] || da[pixel]!=db[pixel]) {
+                    fprintf(stderr,"LIGHT TILES mismatch sample=%u mode=%u xy=%u,%u color=%08x,%08x depth=%g,%g\n",
+                        sample,mode,pixel%width,pixel/width,a[pixel],b[pixel],da[pixel],db[pixel]);break;
+                }
             TILE_CHECK(!memcmp(a,b,width*height*4) && !memcmp(da,db,width*height*4));
         }
     }
-    fprintf(stdout,"LIGHT TILES PASS samples=20 empty=1 bit31=1 bit64=1 bit159=1 near_camera=1 wide_narrow_spot=1 mixed_view=1 resize=1 depth_bands=1 far_tail=1 tiny_extent=1 pixel_depth_equal=1\n");
+    fprintf(stdout,"LIGHT TILES PASS samples=20 empty=1 bit31=1 bit64=1 bit159=1 near_camera=1 wide_narrow_spot=1 mixed_view=1 resize=1 depth_bands=1 clusters=1 far_tail=1 tiny_extent=1 pixel_depth_equal=1\n");
     result=0;
 done:
     g->light_tiles_enabled=saved;g->light_depth_enabled=saved_depth;
+    g->light_clusters_enabled=saved_clusters;
     if(rf_gpu_graphics_resize(g,64,64)<0 || rf_gpu_graphics_set_lighting(g,restore)<0)result=-1;
     return result;
 #undef TILE_CHECK
@@ -412,6 +420,78 @@ done:
 #undef DAY_CHECK
 }
 
+static int receiver_projection_regression(const struct rf_gpu_occlusion_primitive *geometry,unsigned count)
+{
+    struct rf_rc_builder b[2]={{0}};int result=-1;
+    unsigned ids[8];if(count>8)return -1;
+    float lo[3]={1e30f,1e30f,1e30f},hi[3]={-1e30f,-1e30f,-1e30f};
+    for(unsigned i=0;i<count;++i) {
+        ids[i]=i;
+        for(unsigned v=0;v<(geometry[i].solid_box?2u:3u);++v)for(unsigned k=0;k<3;++k) {
+            lo[k]=__builtin_fminf(lo[k],geometry[i].p[v][k]-768);
+            hi[k]=__builtin_fmaxf(hi[k],geometry[i].p[v][k]+768);
+        }
+    }
+    for(unsigned mode=0;mode<2;++mode) {
+        b[mode].geometry=geometry;b[mode].count=count;b[mode].spacing=512;b[mode].fixed_projection=mode==0;
+        b[mode].nodes=calloc(RF_RC_LEAVES*4u,sizeof(*b[mode].nodes));
+        b[mode].positions=calloc(RF_RC_LEAVES*8u,sizeof(*b[mode].positions));
+        if(!b[mode].nodes || !b[mode].positions)goto done;
+        rc_build_node(&b[mode],lo,hi,0,ids,count);
+        if(b[mode].failed)goto done;
+    }
+    if(b[0].used!=b[1].used || b[0].leaves!=b[1].leaves || b[0].unresolved!=b[1].unresolved ||
+        memcmp(b[0].nodes,b[1].nodes,b[0].used*sizeof(*b[0].nodes)) ||
+        memcmp(b[0].positions,b[1].positions,b[0].leaves*8*sizeof(*b[0].positions)))goto done;
+    fprintf(stdout,"RECEIVER PROJECTION PASS primitives=%u samples=%u fixed_sweeps=%llu converged_sweeps=%llu bit_equal=1\n",
+        count,b[0].leaves*8,(unsigned long long)b[0].projection_iterations,(unsigned long long)b[1].projection_iterations);
+    result=0;
+done:
+    for(unsigned i=0;i<2;++i){free(b[i].nodes);free(b[i].positions);}
+    return result;
+}
+static int lighting_clone_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *face,const struct rf_gpu_lighting *lights)
+{
+    struct rf_gpu_vulkan_context context={0};context.implementation=g->owner;
+    struct rf_gpu_graphics *child=rf_gpu_graphics_create(&context);int result=-1;
+    uint32_t a[65*65],b[65*65];float da[65*65],db[65*65],hdr[65*65*4];
+    struct rf_gpu_graphics_stats before,after;
+#define CLONE_CHECK(x) do {if(!(x)){fprintf(stderr,"LIGHTING CLONE FAIL line=%d\n",__LINE__);goto done;}}while(0)
+    CLONE_CHECK(child);
+    child->indirect_mode=g->indirect_mode;child->indirect_debug=g->indirect_debug;
+    child->indirect_enabled=g->indirect_enabled;child->daylight_enabled=g->daylight_enabled;
+    child->receiver_fp32=g->receiver_fp32;child->indirect_bounces=g->indirect_bounces;
+    CLONE_CHECK(!rf_gpu_graphics_resize(child,65,65) && !rf_gpu_graphics_set_lighting(child,lights));
+    CLONE_CHECK(!rf_gpu_graphics_resource_bind(child,face->resource));
+    CLONE_CHECK(!rf_gpu_graphics_clone_lighting(child,g));
+    CLONE_CHECK(child->receiver_samples==g->receiver_samples && child->receiver_ready &&
+        child->receiver_buffer.buffer!=g->receiver_buffer.buffer && child->architecture_source==g);
+    rf_gpu_graphics_get_stats(child,&before);
+    CLONE_CHECK(!rf_gpu_graphics_clone_lighting(child,g));
+    rf_gpu_graphics_get_stats(child,&after);CLONE_CHECK(after.queue_submits==before.queue_submits);
+    CLONE_CHECK(!rf_gpu_graphics_scene_capture(g,face,1,a,da,65*65));
+    CLONE_CHECK(!rf_gpu_graphics_scene_capture(child,face,1,b,db,65*65));
+    CLONE_CHECK(!memcmp(a,b,sizeof(a)) && !memcmp(da,db,sizeof(da)));
+    rf_vk_buffer cache=child->receiver_buffer.buffer;
+    CLONE_CHECK(rf_gpu_graphics_set_architecture(g,NULL,1)<0 && child->architecture_source==g &&
+        child->receiver_buffer.buffer==cache);
+    struct rf_gpu_light off=lights->lights[0];off.color_intensity[3]=0;
+    CLONE_CHECK(!rf_gpu_graphics_set_indirect_lights(child,&off,1));
+    CLONE_CHECK(!rf_gpu_graphics_scene_capture(child,face,1,b,db,65*65));
+    CLONE_CHECK(!rf_gpu_graphics_capture_hdr(child,hdr,65*65) && hdr[(32*65+32)*4+1]==0);
+    CLONE_CHECK(!rf_gpu_graphics_scene_capture(g,face,1,a,da,65*65));
+    CLONE_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65) && hdr[(32*65+32)*4+1]>0);
+    CLONE_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0) && !child->architecture_source &&
+        child->lighting_clone_invalid && !child->architecture_count && !child->receiver_samples);
+    CLONE_CHECK(!rf_gpu_graphics_scene_capture(child,face,1,b,db,65*65));
+    fprintf(stdout,"LIGHTING CLONE PASS gpu_copy=1 reused=1 pixel_depth_equal=1 independent_fixture=1 invalid_retains=1 source_clear_detaches=1\n");
+    result=0;
+done:
+    rf_gpu_graphics_destroy(child);return result;
+#undef CLONE_CHECK
+}
+
 static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *source,uint32_t *rgba,float *depth)
 {
@@ -420,6 +500,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     struct rf_gpu_graphics_batch_item face=*source;
     struct rf_gpu_lighting lights;rf_gpu_lighting_default(&lights);
     float hdr[65*65*4];unsigned center=(32*65+32)*4;
+    int saved_fp32=g->receiver_fp32;g->receiver_fp32=0;
     struct rf_gpu_occlusion_primitive room[7]={
         {{{-2048,-1152,0},{2048,-1024,6144},{0,0,0}},1,0xcccccc,0},
         {{{-2048,1024,0},{2048,1152,6144},{0,0,0}},1,0xcccccc,0},
@@ -438,6 +519,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     face.draw.projection[0]=face.draw.projection[1]=65;face.draw.projection[3]=48;
     face.draw.material[0]=0xffffff;face.draw.emissive=face.draw.metallic=0;
     RC_CHECK(!rf_gpu_graphics_resize(g,65,65));
+    RC_CHECK(!receiver_projection_regression(room,6));
     RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
     RC_CHECK(!rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
     RC_CHECK(depth[32*65+32]>0 && hdr[center+1]==0); // valid zero, sealed room
@@ -448,6 +530,22 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     lights.count=1;lights.lights[0]=lamp;
     RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();
     float lit=hdr[center+1],direct=hdr[center];RC_CHECK(lit>0 && direct>0);
+    /* Identical topology/source solve with FP32 irradiance isolates numerical
+     * storage error. Rebuilding does not change spacing or probe geometry. */
+    unsigned compact_samples=g->receiver_samples;uint64_t compact_bytes=g->receiver_buffer.size;
+    RC_CHECK(!lighting_clone_regression(g,&face,&lights));
+    g->receiver_fp32=1;
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
+    float fp32_lit=hdr[center+1];
+    RC_CHECK(g->receiver_samples==compact_samples &&
+        g->receiver_buffer.size-compact_bytes==(uint64_t)compact_samples*96);
+    RC_CHECK(__builtin_fabsf(fp32_lit-lit)<=__builtin_fmaxf(1e-6f,fp32_lit*0.002f));
+    fprintf(stdout,"RECEIVER FORMAT PASS sample_bytes=128 fp32_sample_bytes=224 samples=%u relative_error=%g\n",
+        compact_samples,(double)(__builtin_fabsf(fp32_lit-lit)/__builtin_fmaxf(fp32_lit,1e-8f)));
+    g->receiver_fp32=0;
+    RC_CHECK(!rf_gpu_graphics_set_architecture(g,room,6));
+    RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
     rf_vk_buffer relation=g->indirect_buffer.buffer,cache=g->receiver_buffer.buffer;
     lamp.color_intensity[0]=4;lamp.color_intensity[1]=0.1f;lamp.color_intensity[2]=0.1f;
     RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1));RC_CAPTURE();
@@ -467,6 +565,10 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
         {{-2048,768,0},{2048,768,0},{2048,768,6144}},0,0xcccccc,0};
     ceiling[7]=(struct rf_gpu_occlusion_primitive){
         {{-2048,768,0},{2048,768,6144},{-2048,768,6144}},0,0xcccccc,0};
+    struct rf_gpu_occlusion_primitive sloped[8];memcpy(sloped,ceiling,sizeof(sloped));
+    sloped[6].p[0][1]=sloped[7].p[0][1]=300;
+    sloped[6].p[1][1]=sloped[6].p[2][1]=sloped[7].p[1][1]=sloped[7].p[2][1]=768;
+    RC_CHECK(!receiver_projection_regression(sloped,8));
     RC_CHECK(!rf_gpu_graphics_set_architecture(g,ceiling,8));
     RC_CHECK(!rf_gpu_graphics_set_indirect_lights(g,&lamp,1) && !rf_gpu_graphics_prepare_daylight(g));RC_CAPTURE();
     float winding_lit=hdr[center+1];unsigned winding_samples=g->receiver_samples;
@@ -499,6 +601,7 @@ static int lighting_receiver_regression(struct rf_gpu_graphics *g,
     result=0;
 done:
     g->indirect_mode=saved_mode;g->indirect_debug=saved_debug;
+    g->receiver_fp32=saved_fp32;
     g->indirect_enabled=saved_gi;g->daylight_enabled=saved_daylight;
     if(rf_gpu_graphics_set_architecture(g,NULL,0)<0)result=-1;
     if(rf_gpu_graphics_resize(g,64,64)<0)result=-1;
@@ -894,7 +997,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
             if(timing.supported) {
                 LIGHT_CHECK(timing.valid && timing.frame_id==7+offscreen);
                 LIGHT_CHECK(timing.sky_compute_ms>=0 && timing.shadow_ms>=0 && timing.main_scene_ms>=0);
-                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.detail_ms[6]-timing.detail_ms[7]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
+                LIGHT_CHECK(fabs(timing.world_draw_ms-timing.sky_compute_ms-timing.detail_ms[0]-timing.detail_ms[6]-timing.detail_ms[7]-timing.detail_ms[8]-timing.shadow_ms-timing.main_scene_ms)<0.00001);
                 double sum=0;
                 for(unsigned i=1;i<6;++i){LIGHT_CHECK(timing.detail_ms[i]>=0);sum+=timing.detail_ms[i];}
                 LIGHT_CHECK(fabs(timing.main_scene_ms-sum)<0.00001);

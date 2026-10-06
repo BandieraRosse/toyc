@@ -100,13 +100,15 @@ struct rf_gpu_graphics {
     struct rf_gpu_graphics_resource *resource, *resources;
     struct rf_graphics_reader *borrowed;
     int destroying;
-    int legacy_skin,staging_skin,reuse_pose;
+    int legacy_skin,staging_skin,reuse_pose,fuse_skin;
     rf_vk_descriptor_set_layout set_layout;
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
     rf_vk_pipeline pipelines[36];
     struct rf_gpu_lighting lighting;
+    struct rf_gpu_graphics *architecture_source,*architecture_readers,*architecture_next;
+    int lighting_clone_invalid;
     struct rf_gpu_vulkan_buffer architecture_buffer;
     struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
     rf_rt_as architecture_blas,architecture_tlas;
@@ -134,7 +136,7 @@ struct rf_gpu_graphics {
     struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;
     rf_vk_pipeline light_tiles_pipeline;
     unsigned light_tiles_width,light_tiles_height,light_ablation;
-    int light_tiles_enabled,light_depth_enabled;
+    int light_tiles_enabled,light_depth_enabled,light_clusters_enabled,receiver_fp32;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
     unsigned sky_scale,sky_width,sky_height;
@@ -163,7 +165,7 @@ struct rf_gpu_graphics {
     rf_vk_command_buffer cmd;
     rf_vk_fence fence;
     int poisoned, scene_in_flight;
-    int skin_batch;
+    int skin_batch,skin_recorded;
     int profile_triangle_update;
     struct rf_gpu_graphics_resource *skin_pending, *skin_pending_tail;
     rf_vk_semaphore scene_acquire;
@@ -218,7 +220,7 @@ static int gfx_resource_share(struct rf_gpu_graphics *g,struct rf_gpu_graphics_r
 {
     if(!gfx_resource_compatible(g,resource))return -1;
     if(resource->owner==g)return 0;
-    if(resource->skin_pending_vertices || resource->owner->scene_in_flight)return -1;
+    if(resource->owner->skin_batch || resource->owner->scene_in_flight)return -1;
     for(struct rf_graphics_reader *r=resource->readers;r;r=r->resource_next)
         if(r->graphics==g)return 0;
     struct rf_graphics_reader *r=calloc(1,sizeof(*r));
@@ -240,8 +242,11 @@ static int gfx_begin(struct rf_gpu_graphics *g)
     if (g->poisoned || g->scene_in_flight || g->owner->api.reset_command_pool(
             g->owner->device, g->pool, 0) != RF_VK_SUCCESS) return -1;
     begin.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    g->skin_recorded=0;
     return g->owner->api.begin_command_buffer(g->cmd, &begin) == RF_VK_SUCCESS ? 0 : -1;
 }
+static void gfx_skin_commit(struct rf_gpu_graphics *g);
+static void gfx_skin_pending_record(struct rf_gpu_graphics *g);
 
 static int gfx_submit(struct rf_gpu_graphics *g, int wait,
                       enum rf_gpu_graphics_submit_kind kind)
@@ -259,6 +264,8 @@ static int gfx_submit(struct rf_gpu_graphics *g, int wait,
     g->stats.submits_by_kind[kind]++;
     if (impl->api.queue_submit(impl->queue, 1, &submit, wait ? g->fence : NULL) != RF_VK_SUCCESS)
         goto failed;
+    if(wait)g->scene_in_flight=1;
+    gfx_skin_commit(g);
     g->stats.submit_wall_ms+=now_ms()-stamp;
     if (!wait) return 0;
     stamp=now_ms();
@@ -268,10 +275,46 @@ static int gfx_submit(struct rf_gpu_graphics *g, int wait,
     stamp=now_ms()-stamp;
     g->stats.fence_wait_wall_ms+=stamp;
     g->stats.wait_ms_by_kind[kind]+=stamp;
+    g->scene_in_flight=0;
     return 0;
 failed:
     g->poisoned = 1;
     return -1;
+}
+
+static void gfx_architecture_bind(struct rf_gpu_graphics *g,struct rf_gpu_graphics *source)
+{
+    if(!g->light_set)return;
+    struct rf_vk_write_descriptor_set write={0};
+    struct rf_vk_descriptor_buffer_info buffer={0};
+    struct rf_rt_write ray={1000150007,NULL,1,&source->architecture_tlas};
+    write.s_type=RF_VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;write.dst_set=g->light_set;
+    write.dst_binding=7;write.descriptor_count=1;
+    if(g->owner->ray_query_enabled){write.next=&ray;write.descriptor_type=RF_RT_DESCRIPTOR;}
+    else {buffer.buffer=source->architecture_buffer.buffer;buffer.range=source->architecture_buffer.size;
+        write.buffer_info=&buffer;write.descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;}
+    g->owner->api.update_descriptor_sets(g->owner->device,1,&write,0,NULL);
+}
+static void gfx_architecture_unshare(struct rf_gpu_graphics *g)
+{
+    if(!g->architecture_source)return;
+    struct rf_gpu_graphics **link=&g->architecture_source->architecture_readers;
+    while(*link && *link!=g)link=&(*link)->architecture_next;
+    if(*link)*link=g->architecture_next;
+    g->architecture_source=g->architecture_next=NULL;
+    gfx_architecture_bind(g,g);
+    g->architecture_count=g->indirect_probe_count=g->daylight_probe_count=g->receiver_samples=0;
+    g->lighting_clone_invalid=1;
+}
+static int gfx_architecture_readers_retired(const struct rf_gpu_graphics *g)
+{
+    for(const struct rf_gpu_graphics *r=g->architecture_readers;r;r=r->architecture_next)
+        if(r->scene_in_flight)return 0;
+    return 1;
+}
+static void gfx_architecture_release_readers(struct rf_gpu_graphics *g)
+{
+    while(g->architecture_readers)gfx_architecture_unshare(g->architecture_readers);
 }
 
 static void gfx_image_destroy(struct rf_gpu_graphics *g, struct rf_graphics_image *i)
@@ -300,6 +343,8 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     /* Also covers a failed submission/wait: never destroy pending resources. */
     impl->api.queue_wait_idle(impl->queue);
     g->scene_in_flight=0;g->destroying=1;
+    gfx_architecture_unshare(g);
+    gfx_architecture_release_readers(g);
     rf_gpu_graphics_skin_batch_cancel(g);
     if (g->scene_acquire) impl->api.destroy_semaphore(impl->device,g->scene_acquire,NULL);
     if (g->scene_query_pool) impl->api.destroy_query_pool(impl->device,g->scene_query_pool,NULL);
@@ -602,14 +647,14 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         raster.cullMode=VK_CULL_MODE_NONE;depth_state.depthCompareOp=VK_COMPARE_OP_LESS_OR_EQUAL;
         raster.depthBiasEnable=1;raster.depthBiasConstantFactor=1.25f;raster.depthBiasSlopeFactor=1.75f;
         blend.attachmentCount=0;
-        if(g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,&g->pipelines[color_vertex?31:30])!=RF_VK_SUCCESS) goto done;
+        if(g->api.CreateGraphicsPipelines(impl->device,impl->pipeline_cache,1,&pipeline,NULL,&g->pipelines[color_vertex?31:30])!=RF_VK_SUCCESS) goto done;
         result=0;goto done;
     }
     if(depth_only) {
         blend_attachment.colorWriteMask=0;
         for(unsigned i=0;i<2;++i) {
             raster.cullMode=i?VK_CULL_MODE_NONE:VK_CULL_MODE_BACK_BIT;
-            if(g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
+            if(g->api.CreateGraphicsPipelines(impl->device,impl->pipeline_cache,1,&pipeline,NULL,
                 &g->pipelines[32+(color_vertex?2:0)+i])!=RF_VK_SUCCESS)goto done;
         }
         result=0;goto done;
@@ -626,7 +671,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         blend_attachment.alphaBlendOp=VK_BLEND_OP_ADD;
         for (unsigned i=0;i<2;++i) {
             raster.cullMode=i ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
-            if (g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
+            if (g->api.CreateGraphicsPipelines(impl->device,impl->pipeline_cache,1,&pipeline,NULL,
                     &g->pipelines[overlay ? 18+(color_vertex?6:0)+alpha*2+i : i+(color_vertex ? 12 : compatible*2)+alpha*(color_vertex ? 2 : 4)])!=RF_VK_SUCCESS) goto done;
         }
     }
@@ -666,13 +711,14 @@ static int gfx_skin_create(struct rf_gpu_graphics *g)
     pipeline.stage.s_type=RF_VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     pipeline.stage.stage=VK_SHADER_STAGE_COMPUTE_BIT; pipeline.stage.module=shader; pipeline.stage.name="main";
     pipeline.layout=g->skin_layout; pipeline.base_pipeline_index=-1;
-    if(impl->api.create_compute_pipelines(impl->device,NULL,1,&pipeline,NULL,&g->skin_pipeline)==RF_VK_SUCCESS) result=0;
+    if(impl->api.create_compute_pipelines(impl->device,impl->pipeline_cache,1,&pipeline,NULL,&g->skin_pipeline)==RF_VK_SUCCESS) result=0;
     impl->api.destroy_shader_module(impl->device,shader,NULL);
     return result;
 }
 
 struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx)
 {
+    double started=now_ms();
     struct rf_gpu_graphics *g;
     struct rf_gpu_vulkan_impl *impl = ctx ? ctx->implementation : NULL;
     VkFormatProperties color, depth;
@@ -686,6 +732,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     struct rf_vk_fence_create_info fence = {0};
     if (!impl || !(impl->queue_flags & VK_QUEUE_GRAPHICS_BIT) ||
         !impl->api.queue_wait_idle || !impl->api.reset_fences) return NULL;
+    pipeline_cache_prepare(impl);
     g = calloc(1, sizeof(*g));
     if (!g) return NULL;
     g->owner = impl;
@@ -693,8 +740,11 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         const char *skin=getenv("RF_GPU_SKIN_LEGACY_UPLOAD");
         const char *staging=getenv("RF_GPU_SKIN_STAGING_UPLOAD");
         const char *pose=getenv("RF_GPU_SCENE_LEGACY_POSE_REUSE");
+        const char *fused=getenv("RF_GPU_SKIN_FUSED");
         g->legacy_skin=skin && skin[0]=='1';g->staging_skin=staging && staging[0]=='1';
         g->reuse_pose=!(pose && !strcmp(pose,"1"));
+        g->fuse_skin=!(fused && !strcmp(fused,"0"));
+        fprintf(stderr,"rf-gpu-skin: fused=%d\n",g->fuse_skin);
         const char *profile=getenv("RF_GPU_PROFILE_TRIANGLE_UPDATE");
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
@@ -750,6 +800,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     if (impl->api.allocate_command_buffers(impl->device, &command, &g->cmd) != RF_VK_SUCCESS) goto fail;
     fence.s_type = RF_VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     if (impl->api.create_fence(impl->device, &fence, NULL, &g->fence) != RF_VK_SUCCESS) goto fail;
+    fprintf(stderr,"rf-gpu-graphics: create-ms=%.3f\n",now_ms()-started);
     return g;
 fail:
     rf_gpu_graphics_destroy(g);
@@ -951,6 +1002,7 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     if (gpu_buffer_create(impl,bytes,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &readback)<0 || gfx_begin(g)<0) goto done;
+    gfx_skin_pending_record(g);
     copy.size=bytes;
     impl->api.cmd_copy_buffer(g->cmd,resource->vertices.buffer,readback.buffer,1,&copy);
     if (gfx_submit(g,1,RF_GPU_SUBMIT_VERTEX_DIFF)<0 || impl->api.map_memory(impl->device,readback.memory,0,
@@ -1343,6 +1395,9 @@ int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g)
 {
     int result=0;
     if (!g || !g->skin_batch || g->poisoned || g->scene_in_flight) return -1;
+    /* Seal host inputs. The first drawing consumer records the dispatches;
+     * AUX and main use the same device/queue and compatible skin layouts. */
+    if(g->fuse_skin){g->skin_batch=0;return 0;}
     if (g->skin_pending) {
         if (gfx_begin(g)<0) { g->poisoned=1;return -1; }
         for (struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
@@ -1353,6 +1408,38 @@ int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g)
     }
     rf_gpu_graphics_skin_batch_cancel(g);
     return result;
+}
+
+static void gfx_skin_pending_record(struct rf_gpu_graphics *g)
+{
+    for(struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
+        gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+    for(struct rf_graphics_reader *reader=g->borrowed;reader;reader=reader->graphics_next) {
+        struct rf_gpu_graphics_resource *r=reader->resource;
+        if(r->skin_pending_vertices && !r->owner->skin_batch)
+            gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+    }
+    g->skin_recorded=1;
+}
+static void gfx_skin_commit_one(struct rf_gpu_graphics_resource *r)
+{
+    if(!r->skin_pending_vertices)return;
+    struct rf_gpu_graphics *source=r->owner;
+    struct rf_gpu_graphics_resource **link=&source->skin_pending,*previous=NULL;
+    while(*link && *link!=r){previous=*link;link=&(*link)->skin_pending_next;}
+    if(!*link)return;
+    *link=r->skin_pending_next;
+    if(source->skin_pending_tail==r)source->skin_pending_tail=previous;
+    r->skin_pending_next=NULL;r->skin_pending_vertices=0;
+    r->skin_cached=r->skin_last_palette!=NULL;
+}
+static void gfx_skin_commit(struct rf_gpu_graphics *g)
+{
+    if(!g->skin_recorded)return;
+    while(g->skin_pending)gfx_skin_commit_one(g->skin_pending);
+    for(struct rf_graphics_reader *r=g->borrowed;r;r=r->graphics_next)
+        if(!r->resource->owner->skin_batch)gfx_skin_commit_one(r->resource);
+    g->skin_recorded=0;
 }
 
 int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
@@ -1714,7 +1801,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
                 d->scene_layer==RF_GPU_SCENE_WORLD ? 1 : (int)d->scene_layer;
             if (layer!=last_layer) transparent_started=0;
             g->resource = items[i].resource;
-            if (!gfx_resource_compatible(g,g->resource) ||
+            if (!gfx_resource_compatible(g,g->resource) || g->resource->owner->skin_batch ||
                 !gfx_draw_valid(g, d, !g->resource->frame_dynamic) ||
                 (layer<last_layer ||
                     (transparent_started && !d->texture[2]) ||
@@ -1735,9 +1822,12 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
-        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,13);
+        impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,14);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
+    gfx_skin_pending_record(g);
+    if(g->scene_query_active)
+        impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,13);
     gfx_sky_record(g,items,count);
     gfx_environment_record(g);
     if (g->scene_query_active)
@@ -1875,25 +1965,26 @@ void rf_gpu_graphics_get_stats(const struct rf_gpu_graphics *g, struct rf_gpu_gr
 static int gfx_scene_timing_read(struct rf_gpu_graphics *g,int presented)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    uint64_t ticks[13]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
+    uint64_t ticks[14]={0},mask=p->timestamp_valid_bits>=64?UINT64_MAX:
         ((1ULL<<p->timestamp_valid_bits)-1ULL);
-    unsigned count=presented?13:2;
+    unsigned count=presented?14:2;
     if(p->api.get_query_pool_results(p->device,g->scene_query_pool,0,count,
         count*sizeof(ticks[0]),ticks,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
-    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,9,
-        9*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
+    if(!presented && p->api.get_query_pool_results(p->device,g->scene_query_pool,4,10,
+        10*sizeof(ticks[0]),ticks+4,sizeof(ticks[0]),
         RF_VK_QUERY_RESULT_64_BIT|RF_VK_QUERY_RESULT_WAIT_BIT)!=RF_VK_SUCCESS)return -1;
     double ms=p->timestamp_period/1000000.0;
     g->scene_timing.world_draw_ms=(double)((ticks[1]-ticks[0])&mask)*ms;
     g->scene_timing.present_blit_ms=(double)((ticks[3]-ticks[2])&mask)*ms;
-    g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[0])&mask)*ms;
+    g->scene_timing.sky_compute_ms=(double)((ticks[4]-ticks[13])&mask)*ms;
     g->scene_timing.shadow_ms=(double)((ticks[5]-ticks[11])&mask)*ms;
     g->scene_timing.main_scene_ms=(double)((ticks[1]-ticks[5])&mask)*ms;
     const unsigned starts[6]={4,5,7,8,9,10},ends[6]={6,7,8,9,10,1};
     for(unsigned i=0;i<6;++i)g->scene_timing.detail_ms[i]=(double)((ticks[ends[i]]-ticks[starts[i]])&mask)*ms;
     g->scene_timing.detail_ms[6]=(double)((ticks[12]-ticks[6])&mask)*ms;
     g->scene_timing.detail_ms[7]=(double)((ticks[11]-ticks[12])&mask)*ms;
+    g->scene_timing.detail_ms[8]=(double)((ticks[13]-ticks[0])&mask)*ms;
     g->scene_timing.valid=1;
     return 0;
 }
@@ -1958,7 +2049,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (impl->timestamp_supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=13;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=14;
         if (impl->api.create_query_pool(impl->device,&query,NULL,&g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }
     memset(&g->scene_timing,0,sizeof(g->scene_timing));
@@ -2029,6 +2120,7 @@ int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     if (present_fault_take(impl,RF_GPU_PRESENT_FAULT_SUBMIT_FAILURE) ||
         impl->api.queue_submit(impl->queue,1,&submit,g->fence)!=RF_VK_SUCCESS) goto failed;
     g->scene_in_flight=1;
+    gfx_skin_commit(g);
     g->stats.queue_submits++; g->stats.submits_by_kind[RF_GPU_SUBMIT_DRAW]++;
     g->scene_timing.queue_submit_ms=now_ms()-start;
     g->stats.submit_wall_ms+=g->scene_timing.queue_submit_ms;
@@ -2068,7 +2160,7 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     if(g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=13;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=14;
         if(g->owner->api.create_query_pool(g->owner->device,&query,NULL,
             &g->scene_query_pool)!=RF_VK_SUCCESS)return -1;
     }
@@ -2108,7 +2200,7 @@ int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     if (g->scene_timing.supported && !g->scene_query_pool) {
         struct rf_vk_query_pool_create_info query={0};
         query.s_type=RF_VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=13;
+        query.query_type=RF_VK_QUERY_TYPE_TIMESTAMP;query.query_count=14;
         if (g->owner->api.create_query_pool(g->owner->device,&query,NULL,
                 &g->scene_query_pool)!=RF_VK_SUCCESS) return -1;
     }

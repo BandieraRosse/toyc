@@ -53,6 +53,8 @@ uint light_mask(uint word) {
             vec3 forward=vec3(view.x*view.w,view.z,view.y*view.w);
             float depth=dot(forward,world_position-vec3(lighting.tile_camera.xyz));
             uint band=uint(clamp(floor(depth/float(lighting.tile_camera.w)),0.0,float(lighting.tile_grid.z-1u)));
+            if((lighting.tile_grid.w&2u)!=0u)
+                return tiles.masks[(lighting.tile_grid.x*lighting.tile_grid.y*(1u+band)+32u+light_tile_index())*5u+word];
             mask&=tiles.masks[(lighting.tile_grid.x*lighting.tile_grid.y+band)*5u+word];
         }
         return mask;
