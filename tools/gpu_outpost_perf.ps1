@@ -9,6 +9,9 @@ param(
     [switch]$CompareArchitecture,
     [switch]$CompareArchitectureShadows,
     [switch]$CompareLightTiles,
+    [switch]$CompareLightDepth,
+    [switch]$CompareGIReuse,
+    [switch]$CompareDepthPrepass,
     [switch]$CompareRoofCache,
     [switch]$CompareGI,
     [switch]$CompareGIBounces,
@@ -22,7 +25,7 @@ param(
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
 if($ProfileLights -and $LightAblations){throw 'Keep fragment counters separate from timing ablations'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
@@ -45,7 +48,7 @@ $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
-    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT')
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
@@ -57,6 +60,9 @@ Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/asset
     compare_architecture_shadows=[bool]$CompareArchitectureShadows;architecture=$env:RF_GPU_ARCHITECTURE;
     compare_light_tiles=[bool]$CompareLightTiles;light_ablations=[bool]$LightAblations;profile_lights=[bool]$ProfileLights;
     compare_roof_cache=[bool]$CompareRoofCache;compare_gi=[bool]$CompareGI;compare_gi_bounces=[bool]$CompareGIBounces;compare_indirect=[bool]$CompareIndirect;
+    compare_light_depth=[bool]$CompareLightDepth;compare_gi_reuse=[bool]$CompareGIReuse;
+    compare_depth_prepass=[bool]$CompareDepthPrepass;depth_prepass=$env:RF_GPU_DEPTH_PREPASS;
+    light_depth=$env:RF_GPU_LIGHT_DEPTH;gi_reuse=$env:RF_GPU_GI_REUSE;
     daylight=$env:RF_GPU_DAYLIGHT;compare_daylight=[bool]$CompareDaylight;
     gi_bounces=$env:RF_GPU_GI_BOUNCES;
     gi_visibility=$env:RF_GPU_GI_VISIBILITY;compare_gi_visibility=[bool]$CompareGIVisibility;
@@ -69,6 +75,7 @@ try {
     $env:RF_LABS_ALL=if($AllLabs){'1'}else{'0'}
     $env:RF_GPU_SKY_TIME='0';$env:RF_GPU_SKY_SCALE='4'
     $env:RF_GPU_GI_DEBUG='0'
+    if($CompareGIReuse){$env:RF_GPU_GI='1';$env:RF_GPU_DAYLIGHT='1';$env:RF_GPU_GI_VISIBILITY='1'}
     if($CompareRoofCache){$env:RF_GPU_DAYLIGHT='0'}
     [Environment]::SetEnvironmentVariable('RF_GPU_HDR_CAPTURE',$null,'Process')
     $env:RF_GPU_SCENE_LEGACY_BIND='0'
@@ -76,12 +83,15 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($LightAblations){$Modes=@('none','roof','sun','local','pcf','brdf','rays')}
             if($Round%2 -eq 0){[array]::Reverse($Modes)}
             foreach($Mode in $Modes) {
                 $Name="r$Round-$View-$Mode"
+                if($CompareLightDepth){$env:RF_GPU_LIGHT_DEPTH=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($CompareDepthPrepass){$env:RF_GPU_DEPTH_PREPASS=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($CompareGIReuse){$env:RF_GPU_GI_REUSE=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareDaylight){$env:RF_GPU_DAYLIGHT=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareArchitecture){$env:RF_GPU_ARCHITECTURE=$Mode}
                 $env:RF_GPU_ARCHITECTURE_SHADOW_MAPS=if($CompareArchitectureShadows -and $Mode -eq 'reference'){'1'}else{'0'}
@@ -139,6 +149,9 @@ try {
                 if($ProfileLights -and ($Result.diagnostic -ne '1' -or [long]$Result.shaded_mean -le 0)){throw "$Name missing diagnostic counters"}
                 if($Errors -notmatch "rf-gpu-light: tiles=$($env:RF_GPU_LIGHT_TILES) profile=$($env:RF_GPU_LIGHT_PROFILE)"){throw "$Name did not activate requested light mode"}
                 if(($CompareRoofCache -or $CompareGI -or $CompareIndirect) -and $Errors -notmatch "rf-gpu-indirect: roof-cache=$($env:RF_GPU_ROOF_CACHE) probe-gi=$($env:RF_GPU_GI)"){throw "$Name did not activate requested indirect mode"}
+                if($CompareLightDepth -and $Errors -notmatch "rf-gpu-light: depth-slices=$(if($Mode -eq 'reference'){'1'}else{'32'})\b"){throw "$Name did not activate requested depth masks"}
+                if($CompareDepthPrepass -and $Errors -notmatch "rf-gpu-scene: depth-prepass=$($env:RF_GPU_DEPTH_PREPASS)"){throw "$Name did not activate requested depth prepass"}
+                if($CompareGIReuse -and $Errors -notmatch "rf-gpu-gi: shared-visibility=$($env:RF_GPU_GI_REUSE)"){throw "$Name did not activate requested GI reuse"}
                 if($CompareDaylight -and $Errors -notmatch "rf-gpu-daylight: enabled=$($env:RF_GPU_DAYLIGHT)"){throw "$Name did not activate requested daylight mode"}
                 if($CompareGIBounces -and $Errors -notmatch "rf-gpu-indirect: roof-cache=1 probe-gi=1 bounces=$($env:RF_GPU_GI_BOUNCES)"){throw "$Name did not activate requested bounce count"}
                 if($CompareGIVisibility -and $Errors -notmatch "rf-gpu-gi: [^\r\n]*visibility=$($env:RF_GPU_GI_VISIBILITY)"){throw "$Name did not activate requested visibility mode"}

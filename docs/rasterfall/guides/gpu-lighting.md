@@ -135,8 +135,31 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -
 探针插值的片元成本计入 WORLD；不得把不同区间的分位数直接相加。
 
 `DAYLIGHT PASS` 覆盖无灯开敞天空、入室天空、纯太阳反弹、封闭房间、超过反弹半径的远处遮挡、
-曝光/相机平移不改变测量、切顶、resize、无效替换、清空和隔离实验。硬件与软件路径分别验证。
+曝光/相机平移不改变测量、切顶、resize、无效替换、清空和隔离实验。当前维护门槛为 NVIDIA 硬件路径；
+软件与核显按用户决策不再要求复测。
 正常图检同时看建筑背光面、门窗和室内深处；车间内真实吸顶灯、楼梯壁灯由地图生成器维护。
+
+## 保持画面的光照性能对照
+
+默认开启同位置 GI 探针的几何权重复用、灯表深度分段和不透明 WORLD 深度预通道。
+实现合同见[光照架构](../architecture/gpu-lighting.md)与[深度提交](../architecture/gpu-rendering-architecture.md#scene-资源与同步)。
+三项各有同包关闭/开启轴，不能同时指定：
+
+```powershell
+$env:RF_GPU_ARCHITECTURE='hardware'
+$env:RF_GPU_VULKAN_VENDOR_ID='10de'
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareGIReuse -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/gi-reuse-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareLightDepth -Views outpost-light-1f -Rounds 5 -Samples 240 -OutputDirectory tmp/light-depth-perf
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_outpost_perf.ps1 -CompareDepthPrepass -Views frontier-floor-2 -Rounds 5 -Samples 240 -OutputDirectory tmp/depth-prepass-perf
+```
+
+普通性能采样关闭计数、validation 和捕获；记录 GPU 温度、频率及限频状态，交替运行方向，
+不能把不同温度或电源状态下的独立消融当作可相加的开销。先核对同镜头画面，再看 WORLD、
+总 GPU 和端到端帧时间；更多 draw 不必然意味着更多 GPU 时间。
+`GI REUSE PASS` 比较曝光前 HDR，覆盖同格、部分覆盖和独立加粗；`LIGHT TILES PASS` 比较
+完整灯表、二维和深度分段，覆盖段边界、远距离、小尺寸、混合相机及高灯索引；
+`DEPTH PREPASS PASS` 比较开关前后的颜色和深度。以上均在 `--gpu-lighting-test` 中运行。
+限定设备的图检、同步与五轮对照见[光照性能优化现场](../archive/lighting-performance-20261006.md)。
 
 ## 物理单位检查与照度读取
 

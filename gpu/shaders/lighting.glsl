@@ -4,8 +4,9 @@ layout(set=1,binding=0,std430) readonly buffer Lighting {
     mat4 shadow_matrix[5]; vec4 cascade_center[3]; Light lights[160];
     vec4 sky_cloud; vec4 sky_weather;
     vec4 cutaway_bounds; vec4 cutaway_height;
-    uvec4 tile_grid; // width, height, enabled, diagnostic counters
-    ivec4 tile_camera; ivec4 tile_view; ivec4 tile_projection;
+    uvec4 tile_grid; // width, height, depth slices (0 disabled, 1 screen only), counters
+    ivec4 tile_camera; // xyz camera, w depth band width in RFU
+    ivec4 tile_view; ivec4 tile_projection;
     uvec4 light_control; // diagnostic ablation mask
     vec4 daylight; // horizontal sky lux / 100, architecture escape distance
 } lighting;

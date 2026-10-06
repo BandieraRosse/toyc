@@ -52,6 +52,35 @@ float probe_visibility(uvec2 geometry,vec3 origin,vec3 direction,float limit) {
     }
     return 1.0;
 }
+float probe_weight(uint base,uvec2 geometry,vec3 position,vec3 receiver,vec3 p,vec3 n,vec3 f,uint corner) {
+    float side=smoothstep(-PROBE_FIELD.params.y,0.0,dot(n,position-p));
+    if(side==0.0)return 0.0;
+    vec3 delta=receiver-position;float distance=max(length(delta),0.001);
+    float visibility;
+    if((lighting.light_control.w&255u)==1u || (lighting.light_control.w&256u)!=0u)
+        visibility=probe_visibility(geometry,position,delta/distance,max(distance-1.0,0.0));
+    else {
+        vec2 moments=probe_depth(base,delta/distance);
+        float difference=max(0.0,distance-moments.x-4.0);
+        float variance=max(1.0,moments.y-moments.x*moments.x);
+        visibility=variance/(variance+difference*difference);
+        visibility=visibility*visibility*visibility;
+    }
+    if(visibility<1e-5)return 0.0;
+    if(visibility<0.2)visibility*=visibility/0.2;
+    ivec3 offset=ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u));
+    vec3 trilinear=mix(1.0-f,f,vec3(offset));
+    float normal_weight=max(0.05,0.5+0.5*dot(n,normalize(position-p+vec3(1e-6))));
+    return trilinear.x*trilinear.y*trilinear.z*visibility*normal_weight*normal_weight*side;
+}
+vec3 probe_lobes(uint base,vec3 n) {
+    vec3 irradiance=vec3(0);
+    for(int axis=0;axis<3;++axis)if(abs(n[axis])>0.001) {
+        uint lobe=uint(axis*2+(n[axis]<0.0?1:0));
+        irradiance+=uintBitsToFloat(probe_load(base+lobe)).rgb*n[axis]*n[axis];
+    }
+    return irradiance;
+}
 vec3 sample_probe_field(vec3 p,vec3 n,vec3 view_direction,out float covered) {
     covered=0.0;
     if(lighting.light_control.z==0u || PROBE_FIELD.header.y==0u ||
@@ -66,7 +95,6 @@ vec3 sample_probe_field(vec3 p,vec3 n,vec3 view_direction,out float covered) {
     uvec2 geometry=probe_load(cell+2u).xy;
     vec3 sum=vec3(0);float total=0.0;
     for(uint corner=0u;corner<8u;++corner) {
-        ivec3 offset=ivec3(int(corner&1u),int((corner>>1u)&1u),int(corner>>2u));
         uint id=corner<4u?neighbors0[corner]:neighbors1[corner-4u];if(id==0u)continue;
         uint base=PROBE_FIELD.header.w+(id-1u)*PROBE_FIELD.header.z;
         if(uintBitsToFloat(probe_load(base)).w==0.0)continue;
@@ -74,35 +102,9 @@ vec3 sample_probe_field(vec3 p,vec3 n,vec3 view_direction,out float covered) {
         // Do not blend irradiance from the back of this receiving plane. This
         // is particularly important at thin storey slabs where both floors
         // have valid probes but very different incident radiance.
-        float side=smoothstep(-PROBE_FIELD.params.y,0.0,dot(n,position-p));
-        if(side==0.0)continue;
-        vec3 delta=receiver-position;float distance=max(length(delta),0.001);
-        float visibility;
-        // Filtered moments cannot prove either visibility or occlusion at an
-        // intersecting wall. Query the actual short segment; the default field
-        // therefore needs no distance moments or their filtering bandwidth.
-        if((lighting.light_control.w&255u)==1u || (lighting.light_control.w&256u)!=0u)
-            visibility=probe_visibility(geometry,position,delta/distance,max(distance-1.0,0.0));
-        else {
-            vec2 moments=probe_depth(base,delta/distance);
-            float difference=max(0.0,distance-moments.x-4.0);
-            float variance=max(1.0,moments.y-moments.x*moments.x);
-            visibility=variance/(variance+difference*difference);
-            visibility=visibility*visibility*visibility;
-        }
-        // Suppress tiny leaking tails; directional weighting favours probes
-        // on the receiving side of a surface. No room IDs or cutaway inputs.
-        if(visibility<1e-5)continue;
-        if(visibility<0.2)visibility*=visibility/0.2;
-        vec3 trilinear=mix(1.0-f,f,vec3(offset));
-        float normal_weight=max(0.05,0.5+0.5*dot(n,normalize(position-p+vec3(1e-6))));
-        float weight=trilinear.x*trilinear.y*trilinear.z*visibility*normal_weight*normal_weight*side;
-        vec3 irradiance=vec3(0);
-        for(int axis=0;axis<3;++axis)if(abs(n[axis])>0.001) {
-            uint lobe=uint(axis*2+(n[axis]<0.0?1:0));
-            irradiance+=uintBitsToFloat(probe_load(base+lobe)).rgb*n[axis]*n[axis];
-        }
-        sum+=irradiance*weight;total+=weight;
+        float weight=probe_weight(base,geometry,position,receiver,p,n,f,corner);
+        if(weight==0.0)continue;
+        sum+=probe_lobes(base,n)*weight;total+=weight;
     }
     // Visibility already rejects occluded neighbours. Normalize the surviving
     // weights even near a slab: a fixed denominator floor stamps the probe

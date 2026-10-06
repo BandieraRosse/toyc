@@ -105,7 +105,7 @@ struct rf_gpu_graphics {
     rf_vk_descriptor_pool descriptor_pool;
     rf_vk_descriptor_set set;
     rf_vk_pipeline_layout layout;
-    rf_vk_pipeline pipelines[32];
+    rf_vk_pipeline pipelines[36];
     struct rf_gpu_lighting lighting;
     struct rf_gpu_vulkan_buffer architecture_buffer;
     struct rf_gpu_vulkan_buffer architecture_blas_buffer,architecture_tlas_buffer;
@@ -122,13 +122,13 @@ struct rf_gpu_graphics {
     rf_vk_pipeline daylight_pipeline,environment_pipeline;
     uint32_t daylight_probe_count,daylight_cursor;
     int daylight_warmed,daylight_enabled;
-    int roof_cache_enabled,indirect_enabled,indirect_bounces,indirect_debug,indirect_visibility;
+    int roof_cache_enabled,indirect_enabled,indirect_bounces,indirect_debug,indirect_visibility,indirect_reuse;
     int legacy_architecture_shadows;
     struct rf_gpu_vulkan_buffer light_buffer,shadow_buffer,sky_buffer;
     struct rf_gpu_vulkan_buffer light_tiles_buffer,light_profile_buffer;
     rf_vk_pipeline light_tiles_pipeline;
     unsigned light_tiles_width,light_tiles_height,light_ablation;
-    int light_tiles_enabled;
+    int light_tiles_enabled,light_depth_enabled;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
     unsigned sky_scale,sky_width,sky_height;
@@ -141,6 +141,7 @@ struct rf_gpu_graphics {
     unsigned shadow_count;
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16];
     int disable_draw_cull;
+    int depth_prepass_enabled;
     int legacy_origin_bounds;
     VkRenderPass shadow_pass,overlay_pass;
     rf_vk_descriptor_set_layout light_layout;
@@ -299,7 +300,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     gfx_target_destroy(g, &g->target);
     if (g->pool) impl->api.destroy_command_pool(impl->device, g->pool, NULL);
     if (g->fence) impl->api.destroy_fence(impl->device, g->fence, NULL);
-    for (unsigned i = 0; i < 32; ++i)
+    for (unsigned i = 0; i < 36; ++i)
         if (g->pipelines[i]) impl->api.destroy_pipeline(impl->device, g->pipelines[i], NULL);
     gfx_lighting_destroy(g);
     if (g->render_pass) g->api.DestroyRenderPass(impl->device, g->render_pass, NULL);
@@ -467,8 +468,9 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         {4,0,VK_FORMAT_R32G32B32_SINT,44}};
     /* Scene color feeds position and {light,RGB24} to shader locations 0/1.
      * Its draw contract disables form light, so normal inputs are unused. */
-    int color_vertex=compatible==2 || compatible==4 || compatible==6;
-    int overlay=compatible==3 || compatible==4, shadow=compatible>=5;
+    int color_vertex=compatible==2 || compatible==4 || compatible==6 || compatible==8;
+    int overlay=compatible==3 || compatible==4, shadow=compatible==5 || compatible==6;
+    int depth_only=compatible==7 || compatible==8;
     if (color_vertex) binding.stride=sizeof(struct rf_gpu_scene_color_vertex);
     VkPipelineVertexInputStateCreateInfo vertex = {0};
     VkPipelineInputAssemblyStateCreateInfo assembly = {0};
@@ -551,6 +553,7 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
             shader_info.code_size=impl->ray_query_enabled?sizeof(rf_graphics_scene_ray_profile_frag_spirv):sizeof(rf_graphics_scene_profile_frag_spirv);
         }
         if(color_vertex && !i) {shader_info.code_size=sizeof(rf_graphics_color_vert_spirv);shader_info.code=rf_graphics_color_vert_spirv;}
+        if(depth_only && i) {shader_info.code_size=sizeof(rf_graphics_depth_frag_spirv);shader_info.code=rf_graphics_depth_frag_spirv;}
         if(shadow) {shader_info.code_size=sizeof(rf_graphics_shadow_vert_spirv);shader_info.code=rf_graphics_shadow_vert_spirv;}
         if (impl->api.create_shader_module(impl->device, &shader_info, NULL, &shaders[i]) != RF_VK_SUCCESS) goto done;
         stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -593,6 +596,15 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         raster.depthBiasEnable=1;raster.depthBiasConstantFactor=1.25f;raster.depthBiasSlopeFactor=1.75f;
         blend.attachmentCount=0;
         if(g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,&g->pipelines[color_vertex?31:30])!=RF_VK_SUCCESS) goto done;
+        result=0;goto done;
+    }
+    if(depth_only) {
+        blend_attachment.colorWriteMask=0;
+        for(unsigned i=0;i<2;++i) {
+            raster.cullMode=i?VK_CULL_MODE_NONE:VK_CULL_MODE_BACK_BIT;
+            if(g->api.CreateGraphicsPipelines(impl->device,NULL,1,&pipeline,NULL,
+                &g->pipelines[32+(color_vertex?2:0)+i])!=RF_VK_SUCCESS)goto done;
+        }
         result=0;goto done;
     }
     for (unsigned alpha=0;alpha<3u;++alpha) {
@@ -680,6 +692,9 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
         g->disable_draw_cull=no_cull && no_cull[0]=='1';
+        const char *prepass=getenv("RF_GPU_DEPTH_PREPASS");
+        g->depth_prepass_enabled=!(prepass && !strcmp(prepass,"0"));
+        fprintf(stderr,"rf-gpu-scene: depth-prepass=%d\n",g->depth_prepass_enabled);
         const char *legacy_shadows=getenv("RF_GPU_ARCHITECTURE_SHADOW_MAPS");
         g->legacy_architecture_shadows=legacy_shadows && !strcmp(legacy_shadows,"1");
         const char *legacy_bounds=getenv("RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS");
@@ -718,6 +733,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         gfx_pipeline_create(g, 2) < 0 ||
         gfx_pipeline_create(g,3)<0 || gfx_pipeline_create(g,4)<0 ||
         gfx_pipeline_create(g,5)<0 || gfx_pipeline_create(g,6)<0 ||
+        gfx_pipeline_create(g,7)<0 || gfx_pipeline_create(g,8)<0 ||
         gfx_lighting_pipelines(g)<0 || gfx_skin_create(g) < 0) goto fail;
     command_pool.s_type = RF_VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     command_pool.queue_family_index = impl->queue_family;
@@ -1636,6 +1652,40 @@ static void gfx_main_timestamps(struct rf_gpu_graphics *g,unsigned *next,unsigne
         ++*next;
     }
 }
+/* Populate only opaque WORLD coverage with the same vertex transform and
+ * cutaway shader. Color draw order (including equal-depth ties) stays intact. */
+static int gfx_depth_record(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *items,uint32_t count)
+{
+    struct rf_gpu_graphics_resource *bound=NULL;
+    int pipeline=-1,drawn=0;uint64_t offset=0;
+    for(uint32_t i=0;i<count;++i) {
+        const struct rf_gpu_graphics_draw *d=&items[i].draw;
+        if(d->scene_layer!=RF_GPU_SCENE_WORLD || d->texture[2] || d->texture[3]==2 ||
+           (!g->disable_draw_cull && gfx_draw_camera_outside(&items[i])))continue;
+        struct rf_gpu_graphics_resource *r=items[i].resource;
+        if(bound!=r) {
+            rf_vk_descriptor_set descriptor=gfx_resource_descriptor(g,r);
+            if(!descriptor)return -1;
+            g->api.CmdBindVertexBuffers(g->cmd,0,1,&r->vertices.buffer,&offset);
+            g->api.CmdBindIndexBuffer(g->cmd,r->indices.buffer,0,VK_INDEX_TYPE_UINT32);
+            g->owner->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,
+                g->layout,0,1,&descriptor,0,NULL);
+            bound=r;
+        }
+        int selected=32+(r->scene_vertex_color?2:0)+d->double_sided;
+        if(pipeline!=selected) {
+            g->owner->api.cmd_bind_pipeline(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[selected]);
+            pipeline=selected;
+        }
+        struct rf_gpu_graphics_draw depth=*d;
+        if(r->scene_vertex_color && depth.quality[2]!=3)depth.quality[2]=0;
+        g->api.CmdPushConstants(g->cmd,g->layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,128,&depth);
+        g->api.CmdDrawIndexed(g->cmd,d->index_count,1,d->first_index,0,0);
+        ++drawn;
+    }
+    return drawn;
+}
 static int gfx_render(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count)
 {
@@ -1647,6 +1697,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     VkRect2D scissor = {{0,0},{0,0}};
     if (!g || g->poisoned || g->skin_batch || !items || !count ||
         count > 65536 || !g->target.framebuffer) return -1;
+    int depth_eligible=g->depth_prepass_enabled;
     {
         struct rf_gpu_graphics_resource *saved = g->resource;
         int valid = 1,transparent_started=0,last_layer=-1;
@@ -1664,6 +1715,9 @@ static int gfx_render(struct rf_gpu_graphics *g,
                       d->scene_layer==RF_GPU_SCENE_OVERLAY) && d->texture[3]!=2) ||
                     (d->scene_layer==RF_GPU_SCENE_TRANSPARENT && !d->texture[2]))) { valid = 0; break; }
             if (d->texture[2]) transparent_started=1;
+            /* Public batches may interleave depth-free screen draws with
+             * WORLD geometry. Keep their original depth/color ordering. */
+            if(d->scene_layer==RF_GPU_SCENE_WORLD && d->texture[3]==2)depth_eligible=0;
             last_layer=layer;
         }
         g->resource = saved;
@@ -1702,7 +1756,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     scissor.extent = begin.renderArea.extent;
     g->api.CmdSetViewport(g->cmd, 0, 1, &viewport); g->api.CmdSetScissor(g->cmd, 0, 1, &scissor);
     impl->api.cmd_bind_descriptor_sets(g->cmd,VK_PIPELINE_BIND_POINT_GRAPHICS,g->layout,1,1,&g->light_set,0,NULL);
-    int viewmodel_started=0,overlay_started=0;
+    int viewmodel_started=0,overlay_started=0,depth_started=!depth_eligible;
     struct rf_gpu_graphics_resource *bound_resource=NULL;
     int bound_integer=-1,bound_pipeline=-1;
     const char *legacy_bind=getenv("RF_GPU_SCENE_LEGACY_BIND");
@@ -1711,6 +1765,12 @@ static int gfx_render(struct rf_gpu_graphics *g,
     unsigned next_timestamp=7;
     for (uint32_t i = 0; i < count; ++i) {
         const struct rf_gpu_graphics_draw *d = &items[i].draw;
+        if(!depth_started && d->scene_layer==RF_GPU_SCENE_WORLD) {
+            int depth_draws=gfx_depth_record(g,items,count);
+            if(depth_draws<0){g->poisoned=1;return -1;}
+            drawn+=(unsigned)depth_draws;depth_started=1;
+            bound_resource=NULL;bound_pipeline=bound_integer=-1;
+        }
         if(d->scene_layer>=RF_GPU_SCENE_TRANSPARENT)gfx_main_timestamps(g,&next_timestamp,7);
         if(d->scene_layer>=RF_GPU_SCENE_VIEWMODEL)gfx_main_timestamps(g,&next_timestamp,8);
         if(d->scene_layer>=RF_GPU_SCENE_OVERLAY)gfx_main_timestamps(g,&next_timestamp,9);

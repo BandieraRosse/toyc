@@ -10,6 +10,7 @@ layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
 } d;
+#include "scene_cutaway.glsl"
 #include "sky_view.glsl"
 layout(set=1,binding=4,std430) readonly buffer SkyImage { vec4 pixels[]; } sky_image;
 vec4 sky_fetch(ivec2 p) {
@@ -44,7 +45,17 @@ uint light_mask(uint word) {
     // Mixed cameras/projections in the public batch API use the complete list.
     if(lighting.tile_grid.z!=0u && d.texture_info.w==0 &&
        all(equal(d.camera.xyz,lighting.tile_camera.xyz)) && all(equal(d.view,lighting.tile_view)) &&
-       all(equal(d.projection,lighting.tile_projection)))return tiles.masks[light_tile_index()*5u+word];
+       all(equal(d.projection,lighting.tile_projection))) {
+        uint mask=tiles.masks[light_tile_index()*5u+word];
+        if(lighting.tile_grid.z>1u) {
+            vec4 view=vec4(lighting.tile_view)/1024.0;
+            vec3 forward=vec3(view.x*view.w,view.z,view.y*view.w);
+            float depth=dot(forward,world_position-vec3(lighting.tile_camera.xyz));
+            uint band=uint(clamp(floor(depth/float(lighting.tile_camera.w)),0.0,float(lighting.tile_grid.z-1u)));
+            mask&=tiles.masks[(lighting.tile_grid.x*lighting.tile_grid.y+band)*5u+word];
+        }
+        return mask;
+    }
     return count==32u?0xffffffffu:((1u<<count)-1u);
 }
 vec3 rgb(uint c) { return vec3((c>>16)&255u,(c>>8)&255u,c&255u)/255.0; }
@@ -78,15 +89,7 @@ void main() {
         color=vec4(-1);return;
     }
     if((d.quality.x&64)!=0) { color=vec4(sky_sample(),1);return; }
-    if((d.quality.x&16)==0 && lighting.cutaway_height.y>0.0 && world_position.y>lighting.cutaway_height.x &&
-       world_position.x>=lighting.cutaway_bounds.x && world_position.x<=lighting.cutaway_bounds.y &&
-       world_position.z>=lighting.cutaway_bounds.z && world_position.z<=lighting.cutaway_bounds.w) {
-        /* Deterministic ordered dissolve keeps opaque depth correct. The
-         * independent shadow pass continues to draw the complete building. */
-        const int pattern[16]=int[16](0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5);
-        ivec2 pixel=ivec2(gl_FragCoord.xy)&3;
-        if(lighting.cutaway_height.y>(float(pattern[pixel.y*4+pixel.x])+0.5)/16.0)discard;
-    }
+    scene_cutaway(world_position);
     float alpha=d.texture_info.z==256 ? triangle_alpha : d.texture_info.z==0 ? 1.0:float(d.texture_info.z)/255.0;
     vec3 base=decode_srgb(rgb(triangle_color));
     if(d.material.z!=0u) {
@@ -119,8 +122,7 @@ void main() {
     vec3 fill=daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
     vec3 radiance=base*(1.0-metal)*fill+base*emissive;
     if(metal<1.0 || meter) {
-        indirect=probe_irradiance(world_position,n,v);
-        if(daylight)indirect+=daylight_irradiance(world_position,n,v);
+        indirect=combined_irradiance(world_position,n,v);
     }
     radiance+=base*(1.0-metal)*indirect;
     const vec3 photopic=vec3(0.2126,0.7152,0.0722);

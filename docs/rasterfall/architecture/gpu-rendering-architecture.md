@@ -35,6 +35,15 @@ GPU 模式使用 `--renderer gpu-scene`（与 `--gpu-scene-play` 等价）。独
 
 ## Scene 资源与同步
 
+不透明 WORLD 在完整着色前增加深度预通道，使用同一顶点变换、索引范围和背面剔除状态。
+`graphics_depth.frag` 与颜色着色器共用 `scene_cutaway.glsl` 的楼层溶解覆盖，因此不会留下
+不可见屋顶的深度。预通道位于 SKY 后、WORLD 颜色前；透明、特效、viewmodel 和 HUD 保留原顺序，
+viewmodel 仍独立清深度。颜色通道保持 reversed-Z 的大于等于比较，使共面表面的后绘制颜色继续获胜。
+公共批次若在 WORLD 中插入不测深度的屏幕 draw，整批保持原提交顺序并跳过预通道。
+预通道只写已有深度附件，不增加图像、读回或玩法状态；draw 和实例上传计数包含额外提交，
+WORLD 时间也包含预通道成本。`RF_GPU_DEPTH_PREPASS=0` 在初始化时关闭以便同包对照，默认 `1`。
+回归逐像素比较遮挡、共面、剖切、混合相机、透明和 viewmodel 的颜色及深度。
+
 天空已脱离 CPU canvas，由独立 compute pass 求值大气与远景体积云，随后在 SKY 层合成。
 太阳共享、低分辨率缓冲与 slot 生命周期见[GPU 天空](gpu-sky.md)。
 

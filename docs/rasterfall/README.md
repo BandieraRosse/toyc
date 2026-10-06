@@ -11,6 +11,9 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+光照性能优化从[同包对照指南](guides/gpu-lighting.md#保持画面的光照性能对照)进入，探针权重复用与
+深度分段灯表归[光照架构](architecture/gpu-lighting.md)，WORLD 深度预通道归[GPU 渲染架构](architecture/gpu-rendering-architecture.md#scene-资源与同步)。
+
 前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
 [地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
 标准房屋、天花板独立底面颜色、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，

@@ -9,7 +9,7 @@ import tempfile
 compiler = sys.argv[1] if len(sys.argv) > 1 else 'glslangValidator'
 output = ['/* Generated from gpu/shaders/graphics_scene, graphics_sky, graphics_shadow, graphics_tonemap and graphics_skin. */']
 with tempfile.TemporaryDirectory() as directory:
-    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('scene_ray','frag'), ('scene_profile','frag'), ('scene_ray_profile','frag'), ('light_tiles','comp'), ('indirect','comp'), ('indirect_ray','comp'), ('daylight','comp'), ('daylight_ray','comp'), ('environment','comp'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
+    for variant, stage in [('skin', 'comp'), ('scene','vert'), ('scene','frag'), ('scene_ray','frag'), ('scene_profile','frag'), ('scene_ray_profile','frag'), ('depth','frag'), ('light_tiles','comp'), ('indirect','comp'), ('indirect_ray','comp'), ('daylight','comp'), ('daylight_ray','comp'), ('environment','comp'), ('color','vert'), ('shadow','vert'), ('tonemap','comp'), ('sky','comp'), ('sky_noise','comp')]:
         path = pathlib.Path(directory) / (variant + stage + '.spv')
         source_variant = 'scene' if variant == 'color' or variant.startswith('scene') else variant
         if variant in ('indirect_ray', 'daylight', 'daylight_ray'):

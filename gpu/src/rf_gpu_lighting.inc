@@ -1,5 +1,6 @@
 /* Per-frame-slot lighting owner. The depth-to-buffer copies remain entirely on
  * the device; manual PCF avoids sampled-depth format/filter dependencies. */
+#define RF_LIGHT_DEPTH_SLICES 32u
 struct rf_lighting_upload {
     float sun_direction[4],sun_color[4],environment[4],counts[4];
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16],cascade_center[3][4];
@@ -135,6 +136,10 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     const char *tiles=getenv("RF_GPU_LIGHT_TILES"),*ablation=getenv("RF_GPU_LIGHT_ABLATION");
     if(tiles && strcmp(tiles,"0") && strcmp(tiles,"1"))return -1;
     g->light_tiles_enabled=!(tiles && !strcmp(tiles,"0"));
+    const char *depth=getenv("RF_GPU_LIGHT_DEPTH");
+    if(depth && strcmp(depth,"0") && strcmp(depth,"1"))return -1;
+    g->light_depth_enabled=!(depth && !strcmp(depth,"0"));
+    fprintf(stderr,"rf-gpu-light: depth-slices=%u\n",g->light_depth_enabled?RF_LIGHT_DEPTH_SLICES:1u);
     const char *roof=getenv("RF_GPU_ROOF_CACHE"),*gi=getenv("RF_GPU_GI");
     if((roof && strcmp(roof,"0") && strcmp(roof,"1")) || (gi && strcmp(gi,"0") && strcmp(gi,"1")))return -1;
     g->roof_cache_enabled=!(roof && !strcmp(roof,"0"));
@@ -152,6 +157,10 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     const char *visibility=getenv("RF_GPU_GI_VISIBILITY");
     if(visibility && strcmp(visibility,"0") && strcmp(visibility,"1") && strcmp(visibility,"2"))return -1;
     g->indirect_visibility=visibility?atoi(visibility):1;
+    const char *reuse=getenv("RF_GPU_GI_REUSE");
+    if(reuse && strcmp(reuse,"0") && strcmp(reuse,"1"))return -1;
+    g->indirect_reuse=!(reuse && !strcmp(reuse,"0"));
+    fprintf(stderr,"rf-gpu-gi: shared-visibility=%d\n",g->indirect_reuse);
     fprintf(stderr,"rf-gpu-indirect: roof-cache=%d probe-gi=%d bounces=%d\n",g->roof_cache_enabled,g->indirect_enabled,g->indirect_bounces);
     const char *modes[]={"none","roof","sun","local","pcf","brdf","rays"};
     const unsigned masks[]={0,1,2,4,8,16,7};
@@ -318,7 +327,7 @@ static int gfx_sky_resize(struct rf_gpu_graphics *g,unsigned width,unsigned heig
 {
     struct rf_gpu_vulkan_buffer tiles={0},profile={0},next={0};
     unsigned tw=(width+15)/16,th=(height+15)/16;
-    if(gpu_buffer_create(g->owner,(uint64_t)tw*th*RF_GPU_LIGHT_WORDS*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+    if(gpu_buffer_create(g->owner,((uint64_t)tw*th+RF_LIGHT_DEPTH_SLICES)*RF_GPU_LIGHT_WORDS*4,RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
         RF_VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,0,&tiles)<0)return -1;
     if(gpu_buffer_create(g->owner,g->owner->light_profile_enabled?(uint64_t)tw*th*7*4:4,
         RF_VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT|
@@ -407,14 +416,16 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     const struct rf_gpu_graphics_draw *camera=&items[0].draw;
     for(unsigned i=0;i<count;++i) if(!items[i].draw.texture[3]) {camera=&items[i].draw;break;}
     u.tile_grid[0]=g->light_tiles_width;u.tile_grid[1]=g->light_tiles_height;
-    u.tile_grid[2]=g->light_tiles_enabled && camera->projection[3]>0;
+    u.tile_grid[2]=g->light_tiles_enabled && camera->projection[3]>0?
+        (g->light_depth_enabled?RF_LIGHT_DEPTH_SLICES:1u):0u;
     u.tile_grid[3]=g->owner->light_profile_enabled;
     memcpy(u.tile_camera,camera->camera,16);memcpy(u.tile_view,camera->view,16);
+    u.tile_camera[3]=2048; /* 4 m depth bands; first/last include the unbounded tails. */
     memcpy(u.tile_projection,camera->projection,16);u.light_control[0]=g->light_ablation;
     u.light_control[1]=g->roof_cache_enabled;
     u.light_control[2]=g->indirect_enabled && !g->lighting.disable_indirect;
     u.light_control[3]=(uint32_t)g->indirect_debug|(g->indirect_visibility?256u:0u)|
-        (g->indirect_visibility==1?512u:0u);
+        (g->indirect_visibility==1?512u:0u)|(g->indirect_reuse?1024u:0u);
     u.daylight[0]=g->daylight_enabled && !g->lighting.disable_indirect?g->lighting.sky_illuminance/RF_PHOTOMETRIC_SCALE:0;
     u.daylight[1]=131072.0f;u.daylight[2]=(float)g->architecture_count;
     if(g->indirect_architecture_nodes) {
@@ -494,7 +505,8 @@ static void gfx_light_tiles_record(struct rf_gpu_graphics *g)
     struct rf_gpu_vulkan_impl *p=g->owner;
     p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->light_tiles_pipeline);
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
-    p->api.cmd_dispatch(g->cmd,(g->light_tiles_width+7)/8,(g->light_tiles_height+7)/8,1);
+    unsigned columns=g->light_tiles_width<RF_LIGHT_DEPTH_SLICES?RF_LIGHT_DEPTH_SLICES:g->light_tiles_width;
+    p->api.cmd_dispatch(g->cmd,(columns+7)/8,(g->light_tiles_height+7)/8,1);
     struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;
     barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT|VK_ACCESS_SHADER_WRITE_BIT;
