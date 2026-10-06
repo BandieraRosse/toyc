@@ -442,6 +442,9 @@ native present 和同帧 mixed BMP / Scene PPM，并调用 `tools/gpu_scene_enem
 
 更新 package 后，从 package root 运行 `rasterfall.exe --gpu-scene-pose-test`，或使用
 `powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --gpu-scene-pose-test`。
+仅有公开资产时，可显式设置 `RF_GPU_POSE_PUBLIC_TEST=1` 后运行同一入口；此专项比较缓存与
+资源释放后的冷求值，覆盖 placement、完整时间、IK、武器、外观、world/身份、body 与衣物。
+它不替代默认完整姿态套件；默认入口仍将缺失私有角色资源报告为失败。
 GUI executable 仍须按下方 `Start-Process -Wait -PassThru` 的方式等待，并检查真实退出码与日志。
 此专项需要 package 中的 RF humanoid body、gear、AK 和动作资源；缺失时失败，不跳过。
 

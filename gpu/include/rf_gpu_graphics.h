@@ -226,13 +226,17 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     const uint32_t *bind_words, uint32_t bind_word_count,
     const uint32_t *palette_words, uint32_t palette_word_count);
 /* Owner updates only, after all borrowing views retire. Updates copy input
- * immediately; end seals the batch. The first main/AUX drawing consumer records
- * skinning before its draws with compute-to-vertex/transfer barriers, without
+ * immediately; end seals the batch. Each main/AUX consumer independently culls
+ * current pose bounds and records only skins needed by its camera or shadows,
+ * before its draws with compute-to-vertex/transfer barriers, without
  * a separate CPU wait. Diagnostic vertex readback can also consume a sealed
  * batch. Cold creates remain synchronous. A queued resource cannot be updated
- * or destroyed until consumed or cancelled. Cancel invalidates unsubmitted
- * results; caller must update again before use. RF_GPU_SKIN_FUSED=0 restores
- * the separate submitting/waiting end for same-build comparison. */
+ * or destroyed until consumed or cancelled. After the last view retires, cancel
+ * any unconsumed remainder. Cancel invalidates unsubmitted
+ * results; caller must update again before use. Unsubmitted staging bind data
+ * survives cancel; the next palette-only update resubmits it before skinning.
+ * RF_GPU_SKIN_FUSED=0 restores the separate submitting/waiting end for
+ * same-build comparison. */
 int rf_gpu_graphics_skin_batch_begin(struct rf_gpu_graphics *g);
 int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g);
 void rf_gpu_graphics_skin_batch_cancel(struct rf_gpu_graphics *g);

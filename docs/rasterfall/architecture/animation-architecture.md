@@ -13,8 +13,13 @@
 ## Scene 批量求值与 IK 更新范围
 
 Scene 的 `rf_gpu_scene_pose_extract_all` 一次验证整个冻结 roster，串行提取存活角色并输出独立 palette、
-附件和武器 placement。模块角色与各 body 的临时 instance 保留分配，每次 composition 重置 pose 和 IK
-历史；冻结的无武器预览也显式 reset。该 scratch 只能在现有串行提取链使用，不能并发共享。
+附件和武器 placement，独立角色来源也使用此批量入口。模块角色按经过校验的 `source_slot` 保留
+有界 instance，各 body 保留自己的 instance。world、身份、外观、武器、完整动画时间、回避与
+持枪输入完全相同时复用最终局部 pose；位置、朝向、相机和 light 不参与局部求值键，
+世界变换、socket、武器 placement 与冻结输出元数据仍逐次重建。
+输入变化时 composition 重置 pose 和 IK 历史；没有动画降频、时钟量化或跨来源共享可变 pose。
+body 预览仅在完整 sample 相同时复用，freeze 和替代模型诊断绕过缓存；释放资源同步失效所有键。
+`RF_GPU_CPU_POSE_REUSE=0` 强制重新求值，供同包对照。该 scratch 只能在现有串行提取链使用，不能并发共享。
 批次失败不发布 count，调用者丢弃整批；单角色提取仍保持失败时不修改输出的合同。
 
 双骨 IK 修改 upper、forearm、hand 后只重算该骨骼的后代，保留原拓扑顺序和变换公式。持枪投影迭代仅在

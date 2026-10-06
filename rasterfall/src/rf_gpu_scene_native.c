@@ -304,6 +304,8 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         pose->bone_count>RF_GPU_SCENE_POSE_BONES || pose->bind_normals>1 ||
         pose->scene_light_q8<0 || pose->scene_light_q8>384) return -1;
     slot->bind_normals=pose->bind_normals;
+    const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
+    if (scene_material_override>=0) mode=scene_material_override ? "material" : "lit";
     slot->draw_count=0;
     for (uint32_t object=include_map ? 0 : 1;object<slot->mesh_count;++object) {
         struct scene_mesh *out=&slot->mesh[object];
@@ -457,8 +459,6 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             }
             if(skinned)d->quality[1]=(int)m->position_scale;
             if (object==1) {
-                const char *mode=getenv("RF_GPU_CHARACTER_DISPLAY");
-                if (scene_material_override>=0) mode=scene_material_override ? "material" : "lit";
                 d->quality[1]=(int)m->position_scale;
                 if (mode && (!strcmp(mode,"unlit") || !strcmp(mode,"parts"))) {
                     d->quality[2]=3; d->material[1]=256;

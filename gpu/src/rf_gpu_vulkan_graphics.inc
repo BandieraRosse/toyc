@@ -62,6 +62,7 @@ struct rf_graphics_reader {
     struct rf_gpu_graphics_resource *resource;
     struct rf_graphics_reader *resource_next,*graphics_next;
 };
+struct rf_skin_bone_box { int lo[3],hi[3],used; };
 struct rf_gpu_graphics_resource {
     struct rf_gpu_graphics *owner;
     struct rf_gpu_graphics_resource *next;
@@ -89,6 +90,11 @@ struct rf_gpu_graphics_resource {
     uint32_t skin_pending_vertices;
     uint32_t *skin_last_palette;
     uint32_t skin_last_words,skin_last_vertices;
+    uint64_t skin_bind_retry_bytes;
+    struct rf_skin_bone_box *skin_boxes;
+    uint32_t skin_box_count,skin_box_vertices;
+    int skin_bounds_valid;
+    struct rf_gpu_graphics *skin_needed_by,*skin_recorded_by;
     int skin_cached;
     void *skin_mapped[2];
     struct rf_gpu_vulkan_buffer *skin_mapped_buffer[2];
@@ -137,6 +143,7 @@ struct rf_gpu_graphics {
     rf_vk_pipeline light_tiles_pipeline;
     unsigned light_tiles_width,light_tiles_height,light_ablation;
     int light_tiles_enabled,light_depth_enabled,light_clusters_enabled,receiver_fp32;
+    int ray_single;
     struct rf_graphics_image sky_noise;
     void *sky_sampler;
     unsigned sky_scale,sky_width,sky_height;
@@ -149,6 +156,9 @@ struct rf_gpu_graphics {
     unsigned shadow_count;
     float shadow_matrix[RF_GPU_SHADOW_MAPS][16];
     int disable_draw_cull;
+    int dynamic_cull;
+    unsigned char *draw_visibility;
+    uint32_t draw_visibility_capacity;
     int depth_prepass_enabled;
     int legacy_origin_bounds;
     VkRenderPass shadow_pass,overlay_pass;
@@ -246,7 +256,8 @@ static int gfx_begin(struct rf_gpu_graphics *g)
     return g->owner->api.begin_command_buffer(g->cmd, &begin) == RF_VK_SUCCESS ? 0 : -1;
 }
 static void gfx_skin_commit(struct rf_gpu_graphics *g);
-static void gfx_skin_pending_record(struct rf_gpu_graphics *g);
+static void gfx_skin_pending_record(struct rf_gpu_graphics *g,int filtered);
+static void gfx_skin_commit_one(struct rf_gpu_graphics_resource *r);
 
 static int gfx_submit(struct rf_gpu_graphics *g, int wait,
                       enum rf_gpu_graphics_submit_kind kind)
@@ -363,6 +374,7 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g)
     while(g->borrowed)gfx_reader_release(g->borrowed);
     while (g->resources) rf_gpu_graphics_resource_destroy(g, g->resources);
     if (g->set_layout) impl->api.destroy_descriptor_set_layout(impl->device, g->set_layout, NULL);
+    free(g->draw_visibility);
     free(g);
 }
 
@@ -401,19 +413,19 @@ static int gfx_image_create(struct rf_gpu_graphics *g, struct rf_graphics_image 
     uint32_t width,uint32_t height,uint32_t format,uint32_t aspect,uint32_t usage)
 { return gfx_image_create_extent(g,out,width,height,1,format,aspect,usage); }
 
-/* Conservative resource bounds remain valid after dynamic CPU uploads. GPU
- * skinning can move vertices outside bind bounds, so never cull it here. */
+/* Skin resources use current-palette bounds; never their reference mesh. */
 static int gfx_draw_box(const struct rf_gpu_graphics_batch_item *item,float center[3],float extent[3])
 {
     const struct rf_gpu_graphics_resource *r=item->resource;
     const struct rf_gpu_graphics_draw *d=&item->draw;
-    if (r->skin_descriptor_set || d->texture[3]) return 0;
+    if (d->texture[3] || (r->skin_descriptor_set &&
+        (!r->owner->dynamic_cull || !r->skin_bounds_valid))) return 0;
     float scale=d->translation_scale[3]/1000.0f*512.0f/(d->quality[1]>512?d->quality[1]:512);
     float sy=d->rotation[0]/1024.0f,cy=d->rotation[1]/1024.0f;
     float local_center[3],local_extent[3];
     for (unsigned k=0;k<3;++k) {
-        local_center[k]=(r->position_min[k]+r->position_max[k])*0.5f;
-        local_extent[k]=(r->position_max[k]-r->position_min[k])*0.5f;
+        local_center[k]=((float)r->position_min[k]+r->position_max[k])*0.5f;
+        local_extent[k]=((float)r->position_max[k]-r->position_min[k])*0.5f;
         if (r->owner->legacy_origin_bounds) {
             local_center[k]=0;
             local_extent[k]=(float)(abs(r->position_min[k])>abs(r->position_max[k]) ?
@@ -436,11 +448,10 @@ static int gfx_box_outside(const float c[3],const float e[3],const float plane[4
     for (unsigned k=0;k<3;++k) maximum+=plane[k]*c[k]+__builtin_fabsf(plane[k])*e[k];
     return maximum<0;
 }
-static int gfx_draw_camera_outside(const struct rf_gpu_graphics_batch_item *item)
+static int gfx_camera_box_outside(const struct rf_gpu_graphics_draw *d,
+    const float center[3],const float e[3])
 {
-    const struct rf_gpu_graphics_draw *d=&item->draw;
-    float c[3],e[3];
-    if (!gfx_draw_box(item,c,e)) return 0;
+    float c[3];memcpy(c,center,sizeof(c));
     float sy=d->view[0]/1024.0f,cy=d->view[1]/1024.0f,ps=d->view[2]/1024.0f,pc=d->view[3]/1024.0f;
     float f[3]={sy*pc,ps,cy*pc},r[3]={cy,0,-sy},u[3]={-sy*ps,pc,-cy*ps};
     for (unsigned k=0;k<3;++k) c[k]-=d->camera[k];
@@ -461,6 +472,8 @@ static void light_chromaticity(float *rgb);
 #include "rf_gpu_indirect.inc"
 #include "rf_gpu_receiver_cache.inc"
 #include "rf_gpu_lighting.inc"
+#include "rf_gpu_draw_visibility.inc"
+#include "rf_gpu_skin_bounds.inc"
 
 int rf_gpu_graphics_resize(struct rf_gpu_graphics *g, uint32_t width, uint32_t height)
 {
@@ -597,12 +610,16 @@ static int gfx_pipeline_create(struct rf_gpu_graphics *g, int compatible)
         shader_info.code_size=i?sizeof(rf_graphics_scene_frag_spirv):sizeof(rf_graphics_scene_vert_spirv);
         shader_info.code=i?rf_graphics_scene_frag_spirv:rf_graphics_scene_vert_spirv;
         if(i && impl->ray_query_enabled) {
-            shader_info.code=rf_graphics_scene_ray_frag_spirv;
-            shader_info.code_size=sizeof(rf_graphics_scene_ray_frag_spirv);
+            shader_info.code=g->ray_single?rf_graphics_scene_ray_frag_spirv:rf_graphics_scene_ray_loop_frag_spirv;
+            shader_info.code_size=g->ray_single?sizeof(rf_graphics_scene_ray_frag_spirv):sizeof(rf_graphics_scene_ray_loop_frag_spirv);
         }
         if(i && impl->light_profile_enabled) {
             shader_info.code=impl->ray_query_enabled?rf_graphics_scene_ray_profile_frag_spirv:rf_graphics_scene_profile_frag_spirv;
             shader_info.code_size=impl->ray_query_enabled?sizeof(rf_graphics_scene_ray_profile_frag_spirv):sizeof(rf_graphics_scene_profile_frag_spirv);
+        }
+        if(i && impl->ray_query_enabled && impl->light_profile_enabled && !g->ray_single) {
+            shader_info.code=rf_graphics_scene_ray_loop_profile_frag_spirv;
+            shader_info.code_size=sizeof(rf_graphics_scene_ray_loop_profile_frag_spirv);
         }
         if(color_vertex && !i) {shader_info.code_size=sizeof(rf_graphics_color_vert_spirv);shader_info.code=rf_graphics_color_vert_spirv;}
         if(depth_only && i) {shader_info.code_size=sizeof(rf_graphics_depth_frag_spirv);shader_info.code=rf_graphics_depth_frag_spirv;}
@@ -749,6 +766,10 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
         g->profile_triangle_update=profile && !strcmp(profile,"1");
         const char *no_cull=getenv("RF_GPU_SCENE_DISABLE_DRAW_CULL");
         g->disable_draw_cull=no_cull && no_cull[0]=='1';
+        const char *dynamic=getenv("RF_GPU_DYNAMIC_CULL");
+        if(dynamic && strcmp(dynamic,"0") && strcmp(dynamic,"1"))goto fail;
+        g->dynamic_cull=!(dynamic && !strcmp(dynamic,"0"));
+        fprintf(stderr,"rf-gpu-scene: dynamic-cull=%d\n",g->dynamic_cull);
         const char *prepass=getenv("RF_GPU_DEPTH_PREPASS");
         g->depth_prepass_enabled=!(prepass && !strcmp(prepass,"0"));
         fprintf(stderr,"rf-gpu-scene: depth-prepass=%d\n",g->depth_prepass_enabled);
@@ -1002,7 +1023,7 @@ int rf_gpu_graphics_resource_diff_vertices(struct rf_gpu_graphics *g,
     if (gpu_buffer_create(impl,bytes,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             &readback)<0 || gfx_begin(g)<0) goto done;
-    gfx_skin_pending_record(g);
+    gfx_skin_pending_record(g,0);
     copy.size=bytes;
     impl->api.cmd_copy_buffer(g->cmd,resource->vertices.buffer,readback.buffer,1,&copy);
     if (gfx_submit(g,1,RF_GPU_SUBMIT_VERTEX_DIFF)<0 || impl->api.map_memory(impl->device,readback.memory,0,
@@ -1339,6 +1360,8 @@ struct rf_gpu_graphics_resource *rf_gpu_graphics_skinned_resource_create(
         VK_PIPELINE_STAGE_VERTEX_INPUT_BIT|VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
     if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto fail;
     r->palette_word_capacity=palette_word_count;
+    gfx_skin_boxes_bind(r,bind_words,vertex_count,palette_word_count);
+    gfx_skin_boxes_pose(r,palette_words,palette_word_count,vertex_count);
     g->stats.mesh_upload_bytes+=(uint64_t)(bind_word_count+palette_word_count)*4;
     return r;
 fail:
@@ -1388,6 +1411,7 @@ void rf_gpu_graphics_skin_batch_cancel(struct rf_gpu_graphics *g)
         struct rf_gpu_graphics_resource *r=g->skin_pending;
         g->skin_pending=r->skin_pending_next;
         r->skin_pending_next=NULL;r->skin_pending_vertices=0;
+        r->skin_bounds_valid=0;r->skin_recorded_by=NULL;r->skin_needed_by=NULL;
     }
     g->skin_pending_tail=NULL;g->skin_batch=0;
 }
@@ -1403,21 +1427,25 @@ int rf_gpu_graphics_skin_batch_end(struct rf_gpu_graphics *g)
         for (struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
             gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
         result=gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING);
-        if(!result) for(struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
-            r->skin_cached=r->skin_last_palette!=NULL;
+        if(!result)while(g->skin_pending)gfx_skin_commit_one(g->skin_pending);
     }
     rf_gpu_graphics_skin_batch_cancel(g);
     return result;
 }
 
-static void gfx_skin_pending_record(struct rf_gpu_graphics *g)
+static void gfx_skin_pending_record(struct rf_gpu_graphics *g,int filtered)
 {
     for(struct rf_gpu_graphics_resource *r=g->skin_pending;r;r=r->skin_pending_next)
-        gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+        if(!filtered || r->skin_needed_by==g) {
+            gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+            r->skin_recorded_by=g;
+        }
     for(struct rf_graphics_reader *reader=g->borrowed;reader;reader=reader->graphics_next) {
         struct rf_gpu_graphics_resource *r=reader->resource;
-        if(r->skin_pending_vertices && !r->owner->skin_batch)
+        if(r->skin_pending_vertices && !r->owner->skin_batch && (!filtered || r->skin_needed_by==g)) {
             gfx_skin_record(g,r,r->skin_pending_upload,r->skin_pending_bytes,r->skin_pending_vertices);
+            r->skin_recorded_by=g;
+        }
     }
     g->skin_recorded=1;
 }
@@ -1431,14 +1459,19 @@ static void gfx_skin_commit_one(struct rf_gpu_graphics_resource *r)
     *link=r->skin_pending_next;
     if(source->skin_pending_tail==r)source->skin_pending_tail=previous;
     r->skin_pending_next=NULL;r->skin_pending_vertices=0;
+    r->skin_recorded_by=NULL;r->skin_needed_by=NULL;
+    r->skin_bind_retry_bytes=0;
     r->skin_cached=r->skin_last_palette!=NULL;
 }
 static void gfx_skin_commit(struct rf_gpu_graphics *g)
 {
     if(!g->skin_recorded)return;
-    while(g->skin_pending)gfx_skin_commit_one(g->skin_pending);
+    for(struct rf_gpu_graphics_resource *r=g->skin_pending,*next;r;r=next) {
+        next=r->skin_pending_next;
+        if(r->skin_recorded_by==g)gfx_skin_commit_one(r);
+    }
     for(struct rf_graphics_reader *r=g->borrowed;r;r=r->graphics_next)
-        if(!r->resource->owner->skin_batch)gfx_skin_commit_one(r->resource);
+        if(r->resource->skin_recorded_by==g)gfx_skin_commit_one(r->resource);
     g->skin_recorded=0;
 }
 
@@ -1466,12 +1499,13 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
     if (vertex_count>r->vertex_capacity ||
         palette_word_count>r->palette_word_capacity) return 1;
     int reuse=g->reuse_pose;
-    if(reuse && !bind_words && r->skin_cached && r->skin_last_vertices==vertex_count &&
+    if(reuse && !bind_words && !r->skin_bind_retry_bytes && r->skin_cached && r->skin_last_vertices==vertex_count &&
         r->skin_last_words==palette_word_count &&
         !memcmp(r->skin_last_palette,palette_words,(size_t)palette_word_count*4)) {
         g->stats.skin_reused++;return 0;
     }
     r->skin_cached=0;
+    r->skin_bounds_valid=0;
     if(reuse) {
         void *next=r->skin_last_words==palette_word_count && r->skin_last_palette ?
             r->skin_last_palette : realloc(r->skin_last_palette,(size_t)palette_word_count*4);
@@ -1517,6 +1551,12 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         if(mapped!=r->skin_mapped[i]) impl->api.unmap_memory(impl->device,upload[i]->memory);
         mapped=NULL;
     }
+    /* Staging bind writes survive cancellation until a successful dispatch.
+     * The producer may reuse its bind key and send only a new palette next. */
+    if(bind_words)r->skin_bind_retry_bytes=upload[0]==&r->skin_bind?0:bytes[0];
+    else if(r->skin_bind_retry_bytes) {
+        upload[0]=&r->skin_staging[0];bytes[0]=r->skin_bind_retry_bytes;
+    }
     if (g->skin_batch) {
         r->skin_pending_vertices=vertex_count;
         memcpy(r->skin_pending_upload,upload,sizeof(upload));
@@ -1528,9 +1568,12 @@ int rf_gpu_graphics_skinned_resource_update(struct rf_gpu_graphics *g,
         if (gfx_begin(g)<0) goto done;
         gfx_skin_record(g,r,upload,bytes,vertex_count);
         if (gfx_submit(g,1,RF_GPU_SUBMIT_SKINNING)<0) goto done;
+        r->skin_bind_retry_bytes=0;
         r->skin_cached=r->skin_last_palette!=NULL;
     }
-    g->stats.mesh_upload_bytes+=bytes[0]+bytes[1];
+    if(bind_words)gfx_skin_boxes_bind(r,bind_words,vertex_count,palette_word_count);
+    gfx_skin_boxes_pose(r,palette_words,palette_word_count,vertex_count);
+    g->stats.mesh_upload_bytes+=(uint64_t)bind_word_count*4+bytes[1];
     result=0;
 done:
     if (mapped && mapped!=r->skin_mapped[mapped_index])
@@ -1577,6 +1620,7 @@ int rf_gpu_graphics_resource_destroy(struct rf_gpu_graphics *g,
     for(unsigned i=0;i<2;++i) if(resource->skin_mapped[i])
         g->owner->api.unmap_memory(g->owner->device,resource->skin_mapped_buffer[i]->memory);
     free(resource->skin_last_palette);
+    free(resource->skin_boxes);
     gpu_buffer_destroy(g->owner,&resource->skin_bind);
     gpu_buffer_destroy(g->owner,&resource->skin_palette);
     for (unsigned i=0;i<2;++i) gpu_buffer_destroy(g->owner,&resource->skin_staging[i]);
@@ -1756,7 +1800,7 @@ static int gfx_depth_record(struct rf_gpu_graphics *g,
     for(uint32_t i=0;i<count;++i) {
         const struct rf_gpu_graphics_draw *d=&items[i].draw;
         if(d->scene_layer!=RF_GPU_SCENE_WORLD || d->texture[2] || d->texture[3]==2 ||
-           (!g->disable_draw_cull && gfx_draw_camera_outside(&items[i])))continue;
+           !(g->draw_visibility[i]&1u))continue;
         struct rf_gpu_graphics_resource *r=items[i].resource;
         if(bound!=r) {
             rf_vk_descriptor_set descriptor=gfx_resource_descriptor(g,r);
@@ -1820,12 +1864,13 @@ static int gfx_render(struct rf_gpu_graphics *g,
     impl = g->owner;
     memset(clear, 0, sizeof(clear));
     if(gfx_lighting_upload(g,items,count)<0) return -1;
+    if(gfx_draw_visibility_prepare(g,items,count)<0)return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
     if (g->scene_query_active) {
         impl->api.cmd_reset_query_pool(g->cmd,g->scene_query_pool,0,14);
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,g->scene_query_pool,0);
     }
-    gfx_skin_pending_record(g);
+    gfx_skin_pending_record(g,1);
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,13);
     gfx_sky_record(g,items,count);
@@ -1874,8 +1919,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         if(d->scene_layer>=RF_GPU_SCENE_TRANSPARENT)gfx_main_timestamps(g,&next_timestamp,7);
         if(d->scene_layer>=RF_GPU_SCENE_VIEWMODEL)gfx_main_timestamps(g,&next_timestamp,8);
         if(d->scene_layer>=RF_GPU_SCENE_OVERLAY)gfx_main_timestamps(g,&next_timestamp,9);
-        if (!g->disable_draw_cull && (d->scene_layer==RF_GPU_SCENE_WORLD || d->scene_layer==RF_GPU_SCENE_TRANSPARENT) &&
-            gfx_draw_camera_outside(&items[i])) continue;
+        if (!(g->draw_visibility[i]&1u)) continue;
         if(d->scene_layer==RF_GPU_SCENE_OVERLAY && !overlay_started) {
             g->api.CmdEndRenderPass(g->cmd);gfx_tonemap_record(g);gfx_video_record(g);
             gfx_main_timestamps(g,&next_timestamp,10);
@@ -1917,7 +1961,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
         float metal=d->metallic<0?0:d->metallic>1?1:d->metallic;
         /* Sixteen-bit logarithmic luminance: zero is exactly dark. Encoding
          * happens on submission, independently of display exposure. */
-        float emission=__builtin_log2f(1.0f+__builtin_fmaxf(0.0f,d->emissive));
+        float emission=d->emissive>0?__builtin_log2f(1.0f+d->emissive):0;
         if(emission>31.999f)emission=31.999f;
         modern.material[1]=(uint32_t)((rough>1?1:rough)*255)|((uint32_t)(metal*255)<<8)|((uint32_t)(emission*2048.0f+0.5f)<<16);
         if(resource->scene_vertex_color && modern.quality[2]!=3) modern.quality[2]=0;

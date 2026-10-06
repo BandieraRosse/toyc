@@ -258,15 +258,19 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
             frame.presentations[i].rifle=cycle.body.rifle;
         }
     if(frame.snapshot.actor_count)frame.presentation=frame.presentations[0];
+    uint32_t extracted=0,begin=scene_enemy_capture.modular_count;
+    if(rf_gpu_scene_pose_extract_all(&frame,scene_enemy_capture.modular+begin,
+            TOY_GAME_MAX_ACTORS-begin,&extracted)<0)goto fail;
+    unsigned ordinal=0;
     for (unsigned i=0;i<frame.snapshot.actor_count;++i) {
-        struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
-        if (rf_gpu_scene_pose_extract_at(&frame,i,pose)<0) goto fail;
+        if(frame.presentations[i].state==TOY_GAME_ACTOR_DOWNED)continue;
+        struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[begin+ordinal++];
         if(cycle_slot>=0 && frame.snapshot.actors[i].source_slot==(unsigned)cycle_slot)
             pose->muzzle_flash=cycle.body.fire && cycle.body.action_time_ms<65;
         pose->identity.source_id=0x80000000u+i;
         pose->identity.generation=(unsigned)scene_enemy_capture.frame_id;
-        scene_enemy_capture.modular_count++;
     }
+    scene_enemy_capture.modular_count+=extracted;
     if (active_session->world_id==RASTERFALL_WORLD_OUTPOST && outpost_model_lab_visible &&
         outpost_model_lab_status>=0) {
         unsigned begin=scene_enemy_capture.modular_count;

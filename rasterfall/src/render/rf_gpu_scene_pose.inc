@@ -2,10 +2,24 @@
  * attachment evaluators. No game/session lookup or draw recording here. */
 #include "rf_gpu_scene_pose.h"
 static struct rasterfall_model_resource scene_body_resources[RASTERFALL_BODY_RESOURCE_COUNT];
-/* Serial scratch storage; action composition resets pose and IK history on
- * every use. No mutable instance escapes in the frozen value frame. */
+/* Serial scratch storage; changed inputs reset pose and IK through composition.
+ * No mutable instance escapes in the frozen value frame. */
 static struct rasterfall_model_instance scene_body_instances[RASTERFALL_BODY_RESOURCE_COUNT];
-static struct rasterfall_model_instance scene_actor_instance;
+static struct rasterfall_model_instance scene_actor_instances[TOY_GAME_MAX_ACTORS];
+struct scene_pose_eval_key {
+    uint64_t world;
+    struct rf_gpu_scene_actor_v1 actor;
+    struct rf_gpu_scene_local_presentation presentation;
+};
+static struct scene_pose_eval_key scene_actor_eval_keys[TOY_GAME_MAX_ACTORS];
+static unsigned char scene_actor_eval_valid[TOY_GAME_MAX_ACTORS];
+static struct rf_gpu_scene_body_sample scene_body_eval_keys[RASTERFALL_BODY_RESOURCE_COUNT];
+static unsigned char scene_body_eval_valid[RASTERFALL_BODY_RESOURCE_COUNT];
+static int scene_pose_reuse_enabled(void)
+{
+    const char *value=getenv("RF_GPU_CPU_POSE_REUSE");
+    return !(value && !strcmp(value,"0"));
+}
 
 void rf_gpu_scene_pose_body_release(void)
 {
@@ -13,7 +27,10 @@ void rf_gpu_scene_pose_body_release(void)
         rasterfall_model_instance_unload(&scene_body_instances[i]);
         rasterfall_model_resource_unload(&scene_body_resources[i]);
     }
-    rasterfall_model_instance_unload(&scene_actor_instance);
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)
+        rasterfall_model_instance_unload(&scene_actor_instances[i]);
+    memset(scene_actor_eval_valid,0,sizeof(scene_actor_eval_valid));
+    memset(scene_body_eval_valid,0,sizeof(scene_body_eval_valid));
 }
 
 static int scene_pose_weapon_from_instance(struct rf_gpu_scene_pose_v1 *next,
@@ -69,6 +86,10 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
         !resource->definition.bone_count ||
         resource->definition.bone_count>RF_GPU_SCENE_POSE_BONES ||
         (!instance->resource && rasterfall_model_instance_init(instance,resource)<0)) goto done;
+    int reuse=scene_pose_reuse_enabled() && !freeze && !diagnostic_model &&
+        scene_body_eval_valid[body_id] &&
+        !memcmp(&scene_body_eval_keys[body_id],sample,sizeof(*sample));
+    if(!reuse)scene_body_eval_valid[body_id]=0;
     if(freeze && !sample->armed && rasterfall_model_instance_reset_pose(instance)<0)goto done;
     composition.layers[0].clip=humanoid_action(sample->walk ?
         RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
@@ -82,10 +103,13 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
         composition.layers[2].time_ms=sample->action_time_ms;
         if (!composition.layers[2].clip) goto done;
     }
-    if (!(freeze && !sample->armed) &&
+    if (!reuse && !(freeze && !sample->armed) &&
         rasterfall_action_compose(instance,&composition)<0) goto done;
-    if (sample->armed && rasterfall_rifle_pose_solve(instance,sample->weapon,
+    if (!reuse && sample->armed && rasterfall_rifle_pose_solve(instance,sample->weapon,
             scale,&sample->rifle,NULL)<0) goto done;
+    if(!freeze && !diagnostic_model) {
+        scene_body_eval_keys[body_id]=*sample;scene_body_eval_valid[body_id]=1;
+    }
     memset(out,0,sizeof(*out));
     out->abi_version=1;out->byte_size=sizeof(*out);
     out->frame_id=frame;out->world_generation=world;out->actor_count=1;
@@ -244,9 +268,21 @@ static int scene_pose_extract_validated(const struct rf_gpu_scene_local_frame *f
         modular_actor_runtime.body.definition.bone_count>RF_GPU_SCENE_POSE_BONES) {
         return -1;
     }
-    instance=&scene_actor_instance;
+    if(actor->source_slot>=TOY_GAME_MAX_ACTORS)return -1;
+    unsigned slot=actor->source_slot;
+    struct scene_pose_eval_key key={0};
+    key.world=frame->snapshot.world_generation;key.actor=*actor;key.presentation=*p;
+    /* Placement/camera/light do not enter action composition or IK. Rebuild
+     * world transforms, sockets and output metadata on every extraction. */
+    key.actor.x=key.actor.y=key.actor.z=key.actor.sy=key.actor.cy=0;
+    key.presentation.scene_light_q8=0;
+    instance=&scene_actor_instances[slot];
+    int reuse=scene_pose_reuse_enabled() && scene_actor_eval_valid[slot] &&
+        !memcmp(&scene_actor_eval_keys[slot],&key,sizeof(key));
     result=-1;
     if (!instance->resource && rasterfall_model_instance_init(instance,&modular_actor_runtime.body)<0) goto done;
+    if(reuse)goto evaluated;
+    scene_actor_eval_valid[slot]=0;
     memset(&composition,0,sizeof(composition));
     composition.layers[RASTERFALL_ACTION_LAYER_LOWER_BODY].clip=humanoid_action(
         p->lower_walk ? RASTERFALL_ACTION_LOCOMOTION_WALK : RASTERFALL_ACTION_LOCOMOTION_IDLE);
@@ -274,6 +310,8 @@ static int scene_pose_extract_validated(const struct rf_gpu_scene_local_frame *f
         actor->weapon < -1 || actor->weapon>=TOY_GAME_WEAPON_COUNT ||
         (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal &&
          rasterfall_rifle_pose_solve(instance,actor->weapon,835,&p->rifle,NULL)<0)) goto done;
+    scene_actor_eval_keys[slot]=key;scene_actor_eval_valid[slot]=1;
+evaluated:
     if (scene_pose_from_instance(next,instance,recipe,actor,p)<0) goto done;
     *out=*next; result=0;
 done:

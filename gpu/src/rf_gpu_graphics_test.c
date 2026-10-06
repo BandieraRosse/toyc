@@ -375,6 +375,101 @@ done:
     return result;
 }
 
+static int skin_visibility_test(struct rf_gpu_vulkan_context *context)
+{
+    struct rf_gpu_graphics *g=rf_gpu_graphics_create(context),*aux=rf_gpu_graphics_create(context);
+    struct rf_gpu_graphics_resource *r=NULL,*oracle=NULL;
+    struct rf_gpu_graphics_vertex v[3]={0},expected[3],reference[3];
+    uint32_t bind[66]={0},palette[30]={0},ix[3]={0,1,2},white=0xffffff;
+    struct rf_gpu_graphics_batch_item item={0};
+    struct rf_gpu_graphics_stats before,after;
+    float one=1,shift=200000;
+    uint64_t pm,nm,um;uint32_t pd,nd;
+    int result=-1;
+    CHECK(g && aux && !rf_gpu_graphics_resize(g,128,96) && !rf_gpu_graphics_resize(aux,128,96));
+    for(unsigned b=0;b<2;++b) {
+        memcpy(palette+b*15,&one,4);memcpy(palette+b*15+4,&one,4);memcpy(palette+b*15+8,&one,4);
+        shift=200000+b*64;
+        memcpy(palette+b*15+9,&shift,4);
+    }
+    for(unsigned i=0;i<3;++i) {
+        v[i].position[0]=i==1?64:-64;v[i].position[1]=i==2?64:-64;v[i].position[2]=128;
+        for(unsigned n=0;n<3;++n)v[i].normals[n*3+2]=32767;
+        memcpy(bind+i*22,&v[i],sizeof(v[i]));
+        for(unsigned n=0;n<4;++n) {
+            bind[i*22+14+n*2]=1u<<16;
+            bind[i*22+15+n*2]=65535u|(1u<<16);
+        }
+        /* Include the endpoints and an actual two-bone weighted position. */
+        bind[i*22+15]=(i==0?0:i==1?65535:32768)|(1u<<16);
+        expected[i]=v[i];expected[i].position[0]+=200000+(i==0?64:i==1?0:32);
+        reference[i]=expected[i];reference[i].position[0]-=200000;
+    }
+    r=rf_gpu_graphics_skinned_resource_create(g,NULL,3,ix,3,bind,66,palette,30,&white,1,1);
+    oracle=rf_gpu_graphics_resource_create(g,reference,3,ix,3,&white,1,1);CHECK(r && oracle);
+    CHECK(!rf_gpu_graphics_resource_bind(aux,r));
+    CHECK(!rf_gpu_graphics_resource_diff_vertices(g,r,expected,3,&pm,&nm,&um,&pd,&nd) && pm<=1 && pd<=1);
+    item.draw=draw(128,96);item.draw.index_count=3;item.draw.texture[0]=item.draw.texture[1]=1;
+    item.draw.quality[2]=3;item.draw.scene_layer=RF_GPU_SCENE_WORLD;
+    item.draw.translation_scale[0]=0;item.resource=oracle;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    unsigned visible=0;
+    for(unsigned p=0;p<128*96;++p)visible+=depths[p]>0;
+    CHECK(visible>0);
+    memcpy(saved,pixels,128*96*4);item.resource=r;item.draw.translation_scale[0]=-200000;
+    CHECK(!rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS));
+    CHECK(!memcmp(saved,pixels,128*96*4)); /* Current pose reaches the camera; bind does not. */
+    if(!getenv("RF_GPU_SKIN_FUSED") || strcmp(getenv("RF_GPU_SKIN_FUSED"),"0")) {
+        shift=200032;for(unsigned b=0;b<2;++b)memcpy(palette+b*15+9,&shift,4);
+        CHECK(!rf_gpu_graphics_skin_batch_begin(g));
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30));
+        CHECK(!rf_gpu_graphics_skin_batch_end(g));
+        item.draw.translation_scale[0]=0;
+        rf_gpu_graphics_get_stats(g,&before);
+        CHECK(!rf_gpu_graphics_scene_offscreen(g,&item,1,2));
+        rf_gpu_graphics_get_stats(g,&after);
+        CHECK(after.indexed_draws==before.indexed_draws && after.shadow_draws==before.shadow_draws);
+        CHECK(rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30)<0);
+        /* A different camera consumes the still-sealed pose. */
+        item.draw.camera[0]=200000;
+        CHECK(!rf_gpu_graphics_scene_offscreen(aux,&item,1,2));
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30));
+        /* Camera-hidden casters still dispatch and draw in shadow views. */
+        shift=0;for(unsigned b=0;b<2;++b)memcpy(palette+b*15+9,&shift,4);
+        CHECK(!rf_gpu_graphics_skin_batch_begin(g));
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30));
+        CHECK(!rf_gpu_graphics_skin_batch_end(g));
+        item.draw.camera[0]=0;item.draw.translation_scale[0]=5000;
+        rf_gpu_graphics_get_stats(g,&before);
+        CHECK(!rf_gpu_graphics_scene_offscreen(g,&item,1,3));
+        rf_gpu_graphics_get_stats(g,&after);
+        CHECK(after.indexed_draws==before.indexed_draws && after.shadow_draws>before.shadow_draws);
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30));
+        /* Nobody consumed this changed pose; cancellation permits a fresh update. */
+        shift=200000;for(unsigned b=0;b<2;++b)memcpy(palette+b*15+9,&shift,4);
+        for(unsigned i=0;i<3;++i)bind[i*22]+=32;
+        CHECK(!rf_gpu_graphics_skin_batch_begin(g));
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,bind,66,palette,30));
+        CHECK(!rf_gpu_graphics_skin_batch_end(g));
+        CHECK(!rf_gpu_graphics_scene_offscreen(g,&item,1,4));
+        rf_gpu_graphics_skin_batch_cancel(g);
+        rf_gpu_graphics_get_stats(g,&before);
+        CHECK(!rf_gpu_graphics_skinned_resource_update(g,r,3,NULL,0,palette,30));
+        rf_gpu_graphics_get_stats(g,&after);
+        CHECK(after.mesh_upload_bytes>before.mesh_upload_bytes);
+        for(unsigned i=0;i<3;++i) {
+            expected[i]=v[i];expected[i].position[0]+=200032;
+        }
+        CHECK(!rf_gpu_graphics_resource_diff_vertices(g,r,expected,3,&pm,&nm,&um,&pd,&nd) && pm<=1 && pd<=1 && !nm && !um);
+    }
+    result=0;
+done:
+    rf_gpu_graphics_skin_batch_cancel(g);
+    rf_gpu_graphics_destroy(aux);rf_gpu_graphics_destroy(g);
+    printf("SCENE current skin bounds/blend/hidden/AUX/shadow/cancel: %s\n",result?"FAIL":"PASS");
+    return result;
+}
+
 static int scene_layers_test(struct rf_gpu_vulkan_context *context)
 {
     struct rf_gpu_graphics *g=rf_gpu_graphics_create(context);
@@ -670,6 +765,7 @@ int main(void)
         CHECK(resource_bounds_test(&context)==0);
         CHECK(scene_color_test(&context)==0);
         CHECK(skin_batch_test(&context)==0);
+        CHECK(skin_visibility_test(&context)==0);
         result=0;goto done;
     }
     CHECK(scene_layers_test(&context)==0);
@@ -677,6 +773,7 @@ int main(void)
     CHECK(resource_bounds_test(&context)==0);
     CHECK(scene_color_test(&context)==0);
     CHECK(skin_batch_test(&context)==0);
+    CHECK(skin_visibility_test(&context)==0);
     CHECK(precision_material_test(&context)==0);
     CHECK(texture_set_test(&context)==0);
     CHECK(auxiliary_video_test(&context)==0);

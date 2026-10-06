@@ -22,7 +22,14 @@ float architecture_visibility(vec3 origin,vec3 direction,float limit) {
     rayQueryInitializeEXT(query,architecture,
         gl_RayFlagsOpaqueEXT|gl_RayFlagsTerminateOnFirstHitEXT,
         255,origin,0.5,direction,limit);
+#ifdef RF_ARCHITECTURE_SINGLE_PROCEED
+    // The retained AS contains only opaque triangles (BOX surfaces included).
+    // Vulkan traversal resolves those internally; no candidate can return
+    // control before completion. Keep a loop variant as the diagnostic oracle.
+    rayQueryProceedEXT(query);
+#else
     while(rayQueryProceedEXT(query)) {}
+#endif
     return rayQueryGetIntersectionTypeEXT(query,true)==gl_RayQueryCommittedIntersectionNoneEXT?1.0:0.0;
 }
 #else

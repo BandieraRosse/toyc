@@ -145,6 +145,10 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     if(clusters && strcmp(clusters,"0") && strcmp(clusters,"1"))return -1;
     g->light_clusters_enabled=clusters && !strcmp(clusters,"1");
     fprintf(stderr,"rf-gpu-light: clusters=%d\n",g->light_clusters_enabled);
+    const char *single=getenv("RF_GPU_RAY_SINGLE");
+    if(single && strcmp(single,"0") && strcmp(single,"1"))return -1;
+    g->ray_single=!(single && !strcmp(single,"0"));
+    fprintf(stderr,"rf-gpu-light: ray-single=%d\n",g->ray_single);
     const char *fp32=getenv("RF_GPU_RECEIVER_FP32");
     if(fp32 && strcmp(fp32,"0") && strcmp(fp32,"1"))return -1;
     g->receiver_fp32=fp32 && !strcmp(fp32,"1");
@@ -583,19 +587,7 @@ static void gfx_shadow_record(struct rf_gpu_graphics *g,const struct rf_gpu_grap
              * every light. Props/actors remain unmarked and cast normally. */
             if(d.architecture_occluder && g->architecture_count &&
                !g->legacy_architecture_shadows)continue;
-            /* Cull in light clip space, independently of the camera: an
-             * offscreen building can still cast an onscreen shadow. */
-            float center[3],extent[3];int outside=0;
-            if (!g->disable_draw_cull && gfx_draw_box(&items[i],center,extent)) {
-                const float *m=g->shadow_matrix[cascade];
-                for (unsigned p=0;p<6 && !outside;++p) {
-                    float plane[4];unsigned row=p/2;
-                    for (unsigned k=0;k<4;++k)
-                        plane[k]=p==4?m[k*4+2]:m[k*4+3]+((p&1)?-1:1)*m[k*4+row];
-                    outside=gfx_box_outside(center,extent,plane);
-                }
-            }
-            if (outside) continue;
+            if (!(g->draw_visibility[i]&(2u<<cascade))) continue;
             struct rf_gpu_graphics_resource *r=items[i].resource;d.camera[3]=(int)cascade;
             int pipeline=r->scene_vertex_color?31:30;
             if (!reuse_bind || bound_pipeline!=pipeline)

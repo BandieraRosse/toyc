@@ -14,7 +14,9 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 光照性能优化从[同包对照指南](guides/gpu-lighting.md#保持画面的光照性能对照)进入，探针权重复用与
 深度分段灯表归[光照架构](architecture/gpu-lighting.md)，WORLD 深度预通道归[GPU 渲染架构](architecture/gpu-rendering-architecture.md#scene-资源与同步)。
 接收缓存 FP16、静态/动态区域与三维灯表同由光照架构维护；蒙皮与主/AUX 消费者合并提交、
-姿态缓存生效和取消退休由 GPU 渲染架构维护。对照轴与 WORLD 缓存读取消融见同包对照指南。
+姿态缓存生效、当前姿态边界、主/AUX 独立可见性与取消退休由 GPU 渲染架构维护。
+CPU 完整输入求值复用归[动画架构](architecture/animation-architecture.md#scene-批量求值与-ik-更新范围)，
+片元单次不透明查询归光照架构；对照轴与 WORLD 缓存读取消融见同包对照指南。
 加载变慢、跨启动管线缓存与辅助镜头首次 GI 准备从[入图预热与多视图所有权](architecture/gpu-rendering-architecture.md#入图预热与多视图资源所有权)
 进入；计时范围见[启动界面合同](reference/boot-interface.md)，加载对照见[光照指南](guides/gpu-lighting.md#加载与首次辅助镜头准备)。
 fast 楼梯缓存边界、地面遮挡合并与换图失败诊断由[光照架构](architecture/gpu-lighting.md)维护；

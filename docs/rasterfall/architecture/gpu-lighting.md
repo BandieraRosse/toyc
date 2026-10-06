@@ -173,6 +173,12 @@ BLAS/TLAS 和存储由各 graphics owner 保留，resize 不重建；不逐帧�
 硬件片元变体使用 GLSL 460 / Vulkan 1.2 SPIR-V，binding 7 为 acceleration-structure descriptor，
 软件变体同一 binding 为 SSBO。射线保留法线起点偏移和有限光源距离，双面、不透明、首个命中终止。
 建筑可见性与 DDGI 命中查询共用该结构；未引入光追 pipeline、SBT、动态 BLAS 或软阴影。
+片元可见性查询默认只调用一次 `rayQueryProceedEXT`：该结构只包含不透明三角形，
+BOX 同样已经转换为表面三角形，不存在需要返回着色器确认的 AABB 或透明候选。
+这是 [Vulkan 遍历规则](https://docs.vulkan.org/spec/latest/chapters/raytraversal.html#ray-opacity-culling)
+允许的完整查询，起点、有限长度、双面和首个命中规则保持不变。若今后加入程序几何或透明建筑，
+必须同步恢复候选处理。`RF_GPU_RAY_SINGLE=0` 选择保留循环的片元变体作同包对照；
+软件 BVH 和 DDGI 最近命中查询仍走各自原有路径。
 两种路径在几何边界的浮点求交可有少量像素差异，不能假定所有场景逐位一致。
 
 ### 顶部可见性缓存

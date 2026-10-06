@@ -488,6 +488,67 @@ done:
     return failure!=0;
 }
 
+/* Public-only cache oracle; the full suite retains its private-asset contract. */
+static int scene_pose_reuse_test(void)
+{
+    static struct toy_game game_state;
+    static struct rf_gpu_scene_local_frame frame;
+    static struct rf_gpu_scene_pose_v1 first,cached,cold;
+    struct rf_gpu_scene_local_source source={0};
+    struct camera camera={0};camera.cy=camera.pitch_cy=1024;
+    int failure=0;
+#define REUSE_CHECK(x) do { if(!(x)){failure=__LINE__;goto done;} } while(0)
+    toy_game_init(&game_state,1);
+    int id=toy_game_add_ai(&game_state,TOY_GAME_AI_LEVEL_1,120,240,"CACHE");
+    REUSE_CHECK(id>0);
+    struct toy_game_actor *actor=&game_state.actors[id-1];
+    actor->character_id=RASTERFALL_CHARACTER_RF_RIFLEMAN;
+    actor->slots[0].weapon=TOY_GAME_WEAPON_AK;actor->current_slot=0;
+    toy_game_actor_set_animation(actor,TOY_GAME_ANIM_MOVE);
+    toy_game_actor_update_animation(actor,160);
+    REUSE_CHECK(!rf_gpu_scene_local_world(&source) && !rf_gpu_scene_local_created(&source,actor));
+    REUSE_CHECK(!rf_gpu_scene_local_freeze(&source,&game_state,&camera,1280,720,1,&frame));
+    REUSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&first));
+    for(unsigned changed=0;changed<7;++changed) {
+        frame.snapshot.frame_id++;
+        if(changed==0) {
+            frame.snapshot.actors[0].x+=123;frame.snapshot.actors[0].z-=321;
+            frame.snapshot.actors[0].sy=1024;frame.snapshot.actors[0].cy=0;
+            frame.presentation.scene_light_q8=192;
+        } else if(changed==1)frame.presentation.rifle.aim_milli=1000;
+        else if(changed==2)frame.presentation.lower_time_ms++;
+        else if(changed==3)frame.snapshot.actors[0].weapon=TOY_GAME_WEAPON_SMG;
+        else if(changed==4)frame.presentation.character_id=RASTERFALL_CHARACTER_GUNNER;
+        else if(changed==5)frame.snapshot.world_generation++;
+        else {
+            frame.snapshot.actors[0].identity.generation++;
+            frame.presentation.identity=frame.snapshot.actors[0].identity;
+        }
+        REUSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&cached));
+        if(changed==0)REUSE_CHECK(!memcmp(cached.palette,first.palette,sizeof(first.palette)) &&
+            cached.frame_id==frame.snapshot.frame_id && cached.scene_light_q8==192);
+        rf_gpu_scene_pose_body_release();
+        REUSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&cold) && !memcmp(&cached,&cold,sizeof(cold)));
+        REUSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&cached) && !memcmp(&cached,&cold,sizeof(cold)));
+    }
+    {
+        struct rf_gpu_scene_body_sample sample={0};
+        sample.armed=1;sample.weapon=TOY_GAME_WEAPON_AK;sample.rifle.aim_milli=1000;
+        REUSE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_HUMANOID_V2,1,2,&sample,0,0,0,0,1024,&first));
+        REUSE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_HUMANOID_V2,2,2,&sample,100,20,-50,1024,0,&cached));
+        rf_gpu_scene_pose_body_release();
+        REUSE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_HUMANOID_V2,2,2,&sample,100,20,-50,1024,0,&cold) &&
+            !memcmp(&cached,&cold,sizeof(cold)));
+    }
+    REUSE_CHECK(!scene_clothing_pose_test());
+done:
+    rf_gpu_scene_pose_body_release();
+    __printf("scene public pose reuse %s line=%d placement/time/IK/weapon/appearance/world/identity/release/clothing\n",
+        failure?"FAIL":"PASS",failure);
+#undef REUSE_CHECK
+    return failure!=0;
+}
+
 /* Explicit resource test: missing private assets is a failure, not a skip. */
 int rf_gpu_scene_pose_logic_test(void)
 {
@@ -499,6 +560,9 @@ int rf_gpu_scene_pose_logic_test(void)
     struct toy_game_actor *actor;
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
+    POSE_CHECK(!scene_pose_reuse_test());
+    const char *public_only=getenv("RF_GPU_POSE_PUBLIC_TEST");
+    if(public_only && !strcmp(public_only,"1"))return 0;
     POSE_CHECK(!scene_independent_enemy_source_test());
     POSE_CHECK(!block_character_pose_test());
     POSE_CHECK(!scene_grip_pose_test());
@@ -836,6 +900,20 @@ int rf_gpu_scene_pose_logic_test(void)
         for(uint32_t i=0;i<batch_count;++i)
             POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,i,&moved) &&
                 !memcmp(&batch[i],&moved,sizeof(moved)));
+        /* Cached evaluation keeps local palette exact while rebuilding world
+         * placement and current frame metadata. Release gives a cold oracle. */
+        frame.snapshot.frame_id++;
+        frame.snapshot.actors[0].x+=123;
+        frame.snapshot.actors[0].z-=321;
+        frame.snapshot.actors[0].sy=1024;frame.snapshot.actors[0].cy=0;
+        frame.presentation.scene_light_q8=192;
+        POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,0,&moved));
+        POSE_CHECK(moved.frame_id==frame.snapshot.frame_id && moved.scene_light_q8==192 &&
+            !memcmp(moved.palette,batch[0].palette,sizeof(moved.palette)));
+        rf_gpu_scene_pose_body_release();
+        POSE_CHECK(!rf_gpu_scene_pose_extract_at(&frame,0,&replacement) &&
+            !memcmp(&moved,&replacement,sizeof(moved)));
+        frame=frozen;
         frame.presentations[1].state=TOY_GAME_ACTOR_DOWNED;
         POSE_CHECK(!rf_gpu_scene_pose_extract_all(&frame,batch,TOY_GAME_MAX_ACTORS,&batch_count) &&
             batch_count==frame.snapshot.actor_count-1);

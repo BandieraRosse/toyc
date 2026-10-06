@@ -1543,6 +1543,8 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     if(!probe->slow_profile_state) {
         const char *slow=getenv("RF_GPU_SCENE_PROFILE_SLOW");
         probe->slow_profile_state=slow && !strcmp(slow,"1")?2:1;
+        const char *reuse=getenv("RF_GPU_CPU_POSE_REUSE");
+        fprintf(stderr,"SCENE-POSE reuse=%d\n",!(reuse && !strcmp(reuse,"0")));
     }
     if (!probe->graphics) {
         probe->graphics=rf_gpu_graphics_create(context);
@@ -1842,8 +1844,10 @@ done:
         probe->startup_event=NULL;probe->startup_event_context=NULL;
     }
     if (items) probe->batch=items;
+    /* All drawing consumers have retired. Discard sealed skins that no view
+     * needed; their copied palette must never become a valid result cache. */
+    rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     if (result<0) {
-        rf_gpu_graphics_skin_batch_cancel(probe->graphics);
         for(uint32_t i=0;i<actor_prepared;++i)
             rf_gpu_scene_actor_gpu_invalidate_bind(probe->actor[i]);
     }

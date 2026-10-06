@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$OutputDirectory='tmp/outpost-performance',
+    [string]$Executable='',
     [ValidateRange(1,5)][int]$Rounds=5,
     [ValidateRange(120,4096)][int]$Samples=360,
     [string[]]$Views=@('sky-north','lab-computer-side','electronics-lab','lighting-lab'),
@@ -11,6 +12,9 @@ param(
     [switch]$CompareLightTiles,
     [switch]$CompareLightDepth,
     [switch]$CompareGIReuse,
+    [switch]$CompareDynamicCull,
+    [switch]$ComparePoseReuse,
+    [switch]$CompareRaySingle,
     [switch]$CompareLightClusters,
     [switch]$CompareSkinFusion,
     [switch]$CompareReceiverFP16,
@@ -32,7 +36,7 @@ param(
     [ValidateRange(480,4320)][int]$Height=1080
 )
 $ErrorActionPreference='Stop'
-if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareLightClusters+[int][bool]$CompareSkinFusion+[int][bool]$CompareReceiverFP16+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$CompareIndirectMode+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
+if(([int][bool]$Compare+[int][bool]$ComparePreparation+[int][bool]$CompareArchitecture+[int][bool]$CompareArchitectureShadows+[int][bool]$CompareLightTiles+[int][bool]$CompareLightDepth+[int][bool]$CompareGIReuse+[int][bool]$CompareDynamicCull+[int][bool]$ComparePoseReuse+[int][bool]$CompareRaySingle+[int][bool]$CompareLightClusters+[int][bool]$CompareSkinFusion+[int][bool]$CompareReceiverFP16+[int][bool]$CompareDepthPrepass+[int][bool]$CompareRoofCache+[int][bool]$CompareGI+[int][bool]$CompareGIBounces+[int][bool]$CompareGIVisibility+[int][bool]$CompareDaylight+[int][bool]$CompareIndirect+[int][bool]$CompareIndirectMode+[int][bool]$LightAblations) -gt 1){throw 'Choose one comparison axis'}
 if($ProfileLights -and $LightAblations){throw 'Keep fragment counters separate from timing ablations'}
 if($AllLabs -and !$PSBoundParameters.ContainsKey('Views')) {
     $Views=@('sky-north','electronics-lab','lighting-lab')
@@ -42,6 +46,11 @@ if($AllLabs -and @($Views | Where-Object {$_ -like 'lab-computer*'}).Count) {
 }
 $Root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Package=Join-Path $Root 'build-windows/rasterfall-windows'
+$Exe=if($Executable){
+    $Target=if([IO.Path]::IsPathRooted($Executable)){$Executable}else{Join-Path $Root $Executable}
+    (Resolve-Path -LiteralPath $Target).Path
+}else{Join-Path $Package 'rasterfall.exe'}
+$Package=Split-Path -Parent $Exe
 $Out=[IO.Path]::GetFullPath((Join-Path $Root $OutputDirectory))
 if(Test-Path -LiteralPath $Out){throw 'Use a new evidence directory'}
 if(Get-Process rasterfall -ErrorAction SilentlyContinue){throw 'Rasterfall already running'}
@@ -55,13 +64,13 @@ $Keys=@('RF_SCENE_PERF_FRAMES','RF_LABS_ALL','RF_GPU_SCENE_LEGACY_LAYER_COLORS',
     'RF_GPU_SCENE_DISABLE_LAYER_CULL','RF_GPU_SCENE_DISABLE_DRAW_CULL','RF_GPU_SCENE_LEGACY_BIND',
     'RF_GPU_SCENE_LEGACY_ORIGIN_BOUNDS','RF_GPU_SCENE_LEGACY_LAYER_PACKING',
     'RF_GPU_VULKAN_VENDOR_ID','RF_GPU_SKY_TIME','RF_GPU_SKY_SCALE','VK_INSTANCE_LAYERS','RF_GPU_ARCHITECTURE',
-    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS','RF_GPU_INDIRECT_MODE','RF_GPU_LIGHT_CLUSTERS','RF_GPU_SKIN_FUSED','RF_GPU_RECEIVER_FP32')
+    'RF_GPU_ARCHITECTURE_SHADOW_MAPS','RF_GPU_LIGHT_TILES','RF_GPU_LIGHT_ABLATION','RF_GPU_LIGHT_PROFILE','RF_GPU_ROOF_CACHE','RF_GPU_GI','RF_GPU_GI_BOUNCES','RF_GPU_GI_VISIBILITY','RF_GPU_GI_DEBUG','RF_GPU_HDR_CAPTURE','RF_GPU_DAYLIGHT','RF_GPU_LIGHT_DEPTH','RF_GPU_GI_REUSE','RF_GPU_DEPTH_PREPASS','RF_GPU_INDIRECT_MODE','RF_GPU_DYNAMIC_CULL','RF_GPU_CPU_POSE_REUSE','RF_GPU_RAY_SINGLE','RF_GPU_LIGHT_CLUSTERS','RF_GPU_SKIN_FUSED','RF_GPU_RECEIVER_FP32')
 $Saved=@{}
 foreach($Key in $Keys){$Saved[$Key]=[Environment]::GetEnvironmentVariable($Key,'Process')}
 $Runs=[Collections.Generic.List[object]]::new()
 $Process=$null
-$Hash=(Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash
-Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
+$Hash=(Get-FileHash -LiteralPath $Exe).Hash
+Write-Json @{exe=$Hash;executable=$Exe;map=(Get-FileHash -LiteralPath "$Package/rasterfall/assets/maps/outpost.map").Hash;
     rounds=$Rounds;samples=$Samples;views=$Views;all_labs=[bool]$AllLabs;compare=[bool]$Compare;
     cooldown_seconds=$CooldownSeconds;ablation_modes=$AblationModes;
     compare_preparation=[bool]$ComparePreparation;compare_architecture=[bool]$CompareArchitecture;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;
@@ -70,6 +79,9 @@ Write-Json @{exe=$Hash;map=(Get-FileHash -LiteralPath "$Package/rasterfall/asset
     compare_roof_cache=[bool]$CompareRoofCache;compare_gi=[bool]$CompareGI;compare_gi_bounces=[bool]$CompareGIBounces;compare_indirect=[bool]$CompareIndirect;
     compare_light_depth=[bool]$CompareLightDepth;compare_gi_reuse=[bool]$CompareGIReuse;
     compare_depth_prepass=[bool]$CompareDepthPrepass;depth_prepass=$env:RF_GPU_DEPTH_PREPASS;
+    compare_dynamic_cull=[bool]$CompareDynamicCull;dynamic_cull=$env:RF_GPU_DYNAMIC_CULL;
+    compare_pose_reuse=[bool]$ComparePoseReuse;pose_reuse=$env:RF_GPU_CPU_POSE_REUSE;
+    compare_ray_single=[bool]$CompareRaySingle;ray_single=$env:RF_GPU_RAY_SINGLE;
     compare_light_clusters=[bool]$CompareLightClusters;compare_skin_fusion=[bool]$CompareSkinFusion;compare_receiver_fp16=[bool]$CompareReceiverFP16;
     light_clusters=$env:RF_GPU_LIGHT_CLUSTERS;skin_fused=$env:RF_GPU_SKIN_FUSED;receiver_fp32=$env:RF_GPU_RECEIVER_FP32;
     light_depth=$env:RF_GPU_LIGHT_DEPTH;gi_reuse=$env:RF_GPU_GI_REUSE;
@@ -97,7 +109,7 @@ try {
     [Environment]::SetEnvironmentVariable('VK_INSTANCE_LAYERS',$null,'Process')
     for($Round=1;$Round -le $Rounds;$Round++) {
         foreach($View in $Views) {
-            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareLightClusters -or $CompareSkinFusion -or $CompareReceiverFP16 -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
+            $Modes=if($Compare -or $ComparePreparation -or $CompareArchitectureShadows -or $CompareLightTiles -or $CompareLightDepth -or $CompareGIReuse -or $CompareDynamicCull -or $ComparePoseReuse -or $CompareRaySingle -or $CompareLightClusters -or $CompareSkinFusion -or $CompareReceiverFP16 -or $CompareDepthPrepass -or $CompareRoofCache -or $CompareGI -or $CompareGIBounces -or $CompareGIVisibility -or $CompareDaylight -or $CompareIndirect){@('reference','optimized')}else{@('optimized')}
             if($CompareArchitecture){$Modes=@('software','hardware')}
             if($LightAblations){$Modes=@($AblationModes)}
             if($CompareIndirectMode){
@@ -112,6 +124,9 @@ try {
                 $Thermal=[Collections.Generic.List[string]]::new();$LastThermal=-2
                 if($CompareLightDepth){$env:RF_GPU_LIGHT_DEPTH=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareDepthPrepass){$env:RF_GPU_DEPTH_PREPASS=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($CompareDynamicCull){$env:RF_GPU_DYNAMIC_CULL=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($ComparePoseReuse){$env:RF_GPU_CPU_POSE_REUSE=if($Mode -eq 'reference'){'0'}else{'1'}}
+                if($CompareRaySingle){$env:RF_GPU_RAY_SINGLE=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareLightClusters){$env:RF_GPU_LIGHT_DEPTH='1';$env:RF_GPU_LIGHT_CLUSTERS=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareSkinFusion){$env:RF_GPU_SKIN_FUSED=if($Mode -eq 'reference'){'0'}else{'1'}}
                 if($CompareReceiverFP16){$env:RF_GPU_INDIRECT_MODE='fast';$env:RF_GPU_RECEIVER_FP32=if($Mode -eq 'reference'){'1'}else{'0'}}
@@ -142,7 +157,7 @@ try {
                 $Map=if($View -like 'frontier-*'){'rasterfall/assets/maps/frontier_station_01.map'}else{'rasterfall/assets/maps/outpost.map'}
                 $Argv=@('--skip-boot','--renderer','gpu-scene','--map',$Map,
                     '--gpu-normal-scene',$View,'0','--window-size',[string]$Width,[string]$Height)
-                $Process=Start-Process -FilePath "$Package/rasterfall.exe" -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
+                $Process=Start-Process -FilePath $Exe -WorkingDirectory $Package -WindowStyle Hidden -PassThru `
                     -ArgumentList (($Argv | ForEach-Object {'"'+$_+'"'}) -join ' ') `
                     -RedirectStandardOutput "$Out/$Name.out" -RedirectStandardError "$Out/$Name.err"
                 $Handle=$Process.Handle
@@ -180,6 +195,9 @@ try {
                 if($CompareLightDepth -and $Errors -notmatch "rf-gpu-light: depth-slices=$(if($Mode -eq 'reference'){'1'}else{'32'})\b"){throw "$Name did not activate requested depth masks"}
                 if($CompareDepthPrepass -and $Errors -notmatch "rf-gpu-scene: depth-prepass=$($env:RF_GPU_DEPTH_PREPASS)"){throw "$Name did not activate requested depth prepass"}
                 if($CompareLightClusters -and $Errors -notmatch "rf-gpu-light: clusters=$($env:RF_GPU_LIGHT_CLUSTERS)"){throw "$Name did not activate requested clusters"}
+                if($CompareDynamicCull -and $Errors -notmatch "rf-gpu-scene: dynamic-cull=$($env:RF_GPU_DYNAMIC_CULL)"){throw "$Name did not activate requested dynamic_cull"}
+                if($ComparePoseReuse -and $Errors -notmatch "SCENE-POSE reuse=$($env:RF_GPU_CPU_POSE_REUSE)"){throw "$Name did not activate requested CPU pose reuse"}
+                if($CompareRaySingle -and $Errors -notmatch "rf-gpu-light: ray-single=$($env:RF_GPU_RAY_SINGLE)"){throw "$Name did not activate requested single ray traversal"}
                 if($CompareSkinFusion -and $Errors -notmatch "rf-gpu-skin: fused=$($env:RF_GPU_SKIN_FUSED)"){throw "$Name did not activate requested skin fusion"}
                 if($CompareReceiverFP16 -and $Errors -notmatch "rf-gpu-receiver-cache: [^\r\n]*precision=$(if($Mode -eq 'reference'){'fp32'}else{'fp16'})"){throw "$Name did not activate requested receiver format"}
                 if($CompareGIReuse -and $Errors -notmatch "rf-gpu-gi: shared-visibility=$($env:RF_GPU_GI_REUSE)"){throw "$Name did not activate requested GI reuse"}
@@ -195,7 +213,7 @@ try {
             }
         }
     }
-    if((Get-FileHash -LiteralPath "$Package/rasterfall.exe").Hash -ne $Hash){throw 'Executable changed while sampling'}
+    if((Get-FileHash -LiteralPath $Exe).Hash -ne $Hash){throw 'Executable changed while sampling'}
 } finally {
     if($Process -and !$Process.HasExited){Stop-Process -Id $Process.Id -Force}
     foreach($Key in $Keys){[Environment]::SetEnvironmentVariable($Key,$Saved[$Key],'Process')}
