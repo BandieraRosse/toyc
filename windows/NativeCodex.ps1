@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('doctor', 'build', 'asset-tools', 'package', 'test', 'gpu-test', 'run', 'acceptance', 'help')]
+    [ValidateSet('doctor', 'build', 'asset-tools', 'tactical-build', 'tactical-test', 'package', 'test', 'gpu-test', 'run', 'acceptance', 'help')]
     [string] $Command = 'help',
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]] $ExtraArgs = @()
@@ -144,6 +144,8 @@ Windows Native Codex
   doctor      Check the fixed MSYS2/MinGW lane, SDL2, Vulkan, package and GPU.
   build       Build, sync configuration to both exe directories, and refresh an existing staged executable.
   asset-tools Build native GLB, RFCHAR, RFANIM and map diagnostics.
+  tactical-build Build the headless tactical range/arena without SDL or assets.
+  tactical-test Run the tactical deterministic contract tests.
   package     Build the executable, stage assets, and create a ZIP archive.
   test        Run staged rasterfall.exe --logic-test.
   gpu-test    Run required native-present GPU smoke with frame audit.
@@ -168,12 +170,15 @@ if ($Command -in @('test', 'package')) { Assert-WeaverBlueprintCache }
 
 switch ($Command) {
     'doctor' { Doctor }
+    'tactical-build' { Invoke-Make @('-f', 'windows/Makefile', 'tactical', "MSYS2_ROOT=$MsysRootForMake") }
+    'tactical-test' { Invoke-Make @('-f', 'windows/Makefile', 'tactical-test', "MSYS2_ROOT=$MsysRootForMake") }
     'build' {
         $sdl = Get-SdlPrefix
         if (-not $sdl) { Fail "SDL2 static library missing in $Deps or $MingwRoot. Install mingw-w64-x86_64-SDL2." }
         Invoke-Make @('-f', 'windows/Makefile', 'all', "WINDOWS_DEPS=$(Convert-ToMsysPath $Deps)", "SDL_PREFIX=$(Convert-ToMsysPath $sdl)", "MSYS2_ROOT=$MsysRootForMake")
         if (Test-Path -LiteralPath $Exe) {
             Copy-Item -LiteralPath (Join-Path $Build 'rasterfall.exe') -Destination $Exe -Force
+            Copy-Item -LiteralPath (Join-Path $Build 'rf-tactical.exe') -Destination (Join-Path $PackageRoot 'rf-tactical.exe') -Force
             Say "staged executable refreshed: $Exe"
         }
     }

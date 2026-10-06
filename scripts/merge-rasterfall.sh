@@ -34,6 +34,7 @@ source_group() {
     case "$relative" in
         gpu/src/rf_gpu_graphics_spirv.inc) printf '%s' generated; return ;;
         rasterfall/src/dev-tests/*) printf '%s' diagnostics; return ;;
+        rasterfall/src/rf_tactical_cli.c) printf '%s' diagnostics; return ;;
     esac
     case "$name" in
         *_test.*|*_test.inc|*_tests.*|rasterfall_logic_test.inc)
@@ -46,12 +47,12 @@ source_group() {
         include/rasterfall_public_protocol.h) printf '%s' gameplay; return ;;
         gpu/*|windows/*|lib/*|include/*|Makefile|scripts/*)
             printf '%s' platform; return ;;
-        rasterfall/lib/game*|rasterfall/lib/sfx.c) printf '%s' gameplay; return ;;
+        rasterfall/lib/game*|rasterfall/lib/sfx.c|rasterfall/lib/rf_tactical*) printf '%s' gameplay; return ;;
         rasterfall/lib/*) printf '%s' maps; return ;;
     esac
     case "$name" in
         toy_map.h|rasterfall_map*|rasterfall_world_content*) printf '%s' maps ;;
-        toy_game*|toy_mesh_weaver.h|rf_weaver_blueprints_generated.h|rasterfall_session*|rasterfall_net*|rasterfall_units*|rasterfall_roster*|rasterfall_ai*|rasterfall_action*|rf_rts.c|rf_rts.h)
+        toy_game*|toy_mesh_weaver.h|rf_weaver_blueprints_generated.h|rasterfall_session*|rasterfall_net*|rasterfall_units*|rasterfall_roster*|rasterfall_ai*|rasterfall_action*|rf_rts.c|rf_rts.h|rf_tactical*)
             printf '%s' gameplay ;;
         rasterfall_character*|rasterfall_model*|rasterfall_animation*|rasterfall_actor_animation*|rasterfall_motion_presentation*|rasterfall_humanoid*|rasterfall_enemy*|rasterfall_block_character*|rasterfall_glb*|rasterfall_vmd*|rasterfall_rifle_pose*|rasterfall_calibration*|rasterfall_viewmodel*|rf_viewmodel_contract*|rf_gpu_scene_pose*|rf_gpu_scene_enemy*|rf_gpu_scene_actor*|rf_outpost_actor_showcase*|rf_outpost_rifle_cycle*|rf_outpost_weapon_cycle*)
             printf '%s' characters ;;
@@ -97,7 +98,7 @@ done
         \( -name 'gpu_*.ps1' -o -name 'gpu_*.py' -o -name 'rf_*.py' \
            -o -name 'rf_*test.c' -o -name 'rasterfall_*test.c' \
            -o -name 'map_*.py' -o -name 'world_layout_export.py' \
-           -o -name 'combat_lab.ps1' -o -name 'rts_command_check.py' \
+           -o -name 'combat_lab.ps1' -o -name 'rts_command_check.py' -o -name 'tactical_*.py' -o -name 'tactical_lab.ps1' \
            -o -name 'generate_gpu_*.py' \) -print0
     printf '%s\0' "$ROOT/Makefile" "$ROOT/windows/Makefile" \
         "$ROOT/windows/NativeCodex.ps1" "$ROOT/scripts/merge-rasterfall.sh"

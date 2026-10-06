@@ -61,6 +61,17 @@ T 结束并查看结果，结果页 Enter 重置，F2 回到配置；配置页 F
 回避条与青色反应效果表示消耗储备，实际受伤另计；持续集火和感染者围攻仍会耗尽储备。
 规则、固定预设及 CSV 复现入口见[战斗实验场](../docs/rasterfall/guides/combat-lab.md)。
 
+新枪战 AI 靶场与对抗使用独立的原生无图形程序：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 tactical-build
+.\build-windows\rf-tactical.exe range --weapon both
+.\build-windows\rf-tactical.exe match --a utility --b mechanical --squad 4 --map-seed 100 --log tmp/tactical-match.jsonl
+```
+
+批量对局、训练和交互回放见[战术实验指南](../docs/rasterfall/guides/tactical-lab.md)。
+此核心尚未替换正式场景的 AI/战斗规则。
+
 保留的 Linux/freestanding 构建入口：
 
 ```sh

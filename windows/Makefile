@@ -98,6 +98,10 @@ SRCS := $(GAME_SRCS) $(ANIMATION_SRCS) $(GAME_LIB_SRCS) $(PLATFORM_SRCS) $(LIB_S
 OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 TARGET := $(BUILD)/rasterfall.exe
+TACTICAL_SRCS := rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
+                 rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/src/dev-tests/rf_tactical_test.c
+TACTICAL_TARGET := $(BUILD)/rf-tactical.exe
 PACKAGE_DIR := $(BUILD)/rasterfall-windows
 PACKAGE := $(BUILD)/rasterfall-windows.zip
 
@@ -154,7 +158,7 @@ define sync-runtime-config
 	@cp -R rasterfall/config/. "$(1)/rasterfall/config/"
 endef
 
-all: $(TARGET)
+all: $(TARGET) $(TACTICAL_TARGET)
 	$(call sync-runtime-config,$(BUILD))
 	$(call sync-runtime-config,$(PACKAGE_DIR))
 	@printf '  WIN-CONFIG build and package configuration refreshed\n'
@@ -268,10 +272,11 @@ $(BUILD)/rf-gpu-graphics-test.exe: $(GPU_GRAPHICS_SRCS) $(GPU_GRAPHICS_DEPS) | $
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -I gpu/include -I windows/include \
 	    -I include -I include/tlibc -I rasterfall/include $(GPU_GRAPHICS_SRCS) -o $@
 
-stage: $(TARGET)
+stage: $(TARGET) $(TACTICAL_TARGET)
 	@rm -rf "$(PACKAGE_DIR)"
 	@mkdir -p "$(PACKAGE_DIR)/rasterfall"
 	@cp "$(TARGET)" "$(PACKAGE_DIR)/rasterfall.exe"
+	@cp "$(TACTICAL_TARGET)" "$(PACKAGE_DIR)/rf-tactical.exe"
 	@cp -R rasterfall/assets "$(PACKAGE_DIR)/rasterfall/assets"
 	$(call sync-runtime-config,$(BUILD))
 	$(call sync-runtime-config,$(PACKAGE_DIR))
@@ -286,7 +291,7 @@ stage: $(TARGET)
 
 package: stage
 	@rm -f "$(PACKAGE)"
-	@cd "$(PACKAGE_DIR)" && $(PYTHON) -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rasterfall
+	@cd "$(PACKAGE_DIR)" && $(PYTHON) -m zipfile -c "$(abspath $(PACKAGE))" rasterfall.exe rf-tactical.exe rasterfall
 	@printf '  WIN-ZIP %s\n' "$(PACKAGE)"
 
 $(BUILD)/win/app/linux/glb_inspect.o: app/linux/glb_inspect.c windows/Makefile rasterfall-rebuild | $(BUILD)
@@ -306,9 +311,23 @@ $(BUILD)/win/rasterfall/src/rf_game_runtime.o: CPPFLAGS += -DRF_COMBAT_BUILD_COM
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_frontier_performance.inc
 $(BUILD)/win/rasterfall/lib/sfx.o $(BUILD)/win/rasterfall/src/rasterfall_audio.o: rasterfall/include/rasterfall_audio_mix.h
 
+# Hosted tactical simulation uses the system C library and never links SDL/GPU.
+# It deliberately has no Toyc self target, like the other hosted diagnostics.
+.PHONY: tactical tactical-test
+tactical: $(TACTICAL_TARGET)
+	$(call sync-runtime-config,$(BUILD))
+	$(call sync-runtime-config,$(PACKAGE_DIR))
+	@if [ -f "$(PACKAGE_DIR)/rasterfall.exe" ]; then cp "$(TACTICAL_TARGET)" "$(PACKAGE_DIR)/rf-tactical.exe"; fi
+$(TACTICAL_TARGET): $(TACTICAL_SRCS) rasterfall/include/rf_tactical.h \
+    rasterfall/include/rf_tactical_weapon.h rasterfall/src/dev-tests/rf_tactical_test.c windows/Makefile | $(BUILD)
+	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -static -mconsole \
+	    -Irasterfall/include $(TACTICAL_SRCS) -o $@ -lm
+tactical-test: $(TACTICAL_TARGET)
+	$(TACTICAL_TARGET) self-test
+
 -include $(DEPS)
 
 clean:
 	rm -rf $(BUILD)/win
 	rm -rf $(PACKAGE_DIR)
-	rm -f $(TARGET) $(PACKAGE)
+	rm -f $(TARGET) $(TACTICAL_TARGET) $(PACKAGE)

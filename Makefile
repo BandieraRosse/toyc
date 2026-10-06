@@ -54,6 +54,20 @@ CFLAGS  := -nostdlib -ffreestanding -Wall -Wextra -I include -I compiler -MD
 # ─── 路径 ───────────────────────────────────────────────────────
 
 BUILD   := build
+.DEFAULT_GOAL := all
+
+# The tactical range/arena is a hosted diagnostic, independent of Tinylibc,
+# rendering and Toyc self builds. Windows native is the acceptance lane.
+TACTICAL_SRCS := rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
+                 rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/src/dev-tests/rf_tactical_test.c
+.PHONY: tactical tactical-test
+tactical: $(BUILD)/rf-tactical
+$(BUILD)/rf-tactical: $(TACTICAL_SRCS) rasterfall/include/rf_tactical.h \
+    rasterfall/include/rf_tactical_weapon.h rasterfall/src/dev-tests/rf_tactical_test.c | $(BUILD)
+	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Irasterfall/include $(TACTICAL_SRCS) -o $@ -lm
+tactical-test: $(BUILD)/rf-tactical
+	$(BUILD)/rf-tactical self-test
 SRC     := compiler
 INC     := include
 
