@@ -100,6 +100,18 @@ static int triangle_reuse_test(struct rf_gpu_vulkan_context *context)
     item.resource=resource;item.draw=d;
     CHECK(rf_gpu_graphics_scene_capture(g,&item,1,pixels,depths,MAX_PIXELS)==0);
     memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
+    /* Loading snapshot preserves the last target and returns GDI channel order. */
+    {
+        uint32_t *snapshot=NULL,width=0,height=0;int matches=1;
+        CHECK(!rf_gpu_graphics_scene_snapshot(g,&snapshot,&width,&height));
+        if(width!=128 || height!=96)matches=0;
+        else for(unsigned i=0;i<128*96;++i) {
+            const unsigned char *rgba=(const unsigned char *)&saved[i];
+            uint32_t expected=0xFF000000u|((uint32_t)rgba[0]<<16)|((uint32_t)rgba[1]<<8)|rgba[2];
+            if(snapshot[i]!=expected){matches=0;break;}
+        }
+        free(snapshot);CHECK(matches);
+    }
     reference=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
     CHECK(reference && rf_gpu_graphics_resource_bind(g,reference)==0);
     item.resource=reference;

@@ -6286,7 +6286,7 @@ startup_again:
 #ifdef TOYC_WINDOWS
         int preview_work=rf_table.open && rf_table_preview.phase>0 && rf_table_preview.phase<3;
         if(rf_table_preview_tick(&game_runtime,&gpu_vulkan_context,&scene_world_probe,
-            options.gpu_scene_play)<0){scene_runtime_failed=1;break;}
+            options.gpu_scene_play,&core)<0){scene_runtime_failed=1;break;}
         if(preview_work){last_time=rf_core_begin_tick(&core);accumulator=0;}
         if(rf_core_should_exit(&core))break;
 #endif

@@ -99,8 +99,18 @@ static void rf_table_draw(struct rasterfall_canvas *c)
         rasterfall_canvas_rect(c,v.x,v.y,v.w,v.h,rf_table.preview_state<=0&&rf_table.hover==23?0x223F50:0x172F40,255);
         const char *state=rf_table.preview_state==4?"当前后端不支持 GPU 预览\n仍可确认部署":rf_table.preview_state<0?"预加载失败\n点击此画面框重试":
             rf_table.preview_state==0?"点击此预览画面框\n开始预加载并渲染出生点画面":
-            rf_table.preview_state==2?"正在渲染出生点首帧…\n完成后才能确认部署":"加载中…\n正在准备地图与资源，完成后才能部署";
+            rf_table.preview_state==2?(rf_table.preview_percent>=75?
+                "正在渲染出生点首帧…\n完成后才能确认部署":"正在准备场景与模型资源…\n完成后才能确认部署"):
+                "加载中…\n正在准备地图与资源，完成后才能部署";
         rf_table_text(c,v.x+pad,v.y+v.h/2-30*s/1000,v.w-pad*2,90*s/1000,s,state,0x9ED5DF);
+        if(rf_table.preview_state==1 || rf_table.preview_state==2) {
+            int bar_x=v.x+pad,bar_y=v.y+v.h-54*s/1000,bar_w=v.w-pad*2;
+            char progress[80];
+            snprintf(progress,sizeof(progress),"加载进度（估算） %d%%",rf_table.preview_percent);
+            rf_table_text(c,bar_x,bar_y-28*s/1000,bar_w,24*s/1000,s,progress,0xB7DDD9);
+            rasterfall_canvas_rect(c,bar_x,bar_y,bar_w,8*s/1000,0x294653,255);
+            rasterfall_canvas_rect(c,bar_x,bar_y,bar_w*rf_table.preview_percent/100,8*s/1000,0x76E5CD,255);
+        }
     }
     rf_table_text(c,v.x,v.y+v.h+16*s/1000,v.w,70*s/1000,s,
         ready?"出生点 · 首帧已冻结\n地图已预加载，等待确认部署":"预览不会推进目标地图的对局与任务",0x8FB5C5);

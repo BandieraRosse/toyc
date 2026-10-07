@@ -70,6 +70,12 @@ struct toy_window *toy_window_open_native(const char *title, int width, int heig
  * width/height specify the restored window; surfaces follow actual client size. */
 struct toy_window *toy_window_open_display(const char *title, int width, int height,
                                           int native_present, int fullscreen);
+/* Main-thread loading UI, independent of the parent's native GPU swapchain.
+ * Draw into the ordinary window surface; retire GPU presentation before begin.
+ * end must follow worker retirement before normal presentation resumes. */
+int toy_window_begin_loading(struct toy_window *window);
+int toy_window_present_loading(struct toy_window *window);
+void toy_window_end_loading(struct toy_window *window);
 #endif
 /* Retain the window handle while releasing any hardware SDL swapchain. */
 int toy_window_prepare_native(struct toy_window *window);

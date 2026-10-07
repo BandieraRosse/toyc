@@ -294,6 +294,11 @@ void rf_gpu_graphics_destroy(struct rf_gpu_graphics *g);
 int rf_gpu_graphics_scene_present(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items, uint32_t count,uint64_t frame_id);
 int rf_gpu_graphics_scene_retire(struct rf_gpu_graphics *g);
+/* One-time loading transition: copy the retired last color target without
+ * drawing a new frame. Returns heap-owned 0xAARRGGBB pixels; caller frees them.
+ * Never call concurrently with another owner using the device queue. */
+int rf_gpu_graphics_scene_snapshot(struct rf_gpu_graphics *g,
+    uint32_t **argb,uint32_t *width,uint32_t *height);
 /* A persistent auxiliary camera target. This draws and retires synchronously
  * without acquiring the swapchain or reading pixels to the CPU. */
 int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,

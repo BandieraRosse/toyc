@@ -8,6 +8,7 @@ struct rf_table_map {
 struct rf_table_ui {
     int open, near, selected, pointer_x, pointer_y;
     int dropdown, hover, focus, preview_state, preview_map, preview_requested;
+    int preview_percent;
     char message[192];
     struct rf_table_map maps[RF_TABLE_MAPS];
 };

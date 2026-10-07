@@ -22,6 +22,7 @@ struct toy_window {
     int minimized;
     int native_present;
     int display_switching;
+    HWND loading_view;
 };
 
 /* Linux input numbers are part of the existing game-facing key contract. Keep
@@ -575,6 +576,13 @@ dispatch:
 snapshot:
     if (sync_window_surface(window, events) < 0) return -1;
     if (events) {
+        if(window->loading_view) {
+            POINT cursor;struct toy_native_window_handle handle;
+            if(GetCursorPos(&cursor) && toy_window_get_native_handle(window,&handle)>0 &&
+               ScreenToClient((HWND)(uintptr_t)handle.window,&cursor)) {
+                events->pointer_x=cursor.x;events->pointer_y=cursor.y;events->pointer_moved=1;
+            }
+        }
         /* Firmware may consume FOCUS_GAINED before Core's input service starts.
          * Publish current focus on every poll, including idle timeout polls;
          * keep keyboard_focus_changed reserved for actual window events. */
@@ -611,6 +619,62 @@ int toy_window_begin_frame(struct toy_window *window, struct toy_surface *surfac
     return 1;
 }
 
+/* A child GDI surface is not overwritten by the parent's Vulkan swapchain.
+ * Both its message handling and pixel writes stay on the SDL/UI thread. */
+static LRESULT CALLBACK loading_window_proc(HWND view,UINT message,WPARAM wp,LPARAM lp)
+{
+    struct toy_window *window=(struct toy_window *)GetWindowLongPtrW(view,GWLP_USERDATA);
+    if(message==WM_NCCREATE) {
+        window=(struct toy_window *)((CREATESTRUCTW *)lp)->lpCreateParams;
+        SetWindowLongPtrW(view,GWLP_USERDATA,(LONG_PTR)window);
+    }
+    if(message==WM_ERASEBKGND)return 1;
+    if(message==WM_SETCURSOR){SetCursor(LoadCursorW(NULL,MAKEINTRESOURCEW(32512)));return TRUE;}
+    if(message==WM_MOUSEMOVE || message==WM_LBUTTONDOWN || message==WM_LBUTTONUP ||
+       message==WM_RBUTTONDOWN || message==WM_RBUTTONUP || message==WM_MOUSEWHEEL)
+        return SendMessageW(GetParent(view),message,wp,lp);
+    if(message==WM_PAINT && window) {
+        PAINTSTRUCT paint;BITMAPINFO info={0};HDC dc=BeginPaint(view,&paint);
+        info.bmiHeader.biSize=sizeof(info.bmiHeader);
+        info.bmiHeader.biWidth=window->width;info.bmiHeader.biHeight=-window->height;
+        info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
+        StretchDIBits(dc,0,0,window->width,window->height,0,0,window->width,window->height,
+            window->pixels,&info,DIB_RGB_COLORS,SRCCOPY);
+        EndPaint(view,&paint);return 0;
+    }
+    return DefWindowProcW(view,message,wp,lp);
+}
+int toy_window_begin_loading(struct toy_window *window)
+{
+    struct toy_native_window_handle handle;
+    static ATOM registered;
+    if(!window || toy_window_get_native_handle(window,&handle)<=0)return -1;
+    if(window->loading_view)return 0;
+    if(!registered) {
+        WNDCLASSW type={0};type.lpfnWndProc=loading_window_proc;
+        type.hInstance=(HINSTANCE)(uintptr_t)handle.instance;
+        type.hCursor=LoadCursorW(NULL,MAKEINTRESOURCEW(32512));type.lpszClassName=L"RasterfallLoadingUI";
+        registered=RegisterClassW(&type);if(!registered)return -1;
+    }
+    window->loading_view=CreateWindowExW(WS_EX_NOACTIVATE,L"RasterfallLoadingUI",L"",
+        WS_CHILD,0,0,window->width,window->height,(HWND)(uintptr_t)handle.window,NULL,
+        (HINSTANCE)(uintptr_t)handle.instance,window);
+    return window->loading_view?0:-1;
+}
+int toy_window_present_loading(struct toy_window *window)
+{
+    if(!window || !window->loading_view)return -1;
+    if(!SetWindowPos(window->loading_view,HWND_TOP,0,0,window->width,window->height,
+        SWP_NOACTIVATE|SWP_SHOWWINDOW))return -1;
+    if(!InvalidateRect(window->loading_view,NULL,FALSE))return -1;
+    return UpdateWindow(window->loading_view)?0:-1;
+}
+void toy_window_end_loading(struct toy_window *window)
+{
+    if(window && window->loading_view) {
+        DestroyWindow(window->loading_view);window->loading_view=NULL;
+    }
+}
 int toy_window_present(struct toy_window *window)
 {
     if (!window || !window->renderer || !window->texture || !window->pixels)
@@ -671,6 +735,7 @@ int toy_window_move(struct toy_window *window, uint32_t serial)
 void toy_window_close(struct toy_window *window)
 {
     if (!window) return;
+    toy_window_end_loading(window);
     SDL_SetRelativeMouseMode(SDL_FALSE);
     SDL_SetWindowGrab(window->window, SDL_FALSE);
     SDL_free(window->pixels);

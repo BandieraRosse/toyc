@@ -2229,6 +2229,43 @@ int rf_gpu_graphics_scene_offscreen(struct rf_gpu_graphics *g,
     g->scene_query_active=0;return result;
 }
 
+int rf_gpu_graphics_scene_snapshot(struct rf_gpu_graphics *g,
+    uint32_t **argb,uint32_t *width,uint32_t *height)
+{
+    struct rf_gpu_vulkan_buffer staging={0};
+    VkBufferImageCopy copy={0};struct rf_vk_memory_barrier barrier={0};
+    void *mapped=NULL;uint32_t *pixels=NULL;int result=-1;
+    if(!argb || !width || !height)return -1;
+    *argb=NULL;*width=*height=0;
+    if(!g || !g->target.valid || g->scene_in_flight || g->poisoned || g->skin_batch)return -1;
+    uint64_t count=(uint64_t)g->target.width*g->target.height,bytes=count*4;
+    if(!count || bytes>SIZE_MAX || !(pixels=malloc((size_t)bytes)))return -1;
+    if(gpu_buffer_create(g->owner,bytes,RF_VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        RF_VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,RF_VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        &staging)<0 || gfx_begin(g)<0)goto done;
+    barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.src_access_mask=VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_TRANSFER_READ_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,0,1,&barrier,0,NULL,0,NULL);
+    copy.imageSubresource.aspectMask=VK_IMAGE_ASPECT_COLOR_BIT;copy.imageSubresource.layerCount=1;
+    copy.imageExtent.width=g->target.width;copy.imageExtent.height=g->target.height;copy.imageExtent.depth=1;
+    g->api.CmdCopyImageToBuffer(g->cmd,g->target.color.image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        staging.buffer,1,&copy);
+    barrier.src_access_mask=VK_ACCESS_TRANSFER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_HOST_READ_BIT;
+    g->owner->api.cmd_pipeline_barrier(g->cmd,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_HOST_BIT,
+        0,1,&barrier,0,NULL,0,NULL);
+    if(gfx_submit(g,1,RF_GPU_SUBMIT_READBACK)<0 ||
+       g->owner->api.map_memory(g->owner->device,staging.memory,0,staging.allocation_size,0,&mapped)!=RF_VK_SUCCESS)goto done;
+    if(gpu_buffer_invalidate(g->owner,&staging)<0)goto done;
+    const unsigned char *rgba=mapped;
+    for(uint64_t i=0;i<count;++i)
+        pixels[i]=0xFF000000u|((uint32_t)rgba[i*4]<<16)|((uint32_t)rgba[i*4+1]<<8)|rgba[i*4+2];
+    *argb=pixels;*width=g->target.width;*height=g->target.height;pixels=NULL;result=0;
+done:
+    if(mapped)g->owner->api.unmap_memory(g->owner->device,staging.memory);
+    gpu_buffer_destroy(g->owner,&staging);free(pixels);return result;
+}
+
 int rf_gpu_graphics_scene_capture_at(struct rf_gpu_graphics *g,
     const struct rf_gpu_graphics_batch_item *items,uint32_t count,
     uint32_t *rgba,float *depth,uint32_t capacity,uint64_t frame_id)

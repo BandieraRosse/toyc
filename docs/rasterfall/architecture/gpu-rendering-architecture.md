@@ -205,8 +205,13 @@ graphics resource 保留唯一创建 owner，多个同 device 消费者登记双
 指挥桌另有 `RF_GPU_AUX_FROZEN`：借用已退休、独立地图 owner 的离屏颜色目标，只做 GPU
 合成，不按 WORLD/WEAPON 的刷新频率更新。目标地图首帧由同一 Scene 冻结、几何与光照链
 生成；没有截图读回或 CPU framebuffer 往返。来源 owner 在解绑主视图并退休后才释放，
-UI 与输入共用预览矩形并在 overlay 留出透明内容区。点击预览框后才在主线程串行准备
-目标地图首帧，选图不自动触发 GPU 资源准备。预加载会话和移交规则归
+UI 与输入共用预览矩形并在 overlay 留出透明内容区。点击预览框后才启动后台首帧任务，
+选图不自动触发 GPU 资源准备。主 GPU 提交退休后，工作线程独占场景渲染和设备队列，
+主线程在启动工作线程前，通过 `rf_gpu_graphics_scene_snapshot` 一次读回已退休主颜色目标，
+作为加载期间的静态大厅背景。该接口不重新提交 Scene 绘制，临时 staging 在读回后释放；
+正常主帧和目标地图预览仍不读回。主线程通过独立 GDI 子窗口绘制背景与加载 UI，
+不使用场景 renderer 或 GPU 呈现；join 后释放 CPU 背景，才能
+移交/释放预览资源并恢复正常主 Scene。预加载会话和移交规则归
 [运行时生命周期](runtime.md#指挥桌预加载与出生点预览)。
 
 `rf_gpu_scene_layers_input.aux_view` 提交通讯/设备视图，`unit_view` 提交 RTS 单位视图，两路可同时显示。
