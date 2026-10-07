@@ -14,7 +14,7 @@ void rf_tac_match_destroy(struct rf_tac_match *m)
 {
     int t;
     if(!m)return;
-    for(t=0;t<2;++t) { rf_tac_prediction_destroy(m->prediction[t]);m->prediction[t]=NULL; }
+    for(t=0;t<2;++t) { rf_tac_prediction_destroy(m->prediction[t]);m->prediction[t]=NULL;rf_ai_host_destroy(&m->ai[t]); }
     rf_tac_world_destroy(&m->world);rf_tac_map_destroy(&m->map);
     m->ready=m->running=0;
 }
@@ -43,6 +43,10 @@ int rf_tac_match_prepare(struct rf_tac_match *m)
     if(!m || !m->ready || m->world.finished)return 0;
     if(m->world.time_ms%RF_TAC_THINK_MS<RF_TAC_DT_MS) {
         for(t=0;t<2;++t) {
+            if(m->policies[t].solver==RF_TAC_M0){
+                if(!rf_ai_host_decide(&m->ai[t],&m->world,t,&m->policies[t],&m->plans[t],&m->observations[t],&m->traces[t]))return -1;
+                continue;
+            }
             struct rf_tac_predictor provider;
             const struct rf_tac_predictor *service=NULL;
             rf_tac_observe(&m->world,t,&m->observations[t]);
@@ -82,6 +86,13 @@ int rf_tactical_lab_export(struct rf_tactical_lab *lab)
         const struct rf_tac_world *w=&lab->match.world;
         fprintf(f,"\"map_seed\":%u,\"map_hash\":%u,\"hash\":\"%08x\",\"time_ms\":%d,\"finished\":%d,\"winner\":%d,\"captured\":[%d,%d],\"policies\":[",w->map->seed,w->map->content_hash,rf_tac_hash(w),w->time_ms,w->finished,w->winner,w->orders[0].captured,w->orders[1].captured);
         for(int t=0;t<2;++t){const struct rf_tac_policy *p=&lab->match.policies[t];
+            if(p->solver==RF_TAC_M0){
+                fprintf(f,"%s{\"solver\":%d,\"algorithm\":\"%s\",\"ai_api_version\":%d,\"algorithm_version\":%d,\"budget\":%d,\"parameters\":{",
+                    t?",":"",p->solver,p->algorithm->name,RF_AI_API_VERSION,p->ai.version,p->budget);
+                for(int k=0;k<p->algorithm->parameter_count;++k)
+                    fprintf(f,"%s\"%s\":%g",k?",":"",p->algorithm->parameters[k].name,p->ai.parameters[k]);
+                fputs("}}",f);continue;
+            }
             fprintf(f,"%s{\"solver\":%d,\"budget\":%d,\"aggression\":%g,\"safety\":%g,\"progress\":%g,\"cover\":%g,\"focus\":%g,\"movement\":%g,\"beam_width\":%d,\"beam_branches\":%d,\"beam_horizon_ms\":%d}",t?",":"",p->solver,p->budget,p->aggression,p->safety,p->progress,p->cover,p->focus,p->movement,p->beam_width,p->beam_branches,p->beam_horizon_ms);}
         fputs("],\"units\":[",f);
         for(int i=0;i<w->squad_size*2;++i) {

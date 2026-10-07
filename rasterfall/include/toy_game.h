@@ -651,7 +651,7 @@ struct toy_game_enemy {
 struct toy_game_actor {
     int active;
     /* External policies submit intents; Game alone advances their bodies. */
-    int controller_external, simulation_paused;
+    int controller_external, simulation_paused, intent_exclusive;
     int intent_move, intent_x, intent_z, intent_y;
     int intent_target_id;
     unsigned int intent_target_generation;

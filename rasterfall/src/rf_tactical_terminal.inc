@@ -6,7 +6,8 @@ static struct {
     char message[192];
 } rf_tac_ui;
 #if RF_TACTICAL_INTERACTIVE
-static const char *rf_tac_policy_names[]={"简单推进","机械策略","Utility 策略","Beam 联合搜索"};
+static const char *rf_tac_policy_names[]={"机械 M0（新框架）","旧简单推进","旧机械策略","旧 Utility","旧 Beam"};
+static const int rf_tac_solver_ids[]={RF_TAC_M0,RF_TAC_SIMPLE,RF_TAC_MECHANICAL,RF_TAC_UTILITY,RF_TAC_BEAM};
 static const char *rf_tac_weapon_names[]={"步枪 / Rifle","冲锋枪 / SMG"};
 static const char *rf_tac_mode_names[]={"单发","三发点射","连续射击"};
 static const char *rf_tac_target_names[]={"全身战士假人","半身战士假人","探头战士假人"};
@@ -15,7 +16,7 @@ static const unsigned rf_tac_seeds[]={1337,424242,98765,20261007};
 static int rf_tac_field_count(int kind){return kind==1?7:5;}
 static int rf_tac_option_count(int kind,int field)
 {
-    static const int arena[]={4,4,3,2,4,2,3},range[]={2,3,9,3,4};
+    static const int arena[]={5,5,3,2,4,2,3},range[]={2,3,9,3,4};
     return kind==1?arena[field]:range[field];
 }
 static const char *rf_tac_field_name(int kind,int field)
@@ -68,7 +69,7 @@ static int rf_tac_apply_settings(struct rasterfall_session *s)
     if(lab->kind==1) {
         struct rf_tac_policy policies[2];
         for(int t=0;t<2;++t) {
-            rf_tac_policy_default(&policies[t],v[t]+1);
+            rf_tac_policy_default(&policies[t],rf_tac_solver_ids[v[t]]);
             policies[t].budget=128<<v[6];
         }
         lab->seed=rf_tac_seeds[v[4]];
@@ -89,7 +90,7 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int width,int height,
     if(rf_tac_ui.world!=(int)r->session->world_id || rf_tac_ui.generation!=r->session->scene_local.world_generation) {
         memset(&rf_tac_ui,0,sizeof(rf_tac_ui));rf_tac_ui.dropdown=-1;rf_tac_ui.hover=-1;
         rf_tac_ui.world=r->session->world_id;rf_tac_ui.generation=r->session->scene_local.world_generation;
-        if(lab->kind==1)rf_tac_ui.values[1]=1;
+        if(lab->kind==1)rf_tac_ui.values[1]=0;
         else {rf_tac_ui.values[1]=2;rf_tac_ui.values[2]=3;}
     }
     const struct toy_game_actor *p=toy_game_local_player_actor_const(&r->session->game_state);

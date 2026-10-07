@@ -59,14 +59,14 @@ BUILD   := build
 # The tactical range/arena is a hosted diagnostic, independent of Tinylibc,
 # rendering and Toyc self builds. Windows native is the acceptance lane.
 TACTICAL_SRCS := rasterfall/lib/rf_tactical_lab.c  rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
-                 rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
                  rasterfall/src/dev-tests/rf_tactical_test.c
 .PHONY: tactical tactical-test
 tactical: $(BUILD)/rf-tactical
 TACTICAL_GAME_SRCS := rasterfall/lib/game.c lib/portable/math.c
-$(BUILD)/rf-tactical: $(TACTICAL_SRCS) $(TACTICAL_GAME_SRCS) $(wildcard rasterfall/lib/game_*.inc) rasterfall/lib/rf_tactical_game.inc rasterfall/lib/rf_range_game.inc rasterfall/include/rf_tactical.h \
+$(BUILD)/rf-tactical: $(TACTICAL_SRCS) $(TACTICAL_GAME_SRCS) $(wildcard rasterfall/lib/game_*.inc) rasterfall/lib/rf_tactical_game.inc rasterfall/lib/rf_range_game.inc rasterfall/lib/rf_ai_tactical.inc rasterfall/include/rf_ai.h rasterfall/include/rf_ai_host.h rasterfall/include/rf_tactical.h \
     rasterfall/include/rf_tactical_weapon.h rasterfall/include/rf_tactical_prediction.h \
-    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/src/dev-tests/rf_tactical_test.c | $(BUILD)
+    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/src/dev-tests/rf_tactical_test.c rasterfall/src/dev-tests/rf_ai_test.inc | $(BUILD)
 	$(CC) -std=c11 -O2 -Wall -Wextra -DRF_GAME_HOSTED -idirafter windows/include -Irasterfall/include $(TACTICAL_SRCS) $(TACTICAL_GAME_SRCS) -o $@ -lm
 tactical-test: $(BUILD)/rf-tactical
 	$(BUILD)/rf-tactical self-test

@@ -1,11 +1,13 @@
 #include "rf_tactical.h"
 #include "rf_tactical_weapon.h"
 #include "rf_tactical_prediction.h"
+#include "rf_ai_host.h"
 #include "rasterfall_character.h"
 #include "rasterfall_units.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* All geometry is in metres. The static map is immutable after baking. The
  * mutable world owns execution, weapon clocks, resource recovery and RNG. */
@@ -25,9 +27,15 @@ static float tac_distance(struct rf_tac_vec a, struct rf_tac_vec b)
 static int tac_valid_pos(struct rf_tac_vec p)
 { return p.x >= 0.35f && p.x <= 63.65f && p.y >= 0.35f && p.y <= 47.65f; }
 static unsigned int tac_generation(const struct rf_tac_world *w,int team)
-{ return w->map->generation ^ (w->seed * 0x9e3779b9u) ^
-         (w->units[0].actor_generation*0x85ebca6bu) ^
-         (w->order_revision[team]*0x7f4a7c15u) ^ ((unsigned int)team*0x27d4eb2du); }
+{
+    unsigned h=w->map->generation ^ (w->seed*0x9e3779b9u) ^
+        (w->order_revision[team]*0x7f4a7c15u) ^ ((unsigned)team*0x27d4eb2du);
+    for(int t=0;t<2;++t)for(int i=0;i<w->squad_size;++i){
+        const struct rf_tac_unit *u=&w->units[t*RF_TAC_MAX_SQUAD+i];
+        h=(h^(unsigned)u->actor_id)*16777619u;h=(h^u->actor_generation)*16777619u;
+    }
+    return h;
+}
 
 static int tac_x(float x) { return (int)lroundf((x-32)*512); }
 static int tac_z(float z) { return (int)lroundf((z-24)*512); }
@@ -143,7 +151,6 @@ static void tac_map_bake(struct rf_tac_map *map)
     int x,y,i,j,grid_count;
     map->node_count=0;
     memset(map->neighbor_count,0,sizeof(map->neighbor_count));
-    memset(map->visible,0,sizeof(map->visible));
     for (i=0;i<RF_TAC_GRID_W*RF_TAC_GRID_H;++i) map->grid_node[i]=-1;
     for (y=0;y<RF_TAC_GRID_H;++y) for (x=0;x<RF_TAC_GRID_W;++x) {
         struct rf_tac_vec p; p.x=1.0f+x*RF_TAC_GRID_M; p.y=1.0f+y*RF_TAC_GRID_M;
@@ -175,10 +182,11 @@ static void tac_map_bake(struct rf_tac_map *map)
             if (tac_distance(map->nodes[i].pos,map->nodes[j].pos)<=3.0f &&
                 tac_move_clear(map,map->nodes[i].pos,map->nodes[j].pos)) { tac_link(map,i,j); ++linked; }
     }
-    for (i=0;i<map->node_count;++i) for (j=0;j<map->node_count;++j) {
-        int exposure=tac_precise_exposure(map,map->nodes[i].pos,map->nodes[j].pos);
-        map->exposure[i][j]=(unsigned char)exposure;
-        if (exposure) map->visible[i][j>>5]|=1u<<(j&31);
+    for(i=0;i<map->node_count;++i){
+        map->ai_nodes[i].position.x=map->nodes[i].pos.x;
+        map->ai_nodes[i].position.z=map->nodes[i].pos.y;
+        map->ai_nodes[i].neighbor_count=map->neighbor_count[i];
+        memcpy(map->ai_nodes[i].neighbors,map->neighbors[i],sizeof(map->ai_nodes[i].neighbors));
     }
 }
 
@@ -554,7 +562,7 @@ int rf_tac_apply(struct rf_tac_world *world,const struct rf_tac_plan *plan)
     int i,valid=1;
     if (!world || !world->map || !plan || world->finished) return 0;
     if (plan->team<0 || plan->team>1) { ++world->invalid_actions; return 0; }
-    if (plan->version!=RF_TAC_VERSION || plan->generation!=tac_generation(world,plan->team) ||
+    if ((plan->explicit_actions!=0 && plan->explicit_actions!=1) || plan->version!=RF_TAC_VERSION || plan->generation!=tac_generation(world,plan->team) ||
         plan->tick!=world->tick || plan->time_ms!=world->time_ms || plan->count!=world->squad_size) {
         for(i=0;i<world->squad_size;++i) tac_unit_hold(&world->units[plan->team*RF_TAC_MAX_SQUAD+i]);
         ++world->invalid_actions; return 0;
@@ -562,14 +570,22 @@ int rf_tac_apply(struct rf_tac_world *world,const struct rf_tac_plan *plan)
     for(i=0;i<world->squad_size;++i) {
         struct rf_tac_unit *u=&world->units[plan->team*RF_TAC_MAX_SQUAD+i];
         struct rf_tac_action action=plan->actions[i]; int legal=1;
+        u->explicit_actions=plan->explicit_actions;
         if (action.kind<RF_TAC_HOLD || action.kind>RF_TAC_RELOAD) legal=0;
         if (!u->alive) { tac_unit_hold(u); continue; }
         if (legal && action.kind==RF_TAC_FIRE)
             legal=action.target>=0 && action.target<world->squad_size &&
                   world->units[(1-plan->team)*RF_TAC_MAX_SQUAD+action.target].alive &&
-                  tac_precise_exposure(world->map,u->pos,world->units[(1-plan->team)*RF_TAC_MAX_SQUAD+action.target].pos);
+                  (plan->explicit_actions || tac_precise_exposure(world->map,u->pos,world->units[(1-plan->team)*RF_TAC_MAX_SQUAD+action.target].pos));
         if (legal && action.kind==RF_TAC_RELOAD) legal=u->reload_ms || u->ammo<toy_game_weapon_info(u->weapon==RF_TW_RIFLE?TOY_GAME_WEAPON_AK:TOY_GAME_WEAPON_SMG)->mag_size;
-        if (legal && action.kind==RF_TAC_MOVE) {
+        if (legal && action.kind==RF_TAC_MOVE && plan->explicit_actions) {
+            struct rf_tac_vec destination=plan->destinations[i];
+            int node=rf_tac_nearest_node(world->map,destination);
+            legal=tac_valid_pos(destination) && node>=0 &&
+                tac_move_clear(world->map,world->map->nodes[node].pos,destination);
+            if(legal){u->destination=destination;u->nav_count=u->nav_cursor=0;u->nav_kind=RF_TAC_CONTINUE;}
+        }
+        if (legal && action.kind==RF_TAC_MOVE && !plan->explicit_actions) {
             struct tac_paths paths; int nodes[RF_TAC_CANDIDATES],kinds[RF_TAC_CANDIDATES];
             int k=action.candidate,count=tac_candidates(world,plan->team,u,&paths,nodes,kinds);
             legal=k>0 && k<count && tac_valid_pos(plan->destinations[i]) &&
@@ -589,12 +605,20 @@ int rf_tac_apply(struct rf_tac_world *world,const struct rf_tac_plan *plan)
         if (!legal) { ++world->invalid_actions; valid=0; tac_unit_hold(u); }
         else { u->action=action; if(action.kind!=RF_TAC_MOVE) { u->nav_count=u->nav_cursor=0; u->nav_kind=RF_TAC_CURRENT; u->destination=u->pos; } }
     }
-    return valid;
+    /* A current API plan is accepted with per-member HOLD corrections. The
+     * legacy interface keeps its old strict return value. Stale headers above
+     * still reject the whole plan. One bad action must not abort an AI match. */
+    return plan->explicit_actions?1:valid;
 }
 
 static int tac_target(const struct rf_tac_world *w,const struct rf_tac_unit *u)
 {
     int e,best=-1; float best_distance=1.0e20f;
+    if(u->explicit_actions){
+        e=u->action.target;
+        return u->action.kind==RF_TAC_FIRE && e>=0 && e<w->squad_size &&
+            w->units[(1-u->team)*RF_TAC_MAX_SQUAD+e].alive?e:-1;
+    }
     if (u->action.kind==RF_TAC_FIRE) {
         e=u->action.target;
         if (e>=0 && e<w->squad_size && w->units[(1-u->team)*RF_TAC_MAX_SQUAD+e].alive &&
@@ -618,12 +642,13 @@ void rf_tac_prepare(struct rf_tac_world *world,int paused)
         struct toy_game_actor *a=toy_game_actor_by_id(world->game,u->actor_id);
         if(!a || a->combat_generation!=u->actor_generation) continue;
         a->simulation_paused=paused;
+        a->intent_exclusive=u->explicit_actions;
         int target=tac_target(world,u);
         const struct rf_tac_unit *v=target<0?NULL:&world->units[(1-u->team)*RF_TAC_MAX_SQUAD+target];
         if(u->action.kind==RF_TAC_MOVE && tac_distance(u->pos,u->destination)<0.35f) tac_unit_hold(u);
         toy_game_actor_set_intent(a,u->action.kind==RF_TAC_MOVE,tac_x(u->destination.x),0,
             tac_z(u->destination.y),v?v->actor_id:-1,v?v->actor_generation:0,
-            u->action.kind==RF_TAC_HOLD || u->action.kind==RF_TAC_FIRE,u->action.kind==RF_TAC_RELOAD);
+            (!u->explicit_actions && u->action.kind==RF_TAC_HOLD) || u->action.kind==RF_TAC_FIRE,u->action.kind==RF_TAC_RELOAD);
         u->last_shot_target=target<0?-1:(1-u->team)*RF_TAC_MAX_SQUAD+target;
     }
 }
@@ -636,7 +661,7 @@ void rf_tac_finish(struct rf_tac_world *world,int dt_ms)
     for(i=0;i<RF_TAC_MAX_UNITS;++i) if(world->units[i].alive) ++alive[world->units[i].team];
     world->time_ms+=dt_ms;world->tick=world->time_ms/RF_TAC_THINK_MS;
     { int capture_mask=0;
-    for(team=0;team<2;++team) if(world->orders[team].kind==RF_TAC_ATTACK && alive[team]) {
+    for(team=0;team<2;++team) if(world->orders[team].kind==RF_TAC_ATTACK && !world->orders[team].captured && alive[team]) {
         struct rf_tac_order *order=&world->orders[team]; int clear=1,occupied=1;
         for(i=0;i<world->squad_size;++i) {
             struct rf_tac_unit *enemy=&world->units[(1-team)*RF_TAC_MAX_SQUAD+i];
@@ -646,13 +671,14 @@ void rf_tac_finish(struct rf_tac_world *world,int dt_ms)
         }
         if(clear && occupied) order->clear_ms+=dt_ms; else order->clear_ms=0;
         if(order->clear_ms>=TAC_CAPTURE_MS) {
-            order->captured=1; order->kind=RF_TAC_DEFEND; ++world->captures;
+            order->captured=1; ++world->captures;
             for(i=0;i<world->squad_size;++i) tac_unit_hold(&world->units[team*RF_TAC_MAX_SQUAD+i]);
             capture_mask|=1<<team;
         }
     }
-    if(capture_mask) { world->finished=1; world->winner=capture_mask==3?-1:capture_mask==1?0:1; }
+    if(capture_mask && !world->continuous_commands) { world->finished=1; world->winner=capture_mask==3?-1:capture_mask==1?0:1; }
     }
+    if(world->continuous_commands)return;
     if(!world->finished && !alive[0] && !alive[1]) { world->finished=1; world->winner=-1; }
     /* Role symmetry: clearing defenders is insufficient for either attacker.
      * A surviving defending side wins immediately if its attackers die. */
@@ -695,6 +721,7 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
     h=tac_hash_word(h,world->squad_size); h=tac_hash_word(h,world->winner);
     h=tac_hash_word(h,world->finished); h=tac_hash_word(h,world->max_time_ms);
     h=tac_hash_word(h,world->captures); h=tac_hash_word(h,world->invalid_actions);
+    h=tac_hash_word(h,world->continuous_commands);
     for(i=0;i<2;++i) {
         h=tac_hash_word(h,world->order_revision[i]);
         const struct rf_tac_order *o=&world->orders[i]; h=tac_hash_word(h,o->kind);
@@ -703,6 +730,7 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
     }
     for(i=0;i<RF_TAC_MAX_UNITS;++i) {
         const struct rf_tac_unit *u=&world->units[i];
+        h=tac_hash_word(h,u->explicit_actions);
         const struct toy_game_actor *a=world->game?toy_game_actor_by_id_const(world->game,u->actor_id):NULL;
         if(a && a->combat_generation==u->actor_generation) {
             const int values[]={a->sy,a->cy,a->pitch_sy,a->pitch_cy,a->ground_y,a->airborne_y,
@@ -971,3 +999,5 @@ void rf_tac_prediction_provider(struct rf_tac_prediction *prediction,struct rf_t
     out->opaque=prediction; out->evaluate=tac_prediction_evaluate;
     out->remaining_steps=tac_prediction_remaining;
 }
+
+#include "rf_ai_tactical.inc"

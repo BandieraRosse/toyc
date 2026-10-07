@@ -121,12 +121,13 @@ static void test_range(void)
           "target resets only after every confirmed event is consumed");
     rf_range_destroy(r);free(r);
 }
+#include "rf_ai_test.inc"
 int rf_tac_run_tests(void)
 {
     struct rf_tac_map *map=calloc(1,sizeof(*map));checked=failed=0;
     CHECK(map!=NULL,"map allocation");if(!map)return 0;
     CHECK(rf_tac_map_generate(map,100),"Game collision graph generation");
-    if(map->geometry){test_game_execution(map);test_prediction(map);}
+    if(map->geometry){test_game_execution(map);test_prediction(map);test_ai_abi();test_ai_game(map);}
     test_range();rf_tac_map_destroy(map);free(map);
     printf("TACTICAL GAME: %d checks, %d failures\n",checked,failed);return !failed;
 }

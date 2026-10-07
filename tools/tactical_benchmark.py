@@ -25,7 +25,7 @@ import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILTINS = frozenset(("simple", "mechanical", "utility", "beam"))
+BUILTINS = frozenset(("simple", "mechanical", "utility", "beam", "mechanical-v3"))
 UINT_MAX = 0xFFFFFFFF
 COST_COUNTS = ("solver_calls", "work_units", "non_prediction_work_units",
                "prediction_calls", "prediction_steps", "predicted_ms",
@@ -406,7 +406,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--exe", type=Path, default=ROOT / "build-windows/rf-tactical.exe")
     result.add_argument("--output", type=Path, default=ROOT / "tmp/tactical-benchmark",
                         help="New or empty directory; existing evidence is never overwritten")
-    result.add_argument("--policies", nargs="+", default=["beam", "rasterfall/config/ai/trained-v1.cfg"],
+    result.add_argument("--policies", nargs="+", default=["mechanical-v3"],
                         metavar="POLICY", help="Built-in name, cfg path relative to repository, or LABEL=POLICY")
     result.add_argument("--opponents", nargs="+", default=["simple", "mechanical", "utility"], metavar="POLICY")
     result.add_argument("--map-seed", type=int, default=30000)

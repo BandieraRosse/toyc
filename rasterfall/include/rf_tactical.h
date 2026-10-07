@@ -1,6 +1,7 @@
 #ifndef RF_TACTICAL_H
 #define RF_TACTICAL_H
 #include "toy_game.h"
+#include "rf_ai.h"
 
 /* Game owns actor simulation; observations are disposable read-only
  * projections. Solvers receive no world pointer and do not own navigation. */
@@ -24,7 +25,7 @@
 enum rf_tac_order_kind { RF_TAC_DEFEND, RF_TAC_ATTACK };
 enum rf_tac_action_kind { RF_TAC_HOLD, RF_TAC_MOVE, RF_TAC_FIRE, RF_TAC_RELOAD };
 enum rf_tac_cover_kind { RF_TAC_LOW = 1, RF_TAC_HIGH = 2 };
-enum rf_tac_solver_kind { RF_TAC_SIMPLE = 1, RF_TAC_MECHANICAL = 2, RF_TAC_UTILITY = 3, RF_TAC_BEAM = 4 };
+enum rf_tac_solver_kind { RF_TAC_SIMPLE = 1, RF_TAC_MECHANICAL = 2, RF_TAC_UTILITY = 3, RF_TAC_BEAM = 4, RF_TAC_M0 = 5 };
 enum rf_tac_candidate_kind {
     RF_TAC_CURRENT, RF_TAC_ADVANCE, RF_TAC_FLANK_LEFT, RF_TAC_FLANK_RIGHT,
     RF_TAC_COVER_LEFT, RF_TAC_COVER_RIGHT, RF_TAC_RETREAT, RF_TAC_CONTINUE
@@ -52,11 +53,10 @@ struct rf_tac_map {
     float objective_radius;
     struct rf_tac_cover covers[RF_TAC_MAX_COVERS];
     struct rf_tac_node nodes[RF_TAC_MAX_NODES];
+    struct rf_ai_nav_node ai_nodes[RF_TAC_MAX_NODES];
     int grid_node[RF_TAC_GRID_W * RF_TAC_GRID_H];
     unsigned char neighbor_count[RF_TAC_MAX_NODES];
     short neighbors[RF_TAC_MAX_NODES][RF_TAC_NEIGHBORS];
-    unsigned char exposure[RF_TAC_MAX_NODES][RF_TAC_MAX_NODES];
-    unsigned int visible[RF_TAC_MAX_NODES][(RF_TAC_MAX_NODES + 31) / 32];
 };
 struct rf_tac_order {
     int kind;
@@ -66,6 +66,7 @@ struct rf_tac_order {
 };
 struct rf_tac_action { int kind, candidate, target; };
 struct rf_tac_plan {
+    int explicit_actions; /* API 1: arbitrary positions, literal HOLD, no auto fire */
     int version;
     unsigned int generation;
     int tick, time_ms, team, count;
@@ -77,6 +78,7 @@ struct rf_tac_plan {
 /* Actor reference, read-only physical projection and policy/advisory state.
  * Strategy-facing health is only effective_health. */
 struct rf_tac_unit {
+    int explicit_actions;
     int actor_id;
     unsigned int actor_generation;
     int id, team, alive, weapon;
@@ -100,6 +102,7 @@ struct rf_tac_world {
     struct rf_tac_order orders[2];
     struct rf_tac_unit units[RF_TAC_MAX_UNITS];
     int invalid_actions, captures;
+    int continuous_commands; /* disable arena termination, retain command progress */
     unsigned int order_revision[2];
 };
 struct rf_tac_unit_view {
@@ -135,6 +138,8 @@ struct rf_tac_observation {
 };
 /* Values belong to the solver. Map/observation deliberately have no score. */
 struct rf_tac_policy {
+    const struct rf_ai_algorithm *algorithm;
+    struct rf_ai_config ai;
     int version, solver, budget;
     float aggression, safety, progress, cover, focus, movement;
     int beam_width, beam_branches, beam_horizon_ms;

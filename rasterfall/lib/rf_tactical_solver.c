@@ -26,6 +26,7 @@ void rf_tac_policy_default(struct rf_tac_policy *p, int solver)
     p->beam_width = 2;
     p->beam_branches = 4;
     p->beam_horizon_ms = 800;
+    p->algorithm=rf_ai_algorithm_find("mechanical-v3");rf_ai_config_default(p->algorithm,&p->ai);
 }
 
 int rf_tac_policy_validate(const struct rf_tac_policy *p)
@@ -34,7 +35,12 @@ int rf_tac_policy_validate(const struct rf_tac_policy *p)
                             p->cover, p->focus, p->movement };
     int i;
     if (p->version != RF_TAC_VERSION || p->solver < RF_TAC_SIMPLE ||
-        p->solver > RF_TAC_BEAM || p->budget < 0 || p->budget > 100000) return 0;
+        p->solver > RF_TAC_M0 || p->budget < 0 || p->budget > 100000) return 0;
+    if(p->solver==RF_TAC_M0){
+        if(!p->algorithm || p->ai.version!=p->algorithm->version)return 0;
+        for(int k=0;k<p->algorithm->parameter_count;++k){const struct rf_ai_parameter *v=&p->algorithm->parameters[k];
+            if(!isfinite(p->ai.parameters[k]) || p->ai.parameters[k]<v->minimum || p->ai.parameters[k]>v->maximum)return 0;}
+    }
     for (i = 0; i < 6; ++i)
         if (!isfinite(values[i]) || values[i] < 0 || values[i] > 100) return 0;
     if (p->solver == RF_TAC_BEAM && (p->beam_width < 1 || p->beam_width > RF_TAC_BEAM_MAX_WIDTH ||
@@ -83,7 +89,13 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
         else if (!strcmp(key, "beam_width")) { bit = 512; integer = &loaded.beam_width; }
         else if (!strcmp(key, "beam_branches")) { bit = 1024; integer = &loaded.beam_branches; }
         else if (!strcmp(key, "beam_horizon_ms")) { bit = 2048; integer = &loaded.beam_horizon_ms; }
-        else { ok = 0; break; }
+        else if (!strcmp(key, "algorithm_version") && (seen&2) && loaded.solver==RF_TAC_M0) {bit=1048576;integer=&loaded.ai.version;}
+        else {
+            if(!(seen&2) || loaded.solver!=RF_TAC_M0){ok=0;break;}
+            for(int k=0;k<loaded.algorithm->parameter_count;++k)
+                if(!strcmp(key,loaded.algorithm->parameters[k].name)){bit=4096u<<k;field=&loaded.ai.parameters[k];break;}
+            if(!field){ok=0;break;}
+        }
         if (seen & bit) { ok = 0; break; }
         seen |= bit;
         if (field) {
@@ -94,6 +106,8 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
             else if (!strcmp(value, "mechanical")) loaded.solver = RF_TAC_MECHANICAL;
             else if (!strcmp(value, "utility")) loaded.solver = RF_TAC_UTILITY;
             else if (!strcmp(value, "beam")) loaded.solver = RF_TAC_BEAM;
+            else if (rf_ai_algorithm_find(value)) {loaded.solver=RF_TAC_M0;
+                loaded.algorithm=rf_ai_algorithm_find(value);rf_ai_config_default(loaded.algorithm,&loaded.ai);}
             else { ok = 0; break; }
         } else {
             long n = strtol(value, &end, 10);
@@ -103,8 +117,11 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
     }
     if (ferror(f)) ok = 0;
     fclose(f);
-    if (!ok || (seen & 511) != 511 || !rf_tac_policy_validate(&loaded) ||
-        (loaded.solver != RF_TAC_BEAM && (seen & 3584))) return 0;
+    unsigned required=loaded.solver==RF_TAC_M0?1048583:511;
+    if (!ok || (seen & required) != required || !rf_tac_policy_validate(&loaded) ||
+        (loaded.solver != RF_TAC_BEAM && (seen & 3584)) ||
+        (loaded.solver != RF_TAC_M0 && (seen & 1044480u)) ||
+        (loaded.solver == RF_TAC_M0 && (seen & 504))) return 0;
     *p = loaded;
     return 1;
 }
@@ -116,6 +133,13 @@ int rf_tac_policy_save(const char *path, const struct rf_tac_policy *p)
     if (!rf_tac_policy_validate(p)) return 0;
     f = fopen(path, "wb");
     if (!f) return 0;
+    if(p->solver==RF_TAC_M0){
+        ok=fprintf(f,"policy_version=%d\nsolver=%s\nalgorithm_version=%d\nbudget=%d\n",p->version,p->algorithm->name,p->ai.version,p->budget)>=0;
+        for(int k=0;k<p->algorithm->parameter_count;++k)
+            if(fprintf(f,"%s=%.9g\n",p->algorithm->parameters[k].name,p->ai.parameters[k])<0)ok=0;
+        if(fclose(f))ok=0;
+        return ok;
+    }
     ok = fprintf(f, "policy_version=%d\nsolver=%s\nbudget=%d\naggression=%.9g\n"
                    "safety=%.9g\nprogress=%.9g\ncover=%.9g\nfocus=%.9g\nmovement=%.9g\n",
                    p->version, p->solver == RF_TAC_SIMPLE ? "simple" :
@@ -177,7 +201,7 @@ void rf_tac_solve(const struct rf_tac_observation *o, const struct rf_tac_policy
         p->budget_exhausted = 1;
         return;
     }
-    if (policy->solver == RF_TAC_BEAM) {
+    if (policy->solver == RF_TAC_BEAM || policy->solver == RF_TAC_M0) {
         if (trace) trace->prediction_unavailable = 1;
         return;
     }

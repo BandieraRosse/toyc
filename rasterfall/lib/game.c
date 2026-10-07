@@ -6443,7 +6443,7 @@ int toy_game_actor_begin_fire(struct toy_game *g, struct toy_game_actor *actor)
     else if (s->weapon == TOY_GAME_WEAPON_AK) push_event(g, TOY_GAME_EV_SHOOT_AK);
     else if (s->weapon == TOY_GAME_WEAPON_AWP) push_event(g, TOY_GAME_EV_SHOOT_AWP);
     else push_event(g, TOY_GAME_EV_SHOOT);
-    if (s->mag == 0 &&
+    if (s->mag == 0 && !(actor->controller_external && actor->intent_exclusive) &&
         (s->reserve == TOY_GAME_AMMO_INFINITE || s->reserve > 0)) {
         actor->reloading = 1;
         actor->reload_timer_ms = toy_game_actor_reload_ms(actor, w);
@@ -6518,7 +6518,7 @@ int toy_game_update_actor_weapon_held(
     s = &actor->slots[actor->current_slot];
     w = toy_game_weapon_info_or_null(s->weapon);
     if (!w) return 0;
-    if (s->weapon != TOY_GAME_WEAPON_PILL && s->mag <= 0 &&
+    if (s->weapon != TOY_GAME_WEAPON_PILL && s->mag <= 0 && !(actor->controller_external && actor->intent_exclusive) &&
         (s->reserve == TOY_GAME_AMMO_INFINITE || s->reserve > 0) &&
         !actor->reloading) {
         actor->reloading = 1;

@@ -9,8 +9,8 @@ void rasterfall_session_tactical_reset(struct rasterfall_session *s)
     lab->kind=s->world_id==RASTERFALL_WORLD_TACTICAL_ARENA?1:2;
     lab->seed=1337;lab->selected=0;lab->accumulator_us=0;++lab->generation;
     struct rf_tac_policy policies[2];
-    rf_tac_policy_default(&policies[0],RF_TAC_SIMPLE);
-    rf_tac_policy_default(&policies[1],RF_TAC_MECHANICAL);
+    rf_tac_policy_default(&policies[0],RF_TAC_M0);
+    rf_tac_policy_default(&policies[1],RF_TAC_M0);
     if(lab->kind==1) {
         lab->match.bound_game=&s->game_state;
         rf_tac_match_reset(&lab->match,100,lab->seed,4,RF_TW_RIFLE,policies);

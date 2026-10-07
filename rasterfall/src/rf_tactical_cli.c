@@ -27,12 +27,14 @@ struct lab_options {
     const char *a, *b, *log;
 };
 struct lab_solver_cost {
+    unsigned long long queries, unknown_queries;
+    double query_seconds;
     unsigned long long calls, work_units, prediction_calls, prediction_steps;
     unsigned long long exhausted_calls, unavailable_calls;
     double preparation_seconds, elapsed_seconds, max_elapsed_seconds;
 };
 struct lab_result {
-    int winner, time_ms, ticks, alive[2], shots[2], hits[2], captured;
+    int winner, time_ms, ticks, alive[2], shots[2], hits[2], captured, invalid_actions;
     float health[2], damage[2];
     unsigned int hash;
     struct lab_solver_cost costs[2];
@@ -66,6 +68,7 @@ static double lab_cpu_seconds(void) {
 #endif
 }
 static void lab_cost_add(struct lab_solver_cost *sum, const struct lab_solver_cost *cost) {
+    sum->queries+=cost->queries;sum->unknown_queries+=cost->unknown_queries;sum->query_seconds+=cost->query_seconds;
     sum->calls += cost->calls; sum->work_units += cost->work_units;
     sum->prediction_calls += cost->prediction_calls; sum->prediction_steps += cost->prediction_steps;
     sum->exhausted_calls += cost->exhausted_calls; sum->unavailable_calls += cost->unavailable_calls;
@@ -73,7 +76,8 @@ static void lab_cost_add(struct lab_solver_cost *sum, const struct lab_solver_co
     if (cost->max_elapsed_seconds > sum->max_elapsed_seconds) sum->max_elapsed_seconds = cost->max_elapsed_seconds;
 }
 static void lab_cost_json(FILE *f, const struct lab_solver_cost *cost) {
-    fprintf(f, "{\"solver_calls\":%llu,\"work_units\":%llu,\"non_prediction_work_units\":%llu,"
+    fprintf(f,"{\"queries\":%llu,\"unknown_queries\":%llu,\"query_seconds\":%.9g,",cost->queries,cost->unknown_queries,cost->query_seconds);
+    fprintf(f, "\"solver_calls\":%llu,\"work_units\":%llu,\"non_prediction_work_units\":%llu,"
             "\"prediction_calls\":%llu,\"prediction_steps\":%llu,\"predicted_ms\":%llu,"
             "\"budget_exhausted_calls\":%llu,\"prediction_unavailable_calls\":%llu,"
             "\"preparation_elapsed_seconds\":%.9g,\"solver_elapsed_seconds\":%.9g,"
@@ -87,7 +91,7 @@ static void lab_cost_json(FILE *f, const struct lab_solver_cost *cost) {
 static void lab_help(void) {
     puts("Rasterfall tactical lab v2 (native deterministic simulation)\n"
          "  rf-tactical range [--samples 2000] [--shot-seed 1337] [--weapon rifle|smg|both]\n"
-         "  rf-tactical match [--a simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
+         "  rf-tactical match [--a mechanical-v3|simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
          "                    [--map-seed 100] [--shot-seed 1337] [--squad 4..6]\n"
          "                    [--weapon rifle|smg] [--duration-ms 60000] [--budget 128]\n"
          "                    [--log FILE.jsonl] [--trace-tick TICK]\n"
@@ -97,6 +101,7 @@ static void lab_help(void) {
          "  rf-tactical batch [same options] [--pairs 8] [--weapon rifle|smg|both]\n"
          "  rf-tactical inspect --log FILE.jsonl --trace-tick TICK\n"
          "  rf-tactical self-test\n"
+         "  rf-tactical algorithms (registered algorithms and parameter schemas)\n"
          "Match team 0 attacks; team 1 defends. Attack clears and captures, then defends.\n"
          "Batch swaps A/B attack and defense on every map/shot seed and mirrored weapon.\n"
          "Range covers 5/10/15/20/30/40/60/80/100 m, full/upper/head/moving targets,\n"
@@ -134,7 +139,7 @@ static int lab_options(int argc, char **argv, struct lab_options *o) {
     o->squad = 4; o->weapon = !strcmp(argv[1], "range") ? 2 : 0;
     o->duration_ms = 60000; o->pairs = 8;
     o->budget = 128; o->trace_tick = -1; o->samples = 2000;
-    o->a = "utility"; o->b = "mechanical"; o->log = NULL;
+    o->a = "mechanical-v3"; o->b = "mechanical-v3"; o->log = NULL;
     o->order[0] = RF_TAC_ATTACK; o->order[1] = RF_TAC_DEFEND;
     o->beam_width = o->beam_branches = o->beam_horizon_ms = 0;
     for (i = 2; i < argc; ++i) {
@@ -194,6 +199,10 @@ static unsigned int lab_policy_hash(const struct rf_tac_policy *p) {
     snprintf(text, sizeof(text), "%d,%d,%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g",
              p->version, p->solver, p->budget, p->aggression, p->safety,
              p->progress, p->cover, p->focus, p->movement);
+    if(p->solver==RF_TAC_M0){
+        size_t used=strlen(text);snprintf(text+used,sizeof(text)-used,",%s,%d",p->algorithm->name,p->ai.version);
+        for(int k=0;k<p->algorithm->parameter_count;++k){used=strlen(text);snprintf(text+used,sizeof(text)-used,",%.9g",p->ai.parameters[k]);}
+    }
     if (p->solver == RF_TAC_BEAM) {
         size_t used = strlen(text);
         snprintf(text + used, sizeof(text) - used, ",%d,%d,%d", p->beam_width, p->beam_branches, p->beam_horizon_ms);
@@ -208,6 +217,8 @@ static void lab_weapon_json(FILE *f,int weapon) {
 }
 static int lab_policy(const char *name, const struct lab_options *o, struct rf_tac_policy *out) {
     if (!strcmp(name, "simple")) rf_tac_policy_default(out, RF_TAC_SIMPLE);
+    else if (rf_ai_algorithm_find(name)) {rf_tac_policy_default(out, RF_TAC_M0);
+        out->algorithm=rf_ai_algorithm_find(name);rf_ai_config_default(out->algorithm,&out->ai);}
     else if (!strcmp(name, "mechanical")) rf_tac_policy_default(out, RF_TAC_MECHANICAL);
     else if (!strcmp(name, "utility")) rf_tac_policy_default(out, RF_TAC_UTILITY);
     else if (!strcmp(name, "beam")) rf_tac_policy_default(out, RF_TAC_BEAM);
@@ -229,6 +240,11 @@ static void lab_policy_json(FILE *f, const struct rf_tac_policy *p, const char *
                "\"focus\":%.9g,\"movement\":%.9g", lab_policy_hash(p), p->version,
                p->solver, p->budget, p->aggression, p->safety, p->progress,
                p->cover, p->focus, p->movement);
+    if(p->solver==RF_TAC_M0){
+        fprintf(f,",\"ai_api_version\":%d,\"algorithm_version\":%d,\"parameters\":{",RF_AI_API_VERSION,p->ai.version);
+        for(int k=0;k<p->algorithm->parameter_count;++k){if(k)fputc(',',f);lab_string(f,p->algorithm->parameters[k].name);fprintf(f,":%.9g",p->ai.parameters[k]);}
+        fputc('}',f);
+    }
     if (p->solver == RF_TAC_BEAM) fprintf(f, ",\"beam_width\":%d,\"beam_branches\":%d,\"beam_horizon_ms\":%d",
             p->beam_width, p->beam_branches, p->beam_horizon_ms);
     fputc('}', f);
@@ -325,7 +341,7 @@ static void lab_beam_trace(FILE *f, const struct rf_tac_plan *p,
 }
 static void lab_decision(FILE *f, const struct rf_tac_observation *o,
                          const struct rf_tac_plan *p, const struct rf_tac_decision_trace *t,
-                         const struct rf_tac_policy *policy) {
+                         const struct rf_tac_policy *policy,const struct rf_ai_host *host) {
     int i, j, k;
     fprintf(f, "{\"type\":\"decision\",\"tick\":%d,\"time_ms\":%d,\"team\":%d,"
                "\"root_tactical_tick\":%d,\"evaluations\":%d,\"work_units\":%d,\"budget_limit\":%d,"
@@ -333,12 +349,13 @@ static void lab_decision(FILE *f, const struct rf_tac_observation *o,
                "\"budget_exhausted\":%d,\"order\":%d,\"score_scope\":\"%s\",\"units\":[",
             o->time_ms / RF_TAC_DT_MS, o->time_ms, o->team, o->tick, p->evaluations, p->evaluations,
             policy->budget, p->prediction_calls, p->prediction_steps, p->prediction_steps * RF_TAC_DT_MS,
-            p->budget_exhausted, o->order.kind, policy->solver == RF_TAC_BEAM ? "joint_plan" : "individual");
+            p->budget_exhausted, o->order.kind, p->explicit_actions?"none":policy->solver == RF_TAC_BEAM ? "joint_plan" : "individual");
     for (i = 0; i < o->count; ++i) {
-        fprintf(f, "%s{\"id\":%d,\"selected\":%d,\"target\":%d,\"score\":%.9g,"
-                   "\"action\":%d,\"destination\":[%.9g,%.9g],\"candidates\":[",
-                i ? "," : "", o->friendly[i].id, t->selected[i], t->targets[i],
-                t->selected_scores[i], p->actions[i].kind, p->destinations[i].x, p->destinations[i].y);
+        fprintf(f, "%s{\"id\":%d,\"selected\":%d,\"target\":%d,\"score\":",
+                i ? "," : "", o->friendly[i].id, t->selected[i], t->targets[i]);
+        if(p->explicit_actions)fputs("null",f);else fprintf(f,"%.9g",t->selected_scores[i]);
+        fprintf(f,",\"action\":%d,\"destination\":[%.9g,%.9g],\"candidates\":[",
+                p->actions[i].kind,p->destinations[i].x,p->destinations[i].y);
         for (j = 0; j < o->candidate_count[i]; ++j) {
             const struct rf_tac_candidate *c = &o->candidates[i][j];
             fprintf(f, "%s{\"index\":%d,\"kind\":%d,\"node\":%d,\"position\":[%.9g,%.9g],\"score\":",
@@ -361,12 +378,17 @@ static void lab_decision(FILE *f, const struct rf_tac_observation *o,
             fputs("]}", f);
         }
         fputs("],\"current_relations\":[", f);
-        for (k = 0; k < o->count; ++k) { if (k) fputc(',', f); lab_relation(f, &o->relations[i][k]); }
-        fputs("]}", f);
+        if(!p->explicit_actions)for (k = 0; k < o->count; ++k) { if (k) fputc(',', f); lab_relation(f, &o->relations[i][k]); }
+        fputc(']',f);
+        if(p->explicit_actions && host)fprintf(f,",\"feedback\":%d",host->snapshot.members[i].feedback);
+        fputc('}',f);
     }
     fprintf(f, "],\"root_plan\":{\"version\":%d,\"generation\":%u,\"tactical_tick\":%d,"
                "\"time_ms\":%d,\"team\":%d,\"count\":%d}",
             p->version, p->generation, p->tick, p->time_ms, p->team, p->count);
+    if(p->explicit_actions)fprintf(f,",\"ai_api_version\":%d,\"explicit_actions\":true",RF_AI_API_VERSION);
+    if(p->explicit_actions && host)fprintf(f,",\"queries\":%d,\"unknown_queries\":%d,\"invalid_actions\":%d,\"snapshot_seconds\":%.9g,\"query_seconds\":%.9g,\"decision_seconds\":%.9g",
+        host->stats.queries,host->stats.unknown,host->stats.invalid_actions,host->snapshot_seconds,host->stats.query_seconds,host->stats.decision_seconds);
     if (policy->solver == RF_TAC_BEAM) { fputs(",\"beam\":", f); lab_beam_trace(f, p, t, policy); }
     fputs("}\n", f);
 }
@@ -412,7 +434,7 @@ static void lab_result_json(FILE *f, const struct lab_result *r, unsigned int ma
             r->health[0], r->health[1], r->shots[0], r->shots[1], r->hits[0], r->hits[1],
             r->damage[0], r->damage[1], r->hash);
     lab_cost_json(f, &r->costs[0]); fputc(',', f); lab_cost_json(f, &r->costs[1]);
-    fputs("]}\n", f);
+    fprintf(f,"],\"invalid_actions\":%d}\n",r->invalid_actions);
 }
 static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
                      const struct rf_tac_policy *a, const struct rf_tac_policy *b,
@@ -422,6 +444,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
     struct rf_tac_plan plan[2];
     struct rf_tac_decision_trace trace[2];
     struct rf_tac_prediction *prediction[2] = {NULL, NULL};
+    struct rf_ai_host ai[2] = {0};
     struct lab_solver_cost costs[2];
     const struct rf_tac_policy *policies[2];
     int i, team, ok = 1;
@@ -439,7 +462,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
                 const struct rf_tac_predictor *service = NULL;
                 int need_trace = log || o->trace_tick == w.time_ms / RF_TAC_DT_MS;
                 double started = lab_wall_seconds(), prepared, elapsed;
-                rf_tac_observe(&w, team, &obs[team]);
+                if(policies[team]->solver!=RF_TAC_M0)rf_tac_observe(&w, team, &obs[team]);
                 if (policies[team]->solver == RF_TAC_BEAM) {
                     if (!prediction[team]) prediction[team] = rf_tac_prediction_create(&w, team, policies[team]->budget);
                     else if (!rf_tac_prediction_reset(prediction[team], &w, team, policies[team]->budget)) {
@@ -449,10 +472,18 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
                 }
                 prepared = lab_wall_seconds();
                 costs[team].preparation_seconds += prepared - started;
-                if (policies[team]->solver == RF_TAC_BEAM)
+                if(policies[team]->solver==RF_TAC_M0){
+                    if(!rf_ai_host_decide(&ai[team],&w,team,policies[team],&plan[team],&obs[team],need_trace?&trace[team]:NULL)){
+                        ok=0;goto cleanup;
+                    }
+                    costs[team].preparation_seconds+=ai[team].snapshot_seconds;
+                    costs[team].queries+=ai[team].stats.queries;costs[team].unknown_queries+=ai[team].stats.unknown;
+                    costs[team].query_seconds+=ai[team].stats.query_seconds;
+                }else if (policies[team]->solver == RF_TAC_BEAM)
                     rf_tac_solve_with_predictor(&obs[team], policies[team], service, &plan[team], need_trace ? &trace[team] : NULL);
                 else rf_tac_solve(&obs[team], policies[team], &plan[team], need_trace ? &trace[team] : NULL);
                 elapsed = lab_wall_seconds() - prepared;
+                if(policies[team]->solver==RF_TAC_M0)elapsed=fmax(0,elapsed-ai[team].snapshot_seconds);
                 ++costs[team].calls; costs[team].work_units += plan[team].evaluations;
                 costs[team].prediction_calls += plan[team].prediction_calls;
                 costs[team].prediction_steps += plan[team].prediction_steps;
@@ -460,9 +491,9 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
                 costs[team].unavailable_calls += policies[team]->solver == RF_TAC_BEAM && !service;
                 costs[team].elapsed_seconds += elapsed;
                 if (elapsed > costs[team].max_elapsed_seconds) costs[team].max_elapsed_seconds = elapsed;
-                if (log) lab_decision(log, &obs[team], &plan[team], &trace[team], policies[team]);
+                if (log) lab_decision(log, &obs[team], &plan[team], &trace[team], policies[team],&ai[team]);
                 if (o->trace_tick == w.time_ms / RF_TAC_DT_MS)
-                    lab_decision(stdout, &obs[team], &plan[team], &trace[team], policies[team]);
+                    lab_decision(stdout, &obs[team], &plan[team], &trace[team], policies[team],&ai[team]);
             }
             for (team = 0; team < 2; ++team) if (!rf_tac_apply(&w, &plan[team])) { ok = 0; goto cleanup; }
         }
@@ -474,6 +505,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
     memset(result, 0, sizeof(*result));
     result->winner = w.winner; result->time_ms = w.time_ms; result->ticks = w.time_ms / RF_TAC_DT_MS;
     result->hash = rf_tac_hash(&w); result->captured = w.orders[0].captured;
+    result->invalid_actions=w.invalid_actions;
     result->costs[0] = costs[0]; result->costs[1] = costs[1];
     for (i = 0; i < w.squad_size * 2; ++i) {
         const struct rf_tac_unit *u = &w.units[(i / w.squad_size) * RF_TAC_MAX_SQUAD + i % w.squad_size];
@@ -484,7 +516,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
     }
     if (log) lab_result_json(log, result, o->map_seed, o->shot_seed, o->weapon);
 cleanup:
-    for (team = 0; team < 2; ++team) rf_tac_prediction_destroy(prediction[team]);
+    for (team = 0; team < 2; ++team) {rf_tac_prediction_destroy(prediction[team]);rf_ai_host_destroy(&ai[team]);}
     rf_tac_world_destroy(&w);
     return ok;
 }
@@ -560,6 +592,18 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[1], "range")) return lab_range(&o) ? 0 : 1;
     if (!strcmp(argv[1], "inspect")) return lab_inspect(&o) ? 0 : 1;
     if (!strcmp(argv[1], "self-test")) return lab_self_test() ? 0 : 1;
+    if (!strcmp(argv[1], "algorithms")) {
+        printf("{\"ai_api_version\":%d,\"algorithms\":[",RF_AI_API_VERSION);
+        for(int i=0;i<rf_ai_algorithm_count();++i){const struct rf_ai_algorithm *a=rf_ai_algorithm_at(i);
+            if(i)fputc(',',stdout);
+            fputs("{\"name\":",stdout);lab_string(stdout,a->name);printf(",\"version\":%d,\"parameters\":[",a->version);
+            for(int k=0;k<a->parameter_count;++k){const struct rf_ai_parameter *p=&a->parameters[k];
+                if(k)fputc(',',stdout);
+                fputs("{\"name\":",stdout);lab_string(stdout,p->name);printf(",\"default\":%g,\"min\":%g,\"max\":%g}",p->initial,p->minimum,p->maximum);}
+            fputs("]}",stdout);
+        }
+        puts("]}");return 0;
+    }
     if (strcmp(argv[1], "match") && strcmp(argv[1], "batch")) { lab_help(); return 2; }
     if (!lab_policy(o.a, &o, &a) || !lab_policy(o.b, &o, &b)) return 2;
     map = (struct rf_tac_map *)calloc(1,sizeof(*map));

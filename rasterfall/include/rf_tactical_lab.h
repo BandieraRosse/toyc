@@ -9,6 +9,7 @@
 #include "rf_tactical.h"
 #include "rf_tactical_weapon.h"
 #include "rf_tactical_prediction.h"
+#include "rf_ai_host.h"
 
 /* Session-owned authority. Frontends only submit controls and read results. */
 struct rf_tac_match {
@@ -21,6 +22,7 @@ struct rf_tac_match {
     struct rf_tac_plan plans[2];
     struct rf_tac_decision_trace traces[2];
     struct rf_tac_prediction *prediction[2];
+    struct rf_ai_host ai[2];
     int ready, running, remainder_ms;
 };
 int rf_tac_match_reset(struct rf_tac_match *m, unsigned map_seed, unsigned shot_seed,

@@ -172,7 +172,7 @@ static void actor_external_step(struct toy_game *g, struct toy_game_actor *a, in
     toy_game_actor_capabilities(a, toy_game_actor_current_weapon(a), &caps);
     cmd.switch_slot = -1;
     a->moving = 0;
-    if (a->intent_move && !a->control_disabled && !a->movement_hold_token) {
+    if (a->intent_move && !(a->intent_exclusive && a->reloading) && !a->control_disabled && !a->movement_hold_token) {
         cmd.move_target_active = 1; cmd.move_x = a->intent_x; cmd.move_z = a->intent_z;
         cmd.move_speed = toy_game_actor_move_step(a, TOY_CONFIG_AI_RETURN_SPEED);
     }
@@ -202,6 +202,10 @@ static void actor_external_step(struct toy_game *g, struct toy_game_actor *a, in
     cmd.fire_pressed = a->intent_fire && a->fire_enabled && !a->control_disabled &&
         visible && error <= 6 && a->combat_aim_ms >= caps.aim_ms;
     cmd.fire_held = cmd.fire_pressed; cmd.reload = a->intent_reload;
+    if(a->intent_exclusive){
+        if(a->reloading)cmd.move_target_active=0;
+        if(cmd.move_target_active){cmd.fire_pressed=cmd.fire_held=0;cmd.reload=0;}
+    }
     toy_game_execute_actor_command(g, a, &cmd, dt_ms, 100);
     if (a->reloading) toy_game_actor_set_animation(a, TOY_GAME_ANIM_RELOAD);
     else if (sequence != a->fire_seq) toy_game_actor_set_animation(a, TOY_GAME_ANIM_FIRE);

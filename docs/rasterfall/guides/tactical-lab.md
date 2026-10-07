@@ -13,6 +13,26 @@
 新训练由 `tools/tactical_train.py` 生成版本 2 参数。游戏内是已加载地图的真实碰撞；
 CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规则和初始状态。
 
+## 新机械算法与攻防对打
+
+当前游戏终端和 CLI 默认双方均为“机械 M0（新框架）”，分别执行进攻和防守。
+CLI 名称是 `mechanical-v3`；旧 `mechanical` 保留作旧接口对照。框架边界和算法扩展方式见
+[算法框架](../architecture/tactical-ai.md#策略算法框架-api-1)。M0 不是已训练的强策略。
+
+```powershell
+.\build-windows\rf-tactical.exe algorithms
+.\build-windows\rf-tactical.exe match --a mechanical-v3 --b mechanical-v3 --log tmp/m0-match.jsonl
+.\build-windows\rf-tactical.exe match --a rasterfall/config/ai/mechanical-v3.cfg --b mechanical-v3 --order-a defend --order-b attack
+.\build-windows\rf-tactical.exe batch --a mechanical-v3 --b mechanical-v3 --pairs 2 --squad 6 --weapon both
+python tools/tactical_benchmark.py --policies mechanical-v3 --opponents mechanical-v3 --pairs 1 --shot-seeds 1337 --squads 4 5 6 --output tmp/m0-benchmark
+```
+
+`batch` 交换攻防，并可覆盖双方枪种。新算法快照不预计算旧候选评分，回放中候选/关系为空、score 为 null，
+不是零火力或零价值。结果中的 preparation_elapsed_seconds 是包装/准备耗时，solver_elapsed_seconds
+包含按需查询；query_seconds 是其中的查询耗时。逻辑工作单位不等于毫秒，不能跨算法直接当成 CPU 成本。
+配置中的参数 schema 和 algorithm_version 由具体算法声明。现有 tactical_train.py 仍只训练旧 utility，
+不可用它声称训练了 M0；新算法训练器和强度分层将在后续阶段接入。
+
 ## 构建和靶场
 
 ### 游戏内入口与终端
