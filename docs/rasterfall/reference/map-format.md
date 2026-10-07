@@ -246,6 +246,9 @@ gameplay `world` bounds（正式地图外围墙保留了这一旧行为）；col
 透明机器窗 `kind=sign attr.style=6` 允许两种轴向：`min_z=max_z` 且 `min_x<max_x` 为正面窗；
 `min_x=max_x` 且 `min_z<max_z` 为侧面窗。两种窗均使用 `height` / `attr.height2` 表示底顶高度，
 不带文字；双水平跨度非零或同时为零均无效。其他 sign 样式继续沿 X 展开。
+建筑窗同样可以使用此透明面，但 SIGN 高度是地面为 -900 的世界 Y，BOX 和 collision
+高度是地面为 0 的建筑高度，两者不能直接照抄。离线编写优先使用
+`BuildingKit.window` 完成坐标转换、窗框和独立碰撞，见[建筑生成语法](architectural-environment-v1.md#标准房屋生成语法)。
 
 地图 IR 与玩法绘制投影的 render 容量均为 640，authored collision 容量为 512，object/prop 容量均为 384；GPU Scene world snapshot
 直接沿用绘制投影容量。各边界必须同步，避免新展区通过解析后在投影时截断或无法冻结。

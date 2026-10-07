@@ -5,6 +5,46 @@ import unittest
 from building_kit import BuildingKit
 
 
+class WindowTest(unittest.TestCase):
+    def test_panes_and_frames_tile_collision_in_both_axes(self):
+        for axis in ("x", "z"):
+            for bottom in (-2048, 0, 512):
+                lines = []
+                BuildingKit(lines).window("test", axis, 700, -3100, 3100,
+                                          bottom, bottom+1400)
+                records = [dict(w.split("=", 1) for w in line.split()[1:]) for line in lines]
+                collider = records[0]
+                rectangles = []
+                for r in records[1:]:
+                    a,b = int(r[f"min_{axis}"]),int(r[f"max_{axis}"])
+                    if r["kind"] == "sign":
+                        y0,y1 = int(r["height"])+900,int(r["attr.height2"])+900
+                        other = "z" if axis == "x" else "x"
+                        self.assertEqual(int(r[f"min_{other}"]), 700)
+                        self.assertEqual(r[f"min_{other}"], r[f"max_{other}"])
+                        self.assertLessEqual(b-a, 2048)
+                    else:
+                        y0,y1 = int(r["attr.base_y"]),int(r["height"])
+                    self.assertTrue(-3100 <= a < b <= 3100)
+                    self.assertTrue(int(collider["attr.base_y"]) <= y0 < y1 <= int(collider["height"]))
+                    rectangles.append((a,b,y0,y1))
+                xs = sorted({v for r in rectangles for v in r[:2]})
+                ys = sorted({v for r in rectangles for v in r[2:]})
+                for a,b in zip(xs,xs[1:]):
+                    for c,d in zip(ys,ys[1:]):
+                        x,y = (a+b)/2,(c+d)/2
+                        self.assertEqual(sum(l<x<r and lo<y<hi for l,r,lo,hi in rectangles), 1)
+
+    def test_invalid_opening_emits_nothing(self):
+        for kwargs in ({"axis":"y"}, {"top":10}, {"frame":0}, {"depth":0}, {"max_pane":0}):
+            args = dict(name="bad", axis="x", at=0, start=0, end=100, bottom=0, top=100)
+            args.update(kwargs)
+            lines = []
+            with self.assertRaises(ValueError):
+                BuildingKit(lines).window(**args)
+            self.assertEqual(lines, [])
+
+
 class SwitchbackFloorTest(unittest.TestCase):
     def test_lowest_floor_covers_enclosure_without_filling_upper_voids(self):
         for footprint, storeys, thickness, depth in (

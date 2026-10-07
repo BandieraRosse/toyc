@@ -26,7 +26,7 @@ fast 楼梯缓存边界、地面遮挡合并与换图失败诊断由[光照架�
 
 前哨站 B1、二层、屋顶和北侧楼梯改动先读 [前哨站合同](reference/outpost-hall-v1.md)，再读
 [地图格式](reference/map-format.md)的楼层与有限厚度楼板约束；结构由 `tools/outpost_storeys.py` 维护。
-标准房屋、天花板独立底面颜色、墙板接缝、门洞和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
+标准房屋、天花板独立底面颜色、墙板接缝、门洞、玻璃窗坐标转换和折返楼梯编写见[建筑生成语法](reference/architectural-environment-v1.md#标准房屋生成语法)，
 入口为 `tools/building_kit.py`；物体顶面、窄护墙、楼梯跳跃与跨层落地见[碰撞高度区间](architecture/gameplay.md#component-collision-高度区间)，玩法判定入口为 `lib/game.c`。
 玩家速度、地面加减速、反向变向、斜向限速、跳跃惯性、离边/落地起跳容错及空中微调见[玩家地面移动与跳跃](architecture/gameplay.md#玩家地面移动与跳跃)；可编辑参数见[玩家移动配置](guides/player-movement-config.md)，由 Game actor 持有运动状态，session 只提交方向输入并保留启动配置。
 

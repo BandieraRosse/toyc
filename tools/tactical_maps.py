@@ -31,8 +31,7 @@ def build(source):
     kit.wall('observer_wall','x',-12475,-17408,17408,512,2304,'536B78',
              openings=[(a,b,1280) for a,b in windows])
     for i,(a,b) in enumerate(windows):
-        arena.append(f'render id=observer_glass_{i} kind=sign min_x={a} max_x={b} min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE')
-        arena.append(f'collision id=observer_glass_{i}_col shape=box min_x={a} max_x={b} min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false')
+        kit.window(f'observer_glass_{i}', 'x', -12475, a, b, 512, 1792, depth=50)
     ranges=shell('tactical_range',-8192,8192,-4096,53248)
     for i,d in enumerate([5,10,15,20,30,40,60,80,100]):
         x=(i-4)*1536;z=d*512
@@ -44,9 +43,13 @@ def build(source):
         for name,a,b,c,d in [('west',x0,x0+64,z0,z1),('east',x1-64,x1,z0,z1),
                               ('south',x0,x1,z0,z0+64),('north',x0,x1,z1-64,z1)]:
             lines.append(f'collision id=perimeter_{name}_col shape=box min_x={a} max_x={b} min_z={c} max_z={d} height=8192 collision=true visible=false walkable=false')
-            if name in ('west','east'):a=b=(a+b)//2
-            else:c=d=(c+d)//2
-            lines.append(f'render id=perimeter_{name}_glass kind=sign min_x={a} max_x={b} min_z={c} max_z={d} height=0 attr.height2=8192 attr.style=6 color=8DCEDE')
+            # The gameplay boundary remains tall; the visible enclosure has
+            # architectural proportions and shares the observer wall's top.
+            axis,at,start,end = ('z',(a+b)//2,c,d) if name in ('west','east') else ('x',(c+d)//2,a,b)
+            # Butt the north/south rails against the side frames at corners.
+            if axis == 'x': start,end = start+64,end-64
+            BuildingKit(lines).window(f'perimeter_{name}_glass', axis, at,
+                                      start, end, 0, 2304, collision=False)
     root=Path('rasterfall/assets/maps')
     for name,lines in [('tactical_arena',arena),('tactical_range',ranges)]:
         (root/(name+'.map')).write_text('\n'.join(lines)+'\n',encoding='utf-8',newline='\n')

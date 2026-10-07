@@ -28,6 +28,7 @@ V1 冻结可复用建筑资产、连接尺度和表面语言；关卡与碰撞�
 - `slab(name, footprint, y, color, ceiling_color=None)`：`footprint=(min_x,max_x,min_z,max_z)`，Y 为板顶，底面为 Y 减统一厚度。可选关键字 `ceiling_color` 独立指定底面基础色，省略则沿用 `color`；`solid` 和 `switchback` 也接受此关键字。
 - `ceiling_light(name, x, z, ceiling, yaw=0)`：透光面位于天花板底面 Y，支持四个正交朝向。完成建筑记录后调用 `finish()`，把同高灯体体积从楼板 render BOX 扣除；生成普通 V1 记录，不扩展运行时解析器。
 - `wall(name, axis, at, start, end, bottom, top, color, openings=(), walk=False)`：轴向为 X 或 Z，`at` 是墙中心线；每个开口为 `(start,end,clear_height)`，自动生成两侧墙段及过梁。开口不得重叠或超出墙段。
+- `window(name, axis, at, start, end, bottom, top, ...)`：填充已留出的矩形窗洞，输入高度与墙体一致，以地面为 0；生成细框、等分竖梃和淡灰蓝透明面。`frame`、`depth`、`max_pane` 控制框宽、框深和最大玻璃跨度；默认输出覆盖整个窗洞的独立碰撞，已有外围边界时可设 `collision=False`。该接口不负责开洞，先用 `wall` 留洞；仅在输出 SIGN 时转换到地面为 -900 的世界 Y，禁止调用方再次偏移。透明面与窗框分区，不叠在实体墙上。
 - `flight(name, footprint, h0, h1, color, steps=12)`：沿 Z 的有限厚度连续碰撞坡面，附踏步表现。
 - `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。最底层南平台与底板共同铺满楼梯间，覆盖双跑踏步和半层平台下方；底板同步生成可见实体、有限厚度碰撞和可站立面，上层保留楼梯井开口。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
 

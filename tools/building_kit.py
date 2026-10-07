@@ -31,6 +31,46 @@ class BuildingKit:
     def slab(self, name, footprint, y, color, *, ceiling_color=None):
         self.solid(name, *footprint, y-self.thickness, y, color, True, ceiling_color=ceiling_color)
 
+    def window(self, name, axis, at, start, end, bottom, top, *,
+               frame=32, depth=64, max_pane=2048, color="B7C9CC",
+               frame_color="35464F", collision=True):
+        """Fill an existing opening; all input heights are ground-relative RFU.
+
+        Only the legacy SIGN output uses world Y (ground=-900). Frame and
+        optional collision use building heights. This does not cut a wall.
+        """
+        if (axis not in ("x", "z") or frame <= 0 or depth <= 0 or
+                max_pane <= 0 or end-start <= 2*frame or top-bottom <= 2*frame):
+            raise ValueError("invalid window opening or frame")
+        lo = at-depth//2
+        hi = lo+depth
+
+        def bounds(a, b, near=lo, far=hi):
+            return self.bounds(a, b, near, far) if axis == "x" else self.bounds(near, far, a, b)
+
+        def rail(part, a, b, y0, y1):
+            self.lines.append(f"render id={name}_{part} kind=box {bounds(a,b)} height={y1} attr.base_y={y0} color={frame_color}")
+
+        width = end-start-2*frame
+        count = max(1, (width+max_pane-1)//max_pane)
+        clear = width-(count-1)*frame
+        if clear < count:
+            raise ValueError("window divisions leave no clear pane")
+        if collision:
+            self.lines.append(f"collision id={name}_col shape=box {bounds(start,end)} height={top} attr.base_y={bottom} collision=true visible=false walkable=false")
+        rail("bottom", start, end, bottom, bottom+frame)
+        rail("top", start, end, top-frame, top)
+        rail("left", start, start+frame, bottom+frame, top-frame)
+        rail("right", end-frame, end, bottom+frame, top-frame)
+        for i in range(count):
+            a = start+frame+clear*i//count+frame*i
+            b = start+frame+clear*(i+1)//count+frame*i
+            plane = (f"min_x={a} max_x={b} min_z={at} max_z={at}" if axis == "x" else
+                     f"min_x={at} max_x={at} min_z={a} max_z={b}")
+            self.lines.append(f"render id={name}_pane_{i} kind=sign {plane} height={bottom+frame-900} attr.height2={top-frame-900} attr.style=6 color={color}")
+            if i+1 < count:
+                rail(f"mullion_{i}", b, b+frame, bottom+frame, top-frame)
+
     def ceiling_light(self, name, x, z, ceiling, yaw=0):
         """Flush lens at the ceiling plane; finish() removes the housing volume.
 
