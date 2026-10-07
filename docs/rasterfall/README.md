@@ -14,6 +14,9 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 角色加速公共合同、Block／普通感染体常驻网格、Humanoid 共用上传事务和多视图消费从
 [统一角色加速](architecture/gpu-rendering-architecture.md#统一角色加速)进入；
 求值缓存与实例隔离见[动画架构](architecture/animation-architecture.md#scene-批量求值与-ik-更新范围)。
+RFCHAR／RF-C01 已接入的上传路径与 CPU、分块、主/AUX 纹理复用范围见
+[RFCHAR 加速边界](architecture/gpu-rendering-architecture.md#rfchar-加速与纹理复用边界)；
+跨实例 GPU 纹理共享与硬件采样评估留待[后续事项](plans/README.md#rfchar-加速后续)。
 
 程序 Block 角色的常驻网格、骨骼与武器变换、主/AUX 资源复用从
 [GPU 渲染架构](architecture/gpu-rendering-architecture.md#程序角色常驻几何)进入；

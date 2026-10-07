@@ -173,6 +173,30 @@ Humanoid 的贴图打包和分块仍保留自身 adapter。实例槽有界，感
 索引；程序角色按冻结序号索引并比较完整输入，序号不是持久身份。并行求值、动画降频、特感迁移、
 跨 adapter 的资源目录整合及跨实例显存去重仍需后续收敛和实测，不由这一入口隐含提供。
 
+### RFCHAR 加速与纹理复用边界
+
+RFCHAR（含 RF-C01）通过 `rf_gpu_scene_native.c` 的角色 adapter 接入公共
+`rf_gpu_character_upload()` 更新／替换事务；保留材质、衣物和几何分块适配，不直接使用
+Block／感染体的模板生产者。CPU 求值动画、IK 和最终 palette，GPU 执行顶点蒙皮。
+稳定资源复用 bind，后端仅在上次提交成功且 palette 等输入一致时复用蒙皮结果。
+
+当前复用范围如下：
+
+| 范围 | 已实现行为 | 边界 |
+| --- | --- | --- |
+| CPU 模型及纹理 backing | 同 owner 的实例注册表经 `rasterfall_resource_pool` 按相同路径共享不可变加载数据 | 不等于跨实例 GPU buffer 去重 |
+| 单实例稳定帧 | `scene_prepare_textures()` 按资源句柄、generation 和绑定状态复用已上传纹理 | 资源替换或失效后重新准备 |
+| 同一 mesh 的几何 chunks | 首 chunk 上传 texture set，其余 chunk 引用计数共享 | 身体、衣物等独立 mesh 不因此自动合并纹理 |
+| 主／AUX 视图 | `shared_parent` 消费者借用主视图角色资源并更新相机参数 | 依赖既有共享帧条件，独立 owner 不自动共享 |
+
+纹理 mip 由 CPU 生成后上传 device-local storage buffer；fragment shader 手动完成
+clamp、双线性／三线性过滤及 sRGB 解码，尚未使用 Vulkan image/sampler 硬件纹理采样路径。
+具体材质容量与 OPAQUE 合同见本页角色材质说明。不同角色实例当前仍各自生成、上传并持有
+GPU texture set，GPU bind／蒙皮输出也仍逐实例分配。
+
+后续优化及验收门槛归[延期事项](../plans/README.md#rfchar-加速后续)，不由当前路径隐含提供。
+以上边界于 2026-10-07 对照源码核查；此次核查未运行原生 GPU 或画面对照，不作为新增性能签收。
+
 ## 程序角色常驻几何
 
 标准 Block carrier 默认由 `render/rf_gpu_scene_block_source.inc` 将固定身体、武器、职业装备和
