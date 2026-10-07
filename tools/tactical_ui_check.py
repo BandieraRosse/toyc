@@ -86,6 +86,33 @@ def main():
             hwnd=wait(find,'window');wait(state,'first audited frame',90);focus()
             press(0x45);wait(lambda:state().get('open')==1,'terminal open')
             capture('01-terminal')
+            def seed_text(value):
+                click(370,332);wait(lambda:state().get('seed_edit')==1,'seed focus')
+                if value:
+                    for digit in value:press(ord(digit))
+                else:press(0x08)
+                wait(lambda:state().get('seed_text')==value[:10],'seed input')
+            seed_text('4294967295');press(0x0d)
+            wait(lambda:state().get('seed_edit')==0,'maximum seed confirmed')
+            click(546,610);wait(lambda:state().get('seed')==4294967295,'maximum seed applied')
+            for invalid in ('4294967296',''):
+                seed_text(invalid);press(0x0d)
+                wait(lambda:state().get('seed_edit')==1,'invalid seed remains editable')
+                click(208,610);time.sleep(.3)
+                assert state().get('seed')==4294967295 and state().get('running')==0,'invalid seed started a match'
+                click(546,610);time.sleep(.3)
+                assert state().get('seed')==4294967295,'invalid seed reset the match'
+            seed_text('12345678901')
+            capture('01a-seed-length')
+            press(0x1b);wait(lambda:state().get('seed_text')=='' and state().get('seed_edit')==0,'seed edit cancelled')
+            seed_text('0');press(0x0d);click(546,610)
+            wait(lambda:state().get('seed')==0,'zero seed applied')
+            seed_text('20261008');press(0x1b)
+            wait(lambda:state().get('seed_text')=='0' and state().get('open')==1,'seed cancellation restores value')
+            seed_text('20261008');press(0x08);press(ord('9'));press(0x0d)
+            wait(lambda:state().get('seed_text')=='20261009','seed deletion and replacement')
+            click(546,610);wait(lambda:state().get('seed')==20261009,'custom seed applied')
+            capture('01b-custom-seed')
             click(370,140);wait(lambda:state().get('dropdown')==0,'dropdown open')
             point(320,186);wait(lambda:state().get('hover',-1)>=100,'hover feedback')
             capture('02-dropdown-hover');click(320,186)

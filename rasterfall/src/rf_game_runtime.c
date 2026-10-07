@@ -5449,7 +5449,7 @@ startup_again:
         }
         if(!paused && session.tactical && rf_tac_ui_input(&game_runtime,renderer.surface.width,renderer.surface.height,
             input.pointer_x,input.pointer_y,events.button_pressed && events.button==BTN_LEFT,
-            action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_INTERACT))) {
+            action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_INTERACT),&events)) {
             camera=game_runtime.camera;
             int lock=!rf_tac_ui.open && !game_runtime.rts_active;
             if(lock!=pointer_lock_requested)pointer_lock_requested=rf_core_set_pointer_lock(&core,lock)>0 && lock;

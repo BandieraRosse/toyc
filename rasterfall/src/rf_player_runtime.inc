@@ -335,10 +335,11 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
     #if RF_TACTICAL_INTERACTIVE
     if(r->session->tactical) {
         const struct rf_tactical_lab *l=r->session->tactical;
-        __printf("TACTICAL-UI-AUDIT {\"kind\":%d,\"open\":%d,\"dropdown\":%d,\"hover\":%d,\"tick\":%d,\"running\":%d,\"shots\":%d,\"player_shots\":%d,\"hash\":\"%08x\"}\n",
+        __printf("TACTICAL-UI-AUDIT {\"kind\":%d,\"open\":%d,\"dropdown\":%d,\"hover\":%d,\"tick\":%d,\"running\":%d,\"shots\":%d,\"player_shots\":%d,\"seed\":%u,\"seed_text\":\"%s\",\"seed_edit\":%d,\"hash\":\"%08x\"}\n",
             l->kind,rf_tac_ui.open,rf_tac_ui.dropdown,rf_tac_ui.hover,l->match.world.tick,
             l->kind==1?l->match.running:l->range.running,l->range.stats[0][l->range.lane].shots,
-            l->range.stats[1][l->range.lane].shots,l->kind==1?rf_tac_hash(&l->match.world):0);
+            l->range.stats[1][l->range.lane].shots,l->seed,rf_tac_ui.seed,rf_tac_ui.seed_edit,
+            l->kind==1?rf_tac_hash(&l->match.world):0);
         fflush(stdout);
     }
     #endif
