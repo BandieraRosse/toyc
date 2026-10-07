@@ -67,9 +67,10 @@ T 结束并查看结果，结果页 Enter 重置，F2 回到配置；配置页 F
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 tactical-build
 .\build-windows\rf-tactical.exe range --weapon both
 .\build-windows\rf-tactical.exe match --a utility --b mechanical --squad 4 --map-seed 100 --log tmp/tactical-match.jsonl
+.\build-windows\rf-tactical.exe match --a beam --b mechanical --squad 6 --budget 128 --log tmp/beam-match.jsonl
 ```
 
-批量对局、训练和交互回放见[战术实验指南](../docs/rasterfall/guides/tactical-lab.md)。
+联合动作 Beam、独立种子基准、批量对局、训练和交互回放见[战术实验指南](../docs/rasterfall/guides/tactical-lab.md)。
 此核心尚未替换正式场景的 AI/战斗规则。
 
 保留的 Linux/freestanding 构建入口：

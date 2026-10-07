@@ -1,5 +1,7 @@
 /* Contracts for the standalone tactical lab; no renderer or old game fixture. */
 #include "rf_tactical.h"
+#include "rf_tactical_beam.h"
+#include "rf_tactical_prediction.h"
 #include "rf_tactical_weapon.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -125,6 +127,310 @@ static void test_generated_navigation(struct rf_tac_map *map, unsigned int seed,
     for (i = 0; i < squad; ++i)
         CHECK(w.units[i].alive && test_distance(w.units[i].pos, map->objective) <= map->objective_radius,
               "every generated-map squad member reaches the capture area");
+}
+
+/* A restricted provider isolates the stable ranking contract: a certain win
+ * outranks a safer unfinished position, but a mean-state win from random
+ * shots has to earn its choice through the continuous score. */
+struct test_terminal_prediction {
+    const struct rf_tac_observation *observation;
+    int remaining, uncertain;
+};
+static int test_terminal_remaining(const void *opaque) {
+    return ((const struct test_terminal_prediction *)opaque)->remaining;
+}
+static int test_terminal_forecast(void *opaque, const struct rf_tac_plan *friendly,
+                                   const struct rf_tac_plan *enemy, int duration_ms,
+                                   struct rf_tac_forecast *out) {
+    struct test_terminal_prediction *model = (struct test_terminal_prediction *)opaque;
+    const struct rf_tac_observation *o = model->observation;
+    int steps = duration_ms / RF_TAC_DT_MS, moving = friendly->actions[0].kind == RF_TAC_MOVE;
+    (void)enemy;
+    memset(out, 0, sizeof(*out));
+    if (duration_ms < RF_TAC_THINK_MS || duration_ms % RF_TAC_THINK_MS || friendly->count != 1)
+        return RF_TAC_PRED_INVALID;
+    if (model->remaining < steps) return RF_TAC_PRED_BUDGET;
+    out->team = o->team; out->count = 1; out->requested_ms = duration_ms;
+    out->steps = moving ? 1 : steps; out->elapsed_ms = out->steps * RF_TAC_DT_MS;
+    model->remaining -= out->steps;
+    out->friendly[0].before = out->friendly[0].after = o->friendly[0];
+    out->enemy[0].before = out->enemy[0].after = o->enemy[0];
+    out->health_before[0] = out->health_after[0] = o->friendly[0].effective_health;
+    out->health_before[1] = out->health_after[1] = o->enemy[0].effective_health;
+    out->alive_before[0] = out->alive_after[0] = out->alive_before[1] = out->alive_after[1] = 1;
+    out->winner = -1; out->orders[0] = o->order;
+    out->friendly[0].destination = friendly->destinations[0];
+    out->friendly[0].objective_distance = o->candidates[0][0].objective_distance;
+    out->friendly[0].objective_path_distance = o->candidates[0][0].objective_path_distance;
+    if (moving) {
+        out->finished = 1; out->winner = o->team; out->uncertain_shots = model->uncertain;
+        out->health_after[0] = out->friendly[0].after.effective_health = 1;
+        out->health_after[1] = out->enemy[0].after.effective_health = 0;
+        out->alive_after[1] = out->enemy[0].after.alive = 0;
+        out->friendly[0].after.pos = friendly->destinations[0];
+    }
+    return RF_TAC_PRED_OK;
+}
+static void test_terminal_certainty(const struct rf_tac_observation *observation) {
+    struct test_terminal_prediction model;
+    struct rf_tac_predictor provider;
+    struct rf_tac_policy policy;
+    struct rf_tac_plan plan;
+    struct rf_tac_decision_trace trace;
+    int layer, rank, saw_uncertain = 0;
+    model.observation = observation; model.remaining = 4096; model.uncertain = 1;
+    provider.opaque = &model; provider.evaluate = test_terminal_forecast;
+    provider.remaining_steps = test_terminal_remaining;
+    rf_tac_policy_default(&policy, RF_TAC_BEAM);
+    policy.budget = 4096; policy.beam_width = 8; policy.beam_branches = 8;
+    policy.beam_horizon_ms = RF_TAC_THINK_MS;
+    policy.aggression = policy.progress = policy.cover = policy.focus = policy.movement = 0;
+    policy.safety = 100;
+    rf_tac_solve_with_predictor(observation, &policy, &provider, &plan, &trace);
+    CHECK(plan.actions[0].kind == RF_TAC_HOLD,
+          "random-shot predicted win cannot override the better continuous health score");
+    for (layer = 0; layer < trace.beam_layer_count; ++layer)
+        for (rank = 0; rank < trace.beam_layers[layer].retained; ++rank) {
+            const struct rf_tac_beam_entry *entry = &trace.beam_layers[layer].entries[rank];
+            if (entry->forecasted && entry->uncertain_shots) {
+                saw_uncertain = 1;
+                CHECK(entry->score.terminal == 0, "uncertain predicted terminal receives no categorical win bonus");
+            }
+        }
+    CHECK(saw_uncertain, "terminal certainty test actually evaluates an uncertain winning joint plan");
+    model.remaining = 4096; model.uncertain = 0;
+    rf_tac_solve_with_predictor(observation, &policy, &provider, &plan, &trace);
+    CHECK(plan.actions[0].kind == RF_TAC_MOVE && trace.beam_selected_score.terminal > 0 &&
+          trace.beam_selected_score.total < trace.beam_hold_score.total,
+          "certain terminal win has priority even when its continuous score is much worse");
+}
+
+static void test_beam_contracts(const struct rf_tac_map *original) {
+    struct rf_tac_map *map = (struct rf_tac_map *)malloc(sizeof(*map));
+    struct rf_tac_map *saved_map = (struct rf_tac_map *)malloc(sizeof(*saved_map));
+    struct rf_tac_world source, changed, applied;
+    struct rf_tac_observation observation, saved_observation, changed_observation;
+    struct rf_tac_plan hold, joint, selected, repeated, changed_hold;
+    struct rf_tac_policy policy, saved_policy;
+    struct rf_tac_decision_trace trace;
+    struct rf_tac_forecast baseline, focused, repeat, zero;
+    struct rf_tac_prediction *prediction;
+    struct rf_tac_predictor provider;
+    unsigned int source_hash, source_rng;
+    int i, result;
+    static const int budgets[] = {0, 1, 9, 128};
+    if (!map || !saved_map) { CHECK(0, "beam fixture map allocation"); free(map); free(saved_map); return; }
+    memcpy(map, original, sizeof(*map)); map->cover_count = 0;
+    memset(map->exposure, RF_TW_FULL, sizeof(map->exposure));
+    memset(map->visible, 255, sizeof(map->visible));
+    CHECK(rf_tac_world_init(&source, map, 42, 2, RF_TW_RIFLE, 10000), "beam fixture initialization");
+    /* Both friendly soldiers consider enemy 0 nearest. One round each can
+     * eliminate both low-health enemies only with a useful joint allocation. */
+    source.units[0].pos.x = 20; source.units[0].pos.y = 20;
+    source.units[1].pos.x = 20; source.units[1].pos.y = 20.4f;
+    source.units[RF_TAC_MAX_SQUAD].pos.x = 22; source.units[RF_TAC_MAX_SQUAD].pos.y = 20.2f;
+    source.units[RF_TAC_MAX_SQUAD + 1].pos.x = 22; source.units[RF_TAC_MAX_SQUAD + 1].pos.y = 23.2f;
+    for (i = 0; i < 2; ++i) {
+        struct rf_tac_unit *enemy = &source.units[RF_TAC_MAX_SQUAD + i];
+        source.units[i].ammo = 1;
+        enemy->hp = 12; enemy->evasion = 0; enemy->recovery_ms = RF_TW_BASE_RECOVERY_DELAY_MS;
+        enemy->ammo = 0; enemy->reload_ms = 5000;
+    }
+    CHECK(rf_tac_command(&source, 0, RF_TAC_DEFEND, source.units[0].pos, 6), "beam fixture defend order");
+    source.time_ms = RF_TAC_DT_MS; source.tick = 0;
+    rf_tac_observe(&source, 0, &observation); saved_observation = observation;
+    rf_tac_plan_hold(&observation, &hold);
+    joint = hold; joint.actions[0].kind = joint.actions[1].kind = RF_TAC_FIRE;
+    joint.actions[0].target = 0; joint.actions[1].target = 1;
+    source_hash = rf_tac_hash(&source); source_rng = source.rng;
+    memcpy(saved_map, map, sizeof(*map)); memset(&zero, 0, sizeof(zero));
+    prediction = rf_tac_prediction_create(&source, 0, 9);
+    CHECK(prediction != NULL, "prediction service allocation");
+    if (!prediction) { free(map); free(saved_map); return; }
+    rf_tac_prediction_provider(prediction, &provider);
+    memset(&baseline, 0x7f, sizeof(baseline));
+    result = provider.evaluate(provider.opaque, &hold, NULL, RF_TAC_THINK_MS, &baseline);
+    CHECK(result == RF_TAC_PRED_BUDGET && provider.remaining_steps(provider.opaque) == 9,
+          "prediction reserves a complete horizon before consuming steps");
+    CHECK(!memcmp(&baseline, &zero, sizeof(zero)), "rejected prediction has no partial forecast");
+    CHECK(provider.evaluate(provider.opaque, &hold, NULL, 199, &baseline) == RF_TAC_PRED_INVALID,
+          "prediction rejects duration outside the tactical time grid");
+    CHECK(provider.remaining_steps(provider.opaque) == 9, "invalid prediction consumes no steps");
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, 10), "prediction budget reset");
+    CHECK(provider.evaluate(provider.opaque, &hold, NULL, RF_TAC_THINK_MS, &baseline) == RF_TAC_PRED_OK,
+          "complete forecast succeeds with exact step allowance");
+    CHECK(baseline.steps == 10 && baseline.elapsed_ms == RF_TAC_THINK_MS &&
+          provider.remaining_steps(provider.opaque) == 0, "successful forecast charges actual executed steps");
+    CHECK(baseline.friendly[0].shots_fired > 0 && baseline.friendly[0].after.ammo == 0 &&
+          baseline.friendly[0].after.reload_ms > 0, "expected prediction advances firing and weapon clocks");
+    CHECK(baseline.alive_after[1] == 1, "nearest-target HOLD exposes the joint overkill problem");
+    CHECK(baseline.uncertain_shots == 0, "close full-body shooting has no uncertain hit or hit-location outcomes");
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, 200), "joint prediction budget reset");
+    CHECK(provider.evaluate(provider.opaque, &joint, NULL, RF_TAC_THINK_MS, &focused) == RF_TAC_PRED_OK,
+          "legal joint target allocation is predictable");
+    CHECK(focused.alive_after[1] == 0 && focused.finished, "joint target allocation can clear both enemies");
+    CHECK(focused.uncertain_shots == 0, "close joint single-round elimination is a certain forecast");
+    CHECK(provider.evaluate(provider.opaque, &hold, NULL, RF_TAC_THINK_MS, &repeat) == RF_TAC_PRED_OK &&
+          !memcmp(&baseline, &repeat, sizeof(baseline)), "one branch cannot contaminate another forecast");
+    CHECK(provider.remaining_steps(provider.opaque) == 200 - focused.steps - repeat.steps,
+          "early terminal forecasts charge actual steps rather than requested horizon");
+    changed = source; changed.seed ^= 0x9e3779b9u; changed.rng ^= 0x7fffffffu;
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 200), "different shot seed prediction reset");
+    CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &repeat) == RF_TAC_PRED_OK &&
+          !memcmp(&baseline, &repeat, sizeof(baseline)), "mean-state forecast is independent of real shot seed and RNG");
+    CHECK(rf_tac_hash(&source) == source_hash && source.rng == source_rng &&
+          !memcmp(map, saved_map, sizeof(*map)), "prediction leaves source world RNG and immutable map unchanged");
+
+    rf_tac_policy_default(&policy, RF_TAC_BEAM);
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "default beam budget reset");
+    rf_tac_solve_with_predictor(&observation, &policy, &provider, &selected, &trace);
+    CHECK(selected.evaluations <= policy.budget && selected.prediction_calls > 0,
+          "default narrow beam runs prediction within its practical budget");
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "default beam selected forecast reset");
+    CHECK(provider.evaluate(provider.opaque, &selected, NULL, policy.beam_horizon_ms, &focused) == RF_TAC_PRED_OK &&
+          focused.alive_after[1] == 0, "default narrow beam coordinates single rounds across both enemies");
+
+    rf_tac_policy_default(&policy, RF_TAC_BEAM);
+    policy.budget = 4096; policy.beam_width = 8; policy.beam_branches = 8;
+    policy.beam_horizon_ms = RF_TAC_THINK_MS; saved_policy = policy;
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "beam prediction reset");
+    rf_tac_solve_with_predictor(&observation, &policy, &provider, &selected, &trace);
+    CHECK(selected.version == RF_TAC_VERSION && selected.generation == observation.generation &&
+          selected.team == observation.team && selected.count == observation.count &&
+          selected.tick == observation.tick && selected.time_ms == observation.time_ms,
+          "beam returns a root plan rather than predicted leaf metadata");
+    CHECK(selected.evaluations <= policy.budget && selected.prediction_steps <= selected.evaluations,
+          "beam charges predictions within unified logical work budget");
+    CHECK(trace.beam_layer_count > 0 && trace.beam_layer_count <= RF_TAC_BEAM_MAX_LAYERS &&
+          trace.prediction_calls == selected.prediction_calls && trace.prediction_steps == selected.prediction_steps,
+          "beam reports bounded search layers and exact prediction accounting");
+    applied = source; CHECK(rf_tac_apply(&applied, &selected), "beam root joint plan is accepted by authoritative execution");
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "beam selected outcome reset");
+    CHECK(provider.evaluate(provider.opaque, &selected, NULL, RF_TAC_THINK_MS, &focused) == RF_TAC_PRED_OK &&
+          focused.alive_after[1] == 0, "beam discovers the useful joint target allocation");
+    CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "beam repeat reset");
+    rf_tac_solve_with_predictor(&observation, &policy, &provider, &repeated, NULL);
+    CHECK(!memcmp(&selected, &repeated, sizeof(selected)), "optional search tracing cannot change the selected plan");
+    CHECK(rf_tac_hash(&source) == source_hash && source.rng == source_rng &&
+          !memcmp(&observation, &saved_observation, sizeof(observation)) &&
+          !memcmp(&policy, &saved_policy, sizeof(policy)) && !memcmp(map, saved_map, sizeof(*map)),
+          "beam search leaves all borrowed root inputs unchanged");
+    for (i = 0; i < (int)(sizeof(budgets) / sizeof(budgets[0])); ++i) {
+        int u;
+        policy.budget = budgets[i];
+        CHECK(rf_tac_prediction_reset(prediction, &source, 0, policy.budget), "tiny beam budget reset");
+        rf_tac_solve_with_predictor(&observation, &policy, &provider, &selected, &trace);
+        CHECK(selected.evaluations <= policy.budget && selected.prediction_steps <= selected.evaluations,
+              "tiny beam budget never overruns work allowance");
+        applied = source; CHECK(rf_tac_apply(&applied, &selected), "tiny beam budget still returns a legal root plan");
+        if (!policy.budget) for (u = 0; u < observation.count; ++u)
+            CHECK(selected.actions[u].kind == RF_TAC_HOLD, "zero beam budget returns all HOLD");
+    }
+    rf_tac_solve_with_predictor(&observation, &policy, NULL, &selected, &trace);
+    CHECK(trace.prediction_unavailable && selected.evaluations == 0 && selected.prediction_steps == 0,
+          "missing prediction provider reports unavailable without uncharged search");
+    for (i = 0; i < observation.count; ++i)
+        CHECK(selected.actions[i].kind == RF_TAC_HOLD, "missing prediction provider returns safe legal HOLD");
+
+    /* The practical default budget must cover assignment of every living
+     * member, rather than only succeeding on a cheaper two-person fixture. */
+    CHECK(rf_tac_world_init(&changed, original, 42, RF_TAC_MAX_SQUAD, RF_TW_RIFLE, 60000),
+          "full beam roster fixture initialization");
+    CHECK(rf_tac_command(&changed, 0, RF_TAC_ATTACK, original->objective, original->objective_radius),
+          "full beam roster attack command");
+    rf_tac_observe(&changed, 0, &changed_observation);
+    rf_tac_policy_default(&policy, RF_TAC_BEAM); policy.budget = 128;
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, policy.budget), "full roster default beam reset");
+    rf_tac_solve_with_predictor(&changed_observation, &policy, &provider, &selected, &trace);
+    CHECK(selected.count == RF_TAC_MAX_SQUAD && selected.evaluations <= 128 && selected.prediction_calls > 0,
+          "six living members run forecasted beam within an explicit 128 work budget");
+    CHECK(trace.beam_layer_count == RF_TAC_MAX_SQUAD + 1,
+          "default beam retains all six member assignment layers and forecast layer");
+    for (i = 0; i < RF_TAC_MAX_SQUAD; ++i)
+        CHECK(changed_observation.friendly[i].alive && trace.beam_layers[i].unit == i &&
+              trace.beam_layers[i].expanded > 0 && trace.beam_layers[i].retained > 0,
+              "no living member is skipped by the practical default beam budget");
+    applied = changed; CHECK(rf_tac_apply(&applied, &selected), "full roster default beam joint plan is executable");
+
+    /* Tail incoming readiness belongs to each opponent. A friendly weapon
+     * still reloading cannot make an otherwise ready opponent stop shooting. */
+    changed = source;
+    for (i = 0; i < changed.squad_size; ++i) {
+        changed.units[i].ammo = 0; changed.units[i].reload_ms = 5000;
+        changed.units[RF_TAC_MAX_SQUAD + i].ammo = rf_tw_profile_get(RF_TW_RIFLE)->magazine;
+        changed.units[RF_TAC_MAX_SQUAD + i].reload_ms = 0;
+    }
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 100), "friendly reload tail prediction reset");
+    CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &baseline) == RF_TAC_PRED_OK,
+          "friendly reload tail forecast succeeds");
+    CHECK(baseline.friendly[0].after.reload_ms > 0 &&
+          baseline.friendly[0].destination_reverse_relations[0].expected_dps > 0 &&
+          baseline.friendly[0].destination_incoming_ready_time_s[0] <
+          baseline.friendly[0].destination_fire_ready_time_s,
+          "friendly reload leaves a ready opponent's incoming tail fire available");
+    for (i = 0; i < changed.squad_size; ++i) changed.units[i].reload_ms = 1000;
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 100), "shorter friendly reload tail reset");
+    CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &repeat) == RF_TAC_PRED_OK &&
+          repeat.friendly[0].destination_fire_ready_time_s < baseline.friendly[0].destination_fire_ready_time_s &&
+          fabsf(repeat.friendly[0].destination_incoming_ready_time_s[0] -
+                baseline.friendly[0].destination_incoming_ready_time_s[0]) < 0.001f,
+          "changing friendly reload changes outgoing readiness without delaying enemy incoming readiness");
+    for (i = 0; i < changed.squad_size; ++i) {
+        changed.units[i].reload_ms = 5000;
+        changed.units[RF_TAC_MAX_SQUAD + i].ammo = 0;
+        changed.units[RF_TAC_MAX_SQUAD + i].reload_ms = 5000;
+    }
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 100), "enemy reload tail reset");
+    CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &focused) == RF_TAC_PRED_OK &&
+          focused.enemy[0].after.reload_ms > 0 &&
+          focused.friendly[0].destination_incoming_ready_time_s[0] >
+          baseline.friendly[0].destination_incoming_ready_time_s[0] &&
+          focused.friendly[0].destination_reverse_relations[0].expected_dps > 0,
+          "enemy reload postpones its own incoming window while preserving future fire potential");
+
+    /* Destination relations must describe the untravelled route endpoint,
+     * rather than reusing visibility and distance at the forecast endpoint. */
+    CHECK(rf_tac_world_init(&changed, original, 42, 1, RF_TW_RIFLE, 10000),
+          "destination geometry fixture initialization");
+    CHECK(rf_tac_command(&changed, 0, RF_TAC_ATTACK, original->objective, original->objective_radius),
+          "destination geometry attack command");
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    for (i = 1; i < changed_observation.candidate_count[0]; ++i)
+        if (changed_observation.candidates[0][i].kind == RF_TAC_ADVANCE) break;
+    CHECK(i < changed_observation.candidate_count[0], "destination geometry has a real navigation advance candidate");
+    if (i < changed_observation.candidate_count[0]) {
+        changed_hold.actions[0].kind = RF_TAC_MOVE; changed_hold.actions[0].candidate = i;
+        changed_hold.destinations[0] = changed_observation.candidates[0][i].pos;
+        CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 100), "destination geometry prediction reset");
+        CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &focused) == RF_TAC_PRED_OK &&
+              focused.friendly[0].moving && focused.friendly[0].remaining_move_time_s > 0,
+              "short forecast retains a real untravelled route suffix");
+        CHECK(test_distance(focused.friendly[0].after.pos, focused.friendly[0].destination) > 0.1f &&
+              fabsf(focused.friendly[0].destination_reverse_relations[0].distance -
+                    test_distance(focused.enemy[0].after.pos, focused.friendly[0].destination)) < 0.001f &&
+              fabsf(focused.friendly[0].destination_reverse_relations[0].exposure -
+                    rf_tac_exposure(original, focused.enemy[0].after.pos, focused.friendly[0].destination)) < 0.001f,
+              "tail incoming geometry is evaluated at the destination with its real cover exposure");
+        CHECK(focused.friendly[0].destination_incoming_ready_time_s[0] + 0.001f >=
+              focused.friendly[0].remaining_move_time_s,
+              "destination incoming tail window starts after physical arrival");
+    }
+    test_terminal_certainty(&changed_observation);
+    changed = source;
+    for (i = 0; i < changed.squad_size; ++i) {
+        changed.units[i].pos.x = 5;
+        changed.units[RF_TAC_MAX_SQUAD + i].pos.x = 60;
+    }
+    rf_tac_observe(&changed, 0, &changed_observation); rf_tac_plan_hold(&changed_observation, &changed_hold);
+    CHECK(rf_tac_prediction_reset(prediction, &changed, 0, 100), "distant uncertain-shot prediction reset");
+    CHECK(provider.evaluate(provider.opaque, &changed_hold, NULL, RF_TAC_THINK_MS, &focused) == RF_TAC_PRED_OK &&
+          focused.friendly[0].shots_fired > 0 && focused.uncertain_shots > 0,
+          "distant live shooting records random hit or hit-location uncertainty");
+    rf_tac_prediction_destroy(prediction); free(saved_map); free(map);
 }
 
 int rf_tac_run_tests(void) {
@@ -332,6 +638,7 @@ int rf_tac_run_tests(void) {
         rf_tw_pattern_metrics(rf_tw_profile_get(RF_TW_SMG), &context, RF_TW_AUTO, &smg);
         CHECK(smg.reload_cycle_dps > rifle.reload_cycle_dps, "SMG has close-distance sustained-fire advantage");
     }
+    test_beam_contracts(m);
     free(m); free(copy);
     printf("{\"type\":\"self-test\",\"checked\":%d,\"failed\":%d,\"passed\":%s}\n",
            checked, failed, failed ? "false" : "true");

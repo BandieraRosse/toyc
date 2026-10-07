@@ -16,11 +16,14 @@
 #define RF_TAC_GRID_M 2.0f
 #define RF_TAC_MAX_PATH 128
 #define RF_TAC_NEIGHBORS 12
+#define RF_TAC_BEAM_MAX_WIDTH 8
+#define RF_TAC_BEAM_MAX_BRANCHES 8
+#define RF_TAC_BEAM_MAX_LAYERS (RF_TAC_MAX_SQUAD + 1)
 
 enum rf_tac_order_kind { RF_TAC_DEFEND, RF_TAC_ATTACK };
 enum rf_tac_action_kind { RF_TAC_HOLD, RF_TAC_MOVE, RF_TAC_FIRE, RF_TAC_RELOAD };
 enum rf_tac_cover_kind { RF_TAC_LOW = 1, RF_TAC_HIGH = 2 };
-enum rf_tac_solver_kind { RF_TAC_SIMPLE = 1, RF_TAC_MECHANICAL = 2, RF_TAC_UTILITY = 3 };
+enum rf_tac_solver_kind { RF_TAC_SIMPLE = 1, RF_TAC_MECHANICAL = 2, RF_TAC_UTILITY = 3, RF_TAC_BEAM = 4 };
 enum rf_tac_candidate_kind {
     RF_TAC_CURRENT, RF_TAC_ADVANCE, RF_TAC_FLANK_LEFT, RF_TAC_FLANK_RIGHT,
     RF_TAC_COVER_LEFT, RF_TAC_COVER_RIGHT, RF_TAC_RETREAT, RF_TAC_CONTINUE
@@ -64,6 +67,7 @@ struct rf_tac_plan {
     struct rf_tac_action actions[RF_TAC_MAX_SQUAD];
     struct rf_tac_vec destinations[RF_TAC_MAX_SQUAD];
     int evaluations, budget_exhausted;
+    int prediction_calls, prediction_steps;
 };
 /* Private execution state. Strategy-facing health is only effective_health. */
 struct rf_tac_unit {
@@ -123,11 +127,32 @@ struct rf_tac_observation {
 struct rf_tac_policy {
     int version, solver, budget;
     float aggression, safety, progress, cover, focus, movement;
+    int beam_width, beam_branches, beam_horizon_ms;
+};
+/* Solver-owned values, not engine facts. A layer expands one squad member;
+ * each prefix is a complete root plan with HOLD for unassigned members. */
+struct rf_tac_search_score {
+    float health, progress, firepower, risk, cohesion, terminal, total;
+};
+struct rf_tac_beam_entry {
+    int parent_rank, changed_unit, forecasted, forecast_ms, uncertain_shots;
+    struct rf_tac_action actions[RF_TAC_MAX_SQUAD];
+    struct rf_tac_vec destinations[RF_TAC_MAX_SQUAD];
+    struct rf_tac_search_score score;
+    float predicted_health[2];
+};
+struct rf_tac_beam_layer {
+    int unit, expanded, retained;
+    struct rf_tac_beam_entry entries[RF_TAC_BEAM_MAX_WIDTH];
 };
 struct rf_tac_decision_trace {
     float candidate_scores[RF_TAC_MAX_SQUAD][RF_TAC_CANDIDATES];
     float selected_scores[RF_TAC_MAX_SQUAD];
     int selected[RF_TAC_MAX_SQUAD], targets[RF_TAC_MAX_SQUAD];
+    int beam_layer_count, prediction_calls, prediction_steps, prediction_unavailable;
+    int beam_selected_rank, beam_hold_uncertain_shots;
+    struct rf_tac_search_score beam_hold_score, beam_selected_score;
+    struct rf_tac_beam_layer beam_layers[RF_TAC_BEAM_MAX_LAYERS];
 };
 
 int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed);
@@ -143,6 +168,7 @@ int rf_tac_apply(struct rf_tac_world *world, const struct rf_tac_plan *plan);
 void rf_tac_step(struct rf_tac_world *world);
 unsigned int rf_tac_hash(const struct rf_tac_world *world);
 void rf_tac_policy_default(struct rf_tac_policy *policy, int solver);
+int rf_tac_policy_validate(const struct rf_tac_policy *policy);
 int rf_tac_policy_load(const char *path, struct rf_tac_policy *policy);
 int rf_tac_policy_save(const char *path, const struct rf_tac_policy *policy);
 void rf_tac_solve(const struct rf_tac_observation *obs, const struct rf_tac_policy *policy,

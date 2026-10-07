@@ -23,17 +23,24 @@ void rf_tac_policy_default(struct rf_tac_policy *p, int solver)
     p->cover = 3.0f;
     p->focus = 2.0f;
     p->movement = 0.4f;
+    p->beam_width = 2;
+    p->beam_branches = 4;
+    p->beam_horizon_ms = 800;
 }
 
-static int valid_policy(const struct rf_tac_policy *p)
+int rf_tac_policy_validate(const struct rf_tac_policy *p)
 {
     const float values[] = { p->aggression, p->safety, p->progress,
                             p->cover, p->focus, p->movement };
     int i;
     if (p->version != RF_TAC_VERSION || p->solver < RF_TAC_SIMPLE ||
-        p->solver > RF_TAC_UTILITY || p->budget < 0 || p->budget > 100000) return 0;
+        p->solver > RF_TAC_BEAM || p->budget < 0 || p->budget > 100000) return 0;
     for (i = 0; i < 6; ++i)
         if (!isfinite(values[i]) || values[i] < 0 || values[i] > 100) return 0;
+    if (p->solver == RF_TAC_BEAM && (p->beam_width < 1 || p->beam_width > RF_TAC_BEAM_MAX_WIDTH ||
+        p->beam_branches < 2 || p->beam_branches > RF_TAC_BEAM_MAX_BRANCHES ||
+        p->beam_horizon_ms < RF_TAC_THINK_MS || p->beam_horizon_ms > 4000 ||
+        p->beam_horizon_ms % RF_TAC_THINK_MS)) return 0;
     return 1;
 }
 
@@ -49,6 +56,7 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
     while (fgets(line, sizeof(line), f)) {
         char *key = line, *value, *end, *eq;
         float *field = NULL;
+        int *integer = NULL;
         unsigned int bit = 0;
         while (*key == ' ' || *key == '\t') ++key;
         if (*key == '#' || *key == '\r' || *key == '\n' || !*key) continue;
@@ -63,15 +71,18 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
         end = value + strlen(value);
         while (end > value && (end[-1] == '\r' || end[-1] == '\n' ||
                end[-1] == ' ' || end[-1] == '\t')) *--end = 0;
-        if (!strcmp(key, "policy_version")) bit = 1;
+        if (!strcmp(key, "policy_version")) { bit = 1; integer = &loaded.version; }
         else if (!strcmp(key, "solver")) bit = 2;
-        else if (!strcmp(key, "budget")) bit = 4;
+        else if (!strcmp(key, "budget")) { bit = 4; integer = &loaded.budget; }
         else if (!strcmp(key, "aggression")) { bit = 8; field = &loaded.aggression; }
         else if (!strcmp(key, "safety")) { bit = 16; field = &loaded.safety; }
         else if (!strcmp(key, "progress")) { bit = 32; field = &loaded.progress; }
         else if (!strcmp(key, "cover")) { bit = 64; field = &loaded.cover; }
         else if (!strcmp(key, "focus")) { bit = 128; field = &loaded.focus; }
         else if (!strcmp(key, "movement")) { bit = 256; field = &loaded.movement; }
+        else if (!strcmp(key, "beam_width")) { bit = 512; integer = &loaded.beam_width; }
+        else if (!strcmp(key, "beam_branches")) { bit = 1024; integer = &loaded.beam_branches; }
+        else if (!strcmp(key, "beam_horizon_ms")) { bit = 2048; integer = &loaded.beam_horizon_ms; }
         else { ok = 0; break; }
         if (seen & bit) { ok = 0; break; }
         seen |= bit;
@@ -82,17 +93,18 @@ int rf_tac_policy_load(const char *path, struct rf_tac_policy *p)
             if (!strcmp(value, "simple")) loaded.solver = RF_TAC_SIMPLE;
             else if (!strcmp(value, "mechanical")) loaded.solver = RF_TAC_MECHANICAL;
             else if (!strcmp(value, "utility")) loaded.solver = RF_TAC_UTILITY;
+            else if (!strcmp(value, "beam")) loaded.solver = RF_TAC_BEAM;
             else { ok = 0; break; }
         } else {
             long n = strtol(value, &end, 10);
             if (end == value || *end || n < 0 || n > 100000) { ok = 0; break; }
-            if (bit == 1) loaded.version = (int)n;
-            else loaded.budget = (int)n;
+            *integer = (int)n;
         }
     }
     if (ferror(f)) ok = 0;
     fclose(f);
-    if (!ok || seen != 511 || !valid_policy(&loaded)) return 0;
+    if (!ok || (seen & 511) != 511 || !rf_tac_policy_validate(&loaded) ||
+        (loaded.solver != RF_TAC_BEAM && (seen & 3584))) return 0;
     *p = loaded;
     return 1;
 }
@@ -101,15 +113,19 @@ int rf_tac_policy_save(const char *path, const struct rf_tac_policy *p)
 {
     FILE *f;
     int ok;
-    if (!valid_policy(p)) return 0;
+    if (!rf_tac_policy_validate(p)) return 0;
     f = fopen(path, "wb");
     if (!f) return 0;
     ok = fprintf(f, "policy_version=%d\nsolver=%s\nbudget=%d\naggression=%.9g\n"
                    "safety=%.9g\nprogress=%.9g\ncover=%.9g\nfocus=%.9g\nmovement=%.9g\n",
                    p->version, p->solver == RF_TAC_SIMPLE ? "simple" :
-                   p->solver == RF_TAC_MECHANICAL ? "mechanical" : "utility",
+                   p->solver == RF_TAC_MECHANICAL ? "mechanical" :
+                   p->solver == RF_TAC_BEAM ? "beam" : "utility",
                    p->budget, p->aggression, p->safety, p->progress,
                    p->cover, p->focus, p->movement) >= 0;
+    if (ok && p->solver == RF_TAC_BEAM)
+        ok = fprintf(f, "beam_width=%d\nbeam_branches=%d\nbeam_horizon_ms=%d\n",
+                     p->beam_width, p->beam_branches, p->beam_horizon_ms) >= 0;
     if (fclose(f)) ok = 0;
     return ok;
 }
@@ -157,8 +173,12 @@ void rf_tac_solve(const struct rf_tac_observation *o, const struct rf_tac_policy
                 trace->candidate_scores[i][j] = -1e20f;
         }
     }
-    if (!valid_policy(policy) || policy->budget == 0) {
+    if (!rf_tac_policy_validate(policy) || policy->budget == 0) {
         p->budget_exhausted = 1;
+        return;
+    }
+    if (policy->solver == RF_TAC_BEAM) {
+        if (trace) trace->prediction_unavailable = 1;
         return;
     }
     for (i = 0; i < o->count; ++i) {

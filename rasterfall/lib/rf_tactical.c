@@ -1,7 +1,9 @@
 #include "rf_tactical.h"
 #include "rf_tactical_weapon.h"
+#include "rf_tactical_prediction.h"
 #include <math.h>
 #include <string.h>
+#include <stdlib.h>
 
 /* All geometry is in metres. The static map is immutable after baking. The
  * mutable world owns execution, weapon clocks, resource recovery and RNG. */
@@ -700,10 +702,47 @@ static int tac_target(const struct rf_tac_world *w,const struct rf_tac_unit *u)
     return best;
 }
 
-void rf_tac_step(struct rf_tac_world *world)
+struct tac_expected_shot {
+    float hit_probability, conditional_damage, risk_cost;
+};
+
+/* Condition on which shots hit before taking an expectation. Averaging damage
+ * before min(risk, cost) would invent immunity to low-probability shots. Head
+ * damage is linear conditional on a hit because risk cost is body damage.
+ * At most six independent shooters can target one soldier in a physical tick. */
+static int tac_expected_settlement(const struct rf_tac_unit *u,
+                                   const struct tac_expected_shot *shots,int count,
+                                   float *hp_loss,float *risk_absorbed)
 {
-    float damage[RF_TAC_MAX_UNITS]={0},risk[RF_TAC_MAX_UNITS]={0}; int i,team,alive[2]={0};
-    if(!world || !world->map || world->finished) return;
+    int mask,j; *hp_loss=*risk_absorbed=0.0f;
+    if(!count) return 0;
+    for(mask=0;mask<(1<<count);++mask) {
+        float probability=1.0f,damage=0.0f,cost=0.0f;
+        float branch_hp=u->hp,branch_risk=u->evasion,absorbed;
+        for(j=0;j<count;++j) {
+            if(mask&(1<<j)) {
+                probability*=shots[j].hit_probability;
+                damage+=shots[j].conditional_damage; cost+=shots[j].risk_cost;
+            } else probability*=1.0f-shots[j].hit_probability;
+        }
+        if(probability<=0.0f || cost<=0.0f) continue;
+        absorbed=rf_tw_apply_damage(&branch_hp,&branch_risk,damage,cost);
+        *risk_absorbed+=probability*absorbed;
+        /* Clamp the mean HP once after expectation. Averaging branch-clamped
+         * HP would make a partly likely lethal hit approach zero forever.
+         * Death and pressure timers remain mean-state approximations. */
+        *hp_loss+=probability*damage*(1.0f-absorbed/cost);
+    }
+    *risk_absorbed=tac_min(u->evasion,*risk_absorbed);
+    return 1;
+}
+
+static int tac_step_mode(struct rf_tac_world *world,int expected)
+{
+    float damage[RF_TAC_MAX_UNITS]={0},risk[RF_TAC_MAX_UNITS]={0}; int i,team,alive[2]={0},uncertain_shots=0;
+    struct tac_expected_shot expected_shots[RF_TAC_MAX_UNITS][RF_TAC_MAX_SQUAD];
+    int expected_count[RF_TAC_MAX_UNITS]={0};
+    if(!world || !world->map || world->finished) return 0;
     /* Clocks and all movement resolve before either side fires. Damage is
      * buffered so a soldier alive at the fire phase gets its simultaneous shot. */
     for(i=0;i<RF_TAC_MAX_UNITS;++i) {
@@ -737,24 +776,46 @@ void rf_tac_step(struct rf_tac_world *world)
         target=tac_target(world,u);
         if(target>=0) {
             int id=(1-u->team)*RF_TAC_MAX_SQUAD+target; struct rf_tac_unit *enemy=&world->units[id];
-            rf_tw_context context; rf_tw_shot shot; int exposure=tac_precise_exposure(world->map,u->pos,enemy->pos);
+            rf_tw_context context; rf_tw_shot shot; rf_tw_metrics metrics;
+            int exposure=tac_precise_exposure(world->map,u->pos,enemy->pos);
             rf_tw_context_reset(&context); context.distance_m=tac_distance(u->pos,enemy->pos); context.exposure=exposure;
             context.target_lateral_speed_mps=tac_unit_lateral_speed(world,u->pos,enemy);
             context.recoil_milli_mrad=u->recoil_milli_mrad;
-            rf_tw_sample_shot(profile,&context,&world->rng,&shot);
+            if(expected) rf_tw_query(profile,&context,&metrics);
+            else rf_tw_sample_shot(profile,&context,&world->rng,&shot);
             if(rf_tw_state_begin_shot(profile,&state)) {
                 tac_weapon_store(u,&state); ++u->shots; u->last_shot_target=target;
-                if(shot.hit) { ++u->hits; damage[id]+=shot.damage_milli/1000.0f; risk[id]+=shot.risk_cost_milli/1000.0f;
+                if(expected) {
+                    if((metrics.hit_probability>0.0f && metrics.hit_probability<1.0f) ||
+                       (metrics.head_probability>0.0f && metrics.head_probability<metrics.hit_probability))
+                        ++uncertain_shots;
+                    if(metrics.hit_probability>0.0f && expected_count[id]<RF_TAC_MAX_SQUAD) {
+                        struct tac_expected_shot *s=&expected_shots[id][expected_count[id]++];
+                        s->hit_probability=metrics.hit_probability;
+                        s->conditional_damage=metrics.expected_damage/metrics.hit_probability;
+                        s->risk_cost=metrics.body_damage;
+                    }
+                    u->damage+=metrics.expected_damage;
+                } else if(shot.hit) { ++u->hits; damage[id]+=shot.damage_milli/1000.0f; risk[id]+=shot.risk_cost_milli/1000.0f;
                     u->damage+=shot.damage_milli/1000.0f; }
             }
         }
     }
     for(i=0;i<RF_TAC_MAX_UNITS;++i) {
         struct rf_tac_unit *u=&world->units[i];
+        int pressured=0;
         if(!u->alive) continue;
-        if(damage[i]>0.0f) {
+        if(expected) {
+            float hp_loss,absorbed;
+            pressured=tac_expected_settlement(u,expected_shots[i],expected_count[i],&hp_loss,&absorbed);
+            if(pressured) {
+                u->hp=tac_max(0.0f,u->hp-hp_loss); u->evasion-=absorbed; u->absorbed+=absorbed;
+            }
+        } else if(damage[i]>0.0f) {
             float absorbed=rf_tw_apply_damage(&u->hp,&u->evasion,damage[i],risk[i]);
-            u->absorbed+=absorbed;
+            u->absorbed+=absorbed; pressured=1;
+        }
+        if(pressured) {
             u->recovery_ms=RF_TW_BASE_RECOVERY_DELAY_MS;
             if(u->hp<=0.0f) { u->hp=0.0f; u->alive=0; tac_unit_hold(u); }
         }
@@ -789,7 +850,11 @@ void rf_tac_step(struct rf_tac_world *world)
         int a=world->orders[0].kind==RF_TAC_ATTACK,b=world->orders[1].kind==RF_TAC_ATTACK;
         world->finished=1; world->winner=a!=b?(a?1:0):-1;
     }
+    return uncertain_shots;
 }
+
+void rf_tac_step(struct rf_tac_world *world)
+{ tac_step_mode(world,0); }
 
 static unsigned int tac_hash_word(unsigned int h,unsigned int value)
 { int i; for(i=0;i<4;++i) { h^=value&255u; h*=16777619u; value>>=8; } return h; }
@@ -833,4 +898,256 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
         for(j=0;j<u->nav_count;++j) h=tac_hash_word(h,u->nav_nodes[j]);
     }
     return h;
+}
+
+struct tac_prediction_candidate {
+    struct rf_tac_vec pos;
+    int kind,count;
+    short route[RF_TAC_MAX_PATH];
+};
+
+struct rf_tac_prediction {
+    struct rf_tac_world root;
+    int team,remaining_steps,valid;
+    int candidate_count[2][RF_TAC_MAX_SQUAD];
+    unsigned int fire_mask[2][RF_TAC_MAX_SQUAD];
+    struct tac_prediction_candidate candidates[2][RF_TAC_MAX_SQUAD][RF_TAC_CANDIDATES];
+};
+
+/* Prepare only execution facts. Full eight-position path-risk observations
+ * are unnecessary here, and navigation is not rerun for every beam leaf. */
+static int tac_prediction_prepare(struct rf_tac_prediction *p)
+{
+    int team,i,e,k;
+    for(team=0;team<2;++team) for(i=0;i<p->root.squad_size;++i) {
+        const struct rf_tac_unit *u=&p->root.units[team*RF_TAC_MAX_SQUAD+i];
+        struct tac_paths paths; int nodes[RF_TAC_CANDIDATES],kinds[RF_TAC_CANDIDATES],count;
+        if(!u->alive) continue;
+        if(!rf_tw_profile_get(u->weapon) || !tac_valid_pos(u->pos) || !isfinite(u->hp) ||
+           !isfinite(u->evasion) || u->hp<=0.0f || u->evasion<0.0f) return 0;
+        count=tac_candidates(&p->root,team,u,&paths,nodes,kinds);
+        if(!count || kinds[0]!=RF_TAC_CURRENT) return 0;
+        p->candidate_count[team][i]=count;
+        for(k=0;k<count;++k) {
+            struct tac_prediction_candidate *c=&p->candidates[team][i][k];
+            c->pos=k==0?u->pos:p->root.map->nodes[nodes[k]].pos; c->kind=kinds[k];
+            if(k) {
+                if(u->action.kind==RF_TAC_MOVE && u->nav_count>0 && tac_distance(u->destination,c->pos)<0.02f) {
+                    c->count=u->nav_count; memcpy(c->route,u->nav_nodes,c->count*sizeof(*c->route));
+                } else c->count=tac_route_nodes(p->root.map,u->pos,&paths,nodes[k],c->route);
+            }
+        }
+        for(e=0;e<p->root.squad_size;++e) {
+            const struct rf_tac_unit *enemy=&p->root.units[(1-team)*RF_TAC_MAX_SQUAD+e];
+            if(enemy->alive && tac_precise_exposure(p->root.map,u->pos,enemy->pos))
+                p->fire_mask[team][i]|=1u<<e;
+        }
+    }
+    return 1;
+}
+
+int rf_tac_prediction_reset(struct rf_tac_prediction *prediction,
+                            const struct rf_tac_world *source,int team,int step_budget)
+{
+    if(!prediction) return 0;
+    prediction->valid=0;
+    if(!source || !source->map || source->finished || team<0 || team>1 || step_budget<0 ||
+       step_budget>1000000 || source->squad_size<1 || source->squad_size>RF_TAC_MAX_SQUAD ||
+       source->map->node_count<1 || source->map->node_count>RF_TAC_MAX_NODES ||
+       source->map->cover_count<0 || source->map->cover_count>RF_TAC_MAX_COVERS) return 0;
+    memset(prediction,0,sizeof(*prediction)); prediction->root=*source;
+    prediction->team=team; prediction->remaining_steps=step_budget;
+    if(!tac_prediction_prepare(prediction)) return 0;
+    prediction->valid=1; return 1;
+}
+
+struct rf_tac_prediction *rf_tac_prediction_create(const struct rf_tac_world *source,
+                                                   int team,int step_budget)
+{
+    struct rf_tac_prediction *p=(struct rf_tac_prediction *)malloc(sizeof(*p));
+    if(!p) return NULL;
+    if(!rf_tac_prediction_reset(p,source,team,step_budget)) { free(p); return NULL; }
+    return p;
+}
+
+void rf_tac_prediction_destroy(struct rf_tac_prediction *prediction)
+{ free(prediction); }
+
+static void tac_prediction_hold(const struct rf_tac_world *w,int team,struct rf_tac_plan *plan)
+{
+    int i; memset(plan,0,sizeof(*plan)); plan->version=RF_TAC_VERSION;
+    plan->generation=tac_generation(w,team); plan->tick=w->tick; plan->time_ms=w->time_ms;
+    plan->team=team; plan->count=w->squad_size;
+    for(i=0;i<w->squad_size;++i) { plan->actions[i].kind=RF_TAC_HOLD; plan->actions[i].target=-1;
+        plan->destinations[i]=w->units[team*RF_TAC_MAX_SQUAD+i].pos; }
+}
+
+/* The same root candidates and routes used by live apply are prepared once.
+ * Keeping an existing destination keeps the original route/cursor, exactly
+ * as live execution does; alternative destinations use its swept route. */
+static int tac_prediction_apply(const struct rf_tac_prediction *p,struct rf_tac_world *w,
+                                const struct rf_tac_plan *plan,int team)
+{
+    int i;
+    if(!plan || plan->team!=team || plan->version!=RF_TAC_VERSION ||
+       plan->generation!=tac_generation(&p->root,team) || plan->tick!=p->root.tick ||
+       plan->time_ms!=p->root.time_ms || plan->count!=p->root.squad_size) return 0;
+    for(i=0;i<w->squad_size;++i) {
+        struct rf_tac_unit *u=&w->units[team*RF_TAC_MAX_SQUAD+i];
+        struct rf_tac_action action=plan->actions[i];
+        if(!u->alive) { tac_unit_hold(u); continue; }
+        if(action.kind<RF_TAC_HOLD || action.kind>RF_TAC_RELOAD) return 0;
+        if(action.kind==RF_TAC_FIRE && (action.target<0 || action.target>=w->squad_size ||
+           !(p->fire_mask[team][i]&(1u<<action.target)))) return 0;
+        if(action.kind==RF_TAC_RELOAD && !u->reload_ms && u->ammo>=rf_tw_profile_get(u->weapon)->magazine) return 0;
+        if(action.kind==RF_TAC_MOVE) {
+            int k=action.candidate; const struct tac_prediction_candidate *c;
+            if(k<=0 || k>=p->candidate_count[team][i] || !tac_valid_pos(plan->destinations[i])) return 0;
+            c=&p->candidates[team][i][k];
+            if(tac_distance(plan->destinations[i],c->pos)>=0.02f || !c->count) return 0;
+            if(u->action.kind!=RF_TAC_MOVE || tac_distance(u->destination,c->pos)>0.02f || !u->nav_count) {
+                memcpy(u->nav_nodes,c->route,c->count*sizeof(*c->route));
+                u->nav_count=c->count; u->nav_cursor=0;
+            }
+            u->destination=c->pos;
+            if(c->kind!=RF_TAC_CONTINUE || u->action.kind!=RF_TAC_MOVE) u->nav_kind=c->kind;
+        } else { u->nav_count=u->nav_cursor=0; u->nav_kind=RF_TAC_CURRENT; u->destination=u->pos; }
+        u->action=action;
+    }
+    return 1;
+}
+
+static float tac_remaining_move_distance(const struct rf_tac_world *w,const struct rf_tac_unit *u)
+{
+    struct rf_tac_vec pos=u->pos; float distance=0.0f; int k;
+    if(u->action.kind!=RF_TAC_MOVE) return 0.0f;
+    for(k=u->nav_cursor;k<u->nav_count;++k) {
+        struct rf_tac_vec next=w->map->nodes[u->nav_nodes[k]].pos;
+        distance+=tac_distance(pos,next); pos=next;
+    }
+    return distance;
+}
+
+static void tac_forecast_destination(const struct rf_tac_world *w,const struct rf_tac_unit *u,
+                                      struct rf_tac_forecast_unit *out)
+{
+    struct rf_tac_unit hypothetical=*u; rf_tw_state state=tac_weapon_state(u);
+    const rf_tw_profile *profile=rf_tw_profile_get(u->weapon); int e,ready_ms;
+    int move_ms=(int)ceilf(out->remaining_move_time_s*1000.0f);
+    hypothetical.pos=out->destination; hypothetical.action.kind=RF_TAC_HOLD;
+    hypothetical.nav_count=hypothetical.nav_cursor=0;
+    rf_tw_state_advance(profile,&state,move_ms);
+    /* A moving empty weapon reloads only after it reaches HOLD, following
+     * execution's mutually exclusive MOVE/reload behavior. */
+    if(!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(profile,&state);
+    ready_ms=state.reload_remaining_ms>state.cooldown_ms?state.reload_remaining_ms:state.cooldown_ms;
+    out->destination_fire_ready_time_s=out->remaining_move_time_s+ready_ms/1000.0f;
+    rf_tw_state_advance(profile,&state,ready_ms); tac_weapon_store(&hypothetical,&state);
+    for(e=0;e<w->squad_size;++e) {
+        const struct rf_tac_unit *enemy=&w->units[(1-u->team)*RF_TAC_MAX_SQUAD+e];
+        struct rf_tac_unit stationary=*enemy;
+        if(enemy->alive) {
+            rf_tw_state enemy_state=tac_weapon_state(enemy);
+            const rf_tw_profile *enemy_profile=rf_tw_profile_get(enemy->weapon);
+            int enemy_ready_ms,incoming_ready_ms;
+            if(!enemy_state.ammo && !enemy_state.reload_remaining_ms) rf_tw_state_begin_reload(enemy_profile,&enemy_state);
+            enemy_ready_ms=enemy_state.reload_remaining_ms>enemy_state.cooldown_ms?
+                           enemy_state.reload_remaining_ms:enemy_state.cooldown_ms;
+            incoming_ready_ms=enemy_ready_ms>move_ms?enemy_ready_ms:move_ms;
+            out->destination_incoming_ready_time_s[e]=incoming_ready_ms/1000.0f;
+            rf_tw_state_advance(enemy_profile,&enemy_state,incoming_ready_ms);
+            tac_weapon_store(&stationary,&enemy_state);
+        }
+        stationary.action.kind=RF_TAC_HOLD; stationary.nav_count=stationary.nav_cursor=0;
+        tac_relation(w,&hypothetical,hypothetical.pos,&stationary,-1,-1,&out->destination_relations[e]);
+        tac_relation(w,&stationary,stationary.pos,&hypothetical,-1,-1,&out->destination_reverse_relations[e]);
+        out->destination_outgoing_dps=tac_max(out->destination_outgoing_dps,out->destination_relations[e].expected_dps);
+        out->destination_incoming_dps+=out->destination_reverse_relations[e].expected_dps;
+    }
+}
+
+static void tac_forecast_project(const struct rf_tac_prediction *p,const struct rf_tac_world *w,
+                                 struct rf_tac_forecast *out)
+{
+    int relative,i,e;
+    out->team=p->team; out->count=w->squad_size; out->elapsed_ms=w->time_ms-p->root.time_ms;
+    out->finished=w->finished; out->winner=w->winner;
+    for(relative=0;relative<2;++relative) {
+        int team=relative==0?p->team:1-p->team; struct tac_paths goal_paths;
+        out->orders[relative]=w->orders[team]; tac_paths_build(w->map,w->orders[team].target,&goal_paths);
+        for(i=0;i<w->squad_size;++i) {
+            const struct rf_tac_unit *u=&w->units[team*RF_TAC_MAX_SQUAD+i];
+            const struct rf_tac_unit *before=&p->root.units[team*RF_TAC_MAX_SQUAD+i];
+            struct rf_tac_forecast_unit *f=relative==0?&out->friendly[i]:&out->enemy[i];
+            tac_view(before,&f->before); tac_view(u,&f->after);
+            out->alive_before[relative]+=before->alive; out->alive_after[relative]+=u->alive;
+            out->health_before[relative]+=f->before.effective_health;
+            out->health_after[relative]+=f->after.effective_health;
+            f->shots_fired=u->shots-before->shots; f->destination=u->action.kind==RF_TAC_MOVE?u->destination:u->pos;
+            f->objective_distance=tac_distance(u->pos,w->orders[team].target);
+            f->inside_objective=u->alive && f->objective_distance<=w->orders[team].radius;
+            if(u->alive && !f->inside_objective) {
+                int node=rf_tac_nearest_node(w->map,u->pos);
+                f->objective_path_distance=node<0?1.0e20f:goal_paths.distance[node]+tac_distance(u->pos,w->map->nodes[node].pos);
+            }
+            if(!u->alive) continue;
+            f->moving=u->action.kind==RF_TAC_MOVE;
+            if(f->moving) {
+                struct rf_tac_path_summary remaining;
+                int last=u->nav_nodes[u->nav_count-1];
+                f->remaining_move_time_s=tac_remaining_move_distance(w,u)/TAC_NAV_SPEED;
+                tac_path_summary(w,team,u,NULL,last,&remaining);
+                f->remaining_path_incoming_damage=remaining.incoming_damage;
+            }
+            tac_forecast_destination(w,u,f);
+        }
+    }
+    for(i=0;i<w->squad_size;++i) for(e=0;e<w->squad_size;++e) {
+        const struct rf_tac_unit *f=&w->units[p->team*RF_TAC_MAX_SQUAD+i];
+        const struct rf_tac_unit *enemy=&w->units[(1-p->team)*RF_TAC_MAX_SQUAD+e];
+        tac_relation(w,f,f->pos,enemy,-1,-1,&out->relations[i][e]);
+        tac_relation(w,enemy,enemy->pos,f,-1,-1,&out->reverse_relations[e][i]);
+        out->friendly[i].outgoing_dps=tac_max(out->friendly[i].outgoing_dps,out->relations[i][e].expected_dps);
+        out->friendly[i].incoming_dps+=out->reverse_relations[e][i].expected_dps;
+        out->enemy[e].outgoing_dps=tac_max(out->enemy[e].outgoing_dps,out->reverse_relations[e][i].expected_dps);
+        out->enemy[e].incoming_dps+=out->relations[i][e].expected_dps;
+    }
+}
+
+static int tac_prediction_evaluate(void *opaque,const struct rf_tac_plan *friendly,
+                                    const struct rf_tac_plan *enemy,int duration_ms,
+                                    struct rf_tac_forecast *out)
+{
+    struct rf_tac_prediction *p=(struct rf_tac_prediction *)opaque;
+    struct rf_tac_world world; struct rf_tac_plan hold; int steps=0,required;
+    if(!out) return RF_TAC_PRED_INVALID;
+    memset(out,0,sizeof(*out));
+    if(!p || !p->valid || !friendly || duration_ms<=0 || duration_ms>RF_TAC_PREDICTION_MAX_MS ||
+       duration_ms%RF_TAC_THINK_MS) return RF_TAC_PRED_INVALID;
+    required=duration_ms/RF_TAC_DT_MS;
+    if(required>p->remaining_steps) return RF_TAC_PRED_BUDGET;
+    world=p->root;
+    if(!enemy) { tac_prediction_hold(&p->root,1-p->team,&hold); enemy=&hold; }
+    if(!tac_prediction_apply(p,&world,friendly,p->team) ||
+       !tac_prediction_apply(p,&world,enemy,1-p->team)) return RF_TAC_PRED_INVALID;
+    while(steps<required && !world.finished) { out->uncertain_shots+=tac_step_mode(&world,1); ++steps; }
+    p->remaining_steps-=steps;
+    out->steps=steps; out->requested_ms=duration_ms;
+    tac_forecast_project(p,&world,out);
+    return RF_TAC_PRED_OK;
+}
+
+static int tac_prediction_remaining(const void *opaque)
+{
+    const struct rf_tac_prediction *p=(const struct rf_tac_prediction *)opaque;
+    return p && p->valid?p->remaining_steps:0;
+}
+
+void rf_tac_prediction_provider(struct rf_tac_prediction *prediction,struct rf_tac_predictor *out)
+{
+    if(!out) return;
+    memset(out,0,sizeof(*out));
+    if(!prediction || !prediction->valid) return;
+    out->opaque=prediction; out->evaluate=tac_prediction_evaluate;
+    out->remaining_steps=tac_prediction_remaining;
 }

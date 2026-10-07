@@ -99,7 +99,7 @@ OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 TARGET := $(BUILD)/rasterfall.exe
 TACTICAL_SRCS := rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
-                 rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
                  rasterfall/src/dev-tests/rf_tactical_test.c
 TACTICAL_TARGET := $(BUILD)/rf-tactical.exe
 PACKAGE_DIR := $(BUILD)/rasterfall-windows
@@ -319,7 +319,8 @@ tactical: $(TACTICAL_TARGET)
 	$(call sync-runtime-config,$(PACKAGE_DIR))
 	@if [ -f "$(PACKAGE_DIR)/rasterfall.exe" ]; then cp "$(TACTICAL_TARGET)" "$(PACKAGE_DIR)/rf-tactical.exe"; fi
 $(TACTICAL_TARGET): $(TACTICAL_SRCS) rasterfall/include/rf_tactical.h \
-    rasterfall/include/rf_tactical_weapon.h rasterfall/src/dev-tests/rf_tactical_test.c windows/Makefile | $(BUILD)
+    rasterfall/include/rf_tactical_weapon.h rasterfall/include/rf_tactical_prediction.h \
+    rasterfall/include/rf_tactical_beam.h rasterfall/src/dev-tests/rf_tactical_test.c windows/Makefile | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -static -mconsole \
 	    -Irasterfall/include $(TACTICAL_SRCS) -o $@ -lm
 tactical-test: $(TACTICAL_TARGET)

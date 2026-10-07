@@ -1,0 +1,468 @@
+{
+  "schema": 1,
+  "experiment": "800ms repeated-shot mean-state prediction calibration",
+  "map_seed": 100,
+  "map_content_hash": "87ae393b",
+  "simulation_version": 1,
+  "weapon": "rifle",
+  "squad_size": 1,
+  "horizon_ms": 800,
+  "dt_ms": 20,
+  "world_time_limit_ms": 5000,
+  "enemy_initial_reload_ms": 5000,
+  "target_initial_recovery_delay_ms": 3000,
+  "samples_per_condition": 4096,
+  "actual_seed_formula": "700000 + sample_index * 7919 modulo 2^32",
+  "actions": "both HOLD; enemy is passive during horizon",
+  "conditions": [
+    {
+      "name": "near_full_risk45",
+      "samples": 4096,
+      "position": {
+        "shooter_node": 0,
+        "target_node": 5,
+        "shooter": [
+          1,
+          1
+        ],
+        "target": [
+          11,
+          1
+        ],
+        "distance_m": 10,
+        "public_exposure": 1,
+        "exposure_kind": 3,
+        "first_shot_hit_probability": 1
+      },
+      "initial_target_hp": 100,
+      "initial_target_risk": 45,
+      "health": {
+        "predicted": 17,
+        "actual_mean": 17,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "hp": {
+        "predicted": 17,
+        "actual_mean": 17,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "risk": {
+        "predicted": 0,
+        "actual_mean": 0,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "shots_fired": {
+        "predicted": 8,
+        "actual_mean": 8,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "elapsed_ms": {
+        "predicted": 800,
+        "actual_mean": 800,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "predicted_dead": false,
+      "actual_deaths": 0,
+      "actual_death_rate": 0,
+      "death_rate_standard_error": 0,
+      "death_rate_wilson_95": [
+        0,
+        0.000936977407
+      ],
+      "source_unchanged": true,
+      "forecast_rng_independent": true,
+      "private_and_public_health_match": true
+    },
+    {
+      "name": "far_full_risk45",
+      "samples": 4096,
+      "position": {
+        "shooter_node": 2,
+        "target_node": 775,
+        "shooter": [
+          5,
+          1
+        ],
+        "target": [
+          50.5699997,
+          31.7999992
+        ],
+        "distance_m": 55.0024071,
+        "public_exposure": 1,
+        "exposure_kind": 3,
+        "first_shot_hit_probability": 0.709401727
+      },
+      "initial_target_hp": 100,
+      "initial_target_risk": 45,
+      "health": {
+        "predicted": 86.5403595,
+        "actual_mean": 86.6173029,
+        "actual_sd": 20.7456928,
+        "standard_error": 0.32415145,
+        "prediction_minus_actual": -0.0769433547,
+        "error_in_standard_errors": -0.237368535
+      },
+      "hp": {
+        "predicted": 85.1668472,
+        "actual_mean": 83.5991852,
+        "actual_sd": 16.8307963,
+        "standard_error": 0.262981192,
+        "prediction_minus_actual": 1.56766203,
+        "error_in_standard_errors": 5.96111844
+      },
+      "risk": {
+        "predicted": 1.37350965,
+        "actual_mean": 3.0181176,
+        "actual_sd": 6.93431306,
+        "standard_error": 0.108348642,
+        "prediction_minus_actual": -1.64460796,
+        "error_in_standard_errors": -15.1788517
+      },
+      "shots_fired": {
+        "predicted": 8,
+        "actual_mean": 8,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "elapsed_ms": {
+        "predicted": 800,
+        "actual_mean": 800,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "predicted_dead": false,
+      "actual_deaths": 0,
+      "actual_death_rate": 0,
+      "death_rate_standard_error": 0,
+      "death_rate_wilson_95": [
+        0,
+        0.000936977407
+      ],
+      "source_unchanged": true,
+      "forecast_rng_independent": true,
+      "private_and_public_health_match": true
+    },
+    {
+      "name": "peek_risk2",
+      "samples": 4096,
+      "position": {
+        "shooter_node": 30,
+        "target_node": 563,
+        "shooter": [
+          61,
+          1
+        ],
+        "target": [
+          13,
+          37
+        ],
+        "distance_m": 60,
+        "public_exposure": 0.333333343,
+        "exposure_kind": 1,
+        "first_shot_hit_probability": 0.123132303
+      },
+      "initial_target_hp": 100,
+      "initial_target_risk": 2,
+      "health": {
+        "predicted": 87.9695892,
+        "actual_mean": 88.1614793,
+        "actual_sd": 18.3736001,
+        "standard_error": 0.287087501,
+        "prediction_minus_actual": -0.191890081,
+        "error_in_standard_errors": -0.668402771
+      },
+      "hp": {
+        "predicted": 86.8114166,
+        "actual_mean": 87.008159,
+        "actual_sd": 17.5110714,
+        "standard_error": 0.273610491,
+        "prediction_minus_actual": -0.196742376,
+        "error_in_standard_errors": -0.719060061
+      },
+      "risk": {
+        "predicted": 1.15817297,
+        "actual_mean": 1.15332031,
+        "actual_sd": 0.988297193,
+        "standard_error": 0.0154421436,
+        "prediction_minus_actual": 0.00485265255,
+        "error_in_standard_errors": 0.314247339
+      },
+      "shots_fired": {
+        "predicted": 8,
+        "actual_mean": 7.99804688,
+        "actual_sd": 0.0796579608,
+        "standard_error": 0.00124465564,
+        "prediction_minus_actual": 0.001953125,
+        "error_in_standard_errors": 1.56920914
+      },
+      "elapsed_ms": {
+        "predicted": 800,
+        "actual_mean": 799.726562,
+        "actual_sd": 10.0462149,
+        "standard_error": 0.156972108,
+        "prediction_minus_actual": 0.2734375,
+        "error_in_standard_errors": 1.74194959
+      },
+      "predicted_dead": false,
+      "actual_deaths": 4,
+      "actual_death_rate": 0.0009765625,
+      "death_rate_standard_error": 0.000488042773,
+      "death_rate_wilson_95": [
+        0.000379829567,
+        0.00250844281
+      ],
+      "source_unchanged": true,
+      "forecast_rng_independent": true,
+      "private_and_public_health_match": true
+    },
+    {
+      "name": "near_full_low_hp",
+      "samples": 4096,
+      "position": {
+        "shooter_node": 0,
+        "target_node": 5,
+        "shooter": [
+          1,
+          1
+        ],
+        "target": [
+          11,
+          1
+        ],
+        "distance_m": 10,
+        "public_exposure": 1,
+        "exposure_kind": 3,
+        "first_shot_hit_probability": 1
+      },
+      "initial_target_hp": 5,
+      "initial_target_risk": 2,
+      "health": {
+        "predicted": 0,
+        "actual_mean": 0,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "hp": {
+        "predicted": 0,
+        "actual_mean": 0,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "risk": {
+        "predicted": 0,
+        "actual_mean": 0,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "shots_fired": {
+        "predicted": 1,
+        "actual_mean": 1,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "elapsed_ms": {
+        "predicted": 20,
+        "actual_mean": 20,
+        "actual_sd": 0,
+        "standard_error": 0,
+        "prediction_minus_actual": 0,
+        "error_in_standard_errors": null
+      },
+      "predicted_dead": true,
+      "actual_deaths": 4096,
+      "actual_death_rate": 1,
+      "death_rate_standard_error": 0,
+      "death_rate_wilson_95": [
+        0.999063023,
+        1
+      ],
+      "source_unchanged": true,
+      "forecast_rng_independent": true,
+      "private_and_public_health_match": true
+    },
+    {
+      "name": "peek_low_hp",
+      "samples": 4096,
+      "position": {
+        "shooter_node": 30,
+        "target_node": 563,
+        "shooter": [
+          61,
+          1
+        ],
+        "target": [
+          13,
+          37
+        ],
+        "distance_m": 60,
+        "public_exposure": 0.333333343,
+        "exposure_kind": 1,
+        "first_shot_hit_probability": 0.123132303
+      },
+      "initial_target_hp": 5,
+      "initial_target_risk": 2,
+      "health": {
+        "predicted": 0,
+        "actual_mean": 4.03662109,
+        "actual_sd": 3.45904018,
+        "standard_error": 0.0540475027,
+        "prediction_minus_actual": -4.03662109,
+        "error_in_standard_errors": -74.6865422
+      },
+      "hp": {
+        "predicted": 0,
+        "actual_mean": 2.88330078,
+        "actual_sd": 2.47074298,
+        "standard_error": 0.0386053591,
+        "prediction_minus_actual": -2.88330078,
+        "error_in_standard_errors": -74.6865422
+      },
+      "risk": {
+        "predicted": 1.58582795,
+        "actual_mean": 1.15332031,
+        "actual_sd": 0.988297193,
+        "standard_error": 0.0154421436,
+        "prediction_minus_actual": 0.432507634,
+        "error_in_standard_errors": 28.0082639
+      },
+      "shots_fired": {
+        "predicted": 2,
+        "actual_mean": 5.94677734,
+        "actual_sd": 2.75727022,
+        "standard_error": 0.0430823472,
+        "prediction_minus_actual": -3.94677734,
+        "error_in_standard_errors": -91.6100817
+      },
+      "elapsed_ms": {
+        "predicted": 120,
+        "actual_mean": 560.810547,
+        "actual_sd": 310.703998,
+        "standard_error": 4.85474996,
+        "prediction_minus_actual": -440.810547,
+        "error_in_standard_errors": -90.7998456
+      },
+      "predicted_dead": true,
+      "actual_deaths": 1734,
+      "actual_death_rate": 0.423339844,
+      "death_rate_standard_error": 0.00772012925,
+      "death_rate_wilson_95": [
+        0.408287417,
+        0.438535928
+      ],
+      "source_unchanged": true,
+      "forecast_rng_independent": true,
+      "private_and_public_health_match": true
+    }
+  ],
+  "scope": "Single-tick hit-mask settlement handles simultaneous shared-risk nonlinearity. Across ticks only mean HP/risk are retained; survival and conservative pressure recovery are approximate. Death ends a native match before 800ms; resources stop at that terminal event, and effective health is zero for dead units. HP/risk are diagnostic-only private reads; the public provider returns effective health only. This run overlaps the larger benchmark and makes no performance claim.",
+  "provenance": {
+    "sha256": {
+      "rasterfall/lib/rf_tactical.c": "348623efbca0874ba68021b7480d8a700fe1f854ef5eb695c782d6d4b6983e1d",
+      "rasterfall/lib/rf_tactical_weapon.c": "18d082f888c4ce336160f970487d9bd43ebdb5e4e83ad647237dbb646d2340f8",
+      "rasterfall/include/rf_tactical_prediction.h": "06c50a3b10e7df52ff4d39619e4c5badd6a7b9e8cdbd2df982ee7492f9f32788",
+      "tmp/tactical_forecast_calibration.c": "628ed00d04af87a487d98903131bb9ec068ade8abf546caf4818e4801ffab4d5",
+      "tmp/tactical_forecast_calibration.exe": "c0d1047e4560ee87a1d8cb3f2a720fa5291eeb6a2e00c5119bd158f3ddf69fe2",
+      "build-windows/rf-tactical.exe": "2d27b3d97e1eb1914d717c19034b1fb87d7b71f2d5977522284d521ef4501af3"
+    },
+    "diagnostic_binary": "tmp/tactical_forecast_calibration.exe",
+    "compiler": "C:/msys64/mingw64/bin/gcc.exe",
+    "compiler_flags": [
+      "-std=c99",
+      "-O2",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-I",
+      "rasterfall/include"
+    ],
+    "private_diagnostic_access": "The temporary harness includes the unchanged production engine implementation to read expected HP/risk. It cross-checks the opaque provider's effective health and timing, then uses public rf_tac_step for all sampled matches. This does not expose resources to strategies or modify the canonical executable."
+  },
+  "summary": [
+    {
+      "condition": "near_full_risk45",
+      "distance_m": 10,
+      "exposure": 1,
+      "predicted_effective_health": 17,
+      "actual_mean_effective_health": 17,
+      "health_standard_error": 0,
+      "actual_death_rate": 0,
+      "predicted_dead": false
+    },
+    {
+      "condition": "far_full_risk45",
+      "distance_m": 55.0024071,
+      "exposure": 1,
+      "predicted_effective_health": 86.5403595,
+      "actual_mean_effective_health": 86.6173029,
+      "health_standard_error": 0.32415145,
+      "actual_death_rate": 0,
+      "predicted_dead": false
+    },
+    {
+      "condition": "peek_risk2",
+      "distance_m": 60,
+      "exposure": 0.333333343,
+      "predicted_effective_health": 87.9695892,
+      "actual_mean_effective_health": 88.1614793,
+      "health_standard_error": 0.287087501,
+      "actual_death_rate": 0.0009765625,
+      "predicted_dead": false
+    },
+    {
+      "condition": "near_full_low_hp",
+      "distance_m": 10,
+      "exposure": 1,
+      "predicted_effective_health": 0,
+      "actual_mean_effective_health": 0,
+      "health_standard_error": 0,
+      "actual_death_rate": 1,
+      "predicted_dead": true
+    },
+    {
+      "condition": "peek_low_hp",
+      "distance_m": 60,
+      "exposure": 0.333333343,
+      "predicted_effective_health": 0,
+      "actual_mean_effective_health": 4.03662109,
+      "health_standard_error": 0.0540475027,
+      "actual_death_rate": 0.423339844,
+      "predicted_dead": true
+    }
+  ],
+  "interpretation": [
+    "Each condition uses 4096 shot seeds on the same generated map and legal navigation-node positions. Exposure is checked with the public geometric function; no map geometry is edited.",
+    "The healthy full and head-exposed conditions are repeated-shot tests with eight shots over 800ms, unless an actual terminal death stops the match. The low-HP full condition legitimately ends after its first shot. The additional low-HP peek condition is included to reveal mean-state death bias over repeated shots.",
+    "The full-health conditions' effective-health errors fall within one empirical standard error in this sample. This is a local calibration result, not a bound on unseen maps, moving opponents, multi-shooter fights, or longer horizons.",
+    "At 55m with 45 initial risk, predicted HP is too high by 1.568 and risk too low by 1.645 even though their sum is close. Keeping only mean resources loses the cross-tick resource distribution.",
+    "At 60m with 5 HP and 2 risk, the mean-state model terminates at 120ms with zero effective health; real death probability by 800ms is 0.42334 and survivors keep 7 effective health. Its terminal flag is a mean-state decision, not a probability or certainty of winning.",
+    "An initial 3000ms recovery delay holds recovery inactive throughout the requested horizon, isolating damage and death approximations. This experiment does not calibrate the separate conservative pressure-reset approximation.",
+    "The run overlaps the larger native benchmark. No execution-speed or CPU-performance conclusion is drawn from it."
+  ]
+}

@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall 战术工具
-> 事实入口：`build-windows/rf-tactical.exe --help`、`tools/tactical_train.py --help`
+> 事实入口：`build-windows/rf-tactical.exe --help`、`tools/tactical_train.py --help`、`tools/tactical_benchmark.py --help`
 
 从仓库根目录运行。实验完全使用 Windows 原生 C 仿真，不初始化 SDL/GPU，也不等待
 实时帧间隔。规则和正式 Game 的接入边界见[战术 AI 架构](../architecture/tactical-ai.md)，
@@ -35,9 +35,10 @@ python tools/tactical_range_report.py tmp/tactical-range.json --output tmp/tacti
 .\build-windows\rf-tactical.exe batch --a utility --b mechanical --map-seed 10000 --shot-seed 1337 --pairs 8 --squad 6 --weapon both
 ```
 
-内置名称 `simple`、`mechanical`、`utility` 对应策略一至三。也可用
+内置名称 `simple`、`mechanical`、`utility` 对应策略一至三，`beam` 是联合动作搜索。也可用
 `rasterfall/config/ai/` 下的 `.cfg` 选择内置 solver 与数值权重；没有动态算法代码加载。
-`--budget` 对双方设置相同的逻辑评价预算。预算耗尽时剩余成员保持合法 HOLD。
+`--budget` 对双方设置相同的逻辑工作预算。Beam 同时计费前缀评分、预测推进和叶评分，
+基线只计费候选/目标评价；相同数值不代表相同 CPU 时间。预算耗尽时返回合法计划。
 主要人数为四至六人，双方共享战士和武器，差别来自策略、攻守岗位和地图。
 
 单局默认 A 进攻、B 防守；`--order-a attack|defend` 和 `--order-b attack|defend`
@@ -63,6 +64,38 @@ JSONL 保存初始配置、地图、策略参数/hash、每个物理步状态和
 HTML 可离线打开，滑动时间、选择队伍/成员，查看位置、射击、健康、候选与评分。
 回放只消费权威日志，不重算对局，也不改变训练结果。
 
+## Beam 搜索与独立基准
+
+```powershell
+.\build-windows\rf-tactical.exe match --a beam --b mechanical --map-seed 2000 --squad 6 --budget 128 --log tmp/beam-match.jsonl
+python tools/tactical_report.py tmp/beam-match.jsonl --output tmp/beam-match.html
+python tools/tactical_benchmark.py --policies beam rasterfall/config/ai/trained-v1.cfg --map-seed 30000 --pairs 8 --shot-seeds 1337 424242 98765 --squads 4 5 6 --jobs 3 --output tmp/beam-benchmark
+```
+
+默认宽度 2、最多 4 分支、800ms 预测已在 `beam-v1.cfg` 中保存。原生
+`--beam-width`、`--beam-branches`、`--beam-horizon-ms` 可覆盖双方 Beam 配置，
+不改变其他 solver。增加这些参数时同步检查预算和日志中的耗尽情况，较大时域
+在小预算下可能只返回 HOLD。默认 128 足以展开六名存活成员并比较 HOLD 和一个挑战计划。
+
+决策的 `beam` 记录每层扩展数、保留联合动作、父排名、预测结果、最终选择和
+健康/进度/火力/风险/队形/终局分数分项。候选表的 Beam 分数是某次联合前缀评价，
+不能当作单个位置的独立价值；未评分项为 null。HTML 同时展示联合计划与最终预测比较。
+`uncertain_shots` 标明预测中含命中/头身随机的射击数；这类预测的均值死亡不能视为
+确定击杀，也不获得终局硬奖励。连续健康分数仍有近似误差。
+800ms 是保持根行动的预测时域，搜索层是成员，尚未搜索多轮未来决策。
+
+benchmark 为每个策略、对手、人数与射击种子运行相同地图批次，镜像枪械并交换岗位。
+先保存 exe 与 cfg 的不可变副本和 SHA-256，逐批次落盘 journal，最后保存稳定排序的
+report。已有非空目录不会覆盖，失败保留证据并返回非零。保留地图用于最终对照，
+不要根据其分数继续调参；开发集应另选种子。
+
+批次输出实际进程 CPU、墙钟、地图/观测准备和求解耗时、工作单位、预测次数/步数。
+Windows 用 GetProcessTimes 测 CPU、QPC 测 elapsed；并行作业的总 CPU 可以超过墙钟，
+求解 elapsed 也包含调度影响，不等同单核 CPU。双方交换岗位后的成本仍按策略身份汇总。
+总体 score 计平局半分，分岗位只报告胜场率；native 汇总尚未保存每局结果，
+不能从 batch 聚合值计算逐局配对显著性检验。Beam 是否更强、是否值得开销，以实测为准。
+本轮预测校准、修订前后独立地图比较及实际限制见[Beam 原生记录](../archive/tactical-beam-20261007.md)。
+
 ## 初步训练
 
 ```powershell
@@ -77,7 +110,7 @@ python tools/tactical_train.py --generations 3 --population 8 --elite 3 --output
 训练入口先保存 native exe 副本，所有批次使用同一副本；并行开发时重建工作区不会
 混入另一套仿真规则。report 记录采样配置、exe SHA-256、训练与保留种子、训练轨迹、各对手结果和初始
 utility 的同条件对照。保留集只用于最终评测，不用于选权重。这是参数训练，
-不是神经网络或已完成的 Beam Search。扩大训练时改变输出目录，保留旧证据。
+不是神经网络或 Beam 参数训练。扩大训练时改变输出目录，保留旧证据。
 
 仓库已提供一次真实训练的
 [`trained-v1.cfg`](../../../rasterfall/config/ai/trained-v1.cfg)，可直接作为 `--a` 或 `--b`。
@@ -88,6 +121,6 @@ utility 的同条件对照。保留集只用于最终评测，不用于选权重
 python tools/tactical_report.py tmp/tactical-match.jsonl --output tmp/tactical-match.html
 ```
 
-`tools/tactical_lab.ps1` 提供相同操作的 wrapper；原生 `--help` 和两个 Python 工具
+`tools/tactical_lab.ps1` 提供靶场、对局、回放、训练及 benchmark 操作的 wrapper；原生 `--help` 和 Python 工具
 的 `--help` 是参数事实入口。完整玩家构建和 package 同时包含 `rf-tactical.exe`
 及策略配置；Toyc self 构建不包含这个 hosted 诊断程序。

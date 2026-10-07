@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position=0)]
-    [ValidateSet('build','range','match','batch','inspect','self-test','train','report','help')]
+    [ValidateSet('build','range','match','batch','inspect','self-test','train','benchmark','report','help')]
     [string]$Command='help',
     [Parameter(Position=1,ValueFromRemainingArguments=$true)]
     [string[]]$ExtraArgs=@()
@@ -30,9 +30,9 @@ Push-Location $Root
 try {
     if($Command -eq 'build') {
         Invoke-Native 'powershell' @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $Root 'windows/NativeCodex.ps1'),'tactical-build')
-    } elseif($Command -eq 'train' -or $Command -eq 'report') {
+    } elseif($Command -eq 'train' -or $Command -eq 'benchmark' -or $Command -eq 'report') {
         $Python=Get-Command python -ErrorAction Stop
-        $Script=if($Command -eq 'train'){'tools/tactical_train.py'}else{'tools/tactical_report.py'}
+        $Script=if($Command -eq 'train'){'tools/tactical_train.py'}elseif($Command -eq 'benchmark'){'tools/tactical_benchmark.py'}else{'tools/tactical_report.py'}
         Invoke-Native $Python.Source (@((Join-Path $Root $Script))+$ExtraArgs)
     } else {
         if(!(Test-Path -LiteralPath $Exe)){throw 'Build first: powershell -NoProfile -ExecutionPolicy Bypass -File tools/tactical_lab.ps1 build'}

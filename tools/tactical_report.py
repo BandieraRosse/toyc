@@ -16,7 +16,7 @@ main{max-width:1200px;margin:auto}h1{font-size:22px}canvas{width:100%;background
 .controls{display:flex;gap:14px;align-items:center;margin:12px 0}input{flex:1}
 button,select{background:#293948;color:#fff;padding:7px;border:1px solid #617586}
 pre{white-space:pre-wrap;background:#19232d;padding:12px;max-height:420px;overflow:auto}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}table{border-collapse:collapse;width:100%;font-size:13px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.scroll{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}
 th,td{padding:5px;border-bottom:1px solid #384c5b;text-align:right}th:first-child,td:first-child{text-align:left}
 @media(max-width:800px){.grid{display:block}}</style><main>
 <h1>Rasterfall native tactical replay</h1><p id="meta"></p>
@@ -25,13 +25,17 @@ th,td{padding:5px;border-bottom:1px solid #384c5b;text-align:right}th:first-chil
 <select id="speed"><option value="1">1×</option><option value="5">5×</option><option value="20">20×</option></select></div>
 <div class="controls"><label>Team <select id="team"><option value="0">0</option><option value="1">1</option></select></label>
 <label>Unit <select id="unit"></select></label><span>Blue = team 0; orange = team 1. Click a unit to inspect.</span></div>
-<div class="grid"><div><h2>Candidate facts and solver scores</h2><div id="candidates"></div></div>
+<div class="grid"><div><h2>Candidate facts and solver scores</h2><p id="score-note"></p><div id="candidates"></div></div>
 <div><h2>Selected decision</h2><pre id="decision"></pre></div></div>
+<section id="beam" hidden><h2>Joint action Beam Search</h2><p id="beam-meta"></p>
+<div class="controls"><label>Member layer <select id="beam-layer"></select></label></div>
+<div id="beam-entries" class="scroll"></div><pre id="beam-selected"></pre></section>
 <h2>Authoritative state</h2><pre id="state"></pre>
 <script id="data" type="application/json">__DATA__</script><script>
 const data=JSON.parse(document.getElementById('data').textContent),h=data.header;
 const ticks=data.ticks,decisions=data.decisions,c=document.getElementById('map'),ctx=c.getContext('2d');
 const slider=document.getElementById('tick'),team=document.getElementById('team'),unit=document.getElementById('unit');
+const beamLayer=document.getElementById('beam-layer');
 slider.max=ticks.length-1;slider.value=0;
 for(let i=0;i<h.squad_size;i++){let o=document.createElement('option');o.value=i;o.textContent=i;unit.appendChild(o)}
 document.getElementById('meta').textContent=`Version ${h.simulation_version}; map ${h.map_seed}; shots ${h.shot_seed}; `+
@@ -40,6 +44,19 @@ document.getElementById('meta').textContent=`Version ${h.simulation_version}; ma
 const sx=c.width/h.width_m,sy=c.height/h.height_m;
 let playing=false,last=0,accum=0;
 function latest(t,side){let d=null;for(const x of decisions){if(x.tick>t)break;if(x.team===side)d=x}return d}
+function tableOf(labels,rows){const table=document.createElement('table'),head=document.createElement('tr');
+ for(const label of labels){let th=document.createElement('th');th.textContent=label;head.appendChild(th)}table.appendChild(head);
+ for(const values of rows){const tr=document.createElement('tr');for(const value of values){const td=document.createElement('td');td.textContent=typeof value==='number'?value.toFixed(3):value??'unscored';tr.appendChild(td)}table.appendChild(tr)}return table}
+function jointText(actions){return actions.map(a=>`${a.unit}:${['HOLD','MOVE','FIRE','RELOAD'][a.kind]||a.kind}${a.kind===2?' enemy '+a.target:a.kind===1?' candidate '+a.candidate:''}`).join('; ')}
+function renderBeam(d){const b=d?.beam,section=document.getElementById('beam');section.hidden=!b;if(!b)return;
+ const old=+beamLayer.value;beamLayer.replaceChildren();for(const layer of b.layers){const o=document.createElement('option');o.value=layer.index;o.textContent=`${layer.index}: ${layer.unit<0?'forecast ranking':'member '+layer.unit} (${layer.retained}/${layer.expanded} retained)`;beamLayer.appendChild(o)}
+ beamLayer.value=Math.min(Number.isFinite(old)?old:0,Math.max(0,b.layers.length-1));
+ document.getElementById('beam-meta').textContent=`Root tactical tick ${d.root_tactical_tick??d.root_plan?.tactical_tick}; work ${d.work_units}/${d.budget_limit}; ${b.prediction_calls} forecasts / ${b.prediction_steps} prediction steps / ${b.predicted_ms} predicted ms; HOLD uncertain shots ${b.hold_uncertain_shots??'unrecorded'}; stop ${b.stop_reason}. Layers assign squad members, with opponent ${b.opponent_assumption}. Only retained candidates are recorded. An uncertain shot has a random hit or hit location; a predicted death after such shots is not a guaranteed kill.`;
+ const layer=b.layers[+beamLayer.value];
+ const rows=(layer?.entries||[]).map(e=>[e.rank,e.parent_rank,e.changed_unit,e.forecasted?e.forecast_ms+' ms':'cheap',e.score.total,e.score.health,e.score.progress,e.score.firepower,e.score.risk,e.score.cohesion,e.score.terminal,e.predicted_health?e.predicted_health.map(x=>x.toFixed(2)).join(' / '):'unpredicted',jointText(e.joint_plan),e.forecasted?e.uncertain_shots??'unrecorded':'unpredicted']);
+ document.getElementById('beam-entries').replaceChildren(tableOf(['rank','parent','member','forecast','total','health','progress','firepower','risk','cohesion','terminal','health own / enemy','joint actions','uncertain shots'],rows));
+ document.getElementById('beam-selected').textContent=JSON.stringify({root_plan:d.root_plan,selected_rank:b.selected_rank,hold_uncertain_shots:b.hold_uncertain_shots,hold_score:b.hold_score,selected_score:b.selected_score,selected_joint_plan:b.selected_joint_plan,layer},null,2);
+}
 function render(){const s=ticks[+slider.value],side=+team.value,idx=+unit.value,id=side*h.squad_size+idx;
  for(let t=0;t<2;t++)team.children[t].textContent=`${t} ${s.orders[t]===1?'attack':'defense'}`;
  ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#263746';ctx.lineWidth=1;
@@ -53,13 +70,15 @@ function render(){const s=ticks[+slider.value],side=+team.value,idx=+unit.value,
  for(const u of s.units){const x=u.position[0]*sx,y=u.position[1]*sy;ctx.globalAlpha=u.alive?1:.3;ctx.fillStyle=u.team===0?'#70beff':'#ffac71';ctx.beginPath();ctx.arc(x,y,u.team===side&&u.id%h.unit_id_stride===idx?9:6,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;ctx.fillStyle='#fff';ctx.font='12px system-ui';ctx.fillText(String(u.id),x+9,y-7);ctx.fillStyle='#163926';ctx.fillRect(x-9,y+11,18,3);ctx.fillStyle='#90de9d';ctx.fillRect(x-9,y+11,18*Math.max(0,u.effective_health)/(h.baseline.hp+h.baseline.risk),3)}
  document.getElementById('time').textContent=`tick ${s.tick} / ${(s.time_ms/1000).toFixed(2)} s`;
  document.getElementById('state').textContent=JSON.stringify(s.units[id],null,2);
- document.getElementById('decision').textContent=JSON.stringify(du?{tick:d.tick,order:d.order,evaluations:d.evaluations,budget_exhausted:d.budget_exhausted,...du,candidates:undefined}:null,null,2);
+ document.getElementById('decision').textContent=JSON.stringify(du?{tick:d.tick,root_tactical_tick:d.root_tactical_tick,root_plan:d.root_plan,order:d.order,evaluations:d.evaluations,work_units:d.work_units,budget_limit:d.budget_limit,prediction_calls:d.prediction_calls,prediction_steps:d.prediction_steps,budget_exhausted:d.budget_exhausted,...du,candidates:undefined}:null,null,2);
+ document.getElementById('score-note').textContent=d?.beam?'Beam scores here belong to the last evaluated joint prefix using that candidate. Use the joint search layers below to compare complete plans.':'Scores belong to individual candidate evaluations. Unscored candidates have no evaluated value.';
  const table=document.createElement('table'),head=document.createElement('tr');
  for(const label of ['candidate','score','out DPS','in DPS','cover','travel s','path dmg','objective m','nav m']){let th=document.createElement('th');th.textContent=label;head.appendChild(th)}table.appendChild(head);
- for(const k of du?.candidates||[]){let tr=document.createElement('tr');if(k.index===du.selected)tr.style.color='#ddf75b';for(const value of [k.index,k.score,k.outgoing_dps,k.incoming_dps,k.cover_quality,k.path.travel_time,k.path.incoming_damage,k.objective_distance,k.objective_path_distance]){let td=document.createElement('td');td.textContent=typeof value==='number'?value.toFixed(2):value;tr.appendChild(td)}table.appendChild(tr)}
+ for(const k of du?.candidates||[]){let tr=document.createElement('tr');if(k.index===du.selected)tr.style.color='#ddf75b';for(const value of [k.index,k.score,k.outgoing_dps,k.incoming_dps,k.cover_quality,k.path.travel_time,k.path.incoming_damage,k.objective_distance,k.objective_path_distance]){let td=document.createElement('td');td.textContent=typeof value==='number'?(value<=-1e19?'unscored':value.toFixed(2)):value??'unscored';tr.appendChild(td)}table.appendChild(tr)}
  document.getElementById('candidates').replaceChildren(table);
+ renderBeam(d);
 }
-slider.oninput=render;team.onchange=render;unit.onchange=render;
+slider.oninput=render;team.onchange=render;unit.onchange=render;beamLayer.onchange=()=>renderBeam(latest(ticks[+slider.value].tick,+team.value));
 document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Play'};
 c.onclick=e=>{const box=c.getBoundingClientRect(),x=(e.clientX-box.left)/box.width*h.width_m,y=(e.clientY-box.top)/box.height*h.height_m;let closest=ticks[+slider.value].units.reduce((a,b)=>Math.hypot(a.position[0]-x,a.position[1]-y)<Math.hypot(b.position[0]-x,b.position[1]-y)?a:b);team.value=closest.team;unit.value=closest.id%h.unit_id_stride;render()};
 function frame(now){if(playing){accum+=(now-last)*+document.getElementById('speed').value;let step=Math.floor(accum/h.dt_ms);if(step){accum-=step*h.dt_ms;slider.value=Math.min(ticks.length-1,+slider.value+step);render();if(+slider.value===ticks.length-1){playing=false;document.getElementById('play').textContent='Play'}}}last=now;requestAnimationFrame(frame)}render();requestAnimationFrame(frame);

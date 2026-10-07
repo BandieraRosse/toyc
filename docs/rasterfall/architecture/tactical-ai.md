@@ -2,7 +2,7 @@
 
 > 状态：当前
 > 所有者：Rasterfall 战术仿真与 AI
-> 事实入口：`rasterfall/include/rf_tactical.h`、`rasterfall/lib/rf_tactical.c`、`rasterfall/lib/rf_tactical_solver.c`
+> 事实入口：`rasterfall/include/rf_tactical.h`、`rasterfall/include/rf_tactical_prediction.h`、`rasterfall/lib/rf_tactical.c`、`rasterfall/lib/rf_tactical_solver.c`、`rasterfall/lib/rf_tactical_beam.c`
 
 这是新枪战体系的独立、确定性仿真核心。`rf-tactical` 是 Windows 原生控制台程序，
 不创建窗口、不初始化 GPU、不以墙钟时间推动玩法。靶场和对抗场共同消费
@@ -19,6 +19,7 @@ seed + map generator → immutable tactical map / navigation / cover / static vi
 weapon profile + soldier baseline → authoritative tactical world
 world + map → read-only observation / relations / candidate positions / path summaries
 observation + compiled solver + numeric parameters + logical budget → plan
+observation + joint-action beam → opaque engine prediction service → read-only forecast facts
 plan validation → navigation / simultaneous combat / recovery / orders
 world → JSONL state and decision log → inspection / browser replay
 ```
@@ -35,8 +36,8 @@ observation 是按队伍生成的固定容量只读值快照：友军、敌军�
 
 solver 没有 world/map 指针，不能调用几何射线或改写玩法。输出只是有界计划；
 执行前验证协议版本、generation、tick、队伍、目标与目的地。无效行动回到 HOLD。
-所有 solver 从全员 HOLD 开始，预算为零时仍返回合法结果；预算按候选/目标评价次数收费，
-不使用 CPU 时间决定分支。
+所有 solver 从全员 HOLD 开始，预算为零时仍返回合法结果；不使用 CPU 时间决定分支。
+基线按候选/目标评价次数收费；Beam 的统一工作预算见下节。相同工作数不代表相同 CPU 开销。
 
 ## 地图、射界与导航
 
@@ -88,8 +89,52 @@ MOVE 只移动，FIRE 指定敌人并保持位置，RELOAD 执行换弹；行动
 基线参数冻结，训练与评测使用不同地图种子，交换攻守、步枪/SMG镜像配置。
 结果只说明所测种子、对手、人数和预算的表现。
 
-当前没有 Beam Search、对手响应搜索或神经网络。后续 beam 应复用候选/计划验证、
-合法 HOLD 起点和可复制世界，保持独立预算与预测状态。短期精确推进和长期粗略健康
-评价需要区分，不能把搜索模型输出覆盖真实世界。
+## 联合动作 Beam 与引擎预测
+
+`rf_tactical_beam.c` 按稳定成员顺序扩展小队联合动作。每层保留固定宽度，未展开的成员
+保持 HOLD，任何前缀都是可提交的完整根计划。候选来自信息层；窄分支优先保留 HOLD、
+进攻推进、另一射击目标及掩体移动。HOLD 会向最近合法敌人射击并可在其死亡后重选；
+显式 FIRE 的目标死亡后停止射击，评分遵守这一差别。主动换弹及更多射击/移动选项
+受分支数约束，窄 Beam 不保证遍历全部合法行动。
+
+前缀廉价评价比较全队目标火力分配、有限弹匣/换弹窗口、路线风险、占领进度和位置冲突。
+只读武器常量和观测计时可用于估算射击数量，几何和射界仍由引擎提供。
+根观测在空弹或正在换弹时关系火力为零，廉价前缀仍可能遗漏换弹完成后的火力；
+完整预测会投影武器准备状态，这一剪枝局限不等同完整预测免去换弹后的射击。
+保留完整计划才调用预测服务；HOLD 也在同一时域预测，未预测的廉价分数不能取代它。
+仅在本次固定计划预测的伤害事件没有命中/头身随机性时，终局胜负先于加权分数比较；
+此时参数权重不能将预测失败排在预测胜利之前。
+
+宿主为每队建立 opaque `rf_tac_prediction`，在本轮求解前 reset 根世界和预测步预算。
+策略仅获得受限 callback，提交本轮合法计划、可选敌方根计划和时域；不能读取私有世界、
+地图或射击随机序列。预测验证 generation/tick/team/候选与路线，复用根候选的执行语义。
+每次评价从同一私有根副本开始，分支间状态不相互污染；地图借用只读，宿主保持其生命周期。
+无效请求不消耗推进步；服务先检查完整时域预算，不能把截断预测冒充完整预测。
+
+真实执行和预测共享 20ms 移动、武器计时、恢复、命令、占领与同时伤害结算。
+真实执行采样命中；预测使用命中期望，完全不读取未来 RNG。每个同时结算步枚举该目标
+至多六发射击的命中组合，先按组合应用共享回避资源，再求平均，避免低命中概率平均伤害
+被错误地全部吸收。但跨步只保留 HP/回避均值，死亡概率与恢复压力是近似，不能视为
+精确的胜率、TTK 或存活分布。预测值只用于评价，永远不写回真实 world。
+预测同时报告 `uncertain_shots`：成功发射中包含非确定命中或头身随机的次数。
+只要出现这些射击，均值死亡不授予终局硬奖励，仍使用连续健康等分数。它是保守的
+模型标记，不能消除均值健康偏差，也不是置信区间；零值仍依赖敌方 HOLD 和根行动假设。
+
+短预测结束后，引擎报告真实路线剩余部分的风险、到点双向关系和武器准备时间。
+策略尾段火力只计算到达且己方可开火后的时间；入射风险独立使用每个敌人的准备时间，
+己方换弹不能成为免伤窗口。已推进区段的风险不重复计入。敌人固定在预测终点，
+尾段关系仍为潜力估算，未包含新的路线、对手响应或完整未来命令搜索。
+
+每次联合前缀评分收取一个工作单位，每个预测 20ms 步收取一个，预测叶评分再收取一个。
+固定容量的局部选项准入不运行完整计划评分或预测。先为 HOLD 与一个挑战计划预留完整
+预测预算；不足则保留合法 HOLD，或评价已展开的前缀。默认 CLI 预算 128、宽度 2、
+每成员最多 4 分支、时域 800ms：六名存活成员最多 44 次前缀评分与两次各 41 单位预测，
+共 126；提前终局时按实际步数计费，可能继续比较另一保留计划，仍不得超过总预算。
+较大宽度/时域须增加预算，否则可能无法展开完整小队。预算只改变搜索，不改变玩法。
+
+这版搜索深度是小队成员数；800ms 内保持根行动，真实对局每 200ms 重新求解。
+它尚未展开连续多个未来决策轮，也不预测敌方的策略响应。推进成本、观测准备成本和
+胜率必须通过实际 native 批次分别报告，不能由 Beam 名称或预算数推断收益。
+
 动态算法文件、策略语言、DSL/VM 与热加载按用户指示延期；普通 `.cfg` 只保存
 内置求解器参数，不是算法程序。操作见[战术实验指南](../guides/tactical-lab.md)。
