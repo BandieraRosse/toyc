@@ -91,6 +91,11 @@ Gunsmith、Logistics、Medic、Guard 的颜色和附件由 presentation-only pro
 
 ### Block 标准骨架
 
+GPU Scene 的标准 Block 来源通过 `rf_gpu_scene_block_bind` 和 `rf_gpu_scene_block_sample`
+分别输出固定几何与值类型 palette。两者只消费程序角色冻结输入；身体动作、握持与倒地复用
+CPU sampler，职业装备共用 box 枚举，武器使用同一挂点和坐标适配。动态几何入口继续作为
+CPU 路径和对照依据。常驻资源、AUX 借用及退休由[GPU 架构](gpu-rendering-architecture.md#程序角色常驻几何)拥有。
+
 Block 队友与网络玩家使用公开 `rf_block.rmesh`，由 `generate_rasterfall_block.py` 生成硬边方块身体。
 它复用 Humanoid V2 的完整 49 骨、rest 和八个挂点；身体分块以单骨权重保持棱角，领口使用双骨过渡。
 上臂、前臂、手掌、指节、大腿、小腿和脚都由标准 RFCHAR 骨架驱动，持枪不再按手部目标拉长方块。

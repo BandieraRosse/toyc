@@ -105,32 +105,50 @@ static int block_character_sample(const struct rasterfall_procedural_humanoid_st
     return 0;
 }
 
-static int block_equipment_box(struct toy_renderer *renderer,const struct camera *camera,
-    const struct rasterfall_model_instance *instance,const struct rasterfall_rigid_transform *world,
-    int head,int x0,int x1,int y0,int y1,int z0,int z1,uint32_t color)
+typedef int (*block_box_fn)(void *,int,int,int,int,int,int,int,uint32_t);
+static const int block_box_faces[]={0,2,3,0,3,1,4,5,7,4,7,6,0,1,5,0,5,4,
+    2,6,7,2,7,3,0,4,6,0,6,2,1,3,7,1,7,5};
+static int block_equipment_bind(const struct rasterfall_model_asset *model,
+    int head,int x0,int x1,int y0,int y1,int z0,int z1,double points[8][3])
 {
-    const struct rasterfall_model_asset *pose=rasterfall_model_instance_final_pose(instance);
     int role=head?RASTERFALL_HUMANOID_HEAD:
         y1<-400?RASTERFALL_HUMANOID_HIPS:RASTERFALL_HUMANOID_CHEST;
-    int bone=rasterfall_model_humanoid_bone(pose,role),pixels=0;
-    const struct rasterfall_model_bone_transform *transform=&pose->bone_transforms[bone];
-    struct vec3 points[8];
-    static const int faces[]={0,2,3,0,3,1,4,5,7,4,7,6,0,1,5,0,5,4,
-        2,6,7,2,7,3,0,4,6,0,6,2,1,3,7,1,7,5};
+    int bone=rasterfall_model_humanoid_bone(model,role);
+    if(bone<0)return -1;
     for (int i=0;i<8;++i) {
         double ly=(i&2)?y1:y0;
-        double bind[3]={-((i&1)?x1:x0)*.0018*512,
-            (head ? 1.72+ly*.0018 : .88+(ly+620)*.68/520)*512,
-            ((i&4)?z1:z0)*.0016*512};
+        points[i][0]=-((i&1)?x1:x0)*.0018*512;
+        points[i][1]=(head ? 1.72+ly*.0018 : .88+(ly+620)*.68/520)*512;
+        points[i][2]=((i&4)?z1:z0)*.0016*512;
+    }
+    return bone;
+}
+struct block_equipment_draw {
+    struct toy_renderer *renderer;
+    const struct camera *camera;
+    const struct rasterfall_model_instance *instance;
+    const struct rasterfall_rigid_transform *world;
+};
+static int block_equipment_box(void *opaque,
+    int head,int x0,int x1,int y0,int y1,int z0,int z1,uint32_t color)
+{
+    const struct block_equipment_draw *draw=opaque;
+    const struct rasterfall_model_asset *pose=rasterfall_model_instance_final_pose(draw->instance);
+    double bind[8][3];struct vec3 points[8];int pixels=0;
+    int bone=block_equipment_bind(pose,head,x0,x1,y0,y1,z0,z1,bind);
+    if(bone<0)return -1;
+    const struct rasterfall_model_bone_transform *transform=&pose->bone_transforms[bone];
+    for(int i=0;i<8;++i) {
         double rest[3]={pose->bones[bone].rest_x,pose->bones[bone].rest_y,pose->bones[bone].rest_z};
         double local[3],out[3];
-        for(int k=0;k<3;++k)local[k]=bind[k]-rest[k];
+        for(int k=0;k<3;++k)local[k]=bind[i][k]-rest[k];
         rigid_matrix_vector(transform->rotation,local,out);
         for(int k=0;k<3;++k)out[k]+=transform->position[k];
-        modular_weapon_world_point(world,out,&points[i]);
+        modular_weapon_world_point(draw->world,out,&points[i]);
     }
-    for(unsigned i=0;i<sizeof(faces)/sizeof(faces[0]);i+=3)
-        pixels+=draw_world_triangle(renderer,camera,&points[faces[i]],&points[faces[i+1]],&points[faces[i+2]],color);
+    for(unsigned i=0;i<sizeof(block_box_faces)/sizeof(block_box_faces[0]);i+=3)
+        pixels+=draw_world_triangle(draw->renderer,draw->camera,&points[block_box_faces[i]],
+            &points[block_box_faces[i+1]],&points[block_box_faces[i+2]],color);
     return pixels;
 }
 

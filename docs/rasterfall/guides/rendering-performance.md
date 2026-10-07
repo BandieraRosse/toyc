@@ -11,6 +11,51 @@ bridge 和 physical-device A/B 由 [GPU 验收与诊断](gpu-validation.md)与
 
 ## 先选正确入口
 
+### 程序 Block 常驻几何对照
+
+`tools/gpu_block_retained.py` 在当前已暂存的 Windows 程序上，以
+`RF_GPU_BLOCK_RETAINED=0/1` 作同包 AB/BA 对照；先通过 NativeCodex 构建并暂存。
+默认比较旧地图轻场景与初始 60 感染体，关闭逐三角形读时钟，记录 1080p 原生帧、
+阶段墙钟、主线程 CPU、温度/频率、实体范围及完整程序/资产哈希。检测到其他编译或
+游戏进程重叠会拒绝该轮。玩法按实时推进，压力组需同时报告实际存活范围。
+
+```powershell
+python tools/gpu_block_retained.py --output tmp/block-ab --rounds 5 --samples 720
+python tools/gpu_block_retained.py --output tmp/block-pixels --capture --rounds 1 --cases near0 near60 procedural block-lab
+```
+
+`--capture` 使用固定 tick，仅作画面验证，不进入正常性能结论；CPU 分步取整与 GPU
+合并求值存在细小差异，不能要求逐像素相同。公开姿态入口
+`RF_GPU_POSE_PUBLIC_TEST=1` 配合 `--gpu-scene-pose-test` 包含 Block 的职业、武器、
+动作、颜色/顺序与位置误差回归，不要求私有 RF-C01 模型。
+资源合同见[程序角色常驻几何](../architecture/gpu-rendering-architecture.md#程序角色常驻几何)。
+常驻路径的 `enemy_extract_us` 包含 palette 求值和必要的首次/外观变化 bind 构建；
+`enemy_upload_us` 包含 palette 上传。`enemy_geometry_reused` 仍描述旧动态三角形整项复用，
+不能用它估算常驻 bind 的命中率。比较收益优先看整帧和完整 `enemy_us`。
+本轮限定实测和画面、同步验证见[常驻几何现场](../archive/block-retained-20261007.md)。
+
+### 主线程 CPU 占比与同帧分解
+
+`tools/rf_cpu_profile.py` 在当前暂存 Windows 程序和资产的独立副本上，串行采样旧地图轻场景、
+60 敌人压力、前哨站一层及首图车间二层。统一 1080p，正常实时固定步和展示节流；
+各场景三轮细分、两轮关闭细分对照，保存原始日志、逐帧值、输入哈希、温度/频率和活动进程检查。
+检测到其他编译或游戏进程重叠时，该轮拒绝进入结果；`--resume` 可在同一冻结副本上续跑。
+`--coarse` 关闭逐三角形层计时，适合 CPU 占比与大阶段定位；`--source` 可复用已有冻结目录。
+本次两组相同快照的结果见[CPU 占比实测](../archive/cpu-profile-20261007.md)，
+更细的嵌套计时及其扰动见[详细诊断组](../archive/cpu-profile-detail-20261007.md)。
+
+```powershell
+python tools/rf_cpu_profile.py --output tmp/cpu-profile-new --samples 720 --rounds 3 --controls 2
+python tools/rf_cpu_profile_report.py tmp/cpu-profile-new/report.json --markdown docs/rasterfall/archive/cpu-profile-local.md
+```
+
+诊断组合 `RF_GPU_SCENE_PROFILE_SLOW=1`、`RF_GPU_SCENE_PROFILE_ALL=1` 保留预热后的全部
+`SCENE-SLOW`，上限 4096 条，并附加 `SCENE-COUNTS`；关闭 ALL 时仍只保留最慢 16 帧。
+全样本 CPU 与帧间隔均使用连续 begin-to-begin 端点，最后一张没有下一次 begin 的帧省略。
+累计线程 CPU / 累计帧墙钟表示主线程占用一个逻辑处理器的时间比例；不要将整帧减 GPU、
+CPU 分位数除以帧分位数，或各项包含等待的墙钟当作独占 CPU 时间。各细分按相同样本求均值，
+保留嵌套关系和未覆盖残差；OS CPU 粗粒度只适合累计窗口，不能解释单张短帧的占比。
+
 | 问题 | 入口 | 口径 |
 | --- | --- | --- |
 | 单个角色资源、pose、skinning、vertex cache、submission | `--character-performance` / `--character-performance-suite` | 角色微基准 |

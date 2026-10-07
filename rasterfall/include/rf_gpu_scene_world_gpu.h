@@ -67,6 +67,8 @@ struct scene_layer_workspace;
 struct scene_enemy_mesh;
 struct scene_enemy_cached;
 struct scene_actor_warm_pool;
+struct scene_block_gpu;
+struct scene_block_workspace;
 
 #define RF_GPU_SCENE_PICKUP_MODEL_COUNT 7
 #define RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES 4
@@ -119,6 +121,8 @@ struct rf_gpu_scene_world_gpu_probe {
     struct scene_layer_workspace *layer_workspace;
     struct scene_enemy_mesh *enemy_workspace;
     struct scene_enemy_cached *enemy_cached;
+    struct scene_block_workspace *block_workspace;
+    struct scene_block_gpu *block[TOY_GAME_MAX_ACTORS];
     int enemy_vertex_color;
     struct rf_gpu_graphics_batch_item *batch;
     uint32_t batch_capacity;

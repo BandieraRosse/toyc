@@ -9008,20 +9008,15 @@ static int render_player_avatar(struct toy_renderer *renderer,
 #include "render/rasterfall_block_character.inc"
 
 /* Legacy profession shapes are rigid followers of the finalized Block rig. */
-static int render_profession_visual(
-    struct toy_renderer *renderer, const struct camera *camera,
-    const struct rasterfall_model_instance *instance,
-    const struct rasterfall_rigid_transform *world,
-    const struct rasterfall_profession_visual_profile *p)
+static int block_profession_boxes(const struct rasterfall_profession_visual_profile *p,
+    block_box_fn emit,void *context)
 {
     int pixels = 0;
     uint32_t accent = p->accent_color, gear = p->gear_color;
 #define GEAR_BOX(x0,x1,y0,y1,z0,z1,c) \
-    pixels += block_equipment_box(renderer,camera,instance,world,0, \
-        x0,x1,y0,y1,z0,z1,c)
+    do { int n=emit(context,0,x0,x1,y0,y1,z0,z1,c); if(n<0)return -1; pixels+=n; } while(0)
 #define HEAD_BOX(x0,x1,y0,y1,z0,z1,c) \
-    pixels += block_equipment_box(renderer,camera,instance,world,1, \
-        x0,x1,y0,y1,z0,z1,c)
+    do { int n=emit(context,1,x0,x1,y0,y1,z0,z1,c); if(n<0)return -1; pixels+=n; } while(0)
     /* Shared harness language; base sleeves and trousers remain character-owned. */
     GEAR_BOX(-135,135,-520,-150,101,125,gear);
     GEAR_BOX(-165,165,-605,-555,-115,132,gear);
@@ -9111,6 +9106,16 @@ static int render_profession_visual(
 #undef HEAD_BOX
     return pixels;
 }
+
+static int render_profession_visual(struct toy_renderer *renderer,const struct camera *camera,
+    const struct rasterfall_model_instance *instance,const struct rasterfall_rigid_transform *world,
+    const struct rasterfall_profession_visual_profile *profile)
+{
+    struct block_equipment_draw draw={renderer,camera,instance,world};
+    return block_profession_boxes(profile,block_equipment_box,&draw);
+}
+
+#include "render/rf_gpu_scene_block_source.inc"
 
 int rasterfall_render_procedural_humanoid(
     struct toy_renderer *renderer, const struct camera *camera,

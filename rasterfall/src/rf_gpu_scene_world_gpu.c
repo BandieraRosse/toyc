@@ -1226,6 +1226,7 @@ static int scene_enemy_prepare_outside(const struct camera *camera,
     return scene_enemy_bound_outside(camera,width,height,min_x,max_x,
         min_y,max_y,min_z,max_z);
 }
+#include "render/rf_gpu_scene_block_gpu.inc"
 static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     const struct rf_gpu_scene_enemy_frame_v1 *frame,const struct camera *camera,
     uint32_t width,uint32_t height,struct rf_gpu_graphics_batch_item *items,
@@ -1248,6 +1249,8 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
     int vertex_color=!(legacy_color && legacy_color[0]=='1');
     const char *legacy_cache=getenv("RF_GPU_SCENE_LEGACY_ENEMY_CACHE");
     int cache=!(legacy_cache && !strcmp(legacy_cache,"1")) && !rebuild;
+    const char *block_mode=getenv("RF_GPU_BLOCK_RETAINED");
+    int retained_block=!(block_mode && !strcmp(block_mode,"0"));
     if(cache && !probe->enemy_cached) probe->enemy_cached=calloc(
         RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS,sizeof(*probe->enemy_cached));
     *procedural_draws=0;
@@ -1292,6 +1295,13 @@ static int enemy_draws_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
             scene_enemy_prepare_outside(camera,width,height,actor ? NULL : source,actor) &&
             (llabs((long long)source->x-camera->x)>131072 || llabs((long long)source->z-camera->z)>131072)) {
             (*prepare_culled)++;
+            continue;
+        }
+        if(actor && retained_block && !rebuild && rf_gpu_scene_block_supported(actor)) {
+            unsigned first=total;
+            if(scene_block_prepare(probe,i-frame->count,frame,actor,camera,width,height,
+                items,capacity,&total,extract_us,upload_us,draw_prepare_us,created,reused,triangles)<0)goto done;
+            *procedural_draws+=total-first;
             continue;
         }
         struct scene_enemy_cached *saved=probe->enemy_cached?&probe->enemy_cached[slot]:NULL;
@@ -1661,9 +1671,6 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
         actor_prepared++;
         draws+=count;actor_draws+=count;
     }
-    int64_t batch_start=rf_core_clock_now_us();
-    if (skin_batch && rf_gpu_graphics_skin_batch_end(probe->graphics)<0) goto done;
-    stats->actor_batch_us=skin_batch ? rf_core_clock_now_us()-batch_start : 0;
     stats->actor_prepare_us=rf_core_clock_now_us()-section_start;
     probe->shared_actor_count=actor_draws;
     stage="flags/projectiles/pickups";
@@ -1696,6 +1703,9 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             &stats->enemy_triangles,&stats->enemy_prepare_culled,&stats->enemy_geometry_reused)<0) goto done;
     draws+=enemy_draws;
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
+    int64_t batch_start=rf_core_clock_now_us();
+    if (skin_batch && rf_gpu_graphics_skin_batch_end(probe->graphics)<0) goto done;
+    stats->actor_batch_us=skin_batch ? rf_core_clock_now_us()-batch_start : 0;
     if(scene_lighting_lab_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
     stage="mesh-weaver";
     section_start=rf_core_clock_now_us();
@@ -1848,6 +1858,8 @@ done:
      * needed; their copied palette must never become a valid result cache. */
     rf_gpu_graphics_skin_batch_cancel(probe->graphics);
     if (result<0) {
+        for(unsigned i=0;i<TOY_GAME_MAX_ACTORS;++i)
+            if(probe->block[i])probe->block[i]->valid=0;
         for(uint32_t i=0;i<actor_prepared;++i)
             rf_gpu_scene_actor_gpu_invalidate_bind(probe->actor[i]);
     }
@@ -1889,6 +1901,10 @@ void rf_gpu_scene_world_gpu_probe_close(struct rf_gpu_scene_world_gpu_probe *pro
     if(probe->enemy_cached) for(unsigned i=0;i<RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS;++i)
         free(probe->enemy_cached[i].runs);
     free(probe->enemy_cached);probe->enemy_cached=NULL;
+    for(unsigned i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        scene_block_gpu_free(probe->graphics,probe->block[i]);probe->block[i]=NULL;
+    }
+    free(probe->block_workspace);probe->block_workspace=NULL;
     free(probe->batch);probe->batch=NULL;probe->batch_capacity=0;
     for (unsigned i=0;i<RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS;++i)
         if (probe->enemy[i])

@@ -91,7 +91,7 @@ quad 路径（65,536 quad 上限，继续不足时直接生成）。GPU 资源�
 共享生成器位于 `render/rf_display_geometry_cache.h`；GPU packet 由 layer workspace 持有，owner 关闭
 时统一释放。缓存属于渲染资源，不能引用玩法状态，也不按地图名称或实验区身份决定是否生效。
 
-敌人和程序角色的完整冻结值、world generation、顶点格式及 CPU 光照模式决定是否复用几何和 draw
+动态三角形路径以敌人和程序角色的完整冻结值、world generation、顶点格式及 CPU 光照模式决定是否复用几何和 draw
 段；只有输入完全相同且无需 CPU 顶点光照时跳过提取和上传，相机参数仍逐帧更新。动画采样和表现
 历史照常推进，主视图与阴影仍各自剔除。GPU 蒙皮仅在 bind 未变、palette 和顶点数完全一致且上次
 提交成功时跳过重复上传与 dispatch；取消的更新不能成为有效缓存。可映射的 bind/palette 缓冲保持
@@ -136,6 +136,31 @@ staging 中尚未提交的 bind 更新保留至下次消费，即使生产者下
 启动环境切到 GPU Scene 时保留 Win32/SDL 窗口句柄，先释放 SDL 硬件呈现器并建立软件呈现器，再为同一窗口创建 Vulkan surface；启动页仍由软件画布呈现，进入游戏后由 GPU Scene 接管。窗口 resize、swapchain 重建及错误注入必须按 graphics owner 的完成/退休顺序处理。失败时传播帧错误，不把残缺 Scene 帧解释为成功。实现边界与复现入口见[Scene 工作流](../guides/gpu-scene-fixture.md)和[Windows Native](../guides/windows-native.md)。
 
 正常交互帧由 Game Runtime 以 120 FPS 节流。其 Vulkan swapchain 优先选 immediate，其次 mailbox，均不可用时退回必备的 FIFO；前两者允许在 60 Hz 显示器上继续采样并提交更多帧，immediate 可能出现画面撕裂。固定帧诊断仍用 FIFO。该呈现选择不改变 GPU service、资源退休或固定逻辑步。玩法状态的双 tick 展示插值见[运行时架构](runtime.md)。
+
+## 程序角色常驻几何
+
+标准 Block carrier 默认由 `render/rf_gpu_scene_block_source.inc` 将固定身体、武器、职业装备和
+枪口闪光拆成 bind 几何与逐帧 palette。身体继续由原 `block_character_sample` 求动作及 IK；
+武器消费 finalized 挂点和原 adapter，装备消费 CPU 绘制共用的 box 枚举与骨骼归属。
+GPU 不推进动画、改写 Game 或反求玩法动作。平面靶和显式 CPU 顶点照明诊断保留三角形提取路径。
+
+`render/rf_gpu_scene_block_gpu.inc` 由 Scene probe 持有有界槽及一次构建 workspace；外观颜色、
+职业、武器或 world generation 变化重建 bind，普通移动和动画只更新 palette。
+顶点、三角形和不透明颜色段保留来源顺序；枪口闪光常驻但只在冻结状态要求时提交。
+完整世界旋转进入 palette，倒地/死亡/复活不受 yaw-only draw 限制；局部原点随角色移动，
+避免大世界坐标进入 FP32 骨骼求值。CPU 分步取整与 GPU 合并求值可产生少量 RFU 的舍入差，
+由几何对照及实机画面验证约束，不声明逐像素一致。
+
+资源沿用现有 GPU skin batch、当前姿态边界和主/AUX 独立可见性。主 owner 在敌人/程序来源
+准备后封存批次；AUX 只有在同帧、同世界和完整冻结输入一致时借用父资源，自己更新镜头参数。
+不匹配来源由子 owner 独立准备。更新、释放及取消遵守全部 reader 退休合同；取消的 GPU 姿态
+仍由通用 skin cache 失效，CPU 保存的 palette 不代表 GPU 已执行。每来源最多沿用 4096 三角形
+上限，probe 关闭释放资源和 workspace。`RF_GPU_BLOCK_RETAINED=0` 选择原动态三角形路径作同包对照。
+
+常驻 bind 和 GPU 蒙皮输出会增加显存容量：64 个槽全部达到上限时，bind、输出顶点和索引的
+理论 payload 为 `64 * 4096 * 3 * (88 + 56 + 4)`，约 111 MiB，另计 palette、可选 staging、
+描述符和对齐；这不是实际驻留测量。各槽按实际来源建立，CPU 仅共用一个有界构建 workspace，
+保留小型 palette 和颜色段。原动态来源槽可能同时保留历史容量，独立子 owner 也单独计费。
 
 ## 入图预热与多视图资源所有权
 

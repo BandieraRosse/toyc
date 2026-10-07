@@ -1,6 +1,7 @@
 #include "rf_gpu_scene_clothing_test.inc"
 #include "rf_gpu_scene_grip_test.inc"
 #include "rf_block_character_test.inc"
+#include "rf_gpu_scene_block_test.inc"
 struct scene_infected_test_geometry { uint64_t hash; unsigned count; int fail; };
 static int scene_infected_test_triangle(void *context,
     const struct rf_gpu_scene_enemy_point *a,const struct rf_gpu_scene_enemy_point *b,
@@ -561,6 +562,7 @@ int rf_gpu_scene_pose_logic_test(void)
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_pose_reuse_test());
+    POSE_CHECK(!scene_block_retained_test());
     const char *public_only=getenv("RF_GPU_POSE_PUBLIC_TEST");
     if(public_only && !strcmp(public_only,"1"))return 0;
     POSE_CHECK(!scene_independent_enemy_source_test());

@@ -8,29 +8,36 @@ static int rf_scene_perf_cpu_enabled;
 struct rf_scene_cost_sample {
     uint64_t frame,scene_frame,world;
     unsigned mission,scene_warmup;
-    int phase,phase_ms,eligible;
+    int phase,phase_ms,eligible,actors_alive,enemies_alive;
     int64_t interval,active,cpu,logic,source,freeze,pose;
     struct rf_gpu_scene_world_gpu_probe_stats gpu;
 };
 static struct {
-    int enabled,count,counter_scope,unknown_scope;
+    int enabled,count,counter_scope,unknown_scope,all_frames;
     uint64_t world,eligible_ended,eligible_ranked,excluded,nonpositive;
     unsigned mission,scene_warmup;
     int64_t began,previous_begin,cpu_begin;
-    struct rf_scene_cost_sample pending,worst[16];
+    struct rf_scene_cost_sample pending,worst[4096];
 } rf_scene_cost;
 static void rf_scene_cost_begin(int64_t now)
 {
     if(!rf_scene_cost.enabled && !rf_scene_perf_cpu_enabled) return;
+    int64_t cpu_now=(int64_t)toy_platform_thread_cpu_us();
     if(rf_scene_cost.enabled && (rf_scene_cost.counter_scope?rf_scene_cost.pending.eligible:rf_scene_cost.pending.frame>120) && rf_scene_cost.previous_begin) {
         struct rf_scene_cost_sample value=rf_scene_cost.pending;
         value.interval=now-rf_scene_cost.previous_begin;
+        /* Full sampling uses matching begin-to-begin CPU and wall endpoints.
+         * Aggregate CPU deltas over the whole window: Windows thread time is
+         * too coarse to interpret individual short-frame percentages. */
+        if(rf_scene_cost.all_frames)
+            value.cpu=cpu_now-rf_scene_cost.cpu_begin;
         if(rf_scene_cost.counter_scope && value.interval<=0) {
             rf_scene_cost.nonpositive++;goto finish_pending;
         }
         rf_scene_cost.eligible_ranked++;
         int at=rf_scene_cost.count;
-        if(at==16) {
+        if(at==(rf_scene_cost.all_frames?4096:16)) {
+            if(rf_scene_cost.all_frames) goto finish_pending;
             at=0;
             for(int i=1;i<16;++i) if(rf_scene_cost.worst[i].interval<rf_scene_cost.worst[at].interval) at=i;
             if(value.interval<=rf_scene_cost.worst[at].interval) at=-1;
@@ -40,7 +47,7 @@ static void rf_scene_cost_begin(int64_t now)
 finish_pending:
     memset(&rf_scene_cost.pending,0,sizeof(rf_scene_cost.pending));
     rf_scene_cost.previous_begin=rf_scene_cost.began=now;
-    rf_scene_cost.cpu_begin=(int64_t)toy_platform_thread_cpu_us();
+    rf_scene_cost.cpu_begin=cpu_now;
 }
 static void rf_scene_cost_end(uint64_t frame,int64_t logic,int64_t source,int64_t freeze,int64_t pose,
     const struct rf_gpu_scene_world_gpu_probe_stats *gpu,
@@ -55,6 +62,12 @@ static void rf_scene_cost_end(uint64_t frame,int64_t logic,int64_t source,int64_
      * read new runtime state at the following begin to label this row. */
     s->scene_frame=frozen->frame_id;s->world=frozen->world_generation;
     const struct rasterfall_session *session=runtime->session;
+    for(unsigned i=0;rf_scene_cost.all_frames && i<TOY_GAME_MAX_ACTORS;++i)
+        s->actors_alive+=session->game_state.actors[i].active &&
+            session->game_state.actors[i].hp>0;
+    for(unsigned i=0;rf_scene_cost.all_frames && i<TOY_GAME_MAX_ENEMIES;++i)
+        s->enemies_alive+=session->game_state.enemies[i].active &&
+            session->game_state.enemies[i].hp>0;
     s->mission=session->frontier.mission_id;
     s->phase=session->frontier.phase;s->phase_ms=session->frontier.phase_ms;
     int frontier=session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 &&
@@ -78,15 +91,20 @@ static void rf_scene_cost_end(uint64_t frame,int64_t logic,int64_t source,int64_
 static void rf_scene_cost_report(void)
 {
     if(!rf_scene_cost.enabled) return;
-    __printf("SCENE-SLOW-META schema=2 scope=%s unknown_scope=%d warmup=120 min_phase_ms=%d cap=16 ranking=interval eligible_ended=%llu eligible_ranked=%llu excluded=%llu nonpositive_interval=%llu selected=%d pending_last_frame_omitted=%d\n",
+    __printf("SCENE-SLOW-META schema=2 scope=%s unknown_scope=%d warmup=120 min_phase_ms=%d cap=%d ranking=%s eligible_ended=%llu eligible_ranked=%llu excluded=%llu nonpositive_interval=%llu selected=%d pending_last_frame_omitted=%d\n",
         rf_scene_cost.counter_scope?"frontier-counter":"global",rf_scene_cost.unknown_scope,
         rf_scene_cost.counter_scope?16000:0,
+        rf_scene_cost.all_frames?4096:16,rf_scene_cost.all_frames?"all":"interval",
         (unsigned long long)rf_scene_cost.eligible_ended,(unsigned long long)rf_scene_cost.eligible_ranked,
         (unsigned long long)rf_scene_cost.excluded,(unsigned long long)rf_scene_cost.nonpositive,
         rf_scene_cost.count,rf_scene_cost.pending.frame!=0);
     for(int i=0;i<rf_scene_cost.count;++i) {
         const struct rf_scene_cost_sample *s=&rf_scene_cost.worst[i];
         const struct rf_gpu_scene_world_gpu_probe_stats *g=&s->gpu;
+        if(rf_scene_cost.all_frames)
+            __printf("SCENE-COUNTS frame=%llu actors_alive=%d enemies_alive=%d draws=%u shadows=%u\n",
+                (unsigned long long)s->frame,s->actors_alive,s->enemies_alive,
+                g->native_draws,g->shadow_draws);
         __printf("SCENE-SLOW frame=%llu scene_frame=%llu world=%llu mission=%u phase=%d phase_ms=%d scene_warmup=%u main_query_frame=%llu interval_us=%lld active_us=%lld thread_cpu_us=%lld logic_us=%lld source_us=%lld freeze_us=%lld pose_us=%lld world_us=%lld actors_us=%lld enemy_us=%lld layers_us=%lld lighting_us=%lld extract_us=%lld clip_us=%lld pack_us=%lld upload_us=%lld batch_us=%lld skin_batch_us=%lld record_us=%lld acquire_us=%lld queue_us=%lld present_us=%lld retire_us=%lld gpu_us=%lld bytes=%llu enemy_reused=%u skin_reused=%u misc_us=%lld weaver_us=%lld aux_us=%lld aux_refresh_mask=%u aux_gpu_valid_mask=%u aux0_before=%llu aux0_after=%llu aux0_cpu_us=%lld aux0_gpu_us=%lld aux1_before=%llu aux1_after=%llu aux1_cpu_us=%lld aux1_gpu_us=%lld enemy_extract_us=%lld enemy_upload_us=%lld enemy_draw_us=%lld enemy_created=%u enemy_triangles=%u\n",
             (unsigned long long)s->frame,(unsigned long long)s->scene_frame,
             (unsigned long long)s->world,s->mission,s->phase,s->phase_ms,s->scene_warmup,
@@ -125,6 +143,8 @@ static void rf_scene_perf_init(int allowed)
     rf_scene_perf_cpu_enabled=0;
     const char *slow=getenv("RF_GPU_SCENE_PROFILE_SLOW");
     rf_scene_cost.enabled=slow && !strcmp(slow,"1");
+    const char *all=getenv("RF_GPU_SCENE_PROFILE_ALL");
+    rf_scene_cost.all_frames=rf_scene_cost.enabled && all && !strcmp(all,"1");
     if(rf_scene_cost.enabled) {
         const char *scope=getenv("RF_GPU_SCENE_PROFILE_SLOW_SCOPE");
         rf_scene_cost.counter_scope=scope && !strcmp(scope,"frontier-counter");

@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+程序 Block 角色的常驻网格、骨骼与武器变换、主/AUX 资源复用从
+[GPU 渲染架构](architecture/gpu-rendering-architecture.md#程序角色常驻几何)进入；
+冻结姿态和职业装备来源归[角色表现](architecture/character-presentation.md#block-标准骨架)。
+
 光照性能优化从[同包对照指南](guides/gpu-lighting.md#保持画面的光照性能对照)进入，探针权重复用与
 深度分段灯表归[光照架构](architecture/gpu-lighting.md)，WORLD 深度预通道归[GPU 渲染架构](architecture/gpu-rendering-architecture.md#scene-资源与同步)。
 接收缓存 FP16、静态/动态区域与三维灯表同由光照架构维护；蒙皮与主/AUX 消费者合并提交、
