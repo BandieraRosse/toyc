@@ -638,6 +638,7 @@ struct toy_game_enemy {
     unsigned short nav_flow_rejected[32];
     int nav_flow_reject_count;
     int nav_stuck_ms;
+    int nav_unit_blocked; /* Previous movement met a live body, not a broken route. */
     int nav_direct_blocked_ms;
     uint64_t nav_direct_tick;
     int nav_direct_valid, nav_direct_result;
@@ -1138,7 +1139,7 @@ void toy_game_set_primitives(struct toy_game *g,
                              const struct toy_map_primitive *primitives,
                              int primitive_count, int room_limit);
 void toy_game_rebuild_navigation(struct toy_game *g);
-/* Returns true only for a physically traversable nearby segment. */
+/* Static terrain connection; transient units do not invalidate navigation. */
 int toy_game_short_connection(const struct toy_game *g,
                               int x0, int z0, int x1, int z1,
                               int radius, int ground_y);
@@ -1147,6 +1148,9 @@ struct toy_game_ground_query toy_game_query_ground(
 int  toy_game_position_blocked_at_height(const struct toy_game *g,
                                          int x, int z, int radius,
                                          int ground_height);
+/* Normal real pool members sweep against terrain and live unit bodies.
+ * Detached navigation probes query terrain only. Special forced motion keeps
+ * its own policy; failed transactional moves leave body state unchanged. */
 int  toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
                              int x, int z);
 int  toy_game_move_actor_sliding(struct toy_game *g,

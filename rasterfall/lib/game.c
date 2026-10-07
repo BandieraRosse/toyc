@@ -1351,7 +1351,7 @@ int toy_game_position_blocked_at_height(const struct toy_game *g,
     return position_blocked_at_height(g, x, z, radius, ground_height, 1);
 }
 
-int toy_game_try_move_actor(struct toy_game *g, struct toy_game_actor *actor,
+static int actor_try_move_terrain(struct toy_game *g, struct toy_game_actor *actor,
                             int x, int z)
 {
     struct toy_game_ground_query ground;
@@ -1436,7 +1436,7 @@ static int probe_actor_move(struct toy_game *g, struct toy_game_actor *actor,
     return result;
 }
 
-int toy_game_move_actor_sliding(struct toy_game *g,
+static int actor_move_sliding_base(struct toy_game *g,
                                 struct toy_game_actor *actor,
                                 int dx, int dz)
 {
@@ -1852,7 +1852,7 @@ static int point_on_walkable_ramp(const struct toy_game *g, int x, int z,
 
 /* Carry support height through each horizontal step.  Testing a ramp step at
  * the previous height makes the uphill part look like a wall to enemies. */
-static int enemy_try_step(struct toy_game *g, struct toy_game_enemy *e,
+static int enemy_try_step_terrain(struct toy_game *g, struct toy_game_enemy *e,
                           int x, int z, int radius)
 {
     struct toy_game_ground_query ground, current_ground;
@@ -1888,6 +1888,8 @@ static int enemy_radius(const struct toy_game_enemy *e)
            ability == TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH ?
            TOY_GAME_CHARGER_RADIUS : TOY_GAME_ENEMY_RADIUS;
 }
+
+#include "game_unit_collision.inc"
 
 static void update_enemy_ground(struct toy_game *g,
                                 struct toy_game_enemy *e)
@@ -2583,54 +2585,22 @@ static void update_campaign(struct toy_game *g, int dt_ms)
 
 /* ── 僵尸 AI ───────────────────────────────────────────────────── */
 
-/* A close enemy that damages the player is briefly launched away from the
- * player as well.  This keeps the hit reaction directional and gives the
- * managed player a small amount of breathing room without changing damage. */
-static void push_enemy_from_player(struct toy_game *g,
-                                   struct toy_game_enemy *e, int knockback)
-{
-    const struct toy_game_actor *player = toy_game_local_player_actor_const(g);
-    int dx, dz, distance;
-    if (!g || !player || !player->active || !e || e->active != 1 ||
-        e->airborne_ms > 0) return;
-    dx = e->x - player->x;
-    dz = e->z - player->z;
-    distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (distance <= 0) return;
-    e->airborne_ms = TOY_GAME_AIRBORNE_MS;
-    e->airborne_y = 0;
-    e->vertical_velocity = TOY_GAME_AIRBORNE_VELOCITY;
-    e->knockback_x = dx * knockback / distance;
-    e->knockback_z = dz * knockback / distance;
-    e->hurt = 180;
-}
-
 static void bite_player(struct toy_game *g, struct toy_game_enemy *e)
 {
     const struct toy_game_enemy_info *info = toy_game_enemy_info(e->type);
     struct toy_game_actor *player = toy_game_local_player_actor(g);
-    int knockback_ready;
     struct toy_game_attack attack = {0};
     struct toy_game_damage_result result;
     if (!player || !player->active || player->state != TOY_GAME_ACTOR_ALIVE ||
         e->bite_cooldown_ms > 0) return;
     e->bite_cooldown_ms = TOY_GAME_BITE_MS;
-    knockback_ready = player->knockback_cooldown_ms <= 0;
-    /* Keep the bite's historical one-shot reaction (the enemy is pushed,
-     * while the player is not launched).  The state itself is nevertheless
-     * actor-owned; the generic impact path is reserved for explosive and
-     * special hits that explicitly launch their victim. */
+    /* A bite deals damage without an automatic player counter-knockback. */
     attack.kind = TOY_GAME_ATTACK_BITE;
     attack.base_damage_milli = attack.health_damage_milli = info->bite_damage * 1000;
     attack.source_x = e->x; attack.source_z = e->z;
     result = toy_game_damage_actor(g, NULL, player, &attack);
     if (!result.health_damage) return;
     e->hurt = 150;
-    if (knockback_ready) {
-        push_enemy_from_player(g, e, TOY_GAME_CHARGER_KNOCKBACK_SPEED);
-        player->knockback_cooldown_ms =
-            TOY_GAME_PLAYER_KNOCKBACK_COOLDOWN_MS;
-    }
     push_event(g, TOY_GAME_EV_BITE);
 }
 
@@ -2842,7 +2812,7 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     int direct, exploring = 0, move_radius = enemy_radius(e);
     int same_height = 1;
     if (g->nav_flow_enabled) move_radius = TOY_GAME_ENEMY_RADIUS;
-    if (g->nav_flow_enabled && dist < TOY_GAME_ATTACK_RANGE && e->nav_target_actor >= 0) {
+    if (g->nav_flow_enabled && dist < enemy_contact_attack_range(e) && e->nav_target_actor >= 0) {
         const struct toy_game_actor *target = &g->actors[e->nav_target_actor];
         int dy = target->ground_y - e->ground_y;
         /* Normal actor ground is authoritative. Only resolve mismatched
@@ -2856,7 +2826,7 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
         same_height = dy >= -TOY_CONFIG_GROUND_STEP_HEIGHT &&
                       dy <= TOY_CONFIG_GROUND_STEP_HEIGHT;
     }
-    if (dist < TOY_GAME_ATTACK_RANGE && same_height) {
+    if (dist < enemy_contact_attack_range(e) && same_height) {
         if (target_kind == 0 && !player_in_safe_room(g)) bite_player(g, e);
         else if (target_kind == TOY_GAME_TARGET_ACTOR) bite_ai(g, e);
         return;
@@ -2957,8 +2927,7 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
     nz = (int)((long long)dz * step / dist);
     old_x = e->x;
     old_z = e->z;
-    enemy_try_step(g, e, e->x + nx, e->z, move_radius);
-    enemy_try_step(g, e, e->x, e->z + nz, move_radius);
+    enemy_move_sliding(g, e, nx, nz, move_radius);
     if (exploring) {
         if (e->x == old_x && e->z == old_z) {
             int hand = ((unsigned int)(e - g->enemies) & 1) ? 1 : 7;
@@ -3258,13 +3227,25 @@ int toy_game_move_actor_forced_swept(struct toy_game *g,
         int target_z = start_z + (int)((long long)dz * i / steps);
         int height = old_height +
             (int)((long long)(new_height - old_height) * i / steps);
+        int previous_height = old_height +
+            (int)((long long)(new_height - old_height) * (i-1) / steps);
+        struct unit_contact contact_x = {UNIT_SWEEP_SCALE,0,0};
+        struct unit_contact contact_z = {UNIT_SWEEP_SCALE,0,0};
+        if (unit_actor_moving(g,actor))
+            contact_x = unit_sweep(g,actor,NULL,actor->x,actor->z,previous_height,
+                target_x-actor->x,0,height,TOY_GAME_PLAYER_RADIUS);
         if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_X) &&
+            contact_x.fraction == UNIT_SWEEP_SCALE &&
             !position_blocked_at_height(g, target_x, actor->z,
                                         TOY_GAME_PLAYER_RADIUS, height, 0))
             actor->x = target_x;
         else
             blocked |= TOY_GAME_FORCED_MOVE_BLOCKED_X;
+        if (unit_actor_moving(g,actor))
+            contact_z = unit_sweep(g,actor,NULL,actor->x,actor->z,previous_height,
+                0,target_z-actor->z,height,TOY_GAME_PLAYER_RADIUS);
         if (!(blocked & TOY_GAME_FORCED_MOVE_BLOCKED_Z) &&
+            contact_z.fraction == UNIT_SWEEP_SCALE &&
             !position_blocked_at_height(g, actor->x, target_z,
                                         TOY_GAME_PLAYER_RADIUS, height, 0))
             actor->z = target_z;
@@ -3723,7 +3704,7 @@ static int nav_next_waypoint(const struct toy_game *g,
     int *out_x, int *out_z)
 {
     return nav_next_waypoint_impl(g, x, z, target_x, target_z, radius,
-        ground_y, out_x, out_z, 0, 0);
+        ground_y, out_x, out_z, 1, 0);
 }
 
 static int enemy_nav_group_valid(const struct toy_game *g,
@@ -4217,10 +4198,17 @@ static int enemy_nav_retained_waypoint(struct toy_game_enemy *e,
         long long dx = (long long)e->nav_x - e->x;
         long long dz = (long long)e->nav_z - e->z;
         long long remaining = dx * dx + dz * dz;
+        int contact_range=enemy_radius(e)*2+e->speed+32;
+        if (e->nav_unit_blocked && remaining<(long long)contact_range*contact_range) {
+            /* Attach to a later node only after proving its terrain segment. */
+            e->nav_active=0; e->nav_stuck_ms=0;
+            return 0;
+        }
         if (remaining + 24LL * 24 < e->nav_best_distance2) {
             e->nav_best_distance2 = remaining;
             e->nav_stuck_ms = 0;
-        } else e->nav_stuck_ms += 16;
+        } else if (e->nav_unit_blocked) e->nav_stuck_ms = 0;
+        else e->nav_stuck_ms += 16;
         if (remaining > 8LL * 8 &&
             e->nav_stuck_ms < 800) {
             *out_x = e->nav_x; *out_z = e->nav_z;
@@ -4481,18 +4469,36 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
         target_x==a->command_x && target_z==a->command_z) {
         if(!toy_game_actor_navigation_target_height(g,a,target_x,a->command_y,target_z,
             speed,dt_ms,&steer_x,&steer_z))return;
-    } else toy_game_actor_navigation_target(g, a, target_x, target_z, speed, dt_ms,
-        &steer_x, &steer_z);
+    } else if (!toy_game_actor_navigation_target(g, a, target_x, target_z, speed, dt_ms,
+        &steer_x, &steer_z)) return;
     dx = steer_x - a->x;
     dz = steer_z - a->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (distance > 0) {
         int step_x = (int)((long long)dx * speed / distance);
         int step_z = (int)((long long)dz * speed / distance);
+        struct unit_contact contact = {UNIT_SWEEP_SCALE,0,0};
+        if (unit_actor_moving(g,a))
+            contact = unit_sweep(g,a,NULL,a->x,a->z,a->ground_y,
+                step_x,step_z,a->ground_y,TOY_GAME_PLAYER_RADIUS);
         move_actor_forced(g, a, step_x, step_z);
         if (a->x != start_x + step_x || a->z != start_z + step_z) {
+            /* A side displacement leaves the corridor whose straight
+             * connection was cached. Recheck that proof, retaining routes. */
             a->nav_direct_valid = 0;
-            if(a->nav_layer_count)toy_game_actor_cancel_navigation(a);
+            if (contact.fraction != UNIT_SWEEP_SCALE) {
+                /* Local clockwise avoidance gives opposing walkers opposite
+                 * sides. A blocked sidestep waits; it never erases a proved
+                 * terrain route or moves the stationary blocker. */
+                int normal = isqrt((long long)contact.nx*contact.nx +
+                                    (long long)contact.nz*contact.nz);
+                if (normal && a->x == start_x && a->z == start_z)
+                    toy_game_move_actor_sliding(g,a,
+                        (int)(-(long long)contact.nz*speed/normal),
+                        (int)((long long)contact.nx*speed/normal));
+            } else {
+                if(a->nav_layer_count)toy_game_actor_cancel_navigation(a);
+            }
             if (g->update_profile) g->update_profile->actor_direct_blocked++;
         }
     }
@@ -4711,7 +4717,7 @@ int toy_game_move_player_input(struct toy_game *g, int actor_index,
 {
     const int scale = 1024;
     struct toy_game_actor *actor;
-    int target_x = 0, target_z = 0, dx, dz, change, before_x, before_z, accel;
+    int target_x = 0, target_z = 0, dx, dz, change, before_x, before_z, before_y, accel;
     long long length2, length;
     if (!g || actor_index < 0 || actor_index >= TOY_GAME_MAX_ACTORS) return 0;
     actor = &g->actors[actor_index];
@@ -4795,13 +4801,24 @@ int toy_game_move_player_input(struct toy_game *g, int actor_index,
     dz = actor->move_remainder_z / scale;
     actor->move_remainder_x -= dx * scale;
     actor->move_remainder_z -= dz * scale;
-    before_x = actor->x; before_z = actor->z;
+    before_x = actor->x; before_z = actor->z; before_y = actor->ground_y;
     toy_game_move_actor_sliding(g, actor, dx, dz);
-    if (actor->x != before_x + dx) {
-        actor->move_velocity_x = actor->move_remainder_x = 0;
-    }
-    if (actor->z != before_z + dz) {
-        actor->move_velocity_z = actor->move_remainder_z = 0;
+    if (actor->x != before_x + dx || actor->z != before_z + dz) {
+        struct unit_contact contact = unit_sweep(g,actor,NULL,before_x,before_z,
+            before_y,dx,dz,actor->ground_y+actor->airborne_y,TOY_GAME_PLAYER_RADIUS);
+        if (contact.fraction != UNIT_SWEEP_SCALE) {
+            /* Circle contacts can change both axes while retaining useful
+             * tangential motion. Carry the accepted velocity into the next
+             * input tick instead of treating both axes as blocked walls. */
+            actor->move_velocity_x = (actor->x-before_x)*scale;
+            actor->move_velocity_z = (actor->z-before_z)*scale;
+            actor->move_remainder_x = actor->move_remainder_z = 0;
+        } else {
+            if (actor->x != before_x + dx)
+                actor->move_velocity_x = actor->move_remainder_x = 0;
+            if (actor->z != before_z + dz)
+                actor->move_velocity_z = actor->move_remainder_z = 0;
+        }
     }
     if (actor->airborne_ms > 0) {
         /* Walking off an edge keeps the actual horizontal momentum. */
@@ -5329,7 +5346,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
         e->target_z = target_z;
         return;
     }
-    if (dist > TOY_GAME_ATTACK_RANGE) chase_enemy(g, e, dx, dz, dist, 0);
+    if (dist > enemy_contact_attack_range(e)) chase_enemy(g, e, dx, dz, dist, 0);
 }
 
 static int tank_target_in_sweep(const struct toy_game_enemy *tank,
@@ -5589,7 +5606,10 @@ static void separate_flow_enemies(struct toy_game *g)
         if (length > maximum) { x = x * maximum / length; z = z * maximum / length; }
         /* A separation nudge is deliberately conservative at floor seams.
          * One body/support query suffices; ordinary locomotion owns climbing. */
-        if (!enemy_step_blocked(g, e, e->x + x, e->z + z,
+        struct unit_contact contact = unit_sweep(g,NULL,e,e->x,e->z,e->ground_y,
+            x,z,e->ground_y,enemy_radius(e));
+        if (contact.fraction == UNIT_SWEEP_SCALE &&
+            !enemy_step_blocked(g, e, e->x + x, e->z + z,
                                 TOY_GAME_ENEMY_RADIUS, e->ground_y, 1)) {
             e->x += x; e->z += z;
         }
@@ -5644,7 +5664,9 @@ static void separate_enemies(struct toy_game *g)
             pz = pz * maximum / length;
         }
         if ((px || pz) &&
-            !enemy_position_blocked(g, e->x + px, e->z + pz, radius)) {
+            unit_sweep(g,NULL,e,e->x,e->z,e->ground_y,px,pz,e->ground_y,
+                enemy_radius(e)).fraction == UNIT_SWEEP_SCALE &&
+            !enemy_position_blocked(g, e->x + px, e->z + pz, radius+UNIT_CONTACT_SKIN)) {
             e->x += px; e->z += pz;
         }
         if (e->x < -limit) e->x = -limit;

@@ -836,9 +836,40 @@ static int enemy_flow_waypoint_impl(struct toy_game *g, struct toy_game_enemy *e
         long long dx = (long long)e->nav_x - e->x;
         long long dz = (long long)e->nav_z - e->z;
         long long d = dx * dx + dz * dz;
+        /* Stagger connector proofs so front ranks cannot consume the local
+         * allowance every tick while the back of a queue waits forever. */
+        if (e->nav_unit_blocked && e->nav_flow_node && !f->clearing &&
+            !((g->nav_tick+(unsigned int)(e-g->enemies)) & 15)) {
+            int next = f->next[e->nav_flow_node];
+            if (next == e->nav_flow_node &&
+                flow_connection(g,e->x,e->z,e->ground_y,tx,tz,ty,1) > 0) {
+                /* The target anchor can itself be occupied. Release it once
+                 * the final approach is proved from the displaced body. */
+                e->nav_active = 0; e->nav_flow_node = 0;
+                f->requested[e-g->enemies] = 0;
+                *out_x = tx; *out_z = tz;
+                return 1;
+            }
+            if (next && next != e->nav_flow_node) {
+                const struct toy_game_flow_node *p = &g->flow_nodes[next];
+                /* A crowded waypoint is not a terrain failure. Bypass it
+                 * only with a budgeted static proof to its successor; do
+                 * not publish an arrival hint for a node never reached. */
+                if (flow_connection(g,e->x,e->z,e->ground_y,
+                                    p->x,p->z,p->y,1) > 0) {
+                    e->nav_flow_node = next;
+                    e->nav_x = p->x; e->nav_z = p->z;
+                    e->nav_depart_cell = -1;
+                    dx = (long long)p->x-e->x; dz = (long long)p->z-e->z;
+                    d = dx*dx+dz*dz;
+                    e->nav_best_distance2 = d; e->nav_stuck_ms = 0;
+                }
+            }
+        }
         if (d + 16 < e->nav_best_distance2) {
             e->nav_best_distance2 = d; e->nav_stuck_ms = 0;
-        } else e->nav_stuck_ms += 16;
+        } else if (e->nav_unit_blocked) e->nav_stuck_ms = 0;
+        else e->nav_stuck_ms += 16;
         if (d > 4 && e->nav_stuck_ms < 800) {
             *out_x = e->nav_x; *out_z = e->nav_z; return 1;
         }

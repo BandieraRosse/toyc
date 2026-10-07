@@ -217,18 +217,20 @@ static int actor_endpoint_navigation_logic_test(void)
     world[2].minx=door+1200;world[2].maxx=50000;
     world[1].minz=world[2].minz=-100;world[1].maxz=world[2].maxz=100;
     world[3].minx=door-3900;world[3].maxx=door-3300;
-    world[3].minz=-5500;world[3].maxz=-4500;
+    world[3].minz=-6500;world[3].maxz=-3500;
     world[4].minx=door+1250;world[4].maxx=door+1850;
-    world[4].minz=4500;world[4].maxz=5500;
+    world[4].minz=3500;world[4].maxz=6500;
     world[5].minx=door-1200;world[5].maxx=door+1200;
     world[5].minz=-100;world[5].maxz=100;world[5].flags=0;
     toy_game_rebuild_navigation(&g);
     for(n=0;n<5;n++) {
-        int id=toy_game_add_ai(&g,TOY_GAME_AI_LEVEL_2,door-4500+n*50,-5000,"ENDPOINT CONTRACT");
+        /* Distinct body-sized slots keep the endpoint contract physically
+         * possible now that actors cannot occupy one another's positions. */
+        int id=toy_game_add_ai(&g,TOY_GAME_AI_LEVEL_2,door-4500+n*50,-5800+n*400,"ENDPOINT CONTRACT");
         struct toy_game_actor *a=toy_game_actor_by_id(&g,id);
         if(!a)return 1;
         indices[n]=(int)(a-g.actors);a->fire_enabled=0;
-        a->command_destination_active=1;a->command_x=door+650+n*50;a->command_z=5000;
+        a->command_destination_active=1;a->command_x=door+650+n*50;a->command_z=4200+n*400;
         i=(a->z-g.nav_origin)/g.nav_cell_size*g.nav_width+(a->x-g.nav_origin)/g.nav_cell_size;
         if(g.nav_walkable[i] || toy_game_position_blocked_at_height(&g,a->x,a->z,TOY_GAME_PLAYER_RADIUS,0))return 2;
         i=(a->command_z-g.nav_origin)/g.nav_cell_size*g.nav_width+(a->command_x-g.nav_origin)/g.nav_cell_size;
@@ -246,7 +248,7 @@ static int actor_endpoint_navigation_logic_test(void)
         struct toy_game_actor *a=&g.actors[indices[n]];
         long long dx=(long long)a->x-a->command_x,dz=(long long)a->z-a->command_z;
         if(dx*dx+dz*dz>200LL*200 || !a->command_destination_active)return 6;
-        toy_game_actor_cancel_navigation(a);a->command_x=door-4500+n*50;a->command_z=-5000;
+        toy_game_actor_cancel_navigation(a);a->command_x=door-4500+n*50;a->command_z=-5800+n*400;
     }
     world[5].flags=TOY_MAP_PRIMITIVE_COLLISION;toy_game_rebuild_navigation(&g);
     for(i=0;i<300;i++) {
@@ -258,7 +260,11 @@ static int actor_endpoint_navigation_logic_test(void)
     for(n=0;n<5;n++) {
         struct toy_game_actor *a=&g.actors[indices[n]];
         long long dx=(long long)a->x-a->command_x,dz=(long long)a->z-a->command_z;
-        if(dx*dx+dz*dz>200LL*200)return 8;
+        if(dx*dx+dz*dz>200LL*200) {
+            __fprintf(2,"ACTOR-NAV return member=%d pos=%d,%d goal=%d,%d waypoint=%d,%d active=%d\n",
+                n,a->x,a->z,a->command_x,a->command_z,a->nav_x,a->nav_z,a->nav_active);
+            return 8;
+        }
     }
     __printf("ACTOR-NAV conservative-endpoints/five-actors/narrow-door/closed-wall/reopen passed\n");
     return 0;

@@ -15,12 +15,14 @@ static int enemy_flow_logic_test(void)
                                       TOY_MAP_PRIMITIVE_COLLISION);
         toy_game_set_primitives(&g, world, 2, 6000);
         g.actors[0].x = 3000; g.actors[0].z = 0; g.actors[0].hp = 100000;
-        g.actors[0].knockback_cooldown_ms = 1000000;
+        /* Route cost is measured from clear bodies, not intersecting spawns. */
         for (i = 0; i < population; ++i)
-            toy_game_place_enemy(&g, -3200 - (i / 8) * 180, (i % 8) * 220 - 770);
+            toy_game_place_enemy(&g, -3200 - (i / 8) * 300, (i % 8) * 300 - 1050);
         memset(&profile, 0, sizeof(profile));
         g.update_profile = &profile;
-        for (tick = 0; tick < 900; ++tick) {
+        /* Solid bodies queue around the obstacle; retain all-member arrival
+         * and per-tick/shared-work bounds with a finite traversal window. */
+        for (tick = 0; tick < 1200; ++tick) {
             unsigned int edges = profile.flow_edges, samples = profile.flow_samples;
             toy_game_update_world(&g, 16);
             if (profile.flow_edges - edges > TOY_GAME_FLOW_EDGES_PER_TICK ||
