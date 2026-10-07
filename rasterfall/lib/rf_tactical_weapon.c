@@ -222,9 +222,9 @@ static double rf_tw_uniform(unsigned int *rng) {
     return ((rf_tw_rng_next(rng) >> 8) + 0.5) / 16777216.0;
 }
 
-void rf_tw_sample_shot(const rf_tw_profile *profile,
+void rf_tw_sample_aim(const rf_tw_profile *profile,
                        const rf_tw_context *context, unsigned int *rng,
-                       rf_tw_shot *shot) {
+                       float aim_x, float aim_y, rf_tw_shot *shot) {
     rf_tw_geometry geometry;
     double x, y, first, second;
     if (!shot) return;
@@ -239,10 +239,10 @@ void rf_tw_sample_shot(const rf_tw_profile *profile,
     /* Ordered draws avoid unspecified expression-evaluation order in C. */
     first = rf_tw_uniform(rng);
     second = rf_tw_uniform(rng);
-    x = (first + second - 1.0) * geometry.spread_x;
+    x = (first + second - 1.0) * geometry.spread_x + aim_x;
     first = rf_tw_uniform(rng);
     second = rf_tw_uniform(rng);
-    y = (first + second - 1.0) * geometry.spread_y;
+    y = (first + second - 1.0) * geometry.spread_y + aim_y;
     shot->offset_x_m = (float)x;
     shot->offset_y_m = (float)y;
     if (!geometry.visible || rf_tw_abs(y) > geometry.half_height) return;
@@ -257,6 +257,9 @@ void rf_tw_sample_shot(const rf_tw_profile *profile,
         (geometry.body_damage_milli * profile->head_multiplier_milli + 500) / 1000 :
         geometry.body_damage_milli;
 }
+
+void rf_tw_sample_shot(const rf_tw_profile *p,const rf_tw_context *c,unsigned int *rng,rf_tw_shot *shot)
+{ rf_tw_sample_aim(p,c,rng,0,0,shot); }
 
 void rf_tw_state_reset(const rf_tw_profile *profile, rf_tw_state *state) {
     if (!state) return;

@@ -1,4 +1,5 @@
 #include "tlibc_everything.h"
+#include "rf_tactical_lab.h"
 #include "math.h"
 #include "rasterfall_session.h"
 #include "rasterfall_feature_freeze.h"
@@ -319,6 +320,8 @@ int rasterfall_session_load(struct rasterfall_session *session,
         const char *identity = rf_map_runtime_world_info(&session->map_ops.runtime)->identity;
         session->world_id = RASTERFALL_WORLD_CAMPAIGN_01;
         if (!strcmp(identity, "outpost")) session->world_id = RASTERFALL_WORLD_OUTPOST;
+        else if (!strcmp(identity, "tactical_arena")) session->world_id=RASTERFALL_WORLD_TACTICAL_ARENA;
+        else if (!strcmp(identity, "tactical_range")) session->world_id=RASTERFALL_WORLD_TACTICAL_RANGE;
         else if (!strcmp(identity, "frontier_station_01"))
             session->world_id = RASTERFALL_WORLD_FRONTIER_STATION_01;
         else if (!strcmp(identity, "return_to_whu_v0"))
@@ -344,6 +347,28 @@ int rasterfall_session_load(struct rasterfall_session *session,
     __printf("Map runtime loaded: regions=%d interactions=%d\n",
              rf_map_runtime_region_count(&session->map_ops.runtime),
              rf_map_runtime_interaction_count(&session->map_ops.runtime));
+    return 0;
+}
+
+int rasterfall_session_adopt_map(struct rasterfall_session *s,struct rasterfall_session *p)
+{
+    if(!s || !p || s==p || !p->map_ops.runtime_loaded)return -1;
+    rasterfall_session_unload(s);
+    struct rf_gpu_scene_local_source source=s->scene_local;
+    struct toy_game_player_movement movement=s->player_movement;
+    struct toy_game_gameplay_config gameplay=s->gameplay_config;
+    memset(s,0,sizeof(*s));s->scene_local=source;
+    s->player_movement=movement;s->gameplay_config=gameplay;
+    s->world_id=p->world_id;s->world_request=s->world_id;s->air_walls_enabled=1;
+    s->highlight_index=s->weaver_item_index=-1;
+    s->level=p->level;memset(&p->level,0,sizeof(p->level));
+    s->content=p->content;memset(&p->content,0,sizeof(p->content));
+    s->map_ops.runtime=p->map_ops.runtime;
+    memset(&p->map_ops.runtime,0,sizeof(p->map_ops.runtime));
+    s->map_ops.runtime_loaded=1;p->map_ops.runtime_loaded=0;
+    rasterfall_map_bind(&s->map_ops,&s->level,s->safe_rooms,s->spawn_zones,
+        &s->spawn_count,&s->air_walls_enabled,s->items,&s->item_count);
+    if(rasterfall_map_project_runtime(&s->map_ops)<0 || !session_frontier_bind(s))return -1;
     return 0;
 }
 
@@ -393,6 +418,12 @@ const struct toy_game_actor *rasterfall_session_local_player_const(
 void rasterfall_session_unload(struct rasterfall_session *session)
 {
     if (!session) return;
+    if(session->tactical) {
+#if RF_TACTICAL_INTERACTIVE
+        rf_tac_match_destroy(&session->tactical->match);
+#endif
+        free(session->tactical);session->tactical=NULL;
+    }
     rf_gpu_scene_local_world(&session->scene_local);
     memset(&session->frontier,0,sizeof(session->frontier));
     memset(&session->frontier_config,0,sizeof(session->frontier_config));
@@ -406,6 +437,8 @@ int rasterfall_session_request_world(struct rasterfall_session *session,
     if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
                      world != RASTERFALL_WORLD_CAMPAIGN_01 &&
                      world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+                     world != RASTERFALL_WORLD_TACTICAL_ARENA &&
+                     world != RASTERFALL_WORLD_TACTICAL_RANGE &&
                      world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
                      world != RASTERFALL_WORLD_PERF_EMPTY &&
                      world != RASTERFALL_WORLD_PERF_COMPONENTS)) return -1;
@@ -422,6 +455,8 @@ int rasterfall_session_take_world_request(struct rasterfall_session *session,
     session->world_request_pending = 0;
     return 1;
 }
+
+#include "rf_tactical_session.inc"
 
 void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed)
@@ -763,8 +798,15 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_add_content_terminals(session);
     /* Formal modular roster members are session-owned and are not removed by
      * the hired-AI path. Their lifetimes end at reset/unload. */
+    if(session->tactical) {
+#if RF_TACTICAL_INTERACTIVE
+        rf_tac_match_destroy(&session->tactical->match);
+#endif
+        free(session->tactical);session->tactical=NULL;
+    }
     rf_gpu_scene_local_world(&session->scene_local);
     session_frontier_reset(session);
+    rasterfall_session_tactical_reset(session);
     for (i=1;i<TOY_GAME_REMOTE_ACTOR_BASE;++i) {
         const struct toy_game_actor *a=&session->game_state.actors[i];
         if (a->active && !a->hired &&

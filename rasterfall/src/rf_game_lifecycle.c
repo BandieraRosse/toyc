@@ -46,18 +46,24 @@ static int rf_game_request_world_path(struct rf_game_runtime *runtime,
     if (world != RASTERFALL_WORLD_OUTPOST &&
         world != RASTERFALL_WORLD_CAMPAIGN_01 &&
         world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
+        world != RASTERFALL_WORLD_TACTICAL_ARENA &&
+        world != RASTERFALL_WORLD_TACTICAL_RANGE &&
         world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
         world != RASTERFALL_WORLD_PERF_EMPTY &&
         world != RASTERFALL_WORLD_PERF_COMPONENTS) return -1;
-    if (world == RASTERFALL_WORLD_FRONTIER_STATION_01 &&
+    if ((world == RASTERFALL_WORLD_FRONTIER_STATION_01 ||
+         world == RASTERFALL_WORLD_TACTICAL_ARENA || world == RASTERFALL_WORLD_TACTICAL_RANGE) &&
         runtime->net.mode != RASTERFALL_NET_OFF) return -1;
     /* Load/parse/project into an independent owner before detaching the live
      * story or unloading its map. Session contains self-references, so never
      * memcpy or swap the probe into the live owner. */
-    if(rf_game_world_preflight(world,path)<0)return -1;
+    struct rasterfall_session *prepared=runtime->preloaded_session;
+    if(prepared && (!prepared->map_ops.runtime_loaded || prepared->world_id!=world))prepared=NULL;
+    if(!prepared && rf_game_world_preflight(world,path)<0)return -1;
     seed = runtime->session->seed;
     rf_story_detach(&runtime->story,runtime->session);
-    if (rasterfall_session_load(runtime->session, path) < 0)
+    if ((prepared?rasterfall_session_adopt_map(runtime->session,prepared):
+                  rasterfall_session_load(runtime->session,path)) < 0)
         return -1;
     rasterfall_resources_invalidate(rasterfall_render_resources());
     runtime->session->world_id = world;
@@ -81,6 +87,7 @@ int rf_game_world_request_logic_test(void)
     struct rasterfall_session *session=tlibc_malloc(sizeof(*session));
     struct rasterfall_session *before=tlibc_malloc(sizeof(*before));
     struct rf_story story_before;
+    struct rasterfall_session *prepared=NULL;
     int result=-1,checks=0;
 #define WORLD_CHECK(condition) do { if(!(condition)) { \
     __printf("WORLD-REQUEST failed line=%d\n",__LINE__);goto done; } checks++; } while(0)
@@ -111,8 +118,26 @@ int rf_game_world_request_logic_test(void)
         world_path(RASTERFALL_WORLD_OUTPOST))==0);
     WORLD_CHECK(!memcmp(before,session,sizeof(*before)) &&
         !memcmp(&story_before,&runtime->story,sizeof(story_before)));
+    prepared=tlibc_malloc(sizeof(*prepared));WORLD_CHECK(prepared!=NULL);
+    memset(prepared,0,sizeof(*prepared));
+    const enum rasterfall_world_id maps[]={RASTERFALL_WORLD_OUTPOST,RASTERFALL_WORLD_CAMPAIGN_01,
+        RASTERFALL_WORLD_RETURN_TO_WHU_V0,RASTERFALL_WORLD_FRONTIER_STATION_01,
+        RASTERFALL_WORLD_TACTICAL_ARENA,RASTERFALL_WORLD_TACTICAL_RANGE};
+    for(unsigned i=0;i<sizeof(maps)/sizeof(maps[0]);++i) {
+        WORLD_CHECK(rasterfall_session_load(prepared,world_path(maps[i]))==0);
+        runtime->preloaded_session=prepared;
+        uint64_t generation=session->scene_local.world_generation;
+        WORLD_CHECK(rf_game_request_world(runtime,maps[i])==0);
+        WORLD_CHECK(!prepared->map_ops.runtime_loaded && !prepared->level.blob);
+        WORLD_CHECK(session->world_id==maps[i] && session->map_ops.level==&session->level &&
+            session->map_ops.spawn_count==&session->spawn_count && session->scene_local.world_generation>generation);
+        rasterfall_session_unload(prepared);
+        WORLD_CHECK(rasterfall_map_projection_counts_match(&session->map_ops));
+    }
     result=0;
 done:
+    if(prepared){rasterfall_session_unload(prepared);tlibc_free(prepared);}
+    if(session)rasterfall_session_unload(session);
     tlibc_free(before);tlibc_free(session);tlibc_free(runtime);
     __printf("WORLD-REQUEST %s checks=%d preflight/preserve-world-generation/story-hold\n",
         result?"FAIL":"PASS",checks);

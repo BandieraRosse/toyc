@@ -202,6 +202,12 @@ graphics resource 保留唯一创建 owner，多个同 device 消费者登记双
 
 ## 通讯镜头、单位镜头与设备预览
 
+指挥桌另有 `RF_GPU_AUX_FROZEN`：借用已退休、独立地图 owner 的离屏颜色目标，只做 GPU
+合成，不按 WORLD/WEAPON 的刷新频率更新。目标地图首帧由同一 Scene 冻结、几何与光照链
+生成；没有截图读回或 CPU framebuffer 往返。来源 owner 在解绑主视图并退休后才释放，
+UI 与输入共用预览矩形并在 overlay 留出透明内容区。预加载会话和移交规则归
+[运行时生命周期](runtime.md#指挥桌预加载与出生点预览)。
+
 `rf_gpu_scene_layers_input.aux_view` 提交通讯/设备视图，`unit_view` 提交 RTS 单位视图，两路可同时显示。
 每路分别保存稳定来源 ID、generation、镜头变换、视频矩形、内部尺寸和刷新频率；UI 布局只改变最终合成矩形。
 `render/rf_gpu_scene_aux.inc` 按槽调度，Scene probe 的 `aux[2]` 各自持有持久子 owner、状态、刷新时刻与重试次数。

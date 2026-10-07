@@ -43,6 +43,7 @@ struct rf_game_runtime {
      * the presentation and frame-loop state which used to be implicit in
      * rasterfall.c. */
     struct rasterfall_session *session;
+    struct rasterfall_session *preloaded_session; /* Borrowed from table preview owner. */
     struct rf_device_service device_service;
     /* Borrowed Core context; Core owns the referenced services. */
     struct rf_core *core;

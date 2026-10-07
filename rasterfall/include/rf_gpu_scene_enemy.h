@@ -5,6 +5,8 @@
 #include "rasterfall_render.h"
 #include "rf_gpu_scene_pose.h"
 struct rf_gpu_scene_procedural_item_v1 {
+    /* Optional planar range target: frozen dimensions in RFU, no game rules. */
+    int target_half_width, target_half_height, target_head_bottom;
     struct rasterfall_procedural_humanoid_state state;
     unsigned body_color, leg_color, skin_color, hair_color;
     int scene_light_q8, vertex_lighting, double_sided;

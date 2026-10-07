@@ -6,12 +6,15 @@
 
 int rasterfall_world_uses_authored_ground(enum rasterfall_world_id world)
 {
-    return world == RASTERFALL_WORLD_RETURN_TO_WHU_V0 ||
+    return world == RASTERFALL_WORLD_TACTICAL_ARENA || world == RASTERFALL_WORLD_TACTICAL_RANGE ||
+           world == RASTERFALL_WORLD_RETURN_TO_WHU_V0 ||
            world == RASTERFALL_WORLD_FRONTIER_STATION_01;
 }
 
 const char *rasterfall_world_map_path(enum rasterfall_world_id world)
 {
+    if (world == RASTERFALL_WORLD_TACTICAL_ARENA) return "rasterfall/assets/maps/tactical_arena.map";
+    if (world == RASTERFALL_WORLD_TACTICAL_RANGE) return "rasterfall/assets/maps/tactical_range.map";
     if (world == RASTERFALL_WORLD_FRONTIER_STATION_01)
         return "rasterfall/assets/maps/frontier_station_01.map";
     if (world == RASTERFALL_WORLD_PERF_EMPTY)
@@ -29,7 +32,8 @@ const char *rasterfall_world_content_path(enum rasterfall_world_id world)
 {
     if (world == RASTERFALL_WORLD_FRONTIER_STATION_01)
         return "rasterfall/assets/worlds/frontier_station_01.content";
-    if (world == RASTERFALL_WORLD_PERF_EMPTY || world == RASTERFALL_WORLD_PERF_COMPONENTS)
+    if (world == RASTERFALL_WORLD_TACTICAL_ARENA || world == RASTERFALL_WORLD_TACTICAL_RANGE ||
+        world == RASTERFALL_WORLD_PERF_EMPTY || world == RASTERFALL_WORLD_PERF_COMPONENTS)
         return "rasterfall/assets/worlds/performance.content";
     if (world == RASTERFALL_WORLD_OUTPOST)
         return "rasterfall/assets/worlds/outpost.content";

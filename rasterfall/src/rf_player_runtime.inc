@@ -51,7 +51,7 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     h->player_ui=&r->player_ui;v->bindings=&game_bindings;
     v->hints=r->player_controls.hints;
     v->phase_visible=r->session->world_id!=RASTERFALL_WORLD_OUTPOST||rf_combat_lab.running;
-    v->modal=r->console.open||rf_weaver_terminal.open||rf_render_terminal.open||rf_table.open;
+    v->modal=rf_tac_ui.open || r->console.open||rf_weaver_terminal.open||rf_render_terminal.open||rf_table.open;
     v->region_name=r->session->world_id==RASTERFALL_WORLD_OUTPOST?"前哨站":"行动区域";
     v->rts_active=r->rts_active;v->rts_selected=r->rts_selected;v->rts_follow_player=r->rts_follow_player;
     v->rts=&r->rts;v->rts_camera=&r->render_camera;
@@ -210,6 +210,12 @@ static void rf_player_device_input(struct rf_game_runtime *r,struct rasterfall_c
     int order[RF_PLAYER_DEVICE_FEATURE_ROWS+3],count=0,at=0,hit=0;
     rf_device_query(r,&q);rf_player_device_layout(&rects,width,height,&r->player_ui,kind,
         kind==RF_PLAYER_DEVICE_TABLE?q.map_count:q.feature_count);
+    static int hovered[2];
+    int pointer_hit=rf_player_device_hit(&rects,in->pointer_x,in->pointer_y);
+    if(pointer_hit!=hovered[kind]) {
+        if(pointer_hit)rasterfall_audio_ui(&r->audio,RF_UI_SOUND_HOVER);
+        hovered[kind]=pointer_hit;
+    }
     if(kind==RF_PLAYER_DEVICE_RENDER)for(int i=0;i<q.feature_count&&i<RF_PLAYER_DEVICE_FEATURE_ROWS;++i)order[count++]=RF_DEVICE_HIT_FEATURE_BASE+i;
     else {
         for(int i=0;i<q.map_count&&i<RF_PLAYER_DEVICE_MAP_ROWS;++i)order[count++]=RF_DEVICE_HIT_MAP_BASE+i;
@@ -226,6 +232,9 @@ static void rf_player_device_input(struct rf_game_runtime *r,struct rasterfall_c
         if(hit)rf_player_device_focus[kind]=hit;
     }
     if(action_pressed(in,RF_ACTION_CANCEL))hit=RF_DEVICE_HIT_CLOSE;
+    if(hit)rasterfall_audio_ui(&r->audio,hit==RF_DEVICE_HIT_CLOSE?RF_UI_SOUND_EXIT:
+        hit==RF_DEVICE_HIT_DEPLOY?RF_UI_SOUND_CONFIRM:
+        kind==RF_PLAYER_DEVICE_RENDER?RF_UI_SOUND_CHANGE:RF_UI_SOUND_CLICK);
     if(hit==RF_DEVICE_HIT_CLOSE) {
         if(kind==RF_PLAYER_DEVICE_RENDER)rf_render_terminal.open=0;else rf_table.open=0;
     } else if(hit==RF_DEVICE_HIT_TERMINAL) {
@@ -323,6 +332,16 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
 {
     rf_frontier_audit(r,frame);
     if(!getenv("RF_UI_AUDIT") || frame%10)return;
+    #if RF_TACTICAL_INTERACTIVE
+    if(r->session->tactical) {
+        const struct rf_tactical_lab *l=r->session->tactical;
+        __printf("TACTICAL-UI-AUDIT {\"kind\":%d,\"open\":%d,\"dropdown\":%d,\"hover\":%d,\"tick\":%d,\"running\":%d,\"shots\":%d,\"player_shots\":%d,\"hash\":\"%08x\"}\n",
+            l->kind,rf_tac_ui.open,rf_tac_ui.dropdown,rf_tac_ui.hover,l->match.world.tick,
+            l->kind==1?l->match.running:l->range.running,l->range.stats[0][l->range.lane].shots,
+            l->range.stats[1][l->range.lane].shots,l->kind==1?rf_tac_hash(&l->match.world):0);
+        fflush(stdout);
+    }
+    #endif
     if(r->rts_active) {
         const struct toy_game *g=&r->session->game_state;
         struct rf_ui_layout ui;int width=0,height=0;
@@ -372,8 +391,9 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
         video->state,(unsigned long long)video->frames,(long long)video->last_cpu_us,(long long)(video->last_gpu_ms*1000),
         rf_weaver_terminal.row,r->story.task.id,r->story.task.state,!rf_weaver_diagnostic.enabled,
         rf_weaver_diagnostic.enabled||rf_weaver_performance.mode);
-    __printf("PLAYER-UI-DEVICE {\"frame\":%d,\"combat\":%d,\"device_code\":%d,\"table_selected\":%d,\"table_pending\":%d,\"render_mask\":%u}\n",
-        frame,r->story.combat,r->device_service.last.code,device.selected_map,device.pending_world,mask);
+    __printf("PLAYER-UI-DEVICE {\"frame\":%d,\"combat\":%d,\"device_code\":%d,\"table_selected\":%d,\"table_pending\":%d,\"render_mask\":%u,\"table_open\":%d,\"table_dropdown\":%d,\"preview_state\":%d,\"preview_map\":%d}\n",
+        frame,r->story.combat,r->device_service.last.code,device.selected_map,device.pending_world,mask,
+        rf_table.open,rf_table.dropdown,rf_table.preview_state,rf_table.preview_map);
     if(c && c->actor_index>=0 && c->actor_index<TOY_GAME_MAX_ACTORS) {
         const struct toy_game_actor *actor=&r->session->game_state.actors[c->actor_index];
         __printf("PLAYER-UI-REMOTE {\"frame\":%d,\"null_x\":%d,\"null_z\":%d,\"null_actor_id\":%d,\"null_actor_generation\":%u}\n",

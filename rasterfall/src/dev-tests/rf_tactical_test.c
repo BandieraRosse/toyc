@@ -1,5 +1,6 @@
 /* Contracts for the standalone tactical lab; no renderer or old game fixture. */
 #include "rf_tactical.h"
+#include "rf_tactical_lab.h"
 #include "rf_tactical_beam.h"
 #include "rf_tactical_prediction.h"
 #include "rf_tactical_weapon.h"
@@ -27,6 +28,8 @@ static void test_think(struct rf_tac_world *w, int solver, int budget) {
     }
     for (t = 0; t < 2; ++t) CHECK(rf_tac_apply(w, &p[t]), "valid simultaneous plans");
 }
+
+#include "rf_tactical_lab_test.inc"
 
 static unsigned int test_candidate_issues(const struct rf_tac_observation *o, int unit, int index) {
     const struct rf_tac_candidate *c = &o->candidates[unit][index];
@@ -638,6 +641,7 @@ int rf_tac_run_tests(void) {
         rf_tw_pattern_metrics(rf_tw_profile_get(RF_TW_SMG), &context, RF_TW_AUTO, &smg);
         CHECK(smg.reload_cycle_dps > rifle.reload_cycle_dps, "SMG has close-distance sustained-fire advantage");
     }
+    test_interactive_lab();
     test_beam_contracts(m);
     free(m); free(copy);
     printf("{\"type\":\"self-test\",\"checked\":%d,\"failed\":%d,\"passed\":%s}\n",

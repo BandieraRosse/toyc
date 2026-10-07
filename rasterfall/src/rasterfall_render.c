@@ -9151,6 +9151,25 @@ int rasterfall_render_procedural_humanoid(
 int rf_gpu_scene_procedural_triangles(const struct rf_gpu_scene_procedural_item_v1 *item,
     rf_gpu_scene_enemy_triangle_fn emit,void *context)
 {
+    if(item && emit && item->target_half_width>0 && item->target_half_width<=128 &&
+       item->target_half_height>0 && item->target_half_height<=435) {
+        for(int part=0;part<2;++part) {
+            int lo=part?item->target_head_bottom:-item->target_half_height;
+            int hi=part?item->target_half_height:item->target_head_bottom;
+            if(lo < -item->target_half_height)lo=-item->target_half_height;
+            if(hi<=lo)continue;
+            int half=part?61:item->target_half_width;
+            struct rf_gpu_scene_enemy_point p[4]={0};
+            for(int i=0;i<4;++i) {
+                p[i].x=item->state.x+((i==1 || i==2)?half:-half);
+                p[i].y=-465+(i>=2?hi:lo);p[i].z=item->state.z;
+                p[i].form_light_q8=256;p[i].light_min_q8=256;p[i].light_max_q8=256;p[i].double_sided=1;
+            }
+            unsigned color=part?0xDBB982:0xB6D4C9;
+            if(emit(context,&p[0],&p[1],&p[2],color)<0 || emit(context,&p[0],&p[2],&p[3],color)<0)return -1;
+        }
+        return 0;
+    }
     struct toy_renderer renderer={0};
     struct camera camera={0};
     struct rasterfall_character_profile character={0};

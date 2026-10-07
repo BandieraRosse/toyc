@@ -87,6 +87,8 @@ void rf_tw_query(const rf_tw_profile *profile, const rf_tw_context *context,
 void rf_tw_sample_shot(const rf_tw_profile *profile,
                        const rf_tw_context *context, unsigned int *rng,
                        rf_tw_shot *shot);
+void rf_tw_sample_aim(const rf_tw_profile *profile, const rf_tw_context *context,
+    unsigned int *rng, float aim_x, float aim_y, rf_tw_shot *shot);
 unsigned int rf_tw_rng_next(unsigned int *rng);
 
 /* Finite magazines, unlimited reserve. begin_shot succeeds only when legal.

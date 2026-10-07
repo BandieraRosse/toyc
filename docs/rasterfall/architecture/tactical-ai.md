@@ -14,6 +14,40 @@
 
 ## 所有权和数据流
 
+### 游戏内实验地图
+
+Windows hosted 前端通过前哨站指挥桌进入 `tactical_arena` 或 `tactical_range`。
+session 拥有堆上 `rf_tactical_lab`，在 reset/unload 时释放预测服务及地图；普通 Game
+只负责控制区玩家的移动和交互。实验士兵不占 Game actor 槽位，不接受普通 RTS 移动命令。
+`rf_tactical_lab.c` 复用已有 world、solver、prediction 和 weapon 模块逐步推进，双方观察
+完成后再提交计划。游戏暂停不推进实验；终端打开允许当前对局继续，暂停按钮显式冻结对局。
+参数编辑只是待应用配置，开始新局或重置才应用；重置前导出当前结果。
+
+`rf_tactical_terminal.inc` 拥有下拉框、鼠标命中和按钮状态，向 session 实验实例提交操作；
+绘图回调只读。RTS 镜头与单位结果卡属于 runtime，角色由独立 Scene source 转成冻结的
+程序角色展示值，射线从权威射击计数转为 effects。renderer 不推进战术世界。
+当前固定据点由 native seed 100 的地图日志经 `tools/tactical_maps.py` 生成：每块掩体
+分别有 collision 与 render 记录，米制坐标在边界转换为 512 RFU/m。两张地图四周都有独立
+BOX 碰撞和透明 sign 面板；控制区隔墙经 BuildingKit 墙洞语义分段，四个窗口替换墙体，
+玻璃只填充洞口并有独立碰撞，不在完整不透明墙上叠加。常规 HUD、移动、跳跃和 FPS/RTS
+输入保留，额外对战成员信息栏只读实验世界；普通 RTS 命令仍只作用于普通 Game actor。
+更换地形须同时更新仿真种子和生成地图；本版终端可更换射击种子，不支持在线重生成地形。
+
+靶场九条射线对应 5–100m 距离，AI 与玩家有独立武器状态、RNG 和统计。玩家试射按钮
+将玩家移至所选射道起点，但不锁定移动或跳跃；玩家也可直接自由试射。按瞄准射线选择
+最接近的标靶，枪械散布与伤害按实际射距计算；导出同时保留射道标称距离与实际距离均值/范围。
+`rf_tw_sample_aim` 在原有四次随机采样上增加瞄准偏移；零偏移与旧采样逐项一致，
+冷却拒绝不消耗随机数。玩家试射清除旧 Game 的开火请求，不重复结算伤害。
+标靶按同一模型的可见矩形和头部区域冻结成平面几何；战士假人使用共享生命、回避和恢复。
+弹着图与射线只读采样结果。完成 TTK 的均值单独展示，未完成试次时长保留在导出中。
+
+完整结果以 JSON 和 CSV 输出到运行目录，包含规则版本、种子、策略配置及状态 hash；
+CLI 的原有训练、完整 JSONL 决策日志和离线回放继续保留。实验地图当前仅启用 Windows
+hosted/GPU 主线；freestanding 前端不链接 hosted 数值模块，也不开放两张地图的指挥桌入口。
+既有 Toyc self 规则不新增战术编译单元，独立 hosted `make tactical` 继续构建共享模块。
+
+新终端下拉列表、悬停、选中标记及菜单音效的操作见[实验指南](../guides/tactical-lab.md)。
+
 ```text
 seed + map generator → immutable tactical map / navigation / cover / static visibility
 weapon profile + soldier baseline → authoritative tactical world

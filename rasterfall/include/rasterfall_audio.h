@@ -12,6 +12,8 @@
 struct rasterfall_weaver_audio_bus;
 
 struct rasterfall_audio {
+    /* Audio-thread-owned short UI oscillator, triggered through event ring. */
+    int ui_kind, ui_remaining, ui_length, ui_phase;
     struct toy_audio *output;
     struct toy_sfx sfx;
     unsigned char events[RASTERFALL_AUDIO_EVENT_RING];
@@ -25,6 +27,10 @@ struct rasterfall_audio {
     /* Include shove and melee effects as well as the original clips. */
     struct toy_sound_asset assets[TOY_SFX_MOLOTOV_BREAK + 1];
 };
+
+enum rasterfall_ui_sound { RF_UI_SOUND_HOVER, RF_UI_SOUND_CLICK,
+    RF_UI_SOUND_CHANGE, RF_UI_SOUND_CONFIRM, RF_UI_SOUND_EXIT };
+void rasterfall_audio_ui(struct rasterfall_audio *audio,int kind);
 
 void rasterfall_audio_load_assets(struct rasterfall_audio *audio);
 int rasterfall_audio_start(struct rasterfall_audio *audio,

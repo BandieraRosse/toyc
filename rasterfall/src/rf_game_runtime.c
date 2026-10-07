@@ -1214,6 +1214,8 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_experiment_labs.inc"
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
+#include "rf_tactical_terminal.inc"
+#include "rf_tactical_effects.inc"
 #include "rf_device_runtime.inc"
 #include "rf_mesh_weaver_runtime.inc"
 #include "rf_mesh_weaver_audio.inc"
@@ -2885,6 +2887,9 @@ int rf_game_update(struct rf_game_runtime *runtime,
     rasterfall_effects_update(game_effects, dt_ms);
     if (command) {
         runtime->command = *command;
+        if(!runtime->lifecycle_paused)rasterfall_session_tactical_step(game_session,game_camera,
+            &runtime->command,dt_ms==FIXED_STEP_US/1000?FIXED_STEP_US:dt_ms*1000,
+            rf_tac_ui.open || runtime->rts_active);
         if (!runtime->lifecycle_paused) {
             if (game_session->game_state.state == TOY_GAME_PLAYING &&
                 !(is_client && (!game_net->connected || !game_net->world_ready))) {
@@ -2928,6 +2933,7 @@ int rf_game_update(struct rf_game_runtime *runtime,
         }
     }
 
+    rf_tactical_effects_sync(runtime);
     {
         enum rasterfall_world_id requested_world;
         if (rasterfall_session_take_world_request(game_session,
@@ -3125,6 +3131,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             runtime->session->world_id == RASTERFALL_WORLD_FRONTIER_STATION_01);
     else if (state->state == TOY_GAME_WON)
         draw_level_won_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    else if(rf_tac_ui.open)rf_tac_ui_draw(canvas,runtime);
     else if(rf_combat_modal())rf_combat_draw(canvas,runtime->rts_active);
     else if (rf_perf_lab.running || rf_perf_lab.menu_open || rf_perf_lab.result_open)
         rf_perf_lab_draw(canvas, rf_core_clock_now_us());
@@ -3139,11 +3146,10 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             rf_player_device_draw(canvas,runtime,RF_PLAYER_DEVICE_RENDER,rf_player_device_focus[RF_PLAYER_DEVICE_RENDER]);
         else rf_render_terminal_draw(canvas);
     } else if (rf_table.open) {
-        if(runtime->player_ui.mode<RF_PLAYER_UI_EXPERIMENT)
-            rf_player_device_draw(canvas,runtime,RF_PLAYER_DEVICE_TABLE,rf_player_device_focus[RF_PLAYER_DEVICE_TABLE]);
-        else rf_table_draw(canvas);
+        rf_table_draw(canvas);
     }
     else {
+        if(runtime->session->tactical)rf_tac_ui_draw(canvas,runtime);
         if(rf_combat_lab.running)rf_combat_draw(canvas,runtime->rts_active);
         if(rf_combat_lab.control_near || rf_combat_lab.result_near)
             rasterfall_canvas_text(canvas,canvas->width/2-155,canvas->height*3/4,
@@ -3455,6 +3461,7 @@ static int rf_boot_scene_event(void *context, const char *task, int result,
     return 0;
 }
 
+#include "rf_table_preview.inc"
 int rf_game_runtime_run(const struct rf_game_config *config)
 {
     static struct rf_gpu_scene_world_resources scene_world_resources;
@@ -3964,6 +3971,11 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         rf_core_shutdown(&core);
         return 1;
     }
+    if((session.world_id==RASTERFALL_WORLD_TACTICAL_ARENA || session.world_id==RASTERFALL_WORLD_TACTICAL_RANGE) &&
+       (requested_net_mode!=RASTERFALL_NET_OFF || !options.gpu_scene_play)) {
+        __fprintf(2,"Tactical maps require offline GPU Scene mode.\n");
+        rf_game_shutdown(&game_runtime);rf_core_shutdown(&core);return 1;
+    }
     if (interactive_boot) {
         rf_boot_record_event(&boot_journal, "session-map-load", 0,
             rf_core_clock_now_us() - boot_task_started);
@@ -4118,7 +4130,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         if(logic_test && result)__fprintf(2,"GAME logic test failed: %d\n",result);
         if (logic_test) {
             for (int i = 0; i < RF_TABLE_MAPS; ++i)
-                if (!rf_table.maps[i].available || !rf_table.maps[i].count) {
+                if (!rf_table.maps[i].available) {
                     __printf("outpost table: map preview load failed: %s\n",
                              rf_table.maps[i].name);
                     result = 1;
@@ -4972,6 +4984,7 @@ startup_again:
         struct toy_game_update_profile game_update_profile = {0};
         int logic_steps = 0;
         int resumed = 0;
+        if(!session.tactical)rf_tac_ui.open=0;
         int device_modal_was_open=rf_render_terminal.open||rf_table.open;
         int ready;
         static int logged_first_frame;
@@ -5193,7 +5206,7 @@ startup_again:
                                    RASTERFALL_CONSOLE_INFO,
                                    "player terminal toggled");
             pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active&&
-                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open&&!game_runtime.comms_focus)>0;
+                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open && !rf_tac_ui.open&&!game_runtime.comms_focus)>0;
             rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             resumed=1;
         }
@@ -5419,7 +5432,7 @@ startup_again:
         if(game.state!=TOY_GAME_PLAYING || session.pose_editor.active)
             game_runtime.comms_focus=0;
         if(!paused && !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
-           !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open &&
+           !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open &&
            game.state==TOY_GAME_PLAYING && !session.pose_editor.active &&
            !rf_combat_modal() && !rf_perf_lab.menu_open && !rf_perf_lab.result_open) {
             if(rf_player_comms_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height)) {
@@ -5430,7 +5443,16 @@ startup_again:
             action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_HIDE);
             action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_ANSWER);
         }
-        rf_weaver_terminal.near = !rf_weaver_terminal.open && !rf_table.open &&
+        if(!paused && session.tactical && rf_tac_ui_input(&game_runtime,renderer.surface.width,renderer.surface.height,
+            input.pointer_x,input.pointer_y,events.button_pressed && events.button==BTN_LEFT,
+            action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_INTERACT))) {
+            camera=game_runtime.camera;
+            int lock=!rf_tac_ui.open && !game_runtime.rts_active;
+            if(lock!=pointer_lock_requested)pointer_lock_requested=rf_core_set_pointer_lock(&core,lock)>0 && lock;
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
+        }
+        rf_weaver_terminal.near = !rf_weaver_terminal.open && !rf_table.open && !rf_tac_ui.open &&
             !rf_render_terminal.open && !paused && !game_runtime.rts_active &&
             !rf_combat_modal() && !rf_combat_lab.running && !rf_perf_lab.running &&
             !rf_perf_lab.menu_open && !rf_perf_lab.result_open &&
@@ -5439,7 +5461,7 @@ startup_again:
             (game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT ||
              !(session.weaver_item_serial && session.highlight_index == session.weaver_item_index)) &&
             rf_weaver_near(&session, camera.x, camera.z);
-        rf_table.near = !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+        rf_table.near = !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             !paused && !game_runtime.rts_active &&
             net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
@@ -5451,7 +5473,7 @@ startup_again:
             rf_labs_reset();
         rf_showcase_near = 0;
         rf_combat_lab.control_near=rf_combat_lab.result_near=0;
-        if(!paused && !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !rf_perf_lab.running &&
+        if(!paused && !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !rf_perf_lab.running &&
            !rf_perf_lab.menu_open && !rf_perf_lab.result_open && !game_runtime.rts_active &&
            net.mode==RASTERFALL_NET_OFF && session.world_id==RASTERFALL_WORLD_OUTPOST) {
             rf_combat_lab.control_near=rf_perf_lab_near_object(&session,"combat_control_terminal",camera.x,camera.z);
@@ -5469,13 +5491,13 @@ startup_again:
             rf_perf_lab.result_near = rf_perf_lab_near_object(
                 &session, "perf_result_terminal", camera.x, camera.z);
         }
-        if (!rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
+        if (!rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
             !game_runtime.rts_active && net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING)
             rf_render_terminal.near = rf_render_terminal_near(
                 &session, camera.x, camera.z) && rf_player_object_facing(&game_runtime,"main_terminal");
-        if (!rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
+        if (!rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
             !game_runtime.rts_active &&
             net.mode==RASTERFALL_NET_OFF &&
             session.world_id==RASTERFALL_WORLD_OUTPOST &&
@@ -5631,7 +5653,7 @@ startup_again:
             fire_edge = shove_edge = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
         } else if (!paused && !game_runtime.rts_active && !developer_console.open &&
-            !rf_table.open && !rf_render_terminal.open &&
+            !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open &&
             rasterfall_session_frontier_near(&session,1)>=0 &&
             (!session.frontier.captured[rasterfall_session_frontier_near(&session,1)] ||
              rasterfall_session_frontier_near(&session,1)!=0) &&
@@ -5723,36 +5745,18 @@ startup_again:
             }
             }
         } else if (rf_table.open) {
-            if(game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT) {
-                if(!developer_console.open)rf_player_device_input(&game_runtime,&developer_console,&input,&events,
-                    renderer.surface.width,renderer.surface.height,RF_PLAYER_DEVICE_TABLE);
-                if(!rf_table.open) {
-                    pointer_lock_requested=rf_core_set_pointer_lock(&core,!game_runtime.rts_active&&!developer_console.open)>0;
-                    resumed=1;
-                }
-            } else {
-            int hit;
-            rf_table.pointer_x = input.pointer_x;
-            rf_table.pointer_y = input.pointer_y;
-            hit = rf_table_hit(renderer.surface.width, renderer.surface.height,
-                               input.pointer_x, input.pointer_y);
-            if (hit >= 0 && hit!=rf_table.selected) rf_device_table_request(hit,0);
-            if (action_pressed(&input, RF_ACTION_CANCEL)) {
-                action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
-                pending_key_edges[KEY_ESC] = 0;
-                rf_table.open = 0;
-                pointer_lock_requested = rf_core_set_pointer_lock(&core, 1) > 0;
-                pointer_turn_pending = pointer_pitch_pending = 0;
-                resumed = 1;
-            } else if (events.button_pressed && events.button == BTN_LEFT &&
-                       hit >= 0) {
-                rf_device_table_request(hit,1);
-            }
+            rf_table_input(&game_runtime,renderer.surface.width,renderer.surface.height,
+                input.pointer_x,input.pointer_y,events.button_pressed && events.button==BTN_LEFT,
+                action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_UI_UP),
+                action_pressed(&input,RF_ACTION_UI_DOWN),action_pressed(&input,RF_ACTION_CONFIRM));
+            if(!rf_table.open) {
+                pointer_lock_requested=rf_core_set_pointer_lock(&core,!game_runtime.rts_active)>0;
+                resumed=1;
             }
         } else if ((rf_render_terminal.near &&
                     action_pressed(&input, RF_ACTION_INTERACT)) ||
                    (action_pressed(&input, RF_ACTION_TERMINAL) &&
-                    !rf_table.open && !paused &&
+                    !rf_table.open && !rf_tac_ui.open && !paused &&
                     !developer_console.open && !managed_terminal.open &&
                     !game_runtime.gui.active &&
                     net.mode == RASTERFALL_NET_OFF &&
@@ -5818,10 +5822,10 @@ startup_again:
             }
         }
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
-            rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_tac_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             pending_key_edges[KEY_M] = 0;
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
-            rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_tac_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
         {
             int deploy_world=rf_device_take_deploy(&game_runtime);
@@ -5841,7 +5845,7 @@ startup_again:
         }
         if(game_runtime.player_controls.requested_view==game_runtime.rts_active)game_runtime.player_controls.requested_view=-1;
         if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) &&
-            !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+            !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING &&
             ((!developer_console.open && action_pressed(&input, RF_ACTION_COMMAND_MODE)) ||
              game_runtime.player_controls.requested_view>=0)) {
@@ -5943,17 +5947,17 @@ startup_again:
         }
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open &&
+            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open && !resumed &&
             events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !paused && !rf_table.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+            !rf_perf_lab.result_open && !paused && !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             !resumed && action_pressed(&input, RF_ACTION_FIRE_KEY))
             fire_edge = 1;
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open &&
+            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open && !resumed &&
             events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;
@@ -6046,13 +6050,13 @@ startup_again:
         }
         /* Some compositors acknowledge locked asynchronously. Relative
          * events received after our accepted request are already valid. */
-        if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open &&
+        if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open &&
             (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
             accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
                                   input.relative_x, input.relative_y, &settings);
-        } else if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open &&
+        } else if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
                    !rf_render_terminal.open && !rf_weaver_terminal.open &&
                    use_absolute_mouse_look(pointer_lock_requested,
                                            &input, &events)) {
@@ -6120,7 +6124,7 @@ startup_again:
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT &&
                       (!net.connected || !net.world_ready))) {
-                    if (rf_weaver_terminal.open || rf_render_terminal.open || rf_table.open || game_runtime.comms_focus ||
+                    if (rf_weaver_terminal.open || rf_render_terminal.open || rf_tac_ui.open || rf_table.open || game_runtime.comms_focus ||
                         resumed || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe))
                         memset(&command, 0, sizeof(command));
                     else
@@ -6157,7 +6161,7 @@ startup_again:
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
                     rf_player_story_tick(&game_runtime,FIXED_STEP_US/1000,
-                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open);
+                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open);
                     rf_weaver_diag_step(&session, FIXED_STEP_US / 1000);
                     if (options.gpu_wave_repro) {
                         static int previous_phase = -1, previous_alive = -1;
@@ -6275,6 +6279,12 @@ startup_again:
         }
         prev_begin = t_frame;
         t_stage = t_frame;
+#ifdef TOYC_WINDOWS
+        int preview_work=rf_table.open && rf_table_preview.phase>0 && rf_table_preview.phase<3;
+        if(rf_table_preview_tick(&game_runtime,&gpu_vulkan_context,&scene_world_probe,
+            options.gpu_scene_play)<0){scene_runtime_failed=1;break;}
+        if(preview_work){last_time=rf_core_begin_tick(&core);accumulator=0;}
+#endif
         if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
                 session.scene_local.world_generation);
@@ -6304,7 +6314,7 @@ startup_again:
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
             if (rf_core_poll_events_timeout(&core, 1000) < 0) break;
             stall_events = *rf_core_events(&core);
-            if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open &&
+            if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
                 !rf_render_terminal.open && !rf_weaver_terminal.open &&
                 (input.pointer_locked || pointer_lock_requested) &&
                 stall_events.relative_moved)
@@ -6498,6 +6508,7 @@ startup_again:
             rf_ui_perf_before_frame(&game_runtime,rendered_frames);
             rf_player_aux_prepare(&game_runtime,renderer.surface.width,renderer.surface.height,
                 (uint64_t)rf_core_clock_now_us(),paused||developer_console.open||rf_render_terminal.open||rf_table.open);
+            rf_table_preview_view(renderer.surface.width,renderer.surface.height);
 #endif
             game_runtime.render_context.character_gpu_skinning =
                 options.gpu_character_skinning;
@@ -7426,6 +7437,7 @@ scene_shutdown:
     rf_scene_cost_report();
     rf_frontier_perf_report();
     rf_gpu_scene_world_gpu_probe_close(&scene_world_probe);
+    rf_table_preview_close(&game_runtime,NULL);
 #endif
     rf_gpu_scene_world_resources_invalidate(&scene_world_resources);
     rf_game_shutdown(&game_runtime);

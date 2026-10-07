@@ -4,11 +4,43 @@
 > 所有者：Rasterfall 战术工具
 > 事实入口：`build-windows/rf-tactical.exe --help`、`tools/tactical_train.py --help`、`tools/tactical_benchmark.py --help`
 
-从仓库根目录运行。实验完全使用 Windows 原生 C 仿真，不初始化 SDL/GPU，也不等待
+无图形命令从仓库根目录运行，使用 Windows 原生 C 仿真，不初始化 SDL/GPU，也不等待
 实时帧间隔。规则和正式 Game 的接入边界见[战术 AI 架构](../architecture/tactical-ai.md)，
 参数的现实依据与设计取舍见[枪械基准](../reference/tactical-weapons.md)。
 
 ## 构建和靶场
+
+### 游戏内入口与终端
+
+Windows 完整构建并暂存后，在前哨站中央指挥桌选择“AI 策略对抗场”或“武器靶场”，
+点击地图字段展开下拉列表，选定目的地后右侧显示预加载状态；出生点首帧完成后冻结画面，
+再点击确认部署。进入地图保留普通 HUD、移动、跳跃和 M 切换视角。
+出生点附近控制终端按 E 打开，点击参数字段展开列表，悬停高亮，
+当前值显示选中标记；点击空白收起列表，Esc 先收起列表、再退出终端。
+开始新局应用当前配置并运行；重置应用配置并停在初始状态；暂停/继续不重新建局。
+待应用参数与当前对局结果分别展示。菜单提示音区分悬停、点击、值变更、确认和退出。
+
+对抗场支持两方内置策略及训练参数、4–6 人、步枪/SMG、攻守交换、射击种子与工作预算。
+点击观战进入 RTS，WASD 平移、滚轮缩放，右侧成员卡查看生命、回避、行动、目标和弹药。
+E 重新打开控制台；普通 RTS 的移动/编组指令不作用于实验参战者。地形固定为种子 100。
+Esc 暂停菜单可沿正常世界切换返回前哨站。
+
+靶场选择武器、AI 射击模式、距离、全身/半身/探头假人和随机种子。开始后 AI 自动打靶，
+玩家试射按钮将玩家放到所选固定射击位；鼠标瞄准、左键射击、R 换弹，E 返回终端。
+各距离的实体标靶同时存在，玩家可自由移动、跳跃和瞄准其他标靶，按实际射距结算；
+AI 继续使用终端配置的固定射道。AI 与玩家的弹着及统计分别记录。
+射道支持无限备弹；假人击杀后重建生命和回避用于下一试次。完成 TTK 不包含尚未击杀的试次。
+
+导出结果按钮保存 `tactical-result-*.json` 与同名 `.csv` 到实际运行目录
+`build-windows/rasterfall-windows/`。重置前和对抗结束也导出；终端显示导出文件名或失败。
+JSON 保存规则版本、种子及对抗策略参数，CSV 适合比较每名战士或各射手/射道的计数；
+玩家移动试射时可用 actual_distance_mean/min/max 核对实际射距。
+批量胜率、训练和完整逐步决策分析仍使用下面的无图形入口。
+
+原生 UI 验证：先 `NativeCodex.ps1 test` 暂存资源，再运行
+`python tools/tactical_ui_check.py --kind arena --output tmp/tactical-ui-arena`，
+靶场将 kind 改为 `range` 并使用另一输出目录。脚本只操作自己创建且取得前台的窗口，
+保存下拉悬停、运行、观战/试射及重置截图、只读状态审计和真实退出码。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 tactical-build

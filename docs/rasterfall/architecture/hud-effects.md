@@ -62,6 +62,13 @@ direct pixels 改称 overlay 来绕过 consumer 缺口。
 
 ## 事件与 runtime
 
+战术实验终端使用 canvas 生成分组字段、下拉列表、当前值标记和悬停色带，命中与绘制共用
+面板尺寸。列表展开时独占鼠标命中，退出时沿玩家输入抑制机制要求已按住的键鼠释放。
+新终端不借用已关闭的 Desktop/Application gate。悬停只在进入不同有效项时触发声音；
+`rasterfall_audio_ui` 通过已有事件环投递五类短提示音，音频线程合成带起止包络的三角波，
+不在渲染回调播放、不添加磁盘音效资源。实验弹着/射线由 `rf_tactical_effects.inc` 从
+权威计数读取，统计不从特效池反推。
+
 数据流固定为：
 
 ```text

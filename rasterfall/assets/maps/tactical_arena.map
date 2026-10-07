@@ -1,0 +1,81 @@
+map version=1 units=rfu
+world min_x=-17408 max_x=17408 min_z=-16384 max_z=13312 room_limit=65000 attr.identity=tactical_arena
+surface id=ground kind=ground min_x=-17408 max_x=17408 min_z=-16384 max_z=13312 height=0 material=344650 attr.collision_id=ground_col
+collision id=ground_col shape=flat min_x=-17408 max_x=17408 min_z=-16384 max_z=13312 height=0 collision=false visible=true walkable=true color=344650
+render id=ground_paint kind=floor min_x=-17408 max_x=17408 min_z=-16384 max_z=13312 height=0 color=344650
+region id=player_start kind=start min_x=0 max_x=0 min_z=-15084 max_z=-15084 attr.sy=0 attr.cy=1024
+object id=tactical_terminal kind=facility_terminal x=0 y=0 z=-14284 yaw=0 scale=1000 attr.collision=component
+render id=control_line kind=floor min_x=-17408 max_x=17408 min_z=-13284 max_z=-13220 height=0 color=4AC8CC
+region id=frontier_station_bounds kind=mission_area min_x=-16384 max_x=16384 min_z=-12288 max_z=12288
+collision id=cover_0 shape=box min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_0 kind=box min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_1 shape=box min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_1 kind=box min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_2 shape=box min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_2 kind=box min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_3 shape=box min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_3 kind=box min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_4 shape=box min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_4 kind=box min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_5 shape=box min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_5 kind=box min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_6 shape=box min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_6 kind=box min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_7 shape=box min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_7 kind=box min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_8 shape=box min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_8 kind=box min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_9 shape=box min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_9 kind=box min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_10 shape=box min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_10 kind=box min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_11 shape=box min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_11 kind=box min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_12 shape=box min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_12 kind=box min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_13 shape=box min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_13 kind=box min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_14 shape=box min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_14 kind=box min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_15 shape=box min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_15 kind=box min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 attr.base_y=0 color=8A9A9F
+collision id=cover_16 shape=box min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 collision=true visible=true walkable=false color=647881
+render id=cover_draw_16 kind=box min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 attr.base_y=0 color=8A9A9F
+collision id=cover_17 shape=box min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 collision=true visible=true walkable=false color=647881
+render id=cover_draw_17 kind=box min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 attr.base_y=0 color=8A9A9F
+collision id=observer_sill_col shape=box min_x=-17408 max_x=17408 min_z=-12600 max_z=-12350 height=512 attr.base_y=0 collision=true visible=false walkable=false
+render id=observer_sill kind=box min_x=-17408 max_x=17408 min_z=-12600 max_z=-12350 height=512 attr.base_y=0 color=536B78
+collision id=observer_wall_pier_0_col shape=box min_x=-17408 max_x=-14500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_wall_pier_0 kind=box min_x=-17408 max_x=-14500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 color=536B78
+collision id=observer_wall_lintel_0_col shape=box min_x=-14500 max_x=-8500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 collision=true visible=false walkable=false
+render id=observer_wall_lintel_0 kind=box min_x=-14500 max_x=-8500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 color=536B78
+collision id=observer_wall_pier_1_col shape=box min_x=-8500 max_x=-6000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_wall_pier_1 kind=box min_x=-8500 max_x=-6000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 color=536B78
+collision id=observer_wall_lintel_1_col shape=box min_x=-6000 max_x=0 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 collision=true visible=false walkable=false
+render id=observer_wall_lintel_1 kind=box min_x=-6000 max_x=0 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 color=536B78
+collision id=observer_wall_pier_2_col shape=box min_x=0 max_x=2500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_wall_pier_2 kind=box min_x=0 max_x=2500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 color=536B78
+collision id=observer_wall_lintel_2_col shape=box min_x=2500 max_x=8500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 collision=true visible=false walkable=false
+render id=observer_wall_lintel_2 kind=box min_x=2500 max_x=8500 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 color=536B78
+collision id=observer_wall_pier_3_col shape=box min_x=8500 max_x=11000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_wall_pier_3 kind=box min_x=8500 max_x=11000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 color=536B78
+collision id=observer_wall_lintel_3_col shape=box min_x=11000 max_x=16000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 collision=true visible=false walkable=false
+render id=observer_wall_lintel_3 kind=box min_x=11000 max_x=16000 min_z=-12600 max_z=-12350 height=2304 attr.base_y=1792 color=536B78
+collision id=observer_wall_pier_end_col shape=box min_x=16000 max_x=17408 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_wall_pier_end kind=box min_x=16000 max_x=17408 min_z=-12600 max_z=-12350 height=2304 attr.base_y=512 color=536B78
+render id=observer_glass_0 kind=sign min_x=-14500 max_x=-8500 min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE
+collision id=observer_glass_0_col shape=box min_x=-14500 max_x=-8500 min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_glass_1 kind=sign min_x=-6000 max_x=0 min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE
+collision id=observer_glass_1_col shape=box min_x=-6000 max_x=0 min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_glass_2 kind=sign min_x=2500 max_x=8500 min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE
+collision id=observer_glass_2_col shape=box min_x=2500 max_x=8500 min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false
+render id=observer_glass_3 kind=sign min_x=11000 max_x=16000 min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE
+collision id=observer_glass_3_col shape=box min_x=11000 max_x=16000 min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false
+collision id=perimeter_west_col shape=box min_x=-17408 max_x=-17344 min_z=-16384 max_z=13312 height=8192 collision=true visible=false walkable=false
+render id=perimeter_west_glass kind=sign min_x=-17376 max_x=-17376 min_z=-16384 max_z=13312 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_east_col shape=box min_x=17344 max_x=17408 min_z=-16384 max_z=13312 height=8192 collision=true visible=false walkable=false
+render id=perimeter_east_glass kind=sign min_x=17376 max_x=17376 min_z=-16384 max_z=13312 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_south_col shape=box min_x=-17408 max_x=17408 min_z=-16384 max_z=-16320 height=8192 collision=true visible=false walkable=false
+render id=perimeter_south_glass kind=sign min_x=-17408 max_x=17408 min_z=-16352 max_z=-16352 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_north_col shape=box min_x=-17408 max_x=17408 min_z=13248 max_z=13312 height=8192 collision=true visible=false walkable=false
+render id=perimeter_north_glass kind=sign min_x=-17408 max_x=17408 min_z=13280 max_z=13280 height=0 attr.height2=8192 attr.style=6 color=8DCEDE

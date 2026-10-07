@@ -46,7 +46,40 @@ static void audio_drain_events(struct rasterfall_audio *audio)
         __sync_synchronize();
         kind = audio->events[rp & (RASTERFALL_AUDIO_EVENT_RING - 1)];
         audio->event_rpos = rp + 1;
-        toy_sfx_play(&audio->sfx, kind);
+        if(kind>=64 && kind<=68) {
+            static const int durations[]={24,38,60,110,85};
+            audio->ui_kind=kind-64;
+            audio->ui_length=audio->ui_remaining=durations[kind-64]*TOY_SFX_RATE/1000;
+            audio->ui_phase=0;
+        } else toy_sfx_play(&audio->sfx, kind);
+    }
+}
+
+void rasterfall_audio_ui(struct rasterfall_audio *audio,int kind)
+{
+    if(audio && audio->running && kind>=0 && kind<=RF_UI_SOUND_EXIT)
+        audio_post_event(audio,64+kind);
+}
+
+static void audio_ui_mix(struct rasterfall_audio *a,short *pcm,int frames)
+{
+    static const int tones[]={1200,720,960,660,880};
+    for(int i=0;i<frames && a->ui_remaining>0;++i) {
+        int elapsed=a->ui_length-a->ui_remaining;
+        int frequency=tones[a->ui_kind];
+        if(a->ui_kind==RF_UI_SOUND_CONFIRM && elapsed>a->ui_length/2)frequency=990;
+        if(a->ui_kind==RF_UI_SOUND_EXIT && elapsed>a->ui_length/2)frequency=550;
+        a->ui_phase=(a->ui_phase+frequency*65536/TOY_SFX_RATE)&65535;
+        int wave=a->ui_phase<32768?a->ui_phase*2-32768:98304-a->ui_phase*2;
+        int envelope=a->ui_remaining*900/a->ui_length;
+        int attack=TOY_SFX_RATE/200;
+        if(elapsed<attack)envelope=envelope*elapsed/attack;
+        int sample=wave*envelope/32768;
+        for(int c=0;c<2;++c) {
+            int value=pcm[i*2+c]+sample;
+            pcm[i*2+c]=(short)(value>32767?32767:value<-32768?-32768:value);
+        }
+        --a->ui_remaining;
     }
 }
 
@@ -61,6 +94,7 @@ static void *audio_thread_func(void *arg)
          * SFX soft peak <28000 plus machine soft peak <4096 fits PCM16. */
         toy_sfx_render_gained(&audio->sfx, play_buf, SFX_BLOCK_FRAMES,192,128,28000);
         rf_weaver_audio_mix(audio->weaver, play_buf, SFX_BLOCK_FRAMES);
+        audio_ui_mix(audio,play_buf,SFX_BLOCK_FRAMES);
         ret = toy_audio_write(audio->output, play_buf, SFX_BLOCK_FRAMES);
         if (ret < 0) break;
     }
@@ -73,6 +107,8 @@ int rasterfall_audio_start(struct rasterfall_audio *audio,
     int kind;
     if (!audio || !output || audio->running) return -1;
     audio->output = output;
+    audio->ui_remaining=0;
+    audio->event_rpos=audio->event_wpos=0;
     __atomic_store_n(&audio->quit, 0, __ATOMIC_RELEASE);
     toy_sfx_init(&audio->sfx, TOY_SFX_RATE);
     for (kind = 0; kind <= TOY_SFX_MOLOTOV_BREAK; kind++)

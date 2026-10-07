@@ -8,7 +8,7 @@
 #include "rasterfall_prop.h"
 #include "rf_mesh_weaver_presentation.h"
 struct rasterfall_effects;
-enum rf_gpu_scene_aux_kind { RF_GPU_AUX_WORLD, RF_GPU_AUX_WEAPON };
+enum rf_gpu_scene_aux_kind { RF_GPU_AUX_WORLD, RF_GPU_AUX_WEAPON, RF_GPU_AUX_FROZEN };
 enum rf_gpu_scene_aux_state {
     RF_GPU_AUX_HIDDEN, RF_GPU_AUX_CONNECTING, RF_GPU_AUX_LIVE, RF_GPU_AUX_UNAVAILABLE
 };
@@ -16,6 +16,7 @@ enum rf_gpu_scene_aux_state {
  * render extent and cadence are independent of UI scale. The WORLD transform
  * comes from the real camera entity, never from the main player's camera. */
 struct rf_gpu_scene_aux_view {
+    struct rf_gpu_graphics *frozen_image; /* Borrowed retired GPU target; no refresh. */
     int visible,kind,shell_visible;
     uint64_t stable_id,generation,now_us;
     struct camera camera;

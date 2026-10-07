@@ -95,10 +95,17 @@ struct rasterfall_command {
     int pose_editor_action;
 };
 
+struct rasterfall_session;
+void rasterfall_session_tactical_reset(struct rasterfall_session *s);
+void rasterfall_session_tactical_step(struct rasterfall_session *s,const struct camera *camera,
+    struct rasterfall_command *cmd,int dt_us,int blocked);
+
 enum rasterfall_pose_debug_action { RASTERFALL_POSE_DEBUG_NONE, RASTERFALL_POSE_DEBUG_PREV_BONE, RASTERFALL_POSE_DEBUG_NEXT_BONE, RASTERFALL_POSE_DEBUG_AXIS_X, RASTERFALL_POSE_DEBUG_AXIS_Y, RASTERFALL_POSE_DEBUG_AXIS_Z, RASTERFALL_POSE_DEBUG_DECREASE, RASTERFALL_POSE_DEBUG_INCREASE, RASTERFALL_POSE_DEBUG_EXPORT, RASTERFALL_POSE_DEBUG_TOGGLE_LAYER };
 enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFALL_HUMANOID_DEBUG_WALK, RASTERFALL_HUMANOID_DEBUG_AIM, RASTERFALL_HUMANOID_DEBUG_RECOIL, RASTERFALL_HUMANOID_DEBUG_ACTION_COUNT };
 
+struct rf_tactical_lab;
 struct rasterfall_session {
+    struct rf_tactical_lab *tactical;
     struct rf_gpu_scene_local_source scene_local;
     enum rasterfall_world_id world_id;
     struct rasterfall_world_content content;
@@ -179,6 +186,10 @@ int rasterfall_session_load_legacy(struct rasterfall_session *session,
 const struct toy_game_actor *rasterfall_session_local_player_const(
     const struct rasterfall_session *session);
 void rasterfall_session_unload(struct rasterfall_session *session);
+/* Move validated map/content ownership, rebind projections, then reset normally.
+ * Neither Game state nor internal pointers are copied from the preview. */
+int rasterfall_session_adopt_map(struct rasterfall_session *session,
+                                struct rasterfall_session *prepared);
 int rasterfall_session_request_world(struct rasterfall_session *session,
                                      enum rasterfall_world_id world);
 int rasterfall_session_take_world_request(struct rasterfall_session *session,

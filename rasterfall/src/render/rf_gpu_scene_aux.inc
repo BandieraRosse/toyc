@@ -89,6 +89,13 @@ static void scene_aux_prepare_one(struct rf_gpu_scene_world_gpu_probe *probe,uns
     if(!view || !view->visible || probe->offscreen_only) {
         slot->visible=0;slot->status.state=RF_GPU_AUX_HIDDEN;return;
     }
+    if(view->kind==RF_GPU_AUX_FROZEN) {
+        slot->visible=1;
+        slot->status.state=view->frozen_image && view->width>0 && view->height>0 &&
+            rf_gpu_graphics_scene_video_at(probe->graphics,slot_index,view->frozen_image,
+                view->x,view->y,view->width,view->height)==0?RF_GPU_AUX_LIVE:RF_GPU_AUX_UNAVAILABLE;
+        return;
+    }
     int changed=!slot->visible || slot->id!=view->stable_id ||
         slot->generation!=view->generation || slot->kind!=view->kind ||
         slot->world_generation!=world->world_generation;

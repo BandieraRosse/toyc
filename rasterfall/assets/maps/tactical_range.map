@@ -1,0 +1,36 @@
+map version=1 units=rfu
+world min_x=-8192 max_x=8192 min_z=-4096 max_z=53248 room_limit=65000 attr.identity=tactical_range
+surface id=ground kind=ground min_x=-8192 max_x=8192 min_z=-4096 max_z=53248 height=0 material=344650 attr.collision_id=ground_col
+collision id=ground_col shape=flat min_x=-8192 max_x=8192 min_z=-4096 max_z=53248 height=0 collision=false visible=true walkable=true color=344650
+render id=ground_paint kind=floor min_x=-8192 max_x=8192 min_z=-4096 max_z=53248 height=0 color=344650
+region id=player_start kind=start min_x=0 max_x=0 min_z=-2796 max_z=-2796 attr.sy=0 attr.cy=1024
+object id=tactical_terminal kind=facility_terminal x=0 y=0 z=-1996 yaw=0 scale=1000 attr.collision=component
+render id=control_line kind=floor min_x=-8192 max_x=8192 min_z=-996 max_z=-932 height=0 color=4AC8CC
+render id=distance_0 kind=sign min_x=-6644 max_x=-5644 min_z=2624 max_z=2640 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=5m
+render id=lane_0 kind=floor min_x=-6154 max_x=-6134 min_z=0 max_z=2560 height=0 color=607B83
+render id=distance_1 kind=sign min_x=-5108 max_x=-4108 min_z=5184 max_z=5200 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=10m
+render id=lane_1 kind=floor min_x=-4618 max_x=-4598 min_z=0 max_z=5120 height=0 color=607B83
+render id=distance_2 kind=sign min_x=-3572 max_x=-2572 min_z=7744 max_z=7760 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=15m
+render id=lane_2 kind=floor min_x=-3082 max_x=-3062 min_z=0 max_z=7680 height=0 color=607B83
+render id=distance_3 kind=sign min_x=-2036 max_x=-1036 min_z=10304 max_z=10320 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=20m
+render id=lane_3 kind=floor min_x=-1546 max_x=-1526 min_z=0 max_z=10240 height=0 color=607B83
+render id=distance_4 kind=sign min_x=-500 max_x=500 min_z=15424 max_z=15440 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=30m
+render id=lane_4 kind=floor min_x=-10 max_x=10 min_z=0 max_z=15360 height=0 color=607B83
+render id=distance_5 kind=sign min_x=1036 max_x=2036 min_z=20544 max_z=20560 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=40m
+render id=lane_5 kind=floor min_x=1526 max_x=1546 min_z=0 max_z=20480 height=0 color=607B83
+render id=distance_6 kind=sign min_x=2572 max_x=3572 min_z=30784 max_z=30800 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=60m
+render id=lane_6 kind=floor min_x=3062 max_x=3082 min_z=0 max_z=30720 height=0 color=607B83
+render id=distance_7 kind=sign min_x=4108 max_x=5108 min_z=41024 max_z=41040 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=80m
+render id=lane_7 kind=floor min_x=4598 max_x=4618 min_z=0 max_z=40960 height=0 color=607B83
+render id=distance_8 kind=sign min_x=5644 max_x=6644 min_z=51264 max_z=51280 height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text=100m
+render id=lane_8 kind=floor min_x=6134 max_x=6154 min_z=0 max_z=51200 height=0 color=607B83
+collision id=backstop shape=box min_x=-8192 max_x=8192 min_z=52224 max_z=52480 height=2500 collision=true visible=true walkable=false color=263640
+render id=backstop_draw kind=box min_x=-8192 max_x=8192 min_z=52224 max_z=52480 height=2500 attr.base_y=0 color=536B78
+collision id=perimeter_west_col shape=box min_x=-8192 max_x=-8128 min_z=-4096 max_z=53248 height=8192 collision=true visible=false walkable=false
+render id=perimeter_west_glass kind=sign min_x=-8160 max_x=-8160 min_z=-4096 max_z=53248 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_east_col shape=box min_x=8128 max_x=8192 min_z=-4096 max_z=53248 height=8192 collision=true visible=false walkable=false
+render id=perimeter_east_glass kind=sign min_x=8160 max_x=8160 min_z=-4096 max_z=53248 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_south_col shape=box min_x=-8192 max_x=8192 min_z=-4096 max_z=-4032 height=8192 collision=true visible=false walkable=false
+render id=perimeter_south_glass kind=sign min_x=-8192 max_x=8192 min_z=-4064 max_z=-4064 height=0 attr.height2=8192 attr.style=6 color=8DCEDE
+collision id=perimeter_north_col shape=box min_x=-8192 max_x=8192 min_z=53184 max_z=53248 height=8192 collision=true visible=false walkable=false
+render id=perimeter_north_glass kind=sign min_x=-8192 max_x=8192 min_z=53216 max_z=53216 height=0 attr.height2=8192 attr.style=6 color=8DCEDE

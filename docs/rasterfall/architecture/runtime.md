@@ -74,6 +74,11 @@ V1 checkpoint 和版本化原型设计见 [Runtime 历史设计](../archive/runt
 
 ## 实验区与性能测试
 
+AI 策略对抗场和武器靶场由指挥桌沿正常 world load/reset/unload 进入，session 拥有独立
+`rf_tactical_lab`。runtime 在固定更新入口把原生 16,667 微秒节拍累积为 20ms 战术步，
+保留玩家射击边沿到下一个有效步；终端、RTS 摄像机和音效只负责交互及表现。
+地图、权威与只读投影合同见[战术 AI 架构](tactical-ai.md#游戏内实验地图)。
+
 `rf_combat_lab.inc` 是战斗固定预设、现场控制和结果的 runtime owner，复用前哨站空性能场和物理终端交互。
 实验与性能场互斥；正常 FPS/RTS 命令仍交给 session，脚本观察仅为实验拥有的 actor 生成正式移动/武器命令。
 所有伤害、回避、计时和统计真值在 Game，runtime 每固定步读取 owned 对象并在结束时写结构化日志。
@@ -107,6 +112,22 @@ RF 电子产品控制台复用交互边沿，按 E 循环关闭和三个转速�
 完整合同见[实验区合同](../reference/experiment-labs.md)，执行见[性能诊断](../guides/rendering-performance.md)。
 
 ## 生命周期
+
+### 指挥桌预加载与出生点预览
+
+`rf_table_panel.inc` 统一拥有下拉选图、悬停、部署按钮和右侧预览矩形；选择与部署分开。
+`rf_table_preview.inc` 持有一个独立 session、地图资源集和 GPU 离屏目标。主线程在连续帧
+依次呈现加载提示、解析/reset 预加载地图、渲染出生点首帧；不调用其玩法 update，不补偿
+加载耗时到实时逻辑。现有 renderer 为串行绑定，预览不在工作线程并发调用。
+成功后保留 GPU 图像并停止刷新，正常大厅仍由自己的 session 推进；切换地图、关闭界面或
+退出时，先退休主 GPU 提交并解绑视频，再释放预览目标和 session。失败禁用预览部署，
+重新选择可重试；CPU 后端保留普通部署并明确提示无 GPU 预览。
+
+确认部署沿设备权限检查和 `rf_game_request_world()` 进入。匹配的预加载 session 通过
+`rasterfall_session_adopt_map()` 移交 Runtime Map、level 和 content，重新绑定投影并在目标
+session 正常 reset；不复制 Game 或 session 自引用指针，不继承预览摄像机状态。原生逻辑
+回归覆盖六个目录地图的移交、源 owner 卸载、目标投影绑定及世界代际增长。
+未命中预加载时仍使用原 preflight/load 路径。预览 GPU 图像不充当进入后的主渲染目标。
 
 默认 Game policy 加载 `RASTERFALL_WORLD_OUTPOST`（`assets/maps/outpost.map`），不让 Core 选择或解析
 Rasterfall world。Outpost 指挥桌地图屏幕可请求 `RASTERFALL_WORLD_CAMPAIGN_01` 或

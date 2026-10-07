@@ -1,0 +1,55 @@
+"""Author the single-layer lab maps from a native tactical log's map facts."""
+import argparse
+import json
+from pathlib import Path
+from building_kit import BuildingKit
+
+def build(source):
+    data=json.loads(Path(source).read_text(encoding="utf-8").splitlines()[0])
+    def shell(identity,x0,x1,z0,z1):
+        return ["map version=1 units=rfu",
+            f"world min_x={x0} max_x={x1} min_z={z0} max_z={z1} room_limit=65000 attr.identity={identity}",
+            f"surface id=ground kind=ground min_x={x0} max_x={x1} min_z={z0} max_z={z1} height=0 material=344650 attr.collision_id=ground_col",
+            f"collision id=ground_col shape=flat min_x={x0} max_x={x1} min_z={z0} max_z={z1} height=0 collision=false visible=true walkable=true color=344650",
+            f"render id=ground_paint kind=floor min_x={x0} max_x={x1} min_z={z0} max_z={z1} height=0 color=344650",
+            f"region id=player_start kind=start min_x=0 max_x=0 min_z={z0+1300} max_z={z0+1300} attr.sy=0 attr.cy=1024",
+            f"object id=tactical_terminal kind=facility_terminal x=0 y=0 z={z0+2100} yaw=0 scale=1000 attr.collision=component",
+            f"render id=control_line kind=floor min_x={x0} max_x={x1} min_z={z0+3100} max_z={z0+3164} height=0 color=4AC8CC"]
+    arena=shell('tactical_arena',-17408,17408,-16384,13312)
+    arena.append('region id=frontier_station_bounds kind=mission_area min_x=-16384 max_x=16384 min_z=-12288 max_z=12288')
+    for i,c in enumerate(data['covers']):
+        x0,z0,x1,z1,height=c
+        x0,x1=round((x0-32)*512),round((x1-32)*512)
+        z0,z1=round((z0-24)*512),round((z1-24)*512)
+        h=round((1.10 if height==1 else 2.20)*512)
+        arena.append(f'collision id=cover_{i} shape=box min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} collision=true visible=true walkable=false color=647881')
+        arena.append(f'render id=cover_draw_{i} kind=box min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} attr.base_y=0 color=8A9A9F')
+    # Replace the wall volume at each window; glass never overlays a solid wall.
+    kit=BuildingKit(arena,250)
+    windows=[(-14500,-8500),(-6000,0),(2500,8500),(11000,16000)]
+    kit.solid('observer_sill',-17408,17408,-12600,-12350,0,512,'536B78')
+    kit.wall('observer_wall','x',-12475,-17408,17408,512,2304,'536B78',
+             openings=[(a,b,1280) for a,b in windows])
+    for i,(a,b) in enumerate(windows):
+        arena.append(f'render id=observer_glass_{i} kind=sign min_x={a} max_x={b} min_z=-12475 max_z=-12475 height=512 attr.height2=1792 attr.style=6 color=8DCEDE')
+        arena.append(f'collision id=observer_glass_{i}_col shape=box min_x={a} max_x={b} min_z=-12500 max_z=-12450 height=1792 attr.base_y=512 collision=true visible=false walkable=false')
+    ranges=shell('tactical_range',-8192,8192,-4096,53248)
+    for i,d in enumerate([5,10,15,20,30,40,60,80,100]):
+        x=(i-4)*1536;z=d*512
+        ranges += [f'render id=distance_{i} kind=sign min_x={x-500} max_x={x+500} min_z={z+64} max_z={z+80} height=1100 attr.height2=1450 color=8DE2CF attr.facing=-z attr.text={d}m',
+                   f'render id=lane_{i} kind=floor min_x={x-10} max_x={x+10} min_z=0 max_z={z} height=0 color=607B83']
+    ranges.append('collision id=backstop shape=box min_x=-8192 max_x=8192 min_z=52224 max_z=52480 height=2500 collision=true visible=true walkable=false color=263640')
+    ranges.append('render id=backstop_draw kind=box min_x=-8192 max_x=8192 min_z=52224 max_z=52480 height=2500 attr.base_y=0 color=536B78')
+    for lines,x0,x1,z0,z1 in [(arena,-17408,17408,-16384,13312),(ranges,-8192,8192,-4096,53248)]:
+        for name,a,b,c,d in [('west',x0,x0+64,z0,z1),('east',x1-64,x1,z0,z1),
+                              ('south',x0,x1,z0,z0+64),('north',x0,x1,z1-64,z1)]:
+            lines.append(f'collision id=perimeter_{name}_col shape=box min_x={a} max_x={b} min_z={c} max_z={d} height=8192 collision=true visible=false walkable=false')
+            if name in ('west','east'):a=b=(a+b)//2
+            else:c=d=(c+d)//2
+            lines.append(f'render id=perimeter_{name}_glass kind=sign min_x={a} max_x={b} min_z={c} max_z={d} height=0 attr.height2=8192 attr.style=6 color=8DCEDE')
+    root=Path('rasterfall/assets/maps')
+    for name,lines in [('tactical_arena',arena),('tactical_range',ranges)]:
+        (root/(name+'.map')).write_text('\n'.join(lines)+'\n',encoding='utf-8',newline='\n')
+
+if __name__=='__main__':
+    parser=argparse.ArgumentParser();parser.add_argument('log');args=parser.parse_args();build(args.log)
