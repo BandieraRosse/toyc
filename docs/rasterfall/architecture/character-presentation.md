@@ -10,6 +10,9 @@
 
 ## 所有权边界
 
+Block 与普通感染体通过[公共角色加速入口](gpu-rendering-architecture.md#统一角色加速)分离固定几何
+和最终 palette；各自保留动作和骨架适配。特感 rigid rig 仍沿原几何生产者，不假定已经迁移。
+
 Game/session 拥有 actor 身份、动作语义和权威位置。presentation adapter 将稳定 character ID 解析为
 profile/recipe，并向 renderer 提交 finalized pose、transform、材质 override 和附件 placement。renderer
 不得从 actor 读取资源路径、gear list 或临时资产参数，也不得从骨骼姿态反推动作语义。

@@ -7007,6 +7007,13 @@ startup_again:
                         (long long)probe_stats.enemy_upload_us,
                         (long long)probe_stats.enemy_draw_prepare_us,probe_stats.enemy_triangles,
                         probe_stats.enemy_prepare_culled);
+                    __printf("SCENE-CHARACTER frame=%llu assets_built=%u assets_shared=%u poses_sampled=%u poses_reused=%u views_reused=%u bind_uploads=%u palette_requests=%u sample_us=%lld pack_us=%lld upload_us=%lld\n",
+                        (unsigned long long)enemy_render.frame_id,
+                        probe_stats.character_cost.assets_built,probe_stats.character_cost.assets_shared,
+                        probe_stats.character_cost.poses_sampled,probe_stats.character_cost.poses_reused,
+                        probe_stats.character_cost.views_reused,probe_stats.character_cost.bind_uploads,
+                        probe_stats.character_cost.palette_uploads,(long long)probe_stats.character_cost.sample_us,
+                        (long long)probe_stats.character_cost.pack_us,(long long)probe_stats.character_cost.upload_us);
                     __printf("SCENE-CPU-COST frame=%llu loop_prepare_us=%lld logic_us=%lld dynamic_source_us=%lld freeze_us=%lld pose_us=%lld map_prepare_us=%lld misc_prepare_us=%lld\n",
                         (unsigned long long)enemy_render.frame_id,(long long)audit_prepare_us,
                         (long long)audit_update_us,(long long)audit_render_us,(long long)scene_freeze_us,

@@ -19,6 +19,8 @@
 
 `tools/blender/rf_character_parts.py` 是公共编排入口，`rf_parts/` 负责语义指纹、版本保存、
 组装、审阅和导出。角色造型、配方及源资产留在本地 `private-assets`；公共工具不包含私有几何。
+RF-C01 V028 的 17 份重建和验证脚本经明确授权纳入版本控制，保留原路径与内容；
+清单、部件 BLEND、纹理和导出模型仍为本地资产。脚本范围与前置条件见[分部件工作流](../guides/character-parts.md)。
 正常组装只加载清单锁定的部件，不执行生成器，也不读取历史 `design-v*` 目录。
 
 RF-C01 的当前创作根为 `rasterfall/private-assets/source/characters/rf_c01/authoring/`。

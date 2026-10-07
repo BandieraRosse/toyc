@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+角色加速公共合同、Block／普通感染体常驻网格、Humanoid 共用上传事务和多视图消费从
+[统一角色加速](architecture/gpu-rendering-architecture.md#统一角色加速)进入；
+求值缓存与实例隔离见[动画架构](architecture/animation-architecture.md#scene-批量求值与-ik-更新范围)。
+
 程序 Block 角色的常驻网格、骨骼与武器变换、主/AUX 资源复用从
 [GPU 渲染架构](architecture/gpu-rendering-architecture.md#程序角色常驻几何)进入；
 冻结姿态和职业装备来源归[角色表现](architecture/character-presentation.md#block-标准骨架)。

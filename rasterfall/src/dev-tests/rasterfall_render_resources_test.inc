@@ -41,6 +41,38 @@ static struct rasterfall_model_asset *resource_test_build_adopted(void)
     return model;
 }
 
+static int resource_pool_test(void)
+{
+    struct rasterfall_resource_registry *a=tlibc_malloc(sizeof(*a)),*b=tlibc_malloc(sizeof(*b));
+    struct rasterfall_resource_pool *pool=rasterfall_resource_pool_create();
+    struct rasterfall_resource_handle x,y,replacement;
+    int result=-1;
+    if(a)memset(a,0,sizeof(*a));
+    if(b)memset(b,0,sizeof(*b));
+    if(!a || !b || !pool)goto done;
+    a->pool=b->pool=pool;
+    if(resource_load(a,"shared",&x,resource_test_load)<0 ||
+        resource_load(b,"shared",&y,resource_test_load)<0)goto done;
+    const struct rasterfall_model_asset *model=rasterfall_resources_resolve(a,x);
+    if(!model || model!=rasterfall_resources_resolve(b,y) || pool->count!=1 ||
+        rasterfall_resource_pool_destroy(pool)>=0)goto done;
+    if(rasterfall_resources_frame_begin(a)<0 || rasterfall_resources_pin(a,x)<0)goto done;
+    rasterfall_resources_invalidate(a);rasterfall_resources_invalidate(b);
+    if(rasterfall_resources_resolve(a,x)!=model || rasterfall_resources_resolve(b,y) ||
+        rasterfall_resource_pool_destroy(pool)>=0 || model->textures.views[0].data[2]!=63)goto done;
+    if(resource_load(b,"shared",&replacement,resource_test_load)<0 ||
+        replacement.generation==y.generation || rasterfall_resources_resolve(b,replacement)!=model)goto done;
+    rasterfall_resources_frame_complete(a);
+    if(rasterfall_resources_resolve(a,x) || rasterfall_resources_resolve(b,replacement)!=model)goto done;
+    if(resource_load(a,"missing",&x,resource_test_load)>=0 || pool->count!=1)goto done;
+    result=0;
+done:
+    if(a) {rasterfall_resources_frame_complete(a);rasterfall_resources_invalidate(a);tlibc_free(a);}
+    if(b) {rasterfall_resources_frame_complete(b);rasterfall_resources_invalidate(b);tlibc_free(b);}
+    if(rasterfall_resource_pool_destroy(pool)<0)result=-1;
+    return result;
+}
+
 int rasterfall_render_resources_logic_test(void)
 {
     struct rasterfall_resource_registry *r = tlibc_malloc(sizeof(*r));
@@ -53,6 +85,7 @@ int rasterfall_render_resources_logic_test(void)
     if (!r) return 1;
     memset(r, 0, sizeof(*r));
 #define RESOURCE_CHECK(x) do { if (!(x)) { failure = __LINE__; goto done; } } while (0)
+    RESOURCE_CHECK(!resource_pool_test());
     RESOURCE_CHECK(resource_load(r, "mesh", &old, resource_test_load) == 0);
     RESOURCE_CHECK(resource_load(r, "mesh", &shared, resource_test_load) == 0);
     RESOURCE_CHECK(old.slot == shared.slot && old.generation == shared.generation && r->loads == 1);

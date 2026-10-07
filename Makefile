@@ -2162,9 +2162,12 @@ $(BUILD)/rf_rts.o $(BUILD)/rf_rts_portrait.o $(BUILD)/rf_player_ui.o $(BUILD)/rf
 $(BUILD)/rf_rts_self.o $(BUILD)/rf_rts_portrait_self.o $(BUILD)/rf_player_ui_self.o $(BUILD)/rf_minimap_self.o $(BUILD)/rf_player_commands_self.o $(BUILD)/rf_story_self.o $(BUILD)/rf_story_test_self.o $(BUILD)/rf_player_panels_self.o $(BUILD)/rf_device_commands_self.o $(BUILD)/rf_ui_font_self.o: $(BUILD)/%_self.o: rasterfall/src/%.c $(SELF_CC) | $(BUILD)
 	$(SELF_CC) $(SELF_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@
 $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_aux.inc
-$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_block_gpu.inc $(RASTERFALL_INC)/rf_gpu_scene_block.h
+$(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rf_gpu_character_gpu.inc $(RASTERFALL_INC)/rf_gpu_scene_block.h
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_block_source.inc $(RASTERFALL_SRC)/dev-tests/rf_gpu_scene_block_test.inc $(RASTERFALL_INC)/rf_gpu_scene_block.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_player_runtime.inc $(RASTERFALL_SRC)/rf_device_runtime.inc $(RASTERFALL_SRC)/rf_ui_performance.inc $(RASTERFALL_INC)/rf_player_ui.h $(RASTERFALL_INC)/rf_player_commands.h $(RASTERFALL_INC)/rf_player_panels.h $(RASTERFALL_INC)/rf_story.h $(RASTERFALL_INC)/rf_device_commands.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_frontier_performance.inc
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_rts_runtime.inc $(RASTERFALL_INC)/rf_rts.h
 $(BUILD)/rf_player_ui.o $(BUILD)/rf_player_ui_self.o: $(RASTERFALL_SRC)/rf_rts_ui.inc $(RASTERFALL_INC)/rf_rts.h
+
+$(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_native_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_character_upload.h $(RASTERFALL_INC)/rf_gpu_character.h
+$(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_infected_source.inc $(RASTERFALL_INC)/rf_gpu_character.h

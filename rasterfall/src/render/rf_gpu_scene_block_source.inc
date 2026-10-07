@@ -26,7 +26,7 @@ int rf_gpu_scene_block_supported(const struct rf_gpu_scene_procedural_item_v1 *i
 { return scene_block_valid(item); }
 
 struct scene_block_build {
-    rf_gpu_scene_block_triangle_fn emit;
+    rf_gpu_character_triangle_fn emit;
     void *context;
     const struct rasterfall_model_asset *body;
 };
@@ -38,7 +38,7 @@ static int scene_block_equipment(void *opaque,int head,int x0,int x1,int y0,int 
     int bone=block_equipment_bind(build->body,head,x0,x1,y0,y1,z0,z1,points);
     if(bone<0)return -1;
     for(unsigned i=0;i<sizeof(block_box_faces)/sizeof(block_box_faces[0]);i+=3) {
-        struct rf_gpu_scene_block_vertex v[3]={0};
+        struct rf_gpu_character_vertex v[3]={0};
         for(int k=0;k<3;++k) {
             for(int axis=0;axis<3;++axis) {
                 double value=points[block_box_faces[i+k]][axis];
@@ -55,7 +55,7 @@ static int scene_block_flash_triangle(void *opaque,const struct rf_gpu_scene_ene
 {
     struct scene_block_build *build=opaque;
     const struct rf_gpu_scene_enemy_point *points[3]={a,b,c};
-    struct rf_gpu_scene_block_vertex v[3]={0};
+    struct rf_gpu_character_vertex v[3]={0};
     for(int k=0;k<3;++k) {
         v[k].position[0]=points[k]->x;v[k].position[1]=points[k]->y;v[k].position[2]=points[k]->z;
         v[k].bone0=v[k].bone1=build->body->bone_count+1;v[k].weight=65535;
@@ -63,7 +63,7 @@ static int scene_block_flash_triangle(void *opaque,const struct rf_gpu_scene_ene
     return build->emit(build->context,v,color,1);
 }
 int rf_gpu_scene_block_bind(const struct rf_gpu_scene_procedural_item_v1 *item,
-    rf_gpu_scene_block_triangle_fn emit,void *context)
+    rf_gpu_character_triangle_fn emit,void *context)
 {
     if(!scene_block_valid(item) || !emit || block_body_ready()<0)return -1;
     const struct rasterfall_model_asset *body=&block_body_resource.definition;
@@ -80,7 +80,7 @@ int rf_gpu_scene_block_bind(const struct rf_gpu_scene_procedural_item_v1 *item,
             if(!part)color=color==0xd94f70?item->body_color:color==0x25354a?item->leg_color:
                 color==0xf0c3a5?item->skin_color:item->hair_color;
             for(unsigned i=0;i<count;i+=3) {
-                struct rf_gpu_scene_block_vertex v[3]={0};
+                struct rf_gpu_character_vertex v[3]={0};
                 for(int k=0;k<3;++k) {
                     unsigned id=model_u32(m->indices+(first+i+k)*4);
                     memcpy(v[k].position,m->vertices+id*m->vertex_bytes,12);
@@ -115,7 +115,7 @@ int rf_gpu_scene_block_bind(const struct rf_gpu_scene_procedural_item_v1 *item,
 }
 
 int rf_gpu_scene_block_sample(const struct rf_gpu_scene_procedural_item_v1 *item,
-    struct rf_gpu_scene_block_pose *out)
+    struct rf_gpu_character_pose *out)
 {
     struct rasterfall_rigid_transform world;
     if(!out || !scene_block_valid(item) || block_body_ready()<0 ||

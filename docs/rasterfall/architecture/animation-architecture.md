@@ -12,6 +12,13 @@
 
 ## Scene 批量求值与 IK 更新范围
 
+Block 与普通感染体通过公共角色实例槽保存各自的最终 palette，使用完整动画／步态输入失效。
+局部求值键排除世界平移，感染体还排除反馈色、淡出与 scene light；朝向、压缩和翻滚目前仍在键中。
+材质／世界／来源变更重新验证模板，不能只以压紧后的序号推断身份。`RF_GPU_CPU_POSE_REUSE=0`
+也适用于这两类 adapter。它们使用重置后的串行 scratch 求值并复制结果，不共享可变最终姿态；
+不得直接并行调用。身体／装备共用 Block 的同一 palette，Humanoid 衣物继续复用身体 palette。
+资源与提交边界见[统一角色加速](gpu-rendering-architecture.md#统一角色加速)。
+
 Scene 的 `rf_gpu_scene_pose_extract_all` 一次验证整个冻结 roster，串行提取存活角色并输出独立 palette、
 附件和武器 placement，独立角色来源也使用此批量入口。模块角色按经过校验的 `source_slot` 保留
 有界 instance，各 body 保留自己的 instance。world、身份、外观、武器、完整动画时间、回避与

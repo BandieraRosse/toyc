@@ -32,7 +32,8 @@ struct rf_gpu_graphics_draw {
     /* Scene precision/material controls. Zero keeps ordinary defaults.
      * flags: public callers must pass zero; internal layer flags are owner-only.
      * units: local units/metre (0=512); shading: 0 flat, 1 smooth, 2 soft,
-     * 3 unlit; filter: 0 nearest, 1 bilinear/repeat, 2 texture-set clamp/mip.
+     * 3 unlit, 4 flat with character form color from averaged skin normals;
+     * filter: 0 nearest, 1 bilinear/repeat, 2 texture-set clamp/mip.
      * Filter 2 uses material[2]=one-based texture-set index (0 untextured),
      * and multiplies the sRGB base color by the texture in linear light. */
     int32_t quality[4];

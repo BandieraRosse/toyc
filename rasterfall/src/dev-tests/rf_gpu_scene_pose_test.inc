@@ -563,6 +563,7 @@ int rf_gpu_scene_pose_logic_test(void)
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
     POSE_CHECK(!scene_pose_reuse_test());
     POSE_CHECK(!scene_block_retained_test());
+    POSE_CHECK(!scene_infected_retained_test());
     const char *public_only=getenv("RF_GPU_POSE_PUBLIC_TEST");
     if(public_only && !strcmp(public_only,"1"))return 0;
     POSE_CHECK(!scene_independent_enemy_source_test());

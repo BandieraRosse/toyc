@@ -67,8 +67,14 @@ struct scene_layer_workspace;
 struct scene_enemy_mesh;
 struct scene_enemy_cached;
 struct scene_actor_warm_pool;
-struct scene_block_gpu;
-struct scene_block_workspace;
+struct scene_character_gpu;
+struct scene_character_workspace;
+struct rasterfall_resource_pool;
+struct rf_gpu_character_cost {
+    unsigned assets_built,assets_shared,poses_sampled,poses_reused,views_reused;
+    unsigned bind_uploads,palette_uploads;
+    int64_t sample_us,pack_us,upload_us;
+};
 
 #define RF_GPU_SCENE_PICKUP_MODEL_COUNT 7
 #define RF_GPU_SCENE_PICKUP_MAX_PRIMITIVES 4
@@ -121,8 +127,10 @@ struct rf_gpu_scene_world_gpu_probe {
     struct scene_layer_workspace *layer_workspace;
     struct scene_enemy_mesh *enemy_workspace;
     struct scene_enemy_cached *enemy_cached;
-    struct scene_block_workspace *block_workspace;
-    struct scene_block_gpu *block[TOY_GAME_MAX_ACTORS];
+    struct scene_character_workspace *character_workspace;
+    struct rasterfall_resource_pool *character_models;
+    struct rf_gpu_character_cost character_cost;
+    struct scene_character_gpu *character[RF_GPU_SCENE_ENEMY_CAPACITY+TOY_GAME_MAX_ACTORS];
     int enemy_vertex_color;
     struct rf_gpu_graphics_batch_item *batch;
     uint32_t batch_capacity;
@@ -164,6 +172,7 @@ struct rf_gpu_scene_world_gpu_probe_stats {
     uint64_t uploads, hits;
     int64_t prepare_us,geometry_extract_us;
     int64_t enemy_upload_us,enemy_draw_prepare_us;
+    struct rf_gpu_character_cost character_cost;
     int64_t world_prepare_us,actor_prepare_us,enemy_prepare_us,layer_prepare_us,submit_retire_us;
     int64_t submit_present_us,retire_us;
     int64_t record_us,acquire_us,queue_submit_us,present_us;

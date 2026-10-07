@@ -607,6 +607,25 @@ static int precision_material_test(struct rf_gpu_vulkan_context *context)
     items[0].resource=r;items[0].draw.quality[1]=65536;
     CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)==0);
     CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
+    /* Retained form color must match the former CPU pre-multiply, while
+     * keeping geometric lighting and depth identical. Negative light dot
+     * exercises the character minimum rather than a fully lit white face. */
+    for(unsigned i=0;i<6;++i)for(unsigned n=0;n<3;++n) {
+        v[i].normals[n*3]=v[i].normals[n*3+1]=0;
+        v[i].normals[n*3+2]=32767;
+    }
+    r=rf_gpu_graphics_resource_create(g,v,6,ix,6,texels,2,2);
+    CHECK(r!=NULL);items[0].resource=r;items[0].draw.quality[2]=4;
+    CHECK(!rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS));
+    memcpy(saved,pixels,128*96*4);memcpy(saved_depths,depths,128*96*4);
+    uint32_t base_color=items[0].draw.material[0];
+    items[0].draw.material[0]=((((base_color>>16)&255)*144/256)<<16)|
+        ((((base_color>>8)&255)*144/256)<<8)|((base_color&255)*144/256);
+    items[0].draw.quality[2]=0;
+    CHECK(!rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS));
+    CHECK(!memcmp(saved,pixels,128*96*4) && !memcmp(saved_depths,depths,128*96*4));
+    items[0].draw.quality[2]=5;
+    CHECK(rf_gpu_graphics_scene_capture(g,items,1,pixels,depths,MAX_PIXELS)<0);
     result=0;
 done:
     rf_gpu_graphics_destroy(g);

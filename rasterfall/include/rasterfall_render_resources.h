@@ -9,8 +9,11 @@
 #define RASTERFALL_RESOURCE_CAPACITY 256
 #define RASTERFALL_RESOURCE_PATH_BYTES 256
 struct rasterfall_resource_handle { unsigned int slot, generation; };
+struct rasterfall_resource_pool;
+struct rasterfall_shared_model;
 struct rasterfall_resource_slot {
     struct rasterfall_model_asset *model;
+    struct rasterfall_shared_model *shared;
     unsigned int generation;
     int active, failed;
     unsigned int pinned;
@@ -18,6 +21,7 @@ struct rasterfall_resource_slot {
 };
 struct rasterfall_resource_registry {
     struct rasterfall_resource_slot slots[RASTERFALL_RESOURCE_CAPACITY];
+    struct rasterfall_resource_pool *pool;
     int frame_active;
     unsigned long long frame_epoch;
     unsigned int loads, releases;
@@ -25,6 +29,12 @@ struct rasterfall_resource_registry {
 struct rasterfall_resource_stats {
     unsigned int live, retired, pinned, failed, loads, releases;
 };
+
+/* Optional serial owner-local immutable model pool. Attach only to an empty
+ * registry. Registries keep independent generations and pins; destroy the
+ * pool only after every attached registry has been invalidated and retired. */
+struct rasterfall_resource_pool *rasterfall_resource_pool_create(void);
+int rasterfall_resource_pool_destroy(struct rasterfall_resource_pool *pool);
 
 /* Zero-initialize once. Never memset a registry to reload it: generations
  * survive unload, shutdown and device/target recreation. Exact asset paths

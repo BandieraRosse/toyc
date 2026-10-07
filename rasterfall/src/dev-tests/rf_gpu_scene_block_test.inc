@@ -2,9 +2,9 @@
  * triangle producer, including ordering, colors, equipment and fallen poses. */
 struct scene_block_test {
     struct { int points[3][3];unsigned color; } reference[RF_GPU_SCENE_ENEMY_MAX_TRIANGLES];
-    struct rf_gpu_scene_block_pose pose;
+    struct rf_gpu_character_pose pose;
     unsigned count,visited;
-    int maximum_error,fail;
+    int maximum_error,fail,infected;
 };
 static int scene_block_reference(void *opaque,const struct rf_gpu_scene_enemy_point *a,
     const struct rf_gpu_scene_enemy_point *b,const struct rf_gpu_scene_enemy_point *c,unsigned color)
@@ -19,13 +19,13 @@ static int scene_block_reference(void *opaque,const struct rf_gpu_scene_enemy_po
     }
     test->reference[test->count++].color=color;return 0;
 }
-static int scene_block_compare(void *opaque,const struct rf_gpu_scene_block_vertex *v,
+static int scene_block_compare(void *opaque,const struct rf_gpu_character_vertex *v,
     unsigned color,int flash)
 {
     struct scene_block_test *test=opaque;
     if(test->fail)return -1;
-    if(flash && !test->pose.flash)return 0;
-    if(test->visited>=test->count || color!=test->reference[test->visited].color)return -1;
+    if((flash&RF_GPU_CHARACTER_FLASH) && !test->pose.flash)return 0;
+    if(test->visited>=test->count || (!test->infected && color!=test->reference[test->visited].color))return -1;
     for(unsigned k=0;k<3;++k) {
         if(v[k].bone0>=test->pose.bone_count || v[k].bone1>=test->pose.bone_count ||
             v[k].type>1 || v[k].weight>65535)return -1;
@@ -40,13 +40,52 @@ static int scene_block_compare(void *opaque,const struct rf_gpu_scene_block_vert
             int actual=(int)(value<0?value-.5f:value+.5f)+test->pose.origin[axis];
             int error=abs(actual-test->reference[test->visited].points[k][axis]);
             if(error>test->maximum_error)test->maximum_error=error;
-            if(error>3) {
+            if(error>(test->infected?5:3)) {
                 __printf("block retained mismatch triangle=%u vertex=%u axis=%u actual=%d expected=%d\n",
                     test->visited,k,axis,actual,test->reference[test->visited].points[k][axis]);return -1;
             }
         }
     }
     test->visited++;return 0;
+}
+
+static int scene_infected_retained_test(void)
+{
+    struct scene_block_test *test=tlibc_malloc(sizeof(*test));
+    int result=1,samples=0,maximum=0;
+    if(!test)return 1;
+    struct rf_gpu_scene_enemy_item_v1 item={0};
+    item.x=173;item.z=-2301;item.lift=284;item.scene_light_q8=256;item.alpha=255;
+    item.dir_x=384;item.dir_z=-949;item.double_sided=1;
+    for(int recipe=1;recipe<=6;++recipe)
+    for(int swing=-24;swing<=24;++swing)
+    for(int death=0;death<3;++death) {
+        item.infected_recipe=recipe;item.type=enemy_visual_recipes[recipe-1].type;
+        item.infected_swing=swing;item.infected_bind=swing==0;
+        item.squash=death==1?370:1000;item.transformed=death==2;
+        item.pivot_x=item.x;item.pivot_z=item.z;item.pivot_y=item.lift-300;
+        item.roll_sin=946;item.roll_cos=-392;
+        memset(test,0,sizeof(*test));test->infected=1;
+        if(!rf_gpu_scene_infected_supported(&item) ||
+            rf_gpu_scene_enemy_triangles(&item,scene_block_reference,test)<0 ||
+            rf_gpu_scene_infected_sample(&item,&test->pose)<0 ||
+            rf_gpu_scene_infected_bind(&item,scene_block_compare,test)<0 || test->count!=test->visited) {
+            __printf("infected retained FAIL recipe=%d swing=%d death=%d count=%u visited=%u\n",
+                recipe,swing,death,test->count,test->visited);goto done;
+        }
+        if(test->maximum_error>maximum)maximum=test->maximum_error;
+        samples++;
+    }
+    test->fail=1;
+    if(rf_gpu_scene_infected_bind(&item,scene_block_compare,test)>=0)goto done;
+    struct rf_gpu_character_pose saved=test->pose;
+    item.infected_swing=25;
+    if(rf_gpu_scene_infected_supported(&item) || rf_gpu_scene_infected_sample(&item,&test->pose)>=0 ||
+        memcmp(&saved,&test->pose,sizeof(saved)))goto done;
+    __printf("infected retained PASS samples=%d maximum_position_error=%d RFU swing/bind/death/failure\n",samples,maximum);
+    result=0;
+done:
+    tlibc_free(test);return result;
 }
 static int scene_block_retained_test(void)
 {

@@ -45,6 +45,19 @@ void main() {
     vec3 n=vec3(ni);
     world_normal=vec3(n.x*float(d.rotation.y)+n.z*float(d.rotation.x),n.y*1024.0,
         n.z*float(d.rotation.y)-n.x*float(d.rotation.x))/33553408.0;
+    // Retained character form color, previously baked by the CPU triangle
+    // producer. All three vertices use the same face-average skin normals.
+    if(d.quality.z==4) {
+        ivec3 average=(normal0+normal1+normal2)/3;
+        vec3 form=vec3(average);
+        form=vec3(form.x*float(d.rotation.y)+form.z*float(d.rotation.x),form.y*1024.0,
+            form.z*float(d.rotation.y)-form.x*float(d.rotation.x))/1024.0;
+        int lambert=int(clamp(dot(form,vec3(-13377,26755,-13377))/32767.0,0.0,32767.0));
+        uint light=uint(clamp(136+lambert*120/32767,144,256));
+        uvec3 rgb=uvec3((triangle_color>>16)&255u,(triangle_color>>8)&255u,triangle_color&255u)*light/256u;
+        triangle_color=(rgb.r<<16)|(rgb.g<<8)|rgb.b;
+        world_normal=vec3(0); // Preserve the old producer's geometric lighting.
+    }
 #else
     world_normal=vec3(0);
 #endif

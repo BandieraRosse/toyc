@@ -137,6 +137,42 @@ staging 中尚未提交的 bind 更新保留至下次消费，即使生产者下
 
 正常交互帧由 Game Runtime 以 120 FPS 节流。其 Vulkan swapchain 优先选 immediate，其次 mailbox，均不可用时退回必备的 FIFO；前两者允许在 60 Hz 显示器上继续采样并提交更多帧，immediate 可能出现画面撕裂。固定帧诊断仍用 FIFO。该呈现选择不改变 GPU service、资源退休或固定逻辑步。玩法状态的双 tick 展示插值见[运行时架构](runtime.md)。
 
+## 统一角色加速
+
+公共边界由 `rf_gpu_character.h` 定义：固定顶点、骨骼权重、材质段和独立值类型 palette。
+Block 与六种普通感染体分别由自己的 source adapter 提供 bind/sample；
+`render/rf_gpu_character_gpu.inc` 统一管理资源模板、实例缓存、上传与镜头 draw。
+Humanoid 保留贴图、衣物和分块 adapter，经 `rf_gpu_character_upload.h` 使用同一资源更新／替换事务。
+它的实例注册表通过 owner-local `rasterfall_resource_pool` 共用不可变模型和纹理 backing；
+同路径只加载一次，注册表各自保留句柄代际和帧 pin。一个实例失效不影响其他实例及退休中的帧。
+资源池最多保留 registry 容量的模型，满时仅淘汰无人引用项；owner 在全部实例完成退休后释放池。
+新增固定几何角色应实现生产者适配，不复制 GPU 生命周期或另建多视图蒙皮调度。
+
+四层所有权如下：模型目录／resource 持有不可变网格与骨架；source 持有动作语义和采样历史；
+公共实例槽保存自己的冻结输入及最终 palette；GPU owner 保存可更新的输出、当前姿态边界与 reader。
+Block 外观键包含颜色、职业和武器；感染体模板键是 recipe，世界代际也参与失效。
+同 owner 中相同键共享引用计数的 CPU bind、索引与材质段，模板晚于最后一个实例释放。
+资源是加载后不可变的；当前没有文件热重载，磁盘资产更新需重启。owner 关闭／世界代际变化
+失效 GPU 模板，不代表重新读取已经加载的模型文件。
+
+普通感染体默认不再逐帧展开三角形或 CPU 蒙皮：步态仍由原 sampler 冻结，GPU 消费最终骨骼矩阵。
+压缩、死亡翻滚、反馈颜色及淡出保留；需要 form-light 的材质使用公共 shading mode 4，
+顶点阶段从同三角形的蒙皮法线均值恢复原角色颜色乘数，片元阶段继续使用几何法线。
+计算由 CPU 移到 GPU，不以直接取消原乘数的方式改变身体明暗。
+CPU 分步整数取整与合并 FP32 蒙皮不承诺逐像素一致。显式 CPU 顶点照明、旧模型、带额外几何的
+诊断来源以及特感刚性 rig 暂保留旧生产者。`RF_GPU_INFECTED_RETAINED=0` 可作同包对照。
+
+主／AUX 只有在世界、帧号和完整冻结输入都匹配时借用同一 GPU 输出，视图和阴影各自裁剪。
+上传替换先成功创建候选资源再退休旧资源，失败不发布候选；取消批次仍由后端失效，不能以
+CPU palette 缓存命中代替 GPU 完成。`SCENE-CHARACTER` 报告模板构建／共享、姿态求值／复用、
+视图借用、bind 上传和 palette 请求，以及采样、打包、上传耗时；palette 请求不等于实际 GPU 上传。
+IK 包含在采样耗时中，GPU 蒙皮继续使用通用 `detail_ms[8]`，不将其重复计入 CPU。
+
+当前共享模板不等于跨实例 GPU bind buffer 去重：GPU 输出、bind 和 palette 仍逐实例分配，
+Humanoid 的贴图打包和分块仍保留自身 adapter。实例槽有界，感染体按验证后的 source slot
+索引；程序角色按冻结序号索引并比较完整输入，序号不是持久身份。并行求值、动画降频、特感迁移、
+跨 adapter 的资源目录整合及跨实例显存去重仍需后续收敛和实测，不由这一入口隐含提供。
+
 ## 程序角色常驻几何
 
 标准 Block carrier 默认由 `render/rf_gpu_scene_block_source.inc` 将固定身体、武器、职业装备和
@@ -144,7 +180,7 @@ staging 中尚未提交的 bind 更新保留至下次消费，即使生产者下
 武器消费 finalized 挂点和原 adapter，装备消费 CPU 绘制共用的 box 枚举与骨骼归属。
 GPU 不推进动画、改写 Game 或反求玩法动作。平面靶和显式 CPU 顶点照明诊断保留三角形提取路径。
 
-`render/rf_gpu_scene_block_gpu.inc` 由 Scene probe 持有有界槽及一次构建 workspace；外观颜色、
+`render/rf_gpu_character_gpu.inc` 由 Scene probe 持有有界槽及一次构建 workspace；外观颜色、
 职业、武器或 world generation 变化重建 bind，普通移动和动画只更新 palette。
 顶点、三角形和不透明颜色段保留来源顺序；枪口闪光常驻但只在冻结状态要求时提交。
 完整世界旋转进入 palette，倒地/死亡/复活不受 yaw-only draw 限制；局部原点随角色移动，
@@ -159,8 +195,9 @@ GPU 不推进动画、改写 Game 或反求玩法动作。平面靶和显式 CPU
 
 常驻 bind 和 GPU 蒙皮输出会增加显存容量：64 个槽全部达到上限时，bind、输出顶点和索引的
 理论 payload 为 `64 * 4096 * 3 * (88 + 56 + 4)`，约 111 MiB，另计 palette、可选 staging、
-描述符和对齐；这不是实际驻留测量。各槽按实际来源建立，CPU 仅共用一个有界构建 workspace，
-保留小型 palette 和颜色段。原动态来源槽可能同时保留历史容量，独立子 owner 也单独计费。
+描述符和对齐；这不是实际驻留测量。各槽按实际来源建立，CPU 共用一个有界构建 workspace，
+按外观共享 bind 模板，每实例保留 palette。普通感染体槽另按实际模型顶点数计费，不能套用
+64 个 Block 槽的总数。原动态来源槽可能同时保留历史容量，独立子 owner 也单独计费。
 
 ## 入图预热与多视图资源所有权
 

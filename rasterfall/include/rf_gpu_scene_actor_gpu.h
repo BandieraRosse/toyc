@@ -29,8 +29,9 @@ void rf_gpu_scene_linear_filter_set(int enabled);
 
 /* Prepare one frozen rifleman body, passive gear and active weapon for a Scene WORLD batch.
  * The caller retires the synchronous diagnostic draw before finish. */
+struct rasterfall_resource_pool;
 struct rf_gpu_scene_actor_gpu *rf_gpu_scene_actor_gpu_create(
-    struct rf_gpu_graphics *graphics);
+    struct rf_gpu_graphics *graphics,struct rasterfall_resource_pool *pool);
 int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     const struct rf_gpu_scene_pose_v1 *pose,const struct camera *camera,
     uint32_t width,uint32_t height,

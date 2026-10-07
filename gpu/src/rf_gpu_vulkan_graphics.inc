@@ -1679,10 +1679,10 @@ static int gfx_draw_valid(struct rf_gpu_graphics *g,
         d->quality[0]!=0 ||
         (d->quality[1]!=0 && (d->quality[1]<512 || d->quality[1]>65536)) ||
         (d->quality[1]>512 && (d->quality[0]&2)) ||
-        d->quality[2]<0 || d->quality[2]>3 || d->quality[3]<0 || d->quality[3]>2 ||
+        d->quality[2]<0 || d->quality[2]>4 || d->quality[3]<0 || d->quality[3]>2 ||
         (d->integer_depth && (d->quality[0] || d->quality[1] || d->quality[2] || d->quality[3])) ||
         (d->quality[2] && d->material[3] && !(d->quality[2]==3 && d->material[3]==2)) ||
-        ((d->quality[2]==1 || d->quality[2]==2) && !g->resource->sequential_triangles) ||
+        ((d->quality[2]==1 || d->quality[2]==2 || d->quality[2]==4) && !g->resource->sequential_triangles) ||
         d->camera[3] || d->texture[2]<0 || d->texture[2]>256 ||
         (d->texture[2]==256 && (d->material[3]!=2 || !g->resource->vertex_alpha_valid)) ||
         (d->texture[2] && d->integer_depth) ||

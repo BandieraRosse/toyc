@@ -17,6 +17,10 @@ $partsTool = 'tools/blender/rf_character_parts.py'
 
 初始完整角色可直接打开 `authoring/build/rf_c01.blend`。每个 `parts/<part>/v001.blend` 也包含可打开
 编辑的独立部件场景。骨架和审阅场景分别在 `rig/`、`review/`；私有源、预览、GLB 和 RFM2 均不加入 Git。
+例外为已跟踪的 V028 重建与验证脚本：13 个主线制作步骤，以及 `texture_v026b.py`、
+`normalize_textures_v026.py`、`validate_v026.py`、`audit_installed_v026.py`，共 17 份。
+这些脚本保留在 `authoring/scripts/`，按 LF 保存以保持配方 SHA-256；不会从空场景生成 V22h 基线。
+新检出仍需另行恢复 V22h 清单及其锁定部件、骨架、接口、审阅场景和组装 BLEND。
 新输出使用未占用路径；工具拒绝覆盖已有部件版本及组装结果。
 以上 `assembly.json` 示例指初始迁移基线。继续当前造型时，改用设计稿指向的候选清单；
 当前 V28 为 `assembly-body-v028.json`，三个头发部件沿用 V25d 起的 `editable_mesh`，按手工网格流程发布。
@@ -26,6 +30,9 @@ V28 另作显式手臂 rest 接口迁移：肩关节保留，上臂与前臂各�
 身体对应顶点同步调整；头、眼、口、发及非手臂骨骼源保持锁定。迁移脚本为私有
 `authoring/scripts/build_v028.py`，验证报告分别列出 arm rest 与身体顶点变化，不能声称骨架未变。
 源动作、身体拓扑、权重和 UV 保持；最终结果还须通过 runtime 与原生握持检查。
+
+V028 私有源的本地恢复来源、完整重建链和验证结果见
+[2026-10-07 恢复记录](../archive/rf-c01-v028-recovery-20261007.md)。
 
 ## 手工修改脸部或冻结头发网格
 

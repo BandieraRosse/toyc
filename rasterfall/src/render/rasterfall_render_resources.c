@@ -4,6 +4,57 @@
 
 static struct rasterfall_resource_registry render_resources;
 
+struct rasterfall_shared_model {
+    struct rasterfall_model_asset model;
+    unsigned references;
+    char path[RASTERFALL_RESOURCE_PATH_BYTES];
+    struct rasterfall_shared_model *next;
+};
+struct rasterfall_resource_pool {
+    struct rasterfall_shared_model *models;
+    unsigned count;
+};
+struct rasterfall_resource_pool *rasterfall_resource_pool_create(void)
+{
+    struct rasterfall_resource_pool *pool=tlibc_malloc(sizeof(*pool));
+    if(pool)memset(pool,0,sizeof(*pool));
+    return pool;
+}
+int rasterfall_resource_pool_destroy(struct rasterfall_resource_pool *pool)
+{
+    if(!pool)return 0;
+    for(struct rasterfall_shared_model *m=pool->models;m;m=m->next)
+        if(m->references)return -1;
+    while(pool->models) {
+        struct rasterfall_shared_model *m=pool->models;pool->models=m->next;
+        rasterfall_model_unload(&m->model);tlibc_free(m);
+    }
+    tlibc_free(pool);return 0;
+}
+static struct rasterfall_shared_model *resource_pool_load(
+    struct rasterfall_resource_pool *pool,const char *path,
+    int (*load)(struct rasterfall_model_asset *,const char *))
+{
+    for(struct rasterfall_shared_model *m=pool->models;m;m=m->next)
+        if(!strcmp(m->path,path)) {
+            if(m->references==UINT_MAX)return NULL;
+            ++m->references;return m;
+        }
+    if(pool->count>=RASTERFALL_RESOURCE_CAPACITY) {
+        struct rasterfall_shared_model **link=&pool->models;
+        while(*link && (*link)->references)link=&(*link)->next;
+        if(!*link)return NULL;
+        struct rasterfall_shared_model *old=*link;*link=old->next;
+        rasterfall_model_unload(&old->model);tlibc_free(old);pool->count--;
+    }
+    struct rasterfall_shared_model *m=tlibc_malloc(sizeof(*m));
+    if(!m)return NULL;
+    memset(m,0,sizeof(*m));
+    if(load(&m->model,path)<0) {rasterfall_model_unload(&m->model);tlibc_free(m);return NULL;}
+    strcpy(m->path,path);m->references=1;m->next=pool->models;pool->models=m;pool->count++;
+    return m;
+}
+
 struct rasterfall_resource_registry *rasterfall_render_resources(void)
 {
     return &render_resources;
@@ -15,8 +66,8 @@ static void resource_collect(struct rasterfall_resource_registry *registry)
     for (i = 0; i < RASTERFALL_RESOURCE_CAPACITY; ++i) {
         struct rasterfall_resource_slot *slot = &registry->slots[i];
         if (!slot->active && !slot->pinned && slot->model) {
-            rasterfall_model_unload(slot->model);
-            tlibc_free(slot->model);
+            if(slot->shared) {slot->shared->references--;slot->shared=NULL;}
+            else {rasterfall_model_unload(slot->model);tlibc_free(slot->model);}
             slot->model = NULL;
             registry->releases++;
         }
@@ -47,6 +98,13 @@ static int resource_load(struct rasterfall_resource_registry *registry,
     }
     if (available == RASTERFALL_RESOURCE_CAPACITY) return -1;
     slot = &registry->slots[available];
+    if(registry->pool) {
+        struct rasterfall_shared_model *shared=resource_pool_load(registry->pool,path,load);
+        if(!shared)return -1;
+        slot->shared=shared;slot->model=&shared->model;slot->generation++;
+        strcpy(slot->path,path);slot->active=1;slot->failed=0;registry->loads++;
+        handle->slot=available;handle->generation=slot->generation;return 0;
+    }
     slot->model = tlibc_malloc(sizeof(*slot->model));
     if (!slot->model) return -1;
     memset(slot->model, 0, sizeof(*slot->model));

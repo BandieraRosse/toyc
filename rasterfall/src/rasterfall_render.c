@@ -9116,6 +9116,7 @@ static int render_profession_visual(struct toy_renderer *renderer,const struct c
 }
 
 #include "render/rf_gpu_scene_block_source.inc"
+#include "render/rf_gpu_scene_infected_source.inc"
 
 int rasterfall_render_procedural_humanoid(
     struct toy_renderer *renderer, const struct camera *camera,

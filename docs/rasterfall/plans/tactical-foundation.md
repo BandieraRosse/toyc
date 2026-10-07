@@ -24,6 +24,11 @@
 
 ## 当前交付与后续顺序
 
+角色加速追加范围：Block／普通感染体共用固定几何、实例 palette 和多视图提交，Humanoid
+共用 GPU 资源更新事务及 owner-local 模型资源池；先核对公开姿态、原生提交及同包对照。后续收敛跨 adapter 资源目录、
+GPU bind 去重与特感刚性部件，再依据采样／IK／上传／蒙皮成本决定是否并行或降频。
+当前所有权和未覆盖边界由[统一角色加速](../architecture/gpu-rendering-architecture.md#统一角色加速)维护。
+
 用户追加的程序 Block 角色常驻几何优化已完成本轮实现与限定验证：身体、武器、职业装备
 保留拓扑，逐帧只求姿态及变换；冻结几何回归、Windows 原生构建、主/AUX 检查和五轮同包
 性能对照见[常驻几何现场](../archive/block-retained-20261007.md)。多帧 pipeline 与车间 GPU

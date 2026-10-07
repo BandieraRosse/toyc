@@ -59,8 +59,8 @@ int rf_gpu_scene_lighting_fixture(void) { return 3; }
 int rf_gpu_scene_native_fixture(int frames,int fault,int fault_frame)
 { (void)frames; (void)fault; (void)fault_frame; return 3; }
 struct rf_gpu_scene_actor_gpu *rf_gpu_scene_actor_gpu_create(
-    struct rf_gpu_graphics *graphics)
-{ (void)graphics; return NULL; }
+    struct rf_gpu_graphics *graphics,struct rasterfall_resource_pool *pool)
+{ (void)graphics;(void)pool; return NULL; }
 int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
     const struct rf_gpu_scene_pose_v1 *pose,const struct camera *camera,
     uint32_t width,uint32_t height,
@@ -83,6 +83,7 @@ void rf_gpu_scene_actor_gpu_destroy(struct rf_gpu_scene_actor_gpu *actor)
 #include "tlibc_everything.h"
 #include "rf_gpu_graphics.h"
 #include "rf_gpu_resource_cache.h"
+#include "rf_gpu_character_upload.h"
 #include "rasterfall_render_resources.h"
 #include "rasterfall_render.h"
 #include "rasterfall_calibration.h"
@@ -573,20 +574,10 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
             uint32_t count=m->count-base;
             if (count>SCENE_CHUNK_VERTICES) count=SCENE_CHUNK_VERTICES;
             struct rf_gpu_graphics_resource **gpu=&m->chunks[c];
-            int grow=*gpu ? rf_gpu_graphics_skinned_resource_update(g,*gpu,count,
-                reuse_bind ? NULL : m->bind+base*22,reuse_bind ? 0 : count*22,
-                m->palette,m->palette_count) : 1;
-            if (grow<0) return -1;
-            if (grow) {
-                m->texture_bound[c]=0;
-                if (*gpu) {
-                    if (rf_gpu_graphics_resource_destroy(g,*gpu)<0) return -1;
-                    *gpu=NULL;
-                    __printf("SCENE resource-growth object=%d vertices=%u retired_before_replace=1\n",i,m->count);
-                }
-                *gpu=rf_gpu_graphics_skinned_resource_create(g,NULL,count,m->indices,count,
-                    m->bind+base*22,count*22,m->palette,m->palette_count,&white,1,1);
-            }
+            int uploaded=rf_gpu_character_upload(g,gpu,count,m->indices,
+                m->bind+base*22,!reuse_bind,m->palette,m->palette_count);
+            if(uploaded<0)return -1;
+            if(uploaded)m->texture_bound[c]=0;
             if (!*gpu) return -1;
             }
             m->gpu=m->chunks[0];
@@ -615,12 +606,12 @@ static void scene_bind_cache_invalidate(struct scene_slot *slot)
         slot->mesh[i].uploaded_bind_handle.generation=0;
 }
 struct rf_gpu_scene_actor_gpu *rf_gpu_scene_actor_gpu_create(
-    struct rf_gpu_graphics *graphics)
+    struct rf_gpu_graphics *graphics,struct rasterfall_resource_pool *pool)
 {
     struct rf_gpu_scene_actor_gpu *actor;
     if (!graphics) return NULL;
     actor=calloc(1,sizeof(*actor));
-    if (actor) actor->graphics=graphics;
+    if (actor) {actor->graphics=graphics;actor->slot.registry.pool=pool;}
     return actor;
 }
 int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
