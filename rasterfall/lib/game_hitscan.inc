@@ -65,6 +65,10 @@ static int combat_visible(const struct toy_game *g, const struct toy_game_actor 
         (int)((long long)dz * 1024 / distance), distance + 1) >= distance;
 }
 
+int toy_game_combat_visible(const struct toy_game *g,
+    const struct toy_game_actor *a, int x, int y, int z)
+{ return g && a && combat_visible(g, a, x, y, z); }
+
 static int combat_find_target(struct toy_game *g,
     const struct toy_game_actor *actor, struct toy_game_combat_target *out,
     int retain_current)
@@ -190,6 +194,7 @@ static void fire_ray(struct toy_game *g, struct toy_game_actor *actor,
 int toy_game_actor_resolve_shot(struct toy_game *g, struct toy_game_actor *actor)
 {
     int i, j, hit = 0;
+    unsigned int killed_rays = 0;
     struct toy_game_capabilities caps;
     if (!g || !actor) return 0;
     toy_game_actor_capabilities(actor, toy_game_actor_current_weapon(actor), &caps);
@@ -239,6 +244,7 @@ int toy_game_actor_resolve_shot(struct toy_game *g, struct toy_game_actor *actor
         hit = 1;
         if (g->defer_actor_damage) continue;
         result = toy_game_damage_actor(g, actor, target, &attack);
+        if (result.killed) killed_rays |= 1u << i;
         for (j = i; j < actor->ray_count; j++) {
             struct toy_game_ray *pellet = &actor->rays[j];
             int health, evasion;
@@ -250,6 +256,16 @@ int toy_game_actor_resolve_shot(struct toy_game *g, struct toy_game_actor *actor
             pellet->evasion_spent_milli = evasion - assigned_evasion;
             assigned_health = health; assigned_evasion = evasion;
         }
+    }
+    {
+        struct toy_game_shot_event *event=&g->shot_history[g->shot_serial%TOY_GAME_SHOT_HISTORY];
+        event->serial=++g->shot_serial;event->source_id=actor->actor_id;
+        event->killed_rays=killed_rays;
+        event->source_generation=actor->combat_generation;event->fire_sequence=actor->fire_seq;
+        event->time_ms=g->combat_time_ms;event->weapon=toy_game_actor_current_weapon(actor);
+        event->x=actor->x;event->y=actor->ground_y+actor->airborne_y+RASTERFALL_HUMAN_EYE_HEIGHT_RFU;
+        event->z=actor->z;event->ray_count=actor->ray_count;
+        memcpy(event->rays,actor->rays,sizeof(event->rays));
     }
     return hit;
 }

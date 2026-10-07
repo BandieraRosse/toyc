@@ -63,10 +63,11 @@ TACTICAL_SRCS := rasterfall/lib/rf_tactical_lab.c  rasterfall/src/rf_tactical_cl
                  rasterfall/src/dev-tests/rf_tactical_test.c
 .PHONY: tactical tactical-test
 tactical: $(BUILD)/rf-tactical
-$(BUILD)/rf-tactical: $(TACTICAL_SRCS) rasterfall/include/rf_tactical.h \
+TACTICAL_GAME_SRCS := rasterfall/lib/game.c lib/portable/math.c
+$(BUILD)/rf-tactical: $(TACTICAL_SRCS) $(TACTICAL_GAME_SRCS) $(wildcard rasterfall/lib/game_*.inc) rasterfall/lib/rf_tactical_game.inc rasterfall/lib/rf_range_game.inc rasterfall/include/rf_tactical.h \
     rasterfall/include/rf_tactical_weapon.h rasterfall/include/rf_tactical_prediction.h \
-    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/src/dev-tests/rf_tactical_lab_test.inc rasterfall/src/dev-tests/rf_tactical_test.c | $(BUILD)
-	$(CC) -std=c11 -O2 -Wall -Wextra -Werror -Irasterfall/include $(TACTICAL_SRCS) -o $@ -lm
+    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/src/dev-tests/rf_tactical_test.c | $(BUILD)
+	$(CC) -std=c11 -O2 -Wall -Wextra -DRF_GAME_HOSTED -idirafter windows/include -Irasterfall/include $(TACTICAL_SRCS) $(TACTICAL_GAME_SRCS) -o $@ -lm
 tactical-test: $(BUILD)/rf-tactical
 	$(BUILD)/rf-tactical self-test
 SRC     := compiler

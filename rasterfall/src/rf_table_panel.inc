@@ -26,6 +26,7 @@ static int rf_table_hit(int w,int h,int px,int py)
             return (py-top)/row;
     }
     if(rf_ui_rect_contains(o.deploy,px,py))return 22;
+    if(rf_ui_rect_contains(o.video,px,py))return 23;
     return -1;
 }
 static void rf_table_input(struct rf_game_runtime *r,int w,int h,int px,int py,
@@ -41,24 +42,35 @@ static void rf_table_input(struct rf_game_runtime *r,int w,int h,int px,int py,
         rasterfall_audio_ui(&r->audio,RF_UI_SOUND_EXIT);return;}
     if(up||down) {
         if(rf_table.dropdown)rf_table.focus=(rf_table.focus+(down?1:RF_TABLE_MAPS-1))%RF_TABLE_MAPS;
-        else rf_table.focus=rf_table.focus==22?20:22;
+        else if(down)rf_table.focus=rf_table.focus==20?23:rf_table.focus==23?22:20;
+        else rf_table.focus=rf_table.focus==22?23:rf_table.focus==23?20:22;
         rasterfall_audio_ui(&r->audio,RF_UI_SOUND_HOVER);
     }
-    if(confirm)hit=rf_table.dropdown?rf_table.focus:rf_table.focus==22?22:20;
+    if(confirm)hit=rf_table.dropdown?rf_table.focus:rf_table.focus==22?22:rf_table.focus==23?23:20;
     else if(!click)return;
     if(hit==20){rf_table.dropdown=!rf_table.dropdown;rf_table.focus=rf_table.selected;}
     else if(hit==21){rf_table.open=0;rasterfall_audio_ui(&r->audio,RF_UI_SOUND_EXIT);return;}
     else if(hit>=0 && hit<RF_TABLE_MAPS && rf_table.dropdown) {
         if(rf_table.maps[hit].available) {
             int changed=hit!=rf_table.selected;rf_device_table_request(hit,0);
-            if(rf_table.preview_state<0)rf_table.preview_state=0;
+            if(changed || rf_table.preview_state<0) {
+                rf_table.preview_state=0;rf_table.preview_requested=0;
+                snprintf(rf_table.message,sizeof(rf_table.message),"点击右侧预览画面框开始加载，完成后才能部署");
+            }
             rasterfall_audio_ui(&r->audio,changed?RF_UI_SOUND_CHANGE:RF_UI_SOUND_CLICK);
         }
         rf_table.dropdown=0;rf_table.focus=20;return;
+    } else if(hit==23) {
+        rf_table.dropdown=0;rf_table.focus=23;
+        if(rf_table.preview_state<=0 && rf_table.maps[rf_table.selected].available) {
+            rf_table.preview_state=0;rf_table.preview_requested=1;
+            snprintf(rf_table.message,sizeof(rf_table.message),"已请求预览，请等待地图加载与首帧渲染完成");
+        }
     } else if(hit==22) {
         if(rf_table.preview_state>=3 && rf_table.preview_map==rf_table.selected) {
             rf_device_table_request(rf_table.selected,1);rasterfall_audio_ui(&r->audio,RF_UI_SOUND_CONFIRM);
-        } else snprintf(rf_table.message,sizeof(rf_table.message),"请等待出生点预览加载完成");
+        } else snprintf(rf_table.message,sizeof(rf_table.message),rf_table.preview_state<=0?
+            "请先点击右侧预览画面框，加载完成后才能部署":"请等待出生点预览加载完成");
         return;
     } else rf_table.dropdown=0;
     rasterfall_audio_ui(&r->audio,RF_UI_SOUND_CLICK);
@@ -77,16 +89,17 @@ static void rf_table_draw(struct rasterfall_canvas *c)
     rasterfall_canvas_rect(c,o.x,v.y+v.h,o.w,o.y+o.h-v.y-v.h,bg,255);
     rasterfall_canvas_rect(c,o.x,o.y,o.w,2,0x55CCCF,255);
     rf_table_text(c,o.x+pad,o.y+24*s/1000,o.w-pad*5,40*s/1000,s,"前哨站 / 行动部署",0xE1F6F3);
-    rf_table_text(c,o.x+pad,o.y+68*s/1000,o.w-pad*2,30*s/1000,s,"选择目的地 · 预加载出生点 · 确认后进入",0x8FB5C5);
+    rf_table_text(c,o.x+pad,o.y+68*s/1000,o.w-pad*2,30*s/1000,s,"选择目的地 · 点击画面框预览 · 确认后进入",0x8FB5C5);
     struct rf_ui_rect f=o.field;
     rasterfall_canvas_rect(c,f.x,f.y,f.w,f.h,rf_table.hover==20?0x37616C:0x223F50,255);
     rf_table_text(c,f.x+10,f.y+8,f.w-36,f.h-8,s,rf_table.maps[rf_table.selected].name,0xDBF2EF);
     rf_table_text(c,f.x+f.w-28,f.y+8,24,f.h,s,rf_table.dropdown?"^":"v",0x80DFD3);
     rf_table_text(c,o.close.x,o.close.y,o.close.w,o.close.h,s,"关闭",rf_table.hover==21?0xFFFFFF:0x8FB5C5);
     if(!ready) {
-        rasterfall_canvas_rect(c,v.x,v.y,v.w,v.h,0x172F40,255);
-        const char *state=rf_table.preview_state==4?"当前后端不支持 GPU 预览\n仍可确认部署":rf_table.preview_state<0?"预加载失败\n重新选择地图可重试":
-            rf_table.preview_state==2?"正在渲染出生点首帧…":"加载中…\n正在准备地图与资源";
+        rasterfall_canvas_rect(c,v.x,v.y,v.w,v.h,rf_table.preview_state<=0&&rf_table.hover==23?0x223F50:0x172F40,255);
+        const char *state=rf_table.preview_state==4?"当前后端不支持 GPU 预览\n仍可确认部署":rf_table.preview_state<0?"预加载失败\n点击此画面框重试":
+            rf_table.preview_state==0?"点击此预览画面框\n开始预加载并渲染出生点画面":
+            rf_table.preview_state==2?"正在渲染出生点首帧…\n完成后才能确认部署":"加载中…\n正在准备地图与资源，完成后才能部署";
         rf_table_text(c,v.x+pad,v.y+v.h/2-30*s/1000,v.w-pad*2,90*s/1000,s,state,0x9ED5DF);
     }
     rf_table_text(c,v.x,v.y+v.h+16*s/1000,v.w,70*s/1000,s,
@@ -96,7 +109,7 @@ static void rf_table_draw(struct rasterfall_canvas *c)
     struct rf_ui_rect d=o.deploy;
     int deployable=ready||rf_table.preview_state==4;
     rasterfall_canvas_rect(c,d.x,d.y,d.w,d.h,deployable?(rf_table.hover==22?0x438077:0x285C58):0x243B49,255);
-    rf_table_text(c,d.x+12,d.y+9,d.w-24,d.h,s,deployable?"确认部署  >":"等待预加载",deployable?0xD7FFF0:0x758F9B);
+    rf_table_text(c,d.x+12,d.y+9,d.w-24,d.h,s,deployable?"确认部署  >":rf_table.preview_state<=0?"请先点击预览":"等待预加载",deployable?0xD7FFF0:0x758F9B);
     rf_table_text(c,o.x+pad,o.y+o.h-32*s/1000,o.w-pad*2,28*s/1000,s,rf_table.message,0xB7CDD2);
     if(rf_table.dropdown) {
         int row=38*s/1000,top=f.y+f.h+4;

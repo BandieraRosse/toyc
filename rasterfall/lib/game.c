@@ -19,7 +19,12 @@
 #include "string.h"
 #include "math.h"
 #include "stdlib.h"
+#ifndef RF_GAME_HOSTED
 #include "tlibc_compat.h"
+#else
+int isqrt(long long value);
+void fast_sincos_deg(int degrees, int *sine, int *cosine);
+#endif
 
 #include "game_player_movement.inc"
 #include "game_gameplay_config.inc"
@@ -6417,7 +6422,7 @@ int toy_game_actor_begin_fire(struct toy_game *g, struct toy_game_actor *actor)
     struct toy_game_slot *s;
     const struct toy_game_weapon_info *w;
     struct toy_game_capabilities caps;
-    if (!g || !actor || !actor->active || actor->state != TOY_GAME_ACTOR_ALIVE ||
+    if (!g || !actor || !actor->active || actor->simulation_paused || actor->state != TOY_GAME_ACTOR_ALIVE ||
         actor->current_slot < 0 || actor->current_slot >= TOY_GAME_WEAPON_SLOTS)
         return 0;
     s = &actor->slots[actor->current_slot];
@@ -6597,7 +6602,7 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
     g->combat_scan_budget = 8;
     /* Teammate updates consume the normalized local actor directly. */
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
-        if (!g->actors[i].active || g->actors[i].kind != TOY_GAME_ACTOR_AI)
+        if (!g->actors[i].active || g->actors[i].simulation_paused || g->actors[i].kind != TOY_GAME_ACTOR_AI)
             continue;
         if (g->actors[i].animation_demo) {
             struct toy_game_actor *demo = &g->actors[i];

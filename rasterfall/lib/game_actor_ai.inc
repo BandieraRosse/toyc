@@ -148,6 +148,70 @@ static int combat_target_valid(const struct toy_game *g,
     return 0;
 }
 
+void toy_game_actor_set_intent(struct toy_game_actor *a, int move,
+    int x, int y, int z, int target_id, unsigned int generation, int fire, int reload)
+{
+    if (!a) return;
+    if(a->intent_target_id!=target_id || a->intent_target_generation!=generation)
+        a->combat_aim_ms=0;
+    a->controller_external = 1;
+    a->intent_move = move; a->intent_x = x; a->intent_y = y; a->intent_z = z;
+    a->intent_target_id = target_id; a->intent_target_generation = generation;
+    a->intent_fire = fire; a->intent_reload = reload;
+}
+
+/* Script, tactical and range policies share normal navigation, aim readiness,
+ * skill limits, weapon execution and animation. Never called by presentation. */
+static void actor_external_step(struct toy_game *g, struct toy_game_actor *a, int dt_ms)
+{
+    struct toy_game_actor_command cmd = {0};
+    struct toy_game_capabilities caps;
+    const struct toy_game_actor *target = toy_game_actor_by_id_const(g, a->intent_target_id);
+    unsigned sequence = a->fire_seq;
+    int error = 180, visible = 0;
+    toy_game_actor_capabilities(a, toy_game_actor_current_weapon(a), &caps);
+    cmd.switch_slot = -1;
+    a->moving = 0;
+    if (a->intent_move && !a->control_disabled && !a->movement_hold_token) {
+        cmd.move_target_active = 1; cmd.move_x = a->intent_x; cmd.move_z = a->intent_z;
+        cmd.move_speed = toy_game_actor_move_step(a, TOY_CONFIG_AI_RETURN_SPEED);
+    }
+    if(a->command_destination_active && !a->control_disabled && !a->movement_hold_token) {
+        cmd.move_target_active=1;cmd.move_x=a->command_x;cmd.move_z=a->command_z;
+        cmd.move_speed=toy_game_actor_move_step(a,TOY_CONFIG_AI_RETURN_SPEED);
+    }
+    if (target && target->combat_generation == a->intent_target_generation &&
+        target->state == TOY_GAME_ACTOR_ALIVE && toy_game_actors_hostile(a, target)) {
+        int dx = target->x - a->x, dz = target->z - a->z;
+        int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        int aim_height=a->intent_aim_height_percent;
+        if(aim_height<1 || aim_height>100) aim_height=64;
+        int y = target->ground_y + target->airborne_y + RASTERFALL_HUMAN_HEIGHT_RFU * aim_height / 100;
+        if (distance) {
+            error = ai_turn_toward(a, dx, dz, caps.turn_degrees, dt_ms);
+            a->pitch_sy = (int)((long long)(y - a->ground_y - a->airborne_y -
+                RASTERFALL_HUMAN_EYE_HEIGHT_RFU) * 1024 / distance);
+            a->pitch_cy = 1024;
+            visible = combat_visible(g, a, target->x, y, target->z);
+        }
+    } else if (cmd.move_target_active) {
+        ai_turn_toward(a, cmd.move_x-a->x, cmd.move_z-a->z, caps.turn_degrees, dt_ms);
+    }
+    if (visible && error <= 6) a->combat_aim_ms += dt_ms;
+    else a->combat_aim_ms = 0;
+    cmd.fire_pressed = a->intent_fire && a->fire_enabled && !a->control_disabled &&
+        visible && error <= 6 && a->combat_aim_ms >= caps.aim_ms;
+    cmd.fire_held = cmd.fire_pressed; cmd.reload = a->intent_reload;
+    toy_game_execute_actor_command(g, a, &cmd, dt_ms, 100);
+    if (a->reloading) toy_game_actor_set_animation(a, TOY_GAME_ANIM_RELOAD);
+    else if (sequence != a->fire_seq) toy_game_actor_set_animation(a, TOY_GAME_ANIM_FIRE);
+    else if (a->animation.id != TOY_GAME_ANIM_HIT && a->animation.id != TOY_GAME_ANIM_FIRE)
+        toy_game_actor_set_animation(a, a->moving ? TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_IDLE);
+    else if (a->animation.time_ms >= toy_game_animation_info(a->animation.id)->duration_ms)
+        toy_game_actor_set_animation(a, a->moving ? TOY_GAME_ANIM_MOVE : TOY_GAME_ANIM_IDLE);
+    toy_game_actor_update_animation(a, dt_ms);
+}
+
 void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
 {
     struct toy_game_actor *a;
@@ -160,7 +224,7 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     if (!g || g->ai_context_actor_index < 0 ||
         g->ai_context_actor_index >= TOY_GAME_MAX_ACTORS) return;
     a = &g->actors[g->ai_context_actor_index];
-    if (!a->active || a->kind != TOY_GAME_ACTOR_AI) return;
+    if (!a->active || a->kind != TOY_GAME_ACTOR_AI || a->simulation_paused) return;
     a->nav_direct_ms = combat_timer(a->nav_direct_ms, dt_ms);
     a->nav_layer_retry_ms=combat_timer(a->nav_layer_retry_ms,dt_ms);
     a->ai_shove_cooldown_ms = combat_timer(a->ai_shove_cooldown_ms, dt_ms);
@@ -176,6 +240,11 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         a->animation_demo) {
         toy_game_actor_cancel_rescue(g, g->ai_context_actor_index);
         toy_game_actor_update_animation(a, dt_ms);
+        return;
+    }
+    if (a->controller_external) {
+        toy_game_actor_cancel_rescue(g, g->ai_context_actor_index);
+        actor_external_step(g, a, dt_ms);
         return;
     }
     toy_game_actor_capabilities(a, toy_game_actor_current_weapon(a), &caps);

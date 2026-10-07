@@ -1,6 +1,8 @@
 #include "rf_tactical.h"
 #include "rf_tactical_weapon.h"
 #include "rf_tactical_prediction.h"
+#include "rasterfall_character.h"
+#include "rasterfall_units.h"
 #include <math.h>
 #include <string.h>
 #include <stdlib.h>
@@ -13,6 +15,7 @@
 
 static unsigned int tac_hash_word(unsigned int h,unsigned int value);
 static unsigned int tac_float_word(float f);
+static unsigned tac_geometry_hash(const struct toy_game *g);
 
 static float tac_min(float a, float b) { return a < b ? a : b; }
 static float tac_max(float a, float b) { return a > b ? a : b; }
@@ -23,52 +26,25 @@ static int tac_valid_pos(struct rf_tac_vec p)
 { return p.x >= 0.35f && p.x <= 63.65f && p.y >= 0.35f && p.y <= 47.65f; }
 static unsigned int tac_generation(const struct rf_tac_world *w,int team)
 { return w->map->generation ^ (w->seed * 0x9e3779b9u) ^
+         (w->units[0].actor_generation*0x85ebca6bu) ^
          (w->order_revision[team]*0x7f4a7c15u) ^ ((unsigned int)team*0x27d4eb2du); }
 
-static int tac_clip(float p, float q, float *first, float *last)
+static int tac_x(float x) { return (int)lroundf((x-32)*512); }
+static int tac_z(float z) { return (int)lroundf((z-24)*512); }
+static int tac_move_clear(const struct rf_tac_map *m, struct rf_tac_vec a, struct rf_tac_vec b)
 {
-    float t;
-    if (tac_abs(p) < 0.00001f) return q >= 0.0f;
-    t = q / p;
-    if (p < 0.0f) { if (t > *last) return 0; if (t > *first) *first = t; }
-    else { if (t < *first) return 0; if (t < *last) *last = t; }
-    return 1;
+    if (!m->geometry || !tac_valid_pos(a) || !tac_valid_pos(b)) return 0;
+    return toy_game_short_connection(m->geometry,tac_x(a.x),tac_z(a.y),
+        tac_x(b.x),tac_z(b.y),TOY_GAME_PLAYER_RADIUS,0);
 }
-
-static int tac_rect_segment(struct rf_tac_vec a, struct rf_tac_vec b,
-                            const struct rf_tac_cover *c, float margin,
-                            float *first, float *last)
-{
-    float dx = b.x-a.x, dy = b.y-a.y;
-    *first = 0.0f; *last = 1.0f;
-    return tac_clip(-dx, a.x-c->x0+margin, first, last) &&
-           tac_clip(dx, c->x1+margin-a.x, first, last) &&
-           tac_clip(-dy, a.y-c->y0+margin, first, last) &&
-           tac_clip(dy, c->y1+margin-a.y, first, last);
-}
-
-static int tac_move_clear(const struct rf_tac_map *m, struct rf_tac_vec a,
-                           struct rf_tac_vec b)
-{
-    int i; float t0, t1;
-    if (!tac_valid_pos(a) || !tac_valid_pos(b)) return 0;
-    for (i = 0; i < m->cover_count; ++i)
-        if (tac_rect_segment(a,b,&m->covers[i],TAC_BODY_RADIUS,&t0,&t1)) return 0;
-    return 1;
-}
-
 static int tac_ray_clear(const struct rf_tac_map *m, struct rf_tac_vec a,
                          float az, struct rf_tac_vec b, float bz)
 {
-    int i; float t0, t1, z0, z1, top;
-    for (i = 0; i < m->cover_count; ++i) {
-        if (!tac_rect_segment(a,b,&m->covers[i],0.0f,&t0,&t1)) continue;
-        if (t1 <= 0.0001f || t0 >= 0.9999f) continue;
-        z0 = az + (bz-az)*t0; z1 = az + (bz-az)*t1;
-        top = m->covers[i].height == RF_TAC_LOW ? 1.10f : 2.20f;
-        if (tac_min(z0,z1) <= top) return 0;
-    }
-    return 1;
+    struct toy_game_actor actor={0};
+    actor.x=tac_x(a.x);actor.z=tac_z(a.y);
+    actor.ground_y=(int)(az*512)-RASTERFALL_HUMAN_EYE_HEIGHT_RFU;
+    return m->geometry && toy_game_combat_visible(m->geometry,&actor,
+        tac_x(b.x),(int)(bz*512),tac_z(b.y));
 }
 
 /* Nearest rectangle face defines protection direction, never a scalar score.
@@ -89,44 +65,14 @@ static int tac_cover_at(const struct rf_tac_map *m, struct rf_tac_vec p,
     return best;
 }
 
-/* A high-cover lean is limited to 0.8m from an edge. It changes ray origins,
- * not authoritative body position or movement; middle wall anchors cannot
- * magically shoot through the wall. Choose the shortest legal corner. */
-static struct rf_tac_vec tac_peek(const struct rf_tac_map *m,
-                                 struct rf_tac_vec p, struct rf_tac_vec toward)
-{
-    struct rf_tac_vec normal, q = p; int ci = tac_cover_at(m,p,&normal);
-    const struct rf_tac_cover *c;
-    if (ci < 0 || m->covers[ci].height != RF_TAC_HIGH) return p;
-    c = &m->covers[ci];
-    if (normal.x*(toward.x-p.x)+normal.y*(toward.y-p.y) >= 0.0f) return p;
-    if (tac_abs(normal.x) > tac_abs(normal.y)) {
-        float low = tac_abs(p.y-c->y0), high = tac_abs(p.y-c->y1);
-        if (tac_min(low,high) <= 0.8f) q.y = low <= high ? c->y0-0.16f : c->y1+0.16f;
-    } else {
-        float low = tac_abs(p.x-c->x0), high = tac_abs(p.x-c->x1);
-        if (tac_min(low,high) <= 0.8f) q.x = low <= high ? c->x0-0.16f : c->x1+0.16f;
-    }
-    return q;
-}
-
+/* Exposure is descriptive only. No imaginary lean or displaced shot origin. */
 static int tac_precise_exposure(const struct rf_tac_map *m,
                                 struct rf_tac_vec from, struct rf_tac_vec to)
 {
-    struct rf_tac_vec normal, source, target[3]; int source_cover, target_cover, i, count = 0;
-    float source_z = 1.55f, heights[3] = {1.55f,0.95f,0.50f};
-    source_cover = tac_cover_at(m,from,&normal);
-    if (source_cover >= 0 && m->covers[source_cover].height == RF_TAC_LOW) source_z = 1.30f;
-    source = tac_peek(m,from,to);
-    target_cover = tac_cover_at(m,to,&normal);
-    target[0] = target[1] = target[2] = to;
-    if (target_cover >= 0) {
-        if (m->covers[target_cover].height == RF_TAC_LOW) {
-            heights[0] = 1.30f; heights[1] = 0.75f; heights[2] = 0.35f;
-        } else target[0] = tac_peek(m,to,from);
-    }
-    for (i = 0; i < 3; ++i)
-        if (tac_ray_clear(m,source,source_z,target[i],heights[i])) ++count;
+    int count=0;
+    const float h=RASTERFALL_HUMAN_HEIGHT_RFU/512.0f;
+    for(int i=0;i<3;++i)
+        count+=tac_ray_clear(m,from,RASTERFALL_HUMAN_EYE_HEIGHT_RFU/512.0f,to,h*(0.3f+0.3f*i));
     return count;
 }
 
@@ -191,33 +137,13 @@ int rf_tac_nearest_node(const struct rf_tac_map *map, struct rf_tac_vec pos)
     return best;
 }
 
-int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed)
+static int tac_map_geometry(struct rf_tac_map *map);
+static void tac_map_bake(struct rf_tac_map *map)
 {
-    unsigned int rng = seed ? seed : 0xa341316cu;
     int x,y,i,j,grid_count;
-    if (!map) return 0;
-    memset(map,0,sizeof(*map)); map->seed=seed;
-    map->generation=(seed*0x85ebca6bu)^0x52465431u;
-    map->objective.x=53.0f; map->objective.y=24.0f; map->objective_radius=6.0f;
-    map->spawn[0].x=5.0f; map->spawn[0].y=24.0f;
-    map->spawn[1]=map->objective;
-    /* Half-open strongpoint: rear/side protection, broken frontal cover and
-     * a final 7m approach without stepping-stone cover. Flanks remain open. */
-    tac_add_cover(map,58.0f,17.0f,58.8f,23.0f,RF_TAC_HIGH);
-    tac_add_cover(map,58.0f,25.0f,58.8f,31.0f,RF_TAC_HIGH);
-    tac_add_cover(map,51.0f,16.0f,57.0f,16.7f,RF_TAC_HIGH);
-    tac_add_cover(map,51.0f,31.3f,57.0f,32.0f,RF_TAC_HIGH);
-    tac_add_cover(map,49.0f,18.0f,49.7f,21.0f,RF_TAC_LOW);
-    tac_add_cover(map,49.0f,27.0f,49.7f,30.0f,RF_TAC_LOW);
-    /* Every band varies cover location, height and orientation. Three broad
-     * advance lanes remain disconnected by gaps rather than enclosed walls. */
-    for (i=0;i<4;++i) for (j=0;j<3;++j) {
-        float cx=13.0f+i*8.0f+(float)(rf_tw_rng_next(&rng)%401)/100.0f;
-        float cy=9.0f+j*14.0f+(float)(rf_tw_rng_next(&rng)%601)/100.0f-3.0f;
-        int height=(rf_tw_rng_next(&rng)%3)==0 ? RF_TAC_HIGH : RF_TAC_LOW;
-        if (rf_tw_rng_next(&rng)&1u) tac_add_cover(map,cx,cy,cx+0.7f,cy+2.4f,height);
-        else tac_add_cover(map,cx,cy,cx+2.4f,cy+0.7f,height);
-    }
+    map->node_count=0;
+    memset(map->neighbor_count,0,sizeof(map->neighbor_count));
+    memset(map->visible,0,sizeof(map->visible));
     for (i=0;i<RF_TAC_GRID_W*RF_TAC_GRID_H;++i) map->grid_node[i]=-1;
     for (y=0;y<RF_TAC_GRID_H;++y) for (x=0;x<RF_TAC_GRID_W;++x) {
         struct rf_tac_vec p; p.x=1.0f+x*RF_TAC_GRID_M; p.y=1.0f+y*RF_TAC_GRID_M;
@@ -254,6 +180,37 @@ int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed)
         map->exposure[i][j]=(unsigned char)exposure;
         if (exposure) map->visible[i][j>>5]|=1u<<(j&31);
     }
+}
+
+int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed)
+{
+    unsigned int rng = seed ? seed : 0xa341316cu;
+    int i,j;
+    if (!map) return 0;
+    memset(map,0,sizeof(*map)); map->seed=seed;
+    map->generation=(seed*0x85ebca6bu)^0x52465431u;
+    map->objective.x=53.0f; map->objective.y=24.0f; map->objective_radius=6.0f;
+    map->spawn[0].x=5.0f; map->spawn[0].y=24.0f;
+    map->spawn[1]=map->objective;
+    /* Half-open strongpoint: rear/side protection, broken frontal cover and
+     * a final 7m approach without stepping-stone cover. Flanks remain open. */
+    tac_add_cover(map,58.0f,17.0f,58.8f,23.0f,RF_TAC_HIGH);
+    tac_add_cover(map,58.0f,25.0f,58.8f,31.0f,RF_TAC_HIGH);
+    tac_add_cover(map,51.0f,16.0f,57.0f,16.7f,RF_TAC_HIGH);
+    tac_add_cover(map,51.0f,31.3f,57.0f,32.0f,RF_TAC_HIGH);
+    tac_add_cover(map,49.0f,18.0f,49.7f,21.0f,RF_TAC_LOW);
+    tac_add_cover(map,49.0f,27.0f,49.7f,30.0f,RF_TAC_LOW);
+    /* Every band varies cover location, height and orientation. Three broad
+     * advance lanes remain disconnected by gaps rather than enclosed walls. */
+    for (i=0;i<4;++i) for (j=0;j<3;++j) {
+        float cx=13.0f+i*8.0f+(float)(rf_tw_rng_next(&rng)%401)/100.0f;
+        float cy=9.0f+j*14.0f+(float)(rf_tw_rng_next(&rng)%601)/100.0f-3.0f;
+        int height=(rf_tw_rng_next(&rng)%3)==0 ? RF_TAC_HIGH : RF_TAC_LOW;
+        if (rf_tw_rng_next(&rng)&1u) tac_add_cover(map,cx,cy,cx+0.7f,cy+2.4f,height);
+        else tac_add_cover(map,cx,cy,cx+2.4f,cy+0.7f,height);
+    }
+    if(!tac_map_geometry(map)) return 0;
+    tac_map_bake(map);
     map->content_hash=tac_hash_word(2166136261u,map->generation);
     for(i=0;i<map->cover_count;++i) {
         const struct rf_tac_cover *c=&map->covers[i];
@@ -269,47 +226,11 @@ int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed)
         for(j=0;j<map->neighbor_count[i];++j)
             map->content_hash=tac_hash_word(map->content_hash,map->neighbors[i][j]);
     }
+    map->content_hash=tac_geometry_hash(map->geometry);
     return rf_tac_nearest_node(map,map->spawn[0])>=0 && rf_tac_nearest_node(map,map->objective)>=0;
 }
 
-static rf_tw_state tac_weapon_state(const struct rf_tac_unit *u)
-{
-    rf_tw_state s; s.ammo=u->ammo; s.cooldown_ms=u->cooldown_ms;
-    s.reload_remaining_ms=u->reload_ms; s.recoil_milli_mrad=u->recoil_milli_mrad;
-    s.recoil_recovery_remainder=u->recoil_recovery_remainder; return s;
-}
-static void tac_weapon_store(struct rf_tac_unit *u, const rf_tw_state *s)
-{
-    u->ammo=s->ammo; u->cooldown_ms=s->cooldown_ms; u->reload_ms=s->reload_remaining_ms;
-    u->recoil_milli_mrad=s->recoil_milli_mrad; u->recoil_recovery_remainder=s->recoil_recovery_remainder;
-}
-
-int rf_tac_world_init(struct rf_tac_world *world, const struct rf_tac_map *map,
-                      unsigned int seed, int squad_size, int weapon, int max_time_ms)
-{
-    int team,i;
-    if (!world || !map || map->node_count<=0 || squad_size<1 || squad_size>RF_TAC_MAX_SQUAD ||
-        !rf_tw_profile_get(weapon) || max_time_ms<RF_TAC_DT_MS) return 0;
-    memset(world,0,sizeof(*world)); world->map=map; world->seed=seed;
-    world->rng=seed?seed:0x1234567u; world->squad_size=squad_size;
-    world->winner=-1; world->max_time_ms=max_time_ms;
-    for (team=0;team<2;++team) {
-        world->orders[team].kind=RF_TAC_DEFEND;
-        world->orders[team].target=map->spawn[team]; world->orders[team].radius=map->objective_radius;
-        for (i=0;i<squad_size;++i) {
-            struct rf_tac_unit *u=&world->units[team*RF_TAC_MAX_SQUAD+i]; rf_tw_state ws;
-            struct rf_tac_vec p=map->spawn[team]; int node;
-            p.x += (i%2)*1.2f; p.y+=(i-(squad_size-1)*0.5f)*1.6f;
-            node=rf_tac_nearest_node(map,p); if (node<0) return 0;
-            u->id=team*RF_TAC_MAX_SQUAD+i; u->team=team; u->alive=1; u->weapon=weapon;
-            u->pos=p; u->hp=RF_TW_BASE_HP; u->evasion=RF_TW_BASE_RISK;
-            u->destination=p; u->action.kind=RF_TAC_HOLD; u->action.target=-1;
-            u->last_shot_target=-1;
-            rf_tw_state_reset(rf_tw_profile_get(weapon),&ws); tac_weapon_store(u,&ws);
-        }
-    }
-    return 1;
-}
+#include "rf_tactical_game.inc"
 
 int rf_tac_command(struct rf_tac_world *world, int team, int kind,
                    struct rf_tac_vec target, float radius)
@@ -399,40 +320,33 @@ static int tac_route_nodes(const struct rf_tac_map *m,struct rf_tac_vec start,
     return count-skip;
 }
 
-static float tac_lateral_speed(struct rf_tac_vec shooter,struct rf_tac_vec target,
-                               struct rf_tac_vec destination)
-{
-    float rx=target.x-shooter.x,ry=target.y-shooter.y;
-    float vx=destination.x-target.x,vy=destination.y-target.y;
-    float denominator=sqrtf((rx*rx+ry*ry)*(vx*vx+vy*vy));
-    if(denominator<0.0001f) return 0.0f;
-    return TAC_NAV_SPEED*tac_abs(rx*vy-ry*vx)/denominator;
-}
-static float tac_unit_lateral_speed(const struct rf_tac_world *w,struct rf_tac_vec shooter,
-                                    const struct rf_tac_unit *target)
-{
-    if(target->action.kind!=RF_TAC_MOVE || target->nav_cursor>=target->nav_count) return 0.0f;
-    return tac_lateral_speed(shooter,target->pos,w->map->nodes[target->nav_nodes[target->nav_cursor]].pos);
-}
-
 static void tac_relation(const struct rf_tac_world *w,const struct rf_tac_unit *from,
-                          struct rf_tac_vec pos,const struct rf_tac_unit *to,int baked_from,
-                          int baked_to,struct rf_tac_relation *out)
+    struct rf_tac_vec pos,const struct rf_tac_unit *to,int baked_from,int baked_to,
+    struct rf_tac_relation *out)
 {
-    rf_tw_context context; rf_tw_metrics metrics; int exposure;
-    memset(out,0,sizeof(*out)); out->distance=tac_distance(pos,to->pos);
-    if (!from->alive || !to->alive) return;
-    exposure=baked_from>=0 && baked_to>=0 &&
-             tac_distance(w->map->nodes[baked_from].pos,pos)<=0.10f &&
-             tac_distance(w->map->nodes[baked_to].pos,to->pos)<=0.10f ? w->map->exposure[baked_from][baked_to] :
-             tac_precise_exposure(w->map,pos,to->pos);
-    out->visible=exposure!=0; out->exposure=exposure/3.0f;
-    if (!exposure || from->reload_ms || !from->ammo) return;
-    rf_tw_context_reset(&context); context.distance_m=out->distance; context.exposure=exposure;
-    context.recoil_milli_mrad=from->recoil_milli_mrad;
-    context.target_lateral_speed_mps=tac_unit_lateral_speed(w,pos,to);
-    rf_tw_query(rf_tw_profile_get(from->weapon),&context,&metrics);
-    out->hit_rate=metrics.hit_probability; out->expected_dps=metrics.reload_cycle_dps;
+    const struct toy_game_actor *source=toy_game_actor_by_id_const(w->game,from->actor_id);
+    const struct toy_game_actor *target=toy_game_actor_by_id_const(w->game,to->actor_id);
+    struct toy_game_actor hypothetical;
+    const struct toy_game_weapon_info *weapon;
+    (void)baked_from;(void)baked_to;
+    memset(out,0,sizeof(*out));out->distance=tac_distance(pos,to->pos);
+    if(!source || !target || !from->alive || !to->alive) return;
+    hypothetical=*source;hypothetical.x=tac_x(pos.x);hypothetical.z=tac_z(pos.y);
+    weapon=toy_game_weapon_info(toy_game_actor_current_weapon(source));
+    out->visible=out->distance*512<=weapon->range && toy_game_combat_visible(w->game,
+        &hypothetical,tac_x(to->pos.x),target->ground_y+target->airborne_y+
+        RASTERFALL_HUMAN_HEIGHT_RFU*64/100,tac_z(to->pos.y));
+    out->exposure=out->visible?rf_tac_exposure(w->map,pos,to->pos):0;
+    /* Conservative potential, not an alternate hit/damage simulator. Actual
+     * finite-ammo, geometry, skills and recoil are resolved by Game rollout. */
+    if(out->visible) {
+        float spread=toy_game_actor_current_spread(source)/1024.0f*out->distance*512;
+        out->hit_rate=fminf(1.0f,TOY_GAME_PLAYER_RADIUS/fmaxf(1,spread))*out->exposure;
+        float cycle=(weapon->mag_size-1)*toy_game_actor_fire_cooldown_ms(source,weapon)+
+            toy_game_actor_reload_ms(source,weapon);
+        out->expected_dps=weapon->damage*weapon->pellets*weapon->mag_size*1000.0f/cycle*out->hit_rate;
+        if(from->reload_ms || !from->ammo) out->expected_dps=0;
+    }
 }
 
 static void tac_view(const struct rf_tac_unit *u,struct rf_tac_unit_view *out)
@@ -536,20 +450,14 @@ static void tac_path_summary(const struct rf_tac_world *w,int team,
             point.x=start.x+(end.x-start.x)*t; point.y=start.y+(end.y-start.y)*t;
             for (e=0;e<w->squad_size;++e) {
                 const struct rf_tac_unit *enemy=&w->units[(1-team)*RF_TAC_MAX_SQUAD+e];
-                rf_tw_context context; rf_tw_metrics metrics; rf_tw_state state;
-                const rf_tw_profile *profile=rf_tw_profile_get(enemy->weapon); int exposure;
-                if (!enemy->alive) continue;
-                exposure=tac_precise_exposure(w->map,enemy->pos,point); if (!exposure) continue;
-                threatened=1;
-                state=tac_weapon_state(enemy);
-                if(!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(profile,&state);
-                rf_tw_state_advance(profile,&state,arrival_ms);
-                if(state.reload_remaining_ms || state.cooldown_ms || !state.ammo) continue;
-                rf_tw_context_reset(&context); context.distance_m=tac_distance(enemy->pos,point);
-                context.exposure=exposure; context.target_lateral_speed_mps=tac_lateral_speed(enemy->pos,point,end);
-                context.recoil_milli_mrad=state.recoil_milli_mrad;
-                rf_tw_query(profile,&context,&metrics);
-                sample_dps+=metrics.reload_cycle_dps;
+                struct rf_tac_relation relation;
+                struct rf_tac_unit projected=*enemy, moving=*unit;
+                if(!enemy->alive) continue;
+                moving.pos=point;
+                if(projected.reload_ms<=arrival_ms) projected.reload_ms=0;
+                tac_relation(w,&projected,projected.pos,&moving,-1,-1,&relation);
+                threatened|=relation.visible;
+                sample_dps+=relation.expected_dps;
             }
             incoming+=sample_dps/samples; exposed+=(float)threatened/samples;
         }
@@ -660,7 +568,7 @@ int rf_tac_apply(struct rf_tac_world *world,const struct rf_tac_plan *plan)
             legal=action.target>=0 && action.target<world->squad_size &&
                   world->units[(1-plan->team)*RF_TAC_MAX_SQUAD+action.target].alive &&
                   tac_precise_exposure(world->map,u->pos,world->units[(1-plan->team)*RF_TAC_MAX_SQUAD+action.target].pos);
-        if (legal && action.kind==RF_TAC_RELOAD) legal=u->reload_ms || u->ammo<rf_tw_profile_get(u->weapon)->magazine;
+        if (legal && action.kind==RF_TAC_RELOAD) legal=u->reload_ms || u->ammo<toy_game_weapon_info(u->weapon==RF_TW_RIFLE?TOY_GAME_WEAPON_AK:TOY_GAME_WEAPON_SMG)->mag_size;
         if (legal && action.kind==RF_TAC_MOVE) {
             struct tac_paths paths; int nodes[RF_TAC_CANDIDATES],kinds[RF_TAC_CANDIDATES];
             int k=action.candidate,count=tac_candidates(world,plan->team,u,&paths,nodes,kinds);
@@ -702,126 +610,31 @@ static int tac_target(const struct rf_tac_world *w,const struct rf_tac_unit *u)
     return best;
 }
 
-struct tac_expected_shot {
-    float hit_probability, conditional_damage, risk_cost;
-};
-
-/* Condition on which shots hit before taking an expectation. Averaging damage
- * before min(risk, cost) would invent immunity to low-probability shots. Head
- * damage is linear conditional on a hit because risk cost is body damage.
- * At most six independent shooters can target one soldier in a physical tick. */
-static int tac_expected_settlement(const struct rf_tac_unit *u,
-                                   const struct tac_expected_shot *shots,int count,
-                                   float *hp_loss,float *risk_absorbed)
+void rf_tac_prepare(struct rf_tac_world *world,int paused)
 {
-    int mask,j; *hp_loss=*risk_absorbed=0.0f;
-    if(!count) return 0;
-    for(mask=0;mask<(1<<count);++mask) {
-        float probability=1.0f,damage=0.0f,cost=0.0f;
-        float branch_hp=u->hp,branch_risk=u->evasion,absorbed;
-        for(j=0;j<count;++j) {
-            if(mask&(1<<j)) {
-                probability*=shots[j].hit_probability;
-                damage+=shots[j].conditional_damage; cost+=shots[j].risk_cost;
-            } else probability*=1.0f-shots[j].hit_probability;
-        }
-        if(probability<=0.0f || cost<=0.0f) continue;
-        absorbed=rf_tw_apply_damage(&branch_hp,&branch_risk,damage,cost);
-        *risk_absorbed+=probability*absorbed;
-        /* Clamp the mean HP once after expectation. Averaging branch-clamped
-         * HP would make a partly likely lethal hit approach zero forever.
-         * Death and pressure timers remain mean-state approximations. */
-        *hp_loss+=probability*damage*(1.0f-absorbed/cost);
+    if(!world || !world->game) return;
+    for(int i=0;i<RF_TAC_MAX_UNITS;++i) {
+        struct rf_tac_unit *u=&world->units[i];
+        struct toy_game_actor *a=toy_game_actor_by_id(world->game,u->actor_id);
+        if(!a || a->combat_generation!=u->actor_generation) continue;
+        a->simulation_paused=paused;
+        int target=tac_target(world,u);
+        const struct rf_tac_unit *v=target<0?NULL:&world->units[(1-u->team)*RF_TAC_MAX_SQUAD+target];
+        if(u->action.kind==RF_TAC_MOVE && tac_distance(u->pos,u->destination)<0.35f) tac_unit_hold(u);
+        toy_game_actor_set_intent(a,u->action.kind==RF_TAC_MOVE,tac_x(u->destination.x),0,
+            tac_z(u->destination.y),v?v->actor_id:-1,v?v->actor_generation:0,
+            u->action.kind==RF_TAC_HOLD || u->action.kind==RF_TAC_FIRE,u->action.kind==RF_TAC_RELOAD);
+        u->last_shot_target=target<0?-1:(1-u->team)*RF_TAC_MAX_SQUAD+target;
     }
-    *risk_absorbed=tac_min(u->evasion,*risk_absorbed);
-    return 1;
 }
 
-static int tac_step_mode(struct rf_tac_world *world,int expected)
+void rf_tac_finish(struct rf_tac_world *world,int dt_ms)
 {
-    float damage[RF_TAC_MAX_UNITS]={0},risk[RF_TAC_MAX_UNITS]={0}; int i,team,alive[2]={0},uncertain_shots=0;
-    struct tac_expected_shot expected_shots[RF_TAC_MAX_UNITS][RF_TAC_MAX_SQUAD];
-    int expected_count[RF_TAC_MAX_UNITS]={0};
-    if(!world || !world->map || world->finished) return 0;
-    /* Clocks and all movement resolve before either side fires. Damage is
-     * buffered so a soldier alive at the fire phase gets its simultaneous shot. */
-    for(i=0;i<RF_TAC_MAX_UNITS;++i) {
-        struct rf_tac_unit *u=&world->units[i]; rf_tw_state state;
-        if(!u->alive) continue;
-        state=tac_weapon_state(u); rf_tw_state_advance(rf_tw_profile_get(u->weapon),&state,RF_TAC_DT_MS); tac_weapon_store(u,&state);
-        if(u->action.kind==RF_TAC_RELOAD && !u->reload_ms && u->ammo==rf_tw_profile_get(u->weapon)->magazine) tac_unit_hold(u);
-        rf_tw_recover(&u->evasion,&u->recovery_ms,RF_TAC_DT_MS);
-        if(u->action.kind==RF_TAC_MOVE) {
-            float budget=TAC_NAV_SPEED*RF_TAC_DT_MS/1000.0f;
-            while(budget>0.0001f && u->nav_cursor<u->nav_count) {
-                struct rf_tac_vec p=world->map->nodes[u->nav_nodes[u->nav_cursor]].pos,next;
-                float d=tac_distance(u->pos,p),move=tac_min(d,budget);
-                if(d<0.001f) { ++u->nav_cursor; continue; }
-                next.x=u->pos.x+(p.x-u->pos.x)*move/d; next.y=u->pos.y+(p.y-u->pos.y)*move/d;
-                if(!tac_move_clear(world->map,u->pos,next)) { tac_unit_hold(u); break; }
-                u->pos=next; budget-=move;
-                if(move>=d-0.0001f) ++u->nav_cursor;
-            }
-            if(u->nav_cursor>=u->nav_count) tac_unit_hold(u);
-        }
-    }
-    for(i=0;i<RF_TAC_MAX_UNITS;++i) {
-        struct rf_tac_unit *u=&world->units[i]; const rf_tw_profile *profile; rf_tw_state state; int target;
-        if(!u->alive || u->action.kind==RF_TAC_MOVE) continue;
-        profile=rf_tw_profile_get(u->weapon); state=tac_weapon_state(u);
-        if(u->action.kind==RF_TAC_RELOAD || !u->ammo) {
-            rf_tw_state_begin_reload(profile,&state); tac_weapon_store(u,&state); continue;
-        }
-        if(u->cooldown_ms || u->reload_ms) continue;
-        target=tac_target(world,u);
-        if(target>=0) {
-            int id=(1-u->team)*RF_TAC_MAX_SQUAD+target; struct rf_tac_unit *enemy=&world->units[id];
-            rf_tw_context context; rf_tw_shot shot; rf_tw_metrics metrics;
-            int exposure=tac_precise_exposure(world->map,u->pos,enemy->pos);
-            rf_tw_context_reset(&context); context.distance_m=tac_distance(u->pos,enemy->pos); context.exposure=exposure;
-            context.target_lateral_speed_mps=tac_unit_lateral_speed(world,u->pos,enemy);
-            context.recoil_milli_mrad=u->recoil_milli_mrad;
-            if(expected) rf_tw_query(profile,&context,&metrics);
-            else rf_tw_sample_shot(profile,&context,&world->rng,&shot);
-            if(rf_tw_state_begin_shot(profile,&state)) {
-                tac_weapon_store(u,&state); ++u->shots; u->last_shot_target=target;
-                if(expected) {
-                    if((metrics.hit_probability>0.0f && metrics.hit_probability<1.0f) ||
-                       (metrics.head_probability>0.0f && metrics.head_probability<metrics.hit_probability))
-                        ++uncertain_shots;
-                    if(metrics.hit_probability>0.0f && expected_count[id]<RF_TAC_MAX_SQUAD) {
-                        struct tac_expected_shot *s=&expected_shots[id][expected_count[id]++];
-                        s->hit_probability=metrics.hit_probability;
-                        s->conditional_damage=metrics.expected_damage/metrics.hit_probability;
-                        s->risk_cost=metrics.body_damage;
-                    }
-                    u->damage+=metrics.expected_damage;
-                } else if(shot.hit) { ++u->hits; damage[id]+=shot.damage_milli/1000.0f; risk[id]+=shot.risk_cost_milli/1000.0f;
-                    u->damage+=shot.damage_milli/1000.0f; }
-            }
-        }
-    }
-    for(i=0;i<RF_TAC_MAX_UNITS;++i) {
-        struct rf_tac_unit *u=&world->units[i];
-        int pressured=0;
-        if(!u->alive) continue;
-        if(expected) {
-            float hp_loss,absorbed;
-            pressured=tac_expected_settlement(u,expected_shots[i],expected_count[i],&hp_loss,&absorbed);
-            if(pressured) {
-                u->hp=tac_max(0.0f,u->hp-hp_loss); u->evasion-=absorbed; u->absorbed+=absorbed;
-            }
-        } else if(damage[i]>0.0f) {
-            float absorbed=rf_tw_apply_damage(&u->hp,&u->evasion,damage[i],risk[i]);
-            u->absorbed+=absorbed; pressured=1;
-        }
-        if(pressured) {
-            u->recovery_ms=RF_TW_BASE_RECOVERY_DELAY_MS;
-            if(u->hp<=0.0f) { u->hp=0.0f; u->alive=0; tac_unit_hold(u); }
-        }
-        if(u->alive) ++alive[u->team];
-    }
-    world->time_ms+=RF_TAC_DT_MS; world->tick=world->time_ms/RF_TAC_THINK_MS;
+    int i,team,alive[2]={0};
+    if(!world || world->finished) return;
+    rf_tac_sync(world);
+    for(i=0;i<RF_TAC_MAX_UNITS;++i) if(world->units[i].alive) ++alive[world->units[i].team];
+    world->time_ms+=dt_ms;world->tick=world->time_ms/RF_TAC_THINK_MS;
     { int capture_mask=0;
     for(team=0;team<2;++team) if(world->orders[team].kind==RF_TAC_ATTACK && alive[team]) {
         struct rf_tac_order *order=&world->orders[team]; int clear=1,occupied=1;
@@ -831,7 +644,7 @@ static int tac_step_mode(struct rf_tac_world *world,int expected)
             if(enemy->alive && tac_distance(enemy->pos,order->target)<=order->radius) clear=0;
             if(friendly->alive && tac_distance(friendly->pos,order->target)>order->radius) occupied=0;
         }
-        if(clear && occupied) order->clear_ms+=RF_TAC_DT_MS; else order->clear_ms=0;
+        if(clear && occupied) order->clear_ms+=dt_ms; else order->clear_ms=0;
         if(order->clear_ms>=TAC_CAPTURE_MS) {
             order->captured=1; order->kind=RF_TAC_DEFEND; ++world->captures;
             for(i=0;i<world->squad_size;++i) tac_unit_hold(&world->units[team*RF_TAC_MAX_SQUAD+i]);
@@ -850,11 +663,16 @@ static int tac_step_mode(struct rf_tac_world *world,int expected)
         int a=world->orders[0].kind==RF_TAC_ATTACK,b=world->orders[1].kind==RF_TAC_ATTACK;
         world->finished=1; world->winner=a!=b?(a?1:0):-1;
     }
-    return uncertain_shots;
 }
 
 void rf_tac_step(struct rf_tac_world *world)
-{ tac_step_mode(world,0); }
+{
+    if(!world || !world->game || world->finished) return;
+    rf_tac_prepare(world,0);
+    world->game->event_count=0;
+    toy_game_update_world(world->game,RF_TAC_DT_MS);
+    rf_tac_finish(world,RF_TAC_DT_MS);
+}
 
 static unsigned int tac_hash_word(unsigned int h,unsigned int value)
 { int i; for(i=0;i<4;++i) { h^=value&255u; h*=16777619u; value>>=8; } return h; }
@@ -872,6 +690,7 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
         h=tac_hash_word(h,tac_float_word(c->x1)); h=tac_hash_word(h,tac_float_word(c->y1)); h=tac_hash_word(h,c->height);
     }
     h=tac_hash_word(h,world->seed); h=tac_hash_word(h,world->rng);
+    if(world->game)h=tac_hash_word(h,(unsigned)(world->game->rng>>32));
     h=tac_hash_word(h,world->time_ms); h=tac_hash_word(h,world->tick);
     h=tac_hash_word(h,world->squad_size); h=tac_hash_word(h,world->winner);
     h=tac_hash_word(h,world->finished); h=tac_hash_word(h,world->max_time_ms);
@@ -884,6 +703,22 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
     }
     for(i=0;i<RF_TAC_MAX_UNITS;++i) {
         const struct rf_tac_unit *u=&world->units[i];
+        const struct toy_game_actor *a=world->game?toy_game_actor_by_id_const(world->game,u->actor_id):NULL;
+        if(a && a->combat_generation==u->actor_generation) {
+            const int values[]={a->sy,a->cy,a->pitch_sy,a->pitch_cy,a->ground_y,a->airborne_y,
+                a->airborne_ms,a->vertical_velocity,a->damage_remainder_milli,
+                a->combat_aim_ms,a->ai_turn_remainder,a->weapon_switch_timer_ms,
+                a->reloading,a->evasion.window_ms,a->evasion.retrigger_ms,
+                a->evasion.pressure_ms,a->nav_active,a->nav_x,a->nav_z,
+                a->nav_direct_valid,a->nav_direct_ms,a->nav_layer_count,a->nav_layer_cursor,
+                a->command_destination_active,a->command_x,a->command_z,
+                a->intent_move,a->intent_x,a->intent_z,a->intent_fire,a->intent_reload};
+            for(unsigned n=0;n<sizeof(values)/sizeof(values[0]);++n)h=tac_hash_word(h,(unsigned)values[n]);
+            for(int n=0;n<TOY_GAME_WEAPON_SLOTS;++n) {
+                h=tac_hash_word(h,a->slots[n].weapon);h=tac_hash_word(h,a->slots[n].mag);
+                h=tac_hash_word(h,a->slots[n].reserve);
+            }
+        }
         h=tac_hash_word(h,u->id); h=tac_hash_word(h,u->team); h=tac_hash_word(h,u->alive); h=tac_hash_word(h,u->weapon);
         h=tac_hash_word(h,tac_float_word(u->pos.x)); h=tac_hash_word(h,tac_float_word(u->pos.y));
         h=tac_hash_word(h,tac_float_word(u->hp)); h=tac_hash_word(h,tac_float_word(u->evasion));
@@ -923,7 +758,7 @@ static int tac_prediction_prepare(struct rf_tac_prediction *p)
         const struct rf_tac_unit *u=&p->root.units[team*RF_TAC_MAX_SQUAD+i];
         struct tac_paths paths; int nodes[RF_TAC_CANDIDATES],kinds[RF_TAC_CANDIDATES],count;
         if(!u->alive) continue;
-        if(!rf_tw_profile_get(u->weapon) || !tac_valid_pos(u->pos) || !isfinite(u->hp) ||
+        if((u->weapon<0 || u->weapon>=RF_TW_KIND_COUNT) || !tac_valid_pos(u->pos) || !isfinite(u->hp) ||
            !isfinite(u->evasion) || u->hp<=0.0f || u->evasion<0.0f) return 0;
         count=tac_candidates(&p->root,team,u,&paths,nodes,kinds);
         if(!count || kinds[0]!=RF_TAC_CURRENT) return 0;
@@ -955,7 +790,10 @@ int rf_tac_prediction_reset(struct rf_tac_prediction *prediction,
        step_budget>1000000 || source->squad_size<1 || source->squad_size>RF_TAC_MAX_SQUAD ||
        source->map->node_count<1 || source->map->node_count>RF_TAC_MAX_NODES ||
        source->map->cover_count<0 || source->map->cover_count>RF_TAC_MAX_COVERS) return 0;
-    memset(prediction,0,sizeof(*prediction)); prediction->root=*source;
+    rf_tac_world_destroy(&prediction->root);
+    memset(prediction,0,sizeof(*prediction));
+    if(!rf_tac_world_clone(&prediction->root,source)) return 0;
+    prediction->root.game->rng=0x726f6c6c6f7574ULL ^ source->seed ^ (unsigned)source->time_ms;
     prediction->team=team; prediction->remaining_steps=step_budget;
     if(!tac_prediction_prepare(prediction)) return 0;
     prediction->valid=1; return 1;
@@ -964,14 +802,14 @@ int rf_tac_prediction_reset(struct rf_tac_prediction *prediction,
 struct rf_tac_prediction *rf_tac_prediction_create(const struct rf_tac_world *source,
                                                    int team,int step_budget)
 {
-    struct rf_tac_prediction *p=(struct rf_tac_prediction *)malloc(sizeof(*p));
+    struct rf_tac_prediction *p=(struct rf_tac_prediction *)calloc(1,sizeof(*p));
     if(!p) return NULL;
-    if(!rf_tac_prediction_reset(p,source,team,step_budget)) { free(p); return NULL; }
+    if(!rf_tac_prediction_reset(p,source,team,step_budget)) { rf_tac_world_destroy(&p->root); free(p); return NULL; }
     return p;
 }
 
 void rf_tac_prediction_destroy(struct rf_tac_prediction *prediction)
-{ free(prediction); }
+{ if(prediction) rf_tac_world_destroy(&prediction->root); free(prediction); }
 
 static void tac_prediction_hold(const struct rf_tac_world *w,int team,struct rf_tac_plan *plan)
 {
@@ -999,7 +837,7 @@ static int tac_prediction_apply(const struct rf_tac_prediction *p,struct rf_tac_
         if(action.kind<RF_TAC_HOLD || action.kind>RF_TAC_RELOAD) return 0;
         if(action.kind==RF_TAC_FIRE && (action.target<0 || action.target>=w->squad_size ||
            !(p->fire_mask[team][i]&(1u<<action.target)))) return 0;
-        if(action.kind==RF_TAC_RELOAD && !u->reload_ms && u->ammo>=rf_tw_profile_get(u->weapon)->magazine) return 0;
+        if(action.kind==RF_TAC_RELOAD && !u->reload_ms && u->ammo>=toy_game_weapon_info(u->weapon==RF_TW_RIFLE?TOY_GAME_WEAPON_AK:TOY_GAME_WEAPON_SMG)->mag_size) return 0;
         if(action.kind==RF_TAC_MOVE) {
             int k=action.candidate; const struct tac_prediction_candidate *c;
             if(k<=0 || k>=p->candidate_count[team][i] || !tac_valid_pos(plan->destinations[i])) return 0;
@@ -1029,40 +867,20 @@ static float tac_remaining_move_distance(const struct rf_tac_world *w,const stru
 }
 
 static void tac_forecast_destination(const struct rf_tac_world *w,const struct rf_tac_unit *u,
-                                      struct rf_tac_forecast_unit *out)
+                                     struct rf_tac_forecast_unit *f)
 {
-    struct rf_tac_unit hypothetical=*u; rf_tw_state state=tac_weapon_state(u);
-    const rf_tw_profile *profile=rf_tw_profile_get(u->weapon); int e,ready_ms;
-    int move_ms=(int)ceilf(out->remaining_move_time_s*1000.0f);
-    hypothetical.pos=out->destination; hypothetical.action.kind=RF_TAC_HOLD;
-    hypothetical.nav_count=hypothetical.nav_cursor=0;
-    rf_tw_state_advance(profile,&state,move_ms);
-    /* A moving empty weapon reloads only after it reaches HOLD, following
-     * execution's mutually exclusive MOVE/reload behavior. */
-    if(!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(profile,&state);
-    ready_ms=state.reload_remaining_ms>state.cooldown_ms?state.reload_remaining_ms:state.cooldown_ms;
-    out->destination_fire_ready_time_s=out->remaining_move_time_s+ready_ms/1000.0f;
-    rf_tw_state_advance(profile,&state,ready_ms); tac_weapon_store(&hypothetical,&state);
-    for(e=0;e<w->squad_size;++e) {
+    struct rf_tac_unit hypothetical=*u;
+    hypothetical.pos=f->destination;
+    f->destination_fire_ready_time_s=fmaxf(u->reload_ms,u->cooldown_ms)/1000.0f;
+    for(int e=0;e<w->squad_size;++e) {
         const struct rf_tac_unit *enemy=&w->units[(1-u->team)*RF_TAC_MAX_SQUAD+e];
-        struct rf_tac_unit stationary=*enemy;
-        if(enemy->alive) {
-            rf_tw_state enemy_state=tac_weapon_state(enemy);
-            const rf_tw_profile *enemy_profile=rf_tw_profile_get(enemy->weapon);
-            int enemy_ready_ms,incoming_ready_ms;
-            if(!enemy_state.ammo && !enemy_state.reload_remaining_ms) rf_tw_state_begin_reload(enemy_profile,&enemy_state);
-            enemy_ready_ms=enemy_state.reload_remaining_ms>enemy_state.cooldown_ms?
-                           enemy_state.reload_remaining_ms:enemy_state.cooldown_ms;
-            incoming_ready_ms=enemy_ready_ms>move_ms?enemy_ready_ms:move_ms;
-            out->destination_incoming_ready_time_s[e]=incoming_ready_ms/1000.0f;
-            rf_tw_state_advance(enemy_profile,&enemy_state,incoming_ready_ms);
-            tac_weapon_store(&stationary,&enemy_state);
-        }
-        stationary.action.kind=RF_TAC_HOLD; stationary.nav_count=stationary.nav_cursor=0;
-        tac_relation(w,&hypothetical,hypothetical.pos,&stationary,-1,-1,&out->destination_relations[e]);
-        tac_relation(w,&stationary,stationary.pos,&hypothetical,-1,-1,&out->destination_reverse_relations[e]);
-        out->destination_outgoing_dps=tac_max(out->destination_outgoing_dps,out->destination_relations[e].expected_dps);
-        out->destination_incoming_dps+=out->destination_reverse_relations[e].expected_dps;
+        struct rf_tac_relation out,in;
+        tac_relation(w,&hypothetical,hypothetical.pos,enemy,-1,-1,&out);
+        tac_relation(w,enemy,enemy->pos,&hypothetical,-1,-1,&in);
+        f->destination_relations[e]=out;f->destination_reverse_relations[e]=in;
+        f->destination_incoming_ready_time_s[e]=fmaxf(enemy->reload_ms,enemy->cooldown_ms)/1000.0f;
+        f->destination_outgoing_dps=fmaxf(f->destination_outgoing_dps,out.expected_dps);
+        f->destination_incoming_dps+=in.expected_dps;
     }
 }
 
@@ -1124,16 +942,18 @@ static int tac_prediction_evaluate(void *opaque,const struct rf_tac_plan *friend
     memset(out,0,sizeof(*out));
     if(!p || !p->valid || !friendly || duration_ms<=0 || duration_ms>RF_TAC_PREDICTION_MAX_MS ||
        duration_ms%RF_TAC_THINK_MS) return RF_TAC_PRED_INVALID;
-    required=duration_ms/RF_TAC_DT_MS;
+    required=(duration_ms+RF_TAC_DT_MS-1)/RF_TAC_DT_MS;
     if(required>p->remaining_steps) return RF_TAC_PRED_BUDGET;
-    world=p->root;
+    if(!rf_tac_world_clone(&world,&p->root)) return RF_TAC_PRED_INVALID;
     if(!enemy) { tac_prediction_hold(&p->root,1-p->team,&hold); enemy=&hold; }
     if(!tac_prediction_apply(p,&world,friendly,p->team) ||
-       !tac_prediction_apply(p,&world,enemy,1-p->team)) return RF_TAC_PRED_INVALID;
-    while(steps<required && !world.finished) { out->uncertain_shots+=tac_step_mode(&world,1); ++steps; }
+       !tac_prediction_apply(p,&world,enemy,1-p->team)) { rf_tac_world_destroy(&world); return RF_TAC_PRED_INVALID; }
+    while(steps<required && !world.finished) { rf_tac_step(&world); ++steps; }
+    out->uncertain_shots=1; /* A sampled branch never proves a certain win. */
     p->remaining_steps-=steps;
     out->steps=steps; out->requested_ms=duration_ms;
     tac_forecast_project(p,&world,out);
+    rf_tac_world_destroy(&world);
     return RF_TAC_PRED_OK;
 }
 

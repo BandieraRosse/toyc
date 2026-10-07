@@ -8,27 +8,32 @@
 实时帧间隔。规则和正式 Game 的接入边界见[战术 AI 架构](../architecture/tactical-ai.md)，
 参数的现实依据与设计取舍见[枪械基准](../reference/tactical-weapons.md)。
 
+当前规则和策略版本为 2，权威为正式 `toy_game`。旧 `trained-v1.cfg` 不再出现在
+终端中，也不能作为新版本策略加载；已有版本 1 报告只能作为旧模型历史结果。
+新训练由 `tools/tactical_train.py` 生成版本 2 参数。游戏内是已加载地图的真实碰撞；
+CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规则和初始状态。
+
 ## 构建和靶场
 
 ### 游戏内入口与终端
 
 Windows 完整构建并暂存后，在前哨站中央指挥桌选择“AI 策略对抗场”或“武器靶场”，
-点击地图字段展开下拉列表，选定目的地后右侧显示预加载状态；出生点首帧完成后冻结画面，
+点击地图字段展开下拉列表，选定目的地后点击右侧预览画面框才开始加载；出生点首帧完成后冻结画面，
 再点击确认部署。进入地图保留普通 HUD、移动、跳跃和 M 切换视角。
 出生点附近控制终端按 E 打开，点击参数字段展开列表，悬停高亮，
 当前值显示选中标记；点击空白收起列表，Esc 先收起列表、再退出终端。
 开始新局应用当前配置并运行；重置应用配置并停在初始状态；暂停/继续不重新建局。
 待应用参数与当前对局结果分别展示。菜单提示音区分悬停、点击、值变更、确认和退出。
 
-对抗场支持两方内置策略及训练参数、4–6 人、步枪/SMG、攻守交换、射击种子与工作预算。
+对抗场支持两方内置策略、4–6 人、步枪/SMG、攻守交换、射击种子与工作预算。
 点击观战进入 RTS，WASD 平移、滚轮缩放，右侧成员卡查看生命、回避、行动、目标和弹药。
-E 重新打开控制台；普通 RTS 的移动/编组指令不作用于实验参战者。地形固定为种子 100。
+E 重新打开控制台；友方正式 actor 可接受普通 RTS 移动/停止命令，该命令优先于策略移动。地形固定为种子 100。
 Esc 暂停菜单可沿正常世界切换返回前哨站。
 
 靶场选择武器、AI 射击模式、距离、全身/半身/探头假人和随机种子。开始后 AI 自动打靶，
 玩家试射按钮将玩家放到所选固定射击位；鼠标瞄准、左键射击、R 换弹，E 返回终端。
 各距离的实体标靶同时存在，玩家可自由移动、跳跃和瞄准其他标靶，按实际射距结算；
-AI 继续使用终端配置的固定射道。AI 与玩家的弹着及统计分别记录。
+AI 继续使用终端配置的固定射道。AI 与玩家使用独立的真实标靶，弹着及统计来自正式射击事件；跨射手打同一标靶的混合试次不计独立 TTK。
 射道支持无限备弹；假人击杀后重建生命和回避用于下一试次。完成 TTK 不包含尚未击杀的试次。
 
 导出结果按钮保存 `tactical-result-*.json` 与同名 `.csv` 到实际运行目录
@@ -48,10 +53,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 tact
 .\build-windows\rf-tactical.exe range --samples 2000 --weapon both
 ```
 
-靶场输出 JSON，分别测试全身、半身、探头、横移目标，覆盖单发、三发点射、连续射击。
-距离从 5m 到 100m；输出实测与同一模型的期望命中率、单发伤害期望、含换弹 DPS、
-散布与基准战士 TTK。未在测试窗口内击杀的样本单独报告 censored，不能用成功击杀
-的均值假装所有样本的 TTK。精确参数以当前 `--help` 和输出为准。
+靶场输出 JSON，使用正式 Game actor 测试全身、半身、探头、横移目标，覆盖单发、三发点射、连续射击。
+距离从 5m 到 100m；输出实际命中率、每发生命损失、实测 DPS 和完成试次 TTK。
+截止时未完成的试次单独报告 censored 和时长；成功击杀均值不代表所有试次。
+半身/探头由真实挡板遮挡，移动目标走正式 actor 导航。精确参数以 `--help` 为准。
 
 保存 JSON 时避免 PowerShell 默认重定向编码，可用 Python 原样捕获标准输出：
 
@@ -91,7 +96,7 @@ python tools/tactical_report.py tmp/tactical-match.jsonl --output tmp/tactical-m
 ```
 
 JSONL 保存初始配置、地图、策略参数/hash、每个物理步状态和每轮求解的候选事实、
-评分及最终计划。日志 tick 是 20ms 物理步，200ms 的决策轮次每十步发生一次。
+评分及最终计划。日志 tick 是 16ms Game 规则步，决策在跨过 200ms 边界的下一步发生。
 原生 inspect 读取指定步的记录；Python inspect 同时找出该步最近的决策。
 HTML 可离线打开，滑动时间、选择队伍/成员，查看位置、射击、健康、候选与评分。
 回放只消费权威日志，不重算对局，也不改变训练结果。
@@ -101,32 +106,20 @@ HTML 可离线打开，滑动时间、选择队伍/成员，查看位置、射�
 ```powershell
 .\build-windows\rf-tactical.exe match --a beam --b mechanical --map-seed 2000 --squad 6 --budget 128 --log tmp/beam-match.jsonl
 python tools/tactical_report.py tmp/beam-match.jsonl --output tmp/beam-match.html
-python tools/tactical_benchmark.py --policies beam rasterfall/config/ai/trained-v1.cfg --map-seed 30000 --pairs 8 --shot-seeds 1337 424242 98765 --squads 4 5 6 --jobs 3 --output tmp/beam-benchmark
+python tools/tactical_benchmark.py --policies beam rasterfall/config/ai/strategy3.cfg --map-seed 30000 --pairs 8 --shot-seeds 1337 424242 98765 --squads 4 5 6 --jobs 3 --output tmp/beam-benchmark
 ```
 
 默认宽度 2、最多 4 分支、800ms 预测已在 `beam-v1.cfg` 中保存。原生
 `--beam-width`、`--beam-branches`、`--beam-horizon-ms` 可覆盖双方 Beam 配置，
 不改变其他 solver。增加这些参数时同步检查预算和日志中的耗尽情况，较大时域
-在小预算下可能只返回 HOLD。默认 128 足以展开六名存活成员并比较 HOLD 和一个挑战计划。
+在小预算下可能只返回 HOLD。16ms 步增加了同一预测时域的步数；128 预算可能提前停止成员扩展，应以日志中的工作数和耗尽标记为准。
 
 决策的 `beam` 记录每层扩展数、保留联合动作、父排名、预测结果、最终选择和
 健康/进度/火力/风险/队形/终局分数分项。候选表的 Beam 分数是某次联合前缀评价，
 不能当作单个位置的独立价值；未评分项为 null。HTML 同时展示联合计划与最终预测比较。
-`uncertain_shots` 标明预测中含命中/头身随机的射击数；这类预测的均值死亡不能视为
-确定击杀，也不获得终局硬奖励。连续健康分数仍有近似误差。
-800ms 是保持根行动的预测时域，搜索层是成员，尚未搜索多轮未来决策。
+`uncertain_shots` 在版本 2 中保守标记采样预测的不确定性；预测深复制正式 Game，
+使用与主世界隔离的随机流，不能把单次预测击杀视为确定胜利。旧均值结算已退役。
 
-benchmark 为每个策略、对手、人数与射击种子运行相同地图批次，镜像枪械并交换岗位。
-先保存 exe 与 cfg 的不可变副本和 SHA-256，逐批次落盘 journal，最后保存稳定排序的
-report。已有非空目录不会覆盖，失败保留证据并返回非零。保留地图用于最终对照，
-不要根据其分数继续调参；开发集应另选种子。
-
-批次输出实际进程 CPU、墙钟、地图/观测准备和求解耗时、工作单位、预测次数/步数。
-Windows 用 GetProcessTimes 测 CPU、QPC 测 elapsed；并行作业的总 CPU 可以超过墙钟，
-求解 elapsed 也包含调度影响，不等同单核 CPU。双方交换岗位后的成本仍按策略身份汇总。
-总体 score 计平局半分，分岗位只报告胜场率；native 汇总尚未保存每局结果，
-不能从 batch 聚合值计算逐局配对显著性检验。Beam 是否更强、是否值得开销，以实测为准。
-本轮预测校准、修订前后独立地图比较及实际限制见[Beam 原生记录](../archive/tactical-beam-20261007.md)。
 
 ## 初步训练
 
@@ -145,11 +138,11 @@ utility 的同条件对照。保留集只用于最终评测，不用于选权重
 不是神经网络或 Beam 参数训练。扩大训练时改变输出目录，保留旧证据。
 
 仓库已提供一次真实训练的
-[`trained-v1.cfg`](../../../rasterfall/config/ai/trained-v1.cfg)，可直接作为 `--a` 或 `--b`。
+[`trained-v1.cfg`](../../../rasterfall/config/ai/strategy3.cfg)，可直接作为 `--a` 或 `--b`。
 训练和最终构建的复核结果见[初版验收记录](../archive/tactical-foundation-20261007.md)。
 
 ```powershell
-.\build-windows\rf-tactical.exe match --a rasterfall/config/ai/trained-v1.cfg --b mechanical --map-seed 10005 --squad 5 --weapon rifle --log tmp/tactical-match.jsonl
+.\build-windows\rf-tactical.exe match --a rasterfall/config/ai/strategy3.cfg --b mechanical --map-seed 10005 --squad 5 --weapon rifle --log tmp/tactical-match.jsonl
 python tools/tactical_report.py tmp/tactical-match.jsonl --output tmp/tactical-match.html
 ```
 

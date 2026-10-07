@@ -108,7 +108,7 @@ TACTICAL_CORE_NAMES := rf_tactical rf_tactical_solver rf_tactical_beam rf_tactic
 # console benchmark; do not shadow the C runtime headers with Tinylibc headers.
 $(addprefix $(BUILD)/win/rasterfall/lib/,$(addsuffix .o,$(TACTICAL_CORE_NAMES))): $(BUILD)/win/rasterfall/lib/%.o: rasterfall/lib/%.c
 	@mkdir -p $(dir $@)
-	$(WIN_CC) $(CFLAGS) -Irasterfall/include -c $< -o $@
+	$(WIN_CC) $(CFLAGS) -idirafter windows/include -Irasterfall/include -c $< -o $@
 PACKAGE_DIR := $(BUILD)/rasterfall-windows
 PACKAGE := $(BUILD)/rasterfall-windows.zip
 
@@ -325,11 +325,14 @@ tactical: $(TACTICAL_TARGET)
 	$(call sync-runtime-config,$(BUILD))
 	$(call sync-runtime-config,$(PACKAGE_DIR))
 	@if [ -f "$(PACKAGE_DIR)/rasterfall.exe" ]; then cp "$(TACTICAL_TARGET)" "$(PACKAGE_DIR)/rf-tactical.exe"; fi
-$(TACTICAL_TARGET): $(TACTICAL_SRCS) rasterfall/include/rf_tactical.h \
+TACTICAL_GAME_OBJS := $(BUILD)/tactical-game.o $(BUILD)/win/lib/portable/math.o
+$(BUILD)/tactical-game.o: rasterfall/lib/game.c $(wildcard rasterfall/lib/game_*.inc) $(wildcard rasterfall/include/toy_game*.h) windows/Makefile | $(BUILD)
+	$(WIN_CC) $(CFLAGS) -DRF_GAME_HOSTED -idirafter windows/include -Irasterfall/include -c $< -o $@
+$(TACTICAL_TARGET): $(TACTICAL_SRCS) $(TACTICAL_GAME_OBJS) rasterfall/include/rf_tactical.h \
     rasterfall/include/rf_tactical_weapon.h rasterfall/include/rf_tactical_prediction.h \
-    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/src/dev-tests/rf_tactical_lab_test.inc rasterfall/src/dev-tests/rf_tactical_test.c windows/Makefile | $(BUILD)
+    rasterfall/include/rf_tactical_beam.h rasterfall/include/rf_tactical_lab.h rasterfall/lib/rf_tactical_game.inc rasterfall/lib/rf_range_game.inc rasterfall/src/dev-tests/rf_tactical_test.c windows/Makefile | $(BUILD)
 	$(WIN_CC) -std=c11 -O2 -Wall -Wextra -Werror -static -mconsole \
-	    -Irasterfall/include $(TACTICAL_SRCS) -o $@ -lm
+	    -idirafter windows/include -Irasterfall/include $(TACTICAL_SRCS) $(TACTICAL_GAME_OBJS) -Wl,--gc-sections -Wl,--stack,16777216 -o $@ -lm
 tactical-test: $(TACTICAL_TARGET)
 	$(TACTICAL_TARGET) self-test
 

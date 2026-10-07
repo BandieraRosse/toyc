@@ -6,7 +6,7 @@ static struct {
     char message[192];
 } rf_tac_ui;
 #if RF_TACTICAL_INTERACTIVE
-static const char *rf_tac_policy_names[]={"简单推进","机械策略","Utility 策略","Beam 联合搜索","训练参数 v1"};
+static const char *rf_tac_policy_names[]={"简单推进","机械策略","Utility 策略","Beam 联合搜索"};
 static const char *rf_tac_weapon_names[]={"步枪 / Rifle","冲锋枪 / SMG"};
 static const char *rf_tac_mode_names[]={"单发","三发点射","连续射击"};
 static const char *rf_tac_target_names[]={"全身战士假人","半身战士假人","探头战士假人"};
@@ -15,7 +15,7 @@ static const unsigned rf_tac_seeds[]={1337,424242,98765,20261007};
 static int rf_tac_field_count(int kind){return kind==1?7:5;}
 static int rf_tac_option_count(int kind,int field)
 {
-    static const int arena[]={5,5,3,2,4,2,3},range[]={2,3,9,3,4};
+    static const int arena[]={4,4,3,2,4,2,3},range[]={2,3,9,3,4};
     return kind==1?arena[field]:range[field];
 }
 static const char *rf_tac_field_name(int kind,int field)
@@ -68,8 +68,7 @@ static int rf_tac_apply_settings(struct rasterfall_session *s)
     if(lab->kind==1) {
         struct rf_tac_policy policies[2];
         for(int t=0;t<2;++t) {
-            rf_tac_policy_default(&policies[t],v[t]<4?v[t]+1:RF_TAC_UTILITY);
-            if(v[t]==4 && !rf_tac_policy_load("rasterfall/config/ai/trained-v1.cfg",&policies[t]))return 0;
+            rf_tac_policy_default(&policies[t],v[t]+1);
             policies[t].budget=128<<v[6];
         }
         lab->seed=rf_tac_seeds[v[4]];
@@ -195,7 +194,7 @@ static void rf_tac_ui_draw(struct rasterfall_canvas *c,const struct rf_game_runt
             const char *actions[]={"保持 / 自动射击","移动","指定目标射击","换弹"};
             snprintf(line,sizeof(line),"%s  弹药 %d",actions[u->action.kind],u->ammo);
             rasterfall_canvas_text(c,sx+8,row+10,line,0xD6F3F3);
-            snprintf(line,sizeof(line),"命中 %d/%d  原始伤害 %.1f",u->hits,u->shots,u->damage);
+            snprintf(line,sizeof(line),"命中 %d/%d  生命伤害 %.1f",u->hits,u->shots,u->damage);
             rasterfall_canvas_text(c,sx+8,row+34,line,0x88B9C3);
             snprintf(line,sizeof(line),"目标 %d  位置 %.1f, %.1fm",u->action.target,u->pos.x,u->pos.y);
             rasterfall_canvas_text(c,sx+8,row+58,line,0x88B9C3);
@@ -228,7 +227,7 @@ static void rf_tac_ui_draw(struct rasterfall_canvas *c,const struct rf_game_runt
             for(int i=0;i<w->squad_size;++i){const struct rf_tac_unit *u=&w->units[t*RF_TAC_MAX_SQUAD+i];shots+=u->shots;hits+=u->hits;alive+=u->alive;damage+=u->damage;}
             snprintf(line,sizeof(line),"%c 方  存活 %d/%d  命中 %d/%d",'A'+t,alive,w->squad_size,hits,shots);
             rasterfall_canvas_text(c,sx,y+158+t*100,line,t?0xF1B48D:0x81DDDC);
-            snprintf(line,sizeof(line),"原始伤害 %.1f  求解工作 %d  预测步 %d",damage,lab->match.plans[t].evaluations,lab->match.plans[t].prediction_steps);
+            snprintf(line,sizeof(line),"生命伤害 %.1f  求解工作 %d  预测步 %d",damage,lab->match.plans[t].evaluations,lab->match.plans[t].prediction_steps);
             rasterfall_canvas_text(c,sx,y+184+t*100,line,0x88B9C3);
         }
         if(w->finished){snprintf(line,sizeof(line),"胜方 %s  /  %s",w->winner==0?"A":w->winner==1?"B":"平局",w->orders[0].captured||w->orders[1].captured?"占领完成":"歼灭或时限");rasterfall_canvas_text(c,sx,y+375,line,0x9FE8C8);}

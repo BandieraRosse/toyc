@@ -180,8 +180,8 @@ def validate_result(result: Any, batch: Batch, args: argparse.Namespace) -> None
             finite_number(cost.get(key), key)
         if cost["work_units"] != cost["non_prediction_work_units"] + cost["prediction_steps"]:
             raise ValueError("Native work units do not account for prediction steps")
-        if cost["predicted_ms"] != cost["prediction_steps"] * 20:
-            raise ValueError("Native predicted duration does not match 20ms steps")
+        if cost["predicted_ms"] != cost["prediction_steps"] * (16 if result.get("simulation_version", 1) >= 2 else 20):
+            raise ValueError("Native predicted duration does not match simulation-version steps")
         if cost["work_units"] > cost["solver_calls"] * args.budget:
             raise ValueError("Native work exceeds the configured per-call budget")
 

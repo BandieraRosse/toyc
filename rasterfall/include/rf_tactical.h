@@ -1,15 +1,16 @@
 #ifndef RF_TACTICAL_H
 #define RF_TACTICAL_H
+#include "toy_game.h"
 
-/* Tactical simulation is authoritative; observation is a disposable read-only
- * projection. Solvers receive no world pointer and do not own navigation. */
-#define RF_TAC_VERSION 1
+/* Game owns actor simulation; observations are disposable read-only
+ * projections. Solvers receive no world pointer and do not own navigation. */
+#define RF_TAC_VERSION 2
 #define RF_TAC_MAX_SQUAD 6
 #define RF_TAC_MAX_UNITS 12
 #define RF_TAC_MAX_NODES 1024
 #define RF_TAC_MAX_COVERS 40
 #define RF_TAC_CANDIDATES 8
-#define RF_TAC_DT_MS 20
+#define RF_TAC_DT_MS 16
 #define RF_TAC_THINK_MS 200
 #define RF_TAC_GRID_W 32
 #define RF_TAC_GRID_H 24
@@ -41,6 +42,10 @@ struct rf_tac_node {
     int height, peek_left, peek_right, fire_over;
 };
 struct rf_tac_map {
+    /* Game geometry owns collision queries; nodes are disposable advice. */
+    struct toy_game *geometry;
+    struct toy_map_primitive primitives[TOY_GAME_MAX_PRIMITIVES];
+    int primitive_count;
     unsigned int seed, generation, content_hash;
     int node_count, cover_count;
     struct rf_tac_vec objective, spawn[2];
@@ -69,8 +74,11 @@ struct rf_tac_plan {
     int evaluations, budget_exhausted;
     int prediction_calls, prediction_steps;
 };
-/* Private execution state. Strategy-facing health is only effective_health. */
+/* Actor reference, read-only physical projection and policy/advisory state.
+ * Strategy-facing health is only effective_health. */
 struct rf_tac_unit {
+    int actor_id;
+    unsigned int actor_generation;
     int id, team, alive, weapon;
     struct rf_tac_vec pos;
     float hp, evasion;
@@ -84,6 +92,8 @@ struct rf_tac_unit {
     int nav_count, nav_cursor, nav_kind;
 };
 struct rf_tac_world {
+    struct toy_game *game;
+    int owns_game;
     const struct rf_tac_map *map;
     unsigned int rng, seed;
     int squad_size, time_ms, tick, winner, finished, max_time_ms;
@@ -166,6 +176,14 @@ void rf_tac_observe(const struct rf_tac_world *world, int team, struct rf_tac_ob
 void rf_tac_plan_hold(const struct rf_tac_observation *obs, struct rf_tac_plan *out);
 int rf_tac_apply(struct rf_tac_world *world, const struct rf_tac_plan *plan);
 void rf_tac_step(struct rf_tac_world *world);
+void rf_tac_world_destroy(struct rf_tac_world *world);
+int rf_tac_world_clone(struct rf_tac_world *out, const struct rf_tac_world *source);
+int rf_tac_world_bind(struct rf_tac_world *world, struct toy_game *game);
+void rf_tac_prepare(struct rf_tac_world *world, int paused);
+void rf_tac_finish(struct rf_tac_world *world, int dt_ms);
+void rf_tac_sync(struct rf_tac_world *world);
+void rf_tac_map_destroy(struct rf_tac_map *map);
+int rf_tac_map_bind(struct rf_tac_map *map, const struct toy_game *game);
 unsigned int rf_tac_hash(const struct rf_tac_world *world);
 void rf_tac_policy_default(struct rf_tac_policy *policy, int solver);
 int rf_tac_policy_validate(const struct rf_tac_policy *policy);

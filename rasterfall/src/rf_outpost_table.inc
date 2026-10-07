@@ -7,7 +7,7 @@ struct rf_table_map {
 };
 struct rf_table_ui {
     int open, near, selected, pointer_x, pointer_y;
-    int dropdown, hover, focus, preview_state, preview_map;
+    int dropdown, hover, focus, preview_state, preview_map, preview_requested;
     char message[192];
     struct rf_table_map maps[RF_TABLE_MAPS];
 };
@@ -30,7 +30,7 @@ static void rf_table_read_map(struct rf_table_map *map)
 static void rf_table_init(void)
 {
     memset(&rf_table, 0, sizeof(rf_table));
-    snprintf(rf_table.message,sizeof(rf_table.message),"选择目的地，查看右侧出生点预览后确认部署");
+    snprintf(rf_table.message,sizeof(rf_table.message),"选择目的地后，点击右侧预览画面框开始加载");
     rf_table.maps[0].world = RASTERFALL_WORLD_OUTPOST;
     rf_table.maps[0].name = "OUTPOST";
     rf_table.maps[1].world = RASTERFALL_WORLD_CAMPAIGN_01;

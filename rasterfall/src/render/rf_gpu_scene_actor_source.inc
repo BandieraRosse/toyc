@@ -123,52 +123,6 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
         if(player && player->active && !active_session->rts_active)
             scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1].auxiliary_only=1;
     }
-    #if RF_TACTICAL_INTERACTIVE
-    if(active_session->tactical) {
-        const struct rf_tactical_lab *lab=active_session->tactical;
-        int count=lab->kind==1?lab->match.world.squad_size*2:RF_RANGE_LANES+1;
-        for(int n=0;n<count;++n) {
-            struct toy_game_actor actor={0};
-            actor.active=1;actor.actor_id=12000+n;actor.character_id=-1;
-            actor.kind=TOY_GAME_ACTOR_AI;actor.state=TOY_GAME_ACTOR_ALIVE;
-            actor.current_slot=0;actor.pitch_cy=1024;actor.cy=-1024;
-            actor.animation.id=TOY_GAME_ANIM_IDLE;
-            unsigned tint=0x81DDDC;
-            if(lab->kind==1) {
-                const struct rf_tac_world *w=&lab->match.world;
-                int index=(n/w->squad_size)*RF_TAC_MAX_SQUAD+n%w->squad_size;
-                const struct rf_tac_unit *u=&w->units[index];
-                if(!u->alive)continue;
-                const struct rf_tac_unit *old=&lab->match.previous.units[index];
-                float blend=lab->match.running?lab->accumulator_us/(RF_TAC_DT_MS*1000.0f):1.0f;
-                actor.x=(int)((old->pos.x+(u->pos.x-old->pos.x)*blend-32)*512);
-                actor.z=(int)((old->pos.y+(u->pos.y-old->pos.y)*blend-24)*512);
-                actor.moving=u->action.kind==RF_TAC_MOVE;
-                actor.animation.id=actor.moving?TOY_GAME_ANIM_MOVE:u->reload_ms?TOY_GAME_ANIM_RELOAD:TOY_GAME_ANIM_IDLE;
-                actor.animation.time_ms=w->time_ms%60000;
-                actor.slots[0].weapon=u->weapon?TOY_GAME_WEAPON_SMG:TOY_GAME_WEAPON_AK;
-                float dx=u->destination.x-u->pos.x,dz=u->destination.y-u->pos.y;
-                if(u->last_shot_target>=0 && u->last_shot_target<RF_TAC_MAX_UNITS && u->shots) {
-                    const struct rf_tac_unit *target=&w->units[u->last_shot_target];
-                    dx=target->pos.x-u->pos.x;dz=target->pos.y-u->pos.y;
-                }
-                double length=sqrt(dx*dx+dz*dz);if(length>0.001){actor.sy=(int)(dx/length*1024);actor.cy=(int)(dz/length*1024);}
-                tint=u->team?0xE8A078:0x70D6D5;
-            } else if(n<RF_RANGE_LANES) {actor.x=(n-4)*1536;actor.z=rf_range_distances[n]*512;actor.slots[0].weapon=-1;tint=0xB7BC9C;}
-            else {actor.x=(lab->range.lane-4)*1536;actor.z=-300;actor.cy=1024;
-                actor.slots[0].weapon=lab->range.weapon?TOY_GAME_WEAPON_SMG:TOY_GAME_WEAPON_AK;tint=0xE8A078;}
-
-            if(scene_actor_procedural(&actor,actor.x,actor.z,actor.sy,actor.cy,0,tint,1)<0)goto fail;
-            struct rf_gpu_scene_procedural_item_v1 *frozen=&scene_enemy_capture.procedural[scene_enemy_capture.procedural_count-1];
-            if(lab->kind==2 && n<RF_RANGE_LANES) {
-                frozen->target_half_width=lab->range.target==2?61:128;
-                frozen->target_half_height=lab->range.target==2?70:lab->range.target==1?218:435;
-                frozen->target_head_bottom=frozen->target_half_height-139;
-            }
-
-        }
-    }
-    #endif
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&game.actors[i];
         if (!actor->active || actor->kind!=TOY_GAME_ACTOR_AI) continue;

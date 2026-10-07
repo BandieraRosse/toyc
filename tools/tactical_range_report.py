@@ -100,6 +100,28 @@ target.onchange=render;mode.onchange=render;render();
 </script></html>'''
 
 
+HTML_V2 = r'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<title>Rasterfall 正式 actor 靶场</title><style>
+body{font:15px/1.6 system-ui;margin:32px;color:#182c3d;background:#f1f5f7}
+table{border-collapse:collapse;background:white;width:100%}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:right}
+th:first-child,td:first-child{text-align:left}select{padding:6px;margin:12px}p{max-width:1000px}
+</style><h1>正式 actor 靶场测量</h1><p id="meta"></p>
+<p>玩家与 AI 共享 Game 武器、命中、回避和恢复。表中伤害为真实生命损失，含未命中和回避。
+TTK 只统计完成的独立击杀试次；截止时尚未击杀的试次单独列出。旧模型的解析期望不适用于此结果。</p>
+<label>目标<select id="target"><option value="full">全身</option><option value="upper">半身</option><option value="head">探头</option><option value="moving">移动</option></select></label>
+<label>模式<select id="mode"><option value="single">单发</option><option value="burst">点射</option><option value="auto" selected>连续</option></select></label>
+<table><thead><tr><th>武器</th><th>距离 m</th><th>发射</th><th>命中率</th><th>HP / 发</th><th>HP / 秒</th><th>完成击杀</th><th>TTK 均值 s</th><th>未完成试次</th><th>未完成时长 s</th></tr></thead><tbody id="rows"></tbody></table>
+<p id="source"></p><script id="data" type="application/json">__DATA__</script><script>
+const report=JSON.parse(document.getElementById('data').textContent),data=report.range;
+const target=document.getElementById('target'),mode=document.getElementById('mode');
+document.getElementById('meta').textContent=`规则版本 ${data.simulation_version} · 种子 ${data.shot_seed} · 固定步 ${data.dt_ms}ms · 目标 ${data.baseline.hp} HP / ${data.baseline.risk} 回避`;
+document.getElementById('source').textContent=`来源 ${report.source} · SHA-256 ${report.sha256}`;
+const num=v=>v===null||v===undefined?'—':Number(v).toFixed(2);
+function render(){const body=document.getElementById('rows');body.replaceChildren();
+for(const r of data.rows.filter(r=>r.target===target.value&&r.mode===mode.value)){
+const tr=document.createElement('tr');for(const v of [r.weapon,r.distance_m,r.sampled_shots,num(r.sampled_hit_rate*100)+'%',num(r.sampled_damage_per_shot),num(r.sampled_dps),r.ttk_kills,r.mean_ttk_ms===null?'—':num(r.mean_ttk_ms/1000),r.ttk_censored,num(r.unfinished_trial_ms/1000)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}body.append(tr)}}
+target.onchange=mode.onchange=render;render();</script></html>'''
+
 NUMERIC = ("distance_m", "sampled_shots", "sampled_hits", "sampled_head_hits",
            "sampled_hit_rate", "expected_hit_rate", "sampled_damage_per_shot",
            "expected_damage_per_shot", "sampled_dps", "expected_dps", "spread_rms_m",
@@ -120,10 +142,13 @@ def load(path: Path) -> dict:
                 "full", "upper", "head", "moving") or row.get("mode") not in ("single", "burst", "auto"):
             raise ValueError(f"Unsupported native range row {i}")
         for field in NUMERIC:
+            if data["simulation_version"] >= 2 and (field.startswith("expected_") or field in
+                    ("spread_rms_m", "cold_magazine_expected_hit_rate", "mechanical_reload_cycle_dps")):
+                continue
             value = row.get(field)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
                 raise ValueError(f"Invalid {field} in row {i}")
-        if row["sampled_shots"] <= 0 or row["ttk_trials"] <= 0:
+        if row["sampled_shots"] < 0 or row["ttk_trials"] < 0:
             raise ValueError(f"Empty native sample counts in row {i}")
         if row["ttk_kills"] + row["ttk_censored"] != row["ttk_trials"]:
             raise ValueError(f"Inconsistent TTK counts in row {i}")
@@ -165,7 +190,8 @@ def main() -> int:
         report = {"source": source.name, "sha256": hashlib.sha256(source.read_bytes()).hexdigest(), "range": data}
         payload = json.dumps(report, separators=(",", ":"), ensure_ascii=True).replace("<", "\\u003c")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(HTML.replace("__DATA__", payload), encoding="utf-8", newline="\n")
+        template = HTML_V2 if data["simulation_version"] >= 2 else HTML
+        args.output.write_text(template.replace("__DATA__", payload), encoding="utf-8", newline="\n")
     if args.csv:
         export_csv(args.csv, data)
     print(json.dumps({"native_rows": len(data["rows"]),

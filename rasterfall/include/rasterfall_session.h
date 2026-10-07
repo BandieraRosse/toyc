@@ -208,6 +208,7 @@ int rasterfall_session_rts_teleport_player(struct rasterfall_session *session,
 int rasterfall_session_rts_move_flag(struct rasterfall_session *session,
                                      int flag_index, int x, int z);
 int rasterfall_session_rts_logic_test(void);
+int rasterfall_session_tactical_logic_test(void);
 int rasterfall_session_rts_order_actor_height(struct rasterfall_session *session,
     int index,int actor_id,unsigned generation,int x,int y,int z,int stop,int height_active);
 int rasterfall_session_rts_order_actor(struct rasterfall_session *session,

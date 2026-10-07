@@ -1,6 +1,5 @@
-/* One isolated, zero-step session and one retired GPU target. Phases run on
- * successive frames so the loading state is presented before expensive work.
- * The existing serial renderer is never called from a worker thread. */
+/* Preview starts only on an explicit UI request. Loading and rendering run
+ * serially on successive main-thread frames, without stepping the session. */
 #ifdef TOYC_WINDOWS
 #include "rf_gpu_graphics.h"
 #undef effects
@@ -25,7 +24,7 @@ static int rf_table_preview_close(struct rf_game_runtime *r,struct rf_gpu_scene_
         rasterfall_session_unload(rf_table_preview.prepared);
         free(rf_table_preview.prepared);rf_table_preview.prepared=NULL;
     }
-    rf_table_preview.phase=0;rf_table.preview_state=0;
+    rf_table_preview.phase=0;rf_table.preview_state=0;rf_table.preview_requested=0;
     return 0;
 }
 static int rf_table_preview_render(struct rf_game_runtime *r,struct rf_gpu_vulkan_context *gpu)
@@ -90,13 +89,21 @@ static int rf_table_preview_tick(struct rf_game_runtime *r,struct rf_gpu_vulkan_
     struct rf_gpu_scene_world_gpu_probe *main,int enabled)
 {
     if(!rf_table.open || r->session->world_id!=RASTERFALL_WORLD_OUTPOST) {
+        rf_table.preview_requested=0;
         if(rf_table_preview.phase)return rf_table_preview_close(r,main);
         return 0;
     }
     if(!enabled){rf_table.preview_state=4;rf_table.preview_map=rf_table.selected;return 0;}
-    if(!rf_table_preview.phase || !rf_table.preview_state || rf_table_preview.selected!=rf_table.selected) {
+    if(rf_table_preview.selected!=rf_table.selected ||
+       (rf_table_preview.phase && !rf_table.preview_state)) {
+        int requested=rf_table.preview_requested;
         if(rf_table_preview_close(r,main)<0)return -1;
-        rf_table_preview.selected=rf_table.selected;rf_table.preview_map=rf_table.selected;
+        rf_table.preview_requested=requested;
+    }
+    rf_table_preview.selected=rf_table.selected;rf_table.preview_map=rf_table.selected;
+    if(!rf_table_preview.phase) {
+        if(!rf_table.preview_requested)return 0;
+        rf_table.preview_requested=0;
         rf_table_preview.phase=1;rf_table.preview_state=1;return 0;
     }
     if(rf_table_preview.phase==1) {

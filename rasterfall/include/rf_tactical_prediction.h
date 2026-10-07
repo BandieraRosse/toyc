@@ -11,8 +11,8 @@ enum rf_tac_prediction_result {
     RF_TAC_PRED_BUDGET = -1
 };
 
-/* Deterministic mean-state forecast, not a sampled future or a probability
- * distribution. No hidden HP/risk split, seed, RNG, map or mutable world is
+/* Reproducible sampled Game rollout, not a probability distribution.
+ * No hidden HP/risk split, seed, RNG, map or mutable world is
  * returned. before/after are standard effective-health unit projections. */
 struct rf_tac_forecast_unit {
     struct rf_tac_unit_view before, after;
@@ -30,9 +30,8 @@ struct rf_tac_forecast_unit {
 struct rf_tac_forecast {
     int team, count, requested_ms, elapsed_ms, steps;
     int finished, winner;
-    /* Model uncertainty marker, not a confidence interval. Zero means only
-     * that this forecast's damage events had no sampled hit/head variation;
-     * it does not validate the opponent's assumed future actions. */
+    /* Always set for sampled Game rollouts; not a confidence interval or
+     * validation of the opponent's assumed future actions. */
     int uncertain_shots;
     int alive_before[2], alive_after[2];
     float health_before[2], health_after[2];
@@ -54,7 +53,8 @@ struct rf_tac_forecast {
  * observations; enemy == NULL explicitly assumes every opponent will HOLD.
  * Duration is a positive 200ms multiple, at most 4000ms. Enough budget for
  * the entire duration must remain before evaluation begins. Each simulated
- * 20ms step costs one unit; early terminal forecasts report actual steps.
+ * 16ms step costs one unit; durations round up to full Game steps and early
+ * terminal forecasts report actual steps.
  * INVALID/BUDGET leave output zero and do not consume prediction steps. */
 struct rf_tac_predictor {
     void *opaque;

@@ -2538,6 +2538,7 @@ static int run_logic_test(void)
     }
     if (enemy_flow_corridor_logic_test()) return 277;
     { int code=rasterfall_session_rts_logic_test();if(code){__printf("RTS-SESSION-TEST %d\n",code);return 260;} }
+    { int code=rasterfall_session_tactical_logic_test();if(code){__printf("TACTICAL-SESSION-TEST %d\n",code);return 261;} }
     rasterfall_host_set_active_slots(24,24);
     if (rasterfall_session_load(&session,
         "rasterfall/assets/maps/outpost.map") < 0 ||

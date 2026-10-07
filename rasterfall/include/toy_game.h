@@ -556,6 +556,14 @@ struct toy_game_slot {
     int reserve;
 };
 
+#define TOY_GAME_SHOT_HISTORY 64
+struct toy_game_shot_event {
+    unsigned int killed_rays; /* first pellet for each confirmed actor kill */
+    unsigned int serial, source_generation, fire_sequence;
+    int source_id, weapon, time_ms, x, y, z, ray_count;
+    struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
+};
+
 #define TOY_GAME_MAX_PROJECTILES 16
 struct toy_game_projectile {
     int active, kind;
@@ -642,6 +650,12 @@ struct toy_game_enemy {
 /* 固定容量 actor 容器；本结构是所有可控制角色的唯一玩法状态。 */
 struct toy_game_actor {
     int active;
+    /* External policies submit intents; Game alone advances their bodies. */
+    int controller_external, simulation_paused;
+    int intent_move, intent_x, intent_z, intent_y;
+    int intent_target_id;
+    unsigned int intent_target_generation;
+    int intent_fire, intent_reload, intent_aim_height_percent;
     int actor_id;
     int kind;
     int class_id;
@@ -978,6 +992,8 @@ struct toy_game {
 
     /* PRNG（xorshift64*，init 时播种） */
     uint64_t rng;
+    unsigned int shot_serial;
+    struct toy_game_shot_event shot_history[TOY_GAME_SHOT_HISTORY];
 
     /* 本帧事件队列（宿主每帧 drain） */
     int event_count;
@@ -1007,7 +1023,12 @@ struct toy_game_damage_result toy_game_damage_actor(
     struct toy_game *game, struct toy_game_actor *source,
     struct toy_game_actor *target, const struct toy_game_attack *attack);
 int toy_game_actor_begin_fire(struct toy_game *game, struct toy_game_actor *actor);
+void toy_game_actor_set_intent(struct toy_game_actor *actor, int move,
+    int x, int y, int z, int target_id, unsigned int target_generation,
+    int fire, int reload);
 int toy_game_actor_resolve_shot(struct toy_game *game, struct toy_game_actor *actor);
+int toy_game_combat_visible(const struct toy_game *game,
+    const struct toy_game_actor *actor, int x, int y, int z);
 int toy_game_add_gunner(struct toy_game *game, int elite, int x, int z,
                          const char *name);
 int toy_game_find_combat_target(struct toy_game *game,

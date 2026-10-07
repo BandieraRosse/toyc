@@ -498,6 +498,12 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     mesh->layer=RF_GPU_SCENE_SKY;
     scene_layer_rect_depth(mesh,0,0,width,height,0,255,1,2);
     mesh->layer=RF_GPU_SCENE_WORLD;
+    for(int i=0;input->source_game && i<input->source_game->primitive_count;++i) {
+        const struct toy_map_primitive *p=&input->source_game->primitives[i];
+        if(!strcmp(p->role,"range_cover"))
+            scene_layer_box(mesh,p->minx,p->maxx,p->base_y-900,p->surface_y0-900,
+                p->minz,p->maxz,0x647881,255);
+    }
     if(!input->world_only && input->aux_view && input->aux_view->shell_visible &&
         scene_camera_shell(mesh,input->aux_view)<0)return -1;
     mesh->emissive=1;

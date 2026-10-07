@@ -75,22 +75,11 @@ static float cheap_fire(const struct rf_tac_unit_view *u,
                          const struct rf_tac_relation *relation,
                          int action, float travel_seconds, float horizon)
 {
-    const rf_tw_profile *weapon = rf_tw_profile_get(u->weapon);
-    rf_tw_state state = {0};
-    int tick, shots = 0;
-    float cycle = ((weapon->magazine - 1)*weapon->shot_interval_ms +
-        (weapon->reload_ms > weapon->shot_interval_ms ? weapon->reload_ms : weapon->shot_interval_ms))*0.001f;
-    state.ammo = u->ammo; state.cooldown_ms = u->cooldown_ms;
-    state.reload_remaining_ms = u->reload_ms;
-    for (tick = RF_TAC_DT_MS; tick <= (int)(horizon*1000); tick += RF_TAC_DT_MS) {
-        rf_tw_state_advance(weapon, &state, RF_TAC_DT_MS);
-        if (action == RF_TAC_RELOAD && tick == RF_TAC_DT_MS &&
-            rf_tw_state_begin_reload(weapon, &state)) continue;
-        if (tick*0.001f < travel_seconds) continue;
-        if (!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(weapon, &state);
-        if (rf_tw_state_begin_shot(weapon, &state)) ++shots;
-    }
-    return relation->expected_dps*cycle*shots/weapon->magazine;
+    (void)action;
+    float ready=fmaxf(u->reload_ms,u->cooldown_ms)/1000.0f;
+    float available=horizon-fmaxf(ready,travel_seconds);
+    return relation->expected_dps*fmaxf(0,available);
+
 }
 
 static struct rf_tac_search_score cheap_score(const struct rf_tac_observation *o,
@@ -327,7 +316,7 @@ void rf_tac_solve_with_predictor(const struct rf_tac_observation *o,
         if (trace) trace->prediction_unavailable = 1;
         return;
     }
-    forecast_cost = p->beam_horizon_ms/RF_TAC_DT_MS + 1;
+    forecast_cost = (p->beam_horizon_ms+RF_TAC_DT_MS-1)/RF_TAC_DT_MS + 1;
     reserve = 2*forecast_cost;
     if (p->budget < forecast_cost || provider->remaining_steps(provider->opaque) < forecast_cost - 1) {
         out->budget_exhausted = 1; return;

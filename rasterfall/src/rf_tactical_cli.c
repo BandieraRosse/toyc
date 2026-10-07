@@ -3,6 +3,8 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include "rf_tactical.h"
+#include "rf_tactical_lab.h"
+#include "rasterfall_units.h"
 #include "rf_tactical_beam.h"
 #include "rf_tactical_prediction.h"
 #include "rf_tactical_weapon.h"
@@ -83,7 +85,7 @@ static void lab_cost_json(FILE *f, const struct lab_solver_cost *cost) {
 }
 
 static void lab_help(void) {
-    puts("Rasterfall tactical lab v1 (native deterministic simulation)\n"
+    puts("Rasterfall tactical lab v2 (native deterministic simulation)\n"
          "  rf-tactical range [--samples 2000] [--shot-seed 1337] [--weapon rifle|smg|both]\n"
          "  rf-tactical match [--a simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
          "                    [--map-seed 100] [--shot-seed 1337] [--squad 4..6]\n"
@@ -99,10 +101,10 @@ static void lab_help(void) {
          "Batch swaps A/B attack and defense on every map/shot seed and mirrored weapon.\n"
          "Range covers 5/10/15/20/30/40/60/80/100 m, full/upper/head/moving targets,\n"
          "single/burst/auto fire. stdout is JSON; full native replay is optional JSONL.\n"
-         "Replay tick is the 20 ms physics tick; decisions occur every 10 ticks.\n"
+         "Replay uses Game 16 ms steps; decisions cross 200 ms boundaries.\n"
          "Beam layers expand squad members, with unassigned members on HOLD.\n"
          "Prediction assumes enemy HOLD. Budget charges one per cheap evaluation,\n"
-         "one per simulated 20 ms step, and one per terminal score. Elapsed/CPU\n"
+         "one per simulated 16 ms step, and one per terminal score. Elapsed/CPU\n"
          "diagnostics are reported separately and never determine search branches.\n"
          "Beam overrides apply to both beam policies; omitted values come from policy defaults.");
 }
@@ -199,19 +201,10 @@ static unsigned int lab_policy_hash(const struct rf_tac_policy *p) {
     for (s = (const unsigned char *)text; *s; ++s) { h ^= *s; h *= 16777619u; }
     return h;
 }
-static void lab_weapon_json(FILE *f, int weapon) {
-    const rf_tw_profile *p = rf_tw_profile_get(weapon);
-    fputs("{\"name\":", f); lab_string(f, p->name);
-    fprintf(f, ",\"kind\":%d,\"damage_milli\":%d,\"minimum_damage_milli\":%d,"
-               "\"head_multiplier_milli\":%d,\"magazine\":%d,\"shot_interval_ms\":%d,"
-               "\"reload_ms\":%d,\"falloff_start_m\":%.9g,\"falloff_end_m\":%.9g,"
-               "\"muzzle_speed_mps\":%.9g,\"spread_mrad\":%.9g,\"recoil_mrad_per_shot\":%.9g,"
-               "\"max_recoil_mrad\":%.9g,\"recoil_recovery_mrad_s\":%.9g,"
-               "\"moving_spread_mrad\":%.9g,\"tracking_error_ms\":%.9g}", p->kind,
-            p->damage_milli, p->minimum_damage_milli, p->head_multiplier_milli, p->magazine,
-            p->shot_interval_ms, p->reload_ms, p->falloff_start_m, p->falloff_end_m,
-            p->muzzle_speed_mps, p->spread_mrad, p->recoil_mrad_per_shot, p->max_recoil_mrad,
-            p->recoil_recovery_mrad_s, p->moving_spread_mrad, p->tracking_error_ms);
+static void lab_weapon_json(FILE *f,int weapon) {
+    const struct toy_game_weapon_info *p=toy_game_weapon_info(weapon==RF_TW_RIFLE?TOY_GAME_WEAPON_AK:TOY_GAME_WEAPON_SMG);
+    fprintf(f,"{\"name\":\"%s\",\"kind\":%d,\"damage_milli\":%d,\"magazine\":%d,\"shot_interval_ms\":%d,\"reload_ms\":%d}",
+        weapon==RF_TW_RIFLE?"rifle":"smg",weapon,p->damage*1000,p->mag_size,p->cooldown_ms,p->reload_ms);
 }
 static int lab_policy(const char *name, const struct lab_options *o, struct rf_tac_policy *out) {
     if (!strcmp(name, "simple")) rf_tac_policy_default(out, RF_TAC_SIMPLE);
@@ -395,8 +388,8 @@ static void lab_tick(FILE *f, const struct rf_tac_world *w, const struct rf_tac_
                    "\"action_heading\":%.9g,\"hp\":%.9g,\"evasion\":%.9g,"
                    "\"effective_health\":%.9g,\"ammo\":%d,\"reload_ms\":%d,\"cooldown_ms\":%d,"
                    "\"recovery_ms\":%d,\"action\":%d,\"candidate\":%d,\"target\":%d,"
-                   "\"destination\":[%.9g,%.9g],\"shot_target\":%d,\"shots\":%d,\"hits\":%d,\"raw_damage\":%.9g,"
-                   "\"absorbed\":%.9g,\"shot_delta\":%d,\"hit_delta\":%d,\"raw_damage_delta\":%.9g,"
+                   "\"destination\":[%.9g,%.9g],\"shot_target\":%d,\"shots\":%d,\"hits\":%d,\"health_damage\":%.9g,"
+                   "\"absorbed\":%.9g,\"shot_delta\":%d,\"hit_delta\":%d,\"health_damage_delta\":%.9g,"
                    "\"hp_damage_delta\":%.9g,\"absorbed_delta\":%.9g}",
                 i ? "," : "", u->id, u->team, u->alive, u->pos.x, u->pos.y,
                 atan2(facing.y - u->pos.y, facing.x - u->pos.x), u->hp, u->evasion,
@@ -413,7 +406,7 @@ static void lab_result_json(FILE *f, const struct lab_result *r, unsigned int ma
     fprintf(f, "{\"type\":\"result\",\"simulation_version\":%d,\"map_seed\":%u,"
                "\"shot_seed\":%u,\"weapon\":%d,\"winner\":%d,\"time_ms\":%d,"
                "\"ticks\":%d,\"captured\":%d,\"alive\":[%d,%d],\"health\":[%.9g,%.9g],"
-               "\"shots\":[%d,%d],\"hits\":[%d,%d],\"raw_damage\":[%.9g,%.9g],"
+               "\"shots\":[%d,%d],\"hits\":[%d,%d],\"health_damage\":[%.9g,%.9g],"
                "\"final_hash\":\"%08x\",\"solver_costs\":[", RF_TAC_VERSION, map_seed, shot_seed, weapon,
             r->winner, r->time_ms, r->ticks, r->captured, r->alive[0], r->alive[1],
             r->health[0], r->health[1], r->shots[0], r->shots[1], r->hits[0], r->hits[1],
@@ -439,7 +432,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
         if (!rf_tac_command(&w, team, o->order[team], map->objective, map->objective_radius)) return 0;
     if (log) { lab_header(log, map, o, a, b); lab_tick(log, &w, &w); }
     while (!w.finished) {
-        if (w.time_ms % RF_TAC_THINK_MS == 0) {
+        if (w.time_ms % RF_TAC_THINK_MS < RF_TAC_DT_MS) {
             /* Both policies observe exactly the same state before either is applied. */
             for (team = 0; team < 2; ++team) {
                 struct rf_tac_predictor provider;
@@ -492,6 +485,7 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
     if (log) lab_result_json(log, result, o->map_seed, o->shot_seed, o->weapon);
 cleanup:
     for (team = 0; team < 2; ++team) rf_tac_prediction_destroy(prediction[team]);
+    rf_tac_world_destroy(&w);
     return ok;
 }
 static int lab_inspect(const struct lab_options *o) {
@@ -517,105 +511,39 @@ static int lab_inspect(const struct lab_options *o) {
 
 /* Range and invariant test implementations below use the same native modules. */
 static int lab_range(const struct lab_options *o) {
-    static const int distances[] = {5, 10, 15, 20, 30, 40, 60, 80, 100};
-    static const char *targets[] = {"full", "upper", "head", "moving"};
-    int weapon, distance, target, mode;
-    fprintf(stdout, "{\"type\":\"range\",\"simulation_version\":%d,\"shot_seed\":%u,"
-            "\"dt_ms\":%d,\"baseline\":{\"hp\":%g,\"risk\":%g,\"width_m\":%g,"
-            "\"height_m\":%g,\"move_speed_mps\":%g,\"recovery_delay_ms\":%d},"
-            "\"ttk_mean_conditional_on_kill\":true,\"ttk_limit_ms\":120000,\"rows\":[",
-            RF_TAC_VERSION, o->shot_seed, RF_TAC_DT_MS, RF_TW_BASE_HP, RF_TW_BASE_RISK,
-            RF_TW_BASE_BODY_WIDTH_M, RF_TW_BASE_BODY_HEIGHT_M, RF_TW_BASE_MOVE_SPEED_MPS,
-            RF_TW_BASE_RECOVERY_DELAY_MS);
-    {
-        int row = 0;
-        for (weapon = 0; weapon < RF_TW_KIND_COUNT; ++weapon) {
-            const rf_tw_profile *profile = rf_tw_profile_get(weapon);
-            if (o->weapon != 2 && o->weapon != weapon) continue;
-            for (distance = 0; distance < 9; ++distance)
-            for (target = 0; target < 4; ++target)
-            for (mode = RF_TW_SINGLE; mode <= RF_TW_AUTO; ++mode) {
-                rf_tw_context context;
-                rf_tw_metrics analytic, current;
-                rf_tw_state state;
-                rf_tw_shot shot;
-                unsigned int rng = o->shot_seed ^ ((unsigned int)distance * 0x9e3779b9u) ^
-                                   ((unsigned int)target * 7919u) ^ ((unsigned int)mode * 101u);
-                int shots = 0, hits = 0, heads = 0, wait_ms = 0, elapsed_ms = 0;
-                int trials = o->samples / 30, trial, kills = 0;
-                double damage = 0, expected_hits = 0, expected_damage = 0, spread_squared = 0;
-                double ttk_sum = 0;
-                if (trials < 20) trials = 20;
-                if (trials > 2000) trials = 2000;
-                rf_tw_context_reset(&context); context.distance_m = (float)distances[distance];
-                context.exposure = target == 1 ? RF_TW_UPPER : target == 2 ? RF_TW_HEAD : RF_TW_FULL;
-                context.target_lateral_speed_mps = target == 3 ? RF_TW_BASE_MOVE_SPEED_MPS : 0;
-                rf_tw_pattern_metrics(profile, &context, mode, &analytic);
-                rf_tw_state_reset(profile, &state);
-                while (shots < o->samples) {
-                    if (!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(profile, &state);
-                    if (!wait_ms && !state.cooldown_ms && !state.reload_remaining_ms && state.ammo) {
-                        context.recoil_milli_mrad = state.recoil_milli_mrad;
-                        rf_tw_query(profile, &context, &current);
-                        rf_tw_sample_shot(profile, &context, &rng, &shot);
-                        if (!rf_tw_state_begin_shot(profile, &state)) return 0;
-                        ++shots; hits += shot.hit; heads += shot.head;
-                        damage += shot.damage_milli / 1000.0;
-                        expected_hits += current.hit_probability;
-                        expected_damage += current.expected_damage;
-                        spread_squared += shot.offset_x_m * shot.offset_x_m + shot.offset_y_m * shot.offset_y_m;
-                        wait_ms = rf_tw_pattern_delay_ms(profile, mode, shots);
-                    }
-                    rf_tw_state_advance(profile, &state, RF_TAC_DT_MS);
-                    wait_ms = wait_ms > RF_TAC_DT_MS ? wait_ms - RF_TAC_DT_MS : 0;
-                    elapsed_ms += RF_TAC_DT_MS;
+    struct rf_range_lab *r=calloc(1,sizeof(*r));
+    static const char *targets[]={"full","upper","head","moving"};
+    int row=0;
+    if(!r)return 0;
+    printf("{\"type\":\"range\",\"simulation_version\":%d,\"authority\":\"toy_game\",\"shot_seed\":%u,\"dt_ms\":%d,",RF_TAC_VERSION,o->shot_seed,RF_TAC_DT_MS);
+    printf("\"baseline\":{\"hp\":%g,\"risk\":%g,\"width_m\":%g,\"height_m\":%g,\"move_speed_mps\":%g,\"recovery_delay_ms\":%d},\"rows\":[",
+        RF_TW_BASE_HP,RF_TW_BASE_RISK,RF_TW_BASE_BODY_WIDTH_M,RF_TW_BASE_BODY_HEIGHT_M,
+        RF_TW_BASE_MOVE_SPEED_MPS,RF_TW_BASE_RECOVERY_DELAY_MS);
+    for(int weapon=0;weapon<2;++weapon) {
+        if(o->weapon!=2 && o->weapon!=weapon)continue;
+        for(int lane=0;lane<RF_RANGE_LANES;++lane)for(int target=0;target<4;++target)for(int mode=0;mode<3;++mode) {
+            rf_range_reset(r,weapon,mode,lane,target==3?0:target,o->shot_seed);
+            if(!r->game){free(r);return 0;}
+            r->running=1;
+            struct rf_range_stats *stats=&r->stats[0][lane];
+            int elapsed=0,limit=o->samples*2000+120000;
+            while(stats->shots<o->samples && elapsed<limit) {
+                if(target==3) {
+                    struct toy_game_actor *a=toy_game_actor_by_id(r->game,r->target_ids[0][lane]);
+                    int x=(lane-4)*1536+640+((elapsed/2000)%2?350:-350);
+                    toy_game_actor_set_intent(a,1,x,0,rf_range_distances[lane]*512,-1,0,0,0);
                 }
-                /* TTK is actual standard-warrior HP/risk resolution, with misses,
-                 * recoil, reload and delayed recovery; censored trials stay explicit. */
-                for (trial = 0; trial < trials; ++trial) {
-                    float hp = RF_TW_BASE_HP, risk = RF_TW_BASE_RISK;
-                    int recovery_ms = 0, trial_ms = 0, trial_shots = 0;
-                    rf_tw_state_reset(profile, &state); wait_ms = 0;
-                    while (hp > 0 && trial_ms < 120000) {
-                        rf_tw_recover(&risk, &recovery_ms, RF_TAC_DT_MS);
-                        if (!state.ammo && !state.reload_remaining_ms) rf_tw_state_begin_reload(profile, &state);
-                        if (!wait_ms && !state.cooldown_ms && !state.reload_remaining_ms && state.ammo) {
-                            context.recoil_milli_mrad = state.recoil_milli_mrad;
-                            rf_tw_sample_shot(profile, &context, &rng, &shot);
-                            if (!rf_tw_state_begin_shot(profile, &state)) return 0;
-                            ++trial_shots;
-                            if (shot.hit) {
-                                rf_tw_apply_damage(&hp, &risk, shot.damage_milli / 1000.0f,
-                                                   shot.risk_cost_milli / 1000.0f);
-                                recovery_ms = RF_TW_BASE_RECOVERY_DELAY_MS;
-                            }
-                            wait_ms = rf_tw_pattern_delay_ms(profile, mode, trial_shots);
-                        }
-                        rf_tw_state_advance(profile, &state, RF_TAC_DT_MS);
-                        wait_ms = wait_ms > RF_TAC_DT_MS ? wait_ms - RF_TAC_DT_MS : 0;
-                        trial_ms += RF_TAC_DT_MS;
-                    }
-                    if (hp <= 0) { ++kills; ttk_sum += trial_ms; }
-                }
-                fprintf(stdout, "%s{\"weapon\":", row++ ? "," : ""); lab_string(stdout, profile->name);
-                fprintf(stdout, ",\"distance_m\":%d,\"target\":\"%s\",\"mode\":\"%s\","
-                        "\"sampled_shots\":%d,\"sampled_hits\":%d,\"sampled_head_hits\":%d,"
-                        "\"sampled_hit_rate\":%.9g,\"expected_hit_rate\":%.9g,"
-                        "\"sampled_damage_per_shot\":%.9g,\"expected_damage_per_shot\":%.9g,"
-                        "\"sampled_dps\":%.9g,\"expected_dps\":%.9g,\"spread_rms_m\":%.9g,"
-                        "\"cold_magazine_expected_hit_rate\":%.9g,\"mechanical_reload_cycle_dps\":%.9g,"
-                        "\"ttk_trials\":%d,\"ttk_kills\":%d,\"ttk_censored\":%d,\"mean_ttk_ms\":",
-                        distances[distance], targets[target], rf_tw_fire_mode_name(mode), shots, hits, heads,
-                        (double)hits / shots, expected_hits / shots, damage / shots, expected_damage / shots,
-                        damage * 1000 / elapsed_ms, expected_damage * 1000 / elapsed_ms,
-                        sqrt(spread_squared / shots), analytic.hit_probability, analytic.reload_cycle_dps,
-                        trials, kills, trials - kills);
-                if (kills) fprintf(stdout, "%.9g}", ttk_sum / kills); else fputs("null}", stdout);
+                rf_range_step(r,RF_TAC_DT_MS);elapsed+=RF_TAC_DT_MS;
             }
+            printf("%s{\"weapon\":\"%s\",\"distance_m\":%d,\"target\":\"%s\",\"mode\":\"%s\",\"sampled_shots\":%d,\"sampled_hits\":%d,\"sampled_head_hits\":%d,\"sampled_hit_rate\":%.9g,\"sampled_damage_per_shot\":%.9g,\"sampled_dps\":%.9g,\"ttk_trials\":%d,\"ttk_kills\":%d,\"ttk_censored\":%d,\"unfinished_trial_ms\":%d,\"mean_ttk_ms\":",
+                row++?",":"",weapon?"smg":"rifle",rf_range_distances[lane],targets[target],rf_tw_fire_mode_name(mode),
+                stats->shots,stats->hits,stats->heads,stats->shots?(double)stats->hits/stats->shots:0,
+                stats->shots?stats->damage/stats->shots:0,elapsed?stats->damage*1000.0/elapsed:0,
+                stats->kills+(stats->trial_ms>0),stats->kills,stats->trial_ms>0,stats->trial_ms);
+            if(stats->kills)printf("%.9g}",(double)stats->ttk_total_ms/stats->kills);else fputs("null}",stdout);
         }
     }
-    fputs("]}\n", stdout);
-    return 1;
+    rf_range_destroy(r);free(r);puts("]}");return 1;
 }
 int rf_tac_run_tests(void);
 static int lab_self_test(void) { return rf_tac_run_tests(); }
@@ -634,7 +562,7 @@ int main(int argc, char **argv) {
     if (!strcmp(argv[1], "self-test")) return lab_self_test() ? 0 : 1;
     if (strcmp(argv[1], "match") && strcmp(argv[1], "batch")) { lab_help(); return 2; }
     if (!lab_policy(o.a, &o, &a) || !lab_policy(o.b, &o, &b)) return 2;
-    map = (struct rf_tac_map *)malloc(sizeof(*map));
+    map = (struct rf_tac_map *)calloc(1,sizeof(*map));
     if (!map) return 1;
     if (!strcmp(argv[1], "match")) {
         if (o.weapon == 2) { fputs("match requires one weapon\n", stderr); free(map); return 2; }
@@ -662,6 +590,7 @@ int main(int argc, char **argv) {
             run.shot_seed = o.shot_seed + (unsigned int)pair * 7919u;
             {
                 double map_start = lab_wall_seconds();
+                rf_tac_map_destroy(map);
                 if (!rf_tac_map_generate(map, run.map_seed)) { ok = 0; break; }
                 map_seconds += lab_wall_seconds() - map_start;
             }
@@ -709,7 +638,7 @@ int main(int argc, char **argv) {
                   "strategy costs are elapsed time and include scheduler effects\"}\n", stdout);
         }
     }
-    free(map);
+    rf_tac_map_destroy(map);free(map);
     if (!ok) fputs("Native tactical simulation failed\n", stderr);
     return ok ? 0 : 1;
 }

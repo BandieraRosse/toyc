@@ -127,6 +127,7 @@ def main():
             target=4 if args.kind=='arena' else 5
             for _ in range(target):press(0x28)
             press(0x0d)
+            click(800,300)
             def preview_ready():
                 for line in reversed(log.read_text(encoding='utf-8',errors='replace').splitlines()):
                     if line.startswith('PLAYER-UI-DEVICE '):

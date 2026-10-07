@@ -143,7 +143,7 @@ void toy_game_update_combat(struct toy_game *g, int dt_ms)
         struct toy_game_actor *a = &g->actors[i];
         struct toy_game_capabilities caps;
         int recovery_ms;
-        if (!a->active) continue;
+        if (!a->active || a->simulation_paused) continue;
         a->evasion.window_ms = combat_timer(a->evasion.window_ms, dt_ms);
         a->evasion.retrigger_ms = combat_timer(a->evasion.retrigger_ms, dt_ms);
         a->evasion.animation_ms = combat_timer(a->evasion.animation_ms, dt_ms);
@@ -171,7 +171,7 @@ struct toy_game_damage_result toy_game_damage_actor(
     struct toy_game_capabilities caps;
     long long health_milli;
     int eligible, cost, spent, damage;
-    if (!g || !target || !attack || !target->active ||
+    if (!g || !target || !attack || !target->active || target->simulation_paused ||
         target->state != TOY_GAME_ACTOR_ALIVE || target->hp <= 0 ||
         attack->base_damage_milli <= 0 || attack->health_damage_milli <= 0)
         return result;

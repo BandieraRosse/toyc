@@ -421,6 +421,7 @@ void rasterfall_session_unload(struct rasterfall_session *session)
     if(session->tactical) {
 #if RF_TACTICAL_INTERACTIVE
         rf_tac_match_destroy(&session->tactical->match);
+        rf_range_destroy(&session->tactical->range);
 #endif
         free(session->tactical);session->tactical=NULL;
     }
@@ -462,6 +463,13 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed)
 {
     int i;
+    if(session->tactical) {
+#if RF_TACTICAL_INTERACTIVE
+        rf_tac_match_destroy(&session->tactical->match);
+        rf_range_destroy(&session->tactical->range);
+#endif
+        free(session->tactical);session->tactical=NULL;
+    }
     if (session->map_ops.runtime_loaded)
         rasterfall_map_project_runtime(&session->map_ops);
     camera->x = session->level.start_x;
@@ -798,12 +806,6 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     session_add_content_terminals(session);
     /* Formal modular roster members are session-owned and are not removed by
      * the hired-AI path. Their lifetimes end at reset/unload. */
-    if(session->tactical) {
-#if RF_TACTICAL_INTERACTIVE
-        rf_tac_match_destroy(&session->tactical->match);
-#endif
-        free(session->tactical);session->tactical=NULL;
-    }
     rf_gpu_scene_local_world(&session->scene_local);
     session_frontier_reset(session);
     rasterfall_session_tactical_reset(session);

@@ -4,6 +4,10 @@
 #include "rf_gpu_scene_enemy.h"
 #include "rf_gpu_scene_world.h"
 #include "rasterfall_world_content.h"
+#ifdef TOYC_WINDOWS
+/* Parse tactical declarations before this runtime's local game/effects macros. */
+#include "rf_tactical_lab.h"
+#endif
 #include <limits.h>
 /*
  * rasterfall — Toyc 软件渲染第一人称僵尸射击游戏
@@ -6284,6 +6288,7 @@ startup_again:
         if(rf_table_preview_tick(&game_runtime,&gpu_vulkan_context,&scene_world_probe,
             options.gpu_scene_play)<0){scene_runtime_failed=1;break;}
         if(preview_work){last_time=rf_core_begin_tick(&core);accumulator=0;}
+        if(rf_core_should_exit(&core))break;
 #endif
         if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
