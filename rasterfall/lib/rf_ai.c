@@ -20,13 +20,15 @@ double rf_ai_clock_seconds(void)
 }
 
 extern const struct rf_ai_algorithm rf_ai_mechanical_algorithm;
-static const struct rf_ai_algorithm *const algorithms[]={&rf_ai_mechanical_algorithm};
+extern const struct rf_ai_algorithm rf_ai_normal_algorithm;
+static const struct rf_ai_algorithm *const algorithms[]={&rf_ai_mechanical_algorithm,&rf_ai_normal_algorithm};
 int rf_ai_algorithm_count(void){return (int)(sizeof(algorithms)/sizeof(*algorithms));}
 const struct rf_ai_algorithm *rf_ai_algorithm_at(int index)
 {return index>=0 && index<rf_ai_algorithm_count()?algorithms[index]:NULL;}
 const struct rf_ai_algorithm *rf_ai_algorithm_find(const char *name)
 {
     if(!name)return NULL;
+    if(!strcmp(name,"easy"))return &rf_ai_mechanical_algorithm;
     for(unsigned i=0;i<sizeof(algorithms)/sizeof(*algorithms);++i)
         if(!strcmp(name,algorithms[i]->name))return algorithms[i];
     return NULL;

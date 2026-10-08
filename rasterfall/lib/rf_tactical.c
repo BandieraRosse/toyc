@@ -662,12 +662,12 @@ void rf_tac_finish(struct rf_tac_world *world,int dt_ms)
     world->time_ms+=dt_ms;world->tick=world->time_ms/RF_TAC_THINK_MS;
     { int capture_mask=0;
     for(team=0;team<2;++team) if(world->orders[team].kind==RF_TAC_ATTACK && !world->orders[team].captured && alive[team]) {
-        struct rf_tac_order *order=&world->orders[team]; int clear=1,occupied=1;
+        struct rf_tac_order *order=&world->orders[team]; int clear=1,occupied=0;
         for(i=0;i<world->squad_size;++i) {
             struct rf_tac_unit *enemy=&world->units[(1-team)*RF_TAC_MAX_SQUAD+i];
             struct rf_tac_unit *friendly=&world->units[team*RF_TAC_MAX_SQUAD+i];
             if(enemy->alive && tac_distance(enemy->pos,order->target)<=order->radius) clear=0;
-            if(friendly->alive && tac_distance(friendly->pos,order->target)>order->radius) occupied=0;
+            if(friendly->alive && tac_distance(friendly->pos,order->target)<=order->radius) occupied=1;
         }
         if(clear && occupied) order->clear_ms+=dt_ms; else order->clear_ms=0;
         if(order->clear_ms>=TAC_CAPTURE_MS) {
@@ -717,6 +717,14 @@ unsigned int rf_tac_hash(const struct rf_tac_world *world)
     }
     h=tac_hash_word(h,world->seed); h=tac_hash_word(h,world->rng);
     if(world->game)h=tac_hash_word(h,(unsigned)(world->game->rng>>32));
+    if(world->game)for(i=0;i<TOY_GAME_MAX_BULLETS;++i){
+        const struct toy_game_bullet *b=&world->game->bullets[i];
+        if(!b->active)continue;
+        const int values[]={i,b->source_id,(int)b->source_generation,(int)b->fire_sequence,
+            b->faction,b->weapon,b->weakpoint_percent,b->sx,b->sy,b->sz,b->x,b->y,b->z,
+            b->dx,b->dy,b->dz,b->distance,b->remainder,b->age_ms};
+        for(unsigned k=0;k<sizeof(values)/sizeof(values[0]);++k)h=tac_hash_word(h,(unsigned)values[k]);
+    }
     h=tac_hash_word(h,world->time_ms); h=tac_hash_word(h,world->tick);
     h=tac_hash_word(h,world->squad_size); h=tac_hash_word(h,world->winner);
     h=tac_hash_word(h,world->finished); h=tac_hash_word(h,world->max_time_ms);

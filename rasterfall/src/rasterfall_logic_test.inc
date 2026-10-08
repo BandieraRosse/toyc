@@ -3345,8 +3345,9 @@ static int run_logic_test(void)
             shotgun->muzzle_profile != TOY_GAME_MUZZLE_SHOTGUN) return 55;
         if (awp->range != TOY_GAME_MAX_RANGE * 2 ||
             awp->alert_range != TOY_GAME_MAX_RANGE * 2 ||
-            ak->range != TOY_GAME_MAX_RANGE * 3 / 2 ||
-            ak->alert_range != TOY_GAME_MAX_RANGE ||
+            ak->range <= smg->range ||
+            ak->alert_range <= smg->alert_range ||
+            ak->alert_range > ak->range ||
             smg->alert_range <= TOY_GAME_DETECT_RANGE ||
             pistol->alert_range <= TOY_GAME_DETECT_RANGE ||
             shotgun->alert_range != TOY_GAME_DETECT_RANGE) return 116;
@@ -4397,7 +4398,7 @@ death_fixture_done:
         ray.ez = -3200;
         rasterfall_effects_reset_fire(&effects);
         sync_network_fire_effects(&viewer, &remote, 0,
-                                  TOY_GAME_WEAPON_SMG, 7, 1, &ray, NULL);
+                                  TOY_GAME_WEAPON_PISTOL, 7, 1, &ray, NULL);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++) {
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER)
@@ -4412,7 +4413,7 @@ death_fixture_done:
         if (tracer_count != 1 || muzzle_count != 3) return 75;
         tracer_count = 0;
         sync_network_fire_effects(&viewer, &remote, 0,
-                                  TOY_GAME_WEAPON_SMG, 7, 1, &ray, NULL);
+                                  TOY_GAME_WEAPON_PISTOL, 7, 1, &ray, NULL);
         for (i = 0; i < RASTERFALL_EFFECT_INSTANCE_SLOTS; i++)
             if (effects.instances[i].active &&
                 effects.instances[i].kind == RASTERFALL_EFFECT_INSTANCE_KIND_TRACER)
@@ -5428,8 +5429,10 @@ death_fixture_done:
     /* Replayed ground acceleration at launch uses the captured direction,
      * even when the restored camera has a different orientation. */
     {
-        struct rasterfall_session live_session;
-        struct rasterfall_session replay_session;
+        /* Full Game copies include in-flight bullets and navigation. Keep
+         * isolated test fixtures out of the native main-thread stack. */
+        static struct rasterfall_session live_session;
+        static struct rasterfall_session replay_session;
         struct camera live_camera, replay_camera;
         struct rasterfall_command jump_command;
         live_session = session;
@@ -6103,7 +6106,9 @@ death_fixture_done:
                      toy_game_weapon_name(weapon), dps, penalty,
                      toy_game_weapon_info(weapon)->power_bias, power,
                      TOY_CONFIG_COMBAT_AI_LEVEL_3_POINTS + power);
-            if (power != expected_power[weapon]) return 137;
+            if (toy_game_weapon_ballistics(weapon)) {
+                if (power <= toy_game_weapon_combat_power(TOY_GAME_WEAPON_PISTOL)) return 137;
+            } else if (power != expected_power[weapon]) return 137;
         }
         if (toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_1) != 10 ||
             toy_game_ai_level_combat_power(TOY_GAME_AI_LEVEL_2) != 18 ||

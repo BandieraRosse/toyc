@@ -45,6 +45,7 @@ Rasterfall 的主要闭环是：
 Windows GUI 进程、GPU 验收、package 和故障注入的具体等待及日志规则见 `docs/rasterfall/guides/windows-native.md`，不要仅凭 PowerShell 表面返回或单张截图下结论。
 
 - Codex 运行仓库内可信 `.ps1` 时，使用 `powershell -NoProfile -ExecutionPolicy Bypass -File <脚本路径> [参数]`，避免本机 `Restricted` 策略拦截；该选项仅作用于本次进程。若仍提示访问拒绝，检查文件或沙箱权限。
+- 截至 2026-10-08，Codex 更新后，本机 Windows 环境调用 `exec_command` 需要设置 `sandbox_permissions: "require_escalated"` 并填写 `justification` 才能成功，建议采用此方式。
 
 ## Windows / PowerShell 文本编辑
 

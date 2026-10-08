@@ -1458,6 +1458,8 @@ static int net_send_entity_chunks(struct rasterfall_net *net,
     return 0;
 }
 
+#include "rasterfall_net_bullets.inc"
+
 static int send_ai_fire_packets(struct rasterfall_net *net,
                                 const struct toy_game *game)
 {
@@ -2052,6 +2054,9 @@ void rasterfall_net_poll(struct rasterfall_net *net)
                        decode_reliable_events(packet + NET_HEADER_SIZE,
                                               payload_size, net) == 0) {
                 net->connected = 1;
+            } else if (type == RASTERFALL_NET_BULLET_EVENTS &&
+                       net_decode_bullets(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
+                /* Confirmed flight and impact are presentation only here. */
             } else if (type == RASTERFALL_NET_AI_FIRE &&
                 decode_ai_fire(packet + NET_HEADER_SIZE, payload_size, net) == 0) {
                 /* AI fire packets are visual companions to snapshots and do
@@ -2219,7 +2224,8 @@ static int net_apply_client_fire_report(
     actor->fire_seq = fire_seq;
     actor->ray_count = ray_count;
     memcpy(actor->rays, accepted, sizeof(accepted));
-    toy_game_actor_resolve_shot(game, actor);
+    if(toy_game_weapon_ballistics(weapon))toy_game_actor_launch_bullet(game,actor);
+    else toy_game_actor_resolve_shot(game, actor);
     toy_game_actor_set_animation(actor, TOY_GAME_ANIM_FIRE);
     client->last_applied_fire_seq = fire_seq;
     return 1;
@@ -2875,6 +2881,8 @@ static int net_combat_test(void)
 
 int rasterfall_net_pipeline_test(void)
 {
+    int bullet_result = net_bullet_codec_test();
+    if (bullet_result) return 500 + bullet_result;
     int combat_result = net_combat_test();
     if (combat_result) return combat_result;
     /* Enemy snapshot keeps the complete authoritative hit mask, including
@@ -3924,6 +3932,7 @@ int rasterfall_net_send_snapshot(struct rasterfall_net *net,
                                     manual_alarm_timer_ms,
                                     snapshot_sequence) < 0) return -1;
         net_send_reliable_events(net);
+        if (net_send_bullets(net, game) < 0) return -1;
         if (send_player_fire_packets(net, game) < 0) return -1;
         return send_ai_fire_packets(net, game);
     }

@@ -102,7 +102,9 @@ static void test_range(void)
     rf_range_reset(r,RF_TW_RIFLE,RF_TW_AUTO,0,2,77);
     player=toy_game_actor_by_id(r->game,r->shooter_ids[1]);
     CHECK(rf_range_fire(r,1,0,0,0),"covered body shot fires");
-    CHECK(r->stats[1][0].hits==0 && player->rays[0].hit_world,"physical cover blocks body shot");
+    toy_game_update_bullets(r->game,16);rf_range_collect(r,16);
+    CHECK(r->stats[1][0].hits==0 && r->game->shot_history[(r->game->shot_serial-1)%TOY_GAME_SHOT_HISTORY].rays[0].hit_world,
+        "physical cover blocks the bullet at arrival");
     r->running=1;for(int i=0;i<300;++i)rf_range_step(r,16);
     CHECK(r->stats[0][0].hits>0,"AI can aim above actual head cover");
     rf_range_reset(r,RF_TW_RIFLE,RF_TW_AUTO,0,0,77);
@@ -124,12 +126,13 @@ static void test_range(void)
     rf_range_destroy(r);free(r);
 }
 #include "rf_ai_test.inc"
+#include "rf_ballistics_test.inc"
 int rf_tac_run_tests(void)
 {
     struct rf_tac_map *map=calloc(1,sizeof(*map));checked=failed=0;
     CHECK(map!=NULL,"map allocation");if(!map)return 0;
     CHECK(rf_tac_map_generate(map,100),"Game collision graph generation");
     if(map->geometry){test_game_execution(map);test_prediction(map);test_ai_abi();test_ai_game(map);test_ai_queries(map);}
-    test_range();rf_tac_map_destroy(map);free(map);
+    test_range();test_ballistics();test_normal_ai();rf_tac_map_destroy(map);free(map);
     printf("TACTICAL GAME: %d checks, %d failures\n",checked,failed);return !failed;
 }

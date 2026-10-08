@@ -1,7 +1,7 @@
 #ifndef RF_AI_H
 #define RF_AI_H
 /* Algorithm ABI: no Game, renderer, tactical candidates or solver scores. */
-#define RF_AI_API_VERSION 2
+#define RF_AI_API_VERSION 3
 #define RF_AI_DEFAULT_BUDGET 16384
 #define RF_AI_MAX_ROUTE_POINTS 130
 #define RF_AI_MAX_EXPOSURE_SAMPLES 128
@@ -28,6 +28,9 @@ struct rf_ai_member {
     int alive, ammo, reserve, magazine, reload_ms, cooldown_ms, aim_ms;
     int feedback, shots, hits, damage_taken;
     float health, evasion, range_m;
+    float max_health, max_evasion, shot_damage, spread_tangent, speed_mps;
+    int fire_interval_ms, aim_required_ms, turn_degrees, reload_duration_ms;
+    float falloff_m[4], falloff_multiplier[4];
     struct rf_ai_point position, facing;
     struct rf_ai_action previous;
 };

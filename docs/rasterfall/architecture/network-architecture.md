@@ -50,12 +50,17 @@ actor snapshot 发布其他权威字段。客户端 camera 由本地 body/presen
 战斗表现事件遵循 Presentation 类别：由权威射击/命中结果或接收端已有展示数据生成，交给
 `rasterfall_effects` 消费；不能把粒子、tracer、镜头抖动等视觉状态反向写入 gameplay。
 
-Combat V0 的 actor snapshot 显式同步阵营、实例 generation、等级技能、生命上限、回避储备、
-压力/窗口/再触发计时、回避事件序号及来源方向、战斗统计。开火报告中的 `damage` 是真正命中
-弹丸的基础伤害操作，完全回避仍需报告；主机通过共享 `toy_game_actor_begin_fire` 和
-`toy_game_actor_resolve_shot` 结算同一次射击的弹丸集合。结果包另外传递实际生命伤害与回避消耗。
-客户端暂不预测 actor 生命与回避扣除，收到主机确认才产生 actor 身体受伤效果。失效 generation
-的旧目标命中不能作用于同槽的新角色。输入射线采用紧凑编码，三份冗余输入仍在单个 1200 字节包内。
+当前协议为 47。actor snapshot 继续同步阵营、generation、能力、生命、回避储备与战斗统计。
+回避窗口字段保留布局但固定为零；再触发只控制动画。旧瞬时枪械的 reported-ray 仍通过共享
+begin_fire / resolve_shot 结算。AK / SMG 报告采样方向，主机通过 begin_fire / launch_bullet
+创建飞行弹；实际遮挡、目标与衰减到达时结算，不能把客户端发射报告当成瞬时命中。
+
+客户端只预测这两种枪械的弹药、后坐与枪口反馈，不创建 Game 弹丸或预测伤害，输入重放
+不会重复占用弹池。BULLET_EVENTS 携带主机 FIRED / IMPACT 的来源身份、generation、开火序号、
+源坐标及结果，每包最多 16 条并重发最近 300ms 的有界事件。接收端以来源/generation/开火
+序号/阶段去重；晚于 IMPACT 到达的 FIRED 丢弃，视觉飞行不能复活。客户端 effects 拥有
+64 个派生飞行槽，命中反馈只使用主机结果；纯表现丢包不改变伤害，周期快照恢复生命状态。
+此事件流不保证极端丢包下每发视觉必达，也不实现滞后补偿。方向仍来自可信客户端，非反作弊重构。
 
 每个客户端的本地玩家始终占用 `actors[0]`。服务器槽位与本地槽位通过交换本客户端远端槽和
 槽 0 映射，actor ID 与 generation 保持服务器身份；报告发出时逆映射目标槽。表现、HUD、观战和

@@ -2727,7 +2727,13 @@ static int ai_turn_toward(struct toy_game_actor *a, int dx, int dz,
     a->ai_turn_remainder = (speed_degree * dt_ms +
                             a->ai_turn_remainder) % 1000;
     if (step < 1) step = 1;
-    if (step > angle) step = angle;
+    if (angle <= step) {
+        /* The final sub-degree residual must converge to the actual target.
+         * Integer angle rounding otherwise leaves a permanent aim bias larger
+         * than the new fixed weapon dispersion at medium range. */
+        a->sy=target_x;a->cy=target_z;
+        return 0;
+    }
     if (step > 0) {
         radians = step * 179 * 1024 / (180 * 100);
         radians2 = radians * radians / 1024;
@@ -5767,6 +5773,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
 }
 
 #include "game_hitscan.inc"
+#include "game_ballistics.inc"
 
 int toy_game_actor_use_special(struct toy_game *g,
                                struct toy_game_actor *actor,
@@ -6432,12 +6439,13 @@ int toy_game_actor_current_spread(const struct toy_game_actor *actor)
     slot = &actor->slots[actor->current_slot];
     weapon = toy_game_weapon_info_or_null(slot->weapon);
     if (!weapon) return 0;
+    if (slot->weapon == TOY_GAME_WEAPON_AK || slot->weapon == TOY_GAME_WEAPON_SMG)
+        return weapon->spread;
     toy_game_actor_capabilities(actor, slot->weapon, &caps);
     spread = weapon->spread * (actor->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
                                TOY_CONFIG_SPREAD_STILL_PERCENT) / 100;
     spread = spread * caps.spread_percent / 100;
     spread += actor->weapon_spread_heat;
-    if (actor->evasion.animation_ms > 0) spread += TOY_CONFIG_EVASION_SPREAD_EXTRA;
     return spread < 1 ? 1 : spread;
 }
 
@@ -6471,8 +6479,9 @@ int toy_game_actor_begin_fire(struct toy_game *g, struct toy_game_actor *actor)
         actor->reloading || actor->fire_cooldown_ms > 0 ||
         actor->weapon_switch_timer_ms > 0) return 0;
     if (s->mag <= 0) { push_event(g, TOY_GAME_EV_DRY_FIRE); return 0; }
+    if (toy_game_weapon_ballistics(s->weapon) && combat_bullet_free(g)<0) return 0;
     s->mag--;
-    actor->fire_cooldown_ms = toy_game_actor_fire_cooldown_ms(actor, w);
+    actor->fire_cooldown_ms += toy_game_actor_fire_cooldown_ms(actor, w);
     actor->muzzle_flash_ms = TOY_GAME_MUZZLE_FLASH_MS;
     toy_game_actor_capabilities(actor, s->weapon, &caps);
     actor->weapon_spread_heat += TOY_CONFIG_SPREAD_SHOT_STEP * caps.heat_percent / 100;
@@ -6517,7 +6526,12 @@ int toy_game_actor_fire(struct toy_game *g, struct toy_game_actor *actor,
         ray->cy = (cy * 1024 + sy * off_x) / 1024;
         normalize_dir(&ray->sy, &ray->cy);
         ray->vy = off_y;
-        fire_ray(g, actor, ray, w->damage, w->range);
+        if (!toy_game_weapon_ballistics(toy_game_actor_current_weapon(actor)))
+            fire_ray(g, actor, ray, w->damage, w->range);
+    }
+    if (toy_game_weapon_ballistics(toy_game_actor_current_weapon(actor))) {
+        toy_game_actor_launch_bullet(g,actor);
+        return 0; /* fire has no confirmed hit yet */
     }
     return toy_game_actor_resolve_shot(g, actor);
 }
@@ -6567,7 +6581,8 @@ int toy_game_update_actor_weapon_held(
     }
     if (actor->fire_cooldown_ms > 0) {
         actor->fire_cooldown_ms -= dt_ms;
-        if (actor->fire_cooldown_ms < 0) actor->fire_cooldown_ms = 0;
+        if (actor->fire_cooldown_ms < 0 && !(fire_held && w->full_auto && !actor->reloading))
+            actor->fire_cooldown_ms = 0;
     }
     if (actor->muzzle_flash_ms > 0) actor->muzzle_flash_ms -= dt_ms;
     if (actor->damage_flash_ms > 0) actor->damage_flash_ms -= dt_ms;
@@ -6579,7 +6594,7 @@ int toy_game_update_actor_weapon_held(
                 used = s->reserve;
             s->mag += used;
             if (s->reserve != TOY_GAME_AMMO_INFINITE) s->reserve -= used;
-            actor->reloading = 0;
+            actor->reloading = 0;actor->reload_timer_ms = 0;
             push_event(g, TOY_GAME_EV_RELOAD_DONE);
         }
     } else if (keys_pressed && keys_pressed[TOY_GAME_KEY_RELOAD] &&
@@ -6714,8 +6729,6 @@ void toy_game_update_held(struct toy_game *g,
     toy_game_update_actor_weapon_held(g, player, keys_pressed, fire_pressed,
                                       fire_held, sy, cy, dt_ms, 100);
     if (player->fire_seq != old_fire_seq) {
-        player->fire_cooldown_ms = toy_game_actor_fire_cooldown_ms(player,
-            toy_game_weapon_info(player->slots[player->current_slot].weapon));
         player->animation.id = TOY_GAME_ANIM_FIRE;
         player->animation.time_ms = 0;
     } else if (player->reloading && !old_reloading) {
@@ -6786,6 +6799,7 @@ void toy_game_update_held(struct toy_game *g,
     }
     update_actor_special_motion(g, dt_ms);
     separate_enemies(g);
+    toy_game_update_bullets(g, dt_ms);
     update_base_core(g, dt_ms);
     if (!g->external_director) {
         if (g->campaign_mode) update_campaign(g, dt_ms);
@@ -6876,6 +6890,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
         mark = now;
     }
     separate_enemies(g);
+    toy_game_update_bullets(g, dt_ms);
     if (profile && profile->clock_us) {
         now = profile->clock_us();
         profile->separation_us += now - mark;

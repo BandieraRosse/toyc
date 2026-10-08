@@ -95,9 +95,9 @@ static void lab_cost_json(FILE *f, const struct lab_solver_cost *cost) {
 }
 
 static void lab_help(void) {
-    puts("Rasterfall tactical lab v2 (native deterministic simulation)\n"
+    puts("Rasterfall tactical lab v4 (native deterministic simulation)\n"
          "  rf-tactical range [--samples 2000] [--shot-seed 1337] [--weapon rifle|smg|both]\n"
-         "  rf-tactical match [--a mechanical-v3|simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
+         "  rf-tactical match [--a easy|normal|mechanical-v3|simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
          "                    [--map-seed 100] [--shot-seed 1337] [--squad 4..6]\n"
          "                    [--weapon rifle|smg] [--duration-ms 60000] [--budget N (policy default)]\n"
          "                    [--log FILE.jsonl] [--trace-tick TICK]\n"
@@ -108,7 +108,7 @@ static void lab_help(void) {
          "  rf-tactical inspect --log FILE.jsonl --trace-tick TICK\n"
          "  rf-tactical self-test\n"
          "  rf-tactical algorithms (registered algorithms and parameter schemas)\n"
-         "Match team 0 attacks; team 1 defends. Attack clears and captures, then defends.\n"
+         "Match team 0 attacks; team 1 defends. Attack clears and captures; defense remains active.\n"
          "Batch swaps A/B attack and defense on every map/shot seed and mirrored weapon.\n"
          "Range covers 5/10/15/20/30/40/60/80/100 m, full/upper/head/moving targets,\n"
          "single/burst/auto fire. stdout is JSON; full native replay is optional JSONL.\n"

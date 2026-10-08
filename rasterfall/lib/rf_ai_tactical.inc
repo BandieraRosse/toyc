@@ -196,6 +196,17 @@ static void ai_tactical_member(const struct rf_tac_world *w,const struct rf_tac_
     }else m->feedback=u->action.kind==RF_TAC_HOLD?RF_AI_IDLE:RF_AI_RUNNING;
     if(!a || a->combat_generation!=u->actor_generation){m->alive=0;return;}
     const struct toy_game_weapon_info *weapon=toy_game_weapon_info(toy_game_actor_current_weapon(a));
+    struct toy_game_capabilities caps;
+    toy_game_actor_capabilities(a,toy_game_actor_current_weapon(a),&caps);
+    const struct toy_game_ballistics *ballistics=toy_game_weapon_ballistics(toy_game_actor_current_weapon(a));
+    m->max_health=a->max_hp;m->max_evasion=caps.evasion_capacity;
+    m->shot_damage=weapon->damage;m->spread_tangent=toy_game_actor_current_spread(a)/1024.0f;
+    m->speed_mps=ballistics?ballistics->speed_mps:0;
+    for(int k=0;k<4;++k){m->falloff_m[k]=ballistics?ballistics->distance_m[k]:0;
+        m->falloff_multiplier[k]=ballistics?ballistics->damage_permille[k]/1000.0f:1;}
+    m->fire_interval_ms=toy_game_actor_fire_cooldown_ms(a,weapon);
+    m->aim_required_ms=caps.aim_ms;m->turn_degrees=caps.turn_degrees;
+    m->reload_duration_ms=toy_game_actor_reload_ms(a,weapon);
     m->health=a->hp;m->evasion=a->evasion.reserve_milli/1000.0f;
     m->ammo=a->slots[a->current_slot].mag;m->reserve=a->slots[a->current_slot].reserve;
     m->magazine=weapon->mag_size;m->range_m=weapon->range/512.0f;

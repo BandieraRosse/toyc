@@ -466,7 +466,7 @@ static int combat_ai_logic_test(void)
         shooter->combat_aim_ms < caps.aim_ms) return 3;
 
     /* Visibility is checked even between budgeted scans. Closing a wall must
-     * stop the very next shot and reset aim readiness, not merely lose a scan. */
+     * stop the very next shot; readiness survives only the short LOS grace. */
     sequence = shooter->fire_seq;
     wall.shape = TOY_MAP_PRIMITIVE_BOX;
     wall.flags = TOY_MAP_PRIMITIVE_COLLISION;
@@ -482,6 +482,8 @@ static int combat_ai_logic_test(void)
     shooter->fire_cooldown_ms = 0;
     shooter->combat_scan_ms = 200;
     toy_game_update_ai_teammates(&g, 16);
+    if (shooter->fire_seq != sequence || !shooter->combat_aim_ms) return 4;
+    for (i = 0; i < 13; i++) toy_game_update_ai_teammates(&g, 16);
     if (shooter->fire_seq != sequence || shooter->combat_aim_ms) return 4;
     for (i = 0; i < 40; i++) toy_game_update_ai_teammates(&g, 16);
     if (shooter->fire_seq != sequence || shooter->combat_target.kind != -1)

@@ -54,8 +54,8 @@ static void test_ai_game(struct rf_tac_map *map)
     for(int t=0;t<2;++t)CHECK(rf_ai_host_decide(&h[t],&w,t,&policy,&p[t],&obs,NULL),"M0 cheap decision");
     CHECK(obs.candidate_count[0]==0 && h[0].snapshot.navigation_count>0,"cheap snapshot has shared nav but no pre-scored candidates");
     CHECK(h[0].stats.work<=policy.budget && h[0].stats.queries>0,"M0 accounts navigation and visibility queries");
-    int moving=0;for(int i=0;i<4;++i)moving+=p[0].actions[i].kind==RF_TAC_MOVE;
-    CHECK(moving==4,"initial attack assigns movement to every member");
+    int moving=0;for(int i=0;i<4;++i)moving+=p[0].actions[i].kind==RF_TAC_MOVE || p[0].actions[i].kind==RF_TAC_FIRE;
+    CHECK(moving==4,"initial attack assigns a useful action to every member");
     struct rf_tac_plan stale=p[0];rf_tac_command(&w,0,RF_TAC_ATTACK,map->objective,map->objective_radius);
     CHECK(!rf_tac_apply(&w,&stale),"old command plan rejected");
     /* Literal HOLD cannot reload an empty weapon, even when Game normally would. */
@@ -85,6 +85,16 @@ static void test_ai_game(struct rf_tac_map *map)
     }
     CHECK(valid,"M0 replans and validates arbitrary destinations throughout attack");
     CHECK(w.orders[0].captured && w.orders[0].kind==RF_TAC_ATTACK && !w.finished,"attack completes without rewriting command to defense");
+    /* Occupancy is a squad opportunity, not an all-members rendezvous. */
+    rf_tac_command(&w,0,RF_TAC_ATTACK,map->objective,map->objective_radius);
+    for(int i=0;i<4;++i){
+        struct toy_game_actor *member=toy_game_actor_by_id(w.game,w.units[i].actor_id);
+        member->x=(int)((map->objective.x-32+(i?12:0))*512);
+        member->z=(int)((map->objective.y-24)*512);
+        member->intent_move=member->intent_fire=0;
+    }
+    for(int tick=0;tick<400 && !w.orders[0].captured;++tick)rf_tac_finish(&w,16);
+    CHECK(w.orders[0].captured,"one friendly can capture while living teammates remain outside");
     rf_tac_command(&w,0,RF_TAC_DEFEND,map->objective,map->objective_radius);
     for(int tick=0;tick<150;++tick)rf_tac_step(&w);
     CHECK(!w.orders[0].captured && !w.finished,"defense remains active after enemies disappear");
@@ -94,7 +104,7 @@ static void test_ai_game(struct rf_tac_map *map)
     if(!w.game)return;
     rf_tac_command(&w,0,RF_TAC_ATTACK,map->objective,map->objective_radius);
     CHECK(rf_ai_host_decide(&h[0],&w,0,&policy,&p[0],NULL,NULL),"six-member budgeted decision");
-    moving=0;for(int i=0;i<6;++i)moving+=p[0].actions[i].kind==RF_TAC_MOVE;
+    moving=0;for(int i=0;i<6;++i)moving+=p[0].actions[i].kind==RF_TAC_MOVE || p[0].actions[i].kind==RF_TAC_FIRE;
     CHECK(moving==6 && h[0].stats.work<=policy.budget,"default budget serves all six members");
     rf_ai_host_destroy(&h[0]);rf_tac_world_destroy(&w);
 }

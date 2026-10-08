@@ -25,7 +25,7 @@ import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILTINS = frozenset(("simple", "mechanical", "utility", "beam", "mechanical-v3"))
+BUILTINS = frozenset(("simple", "mechanical", "utility", "beam", "mechanical-v3", "easy", "normal"))
 UINT_MAX = 0xFFFFFFFF
 COST_COUNTS = ("solver_calls", "work_units", "non_prediction_work_units",
                "prediction_calls", "prediction_steps", "predicted_ms",

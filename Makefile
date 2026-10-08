@@ -59,7 +59,7 @@ BUILD   := build
 # The tactical range/arena is a hosted diagnostic, independent of Tinylibc,
 # rendering and Toyc self builds. Windows native is the acceptance lane.
 TACTICAL_SRCS := rasterfall/lib/rf_tactical_lab.c  rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
-                 rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_ai_normal.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
                  rasterfall/src/dev-tests/rf_tactical_test.c
 .PHONY: tactical tactical-test
 tactical: $(BUILD)/rf-tactical

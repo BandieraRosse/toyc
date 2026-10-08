@@ -9,8 +9,8 @@ static struct {
     int seed_edit, seed_replace;
 } rf_tac_ui;
 #if RF_TACTICAL_INTERACTIVE
-static const char *rf_tac_policy_names[]={"机械 M0（新框架）","旧简单推进","旧机械策略","旧 Utility","旧 Beam"};
-static const int rf_tac_solver_ids[]={RF_TAC_M0,RF_TAC_SIMPLE,RF_TAC_MECHANICAL,RF_TAC_UTILITY,RF_TAC_BEAM};
+static const char *rf_tac_policy_names[]={"简单（机械策略）","普通（协同策略）","旧简单推进","旧机械策略","旧 Utility","旧 Beam"};
+static const int rf_tac_solver_ids[]={RF_TAC_M0,RF_TAC_M0,RF_TAC_SIMPLE,RF_TAC_MECHANICAL,RF_TAC_UTILITY,RF_TAC_BEAM};
 static const int rf_tac_budget_options[]={128,2048,RF_AI_DEFAULT_BUDGET};
 static const char *rf_tac_weapon_names[]={"步枪 / Rifle","冲锋枪 / SMG"};
 static const char *rf_tac_mode_names[]={"单发","三发点射","连续射击"};
@@ -37,7 +37,7 @@ static int rf_tac_seed_check(void)
 static int rf_tac_field_count(int kind){return kind==1?7:5;}
 static int rf_tac_option_count(int kind,int field)
 {
-    static const int arena[]={5,5,3,2,0,2,3},range[]={2,3,9,3,0};
+    static const int arena[]={6,6,3,2,0,2,3},range[]={2,3,9,3,0};
     return kind==1?arena[field]:range[field];
 }
 static const char *rf_tac_field_name(int kind,int field)
@@ -93,6 +93,8 @@ static int rf_tac_apply_settings(struct rasterfall_session *s)
         struct rf_tac_policy policies[2];
         for(int t=0;t<2;++t) {
             rf_tac_policy_default(&policies[t],rf_tac_solver_ids[v[t]]);
+            if(v[t]==1){policies[t].algorithm=rf_ai_algorithm_find("normal");
+                rf_ai_config_default(policies[t].algorithm,&policies[t].ai);}
             policies[t].budget=rf_tac_budget_options[v[6]];
         }
         lab->seed=seed;

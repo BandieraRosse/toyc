@@ -152,12 +152,15 @@ void rf_range_collect(struct rf_range_lab *r,int dt)
                 }
         }
         struct rf_range_stats *stats=&r->stats[shooter][lane];
-        stats->shots++;stats->hits+=hit;stats->heads+=heads;stats->damage+=damage;stats->absorbed+=absorbed/1000.0f;
+        if(e->phase!=TOY_GAME_SHOT_IMPACT)stats->shots++;
+        stats->hits+=hit;stats->heads+=heads;stats->damage+=damage;stats->absorbed+=absorbed/1000.0f;
         float dx=(lane-4)*1536+(target_side?0:640)-e->x,dz=rf_range_distances[lane]*512-e->z;
         float distance=sqrtf(dx*dx+dz*dz)/512;
-        stats->distance_total+=distance;
-        if(stats->shots==1 || distance<stats->distance_min)stats->distance_min=distance;
-        if(distance>stats->distance_max)stats->distance_max=distance;
+        if(e->phase!=TOY_GAME_SHOT_IMPACT) {
+            stats->distance_total+=distance;
+            if(stats->shots==1 || distance<stats->distance_min)stats->distance_min=distance;
+            if(distance>stats->distance_max)stats->distance_max=distance;
+        }
         int *owner=&r->trial_owner[target_side][lane];
         if(*owner==-1)*owner=shooter;else if(*owner!=shooter)*owner=2;
         struct toy_game_actor *target=range_actor(r,r->target_ids[target_side][lane],r->target_generations[target_side][lane]);
@@ -168,10 +171,11 @@ void rf_range_collect(struct rf_range_lab *r,int dt)
                 stats->ttk_total_ms+=stats->last_ttk_ms;
             }
         }
-        if(!shooter) {
+        if(!shooter && e->phase!=TOY_GAME_SHOT_IMPACT) {
             ++r->pattern_shots;
             r->wait_ms=r->mode==RF_TW_SINGLE?450:r->mode==RF_TW_BURST && r->pattern_shots%3==0?450:0;
         }
+        if(e->phase==TOY_GAME_SHOT_FIRED)continue;
         struct rf_range_mark *mark=&r->marks[r->mark_count++%RF_RANGE_MARKS];
         mark->x=(ray->ex-((lane-4)*1536+(target_side?0:640)))/512.0f;
         mark->y=(ray->hit_y-RASTERFALL_HUMAN_HEIGHT_RFU/2)/512.0f;
@@ -181,9 +185,13 @@ void rf_range_collect(struct rf_range_lab *r,int dt)
         struct toy_game_actor *a=range_actor(r,r->shooter_ids[s],r->shooter_generations[s]);
         if(a) {r->weapons[s].ammo=a->slots[a->current_slot].mag;r->weapons[s].cooldown_ms=a->fire_cooldown_ms;
             r->weapons[s].reload_remaining_ms=a->reload_timer_ms;}
+        int pending=0;
+        for(int b=0;b<TOY_GAME_MAX_BULLETS;++b)
+            if(g->bullets[b].active && g->bullets[b].source_id==r->shooter_ids[s] &&
+               g->bullets[b].source_generation==r->shooter_generations[s]){pending=1;break;}
         for(int l=0;l<RF_RANGE_LANES;++l) {
             a=range_actor(r,r->target_ids[s][l],r->target_generations[s][l]);
-            if(a && a->hp<=0) {
+            if(a && a->hp<=0 && !pending) {
                 range_target_reset(a);r->trial_elapsed[s][l]=0;r->trial_owner[s][l]=-1;
             }
             if(a){r->stats[s][l].hp=a->hp;r->stats[s][l].risk=a->evasion.reserve_milli/1000.0f;}

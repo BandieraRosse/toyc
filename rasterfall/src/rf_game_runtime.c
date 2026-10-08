@@ -1848,6 +1848,7 @@ static void emit_ray_effects(const struct toy_game_ray *ray,
 {
     struct rasterfall_effect_event event;
     memset(&event, 0, sizeof(event));
+    if(toy_game_weapon_ballistics(weapon))return; /* flight/impact events own this trace */
     event.type = RASTERFALL_EFFECT_EVENT_TRACER;
     event.flags = depth_test ? RASTERFALL_EFFECT_EVENT_DEPTH_TEST : 0;
     event.sx = sx; event.sy = sy; event.sz = sz;
@@ -5138,6 +5139,9 @@ startup_again:
         if (net.mode == RASTERFALL_NET_CLIENT) {
             rasterfall_net_reconcile_client(&net, &session, &camera);
             rasterfall_net_update_presentation(&net, 16);
+            for(int i=0;i<net.remote_shot_count;++i)
+                rasterfall_effects_remote_shot(&effects,&net.remote_shots[i]);
+            net.remote_shot_count=0;
         }
         if (net.mode == RASTERFALL_NET_HOST) {
             for (int i = 0; i < RASTERFALL_NET_CLIENT_MAX; i++) {
@@ -6374,6 +6378,7 @@ startup_again:
         if (!paused) {
             sync_fire_effects(&camera);
             sync_ai_fire_effects(&camera, &audio);
+            rasterfall_effects_sync_bullets(&effects,&game);
         }
         if (accumulator >= FIXED_STEP_US) {
             scene_dropped_us += accumulator - accumulator % FIXED_STEP_US;

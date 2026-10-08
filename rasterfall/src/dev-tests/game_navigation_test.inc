@@ -36,7 +36,8 @@ static int enemy_flow_logic_test(void)
         __printf("FLOW-TEST enemies=%d arrived=%d builds=%u edges=%u samples=%u legacy=%u hp=%d\n",
             population, arrived, profile.flow_builds, profile.flow_edges,
             profile.flow_samples, profile.nav_searches, g.actors[0].hp);
-        if (arrived != population || g.actors[0].hp == 100000 ||
+        if (arrived != population || (g.actors[0].hp == 100000 &&
+            !g.actors[0].combat_stats.evasion_spent_milli) ||
             profile.nav_searches || profile.nav_group_searches) {
             __printf("FLOW-TEST first x=%d z=%d active=%d state=%d target=%d nav=%d,%d\n",
                 g.enemies[0].x,g.enemies[0].z,g.enemies[0].active,g.state,
@@ -110,6 +111,7 @@ static int enemy_flow_logic_test(void)
     g.enemies[0].nav_active = 0; g.enemies[0].nav_direct_valid = 0;
     g.enemies[0].nav_flow_node = 0; g.enemies[0].bite_cooldown_ms = 0;
     g.actors[0].hp = 100000;
+    g.actors[0].evasion.reserve_milli = 0;
     for (tick = 0; tick < 1200; ++tick) {
         toy_game_update_world(&g, 16);
         if (g.enemies[0].ground_y < 2900 && g.actors[0].hp != 100000) return 9;
@@ -134,7 +136,8 @@ static int enemy_flow_logic_test(void)
     memset(&profile, 0, sizeof(profile)); g.update_profile = &profile;
     for (tick = 0; tick < 1200; ++tick) toy_game_update_world(&g, 16);
     g.update_profile = NULL;
-    for (i = 1; i <= 6; ++i) if (g.actors[i].hp == 100000) {
+    for (i = 1; i <= 6; ++i) if (g.actors[i].hp == 100000 &&
+        !g.actors[i].combat_stats.evasion_spent_milli) {
         __printf("FLOW-TEST target=%d enemy=%d,%d goal=%d,%d active=%d node=%d\n",
             i,g.enemies[i-1].x,g.enemies[i-1].z,g.actors[i].x,g.actors[i].z,
             g.enemies[i-1].nav_active,g.enemies[i-1].nav_flow_node);
@@ -391,6 +394,7 @@ static int ordinary_enemy_retention_logic_test(void)
                                   TOY_MAP_PRIMITIVE_COLLISION);
     toy_game_set_primitives(&g, world, 3, 10000);
     a->x = 1100; a->z = 3500; b->x = 1580; b->z = 3500;
+    a->evasion.reserve_milli = b->evasion.reserve_milli = 0;
     e->speed = toy_game_enemy_info(e->type)->speed_max;
     memset(&p, 0, sizeof(p));
     g.update_profile = &p;

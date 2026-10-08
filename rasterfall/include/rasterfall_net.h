@@ -12,7 +12,7 @@
 #define RASTERFALL_NET_MAX_SNAPSHOT 8192
 /* Keep protocol changes explicit: clients with a different snapshot layout
  * must fail during discovery/handshake instead of decoding shifted data. */
-#define RASTERFALL_NET_PROTOCOL_VERSION 46
+#define RASTERFALL_NET_PROTOCOL_VERSION 47
 #define RASTERFALL_NET_MAX_ACTORS TOY_GAME_MAX_ACTORS
 #define RASTERFALL_NET_PLAYER_MAX 4
 #define RASTERFALL_NET_CLIENT_MAX (RASTERFALL_NET_PLAYER_MAX - 1)
@@ -38,7 +38,8 @@ enum rasterfall_net_packet_type {
     RASTERFALL_NET_RELIABLE_EVENT,
     RASTERFALL_NET_ENTITY_SNAPSHOT,
     RASTERFALL_NET_WORLD_SNAPSHOT,
-    RASTERFALL_NET_PLAYER_FIRE
+    RASTERFALL_NET_PLAYER_FIRE,
+    RASTERFALL_NET_BULLET_EVENTS
 };
 
 enum rasterfall_net_special_event {
@@ -215,6 +216,10 @@ struct rasterfall_net_client {
     long last_receive_ms;
 };
 
+struct rasterfall_net_shot_key {
+    unsigned source, generation, sequence, phase;
+};
+
 struct rasterfall_net {
     int mode;
     int fd;
@@ -251,6 +256,10 @@ struct rasterfall_net {
     int entity_actor_complete;
     int entity_enemy_complete;
     int remote_event_count;
+    struct rasterfall_net_shot_key shot_seen[TOY_GAME_SHOT_HISTORY];
+    unsigned shot_seen_next;
+    struct toy_game_shot_event remote_shots[64];
+    int remote_shot_count;
     unsigned char remote_events[TOY_GAME_MAX_EVENTS];
     struct rasterfall_net_event remote_event_data[TOY_GAME_MAX_EVENTS];
     uint32_t remote_event_last_id;

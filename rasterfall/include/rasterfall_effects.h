@@ -239,11 +239,20 @@ struct rasterfall_effect_emitter {
         children[RASTERFALL_EFFECT_EMITTER_CHILD_SLOTS];
 };
 
+struct rasterfall_effect_flight {
+    unsigned source, generation, sequence;
+    int active, weapon, x, y, z, dx, dy, dz, distance, age_ms;
+};
+
 struct rasterfall_effects {
     struct rasterfall_effect_instance instances[RASTERFALL_EFFECT_INSTANCE_SLOTS];
     int instance_next;
     struct rasterfall_effect_emitter emitters[RASTERFALL_EFFECT_EMITTER_SLOTS];
     int emitter_next;
+    unsigned int bullet_event_cursor;
+    int bullet_time_ms;
+    struct rasterfall_effect_flight remote_flights[64];
+    unsigned remote_flight_next;
     unsigned int last_fire_seq;
     unsigned int last_confirmed_fire_seq, last_confirmed_generation;
     unsigned int last_network_fire_seq[4];
@@ -294,6 +303,8 @@ struct rasterfall_effect_emitter *rasterfall_effects_spawn_emitter(
     const struct rasterfall_effect_emitter *seed);
 void rasterfall_effects_spawn_hit_particles(struct rasterfall_effects *effects,
                                             int x, int y, int z, int sy, int cy);
+void rasterfall_effects_remote_shot(struct rasterfall_effects *effects, const struct toy_game_shot_event *shot);
+void rasterfall_effects_sync_bullets(struct rasterfall_effects *effects, const struct toy_game *game);
 void rasterfall_effects_consume(struct rasterfall_effects *effects,
                                 const struct rasterfall_effect_event *event);
 

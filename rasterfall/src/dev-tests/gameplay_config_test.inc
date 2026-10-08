@@ -18,14 +18,13 @@ static int gameplay_config_logic_test(void)
         "melee_range_rfu=1800\nmelee_damage=5\nthrow_speed_rfu_per_second=5120\n"
         "throw_gravity_rfu_per_second2=3200\nbomb_damage=11\nbomb_radius_rfu=600\n"
         "bomb_fuse_ms=0\nmolotov_burn_ms=64\nmolotov_tick_ms=16\nmolotov_damage=3\n"
-        "evasion_window_ms=200\nevasion_retrigger_ms=700\nevasion_recovery_delay_ms=100\n"
-        "evasion_bullet_window_percent=25\nevasion_melee_window_percent=50\n"
-        "evasion_melee_cost_percent=200 # last field beyond a 32-bit seen mask\n";
+        "evasion_recovery_delay_ms=100\n";
     const char *bad[] = {"base_hp=600\nunknown=1\n", "base_hp=600\nbase_hp=700\n",
         "base_regen_ms=0\n", "molotov_tick_ms=0\n", "wave_scale_percent=0\n",
         "throw_bounce_per_mille=1001\n", "base_hp=-1\n", "base_hp=1.5\n",
         "base_hp=999999999999999999999\n", "base_hp=\n", "base_hp 600\n",
-        "evasion_melee_cost_percent=200\nevasion_melee_cost_percent=300\n",
+        "evasion_recovery_delay_ms=200\nevasion_recovery_delay_ms=300\n",
+        "evasion_bullet_window_percent=50\n",
         "throw_gravity_rfu_per_second2=1\n"};
     const char embedded[] = "base_hp=600\0\n";
     const char *error = NULL;
@@ -97,10 +96,10 @@ static int gameplay_config_logic_test(void)
     attack.kind=TOY_GAME_ATTACK_BULLET;
     attack.base_damage_milli=attack.health_damage_milli=10000;
     result=toy_game_damage_actor(&g,NULL,a,&attack);
-    if (result.evasion_spent_milli!=10000 || a->evasion.window_ms!=200 ||
-        a->evasion.retrigger_ms!=700 || a->evasion.pressure_ms!=100) return 20;
+    if (result.evasion_spent_milli!=10000 || a->evasion.window_ms!=0 ||
+        a->evasion.retrigger_ms!=TOY_CONFIG_EVASION_RETRIGGER_MS || a->evasion.pressure_ms!=100) return 20;
     result=toy_game_damage_actor(&g,NULL,a,&attack);
-    if (result.evasion_spent_milli!=2500) return 21;
+    if (result.evasion_spent_milli!=10000) return 21;
     attack.kind=TOY_GAME_ATTACK_MELEE;
     result=toy_game_damage_actor(&g,NULL,a,&attack);
     if (result.evasion_spent_milli!=10000) return 22;

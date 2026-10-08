@@ -248,7 +248,10 @@ static int rf_mesh_weaver_logic_test(void)
         toy_game_actor_fire(g, player, 0, 1024, 100);
         WEAVER_CHECK(player->slots[weapon->slot].mag == before - 1 &&
             player->fire_seq == sequence + 1 && player->ray_count > 0);
-        WEAVER_CHECK(player->rays[0].hit_enemy);
+        if(toy_game_weapon_ballistics(bp.weapon)) {
+            toy_game_update_bullets(g,16);
+            WEAVER_CHECK(g->shot_history[(g->shot_serial-1)%TOY_GAME_SHOT_HISTORY].rays[0].hit_enemy);
+        } else WEAVER_CHECK(player->rays[0].hit_enemy);
         action.reload = 1;
         toy_game_execute_actor_command(g, player, &action, 16, 100);
         WEAVER_CHECK(!player->reloading && player->slots[weapon->slot].mag == before - 1);

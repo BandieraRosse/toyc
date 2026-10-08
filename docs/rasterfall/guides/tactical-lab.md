@@ -8,19 +8,22 @@
 实时帧间隔。规则和正式 Game 的接入边界见[战术 AI 架构](../architecture/tactical-ai.md)，
 参数的现实依据与设计取舍见[枪械基准](../reference/tactical-weapons.md)。
 
-当前规则和策略版本为 2，权威为正式 `toy_game`。旧 `trained-v1.cfg` 不再出现在
+当前规则和策略版本为 4，权威为正式 `toy_game`。旧 `trained-v1.cfg` 不再出现在
 终端中，也不能作为新版本策略加载；已有版本 1 报告只能作为旧模型历史结果。
-新训练由 `tools/tactical_train.py` 生成版本 2 参数。游戏内是已加载地图的真实碰撞；
+新训练由 `tools/tactical_train.py` 生成当前规则版本的旧 utility 参数。游戏内是已加载地图的真实碰撞；
 CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规则和初始状态。
 
 ## 新机械算法与攻防对打
 
-当前游戏终端和 CLI 默认双方均为“机械 M0（新框架）”，分别执行进攻和防守。
+终端现在提供“简单（机械策略）”与“普通（协同策略）”，默认双方仍为简单，分别执行进攻和防守。
+要观察本轮差异，将一侧选为普通后开始实验；FPS / RTS 共用移动短弹迹与实际命中效果。
+普通主要表现为集火收尾、寻找可交火位置和错峰主动换弹；不保证每张地图胜出。
 CLI 名称是 `mechanical-v3`；旧 `mechanical` 保留作旧接口对照。框架边界和算法扩展方式见
-[算法框架](../architecture/tactical-ai.md#策略算法框架-api-2)。M0 不是已训练的强策略。
+[算法框架](../architecture/tactical-ai.md#策略算法框架-api-3)。M0 不是已训练的强策略。
 
 ```powershell
 .\build-windows\rf-tactical.exe algorithms
+.\build-windows\rf-tactical.exe batch --a normal --b easy --pairs 32 --squad 4 --weapon both
 .\build-windows\rf-tactical.exe match --a mechanical-v3 --b mechanical-v3 --log tmp/m0-match.jsonl
 .\build-windows\rf-tactical.exe match --a rasterfall/config/ai/mechanical-v3.cfg --b mechanical-v3 --order-a defend --order-b attack
 .\build-windows\rf-tactical.exe batch --a mechanical-v3 --b mechanical-v3 --pairs 2 --squad 6 --weapon both
@@ -31,7 +34,7 @@ python tools/tactical_benchmark.py --policies mechanical-v3 --opponents mechanic
 不是零火力或零价值。结果中的 preparation_elapsed_seconds 是包装/准备耗时，solver_elapsed_seconds
 包含按需查询；query_seconds 是其中的查询耗时。逻辑工作单位不等于毫秒，不能跨算法直接当成 CPU 成本。
 配置中的参数 schema 和 algorithm_version 由具体算法声明。现有 tactical_train.py 仍只训练旧 utility，
-不可用它声称训练了 M0；新算法训练器和强度分层将在后续阶段接入。
+不可用它声称训练了 M0 或 normal；本轮两种难度使用人工规则，新算法训练器留待后续。
 
 API 2 的工作预算按导航扩展和几何检查等实际操作计费，不能沿用 API 1 的数值比较。
 M0 使用算法版本 2；CLI 不传 `--budget` 时保留内置策略或配置文件的预算，显式传入则覆盖双方。

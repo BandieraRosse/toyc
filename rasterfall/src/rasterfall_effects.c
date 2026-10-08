@@ -3,6 +3,8 @@
 #include "rasterfall_effects.h"
 #include "rasterfall_units.h"
 
+static void update_remote_flights(struct rasterfall_effects *fx,int dt_ms);
+
 static uint32_t xorshift32(uint32_t *state)
 {
     uint32_t x = *state;
@@ -994,6 +996,8 @@ void rasterfall_effects_reset_fire(struct rasterfall_effects *effects)
     effects->instance_next = 0;
     memset(effects->emitters, 0, sizeof(effects->emitters));
     effects->emitter_next = 0;
+    effects->bullet_event_cursor=0;effects->bullet_time_ms=-1;
+    memset(effects->remote_flights,0,sizeof(effects->remote_flights));effects->remote_flight_next=0;
     effects->last_fire_seq = 0;
     effects->last_confirmed_fire_seq = effects->last_confirmed_generation = 0;
     memset(effects->last_network_fire_seq, 0,
@@ -1273,6 +1277,7 @@ void rasterfall_effects_update(struct rasterfall_effects *effects, int dt_ms)
 {
     int i, steps;
     if (!effects) return;
+    update_remote_flights(effects,dt_ms);
     steps = dt_ms / 16;
     if (dt_ms > 0 && steps < 1) steps = 1;
     if (effects->damage_shake_cooldown_ms > 0) {
@@ -1376,6 +1381,26 @@ int rasterfall_effects_combat_logic_test(void)
     int before, i, actor_id;
     toy_game_init(&game, 91);
     rasterfall_effects_init(&effects);
+    {
+        struct toy_game_shot_event shot={0};
+        shot.phase=TOY_GAME_SHOT_FIRED;shot.weapon=TOY_GAME_WEAPON_AK;
+        shot.source_id=1;shot.source_generation=3;shot.fire_sequence=8;
+        shot.y=700;shot.ray_count=1;shot.rays[0].cy=1024;
+        rasterfall_effects_remote_shot(&effects,&shot);
+        if(effects.instance_next || !effects.remote_flights[0].active)return 40;
+        rasterfall_effects_update(&effects,16);
+        if(!effects.instance_next || effects.remote_flights[0].distance<=0)return 41;
+        shot.phase=TOY_GAME_SHOT_IMPACT;shot.rays[0].ez=6000;shot.rays[0].hit_y=700;
+        shot.rays[0].hit_world=1;
+        rasterfall_effects_remote_shot(&effects,&shot);
+        if(effects.remote_flights[0].active)return 42;
+        rasterfall_effects_reset_fire(&effects);
+        shot.phase=TOY_GAME_SHOT_FIRED;
+        rasterfall_effects_remote_shot(&effects,&shot);
+        rasterfall_effects_update(&effects,800);
+        if(effects.remote_flights[0].active)return 43;
+        rasterfall_effects_reset_fire(&effects);
+    }
     memset(&hit, 0, sizeof(hit));
     hit.type = RASTERFALL_EFFECT_EVENT_ENTITY_HIT;
     hit.target_id = -1;
@@ -1405,3 +1430,5 @@ int rasterfall_effects_combat_logic_test(void)
     if (effects.instance_next == before || effects.enemy_hit_strength[0]) return 8;
     return 0;
 }
+
+#include "rasterfall_bullet_effects.inc"

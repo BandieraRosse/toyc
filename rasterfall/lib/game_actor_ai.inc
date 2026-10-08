@@ -197,10 +197,14 @@ static void actor_external_step(struct toy_game *g, struct toy_game_actor *a, in
     } else if (cmd.move_target_active) {
         ai_turn_toward(a, cmd.move_x-a->x, cmd.move_z-a->z, caps.turn_degrees, dt_ms);
     }
-    if (visible && error <= 6) a->combat_aim_ms += dt_ms;
-    else a->combat_aim_ms = 0;
+    if (visible && error <= 2 && !cmd.move_target_active) {
+        a->combat_aim_ms += dt_ms;a->combat_aim_lost_ms=0;
+    } else {
+        a->combat_aim_lost_ms+=dt_ms;
+        if(cmd.move_target_active || a->combat_aim_lost_ms>200)a->combat_aim_ms=0;
+    }
     cmd.fire_pressed = a->intent_fire && a->fire_enabled && !a->control_disabled &&
-        visible && error <= 6 && a->combat_aim_ms >= caps.aim_ms;
+        visible && error <= 2 && a->combat_aim_ms >= caps.aim_ms;
     cmd.fire_held = cmd.fire_pressed; cmd.reload = a->intent_reload;
     if(a->intent_exclusive){
         if(a->reloading)cmd.move_target_active=0;
@@ -378,12 +382,16 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     } else if (moved) {
         ai_turn_toward(a, a->x - sx, a->z - sz, caps.turn_degrees, dt_ms);
     }
-    if (visible && error <= 6) a->combat_aim_ms += dt_ms;
-    else a->combat_aim_ms = 0;
+    if (visible && error <= 2 && !moved) {
+        a->combat_aim_ms += dt_ms;a->combat_aim_lost_ms=0;
+    } else {
+        a->combat_aim_lost_ms+=dt_ms;
+        if(moved || a->combat_aim_lost_ms>200)a->combat_aim_ms=0;
+    }
     command.switch_slot = -1;
     command.aim_active = target_present;
     command.aim_sy = a->sy; command.aim_cy = a->cy;
-    command.fire_pressed = a->fire_enabled && visible && error <= 6 &&
+    command.fire_pressed = a->fire_enabled && visible && error <= 2 &&
         a->combat_aim_ms >= caps.aim_ms;
     command.fire_held = command.fire_pressed;
     a->moving = moved;

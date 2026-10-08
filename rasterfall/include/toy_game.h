@@ -556,11 +556,23 @@ struct toy_game_slot {
     int reserve;
 };
 
-#define TOY_GAME_SHOT_HISTORY 64
+#define TOY_GAME_MAX_BULLETS 512
+struct toy_game_ballistics {
+    int speed_mps, distance_m[4], damage_permille[4];
+};
+struct toy_game_bullet {
+    int active, source_id, faction, weapon, weakpoint_percent;
+    unsigned source_generation, fire_sequence;
+    int sx, sy, sz, x, y, z, dx, dy, dz, distance, remainder, age_ms;
+};
+/* Legacy instantaneous firearms publish RESOLVED once. Finite bullets publish
+ * FIRED then IMPACT (also when range expires without hitting anything). */
+enum toy_game_shot_phase { TOY_GAME_SHOT_RESOLVED, TOY_GAME_SHOT_FIRED, TOY_GAME_SHOT_IMPACT };
+#define TOY_GAME_SHOT_HISTORY 256
 struct toy_game_shot_event {
     unsigned int killed_rays; /* first pellet for each confirmed actor kill */
     unsigned int serial, source_generation, fire_sequence;
-    int source_id, weapon, time_ms, x, y, z, ray_count;
+    int source_id, weapon, time_ms, x, y, z, ray_count, phase;
     struct toy_game_ray rays[TOY_GAME_MAX_RAYS];
 };
 
@@ -669,7 +681,7 @@ struct toy_game_actor {
     struct toy_game_combat_stats combat_stats;
     int damage_remainder_milli;
     struct toy_game_combat_target combat_target;
-    int combat_scan_ms, combat_aim_ms, combat_lost_ms;
+    int combat_scan_ms, combat_aim_ms, combat_lost_ms, combat_aim_lost_ms;
     int combat_last_x, combat_last_z, combat_last_y;
     int ai_guard_radius;       /* Hostile post radius; zero leaves perception unrestricted. */
     int ai_assault_active;     /* Without a target, advance to deployment_x/z. */
@@ -1000,6 +1012,7 @@ struct toy_game {
     /* PRNG（xorshift64*，init 时播种） */
     uint64_t rng;
     unsigned int shot_serial;
+    struct toy_game_bullet bullets[TOY_GAME_MAX_BULLETS];
     struct toy_game_shot_event shot_history[TOY_GAME_SHOT_HISTORY];
 
     /* 本帧事件队列（宿主每帧 drain） */
@@ -1033,6 +1046,10 @@ int toy_game_actor_begin_fire(struct toy_game *game, struct toy_game_actor *acto
 void toy_game_actor_set_intent(struct toy_game_actor *actor, int move,
     int x, int y, int z, int target_id, unsigned int target_generation,
     int fire, int reload);
+const struct toy_game_ballistics *toy_game_weapon_ballistics(int weapon);
+int toy_game_weapon_damage_milli(int weapon, int distance_rfu);
+int toy_game_actor_launch_bullet(struct toy_game *game, struct toy_game_actor *actor);
+void toy_game_update_bullets(struct toy_game *game, int dt_ms);
 int toy_game_actor_resolve_shot(struct toy_game *game, struct toy_game_actor *actor);
 int toy_game_combat_visible(const struct toy_game *game,
     const struct toy_game_actor *actor, int x, int y, int z);

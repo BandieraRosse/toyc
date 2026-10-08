@@ -47,7 +47,7 @@ static int combat_evasion_logic_test(void)
     if (result.health_damage != 67 || result.evasion_spent_milli != 15000 ||
         actor->damage_remainder_milli != 500) return 2;
 
-    /* Continued hits get the existing window discount without extending any
+    /* Continued hits pay the same cost without extending any
      * timer or changing the event direction/strength/sequence. */
     actor = combat_evasion_fixture(&combat_case);
     result = combat_evasion_hit(&combat_case, actor, TOY_GAME_ATTACK_BULLET, 6000, 6000);
@@ -159,7 +159,7 @@ static int combat_evasion_logic_test(void)
     result = combat_evasion_hit(&combat_case, actor, TOY_GAME_ATTACK_BITE, 1000, 1000);
     damage = 1000 * TOY_CONFIG_EVASION_MELEE_COST_PERCENT / 100;
     if (result.health_damage || result.evasion_spent_milli != damage ||
-        result.evasion_spent_milli <= 1000) return 21;
+        result.evasion_spent_milli != 1000) return 21;
     result = combat_evasion_hit(&combat_case, actor, TOY_GAME_ATTACK_MELEE, 1000, 1000);
     if (result.health_damage || result.evasion_spent_milli !=
         damage * TOY_CONFIG_EVASION_MELEE_WINDOW_PERCENT / 100) return 22;

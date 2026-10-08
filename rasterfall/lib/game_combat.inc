@@ -48,6 +48,13 @@ void toy_game_actor_capabilities(const struct toy_game_actor *actor, int weapon,
     out->turn_degrees = turn[pi];
     out->aim_ms = aim[pi];
     out->weakpoint_percent = 150 + pi * 5;
+    if (weapon == TOY_GAME_WEAPON_AK || weapon == TOY_GAME_WEAPON_SMG) {
+        out->fire_interval_percent = out->reload_percent = out->spread_percent = 100;
+        out->heat_percent = 0;
+        out->turn_degrees = 360;
+        out->aim_ms = weapon == TOY_GAME_WEAPON_AK ? 240 : 120;
+        out->weakpoint_percent = 150;
+    }
     out->evasion_capacity = actor && actor->base_core ? 0 : evasion[ei];
     out->evasion_per_second = actor && actor->base_core ? 0 : recovery[ei];
 }
@@ -109,7 +116,7 @@ void toy_game_actor_reset_combat(struct toy_game_actor *actor, int refill_evasio
     actor->combat_target.kind = -1;
     actor->combat_target.index = -1;
     actor->evasion.reserve_milli = refill_evasion ? caps.evasion_capacity * 1000 : 0;
-    actor->combat_scan_ms = actor->combat_aim_ms = actor->combat_lost_ms = 0;
+    actor->combat_scan_ms = actor->combat_aim_ms = actor->combat_lost_ms = actor->combat_aim_lost_ms = 0;
     actor->combat_last_x = actor->combat_last_z = actor->combat_last_y = 0;
     actor->ai_rescue_active = 0; actor->ai_rescue_index = -1;
     actor->ai_rescue_generation = 0;
@@ -182,14 +189,7 @@ struct toy_game_damage_result toy_game_damage_actor(
                attack->kind == TOY_GAME_ATTACK_MELEE;
     toy_game_actor_capabilities(target, toy_game_actor_current_weapon(target), &caps);
     if (eligible && caps.evasion_capacity && target->evasion.reserve_milli > 0) {
-        int was_window = target->evasion.window_ms > 0;
         cost = attack->base_damage_milli;
-        if (attack->kind != TOY_GAME_ATTACK_BULLET)
-            cost = (int)((long long)cost * g->gameplay_config.evasion_melee_cost_percent / 100);
-        if (was_window) cost = (int)((long long)cost *
-            (attack->kind == TOY_GAME_ATTACK_BULLET ?
-             g->gameplay_config.evasion_bullet_window_percent :
-             g->gameplay_config.evasion_melee_window_percent) / 100);
         if (cost < 1) cost = 1;
         spent = target->evasion.reserve_milli < cost ?
             target->evasion.reserve_milli : cost;
@@ -199,9 +199,9 @@ struct toy_game_damage_result toy_game_damage_actor(
         target->combat_stats.evasion_spent_milli += spent;
         if (!target->evasion.reserve_milli)
             target->combat_stats.evasion_exhaustions++;
-        if (!was_window && !target->evasion.retrigger_ms) {
-            target->evasion.window_ms = g->gameplay_config.evasion_window_ms;
-            target->evasion.retrigger_ms = g->gameplay_config.evasion_retrigger_ms;
+        if (!target->evasion.retrigger_ms) {
+            target->evasion.window_ms = 0; /* no damage discount window */
+            target->evasion.retrigger_ms = TOY_CONFIG_EVASION_RETRIGGER_MS; /* visual only */
             target->evasion.animation_ms = TOY_CONFIG_EVASION_ANIMATION_MS;
             target->evasion.trigger_time_ms = g->combat_time_ms;
             target->evasion.sequence++;

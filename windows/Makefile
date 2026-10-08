@@ -84,7 +84,7 @@ GAME_SRCS += rasterfall/src/rf_player_ui.c rasterfall/src/rf_minimap.c \
 GAME_SRCS += gpu/src/rf_gpu_vulkan_backend.c \
              gpu/src/rf_gpu_resource_cache.c
 ANIMATION_SRCS := app/linux/glb_inspect.c rasterfall/src/rasterfall_vmd.c
-GAME_SRCS += rasterfall/lib/rf_tactical.c rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c rasterfall/lib/rf_tactical_lab.c
+GAME_SRCS += rasterfall/lib/rf_tactical.c rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_ai_normal.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c rasterfall/lib/rf_tactical_lab.c
 GAME_LIB_SRCS := rasterfall/lib/game.c rasterfall/lib/rf_frontier_mission.c rasterfall/lib/map.c rasterfall/lib/sfx.c \
                  rasterfall/lib/rasterfall_map_parser.c \
                  rasterfall/lib/rasterfall_map_runtime.c \
@@ -100,10 +100,10 @@ OBJS := $(patsubst %.c,$(BUILD)/win/%.o,$(SRCS))
 DEPS := $(OBJS:.o=.d)
 TARGET := $(BUILD)/rasterfall.exe
 TACTICAL_SRCS := rasterfall/lib/rf_tactical_lab.c  rasterfall/src/rf_tactical_cli.c rasterfall/lib/rf_tactical.c \
-                 rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
+                 rasterfall/lib/rf_ai.c rasterfall/lib/rf_ai_mechanical.c rasterfall/lib/rf_ai_normal.c rasterfall/lib/rf_tactical_solver.c rasterfall/lib/rf_tactical_beam.c rasterfall/lib/rf_tactical_weapon.c \
                  rasterfall/src/dev-tests/rf_tactical_test.c
 TACTICAL_TARGET := $(BUILD)/rf-tactical.exe
-TACTICAL_CORE_NAMES := rf_ai rf_ai_mechanical rf_tactical rf_tactical_solver rf_tactical_beam rf_tactical_weapon rf_tactical_lab
+TACTICAL_CORE_NAMES := rf_ai rf_ai_mechanical rf_ai_normal rf_tactical rf_tactical_solver rf_tactical_beam rf_tactical_weapon rf_tactical_lab
 # These hosted numerical modules share the exact native ABI and math with the
 # console benchmark; do not shadow the C runtime headers with Tinylibc headers.
 $(addprefix $(BUILD)/win/rasterfall/lib/,$(addsuffix .o,$(TACTICAL_CORE_NAMES))): $(BUILD)/win/rasterfall/lib/%.o: rasterfall/lib/%.c

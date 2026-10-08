@@ -259,6 +259,7 @@ int toy_game_actor_resolve_shot(struct toy_game *g, struct toy_game_actor *actor
     }
     {
         struct toy_game_shot_event *event=&g->shot_history[g->shot_serial%TOY_GAME_SHOT_HISTORY];
+        event->phase=TOY_GAME_SHOT_RESOLVED;
         event->serial=++g->shot_serial;event->source_id=actor->actor_id;
         event->killed_rays=killed_rays;
         event->source_generation=actor->combat_generation;event->fire_sequence=actor->fire_seq;
