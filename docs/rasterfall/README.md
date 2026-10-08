@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+一米网格地板、动画场西南扩展和中央敌人召唤终端见[网格玩法场](reference/experiment-labs.md#一米网格玩法场)；
+地图由 `tools/grid_lab.py` 维护，session 拥有召唤身份与枪手推进意图，UI 位于 `rf_grid_terminal.inc`。
+多枪手交战、出网格回看与角色 GPU 失败日志见[网格交战诊断](guides/gpu-scene-fixture.md#动态角色与设备实验)。
+
 地图目录、校园地图退役与稳定 world ID 由[地图与世界内容](architecture/maps-and-world-content.md)维护；
 旧地图和正式地图的首次缓存加载诊断从[光照指南](guides/gpu-lighting.md#固定光照烘焙与对照)进入。
 

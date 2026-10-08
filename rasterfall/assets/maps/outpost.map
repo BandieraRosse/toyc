@@ -1,6 +1,6 @@
 # Outpost. RFU = metres * 512; B1, 1F, 2F, accessible roof, north stairs.
 map version=1 units=rfu
-world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640 attr.identity=outpost
+world min_x=-54272 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640 attr.identity=outpost
 region id=player_start kind=start min_x=0 max_x=0 min_z=-4900 max_z=-4900 attr.sy=0 attr.cy=1024
 surface id=entry_apron kind=ground min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 material=49565F attr.collision_id=entry_apron_col
 collision id=entry_apron_col shape=flat min_x=-4608 max_x=4608 min_z=-5632 max_z=-4096 height=0 collision=false visible=true walkable=true color=49565F
@@ -478,6 +478,16 @@ surface id=experiment_support_performance kind=ground min_x=-11264 max_x=11264 m
 collision id=experiment_support_entry_col shape=flat min_x=-5120 max_x=5120 min_z=-14848 max_z=-5632 height=0 collision=false visible=false walkable=true
 surface id=experiment_support_entry kind=ground min_x=-5120 max_x=5120 min_z=-14848 max_z=-5632 height=0 attr.collision_id=experiment_support_entry_col
 # END DYNAMIC EXPERIMENT CAMPUS
+# BEGIN GRID GAMEPLAY LAB
+region id=grid_lab_area kind=experiment min_x=-53760 max_x=-20992 min_z=-47616 max_z=-14848 attr.cell_size=512
+collision id=grid_lab_col shape=flat min_x=-53760 max_x=-20992 min_z=-47616 max_z=-14848 height=0 collision=false visible=false walkable=true
+surface id=grid_lab kind=ground min_x=-53760 max_x=-20992 min_z=-47616 max_z=-14848 height=0 attr.collision_id=grid_lab_col
+render id=grid_lab_floor kind=floor min_x=-53760 max_x=-20992 min_z=-47616 max_z=-14848 height=0 color=536570 attr.style=13
+collision id=grid_lab_join_col shape=flat min_x=-22016 max_x=-19968 min_z=-24064 max_z=-15872 height=0 collision=false visible=false walkable=true
+surface id=grid_lab_join kind=ground min_x=-22016 max_x=-19968 min_z=-24064 max_z=-15872 height=0 attr.collision_id=grid_lab_join_col
+object id=grid_lab_terminal kind=facility_terminal x=-37120 y=0 z=-30976 yaw=0 scale=1000 attr.collision=component
+render id=grid_lab_title kind=sign min_x=-38820 max_x=-35420 min_z=-31626 max_z=-31606 height=700 attr.height2=1100 color=79E8C5 attr.style=2 attr.text=GRID_LAB_/_1m attr.projection_beams=0
+# END GRID GAMEPLAY LAB
 # BEGIN OUTPOST STOREYS
 # Signed heights are relative to the existing outdoor ground.
 region id=outpost_bounds kind=area min_x=-41216 max_x=41216 min_z=-41472 max_z=19533

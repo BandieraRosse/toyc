@@ -1663,7 +1663,10 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     probe->shared_actor_first=draws;
     if(probe->shared_parent) {
         const struct rf_gpu_scene_world_gpu_probe *parent=probe->shared_parent;
-        if(parent->shared_actor_count>capacity-draws)goto done;
+        if(parent->shared_actor_count>capacity-draws) {
+            fprintf(stderr,"SCENE actors failed reason=shared-capacity parent-count=%u draws=%u capacity=%u\n",parent->shared_actor_count,draws,capacity);
+            goto done;
+        }
         for(unsigned i=0;i<parent->shared_actor_count;++i) {
             struct rf_gpu_graphics_batch_item *item=&items[draws++];
             *item=parent->batch[parent->shared_actor_first+i];
@@ -1671,16 +1674,28 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
             d->camera[0]=camera->x;d->camera[1]=camera->y;d->camera[2]=camera->z;
             d->view[0]=camera->sy;d->view[1]=camera->cy;d->view[2]=camera->pitch_sy;d->view[3]=camera->pitch_cy;
             d->projection[0]=width;d->projection[1]=height;d->projection[3]=width*3/4;
-            if(rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0)goto done;
+            if(rf_gpu_graphics_resource_bind(probe->graphics,item->resource)<0) {
+                fprintf(stderr,"SCENE actors failed reason=shared-bind draw=%u resource=%p parent-first=%u parent-count=%u\n",i,(void *)item->resource,parent->shared_actor_first,parent->shared_actor_count);
+                goto done;
+            }
         }
         actor_draws=parent->shared_actor_count;
     }
-    if (skin_batch && rf_gpu_graphics_skin_batch_begin(probe->graphics)<0) goto done;
+    if (skin_batch && rf_gpu_graphics_skin_batch_begin(probe->graphics)<0) {
+        fprintf(stderr,"SCENE actors failed reason=skin-batch-begin shared=%d poses=%u\n",probe->shared_parent!=NULL,pose_count);
+        goto done;
+    }
     for(uint32_t i=0;!probe->shared_parent && i<pose_count;++i) {
         uint32_t count=0;
         rf_gpu_scene_actor_gpu_set_quiet(probe->actor[i],probe->quiet);
         if (rf_gpu_scene_actor_gpu_prepare(probe->actor[i],&poses[i],camera,width,height,
-                items+draws,capacity-draws,&count)<0) goto done;
+                items+draws,capacity-draws,&count)<0) {
+            fprintf(stderr,"SCENE actors failed reason=actor-prepare ordinal=%u identity=%u:%u:%u character=%d body=%u weapon=%d bones=%u position=(%.3f,%.3f,%.3f) draws=%u capacity=%u camera=(%d,%d,%d)\n",
+                i,poses[i].identity.source,poses[i].identity.source_id,poses[i].identity.generation,
+                poses[i].character_id,poses[i].body_resource_id,poses[i].weapon,poses[i].bone_count,
+                (double)poses[i].body_to_world.translation[0],(double)poses[i].body_to_world.translation[1],(double)poses[i].body_to_world.translation[2],draws,capacity,camera->x,camera->y,camera->z);
+            goto done;
+        }
         actor_prepared++;
         draws+=count;actor_draws+=count;
     }

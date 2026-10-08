@@ -3,6 +3,8 @@
 #include <direct.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
+#include <io.h>
 
 int main(int argc, char **argv);
 void toy_windows_log(const char *message);
@@ -44,6 +46,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_line,
             }
         }
     }
+    /* Explorer launches have no stderr destination. Preserve redirected
+     * pipes for the native test runner, otherwise retain renderer failures. */
+    {
+        intptr_t handle = _get_osfhandle(_fileno(stderr));
+        if (handle == -1 || handle == -2) {
+            if (freopen("rasterfall.log", "ab", stderr))
+                setvbuf(stderr, NULL, _IONBF, 0);
+        }
+    }
     wide_argv = CommandLineToArgvW(GetCommandLineW(), &wide_argc);
     if (!wide_argv) return 1;
     utf8_argv = (char **)calloc((size_t)wide_argc + 1, sizeof(*utf8_argv));
@@ -59,6 +70,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, LPWSTR command_line,
         }
     }
     result = main(wide_argc, utf8_argv);
+    {
+        char line[64];
+        wsprintfA(line, "process exit: status=%d", result);
+        toy_windows_log(line);
+    }
     for (i = 0; i < wide_argc; i++) free(utf8_argv[i]);
     free(utf8_argv);
     LocalFree(wide_argv);

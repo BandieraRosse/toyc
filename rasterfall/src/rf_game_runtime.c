@@ -4312,6 +4312,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                !strcmp(options.gpu_normal_view,"character-lab") ||
                !strcmp(options.gpu_normal_view,"walk-lab") ||
                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+               !strncmp(options.gpu_normal_view,"grid-",5) ||
                !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
                !strcmp(options.gpu_normal_view,"weapon-cycle-lab") ||
                !strcmp(options.gpu_normal_view,"mesh-weaver") ||
@@ -4412,6 +4413,12 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         } else if (!strcmp(options.gpu_normal_view, "walk-lab")) {
             rf_lab_camera_position(&session,&camera,"walk_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_INFECTED_WALK]=1;
+        } else if (!strncmp(options.gpu_normal_view,"grid-",5)) {
+            rf_grid_camera(&session,&camera);
+            if(!strcmp(options.gpu_normal_view,"grid-menu")) {
+                rf_exp_ui.open=1;rf_exp_ui.category=5;rf_exp_ui.session=&session;
+                rf_exp_ui.message[0]=0;rf_exp_ui.hover=-1;
+            }
         } else if (!strcmp(options.gpu_normal_view, "actor-actions-lab")) {
             rf_lab_camera_position(&session,&camera,"actor_actions_lab_area",0,9956);camera.cy=-1024;
             rf_labs.requested[RF_LAB_ACTOR_ACTIONS]=1;
@@ -4565,6 +4572,16 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         local_actor->z = camera.z;
         local_actor->sy = camera.sy;
         local_actor->cy = camera.cy;
+        if(!strcmp(options.gpu_normal_view,"grid-combat")) {
+            const struct rf_map_runtime_region *area=rf_map_runtime_find_region(&session.map_ops.runtime,"grid_lab_area");
+            if(area) {
+                local_actor->x=(area->bounds.min_x+area->bounds.max_x)/2;
+                local_actor->z=(area->bounds.min_z+area->bounds.max_z)/2-2000;
+                if(!getenv("RF_GRID_COMBAT_MORTAL"))local_actor->hp=local_actor->max_hp=1000000;
+                camera.x=local_actor->x;camera.z=local_actor->z;
+                camera.sy=0;camera.cy=1024;camera.pitch_sy=0;camera.pitch_cy=1024;
+            }
+        }
         if(!strncmp(options.gpu_normal_view,"outpost-light-",14) ||
            !strncmp(options.gpu_normal_view,"frontier-stairs",15)) {
             local_actor->ground_y=camera.y-RASTERFALL_STANDING_CAMERA_Y;
@@ -5912,10 +5929,11 @@ startup_again:
             input.key_pressed[KEY_E]=0;
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             int lab=rf_showcase_near-1;
-            if(rf_exp_character_lab(lab) || lab==RF_LAB_LIGHTING || lab==RF_LAB_ELECTRONICS) {
+            if(rf_exp_character_lab(lab) || lab==RF_LAB_LIGHTING || lab==RF_LAB_ELECTRONICS || lab==RF_LAB_GRID) {
                 rf_exp_ui.open=1;rf_exp_ui.dropdown=-1;rf_exp_ui.hover=-1;
                 rf_exp_ui.session=&session;
-                rf_exp_ui.category=lab==RF_LAB_LIGHTING?1:lab==RF_LAB_ELECTRONICS?2:0;
+                rf_exp_ui.category=lab==RF_LAB_GRID?5:lab==RF_LAB_LIGHTING?1:lab==RF_LAB_ELECTRONICS?2:0;
+                rf_exp_ui.message[0]=0;
                 rf_exp_ui.preset=lab==RF_LAB_MODEL?4:lab==RF_LAB_WEAPON_CYCLE?3:lab==RF_LAB_RIFLE_CYCLE?2:1;
                 if(rf_exp_ui.category)rf_exp_ui.preset=0;
                 rf_exp_ui.animation=lab==RF_LAB_ACTOR_WALK?1:0;
@@ -6300,6 +6318,22 @@ startup_again:
                     }
                     if (game_runtime.rts_active || rf_weaver_terminal.open)
                         memset(&command, 0, sizeof(command));
+                    if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"grid-combat") &&
+                       getenv("RF_GRID_COMBAT_EXIT") && !rf_exp_ui.open &&
+                       rendered_frames>=600 && rendered_frames<2400) {
+                        const struct rf_map_runtime_region *area=rf_map_runtime_find_region(&session.map_ops.runtime,"grid_lab_area");
+                        if(area) {
+                            /* Leave by the supported northeast road connection. */
+                            int bypass=camera.z<area->bounds.max_z-6000 &&
+                                camera.x<(area->bounds.min_x+area->bounds.max_x)/2+1500;
+                            int north=!bypass && camera.z<area->bounds.max_z-6000;
+                            int east=bypass || (!north && camera.x<area->bounds.max_x+512);
+                            if(north || east) {
+                                camera.sy=east?1024:0;camera.cy=north?1024:0;
+                                command.move_forward=1;command.move_strafe=0;command.turn=0;
+                            }
+                        }
+                    }
                     capture_jump_vector(&command, &camera);
                     game_runtime.camera = camera;
                     game_runtime.lifecycle_paused = paused;
@@ -6543,7 +6577,35 @@ startup_again:
             }
             rasterfall_perf_end_stage(&stats, &stats_total, RASTERFALL_STATS_BEGIN,
                            &t_stage, 0, 0);
+            if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"grid-combat") && rendered_frames==120) {
+                if(getenv("RF_GRID_COMBAT_TERMINAL")) {
+                    rf_exp_ui.open=1;rf_exp_ui.category=5;rf_exp_ui.session=&session;
+                    rf_exp_ui.message[0]=0;rf_exp_ui.hover=-1;
+                    __printf("GRID-COMBAT terminal-ready frame=%d\n",rendered_frames);
+                } else {
+                    int made=rasterfall_grid_spawn(&session,RF_GRID_GUNNER_SMG,4,0);
+                    __printf("GRID-COMBAT spawned=%d frame=%d\n",made,rendered_frames);
+                }
+            }
+            if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"grid-combat") &&
+               (!getenv("RF_GRID_COMBAT_EXIT") || rendered_frames<600 || rendered_frames>=2400))
+                rasterfall_camera_rotate(&camera,37,0);
             game_runtime.camera = camera;
+            if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"grid-combat") &&
+               !(rendered_frames%300)) {
+                const struct toy_game_actor *p=toy_game_local_player_actor_const(&game);
+                __printf("GRID-COMBAT frame=%d time_ms=%d player_hp=%d state=%d pos=(%d,%d) ground=%d airborne=%d\n",rendered_frames,game.combat_time_ms,p->hp,p->state,p->x,p->z,p->ground_y,p->airborne_y);
+                for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+                    const struct toy_game_actor *a=&game.actors[i];
+                    if(a->active && a->faction==TOY_GAME_FACTION_HOSTILE)
+                        __printf("GRID-COMBAT actor=%d hp=%d state=%d shots=%d reload=%d anim=%d time=%d pos=(%d,%d) ground=%d airborne=%d\n",
+                            a->actor_id,a->hp,a->state,a->fire_seq,a->reloading,a->animation.id,a->animation.time_ms,a->x,a->z,a->ground_y,a->airborne_y);
+                }
+            }
+            if(options.gpu_normal_view && !strncmp(options.gpu_normal_view,"grid-",5) &&
+               strcmp(options.gpu_normal_view,"grid-combat") &&
+               (options.gpu_frame_capture || options.gpu_normal_fixed_tick))
+                rf_grid_camera(&session,&game_runtime.camera);
             if(options.gpu_normal_view && !strcmp(options.gpu_normal_view,"mesh-weaver") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick || rf_weaver_performance.mode))
                 rf_weaver_camera(&session,&game_runtime.camera);
@@ -7011,6 +7073,7 @@ startup_again:
                               (!strcmp(options.gpu_normal_view,"character-lab") ||
                                !strcmp(options.gpu_normal_view,"walk-lab") ||
                                !strcmp(options.gpu_normal_view,"actor-actions-lab") ||
+                               (!strncmp(options.gpu_normal_view,"grid-",5) && strcmp(options.gpu_normal_view,"grid-combat")) ||
                                !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ||
                                !strcmp(options.gpu_normal_view,"weapon-cycle-lab") ||
                                (!strcmp(options.gpu_normal_view,"mesh-weaver") &&

@@ -100,6 +100,7 @@ static void rf_exp_diagnostic(struct rasterfall_session *s,const char *view)
     if(!view || s->world_id!=RASTERFALL_WORLD_OUTPOST)return;
     int all=getenv("RF_LABS_ALL") && getenv("RF_LABS_ALL")[0]=='1';
     for(int i=0;i<RF_LAB_COUNT;++i)if(rf_labs.requested[i] || (all && i==RF_LAB_LIGHTING)) {
+        if(i==RF_LAB_GRID)continue;
         rf_exp_ui.category=i==RF_LAB_LIGHTING?1:i==RF_LAB_ELECTRONICS?2:0;
         rf_exp_ui.preset=rf_exp_ui.category?0:i==RF_LAB_MODEL?4:i==RF_LAB_WEAPON_CYCLE?3:
             i==RF_LAB_RIFLE_CYCLE?2:i==RF_LAB_IDLE_RIFLE?6:(i==RF_LAB_INFECTED_POSES || i==RF_LAB_INFECTED_WALK)?5:1;
@@ -147,6 +148,7 @@ static int rf_exp_hit(int w,int h,int px,int py)
     }
     return -1;
 }
+#include "rf_grid_terminal.inc"
 static int rf_exp_input(struct rf_game_runtime *r,int w,int h,int px,int py,int click,int cancel,
                         const struct toy_window_events *events)
 {
@@ -154,6 +156,7 @@ static int rf_exp_input(struct rf_game_runtime *r,int w,int h,int px,int py,int 
     if(rf_exp_ui.session!=r->session || r->session->world_id!=RASTERFALL_WORLD_OUTPOST) {
         rf_exp_ui.open=0;return 1;
     }
+    if(rf_exp_ui.category==5)return rf_grid_input(r,w,h,px,py,click,cancel);
     rf_exp_ui.px=px;rf_exp_ui.py=py;
     if(cancel) {
         if(rf_exp_ui.edit){strcpy(rf_exp_ui.time,rf_exp_ui.before);rf_exp_ui.edit=0;}
@@ -213,6 +216,7 @@ static int rf_exp_input(struct rf_game_runtime *r,int w,int h,int px,int py,int 
 }
 static void rf_exp_draw(struct rasterfall_canvas *c,const struct rf_game_runtime *r)
 {
+    if(rf_exp_ui.category==5){rf_grid_draw(c,r);return;}
     int x,y,pw,ph;rf_exp_panel(c->width,c->height,&x,&y,&pw,&ph);
     int fw=(pw-72)/2;char line[160];
     const struct rf_experiment_group *group=r->session->experiments && rf_exp_ui.category<3?&r->session->experiments->groups[rf_exp_ui.category]:NULL;

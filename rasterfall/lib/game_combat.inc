@@ -48,13 +48,6 @@ void toy_game_actor_capabilities(const struct toy_game_actor *actor, int weapon,
     out->turn_degrees = turn[pi];
     out->aim_ms = aim[pi];
     out->weakpoint_percent = 150 + pi * 5;
-    if (weapon == TOY_GAME_WEAPON_AK || weapon == TOY_GAME_WEAPON_SMG) {
-        out->fire_interval_percent = out->reload_percent = out->spread_percent = 100;
-        out->heat_percent = 0;
-        out->turn_degrees = 360;
-        out->aim_ms = weapon == TOY_GAME_WEAPON_AK ? 240 : 120;
-        out->weakpoint_percent = 150;
-    }
     out->evasion_capacity = actor && actor->base_core ? 0 : evasion[ei];
     out->evasion_per_second = actor && actor->base_core ? 0 : recovery[ei];
 }

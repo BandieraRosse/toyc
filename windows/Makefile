@@ -227,6 +227,7 @@ $(TARGET): $(OBJS) | $(BUILD)
 # Included gameplay/test units must invalidate their owning translation unit.
 $(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc rasterfall/lib/game_gameplay_config.inc rasterfall/include/toy_gameplay_fields.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_squad_test.inc
+$(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_grid_terminal.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_corner_test.inc
 $(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_unit_collision.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_unit_collision_test.inc

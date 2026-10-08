@@ -2,7 +2,10 @@
 #define RASTERFALL_EXPERIMENT_H
 #include "rasterfall_map_runtime.h"
 
-#define RF_EXPERIMENT_GROUPS 4
+#define RF_EXPERIMENT_GROUPS 5
+#define RF_EXPERIMENT_GRID_GROUP 4
+#define RF_GRID_GUNNER_RIFLE 6
+#define RF_GRID_GUNNER_SMG 7
 #define RF_EXPERIMENT_ACTORS 24
 struct rasterfall_session;
 struct rf_experiment_actor_spec {
@@ -29,4 +32,10 @@ int rasterfall_experiment_replace(struct rasterfall_session *session, int group,
     const struct rf_experiment_actor_spec *actors, int count, const char *map_path);
 int rasterfall_experiment_pause(struct rasterfall_session *session, int group, int paused);
 void rasterfall_experiment_dispose(struct rasterfall_session *session, int restore_base);
+/* Type is an infection enum or RF_GRID_GUNNER_*. Append at free perimeter
+ * cell centres. side: 0 all, 1 N, 2 E,
+ * 3 S, 4 W. Returns the actual number created, or -1 for invalid requests. */
+int rasterfall_grid_spawn(struct rasterfall_session *session, int type, int count, int side);
+int rasterfall_grid_alive(const struct rasterfall_session *session);
+void rasterfall_grid_tick(struct rasterfall_session *session, int dt_ms);
 #endif

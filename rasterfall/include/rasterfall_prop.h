@@ -153,7 +153,7 @@ int rasterfall_host_activity(const struct rasterfall_prop_instance *instance,
     unsigned time_ms, rasterfall_host_quad_fn emit, void *context);
 /* RF product presentation groups: positive IDs follow lab registry order; 0 is unpowered.
  * Runtime integrates phase; both renderers only consume this frame value. */
-#define RASTERFALL_ELECTRONICS_GROUPS 11
+#define RASTERFALL_ELECTRONICS_GROUPS 12
 struct rasterfall_electronics_frame {
     unsigned phase[RASTERFALL_ELECTRONICS_GROUPS]; /* RPM * microseconds mod 60M */
     unsigned time_ms[RASTERFALL_ELECTRONICS_GROUPS];

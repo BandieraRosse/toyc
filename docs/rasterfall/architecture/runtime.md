@@ -28,6 +28,11 @@ GPU 的当前验收与生命周期门槛见 [GPU 验收与诊断](../guides/gpu-
 地图片段提交使用新 Scene world generation，使旧绘制与阴影资源进入既有退休路径。session reset/unload 负责清空组，
 UI 只拥有待应用配置、下拉和输入状态。合同与场地映射见[动态实验场](../reference/experiment-labs.md)。
 
+网格场使用独立实验组保存终端召唤的 actor/enemy 身份。`rf_grid_terminal.inc` 仅提交类型、
+数量和边缘选择；`rf_experiment_session.inc` 检查真实支撑、身体净空与容量后创建普通实体。
+session 固定步低频更新敌方枪手向玩家格中心的 assault 意图，Game 推进路径、碰撞、瞄准和战斗。
+地板一米格是固定内容尺度，不依赖导航网格自动粗化，也不强制玩家或交战中的身体吸附格中心。
+
 `src/rasterfall.c` 是可执行程序入口，负责命令行解析并组装 `rf_game_config`；
 `src/rf_game_runtime.c` 负责 Game facade 的运行调度，Core Host 由 `rf_core_config` 接收启动参数。
 `struct rf_game_runtime` 集中拥有

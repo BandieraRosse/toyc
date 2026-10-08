@@ -57,7 +57,9 @@ static void test_ballistics(void)
     int spread=toy_game_actor_current_spread(source);
     source->moving=1;source->weapon_spread_heat=100;source->evasion.animation_ms=500;
     memset(&source->skills,3,sizeof(source->skills));
-    CHECK(toy_game_actor_current_spread(source)==spread,"rifle spread is fixed across motion, heat and skills");
+    CHECK(toy_game_actor_current_spread(source)>spread,"rifle movement and sustained fire increase spread");
+    source->moving=0;source->weapon_spread_heat=0;
+    CHECK(toy_game_actor_current_spread(source)<spread,"precision mastery improves settled rifle spread");
     /* Cadence carries fixed-step overshoot; no reload hides the result. */
     memset(g->bullets,0,sizeof(g->bullets));source->slots[source->current_slot].mag=100;
     source->slots[source->current_slot].reserve=0;source->fire_cooldown_ms=0;
@@ -72,6 +74,11 @@ static void test_ballistics(void)
         toy_game_actor_fire(g,source,0,1024,0);}
     CHECK(!g->bullets[0].active && g->shot_serial==serial,
         "client prediction and replay cannot consume authoritative flight slots or publish hits");
+    g->defer_actor_damage=0;target->z=toy_game_weapon_info(TOY_GAME_WEAPON_AK)->range+1000;
+    source->fire_cooldown_ms=0;source->pitch_sy=0;
+    hp=target->hp;toy_game_actor_fire(g,source,0,1024,0);
+    toy_game_update_bullets(g,1000);
+    CHECK(target->hp==hp && !g->bullets[0].active,"rifle flight stops at its finite maximum range");
     free(g);
 }
 

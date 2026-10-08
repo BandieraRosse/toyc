@@ -4289,6 +4289,21 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                 floor_split_add(zs, &z_count, draw->d, base_z, tile_max_z);
                 /* Purpose-specific paving remains part of the same plane.
                  * Split only tiles touched by an authored paving finish. */
+                if (draw->type == TOY_MAP_DRAW_FLOOR && draw->style == 13) {
+                    int cell = RASTERFALL_GRID_CELL_RFU;
+                    int gx = draw->a + (base_x > draw->a ? (base_x-draw->a)/cell : 0)*cell;
+                    int gz = draw->c + (base_z > draw->c ? (base_z-draw->c)/cell : 0)*cell;
+                    for (; gx < tile_max_x && gx < draw->b; gx += cell) {
+                        floor_split_add(xs,&x_count,gx,base_x,tile_max_x);
+                        floor_split_add(xs,&x_count,gx+8,base_x,tile_max_x);
+                    }
+                    for (; gz < tile_max_z && gz < draw->d; gz += cell) {
+                        floor_split_add(zs,&z_count,gz,base_z,tile_max_z);
+                        floor_split_add(zs,&z_count,gz+8,base_z,tile_max_z);
+                    }
+                    floor_split_add(xs,&x_count,draw->b-8,base_x,tile_max_x);
+                    floor_split_add(zs,&z_count,draw->d-8,base_z,tile_max_z);
+                }
                 if (draw->type == TOY_MAP_DRAW_FLOOR &&
                     draw->style >= 10 && draw->style <= 12) {
                     int inset = draw->style == 10 ? 48 : 24;
@@ -4359,6 +4374,14 @@ static int draw_partitioned_floor(struct toy_renderer *renderer,
                                 draw->style == TOY_MAP_FLOOR_GROUND) continue;
                             if (floor_draw_contains(draw, center_x, center_z)) {
                                 color = draw->color;
+                                if (draw->type == TOY_MAP_DRAW_FLOOR && draw->style == 13) {
+                                    int cell=RASTERFALL_GRID_CELL_RFU;
+                                    int dx=center_x-draw->a,dz=center_z-draw->c;
+                                    int edge=dx%cell<8 || dz%cell<8 ||
+                                        center_x>=draw->b-8 || center_z>=draw->d-8;
+                                    if (edge) color=0x91B5BA;
+                                    else if (((dx/cell)+(dz/cell))&1) color=0x4B5D67;
+                                }
                                 if (draw->type == TOY_MAP_DRAW_FLOOR &&
                                     draw->style >= 10 && draw->style <= 12) {
                                     int inset = draw->style == 10 ? 48 : 24;

@@ -2150,6 +2150,7 @@ $(BUILD)/rasterfall_hud.o $(BUILD)/rasterfall_hud_self.o $(BUILD)/rasterfall_sky
 $(APP_EXTRA_OBJS_rasterfall) $(SELF_APP_EXTRA_OBJS_rasterfall) $(BUILD)/rasterfall.o $(BUILD)/rasterfall_self.o: $(RASTERFALL_INC)/toy_map.h
 $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_SRC)/render/rasterfall_lab_terminal.h
 $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/dev-tests/rf_experiment_lab_test.inc
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/rf_grid_terminal.inc
 
 $(BUILD)/rf_gpu_scene_%.o: rasterfall/src/rf_gpu_scene_%.c | $(BUILD)
 	$(GCC) $(LIBC_CFLAGS) -I $(RASTERFALL_INC) -c $< -o $@

@@ -2,6 +2,15 @@
 
 ## 动态角色与设备实验
 
+网格交战诊断使用 `--gpu-normal-scene grid-combat 0`：第 120 帧通过 session 生成四名
+SMG 枪手，保留第一人称武器并旋转观察。`RF_GRID_COMBAT_EXIT=1` 增加正常移动命令，
+从网格中央沿东北连接道路出场，停止后继续旋转；建议配合 `--gpu-normal-fixed-tick --frames 5400`。
+`RF_GRID_COMBAT_TERMINAL=1` 改为打开真实终端，需点击类型、数量和召唤，再关闭面板；
+它不自动创建枪手。默认提高玩家生命以观察持续交战，`RF_GRID_COMBAT_MORTAL=1` 保留正常生命。
+这些入口控制起点、移动和镜头，不能当作完整手动游玩签收。失败时 stderr 的 `SCENE actors failed`
+记录具体分支和角色身份，`SCENE-ACTOR pack` 记录数值校验原因；普通 Windows 启动追加到
+运行目录的 `rasterfall.log`，再次运行或暂存前先备份现场。
+
 前哨站现使用[动态实验组](../reference/experiment-labs.md)。普通入口为空场，靠近场地终端按 E，
 选择模型组合与动作后创建；终端支持替换、暂停、重建和销毁。旧模型区、装备区、三模型区、
 五枪区和真实 AI 区合并到同一角色实验场，不再通过显示开关保存常驻展示实例。

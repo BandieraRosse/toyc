@@ -342,9 +342,21 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
         if (object) {
             out->palette_count=skinned ? pose->bone_count*15 : 15;
             if (scene_backing_reserve(out,m->index_count,out->palette_count,1)<0) return -1;
-            if (!m->position_scale || transform->scale_milli<1 || transform->scale_milli>8000) return -1;
-            for(int k=0;k<9;++k) if (!__builtin_isfinite(transform->rotation[k]) || fabs(transform->rotation[k])>1.01) return -1;
-            for(int k=0;k<3;++k) if (!__builtin_isfinite(transform->translation[k]) || fabs(transform->translation[k])>262144) return -1;
+            if (!m->position_scale || transform->scale_milli<1 || transform->scale_milli>8000) {
+                fprintf(stderr,"SCENE-ACTOR pack scale object=%u model-scale=%u transform-scale=%d\n",object,m->position_scale,transform->scale_milli);
+                return -1;
+            }
+            for(int k=0;k<9;++k) if (!__builtin_isfinite(transform->rotation[k]) || fabs(transform->rotation[k])>1.01) {
+                fprintf(stderr,"SCENE-ACTOR pack rotation object=%u axis=%d value=%.9g\n",object,k,(double)transform->rotation[k]);
+                fprintf(stderr,"SCENE-ACTOR body-yaw=(%.9g,%.9g) rigid-rows=(%.9g,%.9g,%.9g;%.9g,%.9g,%.9g;%.9g,%.9g,%.9g)\n",
+                    pose->body_to_world.rotation[2],pose->body_to_world.rotation[0],
+                    transform->rotation[0],transform->rotation[1],transform->rotation[2],transform->rotation[3],transform->rotation[4],transform->rotation[5],transform->rotation[6],transform->rotation[7],transform->rotation[8]);
+                return -1;
+            }
+            for(int k=0;k<3;++k) if (!__builtin_isfinite(transform->translation[k]) || fabs(transform->translation[k])>262144) {
+                fprintf(stderr,"SCENE-ACTOR pack transform-range object=%u axis=%d value=%.9g\n",object,k,(double)transform->translation[k]);
+                return -1;
+            }
             /* Clothing consumes the exact validated body palette. Pack once,
              * without repeating per-bone conversion and range checks. */
             if(clothing_object)memcpy(out->palette,slot->mesh[1].palette,(size_t)out->palette_count*4);
@@ -356,12 +368,18 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                         (weapon_object ? transform->scale_milli/1000.0 :
                         (((int64_t)RASTERFALL_RFU_PER_METER*transform->scale_milli+
                             m->position_scale/2)/m->position_scale)/1000.0);
-                    if (!__builtin_isfinite(v) || fabs(v)>8) return -1;
+                    if (!__builtin_isfinite(v) || fabs(v)>8) {
+                        fprintf(stderr,"SCENE-ACTOR pack palette-rotation object=%u bone=%u axis=%d value=%.9g\n",object,bone,k,v);
+                        return -1;
+                    }
                     dst[k]=scene_float(v);
                 }
                 for(int k=0;k<3;++k) {
                     double v=skinned ? p->position[k] : transform->translation[k];
-                    if (!__builtin_isfinite(v) || fabs(v)>262144) return -1;
+                    if (!__builtin_isfinite(v) || fabs(v)>262144) {
+                        fprintf(stderr,"SCENE-ACTOR pack palette-position object=%u bone=%u axis=%d value=%.9g\n",object,bone,k,v);
+                        return -1;
+                    }
                     dst[9+k]=scene_float(v); dst[12+k]=skinned ? (uint32_t)p->rest[k] : 0;
                 }
             }
@@ -420,7 +438,10 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
             d->translation_scale[3]=1000; d->rotation[1]=1024;
             if (skinned) {
                 /* Frozen actor has yaw only; rigid gear consumes full matrix in compute. */
-                if (fabs(transform->rotation[1])+fabs(transform->rotation[3])+fabs(transform->rotation[5])+fabs(transform->rotation[7])>0.00001 || fabs(transform->rotation[4]-1)>0.00001) return -1;
+                if (fabs(transform->rotation[1])+fabs(transform->rotation[3])+fabs(transform->rotation[5])+fabs(transform->rotation[7])>0.00001 || fabs(transform->rotation[4]-1)>0.00001) {
+                    fprintf(stderr,"SCENE-ACTOR pack non-yaw object=%u rotation=(%.9g,%.9g,%.9g,%.9g,%.9g)\n",object,(double)transform->rotation[1],(double)transform->rotation[3],(double)transform->rotation[4],(double)transform->rotation[5],(double)transform->rotation[7]);
+                    return -1;
+                }
                 for(int k=0;k<3;++k) d->translation_scale[k]=(int)scene_round(transform->translation[k]);
                 d->translation_scale[3]=transform->scale_milli;
                 d->rotation[0]=(int)scene_round(transform->rotation[2]*1024);
@@ -579,7 +600,10 @@ static int scene_prepare(struct scene_slot *slot,struct rf_gpu_graphics *g,
             struct rf_gpu_graphics_resource **gpu=&m->chunks[c];
             int uploaded=rf_gpu_character_upload(g,gpu,count,m->indices,
                 m->bind+base*22,!reuse_bind,m->palette,m->palette_count);
-            if(uploaded<0)return -1;
+            if(uploaded<0) {
+                fprintf(stderr,"SCENE-ACTOR upload failed object=%u chunk=%u resource=%p handle=%u:%u vertices=%u palette=%u reuse-bind=%d\n",i,c,(void *)*gpu,m->handle.slot,m->handle.generation,count,m->palette_count,reuse_bind);
+                return -1;
+            }
             if(uploaded)m->texture_bound[c]=0;
             if (!*gpu) return -1;
             }
@@ -624,15 +648,19 @@ int rf_gpu_scene_actor_gpu_prepare(struct rf_gpu_scene_actor_gpu *actor,
 {
     int64_t t0,t1,t2,t3;
     if (!actor || !pose || !camera || !items || !count || actor->frame_active ||
-        !width || !height || width>INT_MAX || height>INT_MAX) return -1;
+        !width || !height || width>INT_MAX || height>INT_MAX) {
+        fprintf(stderr,"SCENE-ACTOR invalid prepare active=%d size=%ux%u\n",actor?actor->frame_active:-1,width,height);
+        return -1;
+    }
     *count=0;
     t0=rf_core_clock_now_us();
-    if (scene_load(&actor->slot,pose,0)<0) {__printf("SCENE-ACTOR load failed character=%d\n",pose->character_id);return -1;}
+    if (scene_load(&actor->slot,pose,0)<0) {fprintf(stderr,"SCENE-ACTOR load failed character=%d\n",pose->character_id);return -1;}
     t1=rf_core_clock_now_us();
     if (scene_pack(&actor->slot,pose,camera,(int)width,(int)height,0)<0 ||
-        actor->slot.draw_count>capacity) {__printf("SCENE-ACTOR pack failed character=%d\n",pose->character_id);return -1;}
+        actor->slot.draw_count>capacity) {fprintf(stderr,"SCENE-ACTOR pack failed character=%d draws=%u capacity=%u\n",pose->character_id,actor->slot.draw_count,capacity);return -1;}
     t2=rf_core_clock_now_us();
     if (scene_prepare(&actor->slot,actor->graphics,0)<0) {
+        fprintf(stderr,"SCENE-ACTOR resource prepare failed character=%d meshes=%u draws=%u\n",pose->character_id,actor->slot.mesh_count,actor->slot.draw_count);
         scene_bind_cache_invalidate(&actor->slot);
         rasterfall_resources_frame_complete(&actor->slot.registry);
         actor->slot.pinned=0;

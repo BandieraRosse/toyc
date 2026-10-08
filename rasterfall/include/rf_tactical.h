@@ -5,7 +5,7 @@
 
 /* Game owns actor simulation; observations are disposable read-only
  * projections. Solvers receive no world pointer and do not own navigation. */
-#define RF_TAC_VERSION 5
+#define RF_TAC_VERSION 6
 #define RF_TAC_MAX_SQUAD 6
 #define RF_TAC_MAX_UNITS 12
 #define RF_TAC_MAX_NODES 2304

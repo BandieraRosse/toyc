@@ -2772,6 +2772,7 @@ void rasterfall_session_step(struct rasterfall_session *session,
         }
     }
     /* World simulation is separate from the local actor's weapon step. */
+    rasterfall_grid_tick(session,dt_ms);
     toy_game_update_world(&session->game_state, dt_ms);
     rasterfall_session_weaver_sync(session);
     {

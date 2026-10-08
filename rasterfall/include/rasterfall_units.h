@@ -7,6 +7,7 @@
  * GLB, animation translations) must be converted at the presentation edge;
  * they are never implicitly treated as RFU. */
 #define RASTERFALL_RFU_PER_METER 512
+#define RASTERFALL_GRID_CELL_RFU RASTERFALL_RFU_PER_METER
 #define RASTERFALL_RFU_FROM_MM(mm) ((mm) * RASTERFALL_RFU_PER_METER / 1000)
 #define RASTERFALL_RFU_FROM_CM(cm) ((cm) * RASTERFALL_RFU_PER_METER / 100)
 

@@ -2714,6 +2714,14 @@ static int ai_turn_toward(struct toy_game_actor *a, int dx, int dz,
     int target_x, target_z, angle, step, radians, radians2;
     int sin_step, cos_step, next_x, next_z;
     if (!a || dist <= 0) return 0;
+    /* Preserve sub-RFU length precision for short movement deltas. Dividing
+     * (30,-19) by floor(sqrt(1261)) otherwise yields (877,-555), whose
+     * length exceeds 1024 and stretches every attached rigid transform.
+     * The bound keeps both the scaled coordinates and squared length safe. */
+    if (dist < 1024) {
+        dx *= 1024; dz *= 1024;
+        dist = isqrt(dist2 * 1048576LL);
+    }
     target_x = (int)((long long)dx * 1024 / dist);
     target_z = (int)((long long)dz * 1024 / dist);
     if (a->sy == 0 && a->cy == 0) {
@@ -6439,8 +6447,6 @@ int toy_game_actor_current_spread(const struct toy_game_actor *actor)
     slot = &actor->slots[actor->current_slot];
     weapon = toy_game_weapon_info_or_null(slot->weapon);
     if (!weapon) return 0;
-    if (slot->weapon == TOY_GAME_WEAPON_AK || slot->weapon == TOY_GAME_WEAPON_SMG)
-        return weapon->spread;
     toy_game_actor_capabilities(actor, slot->weapon, &caps);
     spread = weapon->spread * (actor->moving ? TOY_CONFIG_SPREAD_MOVE_PERCENT :
                                TOY_CONFIG_SPREAD_STILL_PERCENT) / 100;

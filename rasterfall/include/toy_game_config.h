@@ -98,15 +98,15 @@
 #define TOY_CONFIG_PISTOL_DAMAGE                6  /* 单颗伤害 */
 
 /* SMG weapon tuning. */
-#define TOY_CONFIG_SMG_MAG                     30  /* 弹匣容量 */
+#define TOY_CONFIG_SMG_MAG                     40  /* 弹匣容量 */
 #define TOY_CONFIG_SMG_RESERVE                650  /* 备弹上限 */
-#define TOY_CONFIG_SMG_COOLDOWN_MS            75  /* 射击间隔 */
+#define TOY_CONFIG_SMG_COOLDOWN_MS            100  /* 射击间隔 */
 #define TOY_CONFIG_SMG_RELOAD_MS             2000  /* 换弹时间 */
 #define TOY_CONFIG_SMG_FULL_AUTO                1  /* 是否全自动 */
 #define TOY_CONFIG_SMG_PELLETS                  1  /* 每次弹丸数 */
-#define TOY_CONFIG_SMG_SPREAD                  9  /* 散布范围 */
+#define TOY_CONFIG_SMG_SPREAD                  90  /* 散布范围 */
 #define TOY_CONFIG_SMG_SLOT                     0  /* 武器槽位 */
-#define TOY_CONFIG_SMG_DAMAGE                    6  /* 单颗伤害 */
+#define TOY_CONFIG_SMG_DAMAGE                    7  /* 单颗伤害 */
 
 /* Shotgun weapon tuning. */
 #define TOY_CONFIG_SHOTGUN_MAG                  8  /* 弹匣容量 */
@@ -120,15 +120,15 @@
 #define TOY_CONFIG_SHOTGUN_DAMAGE                7  /* 单颗伤害 */
 
 /* AK rifle weapon tuning. */
-#define TOY_CONFIG_AK_MAG                       30  /* 弹匣容量 */
+#define TOY_CONFIG_AK_MAG                       40  /* 弹匣容量 */
 #define TOY_CONFIG_AK_RESERVE                  360  /* 备弹上限 */
-#define TOY_CONFIG_AK_COOLDOWN_MS              120  /* 射击间隔 */
+#define TOY_CONFIG_AK_COOLDOWN_MS              180  /* 射击间隔 */
 #define TOY_CONFIG_AK_RELOAD_MS              2200  /* 换弹时间 */
 #define TOY_CONFIG_AK_FULL_AUTO                  1  /* 是否全自动 */
 #define TOY_CONFIG_AK_PELLETS                    1  /* 每次弹丸数 */
-#define TOY_CONFIG_AK_SPREAD                    5  /* 散布范围 */
+#define TOY_CONFIG_AK_SPREAD                    50  /* 散布范围 */
 #define TOY_CONFIG_AK_SLOT                       0  /* 武器槽位 */
-#define TOY_CONFIG_AK_DAMAGE                     8  /* 单颗伤害 */
+#define TOY_CONFIG_AK_DAMAGE                     16  /* 单颗伤害 */
 
 /* AWP sniper weapon tuning. */
 #define TOY_CONFIG_AWP_MAG                      10  /* 弹匣容量 */
@@ -144,12 +144,12 @@
 /* Weapon reach and AI teammate awareness. */
 #define TOY_CONFIG_PISTOL_RANGE              11500  /* 最大射程 */
 #define TOY_CONFIG_PISTOL_ALERT_RANGE         8400  /* AI 警觉范围 */
-#define TOY_CONFIG_SMG_RANGE                 102400  /* 最大射程 */
-#define TOY_CONFIG_SMG_ALERT_RANGE            25600  /* AI 警觉范围 */
+#define TOY_CONFIG_SMG_RANGE                 11500  /* 最大射程 */
+#define TOY_CONFIG_SMG_ALERT_RANGE            8400  /* AI 警觉范围 */
 #define TOY_CONFIG_SHOTGUN_RANGE             11500  /* 最大射程 */
 #define TOY_CONFIG_SHOTGUN_ALERT_RANGE        5600  /* AI 警觉范围 */
-#define TOY_CONFIG_AK_RANGE                  204800  /* 最大射程 */
-#define TOY_CONFIG_AK_ALERT_RANGE            40960  /* AI 警觉范围 */
+#define TOY_CONFIG_AK_RANGE                  17250  /* 最大射程 */
+#define TOY_CONFIG_AK_ALERT_RANGE            11500  /* AI 警觉范围 */
 #define TOY_CONFIG_AWP_RANGE                 23000  /* 最大射程 */
 #define TOY_CONFIG_AWP_ALERT_RANGE           23000  /* AI 警觉范围 */
 

@@ -177,3 +177,143 @@ int rasterfall_experiment_pause(struct rasterfall_session *s,int slot,int paused
     group->paused=paused!=0;
     return 0;
 }
+
+static int grid_enemy_radius(int type)
+{
+    int ability=toy_game_enemy_info(type)->ability;
+    return ability==TOY_GAME_ENEMY_ABILITY_CHARGER_RUSH?TOY_GAME_CHARGER_RADIUS:
+        ability==TOY_GAME_ENEMY_ABILITY_TANK_SWEEP?TOY_GAME_TANK_RADIUS:TOY_GAME_ENEMY_RADIUS;
+}
+
+int rasterfall_grid_alive(const struct rasterfall_session *s)
+{
+    if(!s || !s->experiments)return 0;
+    const struct rf_experiment_group *group=&s->experiments->groups[RF_EXPERIMENT_GRID_GROUP];
+    int count=0;
+    for(int i=0;i<group->count;++i) {
+        if(group->ids[i]>=0) {
+            const struct toy_game_actor *a=toy_game_actor_by_id_const(&s->game_state,group->ids[i]);
+            count+=a && a->state==TOY_GAME_ACTOR_ALIVE && a->hp>0 && a->combat_generation==group->generations[i];
+            continue;
+        }
+        int slot=-group->ids[i]-1;
+        if(slot>=0 && slot<TOY_GAME_MAX_ENEMIES) {
+            const struct toy_game_enemy *e=&s->game_state.enemies[slot];
+            count+=e->active==1 && e->combat_generation==group->generations[i];
+        }
+    }
+    return count;
+}
+
+static int grid_spawn_clear(const struct toy_game *g,int x,int z,int radius)
+{
+    struct toy_game_ground_query ground=toy_game_query_ground(g,x,z,radius,0);
+    if(!ground.has_support || ground.support_y!=0 ||
+       toy_game_position_blocked_at_height(g,x,z,radius,0))return 0;
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct toy_game_actor *a=&g->actors[i];
+        if(!a->active || a->hp<=0 || a->state!=TOY_GAME_ACTOR_ALIVE || a->base_core)continue;
+        int y=a->ground_y+a->airborne_y;
+        long long dx=x-a->x,dz=z-a->z,r=radius+TOY_GAME_PLAYER_RADIUS+4;
+        if(y<RASTERFALL_HUMAN_HEIGHT_RFU && y+RASTERFALL_HUMAN_HEIGHT_RFU>0 && dx*dx+dz*dz<r*r)return 0;
+    }
+    for(int i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+        const struct toy_game_enemy *e=&g->enemies[i];
+        if(e->active!=1 || e->hp<=0)continue;
+        int y=e->ground_y+e->airborne_y;
+        long long dx=x-e->x,dz=z-e->z,r=radius+grid_enemy_radius(e->type)+4;
+        if(y<RASTERFALL_HUMAN_HEIGHT_RFU && y+RASTERFALL_HUMAN_HEIGHT_RFU>0 && dx*dx+dz*dz<r*r)return 0;
+    }
+    return 1;
+}
+
+int rasterfall_grid_spawn(struct rasterfall_session *s,int type,int count,int side)
+{
+    if(!s || s->world_id!=RASTERFALL_WORLD_OUTPOST || s->game_state.state!=TOY_GAME_PLAYING ||
+       type<0 || type>RF_GRID_GUNNER_SMG || count<1 || count>RF_EXPERIMENT_ACTORS || side<0 || side>4)return -1;
+    const struct rf_map_runtime_region *area=rf_map_runtime_find_region(&s->map_ops.runtime,"grid_lab_area");
+    if(!area)return -1;
+    int gunner=type>=RF_GRID_GUNNER_RIFLE;
+    int cell=RASTERFALL_GRID_CELL_RFU,radius=gunner?TOY_GAME_PLAYER_RADIUS:grid_enemy_radius(type);
+    int nx=(area->bounds.max_x-area->bounds.min_x)/cell;
+    int nz=(area->bounds.max_z-area->bounds.min_z)/cell;
+    int inset=(radius+4+cell/2-1)/cell;
+    if(nx<=2*inset+2 || nz<=2*inset+2)return -1;
+    if(!s->experiments && rasterfall_experiment_replace(s,RF_EXPERIMENT_GRID_GROUP,NULL,0,NULL)<0)return -1;
+    struct rf_experiment_group *group=&s->experiments->groups[RF_EXPERIMENT_GRID_GROUP];
+    /* Retire dead identities before reusing capacity; keep living units even outside the grid. */
+    int kept=0;
+    for(int i=0;i<group->count;++i) {
+        if(group->ids[i]>=0) {
+            struct toy_game_actor *a=toy_game_actor_by_id(&s->game_state,group->ids[i]);
+            if(!a || a->combat_generation!=group->generations[i])continue;
+            if(a->state==TOY_GAME_ACTOR_DEAD) {
+                rf_gpu_scene_local_removed(&s->scene_local,a->actor_id);
+                memset(a,0,sizeof(*a));continue;
+            }
+            group->ids[kept]=group->ids[i];group->generations[kept]=group->generations[i];
+            group->modes[kept++]=0;continue;
+        }
+        int slot=-group->ids[i]-1;
+        if(slot<0 || slot>=TOY_GAME_MAX_ENEMIES)continue;
+        const struct toy_game_enemy *e=&s->game_state.enemies[slot];
+        if(!e->active || e->combat_generation!=group->generations[i])continue;
+        group->ids[kept]=group->ids[i];group->generations[kept]=group->generations[i];
+        group->modes[kept++]=0;
+    }
+    group->count=kept;
+    int made=0,span=nx>nz?nx:nz;
+    /* Alternate sides before advancing along each edge, so ALL distributes a small batch. */
+    for(int step=0;step<span && made<count && group->count<RF_EXPERIMENT_ACTORS;++step)
+        for(int edge=1;edge<=4 && made<count && group->count<RF_EXPERIMENT_ACTORS;++edge) {
+            if(side && edge!=side)continue;
+            int length=(edge==1 || edge==3?nx:nz)-2*inset;
+            if(step>=length)continue;
+            int along=inset+(length/2+step)%length;
+            int gx=edge==2?nx-1-inset:edge==4?inset:along;
+            int gz=edge==1?nz-1-inset:edge==3?inset:along;
+            int x=area->bounds.min_x+gx*cell+cell/2,z=area->bounds.min_z+gz*cell+cell/2;
+            if(!grid_spawn_clear(&s->game_state,x,z,radius))continue;
+            if(gunner) {
+                int id=toy_game_add_gunner(&s->game_state,0,x,z,"GRID GUNNER");
+                struct toy_game_actor *a=toy_game_actor_by_id(&s->game_state,id);
+                if(!a)continue;
+                toy_game_actor_equip_weapon(&s->game_state,a,type==RF_GRID_GUNNER_SMG?TOY_GAME_WEAPON_SMG:TOY_GAME_WEAPON_AK);
+                toy_game_actor_refill_ammo(&s->game_state,a);
+                if(rf_gpu_scene_local_created(&s->scene_local,a)<0){memset(a,0,sizeof(*a));break;}
+                const struct toy_game_actor *player=toy_game_local_player_actor_const(&s->game_state);
+                toy_game_actor_set_assault(&s->game_state,(int)(a-s->game_state.actors),player->x,player->z);
+                int n=group->count++;
+                group->ids[n]=id;group->generations[n]=a->combat_generation;
+                group->modes[n]=0;group->active=1;++made;continue;
+            }
+            int slot=toy_game_spawn_enemy(&s->game_state,type,x,z);
+            if(slot<0)continue;
+            int n=group->count++;
+            group->ids[n]=-slot-1;group->generations[n]=s->game_state.enemies[slot].combat_generation;
+            group->modes[n]=0;group->active=1;++made;
+        }
+    return made;
+}
+
+void rasterfall_grid_tick(struct rasterfall_session *s,int dt_ms)
+{
+    if(!s || !s->experiments || s->world_id!=RASTERFALL_WORLD_OUTPOST)return;
+    struct rf_experiment_group *group=&s->experiments->groups[RF_EXPERIMENT_GRID_GROUP];
+    if(!group->active || group->paused)return;
+    group->elapsed_ms+=dt_ms;
+    if(group->elapsed_ms<250)return;
+    group->elapsed_ms%=250;
+    const struct toy_game_actor *player=toy_game_local_player_actor_const(&s->game_state);
+    if(!player || player->state!=TOY_GAME_ACTOR_ALIVE)return;
+    int cell=RASTERFALL_GRID_CELL_RFU;
+    /* C integer division truncates toward zero: explicitly floor negative coordinates. */
+    int gx=player->x/cell-(player->x%cell<0),gz=player->z/cell-(player->z%cell<0);
+    for(int i=0;i<group->count;++i)if(group->ids[i]>=0) {
+        struct toy_game_actor *a=toy_game_actor_by_id(&s->game_state,group->ids[i]);
+        if(!a || a->combat_generation!=group->generations[i] || a->state!=TOY_GAME_ACTOR_ALIVE)continue;
+        /* Update the simple assault intent; ordinary Game AI owns navigation, aim and fire. */
+        a->deployment_x=gx*cell+cell/2;a->deployment_z=gz*cell+cell/2;
+        a->ai_assault_active=1;a->ai_guard_radius=0;
+    }
+}

@@ -216,6 +216,7 @@ void rasterfall_options_usage(int fd)
         "    lab-computer / lab-computer-close / lab-computer-side / lab-computer-rear: computer overview / ON screen / RF Gen1 internals / rear I/O\n"
         "    performance-terminal / performance-menu: roadside performance terminals / test menu\n"
         "    electronics-lab / electronics-case: RF Gen1 product gallery / powered workstation\n"
+        "    grid-lab / grid-menu / grid-combat: grid overview / terminal / four SMG gunners\n"
         "  --gpu-normal-fixed-tick  (diagnostic: one 16ms gameplay tick per rendered normal-scene or wave-repro frame)\n"
         "  --gpu-character-vertex-diff  (frame 30 device-local position/normal proof)\n"
         "  --gpu-character-skinning-off  (use the CPU-skinned vertex upload rollback path)\n"
@@ -497,6 +498,9 @@ int rasterfall_options_parse(struct rasterfall_options *o, int argc, char **argv
                  strcmp(o->gpu_normal_view,"character-lab") &&
                  strcmp(o->gpu_normal_view,"walk-lab") &&
                  strcmp(o->gpu_normal_view,"actor-actions-lab") &&
+                 strcmp(o->gpu_normal_view,"grid-lab") &&
+                 strcmp(o->gpu_normal_view,"grid-menu") &&
+                 strcmp(o->gpu_normal_view,"grid-combat") &&
                  strcmp(o->gpu_normal_view,"rifle-cycle-lab") &&
                  strcmp(o->gpu_normal_view,"weapon-cycle-lab") &&
                  strcmp(o->gpu_normal_view,"mesh-weaver") &&

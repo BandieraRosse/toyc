@@ -2,7 +2,7 @@
 enum rf_experiment_lab {
     RF_LAB_INFECTED_POSES, RF_LAB_INFECTED_WALK, RF_LAB_ACTOR_ACTIONS,
     RF_LAB_ACTOR_WALK, RF_LAB_MODEL, RF_LAB_LIGHTING, RF_LAB_ELECTRONICS,
-    RF_LAB_RIFLE_CYCLE, RF_LAB_IDLE_RIFLE, RF_LAB_WEAPON_CYCLE, RF_LAB_COUNT
+    RF_LAB_RIFLE_CYCLE, RF_LAB_IDLE_RIFLE, RF_LAB_WEAPON_CYCLE, RF_LAB_GRID, RF_LAB_COUNT
 };
 struct rf_experiment_definition {
     const char *id, *surface, *terminal, *view;
@@ -18,7 +18,8 @@ static const struct rf_experiment_definition rf_lab_definitions[RF_LAB_COUNT] = 
     {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0},
     {"RIFLE CYCLE", "actor_actions_lab", "actor_actions_lab_button", "rifle-cycle-lab", 1},
     {"LIVE AI HOLDS", "actor_actions_lab", "actor_actions_lab_button", "idle-rifle-lab", 0},
-    {"WEAPON CYCLE 3 X 5", "actor_actions_lab", "actor_actions_lab_button", "weapon-cycle-lab", 1}
+    {"WEAPON CYCLE 3 X 5", "actor_actions_lab", "actor_actions_lab_button", "weapon-cycle-lab", 1},
+    {"GRID / 1m", "grid_lab", "grid_lab_terminal", "grid-lab", 0}
 };
 static struct {
     int requested[RF_LAB_COUNT],paused[RF_LAB_COUNT],fan_rpm;

@@ -122,6 +122,8 @@ def main():
         campus += [f'collision id=experiment_support_{name}_col shape=flat {b} height=0 collision=false visible=false walkable=true',
             f'surface id=experiment_support_{name} kind=ground {b} height=0 attr.collision_id=experiment_support_{name}_col']
     campus.append(END)
+    from grid_lab import update as update_grid
     write(path,base+campus+tail)
+    update_grid(path)
 
 if __name__=='__main__':main()

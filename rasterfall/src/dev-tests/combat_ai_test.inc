@@ -447,6 +447,22 @@ static int combat_ai_logic_test(void)
     struct toy_map_primitive obstruction[2] = {{0}};
     unsigned int sequence, generation;
     int i, elapsed, id, old_index;
+    /* Short per-tick movement deltas must still produce a unit facing vector.
+     * A floored world-space distance used to stretch the actor and its gear. */
+    shooter = combat_ai_fixture(&g);
+    if (!shooter) return 60;
+    g.actors[0].active=0;
+    shooter->ai_assault_active=1;
+    shooter->deployment_x=6000;shooter->deployment_z=-3800;
+    for(i=0;i<300;++i) {
+        toy_game_update_ai_teammates(&g,16);
+        long long length2=(long long)shooter->sy*shooter->sy+(long long)shooter->cy*shooter->cy;
+        if(length2<1022LL*1022 || length2>1026LL*1026) {
+            __printf("COMBAT facing non-unit tick=%d facing=(%d,%d)\n",i,shooter->sy,shooter->cy);
+            return 61;
+        }
+    }
+    if(shooter->x<1000 || shooter->z>-500)return 62;
     shooter = combat_ai_fixture(&g);
     if (!shooter) return 1;
     target = &g.actors[0];

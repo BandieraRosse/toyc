@@ -44,6 +44,10 @@ Map IR 包含 world、regions、collisions、surfaces、renders、interactions�
 
 ## Surface V1
 
+`render kind=floor attr.style=13` 为一米网格地板。格长固定 512 RFU，相对 render 的最小 X/Z
+边界对齐，以同一地面网格分割浅青格线及蓝灰交错格面；它只负责表现，不隐式生成占地、导航或碰撞。
+通行仍需独立 surface/collision 声明；使用规范见[网格玩法场](experiment-labs.md#一米网格玩法场)。
+
 ### 楼层与有限厚度楼板
 
 `region kind=building_floor` 使用 `attr.building` 稳定建筑 ID、`attr.level`（-16～-1 或 1～16）、
