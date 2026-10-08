@@ -233,5 +233,46 @@ int rf_story_logic_test(void)
     if(story.active_story!=RF_STORY_FRONTIER_ARRIVAL)return 48;
     rf_story_detach(&story,&session);
     if(story.active_story || story.queue_count || story.frontier_mission_id)return 49;
+    /* Leaving a map ends local text without completing it or losing tasks and
+     * history. Old commands cannot affect the destination's subtitle radio. */
+    story_fixture(&story,&session);
+    actor=&session.game_state.actors[session.null_actor_index];
+    rf_story_emit(&story,RF_STORY_EVENT_OUTPOST_ENTER,NULL);
+    rf_story_emit(&story,RF_STORY_EVENT_LABS_ENTER,NULL);
+    rf_story_update(&story,&session,16,0,1);
+    sr=story.session_revision;nr=story.node_revision;
+    story.task.id=RF_STORY_TASK_WEAVER;story.task.state=RF_STORY_TASK_RUNNING;
+    story.task.target_valid=1;
+    unsigned history_revision=story.history_revision;
+    rf_story_leave_world(&story,&session);
+    if(story.active_story || story.node_id || story.queue_count || !story.collapsed ||
+        story.link!=RF_STORY_LINK_OFF || story.camera.active || story.hold_token ||
+        actor->movement_hold_token || story.line_elapsed_ms ||
+        story.progress[0]!=RF_STORY_INTERRUPTED || story.progress[1]!=RF_STORY_INTERRUPTED ||
+        story.task.id!=RF_STORY_TASK_WEAVER || story.task.state!=RF_STORY_TASK_RUNNING ||
+        story.task.target_valid || story.history_revision!=history_revision || !story.history_count ||
+        rf_story_answer(&story,&session,sr,nr,-1))return 50;
+    session.scene_local.world_generation++;
+    session.world_id=RASTERFALL_WORLD_FRONTIER_STATION_01;
+    session.frontier.mission_id=19;
+    rf_story_frontier_events(&story,&session,RF_FRONTIER_EVENT_ARRIVAL);
+    rf_story_update(&story,&session,16,1,1);
+    if(story.active_story!=RF_STORY_FRONTIER_ARRIVAL || !rf_story_subtitle_only(&story) ||
+        story.camera.active || story.hold_token ||
+        story.task.id!=RF_STORY_TASK_WEAVER || story.task.state!=RF_STORY_TASK_RUNNING ||
+        rf_story_answer(&story,&session,sr,nr,-1))return 51;
+    rf_story_leave_world(&story,&session);
+    session.scene_local.world_generation++;session.world_id=RASTERFALL_WORLD_OUTPOST;
+    rf_story_emit(&story,RF_STORY_EVENT_OUTPOST_ENTER,NULL);
+    rf_story_emit(&story,RF_STORY_EVENT_LABS_ENTER,NULL);
+    rf_story_update(&story,&session,16,0,1);
+    if(story.active_story || story.queue_count || story.frontier_mission_id)return 52;
+    /* A generation change outside the explicit world-request path also ends
+     * an existing performance; a fresh save owner still reconnects above. */
+    rf_story_replay(&story,&session,RF_STORY_OUTPOST);
+    rf_story_update(&story,&session,16,0,1);
+    session.scene_local.world_generation++;
+    rf_story_update(&story,&session,16,0,1);
+    if(story.active_story || story.queue_count || story.progress[0]!=RF_STORY_INTERRUPTED)return 53;
     return 0;
 }

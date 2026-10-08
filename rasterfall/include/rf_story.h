@@ -83,6 +83,9 @@ void rf_story_init(struct rf_story *story);
 /* Call before unloading/resetting the session and during shutdown. Keeps
  * story progress; releases only the exact actor generation owned by us. */
 void rf_story_detach(struct rf_story *story, struct rasterfall_session *session);
+/* End map-local performances after a world replacement. Keeps history,
+ * independent tasks and per-game trigger bits; never marks unread text done. */
+void rf_story_leave_world(struct rf_story *story, struct rasterfall_session *session);
 /* Single-player authoritative update; allow_start=0 preserves active dialogue
  * while delaying new calls during menus, terminal typing, or combat. */
 void rf_story_update(struct rf_story *story, struct rasterfall_session *session,

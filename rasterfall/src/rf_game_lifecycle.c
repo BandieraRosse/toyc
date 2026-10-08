@@ -68,6 +68,11 @@ static int rf_game_request_world_path(struct rf_game_runtime *runtime,
     runtime->session->world_id = world;
     rasterfall_session_reset(runtime->session, &runtime->camera,
                              seed ? seed : 1);
+    rf_story_leave_world(&runtime->story,runtime->session);
+    runtime->player_ui.subtitle_count=0;
+    runtime->player_ui.subtitle_history_revision=runtime->story.history_revision;
+    runtime->comms_focus=runtime->comms_choice=runtime->chat_scroll=0;
+    runtime->ui_video_live=0;
     rf_game_seed_world_groups(runtime);
     rasterfall_render_bake_lightmap();
     runtime->render_camera = runtime->camera;
@@ -126,7 +131,19 @@ int rf_game_world_request_logic_test(void)
         WORLD_CHECK(rasterfall_session_load(prepared,world_path(maps[i]))==0);
         runtime->preloaded_session=prepared;
         uint64_t generation=session->scene_local.world_generation;
+        rf_story_emit(&runtime->story,RF_STORY_EVENT_OUTPOST_ENTER,NULL);
+        runtime->story.active_story=RF_STORY_OUTPOST;runtime->story.node_id=1010;
+        runtime->story.progress[0]=RF_STORY_ACTIVE;runtime->story.collapsed=0;
+        runtime->player_ui.subtitle_count=1;
+        runtime->player_ui.subtitle_history_revision=0;
+        runtime->story.history_revision=3;
+        runtime->comms_focus=runtime->ui_video_live=1;
         WORLD_CHECK(rf_game_request_world(runtime,maps[i])==0);
+        WORLD_CHECK(!runtime->story.active_story && !runtime->story.queue_count &&
+            runtime->story.progress[0]==RF_STORY_INTERRUPTED && runtime->story.collapsed &&
+            !runtime->story.camera.active && !runtime->story.hold_token &&
+            !runtime->player_ui.subtitle_count && runtime->player_ui.subtitle_history_revision==3 &&
+            !runtime->comms_focus && !runtime->ui_video_live);
         WORLD_CHECK(!prepared->map_ops.runtime_loaded && !prepared->level.blob);
         WORLD_CHECK(session->world_id==maps[i] && session->map_ops.level==&session->level &&
             session->map_ops.spawn_count==&session->spawn_count && session->scene_local.world_generation>generation);

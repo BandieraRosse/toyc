@@ -187,17 +187,37 @@ void rf_story_detach(struct rf_story *s, struct rasterfall_session *session)
     }
 }
 
+void rf_story_leave_world(struct rf_story *s, struct rasterfall_session *session)
+{
+    if (!s) return;
+    rf_story_detach(s, session);
+    for (int i = 0; i < 2; ++i)
+        if (s->progress[i] == RF_STORY_ACTIVE || s->progress[i] == RF_STORY_QUEUED ||
+            s->progress[i] == RF_STORY_INTERRUPTED)
+            s->progress[i] = RF_STORY_INTERRUPTED;
+    for (int i = 2; i < 8; ++i) s->progress[i] = RF_STORY_UNSEEN;
+    s->active_story = s->node_id = s->queue_count = 0;
+    s->frontier_mission_id = s->region_presence = 0;
+    s->collapsed = 1; s->link = RF_STORY_LINK_OFF;
+    s->retry_ms = s->line_elapsed_ms = 0;
+    s->task.target_valid = 0;
+    s->session_revision++; s->node_revision++;
+    s->dirty = 1;
+}
+
 void rf_story_frontier_events(struct rf_story *s,struct rasterfall_session *session,unsigned events)
 {
     if(!s || !session || !s->enabled ||
         session->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)return;
-    if(s->world_generation!=session->scene_local.world_generation)rf_story_detach(s,session);
+    if(s->world_generation!=session->scene_local.world_generation) {
+        if(s->world_generation)rf_story_leave_world(s,session);
+        else rf_story_detach(s,session);
+    }
     if(s->frontier_mission_id!=session->frontier.mission_id) {
         rf_story_close(s,session);
         s->queue_count=0;
         for(int i=2;i<8;++i)s->progress[i]=RF_STORY_UNSEEN;
         s->frontier_mission_id=session->frontier.mission_id;
-        memset(&s->task,0,sizeof(s->task));
     }
     for(int bit=0;bit<6;++bit)if(events&(1u<<bit)) {
         int id=RF_STORY_FRONTIER_ARRIVAL+bit,index=story_index(id);
@@ -450,8 +470,10 @@ void rf_story_update(struct rf_story *s, struct rasterfall_session *session,
     struct toy_game_actor *a;
     if (!s || !session) return;
     if (!s->enabled) { rf_story_detach(s, session); return; }
-    if (s->world_generation != session->scene_local.world_generation)
-        rf_story_detach(s, session);
+    if (s->world_generation != session->scene_local.world_generation) {
+        if (s->world_generation) rf_story_leave_world(s, session);
+        else rf_story_detach(s, session);
+    }
     s->combat = combat != 0;
     if(session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
         if(!s->active_story && allow_start && s->queue_count) {
