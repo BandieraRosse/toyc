@@ -7,6 +7,8 @@ build-windows/**
 tools/.map-layout-fonts/**
 .vscode/*
 tmp/**
+/rasterfall_audio.cfg
+/rasterfall_audio.cfg.tmp
 .claude/**
 /local/agent-history/
 # Git worktrees created inside the repository.

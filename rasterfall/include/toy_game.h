@@ -1337,6 +1337,7 @@ struct toy_sfx_voice {
     int step;           /* 当前相位增量 */
     int vol;            /* 初始振幅（样本单位 0-32768） */
     uint32_t seed;      /* 噪声源（xorshift32） */
+    int left_q8, right_q8, source_id, priority, local;
     int lp;             /* 一阶低通状态（噪声上色） */
 };
 
@@ -1349,6 +1350,7 @@ struct toy_sfx {
     unsigned int bass_phase;
     struct toy_sfx_sample samples[TOY_SFX_MOLOTOV_BREAK + 1];
     struct toy_sfx_voice voices[TOY_SFX_MAX_VOICES];
+    int mix_gain_q16[2][TOY_SFX_MOLOTOV_BREAK+1];
 };
 
 void toy_sfx_init(struct toy_sfx *sfx, int rate);
@@ -1361,5 +1363,12 @@ void toy_sfx_render(struct toy_sfx *sfx, short *out, int frames); /* 混音至 S
  * Does not alter voice state, assets, event production or music enable policy. */
 void toy_sfx_render_gained(struct toy_sfx *sfx, short *out, int frames,
                           int effects_q8, int music_q8, int ceiling);
+
+/* Opt-in presentation path: wide accumulators, live per-kind/local gains,
+ * bounded source overlap and priority-based admission. Legacy APIs unchanged. */
+void toy_sfx_play_spatial(struct toy_sfx *sfx,int kind,int source_id,
+    int left_q8,int right_q8,int priority,int local);
+void toy_sfx_render_buses(struct toy_sfx *sfx,int *music,int *effects,int frames,
+    const int gains[2][TOY_SFX_MOLOTOV_BREAK+1]);
 
 #endif /* TOYC_TOY_GAME_H */

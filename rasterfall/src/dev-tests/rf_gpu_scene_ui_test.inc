@@ -15,6 +15,8 @@ static int scene_ui_test(void)
     struct rasterfall_canvas canvas={1280,720,0,&sink,scene_ui_test_rect};
     struct control_settings settings={0};
     struct pause_menu menu={0};
+    struct rf_player_ui_state ui;
+    rf_player_ui_init(&ui);
     struct rasterfall_options options;
     char *args[]={"rasterfall","--gpu-scene-play"};
     static struct toy_game before;
@@ -34,12 +36,21 @@ static int scene_ui_test(void)
         if (!rasterfall_options_parse(&options,4,invalid_size) ||
             !rasterfall_options_parse(&options,3,invalid_scale)) return 7;
     }
-    draw_pause_overlay(&canvas,&menu,&settings,0,0);
+    menu.page=RF_PAUSE_CONTROL;
+    draw_pause_overlay(&canvas,&menu,&settings,0,0,NULL,&ui);
     uint64_t initial=sink.hash;
     if (canvas.failed || !sink.calls) return 2;
     memset(&sink,0,sizeof(sink));settings.mouse_level=7;
-    draw_pause_overlay(&canvas,&menu,&settings,0,0);
+    draw_pause_overlay(&canvas,&menu,&settings,0,0,NULL,&ui);
     if (canvas.failed || sink.hash==initial) return 3;
+    struct rasterfall_audio audio_state={0};
+    rf_audio_settings_default(&audio_state.settings);menu.page=RF_PAUSE_AUDIO;
+    draw_pause_overlay(&canvas,&menu,&settings,0,0,&audio_state,&ui);
+    if(canvas.failed || memcmp(&before,&game,sizeof(before)))return 8;
+    menu.page=RF_PAUSE_DEVELOPER;
+    draw_pause_overlay(&canvas,&menu,&settings,0,0,NULL,&ui);
+    menu.page=RF_PAUSE_MAIN;
+    draw_pause_overlay(&canvas,&menu,&settings,0,0,NULL,&ui);
     struct rasterfall_net net={0};
     draw_scoreboard(&canvas,&net);
     draw_game_over_panel(&canvas,0,0);draw_level_won_panel(&canvas,0);
@@ -49,7 +60,7 @@ static int scene_ui_test(void)
         rf_table_draw(&canvas);
     }
     if (canvas.failed || memcmp(&before,&game,sizeof(before))) return 4;
-    sink.fail=1;draw_pause_overlay(&canvas,&menu,&settings,0,0);
+    sink.fail=1;draw_pause_overlay(&canvas,&menu,&settings,0,0,NULL,&ui);
     if (!canvas.failed) return 5;
     __printf("scene UI layouts: read-only, settings, scoreboard, result, failure PASS\n");
     return 0;

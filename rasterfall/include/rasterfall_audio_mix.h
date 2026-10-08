@@ -15,4 +15,13 @@ static int rf_audio_soft_peak(int value,int ceiling)
     return value<0?-limited:limited;
 }
 
+static inline int rf_audio_gain_step(int current,int target)
+{
+    int delta=target-current;
+    if(!delta)return current;
+    int step=delta/1323;
+    if(!step)step=delta>0?1:-1;
+    return current+step;
+}
+
 #endif

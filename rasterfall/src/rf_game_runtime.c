@@ -229,7 +229,7 @@ struct vec3 { int x, y, z; };
 /* 朝向：sy/cy = 偏航 sin/cos，pitch_sy/pitch_cy = 俯仰 sin/cos（均 1024 定点）。 */
 struct box { int minx, maxx, minz, maxz, height; uint32_t color; };
 struct control_settings { int mouse_level, keyboard_level; };
-struct pause_menu { int selected; };
+struct pause_menu { int selected, page, pointer_x, pointer_y, pointer_valid, slider_drag; };
 struct managed_terminal {
     int open;
     char line[32];
@@ -242,14 +242,20 @@ static void rf_windows_log(const char *message) { toy_windows_log(message); }
 static void rf_windows_log(const char *message) { (void)message; }
 #endif
 
-#define PAUSE_ITEM_RESUME   0
-#define PAUSE_ITEM_MOUSE    1
-#define PAUSE_ITEM_COORDS   2
-#define PAUSE_ITEM_KEYBOARD 3
-#define PAUSE_ITEM_OUTPOST 4
-#define PAUSE_ITEM_RENDERER 5
-#define PAUSE_ITEM_EXIT    6
-#define PAUSE_ITEM_COUNT   7
+enum rf_pause_page { RF_PAUSE_MAIN, RF_PAUSE_AUDIO, RF_PAUSE_CONTROL, RF_PAUSE_DEVELOPER };
+#define PAUSE_ITEM_RESUME    0
+#define PAUSE_ITEM_CONTROL   1
+#define PAUSE_ITEM_AUDIO     2
+#define PAUSE_ITEM_DEVELOPER 3
+#define PAUSE_ITEM_OUTPOST   4
+#define PAUSE_ITEM_EXIT      5
+#define PAUSE_ITEM_COUNT     6
+#define CONTROL_ITEM_MOUSE    0
+#define CONTROL_ITEM_KEYBOARD 1
+#define SUBMENU_ITEM_BACK     2
+#define SUBMENU_ITEM_COUNT    3
+#define DEVELOPER_ITEM_COORDS   0
+#define DEVELOPER_ITEM_RENDERER 1
 
 enum rasterfall_startup_screen {
     RASTERFALL_STARTUP_MAIN,
@@ -1265,59 +1271,54 @@ static int rf_exp_performance_action(struct rf_game_runtime *runtime,int action)
 #include "rf_ui_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
 
+#include "rf_audio_menu.inc"
+
 static void draw_pause_overlay(struct rasterfall_canvas *surface,
                                const struct pause_menu *menu,
                                const struct control_settings *settings,
-                               int coordinate_axes, int online)
+                               int coordinate_axes, int online,const struct rasterfall_audio *audio_state,
+                               const struct rf_player_ui_state *ui)
 {
-    char line[64];
-    int panel_w = surface->width * 3 / 5;
-    int panel_h = surface->height * 2 / 3;
-    int x = (surface->width - panel_w) / 2;
-    int y = (surface->height - panel_h) / 2;
-    int row_y = y + 58;
-    rasterfall_canvas_rect(surface, x - 3, y - 3, panel_w + 6, panel_h + 6, 0xD88A32, 255);
-    rasterfall_canvas_rect(surface, x, y, panel_w, panel_h, RF_COLOR_UI_BACKGROUND, 255);
-    rasterfall_canvas_text(surface, x + (panel_w - FB_FONT_W * 6) / 2, y + 28,
-                   "PAUSED", RF_COLOR_UI_TEXT);
-    for (int item = 0; item < PAUSE_ITEM_COUNT; item++) {
-        uint32_t color = item == menu->selected ? RF_COLOR_UI_ACCENT : RF_COLOR_UI_TEXT;
-        if (item == menu->selected)
-            rasterfall_canvas_rect(surface, x + 30, row_y - 3, panel_w - 60,
-                      FB_FONT_H + 6, 0x343B49, 255);
-        if (item == PAUSE_ITEM_RESUME)
-            snprintf(line, sizeof(line), "%c RESUME", item == menu->selected ? '>' : ' ');
-        else if (item == PAUSE_ITEM_MOUSE)
-            snprintf(line, sizeof(line), "%c MOUSE SENS  < %d%% >",
-                     item == menu->selected ? '>' : ' ',
-                     sensitivity_percent(settings->mouse_level));
-        else if (item == PAUSE_ITEM_COORDS)
-            snprintf(line, sizeof(line), "%c COORDINATE AXES < %s >",
-                     item == menu->selected ? '>' : ' ',
-                     coordinate_axes ? "ON" : "OFF");
-        else if (item == PAUSE_ITEM_KEYBOARD)
-            snprintf(line, sizeof(line), "%c KEYBOARD SENS < %d%% >",
-                     item == menu->selected ? '>' : ' ',
-                     sensitivity_percent(settings->keyboard_level));
-        else if (item == PAUSE_ITEM_OUTPOST)
-            snprintf(line, sizeof(line), "%c RETURN TO OUTPOST%s",
-                     item == menu->selected ? '>' : ' ',
-                     online ? " (OFFLINE ONLY)" : "");
-        else if (item == PAUSE_ITEM_RENDERER)
-            snprintf(line, sizeof(line), "%c SWITCH CPU / GPU SCENE%s",
-                     item == menu->selected ? '>' : ' ',
-                     online ? " (OFFLINE ONLY)" : "");
-        else
-            snprintf(line, sizeof(line), "%c EXIT GAME",
-                     item == menu->selected ? '>' : ' ');
-        rasterfall_canvas_text(surface, x + 42, row_y,
-                       line, color);
-        row_y += 30;
+    if(menu->page==RF_PAUSE_AUDIO){rf_audio_menu_draw(surface,menu,audio_state,ui);return;}
+    char line[128];struct rf_pause_layout layout;
+    const struct rf_ui_theme *theme=&ui->theme;
+    rf_pause_geometry(&layout,ui,surface->width,surface->height,menu->page);
+    rf_ui_window(surface,layout.panel,theme,menu->page==RF_PAUSE_CONTROL?"控制设置":
+        menu->page==RF_PAUSE_DEVELOPER?"开发者功能":"暂停菜单",layout.scale);
+    for(int item=0;item<layout.count;++item) {
+        int enabled=1;
+        if(menu->page==RF_PAUSE_CONTROL) {
+            if(item==SUBMENU_ITEM_BACK)snprintf(line,sizeof(line),"返回暂停菜单");
+            else snprintf(line,sizeof(line),"%s  %d%%",item==CONTROL_ITEM_MOUSE?
+                "鼠标灵敏度":"键盘灵敏度（转向）",sensitivity_percent(item==CONTROL_ITEM_MOUSE?
+                settings->mouse_level:settings->keyboard_level));
+        } else if(menu->page==RF_PAUSE_DEVELOPER) {
+            if(item==DEVELOPER_ITEM_COORDS)
+                snprintf(line,sizeof(line),"坐标轴显示  < %s >",coordinate_axes?"开启":"关闭");
+            else if(item==DEVELOPER_ITEM_RENDERER) {
+                snprintf(line,sizeof(line),"切换 CPU / GPU 渲染%s",online?"（仅离线）":"");
+                enabled=!online;
+            } else snprintf(line,sizeof(line),"返回暂停菜单");
+        } else {
+            if(item==PAUSE_ITEM_RESUME)snprintf(line,sizeof(line),"继续游戏");
+            else if(item==PAUSE_ITEM_CONTROL)snprintf(line,sizeof(line),"控制设置");
+            else if(item==PAUSE_ITEM_AUDIO)snprintf(line,sizeof(line),"音频设置");
+            else if(item==PAUSE_ITEM_DEVELOPER)snprintf(line,sizeof(line),"开发者功能");
+            else if(item==PAUSE_ITEM_OUTPOST) {
+                snprintf(line,sizeof(line),"返回前哨站%s",online?"（仅离线）":"");
+                enabled=!online;
+            } else snprintf(line,sizeof(line),"退出游戏");
+        }
+        rf_ui_button(surface,rf_pause_row(&layout,item),theme,line,layout.scale,
+            item==menu->selected,enabled);
+        if(menu->page==RF_PAUSE_CONTROL && item<SUBMENU_ITEM_BACK)
+            rf_pause_slider_draw(surface,&layout,theme,item,item==CONTROL_ITEM_MOUSE?
+                settings->mouse_level:settings->keyboard_level,15,item==menu->selected);
     }
-    rasterfall_canvas_text(surface, x + 42, y + panel_h - 62,
-                   "UP DOWN SELECT  LEFT RIGHT CHANGE", 0xAEB6C2);
-    rasterfall_canvas_text(surface, x + 42, y + panel_h - 38,
-                   "ENTER CONFIRM  ESC RESUME", 0xD88A32);
+    rf_pause_footer(surface,&layout,theme,menu->page==RF_PAUSE_CONTROL?
+        "方向键转动视角的速度，不影响移动速度":"鼠标选择 · 上下选择 · Enter 确认",
+        menu->page==RF_PAUSE_MAIN?"点击确认 · Esc 继续游戏":menu->page==RF_PAUSE_CONTROL?
+        "点击滑条 / 左右调整 · Esc 返回":"点击确认 / 左右调整 · Esc 返回",0);
 }
 
 static void draw_managed_terminal(struct toy_surface *surface,
@@ -1960,7 +1961,9 @@ static void sync_ai_fire_effects(const struct camera *camera,
                 weapon == TOY_GAME_WEAPON_AK ? TOY_GAME_EV_SHOOT_AK :
                 weapon == TOY_GAME_WEAPON_AWP ? TOY_GAME_EV_SHOOT_AWP :
                 TOY_GAME_EV_SHOOT;
-            rasterfall_audio_play_events(audio, &event, 1);
+            rasterfall_audio_play_world(audio,event,actor->x,
+                RASTERFALL_WORLD_GROUND_Y+actor->ground_y+actor->airborne_y+700,
+                actor->z,1+actor_index);
         }
         if (actor_index == 0) effects.last_ai_fire_seq = actor->fire_seq;
         ray_count = actor->ray_count;
@@ -2046,7 +2049,7 @@ static void sync_network_fire_effects(const struct camera *viewer,
     effects.last_network_fire_seq[source_id] = fire_seq;
     if (audio && audio->running) {
         unsigned char event = network_weapon_fire_event(weapon);
-        rasterfall_audio_play_events(audio, &event, 1);
+        rasterfall_audio_play_world(audio,event,client->x,client->y,client->z,TOY_GAME_MAX_ACTORS+1+source_id);
     }
     if (ray_count < 0) ray_count = 0;
     if (ray_count > TOY_GAME_MAX_RAYS) ray_count = TOY_GAME_MAX_RAYS;
@@ -3147,6 +3150,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     settings.mouse_level = runtime->mouse_level;
     settings.keyboard_level = runtime->keyboard_level;
     menu.selected = runtime->pause_menu_selected;
+    menu.page=runtime->pause_menu_page;
     if (runtime->console.open) {
         rf_player_terminal_draw(canvas,runtime,&game_bindings);
         return;
@@ -3154,7 +3158,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
     if (runtime->gui.active || runtime->managed_terminal_open) return;
     if (runtime->lifecycle_paused)
         draw_pause_overlay(canvas, &menu, &settings, runtime->coordinate_axes,
-                           runtime->net.mode != RASTERFALL_NET_OFF);
+                           runtime->net.mode != RASTERFALL_NET_OFF,&runtime->audio,&runtime->player_ui);
     else if (state->state == TOY_GAME_OVER)
         draw_game_over_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT,
             runtime->session->world_id == RASTERFALL_WORLD_FRONTIER_STATION_01);
@@ -3512,7 +3516,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     struct toy_renderer renderer;
     struct camera camera;
     struct control_settings settings;
-    struct pause_menu pause_menu;
+    struct pause_menu pause_menu = {.slider_drag=-1};
     struct managed_terminal managed_terminal;
     struct rasterfall_console developer_console;
     struct rf_command_context command_context;
@@ -4216,6 +4220,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     settings.keyboard_level = 5;
     rasterfall_render_set_coordinate_axes(coordinate_axes);
     pause_menu.selected = PAUSE_ITEM_RESUME;
+    pause_menu.page=0;
     if(options.combat_lab>=0 || options.combat_lab_suite)seed=(uint64_t)options.combat_lab_seed;
     else if (options.render_performance ||
         options.gpu_normal_view || options.gpu_wave_repro || options.environment_capture_dir ||
@@ -4601,7 +4606,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
                      options.gpu_normal_enemies/10,options.gpu_normal_enemies/10);
         game.state = TOY_GAME_PLAYING;
         if (!strcmp(options.gpu_normal_view,"ui-pause")) {
-            paused=1;pause_menu.selected=PAUSE_ITEM_MOUSE;
+            paused=1;pause_menu.page=RF_PAUSE_CONTROL;pause_menu.selected=CONTROL_ITEM_MOUSE;
             settings.mouse_level=7;settings.keyboard_level=8;
         }
         if (!strcmp(options.gpu_normal_view,"ui-over")) game.state=TOY_GAME_OVER;
@@ -4833,6 +4838,7 @@ startup_again:
     }
     boot_task_started = rf_core_clock_now_us();
     memset(&audio, 0, sizeof(audio));
+    rasterfall_audio_settings_init(&audio,!options.gpu_normal_view && !frame_limit && !options.gpu_frame_capture);
     rasterfall_audio_load_assets(&audio);
     if (gpu_boot_pending)
         rf_boot_record_event(&boot_journal, "sound-assets-load-attempt", 0,
@@ -5100,6 +5106,18 @@ startup_again:
                 running = 0;
             }
         }
+        {
+            struct camera listener=camera;
+            if(game_runtime.rts_active) {
+                rts_setup_camera(&listener,&game_runtime);
+                /* Project the center ray onto the focused floor, ignoring
+                 * camera altitude so RTS zoom does not mute the battlefield. */
+                listener.z+=(int)((long long)game_runtime.rts_camera_distance*90/1020);
+                listener.y-=game_runtime.rts_camera_distance-700;
+            }
+            rasterfall_audio_listener(&audio,listener.x,listener.y,listener.z,
+                listener.sy,listener.cy,session.scene_local.world_generation);
+        }
         rasterfall_net_poll(&net);
         if (net.mode == RASTERFALL_NET_HOST && discovery.fd >= 0) {
             int players = 1;
@@ -5114,7 +5132,7 @@ startup_again:
         rasterfall_net_update_connection(&net);
         if (net.mode == RASTERFALL_NET_CLIENT && net.remote_event_count > 0) {
             if (audio.running)
-                rasterfall_audio_play_events(&audio, net.remote_events,
+                rasterfall_audio_play_remote_events(&audio, net.remote_events,
                                              net.remote_event_count);
         }
         if (net.mode == RASTERFALL_NET_CLIENT) {
@@ -5330,6 +5348,41 @@ startup_again:
         }
         if (!managed_terminal.open && paused) {
             int resume_requested = 0;
+            int pause_count;
+            struct rf_pause_layout pause_layout;
+            rf_pause_geometry(&pause_layout,&game_runtime.player_ui,
+                surface.width,surface.height,pause_menu.page);
+            pause_count=pause_layout.count;
+            int pause_hit=rf_pause_hit(&pause_layout,input.pointer_x,input.pointer_y);
+            int pointer_moved=pause_menu.pointer_valid &&
+                (pause_menu.pointer_x!=input.pointer_x || pause_menu.pointer_y!=input.pointer_y);
+            pause_menu.pointer_x=input.pointer_x;pause_menu.pointer_y=input.pointer_y;
+            pause_menu.pointer_valid=1;
+            if(!(input.mouse_buttons&1))pause_menu.slider_drag=-1;
+            if(pointer_moved && pause_menu.slider_drag<0 && pause_hit>=0 && pause_hit!=pause_menu.selected) {
+                pause_menu.selected=pause_hit;
+                rasterfall_audio_ui(&audio,RF_UI_SOUND_HOVER);
+            }
+            int mouse_confirm=0;
+            if(events.button_pressed && events.button==BTN_LEFT) {
+                if(pause_hit>=0) {
+                    pause_menu.selected=pause_hit;
+                    rasterfall_audio_ui(&audio,RF_UI_SOUND_CLICK);
+                    int slider=(pause_menu.page==RF_PAUSE_AUDIO && pause_hit<RF_AUDIO_CONTROL_COUNT) ||
+                        (pause_menu.page==RF_PAUSE_CONTROL && pause_hit<SUBMENU_ITEM_BACK);
+                    if(slider) {
+                        struct rf_ui_rect bar=rf_pause_bar(&pause_layout,pause_hit);
+                        if(rf_ui_rect_contains(bar,input.pointer_x,input.pointer_y)) {
+                            pause_menu.slider_drag=pause_hit;
+                            rf_pause_slider_set(&audio,&settings,&pause_menu,&pause_layout,input.pointer_x);
+                        }
+                    } else mouse_confirm=1;
+                }
+                events.button_pressed=0;
+            } else if(pause_menu.slider_drag>=0 && (input.mouse_buttons&1) && pointer_moved) {
+                pause_menu.selected=pause_menu.slider_drag;
+                rf_pause_slider_set(&audio,&settings,&pause_menu,&pause_layout,input.pointer_x);
+            }
             /* 菜单导航使用独立节流；Wayland/键盘自动重复可能在一帧内
              * 送来多次边沿，不能让选项随帧率飞快滚动。 */
             int up = action_pressed(&input, RF_ACTION_UI_UP);
@@ -5340,12 +5393,13 @@ startup_again:
                     if (up > 0) {
                         pause_menu.selected--;
                         if (pause_menu.selected < 0)
-                            pause_menu.selected += PAUSE_ITEM_COUNT;
+                            pause_menu.selected += pause_count;
                     } else {
                         pause_menu.selected++;
-                        if (pause_menu.selected >= PAUSE_ITEM_COUNT)
-                            pause_menu.selected -= PAUSE_ITEM_COUNT;
+                        if (pause_menu.selected >= pause_count)
+                            pause_menu.selected -= pause_count;
                     }
+                    rasterfall_audio_ui(&audio,RF_UI_SOUND_HOVER);
                     menu_nav_ready_us = menu_now + 180000;
                     if (interactive_boot) {
                         char nav_line[96];
@@ -5364,14 +5418,18 @@ startup_again:
                 int change = action_pressed(&input, RF_ACTION_UI_RIGHT) -
                              action_pressed(&input, RF_ACTION_UI_LEFT);
                 if (change != 0) {
-                    if (pause_menu.selected == PAUSE_ITEM_MOUSE)
-                        settings.mouse_level = clampi(settings.mouse_level + change, 0, 15);
-                    else if (pause_menu.selected == PAUSE_ITEM_COORDS) {
-                        coordinate_axes = change > 0 ? 1 : 0;
+                    if(pause_menu.page==RF_PAUSE_AUDIO)
+                        rf_audio_menu_change(&audio,pause_menu.selected,change);
+                    else if(pause_menu.page==RF_PAUSE_CONTROL && pause_menu.selected<SUBMENU_ITEM_BACK) {
+                        int *level=pause_menu.selected==CONTROL_ITEM_MOUSE?
+                            &settings.mouse_level:&settings.keyboard_level;
+                        *level=clampi(*level+change,0,15);
+                        rasterfall_audio_ui(&audio,RF_UI_SOUND_CHANGE);
+                    } else if(pause_menu.page==RF_PAUSE_DEVELOPER && pause_menu.selected==DEVELOPER_ITEM_COORDS) {
+                        coordinate_axes=change>0?1:0;
                         rasterfall_render_set_coordinate_axes(coordinate_axes);
+                        rasterfall_audio_ui(&audio,RF_UI_SOUND_CHANGE);
                     }
-                    else if (pause_menu.selected == PAUSE_ITEM_KEYBOARD)
-                        settings.keyboard_level = clampi(settings.keyboard_level + change, 0, 15);
                     pending_key_edges[KEY_RIGHT] = 0;
                     pending_key_edges[KEY_LEFT] = 0;
                     action_consume(&input, pending_physical_edges,
@@ -5380,7 +5438,11 @@ startup_again:
                                    RF_ACTION_UI_LEFT);
                 }
             }
-            if (action_pressed(&input, RF_ACTION_CONFIRM)) {
+            if (mouse_confirm || action_pressed(&input, RF_ACTION_CONFIRM)) {
+                if(pause_menu.page!=RF_PAUSE_AUDIO)rasterfall_audio_ui(&audio,
+                    (pause_menu.page==RF_PAUSE_MAIN && pause_menu.selected==PAUSE_ITEM_EXIT) ||
+                    (pause_menu.page!=RF_PAUSE_MAIN && pause_menu.selected==SUBMENU_ITEM_BACK)?
+                    RF_UI_SOUND_EXIT:RF_UI_SOUND_CONFIRM);
                 if (interactive_boot) {
                     char select_line[96];
                     snprintf(select_line, sizeof(select_line),
@@ -5390,13 +5452,22 @@ startup_again:
                 }
                 action_consume(&input, pending_physical_edges, RF_ACTION_CONFIRM);
                 pending_key_edges[KEY_ENTER] = 0;
-                if (pause_menu.selected == PAUSE_ITEM_RESUME)
-                    resume_requested = 1;
-                else if (pause_menu.selected == PAUSE_ITEM_COORDS) {
-                    coordinate_axes = !coordinate_axes;
+                if(pause_menu.page==RF_PAUSE_AUDIO)rf_audio_menu_confirm(&audio,&pause_menu);
+                else if(pause_menu.page!=RF_PAUSE_MAIN && pause_menu.selected==SUBMENU_ITEM_BACK)
+                    rf_pause_back(&pause_menu);
+                else if(pause_menu.page==RF_PAUSE_MAIN && (pause_menu.selected==PAUSE_ITEM_AUDIO ||
+                    pause_menu.selected==PAUSE_ITEM_CONTROL || pause_menu.selected==PAUSE_ITEM_DEVELOPER)) {
+                    pause_menu.page=pause_menu.selected==PAUSE_ITEM_AUDIO?RF_PAUSE_AUDIO:
+                        pause_menu.selected==PAUSE_ITEM_CONTROL?RF_PAUSE_CONTROL:RF_PAUSE_DEVELOPER;
+                    pause_menu.selected=0;pause_menu.slider_drag=-1;
+                }
+                else if(pause_menu.page==RF_PAUSE_MAIN && pause_menu.selected==PAUSE_ITEM_RESUME)
+                    resume_requested=1;
+                else if(pause_menu.page==RF_PAUSE_DEVELOPER && pause_menu.selected==DEVELOPER_ITEM_COORDS) {
+                    coordinate_axes=!coordinate_axes;
                     rasterfall_render_set_coordinate_axes(coordinate_axes);
                 }
-                else if (pause_menu.selected == PAUSE_ITEM_OUTPOST) {
+                else if(pause_menu.page==RF_PAUSE_MAIN && pause_menu.selected==PAUSE_ITEM_OUTPOST) {
                     if (net.mode != RASTERFALL_NET_OFF) {
                         session.banner_text = "RETURN AVAILABLE OFFLINE";
                         session.banner_ms = 2200;
@@ -5418,7 +5489,7 @@ startup_again:
                         }
                     }
                 }
-                else if (pause_menu.selected == PAUSE_ITEM_RENDERER) {
+                else if (pause_menu.page==RF_PAUSE_DEVELOPER && pause_menu.selected==DEVELOPER_ITEM_RENDERER) {
                     if (net.mode != RASTERFALL_NET_OFF) {
                         session.banner_text = "RENDERER SWITCH AVAILABLE OFFLINE";
                         session.banner_ms = 2200;
@@ -5433,7 +5504,7 @@ startup_again:
 #endif
                     }
                 }
-                else if (pause_menu.selected == PAUSE_ITEM_EXIT) {
+                else if (pause_menu.page==RF_PAUSE_MAIN && pause_menu.selected==PAUSE_ITEM_EXIT) {
                     /* UI requests termination through Core so the host keeps
                      * ownership of the actual shutdown sequence. */
                     rf_core_request_exit(&core);
@@ -5443,9 +5514,13 @@ startup_again:
             if (action_pressed(&input, RF_ACTION_CANCEL)) {
                 action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 pending_key_edges[KEY_ESC] = 0;
-                resume_requested = 1;
+                rasterfall_audio_ui(&audio,RF_UI_SOUND_EXIT);
+                if(pause_menu.page!=RF_PAUSE_MAIN)rf_pause_back(&pause_menu);
+                else resume_requested = 1;
             }
             if (resume_requested) {
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            fire_edge=shove_edge=0;
             int capture_result = game_runtime.rts_active ? 0 :
                 rf_core_set_pointer_lock(&core, 1);
             pointer_lock_requested = capture_result > 0;
@@ -5878,6 +5953,10 @@ startup_again:
                 pointer_turn_pending = 0;
                 pointer_pitch_pending = 0;
                 pause_menu.selected = PAUSE_ITEM_RESUME;
+                pause_menu.page=RF_PAUSE_MAIN;pause_menu.slider_drag=-1;
+                pause_menu.pointer_x=input.pointer_x;pause_menu.pointer_y=input.pointer_y;
+                pause_menu.pointer_valid=1;
+                rasterfall_audio_ui(&audio,RF_UI_SOUND_CONFIRM);
                 pending_key_edges[KEY_ESC] = 0;
                 action_consume(&input, pending_physical_edges, RF_ACTION_CANCEL);
                 __printf("rasterfall: paused, pointer released\n");
@@ -6548,6 +6627,7 @@ startup_again:
             game_runtime.mouse_level = settings.mouse_level;
             game_runtime.keyboard_level = settings.keyboard_level;
             game_runtime.pause_menu_selected = pause_menu.selected;
+            game_runtime.pause_menu_page=pause_menu.page;
             game_runtime.managed_terminal_open = managed_terminal.open;
             strcpy(game_runtime.managed_terminal_line, managed_terminal.line);
             strcpy(game_runtime.managed_terminal_message,

@@ -113,27 +113,13 @@ void toy_sfx_init(struct toy_sfx *sfx, int rate)
     ensure_sine_table();
 }
 
-void toy_sfx_play(struct toy_sfx *sfx, int kind)
+static void sfx_start_voice(struct toy_sfx *sfx,struct toy_sfx_voice *v,int kind)
 {
-    struct toy_sfx_voice *v = NULL;
-    int i, victim = -1, remain = 0x7fffffff;
-    const struct sfx_spec *spec;
-    if (!sfx || !sfx->enabled) return;
-    if (kind < 0 || kind > TOY_SFX_MOLOTOV_BREAK) return;
-    spec = &sfx_specs[kind];
-    for (i = 0; i < TOY_SFX_MAX_VOICES; i++) {
-        struct toy_sfx_voice *cand = &sfx->voices[i];
-        if (!cand->active) { victim = i; break; }
-        if (cand->len - cand->pos < remain) {
-            remain = cand->len - cand->pos;
-            victim = i;
-        }
-    }
-    if (victim < 0) return;
-    v = &sfx->voices[victim];
+    const struct sfx_spec *spec=&sfx_specs[kind];
     v->active = 1;
     v->kind = kind;
     v->pos = 0;
+    v->left_q8=v->right_q8=256;v->source_id=-1;v->priority=0;v->local=0;
     if (sfx->samples[kind].data) {
         /* 样本模式：直接播放注册的 TSND 资产（rate 同为 44100，无需重采样） */
         v->sample = sfx->samples[kind].data;
@@ -149,6 +135,23 @@ void toy_sfx_play(struct toy_sfx *sfx, int kind)
     v->vol = spec->vol;
     v->seed = (uint32_t)(kind * 2654435761u + 12345u);
     v->lp = 0;
+}
+
+void toy_sfx_play(struct toy_sfx *sfx, int kind)
+{
+    int i, victim = -1, remain = 0x7fffffff;
+    if (!sfx || !sfx->enabled) return;
+    if (kind < 0 || kind > TOY_SFX_MOLOTOV_BREAK) return;
+    for (i = 0; i < TOY_SFX_MAX_VOICES; i++) {
+        struct toy_sfx_voice *cand = &sfx->voices[i];
+        if (!cand->active) { victim = i; break; }
+        if (cand->len - cand->pos < remain) {
+            remain = cand->len - cand->pos;
+            victim = i;
+        }
+    }
+    if (victim < 0) return;
+    sfx_start_voice(sfx,&sfx->voices[victim],kind);
 }
 
 /* 注册样本音色替代程序合成；pcm 或 frames 为空时清除，回退程序合成。
@@ -370,4 +373,73 @@ void toy_sfx_render_gained(struct toy_sfx *sfx, short *out, int frames,
 void toy_sfx_render(struct toy_sfx *sfx,short *out,int frames)
 {
     toy_sfx_render_gained(sfx,out,frames,256,256,0);
+}
+
+static int sfx_is_gun(int kind)
+{
+    return kind==TOY_SFX_GUNSHOT || (kind>=TOY_SFX_SMG && kind<=TOY_SFX_AWP);
+}
+void toy_sfx_play_spatial(struct toy_sfx *sfx,int kind,int source_id,
+    int left_q8,int right_q8,int priority,int local)
+{
+    if(!sfx || !sfx->enabled || kind<0 || kind>TOY_SFX_MOLOTOV_BREAK)return;
+    if(left_q8<0)left_q8=0;
+    if(left_q8>256)left_q8=256;
+    if(right_q8<0)right_q8=0;
+    if(right_q8>256)right_q8=256;
+    if(!left_q8 && !right_q8)return;
+    int victim=-1,weakest=0x7fffffff,oldest=-1,overlap=0;
+    for(int i=0;i<TOY_SFX_MAX_VOICES;++i) {
+        struct toy_sfx_voice *v=&sfx->voices[i];
+        if(!v->active) {if(victim<0)victim=i;continue;}
+        if(v->priority<weakest)weakest=v->priority;
+        if(sfx_is_gun(kind) && sfx_is_gun(v->kind) && v->source_id==source_id) {
+            ++overlap;
+            if(oldest<0 || v->pos>sfx->voices[oldest].pos)oldest=i;
+        }
+    }
+    if(overlap>=2)victim=oldest;
+    if(victim<0) {
+        if(priority<weakest)return;
+        int remain=0x7fffffff;
+        for(int i=0;i<TOY_SFX_MAX_VOICES;++i) {
+            struct toy_sfx_voice *v=&sfx->voices[i];
+            if(v->priority==weakest && v->len-v->pos<remain) {
+                victim=i;remain=v->len-v->pos;
+            }
+        }
+    }
+    struct toy_sfx_voice *v=&sfx->voices[victim];
+    sfx_start_voice(sfx,v,kind);
+    v->left_q8=left_q8;v->right_q8=right_q8;
+    v->source_id=source_id;v->priority=priority;v->local=local?1:0;
+}
+void toy_sfx_render_buses(struct toy_sfx *sfx,int *music,int *effects,int frames,
+    const int gains[2][TOY_SFX_MOLOTOV_BREAK+1])
+{
+    for(int f=0;f<frames;++f) {
+        int left=0,right=0,ml=0,mr=0;
+        if(sfx && sfx->enabled) {
+            render_music(sfx,&ml,&mr);
+            for(int local=0;local<2;++local)
+                for(int k=0;k<=TOY_SFX_MOLOTOV_BREAK;++k)
+                    sfx->mix_gain_q16[local][k]=rf_audio_gain_step(
+                        sfx->mix_gain_q16[local][k],gains[local][k]*256);
+            for(int i=0;i<TOY_SFX_MAX_VOICES;++i) {
+                struct toy_sfx_voice *v=&sfx->voices[i];
+                if(!v->active)continue;
+                int sample=(int)((long long)render_voice(v)*
+                    sfx->mix_gain_q16[v->local][v->kind]/65536);
+                /* Gentle onset and shorter gun tails avoid clicks and buildup. */
+                if(v->pos<44)sample=sample*v->pos/44;
+                if(sfx_is_gun(v->kind) && v->pos>sfx->rate/40)
+                    sample=(int)((long long)sample*(v->len-v->pos)/
+                        (v->len-sfx->rate/40));
+                left+=sample*v->left_q8/256;right+=sample*v->right_q8/256;
+                if(++v->pos>=v->len)v->active=0;
+            }
+        }
+        music[f*2]=ml;music[f*2+1]=mr;
+        effects[f*2]=left;effects[f*2+1]=right;
+    }
 }

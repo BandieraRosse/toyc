@@ -15,20 +15,13 @@ static void rf_weaver_audio_update(const struct rasterfall_session *s,
     input.job_serial=w->job_serial;input.produced_count=w->produced_count;
     input.phase=w->phase;input.paused=paused || w->pause_reason;
     if(input.enabled && listener) {
-        double dx=(double)machine->x+512.0*rf_mesh_weaver_build_center_m[0]-listener->x;
-        double dy=(double)machine->y-900.0+512.0*rf_mesh_weaver_build_center_m[1]-listener->y;
-        double dz=(double)machine->z+512.0*rf_mesh_weaver_build_center_m[2]-listener->z;
-        double distance=sqrt(dx*dx+dy*dy+dz*dz),gain=0.0;
-        if(distance<4096.0) {
-            gain=distance<=1024.0 ? 1.0 : (4096.0-distance)/3072.0;
-            gain*=gain;
-        }
-        double pan=distance>1.0 ?
-            (dx*listener->cy-dz*listener->sy)/(1024.0*distance) : 0.0;
-        if(pan>1.0)pan=1.0;
-        if(pan< -1.0)pan=-1.0;
-        input.left_q8=(int)(256.0*gain*(pan>0.0?1.0-.55*pan:1.0));
-        input.right_q8=(int)(256.0*gain*(pan<0.0?1.0+.55*pan:1.0));
+        int x=machine->x+(int)(512.0*rf_mesh_weaver_build_center_m[0]);
+        int y=machine->y-900+(int)(512.0*rf_mesh_weaver_build_center_m[1]);
+        int z=machine->z+(int)(512.0*rf_mesh_weaver_build_center_m[2]);
+        struct rf_audio_spatial gain;
+        rf_audio_spatial_gain(&gain,x-audio->listener_x,y-audio->listener_y,
+            z-audio->listener_z,audio->listener_sy,audio->listener_cy,1024,4096);
+        input.left_q8=gain.left_q8;input.right_q8=gain.right_q8;
     }
     /* Zero-gain frames still advance the observed task identity; approaching
      * an already running machine must not replay old startup/completion cues. */

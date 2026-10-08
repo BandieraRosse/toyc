@@ -332,6 +332,10 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
 {
     rf_frontier_audit(r,frame);
     if(!getenv("RF_UI_AUDIT") || frame%10)return;
+    __printf("AUDIO-AUDIT {\"paused\":%d,\"page\":%d,\"selected\":%d,\"range\":%d,\"save_error\":%d,\"volume\":[",
+        r->lifecycle_paused,r->pause_menu_page,r->pause_menu_selected,r->audio.settings.range,r->audio.save_error);
+    for(int i=0;i<RF_AUDIO_CONTROL_COUNT;++i)__printf("%s%d",i?",":"",r->audio.settings.volume[i]);
+    __printf("]}\n");fflush(stdout);
     #if RF_TACTICAL_INTERACTIVE
     if(r->session->tactical) {
         const struct rf_tactical_lab *l=r->session->tactical;

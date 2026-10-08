@@ -95,6 +95,7 @@ struct rf_game_runtime {
     int mouse_level;
     int keyboard_level;
     int pause_menu_selected;
+    int pause_menu_page;
     int managed_terminal_open;
     char managed_terminal_line[32];
     char managed_terminal_message[96];
