@@ -11,6 +11,7 @@ static struct {
 #if RF_TACTICAL_INTERACTIVE
 static const char *rf_tac_policy_names[]={"机械 M0（新框架）","旧简单推进","旧机械策略","旧 Utility","旧 Beam"};
 static const int rf_tac_solver_ids[]={RF_TAC_M0,RF_TAC_SIMPLE,RF_TAC_MECHANICAL,RF_TAC_UTILITY,RF_TAC_BEAM};
+static const int rf_tac_budget_options[]={128,2048,RF_AI_DEFAULT_BUDGET};
 static const char *rf_tac_weapon_names[]={"步枪 / Rifle","冲锋枪 / SMG"};
 static const char *rf_tac_mode_names[]={"单发","三发点射","连续射击"};
 static const char *rf_tac_target_names[]={"全身战士假人","半身战士假人","探头战士假人"};
@@ -53,7 +54,7 @@ static void rf_tac_option_name(int kind,int field,int value,char *out,int cap)
         else if(field==3)snprintf(out,cap,"%s",rf_tac_weapon_names[value]);
         else if(field==4)snprintf(out,cap,"%s",rf_tac_ui.seed);
         else if(field==5)snprintf(out,cap,"%s",value?"A 防守 / B 进攻":"A 进攻 / B 防守");
-        else snprintf(out,cap,"%d 工作单位",128<<value);
+        else snprintf(out,cap,"%d 工作单位",rf_tac_budget_options[value]);
     } else {
         if(field==0)snprintf(out,cap,"%s",rf_tac_weapon_names[value]);
         else if(field==1)snprintf(out,cap,"%s",rf_tac_mode_names[value]);
@@ -92,7 +93,7 @@ static int rf_tac_apply_settings(struct rasterfall_session *s)
         struct rf_tac_policy policies[2];
         for(int t=0;t<2;++t) {
             rf_tac_policy_default(&policies[t],rf_tac_solver_ids[v[t]]);
-            policies[t].budget=128<<v[6];
+            policies[t].budget=rf_tac_budget_options[v[6]];
         }
         lab->seed=seed;
         if(!rf_tac_match_reset(&lab->match,100,lab->seed,v[2]+4,v[3],policies))return 0;
@@ -114,7 +115,7 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int width,int height,
         memset(&rf_tac_ui,0,sizeof(rf_tac_ui));rf_tac_ui.dropdown=-1;rf_tac_ui.hover=-1;
         rf_tac_ui.world=r->session->world_id;rf_tac_ui.generation=r->session->scene_local.world_generation;
         snprintf(rf_tac_ui.seed,sizeof(rf_tac_ui.seed),"%u",lab->seed);
-        if(lab->kind==1)rf_tac_ui.values[1]=0;
+        if(lab->kind==1){rf_tac_ui.values[1]=0;rf_tac_ui.values[6]=2;}
         else {rf_tac_ui.values[1]=2;rf_tac_ui.values[2]=3;}
     }
     const struct toy_game_actor *p=toy_game_local_player_actor_const(&r->session->game_state);

@@ -71,15 +71,38 @@ static int ai_spend(void *opaque,int n)
 }
 static int ai_remaining(const void *opaque)
 {const struct ai_call *c=opaque;return c->limit-c->stats->work;}
+struct ai_query_call { struct ai_call *call; int start, limit; struct rf_ai_query_result *result; };
+static int ai_query_spend(void *opaque,int n)
+{
+    struct ai_query_call *q=opaque;
+    if(n<0 || n>q->limit-(q->call->stats->work-q->start)){
+        q->result->limited=1;
+        if(n>ai_remaining(q->call))q->call->stats->exhausted=1;
+        return 0;
+    }
+    return ai_spend(q->call,n);
+}
 static int ai_query(void *opaque,const struct rf_ai_query *q,struct rf_ai_query_result *r)
 {
     struct ai_call *c=opaque;memset(r,0,sizeof(*r));r->answer=RF_AI_UNKNOWN;
-    if(!q || q->kind<RF_AI_SHOT || q->kind>RF_AI_CONNECTION)return RF_AI_UNKNOWN;
-    int cost=q->kind==RF_AI_ROUTE?8:2;
-    if(!ai_spend(c,cost)){++c->stats->unknown;return RF_AI_UNKNOWN;}
+    if(!q || q->kind<RF_AI_SHOT || q->kind>RF_AI_EXPOSURE || q->max_work<0){
+        ++c->stats->unknown;return RF_AI_UNKNOWN;
+    }
+    if(q->kind==RF_AI_EXPOSURE)r->next_sample=q->first_sample;
+    int remaining=ai_remaining(c),limit=q->max_work?q->max_work:remaining;
+    if(limit>remaining)limit=remaining;
+    struct ai_query_call call={c,c->stats->work,limit,r};
+    struct rf_ai_query_budget meter={&call,ai_query_spend};
     ++c->stats->queries;double start=rf_ai_clock_seconds();
-    int result=c->backend?c->backend(c->context,q,r):RF_AI_UNKNOWN;
+    int result=RF_AI_UNKNOWN;
+    if(ai_query_spend(&call,1)){
+        if(c->backend)result=c->backend(c->context,q,r,&meter);
+    }
     c->stats->query_seconds+=rf_ai_clock_seconds()-start;
+    r->work=c->stats->work-call.start;c->stats->query_work+=r->work;
+    c->stats->limited_queries+=r->limited;
+    c->stats->expanded_nodes+=r->expanded_nodes;c->stats->visibility_tests+=r->visibility_tests;
+    c->stats->connection_tests+=r->connection_tests;c->stats->cache_hits+=r->cache_hits;
     if(result!=RF_AI_NO && result!=RF_AI_YES){result=RF_AI_UNKNOWN;++c->stats->unknown;}
     r->answer=result;return result;
 }

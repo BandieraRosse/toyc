@@ -17,7 +17,7 @@ CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规�
 
 当前游戏终端和 CLI 默认双方均为“机械 M0（新框架）”，分别执行进攻和防守。
 CLI 名称是 `mechanical-v3`；旧 `mechanical` 保留作旧接口对照。框架边界和算法扩展方式见
-[算法框架](../architecture/tactical-ai.md#策略算法框架-api-1)。M0 不是已训练的强策略。
+[算法框架](../architecture/tactical-ai.md#策略算法框架-api-2)。M0 不是已训练的强策略。
 
 ```powershell
 .\build-windows\rf-tactical.exe algorithms
@@ -32,6 +32,13 @@ python tools/tactical_benchmark.py --policies mechanical-v3 --opponents mechanic
 包含按需查询；query_seconds 是其中的查询耗时。逻辑工作单位不等于毫秒，不能跨算法直接当成 CPU 成本。
 配置中的参数 schema 和 algorithm_version 由具体算法声明。现有 tactical_train.py 仍只训练旧 utility，
 不可用它声称训练了 M0；新算法训练器和强度分层将在后续阶段接入。
+
+API 2 的工作预算按导航扩展和几何检查等实际操作计费，不能沿用 API 1 的数值比较。
+M0 使用算法版本 2；CLI 不传 `--budget` 时保留内置策略或配置文件的预算，显式传入则覆盖双方。
+终端默认与 M0 配置一致，另有较低预算用于观察额度不足；benchmark 默认预算同步为 16384。
+日志增加 query_work、limited_queries、expanded_nodes、visibility_tests、connection_tests 和 cache_hits，
+其中 query_work 已包含在 work_units 中。limited_queries 可能只是算法主动限制一条查询，
+不等于整轮预算耗尽。路线与暴露样本合同见[路线暴露与计费](../architecture/tactical-ai.md#路线暴露与工作计费)。
 
 ## 构建和靶场
 

@@ -28,6 +28,7 @@ struct lab_options {
 };
 struct lab_solver_cost {
     unsigned long long queries, unknown_queries;
+    unsigned long long query_work, limited_queries, expanded_nodes, visibility_tests, connection_tests, cache_hits;
     double query_seconds;
     unsigned long long calls, work_units, prediction_calls, prediction_steps;
     unsigned long long exhausted_calls, unavailable_calls;
@@ -68,6 +69,9 @@ static double lab_cpu_seconds(void) {
 #endif
 }
 static void lab_cost_add(struct lab_solver_cost *sum, const struct lab_solver_cost *cost) {
+    sum->query_work+=cost->query_work;sum->limited_queries+=cost->limited_queries;
+    sum->expanded_nodes+=cost->expanded_nodes;sum->visibility_tests+=cost->visibility_tests;
+    sum->connection_tests+=cost->connection_tests;sum->cache_hits+=cost->cache_hits;
     sum->queries+=cost->queries;sum->unknown_queries+=cost->unknown_queries;sum->query_seconds+=cost->query_seconds;
     sum->calls += cost->calls; sum->work_units += cost->work_units;
     sum->prediction_calls += cost->prediction_calls; sum->prediction_steps += cost->prediction_steps;
@@ -77,6 +81,8 @@ static void lab_cost_add(struct lab_solver_cost *sum, const struct lab_solver_co
 }
 static void lab_cost_json(FILE *f, const struct lab_solver_cost *cost) {
     fprintf(f,"{\"queries\":%llu,\"unknown_queries\":%llu,\"query_seconds\":%.9g,",cost->queries,cost->unknown_queries,cost->query_seconds);
+    fprintf(f,"\"query_work\":%llu,\"limited_queries\":%llu,\"expanded_nodes\":%llu,\"visibility_tests\":%llu,\"connection_tests\":%llu,\"cache_hits\":%llu,",
+        cost->query_work,cost->limited_queries,cost->expanded_nodes,cost->visibility_tests,cost->connection_tests,cost->cache_hits);
     fprintf(f, "\"solver_calls\":%llu,\"work_units\":%llu,\"non_prediction_work_units\":%llu,"
             "\"prediction_calls\":%llu,\"prediction_steps\":%llu,\"predicted_ms\":%llu,"
             "\"budget_exhausted_calls\":%llu,\"prediction_unavailable_calls\":%llu,"
@@ -93,7 +99,7 @@ static void lab_help(void) {
          "  rf-tactical range [--samples 2000] [--shot-seed 1337] [--weapon rifle|smg|both]\n"
          "  rf-tactical match [--a mechanical-v3|simple|mechanical|utility|beam|FILE.cfg] [--b POLICY]\n"
          "                    [--map-seed 100] [--shot-seed 1337] [--squad 4..6]\n"
-         "                    [--weapon rifle|smg] [--duration-ms 60000] [--budget 128]\n"
+         "                    [--weapon rifle|smg] [--duration-ms 60000] [--budget N (policy default)]\n"
          "                    [--log FILE.jsonl] [--trace-tick TICK]\n"
          "                    [--order-a attack|defend] [--order-b attack|defend]\n"
          "                    [--beam-width 1..8] [--beam-branches 2..8]\n"
@@ -138,7 +144,7 @@ static int lab_options(int argc, char **argv, struct lab_options *o) {
     o->map_seed = 100; o->shot_seed = 1337;
     o->squad = 4; o->weapon = !strcmp(argv[1], "range") ? 2 : 0;
     o->duration_ms = 60000; o->pairs = 8;
-    o->budget = 128; o->trace_tick = -1; o->samples = 2000;
+    o->budget = -1; o->trace_tick = -1; o->samples = 2000;
     o->a = "mechanical-v3"; o->b = "mechanical-v3"; o->log = NULL;
     o->order[0] = RF_TAC_ATTACK; o->order[1] = RF_TAC_DEFEND;
     o->beam_width = o->beam_branches = o->beam_horizon_ms = 0;
@@ -225,7 +231,7 @@ static int lab_policy(const char *name, const struct lab_options *o, struct rf_t
     else if (!rf_tac_policy_load(name, out)) {
         fprintf(stderr, "Cannot load policy: %s\n", name); return 0;
     }
-    out->budget = o->budget;
+    if(o->budget>=0)out->budget=o->budget;
     if (out->solver == RF_TAC_BEAM) {
         if (o->beam_width) out->beam_width = o->beam_width;
         if (o->beam_branches) out->beam_branches = o->beam_branches;
@@ -389,6 +395,9 @@ static void lab_decision(FILE *f, const struct rf_tac_observation *o,
     if(p->explicit_actions)fprintf(f,",\"ai_api_version\":%d,\"explicit_actions\":true",RF_AI_API_VERSION);
     if(p->explicit_actions && host)fprintf(f,",\"queries\":%d,\"unknown_queries\":%d,\"invalid_actions\":%d,\"snapshot_seconds\":%.9g,\"query_seconds\":%.9g,\"decision_seconds\":%.9g",
         host->stats.queries,host->stats.unknown,host->stats.invalid_actions,host->snapshot_seconds,host->stats.query_seconds,host->stats.decision_seconds);
+    if(p->explicit_actions && host)fprintf(f,",\"query_work\":%d,\"limited_queries\":%d,\"expanded_nodes\":%d,\"visibility_tests\":%d,\"connection_tests\":%d,\"cache_hits\":%d",
+        host->stats.query_work,host->stats.limited_queries,host->stats.expanded_nodes,
+        host->stats.visibility_tests,host->stats.connection_tests,host->stats.cache_hits);
     if (policy->solver == RF_TAC_BEAM) { fputs(",\"beam\":", f); lab_beam_trace(f, p, t, policy); }
     fputs("}\n", f);
 }
@@ -479,6 +488,9 @@ static int lab_match(const struct rf_tac_map *map, const struct lab_options *o,
                     costs[team].preparation_seconds+=ai[team].snapshot_seconds;
                     costs[team].queries+=ai[team].stats.queries;costs[team].unknown_queries+=ai[team].stats.unknown;
                     costs[team].query_seconds+=ai[team].stats.query_seconds;
+                    costs[team].query_work+=ai[team].stats.query_work;costs[team].limited_queries+=ai[team].stats.limited_queries;
+                    costs[team].expanded_nodes+=ai[team].stats.expanded_nodes;costs[team].visibility_tests+=ai[team].stats.visibility_tests;
+                    costs[team].connection_tests+=ai[team].stats.connection_tests;costs[team].cache_hits+=ai[team].stats.cache_hits;
                 }else if (policies[team]->solver == RF_TAC_BEAM)
                     rf_tac_solve_with_predictor(&obs[team], policies[team], service, &plan[team], need_trace ? &trace[team] : NULL);
                 else rf_tac_solve(&obs[team], policies[team], &plan[team], need_trace ? &trace[team] : NULL);

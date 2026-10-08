@@ -414,7 +414,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--shot-seeds", type=int, nargs="+", default=[1337, 424242, 98765],
                         help="Native shot seed bases; map pair i uses (base + i*7919) modulo 2^32")
     result.add_argument("--squads", type=int, nargs="+", choices=(4, 5, 6), default=[4, 5, 6])
-    result.add_argument("--budget", type=int, default=128)
+    result.add_argument("--budget", type=int, default=16384)
     result.add_argument("--duration-ms", type=int, default=60000)
     result.add_argument("--jobs", type=int, default=1, help="Independent native processes, 1..32; e.g. 3")
     result.add_argument("--timeout", type=float, default=600, help="Timeout seconds per native batch")

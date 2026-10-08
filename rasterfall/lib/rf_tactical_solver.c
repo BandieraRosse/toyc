@@ -16,7 +16,7 @@ void rf_tac_policy_default(struct rf_tac_policy *p, int solver)
     memset(p, 0, sizeof(*p));
     p->version = RF_TAC_VERSION;
     p->solver = solver;
-    p->budget = 256;
+    p->budget = solver==RF_TAC_M0?RF_AI_DEFAULT_BUDGET:256;
     p->aggression = 1.0f;
     p->safety = 1.0f;
     p->progress = 4.0f;
