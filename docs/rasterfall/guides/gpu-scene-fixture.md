@@ -260,7 +260,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_scene_fixture.ps1 
 日志及输入 SHA256。标准库 Python 生成 PNG 原图、绝对 RGB diff 与 `diff.json`，记录变更像素数、
 逐通道 MAE/max、原图哈希；不设置容差，不自动批准基线。`-Views` 可在 PowerShell 中传入镜头数组。
 
-`-MapOnly` 在输出目录生成副本，显式使用 `attr.identity=return_to_whu_v0` 的空 World Content policy，
+`-MapOnly` 在输出目录生成副本，显式使用 `attr.identity=performance_empty` 的空 World Content policy，
 排除 Campaign 队员、旗帜及展示内容；HUD/viewmodel 仍保留。它不改原地图，也不签收角色覆盖。
 `-Isolate` 保留 ground 与镜头对应的一种 render（gate 保留 box+platform），重排连续 legacy index，
 保留其他空间/碰撞记录。副本及哈希随原图保存，单物体结果不能冒充完整地图。

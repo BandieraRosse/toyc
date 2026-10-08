@@ -168,7 +168,7 @@ static void device_test_query(void *context,struct rf_device_query *q)
     q->features[1]=(struct rf_device_feature){"pbr","PBR",RF_DEVICE_EXPERIMENTAL,1,0};
     q->features[2]=(struct rf_device_feature){"outline","Outline",RF_DEVICE_UNIMPLEMENTED,0,1};
     q->maps[0]=(struct rf_device_map){"campaign","Campaign",RASTERFALL_WORLD_CAMPAIGN_01,1};
-    q->maps[1]=(struct rf_device_map){"whu","WHU",RASTERFALL_WORLD_RETURN_TO_WHU_V0,0};
+    q->maps[1]=(struct rf_device_map){"frontier","Frontier",RASTERFALL_WORLD_FRONTIER_STATION_01,0};
 }
 static int device_test_apply(void *context,int operation,int index,int value)
 {

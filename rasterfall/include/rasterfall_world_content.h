@@ -4,7 +4,7 @@
 enum rasterfall_world_id {
     RASTERFALL_WORLD_OUTPOST = 0,
     RASTERFALL_WORLD_CAMPAIGN_01 = 1,
-    RASTERFALL_WORLD_RETURN_TO_WHU_V0 = 2,
+    /* World ID 2 is retired; keep subsequent persistent IDs stable. */
     RASTERFALL_WORLD_PERF_EMPTY = 3,
     RASTERFALL_WORLD_PERF_COMPONENTS = 4,
     RASTERFALL_WORLD_FRONTIER_STATION_01 = 5,

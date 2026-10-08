@@ -1,6 +1,6 @@
 # Return to WHU 核心区资料
 
-本目录保存信息学部核心区 V0 的来源和派生比例资料，记录已取得的证据与尚未核实的尺寸。阶段性的游戏空间草案已归档；当前优先级见[活动计划](../../plans/README.md)。
+本目录仅保留信息学部核心区 V0 的历史来源和派生比例资料。校园地图已删除并停止开发；阶段性的游戏空间草案已归档，当前地图见[地图架构](../../architecture/maps-and-world-content.md)。
 
 - [来源与测量台账](sources.md)：资料出处、坐标约定及可信度。
 - [V0 调查报告](investigation-report.md)与[V1 补充](evidence-addendum-v1.md)：已核实事实和缺口。

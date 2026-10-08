@@ -325,8 +325,6 @@ int rasterfall_session_load(struct rasterfall_session *session,
         else if (!strcmp(identity, "tactical_range")) session->world_id=RASTERFALL_WORLD_TACTICAL_RANGE;
         else if (!strcmp(identity, "frontier_station_01"))
             session->world_id = RASTERFALL_WORLD_FRONTIER_STATION_01;
-        else if (!strcmp(identity, "return_to_whu_v0"))
-            session->world_id = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
         else if (!strcmp(identity, "performance_empty"))
             session->world_id = RASTERFALL_WORLD_PERF_EMPTY;
         else if (!strcmp(identity, "performance_components"))
@@ -439,7 +437,6 @@ int rasterfall_session_request_world(struct rasterfall_session *session,
 {
     if (!session || (world != RASTERFALL_WORLD_OUTPOST &&
                      world != RASTERFALL_WORLD_CAMPAIGN_01 &&
-                     world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
                      world != RASTERFALL_WORLD_TACTICAL_ARENA &&
                      world != RASTERFALL_WORLD_TACTICAL_RANGE &&
                      world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
@@ -1240,13 +1237,6 @@ static void session_interact(struct rasterfall_session *session,
         rasterfall_session_request_world(session, RASTERFALL_WORLD_OUTPOST);
         session->banner_ms = 800;
         session->banner_text = "RETURNING TO OUTPOST";
-        return;
-    }
-    if (it->kind == TOY_MAP_PICKUP_RETURN_TO_WHU_V0) {
-        rasterfall_session_request_world(session,
-                                         RASTERFALL_WORLD_RETURN_TO_WHU_V0);
-        session->banner_ms = 1200;
-        session->banner_text = "DEPLOYING RETURN TO WHU V0";
         return;
     }
     if (it->kind == TOY_MAP_PICKUP_BUTTON) {

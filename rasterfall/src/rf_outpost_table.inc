@@ -1,5 +1,5 @@
 /* Outpost command table: presentation state and map-file previews. */
-#define RF_TABLE_MAPS 6
+#define RF_TABLE_MAPS 5
 struct rf_table_map {
     enum rasterfall_world_id world;
     const char *name;
@@ -36,18 +36,16 @@ static void rf_table_init(void)
     rf_table.maps[0].name = "OUTPOST";
     rf_table.maps[1].world = RASTERFALL_WORLD_CAMPAIGN_01;
     rf_table.maps[1].name = "CAMPAIGN 01";
-    rf_table.maps[2].world = RASTERFALL_WORLD_RETURN_TO_WHU_V0;
-    rf_table.maps[2].name = "RETURN TO WHU";
-    rf_table.maps[3].world = RASTERFALL_WORLD_FRONTIER_STATION_01;
-    rf_table.maps[3].name = "边缘站点 01";
-    rf_table.maps[4].world=RASTERFALL_WORLD_TACTICAL_ARENA;
-    rf_table.maps[4].name="AI 策略对抗场";
-    rf_table.maps[5].world=RASTERFALL_WORLD_TACTICAL_RANGE;
-    rf_table.maps[5].name="武器靶场";
+    rf_table.maps[2].world = RASTERFALL_WORLD_FRONTIER_STATION_01;
+    rf_table.maps[2].name = "边缘站点 01";
+    rf_table.maps[3].world=RASTERFALL_WORLD_TACTICAL_ARENA;
+    rf_table.maps[3].name="AI 策略对抗场";
+    rf_table.maps[4].world=RASTERFALL_WORLD_TACTICAL_RANGE;
+    rf_table.maps[4].name="武器靶场";
     for (int i = 0; i < RF_TABLE_MAPS; ++i)
         rf_table_read_map(&rf_table.maps[i]);
 #ifndef TOYC_WINDOWS
-    rf_table.maps[4].available=rf_table.maps[5].available=0;
+    rf_table.maps[3].available=rf_table.maps[4].available=0;
     rf_table.preview_state=4;
 #endif
 }

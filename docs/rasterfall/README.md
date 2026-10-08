@@ -11,6 +11,9 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+地图目录、校园地图退役与稳定 world ID 由[地图与世界内容](architecture/maps-and-world-content.md)维护；
+旧地图和正式地图的首次缓存加载诊断从[光照指南](guides/gpu-lighting.md#固定光照烘焙与对照)进入。
+
 动态实验场的创建、暂停、替换、销毁、正式 actor 播放控制与可越过玻璃围栏，从
 [动态实验场合同](reference/experiment-labs.md)进入；session 所有权见
 [运行时架构](architecture/runtime.md)，固定负载与真实战斗采样见[性能诊断](guides/rendering-performance.md#前哨站游戏内性能实验场)。

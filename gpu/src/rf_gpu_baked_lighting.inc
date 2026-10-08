@@ -125,11 +125,22 @@ static int gfx_baked_surface_prepare(struct rf_gpu_graphics *g,
     if(!samples)return 0;
     if(key==g->baked_surface_key) {
         if(g->baked_surface_pending==2) {
+            size_t bytes=(size_t)g->baked_surface.size;
+            void *snapshot=malloc(bytes);
             void *mapped=NULL;
-            if(g->owner->api.map_memory(g->owner->device,g->baked_surface.memory,0,g->baked_surface.allocation_size,0,&mapped)==RF_VK_SUCCESS) {
-                bake_write(key,3,mapped,(size_t)g->baked_surface.size);
+            if(snapshot && g->owner->api.map_memory(g->owner->device,g->baked_surface.memory,0,g->baked_surface.allocation_size,0,&mapped)==RF_VK_SUCCESS) {
+                /* HOST_COHERENT does not imply CPU-cached memory. Hashing mapped
+                 * device memory byte by byte can cost tens of seconds on a dGPU.
+                 * Retired GPU output is copied once to ordinary RAM, as for the
+                 * volume bake, before either the checksum or file IO reads it. */
+                double started=now_ms();
+                memcpy(snapshot,mapped,bytes);
                 g->owner->api.unmap_memory(g->owner->device,g->baked_surface.memory);
+                fprintf(stderr,"rf-gpu-bake: surface-readback bytes=%llu copy-ms=%.3f\n",
+                    (unsigned long long)bytes,now_ms()-started);
+                bake_write(key,3,snapshot,bytes);
             }
+            free(snapshot);
             g->baked_surface_pending=0;
         }
         return 0;

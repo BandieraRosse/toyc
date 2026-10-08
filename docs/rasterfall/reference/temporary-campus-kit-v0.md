@@ -3,7 +3,7 @@
 > 状态：当前
 > 所有者：临时校园展示资产与拼接合同
 
-本套件用于可撤回的 Planar Massing V0 展示，不代表武汉大学的实测宽度、坡度、标高或正式建筑。阶段清点与合成场景观察见[历史记录](../archive/temporary-campus-kit-v0.md)；重建与截图见[操作指南](../guides/temporary-campus-kit-v0.md)。真实空间依据仍由 [Return to WHU 资料](return-to-whu-core/)负责。
+本套件保留通用组件与合成展示；Planar Massing V0 地图已退役，不再开发。组件不代表武汉大学的实测宽度、坡度、标高或正式建筑。阶段清点与合成场景观察见[历史记录](../archive/temporary-campus-kit-v0.md)；重建与截图见[操作指南](../guides/temporary-campus-kit-v0.md)。历史空间依据见 [Return to WHU 资料](return-to-whu-core/)。
 
 ## 资产分工
 

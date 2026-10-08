@@ -959,9 +959,8 @@ static int capture_map_world(const char *output_dir,
     if (!active_session || !output_dir || !*output_dir || strlen(output_dir)>450) return 1;
     if (tlibc_recursive_mkdir(output_dir) < 0) return 1;
     character_strip_model_path = model_path && *model_path ? model_path : NULL;
-    int whu = environment && active_session->world_id == RASTERFALL_WORLD_RETURN_TO_WHU_V0;
     int hall = environment && active_session->world_id == RASTERFALL_WORLD_OUTPOST;
-    for (i = 0; i < (hall ? 18 : whu ? 4 : environment ? 21 : 17); i++) {
+    for (i = 0; i < (hall ? 18 : environment ? 21 : 17); i++) {
         struct camera camera;
         struct toy_renderer renderer;
         struct toy_surface surface;
@@ -972,7 +971,7 @@ static int capture_map_world(const char *output_dir,
         long frame_start, raster_start, raster_us, frame_us;
         unsigned long submitted_triangles;
         struct toy_game *saved_fixture_game = NULL;
-        int c2_fixture = environment && !whu && !hall && i >= 12;
+        int c2_fixture = environment && !hall && i >= 12;
         int character_bounds_fixture = !environment && i >= 15;
         int saved_campaign_fixture_enabled = 0;
         struct camera c2_body_camera;
@@ -1012,22 +1011,6 @@ static int capture_map_world(const char *output_dir,
             camera.body.x = views[i].x; camera.body.z = views[i].z;
             camera.view.sy = views[i].sy; camera.view.cy = views[i].cy;
             camera.view.y = -350; camera.view.pitch_cy = 1024;
-            snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
-        }
-        if (whu) {
-            static const struct { const char *name; int x, z, sy, cy; } views[] = {
-                {"a18-start", 0, 0, 0, 0},
-                {"b-west-plaza", -64000, 8000, 819, -614},
-                {"library-forecourt", 32000, -43000, 614, 819},
-                {"d-to-ef", 74000, -48000, 0, -1024}
-            };
-            memset(&camera, 0, sizeof(camera));
-            camera.x = i ? views[i].x : active_session->level.start_x;
-            camera.z = i ? views[i].z : active_session->level.start_z;
-            camera.sy = i ? views[i].sy : active_session->level.start_sy;
-            camera.cy = i ? views[i].cy : active_session->level.start_cy;
-            camera.y = RASTERFALL_STANDING_CAMERA_Y;
-            camera.pitch_cy = 1024;
             snprintf(path, sizeof(path), "%s/%s.bmp", output_dir, views[i].name);
         }
         if (hall) {
@@ -1199,7 +1182,7 @@ static int capture_map_world(const char *output_dir,
         rasterfall_host_set_capture_time(0);
         rasterfall_render_scene(&renderer, &camera);
         rasterfall_host_set_capture_time(-1);
-        if (environment && !whu && !hall && !c2_fixture) {
+        if (environment && !hall && !c2_fixture) {
             struct rasterfall_scene_stats audit_stats;
             rasterfall_render_scene_stats(&audit_stats);
             normal_frame_coverage_trace(path, &renderer, &audit_stats);

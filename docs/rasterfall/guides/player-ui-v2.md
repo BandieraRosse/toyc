@@ -118,7 +118,7 @@ python tools/rts_command_check.py --boot --fullscreen --physical-mouse --story -
 | 收起/恢复/结束 | `RF_PLAYER_DIALOG_COLLAPSE/CLOSE`；`comms hide|resume|close` | `comms`、`comms history` | USER；保留/释放按会话规则 | 停止视频、释放控制 |
 | 任务/通知 | 共享只读状态 | `task`、`notices` | USER；不泄漏未知敌人 | 真实事件驱动 |
 | 渲染开关 | `RF_DEVICE_RENDER_SET`；`render set outline 0|1` 等能力 ID | `render status` | USER；按当前后端支持状态校验 | 显式设置幂等 |
-| 指挥桌选择/部署 | `RF_DEVICE_TABLE_SELECT/DEPLOY`；`table select|deploy outpost|campaign|whu` | `table maps`、`devices status` | 部署复核桌旁距离/高度、离线与世界代际 | 队列单次消费 |
+| 指挥桌选择/部署 | `RF_DEVICE_TABLE_SELECT/DEPLOY`；地图 ID 由 `table maps` 列出 | `table maps`、`devices status` | 部署复核桌旁距离/高度、离线与世界代际 | 队列单次消费 |
 | 重播/重置 | `RF_PLAYER_STORY_REPLAY/RESET`；`comms replay 101|102`、`comms reset 0|101|102` | `comms` | ADMIN；显式实验模式 | 两段与全部回答分支 |
 
 ## 验收入口

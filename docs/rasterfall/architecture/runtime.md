@@ -147,12 +147,12 @@ SDL 父窗口，光标位置另从 Win32 原生快照同步。窗口绘制和 Vu
 确认部署沿设备权限检查和 `rf_game_request_world()` 进入。匹配的预加载 session 通过
 `rasterfall_session_adopt_map()` 移交 Runtime Map、level 和 content，重新绑定投影并在目标
 session 正常 reset；不复制 Game 或 session 自引用指针，不继承预览摄像机状态。原生逻辑
-回归覆盖六个目录地图的移交、源 owner 卸载、目标投影绑定及世界代际增长。
+回归覆盖五个目录地图的移交、源 owner 卸载、目标投影绑定及世界代际增长。
 未命中预加载时仍使用原 preflight/load 路径。预览 GPU 图像不充当进入后的主渲染目标。
 
 默认 Game policy 加载 `RASTERFALL_WORLD_OUTPOST`（`assets/maps/outpost.map`），不让 Core 选择或解析
-Rasterfall world。Outpost 指挥桌地图屏幕可请求 `RASTERFALL_WORLD_CAMPAIGN_01` 或
-`RASTERFALL_WORLD_RETURN_TO_WHU_V0`；战役返回设备请求 Outpost；`rf_game_request_world()` 按 unload → Runtime Map load → projection → session reset → lightmap
+Rasterfall world。Outpost 指挥桌地图屏幕可请求 Campaign 01、边缘站点、AI 策略对抗场与武器靶场；
+战役返回设备请求 Outpost；`rf_game_request_world()` 按 unload → Runtime Map load → projection → session reset → lightmap
 rebuild 顺序完成一次完整重建。普通离线启动经 RF Boot Manager 引导后落地前哨站，显式网络/诊断路径仍可使用旧启动菜单。
 
 前哨站指挥桌的离线互动由 Game Runtime 管理临时输入与展示状态：桌前 E 进入固定站位、解锁指针，Esc 恢复 FPS；地图列表以现有 world ID 为准，预览从对应 `.map` 文件的 world bounds、surface 与 collision footprint 读取并逐帧绘制。点击列表调用 `rf_game_request_world()`。离线暂停菜单的 `RETURN TO OUTPOST` 也调用同一重载链，恢复出生点、初始 seed 和新局状态；联机时避免客户端单方面重载地图。

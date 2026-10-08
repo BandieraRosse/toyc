@@ -28,8 +28,7 @@ session 保存启动配置，在 normal/legacy 换图及重试后、世界 actor
 空间地图（Spatial Map）remains authoritative for terrain, collision and neutral spatial
 data. Rasterfall Game keeps a small `rasterfall_world_content` policy in the
 session: Outpost builds Null and station content, while Campaign 01 builds
-the campaign roster, content-defined Maid/Hurd formations, flags and support actors. Return-to-WHU Planar Massing V0
-intentionally builds no world-content actors or tasks. Campaign-only
+the campaign roster, content-defined Maid/Hurd formations, flags and support actors. Campaign-only
 actors are not created in Outpost gameplay state. The policy is Game-owned and
 is rebuilt when a world loads; it is not part of RF Core or Map Runtime.
 

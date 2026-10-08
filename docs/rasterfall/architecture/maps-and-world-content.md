@@ -79,9 +79,12 @@ Runtime Map 和 projection adapter 是默认输入链路；修改语法时必须
 Outpost V1 使用同一 V1 链路，源文件为 `assets/maps/outpost.map`；多层基地、四向大厅与七件家具的
 空间合同见 [Outpost V1](../reference/outpost-hall-v1.md)。当前 content 只放置 Null，家具为地图
 object，不声明交互终端；设备视觉不改变 Game 状态。既有 `station_terminal`、
-`operations_terminal`、`super_terminal`、`return_outpost` 和 `return_to_whu_v0` 是 Game-owned interaction vocabulary，分别
-映射为 Station GUI 请求、Campaign 01 world request、锁定反馈、返回请求和 Return-to-WHU Planar Massing V0 world request；它们不是 Core API，也不改变
+`operations_terminal`、`super_terminal` 和 `return_outpost` 是 Game-owned interaction vocabulary，分别
+映射为 Station GUI 请求、Campaign 01 world request、锁定反馈和返回请求；它们不是 Core API，也不改变
 Runtime Map ownership。
+
+校园 Planar Massing V0 地图及独立 World Content 已退役，部署目录不再提供该入口，
+原 world ID 2 保留为空缺，其他世界 ID 不重排。通用校园组件与历史空间资料继续保留。
 
 边缘站点 01 使用 identity `frontier_station_01`，配对 `assets/maps/frontier_station_01.map`
 与 `assets/worlds/frontier_station_01.content`。World Content 定义五名正式队员及编组；敌方守军、

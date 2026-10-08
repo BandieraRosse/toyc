@@ -25,14 +25,14 @@ foreach ($view in $Views) {
             default { @('air_gate_box','air_gate_platform') }
         }
         $viewMap = Join-Path $out "$view.map"
-        $mapLines = Get-Content -LiteralPath $map | Where-Object {
+        $mapLines = Get-Content -Encoding UTF8 -LiteralPath $map | Where-Object {
             if ($Isolate -and $_ -match '^render id=([^ ]+)') { $ids -contains $Matches[1] -or $Matches[1] -eq 'fixture_ground' }
             else { $true }
         }
         $renderIndex = 0
         $mapLines = @($mapLines | ForEach-Object {
             if ($_ -match '^render ') { $_ -replace 'attr.legacy_index=\d+', "attr.legacy_index=$renderIndex"; $renderIndex++ }
-            elseif ($MapOnly -and $_ -match '^world ') { $_ + ' attr.identity=return_to_whu_v0' }
+            elseif ($MapOnly -and $_ -match '^world ') { $_ + ' attr.identity=performance_empty' }
             else { $_ }
         })
         [IO.File]::WriteAllLines($viewMap, $mapLines, (New-Object Text.UTF8Encoding($false)))

@@ -4296,7 +4296,6 @@ int rf_game_runtime_run(const struct rf_game_config *config)
          options.environment_capture_dir ||
          options.normal_frame_audit_output ||
          options.character_world_capture_dir) &&
-        session.world_id != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         session.world_id != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
         !(options.gpu_normal_view && !strcmp(options.gpu_normal_view, "mesh-weaver")) &&
         !(options.map_path && session.world_id == RASTERFALL_WORLD_OUTPOST &&
@@ -4986,7 +4985,7 @@ startup_again:
              rendered_frames == 90)) {
             enum rasterfall_world_id next_world = rendered_frames == 30 ?
                 RASTERFALL_WORLD_CAMPAIGN_01 : rendered_frames == 60 ?
-                RASTERFALL_WORLD_RETURN_TO_WHU_V0 :
+                RASTERFALL_WORLD_OUTPOST :
                 RASTERFALL_WORLD_CAMPAIGN_01;
             if (rf_game_request_world(&game_runtime, next_world) < 0) {
                 __fprintf(2, "rasterfall: world cycle gate failed at frame %d world %d\n",

@@ -22,6 +22,8 @@ python tools/bake_lighting.py --map rasterfall/assets/maps/outpost.map --map ras
 
 `rf-gpu-bake` 日志区分 `topology=hit`、光场 `hit key`、`surface=hit`、冷准备和写入失败；
 不能只凭 pipeline cache 命中认定光照已复用。热运行的 `gi`、`receiver` 区间只保留时间戳边界开销。
+`surface-readback copy-ms` 与 `save hash-ms/write-ms` 拆分表面读回及落盘；它们发生于提交退休后，
+不应当用 GI GPU 时间解释这部分 CPU 等待。完整进程时间也包含初始化、首帧与退出。
 `SCENE-PREWARM` 仍包括模型/地图上传和 AUX 目标创建，不会因为光照已烘焙而消失。
 
 同包对照：固定 `RF_GPU_SKY_TIME=0`，分别设置 `RF_GPU_BAKED_LIGHTING=0/1`，交替运行

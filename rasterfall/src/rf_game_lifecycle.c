@@ -45,7 +45,6 @@ static int rf_game_request_world_path(struct rf_game_runtime *runtime,
     if (!runtime || !runtime->initialized || !runtime->session) return -1;
     if (world != RASTERFALL_WORLD_OUTPOST &&
         world != RASTERFALL_WORLD_CAMPAIGN_01 &&
-        world != RASTERFALL_WORLD_RETURN_TO_WHU_V0 &&
         world != RASTERFALL_WORLD_TACTICAL_ARENA &&
         world != RASTERFALL_WORLD_TACTICAL_RANGE &&
         world != RASTERFALL_WORLD_FRONTIER_STATION_01 &&
@@ -121,7 +120,7 @@ int rf_game_world_request_logic_test(void)
     prepared=tlibc_malloc(sizeof(*prepared));WORLD_CHECK(prepared!=NULL);
     memset(prepared,0,sizeof(*prepared));
     const enum rasterfall_world_id maps[]={RASTERFALL_WORLD_OUTPOST,RASTERFALL_WORLD_CAMPAIGN_01,
-        RASTERFALL_WORLD_RETURN_TO_WHU_V0,RASTERFALL_WORLD_FRONTIER_STATION_01,
+        RASTERFALL_WORLD_FRONTIER_STATION_01,
         RASTERFALL_WORLD_TACTICAL_ARENA,RASTERFALL_WORLD_TACTICAL_RANGE};
     for(unsigned i=0;i<sizeof(maps)/sizeof(maps[0]);++i) {
         WORLD_CHECK(rasterfall_session_load(prepared,world_path(maps[i]))==0);

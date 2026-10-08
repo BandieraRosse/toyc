@@ -43,7 +43,9 @@ static void bake_write(uint64_t key,unsigned kind,const void *data,size_t bytes)
     unsigned long process=(unsigned long)getpid();
 #endif
     snprintf(temporary,sizeof(temporary),"%s.%lu.tmp",path,process);
+    double started=now_ms();
     uint64_t h[5]={0x31454b41424652ull,key,kind,bytes,bake_hash(bake_seed(),data,bytes)};
+    double hashed=now_ms();
     FILE *file=fopen(temporary,"wb");int ok=0;
     if(file) {
         ok=fwrite(h,sizeof(h),1,file)==1 && fwrite(data,1,bytes,file)==bytes;
@@ -57,5 +59,6 @@ static void bake_write(uint64_t key,unsigned kind,const void *data,size_t bytes)
         }
         if(!ok)remove(temporary);
     }
-    fprintf(stderr,"rf-gpu-bake: save kind=%u bytes=%llu result=%s\n",kind,(unsigned long long)bytes,ok?"ok":"unavailable");
+    fprintf(stderr,"rf-gpu-bake: save kind=%u bytes=%llu result=%s hash-ms=%.3f write-ms=%.3f\n",
+        kind,(unsigned long long)bytes,ok?"ok":"unavailable",hashed-started,now_ms()-hashed);
 }
