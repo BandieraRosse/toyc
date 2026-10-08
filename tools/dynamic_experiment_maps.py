@@ -87,21 +87,40 @@ def main():
     for name,x,z,category in [('actor_actions_lab',-9728,-19968,'animation'),
         ('rf_electronics_lab',9728,-19968,'model'),('rf_light_lab',29184,-19968,'lighting')]:
         width=12288 if name=='rf_light_lab' else 10240
-        campus.extend(line for line in lab(name,x,z,category,'walled',width=width,depth=9216,
+        campus.extend(line for line in lab(name,x,z,category,'open',width=width,depth=9216,
                           projection_beams=False).splitlines() if '_sample_info' not in line)
     # A single performance footprint. Workloads own everything inside it.
     campus.extend(line for line in lab('perf_low',0,-35000,'performance','walled',width=13500,depth=9000,
-                      plot_width=16384,plot_depth=10240,projection_beams=False).splitlines()
+                      plot_width=16384,plot_depth=10240,projection_beams=False,entry_gap=0).splitlines()
                       if 'perf_low_button' not in line and '_sample_info' not in line)
     campus += ['object id=perf_control_terminal kind=facility_terminal x=7800 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=perf_result_terminal kind=facility_terminal x=9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=combat_control_terminal kind=facility_terminal x=-7800 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=combat_result_terminal kind=facility_terminal x=-9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component']
-    for i,(x0,x1,z0,z1) in enumerate([(-18000,38000,-14800,-11776),(-1536,1536,-30000,-11776)]):
+    # Tile the roads against plot edges without overlapping visible floor paint.
+    roads = [(-20992,40448,-14848,-11776),
+             (-20992,40448,-28160,-25088),
+             (-20992,-17920,-25088,-14848),
+             (-1536,1536,-25088,-14848),
+             (17920,20992,-25088,-14848),
+             (37376,40448,-25088,-14848),
+             (-11264,11264,-29880,-28160),
+             (-11264,-8192,-40120,-29880),
+             (8192,11264,-40120,-29880),
+             (-11264,11264,-43192,-40120)]
+    for i,(x0,x1,z0,z1) in enumerate(roads):
         b=f'min_x={x0} max_x={x1} min_z={z0} max_z={z1}'
         campus += [f'collision id=experiment_road_{i}_col shape=flat {b} height=0 collision=false visible=true walkable=true',
             f'surface id=experiment_road_{i} kind=ground {b} height=0 attr.collision_id=experiment_road_{i}_col',
             f'render id=experiment_road_{i}_paint kind=floor {b} height=0 color=485860 attr.style=11']
+    # Continuous invisible support carries actor footprints across road/plot seams.
+    # Overlap only inside already paved ground, including the existing hall yard.
+    for name,(x0,x1,z0,z1) in [('main',(-20992,40448,-28160,-11776)),
+                              ('performance',(-11264,11264,-43192,-25088)),
+                              ('entry',(-5120,5120,-14848,-5632))]:
+        b=f'min_x={x0} max_x={x1} min_z={z0} max_z={z1}'
+        campus += [f'collision id=experiment_support_{name}_col shape=flat {b} height=0 collision=false visible=false walkable=true',
+            f'surface id=experiment_support_{name} kind=ground {b} height=0 attr.collision_id=experiment_support_{name}_col']
     campus.append(END)
     write(path,base+campus+tail)
 

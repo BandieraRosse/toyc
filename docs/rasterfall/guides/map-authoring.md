@@ -30,7 +30,8 @@ python tools/experiment_lab.py new_model_lab --x 0 --z -42000 --category model -
 使用 floor style 11；工作板与填充板分别为 style 10/12，原通用样式继续可用。
 片段中的地面、标线、入口显示与试样信息使用 `attr.lab` 局部坐标；终端由 `assembly` 引用 lab，
 其独立模型、像素屏和透明窗通过 `attr.assembly` 组合。移动区域只改 `lab` 原点，
-连通道路仍由全局布局拥有。用途和围合选项以工具 `--help` 为准。
+连通道路仍由全局布局拥有。围栏的 `--entry-gap 0` 生成完整闭合边界；默认保留北侧入口。
+用途和围合选项以工具 `--help` 为准。
 
 新增展示功能时，在 `rf_experiment_labs.inc` 登记 surface、控制 object、诊断镜头和后端能力，
 沿用默认关闭、暂停时钟与性能独占规则，并在对应来源中使用区域局部坐标。新 channel 的内容由

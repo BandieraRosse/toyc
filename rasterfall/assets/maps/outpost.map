@@ -230,7 +230,7 @@ object id=yard_power kind=power_unit x=3270 y=0 z=-10000 yaw=90 scale=1000 attr.
 render id=yard_sign kind=sign min_x=-1000 max_x=1000 min_z=-11525 max_z=-11495 height=950 color=596F7C attr.height2=1200 attr.style=1 attr.text=TEST_YARD attr.facing=+z
 
 # BEGIN DYNAMIC EXPERIMENT CAMPUS
-lab id=actor_actions_lab_area x=-9728 z=-19968 width=10240 depth=9216 category=animation enclosure=walled
+lab id=actor_actions_lab_area x=-9728 z=-19968 width=10240 depth=9216 category=animation enclosure=open
 surface id=actor_actions_lab kind=ground min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=actor_actions_lab_col attr.lab=actor_actions_lab_area
 collision id=actor_actions_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=actor_actions_lab_area
 render id=actor_actions_lab_paint kind=floor min_x=-5056 max_x=5056 min_z=-4544 max_z=4544 height=0 color=607985 attr.style=10 attr.lab=actor_actions_lab_area
@@ -238,73 +238,6 @@ render id=actor_actions_lab_north_line kind=floor min_x=-5120 max_x=5120 min_z=4
 render id=actor_actions_lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_z=-4544 height=0 color=79E8C5 attr.lab=actor_actions_lab_area
 render id=actor_actions_lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_actions_lab_area
 render id=actor_actions_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=79E8C5 attr.lab=actor_actions_lab_area
-collision id=actor_actions_lab_wall_0_col shape=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=actor_actions_lab_area
-surface id=actor_actions_lab_wall_0_surface kind=platform min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=actor_actions_lab_wall_0_col attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_bottom kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_top kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_left kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_right kind=box min_x=-5120 max_x=-4992 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_pane_0 kind=sign min_x=-5056 max_x=-5056 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_mullion_0 kind=box min_x=-5120 max_x=-4992 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_pane_1 kind=sign min_x=-5056 max_x=-5056 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_mullion_1 kind=box min_x=-5120 max_x=-4992 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_pane_2 kind=sign min_x=-5056 max_x=-5056 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_mullion_2 kind=box min_x=-5120 max_x=-4992 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_pane_3 kind=sign min_x=-5056 max_x=-5056 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_mullion_3 kind=box min_x=-5120 max_x=-4992 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_0_pane_4 kind=sign min_x=-5056 max_x=-5056 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-collision id=actor_actions_lab_wall_1_col shape=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=actor_actions_lab_area
-surface id=actor_actions_lab_wall_1_surface kind=platform min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=actor_actions_lab_wall_1_col attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_bottom kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_top kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_left kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_right kind=box min_x=4992 max_x=5120 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_pane_0 kind=sign min_x=5056 max_x=5056 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_mullion_0 kind=box min_x=4992 max_x=5120 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_pane_1 kind=sign min_x=5056 max_x=5056 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_mullion_1 kind=box min_x=4992 max_x=5120 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_pane_2 kind=sign min_x=5056 max_x=5056 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_mullion_2 kind=box min_x=4992 max_x=5120 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_pane_3 kind=sign min_x=5056 max_x=5056 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_mullion_3 kind=box min_x=4992 max_x=5120 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_1_pane_4 kind=sign min_x=5056 max_x=5056 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-collision id=actor_actions_lab_wall_2_col shape=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=actor_actions_lab_area
-surface id=actor_actions_lab_wall_2_surface kind=platform min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 material=35464F attr.collision_id=actor_actions_lab_wall_2_col attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_bottom kind=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=32 attr.base_y=0 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_top kind=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 attr.base_y=480 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_left kind=box min_x=-4992 max_x=-4960 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_right kind=box min_x=4960 max_x=4992 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_pane_0 kind=sign min_x=-4960 max_x=-3002 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_mullion_0 kind=box min_x=-3002 max_x=-2970 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_pane_1 kind=sign min_x=-2970 max_x=-1012 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_mullion_1 kind=box min_x=-1012 max_x=-980 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_pane_2 kind=sign min_x=-980 max_x=979 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_mullion_2 kind=box min_x=979 max_x=1011 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_pane_3 kind=sign min_x=1011 max_x=2969 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_mullion_3 kind=box min_x=2969 max_x=3001 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_2_pane_4 kind=sign min_x=3001 max_x=4960 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-collision id=actor_actions_lab_wall_3_col shape=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=actor_actions_lab_area
-surface id=actor_actions_lab_wall_3_surface kind=platform min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=actor_actions_lab_wall_3_col attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_bottom kind=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_top kind=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_left kind=box min_x=-4992 max_x=-4960 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_right kind=box min_x=-800 max_x=-768 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_pane_0 kind=sign min_x=-4960 max_x=-3595 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_mullion_0 kind=box min_x=-3595 max_x=-3563 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_pane_1 kind=sign min_x=-3563 max_x=-2198 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_mullion_1 kind=box min_x=-2198 max_x=-2166 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_3_pane_2 kind=sign min_x=-2166 max_x=-800 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-collision id=actor_actions_lab_wall_4_col shape=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=actor_actions_lab_area
-surface id=actor_actions_lab_wall_4_surface kind=platform min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=actor_actions_lab_wall_4_col attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_bottom kind=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_top kind=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_left kind=box min_x=768 max_x=800 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_right kind=box min_x=4960 max_x=4992 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_pane_0 kind=sign min_x=800 max_x=2165 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_mullion_0 kind=box min_x=2165 max_x=2197 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_pane_1 kind=sign min_x=2197 max_x=3562 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_mullion_1 kind=box min_x=3562 max_x=3594 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=actor_actions_lab_area
-render id=actor_actions_lab_wall_4_pane_2 kind=sign min_x=3594 max_x=4960 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=actor_actions_lab_area
 assembly id=actor_actions_lab_button_assembly x=4352 y=0 z=3840 attr.lab=actor_actions_lab_area
 object id=actor_actions_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=actor_actions_lab_button_assembly attr.length=3 attr.collision=component
 object id=actor_actions_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=actor_actions_lab_button_assembly attr.length=3
@@ -335,7 +268,7 @@ collision id=actor_actions_lab_area_beacon_sw_col shape=box min_x=-5520 max_x=-5
 render id=actor_actions_lab_area_beacon_se kind=sign min_x=5160 max_x=5520 min_z=-4568 max_z=-4288 height=-896 color=79E8C5 attr.height2=-52 attr.style=7 attr.projection_beams=0 attr.lab=actor_actions_lab_area
 collision id=actor_actions_lab_area_beacon_se_col shape=box min_x=5160 max_x=5520 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=actor_actions_lab_area
 # Sample origin is local (0, 0); add local records with attr.lab=actor_actions_lab_area
-lab id=rf_electronics_lab_area x=9728 z=-19968 width=10240 depth=9216 category=model enclosure=walled
+lab id=rf_electronics_lab_area x=9728 z=-19968 width=10240 depth=9216 category=model enclosure=open
 surface id=rf_electronics_lab kind=ground min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=rf_electronics_lab_col attr.lab=rf_electronics_lab_area
 collision id=rf_electronics_lab_col shape=flat min_x=-5120 max_x=5120 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=rf_electronics_lab_area
 render id=rf_electronics_lab_paint kind=floor min_x=-5056 max_x=5056 min_z=-4544 max_z=4544 height=0 color=607985 attr.style=10 attr.lab=rf_electronics_lab_area
@@ -343,73 +276,6 @@ render id=rf_electronics_lab_north_line kind=floor min_x=-5120 max_x=5120 min_z=
 render id=rf_electronics_lab_south_line kind=floor min_x=-5120 max_x=5120 min_z=-4608 max_z=-4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
 render id=rf_electronics_lab_west_line kind=floor min_x=-5120 max_x=-5056 min_z=-4544 max_z=4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
 render id=rf_electronics_lab_east_line kind=floor min_x=5056 max_x=5120 min_z=-4544 max_z=4544 height=0 color=9FB4FF attr.lab=rf_electronics_lab_area
-collision id=rf_electronics_lab_wall_0_col shape=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_electronics_lab_area
-surface id=rf_electronics_lab_wall_0_surface kind=platform min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=rf_electronics_lab_wall_0_col attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_bottom kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_top kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_left kind=box min_x=-5120 max_x=-4992 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_right kind=box min_x=-5120 max_x=-4992 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_pane_0 kind=sign min_x=-5056 max_x=-5056 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_mullion_0 kind=box min_x=-5120 max_x=-4992 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_pane_1 kind=sign min_x=-5056 max_x=-5056 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_mullion_1 kind=box min_x=-5120 max_x=-4992 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_pane_2 kind=sign min_x=-5056 max_x=-5056 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_mullion_2 kind=box min_x=-5120 max_x=-4992 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_pane_3 kind=sign min_x=-5056 max_x=-5056 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_mullion_3 kind=box min_x=-5120 max_x=-4992 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_0_pane_4 kind=sign min_x=-5056 max_x=-5056 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-collision id=rf_electronics_lab_wall_1_col shape=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_electronics_lab_area
-surface id=rf_electronics_lab_wall_1_surface kind=platform min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=rf_electronics_lab_wall_1_col attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_bottom kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_top kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_left kind=box min_x=4992 max_x=5120 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_right kind=box min_x=4992 max_x=5120 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_pane_0 kind=sign min_x=5056 max_x=5056 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_mullion_0 kind=box min_x=4992 max_x=5120 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_pane_1 kind=sign min_x=5056 max_x=5056 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_mullion_1 kind=box min_x=4992 max_x=5120 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_pane_2 kind=sign min_x=5056 max_x=5056 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_mullion_2 kind=box min_x=4992 max_x=5120 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_pane_3 kind=sign min_x=5056 max_x=5056 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_mullion_3 kind=box min_x=4992 max_x=5120 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_1_pane_4 kind=sign min_x=5056 max_x=5056 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-collision id=rf_electronics_lab_wall_2_col shape=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_electronics_lab_area
-surface id=rf_electronics_lab_wall_2_surface kind=platform min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 material=35464F attr.collision_id=rf_electronics_lab_wall_2_col attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_bottom kind=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=32 attr.base_y=0 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_top kind=box min_x=-4992 max_x=4992 min_z=-4608 max_z=-4480 height=512 attr.base_y=480 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_left kind=box min_x=-4992 max_x=-4960 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_right kind=box min_x=4960 max_x=4992 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_pane_0 kind=sign min_x=-4960 max_x=-3002 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_mullion_0 kind=box min_x=-3002 max_x=-2970 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_pane_1 kind=sign min_x=-2970 max_x=-1012 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_mullion_1 kind=box min_x=-1012 max_x=-980 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_pane_2 kind=sign min_x=-980 max_x=979 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_mullion_2 kind=box min_x=979 max_x=1011 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_pane_3 kind=sign min_x=1011 max_x=2969 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_mullion_3 kind=box min_x=2969 max_x=3001 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_2_pane_4 kind=sign min_x=3001 max_x=4960 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-collision id=rf_electronics_lab_wall_3_col shape=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_electronics_lab_area
-surface id=rf_electronics_lab_wall_3_surface kind=platform min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=rf_electronics_lab_wall_3_col attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_bottom kind=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_top kind=box min_x=-4992 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_left kind=box min_x=-4992 max_x=-4960 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_right kind=box min_x=-800 max_x=-768 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_pane_0 kind=sign min_x=-4960 max_x=-3595 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_mullion_0 kind=box min_x=-3595 max_x=-3563 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_pane_1 kind=sign min_x=-3563 max_x=-2198 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_mullion_1 kind=box min_x=-2198 max_x=-2166 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_3_pane_2 kind=sign min_x=-2166 max_x=-800 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-collision id=rf_electronics_lab_wall_4_col shape=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_electronics_lab_area
-surface id=rf_electronics_lab_wall_4_surface kind=platform min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=rf_electronics_lab_wall_4_col attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_bottom kind=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_top kind=box min_x=768 max_x=4992 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_left kind=box min_x=768 max_x=800 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_right kind=box min_x=4960 max_x=4992 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_pane_0 kind=sign min_x=800 max_x=2165 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_mullion_0 kind=box min_x=2165 max_x=2197 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_pane_1 kind=sign min_x=2197 max_x=3562 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_mullion_1 kind=box min_x=3562 max_x=3594 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_electronics_lab_area
-render id=rf_electronics_lab_wall_4_pane_2 kind=sign min_x=3594 max_x=4960 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_electronics_lab_area
 assembly id=rf_electronics_lab_button_assembly x=4352 y=0 z=3840 attr.lab=rf_electronics_lab_area
 object id=rf_electronics_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7 attr.collision=component
 object id=rf_electronics_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_lab_button_assembly attr.length=7
@@ -440,7 +306,7 @@ collision id=rf_electronics_lab_area_beacon_sw_col shape=box min_x=-5520 max_x=-
 render id=rf_electronics_lab_area_beacon_se kind=sign min_x=5160 max_x=5520 min_z=-4568 max_z=-4288 height=-896 color=9FB4FF attr.height2=-52 attr.style=7 attr.projection_beams=0 attr.lab=rf_electronics_lab_area
 collision id=rf_electronics_lab_area_beacon_se_col shape=box min_x=5160 max_x=5520 min_z=-4548 max_z=-4308 height=292 collision=true visible=false walkable=true color=526874 attr.lab=rf_electronics_lab_area
 # Sample origin is local (0, 0); add local records with attr.lab=rf_electronics_lab_area
-lab id=rf_light_lab_area x=29184 z=-19968 width=12288 depth=9216 category=lighting enclosure=walled
+lab id=rf_light_lab_area x=29184 z=-19968 width=12288 depth=9216 category=lighting enclosure=open
 surface id=rf_light_lab kind=ground min_x=-6144 max_x=6144 min_z=-4608 max_z=4608 height=0 material=52616A attr.collision_id=rf_light_lab_col attr.lab=rf_light_lab_area
 collision id=rf_light_lab_col shape=flat min_x=-6144 max_x=6144 min_z=-4608 max_z=4608 height=0 collision=false visible=true walkable=true color=52616A attr.lab=rf_light_lab_area
 render id=rf_light_lab_paint kind=floor min_x=-6080 max_x=6080 min_z=-4544 max_z=4544 height=0 color=607985 attr.style=10 attr.lab=rf_light_lab_area
@@ -448,75 +314,6 @@ render id=rf_light_lab_north_line kind=floor min_x=-6144 max_x=6144 min_z=4544 m
 render id=rf_light_lab_south_line kind=floor min_x=-6144 max_x=6144 min_z=-4608 max_z=-4544 height=0 color=FFD283 attr.lab=rf_light_lab_area
 render id=rf_light_lab_west_line kind=floor min_x=-6144 max_x=-6080 min_z=-4544 max_z=4544 height=0 color=FFD283 attr.lab=rf_light_lab_area
 render id=rf_light_lab_east_line kind=floor min_x=6080 max_x=6144 min_z=-4544 max_z=4544 height=0 color=FFD283 attr.lab=rf_light_lab_area
-collision id=rf_light_lab_wall_0_col shape=box min_x=-6144 max_x=-6016 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_light_lab_area
-surface id=rf_light_lab_wall_0_surface kind=platform min_x=-6144 max_x=-6016 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=rf_light_lab_wall_0_col attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_bottom kind=box min_x=-6144 max_x=-6016 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_top kind=box min_x=-6144 max_x=-6016 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_left kind=box min_x=-6144 max_x=-6016 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_right kind=box min_x=-6144 max_x=-6016 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_pane_0 kind=sign min_x=-6080 max_x=-6080 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_mullion_0 kind=box min_x=-6144 max_x=-6016 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_pane_1 kind=sign min_x=-6080 max_x=-6080 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_mullion_1 kind=box min_x=-6144 max_x=-6016 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_pane_2 kind=sign min_x=-6080 max_x=-6080 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_mullion_2 kind=box min_x=-6144 max_x=-6016 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_pane_3 kind=sign min_x=-6080 max_x=-6080 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_mullion_3 kind=box min_x=-6144 max_x=-6016 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_0_pane_4 kind=sign min_x=-6080 max_x=-6080 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-collision id=rf_light_lab_wall_1_col shape=box min_x=6016 max_x=6144 min_z=-4608 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_light_lab_area
-surface id=rf_light_lab_wall_1_surface kind=platform min_x=6016 max_x=6144 min_z=-4608 max_z=4608 height=512 material=35464F attr.collision_id=rf_light_lab_wall_1_col attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_bottom kind=box min_x=6016 max_x=6144 min_z=-4608 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_top kind=box min_x=6016 max_x=6144 min_z=-4608 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_left kind=box min_x=6016 max_x=6144 min_z=-4608 max_z=-4576 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_right kind=box min_x=6016 max_x=6144 min_z=4576 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_pane_0 kind=sign min_x=6080 max_x=6080 min_z=-4576 max_z=-2772 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_mullion_0 kind=box min_x=6016 max_x=6144 min_z=-2772 max_z=-2740 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_pane_1 kind=sign min_x=6080 max_x=6080 min_z=-2740 max_z=-935 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_mullion_1 kind=box min_x=6016 max_x=6144 min_z=-935 max_z=-903 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_pane_2 kind=sign min_x=6080 max_x=6080 min_z=-903 max_z=902 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_mullion_2 kind=box min_x=6016 max_x=6144 min_z=902 max_z=934 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_pane_3 kind=sign min_x=6080 max_x=6080 min_z=934 max_z=2739 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_mullion_3 kind=box min_x=6016 max_x=6144 min_z=2739 max_z=2771 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_1_pane_4 kind=sign min_x=6080 max_x=6080 min_z=2771 max_z=4576 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-collision id=rf_light_lab_wall_2_col shape=box min_x=-6016 max_x=6016 min_z=-4608 max_z=-4480 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_light_lab_area
-surface id=rf_light_lab_wall_2_surface kind=platform min_x=-6016 max_x=6016 min_z=-4608 max_z=-4480 height=512 material=35464F attr.collision_id=rf_light_lab_wall_2_col attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_bottom kind=box min_x=-6016 max_x=6016 min_z=-4608 max_z=-4480 height=32 attr.base_y=0 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_top kind=box min_x=-6016 max_x=6016 min_z=-4608 max_z=-4480 height=512 attr.base_y=480 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_left kind=box min_x=-6016 max_x=-5984 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_right kind=box min_x=5984 max_x=6016 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_0 kind=sign min_x=-5984 max_x=-4016 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_mullion_0 kind=box min_x=-4016 max_x=-3984 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_1 kind=sign min_x=-3984 max_x=-2016 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_mullion_1 kind=box min_x=-2016 max_x=-1984 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_2 kind=sign min_x=-1984 max_x=-16 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_mullion_2 kind=box min_x=-16 max_x=16 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_3 kind=sign min_x=16 max_x=1984 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_mullion_3 kind=box min_x=1984 max_x=2016 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_4 kind=sign min_x=2016 max_x=3984 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_mullion_4 kind=box min_x=3984 max_x=4016 min_z=-4608 max_z=-4480 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_2_pane_5 kind=sign min_x=4016 max_x=5984 min_z=-4544 max_z=-4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-collision id=rf_light_lab_wall_3_col shape=box min_x=-6016 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_light_lab_area
-surface id=rf_light_lab_wall_3_surface kind=platform min_x=-6016 max_x=-768 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=rf_light_lab_wall_3_col attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_bottom kind=box min_x=-6016 max_x=-768 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_top kind=box min_x=-6016 max_x=-768 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_left kind=box min_x=-6016 max_x=-5984 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_right kind=box min_x=-800 max_x=-768 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_pane_0 kind=sign min_x=-5984 max_x=-4278 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_mullion_0 kind=box min_x=-4278 max_x=-4246 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_pane_1 kind=sign min_x=-4246 max_x=-2539 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_mullion_1 kind=box min_x=-2539 max_x=-2507 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_3_pane_2 kind=sign min_x=-2507 max_x=-800 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-collision id=rf_light_lab_wall_4_col shape=box min_x=768 max_x=6016 min_z=4480 max_z=4608 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=rf_light_lab_area
-surface id=rf_light_lab_wall_4_surface kind=platform min_x=768 max_x=6016 min_z=4480 max_z=4608 height=512 material=35464F attr.collision_id=rf_light_lab_wall_4_col attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_bottom kind=box min_x=768 max_x=6016 min_z=4480 max_z=4608 height=32 attr.base_y=0 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_top kind=box min_x=768 max_x=6016 min_z=4480 max_z=4608 height=512 attr.base_y=480 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_left kind=box min_x=768 max_x=800 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_right kind=box min_x=5984 max_x=6016 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_pane_0 kind=sign min_x=800 max_x=2506 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_mullion_0 kind=box min_x=2506 max_x=2538 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_pane_1 kind=sign min_x=2538 max_x=4245 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_mullion_1 kind=box min_x=4245 max_x=4277 min_z=4480 max_z=4608 height=480 attr.base_y=32 color=35464F attr.lab=rf_light_lab_area
-render id=rf_light_lab_wall_4_pane_2 kind=sign min_x=4277 max_x=5984 min_z=4544 max_z=4544 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=rf_light_lab_area
 assembly id=rf_light_lab_button_assembly x=5376 y=0 z=3840 attr.lab=rf_light_lab_area
 object id=rf_light_lab_button kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6 attr.collision=component
 object id=rf_light_lab_button_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_light_lab_button_assembly attr.length=6
@@ -604,28 +401,25 @@ render id=perf_low_wall_2_mullion_4 kind=box min_x=2815 max_x=2847 min_z=-4500 m
 render id=perf_low_wall_2_pane_5 kind=sign min_x=2847 max_x=4702 min_z=-4436 max_z=-4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
 render id=perf_low_wall_2_mullion_5 kind=box min_x=4702 max_x=4734 min_z=-4500 max_z=-4372 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
 render id=perf_low_wall_2_pane_6 kind=sign min_x=4734 max_x=6590 min_z=-4436 max_z=-4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-collision id=perf_low_wall_3_col shape=box min_x=-6622 max_x=-768 min_z=4372 max_z=4500 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=perf_low_area
-surface id=perf_low_wall_3_surface kind=platform min_x=-6622 max_x=-768 min_z=4372 max_z=4500 height=512 material=35464F attr.collision_id=perf_low_wall_3_col attr.lab=perf_low_area
-render id=perf_low_wall_3_bottom kind=box min_x=-6622 max_x=-768 min_z=4372 max_z=4500 height=32 attr.base_y=0 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_3_top kind=box min_x=-6622 max_x=-768 min_z=4372 max_z=4500 height=512 attr.base_y=480 color=35464F attr.lab=perf_low_area
+collision id=perf_low_wall_3_col shape=box min_x=-6622 max_x=6622 min_z=4372 max_z=4500 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=perf_low_area
+surface id=perf_low_wall_3_surface kind=platform min_x=-6622 max_x=6622 min_z=4372 max_z=4500 height=512 material=35464F attr.collision_id=perf_low_wall_3_col attr.lab=perf_low_area
+render id=perf_low_wall_3_bottom kind=box min_x=-6622 max_x=6622 min_z=4372 max_z=4500 height=32 attr.base_y=0 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_top kind=box min_x=-6622 max_x=6622 min_z=4372 max_z=4500 height=512 attr.base_y=480 color=35464F attr.lab=perf_low_area
 render id=perf_low_wall_3_left kind=box min_x=-6622 max_x=-6590 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_3_right kind=box min_x=-800 max_x=-768 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_3_pane_0 kind=sign min_x=-6590 max_x=-4682 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-render id=perf_low_wall_3_mullion_0 kind=box min_x=-4682 max_x=-4650 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_3_pane_1 kind=sign min_x=-4650 max_x=-2741 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-render id=perf_low_wall_3_mullion_1 kind=box min_x=-2741 max_x=-2709 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_3_pane_2 kind=sign min_x=-2709 max_x=-800 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-collision id=perf_low_wall_4_col shape=box min_x=768 max_x=6622 min_z=4372 max_z=4500 height=512 attr.base_y=0 collision=true visible=false walkable=true attr.lab=perf_low_area
-surface id=perf_low_wall_4_surface kind=platform min_x=768 max_x=6622 min_z=4372 max_z=4500 height=512 material=35464F attr.collision_id=perf_low_wall_4_col attr.lab=perf_low_area
-render id=perf_low_wall_4_bottom kind=box min_x=768 max_x=6622 min_z=4372 max_z=4500 height=32 attr.base_y=0 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_top kind=box min_x=768 max_x=6622 min_z=4372 max_z=4500 height=512 attr.base_y=480 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_left kind=box min_x=768 max_x=800 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_right kind=box min_x=6590 max_x=6622 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_pane_0 kind=sign min_x=800 max_x=2708 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-render id=perf_low_wall_4_mullion_0 kind=box min_x=2708 max_x=2740 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_pane_1 kind=sign min_x=2740 max_x=4649 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
-render id=perf_low_wall_4_mullion_1 kind=box min_x=4649 max_x=4681 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
-render id=perf_low_wall_4_pane_2 kind=sign min_x=4681 max_x=6590 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_right kind=box min_x=6590 max_x=6622 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_0 kind=sign min_x=-6590 max_x=-4735 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_0 kind=box min_x=-4735 max_x=-4703 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_1 kind=sign min_x=-4703 max_x=-2848 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_1 kind=box min_x=-2848 max_x=-2816 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_2 kind=sign min_x=-2816 max_x=-960 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_2 kind=box min_x=-960 max_x=-928 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_3 kind=sign min_x=-928 max_x=927 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_3 kind=box min_x=927 max_x=959 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_4 kind=sign min_x=959 max_x=2815 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_4 kind=box min_x=2815 max_x=2847 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_5 kind=sign min_x=2847 max_x=4702 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
+render id=perf_low_wall_3_mullion_5 kind=box min_x=4702 max_x=4734 min_z=4372 max_z=4500 height=480 attr.base_y=32 color=35464F attr.lab=perf_low_area
+render id=perf_low_wall_3_pane_6 kind=sign min_x=4734 max_x=6590 min_z=4436 max_z=4436 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC attr.lab=perf_low_area
 render id=perf_low_title kind=sign min_x=-2400 max_x=2400 min_z=-4100 max_z=-4080 height=500 color=FFAB78 attr.height2=1100 attr.style=2 attr.text=PERFORMANCE_LAB attr.facing=+z attr.texture_u=4 attr.projection_beams=0 attr.lab=perf_low_area
 render id=perf_low_display kind=sign min_x=-2400 max_x=2400 min_z=4170 max_z=4190 height=900 color=FFAB78 attr.height2=1500 attr.style=4 attr.text=EXHIBIT_OFF attr.facing=+z attr.texture_u=4 attr.projection_beams=0 attr.channel=perf_low attr.lab=perf_low_area
 surface id=perf_low_area_site_ground kind=ground min_x=-8192 max_x=8192 min_z=-5120 max_z=5120 height=0 material=78858A attr.collision_id=perf_low_area_site_ground_col attr.lab=perf_low_area
@@ -647,12 +441,42 @@ object id=perf_control_terminal kind=facility_terminal x=7800 y=0 z=-31000 yaw=0
 object id=perf_result_terminal kind=facility_terminal x=9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component
 object id=combat_control_terminal kind=facility_terminal x=-7800 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component
 object id=combat_result_terminal kind=facility_terminal x=-9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component
-collision id=experiment_road_0_col shape=flat min_x=-18000 max_x=38000 min_z=-14800 max_z=-11776 height=0 collision=false visible=true walkable=true
-surface id=experiment_road_0 kind=ground min_x=-18000 max_x=38000 min_z=-14800 max_z=-11776 height=0 attr.collision_id=experiment_road_0_col
-render id=experiment_road_0_paint kind=floor min_x=-18000 max_x=38000 min_z=-14800 max_z=-11776 height=0 color=485860 attr.style=11
-collision id=experiment_road_1_col shape=flat min_x=-1536 max_x=1536 min_z=-30000 max_z=-11776 height=0 collision=false visible=true walkable=true
-surface id=experiment_road_1 kind=ground min_x=-1536 max_x=1536 min_z=-30000 max_z=-11776 height=0 attr.collision_id=experiment_road_1_col
-render id=experiment_road_1_paint kind=floor min_x=-1536 max_x=1536 min_z=-30000 max_z=-11776 height=0 color=485860 attr.style=11
+collision id=experiment_road_0_col shape=flat min_x=-20992 max_x=40448 min_z=-14848 max_z=-11776 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_0 kind=ground min_x=-20992 max_x=40448 min_z=-14848 max_z=-11776 height=0 attr.collision_id=experiment_road_0_col
+render id=experiment_road_0_paint kind=floor min_x=-20992 max_x=40448 min_z=-14848 max_z=-11776 height=0 color=485860 attr.style=11
+collision id=experiment_road_1_col shape=flat min_x=-20992 max_x=40448 min_z=-28160 max_z=-25088 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_1 kind=ground min_x=-20992 max_x=40448 min_z=-28160 max_z=-25088 height=0 attr.collision_id=experiment_road_1_col
+render id=experiment_road_1_paint kind=floor min_x=-20992 max_x=40448 min_z=-28160 max_z=-25088 height=0 color=485860 attr.style=11
+collision id=experiment_road_2_col shape=flat min_x=-20992 max_x=-17920 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_2 kind=ground min_x=-20992 max_x=-17920 min_z=-25088 max_z=-14848 height=0 attr.collision_id=experiment_road_2_col
+render id=experiment_road_2_paint kind=floor min_x=-20992 max_x=-17920 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+collision id=experiment_road_3_col shape=flat min_x=-1536 max_x=1536 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_3 kind=ground min_x=-1536 max_x=1536 min_z=-25088 max_z=-14848 height=0 attr.collision_id=experiment_road_3_col
+render id=experiment_road_3_paint kind=floor min_x=-1536 max_x=1536 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+collision id=experiment_road_4_col shape=flat min_x=17920 max_x=20992 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_4 kind=ground min_x=17920 max_x=20992 min_z=-25088 max_z=-14848 height=0 attr.collision_id=experiment_road_4_col
+render id=experiment_road_4_paint kind=floor min_x=17920 max_x=20992 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+collision id=experiment_road_5_col shape=flat min_x=37376 max_x=40448 min_z=-25088 max_z=-14848 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_5 kind=ground min_x=37376 max_x=40448 min_z=-25088 max_z=-14848 height=0 attr.collision_id=experiment_road_5_col
+render id=experiment_road_5_paint kind=floor min_x=37376 max_x=40448 min_z=-25088 max_z=-14848 height=0 color=485860 attr.style=11
+collision id=experiment_road_6_col shape=flat min_x=-11264 max_x=11264 min_z=-29880 max_z=-28160 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_6 kind=ground min_x=-11264 max_x=11264 min_z=-29880 max_z=-28160 height=0 attr.collision_id=experiment_road_6_col
+render id=experiment_road_6_paint kind=floor min_x=-11264 max_x=11264 min_z=-29880 max_z=-28160 height=0 color=485860 attr.style=11
+collision id=experiment_road_7_col shape=flat min_x=-11264 max_x=-8192 min_z=-40120 max_z=-29880 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_7 kind=ground min_x=-11264 max_x=-8192 min_z=-40120 max_z=-29880 height=0 attr.collision_id=experiment_road_7_col
+render id=experiment_road_7_paint kind=floor min_x=-11264 max_x=-8192 min_z=-40120 max_z=-29880 height=0 color=485860 attr.style=11
+collision id=experiment_road_8_col shape=flat min_x=8192 max_x=11264 min_z=-40120 max_z=-29880 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_8 kind=ground min_x=8192 max_x=11264 min_z=-40120 max_z=-29880 height=0 attr.collision_id=experiment_road_8_col
+render id=experiment_road_8_paint kind=floor min_x=8192 max_x=11264 min_z=-40120 max_z=-29880 height=0 color=485860 attr.style=11
+collision id=experiment_road_9_col shape=flat min_x=-11264 max_x=11264 min_z=-43192 max_z=-40120 height=0 collision=false visible=true walkable=true
+surface id=experiment_road_9 kind=ground min_x=-11264 max_x=11264 min_z=-43192 max_z=-40120 height=0 attr.collision_id=experiment_road_9_col
+render id=experiment_road_9_paint kind=floor min_x=-11264 max_x=11264 min_z=-43192 max_z=-40120 height=0 color=485860 attr.style=11
+collision id=experiment_support_main_col shape=flat min_x=-20992 max_x=40448 min_z=-28160 max_z=-11776 height=0 collision=false visible=false walkable=true
+surface id=experiment_support_main kind=ground min_x=-20992 max_x=40448 min_z=-28160 max_z=-11776 height=0 attr.collision_id=experiment_support_main_col
+collision id=experiment_support_performance_col shape=flat min_x=-11264 max_x=11264 min_z=-43192 max_z=-25088 height=0 collision=false visible=false walkable=true
+surface id=experiment_support_performance kind=ground min_x=-11264 max_x=11264 min_z=-43192 max_z=-25088 height=0 attr.collision_id=experiment_support_performance_col
+collision id=experiment_support_entry_col shape=flat min_x=-5120 max_x=5120 min_z=-14848 max_z=-5632 height=0 collision=false visible=false walkable=true
+surface id=experiment_support_entry kind=ground min_x=-5120 max_x=5120 min_z=-14848 max_z=-5632 height=0 attr.collision_id=experiment_support_entry_col
 # END DYNAMIC EXPERIMENT CAMPUS
 # BEGIN OUTPOST STOREYS
 # Signed heights are relative to the existing outdoor ground.
