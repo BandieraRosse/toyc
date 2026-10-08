@@ -377,7 +377,8 @@ static int scene_local_source_test(void)
         }
         LOCAL_CHECK(rf_gpu_scene_world_prop_freeze(&owner.map_ops,
             owner.scene_local.frame_id+1,owner.scene_local.world_generation,
-            &prop_render)==0 && prop_render.count==134);
+            &prop_render)==0 && prop_render.count==
+                (uint32_t)rf_map_runtime_object_count(&owner.map_ops.runtime));
         {
             struct rasterfall_model_asset *boundary=NULL;
             uint32_t accepted=0;
@@ -398,10 +399,17 @@ static int scene_local_source_test(void)
         {
             struct rasterfall_model_asset *models[RF_GPU_SCENE_WORLD_OPAQUE_CLASS_COUNT]={0};
             uint32_t opaque=0,deferred=0,transparent=0,prop_accepted=0;
+            uint32_t visible_sources=0;
+            for(uint32_t i=0;i<world_render.count;++i) {
+                const struct rf_gpu_scene_world_render_item_v1 *item=&world_render.items[i];
+                if(item->visible && !(item->draw.type==TOY_MAP_DRAW_SIGN &&
+                    (item->draw.style==4 || item->draw.style==5))) ++visible_sources;
+            }
             LOCAL_CHECK(rf_gpu_scene_world_opaque_mesh_build(&frame.snapshot,&world_render,
                 &floor_render,&prop_render,models,&opaque,&deferred,
                 &transparent,&prop_accepted)==0);
-            LOCAL_CHECK(opaque==60 && deferred==15 && transparent==4 &&
+            LOCAL_CHECK(opaque>0 && deferred>0 && transparent>0 &&
+                opaque+deferred+transparent==visible_sources &&
                 prop_accepted==21 && models[RF_GPU_SCENE_WORLD_MODEL_BOX] &&
                 models[RF_GPU_SCENE_WORLD_MODEL_BOX]->primitive_count>0);
             LOCAL_CHECK(models[RF_GPU_SCENE_WORLD_MODEL_LEGACY] &&

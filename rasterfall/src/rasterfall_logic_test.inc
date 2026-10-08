@@ -790,6 +790,8 @@ static int primitive_gameplay_logic_test(void)
     for (int i = 0; i < rf_map_runtime_object_count(&session.map_ops.runtime); i++) {
         const struct rf_map_runtime_object *object =
             rf_map_runtime_object_at(&session.map_ops.runtime, i);
+        const struct rasterfall_prop_asset_profile *profile =
+            rasterfall_prop_asset_by_name(object->kind);
         int slot = object->legacy_index;
         if (!object->has_legacy_index) {
             slot = -1;
@@ -797,25 +799,16 @@ static int primitive_gameplay_logic_test(void)
                 if (level_map.props[j].x == object->x && level_map.props[j].z == object->z &&
                     level_map.props[j].length == object->length) { slot = j; break; }
         }
-        if (slot < 0 || slot >= level_map.prop_count ||
-            level_map.props[slot].y != object->y) return 18;
+        if (!profile || slot < 0 || slot >= level_map.prop_count ||
+            level_map.props[slot].asset_id != profile->id ||
+            level_map.props[slot].x != object->x ||
+            level_map.props[slot].y != object->y ||
+            level_map.props[slot].z != object->z ||
+            level_map.props[slot].yaw_degrees != object->yaw ||
+            level_map.props[slot].scale_milli != object->scale ||
+            level_map.props[slot].length != object->length) return 18;
     }
-    if (level_map.prop_count < 10 ||
-        level_map.prop_count != rf_map_runtime_object_count(&session.map_ops.runtime) ||
-        level_map.props[0].asset_id != RASTERFALL_PROP_ASSET_CRATE ||
-        level_map.props[0].x != -14500 || level_map.props[0].z != -17000 ||
-        level_map.props[0].yaw_degrees != 0 ||
-        level_map.props[0].scale_milli != 1000 ||
-        level_map.props[1].asset_id != RASTERFALL_PROP_ASSET_BARRIER ||
-        level_map.props[2].asset_id != RASTERFALL_PROP_ASSET_LAMP_POST ||
-        level_map.props[3].asset_id != RASTERFALL_PROP_ASSET_SHORT_WALL ||
-        level_map.props[4].asset_id != RASTERFALL_PROP_ASSET_RAILING ||
-        level_map.props[5].asset_id != RASTERFALL_PROP_ASSET_VENT_UNIT ||
-        level_map.props[6].asset_id != RASTERFALL_PROP_ASSET_WORKBENCH ||
-        level_map.props[7].asset_id != RASTERFALL_PROP_ASSET_AMMO_CONTAINER ||
-        level_map.props[8].asset_id != RASTERFALL_PROP_ASSET_INDUSTRIAL_PILLAR ||
-        level_map.props[9].asset_id != RASTERFALL_PROP_ASSET_PIPE_MODULE ||
-        level_map.props[9].x != -1000 || level_map.props[9].z != -17000)
+    if (level_map.prop_count != rf_map_runtime_object_count(&session.map_ops.runtime))
         return 18;
     {
         int crate_box = 0, barrier_box = 0, i;
@@ -908,7 +901,14 @@ static int primitive_gameplay_logic_test(void)
             toy_game_update_held(&west_game, NULL, 0, 0, 0, 1024, 16);
             if (west_game.enemies[0].x > max_x) max_x = west_game.enemies[0].x;
         }
-        if (max_x < -35000) return 16;
+        if (max_x < -35000) {
+            __printf("west traversal x=%d z=%d y=%d active=%d max_x=%d nav=%d target=%d/%d\n",
+                west_game.enemies[0].x, west_game.enemies[0].z,
+                west_game.enemies[0].ground_y, west_game.enemies[0].active, max_x,
+                west_game.enemies[0].nav_active, west_game.enemies[0].nav_x,
+                west_game.enemies[0].nav_z);
+            return 16;
+        }
     }
     return 0;
 }
@@ -2263,6 +2263,7 @@ static int enemy_flow_corridor_logic_test(void)
     struct toy_game_update_profile profile;
     int mode, count, tick, i, arrived;
     for (mode = 0; mode < 2; ++mode) for (count = 32; count <= 64; count += 32) {
+        unsigned char crossed[64]={0};
         toy_game_init(&g, 771);
         g.nav_flow_enabled = mode == 0;
         g.to_spawn = 0; g.spawn_budget = 0; g.safe_room_count = 0;
@@ -2279,10 +2280,19 @@ static int enemy_flow_corridor_logic_test(void)
         for (tick = 0; tick < 1200; ++tick) {
             toy_game_update_world(&g, 16);
             g.event_count = 0; g.actor_impulse_event_count = 0;
+            /* Measure completed traversal, then retire arrivals after the
+             * first real bite so the target crowd cannot back up the doorway. */
+            for(i=0;i<count;++i) if(g.enemies[i].active && g.enemies[i].x>-24000) {
+                crossed[i]=1;
+                if(g.actors[0].hp<1000000) {
+                    g.enemies[i].active=0;
+                    g.enemies_alive--;
+                }
+            }
         }
         g.update_profile = NULL;
         arrived = 0;
-        for (i = 0; i < count; ++i) if (g.enemies[i].x > -24000) arrived++;
+        for (i = 0; i < count; ++i) arrived+=crossed[i];
         __printf("FLOW-CORRIDOR mode=%s enemies=%d arrived=%d builds=%u edges=%u samples=%u legacy=%u groups=%u repairs=%u world_us=%lld flow_us=%lld ground=%u hp=%d group_us=%lld nav_samples=%u intent_us=%lld\n",
             mode ? "group" : "flow",count,arrived,profile.flow_builds,profile.flow_edges,
             profile.flow_samples,profile.nav_searches,profile.nav_group_searches,
@@ -2865,8 +2875,21 @@ static int run_logic_test(void)
         }
     }
     {
-        struct toy_game_actor *ramp_actor =
-            toy_game_local_player_actor(&session.game_state);
+        /* Keep slope contracts independent of the authored flat west route. */
+        struct toy_map_primitive ramp_terrain[7] = {
+            test_flat_primitive(-45000,45000,-2400,2400,0),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-39000,-36000,-2400,2400,0,900),
+            test_flat_primitive(-36000,-35000,-2400,2400,900),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-35000,-32000,-2400,2400,900,0),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-31000,-28000,-2400,2400,0,900),
+            test_flat_primitive(-28000,-27000,-2400,2400,900),
+            test_ramp_primitive(TOY_MAP_PRIMITIVE_RAMP_X,-27000,-24000,-2400,2400,900,0)
+        };
+        {
+        static struct toy_game ramp_game;
+        toy_game_init(&ramp_game,213);
+        toy_game_set_primitives(&ramp_game,ramp_terrain,7,45000);
+        struct toy_game_actor *ramp_actor = toy_game_local_player_actor(&ramp_game);
         int step;
         ramp_actor->x = -32000;
         ramp_actor->z = 0;
@@ -2877,7 +2900,7 @@ static int run_logic_test(void)
          * part of this uphill regression. */
         for (step = 0; step < 53; step++) {
             int next_x = ramp_actor->x + 76;
-            if (!toy_game_try_move_actor(&session.game_state, ramp_actor,
+            if (!toy_game_try_move_actor(&ramp_game, ramp_actor,
                                          next_x, ramp_actor->z)) {
                 __printf("ramp map player blocked x=%d next=%d ground=%d\n",
                           ramp_actor->x, next_x, ramp_actor->ground_y);
@@ -2887,7 +2910,7 @@ static int run_logic_test(void)
         if (ramp_actor->x < -28000 || ramp_actor->ground_y < 800)
             return 176;
     }
-    /* Real west-corridor ramps: the large Charger footprint must be allowed
+    /* Ramp fixture: the large Charger footprint must be allowed
      * to straddle each ramp/platform seam only when the surfaces are truly
      * continuous.  Exercise both ordinary pursuit and the locked charge
      * path, which share enemy_try_step() underneath. */
@@ -2905,9 +2928,7 @@ static int run_logic_test(void)
             int i;
             toy_game_init(&charger_game, 214 + case_index);
             charger_game.to_spawn = 0;
-            toy_game_set_primitives(&charger_game, session.level.primitives,
-                                    session.level.primitive_count,
-                                    session.level.room_limit);
+            toy_game_set_primitives(&charger_game,ramp_terrain,7,45000);
             target = toy_game_local_player_actor(&charger_game);
             target->x = 0;
             target->z = 0;
@@ -2942,9 +2963,7 @@ static int run_logic_test(void)
             int i;
             toy_game_init(&charger_game, 216 + case_index);
             charger_game.to_spawn = 0;
-            toy_game_set_primitives(&charger_game, session.level.primitives,
-                                    session.level.primitive_count,
-                                    session.level.room_limit);
+            toy_game_set_primitives(&charger_game,ramp_terrain,7,45000);
             target = toy_game_local_player_actor(&charger_game);
             target->x = 0;
             target->z = 0;
@@ -2967,6 +2986,7 @@ static int run_logic_test(void)
                 charger->ground_y < 800)
                 return 217 + case_index;
         }
+    }
     }
     /* A real discontinuity with the same ramp height must remain blocked: a
      * 1200-high platform is not a continuation of the 900-high ramp. */

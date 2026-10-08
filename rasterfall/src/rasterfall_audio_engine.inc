@@ -2,6 +2,7 @@
 static int rf_audio_weapon_kind(int k)
 {
     return k==TOY_SFX_GUNSHOT || (k>=TOY_SFX_SMG && k<=TOY_SFX_AWP) ||
+        k==TOY_SFX_MELEE || k==TOY_SFX_MELEE_HIT ||
         k==TOY_SFX_BOMB_EXPLODE || k==TOY_SFX_MOLOTOV_BREAK;
 }
 static int rf_audio_feedback_kind(int k)
@@ -27,8 +28,8 @@ static void audio_render_block(struct rasterfall_audio *a,short *pcm,int frames)
     unsigned range=__atomic_load_n(&a->target_range,__ATOMIC_ACQUIRE);
     /* Trim is independent from source propagation strength. Asset variants
      * with large peaks (sniper/explosion) receive additional compensation. */
-    static const int trim[]={96,144,144,144,144,160,160,160,160,160,160,160,
-        88,88,96,64,96,80,112};
+    static const int trim[]={96,144,144,144,144,160,160,160,160,160,80,80,
+        88,88,96,64,96,48,112};
     for(int c=0;c<RF_AUDIO_CONTROL_COUNT;++c)
         target[c]=(int)__atomic_load_n(&a->target_q8[c],__ATOMIC_ACQUIRE);
     for(int local=0;local<2;++local)for(int k=0;k<=TOY_SFX_MOLOTOV_BREAK;++k) {

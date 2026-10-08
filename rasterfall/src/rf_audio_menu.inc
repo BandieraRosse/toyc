@@ -91,7 +91,7 @@ static void rf_audio_menu_draw(struct rasterfall_canvas *c,
     const struct pause_menu *menu,const struct rasterfall_audio *a,
     const struct rf_player_ui_state *ui)
 {
-    static const char *labels[]={"总音量","音乐","游戏音效","枪械与爆炸",
+    static const char *labels[]={"总音量","音乐","游戏音效","武器与爆炸",
         "自身枪声","环境与机器","战斗反馈","界面音效"};
     static const char *ranges[]={"宽广","标准","舒适"};
     struct rf_pause_layout layout;char text[96];

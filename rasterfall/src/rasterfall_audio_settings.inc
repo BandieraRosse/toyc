@@ -2,6 +2,7 @@
 void rf_audio_settings_default(struct rf_audio_settings *s)
 {
     for(int i=0;i<RF_AUDIO_CONTROL_COUNT;++i)s->volume[i]=100;
+    s->volume[RF_AUDIO_MASTER]=80;
     s->range=RF_AUDIO_STANDARD;
 }
 int rf_audio_volume_q8(int percent)

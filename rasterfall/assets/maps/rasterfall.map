@@ -18,19 +18,18 @@ surface id=surface_ramp_south_west kind=ramp min_x=7000 max_x=10000 min_z=-19000
 surface id=surface_ramp_south_center kind=ramp min_x=11000 max_x=12500 min_z=-19000 max_z=-16000 height=0 height2=1200 axis=z material=596775 attr.collision_id=ramp_south_center
 surface id=surface_ramp_south_east kind=ramp min_x=14000 max_x=17000 min_z=-19000 max_z=-17500 height=900 height2=0 axis=x material=665E53 attr.collision_id=ramp_south_east
 surface id=surface_platform_weapon_table kind=platform min_x=-880 max_x=880 min_z=-7780 max_z=-7120 height=650 material=525F65 attr.collision_id=platform_weapon_table
-surface id=surface_platform_ammo_container kind=platform min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 material=525F65 attr.collision_id=platform_ammo_container
 surface id=surface_floor_spawn_west kind=floor min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 material=59494B attr.collision_id=floor_spawn_west
 surface id=surface_floor_spawn_east kind=floor min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 material=59494B attr.collision_id=floor_spawn_east
 surface id=surface_floor_spawn_north_west kind=floor min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 material=59494B attr.collision_id=floor_spawn_north_west
 surface id=surface_floor_spawn_north_east kind=floor min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 material=59494B attr.collision_id=floor_spawn_north_east
-surface id=surface_ramp_west_outer kind=ramp min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 height2=900 axis=x material=4C565B attr.collision_id=ramp_west_outer
-surface id=surface_platform_west_outer kind=platform min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 material=525F65 attr.collision_id=platform_west_outer
-surface id=surface_ramp_west_down kind=ramp min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 height2=0 axis=x material=4C565B attr.collision_id=ramp_west_down
+surface id=surface_ramp_west_outer kind=floor min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=ramp_west_outer
+surface id=surface_platform_west_outer kind=floor min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=0 material=525F65 attr.collision_id=platform_west_outer
+surface id=surface_ramp_west_down kind=floor min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=ramp_west_down
 surface id=surface_floor_west_mid kind=floor min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=floor_west_mid
-surface id=surface_ramp_west_inner kind=ramp min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 height2=900 axis=x material=4C565B attr.collision_id=ramp_west_inner
-surface id=surface_platform_west_inner kind=platform min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 material=525F65 attr.collision_id=platform_west_inner
-surface id=surface_ramp_west_inner_down kind=ramp min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 height2=0 axis=x material=4C565B attr.collision_id=ramp_west_inner_down
-surface id=surface_floor_west_outer kind=floor min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=floor_west_outer
+surface id=surface_ramp_west_inner kind=floor min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=ramp_west_inner
+surface id=surface_platform_west_inner kind=floor min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=0 material=525F65 attr.collision_id=platform_west_inner
+surface id=surface_ramp_west_inner_down kind=floor min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=ramp_west_inner_down
+surface id=surface_floor_west_outer kind=floor min_x=-45000 max_x=-24000 min_z=-2400 max_z=2400 height=0 material=4C565B attr.collision_id=floor_west_outer
 surface id=surface_floor_east_corridor kind=floor min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 material=4C565B attr.collision_id=floor_east_corridor
 surface id=surface_floor_hurd_base kind=floor min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 material=4C565B attr.collision_id=floor_hurd_base
 surface id=surface_floor_spawn_west_end kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 material=665052 attr.collision_id=floor_spawn_west_end
@@ -43,7 +42,7 @@ region id=spawn_north_east kind=spawn min_x=9000 max_x=20000 min_z=14000 max_z=2
 region id=spawn_west_end kind=spawn min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 attr.legacy_index=6
 region id=alarm_control kind=alarm min_x=-23940 max_x=-23940 min_z=-3000 max_z=-3000 attr.legacy_index=7
 region id=player_start kind=start min_x=-13000 max_x=-13000 min_z=-12000 max_z=-12000 attr.sy=0 attr.cy=1024
-interaction id=return_outpost action=return_outpost x=-13000 y=0 z=-11000 attr.legacy_index=44
+interaction id=return_outpost action=return_outpost x=-13000 y=0 z=-11000 attr.legacy_index=43
 render id=return_outpost_label kind=label min_x=-14500 max_x=-11500 min_z=-10800 max_z=-10600 height=1800 color=9FE8C8 attr.text=RETURN_TO_OUTPOST attr.legacy_index=0
 collision id=ground_world shape=flat min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 collision=false visible=false walkable=true color=414B53 attr.legacy_index=0
 collision id=floor_base shape=flat min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 collision=false visible=true walkable=true color=465A57 attr.legacy_index=1
@@ -70,23 +69,21 @@ collision id=ramp_south_center shape=ramp_z min_x=11000 max_x=12500 min_z=-19000
 collision id=ramp_south_east shape=ramp_x min_x=14000 max_x=17000 min_z=-19000 max_z=-17500 height=900 height2=0 collision=true visible=true walkable=true color=665E53 attr.legacy_index=22
 collision id=box_weapon_table shape=box min_x=-700 max_x=700 min_z=-7600 max_z=-7300 height=650 collision=true visible=false walkable=false color=5A3E28 attr.legacy_index=23
 collision id=platform_weapon_table shape=flat min_x=-880 max_x=880 min_z=-7780 max_z=-7120 height=650 collision=true visible=false walkable=true color=525F65 attr.legacy_index=24
-collision id=box_ammo_container shape=box min_x=820 max_x=940 min_z=-7570 max_z=-7390 height=340 collision=true visible=false walkable=false color=6A5538 attr.legacy_index=25
-collision id=platform_ammo_container shape=flat min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 collision=true visible=false walkable=true color=525F65 attr.legacy_index=26
-collision id=floor_spawn_west shape=flat min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=27
-collision id=floor_spawn_east shape=flat min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=28
-collision id=floor_spawn_north_west shape=flat min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=29
-collision id=floor_spawn_north_east shape=flat min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=30
-collision id=ramp_west_outer shape=ramp_x min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 height2=900 collision=true visible=true walkable=true color=4C565B attr.legacy_index=31
-collision id=platform_west_outer shape=flat min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 collision=true visible=false walkable=true color=525F65 attr.legacy_index=32
-collision id=ramp_west_down shape=ramp_x min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 height2=0 collision=true visible=true walkable=true color=4C565B attr.legacy_index=33
-collision id=floor_west_mid shape=flat min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=34
-collision id=ramp_west_inner shape=ramp_x min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 height2=900 collision=true visible=true walkable=true color=4C565B attr.legacy_index=35
-collision id=platform_west_inner shape=flat min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 collision=true visible=false walkable=true color=525F65 attr.legacy_index=36
-collision id=ramp_west_inner_down shape=ramp_x min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 height2=0 collision=true visible=true walkable=true color=4C565B attr.legacy_index=37
-collision id=floor_west_outer shape=flat min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=38
-collision id=floor_east_corridor shape=flat min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=39
-collision id=floor_hurd_base shape=flat min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=40
-collision id=floor_spawn_west_end shape=flat min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 collision=false visible=true walkable=true color=665052 attr.legacy_index=41
+collision id=floor_spawn_west shape=flat min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=25
+collision id=floor_spawn_east shape=flat min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=26
+collision id=floor_spawn_north_west shape=flat min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=27
+collision id=floor_spawn_north_east shape=flat min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 collision=false visible=true walkable=true color=59494B attr.legacy_index=28
+collision id=ramp_west_outer shape=flat min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=29
+collision id=platform_west_outer shape=flat min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=525F65 attr.legacy_index=30
+collision id=ramp_west_down shape=flat min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=31
+collision id=floor_west_mid shape=flat min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=32
+collision id=ramp_west_inner shape=flat min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=33
+collision id=platform_west_inner shape=flat min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=525F65 attr.legacy_index=34
+collision id=ramp_west_inner_down shape=flat min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=35
+collision id=floor_west_outer shape=flat min_x=-45000 max_x=-24000 min_z=-2400 max_z=2400 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=36
+collision id=floor_east_corridor shape=flat min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=37
+collision id=floor_hurd_base shape=flat min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 collision=false visible=true walkable=true color=4C565B attr.legacy_index=38
+collision id=floor_spawn_west_end shape=flat min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 collision=false visible=true walkable=true color=665052 attr.legacy_index=39
 render id=legacy_render_000 kind=ground min_x=-33000 max_x=33000 min_z=-33000 max_z=33000 height=0 color=414B53 attr.legacy_index=1
 render id=legacy_render_001 kind=label min_x=-12200 max_x=-11200 min_z=-10300 max_z=-10100 color=9FE8C8 attr.text=RF_HUMANOID_V2_ACTION_DEBUG attr.legacy_index=2
 render id=legacy_render_002 kind=floor min_x=-3000 max_x=3000 min_z=-3000 max_z=3000 height=0 color=465A57 attr.legacy_index=3
@@ -146,24 +143,22 @@ render id=legacy_render_055 kind=model min_x=-700 max_x=-610 min_z=-7600 max_z=-
 render id=legacy_render_056 kind=model min_x=610 max_x=700 min_z=-7600 max_z=-7510 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=57
 render id=legacy_render_057 kind=model min_x=-700 max_x=-610 min_z=-7390 max_z=-7300 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=58
 render id=legacy_render_058 kind=model min_x=610 max_x=700 min_z=-7390 max_z=-7300 height=-900 color=5A3E28 attr.height2=-250 attr.legacy_index=59
-render id=legacy_render_059 kind=platform min_x=640 max_x=1120 min_z=-7750 max_z=-7210 height=340 color=525F65 attr.style=0 attr.legacy_index=60
-render id=legacy_render_060 kind=model min_x=820 max_x=940 min_z=-7570 max_z=-7390 height=-900 color=6A5538 attr.height2=-560 attr.legacy_index=61
-render id=legacy_render_061 kind=floor min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 color=59494B attr.legacy_index=62
-render id=legacy_render_062 kind=floor min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 color=59494B attr.legacy_index=63
-render id=legacy_render_063 kind=floor min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 color=59494B attr.legacy_index=64
-render id=legacy_render_064 kind=floor min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 color=59494B attr.legacy_index=65
-render id=legacy_render_072 kind=ramp min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.height2=900 attr.style=2 attr.axis=x attr.legacy_index=66
-render id=legacy_render_073 kind=platform min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=900 color=525F65 attr.style=2 attr.legacy_index=67
-render id=legacy_render_074 kind=ramp min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=900 color=4C565B attr.height2=0 attr.style=2 attr.axis=x attr.legacy_index=68
-render id=legacy_render_075 kind=floor min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=69
-render id=legacy_render_076 kind=ramp min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.height2=900 attr.style=2 attr.axis=x attr.legacy_index=70
-render id=legacy_render_077 kind=platform min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=900 color=525F65 attr.style=2 attr.legacy_index=71
-render id=legacy_render_078 kind=ramp min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=900 color=4C565B attr.height2=0 attr.style=2 attr.axis=x attr.legacy_index=72
-render id=legacy_render_079 kind=floor min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=73
-render id=legacy_render_083 kind=floor min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 color=4C565B attr.legacy_index=74
-render id=legacy_render_087 kind=floor min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 color=4C565B attr.legacy_index=75
-render id=legacy_render_096 kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 color=665052 attr.legacy_index=76
-render id=legacy_render_097 kind=label min_x=10500 max_x=17500 min_z=-14100 max_z=-13900 color=FFD060 attr.text=ENEMY_DEATH_PRESENTATION attr.legacy_index=77
+render id=legacy_render_061 kind=floor min_x=-23000 max_x=-21500 min_z=-5600 max_z=23000 height=0 color=59494B attr.legacy_index=60
+render id=legacy_render_062 kind=floor min_x=21500 max_x=23000 min_z=-5600 max_z=23000 height=0 color=59494B attr.legacy_index=61
+render id=legacy_render_063 kind=floor min_x=-20000 max_x=-9000 min_z=14000 max_z=22000 height=0 color=59494B attr.legacy_index=62
+render id=legacy_render_064 kind=floor min_x=9000 max_x=20000 min_z=14000 max_z=22000 height=0 color=59494B attr.legacy_index=63
+render id=legacy_render_072 kind=floor min_x=-39000 max_x=-36000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=64
+render id=legacy_render_073 kind=floor min_x=-36000 max_x=-35000 min_z=-2400 max_z=2400 height=0 color=525F65 attr.legacy_index=65
+render id=legacy_render_074 kind=floor min_x=-35000 max_x=-32000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=66
+render id=legacy_render_075 kind=floor min_x=-32000 max_x=-31000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=67
+render id=legacy_render_076 kind=floor min_x=-31000 max_x=-28000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=68
+render id=legacy_render_077 kind=floor min_x=-28000 max_x=-27000 min_z=-2400 max_z=2400 height=0 color=525F65 attr.legacy_index=69
+render id=legacy_render_078 kind=floor min_x=-27000 max_x=-24000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=70
+render id=legacy_render_079 kind=floor min_x=-45000 max_x=-39000 min_z=-2400 max_z=2400 height=0 color=4C565B attr.legacy_index=71
+render id=legacy_render_083 kind=floor min_x=24000 max_x=33000 min_z=-800 max_z=800 height=0 color=4C565B attr.legacy_index=72
+render id=legacy_render_087 kind=floor min_x=-6000 max_x=6000 min_z=24000 max_z=33000 height=0 color=4C565B attr.legacy_index=73
+render id=legacy_render_096 kind=floor min_x=-44400 max_x=-43400 min_z=-1650 max_z=1650 height=0 color=665052 attr.legacy_index=74
+render id=legacy_render_097 kind=label min_x=10500 max_x=17500 min_z=-14100 max_z=-13900 color=FFD060 attr.text=ENEMY_DEATH_PRESENTATION attr.legacy_index=75
 actor_spawn id=GUARD class=level1 base_id=1 x=0 y=0 z=-900 downed=0 attr.legacy_index=0
 actor_spawn id=ELITE class=level3 base_id=2 x=-1000 y=0 z=0 downed=0 attr.legacy_index=1
 actor_spawn id=BASE class=level1 base_id=0 x=0 y=0 z=900 downed=0 weapon=pistol attr.legacy_index=2
@@ -175,14 +170,13 @@ actor_spawn id=AK_TEST class=level3 base_id=0 x=-9000 y=0 z=-10800 downed=0 weap
 actor_spawn id=AWP_TEST class=level3 base_id=0 x=-8000 y=0 z=-10000 downed=0 weapon=awp attr.legacy_index=8
 pickup id=pickup_smg kind=smg x=-250 y=-235 z=-7450 attr.legacy_index=0
 pickup id=pickup_shotgun kind=shotgun x=250 y=-235 z=-7450 attr.legacy_index=1
-pickup id=pickup_ammo_1 kind=ammo x=880 y=-520 z=-7480 attr.legacy_index=2
-pickup id=pickup_ammo_2 kind=ammo x=450 y=-500 z=900 attr.legacy_index=3
-pickup id=pickup_ak kind=ak x=-700 y=-235 z=-7450 attr.legacy_index=5
-pickup id=pickup_awp kind=awp x=700 y=-235 z=-7450 attr.legacy_index=6
-pickup id=pickup_axe kind=axe x=-1050 y=-235 z=-7450 attr.legacy_index=7
-pickup id=pickup_bomb kind=bomb x=1050 y=-235 z=-7450 attr.legacy_index=8
-pickup id=pickup_molotov kind=molotov x=1350 y=-235 z=-7450 attr.legacy_index=9
-pickup id=pickup_pill kind=pill x=1650 y=-235 z=-7450 attr.legacy_index=10
+pickup id=pickup_ammo_2 kind=ammo x=450 y=-500 z=900 attr.legacy_index=2
+pickup id=pickup_ak kind=ak x=-700 y=-235 z=-7450 attr.legacy_index=4
+pickup id=pickup_awp kind=awp x=700 y=-235 z=-7450 attr.legacy_index=5
+pickup id=pickup_axe kind=axe x=-1050 y=-235 z=-7450 attr.legacy_index=6
+pickup id=pickup_bomb kind=bomb x=1050 y=-235 z=-7450 attr.legacy_index=7
+pickup id=pickup_molotov kind=molotov x=1350 y=-235 z=-7450 attr.legacy_index=8
+pickup id=pickup_pill kind=pill x=1650 y=-235 z=-7450 attr.legacy_index=9
 object id=object_crate kind=crate x=-14500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=0 attr.collision=component
 object id=object_barrier kind=barrier x=-13000 y=0 z=-17000 yaw=90 scale=1000 attr.legacy_index=1 attr.collision=component
 object id=object_lamp_post kind=lamp_post x=-11500 y=0 z=-17000 yaw=45 scale=1000 attr.legacy_index=2 attr.collision=component
@@ -190,170 +184,169 @@ object id=object_short_wall kind=short_wall x=-10000 y=0 z=-17000 yaw=0 scale=10
 object id=object_railing kind=railing x=-8500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=4 attr.collision=component
 object id=object_vent_unit kind=vent_unit x=-7000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=5 attr.collision=component
 object id=object_workbench kind=workbench x=-5500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=6 attr.collision=component
-object id=object_ammo_container kind=ammo_container x=-4000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=7 attr.collision=component
-object id=object_industrial_pillar kind=industrial_pillar x=-2500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=8 attr.collision=component
-object id=object_pipe_module kind=pipe_module x=-1000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=9 attr.collision=component
-interaction id=humanoid_actions action=humanoid_actions x=-12600 y=-250 z=-12800 attr.legacy_index=11
-interaction id=wave_skip action=wave_skip x=-1740 y=0 z=-4800 attr.legacy_index=12
-interaction id=attack_x2 action=attack_x2 x=4200 y=-250 z=-11600 attr.legacy_index=13
-interaction id=attack_x3 action=attack_x3 x=4700 y=-250 z=-11600 attr.legacy_index=14
-interaction id=attack_x4 action=attack_x4 x=5200 y=-250 z=-11600 attr.legacy_index=15
-interaction id=horde action=horde x=-23940 y=200 z=-10000 attr.legacy_index=16
-interaction id=air_left action=air x=-23940 y=200 z=-7600 attr.legacy_index=17
-interaction id=alarm action=alarm x=-23940 y=200 z=-3000 attr.legacy_index=18
-interaction id=heavy action=heavy x=-23940 y=200 z=-8500 attr.legacy_index=19
-interaction id=fast action=fast x=-23940 y=200 z=-9000 attr.legacy_index=20
-interaction id=smoker action=smoker x=4200 y=-250 z=-7600 attr.legacy_index=21
-interaction id=charger action=charger x=4700 y=-250 z=-7600 attr.legacy_index=22
-interaction id=tank action=tank x=5200 y=-250 z=-7600 attr.legacy_index=23
-interaction id=enemy_death_test action=enemy_death_test x=14000 y=-250 z=-10500 attr.legacy_index=26
-interaction id=air_right action=air x=23940 y=-250 z=-7600 attr.legacy_index=27
-interaction id=pose_reset action=pose x=-14250 y=-250 z=-11300 attr.legacy_index=28
-interaction id=humanoid_pose_debug action=humanoid_pose_debug x=-15100 y=-250 z=-11300 attr.legacy_index=29
-interaction id=pose_right_arm action=pose_prev_bone x=-13400 y=-250 z=-11300 attr.legacy_index=30
-interaction id=pose_arms action=pose_next_bone x=-12600 y=-250 z=-11300 attr.legacy_index=31
-interaction id=pose_body action=pose_axis_x x=-11750 y=-250 z=-11300 attr.legacy_index=32
-interaction id=anim_idle action=anim_idle x=-10900 y=-250 z=-11300 attr.legacy_index=33
-interaction id=anim_walk action=anim_walk x=-10050 y=-250 z=-11300 attr.legacy_index=34
-interaction id=anim_jog action=anim_jog x=-9200 y=-250 z=-11300 attr.legacy_index=35
-interaction id=glb_idle action=glb_idle x=-10900 y=-250 z=-12100 attr.legacy_index=36
-interaction id=glb_walk action=glb_walk x=-10050 y=-250 z=-12100 attr.legacy_index=37
-interaction id=glb_jog action=glb_jog x=-9200 y=-250 z=-12100 attr.legacy_index=38
-interaction id=vmd_walk action=vmd_walk x=-8350 y=-250 z=-12100 attr.legacy_index=39
-interaction id=vmd_manjusaka action=vmd_manjusaka x=-7500 y=-250 z=-12100 attr.legacy_index=40
-interaction id=animation_composition action=animation_composition x=-6650 y=-250 z=-12100 attr.legacy_index=41
-interaction id=west_corridor action=west_corridor x=-23940 y=200 z=-2100 attr.legacy_index=42
-interaction id=west_corridor_no_tank action=west_corridor_no_tank x=-23940 y=200 z=2100 attr.legacy_index=43
+object id=object_industrial_pillar kind=industrial_pillar x=-2500 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=7 attr.collision=component
+object id=object_pipe_module kind=pipe_module x=-1000 y=0 z=-17000 yaw=0 scale=1000 attr.legacy_index=8 attr.collision=component
+interaction id=humanoid_actions action=humanoid_actions x=-12600 y=-250 z=-12800 attr.legacy_index=10
+interaction id=wave_skip action=wave_skip x=-1740 y=0 z=-4800 attr.legacy_index=11
+interaction id=attack_x2 action=attack_x2 x=4200 y=-250 z=-11600 attr.legacy_index=12
+interaction id=attack_x3 action=attack_x3 x=4700 y=-250 z=-11600 attr.legacy_index=13
+interaction id=attack_x4 action=attack_x4 x=5200 y=-250 z=-11600 attr.legacy_index=14
+interaction id=horde action=horde x=-23940 y=200 z=-10000 attr.legacy_index=15
+interaction id=air_left action=air x=-23940 y=200 z=-7600 attr.legacy_index=16
+interaction id=alarm action=alarm x=-23940 y=200 z=-3000 attr.legacy_index=17
+interaction id=heavy action=heavy x=-23940 y=200 z=-8500 attr.legacy_index=18
+interaction id=fast action=fast x=-23940 y=200 z=-9000 attr.legacy_index=19
+interaction id=smoker action=smoker x=4200 y=-250 z=-7600 attr.legacy_index=20
+interaction id=charger action=charger x=4700 y=-250 z=-7600 attr.legacy_index=21
+interaction id=tank action=tank x=5200 y=-250 z=-7600 attr.legacy_index=22
+interaction id=enemy_death_test action=enemy_death_test x=14000 y=-250 z=-10500 attr.legacy_index=25
+interaction id=air_right action=air x=23940 y=-250 z=-7600 attr.legacy_index=26
+interaction id=pose_reset action=pose x=-14250 y=-250 z=-11300 attr.legacy_index=27
+interaction id=humanoid_pose_debug action=humanoid_pose_debug x=-15100 y=-250 z=-11300 attr.legacy_index=28
+interaction id=pose_right_arm action=pose_prev_bone x=-13400 y=-250 z=-11300 attr.legacy_index=29
+interaction id=pose_arms action=pose_next_bone x=-12600 y=-250 z=-11300 attr.legacy_index=30
+interaction id=pose_body action=pose_axis_x x=-11750 y=-250 z=-11300 attr.legacy_index=31
+interaction id=anim_idle action=anim_idle x=-10900 y=-250 z=-11300 attr.legacy_index=32
+interaction id=anim_walk action=anim_walk x=-10050 y=-250 z=-11300 attr.legacy_index=33
+interaction id=anim_jog action=anim_jog x=-9200 y=-250 z=-11300 attr.legacy_index=34
+interaction id=glb_idle action=glb_idle x=-10900 y=-250 z=-12100 attr.legacy_index=35
+interaction id=glb_walk action=glb_walk x=-10050 y=-250 z=-12100 attr.legacy_index=36
+interaction id=glb_jog action=glb_jog x=-9200 y=-250 z=-12100 attr.legacy_index=37
+interaction id=vmd_walk action=vmd_walk x=-8350 y=-250 z=-12100 attr.legacy_index=38
+interaction id=vmd_manjusaka action=vmd_manjusaka x=-7500 y=-250 z=-12100 attr.legacy_index=39
+interaction id=animation_composition action=animation_composition x=-6650 y=-250 z=-12100 attr.legacy_index=40
+interaction id=west_corridor action=west_corridor x=-23940 y=200 z=-2100 attr.legacy_index=41
+interaction id=west_corridor_no_tank action=west_corridor_no_tank x=-23940 y=200 z=2100 attr.legacy_index=42
 
 # Facility compositions. Spatial/gameplay records above remain intact.
 # West maintenance island: equipment faces the broad central combat apron.
-object id=env_west_vent_1 kind=vent_unit x=-15500 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=10 attr.collision=component
-object id=env_west_vent_2 kind=vent_unit x=-15500 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=11 attr.collision=component
-object id=env_west_pipe_1 kind=pipe_module x=-17200 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=12 attr.collision=component
-object id=env_west_pipe_2 kind=pipe_module x=-17200 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=13 attr.collision=component
-object id=env_west_pillar_1 kind=industrial_pillar x=-18500 y=0 z=3500 yaw=0 scale=1000 attr.legacy_index=14 attr.collision=component
-object id=env_west_pillar_2 kind=industrial_pillar x=-18500 y=0 z=6572 yaw=0 scale=1000 attr.legacy_index=15 attr.collision=component
-object id=env_west_bench kind=workbench x=-14300 y=0 z=8800 yaw=90 scale=1000 attr.legacy_index=16 attr.collision=component
-object id=env_west_ammo kind=ammo_container x=-14300 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=17 attr.collision=component
-object id=env_west_crate kind=crate x=-15700 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=18 attr.collision=component
-object id=env_west_lamp kind=lamp_post x=-13000 y=0 z=5300 yaw=90 scale=1000 attr.legacy_index=19 attr.collision=component
+object id=env_west_vent_1 kind=vent_unit x=-15500 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=9 attr.collision=component
+object id=env_west_vent_2 kind=vent_unit x=-15500 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=10 attr.collision=component
+object id=env_west_pipe_1 kind=pipe_module x=-17200 y=0 z=6200 yaw=90 scale=1000 attr.legacy_index=11 attr.collision=component
+object id=env_west_pipe_2 kind=pipe_module x=-17200 y=0 z=7600 yaw=90 scale=1000 attr.legacy_index=12 attr.collision=component
+object id=env_west_pillar_1 kind=industrial_pillar x=-18500 y=0 z=3500 yaw=0 scale=1000 attr.legacy_index=13 attr.collision=component
+object id=env_west_pillar_2 kind=industrial_pillar x=-18500 y=0 z=6572 yaw=0 scale=1000 attr.legacy_index=14 attr.collision=component
+object id=env_west_bench kind=workbench x=-14300 y=0 z=8800 yaw=90 scale=1000 attr.legacy_index=15 attr.collision=component
+object id=env_west_ammo kind=ammo_container x=-14300 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=16 attr.collision=component
+object id=env_west_crate kind=crate x=-15700 y=0 z=10100 yaw=90 scale=1000 attr.legacy_index=17 attr.collision=component
+object id=env_west_lamp kind=lamp_post x=-13000 y=0 z=5300 yaw=90 scale=1000 attr.legacy_index=18 attr.collision=component
 # East service island: wider apron, repeated blue-grey ventilation rhythm.
-object id=env_east_vent_1 kind=vent_unit x=17100 y=0 z=7700 yaw=270 scale=1000 attr.legacy_index=20 attr.collision=component
-object id=env_east_vent_2 kind=vent_unit x=17100 y=0 z=9300 yaw=270 scale=1000 attr.legacy_index=21 attr.collision=component
-object id=env_east_pipe kind=pipe_module x=18200 y=0 z=8500 yaw=270 scale=1000 attr.legacy_index=22 attr.collision=component
-object id=env_east_pillar_1 kind=industrial_pillar x=19200 y=0 z=6000 yaw=0 scale=1000 attr.legacy_index=23 attr.collision=component
-object id=env_east_pillar_2 kind=industrial_pillar x=19200 y=0 z=9072 yaw=0 scale=1000 attr.legacy_index=24 attr.collision=component
-object id=env_east_wall_1 kind=short_wall x=15600 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=25 attr.collision=component
-object id=env_east_wall_2 kind=short_wall x=18000 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=26 attr.collision=component
-object id=env_east_lamp kind=lamp_post x=14700 y=0 z=6500 yaw=270 scale=1000 attr.legacy_index=27 attr.collision=component
+object id=env_east_vent_1 kind=vent_unit x=17100 y=0 z=7700 yaw=270 scale=1000 attr.legacy_index=19 attr.collision=component
+object id=env_east_vent_2 kind=vent_unit x=17100 y=0 z=9300 yaw=270 scale=1000 attr.legacy_index=20 attr.collision=component
+object id=env_east_pipe kind=pipe_module x=18200 y=0 z=8500 yaw=270 scale=1000 attr.legacy_index=21 attr.collision=component
+object id=env_east_pillar_1 kind=industrial_pillar x=19200 y=0 z=6000 yaw=0 scale=1000 attr.legacy_index=22 attr.collision=component
+object id=env_east_pillar_2 kind=industrial_pillar x=19200 y=0 z=9072 yaw=0 scale=1000 attr.legacy_index=23 attr.collision=component
+object id=env_east_wall_1 kind=short_wall x=15600 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=24 attr.collision=component
+object id=env_east_wall_2 kind=short_wall x=18000 y=0 z=11100 yaw=0 scale=1000 attr.legacy_index=25 attr.collision=component
+object id=env_east_lamp kind=lamp_post x=14700 y=0 z=6500 yaw=270 scale=1000 attr.legacy_index=26 attr.collision=component
 # North gate shoulders leave the central Hurd approach completely open.
-object id=env_north_barrier_w kind=barrier x=-7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=28 attr.collision=component
-object id=env_north_barrier_e kind=barrier x=7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=29 attr.collision=component
-object id=env_north_lamp_w kind=lamp_post x=-4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=30 attr.collision=component
-object id=env_north_lamp_e kind=lamp_post x=4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=31 attr.collision=component
-object id=env_hurd_bench kind=workbench x=-4300 y=0 z=31200 yaw=90 scale=1000 attr.legacy_index=32 attr.collision=component
-object id=env_hurd_crate kind=crate x=4300 y=0 z=31200 yaw=270 scale=1000 attr.legacy_index=33 attr.collision=component
-object id=env_hurd_ammo kind=ammo_container x=4300 y=0 z=29900 yaw=270 scale=1000 attr.legacy_index=34 attr.collision=component
+object id=env_north_barrier_w kind=barrier x=-7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=27 attr.collision=component
+object id=env_north_barrier_e kind=barrier x=7300 y=0 z=23000 yaw=0 scale=1000 attr.legacy_index=28 attr.collision=component
+object id=env_north_lamp_w kind=lamp_post x=-4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=29 attr.collision=component
+object id=env_north_lamp_e kind=lamp_post x=4700 y=0 z=24800 yaw=0 scale=1000 attr.legacy_index=30 attr.collision=component
+object id=env_hurd_bench kind=workbench x=-4300 y=0 z=31200 yaw=90 scale=1000 attr.legacy_index=31 attr.collision=component
+object id=env_hurd_crate kind=crate x=4300 y=0 z=31200 yaw=270 scale=1000 attr.legacy_index=32 attr.collision=component
+object id=env_hurd_ammo kind=ammo_container x=4300 y=0 z=29900 yaw=270 scale=1000 attr.legacy_index=33 attr.collision=component
 # South maintenance apron, outside the existing actor/interaction strip.
-object id=env_south_bench_1 kind=workbench x=-5800 y=0 z=-15000 yaw=180 scale=1000 attr.legacy_index=35 attr.collision=component
-object id=env_south_crate kind=crate x=-9200 y=0 z=-15000 yaw=0 scale=1000 attr.legacy_index=36 attr.collision=component
-object id=env_south_ammo kind=ammo_container x=-5800 y=0 z=-15900 yaw=0 scale=1000 attr.legacy_index=37 attr.collision=component
-object id=env_south_lamp kind=lamp_post x=-10300 y=0 z=-15300 yaw=180 scale=1000 attr.legacy_index=38 attr.collision=component
+object id=env_south_bench_1 kind=workbench x=-5800 y=0 z=-15000 yaw=180 scale=1000 attr.legacy_index=34 attr.collision=component
+object id=env_south_crate kind=crate x=-9200 y=0 z=-15000 yaw=0 scale=1000 attr.legacy_index=35 attr.collision=component
+object id=env_south_ammo kind=ammo_container x=-5800 y=0 z=-15900 yaw=0 scale=1000 attr.legacy_index=36 attr.collision=component
+object id=env_south_lamp kind=lamp_post x=-10300 y=0 z=-15300 yaw=180 scale=1000 attr.legacy_index=37 attr.collision=component
 # Ramp-side service equipment stays clear of the ramp footprint.
-object id=env_ramp_rail_1 kind=railing x=-18100 y=0 z=-14000 yaw=90 scale=1000 attr.legacy_index=39 attr.collision=component
-object id=env_ramp_rail_2 kind=railing x=-18100 y=0 z=-12700 yaw=90 scale=1000 attr.legacy_index=40 attr.collision=component
-object id=env_ramp_vent kind=vent_unit x=-17000 y=0 z=-14000 yaw=180 scale=1000 attr.legacy_index=41 attr.collision=component
-object id=env_ramp_lamp kind=lamp_post x=-18100 y=0 z=-15400 yaw=180 scale=1000 attr.legacy_index=42 attr.collision=component
+object id=env_ramp_rail_1 kind=railing x=-18100 y=0 z=-14000 yaw=90 scale=1000 attr.legacy_index=38 attr.collision=component
+object id=env_ramp_rail_2 kind=railing x=-18100 y=0 z=-12700 yaw=90 scale=1000 attr.legacy_index=39 attr.collision=component
+object id=env_ramp_vent kind=vent_unit x=-17000 y=0 z=-14000 yaw=180 scale=1000 attr.legacy_index=40 attr.collision=component
+object id=env_ramp_lamp kind=lamp_post x=-18100 y=0 z=-15400 yaw=180 scale=1000 attr.legacy_index=41 attr.collision=component
 
 # Facility grammar: repeated anchor, open frame and control interface.
-object id=env_west_power kind=power_unit x=-17700 y=0 z=3900 yaw=90 scale=1250 attr.legacy_index=43 attr.collision=component
-object id=env_east_power kind=power_unit x=17600 y=0 z=4500 yaw=270 scale=1250 attr.legacy_index=44 attr.collision=component
-object id=env_south_power kind=power_unit x=19000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=45 attr.collision=component
-object id=env_west_control kind=control_cabinet x=-14700 y=0 z=4200 yaw=90 scale=1000 attr.legacy_index=46 attr.collision=component
-object id=env_east_control kind=control_cabinet x=15700 y=0 z=4400 yaw=270 scale=1000 attr.legacy_index=47 attr.collision=component
-object id=env_south_control kind=control_cabinet x=-7600 y=0 z=-15900 yaw=180 scale=1000 attr.legacy_index=48 attr.collision=component
-object id=env_hurd_control kind=control_cabinet x=-4300 y=0 z=29800 yaw=90 scale=1000 attr.legacy_index=49 attr.collision=component
-object id=env_west_gate kind=gate_frame x=-40500 y=0 z=0 yaw=90 scale=1250 attr.legacy_index=50 attr.collision=component
-object id=env_hurd_gate kind=gate_frame x=0 y=0 z=24700 yaw=0 scale=2000 attr.legacy_index=51 attr.collision=component
-object id=env_south_gate kind=gate_frame x=-6900 y=0 z=-14300 yaw=180 scale=1000 attr.legacy_index=52 attr.collision=component
-object id=env_east_route_gate kind=gate_frame x=28000 y=0 z=0 yaw=90 scale=500 attr.legacy_index=53 attr.collision=component
-object id=env_east_route_control kind=control_cabinet x=29500 y=0 z=580 yaw=180 scale=1000 attr.legacy_index=54 attr.collision=component
-object id=env_west_route_control kind=control_cabinet x=-42000 y=0 z=1800 yaw=180 scale=1000 attr.legacy_index=55 attr.collision=component
-object id=env_west_route_lamp kind=lamp_post x=-42000 y=0 z=-1800 yaw=90 scale=1000 attr.legacy_index=56 attr.collision=component
-object id=env_base_lamp_w kind=lamp_post x=-4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=57 attr.collision=component
-object id=env_base_lamp_e kind=lamp_post x=4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=58 attr.collision=component
-object id=env_base_barrier_w kind=barrier x=-4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=59 attr.collision=component
-object id=env_base_barrier_e kind=barrier x=4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=60 attr.collision=component
-object id=env_north_power kind=power_unit x=-7500 y=0 z=11500 yaw=180 scale=1500 attr.legacy_index=61 attr.collision=component
-object id=env_north_control kind=control_cabinet x=-5000 y=0 z=10200 yaw=180 scale=1000 attr.legacy_index=62 attr.collision=component
-object id=env_north_pipe kind=pipe_module x=-9800 y=0 z=11500 yaw=180 scale=1000 attr.legacy_index=63 attr.collision=component
-object id=env_north_vent kind=vent_unit x=-7500 y=0 z=13000 yaw=180 scale=1000 attr.legacy_index=64 attr.collision=component
-object id=env_power_yard_pipe kind=pipe_module x=17300 y=0 z=-21500 yaw=0 scale=1000 attr.legacy_index=65 attr.collision=component
-object id=env_power_yard_vent kind=vent_unit x=21000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=66 attr.collision=component
-object id=env_power_yard_control kind=control_cabinet x=19000 y=0 z=-19900 yaw=0 scale=1000 attr.legacy_index=67 attr.collision=component
+object id=env_west_power kind=power_unit x=-17700 y=0 z=3900 yaw=90 scale=1250 attr.legacy_index=42 attr.collision=component
+object id=env_east_power kind=power_unit x=17600 y=0 z=4500 yaw=270 scale=1250 attr.legacy_index=43 attr.collision=component
+object id=env_south_power kind=power_unit x=19000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=44 attr.collision=component
+object id=env_west_control kind=control_cabinet x=-14700 y=0 z=4200 yaw=90 scale=1000 attr.legacy_index=45 attr.collision=component
+object id=env_east_control kind=control_cabinet x=15700 y=0 z=4400 yaw=270 scale=1000 attr.legacy_index=46 attr.collision=component
+object id=env_south_control kind=control_cabinet x=-7600 y=0 z=-15900 yaw=180 scale=1000 attr.legacy_index=47 attr.collision=component
+object id=env_hurd_control kind=control_cabinet x=-4300 y=0 z=29800 yaw=90 scale=1000 attr.legacy_index=48 attr.collision=component
+object id=env_west_gate kind=gate_frame x=-40500 y=0 z=0 yaw=90 scale=1250 attr.legacy_index=49 attr.collision=component
+object id=env_hurd_gate kind=gate_frame x=0 y=0 z=24700 yaw=0 scale=2000 attr.legacy_index=50 attr.collision=component
+object id=env_south_gate kind=gate_frame x=-6900 y=0 z=-14300 yaw=180 scale=1000 attr.legacy_index=51 attr.collision=component
+object id=env_east_route_gate kind=gate_frame x=28000 y=0 z=0 yaw=90 scale=500 attr.legacy_index=52 attr.collision=component
+object id=env_east_route_control kind=control_cabinet x=29500 y=0 z=580 yaw=180 scale=1000 attr.legacy_index=53 attr.collision=component
+object id=env_west_route_control kind=control_cabinet x=-42000 y=0 z=1800 yaw=180 scale=1000 attr.legacy_index=54 attr.collision=component
+object id=env_west_route_lamp kind=lamp_post x=-42000 y=0 z=-1800 yaw=90 scale=1000 attr.legacy_index=55 attr.collision=component
+object id=env_base_lamp_w kind=lamp_post x=-4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=56 attr.collision=component
+object id=env_base_lamp_e kind=lamp_post x=4400 y=0 z=3200 yaw=0 scale=1000 attr.legacy_index=57 attr.collision=component
+object id=env_base_barrier_w kind=barrier x=-4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=58 attr.collision=component
+object id=env_base_barrier_e kind=barrier x=4800 y=0 z=-1500 yaw=90 scale=1000 attr.legacy_index=59 attr.collision=component
+object id=env_north_power kind=power_unit x=-7500 y=0 z=11500 yaw=180 scale=1500 attr.legacy_index=60 attr.collision=component
+object id=env_north_control kind=control_cabinet x=-5000 y=0 z=10200 yaw=180 scale=1000 attr.legacy_index=61 attr.collision=component
+object id=env_north_pipe kind=pipe_module x=-9800 y=0 z=11500 yaw=180 scale=1000 attr.legacy_index=62 attr.collision=component
+object id=env_north_vent kind=vent_unit x=-7500 y=0 z=13000 yaw=180 scale=1000 attr.legacy_index=63 attr.collision=component
+object id=env_power_yard_pipe kind=pipe_module x=17300 y=0 z=-21500 yaw=0 scale=1000 attr.legacy_index=64 attr.collision=component
+object id=env_power_yard_vent kind=vent_unit x=21000 y=0 z=-21000 yaw=0 scale=1000 attr.legacy_index=65 attr.collision=component
+object id=env_power_yard_control kind=control_cabinet x=19000 y=0 z=-19900 yaw=0 scale=1000 attr.legacy_index=66 attr.collision=component
 
 # Visual service pads: presentation only, existing surfaces/collision unchanged.
-render id=env_pad_west kind=floor min_x=-19000 max_x=-13000 min_z=2500 max_z=11500 height=0 color=303B3A attr.legacy_index=78
-render id=env_pad_east kind=floor min_x=14000 max_x=20000 min_z=2800 max_z=12000 height=0 color=30393F attr.legacy_index=79
-render id=env_pad_north kind=floor min_x=-10800 max_x=-4500 min_z=9800 max_z=13700 height=0 color=353D37 attr.legacy_index=80
-render id=env_pad_south kind=floor min_x=-10500 max_x=-4200 min_z=-16400 max_z=-14000 height=0 color=3C3A32 attr.legacy_index=81
-render id=env_pad_power_yard kind=floor min_x=16500 max_x=22000 min_z=-22500 max_z=-19500 height=0 color=353D37 attr.legacy_index=82
+render id=env_pad_west kind=floor min_x=-19000 max_x=-13000 min_z=2500 max_z=11500 height=0 color=303B3A attr.legacy_index=76
+render id=env_pad_east kind=floor min_x=14000 max_x=20000 min_z=2800 max_z=12000 height=0 color=30393F attr.legacy_index=77
+render id=env_pad_north kind=floor min_x=-10800 max_x=-4500 min_z=9800 max_z=13700 height=0 color=353D37 attr.legacy_index=78
+render id=env_pad_south kind=floor min_x=-10500 max_x=-4200 min_z=-16400 max_z=-14000 height=0 color=3C3A32 attr.legacy_index=79
+render id=env_pad_power_yard kind=floor min_x=16500 max_x=22000 min_z=-22500 max_z=-19500 height=0 color=353D37 attr.legacy_index=80
 
 # Architectural V1 Campaign integration. All objects are visual-only: no new
 # collision, surface, spawn or route records. Side shells mark equipment edges;
 # open shoulders and doorway openings preserve the existing movement network.
 # West: south entrance, western service edge, short eastern return, open north.
 # Wall panels are 2048 RFU; side beams are 3072 RFU, seated at 1434 RFU.
-object id=env_arch_west_entry kind=arch_doorway x=-15500 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=68 attr.collision=component
-object id=env_arch_west_entry_wall kind=arch_wall x=-18060 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=69 attr.collision=component
-object id=env_arch_west_wall_1 kind=arch_wall x=-19084 y=0 z=3224 yaw=90 scale=1000 attr.legacy_index=70 attr.collision=component
-object id=env_arch_west_wall_2 kind=arch_wall x=-19084 y=0 z=5272 yaw=90 scale=1000 attr.legacy_index=71 attr.collision=component
-object id=env_arch_west_wall_3 kind=arch_wall x=-19084 y=0 z=7320 yaw=90 scale=1000 attr.legacy_index=72 attr.collision=component
-object id=env_arch_west_return kind=arch_wall x=-13200 y=0 z=9000 yaw=270 scale=1000 attr.legacy_index=73 attr.collision=component
-object id=env_arch_west_pillar_3 kind=industrial_pillar x=-18500 y=0 z=9644 yaw=0 scale=1000 attr.legacy_index=74 attr.collision=component
-object id=env_arch_west_beam_1 kind=arch_beam x=-18500 y=1434 z=5036 yaw=90 scale=1000 attr.legacy_index=75 attr.collision=component
-object id=env_arch_west_beam_2 kind=arch_beam x=-18500 y=1434 z=8108 yaw=90 scale=1000 attr.legacy_index=76 attr.collision=component
-object id=env_arch_west_support kind=arch_support x=-18500 y=0 z=8108 yaw=90 scale=1000 attr.legacy_index=77 attr.collision=component
-object id=env_arch_west_panel_1 kind=arch_service_panel x=-18980 y=600 z=4248 yaw=90 scale=1000 attr.legacy_index=78 attr.collision=component
-object id=env_arch_west_panel_2 kind=arch_service_panel x=-18980 y=600 z=7320 yaw=90 scale=1000 attr.legacy_index=79 attr.collision=component
-object id=env_arch_west_tray_1 kind=arch_cable_tray x=-18940 y=1700 z=4248 yaw=90 scale=1000 attr.legacy_index=80 attr.collision=component
-object id=env_arch_west_tray_2 kind=arch_cable_tray x=-18940 y=1700 z=6296 yaw=90 scale=1000 attr.legacy_index=81 attr.collision=component
+object id=env_arch_west_entry kind=arch_doorway x=-15500 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=67 attr.collision=component
+object id=env_arch_west_entry_wall kind=arch_wall x=-18060 y=0 z=2200 yaw=0 scale=1000 attr.legacy_index=68 attr.collision=component
+object id=env_arch_west_wall_1 kind=arch_wall x=-19084 y=0 z=3224 yaw=90 scale=1000 attr.legacy_index=69 attr.collision=component
+object id=env_arch_west_wall_2 kind=arch_wall x=-19084 y=0 z=5272 yaw=90 scale=1000 attr.legacy_index=70 attr.collision=component
+object id=env_arch_west_wall_3 kind=arch_wall x=-19084 y=0 z=7320 yaw=90 scale=1000 attr.legacy_index=71 attr.collision=component
+object id=env_arch_west_return kind=arch_wall x=-13200 y=0 z=9000 yaw=270 scale=1000 attr.legacy_index=72 attr.collision=component
+object id=env_arch_west_pillar_3 kind=industrial_pillar x=-18500 y=0 z=9644 yaw=0 scale=1000 attr.legacy_index=73 attr.collision=component
+object id=env_arch_west_beam_1 kind=arch_beam x=-18500 y=1434 z=5036 yaw=90 scale=1000 attr.legacy_index=74 attr.collision=component
+object id=env_arch_west_beam_2 kind=arch_beam x=-18500 y=1434 z=8108 yaw=90 scale=1000 attr.legacy_index=75 attr.collision=component
+object id=env_arch_west_support kind=arch_support x=-18500 y=0 z=8108 yaw=90 scale=1000 attr.legacy_index=76 attr.collision=component
+object id=env_arch_west_panel_1 kind=arch_service_panel x=-18980 y=600 z=4248 yaw=90 scale=1000 attr.legacy_index=77 attr.collision=component
+object id=env_arch_west_panel_2 kind=arch_service_panel x=-18980 y=600 z=7320 yaw=90 scale=1000 attr.legacy_index=78 attr.collision=component
+object id=env_arch_west_tray_1 kind=arch_cable_tray x=-18940 y=1700 z=4248 yaw=90 scale=1000 attr.legacy_index=79 attr.collision=component
+object id=env_arch_west_tray_2 kind=arch_cable_tray x=-18940 y=1700 z=6296 yaw=90 scale=1000 attr.legacy_index=80 attr.collision=component
 # Horizontal mechanical line: terminal cabinet -> tee -> elbow -> power casing.
 # At yaw=90 local +X points -Z; fittings use port centres, not AABBs.
-object id=env_arch_west_pipe_1 kind=arch_pipe_straight x=-18900 y=600 z=6808 yaw=90 scale=1000 attr.legacy_index=82 attr.collision=component
-object id=env_arch_west_tee kind=arch_pipe_tee x=-18723 y=600 z=5784 yaw=270 scale=1000 attr.legacy_index=83 attr.collision=component
-object id=env_arch_west_pipe_2 kind=arch_pipe_straight x=-18900 y=600 z=4760 yaw=90 scale=1000 attr.legacy_index=84 attr.collision=component
-object id=env_arch_west_elbow kind=arch_pipe_elbow x=-18723 y=600 z=3913 yaw=180 scale=1000 attr.legacy_index=85 attr.collision=component
-object id=env_arch_west_power_feed kind=arch_pipe_straight x=-17876 y=600 z=3736 yaw=0 scale=1000 attr.legacy_index=86 attr.collision=component
-object id=env_arch_west_branch_control kind=control_cabinet x=-18234 y=0 z=5784 yaw=270 scale=1000 attr.legacy_index=87 attr.collision=component
-object id=env_arch_west_hatch kind=arch_floor_hatch x=-17700 y=4 z=9000 yaw=0 scale=1000 attr.legacy_index=88 attr.collision=component
+object id=env_arch_west_pipe_1 kind=arch_pipe_straight x=-18900 y=600 z=6808 yaw=90 scale=1000 attr.legacy_index=81 attr.collision=component
+object id=env_arch_west_tee kind=arch_pipe_tee x=-18723 y=600 z=5784 yaw=270 scale=1000 attr.legacy_index=82 attr.collision=component
+object id=env_arch_west_pipe_2 kind=arch_pipe_straight x=-18900 y=600 z=4760 yaw=90 scale=1000 attr.legacy_index=83 attr.collision=component
+object id=env_arch_west_elbow kind=arch_pipe_elbow x=-18723 y=600 z=3913 yaw=180 scale=1000 attr.legacy_index=84 attr.collision=component
+object id=env_arch_west_power_feed kind=arch_pipe_straight x=-17876 y=600 z=3736 yaw=0 scale=1000 attr.legacy_index=85 attr.collision=component
+object id=env_arch_west_branch_control kind=control_cabinet x=-18234 y=0 z=5784 yaw=270 scale=1000 attr.legacy_index=86 attr.collision=component
+object id=env_arch_west_hatch kind=arch_floor_hatch x=-17700 y=4 z=9000 yaw=0 scale=1000 attr.legacy_index=87 attr.collision=component
 # East: two openings and a wide centre; independent north/south equipment bands.
-object id=env_arch_east_entry_s kind=arch_doorway x=15500 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=89 attr.collision=component
-object id=env_arch_east_entry_n kind=arch_doorway x=15500 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=90 attr.collision=component
-object id=env_arch_east_s_wall kind=arch_wall x=18060 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=91 attr.collision=component
-object id=env_arch_east_n_wall kind=arch_wall x=18060 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=92 attr.collision=component
-object id=env_arch_east_wall_1 kind=arch_wall x=19800 y=0 z=6000 yaw=270 scale=1000 attr.legacy_index=93 attr.collision=component
-object id=env_arch_east_wall_2 kind=arch_wall x=19800 y=0 z=8048 yaw=270 scale=1000 attr.legacy_index=94 attr.collision=component
-object id=env_arch_east_wall_3 kind=arch_wall x=19800 y=0 z=10096 yaw=270 scale=1000 attr.legacy_index=95 attr.collision=component
-object id=env_arch_east_beam kind=arch_beam x=19200 y=1434 z=7536 yaw=90 scale=1000 attr.legacy_index=96 attr.collision=component
-object id=env_arch_east_support kind=arch_support x=19200 y=0 z=7536 yaw=90 scale=1000 attr.legacy_index=97 attr.collision=component
-object id=env_arch_east_panel kind=arch_service_panel x=19690 y=600 z=10096 yaw=270 scale=1000 attr.legacy_index=98 attr.collision=component
-object id=env_arch_east_tray_1 kind=arch_cable_tray x=19660 y=1700 z=7024 yaw=270 scale=1000 attr.legacy_index=99 attr.collision=component
-object id=env_arch_east_tray_2 kind=arch_cable_tray x=19660 y=1700 z=9072 yaw=270 scale=1000 attr.legacy_index=100 attr.collision=component
+object id=env_arch_east_entry_s kind=arch_doorway x=15500 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=88 attr.collision=component
+object id=env_arch_east_entry_n kind=arch_doorway x=15500 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=89 attr.collision=component
+object id=env_arch_east_s_wall kind=arch_wall x=18060 y=0 z=2500 yaw=0 scale=1000 attr.legacy_index=90 attr.collision=component
+object id=env_arch_east_n_wall kind=arch_wall x=18060 y=0 z=12300 yaw=180 scale=1000 attr.legacy_index=91 attr.collision=component
+object id=env_arch_east_wall_1 kind=arch_wall x=19800 y=0 z=6000 yaw=270 scale=1000 attr.legacy_index=92 attr.collision=component
+object id=env_arch_east_wall_2 kind=arch_wall x=19800 y=0 z=8048 yaw=270 scale=1000 attr.legacy_index=93 attr.collision=component
+object id=env_arch_east_wall_3 kind=arch_wall x=19800 y=0 z=10096 yaw=270 scale=1000 attr.legacy_index=94 attr.collision=component
+object id=env_arch_east_beam kind=arch_beam x=19200 y=1434 z=7536 yaw=90 scale=1000 attr.legacy_index=95 attr.collision=component
+object id=env_arch_east_support kind=arch_support x=19200 y=0 z=7536 yaw=90 scale=1000 attr.legacy_index=96 attr.collision=component
+object id=env_arch_east_panel kind=arch_service_panel x=19690 y=600 z=10096 yaw=270 scale=1000 attr.legacy_index=97 attr.collision=component
+object id=env_arch_east_tray_1 kind=arch_cable_tray x=19660 y=1700 z=7024 yaw=270 scale=1000 attr.legacy_index=98 attr.collision=component
+object id=env_arch_east_tray_2 kind=arch_cable_tray x=19660 y=1700 z=9072 yaw=270 scale=1000 attr.legacy_index=99 attr.collision=component
 # Straight main joins the wall interface to the existing double-pipe equipment.
-object id=env_arch_east_pipe_1 kind=arch_pipe_straight x=19550 y=400 z=9584 yaw=90 scale=1000 attr.legacy_index=101 attr.collision=component
-object id=env_arch_east_elbow kind=arch_pipe_elbow x=19373 y=400 z=8737 yaw=90 scale=1000 attr.legacy_index=102 attr.collision=component
-object id=env_arch_east_feed kind=arch_pipe_straight x=18526 y=400 z=8560 yaw=0 scale=1000 attr.legacy_index=103 attr.collision=component
-object id=env_arch_east_hatch kind=arch_floor_hatch x=18000 y=4 z=6500 yaw=90 scale=1000 attr.legacy_index=104 attr.collision=component
+object id=env_arch_east_pipe_1 kind=arch_pipe_straight x=19550 y=400 z=9584 yaw=90 scale=1000 attr.legacy_index=100 attr.collision=component
+object id=env_arch_east_elbow kind=arch_pipe_elbow x=19373 y=400 z=8737 yaw=90 scale=1000 attr.legacy_index=101 attr.collision=component
+object id=env_arch_east_feed kind=arch_pipe_straight x=18526 y=400 z=8560 yaw=0 scale=1000 attr.legacy_index=102 attr.collision=component
+object id=env_arch_east_hatch kind=arch_floor_hatch x=18000 y=4 z=6500 yaw=90 scale=1000 attr.legacy_index=103 attr.collision=component
 # South power yard: one rear service wall and an open entrance, no route walls.
-object id=env_arch_power_wall_1 kind=arch_wall x=17976 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=105 attr.collision=component
-object id=env_arch_power_wall_2 kind=arch_wall x=20024 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=106 attr.collision=component
-object id=env_arch_power_entry kind=arch_doorway x=19000 y=0 z=-19100 yaw=180 scale=1000 attr.legacy_index=107 attr.collision=component
-object id=env_arch_power_panel kind=arch_service_panel x=20024 y=600 z=-22500 yaw=0 scale=1000 attr.legacy_index=108 attr.collision=component
-object id=env_arch_power_tray kind=arch_cable_tray x=20024 y=1700 z=-22460 yaw=0 scale=1000 attr.legacy_index=109 attr.collision=component
-object id=env_arch_power_hatch kind=arch_floor_hatch x=21100 y=4 z=-21900 yaw=0 scale=1000 attr.legacy_index=110 attr.collision=component
-object id=env_arch_west_pipe_terminal kind=control_cabinet x=-18900 y=0 z=7474 yaw=180 scale=1000 attr.legacy_index=111 attr.collision=component
-object id=env_arch_east_pipe_terminal kind=control_cabinet x=19550 y=0 z=10250 yaw=180 scale=1000 attr.legacy_index=112 attr.collision=component
+object id=env_arch_power_wall_1 kind=arch_wall x=17976 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=104 attr.collision=component
+object id=env_arch_power_wall_2 kind=arch_wall x=20024 y=0 z=-22600 yaw=0 scale=1000 attr.legacy_index=105 attr.collision=component
+object id=env_arch_power_entry kind=arch_doorway x=19000 y=0 z=-19100 yaw=180 scale=1000 attr.legacy_index=106 attr.collision=component
+object id=env_arch_power_panel kind=arch_service_panel x=20024 y=600 z=-22500 yaw=0 scale=1000 attr.legacy_index=107 attr.collision=component
+object id=env_arch_power_tray kind=arch_cable_tray x=20024 y=1700 z=-22460 yaw=0 scale=1000 attr.legacy_index=108 attr.collision=component
+object id=env_arch_power_hatch kind=arch_floor_hatch x=21100 y=4 z=-21900 yaw=0 scale=1000 attr.legacy_index=109 attr.collision=component
+object id=env_arch_west_pipe_terminal kind=control_cabinet x=-18900 y=0 z=7474 yaw=180 scale=1000 attr.legacy_index=110 attr.collision=component
+object id=env_arch_east_pipe_terminal kind=control_cabinet x=19550 y=0 z=10250 yaw=180 scale=1000 attr.legacy_index=111 attr.collision=component
 
 # Continuous 4.2 m perimeter wall components; runtime generates collider parts.
 object id=boundary_wall_00 kind=boundary_wall x=0 y=0 z=-24062 yaw=0 scale=1000 attr.length=48000 attr.collision=boundary

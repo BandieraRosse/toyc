@@ -43,6 +43,22 @@ static int mix_contracts(void)
     prepare(&b);b.settings.volume[RF_AUDIO_WEAPONS]=0;rasterfall_audio_settings_apply(&b,0);settle(&b);
     rasterfall_audio_play_events(&b,&reload,1);audio_drain_events(&b);
     audio_render_block(&b,block,SFX_BLOCK_FRAMES);CHECK(energy(block,0)>0);
+    const unsigned char weapons[]={TOY_GAME_EV_MELEE,TOY_GAME_EV_MELEE_HIT,TOY_GAME_EV_BOMB_EXPLODE};
+    for(unsigned i=0;i<sizeof(weapons);++i) {
+        unsigned char event=weapons[i];
+        prepare(&b);b.settings.volume[RF_AUDIO_SELF]=0;
+        rasterfall_audio_settings_apply(&b,0);settle(&b);
+        rasterfall_audio_play_events(&b,&event,1);audio_drain_events(&b);
+        audio_render_block(&b,block,SFX_BLOCK_FRAMES);long long full=energy(block,0);CHECK(full>0);
+        prepare(&b);b.settings.volume[RF_AUDIO_WEAPONS]=50;
+        rasterfall_audio_settings_apply(&b,0);settle(&b);
+        rasterfall_audio_play_events(&b,&event,1);audio_drain_events(&b);
+        audio_render_block(&b,block,SFX_BLOCK_FRAMES);CHECK(energy(block,0)>0 && energy(block,0)<full/8);
+        prepare(&b);b.settings.volume[RF_AUDIO_WEAPONS]=0;
+        rasterfall_audio_settings_apply(&b,0);settle(&b);
+        rasterfall_audio_play_events(&b,&event,1);audio_drain_events(&b);
+        audio_render_block(&b,block,SFX_BLOCK_FRAMES);CHECK(!energy(block,0) && !energy(block,1));
+    }
     prepare(&b);b.listener_cy=1024;
     rasterfall_audio_play_world(&b,gun,512,0,0,7);audio_drain_events(&b);
     audio_render_block(&b,block,SFX_BLOCK_FRAMES);CHECK(energy(block,1)>energy(block,0));
@@ -131,7 +147,8 @@ static int asset_balance(const char *package_root)
     struct rasterfall_audio a={0};struct toy_sfx reference;
     rasterfall_audio_settings_init(&a,0);
     toy_sfx_init(&a.sfx,TOY_SFX_RATE);toy_sfx_init(&reference,TOY_SFX_RATE);
-    const int kinds[]={TOY_SFX_GUNSHOT,TOY_SFX_SMG,TOY_SFX_SHOTGUN,TOY_SFX_AK,TOY_SFX_AWP};
+    const int kinds[]={TOY_SFX_GUNSHOT,TOY_SFX_SMG,TOY_SFX_SHOTGUN,TOY_SFX_AK,TOY_SFX_AWP,
+        TOY_SFX_MELEE,TOY_SFX_MELEE_HIT,TOY_SFX_BOMB_EXPLODE};
     for(int k=0;k<=TOY_SFX_MOLOTOV_BREAK;++k) {
         char path[1024];
         snprintf(path,sizeof(path),"%s/rasterfall/assets/audio/sfx_%s.tsnd",package_root,sfx_asset_names[k]);
@@ -142,7 +159,7 @@ static int asset_balance(const char *package_root)
     }
     CHECK(a.assets[TOY_SFX_GUNSHOT].blob);
     settle(&a);
-    for(int n=0;n<5;++n) {
+    for(unsigned n=0;n<sizeof(kinds)/sizeof(kinds[0]);++n) {
         int k=kinds[n],old_peak=0,new_peak=0;long long old_energy=0,new_energy=0;
         toy_sfx_play(&reference,k);toy_sfx_play_spatial(&a.sfx,k,-1,256,256,768,1);
         for(int chunk=0;chunk<30;++chunk) {
