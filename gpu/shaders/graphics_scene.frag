@@ -11,6 +11,7 @@ layout(push_constant) uniform Draw {
     ivec4 instance; ivec4 rotation; ivec4 camera; ivec4 view;
     ivec4 projection; uvec4 material; ivec4 texture_info; ivec4 quality;
 } d;
+#include "baked_surface.glsl"
 #include "scene_cutaway.glsl"
 #include "sky_view.glsl"
 layout(set=1,binding=4,std430) readonly buffer SkyImage { vec4 pixels[]; } sky_image;
@@ -129,8 +130,15 @@ void main() {
     vec3 fill=indirect_mode!=0u || daylight?vec3(0):environment_irradiance(n)*mix(0.10,1.0,sky_access),indirect=vec3(0);
     vec3 radiance=base*(1.0-metal)*fill+base*emissive;
     uint receiver_region=0u;
+    bool baked=d.rotation.w>0 && lighting.light_control.z!=0u && (lighting.light_control.x&96u)==0u;
+    float baked_sun=1.0;
+    bool baked_continuous=false;
     if(metal<1.0 || meter) {
-        if(indirect_mode==1u)indirect=cached_receiver_irradiance(world_position,n,receiver_region);
+        if(baked) {
+            indirect=baked_surface_read(baked_sun,baked_continuous);
+            if(!baked_continuous)indirect=cached_receiver_irradiance(world_position,n,receiver_region);
+        }
+        else if(indirect_mode==1u)indirect=cached_receiver_irradiance(world_position,n,receiver_region);
         else if(indirect_mode==0u)indirect=combined_irradiance(world_position,n,v);
     }
     radiance+=base*(1.0-metal)*indirect;
@@ -142,8 +150,11 @@ void main() {
     float direct_lux=0.0;
     vec3 l=lighting.sun_direction.xyz;
     bool sun_test=lighting.sun_color.w>0.0 && (stylized || dot(n,l)>0.0);
-    if(sun_test && ((ablation&2u)!=0u || architecture_visibility(origin,l,131072.0)>0.0)) {
-        vec3 incident=lighting.sun_color.rgb*lighting.sun_color.w*sun_visibility(world_position,n);
+    if(baked && metal>=1.0 && !meter)baked_surface_read(baked_sun,baked_continuous);
+    float sun_architecture=1.0;
+    if(sun_test && (ablation&2u)==0u)sun_architecture=baked?baked_sun:architecture_visibility(origin,l,131072.0);
+    if(sun_test && sun_architecture>0.0) {
+        vec3 incident=lighting.sun_color.rgb*lighting.sun_color.w*sun_visibility(world_position,n)*sun_architecture;
         radiance+=brdf(base,n,v,l,rough,metal,stylized)*incident;
         if(meter)direct_lux+=dot(incident,photopic)*max(dot(n,l),0.0);
     }
@@ -168,15 +179,19 @@ void main() {
         float spot=light.direction_outer.w<0.0 ? 1.0 : smoothstep(light.direction_outer.w,
             light.inner_shadow.x,dot(-l,light.direction_outer.xyz));
         if(spot<=0.0 || (!stylized && dot(n,l)<=0.0)) continue;
+        bool cached_local=baked && baked_lamp_matches(uint(i),light);
 #ifdef RF_LIGHT_PROFILE
-        if((ablation&4u)==0u)++local_rays;
+        if((ablation&4u)==0u && !cached_local)++local_rays;
 #endif
-        if((ablation&4u)==0u && architecture_visibility(origin,l,max(sqrt(distance_squared)-2.0,0.0))==0.0)continue;
+        float architecture_factor=1.0;
+        if((ablation&4u)==0u)architecture_factor=cached_local?baked_lamp_visibility(uint(i)):
+            architecture_visibility(origin,l,max(sqrt(distance_squared)-2.0,0.0));
+        if(architecture_factor<=0.0)continue;
 #ifdef RF_LIGHT_PROFILE
         ++local_visible;
 #endif
         float attenuation=fade*fade/max(distance_squared/(512.0*512.0),0.04);
-        vec3 incident=light.color_intensity.rgb*light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n);
+        vec3 incident=light.color_intensity.rgb*light.color_intensity.w*attenuation*spot*spot_visibility(light,world_position,n)*architecture_factor;
         radiance+=brdf(base,n,v,l,rough,metal,stylized)*incident;
         if(meter)direct_lux+=dot(incident,photopic)*max(dot(n,l),0.0);
     }
@@ -189,7 +204,7 @@ void main() {
     atomicAdd(profile.counts[at],1u);
     atomicAdd(profile.counts[at+1u],candidates);
     atomicAdd(profile.counts[at+2u],roof_traced?1u:0u);
-    atomicAdd(profile.counts[at+3u],sun_test && (ablation&2u)==0u?1u:0u);
+    atomicAdd(profile.counts[at+3u],sun_test && (ablation&2u)==0u && !baked?1u:0u);
     atomicAdd(profile.counts[at+4u],local_rays);
     atomicAdd(profile.counts[at+5u],local_visible);
     atomicAdd(profile.counts[at+6u],profile_pcf);

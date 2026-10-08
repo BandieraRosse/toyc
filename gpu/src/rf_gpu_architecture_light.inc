@@ -123,6 +123,9 @@ int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     g->local_block_count=0;
     g->receiver_samples=receiver_samples;g->receiver_ready=0;
     g->indirect_source_count=0;
+    g->bake_geometry_key=bake_hash(bake_seed(),triangles,(size_t)count*sizeof(*triangles));
+    g->bake_checked=g->bake_pending=0;
+    g->bake_environment_ready=0;
     return 0;
 fail:
     free(leaves);gpu_buffer_destroy(p,&blocks);

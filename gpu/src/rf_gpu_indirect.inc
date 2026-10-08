@@ -167,6 +167,7 @@ static void gfx_indirect_record(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
     if(!g->indirect_enabled || g->lighting.disable_indirect || !g->indirect_probe_count)return;
+    if(g->baked_fixtures && g->indirect_warmed)return;
     uint32_t budget=g->indirect_warmed?256:g->indirect_probe_count;
     if(budget>g->indirect_probe_count)budget=g->indirect_probe_count;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
@@ -198,6 +199,7 @@ static int indirect_field_build(struct rf_gpu_graphics *g,
         light_chromaticity(lights[i].color_intensity);
         lights[i].color_intensity[3]/=RF_PHOTOMETRIC_SCALE;
     }
+    g->bake_checked=g->bake_pending=0;
     struct rf_gi_header header={0};struct rf_gpu_vulkan_buffer next={0},source_buffer={0};
     unsigned char source_data[16+RF_GPU_INDIRECT_LIGHT_CAP*sizeof(struct rf_gpu_light)]={0};
     memcpy(source_data,&count,4);memcpy(source_data+16,lights,count*sizeof(*lights));
@@ -359,8 +361,9 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
         g->roof_cache_enabled!=source->roof_cache_enabled || g->indirect_reuse!=source->indirect_reuse ||
         g->indirect_visibility!=source->indirect_visibility || g->receiver_fp32!=source->receiver_fp32 ||
         g->local_block_enabled!=source->local_block_enabled ||
+        g->baked_fixtures!=source->baked_fixtures ||
         (source->indirect_probe_count && !source->indirect_warmed) ||
-        (source->daylight_probe_count && !source->daylight_warmed) ||
+        (source->daylight_probe_count && source->lighting.sky_illuminance>0 && !source->daylight_warmed) ||
         (source->receiver_samples && !source->receiver_ready))return -1;
     if(g->architecture_source==source)return 0;
     if(g->architecture_count && !g->architecture_source)return -1;
@@ -416,6 +419,9 @@ int rf_gpu_graphics_clone_lighting(struct rf_gpu_graphics *g,struct rf_gpu_graph
     g->receiver_samples=source->receiver_samples;g->receiver_cursor=source->receiver_cursor;
     g->receiver_ready=source->receiver_ready;g->receiver_full_refresh=source->receiver_full_refresh;
     g->indirect_source_count=source->indirect_source_count;
+    g->bake_geometry_key=source->bake_geometry_key;g->bake_key=source->bake_key;
+    g->bake_checked=source->bake_checked;g->bake_pending=0;
+    g->bake_environment_ready=0;
     memcpy(g->indirect_source_snapshot,source->indirect_source_snapshot,sizeof(g->indirect_source_snapshot));
     gfx_architecture_bind(g,source);g->architecture_source=source;
     g->architecture_next=source->architecture_readers;source->architecture_readers=g;
@@ -430,6 +436,7 @@ done:
 
 static void gfx_daylight_record(struct rf_gpu_graphics *g)
 {
+    if(g->baked_fixtures && g->daylight_warmed)return;
     if(!g->daylight_enabled || !g->indirect_enabled || g->lighting.disable_indirect ||
        g->lighting.sky_illuminance<=0 || !g->daylight_probe_count)return;
     struct rf_gpu_vulkan_impl *p=g->owner;
@@ -437,7 +444,8 @@ static void gfx_daylight_record(struct rf_gpu_graphics *g)
     if(budget>g->daylight_probe_count)budget=g->daylight_probe_count;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
     p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->daylight_pipeline);
-    g->api.CmdPushConstants(g->cmd,g->post_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&g->daylight_cursor);
+    uint32_t control=g->daylight_cursor|(g->baked_fixtures?0x80000000u:0u);
+    g->api.CmdPushConstants(g->cmd,g->post_layout,VK_SHADER_STAGE_COMPUTE_BIT,0,4,&control);
     p->api.cmd_dispatch(g->cmd,budget,1,1);
     struct rf_vk_memory_barrier barrier={0};barrier.s_type=RF_VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.src_access_mask=VK_ACCESS_SHADER_WRITE_BIT;barrier.dst_access_mask=VK_ACCESS_SHADER_READ_BIT;

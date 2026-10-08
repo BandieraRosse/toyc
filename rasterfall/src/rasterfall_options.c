@@ -191,6 +191,8 @@ void rasterfall_options_usage(int fd)
         "  --combat-lab-auto-exit (close after one native trial; wall-clock frame sample)\n"
         "  --combat-character-capture <directory> (shared body / gunner components and motion views)\n"
         "  --gpu-lighting-test (hardware shadow, dynamic light, material and HDR regression)\n"
+        "    RF_GPU_BAKED_LIGHTING=0|1 (default 1: fixed sun/sky/fixtures; transient direct lights stay live)\n"
+        "    RF_GPU_BAKE_CACHE=<directory>|- (default build; - disables disk cache); RF_GPU_BAKED_SURFACES=0|1\n"
         "    RF_GPU_INDIRECT_MODE=reference|fast|direct_only_diag (default fast; fast uses receiver cache)\n"
         "    RF_GPU_FIXTURE_SEQUENCE=N (diagnostic: fixed lights on/red/off/restored every N frames)\n"
         "  GPU sky: RF_GPU_SKY_PRESET=clear|rain|warm; RF_GPU_SKY_TIME=seconds (optional frozen time)\n"

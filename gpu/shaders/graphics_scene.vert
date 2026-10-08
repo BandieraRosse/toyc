@@ -15,7 +15,11 @@ layout(location=1) out vec3 world_position;
 layout(location=2) out vec3 world_normal;
 layout(location=3) flat out uint triangle_color;
 layout(location=4) flat out float triangle_alpha;
+layout(location=5) out vec2 baked_uv;
+layout(location=6) flat out uint baked_triangle;
 void main() {
+    baked_triangle=uint(gl_VertexIndex)/3u;
+    baked_uv=gl_VertexIndex%3==1?vec2(1,0):gl_VertexIndex%3==2?vec2(0,1):vec2(0);
     triangle_color=d.material.w==2u ? uint(uv.y) : d.material.x;
     triangle_alpha=d.material.w==2u && d.texture_info.z==256 ? float(uv.x)/255.0 : 1.0;
     texcoord=vec2(uv)/65536.0;world_position=vec3(0);world_normal=vec3(0,1,0);

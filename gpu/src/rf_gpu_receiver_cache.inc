@@ -120,6 +120,37 @@ static int receiver_cache_build(struct rf_gpu_graphics *g,
 {
     uint32_t header[4]={0};*sample_count=0;*leaves=NULL;
     if(g->indirect_mode!=1 || !g->indirect_enabled || !count)return indirect_upload(g,header,16,next);
+    unsigned topology_settings[]={1,(unsigned)g->receiver_fp32,(unsigned)g->local_block_enabled};
+    uint64_t topology_key=bake_hash(bake_seed(),geometry,(size_t)count*sizeof(*geometry));
+    topology_key=bake_hash(topology_key,topology_settings,sizeof(topology_settings));
+    size_t cached_bytes=0;
+    unsigned char *cached=g->baked_fixtures?bake_read(topology_key,1,0,&cached_bytes):NULL;
+    if(cached) {
+        uint32_t h[4];memcpy(h,cached,16);unsigned nodes=h[0]&0x7fffffffu,samples=h[1];
+        size_t expected=16+(size_t)h[3]*16+(size_t)samples*(g->receiver_fp32?12u:6u)*16;
+        int valid=nodes && nodes<=RF_RC_LEAVES*4u && samples<=RF_RC_LEAVES*8u && samples%8==0 &&
+            h[2]==nodes*4u && h[3]==h[2]+samples*2u && expected==cached_bytes &&
+            (h[0]>>31)==(unsigned)g->receiver_fp32;
+        struct rf_rc_leaf *bounds=valid && g->local_block_enabled && samples?calloc(samples/8,sizeof(*bounds)):NULL;
+        if(valid && g->local_block_enabled && samples && !bounds)valid=0;
+        const struct rf_rc_node *tree=(const struct rf_rc_node *)(cached+16);
+        for(unsigned i=0;valid && i<nodes;++i) {
+            const struct rf_rc_node *n=&tree[i];
+            if(n->child[0] || n->child[1]) {
+                if(n->child[0]<=i+1 || n->child[0]>nodes || n->child[1]<=i+1 || n->child[1]>nodes)valid=0;
+            } else if(n->child[3]) {
+                unsigned first=n->child[3]-1;
+                if(first%8 || first+8>samples)valid=0;
+                else if(bounds){memcpy(bounds[first/8].lo,n->lo,12);memcpy(bounds[first/8].hi,n->hi,12);}
+            }
+        }
+        if(valid && !indirect_upload(g,cached,cached_bytes,next)) {
+            *sample_count=samples;*leaves=bounds;free(cached);
+            fprintf(stderr,"rf-gpu-bake: topology=hit samples=%u bytes=%llu\n",samples,(unsigned long long)cached_bytes);
+            return 0;
+        }
+        free(bounds);free(cached);
+    }
     struct rf_rc_builder b={0};b.geometry=geometry;b.count=count;b.spacing=512;
     const char *fixed=getenv("RF_GPU_RECEIVER_PROJECTION_FIXED");
     b.fixed_projection=fixed && !strcmp(fixed,"1");
@@ -155,6 +186,7 @@ static int receiver_cache_build(struct rf_gpu_graphics *g,
         memcpy(data,header,16);memcpy(data+16,b.nodes,(size_t)b.used*sizeof(*b.nodes));
         for(unsigned i=0;i<header[1];++i)memcpy(data+16+(size_t)header[2]*16+(size_t)i*RF_RC_STATIC_VECTORS*16,b.positions[i],12);
         result=indirect_upload(g,data,bytes,next);
+        if(!result && g->baked_fixtures)bake_write(topology_key,1,data,bytes);
         if(!result){*sample_count=header[1];*leaves=bounds;bounds=NULL;}
     }
     fprintf(stderr,"rf-gpu-receiver-cache: leaves=%u nodes=%u samples=%u spacing=%.0f bytes=%llu prepare-ms=%.3f unresolved=%u sample-bytes=%u precision=%s projection-sweeps=%llu\n",
@@ -260,6 +292,7 @@ static int receiver_block_cache_update(struct rf_gpu_graphics *g,
 }
 static void gfx_receiver_cache_record(struct rf_gpu_graphics *g)
 {
+    if(g->baked_fixtures && g->receiver_ready && !g->receiver_full_refresh)return;
     if(g->indirect_mode!=1 || !g->indirect_enabled || g->lighting.disable_indirect || !g->receiver_samples)return;
     struct rf_gpu_vulkan_impl *p=g->owner;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);

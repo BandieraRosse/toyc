@@ -104,6 +104,8 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
     if(g->indirect_pipeline)p->api.destroy_pipeline(p->device,g->indirect_pipeline,NULL);
     if(g->daylight_pipeline)p->api.destroy_pipeline(p->device,g->daylight_pipeline,NULL);
     if(g->receiver_pipeline)p->api.destroy_pipeline(p->device,g->receiver_pipeline,NULL);
+    if(g->baked_surface_pipeline)p->api.destroy_pipeline(p->device,g->baked_surface_pipeline,NULL);
+    gpu_buffer_destroy(p,&g->baked_surface);free(g->baked_surface_offsets);
     gpu_buffer_destroy(p,&g->receiver_buffer);
     gpu_buffer_destroy(p,&g->local_block_buffer);
     free(g->receiver_leaves);g->receiver_leaves=NULL;
@@ -129,9 +131,9 @@ static void gfx_lighting_destroy(struct rf_gpu_graphics *g)
 static int gfx_lighting_create(struct rf_gpu_graphics *g)
 {
     struct rf_gpu_vulkan_impl *p=g->owner;
-    struct rf_vk_descriptor_set_layout_binding b[18]={{0}};
+    struct rf_vk_descriptor_set_layout_binding b[19]={{0}};
     struct rf_vk_descriptor_set_layout_create_info layout={0};
-    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,14},{3,3},
+    struct rf_vk_descriptor_pool_size sizes[3]={{RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,15},{3,3},
         {RF_SKY_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
     struct rf_vk_descriptor_pool_create_info pool={0};
     struct rf_vk_descriptor_set_allocate_info set={0};
@@ -169,6 +171,13 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     g->indirect_mode=!indirect_mode || !strcmp(indirect_mode,"fast")?1:
         indirect_mode && !strcmp(indirect_mode,"direct_only_diag")?2:0;
     if(g->indirect_mode==2)g->indirect_enabled=0;
+    const char *baked=getenv("RF_GPU_BAKED_LIGHTING");
+    if(baked && strcmp(baked,"0") && strcmp(baked,"1"))return -1;
+    g->baked_fixtures=g->indirect_mode==1 && g->indirect_enabled && !(baked && !strcmp(baked,"0"));
+    fprintf(stderr,"rf-gpu-bake: static-lighting=%d\n",g->baked_fixtures);
+    const char *surfaces=getenv("RF_GPU_BAKED_SURFACES");
+    if(surfaces && strcmp(surfaces,"0") && strcmp(surfaces,"1"))return -1;
+    g->baked_surfaces=!(surfaces && !strcmp(surfaces,"0"));
     fprintf(stderr,"rf-gpu-indirect-mode: %s\n",g->indirect_mode==1?"fast":g->indirect_mode==2?"direct_only_diag":"reference");
     const char *daylight=getenv("RF_GPU_DAYLIGHT");
     if(daylight && strcmp(daylight,"0") && strcmp(daylight,"1"))return -1;
@@ -215,13 +224,13 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     b[7].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     if(p->ray_query_enabled) {
         b[7].descriptor_type=RF_RT_DESCRIPTOR;
-        sizes[0].descriptor_count=13;
+        sizes[0].descriptor_count=14;
     }
-    for(unsigned i=8;i<18;++i) {
+    for(unsigned i=8;i<19;++i) {
         b[i].binding=i;b[i].descriptor_count=1;b[i].descriptor_type=RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         b[i].stage_flags=VK_SHADER_STAGE_FRAGMENT_BIT|VK_SHADER_STAGE_COMPUTE_BIT;
     }
-    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=18;layout.bindings=b;
+    layout.s_type=RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;layout.binding_count=19;layout.bindings=b;
     if(p->api.create_descriptor_set_layout(p->device,&layout,NULL,&g->light_layout)!=RF_VK_SUCCESS) return -1;
     struct rf_vk_descriptor_pool_size rt_sizes[4];memcpy(rt_sizes,sizes,sizeof(sizes));
     rt_sizes[3].type=RF_RT_DESCRIPTOR;rt_sizes[3].descriptor_count=1;
@@ -263,6 +272,9 @@ static int gfx_lighting_create(struct rf_gpu_graphics *g)
     struct rf_gpu_vulkan_buffer environment={0};float empty_environment[(512+7)*4]={0};
     if(indirect_upload(g,empty_environment,sizeof(empty_environment),&environment)<0)return -1;
     indirect_bind(g,14,&g->environment_buffer,&environment);
+    struct rf_gpu_vulkan_buffer surface={0};uint32_t empty_surface[8]={0};
+    if(indirect_upload(g,empty_surface,sizeof(empty_surface),&surface)<0)return -1;
+    indirect_bind(g,18,&g->baked_surface,&surface);
     return rf_gpu_graphics_set_architecture(g,NULL,0);
 }
 static void gfx_lighting_images(struct rf_gpu_graphics *g)
@@ -352,6 +364,13 @@ static int gfx_lighting_pipelines(struct rf_gpu_graphics *g)
     pipeline.stage.module=module;
     result=p->api.create_compute_pipelines(p->device,p->pipeline_cache,1,&pipeline,NULL,&g->sky_noise_pipeline);
     p->api.destroy_shader_module(p->device,module,NULL);
+    if(result!=RF_VK_SUCCESS)return -1;
+    shader.code_size=p->ray_query_enabled?sizeof(rf_graphics_baked_ray_comp_spirv):sizeof(rf_graphics_baked_comp_spirv);
+    shader.code=p->ray_query_enabled?rf_graphics_baked_ray_comp_spirv:rf_graphics_baked_comp_spirv;
+    if(p->api.create_shader_module(p->device,&shader,NULL,&module)!=RF_VK_SUCCESS)return -1;
+    pipeline.stage.module=module;
+    result=p->api.create_compute_pipelines(p->device,p->pipeline_cache,1,&pipeline,NULL,&g->baked_surface_pipeline);
+    p->api.destroy_shader_module(p->device,module,NULL);
     return result==RF_VK_SUCCESS?0:-1;
 }
 /* Per-slot targets: retired before resize. Only diagnostic counters read back.
@@ -414,9 +433,11 @@ static void gfx_sky_noise_record(struct rf_gpu_graphics *g)
 }
 static void gfx_environment_record(struct rf_gpu_graphics *g)
 {
+    if(g->baked_fixtures && g->bake_environment_ready)return;
     if(g->indirect_mode==2 || (g->indirect_mode==1 && !g->indirect_enabled) || !g->daylight_enabled ||
         g->lighting.sky_illuminance<=0 || g->lighting.disable_indirect)return;
     gfx_sky_noise_record(g);
+    g->bake_environment_ready=1;
     struct rf_gpu_vulkan_impl *p=g->owner;
     p->api.cmd_bind_descriptor_sets(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->post_layout,1,1,&g->light_set,0,NULL);
     p->api.cmd_bind_pipeline(g->cmd,RF_VK_PIPELINE_BIND_POINT_COMPUTE,g->environment_pipeline);
@@ -462,7 +483,7 @@ static int gfx_lighting_upload(struct rf_gpu_graphics *g,const struct rf_gpu_gra
     u.light_control[2]=g->indirect_enabled && !g->lighting.disable_indirect && !g->lighting_clone_invalid;
     u.light_control[3]=(uint32_t)g->indirect_debug|(g->indirect_visibility?256u:0u)|
         (g->indirect_visibility==1?512u:0u)|(g->indirect_reuse?1024u:0u)|((uint32_t)g->indirect_mode<<11)|
-        (g->local_block_enabled && g->local_block_count?16384u:0u);
+        (g->local_block_enabled && g->local_block_count?16384u:0u)|(g->baked_fixtures?32768u:0u);
     u.daylight[0]=g->daylight_enabled && !g->lighting.disable_indirect?g->lighting.sky_illuminance/RF_PHOTOMETRIC_SCALE:0;
     u.daylight[1]=131072.0f;u.daylight[2]=(float)g->architecture_count;
     if(g->indirect_architecture_nodes) {

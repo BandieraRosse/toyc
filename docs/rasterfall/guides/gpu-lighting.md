@@ -3,6 +3,33 @@
 > 状态：当前操作指南
 > 所有者：GPU Scene
 
+## 固定光照烘焙与对照
+
+正常 fast 模式默认固定太阳、天空和设施灯，首次缺缓存时自动烘焙，后续启动加载缓存。
+人物、手电、枪口和爆炸仍实时显示；固定环境不包含短时动态灯的反弹。
+边界与所有权见[固定光照架构](../architecture/gpu-lighting.md#固定光照烘焙)。
+
+资源已通过 `NativeCodex.ps1 run` 暂存后，可以提前生成并用第二次原生启动验证复用：
+
+```powershell
+python tools/bake_lighting.py --map rasterfall/assets/maps/outpost.map --map rasterfall/assets/maps/frontier_station_01.map
+```
+
+脚本等待每个 Windows 进程真实退出并检查复用日志。默认写入 staged exe 旁的 `build/`；
+`--output` 可选独立缓存目录，游戏使用同一路径时设置 `RF_GPU_BAKE_CACHE`。
+缓存是可重建的生成物，不加入 Git 或常规 package 资产；干净发布包首次启动会自动生成。
+`RF_GPU_BAKE_CACHE=-` 关闭磁盘读写，适合测量冷烘焙；不会恢复逐帧 GI。
+
+`rf-gpu-bake` 日志区分 `topology=hit`、光场 `hit key`、`surface=hit`、冷准备和写入失败；
+不能只凭 pipeline cache 命中认定光照已复用。热运行的 `gi`、`receiver` 区间只保留时间戳边界开销。
+`SCENE-PREWARM` 仍包括模型/地图上传和 AUX 目标创建，不会因为光照已烘焙而消失。
+
+同包对照：固定 `RF_GPU_SKY_TIME=0`，分别设置 `RF_GPU_BAKED_LIGHTING=0/1`，交替运行
+现有 native 性能脚本；`RF_GPU_BAKED_SURFACES=0/1` 单独比较固定空间场与表面缓存。
+烘焙与旧路径允许有限空间采样差异，需要核对墙角、门洞、薄墙、楼梯和楼板两侧，不能仅比较平均亮度。
+光照回归 `--gpu-lighting-test` 覆盖冻结、瞬时灯隔离、曝光独立、损坏回退、改灯失效与 AUX。
+修改遮挡、灯表或烘焙格式后，先运行该回归，再做所需画面及同步检查。
+
 ## 建筑硬件光追与对照
 
 默认自动探测设备能力，在支持 Vulkan 1.2 和 KHR Ray Query 时启用静态建筑硬件遮挡。

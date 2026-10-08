@@ -236,6 +236,8 @@ Vulkan backend 持有一个 device 级 `VkPipelineCache`，同设备的主/AUX g
 
 每个 world generation 的首个 native Scene 帧前，主 probe 对同一冻结输入执行一次正常离屏准备和
 绘制，提前完成静态地图/prop、当前冻结角色及附件、显示几何、天空/光照管线与主目标的主要首次开销。
+固定光照优先加载持久的空间场与建筑表面数据；缺失时由同一离屏提交烘焙，并在退休后写入缓存。
+热启动不再重新追踪固定 GI；键、边界与动态照明分工归[固定光照架构](gpu-lighting.md#固定光照烘焙)。
 随后创建两路持久辅助目标。预热不推进玩法和动作历史；runtime 重置固定步长累计器，加载耗时不补成
 一串游戏逻辑步。成功后才记录 `prewarmed_generation` 并显示该地图的第一张 native 画面。
 地图代际改变重新预热，关闭 probe 清除标记；失败按正常 Scene 错误链退出。

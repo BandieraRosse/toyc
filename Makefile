@@ -1418,6 +1418,7 @@ win-gpu-resource-cache-test:
 
 GPU_GRAPHICS_TEST_SRCS := gpu/src/rf_gpu_vulkan_backend.c rasterfall/src/rf_gpu.c
 GPU_GRAPHICS_TEST_DEPS := gpu/include/rf_vulkan_min.h gpu/include/rf_vulkan_graphics_min.h \
+    $(wildcard gpu/src/rf_gpu_baked*.inc) gpu/shaders/graphics_baked.comp \
     gpu/include/rf_vulkan_sky_min.h gpu/include/rf_vulkan_ray_min.h gpu/src/rf_gpu_architecture_ray.inc gpu/src/rf_gpu_indirect.inc \
     $(wildcard gpu/shaders/graphics_scene.* gpu/shaders/graphics_depth.frag gpu/shaders/graphics_sky* gpu/shaders/graphics_environment.comp gpu/shaders/graphics_light_tiles.comp gpu/shaders/graphics_indirect.comp gpu/shaders/graphics_receiver.comp gpu/shaders/*.glsl) gpu/src/rf_gpu_receiver_cache.inc \
     gpu/include/rf_gpu_vulkan_backend.h gpu/include/rf_gpu_graphics.h \

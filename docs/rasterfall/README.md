@@ -28,6 +28,8 @@ RFCHAR／RF-C01 已接入的上传路径与 CPU、分块、主/AUX 纹理复用�
 
 光照性能优化从[同包对照指南](guides/gpu-lighting.md#保持画面的光照性能对照)进入，探针权重复用与
 深度分段灯表归[光照架构](architecture/gpu-lighting.md)，WORLD 深度预通道归[GPU 渲染架构](architecture/gpu-rendering-architecture.md#scene-资源与同步)。
+固定太阳、天空与设施灯的烘焙、表面缓存和跨启动失效从[固定光照烘焙](architecture/gpu-lighting.md#固定光照烘焙)
+进入；提前生成与实时对照见[烘焙操作](guides/gpu-lighting.md#固定光照烘焙与对照)。
 接收缓存 FP16、静态/动态区域与三维灯表同由光照架构维护；蒙皮与主/AUX 消费者合并提交、
 姿态缓存生效、当前姿态边界、主/AUX 独立可见性与取消退休由 GPU 渲染架构维护。
 CPU 完整输入求值复用归[动画架构](architecture/animation-architecture.md#scene-批量求值与-ik-更新范围)，

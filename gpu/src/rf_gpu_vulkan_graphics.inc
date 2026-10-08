@@ -81,6 +81,7 @@ struct rf_gpu_graphics_resource {
     int position_min[3],position_max[3];
     int frame_dynamic;
     int sequential_triangles;
+    uint64_t bake_mesh_key;
     int scene_vertex_color;
     int vertex_alpha_valid;
     struct rf_gpu_vulkan_buffer triangle_staging;
@@ -127,6 +128,13 @@ struct rf_gpu_graphics {
     rf_vk_pipeline indirect_pipeline;
     uint32_t indirect_probe_count,indirect_cursor;
     int indirect_warmed;
+    int baked_fixtures,bake_checked,bake_pending,bake_environment_ready;
+    uint64_t bake_geometry_key,bake_key;
+    struct rf_gpu_vulkan_buffer baked_surface;
+    rf_vk_pipeline baked_surface_pipeline;
+    uint64_t baked_surface_key;
+    uint32_t *baked_surface_offsets,baked_surface_count,baked_surface_samples;
+    int baked_surface_pending,baked_surfaces;
     struct rf_gpu_vulkan_buffer daylight_buffer,environment_buffer;
     rf_vk_pipeline daylight_pipeline,environment_pipeline;
     uint32_t daylight_probe_count,daylight_cursor;
@@ -471,6 +479,7 @@ static int gfx_camera_box_outside(const struct rf_gpu_graphics_draw *d,
     }
     return 0;
 }
+#include "rf_gpu_baked_io.inc"
 #include "rf_gpu_architecture_ray.inc"
 #include "rf_gpu_architecture_light.inc"
 #define RF_PHOTOMETRIC_SCALE 100.0f
@@ -478,6 +487,7 @@ static float light_luminance(const float *rgb);
 static void light_chromaticity(float *rgb);
 #include "rf_gpu_indirect.inc"
 #include "rf_gpu_receiver_cache.inc"
+#include "rf_gpu_baked_lighting.inc"
 #include "rf_gpu_lighting.inc"
 #include "rf_gpu_draw_visibility.inc"
 #include "rf_gpu_skin_bounds.inc"
@@ -803,7 +813,7 @@ struct rf_gpu_graphics *rf_gpu_graphics_create(struct rf_gpu_vulkan_context *ctx
     for (unsigned i = 0; i < 3; ++i) {
         binding[i].binding = i; binding[i].descriptor_type = RF_VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         binding[i].descriptor_count = 1;
-        binding[i].stage_flags = i ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT;
+        binding[i].stage_flags = (i ? VK_SHADER_STAGE_VERTEX_BIT : VK_SHADER_STAGE_FRAGMENT_BIT)|VK_SHADER_STAGE_COMPUTE_BIT;
     }
     layout.s_type = RF_VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layout.binding_count = 3; layout.bindings = binding;
@@ -986,6 +996,7 @@ upload_done:
     }
     resource->index_count = index_count; resource->texture_width = texture_width; resource->texture_height = texture_height;
     resource->vertex_capacity = vertex_count;
+    resource->bake_mesh_key=vertices?bake_hash(bake_seed(),vertices,(size_t)bytes[0]):0;
     resource->vertex_alpha_valid=alpha_valid;
     resource->sequential_triangles = index_count==vertex_count;
     for (uint32_t i=0;resource->sequential_triangles && i<index_count;++i)
@@ -1230,6 +1241,7 @@ static int gfx_triangle_resource_update(struct rf_gpu_graphics *g,
         if (gfx_submit(g,1,RF_GPU_SUBMIT_UPLOAD)<0) return -1;
     }
     r->index_count=vertex_count;
+    if(!r->frame_dynamic)r->bake_mesh_key=bake_hash(bake_seed(),vertices,(size_t)bytes);
     r->vertex_alpha_valid=alpha_valid;
     memcpy(r->position_min,minimum,sizeof(minimum));
     memcpy(r->position_max,maximum,sizeof(maximum));
@@ -1870,6 +1882,7 @@ static int gfx_render(struct rf_gpu_graphics *g,
     }
     impl = g->owner;
     memset(clear, 0, sizeof(clear));
+    if(gfx_bake_prepare(g)<0 || gfx_baked_surface_prepare(g,items,count)<0)return -1;
     if(gfx_lighting_upload(g,items,count)<0) return -1;
     if(gfx_draw_visibility_prepare(g,items,count)<0)return -1;
     if (gfx_begin(g) < 0) { g->poisoned=1; return -1; }
@@ -1892,6 +1905,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,12);
     gfx_receiver_cache_record(g);
+    gfx_baked_surface_record(g,items,count);
+    gfx_bake_host_barrier(g);
     if(g->scene_query_active)
         impl->api.cmd_write_timestamp(g->cmd,RF_VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,g->scene_query_pool,11);
     gfx_shadow_record(g,items,count);
@@ -1964,6 +1979,8 @@ static int gfx_render(struct rf_gpu_graphics *g,
             impl->api.cmd_bind_pipeline(g->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,g->pipelines[pipeline]);
         bound_resource=resource;bound_integer=d->integer_depth;bound_pipeline=pipeline;
         struct rf_gpu_graphics_draw modern=*d;
+        modern.rotation[3]=g->baked_surface_offsets && i<g->baked_surface_count?
+            (int32_t)g->baked_surface_offsets[i]:0;
         float rough=d->roughness>0?d->roughness:0.65f;
         float metal=d->metallic<0?0:d->metallic>1?1:d->metallic;
         /* Sixteen-bit logarithmic luminance: zero is exactly dark. Encoding

@@ -264,6 +264,10 @@ static int scene_lighting_prepare(struct rf_gpu_scene_world_gpu_probe *probe,
         fprintf(stderr,"Invalid RF_GPU_SKY_PRESET (clear/rain/warm)\n");return -1;
     }
     double seconds=probe->layers ? (double)probe->layers->host_time_ms/1000.0 : 0.0;
+    const char *baked=getenv("RF_GPU_BAKED_LIGHTING");
+    const char *indirect_mode=getenv("RF_GPU_INDIRECT_MODE"),*gi=getenv("RF_GPU_GI");
+    if((!baked || strcmp(baked,"0")) && (!indirect_mode || !strcmp(indirect_mode,"fast")) &&
+       (!gi || strcmp(gi,"0")))seconds=0;
     if(sky_time && sky_time[0]) {
         char *end=NULL;seconds=strtod(sky_time,&end);
         if(!end || *end || !(seconds>=0 && seconds<=1000000)) {

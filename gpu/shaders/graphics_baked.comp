@@ -1,0 +1,55 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#ifdef RF_ARCHITECTURE_RAY_QUERY
+#extension GL_EXT_ray_query : require
+#endif
+#include "lighting.glsl"
+#include "environment.glsl"
+#include "indirect.glsl"
+#include "receiver_cache.glsl"
+layout(local_size_x=64) in;
+layout(push_constant) uniform Draw {
+    ivec4 instance;ivec4 rotation;ivec4 camera;ivec4 view;
+    ivec4 projection;uvec4 material;ivec4 texture_info;ivec4 quality;
+} d;
+layout(set=0,binding=1,std430) readonly buffer Vertices {int words[];} vertices;
+layout(set=1,binding=13,std430) readonly buffer FixtureLights {uvec4 header;Light lights[];} fixtures;
+layout(set=1,binding=18,std430) buffer Surface {uvec4 data[];} surface;
+vec3 position(uint vertex) {
+    uint at=vertex*(d.material.w==2u?5u:14u);
+    vec3 q=vec3(vertices.words[at],vertices.words[at+1u],vertices.words[at+2u]);q.y-=float(d.rotation.z);
+    q=vec3(q.x*float(d.rotation.y)+q.z*float(d.rotation.x),q.y*1024.0,
+        q.z*float(d.rotation.y)-q.x*float(d.rotation.x))/1024.0;
+    return q*float(d.instance.w)/1000.0*512.0/float(max(d.quality.y,512))+vec3(d.instance.xyz);
+}
+void main() {
+    uint sample_id=gl_GlobalInvocationID.x;
+    if(sample_id>=uint(d.camera.w))return;
+    uint triangle=sample_id/32u,side=(sample_id/16u)&1u,texel=sample_id%16u;
+    vec3 a=position(triangle*3u),b=position(triangle*3u+1u),c=position(triangle*3u+2u);
+    vec3 cross_normal=cross(b-a,c-a);float area=length(cross_normal);
+    vec3 n=area>0.001?cross_normal/area:vec3(0,1,0);if(side!=0u)n=-n;
+    vec2 uv=vec2(texel%4u,texel/4u)/3.0;
+    if(uv.x+uv.y>1.0)uv/=uv.x+uv.y;
+    // Stay just inside the source triangle at shared edges. No averaging
+    // between surfaces, storeys or the front/back of a thin sheet.
+    vec3 minimum_weight=min(vec3(0.2),4.0*vec3(length(c-b),length(c-a),length(b-a))/max(area,0.001));
+    vec3 weights=max(vec3(1.0-uv.x-uv.y,uv),minimum_weight);
+    weights/=weights.x+weights.y+weights.z;
+    vec3 p=a*weights.x+b*weights.y+c*weights.z,origin=p+n*1.5;
+    uint region;vec3 gi=clamp(cached_receiver_irradiance(p,n,region),vec3(0),vec3(65504));
+    uvec4 mask=uvec4(0);
+    for(uint i=0u;i<fixtures.header.x;++i) {
+        Light lamp=fixtures.lights[i];vec3 delta=lamp.position_radius.xyz-p;float distance=length(delta);
+        if(distance<0.001){mask[i/32u]|=1u<<(i%32u);continue;}
+        vec3 l=delta/distance;
+        // Cache geometry only. Range, cone and N.L are evaluated at the live
+        // fragment; sampling their cutoffs here would invent dark bands.
+        if(architecture_visibility(origin,l,max(distance-2.0,0.0))>0.0)mask[i/32u]|=1u<<(i%32u);
+    }
+    float sun=dot(n,lighting.sun_direction.xyz)>0.0?
+        architecture_visibility(origin,lighting.sun_direction.xyz,131072.0):0.0;
+    uint at=(uint(d.rotation.w)-1u+sample_id)*2u;
+    surface.data[at]=uvec4(packHalf2x16(gi.rg),packHalf2x16(vec2(gi.b,sun)),region,0);
+    surface.data[at+1u]=mask;
+}

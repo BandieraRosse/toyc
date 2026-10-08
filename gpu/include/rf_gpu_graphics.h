@@ -23,7 +23,7 @@ _Static_assert(sizeof(struct rf_gpu_scene_color_vertex)==20,"Scene color vertex 
  * integer_depth is reserved and must be zero. */
 struct rf_gpu_graphics_draw {
     int32_t translation_scale[4];
-    int32_t rotation[4]; /* sin, cos, bottom pivot y, reserved */
+    int32_t rotation[4]; /* sin, cos, bottom pivot y, reserved (backend lightmap offset) */
     int32_t camera[4];
     int32_t view[4]; /* direction x,z; pitch sin,cos */
     int32_t projection[4]; /* extent x,y; near=64; focal=width*3/4 */
@@ -128,8 +128,8 @@ struct rf_gpu_occlusion_primitive {
 };
 int rf_gpu_graphics_set_architecture(struct rf_gpu_graphics *g,
     const struct rf_gpu_occlusion_primitive *triangles,uint32_t count);
-/* DDGI volume placement and persistent fixture sources. GPU updates diffuse
- * irradiance/distance moments in batches; transient direct lights also inject.
+/* DDGI volume placement and persistent fixture sources. Fixed-lighting mode
+ * bakes once and excludes transient lights; realtime mode updates in batches.
  * Sources are camera-independent. Empty input clears the volume. */
 #define RF_GPU_INDIRECT_LIGHT_CAP 128
 int rf_gpu_graphics_set_indirect_lights(struct rf_gpu_graphics *g,

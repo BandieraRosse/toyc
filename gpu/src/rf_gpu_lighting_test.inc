@@ -463,6 +463,7 @@ static int lighting_clone_regression(struct rf_gpu_graphics *g,
     child->indirect_enabled=g->indirect_enabled;child->daylight_enabled=g->daylight_enabled;
     child->receiver_fp32=g->receiver_fp32;child->indirect_bounces=g->indirect_bounces;
     child->local_block_enabled=g->local_block_enabled;
+    child->baked_fixtures=g->baked_fixtures;
     CLONE_CHECK(!rf_gpu_graphics_resize(child,65,65) && !rf_gpu_graphics_set_lighting(child,lights));
     CLONE_CHECK(!rf_gpu_graphics_resource_bind(child,face->resource));
     CLONE_CHECK(!rf_gpu_graphics_clone_lighting(child,g));
@@ -961,9 +962,77 @@ done:
     if(rf_gpu_graphics_set_lighting(g,lighting)<0)result=-1;
     return result;
 }
+static int lighting_baked_regression(struct rf_gpu_graphics *g,
+    const struct rf_gpu_graphics_batch_item *source,uint32_t *a,uint32_t *b,float *depth)
+{
+    int result=-1,mode=g->indirect_mode,baked=g->baked_fixtures,debug=g->indirect_debug;
+    struct rf_gpu_graphics_batch_item face=*source;
+    struct rf_gpu_lighting light;rf_gpu_lighting_default(&light);
+    struct rf_gpu_occlusion_primitive room[6]={
+        {{{-2048,-2176,0},{2048,-2048,4096},{0}},1,0xcccccc,0},
+        {{{-2048,2048,0},{2048,2176,4096},{0}},1,0xcccccc,0},
+        {{{-2176,-2176,0},{-2048,2176,4096},{0}},1,0xcccccc,0},
+        {{{2048,-2176,0},{2176,2176,4096},{0}},1,0xcccccc,0},
+        {{{-2176,-2176,4096},{2176,2176,4224},{0}},1,0xcccccc,0},
+        {{{-2176,-2176,-128},{2176,2176,0},{0}},1,0xcccccc,0}};
+    float hdr[65*65*4];unsigned center=(32*65+32)*4;
+#define BAKE_CHECK(x) do {if(!(x)){fprintf(stderr,"BAKED LIGHTING FAIL line=%d\n",__LINE__);goto done;}}while(0)
+#define BAKE_CAPTURE(out) do {BAKE_CHECK(!rf_gpu_graphics_set_lighting(g,&light)); \
+    BAKE_CHECK(!rf_gpu_graphics_scene_capture(g,&face,1,out,depth,96*96)); \
+    BAKE_CHECK(!rf_gpu_graphics_capture_hdr(g,hdr,65*65));}while(0)
+#define BAKE_WORLD() do {BAKE_CHECK(!rf_gpu_graphics_set_architecture(g,room,6)); \
+    BAKE_CHECK(!rf_gpu_graphics_set_indirect_lights(g,light.lights,1)); \
+    BAKE_CHECK(!rf_gpu_graphics_prepare_daylight(g));}while(0)
+    g->indirect_mode=1;g->indirect_debug=3;g->baked_fixtures=0;
+    light.sun_color[3]=0;light.sky_illuminance=0;
+    light.environment[0]=light.environment[1]=light.environment[2]=0;
+    light.count=1;light.lights[0].position_radius[2]=2048;light.lights[0].position_radius[3]=8192;
+    light.lights[0].color_intensity[0]=light.lights[0].color_intensity[1]=light.lights[0].color_intensity[2]=1;
+    light.lights[0].color_intensity[3]=1000;light.lights[0].direction_outer[3]=-1;light.lights[0].inner_shadow[2]=1;
+    face.draw.projection[0]=face.draw.projection[1]=65;face.draw.projection[3]=48;
+    face.draw.quality[2]=0;face.draw.architecture_occluder=1;
+    face.draw.metallic=face.draw.emissive=0;
+    BAKE_CHECK(!rf_gpu_graphics_resize(g,65,65));BAKE_WORLD();BAKE_CAPTURE(a);
+    float direct=hdr[center],indirect=hdr[center+1];BAKE_CHECK(direct>0 && indirect>0);
+    g->baked_fixtures=1;BAKE_WORLD();BAKE_CAPTURE(b);
+    BAKE_CHECK(g->baked_surface_offsets[0] && g->receiver_ready);
+    BAKE_CHECK(fabs(hdr[center]-direct)<0.01 && fabs(hdr[center+1]-indirect)<indirect*0.15+0.01);
+    BAKE_CAPTURE(a);uint64_t key=g->bake_key;float baked_direct=hdr[center],baked_indirect=hdr[center+1];
+    unsigned cursor=g->indirect_cursor,day_cursor=g->daylight_cursor,receiver_cursor=g->receiver_cursor;
+    light.environment[3]=2;BAKE_CAPTURE(b);
+    BAKE_CHECK(key==g->bake_key && g->indirect_cursor==cursor && g->daylight_cursor==day_cursor && g->receiver_cursor==receiver_cursor);
+    BAKE_CHECK(hdr[center]==baked_direct && hdr[center+1]==baked_indirect); // Meter is before exposure.
+    light.count=2;light.lights[1]=light.lights[0];light.lights[1].inner_shadow[2]=0;
+    BAKE_CAPTURE(b);BAKE_CHECK(hdr[center]>direct*1.9 && key==g->bake_key);
+    BAKE_CHECK(fabs(hdr[center+1]-indirect)<indirect*0.15+0.01);
+    light.count=1;light.environment[3]=1;BAKE_CAPTURE(a);
+    BAKE_WORLD();BAKE_CAPTURE(b);BAKE_CHECK(!memcmp(a,b,65*65*4));
+    char path[1024];int persistent=bake_path(path,sizeof(path),key,2);
+    if(persistent) {
+        BAKE_CHECK(!g->bake_pending);
+        unsigned char broken[32]={0};bake_write(key,2,broken,sizeof(broken));
+        BAKE_WORLD();BAKE_CAPTURE(b);BAKE_CHECK(g->bake_pending==2 && !memcmp(a,b,65*65*4));BAKE_CAPTURE(b);
+    }
+    BAKE_CHECK(!lighting_clone_regression(g,&face,&light));
+    // The clone regression clears the parent's architecture at the end.
+    BAKE_WORLD();light.lights[0].color_intensity[3]=2000;
+    BAKE_CHECK(!rf_gpu_graphics_set_indirect_lights(g,light.lights,1));BAKE_CAPTURE(b);
+    BAKE_CHECK(g->bake_key!=key && hdr[center]>direct*1.9 && hdr[center+1]>indirect*1.7);
+    BAKE_CHECK(!rf_gpu_graphics_set_architecture(g,NULL,0));
+    fprintf(stdout,"BAKED LIGHTING PASS surface=1 volume_frozen=1 transient_direct=1 exposure=1 persistence=%d corrupt_fallback=1 lamp_invalidation=1 clone=1\n",persistent);
+    result=0;
+done:
+    g->indirect_mode=mode;g->baked_fixtures=baked;g->indirect_debug=debug;
+    if(rf_gpu_graphics_resize(g,(unsigned)source->draw.projection[0],(unsigned)source->draw.projection[1])<0)result=-1;
+    return result;
+#undef BAKE_WORLD
+#undef BAKE_CAPTURE
+#undef BAKE_CHECK
+}
 int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
 {
-    int saved_mode=g->indirect_mode;
+    int saved_mode=g->indirect_mode,saved_baked=g->baked_fixtures;
+    g->baked_fixtures=0;
     /* Probe/environment contracts below target reference. The receiver
      * regression explicitly checks fast and direct_only_diag separately. */
     g->indirect_mode=0;
@@ -1009,6 +1078,7 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     LIGHT_CHECK(!lighting_indirect_regression(g,items,a,b,da,db));
     LIGHT_CHECK(!lighting_daylight_regression(g,items,a,da));
     LIGHT_CHECK(!lighting_receiver_regression(g,items,a,da));
+    LIGHT_CHECK(!lighting_baked_regression(g,items,a,b,da));
     LIGHT_CHECK(!rf_gpu_graphics_set_lighting(g,&lights));
     LIGHT_CHECK(!rf_gpu_graphics_scene_capture(g,items,2,b,db,96*96));
     /* Only sources fully covered by the current architecture may leave the
@@ -1196,6 +1266,6 @@ int rf_gpu_graphics_lighting_regression(struct rf_gpu_graphics *g)
     result=0;
 done:
     if(r) rf_gpu_graphics_resource_destroy(g,r);
-    free(a);free(b);free(da);free(db);g->indirect_mode=saved_mode;return result;
+    free(a);free(b);free(da);free(db);g->indirect_mode=saved_mode;g->baked_fixtures=saved_baked;return result;
 #undef LIGHT_CHECK
 }
