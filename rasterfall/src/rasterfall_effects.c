@@ -954,6 +954,12 @@ static struct rasterfall_effect_instance *spawn_event_instance(
             instance.ray_end_color = weapon->tracer_end_color;
             instance.ray_width = weapon->tracer_width;
             instance.ray_tail_percent = weapon->tracer_tail_percent;
+            if (toy_game_weapon_ballistics(event->weapon)) {
+                instance.color = 0xFFF7D6;
+                instance.ray_end_color = 0xFFC46B;
+                instance.ray_width = 5;
+                instance.ray_tail_percent = 40;
+            }
             if (instance.lifetime_ms <= 0)
                 instance.lifetime_ms = weapon->tracer_lifetime_ms;
         }

@@ -106,7 +106,7 @@
 #define TOY_CONFIG_SMG_PELLETS                  1  /* 每次弹丸数 */
 #define TOY_CONFIG_SMG_SPREAD                  9  /* 散布范围 */
 #define TOY_CONFIG_SMG_SLOT                     0  /* 武器槽位 */
-#define TOY_CONFIG_SMG_DAMAGE                   10  /* 单颗伤害 */
+#define TOY_CONFIG_SMG_DAMAGE                    6  /* 单颗伤害 */
 
 /* Shotgun weapon tuning. */
 #define TOY_CONFIG_SHOTGUN_MAG                  8  /* 弹匣容量 */
@@ -122,13 +122,13 @@
 /* AK rifle weapon tuning. */
 #define TOY_CONFIG_AK_MAG                       30  /* 弹匣容量 */
 #define TOY_CONFIG_AK_RESERVE                  360  /* 备弹上限 */
-#define TOY_CONFIG_AK_COOLDOWN_MS              100  /* 射击间隔 */
+#define TOY_CONFIG_AK_COOLDOWN_MS              120  /* 射击间隔 */
 #define TOY_CONFIG_AK_RELOAD_MS              2200  /* 换弹时间 */
 #define TOY_CONFIG_AK_FULL_AUTO                  1  /* 是否全自动 */
 #define TOY_CONFIG_AK_PELLETS                    1  /* 每次弹丸数 */
 #define TOY_CONFIG_AK_SPREAD                    5  /* 散布范围 */
 #define TOY_CONFIG_AK_SLOT                       0  /* 武器槽位 */
-#define TOY_CONFIG_AK_DAMAGE                    16  /* 单颗伤害 */
+#define TOY_CONFIG_AK_DAMAGE                     8  /* 单颗伤害 */
 
 /* AWP sniper weapon tuning. */
 #define TOY_CONFIG_AWP_MAG                      10  /* 弹匣容量 */

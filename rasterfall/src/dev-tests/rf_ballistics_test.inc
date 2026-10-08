@@ -58,13 +58,14 @@ static void test_ballistics(void)
     source->moving=1;source->weapon_spread_heat=100;source->evasion.animation_ms=500;
     memset(&source->skills,3,sizeof(source->skills));
     CHECK(toy_game_actor_current_spread(source)==spread,"rifle spread is fixed across motion, heat and skills");
-    /* Cadence carries fixed-step overshoot instead of rounding every 100ms
-     * interval to 112ms. No reload or capacity overflow hides the result. */
+    /* Cadence carries fixed-step overshoot; no reload hides the result. */
     memset(g->bullets,0,sizeof(g->bullets));source->slots[source->current_slot].mag=100;
     source->slots[source->current_slot].reserve=0;source->fire_cooldown_ms=0;
     source->fire_seq=0;source->reloading=0;
     for(int i=0;i<125;++i)toy_game_update_actor_weapon_held(g,source,NULL,0,1,1024,0,16,100);
-    CHECK(source->fire_seq==20,"rifle sustained cadence preserves 600 RPM over fixed steps");
+    CHECK(source->fire_seq==(unsigned)((2000+toy_game_weapon_info(TOY_GAME_WEAPON_AK)->cooldown_ms-1)/
+        toy_game_weapon_info(TOY_GAME_WEAPON_AK)->cooldown_ms),
+        "rifle sustained cadence preserves mechanical rate over fixed steps");
     memset(g->bullets,0,sizeof(g->bullets));g->defer_actor_damage=1;
     unsigned serial=g->shot_serial;source->slots[source->current_slot].mag=100;
     for(int i=0;i<600;++i){source->fire_cooldown_ms=0;source->slots[source->current_slot].mag=100;
@@ -87,6 +88,31 @@ static int normal_test_query(void *context,const struct rf_ai_query *q,struct rf
         return RF_AI_YES;
     }
     return RF_AI_NO; /* This fixture has no legal relocation. */
+}
+static int normal_maneuver_query(void *context,const struct rf_ai_query *q,struct rf_ai_query_result *r,
+    const struct rf_ai_query_budget *budget)
+{
+    const struct rf_ai_snapshot *s=context;
+    if(!budget->spend(budget->context,2))return RF_AI_UNKNOWN;
+    if(q->kind==RF_AI_SHOT)return q->from.x<9?RF_AI_NO:RF_AI_YES;
+    if(q->kind==RF_AI_ROUTE){
+        r->route.count=2;r->route.points[0]=s->members[q->member].position;
+        r->route.points[1]=q->destination;r->waypoint=r->destination=q->destination;
+        float x=q->destination.x-r->route.points[0].x,z=q->destination.z-r->route.points[0].z;
+        r->distance=sqrtf(x*x+z*z);return RF_AI_YES;
+    }
+    if(q->kind==RF_AI_EXPOSURE){
+        r->sample_count=r->samples_completed=q->sample_count;
+        for(int i=0;i<q->sample_count;++i){
+            float f=(float)i/(q->sample_count-1);
+            r->samples[i].position.x=q->route->points[0].x+(q->route->points[1].x-q->route->points[0].x)*f;
+            r->samples[i].position.z=q->route->points[0].z+(q->route->points[1].z-q->route->points[0].z)*f;
+            r->samples[i].tested_enemies=1;
+            r->samples[i].visible_enemies=r->samples[i].position.x<9?0:1;
+        }
+        return RF_AI_YES;
+    }
+    return RF_AI_NO;
 }
 static void test_normal_ai(void)
 {
@@ -119,5 +145,10 @@ static void test_normal_ai(void)
         p.actions[0].kind==RF_AI_RELOAD,"empty weapon reloads before considering a move");
     CHECK(rf_ai_decide(&instance,&s,0,normal_test_query,NULL,&p,&stats) &&
         p.actions[0].kind==RF_AI_HOLD && p.actions[1].kind==RF_AI_HOLD,"normal zero budget remains safe HOLD");
+    s.count=s.enemy_count=1;s.radius=8;s.members[0].ammo=30;
+    s.members[0].health=20;s.members[0].evasion=0;s.enemies[0].shot_damage=100;
+    CHECK(rf_ai_decide(&instance,&s,RF_AI_DEFAULT_BUDGET,normal_maneuver_query,&s,&p,&stats) &&
+        p.actions[0].kind==RF_AI_MOVE && p.actions[0].destination.x<9,
+        "pressured normal actor can leave a firing lane for reachable cover");
     rf_ai_instance_destroy(&instance);
 }

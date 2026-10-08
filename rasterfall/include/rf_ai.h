@@ -2,7 +2,7 @@
 #define RF_AI_H
 /* Algorithm ABI: no Game, renderer, tactical candidates or solver scores. */
 #define RF_AI_API_VERSION 3
-#define RF_AI_DEFAULT_BUDGET 16384
+#define RF_AI_DEFAULT_BUDGET 49152
 #define RF_AI_MAX_ROUTE_POINTS 130
 #define RF_AI_MAX_EXPOSURE_SAMPLES 128
 #define RF_AI_MAX_MEMBERS 6

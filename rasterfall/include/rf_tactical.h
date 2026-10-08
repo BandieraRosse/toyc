@@ -5,17 +5,19 @@
 
 /* Game owns actor simulation; observations are disposable read-only
  * projections. Solvers receive no world pointer and do not own navigation. */
-#define RF_TAC_VERSION 4
+#define RF_TAC_VERSION 5
 #define RF_TAC_MAX_SQUAD 6
 #define RF_TAC_MAX_UNITS 12
-#define RF_TAC_MAX_NODES 1024
+#define RF_TAC_MAX_NODES 2304
 #define RF_TAC_MAX_COVERS 40
 #define RF_TAC_CANDIDATES 8
 #define RF_TAC_DT_MS 16
 #define RF_TAC_THINK_MS 200
-#define RF_TAC_GRID_W 32
-#define RF_TAC_GRID_H 24
+#define RF_TAC_GRID_W 48
+#define RF_TAC_GRID_H 36
 #define RF_TAC_GRID_M 2.0f
+#define RF_TAC_WIDTH_M (RF_TAC_GRID_W * RF_TAC_GRID_M)
+#define RF_TAC_HEIGHT_M (RF_TAC_GRID_H * RF_TAC_GRID_M)
 #define RF_TAC_MAX_PATH 128
 #define RF_TAC_NEIGHBORS 12
 #define RF_TAC_BEAM_MAX_WIDTH 8

@@ -89,8 +89,8 @@ static void test_ai_game(struct rf_tac_map *map)
     rf_tac_command(&w,0,RF_TAC_ATTACK,map->objective,map->objective_radius);
     for(int i=0;i<4;++i){
         struct toy_game_actor *member=toy_game_actor_by_id(w.game,w.units[i].actor_id);
-        member->x=(int)((map->objective.x-32+(i?12:0))*512);
-        member->z=(int)((map->objective.y-24)*512);
+        member->x=(int)((map->objective.x-RF_TAC_WIDTH_M/2+(i?12:0))*512);
+        member->z=(int)((map->objective.y-RF_TAC_HEIGHT_M/2)*512);
         member->intent_move=member->intent_fire=0;
     }
     for(int tick=0;tick<400 && !w.orders[0].captured;++tick)rf_tac_finish(&w,16);
@@ -223,9 +223,9 @@ static void test_ai_queries(struct rf_tac_map *map)
             const struct toy_game_actor *source=toy_game_actor_by_id_const(w.game,u->actor_id);
             float dx=u->pos.x-sample->position.x,dz=u->pos.y-sample->position.z;
             if(sqrtf(dx*dx+dz*dz)*512<=toy_game_weapon_info(toy_game_actor_current_weapon(source))->range &&
-               toy_game_combat_visible(w.game,source,(int)lroundf((sample->position.x-32)*512),
+               toy_game_combat_visible(w.game,source,(int)lroundf((sample->position.x-RF_TAC_WIDTH_M/2)*512),
                 target->ground_y+target->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU*64/100,
-                (int)lroundf((sample->position.z-24)*512)))visible|=1u<<e;
+                (int)lroundf((sample->position.z-RF_TAC_HEIGHT_M/2)*512)))visible|=1u<<e;
         }
         CHECK(sample->tested_enemies==15 && sample->visible_enemies==visible,"exposure agrees with enemy-to-route official visibility");
     }

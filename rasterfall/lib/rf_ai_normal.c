@@ -145,9 +145,15 @@ static void normal_decide(void *state,const struct rf_ai_config *cfg,const struc
          * decision. Re-evaluate immediately if the executor reports blockage. */
         if(a->kind!=RF_AI_FIRE && u->previous.kind==RF_AI_MOVE && u->feedback==RF_AI_RUNNING &&
             s->time_ms<memory->move_until[i]){*a=u->previous;continue;}
-        /* Once engaged, finish the firing action. Reposition primarily
-         * while seeking a firing lane; repeated movement discards aim time. */
-        if(a->kind==RF_AI_FIRE){
+        /* Stable useful fire keeps its aim. Weak distant fire and concentrated
+         * incoming fire may instead compete with reachable, safer positions. */
+        float own_dps=current.target>=0?normal_dps(u,normal_distance(u->position,
+            s->enemies[current.target].position)):0;
+        int distant=current.target>=0 && u->falloff_m[0]>0 &&
+            normal_distance(u->position,s->enemies[current.target].position)>u->falloff_m[0] &&
+            own_dps<normal_dps(u,0)*0.55f;
+        int pressured=current.threat>fmaxf(own_dps*1.6f,20) && need_cover;
+        if(a->kind==RF_AI_FIRE && !distant && !pressured){
             assigned[current.target]+=normal_dps(u,normal_distance(u->position,
                 s->enemies[current.target].position))*0.25f;
             continue;
@@ -191,7 +197,7 @@ static void normal_decide(void *state,const struct rf_ai_config *cfg,const struc
             if(available<100)break;
             struct rf_ai_query q={0};struct rf_ai_query_result route_result,exposure;
             q.kind=RF_AI_ROUTE;q.member=i;q.destination=at;
-            q.max_work=available>3500?3500:available;
+            q.max_work=available>8000?8000:available;
             if(api->query(api->context,&q,&route_result)!=RF_AI_YES)continue;
             available=api->remaining(api->context)-floor;
             if(available<1)break;
@@ -216,5 +222,5 @@ static const struct rf_ai_parameter normal_parameters[]={
     {"objective_weight",2,0.1f,8}
 };
 const struct rf_ai_algorithm rf_ai_normal_algorithm={
-    "normal",1,sizeof(struct normal_state),3,normal_parameters,NULL,normal_decide,NULL
+    "normal",2,sizeof(struct normal_state),3,normal_parameters,NULL,normal_decide,NULL
 };

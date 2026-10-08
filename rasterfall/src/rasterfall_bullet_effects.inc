@@ -5,9 +5,9 @@ static void effect_bullet_impact(struct rasterfall_effects *fx,const struct toy_
     int dx,dy,dz,length,tail;
     if(shot->phase!=TOY_GAME_SHOT_IMPACT)return;
     dx=ray->ex-shot->x;dy=ray->hit_y-shot->y;dz=ray->ez-shot->z;
-    length=(int)sqrt((double)dx*dx+(double)dy*dy+(double)dz*dz);tail=length<1024?length:1024;
+    length=(int)sqrt((double)dx*dx+(double)dy*dy+(double)dz*dz);tail=length<2048?length:2048;
     e.type=RASTERFALL_EFFECT_EVENT_TRACER;e.flags=RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
-    e.weapon=shot->weapon;e.source_id=shot->source_id;e.sequence=shot->fire_sequence;e.life_ms=24;
+    e.weapon=shot->weapon;e.source_id=shot->source_id;e.sequence=shot->fire_sequence;e.life_ms=48;
     e.ex=ray->ex;e.ey=RASTERFALL_WORLD_GROUND_Y+ray->hit_y;e.ez=ray->ez;
     e.sx=e.ex-(length?(int)((long long)dx*tail/length):0);
     e.sy=e.ey-(length?(int)((long long)dy*tail/length):0);
@@ -50,9 +50,9 @@ static void update_remote_flights(struct rasterfall_effects *fx,int dt_ms)
         b->age_ms+=dt_ms;
         int distance=toy_game_weapon_ballistics(b->weapon)->speed_mps*512*b->age_ms/1000;
         if(distance>toy_game_weapon_info(b->weapon)->range || b->age_ms>700){b->active=0;continue;}
-        int tail=distance<1024?distance:1024;
+        int tail=distance<2048?distance:2048;
         b->distance=distance;e.type=RASTERFALL_EFFECT_EVENT_TRACER;e.flags=RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
-        e.weapon=b->weapon;e.source_id=b->source;e.sequence=b->sequence;e.life_ms=24;
+        e.weapon=b->weapon;e.source_id=b->source;e.sequence=b->sequence;e.life_ms=48;
         e.ex=b->x+(int)((long long)b->dx*distance/1024);
         e.ey=RASTERFALL_WORLD_GROUND_Y+b->y+(int)((long long)b->dy*distance/1024);
         e.ez=b->z+(int)((long long)b->dz*distance/1024);
@@ -76,9 +76,9 @@ void rasterfall_effects_sync_bullets(struct rasterfall_effects *fx,const struct 
             const struct toy_game_bullet *b=&g->bullets[i];
             struct rasterfall_effect_event e={0};int tail;
             if(!b->active || !b->distance)continue;
-            tail=b->distance<1024?b->distance:1024;
+            tail=b->distance<2048?b->distance:2048;
             e.type=RASTERFALL_EFFECT_EVENT_TRACER;e.flags=RASTERFALL_EFFECT_EVENT_DEPTH_TEST;
-            e.weapon=b->weapon;e.source_id=b->source_id;e.sequence=b->fire_sequence;e.life_ms=24;
+            e.weapon=b->weapon;e.source_id=b->source_id;e.sequence=b->fire_sequence;e.life_ms=48;
             e.ex=b->x;e.ey=RASTERFALL_WORLD_GROUND_Y+b->y;e.ez=b->z;
             e.sx=e.ex-b->dx*tail/1024;e.sy=e.ey-b->dy*tail/1024;e.sz=e.ez-b->dz*tail/1024;
             rasterfall_effects_consume(fx,&e);

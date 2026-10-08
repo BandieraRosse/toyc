@@ -25,7 +25,7 @@ static float tac_abs(float a) { return a < 0.0f ? -a : a; }
 static float tac_distance(struct rf_tac_vec a, struct rf_tac_vec b)
 { float x = a.x - b.x, y = a.y - b.y; return sqrtf(x*x + y*y); }
 static int tac_valid_pos(struct rf_tac_vec p)
-{ return p.x >= 0.35f && p.x <= 63.65f && p.y >= 0.35f && p.y <= 47.65f; }
+{ return p.x >= 0.35f && p.x <= RF_TAC_WIDTH_M-0.35f && p.y >= 0.35f && p.y <= RF_TAC_HEIGHT_M-0.35f; }
 static unsigned int tac_generation(const struct rf_tac_world *w,int team)
 {
     unsigned h=w->map->generation ^ (w->seed*0x9e3779b9u) ^
@@ -37,8 +37,8 @@ static unsigned int tac_generation(const struct rf_tac_world *w,int team)
     return h;
 }
 
-static int tac_x(float x) { return (int)lroundf((x-32)*512); }
-static int tac_z(float z) { return (int)lroundf((z-24)*512); }
+static int tac_x(float x) { return (int)lroundf((x-RF_TAC_WIDTH_M/2)*512); }
+static int tac_z(float z) { return (int)lroundf((z-RF_TAC_HEIGHT_M/2)*512); }
 static int tac_move_clear(const struct rf_tac_map *m, struct rf_tac_vec a, struct rf_tac_vec b)
 {
     if (!m->geometry || !tac_valid_pos(a) || !tac_valid_pos(b)) return 0;
@@ -197,25 +197,27 @@ int rf_tac_map_generate(struct rf_tac_map *map, unsigned int seed)
     if (!map) return 0;
     memset(map,0,sizeof(*map)); map->seed=seed;
     map->generation=(seed*0x85ebca6bu)^0x52465431u;
-    map->objective.x=53.0f; map->objective.y=24.0f; map->objective_radius=6.0f;
-    map->spawn[0].x=5.0f; map->spawn[0].y=24.0f;
+    map->objective.x=82.0f; map->objective.y=36.0f; map->objective_radius=6.0f;
+    map->spawn[0].x=8.0f; map->spawn[0].y=36.0f;
     map->spawn[1]=map->objective;
     /* Half-open strongpoint: rear/side protection, broken frontal cover and
      * a final 7m approach without stepping-stone cover. Flanks remain open. */
-    tac_add_cover(map,58.0f,17.0f,58.8f,23.0f,RF_TAC_HIGH);
-    tac_add_cover(map,58.0f,25.0f,58.8f,31.0f,RF_TAC_HIGH);
-    tac_add_cover(map,51.0f,16.0f,57.0f,16.7f,RF_TAC_HIGH);
-    tac_add_cover(map,51.0f,31.3f,57.0f,32.0f,RF_TAC_HIGH);
-    tac_add_cover(map,49.0f,18.0f,49.7f,21.0f,RF_TAC_LOW);
-    tac_add_cover(map,49.0f,27.0f,49.7f,30.0f,RF_TAC_LOW);
+    tac_add_cover(map,87.0f,29.0f,87.8f,35.0f,RF_TAC_HIGH);
+    tac_add_cover(map,87.0f,37.0f,87.8f,43.0f,RF_TAC_HIGH);
+    tac_add_cover(map,80.0f,28.0f,86.0f,28.7f,RF_TAC_HIGH);
+    tac_add_cover(map,80.0f,43.3f,86.0f,44.0f,RF_TAC_HIGH);
+    tac_add_cover(map,78.0f,30.0f,78.7f,33.0f,RF_TAC_LOW);
+    tac_add_cover(map,78.0f,39.0f,78.7f,42.0f,RF_TAC_LOW);
+    /* Full-height screens block every starting squad ray, with two exits. */
+    tac_add_cover(map,20.0f,24.0f,20.8f,48.0f,RF_TAC_HIGH);
     /* Every band varies cover location, height and orientation. Three broad
      * advance lanes remain disconnected by gaps rather than enclosed walls. */
     for (i=0;i<4;++i) for (j=0;j<3;++j) {
-        float cx=13.0f+i*8.0f+(float)(rf_tw_rng_next(&rng)%401)/100.0f;
-        float cy=9.0f+j*14.0f+(float)(rf_tw_rng_next(&rng)%601)/100.0f-3.0f;
-        int height=(rf_tw_rng_next(&rng)%3)==0 ? RF_TAC_HIGH : RF_TAC_LOW;
-        if (rf_tw_rng_next(&rng)&1u) tac_add_cover(map,cx,cy,cx+0.7f,cy+2.4f,height);
-        else tac_add_cover(map,cx,cy,cx+2.4f,cy+0.7f,height);
+        float cx=30.0f+i*10.0f+(float)(rf_tw_rng_next(&rng)%401)/100.0f;
+        float cy=12.0f+j*22.0f+(float)(rf_tw_rng_next(&rng)%601)/100.0f-3.0f;
+        int height=(rf_tw_rng_next(&rng)%3)!=0 ? RF_TAC_HIGH : RF_TAC_LOW;
+        if (rf_tw_rng_next(&rng)&1u) tac_add_cover(map,cx,cy,cx+0.7f,cy+5.0f,height);
+        else tac_add_cover(map,cx,cy,cx+5.0f,cy+0.7f,height);
     }
     if(!tac_map_geometry(map)) return 0;
     tac_map_bake(map);

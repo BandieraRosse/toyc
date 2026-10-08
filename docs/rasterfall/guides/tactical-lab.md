@@ -8,7 +8,7 @@
 实时帧间隔。规则和正式 Game 的接入边界见[战术 AI 架构](../architecture/tactical-ai.md)，
 参数的现实依据与设计取舍见[枪械基准](../reference/tactical-weapons.md)。
 
-当前规则和策略版本为 4，权威为正式 `toy_game`。旧 `trained-v1.cfg` 不再出现在
+当前规则和策略版本为 5，权威为正式 `toy_game`。旧 `trained-v1.cfg` 不再出现在
 终端中，也不能作为新版本策略加载；已有版本 1 报告只能作为旧模型历史结果。
 新训练由 `tools/tactical_train.py` 生成当前规则版本的旧 utility 参数。游戏内是已加载地图的真实碰撞；
 CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规则和初始状态。
@@ -17,7 +17,7 @@ CLI 的种子地图是生成场景，跨前端复现须同时匹配几何、规�
 
 终端现在提供“简单（机械策略）”与“普通（协同策略）”，默认双方仍为简单，分别执行进攻和防守。
 要观察本轮差异，将一侧选为普通后开始实验；FPS / RTS 共用移动短弹迹与实际命中效果。
-普通主要表现为集火收尾、寻找可交火位置和错峰主动换弹；不保证每张地图胜出。
+普通主要表现为集火收尾、低效远射或受压时评估转移、寻找可交火位置和错峰主动换弹；不保证每张地图胜出。
 CLI 名称是 `mechanical-v3`；旧 `mechanical` 保留作旧接口对照。框架边界和算法扩展方式见
 [算法框架](../architecture/tactical-ai.md#策略算法框架-api-3)。M0 不是已训练的强策略。
 
@@ -38,7 +38,7 @@ python tools/tactical_benchmark.py --policies mechanical-v3 --opponents mechanic
 
 API 2 的工作预算按导航扩展和几何检查等实际操作计费，不能沿用 API 1 的数值比较。
 M0 使用算法版本 2；CLI 不传 `--budget` 时保留内置策略或配置文件的预算，显式传入则覆盖双方。
-终端默认与 M0 配置一致，另有较低预算用于观察额度不足；benchmark 默认预算同步为 16384。
+终端默认与 M0 配置一致，另有较低预算用于观察额度不足；benchmark 默认预算同步为 49152。
 日志增加 query_work、limited_queries、expanded_nodes、visibility_tests、connection_tests 和 cache_hits，
 其中 query_work 已包含在 work_units 中。limited_queries 可能只是算法主动限制一条查询，
 不等于整轮预算耗尽。路线与暴露样本合同见[路线暴露与计费](../architecture/tactical-ai.md#路线暴露与工作计费)。
@@ -173,12 +173,12 @@ python tools/tactical_train.py --generations 3 --population 8 --elite 3 --output
 utility 的同条件对照。保留集只用于最终评测，不用于选权重。这是参数训练，
 不是神经网络或 Beam 参数训练。扩大训练时改变输出目录，保留旧证据。
 
-仓库已提供一次真实训练的
-[`trained-v1.cfg`](../../../rasterfall/config/ai/strategy3.cfg)，可直接作为 `--a` 或 `--b`。
+仓库保留一次旧规则训练的
+[`strategy3.cfg`](../../../rasterfall/config/ai/strategy3.cfg)，仅供历史对照，不能作为当前 `--a` 或 `--b` 加载。
 训练和最终构建的复核结果见[初版验收记录](../archive/tactical-foundation-20261007.md)。
 
 ```powershell
-.\build-windows\rf-tactical.exe match --a rasterfall/config/ai/strategy3.cfg --b mechanical --map-seed 10005 --squad 5 --weapon rifle --log tmp/tactical-match.jsonl
+.\build-windows\rf-tactical.exe match --a normal --b easy --map-seed 10005 --squad 5 --weapon rifle --log tmp/tactical-match.jsonl
 python tools/tactical_report.py tmp/tactical-match.jsonl --output tmp/tactical-match.html
 ```
 

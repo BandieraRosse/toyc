@@ -21,7 +21,7 @@ OPPONENTS = ("simple", "mechanical", "utility")
 
 def write_policy(path: Path, values: list[float] | tuple[float, ...], budget: int) -> None:
     lines = ["# Native utility solver weights; deterministic CEM parameter tuning.",
-             "policy_version=4", "solver=utility", f"budget={budget}"]
+             "policy_version=5", "solver=utility", f"budget={budget}"]
     lines.extend(f"{key}={value:.9g}" for key, value in zip(FIELDS, values))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 

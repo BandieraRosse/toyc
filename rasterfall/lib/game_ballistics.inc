@@ -2,8 +2,8 @@
  * Other firearms retain their existing instantaneous settlement. */
 const struct toy_game_ballistics *toy_game_weapon_ballistics(int weapon)
 {
-    static const struct toy_game_ballistics rifle = {720, {40,80,150,300}, {1000,950,800,650}};
-    static const struct toy_game_ballistics smg = {400, {15,35,70,150}, {1000,850,650,450}};
+    static const struct toy_game_ballistics rifle = {720, {30,45,65,90}, {1000,750,450,250}};
+    static const struct toy_game_ballistics smg = {400, {15,25,40,60}, {1000,750,400,200}};
     return weapon == TOY_GAME_WEAPON_AK ? &rifle : weapon == TOY_GAME_WEAPON_SMG ? &smg : NULL;
 }
 

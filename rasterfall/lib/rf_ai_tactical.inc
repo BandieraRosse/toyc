@@ -122,12 +122,14 @@ static int ai_exposure_query(struct ai_tactical_queries *c,const struct rf_ai_qu
     for(int i=q->first_sample;i<q->sample_count;++i){
         if(!budget->spend(budget->context,1))return RF_AI_UNKNOWN;
         struct rf_ai_exposure_sample *sample=&r->samples[r->sample_count++];
-        sample->distance=r->distance*i/(q->sample_count-1);
+        sample->distance=i==q->sample_count-1?r->distance:r->distance*i/(q->sample_count-1);
         while(segment<route->count-1 && arc[segment]<sample->distance)++segment;
         float span=arc[segment]-arc[segment-1];
         float f=span>0?(sample->distance-arc[segment-1])/span:0;
         sample->position.x=route->points[segment-1].x+(route->points[segment].x-route->points[segment-1].x)*f;
         sample->position.z=route->points[segment-1].z+(route->points[segment].z-route->points[segment-1].z)*f;
+        if(i==0)sample->position=route->points[0];
+        if(i==q->sample_count-1)sample->position=route->points[route->count-1];
         for(int e=0;e<w->squad_size;++e){
             if(!budget->spend(budget->context,2))return RF_AI_UNKNOWN;
             const struct rf_tac_unit *enemy=&w->units[(1-c->team)*RF_TAC_MAX_SQUAD+e];
@@ -227,7 +229,7 @@ int rf_ai_host_decide(struct rf_ai_host *h,const struct rf_tac_world *w,int team
     s->navigation_count=w->map->node_count;s->navigation=w->map->ai_nodes;
     s->command=w->orders[team].kind;s->objective=ai_point(w->orders[team].target);
     s->radius=w->orders[team].radius;s->completed=w->orders[team].captured;s->capture_ms=w->orders[team].clear_ms;
-    s->bounds_min.x=s->bounds_min.z=0.35f;s->bounds_max.x=63.65f;s->bounds_max.z=47.65f;
+    s->bounds_min.x=s->bounds_min.z=0.35f;s->bounds_max.x=RF_TAC_WIDTH_M-0.35f;s->bounds_max.z=RF_TAC_HEIGHT_M-0.35f;
     int reset=h->generation!=s->generation;
     for(int i=0;i<s->count;++i){
         ai_tactical_member(w,&w->units[team*RF_TAC_MAX_SQUAD+i],&s->members[i]);

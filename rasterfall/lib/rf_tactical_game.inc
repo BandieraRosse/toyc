@@ -6,8 +6,8 @@ static int tac_map_geometry(struct rf_tac_map *m)
     if(!m->geometry) return 0;
     toy_game_init(m->geometry,1);
     struct toy_map_primitive *p=&m->primitives[0];
-    p->shape=TOY_MAP_PRIMITIVE_FLAT;p->minx=-17408;p->maxx=17408;
-    p->minz=-16384;p->maxz=13312;p->flags=TOY_MAP_PRIMITIVE_WALKABLE;
+    p->shape=TOY_MAP_PRIMITIVE_FLAT;p->minx=tac_x(-2);p->maxx=tac_x(RF_TAC_WIDTH_M+2);
+    p->minz=tac_z(-8);p->maxz=tac_z(RF_TAC_HEIGHT_M+2);p->flags=TOY_MAP_PRIMITIVE_WALKABLE;
     m->primitive_count=1;
     for(int i=0;i<m->cover_count;++i) {
         const struct rf_tac_cover *c=&m->covers[i];p=&m->primitives[m->primitive_count++];
@@ -59,7 +59,7 @@ void rf_tac_sync(struct rf_tac_world *w)
         const struct toy_game_actor *a=toy_game_actor_by_id_const(w->game,u->actor_id);
         if(!a || a->combat_generation!=u->actor_generation) {u->alive=0;continue;}
         u->alive=a->state==TOY_GAME_ACTOR_ALIVE && a->hp>0;
-        u->pos.x=a->x/512.0f+32;u->pos.y=a->z/512.0f+24;
+        u->pos.x=a->x/512.0f+RF_TAC_WIDTH_M/2;u->pos.y=a->z/512.0f+RF_TAC_HEIGHT_M/2;
         u->hp=a->hp;u->evasion=a->evasion.reserve_milli/1000.0f;
         u->recovery_ms=a->evasion.pressure_ms;
         u->ammo=a->slots[a->current_slot].mag;u->reload_ms=a->reload_timer_ms;

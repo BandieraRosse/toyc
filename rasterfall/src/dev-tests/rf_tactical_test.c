@@ -79,6 +79,21 @@ static void test_prediction(struct rf_tac_map *map)
     }
     rf_tac_world_destroy(&w);
 }
+static void test_spawn_cover(struct rf_tac_map *map)
+{
+    struct rf_tac_world w={0};
+    CHECK(rf_tac_world_init(&w,map,42,RF_TAC_MAX_SQUAD,RF_TW_RIFLE,60000),"full squad spawn fixture");
+    if(!w.game)return;
+    for(int i=0;i<w.squad_size;++i)for(int j=0;j<w.squad_size;++j){
+        struct rf_tac_vec a=w.units[i].pos,b=w.units[RF_TAC_MAX_SQUAD+j].pos;
+        CHECK(rf_tac_exposure(map,a,b)==0 && rf_tac_exposure(map,b,a)==0,
+            "spawn screens block both directions including upper body");
+    }
+    struct rf_tac_vec far={RF_TAC_WIDTH_M-3,RF_TAC_HEIGHT_M-3};
+    CHECK(rf_tac_nearest_node(map,far)>=0 && rf_tac_command(&w,0,RF_TAC_ATTACK,far,2),
+        "expanded arena supports navigation and commands at the far corner");
+    rf_tac_world_destroy(&w);
+}
 static void test_range(void)
 {
     struct rf_range_lab *r=calloc(1,sizeof(*r));
@@ -132,7 +147,7 @@ int rf_tac_run_tests(void)
     struct rf_tac_map *map=calloc(1,sizeof(*map));checked=failed=0;
     CHECK(map!=NULL,"map allocation");if(!map)return 0;
     CHECK(rf_tac_map_generate(map,100),"Game collision graph generation");
-    if(map->geometry){test_game_execution(map);test_prediction(map);test_ai_abi();test_ai_game(map);test_ai_queries(map);}
+    if(map->geometry){test_spawn_cover(map);test_game_execution(map);test_prediction(map);test_ai_abi();test_ai_game(map);test_ai_queries(map);}
     test_range();test_ballistics();test_normal_ai();rf_tac_map_destroy(map);free(map);
     printf("TACTICAL GAME: %d checks, %d failures\n",checked,failed);return !failed;
 }
