@@ -25,7 +25,6 @@ static int rf_perf_live_start(struct rf_game_runtime *runtime);
 static int rf_perf_live_return(struct rf_game_runtime *runtime);
 static void rf_perf_live_camera(struct rf_game_runtime *runtime,int64_t now);
 static void rf_perf_live_collect(struct rf_game_runtime *runtime,int64_t interval);
-static void rf_perf_live_dump_route(struct rf_game_runtime *runtime);
 static struct rf_perf_lab_live_result rf_perf_live_result;
 struct rf_perf_lab_result {
     int valid, scene, samples, spawned, min_alive, max_alive;
@@ -93,7 +92,7 @@ static const char *rf_perf_lab_descriptions[RF_PERF_LAB_SCENES] = {
     "采样正式边缘站点进攻阶段的入口、全景、各层与屋顶。"
 };
 static const char *rf_perf_lab_areas[RF_PERF_LAB_SCENES] = {
-    "perf_low_area", "perf_enemy_area", "perf_components_area", "perf_mixed_area",
+    "perf_low_area", "perf_low_area", "perf_low_area", "perf_low_area",
     "perf_low_area", "perf_low_area", "perf_low_area", "perf_low_area",
     "perf_low_area", "perf_low_area"
 };
@@ -192,6 +191,7 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
     struct toy_game *test_game = &session->game_state;
     struct toy_game_actor *player = toy_game_local_player_actor(test_game);
     int scene = rf_perf_lab.selected;
+    if(scene==4 || scene==5 || scene>=8)return -1;
     if (scene < 0 || scene >= RF_PERF_LAB_SCENES || !player ||
         test_game->state != TOY_GAME_PLAYING || test_game->enemies_alive ||
         session->world_id != RASTERFALL_WORLD_OUTPOST) return -1;
@@ -212,6 +212,12 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
     rf_perf_lab.saved_interference=rf_perf_lab.interference;
     memcpy(rf_perf_lab.previous_requested,rf_labs.requested,sizeof(rf_labs.requested));
     rf_perf_lab.previous_rpm=rf_labs.fan_rpm;
+    /* One physical field; content is a transaction owned by the trial. */
+    rf_perf_lab.isolated=0;rf_perf_lab.interference=1;
+    if(scene==2 || scene==3) {
+        if(rasterfall_experiment_replace(session,3,NULL,0,
+            "rasterfall/assets/maps/experiment_components.map")<0)return -1;
+    }
     if(rf_perf_lab_live()) {
         rf_perf_lab.isolated=0;rf_perf_lab.interference=1;
         rf_perf_lab.menu_open=0;
@@ -277,6 +283,8 @@ static int rf_perf_lab_start(struct rf_game_runtime *runtime)
     rf_perf_lab.result_open = 0;
     return 0;
 failed:
+    if(session->experiments && session->experiments->groups[3].active)
+        rasterfall_experiment_replace(session,3,NULL,0,NULL);
     if (rf_perf_lab.isolated) {
         session->seed = rf_perf_lab.previous_seed;
         if (rf_game_request_world(runtime, RASTERFALL_WORLD_OUTPOST) < 0) return -2;
@@ -379,13 +387,14 @@ static int rf_perf_lab_finish(struct rf_game_runtime *runtime, int aborted)
         }
     }
     if(rf_perf_lab_live()) {
-        if(rf_perf_lab.selected==8 && !rf_perf_live_result.done)rf_perf_live_dump_route(runtime);
         if(rf_perf_live_return(runtime)<0)return -2;
         rf_perf_lab.isolated=rf_perf_lab.saved_isolated;
         rf_perf_lab.interference=rf_perf_lab.saved_interference;
         rf_perf_lab.menu_open=0;
         return 0;
     }
+    if(session->experiments && session->experiments->groups[3].active &&
+        rasterfall_experiment_replace(session,3,NULL,0,NULL)<0)return -2;
     if (rf_perf_lab.isolated) {
         session->seed = rf_perf_lab.previous_seed;
         if (rf_game_request_world(runtime, RASTERFALL_WORLD_OUTPOST) < 0) return -2;
@@ -420,8 +429,8 @@ static void rf_perf_lab_sample(int64_t now, int64_t interval_us,
     unsigned present_mode, int width, int height)
 {
     int n = rf_perf_lab.samples;
-    if(rf_perf_lab.running && rf_perf_lab_live() && !rf_perf_lab.presented) {
-        /* Loading a formal world can synchronously prewarm GPU resources.
+    if(rf_perf_lab.running && !rf_perf_lab.presented) {
+        /* Creating an experiment can synchronously prewarm GPU resources.
          * Start the steady trial clock after that first successful present. */
         rf_perf_lab.presented=1;rf_perf_lab.started_us=now;
         return;
@@ -522,8 +531,8 @@ static void rf_perf_lab_draw(struct rasterfall_canvas *c, int64_t now)
             rasterfall_canvas_text(c,x+25,y+180,line,0xFFFFFF);
             snprintf(line,sizeof(line),"AI %.3f  INFECTED LOGIC %.3f ms / STEP",r->ai_us/1000.0,r->enemy_logic_us/1000.0);
             rasterfall_canvas_text(c,x+25,y+230,line,0xFFFFFF);
-            snprintf(line,sizeof(line),"ROUTE %d/4  COMPLETE %d  LAYER QUERIES %u  NODES %u",
-                r->live_legs,r->live_done,r->layer_queries,r->layer_nodes);
+            snprintf(line,sizeof(line),"LAYER QUERIES %u  NODES %u",
+                r->layer_queries,r->layer_nodes);
             rasterfall_canvas_text(c,x+25,y+280,line,0xFFFFFF);
             snprintf(line,sizeof(line),"GROUND SCANS %u  BODY SCANS %u  NAV WAIT %u",
                 r->ground_scans,r->body_scans,r->waiting);
@@ -587,8 +596,8 @@ static void rf_perf_lab_draw(struct rasterfall_canvas *c, int64_t now)
             snprintf(line,sizeof(line),"GPU SAMPLES %d / %d   EXHIBITS %02X",r->gpu_samples,r->samples,r->lab_mask);
             rasterfall_canvas_text(c,x+25,y+500,line,0x9FB7C5);
             if(r->scene>=6 && r->valid==1) {
-                snprintf(line,sizeof(line),"LIVE ALLIES %d..%d  GUNNERS %d..%d  ROUTE %d/4",
-                    r->allies_min,r->allies_max,r->gunners_min,r->gunners_max,r->live_legs);
+                snprintf(line,sizeof(line),"LIVE ALLIES %d..%d  GUNNERS %d..%d",
+                    r->allies_min,r->allies_max,r->gunners_min,r->gunners_max);
                 rasterfall_canvas_text(c,x+25,y+430,line,0xC7F2EE);
             }
         }

@@ -8,6 +8,14 @@ void rasterfall_session_tactical_reset(struct rasterfall_session *s)
     struct rf_tactical_lab *lab=s->tactical;
     lab->kind=s->world_id==RASTERFALL_WORLD_TACTICAL_ARENA?1:2;
     lab->seed=1337;lab->selected=0;lab->accumulator_us=0;++lab->generation;
+    lab->match.bound_game=&s->game_state;
+    s->game_state.external_director=1;
+    s->game_state.to_spawn=0;
+}
+
+static void session_tactical_create_defaults(struct rasterfall_session *s)
+{
+    struct rf_tactical_lab *lab=s->tactical;
     struct rf_tac_policy policies[2];
     rf_tac_policy_default(&policies[0],RF_TAC_M0);
     rf_tac_policy_default(&policies[1],RF_TAC_M0);
@@ -52,7 +60,8 @@ int rasterfall_session_tactical_logic_test(void)
     if(!s)return 1;
     if(rasterfall_session_load(s,"rasterfall/assets/maps/tactical_arena.map")<0){result=2;goto done;}
     rasterfall_session_reset(s,&camera,1337);
-    if(!s->tactical || s->tactical->match.world.game!=&s->game_state){result=3;goto done;}
+    if(!s->tactical || s->tactical->match.world.game){result=3;goto done;}
+    session_tactical_create_defaults(s);
     struct rf_tac_match *m=&s->tactical->match;m->running=1;
     if(!rf_tac_world_clone(&reference,&m->world)){result=4;goto done;}
     for(int i=0;i<100;++i) {
@@ -67,7 +76,8 @@ int rasterfall_session_tactical_logic_test(void)
     rf_tac_world_destroy(&reference);
     if(rasterfall_session_load(s,"rasterfall/assets/maps/tactical_range.map")<0){result=7;goto done;}
     rasterfall_session_reset(s,&camera,1337);
-    if(!s->tactical || s->tactical->range.game!=&s->game_state){result=8;goto done;}
+    if(!s->tactical || s->tactical->range.game){result=8;goto done;}
+    session_tactical_create_defaults(s);
     struct rf_range_lab *range=&s->tactical->range;range->running=1;
     struct toy_game_actor *player=toy_game_local_player_actor(&s->game_state);
     camera.x=player->x=(range->lane-4)*1536;camera.z=player->z=0;
@@ -83,7 +93,7 @@ int rasterfall_session_tactical_logic_test(void)
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)before+=s->game_state.actors[i].active!=0;
     rasterfall_session_reset(s,&camera,1337);
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)after+=s->game_state.actors[i].active!=0;
-    if(before!=after || !s->tactical || s->tactical->range.game!=&s->game_state){result=10;goto done;}
+    if(before<=after || !s->tactical || s->tactical->range.game){result=10;goto done;}
     __printf("TACTICAL-SESSION Game authority / headless parity / player fire / reset passed\n");
 done:
     rf_tac_world_destroy(&reference);rasterfall_session_unload(s);free(s);return result;

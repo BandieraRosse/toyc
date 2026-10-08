@@ -97,26 +97,22 @@ def geometry(prefix=()):
     # Flush lenses replace the underside volume; finish() keeps a sealed cap.
     for floor,y in (("b1",-2458),("1f",0),("2f",2458)):
         for x in (-2304,2304):
-            for z in (-2304,2048,6656,9216):
+            for z in (-512,7680):
                 kit.ceiling_light(f"outpost_{floor}_ceiling_{x}_{z}",x,z,y+2304)
         if floor!="b1":
             for x in (-7424,7424):
-                for z in (-1536,1536):
+                for z in (0,):
                     kit.ceiling_light(f"outpost_{floor}_wing_{x}_{z}",x,z,y+2304)
         if floor=="1f":
             # Separate central service corridor from the Power/Control rooms.
-            for z in (5632,8704):kit.ceiling_light(f"outpost_1f_corridor_{z}",0,z,y+2304)
+            for z in (7168,):kit.ceiling_light(f"outpost_1f_corridor_{z}",0,z,y+2304)
 
     storeys=(("b1",-2458),("1f",0),("2f",2458),("roof",4916))
     kit.switchback("outpost_stair",(-3072,3072,10240,19456),storeys,7220,
                    wall_color=WALL_COLOR,ceiling_color=CEILING_COLOR)
     for name, y in storeys:
-        # East wall, aperture faces west and down. Keep below the next landing.
-        lamp(f"outpost_stair_{name}_light",2928,11264,y+1650,True,270)
-        if name=="roof":
-            continue
-        mid=y+1229
-        lamp(f"outpost_stair_{name}_half_light",2928,18432,mid+1650,True,270)
+        # One light per flight avoids the divider and reaches both end landings.
+        if name=="roof":continue
         lamp(f"outpost_stair_{name}_flight_light",-2928,15360,y+2200,True,90)
         lamp(f"outpost_stair_{name}_return_light",2928,15360,y+3400,True,270)
     # Replace the two forecourt poles with facade-mounted warm downlights.

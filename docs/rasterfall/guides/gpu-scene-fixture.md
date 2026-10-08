@@ -1,91 +1,31 @@
 # GPU Scene 固定渲染地图
 
-## RF_MODEL_LAB 角色预览
+## 动态角色与设备实验
 
-本地安装目录当前使用的 `rasterfall/private-assets/models/rf_c01_v028.rmesh` 及同名 `.textures` 目录后构建 package。
-该资源通过统一导入器的 `--character-surface --position-scale 65536` 生成，保留原局部细节和旧候选。
-当前候选保留不透明基础色图、单表面眼球及持枪臂展修订；资源路径由角色目录拥有。
-创作与运行验证分别留证，见[角色保真诊断](character-fidelity.md)。
+前哨站现使用[动态实验组](../reference/experiment-labs.md)。普通入口为空场，靠近场地终端按 E，
+选择模型组合与动作后创建；终端支持替换、暂停、重建和销毁。旧模型区、装备区、三模型区、
+五枪区和真实 AI 区合并到同一角色实验场，不再通过显示开关保存常驻展示实例。
+
+展示进入正式 actor/敌人容器，使用正常角色、装备、动画采样和身体碰撞。
+指定动画不运行战斗 AI；真实 AI 预设分别执行正常闲置、往返部署或射击目标。
+旧的 50/60 秒自动路线循环已由所选动画和时间参数替代，不再按旧循环阶段解释截图时间。
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene model-lab 0
 ```
 
-此入口直接定位并显示静止、步行、持枪、瞄准、低位移动射击、低位移动持枪台位，仍可移动观察。普通前哨站入口初始隐藏，在场地东北侧终端按 E
-显示/隐藏。切离前哨站后隐藏；CPU 入口不绘制该预览。固定复现可追加
-`--gpu-normal-fixed-tick --frames 120 --frame-audit --gpu-frame-capture <绝对路径.bmp>`，
-截图产物为 `<绝对路径.bmp>.scene.ppm`；显式 readback 只用于捕获帧。
-持枪台位复用正式动作、手腕朝向和完整握点求解，支持 v15 不透明基础色图与材质常量；
-定向近景与动作帧检查见[保真诊断](character-fidelity.md)。描边与 LOD 不属于此次签收。
-缺失资源在画面与日志中显示错误，重新安装后关闭再开启展示。
+保留的诊断视图会通过同一创建接口生成对应实验组：`model-lab`、`actor-actions-lab`、
+`rifle-cycle-lab`、`weapon-cycle-lab`、`idle-rifle-lab`、`lighting-lab`、`electronics-lab`、
+`mesh-weaver`。`idle-rifle-lab` 默认创建真实闲置 AI；移动和射击预设由新终端选择。
+旧独立地块生成器与循环环境变量不再定义当前园区布局或动画状态。
 
-## 真实 AI 持枪实验区
+RF-C01 仍要求本地安装 `rasterfall/private-assets/models/rf_c01_v028.rmesh` 及同名 `.textures` 目录，
+并重新构建 package。该预设限 GPU Scene，缺少资源应先修复安装；CPU 入口不会替换成另一角色。
+资产创作与正常姿态核对见[角色保真诊断](character-fidelity.md)。
 
-模型区的持枪闲置台与 AI 动作区的静止台也使用同一套随机切换逻辑；它们各自保存展示历史，
-按展示时钟推进。三模型持枪循环区保留同步瞄准／射击／往返路线，Block 也消费共享持枪输入。
-
-`LIVE AI HOLDS` 位于三模型持枪循环区正南方，沿东侧道路可以步行到达。东北控制台按 E 循环：
-静止随机持枪、往返部署、真实目标、关闭。四名角色分别为 Block、步枪手、重装和侦察，
-全部通过正常玩法 AI 和角色渲染运行。目标模式生成不还击的真实敌方枪手；其倒地后回到静止。
-可以走近、绕到侧面，或切换 RTS 观察。关闭只移除本区拥有的角色；离线可用，默认关闭。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene idle-rifle-lab 0
-```
-
-诊断入口自动开启静止模式；`RF_IDLE_LAB_MODE=1/2/3` 分别选择静止、移动和目标。
-固定截图可追加 `--gpu-normal-fixed-tick --frames 400 --frame-audit --gpu-frame-capture <绝对路径.bmp>`。
-它按真实固定逻辑步推进 AI 和持枪历史，不指定某种姿态，不调用展示专用动作曲线。
-持续观察随机停留时使用普通运行；暂停时逻辑和姿态同时停止。几何、台位与道路由
-`tools/idle_rifle_lab.py` 生成，所有权与中断规则见[实验区合同](../reference/experiment-labs.md)。
-
-## 三模型持枪循环区
-
-RF 模型区东侧新增 `AI RIFLE CYCLE`，使用已有 Block、Humanoid 和 RF-C01 三种模型。
-RF-C01 的私有资源安装要求与上节一致；缺失时保留另两种展示并提示资源错误。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene rifle-cycle-lab 0
-```
-
-该入口自动开启循环，普通前哨站通过东北侧终端按 E 启停。静止瞄准/射击、移动射击与转身往返共用
-50 秒循环，每半程为 12 秒静止、12 秒行进、1 秒转身；静止与行进各采样五组仰俯/左右角度。
-三条路线同步，便于比较身体、头、枪和双手。暂停、关闭或性能隔离期间展示时钟不推进。
-
-固定截图可追加 `--gpu-normal-fixed-tick --frames 60 --frame-audit --gpu-frame-capture <绝对路径.bmp>`。
-此时使用独立俯视镜头；普通运行可自由走近观察。诊断环境变量 `RF_RIFLE_CYCLE_TIME_MS` 将循环固定到
-指定毫秒（按 50000 取模），例如 5835 为静止射击、16335 为移动射击、24500 为转身、38335 为返程。
-该变量仅用于 `rifle-cycle-lab` 诊断入口；删除变量可恢复连续播放。
-`--gpu-scene-pose-test` 验证整圈位置/转身连续性、移动射击下身时间与显式姿态的重复提取。
-
-## 三角色五枪循环区
-
-原 `AI RIFLE CYCLE` 东侧的 `WEAPON CYCLE 3 X 5` 同时显示 15 组组合。由北向南为 Block、
-Humanoid、RF-C01；由西向东为手枪、SMG、霰弹枪、AK、AWP。东北侧终端按 E 启停；
-通过入口横路可步行到达，普通运行可以绕到每组左右侧观察。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --map rasterfall/assets/maps/outpost.map --gpu-normal-scene weapon-cycle-lab 0
-```
-
-60 秒循环依次展示低位待机、瞄准与静止射击、低位移动射击、转身和返程；五种枪的节奏使用各自
-玩法射击间隔。三种身体共用同一时间，枪械和双手始终使用正式握点求解。暂停与性能隔离冻结时钟。
-RF-C01 私有资源缺失时另两排仍可使用，画面和日志提示缺失资源；安装后重新开启展示重试。
-
-原生定向采样使用已构建并暂存的 package：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_weapon_cycle.ps1 -Station 10 -TimeMs 8500 -View side -Frames 2 -OutputDirectory tmp/weapon-review
-```
-
-`Station` 为行优先的 0..14，-1 为全景；参数范围以脚本为准。8500 ms 为瞄准，13835 ms 为
-静止射击，24335 ms 为移动射击，32500 ms 为转身，46335 ms 为返程。`TimeMs=-1` 按固定逻辑步
-连续播放；展示时钟每帧推进 16 ms，完整一圈可用 `-Frames 4000`。脚本等待进程退出并校验 native 日志与截图，结果写入独立目录。
-`RF_WEAPON_CYCLE_TIME_MS`、`RF_WEAPON_CYCLE_STATION` 与 `RF_WEAPON_CYCLE_VIEW` 只影响本诊断入口。
-普通游戏不读取这些覆盖值。区域生成器为 `tools/weapon_cycle_lab.py`。
-
-`--gpu-scene-pose-test` 检查跨体型握点误差、腕部方向、可达性与循环采样；近景检查仍须确认手掌、
-握把、泵柄、枪托与身体的实际网格关系。
+固定复现可追加 `--gpu-normal-fixed-tick --frames 120 --frame-audit --gpu-frame-capture <绝对路径.bmp>`。
+截图为 `<绝对路径.bmp>.scene.ppm`，显式 readback 只用于捕获帧。
+`RF_EXPERIMENT_UI=1` 可在这些诊断入口打开新控制面板；普通入口仍通过现场终端操作。
 
 ## 实验性单人入口
 

@@ -14,6 +14,7 @@
 #include "rasterfall_roster.h"
 #include "rasterfall_world_content.h"
 #include "rf_frontier_mission.h"
+#include "rasterfall_experiment.h"
 
 #define RASTERFALL_PLAYER_RADIUS 180
 #define RASTERFALL_MOVE_STEP TOY_CONFIG_PLAYER_MOVE_STEP
@@ -105,6 +106,7 @@ enum rasterfall_humanoid_debug_action { RASTERFALL_HUMANOID_DEBUG_IDLE, RASTERFA
 
 struct rf_tactical_lab;
 struct rasterfall_session {
+    struct rasterfall_experiments *experiments;
     struct rf_tactical_lab *tactical;
     struct rf_gpu_scene_local_source scene_local;
     enum rasterfall_world_id world_id;

@@ -74,7 +74,8 @@ static int scene_actor_procedural(const struct toy_game_actor *actor,
     item->state.animation_id=actor->animation.id;
     item->state.animation_time_ms=actor->animation.time_ms;
     item->state.moving=actor->moving;
-    item->state.locomotion_time_ms=(int)((unsigned long long)game.combat_time_ms%60000);
+    item->state.locomotion_time_ms=(int)((actor->animation_control ?
+        actor->animation_clock_ms : (unsigned long long)game.combat_time_ms)%60000);
     item->state.profession_id=actor->character_id<0 ? RASTERFALL_PROFESSION_NONE : profile->profession_id;
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(actor==&game.actors[i] && actor->kind==TOY_GAME_ACTOR_AI) {
         rasterfall_rifle_sample(actor,(unsigned)game.combat_time_ms,&scene_procedural_rifle[i],&item->state.rifle);
@@ -126,6 +127,25 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&game.actors[i];
         if (!actor->active || actor->kind!=TOY_GAME_ACTOR_AI) continue;
+        if(actor->character_id==RASTERFALL_CHARACTER_RF_C01) {
+            struct rf_gpu_scene_body_sample sample={0};
+            if(scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS)goto fail;
+            sample.lower_time_ms=actor->animation_control?actor->animation_clock_ms:(uint64_t)game.combat_time_ms;
+            sample.action_time_ms=actor->animation.time_ms;
+            sample.walk=actor->moving;sample.fire=actor->animation.id==TOY_GAME_ANIM_FIRE;
+            sample.weapon=actor->slots[actor->current_slot].weapon;
+            sample.armed=sample.weapon>=TOY_GAME_WEAPON_PISTOL && sample.weapon<=TOY_GAME_WEAPON_AWP;
+            rasterfall_rifle_sample(actor,(unsigned)game.combat_time_ms,&scene_procedural_rifle[i],&sample.rifle);
+            struct rf_gpu_scene_pose_v1 *pose=&scene_enemy_capture.modular[scene_enemy_capture.modular_count];
+            if(rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_C01_V22H,scene_enemy_capture.frame_id,
+                scene_enemy_capture.world_generation,&sample,actor->x,-900+actor->ground_y+actor->airborne_y,
+                actor->z,actor->sy,actor->cy,pose)<0)goto fail;
+            pose->identity.source_id=(unsigned)actor->actor_id;
+            pose->identity.generation=actor->combat_generation;
+            pose->character_id=actor->character_id;
+            ++scene_enemy_capture.modular_count;
+            continue;
+        }
         if (actor->state!=TOY_GAME_ACTOR_DOWNED &&
             rasterfall_character_visual_recipe_for_character(actor->character_id)) {
             if (scene_actor_registered(actor->actor_id)) continue;

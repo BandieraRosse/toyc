@@ -105,6 +105,7 @@ void rasterfall_rifle_sample(const struct toy_game_actor *a,unsigned tick,
     int aiming,hip,ready,step,idle,weapon;
     memset(out,0,sizeof(*out));
     if(!a || !h)return;
+    if(a->animation_control)tick=a->animation_clock_ms;
     weapon=a->current_slot>=0 && a->current_slot<TOY_GAME_WEAPON_SLOTS?
         a->slots[a->current_slot].weapon:-1;
     ready=!a->reloading && !a->weapon_switch_timer_ms && !a->control_disabled &&
@@ -114,7 +115,7 @@ void rasterfall_rifle_sample(const struct toy_game_actor *a,unsigned tick,
     aiming=ready && !hip &&
         (a->combat_target.kind>=0 || a->animation.id==TOY_GAME_ANIM_FIRE);
     idle=ready && weapon>=TOY_GAME_WEAPON_PISTOL && weapon<=TOY_GAME_WEAPON_AWP && a->active && a->kind==TOY_GAME_ACTOR_AI &&
-        !a->developer_only && !a->animation_demo && !a->moving && a->combat_target.kind<0 &&
+        !a->developer_only && !a->animation_demo && !a->animation_control && !a->moving && a->combat_target.kind<0 &&
         (a->animation.id==TOY_GAME_ANIM_IDLE || a->animation.id==TOY_GAME_ANIM_NONE);
     if(!h->valid || h->actor_id!=a->actor_id || h->generation!=a->combat_generation ||
         (int)(tick-h->tick)<0) {

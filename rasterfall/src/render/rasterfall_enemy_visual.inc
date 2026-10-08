@@ -54,6 +54,12 @@ static struct rasterfall_infected_motion enemy_visual_motion[TOY_GAME_MAX_ENEMIE
 static int enemy_visual_capture_pose = -1; /* -1 runtime, 0 bind, 1 idle, 2 move */
 static int enemy_visual_submissions, enemy_visual_failures;
 
+static int enemy_playback_swing(const struct toy_game_enemy *enemy)
+{
+    int phase=(int)(enemy->animation_clock_ms%1000)*640/1000;
+    return enemy->animation_id==TOY_GAME_ANIM_MOVE?(phase<320?phase:640-phase)*48/320-24:0;
+}
+
 int rasterfall_infected_sample_motion(
     const struct rasterfall_infected_motion *previous,
     int active, int x, int z, uint64_t now_us,
@@ -232,6 +238,9 @@ static int render_infected_enemy(struct toy_renderer *renderer,
                 (uint64_t)now.tv_sec * 1000000 + now.tv_nsec / 1000, &sample) < 0) return -1;
         enemy_visual_motion[slot] = sample.next;
         swing = sample.swing;
+        if(source->animation_control) {
+            swing=enemy_playback_swing(source);
+        }
     }
     if (presentation_sample) swing=presentation_sample->swing;
     else if (enemy_visual_capture_pose >= 0) {

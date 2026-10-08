@@ -3,7 +3,7 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
 {
     struct toy_game *g=&runtime->session->game_state;
     const struct rf_map_runtime_region *field=rf_map_runtime_find_region(&runtime->session->map_ops.runtime,"perf_low_area");
-    const struct rf_map_runtime_region *other=rf_map_runtime_find_region(&runtime->session->map_ops.runtime,"perf_enemy_area");
+    const struct rf_map_runtime_region *other=rf_map_runtime_find_region(&runtime->session->map_ops.runtime,"actor_actions_lab_area");
     if(!field || !other)return -1;
     int id=toy_game_add_ai(g,TOY_GAME_AI_LEVEL_1,field->origin_x,field->origin_z,"FOREIGN SENTINEL");
     struct toy_game_actor *foreign=toy_game_actor_by_id(g,id);

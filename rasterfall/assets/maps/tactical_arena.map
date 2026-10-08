@@ -7,41 +7,59 @@ region id=player_start kind=start min_x=0 max_x=0 min_z=-15084 max_z=-15084 attr
 object id=tactical_terminal kind=facility_terminal x=0 y=0 z=-14284 yaw=0 scale=1000 attr.collision=component
 render id=control_line kind=floor min_x=-17408 max_x=17408 min_z=-13284 max_z=-13220 height=0 color=4AC8CC
 region id=frontier_station_bounds kind=mission_area min_x=-16384 max_x=16384 min_z=-12288 max_z=12288
-collision id=cover_0 shape=box min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_0 shape=box min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_0_surface kind=platform min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 material=8A9A9F attr.collision_id=cover_0
 render id=cover_draw_0 kind=box min_x=13312 max_x=13722 min_z=-3584 max_z=-512 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_1 shape=box min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_1 shape=box min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_1_surface kind=platform min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 material=8A9A9F attr.collision_id=cover_1
 render id=cover_draw_1 kind=box min_x=13312 max_x=13722 min_z=512 max_z=3584 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_2 shape=box min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_2 shape=box min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_2_surface kind=platform min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 material=8A9A9F attr.collision_id=cover_2
 render id=cover_draw_2 kind=box min_x=9728 max_x=12800 min_z=-4096 max_z=-3738 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_3 shape=box min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_3 shape=box min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_3_surface kind=platform min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 material=8A9A9F attr.collision_id=cover_3
 render id=cover_draw_3 kind=box min_x=9728 max_x=12800 min_z=3738 max_z=4096 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_4 shape=box min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_4 shape=box min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_4_surface kind=platform min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 material=8A9A9F attr.collision_id=cover_4
 render id=cover_draw_4 kind=box min_x=8704 max_x=9062 min_z=-3072 max_z=-1536 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_5 shape=box min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_5 shape=box min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_5_surface kind=platform min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 material=8A9A9F attr.collision_id=cover_5
 render id=cover_draw_5 kind=box min_x=8704 max_x=9062 min_z=1536 max_z=3072 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_6 shape=box min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_6 shape=box min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_6_surface kind=platform min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 material=8A9A9F attr.collision_id=cover_6
 render id=cover_draw_6 kind=box min_x=-9303 max_x=-8945 min_z=-6743 max_z=-5514 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_7 shape=box min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_7 shape=box min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_7_surface kind=platform min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 material=8A9A9F attr.collision_id=cover_7
 render id=cover_draw_7 kind=box min_x=-7864 max_x=-7506 min_z=-794 max_z=435 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_8 shape=box min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_8 shape=box min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_8_surface kind=platform min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 material=8A9A9F attr.collision_id=cover_8
 render id=cover_draw_8 kind=box min_x=-8643 max_x=-8284 min_z=5612 max_z=6840 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_9 shape=box min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_9 shape=box min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_9_surface kind=platform min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 material=8A9A9F attr.collision_id=cover_9
 render id=cover_draw_9 kind=box min_x=-5514 max_x=-4285 min_z=-6600 max_z=-6241 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_10 shape=box min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_10 shape=box min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_10_surface kind=platform min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 material=8A9A9F attr.collision_id=cover_10
 render id=cover_draw_10 kind=box min_x=-4408 max_x=-4050 min_z=538 max_z=1766 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_11 shape=box min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_11 shape=box min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_11_surface kind=platform min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 material=8A9A9F attr.collision_id=cover_11
 render id=cover_draw_11 kind=box min_x=-4193 max_x=-3835 min_z=7480 max_z=8709 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_12 shape=box min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_12 shape=box min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_12_surface kind=platform min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 material=8A9A9F attr.collision_id=cover_12
 render id=cover_draw_12 kind=box min_x=164 max_x=1393 min_z=-8653 max_z=-8294 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_13 shape=box min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_13 shape=box min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_13_surface kind=platform min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 material=8A9A9F attr.collision_id=cover_13
 render id=cover_draw_13 kind=box min_x=-1188 max_x=-829 min_z=-451 max_z=778 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_14 shape=box min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_14 shape=box min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_14_surface kind=platform min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 material=8A9A9F attr.collision_id=cover_14
 render id=cover_draw_14 kind=box min_x=77 max_x=1306 min_z=6390 max_z=6748 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_15 shape=box min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_15 shape=box min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_15_surface kind=platform min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 material=8A9A9F attr.collision_id=cover_15
 render id=cover_draw_15 kind=box min_x=2954 max_x=3313 min_z=-7204 max_z=-5975 height=563 attr.base_y=0 color=8A9A9F
-collision id=cover_16 shape=box min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 collision=true visible=true walkable=false color=647881
+collision id=cover_16 shape=box min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 collision=true visible=true walkable=true color=647881
+surface id=cover_16_surface kind=platform min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 material=8A9A9F attr.collision_id=cover_16
 render id=cover_draw_16 kind=box min_x=4454 max_x=5683 min_z=-1132 max_z=-773 height=1126 attr.base_y=0 color=8A9A9F
-collision id=cover_17 shape=box min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 collision=true visible=true walkable=false color=647881
+collision id=cover_17 shape=box min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 collision=true visible=true walkable=true color=647881
+surface id=cover_17_surface kind=platform min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 material=8A9A9F attr.collision_id=cover_17
 render id=cover_draw_17 kind=box min_x=4009 max_x=5238 min_z=7163 max_z=7521 height=563 attr.base_y=0 color=8A9A9F
 collision id=observer_sill_col shape=box min_x=-17408 max_x=17408 min_z=-12600 max_z=-12350 height=512 attr.base_y=0 collision=true visible=false walkable=false
 render id=observer_sill kind=box min_x=-17408 max_x=17408 min_z=-12600 max_z=-12350 height=512 attr.base_y=0 color=536B78
@@ -103,147 +121,151 @@ render id=observer_glass_3_mullion_0 kind=box min_x=12656 max_x=12688 min_z=-125
 render id=observer_glass_3_pane_1 kind=sign min_x=12688 max_x=14312 min_z=-12475 max_z=-12475 height=-356 attr.height2=860 attr.style=6 color=B7C9CC
 render id=observer_glass_3_mullion_1 kind=box min_x=14312 max_x=14344 min_z=-12500 max_z=-12450 height=1760 attr.base_y=544 color=35464F
 render id=observer_glass_3_pane_2 kind=sign min_x=14344 max_x=15968 min_z=-12475 max_z=-12475 height=-356 attr.height2=860 attr.style=6 color=B7C9CC
-collision id=perimeter_west_col shape=box min_x=-17408 max_x=-17344 min_z=-16384 max_z=13312 height=8192 collision=true visible=false walkable=false
-render id=perimeter_west_glass_bottom kind=box min_x=-17408 max_x=-17344 min_z=-16384 max_z=13312 height=32 attr.base_y=0 color=35464F
-render id=perimeter_west_glass_top kind=box min_x=-17408 max_x=-17344 min_z=-16384 max_z=13312 height=2304 attr.base_y=2272 color=35464F
-render id=perimeter_west_glass_left kind=box min_x=-17408 max_x=-17344 min_z=-16384 max_z=-16352 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_right kind=box min_x=-17408 max_x=-17344 min_z=13280 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_0 kind=sign min_x=-17376 max_x=-17376 min_z=-16352 max_z=-14407 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_0 kind=box min_x=-17408 max_x=-17344 min_z=-14407 max_z=-14375 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_1 kind=sign min_x=-17376 max_x=-17376 min_z=-14375 max_z=-12429 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_1 kind=box min_x=-17408 max_x=-17344 min_z=-12429 max_z=-12397 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_2 kind=sign min_x=-17376 max_x=-17376 min_z=-12397 max_z=-10452 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_2 kind=box min_x=-17408 max_x=-17344 min_z=-10452 max_z=-10420 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_3 kind=sign min_x=-17376 max_x=-17376 min_z=-10420 max_z=-8474 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_3 kind=box min_x=-17408 max_x=-17344 min_z=-8474 max_z=-8442 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_4 kind=sign min_x=-17376 max_x=-17376 min_z=-8442 max_z=-6496 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_4 kind=box min_x=-17408 max_x=-17344 min_z=-6496 max_z=-6464 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_5 kind=sign min_x=-17376 max_x=-17376 min_z=-6464 max_z=-4519 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_5 kind=box min_x=-17408 max_x=-17344 min_z=-4519 max_z=-4487 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_6 kind=sign min_x=-17376 max_x=-17376 min_z=-4487 max_z=-2541 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_6 kind=box min_x=-17408 max_x=-17344 min_z=-2541 max_z=-2509 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_7 kind=sign min_x=-17376 max_x=-17376 min_z=-2509 max_z=-564 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_7 kind=box min_x=-17408 max_x=-17344 min_z=-564 max_z=-532 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_8 kind=sign min_x=-17376 max_x=-17376 min_z=-532 max_z=1414 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_8 kind=box min_x=-17408 max_x=-17344 min_z=1414 max_z=1446 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_9 kind=sign min_x=-17376 max_x=-17376 min_z=1446 max_z=3392 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_9 kind=box min_x=-17408 max_x=-17344 min_z=3392 max_z=3424 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_10 kind=sign min_x=-17376 max_x=-17376 min_z=3424 max_z=5369 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_10 kind=box min_x=-17408 max_x=-17344 min_z=5369 max_z=5401 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_11 kind=sign min_x=-17376 max_x=-17376 min_z=5401 max_z=7347 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_11 kind=box min_x=-17408 max_x=-17344 min_z=7347 max_z=7379 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_12 kind=sign min_x=-17376 max_x=-17376 min_z=7379 max_z=9324 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_12 kind=box min_x=-17408 max_x=-17344 min_z=9324 max_z=9356 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_13 kind=sign min_x=-17376 max_x=-17376 min_z=9356 max_z=11302 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_west_glass_mullion_13 kind=box min_x=-17408 max_x=-17344 min_z=11302 max_z=11334 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_west_glass_pane_14 kind=sign min_x=-17376 max_x=-17376 min_z=11334 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-collision id=perimeter_east_col shape=box min_x=17344 max_x=17408 min_z=-16384 max_z=13312 height=8192 collision=true visible=false walkable=false
-render id=perimeter_east_glass_bottom kind=box min_x=17344 max_x=17408 min_z=-16384 max_z=13312 height=32 attr.base_y=0 color=35464F
-render id=perimeter_east_glass_top kind=box min_x=17344 max_x=17408 min_z=-16384 max_z=13312 height=2304 attr.base_y=2272 color=35464F
-render id=perimeter_east_glass_left kind=box min_x=17344 max_x=17408 min_z=-16384 max_z=-16352 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_right kind=box min_x=17344 max_x=17408 min_z=13280 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_0 kind=sign min_x=17376 max_x=17376 min_z=-16352 max_z=-14407 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_0 kind=box min_x=17344 max_x=17408 min_z=-14407 max_z=-14375 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_1 kind=sign min_x=17376 max_x=17376 min_z=-14375 max_z=-12429 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_1 kind=box min_x=17344 max_x=17408 min_z=-12429 max_z=-12397 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_2 kind=sign min_x=17376 max_x=17376 min_z=-12397 max_z=-10452 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_2 kind=box min_x=17344 max_x=17408 min_z=-10452 max_z=-10420 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_3 kind=sign min_x=17376 max_x=17376 min_z=-10420 max_z=-8474 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_3 kind=box min_x=17344 max_x=17408 min_z=-8474 max_z=-8442 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_4 kind=sign min_x=17376 max_x=17376 min_z=-8442 max_z=-6496 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_4 kind=box min_x=17344 max_x=17408 min_z=-6496 max_z=-6464 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_5 kind=sign min_x=17376 max_x=17376 min_z=-6464 max_z=-4519 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_5 kind=box min_x=17344 max_x=17408 min_z=-4519 max_z=-4487 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_6 kind=sign min_x=17376 max_x=17376 min_z=-4487 max_z=-2541 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_6 kind=box min_x=17344 max_x=17408 min_z=-2541 max_z=-2509 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_7 kind=sign min_x=17376 max_x=17376 min_z=-2509 max_z=-564 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_7 kind=box min_x=17344 max_x=17408 min_z=-564 max_z=-532 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_8 kind=sign min_x=17376 max_x=17376 min_z=-532 max_z=1414 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_8 kind=box min_x=17344 max_x=17408 min_z=1414 max_z=1446 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_9 kind=sign min_x=17376 max_x=17376 min_z=1446 max_z=3392 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_9 kind=box min_x=17344 max_x=17408 min_z=3392 max_z=3424 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_10 kind=sign min_x=17376 max_x=17376 min_z=3424 max_z=5369 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_10 kind=box min_x=17344 max_x=17408 min_z=5369 max_z=5401 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_11 kind=sign min_x=17376 max_x=17376 min_z=5401 max_z=7347 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_11 kind=box min_x=17344 max_x=17408 min_z=7347 max_z=7379 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_12 kind=sign min_x=17376 max_x=17376 min_z=7379 max_z=9324 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_12 kind=box min_x=17344 max_x=17408 min_z=9324 max_z=9356 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_13 kind=sign min_x=17376 max_x=17376 min_z=9356 max_z=11302 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_east_glass_mullion_13 kind=box min_x=17344 max_x=17408 min_z=11302 max_z=11334 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_east_glass_pane_14 kind=sign min_x=17376 max_x=17376 min_z=11334 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-collision id=perimeter_south_col shape=box min_x=-17408 max_x=17408 min_z=-16384 max_z=-16320 height=8192 collision=true visible=false walkable=false
-render id=perimeter_south_glass_bottom kind=box min_x=-17344 max_x=17344 min_z=-16384 max_z=-16320 height=32 attr.base_y=0 color=35464F
-render id=perimeter_south_glass_top kind=box min_x=-17344 max_x=17344 min_z=-16384 max_z=-16320 height=2304 attr.base_y=2272 color=35464F
-render id=perimeter_south_glass_left kind=box min_x=-17344 max_x=-17312 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_right kind=box min_x=17312 max_x=17344 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_0 kind=sign min_x=-17312 max_x=-15306 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_0 kind=box min_x=-15306 max_x=-15274 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_1 kind=sign min_x=-15274 max_x=-13267 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_1 kind=box min_x=-13267 max_x=-13235 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_2 kind=sign min_x=-13235 max_x=-11229 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_2 kind=box min_x=-11229 max_x=-11197 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_3 kind=sign min_x=-11197 max_x=-9190 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_3 kind=box min_x=-9190 max_x=-9158 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_4 kind=sign min_x=-9158 max_x=-7152 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_4 kind=box min_x=-7152 max_x=-7120 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_5 kind=sign min_x=-7120 max_x=-5113 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_5 kind=box min_x=-5113 max_x=-5081 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_6 kind=sign min_x=-5081 max_x=-3074 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_6 kind=box min_x=-3074 max_x=-3042 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_7 kind=sign min_x=-3042 max_x=-1036 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_7 kind=box min_x=-1036 max_x=-1004 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_8 kind=sign min_x=-1004 max_x=1003 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_8 kind=box min_x=1003 max_x=1035 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_9 kind=sign min_x=1035 max_x=3041 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_9 kind=box min_x=3041 max_x=3073 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_10 kind=sign min_x=3073 max_x=5080 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_10 kind=box min_x=5080 max_x=5112 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_11 kind=sign min_x=5112 max_x=7119 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_11 kind=box min_x=7119 max_x=7151 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_12 kind=sign min_x=7151 max_x=9157 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_12 kind=box min_x=9157 max_x=9189 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_13 kind=sign min_x=9189 max_x=11196 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_13 kind=box min_x=11196 max_x=11228 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_14 kind=sign min_x=11228 max_x=13234 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_14 kind=box min_x=13234 max_x=13266 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_15 kind=sign min_x=13266 max_x=15273 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_south_glass_mullion_15 kind=box min_x=15273 max_x=15305 min_z=-16384 max_z=-16320 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_south_glass_pane_16 kind=sign min_x=15305 max_x=17312 min_z=-16352 max_z=-16352 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-collision id=perimeter_north_col shape=box min_x=-17408 max_x=17408 min_z=13248 max_z=13312 height=8192 collision=true visible=false walkable=false
-render id=perimeter_north_glass_bottom kind=box min_x=-17344 max_x=17344 min_z=13248 max_z=13312 height=32 attr.base_y=0 color=35464F
-render id=perimeter_north_glass_top kind=box min_x=-17344 max_x=17344 min_z=13248 max_z=13312 height=2304 attr.base_y=2272 color=35464F
-render id=perimeter_north_glass_left kind=box min_x=-17344 max_x=-17312 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_right kind=box min_x=17312 max_x=17344 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_0 kind=sign min_x=-17312 max_x=-15306 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_0 kind=box min_x=-15306 max_x=-15274 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_1 kind=sign min_x=-15274 max_x=-13267 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_1 kind=box min_x=-13267 max_x=-13235 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_2 kind=sign min_x=-13235 max_x=-11229 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_2 kind=box min_x=-11229 max_x=-11197 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_3 kind=sign min_x=-11197 max_x=-9190 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_3 kind=box min_x=-9190 max_x=-9158 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_4 kind=sign min_x=-9158 max_x=-7152 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_4 kind=box min_x=-7152 max_x=-7120 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_5 kind=sign min_x=-7120 max_x=-5113 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_5 kind=box min_x=-5113 max_x=-5081 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_6 kind=sign min_x=-5081 max_x=-3074 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_6 kind=box min_x=-3074 max_x=-3042 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_7 kind=sign min_x=-3042 max_x=-1036 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_7 kind=box min_x=-1036 max_x=-1004 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_8 kind=sign min_x=-1004 max_x=1003 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_8 kind=box min_x=1003 max_x=1035 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_9 kind=sign min_x=1035 max_x=3041 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_9 kind=box min_x=3041 max_x=3073 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_10 kind=sign min_x=3073 max_x=5080 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_10 kind=box min_x=5080 max_x=5112 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_11 kind=sign min_x=5112 max_x=7119 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_11 kind=box min_x=7119 max_x=7151 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_12 kind=sign min_x=7151 max_x=9157 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_12 kind=box min_x=9157 max_x=9189 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_13 kind=sign min_x=9189 max_x=11196 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_13 kind=box min_x=11196 max_x=11228 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_14 kind=sign min_x=11228 max_x=13234 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_14 kind=box min_x=13234 max_x=13266 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_15 kind=sign min_x=13266 max_x=15273 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
-render id=perimeter_north_glass_mullion_15 kind=box min_x=15273 max_x=15305 min_z=13248 max_z=13312 height=2272 attr.base_y=32 color=35464F
-render id=perimeter_north_glass_pane_16 kind=sign min_x=15305 max_x=17312 min_z=13280 max_z=13280 height=-868 attr.height2=1372 attr.style=6 color=B7C9CC
+collision id=perimeter_west_glass_col shape=box min_x=-17408 max_x=-17280 min_z=-16384 max_z=13312 height=512 attr.base_y=0 collision=true visible=false walkable=true
+surface id=perimeter_west_glass_surface kind=platform min_x=-17408 max_x=-17280 min_z=-16384 max_z=13312 height=512 material=35464F attr.collision_id=perimeter_west_glass_col
+render id=perimeter_west_glass_bottom kind=box min_x=-17408 max_x=-17280 min_z=-16384 max_z=13312 height=32 attr.base_y=0 color=35464F
+render id=perimeter_west_glass_top kind=box min_x=-17408 max_x=-17280 min_z=-16384 max_z=13312 height=512 attr.base_y=480 color=35464F
+render id=perimeter_west_glass_left kind=box min_x=-17408 max_x=-17280 min_z=-16384 max_z=-16352 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_right kind=box min_x=-17408 max_x=-17280 min_z=13280 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_0 kind=sign min_x=-17344 max_x=-17344 min_z=-16352 max_z=-14407 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_0 kind=box min_x=-17408 max_x=-17280 min_z=-14407 max_z=-14375 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_1 kind=sign min_x=-17344 max_x=-17344 min_z=-14375 max_z=-12429 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_1 kind=box min_x=-17408 max_x=-17280 min_z=-12429 max_z=-12397 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_2 kind=sign min_x=-17344 max_x=-17344 min_z=-12397 max_z=-10452 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_2 kind=box min_x=-17408 max_x=-17280 min_z=-10452 max_z=-10420 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_3 kind=sign min_x=-17344 max_x=-17344 min_z=-10420 max_z=-8474 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_3 kind=box min_x=-17408 max_x=-17280 min_z=-8474 max_z=-8442 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_4 kind=sign min_x=-17344 max_x=-17344 min_z=-8442 max_z=-6496 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_4 kind=box min_x=-17408 max_x=-17280 min_z=-6496 max_z=-6464 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_5 kind=sign min_x=-17344 max_x=-17344 min_z=-6464 max_z=-4519 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_5 kind=box min_x=-17408 max_x=-17280 min_z=-4519 max_z=-4487 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_6 kind=sign min_x=-17344 max_x=-17344 min_z=-4487 max_z=-2541 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_6 kind=box min_x=-17408 max_x=-17280 min_z=-2541 max_z=-2509 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_7 kind=sign min_x=-17344 max_x=-17344 min_z=-2509 max_z=-564 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_7 kind=box min_x=-17408 max_x=-17280 min_z=-564 max_z=-532 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_8 kind=sign min_x=-17344 max_x=-17344 min_z=-532 max_z=1414 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_8 kind=box min_x=-17408 max_x=-17280 min_z=1414 max_z=1446 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_9 kind=sign min_x=-17344 max_x=-17344 min_z=1446 max_z=3392 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_9 kind=box min_x=-17408 max_x=-17280 min_z=3392 max_z=3424 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_10 kind=sign min_x=-17344 max_x=-17344 min_z=3424 max_z=5369 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_10 kind=box min_x=-17408 max_x=-17280 min_z=5369 max_z=5401 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_11 kind=sign min_x=-17344 max_x=-17344 min_z=5401 max_z=7347 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_11 kind=box min_x=-17408 max_x=-17280 min_z=7347 max_z=7379 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_12 kind=sign min_x=-17344 max_x=-17344 min_z=7379 max_z=9324 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_12 kind=box min_x=-17408 max_x=-17280 min_z=9324 max_z=9356 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_13 kind=sign min_x=-17344 max_x=-17344 min_z=9356 max_z=11302 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_west_glass_mullion_13 kind=box min_x=-17408 max_x=-17280 min_z=11302 max_z=11334 height=480 attr.base_y=32 color=35464F
+render id=perimeter_west_glass_pane_14 kind=sign min_x=-17344 max_x=-17344 min_z=11334 max_z=13280 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+collision id=perimeter_east_glass_col shape=box min_x=17280 max_x=17408 min_z=-16384 max_z=13312 height=512 attr.base_y=0 collision=true visible=false walkable=true
+surface id=perimeter_east_glass_surface kind=platform min_x=17280 max_x=17408 min_z=-16384 max_z=13312 height=512 material=35464F attr.collision_id=perimeter_east_glass_col
+render id=perimeter_east_glass_bottom kind=box min_x=17280 max_x=17408 min_z=-16384 max_z=13312 height=32 attr.base_y=0 color=35464F
+render id=perimeter_east_glass_top kind=box min_x=17280 max_x=17408 min_z=-16384 max_z=13312 height=512 attr.base_y=480 color=35464F
+render id=perimeter_east_glass_left kind=box min_x=17280 max_x=17408 min_z=-16384 max_z=-16352 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_right kind=box min_x=17280 max_x=17408 min_z=13280 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_0 kind=sign min_x=17344 max_x=17344 min_z=-16352 max_z=-14407 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_0 kind=box min_x=17280 max_x=17408 min_z=-14407 max_z=-14375 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_1 kind=sign min_x=17344 max_x=17344 min_z=-14375 max_z=-12429 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_1 kind=box min_x=17280 max_x=17408 min_z=-12429 max_z=-12397 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_2 kind=sign min_x=17344 max_x=17344 min_z=-12397 max_z=-10452 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_2 kind=box min_x=17280 max_x=17408 min_z=-10452 max_z=-10420 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_3 kind=sign min_x=17344 max_x=17344 min_z=-10420 max_z=-8474 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_3 kind=box min_x=17280 max_x=17408 min_z=-8474 max_z=-8442 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_4 kind=sign min_x=17344 max_x=17344 min_z=-8442 max_z=-6496 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_4 kind=box min_x=17280 max_x=17408 min_z=-6496 max_z=-6464 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_5 kind=sign min_x=17344 max_x=17344 min_z=-6464 max_z=-4519 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_5 kind=box min_x=17280 max_x=17408 min_z=-4519 max_z=-4487 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_6 kind=sign min_x=17344 max_x=17344 min_z=-4487 max_z=-2541 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_6 kind=box min_x=17280 max_x=17408 min_z=-2541 max_z=-2509 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_7 kind=sign min_x=17344 max_x=17344 min_z=-2509 max_z=-564 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_7 kind=box min_x=17280 max_x=17408 min_z=-564 max_z=-532 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_8 kind=sign min_x=17344 max_x=17344 min_z=-532 max_z=1414 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_8 kind=box min_x=17280 max_x=17408 min_z=1414 max_z=1446 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_9 kind=sign min_x=17344 max_x=17344 min_z=1446 max_z=3392 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_9 kind=box min_x=17280 max_x=17408 min_z=3392 max_z=3424 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_10 kind=sign min_x=17344 max_x=17344 min_z=3424 max_z=5369 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_10 kind=box min_x=17280 max_x=17408 min_z=5369 max_z=5401 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_11 kind=sign min_x=17344 max_x=17344 min_z=5401 max_z=7347 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_11 kind=box min_x=17280 max_x=17408 min_z=7347 max_z=7379 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_12 kind=sign min_x=17344 max_x=17344 min_z=7379 max_z=9324 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_12 kind=box min_x=17280 max_x=17408 min_z=9324 max_z=9356 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_13 kind=sign min_x=17344 max_x=17344 min_z=9356 max_z=11302 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_east_glass_mullion_13 kind=box min_x=17280 max_x=17408 min_z=11302 max_z=11334 height=480 attr.base_y=32 color=35464F
+render id=perimeter_east_glass_pane_14 kind=sign min_x=17344 max_x=17344 min_z=11334 max_z=13280 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+collision id=perimeter_south_glass_col shape=box min_x=-17344 max_x=17344 min_z=-16384 max_z=-16256 height=512 attr.base_y=0 collision=true visible=false walkable=true
+surface id=perimeter_south_glass_surface kind=platform min_x=-17344 max_x=17344 min_z=-16384 max_z=-16256 height=512 material=35464F attr.collision_id=perimeter_south_glass_col
+render id=perimeter_south_glass_bottom kind=box min_x=-17344 max_x=17344 min_z=-16384 max_z=-16256 height=32 attr.base_y=0 color=35464F
+render id=perimeter_south_glass_top kind=box min_x=-17344 max_x=17344 min_z=-16384 max_z=-16256 height=512 attr.base_y=480 color=35464F
+render id=perimeter_south_glass_left kind=box min_x=-17344 max_x=-17312 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_right kind=box min_x=17312 max_x=17344 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_0 kind=sign min_x=-17312 max_x=-15306 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_0 kind=box min_x=-15306 max_x=-15274 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_1 kind=sign min_x=-15274 max_x=-13267 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_1 kind=box min_x=-13267 max_x=-13235 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_2 kind=sign min_x=-13235 max_x=-11229 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_2 kind=box min_x=-11229 max_x=-11197 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_3 kind=sign min_x=-11197 max_x=-9190 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_3 kind=box min_x=-9190 max_x=-9158 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_4 kind=sign min_x=-9158 max_x=-7152 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_4 kind=box min_x=-7152 max_x=-7120 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_5 kind=sign min_x=-7120 max_x=-5113 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_5 kind=box min_x=-5113 max_x=-5081 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_6 kind=sign min_x=-5081 max_x=-3074 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_6 kind=box min_x=-3074 max_x=-3042 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_7 kind=sign min_x=-3042 max_x=-1036 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_7 kind=box min_x=-1036 max_x=-1004 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_8 kind=sign min_x=-1004 max_x=1003 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_8 kind=box min_x=1003 max_x=1035 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_9 kind=sign min_x=1035 max_x=3041 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_9 kind=box min_x=3041 max_x=3073 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_10 kind=sign min_x=3073 max_x=5080 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_10 kind=box min_x=5080 max_x=5112 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_11 kind=sign min_x=5112 max_x=7119 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_11 kind=box min_x=7119 max_x=7151 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_12 kind=sign min_x=7151 max_x=9157 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_12 kind=box min_x=9157 max_x=9189 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_13 kind=sign min_x=9189 max_x=11196 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_13 kind=box min_x=11196 max_x=11228 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_14 kind=sign min_x=11228 max_x=13234 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_14 kind=box min_x=13234 max_x=13266 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_15 kind=sign min_x=13266 max_x=15273 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_south_glass_mullion_15 kind=box min_x=15273 max_x=15305 min_z=-16384 max_z=-16256 height=480 attr.base_y=32 color=35464F
+render id=perimeter_south_glass_pane_16 kind=sign min_x=15305 max_x=17312 min_z=-16320 max_z=-16320 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+collision id=perimeter_north_glass_col shape=box min_x=-17344 max_x=17344 min_z=13184 max_z=13312 height=512 attr.base_y=0 collision=true visible=false walkable=true
+surface id=perimeter_north_glass_surface kind=platform min_x=-17344 max_x=17344 min_z=13184 max_z=13312 height=512 material=35464F attr.collision_id=perimeter_north_glass_col
+render id=perimeter_north_glass_bottom kind=box min_x=-17344 max_x=17344 min_z=13184 max_z=13312 height=32 attr.base_y=0 color=35464F
+render id=perimeter_north_glass_top kind=box min_x=-17344 max_x=17344 min_z=13184 max_z=13312 height=512 attr.base_y=480 color=35464F
+render id=perimeter_north_glass_left kind=box min_x=-17344 max_x=-17312 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_right kind=box min_x=17312 max_x=17344 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_0 kind=sign min_x=-17312 max_x=-15306 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_0 kind=box min_x=-15306 max_x=-15274 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_1 kind=sign min_x=-15274 max_x=-13267 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_1 kind=box min_x=-13267 max_x=-13235 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_2 kind=sign min_x=-13235 max_x=-11229 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_2 kind=box min_x=-11229 max_x=-11197 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_3 kind=sign min_x=-11197 max_x=-9190 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_3 kind=box min_x=-9190 max_x=-9158 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_4 kind=sign min_x=-9158 max_x=-7152 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_4 kind=box min_x=-7152 max_x=-7120 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_5 kind=sign min_x=-7120 max_x=-5113 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_5 kind=box min_x=-5113 max_x=-5081 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_6 kind=sign min_x=-5081 max_x=-3074 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_6 kind=box min_x=-3074 max_x=-3042 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_7 kind=sign min_x=-3042 max_x=-1036 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_7 kind=box min_x=-1036 max_x=-1004 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_8 kind=sign min_x=-1004 max_x=1003 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_8 kind=box min_x=1003 max_x=1035 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_9 kind=sign min_x=1035 max_x=3041 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_9 kind=box min_x=3041 max_x=3073 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_10 kind=sign min_x=3073 max_x=5080 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_10 kind=box min_x=5080 max_x=5112 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_11 kind=sign min_x=5112 max_x=7119 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_11 kind=box min_x=7119 max_x=7151 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_12 kind=sign min_x=7151 max_x=9157 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_12 kind=box min_x=9157 max_x=9189 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_13 kind=sign min_x=9189 max_x=11196 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_13 kind=box min_x=11196 max_x=11228 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_14 kind=sign min_x=11228 max_x=13234 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_14 kind=box min_x=13234 max_x=13266 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_15 kind=sign min_x=13266 max_x=15273 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC
+render id=perimeter_north_glass_mullion_15 kind=box min_x=15273 max_x=15305 min_z=13184 max_z=13312 height=480 attr.base_y=32 color=35464F
+render id=perimeter_north_glass_pane_16 kind=sign min_x=15305 max_x=17312 min_z=13248 max_z=13248 height=-868 attr.height2=-420 attr.style=6 color=B7C9CC

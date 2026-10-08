@@ -52,6 +52,19 @@ static int game_unit_collision_logic_test(void)
     b->ground_y=RASTERFALL_HUMAN_HEIGHT_RFU-100; a->x=-1000;
     UNIT_CHECK(!toy_game_try_move_actor(&unit_game,a,1000,0),14);
     b->ground_y=0;
+    /* Playback is a real, solid actor, including a frozen sample. */
+    UNIT_CHECK(!toy_game_actor_playback(b,2,TOY_GAME_ANIM_MOVE,123),31);
+    a->x=-1000;
+    UNIT_CHECK(!toy_game_try_move_actor(&unit_game,a,1000,0),32);
+    toy_game_update_ai_teammates(&unit_game,16);
+    UNIT_CHECK(b->animation_clock_ms==123 && b->animation.time_ms==123 && !b->x,33);
+    UNIT_CHECK(!toy_game_actor_playback(b,1,TOY_GAME_ANIM_MOVE,123),34);
+    toy_game_update_ai_teammates(&unit_game,16);
+    UNIT_CHECK(b->animation_clock_ms==139 && b->animation.time_ms==139 && !b->x,35);
+    UNIT_CHECK(!toy_game_actor_playback(b,0,TOY_GAME_ANIM_IDLE,0),36);
+    b->animation_demo=1;
+    UNIT_CHECK(!toy_game_try_move_actor(&unit_game,a,1000,0),37);
+    b->animation_demo=0;
     memcpy(&probe,a,sizeof(probe));
     UNIT_CHECK(toy_game_try_move_actor(&unit_game,&probe,1000,0),15);
     UNIT_CHECK(toy_game_short_connection(&unit_game,-1000,0,1000,0,TOY_GAME_PLAYER_RADIUS,0),16);

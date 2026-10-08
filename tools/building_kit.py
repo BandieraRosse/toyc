@@ -33,12 +33,14 @@ class BuildingKit:
 
     def window(self, name, axis, at, start, end, bottom, top, *,
                frame=32, depth=64, max_pane=2048, color="B7C9CC",
-               frame_color="35464F", collision=True):
+               frame_color="35464F", collision=True, walk=False):
         """Fill an existing opening; all input heights are ground-relative RFU.
 
         Only the legacy SIGN output uses world Y (ground=-900). Frame and
         optional collision use building heights. This does not cut a wall.
         """
+        if walk and not collision:
+            raise ValueError("walkable glass requires physical collision")
         if (axis not in ("x", "z") or frame <= 0 or depth <= 0 or
                 max_pane <= 0 or end-start <= 2*frame or top-bottom <= 2*frame):
             raise ValueError("invalid window opening or frame")
@@ -57,7 +59,9 @@ class BuildingKit:
         if clear < count:
             raise ValueError("window divisions leave no clear pane")
         if collision:
-            self.lines.append(f"collision id={name}_col shape=box {bounds(start,end)} height={top} attr.base_y={bottom} collision=true visible=false walkable=false")
+            self.lines.append(f"collision id={name}_col shape=box {bounds(start,end)} height={top} attr.base_y={bottom} collision=true visible=false walkable={str(walk).lower()}")
+            if walk:
+                self.lines.append(f"surface id={name}_surface kind=platform {bounds(start,end)} height={top} material={frame_color} attr.collision_id={name}_col")
         rail("bottom", start, end, bottom, bottom+frame)
         rail("top", start, end, top-frame, top)
         rail("left", start, start+frame, bottom+frame, top-frame)

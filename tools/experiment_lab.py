@@ -4,6 +4,7 @@ import argparse
 import re
 from pathlib import Path
 from lab_computer import generate as computer
+from building_kit import BuildingKit
 
 PALETTE = {"model": ("9FB4FF", 1), "animation": ("79E8C5", 2),
            "lighting": ("FFD283", 3), "performance": ("FFAB78", 4)}
@@ -69,7 +70,12 @@ def generate(name, x, z, category, enclosure, width=10240, depth=9216,
         walls = [(-hx,-hx+128,-hz,hz),(hx-128,hx,-hz,hz),(-hx+128,hx-128,-hz,-hz+128),
                  (-hx+128,-768,hz-128,hz),(768,hx-128,hz-128,hz)]
         for i,b in enumerate(walls):
-            add("collision", f"_wall_{i}", shape="box", **dict(zip(bounds,b)), height=650, visible="true", collision="true", color="6B8E92")
+            a,c,d,e=b
+            glass=[]
+            axis,at,start,end=("z",(a+c)//2,d,e) if c-a==128 else ("x",(d+e)//2,a,c)
+            BuildingKit(glass).window(f"{name}_wall_{i}",axis,at,start,end,
+                                      0,512,depth=128,walk=True)
+            records.extend(line+f" attr.lab={lab}" for line in glass)
     elif enclosure == "backdrop":
         add("render", "_backdrop", kind="wall", min_x=-hx+64, max_x=hx-64, min_z=-hz+64, max_z=-hz+64, height=4400, color="65717D")
     bx, bz = hx-768, hz-768

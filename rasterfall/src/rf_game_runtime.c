@@ -1219,6 +1219,8 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_outpost_table.inc"
 #include "rf_render_terminal.inc"
 #include "rf_tactical_terminal.inc"
+#include "rf_experiment_terminal.inc"
+#include "dev-tests/rf_experiment_native_test.inc"
 #include "rf_tactical_effects.inc"
 #include "rf_device_runtime.inc"
 #include "rf_mesh_weaver_runtime.inc"
@@ -1227,6 +1229,19 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_mesh_weaver_performance.inc"
 #include "rf_performance_lab.inc"
 #include "rf_combat_lab.inc"
+static const char *rf_exp_combat_name(int preset){return rf_combat_names[preset];}
+static int rf_exp_combat_action(struct rf_game_runtime *runtime,int action)
+{
+    if(action==0) {
+        if(rf_combat_lab.running)rf_combat_finish(runtime,3);
+        rf_combat_lab.menu_open=rf_combat_lab.result_open=0;
+        if(rf_combat_start(runtime,rf_exp_ui.preset,1,1337,0)<0)return -1;
+    } else if(action==1) {
+        if(rf_combat_lab.running)rf_combat_finish(runtime,3);
+        rf_combat_lab.menu_open=rf_combat_lab.result_open=0;
+    } else if(action==2)rf_combat_lab.result_open=1;
+    rf_exp_ui.open=0;return 0;
+}
 #include "rf_idle_rifle_lab.inc"
 #include "dev-tests/rf_idle_rifle_lab_test.inc"
 #include "dev-tests/rf_combat_lab_test.inc"
@@ -1236,6 +1251,17 @@ static void fill_rect(struct toy_surface *surface, int x, int y,
 #include "rf_player_runtime.inc"
 #include "rf_rts_runtime.inc"
 #include "rf_performance_live.inc"
+static int rf_exp_performance_action(struct rf_game_runtime *runtime,int action)
+{
+    static const int scenes[]={0,1,2,3,6,7};
+    if(action==0) {
+        rf_perf_lab.selected=scenes[rf_exp_ui.preset];rf_perf_lab.isolated=0;
+        rf_perf_lab.interference=1;
+        if(rf_perf_lab_start(runtime)<0)return -1;
+    } else if(action==1)rf_perf_lab.result_open=1;
+    rf_exp_ui.open=0;
+    return 0;
+}
 #include "rf_ui_performance.inc"
 #include "dev-tests/rf_experiment_lab_test.inc"
 
@@ -2879,21 +2905,20 @@ int rf_game_update(struct rf_game_runtime *runtime,
     if(rf_perf_lab.running && rf_perf_lab_live() && !runtime->lifecycle_paused) {
         perf_step_started=rf_core_clock_now_us();
         game_session->game_state.update_profile=&rf_perf_live.profile;
-        rf_perf_live_before_step(runtime);
     }
-    rf_idle_lab_step(runtime,dt_ms);
     if(rf_combat_lab.running && !runtime->lifecycle_paused) {
         combat_step_started=rf_core_clock_now_us();
         game_session->game_state.update_profile=&rf_combat_lab.profile;
         rf_combat_before_step(runtime,dt_ms);
     }
 
+    rf_idle_lab_step(runtime,dt_ms);
     rasterfall_effects_update(game_effects, dt_ms);
     if (command) {
         runtime->command = *command;
         if(!runtime->lifecycle_paused)rasterfall_session_tactical_step(game_session,game_camera,
             &runtime->command,dt_ms==FIXED_STEP_US/1000?FIXED_STEP_US:dt_ms*1000,
-            rf_tac_ui.open || runtime->rts_active);
+            rf_tac_ui.open || rf_exp_ui.open || runtime->rts_active);
         if (!runtime->lifecycle_paused) {
             if (game_session->game_state.state == TOY_GAME_PLAYING &&
                 !(is_client && (!game_net->connected || !game_net->world_ready))) {
@@ -3135,6 +3160,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
             runtime->session->world_id == RASTERFALL_WORLD_FRONTIER_STATION_01);
     else if (state->state == TOY_GAME_WON)
         draw_level_won_panel(canvas, runtime->net.mode == RASTERFALL_NET_CLIENT);
+    else if(rf_exp_ui.open)rf_exp_draw(canvas,runtime);
     else if(rf_tac_ui.open)rf_tac_ui_draw(canvas,runtime);
     else if(rf_combat_modal())rf_combat_draw(canvas,runtime->rts_active);
     else if (rf_perf_lab.running || rf_perf_lab.menu_open || rf_perf_lab.result_open)
@@ -3178,9 +3204,7 @@ static void rf_game_shared_ui_layout(void *context, struct rasterfall_canvas *ca
                 canvas->height * 3 / 4,
                 rf_lab_definitions[rf_showcase_near-1].gpu_only && !rf_render_terminal.scene_backend ?
                     "GPU SCENE REQUIRED" :
-                rf_showcase_near-1==RF_LAB_ELECTRONICS ? "E  OFF / 600 / 1200 / 1800 RPM" :
-                rf_showcase_near-1==RF_LAB_IDLE_RIFLE ? "E  IDLE / WALK / TARGET / OFF" :
-                rf_labs.requested[rf_showcase_near-1] ? "E  DISABLE EXHIBIT" : "E  ENABLE EXHIBIT", 0xC7F2EE);
+                "E  EXPERIMENT CONTROL", 0xC7F2EE);
         if ((rf_labs.requested[RF_LAB_MODEL] && rasterfall_render_outpost_model_lab_status()<0) ||
             (rf_labs.requested[RF_LAB_RIFLE_CYCLE] && rasterfall_render_outpost_rifle_cycle_status()<0) ||
             (rf_labs.requested[RF_LAB_WEAPON_CYCLE] && rasterfall_render_outpost_weapon_cycle_status()<0))
@@ -4084,7 +4108,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
     int64_t runtime_started = rf_core_clock_now_us();
     memset(&rf_perf_lab, 0, sizeof(rf_perf_lab));
     rf_combat_init(&options);
-    memset(&rf_idle_lab,0,sizeof(rf_idle_lab));
+
     rf_labs_reset();
     rf_perf_lab.isolated=1;
     {
@@ -4120,6 +4144,7 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             !strcmp(mode,"terminal")?RF_PLAYER_UI_TERMINAL:RF_PLAYER_UI_PLAYER;
     }
     rf_weaver_present_reset();
+    rf_exp_ui.gpu=options.gpu_scene_play;
     rf_labs_diagnostic_view(options.gpu_normal_view);
 #ifdef TOYC_WINDOWS
     rf_scene_perf_init(options.gpu_scene_play && options.gpu_normal_view && !options.frame_audit && !frame_limit);
@@ -4329,6 +4354,8 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         struct toy_game_actor *local_actor;
         if(session.world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)
             memset(game.enemies, 0, sizeof(game.enemies));
+        rf_exp_diagnostic(&session,options.gpu_normal_view);
+        rf_weaver_configure(&session,net.mode==RASTERFALL_NET_OFF);
         memset(&camera, 0, sizeof(camera));
         if (!strcmp(options.gpu_normal_view, "interior")) {
             /* Inside the west maintenance building, facing its beams,
@@ -4366,7 +4393,9 @@ int rf_game_runtime_run(const struct rf_game_config *config)
             camera.x=2200;camera.z=3000;camera.y=-420;camera.sy=800;camera.cy=639;
         } else if (!strncmp(options.gpu_normal_view,"performance-",12)) {
             rf_performance_terminal_camera(&session,&camera);
-            if(!strcmp(options.gpu_normal_view,"performance-menu")) rf_perf_lab.menu_open=1;
+            if(!strcmp(options.gpu_normal_view,"performance-menu")) {
+                rf_exp_ui.open=1;rf_exp_ui.session=&session;rf_exp_ui.category=3;rf_exp_ui.preset=0;
+            }
         } else if (!strncmp(options.gpu_normal_view, "lab-computer",12)) {
             rf_lab_computer_camera(&session,&camera,options.gpu_normal_view);
             rf_labs.requested[RF_LAB_INFECTED_POSES]=!strcmp(options.gpu_normal_view,"lab-computer-close");
@@ -5019,7 +5048,7 @@ startup_again:
             __printf("PERF-LAB start scene=%d spawned=%d\n",
                 rf_perf_lab.selected,rf_perf_lab.spawned);
         }
-        if (rf_perf_lab.running &&
+        if (rf_perf_lab.running && rf_perf_lab.presented &&
             (rf_core_clock_now_us()-rf_perf_lab.started_us >= rf_perf_lab_duration() ||
              (rf_perf_lab.selected==8 && rf_perf_live_result.done))) {
             if (rf_perf_lab_finish(&game_runtime,0) < 0) {
@@ -5210,7 +5239,7 @@ startup_again:
                                    RASTERFALL_CONSOLE_INFO,
                                    "player terminal toggled");
             pointer_lock_requested=rf_core_set_pointer_lock(&core,!developer_console.open&&!game_runtime.rts_active&&
-                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open && !rf_tac_ui.open&&!game_runtime.comms_focus)>0;
+                !rf_weaver_terminal.open&&!rf_render_terminal.open&&!rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open&&!game_runtime.comms_focus)>0;
             rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             resumed=1;
         }
@@ -5436,7 +5465,7 @@ startup_again:
         if(game.state!=TOY_GAME_PLAYING || session.pose_editor.active)
             game_runtime.comms_focus=0;
         if(!paused && !developer_console.open && !managed_terminal.open && !game_runtime.gui.active &&
-           !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open &&
+           !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
            game.state==TOY_GAME_PLAYING && !session.pose_editor.active &&
            !rf_combat_modal() && !rf_perf_lab.menu_open && !rf_perf_lab.result_open) {
             if(rf_player_comms_input(&game_runtime,&developer_console,&input,&events,renderer.surface.width,renderer.surface.height)) {
@@ -5447,16 +5476,25 @@ startup_again:
             action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_HIDE);
             action_consume(&input,pending_physical_edges,RF_ACTION_COMMS_ANSWER);
         }
-        if(!paused && session.tactical && rf_tac_ui_input(&game_runtime,renderer.surface.width,renderer.surface.height,
+        if(!paused && rf_exp_input(&game_runtime,renderer.surface.width,renderer.surface.height,
             input.pointer_x,input.pointer_y,events.button_pressed && events.button==BTN_LEFT,
-            action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_INTERACT),&events)) {
+            action_pressed(&input,RF_ACTION_CANCEL),&events)) {
             camera=game_runtime.camera;
-            int lock=!rf_tac_ui.open && !game_runtime.rts_active;
+            int lock=!rf_exp_ui.open && !game_runtime.rts_active;
             if(lock!=pointer_lock_requested)pointer_lock_requested=rf_core_set_pointer_lock(&core,lock)>0 && lock;
             rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
         }
-        rf_weaver_terminal.near = !rf_weaver_terminal.open && !rf_table.open && !rf_tac_ui.open &&
+        if(!paused && session.tactical && rf_tac_ui_input(&game_runtime,renderer.surface.width,renderer.surface.height,
+            input.pointer_x,input.pointer_y,events.button_pressed && events.button==BTN_LEFT,
+            action_pressed(&input,RF_ACTION_CANCEL),action_pressed(&input,RF_ACTION_INTERACT),&events)) {
+            camera=game_runtime.camera;
+            int lock=!rf_tac_ui.open && !rf_exp_ui.open && !game_runtime.rts_active;
+            if(lock!=pointer_lock_requested)pointer_lock_requested=rf_core_set_pointer_lock(&core,lock)>0 && lock;
+            rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
+            fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
+        }
+        rf_weaver_terminal.near = !rf_weaver_terminal.open && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
             !rf_render_terminal.open && !paused && !game_runtime.rts_active &&
             !rf_combat_modal() && !rf_combat_lab.running && !rf_perf_lab.running &&
             !rf_perf_lab.menu_open && !rf_perf_lab.result_open &&
@@ -5465,7 +5503,7 @@ startup_again:
             (game_runtime.player_ui.mode<RF_PLAYER_UI_EXPERIMENT ||
              !(session.weaver_item_serial && session.highlight_index == session.weaver_item_index)) &&
             rf_weaver_near(&session, camera.x, camera.z);
-        rf_table.near = !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+        rf_table.near = !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             !paused && !game_runtime.rts_active &&
             net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
@@ -5477,7 +5515,7 @@ startup_again:
             rf_labs_reset();
         rf_showcase_near = 0;
         rf_combat_lab.control_near=rf_combat_lab.result_near=0;
-        if(!paused && !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !rf_perf_lab.running &&
+        if(!paused && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !rf_perf_lab.running &&
            !rf_perf_lab.menu_open && !rf_perf_lab.result_open && !game_runtime.rts_active &&
            net.mode==RASTERFALL_NET_OFF && session.world_id==RASTERFALL_WORLD_OUTPOST) {
             rf_combat_lab.control_near=rf_perf_lab_near_object(&session,"combat_control_terminal",camera.x,camera.z);
@@ -5495,13 +5533,13 @@ startup_again:
             rf_perf_lab.result_near = rf_perf_lab_near_object(
                 &session, "perf_result_terminal", camera.x, camera.z);
         }
-        if (!rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
+        if (!rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
             !game_runtime.rts_active && net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING)
             rf_render_terminal.near = rf_render_terminal_near(
                 &session, camera.x, camera.z) && rf_player_object_facing(&game_runtime,"main_terminal");
-        if (!rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
+        if (!rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open && !paused &&
             !game_runtime.rts_active &&
             net.mode==RASTERFALL_NET_OFF &&
             session.world_id==RASTERFALL_WORLD_OUTPOST &&
@@ -5515,7 +5553,9 @@ startup_again:
                 pointer_lock_requested=rf_core_set_pointer_lock(&core,1)>0;resumed=1;
             } else {
                 if(toy_input_pressed(&input,KEY_F2)) {
-                    if(rf_combat_lab.result_open){rf_combat_lab.result_open=0;rf_combat_lab.menu_open=1;}
+                    if(rf_combat_lab.result_open){rf_combat_lab.result_open=0;
+                        rf_exp_ui.open=1;rf_exp_ui.session=&session;rf_exp_ui.category=4;
+                        rf_exp_ui.preset=rf_combat_lab.selected;rf_exp_ui.dropdown=-1;}
                     else rf_combat_lab.observe=!rf_combat_lab.observe;
                     pending_key_edges[KEY_F2]=0;input.key_pressed[KEY_F2]=0;
                 }
@@ -5540,7 +5580,10 @@ startup_again:
             action_consume(&input,pending_physical_edges,RF_ACTION_INTERACT);
             pending_key_edges[KEY_E]=pending_key_edges[KEY_T]=0;input.key_pressed[KEY_E]=input.key_pressed[KEY_T]=0;
             if(rf_combat_lab.running){rf_combat_finish(&game_runtime,3);camera=game_runtime.camera;}
-            else {rf_combat_lab.menu_open=rf_combat_lab.control_near;rf_combat_lab.result_open=!rf_combat_lab.menu_open;}
+            else if(rf_combat_lab.control_near) {
+                rf_exp_ui.open=1;rf_exp_ui.session=&session;rf_exp_ui.category=4;
+                rf_exp_ui.preset=rf_combat_lab.selected;rf_exp_ui.dropdown=-1;
+            } else rf_combat_lab.result_open=1;
             rf_core_set_pointer_lock(&core,0);pointer_lock_requested=0;
             pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
         } else if (rf_perf_lab.running) {
@@ -5617,7 +5660,12 @@ startup_again:
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             pending_key_edges[KEY_E] = 0;
             input.key_pressed[KEY_E] = 0;
-            rf_perf_lab.menu_open = rf_perf_lab.control_near;
+            if(rf_perf_lab.control_near) {
+                rf_exp_ui.open=1;rf_exp_ui.category=3;rf_exp_ui.preset=0;
+                rf_exp_ui.dropdown=-1;rf_exp_ui.hover=-1;rf_exp_ui.session=&session;
+                rf_core_set_pointer_lock(&core,0);pointer_lock_requested=0;
+            }
+            rf_perf_lab.menu_open = 0;
             rf_perf_lab.result_open = rf_perf_lab.result_near &&
                 !rf_perf_lab.control_near;
             rf_core_set_pointer_lock(&core, 0);
@@ -5657,7 +5705,7 @@ startup_again:
             fire_edge = shove_edge = 0;
             pointer_turn_pending = pointer_pitch_pending = 0;
         } else if (!paused && !game_runtime.rts_active && !developer_console.open &&
-            !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open &&
+            !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open &&
             rasterfall_session_frontier_near(&session,1)>=0 &&
             (!session.frontier.captured[rasterfall_session_frontier_near(&session,1)] ||
              rasterfall_session_frontier_near(&session,1)!=0) &&
@@ -5760,7 +5808,7 @@ startup_again:
         } else if ((rf_render_terminal.near &&
                     action_pressed(&input, RF_ACTION_INTERACT)) ||
                    (action_pressed(&input, RF_ACTION_TERMINAL) &&
-                    !rf_table.open && !rf_tac_ui.open && !paused &&
+                    !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !paused &&
                     !developer_console.open && !managed_terminal.open &&
                     !game_runtime.gui.active &&
                     net.mode == RASTERFALL_NET_OFF &&
@@ -5786,7 +5834,18 @@ startup_again:
             input.key_pressed[KEY_E]=0;
             action_consume(&input, pending_physical_edges, RF_ACTION_INTERACT);
             int lab=rf_showcase_near-1;
-            if(lab==RF_LAB_IDLE_RIFLE && net.mode!=RASTERFALL_NET_OFF) {
+            if(rf_exp_character_lab(lab) || lab==RF_LAB_LIGHTING || lab==RF_LAB_ELECTRONICS) {
+                rf_exp_ui.open=1;rf_exp_ui.dropdown=-1;rf_exp_ui.hover=-1;
+                rf_exp_ui.session=&session;
+                rf_exp_ui.category=lab==RF_LAB_LIGHTING?1:lab==RF_LAB_ELECTRONICS?2:0;
+                rf_exp_ui.preset=lab==RF_LAB_MODEL?4:lab==RF_LAB_WEAPON_CYCLE?3:lab==RF_LAB_RIFLE_CYCLE?2:1;
+                if(rf_exp_ui.category)rf_exp_ui.preset=0;
+                rf_exp_ui.animation=lab==RF_LAB_ACTOR_WALK?1:0;
+                rf_exp_ui.mode=lab==RF_LAB_IDLE_RIFLE?2:0;
+                rf_exp_ui.px=renderer.surface.width/2;rf_exp_ui.py=renderer.surface.height/2;
+                rf_core_set_pointer_lock(&core,0);pointer_lock_requested=0;
+                pointer_turn_pending=pointer_pitch_pending=fire_edge=shove_edge=0;resumed=1;
+            } else if(lab==RF_LAB_IDLE_RIFLE && net.mode!=RASTERFALL_NET_OFF) {
                 session.banner_text="LIVE AI LAB AVAILABLE OFFLINE";session.banner_ms=2200;
             } else if (!rf_lab_definitions[lab].gpu_only || options.gpu_scene_play)
                 rf_lab_control(lab);
@@ -5804,7 +5863,7 @@ startup_again:
             pointer_turn_pending = pointer_pitch_pending = 0;
             resumed = 1;
         }
-        if(device_modal_was_open||rf_render_terminal.open||rf_table.open) {
+        if(device_modal_was_open||rf_render_terminal.open||rf_table.open||rf_exp_ui.open) {
             rf_player_block_input(&game_runtime,&input,pending_key_edges,pending_physical_edges,&events);
             fire_edge=shove_edge=pointer_turn_pending=pointer_pitch_pending=0;resumed=1;
         }
@@ -5826,10 +5885,10 @@ startup_again:
             }
         }
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
-            rf_tac_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_tac_ui.open || rf_exp_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             pending_key_edges[KEY_M] = 0;
         if (paused || rf_combat_modal() || (rf_combat_lab.running && rf_combat_lab.observe) || developer_console.open ||
-            rf_tac_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
+            rf_tac_ui.open || rf_exp_ui.open || rf_table.open || rf_render_terminal.open || rf_weaver_terminal.open)
             action_consume(&input, pending_physical_edges, RF_ACTION_COMMAND_MODE);
         {
             int deploy_world=rf_device_take_deploy(&game_runtime);
@@ -5849,7 +5908,7 @@ startup_again:
         }
         if(game_runtime.player_controls.requested_view==game_runtime.rts_active)game_runtime.player_controls.requested_view=-1;
         if (!paused && !rf_combat_modal() && !(rf_combat_lab.running && rf_combat_lab.observe) &&
-            !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+            !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             game.state == TOY_GAME_PLAYING &&
             ((!developer_console.open && action_pressed(&input, RF_ACTION_COMMAND_MODE)) ||
              game_runtime.player_controls.requested_view>=0)) {
@@ -5951,17 +6010,17 @@ startup_again:
         }
         /* 射击输入：每帧只取一次边沿（恢复点击帧不开火） */
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open &&
+            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open && !resumed &&
             events.button_pressed && events.button == BTN_LEFT)
             fire_edge = 1;
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !paused && !rf_table.open && !rf_tac_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
+            !rf_perf_lab.result_open && !paused && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open && !rf_render_terminal.open && !rf_weaver_terminal.open &&
             !resumed && action_pressed(&input, RF_ACTION_FIRE_KEY))
             fire_edge = 1;
         /* 推开输入：右键与开火同一套边沿锁存（恢复点击帧不算） */
         if (!rf_combat_modal() && !rf_perf_lab.running && !rf_perf_lab.menu_open &&
-            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open &&
+            !rf_perf_lab.result_open && !game_runtime.rts_active && !paused && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open && !resumed &&
             events.button_pressed && events.button == BTN_RIGHT)
             shove_edge = 1;
@@ -6054,13 +6113,13 @@ startup_again:
         }
         /* Some compositors acknowledge locked asynchronously. Relative
          * events received after our accepted request are already valid. */
-        if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
+        if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
             !rf_render_terminal.open && !rf_weaver_terminal.open &&
             (input.pointer_locked || pointer_lock_requested) &&
             events.relative_moved) {
             accumulate_mouse_look(&pointer_turn_pending, &pointer_pitch_pending,
                                   input.relative_x, input.relative_y, &settings);
-        } else if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
+        } else if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
                    !rf_render_terminal.open && !rf_weaver_terminal.open &&
                    use_absolute_mouse_look(pointer_lock_requested,
                                            &input, &events)) {
@@ -6128,7 +6187,7 @@ startup_again:
                 if (game.state == TOY_GAME_PLAYING &&
                     !(net.mode == RASTERFALL_NET_CLIENT &&
                       (!net.connected || !net.world_ready))) {
-                    if (rf_weaver_terminal.open || rf_render_terminal.open || rf_tac_ui.open || rf_table.open || game_runtime.comms_focus ||
+                    if (rf_weaver_terminal.open || rf_render_terminal.open || rf_tac_ui.open || rf_exp_ui.open || rf_table.open || game_runtime.comms_focus ||
                         resumed || rf_perf_lab.running || (rf_combat_lab.running && rf_combat_lab.observe))
                         memset(&command, 0, sizeof(command));
                     else
@@ -6165,7 +6224,7 @@ startup_again:
                     rf_game_update(&game_runtime, &command,
                                    FIXED_STEP_US / 1000);
                     rf_player_story_tick(&game_runtime,FIXED_STEP_US/1000,
-                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open);
+                        !developer_console.open && !rf_weaver_terminal.open && !rf_render_terminal.open && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open);
                     rf_weaver_diag_step(&session, FIXED_STEP_US / 1000);
                     if (options.gpu_wave_repro) {
                         static int previous_phase = -1, previous_alive = -1;
@@ -6245,7 +6304,7 @@ startup_again:
         if (logic_steps > 0)
             rasterfall_motion_capture(&motion_current, &session.game_state);
         if (motion_world_generation != session.scene_local.world_generation) {
-            if (!rf_perf_lab.running && !rf_perf_lab.returning) rf_labs_reset();
+            if (!session.experiments && !rf_perf_lab.running && !rf_perf_lab.returning) rf_labs_reset();
             rf_perf_lab.returning=0;
             rasterfall_motion_capture(&motion_current, &session.game_state);
             motion_previous = motion_current;
@@ -6290,6 +6349,10 @@ startup_again:
         if(preview_work){last_time=rf_core_begin_tick(&core);accumulator=0;}
         if(rf_core_should_exit(&core))break;
 #endif
+        if(rf_exp_native_test(&game_runtime,rendered_frames,renderer.surface.width,renderer.surface.height)<0) {
+            __fprintf(2,"EXPERIMENT-NATIVE failed at frame=%d\n",rendered_frames);
+            scene_runtime_failed=1;break;
+        }
         if (options.frame_audit || options.gpu_scene_world_preview)
             rf_gpu_scene_enemy_begin(session.scene_local.frame_id+1,
                 session.scene_local.world_generation);
@@ -6319,7 +6382,7 @@ startup_again:
              * key_down 无法清零，角色会持续移动不受控制（粘键）。 */
             if (rf_core_poll_events_timeout(&core, 1000) < 0) break;
             stall_events = *rf_core_events(&core);
-            if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open &&
+            if (!game_runtime.rts_active && !paused && !rf_combat_modal() && !rf_table.open && !rf_tac_ui.open && !rf_exp_ui.open &&
                 !rf_render_terminal.open && !rf_weaver_terminal.open &&
                 (input.pointer_locked || pointer_lock_requested) &&
                 stall_events.relative_moved)
@@ -6440,9 +6503,9 @@ startup_again:
             }
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab") &&
                 (options.gpu_frame_capture || options.gpu_normal_fixed_tick)) {
-                rf_lab_camera_position(&session,&game_runtime.camera,"rf_model_lab_area",216,2744);
-                game_runtime.camera.y=650;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
-                game_runtime.camera.pitch_sy=-384;game_runtime.camera.pitch_cy=949;
+                rf_lab_camera_position(&session,&game_runtime.camera,"actor_actions_lab_area",0,9956);
+                game_runtime.camera.y=10500;game_runtime.camera.sy=0;game_runtime.camera.cy=-1024;
+                game_runtime.camera.pitch_sy=-772;game_runtime.camera.pitch_cy=672;
             }
             if (options.gpu_normal_view && !strcmp(options.gpu_normal_view,"model-lab")) {
                 const char *view=getenv("RF_GPU_CHARACTER_VIEW");
@@ -6465,8 +6528,8 @@ startup_again:
                         if (radius>4096) radius=4096;
                     }
                     rf_lab_camera_position(&session,&game_runtime.camera,"rf_model_lab_area",
-                        -384+(station%2)*1200+(int)(sin(angle)*radius),
-                        344-(station/2)*1500+(int)(cos(angle)*radius));
+                        -3600+(station%5)*1800+(int)(sin(angle)*radius),
+                        2400-(station/5)*2100+(int)(cos(angle)*radius));
                     game_runtime.camera.y=station>=2 ? -320 : -114;
                     game_runtime.camera.sy=(int)(-sin(angle)*1024);
                     game_runtime.camera.cy=(int)(-cos(angle)*1024);
@@ -6526,23 +6589,26 @@ startup_again:
             if(game_runtime.render_context.floor_view_active)
                 game_runtime.render_context.cutaway_floor=
                     game_runtime.rts.floors[game_runtime.rts.focus_floor];
+            rf_exp_sync(&session);
             rf_labs_tick(session.world_id,paused ||
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play,
                 options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
                     (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us());
             rf_labs_display(session.world_id,paused ||
                 (rf_perf_lab.running && !rf_perf_lab.interference),options.gpu_scene_play);
+            rf_exp_sync(&session);
             rf_weaver_perf_before_frame(&session,rendered_frames);
             rf_weaver_present_tick(&session,
                 options.gpu_normal_fixed_tick || options.gpu_frame_capture ?
-                    (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us(),paused);
+                    (uint64_t)(rendered_frames+1)*16000 : (uint64_t)rf_core_clock_now_us(),
+                paused || (session.experiments && session.experiments->groups[2].paused));
             rf_weaver_display(&session);
             {
                 struct rf_mesh_weaver_frame weaver_frame;
                 rf_weaver_frame(&session, &weaver_frame);
                 rasterfall_mesh_weaver_set_frame(&weaver_frame);
             }
-            rf_idle_lab_display(&session,paused || rf_perf_lab.running || rf_combat_lab.running);
+
             rasterfall_render_terminal_set("performance_control",rf_perf_lab.running ?
                 "PERFORMANCE / RUNNING" : "PERFORMANCE / E CONFIGURE");
             {
@@ -6564,33 +6630,26 @@ startup_again:
                 rasterfall_render_terminal_set("performance_result",text);
             }
             rasterfall_render_set_outpost_showcase(
-                rf_lab_effective(RF_LAB_INFECTED_POSES,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 rf_labs.time_us[RF_LAB_INFECTED_POSES]);
             rasterfall_render_set_outpost_walk(
-                rf_lab_effective(RF_LAB_INFECTED_WALK,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 rf_labs.time_us[RF_LAB_INFECTED_WALK]);
             rasterfall_render_set_outpost_actor_actions(
-                rf_lab_effective(RF_LAB_ACTOR_ACTIONS,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 rf_labs.time_us[RF_LAB_ACTOR_ACTIONS]);
             rasterfall_render_set_outpost_actor_walk(
-                rf_lab_effective(RF_LAB_ACTOR_WALK,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 rf_labs.time_us[RF_LAB_ACTOR_WALK]);
             rasterfall_render_set_outpost_model_lab(
-                rf_lab_effective(RF_LAB_MODEL,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 rf_labs.time_us[RF_LAB_MODEL]);
             rasterfall_render_set_outpost_rifle_cycle(
-                rf_lab_effective(RF_LAB_RIFLE_CYCLE,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 options.gpu_normal_view && !strcmp(options.gpu_normal_view,"rifle-cycle-lab") ?
                     rf_rifle_cycle_time() : rf_labs.time_us[RF_LAB_RIFLE_CYCLE]);
             rasterfall_render_set_outpost_weapon_cycle(
-                rf_lab_effective(RF_LAB_WEAPON_CYCLE,session.world_id,
-                    rf_perf_lab.running && !rf_perf_lab.interference,options.gpu_scene_play),
+                0,
                 options.gpu_normal_view && !strcmp(options.gpu_normal_view,"weapon-cycle-lab") ?
                     rf_weapon_cycle_time() : rf_labs.time_us[RF_LAB_WEAPON_CYCLE]);
             game_runtime.render_context.character_cpu_reference =
@@ -7432,7 +7491,7 @@ scene_shutdown:
         if(rf_combat_lab.member_count)rf_combat_cleanup(&game_runtime);
         session.game_state.update_profile=NULL;
     }
-    rf_idle_lab_clear(&session);
+
     rf_perf_lab.running=0;
     rf_labs_reset();
     rasterfall_render_set_motion_presentation(NULL, NULL, 0);

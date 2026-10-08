@@ -6,6 +6,7 @@
 #include "rasterfall_units.h"
 #include "rasterfall_model.h"
 #include "rasterfall_character.h"
+#include "rf_experiment_session.inc"
 
 #define INTERACT_AIM_CONE 784
 #define HORDE_COUNT_MIN 15
@@ -418,6 +419,7 @@ const struct toy_game_actor *rasterfall_session_local_player_const(
 void rasterfall_session_unload(struct rasterfall_session *session)
 {
     if (!session) return;
+    rasterfall_experiment_dispose(session,0);
     if(session->tactical) {
 #if RF_TACTICAL_INTERACTIVE
         rf_tac_match_destroy(&session->tactical->match);
@@ -463,6 +465,7 @@ void rasterfall_session_reset(struct rasterfall_session *session,
                               struct camera *camera, uint64_t seed)
 {
     int i;
+    rasterfall_experiment_dispose(session,1);
     if(session->tactical) {
 #if RF_TACTICAL_INTERACTIVE
         rf_tac_match_destroy(&session->tactical->match);

@@ -420,6 +420,24 @@ void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms)
     }
 }
 
+int toy_game_actor_playback(struct toy_game_actor *actor, int mode,
+                            int animation_id, int time_ms)
+{
+    if (!actor || !actor->active || actor->kind != TOY_GAME_ACTOR_AI ||
+        mode < 0 || mode > 2 || animation_id < TOY_GAME_ANIM_IDLE ||
+        animation_id >= TOY_GAME_ANIM_COUNT || time_ms < 0) return -1;
+    actor->animation_control = mode;
+    actor->simulation_paused = mode != 0;
+    actor->animation_demo = 0;
+    actor->animation_clock_ms = (unsigned)time_ms;
+    toy_game_actor_set_animation(actor, animation_id);
+    actor->animation.time_ms = 0;
+    toy_game_animation_update(&actor->animation, time_ms);
+    actor->moving = animation_id == TOY_GAME_ANIM_MOVE;
+    actor->locomotion_blend_ms = 200;
+    return 0;
+}
+
 static int segment_hits_box(int px, int pz, int qx, int qz,
                             const struct toy_game_box *b);
 
@@ -3710,7 +3728,7 @@ static int nav_next_waypoint(const struct toy_game *g,
 static int enemy_nav_group_valid(const struct toy_game *g,
                                  const struct toy_game_enemy *e)
 {
-    return e->nav_group >= 0 && e->nav_group < TOY_GAME_NAV_MAX_GROUPS &&
+    return !e->animation_control && e->nav_group >= 0 && e->nav_group < TOY_GAME_NAV_MAX_GROUPS &&
            g->nav_groups[e->nav_group].active &&
            g->nav_groups[e->nav_group].generation == e->nav_group_generation;
 }
@@ -3849,7 +3867,7 @@ static void enemy_nav_group_assign(struct toy_game *g, int index)
     struct toy_game_enemy *e = &g->enemies[index];
     int slot = -1, i;
     long long best = 0;
-    if (e->active != 1 || enemy_nav_group_valid(g, e)) return;
+    if (e->active != 1 || e->animation_control || enemy_nav_group_valid(g, e)) return;
     e->nav_group = -1;
     for (i = 0; i < TOY_GAME_NAV_MAX_GROUPS; i++) {
         struct toy_game_nav_group *group = &g->nav_groups[i];
@@ -5162,7 +5180,7 @@ static int apply_entity_impact_with_knockback(struct toy_game *g, int kind,
         struct toy_game_enemy *e;
         if (index < 0 || index >= TOY_GAME_MAX_ENEMIES) return 0;
         e = &g->enemies[index];
-        if (e->active != 1) return 0;
+        if (e->active != 1 || e->animation_control) return 0;
         e->hp -= damage;
         if (e->hp <= 0) { e->hp = 0; e->active = 2; e->dying_ms = TOY_GAME_DYING_MS; g->enemies_alive--; }
         e->ability.special_target_active = 0; e->ability.special_windup_ms = 0; e->ability.charge_active = 0;
@@ -5565,7 +5583,7 @@ static void separate_flow_enemies(struct toy_game *g)
     for (i = TOY_GAME_MAX_ENEMIES - 1; i >= 0; --i) {
         struct toy_game_enemy *e = &g->enemies[i];
         unsigned int bucket;
-        if (e->active != 1 || e->airborne_ms > 0) continue;
+        if (e->active != 1 || e->airborne_ms > 0 || e->animation_control) continue;
         bx[i] = (e->x + g->room_limit) / 1600;
         bz[i] = (e->z + g->room_limit) / 1600;
         bucket = ((unsigned int)bx[i] * 31u + (unsigned int)bz[i] * 131u) & 127;
@@ -5574,7 +5592,7 @@ static void separate_flow_enemies(struct toy_game *g)
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
         struct toy_game_enemy *a = &g->enemies[i];
         int candidates = 0;
-        if (a->active != 1 || a->airborne_ms > 0) continue;
+        if (a->active != 1 || a->airborne_ms > 0 || a->animation_control) continue;
         for (dz = -1; dz <= 1; ++dz) for (dx = -1; dx <= 1; ++dx) {
             unsigned int bucket = ((unsigned int)(bx[i] + dx) * 31u +
                                    (unsigned int)(bz[i] + dz) * 131u) & 127;
@@ -5650,7 +5668,7 @@ static void separate_enemies(struct toy_game *g)
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
         int limit = g->room_limit - enemy_radius(e);
-        if (e->active != 1) continue;
+        if (e->active != 1 || e->animation_control) continue;
         /* Resolve the summed crowd force once. Bound it below forward speed
          * so a packed doorway cannot cancel a follower's route progress. */
         int px = push_x[i], pz = push_z[i];
@@ -5728,7 +5746,7 @@ int toy_game_apply_reported_hit(struct toy_game *g,
     if (!g || !actor || enemy_index < 0 ||
         enemy_index >= TOY_GAME_MAX_ENEMIES || damage <= 0) return 0;
     e = &g->enemies[enemy_index];
-    if (e->active != 1) return 0;
+    if (e->active != 1 || e->animation_control) return 0;
     inflicted = damage < e->hp ? damage : e->hp;
     e->hp -= damage;
     actor->damage_dealt += inflicted;
@@ -5783,7 +5801,7 @@ int toy_game_actor_use_special(struct toy_game *g,
         struct toy_game_enemy *e = &g->enemies[i];
         long long dx, dz, dist2, dist, dot;
         int inflicted;
-        if (e->active != 1) continue;
+        if (e->active != 1 || e->animation_control) continue;
         dx = e->x - actor->x; dz = e->z - actor->z;
         dist2 = dx * dx + dz * dz;
         if (!dist2 || dist2 > range2) continue;
@@ -5942,7 +5960,7 @@ static void toy_game_update_burn_zones(struct toy_game *g, int dt_ms)
                 struct toy_game_enemy *e = &g->enemies[j];
                 long long dx, dz;
                 int inflicted;
-                if (e->active != 1) continue;
+                if (e->active != 1 || e->animation_control) continue;
                 dx = e->x - zone->x; dz = e->z - zone->z;
                 if (dx * dx + dz * dz > radius2) continue;
                 inflicted = e->hp < g->gameplay_config.molotov_damage ?
@@ -6624,6 +6642,19 @@ void toy_game_update_ai_teammates(struct toy_game *g, int dt_ms)
     g->combat_scan_budget = 8;
     /* Teammate updates consume the normalized local actor directly. */
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++) {
+        if (g->actors[i].active && g->actors[i].kind == TOY_GAME_ACTOR_AI &&
+            g->actors[i].animation_control) {
+            struct toy_game_actor *a = &g->actors[i];
+            if (a->animation_control == 1 && dt_ms > 0) {
+                const struct toy_game_animation_info *info = toy_game_animation_info(a->animation.id);
+                a->animation_clock_ms += (unsigned)dt_ms;
+                if (info->duration_ms > 0)
+                    a->animation.time_ms = (int)(((unsigned)a->animation.time_ms +
+                        (unsigned)dt_ms) % (unsigned)info->duration_ms);
+            }
+            toy_game_update_actor_ground(g, i);
+            continue;
+        }
         if (!g->actors[i].active || g->actors[i].simulation_paused || g->actors[i].kind != TOY_GAME_ACTOR_AI)
             continue;
         if (g->actors[i].animation_demo) {
@@ -6720,6 +6751,10 @@ void toy_game_update_held(struct toy_game *g,
     /* 敌人计时器与移动/攻击/倒地 */
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
+        if(e->active==1 && e->animation_control) {
+            if(e->animation_control==1 && dt_ms>0)e->animation_clock_ms+=(unsigned)dt_ms;
+            continue;
+        }
         if (e->active == 1) {
             if (e->airborne_ms > 0) {
                 update_enemy_airborne(g, e, dt_ms);
@@ -6787,6 +6822,10 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
     enemy_nav_groups_update(g, dt_ms);
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; i++) {
         struct toy_game_enemy *e = &g->enemies[i];
+        if(e->active==1 && e->animation_control) {
+            if(e->animation_control==1 && dt_ms>0)e->animation_clock_ms+=(unsigned)dt_ms;
+            continue;
+        }
         if (e->active == 1) {
             int64_t enemy_start = profile && profile->clock_us ?
                 profile->clock_us() : 0;

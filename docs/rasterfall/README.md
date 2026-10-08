@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+动态实验场的创建、暂停、替换、销毁、正式 actor 播放控制与可越过玻璃围栏，从
+[动态实验场合同](reference/experiment-labs.md)进入；session 所有权见
+[运行时架构](architecture/runtime.md)，固定负载与真实战斗采样见[性能诊断](guides/rendering-performance.md#前哨站游戏内性能实验场)。
+
 角色加速公共合同、Block／普通感染体常驻网格、Humanoid 共用上传事务和多视图消费从
 [统一角色加速](architecture/gpu-rendering-architecture.md#统一角色加速)进入；
 求值缓存与实例隔离见[动画架构](architecture/animation-architecture.md#scene-批量求值与-ik-更新范围)。

@@ -2,7 +2,7 @@
 param(
     [string]$OutputDirectory='tmp/performance-lab',
     [ValidateRange(1,10)][int]$Rounds=3,
-    [ValidateSet('Isolated','Interference','Full','Panorama','Live','All')][string]$Stage='Isolated',
+    [ValidateSet('Fixed','Live','All')][string]$Stage='Fixed',
     [ValidateRange(1,10)][int[]]$Scenes=@(1,2,3,4),
     [switch]$Capped,
     [switch]$CompareGeometry,
@@ -17,15 +17,14 @@ if(($Width -ne 0 -or $Height -ne 0) -and ($Width -lt 640 -or $Width -gt 7680 -or
 }
 if($CompareGeometry -and $CompareBackend) {throw 'Choose one comparison axis'}
 if(!$PSBoundParameters.ContainsKey('Scenes')) {
-    if($Stage -eq 'Panorama') {$Scenes=@(5,6)}
-    elseif($Stage -eq 'Live') {$Scenes=@(7,8,9,10)}
-    elseif($Stage -eq 'All') {$Scenes=@(1,2,3,4,5,6,7,8,9,10)}
+    if($Stage -eq 'Live') {$Scenes=@(7,8)}
+    elseif($Stage -eq 'All') {$Scenes=@(1,2,3,4,7,8)}
 }
-if($Stage -in @('Isolated','Interference') -and @($Scenes | Where-Object {$_ -gt 4}).Count) {
-    throw 'Panorama/live scenes require Panorama, Live, Full or All stage'
+if(@($Scenes | Where-Object {$_ -notin @(1,2,3,4,7,8)}).Count) {
+    throw 'Supported experiments: 1..4 fixed workloads, 7..8 live combat'
 }
-if($Stage -eq 'Panorama' -and @($Scenes | Where-Object {$_ -lt 5 -or $_ -gt 6}).Count) {throw 'Panorama stage accepts scenes 5 and 6'}
-if($Stage -eq 'Live' -and @($Scenes | Where-Object {$_ -lt 7}).Count) {throw 'Live stage accepts scenes 7 through 10'}
+if($Stage -eq 'Fixed' -and @($Scenes | Where-Object {$_ -gt 4}).Count) {throw 'Fixed stage accepts scenes 1..4'}
+if($Stage -eq 'Live' -and @($Scenes | Where-Object {$_ -lt 7}).Count) {throw 'Live stage accepts scenes 7..8'}
 $TaskPath=[Environment]::GetEnvironmentVariable('Path','Process')
 [Environment]::SetEnvironmentVariable('PATH',$null,'Process')
 [Environment]::SetEnvironmentVariable('Path',$TaskPath,'Process')
@@ -50,9 +49,7 @@ foreach ($Key in $Keys) { $Saved[$Key]=[Environment]::GetEnvironmentVariable($Ke
 $Runs=[Collections.Generic.List[object]]::new()
 $Process=$null
 $Files=@('rasterfall.exe','rasterfall/assets/maps/outpost.map',
-    'rasterfall/assets/maps/performance_empty.map','rasterfall/assets/maps/performance_components.map',
-    'rasterfall/assets/worlds/performance.content','rasterfall/assets/worlds/outpost.content',
-    'rasterfall/assets/maps/frontier_station_01.map','rasterfall/assets/worlds/frontier_station_01.content')
+    'rasterfall/assets/maps/experiment_components.map','rasterfall/assets/worlds/outpost.content')
 $Hashes=@($Files | ForEach-Object { Get-FileHash -LiteralPath (Join-Path $Package $_) })
 Write-Json $Hashes 'hashes.json'
 $Argv=@('--skip-boot','--gpu-scene-play','--map','rasterfall/assets/maps/outpost.map')
@@ -60,13 +57,7 @@ if($Width) {$Argv+=@('--window-size',[string]$Width,[string]$Height)}
 Write-Json @{rounds=$Rounds;stage=$Stage;scenes=$Scenes;capped=[bool]$Capped;compare_geometry=[bool]$CompareGeometry;compare_backend=[bool]$CompareBackend;profile_slow=[bool]$ProfileSlow;gpu_vendor=$env:RF_GPU_VULKAN_VENDOR_ID;sky_time=$env:RF_GPU_SKY_TIME;sky_scale=$env:RF_GPU_SKY_SCALE;argv=$Argv;validation=$false} 'config.json'
 $Cases=[Collections.Generic.List[object]]::new()
 foreach ($Scene in ($Scenes | Select-Object -Unique)) {
-    if($Scene -gt 4) {$Cases.Add(@{scene=$Scene;scope='full';interference=0});continue}
-    if($Stage -in @('Full','All')) {$Cases.Add(@{scene=$Scene;scope='full';interference=0})}
-    if ($Stage -in @('Isolated','All')) { $Cases.Add(@{scene=$Scene;scope='isolated';interference=0}) }
-    if ($Stage -in @('Interference','All')) {
-        $Cases.Add(@{scene=$Scene;scope='outpost';interference=1})
-        $Cases.Add(@{scene=$Scene;scope='outpost';interference=0})
-    }
+    $Cases.Add(@{scene=$Scene;scope='full';interference=1})
 }
 if($CompareGeometry -or $CompareBackend) {
     $Pairs=[Collections.Generic.List[object]]::new()
@@ -134,22 +125,14 @@ try {
                 }
                 $Point
             })
-            if($Case.scene -in @(5,6,10) -and ($Points.Count -ne 5 -or
-                @($Points | Where-Object {[int]$_.frames -lt 1}).Count -or $Values.scope -ne 'full')) {
-                throw "$Name incomplete panorama"
-            }
             if($Case.scene -ge 7 -and (!$Live.Success -or [int]$Values.ticks -lt 1 -or
                 [int]$Values.remaining_actors -ne 0 -or $Values.scope -ne 'full')) {throw "$Name missing live trial/cleanup evidence"}
             if($Case.scene -in @(7,8) -and [int]$Values.combat_frames -lt 1) {throw "$Name never sampled active combat"}
-            if($Case.scene -eq 9 -and ($Values.route_done -ne '1' -or $Values.route_legs -ne '4')) {throw "$Name route did not complete"}
             if ($Values.valid -ne '1' -or [int]$Values.frames -lt 1 -or
                 [int]$Values.remaining -ne 0 -or [int]$Values.gpu_samples -lt 1) {
                 throw "$Name invalid workload or missing GPU timing"
             }
             if($Width -and $Values.extent -ne "${Width}x${Height}") {throw "$Name extent differs from requested window size"}
-            if ($Case.scope -eq 'isolated' -and ($Values.lights -ne '0' -or $Values.shadow_maps -ne '3')) {
-                throw "$Name isolated lighting contract failed"
-            }
             $Slow=@([regex]::Matches($Log,'SCENE-SLOW ([^\r\n]+)') | ForEach-Object {
                 $Fields=@{}
                 foreach($Field in [regex]::Matches($_.Groups[1].Value,'(\w+)=([^\s]+)')) {

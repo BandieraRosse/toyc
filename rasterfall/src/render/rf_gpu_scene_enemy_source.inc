@@ -35,6 +35,9 @@ static struct enemy_rig_input scene_independent_enemy_rig_input(
     input.type=e->type;
     input.attack_ms=input.recovery_ms=input.impact_age_ms=-1;
     input.tongue_active=e->special_target_active;
+    if(e->animation_control) {
+        return enemy_rig_adapt(e);
+    }
     if (e->active!=1 || !profile) {
         history->valid=0;
         return input;
@@ -258,6 +261,9 @@ int rf_gpu_scene_enemy_collect_independent(const struct camera *camera,
             int recipe=-1;
             if (rasterfall_infected_sample_motion(&next[i].infected,e->active,
                     e->x,e->z,now_us,&sample)<0) return -1;
+            if(e->animation_control) {
+                sample.swing=enemy_playback_swing(e);
+            }
             next[i].infected=sample.next;
             for (int j=0;j<6;++j)
                 if (enemy_visual_recipes[j].family==family &&

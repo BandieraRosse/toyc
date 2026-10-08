@@ -166,109 +166,61 @@ object id=workshop_supply_0 kind=crate x=15872 y=0 z=26112 yaw=0 scale=1000 attr
 object id=workshop_supply_1 kind=crate x=12288 y=0 z=32768 yaw=0 scale=1000 attr.collision=component
 object id=workshop_supply_2 kind=crate x=4608 y=0 z=33280 yaw=0 scale=1000 attr.collision=component
 collision id=workshop_upper_slab_col shape=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=2150 attr.base_y=2048 collision=true visible=false walkable=true
-render id=workshop_upper_slab kind=box min_x=3072 max_x=4249 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_1 kind=box min_x=4967 max_x=7065 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_2 kind=box min_x=7783 max_x=9881 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_3 kind=box min_x=10599 max_x=12185 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_4 kind=box min_x=12903 max_x=15513 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_5 kind=box min_x=16231 max_x=17408 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_6 kind=box min_x=15513 max_x=16231 min_z=24576 max_z=26188 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_7 kind=box min_x=15513 max_x=16231 min_z=26548 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_8 kind=box min_x=12185 max_x=12903 min_z=24576 max_z=26188 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_9 kind=box min_x=12185 max_x=12903 min_z=26548 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_10 kind=box min_x=9881 max_x=10599 min_z=24576 max_z=26188 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_11 kind=box min_x=9881 max_x=10599 min_z=26548 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_12 kind=box min_x=7065 max_x=7783 min_z=24576 max_z=26188 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_13 kind=box min_x=7065 max_x=7783 min_z=26548 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_14 kind=box min_x=4249 max_x=4967 min_z=24576 max_z=26188 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_15 kind=box min_x=4249 max_x=4967 min_z=26548 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_recess_16 kind=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=2150 attr.base_y=2132 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab kind=box min_x=3072 max_x=5273 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_1 kind=box min_x=5991 max_x=10905 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_2 kind=box min_x=11623 max_x=15513 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_3 kind=box min_x=16231 max_x=17408 min_z=24576 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_4 kind=box min_x=15513 max_x=16231 min_z=24576 max_z=26444 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_5 kind=box min_x=15513 max_x=16231 min_z=26804 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_6 kind=box min_x=10905 max_x=11623 min_z=24576 max_z=26444 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_7 kind=box min_x=10905 max_x=11623 min_z=26804 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_8 kind=box min_x=5273 max_x=5991 min_z=24576 max_z=26444 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_9 kind=box min_x=5273 max_x=5991 min_z=26804 max_z=28672 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_recess_10 kind=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=2150 attr.base_y=2132 color=87989F attr.bottom_color=C8CDD0
 surface id=workshop_upper_slab_surface kind=platform min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=2150 material=87989F attr.collision_id=workshop_upper_slab_col
 collision id=workshop_upper_slab_w_col shape=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=2150 attr.base_y=2048 collision=true visible=false walkable=true
-render id=workshop_upper_slab_w kind=box min_x=3072 max_x=4249 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_1 kind=box min_x=4967 max_x=7065 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_2 kind=box min_x=7783 max_x=9881 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_3 kind=box min_x=10599 max_x=12185 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_4 kind=box min_x=12903 max_x=13312 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_5 kind=box min_x=12185 max_x=12903 min_z=28672 max_z=29516 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_6 kind=box min_x=12185 max_x=12903 min_z=29876 max_z=32844 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_7 kind=box min_x=12185 max_x=12903 min_z=33204 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_8 kind=box min_x=9881 max_x=10599 min_z=28672 max_z=29516 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_9 kind=box min_x=9881 max_x=10599 min_z=29876 max_z=32844 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_10 kind=box min_x=9881 max_x=10599 min_z=33204 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_11 kind=box min_x=7065 max_x=7783 min_z=28672 max_z=29516 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_12 kind=box min_x=7065 max_x=7783 min_z=29876 max_z=32844 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_13 kind=box min_x=7065 max_x=7783 min_z=33204 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_14 kind=box min_x=4249 max_x=4967 min_z=28672 max_z=29516 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_15 kind=box min_x=4249 max_x=4967 min_z=29876 max_z=32844 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_16 kind=box min_x=4249 max_x=4967 min_z=33204 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
-render id=workshop_upper_slab_w_recess_17 kind=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=2150 attr.base_y=2132 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w kind=box min_x=3072 max_x=5273 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_1 kind=box min_x=5991 max_x=10905 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_2 kind=box min_x=11623 max_x=13312 min_z=28672 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_3 kind=box min_x=10905 max_x=11623 min_z=28672 max_z=32076 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_4 kind=box min_x=10905 max_x=11623 min_z=32436 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_5 kind=box min_x=5273 max_x=5991 min_z=28672 max_z=32076 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_6 kind=box min_x=5273 max_x=5991 min_z=32436 max_z=34816 height=2132 attr.base_y=2048 color=87989F attr.bottom_color=C8CDD0
+render id=workshop_upper_slab_w_recess_7 kind=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=2150 attr.base_y=2132 color=87989F attr.bottom_color=C8CDD0
 surface id=workshop_upper_slab_w_surface kind=platform min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=2150 material=87989F attr.collision_id=workshop_upper_slab_w_col
 collision id=workshop_roof_slab_col shape=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=4301 attr.base_y=4198 collision=true visible=false walkable=true
-render id=workshop_roof_slab kind=box min_x=3072 max_x=4249 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_1 kind=box min_x=4967 max_x=7065 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_2 kind=box min_x=7783 max_x=9881 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_3 kind=box min_x=10599 max_x=12185 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_4 kind=box min_x=12903 max_x=15513 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_5 kind=box min_x=16231 max_x=17408 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_6 kind=box min_x=15513 max_x=16231 min_z=24576 max_z=26188 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_7 kind=box min_x=15513 max_x=16231 min_z=26548 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_8 kind=box min_x=12185 max_x=12903 min_z=24576 max_z=26188 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_9 kind=box min_x=12185 max_x=12903 min_z=26548 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_10 kind=box min_x=9881 max_x=10599 min_z=24576 max_z=26188 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_11 kind=box min_x=9881 max_x=10599 min_z=26548 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_12 kind=box min_x=7065 max_x=7783 min_z=24576 max_z=26188 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_13 kind=box min_x=7065 max_x=7783 min_z=26548 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_14 kind=box min_x=4249 max_x=4967 min_z=24576 max_z=26188 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_15 kind=box min_x=4249 max_x=4967 min_z=26548 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_recess_16 kind=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=4301 attr.base_y=4282 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab kind=box min_x=3072 max_x=5273 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_1 kind=box min_x=5991 max_x=10905 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_2 kind=box min_x=11623 max_x=15513 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_3 kind=box min_x=16231 max_x=17408 min_z=24576 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_4 kind=box min_x=15513 max_x=16231 min_z=24576 max_z=26444 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_5 kind=box min_x=15513 max_x=16231 min_z=26804 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_6 kind=box min_x=10905 max_x=11623 min_z=24576 max_z=26444 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_7 kind=box min_x=10905 max_x=11623 min_z=26804 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_8 kind=box min_x=5273 max_x=5991 min_z=24576 max_z=26444 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_9 kind=box min_x=5273 max_x=5991 min_z=26804 max_z=28672 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_recess_10 kind=box min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=4301 attr.base_y=4282 color=697A84 attr.bottom_color=C8CDD0
 surface id=workshop_roof_slab_surface kind=platform min_x=3072 max_x=17408 min_z=24576 max_z=28672 height=4301 material=697A84 attr.collision_id=workshop_roof_slab_col
 collision id=workshop_roof_slab_w_col shape=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=4301 attr.base_y=4198 collision=true visible=false walkable=true
-render id=workshop_roof_slab_w kind=box min_x=3072 max_x=4249 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_1 kind=box min_x=4967 max_x=7065 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_2 kind=box min_x=7783 max_x=9881 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_3 kind=box min_x=10599 max_x=12185 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_4 kind=box min_x=12903 max_x=13312 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_5 kind=box min_x=12185 max_x=12903 min_z=28672 max_z=29516 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_6 kind=box min_x=12185 max_x=12903 min_z=29876 max_z=32844 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_7 kind=box min_x=12185 max_x=12903 min_z=33204 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_8 kind=box min_x=9881 max_x=10599 min_z=28672 max_z=29516 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_9 kind=box min_x=9881 max_x=10599 min_z=29876 max_z=32844 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_10 kind=box min_x=9881 max_x=10599 min_z=33204 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_11 kind=box min_x=7065 max_x=7783 min_z=28672 max_z=29516 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_12 kind=box min_x=7065 max_x=7783 min_z=29876 max_z=32844 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_13 kind=box min_x=7065 max_x=7783 min_z=33204 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_14 kind=box min_x=4249 max_x=4967 min_z=28672 max_z=29516 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_15 kind=box min_x=4249 max_x=4967 min_z=29876 max_z=32844 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_16 kind=box min_x=4249 max_x=4967 min_z=33204 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
-render id=workshop_roof_slab_w_recess_17 kind=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=4301 attr.base_y=4282 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w kind=box min_x=3072 max_x=5273 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_1 kind=box min_x=5991 max_x=10905 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_2 kind=box min_x=11623 max_x=13312 min_z=28672 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_3 kind=box min_x=10905 max_x=11623 min_z=28672 max_z=32076 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_4 kind=box min_x=10905 max_x=11623 min_z=32436 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_5 kind=box min_x=5273 max_x=5991 min_z=28672 max_z=32076 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_6 kind=box min_x=5273 max_x=5991 min_z=32436 max_z=34816 height=4282 attr.base_y=4198 color=697A84 attr.bottom_color=C8CDD0
+render id=workshop_roof_slab_w_recess_7 kind=box min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=4301 attr.base_y=4282 color=697A84 attr.bottom_color=C8CDD0
 surface id=workshop_roof_slab_w_surface kind=platform min_x=3072 max_x=13312 min_z=28672 max_z=34816 height=4301 material=697A84 attr.collision_id=workshop_roof_slab_w_col
-object id=workshop_1f_ceiling_0_0 kind=light_ceiling x=4608 y=2048 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_0_1 kind=light_ceiling x=4608 y=2048 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_0_2 kind=light_ceiling x=4608 y=2048 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_1_0 kind=light_ceiling x=7424 y=2048 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_1_1 kind=light_ceiling x=7424 y=2048 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_1_2 kind=light_ceiling x=7424 y=2048 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_2_0 kind=light_ceiling x=10240 y=2048 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_2_1 kind=light_ceiling x=10240 y=2048 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_2_2 kind=light_ceiling x=10240 y=2048 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_3_0 kind=light_ceiling x=12544 y=2048 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_3_1 kind=light_ceiling x=12544 y=2048 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_3_2 kind=light_ceiling x=12544 y=2048 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_1f_ceiling_4_0 kind=light_ceiling x=15872 y=2048 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_0_0 kind=light_ceiling x=4608 y=4198 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_0_1 kind=light_ceiling x=4608 y=4198 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_0_2 kind=light_ceiling x=4608 y=4198 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_1_0 kind=light_ceiling x=7424 y=4198 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_1_1 kind=light_ceiling x=7424 y=4198 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_1_2 kind=light_ceiling x=7424 y=4198 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_2_0 kind=light_ceiling x=10240 y=4198 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_2_1 kind=light_ceiling x=10240 y=4198 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_2_2 kind=light_ceiling x=10240 y=4198 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_3_0 kind=light_ceiling x=12544 y=4198 z=26368 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_3_1 kind=light_ceiling x=12544 y=4198 z=29696 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_3_2 kind=light_ceiling x=12544 y=4198 z=33024 yaw=0 scale=1000 attr.collision=none
-object id=workshop_2f_ceiling_4_0 kind=light_ceiling x=15872 y=4198 z=26368 yaw=0 scale=1000 attr.collision=none
+object id=workshop_1f_ceiling_0_0 kind=light_ceiling x=5632 y=2048 z=26624 yaw=0 scale=1000 attr.collision=none
+object id=workshop_1f_ceiling_0_1 kind=light_ceiling x=5632 y=2048 z=32256 yaw=0 scale=1000 attr.collision=none
+object id=workshop_1f_ceiling_1_0 kind=light_ceiling x=11264 y=2048 z=26624 yaw=0 scale=1000 attr.collision=none
+object id=workshop_1f_ceiling_1_1 kind=light_ceiling x=11264 y=2048 z=32256 yaw=0 scale=1000 attr.collision=none
+object id=workshop_1f_ceiling_2_0 kind=light_ceiling x=15872 y=2048 z=26624 yaw=0 scale=1000 attr.collision=none
+object id=workshop_2f_ceiling_0_0 kind=light_ceiling x=5632 y=4198 z=26624 yaw=0 scale=1000 attr.collision=none
+object id=workshop_2f_ceiling_0_1 kind=light_ceiling x=5632 y=4198 z=32256 yaw=0 scale=1000 attr.collision=none
+object id=workshop_2f_ceiling_1_0 kind=light_ceiling x=11264 y=4198 z=26624 yaw=0 scale=1000 attr.collision=none
+object id=workshop_2f_ceiling_1_1 kind=light_ceiling x=11264 y=4198 z=32256 yaw=0 scale=1000 attr.collision=none
+object id=workshop_2f_ceiling_2_0 kind=light_ceiling x=15872 y=4198 z=26624 yaw=0 scale=1000 attr.collision=none
 collision id=workshop_upper_w_col shape=box min_x=3021 max_x=3123 min_z=24576 max_z=34816 height=4198 attr.base_y=2150 collision=true visible=false walkable=false
 render id=workshop_upper_w kind=box min_x=3021 max_x=3123 min_z=24576 max_z=34816 height=4198 attr.base_y=2150 color=8B9AA2
 collision id=workshop_upper_n_col shape=box min_x=3072 max_x=13312 min_z=34765 max_z=34867 height=4198 attr.base_y=2150 collision=true visible=false walkable=false
@@ -344,15 +296,10 @@ render id=workshop_stair_wall_spine kind=box min_x=15207 max_x=15514 min_z=30208
 collision id=workshop_stair_cap_col shape=box min_x=13261 max_x=17459 min_z=28621 max_z=34867 height=6451 attr.base_y=6349 collision=true visible=false walkable=true
 render id=workshop_stair_cap kind=box min_x=13261 max_x=17459 min_z=28621 max_z=34867 height=6451 attr.base_y=6349 color=AAB9C0 attr.bottom_color=C8CDD0
 surface id=workshop_stair_cap_surface kind=platform min_x=13261 max_x=17459 min_z=28621 max_z=34867 height=6451 material=AAB9C0 attr.collision_id=workshop_stair_cap_col
-object id=workshop_stair_1f_light kind=light_wall x=17285 y=1357 z=29440 yaw=270 scale=1000 attr.collision=none
-object id=workshop_stair_1f_half_light kind=light_wall x=17285 y=2432 z=34048 yaw=270 scale=1000 attr.collision=none
 object id=workshop_stair_1f_flight_light kind=light_wall x=13435 y=1792 z=31744 yaw=90 scale=1000 attr.collision=none
 object id=workshop_stair_1f_return_light kind=light_wall x=17285 y=2867 z=31744 yaw=270 scale=1000 attr.collision=none
-object id=workshop_stair_2f_light kind=light_wall x=17285 y=3507 z=29440 yaw=270 scale=1000 attr.collision=none
-object id=workshop_stair_2f_half_light kind=light_wall x=17285 y=4582 z=34048 yaw=270 scale=1000 attr.collision=none
 object id=workshop_stair_2f_flight_light kind=light_wall x=13435 y=3942 z=31744 yaw=90 scale=1000 attr.collision=none
 object id=workshop_stair_2f_return_light kind=light_wall x=17285 y=5017 z=31744 yaw=270 scale=1000 attr.collision=none
-object id=workshop_stair_roof_light kind=light_wall x=17285 y=5658 z=29440 yaw=270 scale=1000 attr.collision=none
 collision id=workshop_roof_rail_s_col shape=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=4787 attr.base_y=4301 collision=true visible=false walkable=false
 render id=workshop_roof_rail_s kind=box min_x=3072 max_x=17408 min_z=24499 max_z=24653 height=4787 attr.base_y=4301 color=536771
 collision id=workshop_roof_rail_n_col shape=box min_x=3072 max_x=13312 min_z=34739 max_z=34893 height=4787 attr.base_y=4301 collision=true visible=false walkable=false

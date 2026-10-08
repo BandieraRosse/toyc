@@ -245,8 +245,8 @@ def generate():
     # Real model sockets provide direct light and fixture GI on both floors.
     # Flush mounting cuts only render recesses; collision and slab caps stay sealed.
     for level, ceiling in ((1,4.0),(2,8.2)):
-        for column, x in enumerate((9,14.5,20,24.5,31)):
-            for row, z in enumerate((51.5,58,64.5)):
+        for column, x in enumerate((11,22,31)):
+            for row, z in enumerate((52,63)):
                 if x>26 and z>56:continue
                 kit.ceiling_light(f"workshop_{level}f_ceiling_{column}_{row}",rfu(x),rfu(z),rfu(ceiling))
     workshop_wall("upper_w","z",6,48,68,4.2,8.2)
@@ -261,9 +261,7 @@ def generate():
     kit.switchback("workshop_stair",tuple(rfu(v) for v in (26,34,56,68)),storeys,rfu(12.4),
                    landing_depth=rfu(3),spine_width=rfu(.6),wall_color="AAB9C0",ceiling_color="C8CDD0")
     for label, y in storeys:
-        obj(f"workshop_stair_{label}_light","light_wall",33.76,57.5,y=y/512+2.65,yaw=270,collision=False)
         if label=="roof":continue
-        obj(f"workshop_stair_{label}_half_light","light_wall",33.76,66.5,y=y/512+4.75,yaw=270,collision=False)
         obj(f"workshop_stair_{label}_flight_light","light_wall",26.24,62,y=y/512+3.5,yaw=90,collision=False)
         obj(f"workshop_stair_{label}_return_light","light_wall",33.76,62,y=y/512+5.6,yaw=270,collision=False)
     # Parapets terminate against the stair enclosure; its south portal opens onto the roof.

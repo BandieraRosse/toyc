@@ -127,6 +127,11 @@ static struct enemy_rig_input enemy_rig_adapt(const struct toy_game_enemy *e)
     memset(&in,0,sizeof(in));
     in.type=e->type; in.attack_ms=-1; in.recovery_ms=-1; in.impact_age_ms=-1;
     in.tongue_active=e->special_target_active;
+    if(e->animation_control) {
+        in.moving=e->animation_id==TOY_GAME_ANIM_MOVE;
+        in.stride_phase=(int)(e->animation_clock_ms%1000)*1024/1000;
+        return in;
+    }
     if (enemy_rig_slot>=0) {
         const struct enemy_rig_observer *o=&enemy_rig_observers[enemy_rig_slot];
         const struct enemy_rig_profile *p=enemy_rig_profile(e->type);

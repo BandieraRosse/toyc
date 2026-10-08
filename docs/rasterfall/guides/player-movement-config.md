@@ -5,6 +5,8 @@
 > 事实入口：`rasterfall/config/player-movement.cfg`、`rasterfall/lib/game_player_movement.inc`
 
 玩家运动在启动时读取 `rasterfall/config/player-movement.cfg`，修改后重启游戏即可生效，无需重新编译。
+仓库配置的跑速为 17.812 m/s，是原配置的两倍；加减速和垂直跳跃参数保持原值。
+未加载配置时的内置基准仍约为 8.91 m/s，逻辑 fixture 使用该基准。
 在源码工作区修改仓库中的文件；Windows `NativeCodex.ps1 build` 及各暂存命令都会复制它。
 配置同时位于 `build-windows/rasterfall/config/` 和 `build-windows/rasterfall-windows/rasterfall/config/`，
 各自供同目录的 exe 读取。直接运行分发目录里的 exe 时可修改分发目录中同一路径的文件，

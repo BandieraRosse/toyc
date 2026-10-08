@@ -210,7 +210,10 @@ static int scene_load(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
     const char *name;
     const struct rasterfall_character_visual_recipe *recipe=
         rasterfall_character_visual_recipe_for_character(pose->character_id);
-    int body_only=pose->character_id==RASTERFALL_CHARACTER_NONE;
+    int body_only=pose->character_id==RASTERFALL_CHARACTER_NONE ||
+        pose->character_id==RASTERFALL_CHARACTER_RF_C01;
+    if(pose->character_id==RASTERFALL_CHARACTER_RF_C01 &&
+        pose->body_resource_id!=RASTERFALL_BODY_RF_C01_V22H)return -1;
     if (!rasterfall_character_body_resource_name(pose->body_resource_id) ||
         gear_count>RASTERFALL_CHARACTER_RECIPE_ATTACHMENTS || clothing_count>RASTERFALL_CHARACTER_RECIPE_CLOTHING ||
         (body_only ? (gear_count || clothing_count || pose->body_hidden_material_mask || include_map) :
@@ -447,7 +450,7 @@ static int scene_pack(struct scene_slot *slot,const struct rf_gpu_scene_pose_v1 
                 if(d->roughness<0.06f)d->roughness=0.06f;
                 d->quality[2]=1;
             }
-            if (object==1 && pose->character_id!=RASTERFALL_CHARACTER_NONE) {
+            if (object==1 && rasterfall_character_visual_recipe_for_character(pose->character_id)) {
                 if (mi==0) d->material[0]=pose->pants_color;
                 if (mi==1) d->material[0]=pose->shirt_color;
             }

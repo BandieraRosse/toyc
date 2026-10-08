@@ -4,6 +4,12 @@
 > 所有者：Rasterfall character/enemy presentation adapters
 > 最近核对：2026-10-03
 
+实验角色也属于正式 actor/enemy 池。`animation_control` 为普通 AI、指定动画、冻结采样三种状态，
+指定或冻结时跳过 AI 控制，保留身体碰撞；姿态与持枪输入由同一表现 adapter 消费实例时钟。
+RF-C01 通过稳定角色 ID 接入正常 Scene actor 提取和既有身体采样器，不另造展示用身体。
+其当前可选动作为待机、行走、射击，CPU 终端不创建该 GPU 专属预设。
+实验组的 ID/generation 与销毁责任见[动态实验场](../reference/experiment-labs.md)。
+
 本文描述玩法 actor 到可见角色的渲染侧适配。模型格式、bind pose、动画求值和 attachment 格式分别由
 [动画架构](animation-architecture.md)和
 [角色资产合同](../reference/character-assets.md)拥有；固定截图流程见 [视觉验收](../guides/visual-validation.md)。

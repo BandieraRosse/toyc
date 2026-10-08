@@ -210,6 +210,12 @@ struct rf_map_runtime {
 };
 
 int rf_map_runtime_load(struct rf_map_runtime *runtime, const char *path);
+/* Transactional composition in world coordinates. No record is shared with
+ * inputs; failure preserves the previous destination. Parts must have unique
+ * record IDs and no legacy projection indices. Empty parts clone the base. */
+int rf_map_runtime_compose(struct rf_map_runtime *destination,
+                          const struct rf_map_runtime *base,
+                          const struct rf_map_runtime *const *parts, int count);
 void rf_map_runtime_unload(struct rf_map_runtime *runtime);
 const struct rf_map_runtime_world *rf_map_runtime_world_info(
     const struct rf_map_runtime *runtime);

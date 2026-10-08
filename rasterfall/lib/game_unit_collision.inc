@@ -12,7 +12,7 @@ struct unit_contact {
 static int unit_actor_solid(const struct toy_game_actor *a)
 {
     return a->active && a->hp > 0 && a->state == TOY_GAME_ACTOR_ALIVE &&
-        !a->base_core && !a->animation_demo;
+        !a->base_core;
 }
 
 static int unit_actor_moving(const struct toy_game *g,
@@ -212,6 +212,7 @@ static int enemy_try_step(struct toy_game *g, struct toy_game_enemy *e, int x, i
     struct toy_game_enemy previous;
     struct unit_contact contact;
     if (!g || !e) return 0;
+    if(e->animation_control)return 0;
     if (!unit_enemy_moving(g,e)) return enemy_try_step_terrain(g,e,x,z,radius);
     memcpy(&previous,e,sizeof(previous));
     if (!enemy_try_step_terrain(g,e,x,z,radius)) return 0;
@@ -225,6 +226,7 @@ static int enemy_try_step(struct toy_game *g, struct toy_game_enemy *e, int x, i
 
 static int enemy_move_sliding(struct toy_game *g, struct toy_game_enemy *e, int dx, int dz, int radius)
 {
+    if(e->animation_control)return 0;
     int start_x=e->x, start_z=e->z, iteration;
     struct unit_contact last_contact = {UNIT_SWEEP_SCALE,0,0};
     e->nav_unit_blocked=0;

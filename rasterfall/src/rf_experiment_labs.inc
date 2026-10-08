@@ -9,19 +9,19 @@ struct rf_experiment_definition {
     int gpu_only;
 };
 static const struct rf_experiment_definition rf_lab_definitions[RF_LAB_COUNT] = {
-    {"INFECTED POSES", "character_lab", "lab_showcase_button", "character-lab", 0},
-    {"INFECTED WALK", "walk_lab", "walk_lab_showcase_button", "walk-lab", 0},
-    {"AI ACTIONS", "actor_actions_lab", "actor_actions_button", "actor-actions-lab", 0},
-    {"AI WALK", "actor_walk_lab", "actor_walk_button", "actor-walk-lab", 0},
-    {"RF MODEL", "rf_model_lab", "rf_model_lab_button", "model-lab", 1},
+    {"INFECTED POSES", "actor_actions_lab", "actor_actions_lab_button", "character-lab", 0},
+    {"INFECTED WALK", "actor_actions_lab", "actor_actions_lab_button", "walk-lab", 0},
+    {"AI ACTIONS", "actor_actions_lab", "actor_actions_lab_button", "actor-actions-lab", 0},
+    {"AI WALK", "actor_actions_lab", "actor_actions_lab_button", "actor-walk-lab", 0},
+    {"RF MODEL", "actor_actions_lab", "actor_actions_lab_button", "model-lab", 1},
     {"GPU LIGHTING", "rf_light_lab", "rf_light_lab_button", "lighting-lab", 1},
     {"RF ELECTRONICS", "rf_electronics_lab", "rf_electronics_lab_button", "electronics-lab", 0},
-    {"RIFLE CYCLE", "rifle_cycle_lab", "rifle_cycle_lab_button", "rifle-cycle-lab", 1},
-    {"LIVE AI HOLDS", "idle_rifle_lab", "idle_rifle_lab_button", "idle-rifle-lab", 0},
-    {"WEAPON CYCLE 3 X 5", "weapon_cycle_lab", "weapon_cycle_lab_button", "weapon-cycle-lab", 1}
+    {"RIFLE CYCLE", "actor_actions_lab", "actor_actions_lab_button", "rifle-cycle-lab", 1},
+    {"LIVE AI HOLDS", "actor_actions_lab", "actor_actions_lab_button", "idle-rifle-lab", 0},
+    {"WEAPON CYCLE 3 X 5", "actor_actions_lab", "actor_actions_lab_button", "weapon-cycle-lab", 1}
 };
 static struct {
-    int requested[RF_LAB_COUNT],fan_rpm;
+    int requested[RF_LAB_COUNT],paused[RF_LAB_COUNT],fan_rpm;
     unsigned fan_phase[RF_LAB_COUNT];
     uint64_t time_us[RF_LAB_COUNT], last_us;
 } rf_labs;
@@ -64,9 +64,11 @@ static void rf_labs_tick(enum rasterfall_world_id world,int suspended,int gpu,ui
     for (int i=0;i<RF_LAB_COUNT;++i) {
         if (!rf_labs.requested[i]) rf_labs.time_us[i]=0;
         else if (rf_lab_effective(i,world,suspended,gpu)) {
-            rf_labs.time_us[i]+=dt;
-            rf_labs.fan_phase[i]=(unsigned)((rf_labs.fan_phase[i]+
+            if(!rf_labs.paused[i]) {
+                rf_labs.time_us[i]+=dt;
+                rf_labs.fan_phase[i]=(unsigned)((rf_labs.fan_phase[i]+
                 (dt%60000000u)*(unsigned)rf_labs.fan_rpm)%60000000u);
+            }
             frame.powered_mask|=1u<<(i+1);
         }
         frame.phase[i+1]=rf_labs.fan_phase[i];
@@ -106,6 +108,10 @@ static void rf_labs_display(enum rasterfall_world_id world,int suspended,int gpu
 static void rf_lab_camera_position(const struct rasterfall_session *session,
     struct camera *camera, const char *id, int x, int z)
 {
+    if(!strcmp(id,"character_lab_area") || !strcmp(id,"walk_lab_area") ||
+        !strcmp(id,"actor_walk_lab_area") || !strcmp(id,"rf_model_lab_area") ||
+        !strcmp(id,"rifle_cycle_lab_area") || !strcmp(id,"idle_rifle_lab_area") ||
+        !strcmp(id,"weapon_cycle_lab_area"))id="actor_actions_lab_area";
     const struct rf_map_runtime_region *area=rf_map_runtime_find_region(
         &session->map_ops.runtime,id);
     if (!area) return;
@@ -208,7 +214,7 @@ static void rf_lab_computer_camera(const struct rasterfall_session *session,
     struct camera *camera,const char *view)
 {
     const struct rf_map_runtime_object *o=rf_map_runtime_find_object(
-        &session->map_ops.runtime,"lab_showcase_button");
+        &session->map_ops.runtime,"actor_actions_lab_button");
     if (!o) return;
     int close=!strcmp(view,"lab-computer-close");
     camera->x=o->x+(close?130:260);camera->z=o->z+(close?720:1500);

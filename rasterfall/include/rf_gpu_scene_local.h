@@ -43,6 +43,7 @@ int rf_gpu_scene_local_world(struct rf_gpu_scene_local_source *source);
 int rf_gpu_scene_local_created(struct rf_gpu_scene_local_source *source,
                                const struct toy_game_actor *actor);
 void rf_gpu_scene_local_destroyed(struct rf_gpu_scene_local_source *source);
+void rf_gpu_scene_local_removed(struct rf_gpu_scene_local_source *source,int actor_id);
 int rf_gpu_scene_local_freeze(struct rf_gpu_scene_local_source *source,
     const struct toy_game *game, const struct camera *camera,
     uint32_t width, uint32_t height, int air_walls_enabled,

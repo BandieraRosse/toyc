@@ -1,0 +1,27 @@
+# Dynamic experiment group; ordinary components in world coordinates.
+map version=1 units=rfu
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640
+object id=experiment_load_0 kind=crate x=-5250 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_1 kind=crate x=-3250 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_2 kind=crate x=-1250 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_3 kind=crate x=750 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_4 kind=crate x=2750 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_5 kind=crate x=4750 y=0 z=-38100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_6 kind=crate x=-5250 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_7 kind=crate x=-3250 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_8 kind=crate x=-1250 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_9 kind=crate x=750 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_10 kind=crate x=2750 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_11 kind=crate x=4750 y=0 z=-36100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_12 kind=crate x=-5250 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_13 kind=crate x=-3250 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_14 kind=crate x=-1250 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_15 kind=crate x=750 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_16 kind=crate x=2750 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_17 kind=crate x=4750 y=0 z=-34100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_18 kind=crate x=-5250 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_19 kind=crate x=-3250 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_20 kind=crate x=-1250 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_21 kind=crate x=750 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_22 kind=crate x=2750 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component
+object id=experiment_load_23 kind=crate x=4750 y=0 z=-32100 yaw=0 scale=1000 attr.collision=component

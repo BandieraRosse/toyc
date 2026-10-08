@@ -14,7 +14,7 @@
 
 北侧服务走廊尽头通过门洞连接楼梯间，范围 X ±3072、Z 10240～19456 RFU。每层南端为楼层平台，北端为半层折返平台，左右两段踏步连接相邻楼层；连续碰撞坡面配有限厚度底面，避免上层楼梯封住下层空间。踏步横向填满外墙内侧到中央隔墙之间的空间，不留侧槽；踏步端点与平台使用相同连接平面和高度。B1 入口平台与底板铺满最底层，楼梯和半层平台下方也有可见、可站立的有限厚度地板。楼梯间连接 B1 到屋顶并有独立顶盖。一层地面改为有限厚度实体楼板，防止地下角色误吸附到地面层。前哨站地图不再声明安全区。
 
-楼层由 `outpost_base` 的四条 `building_floor` region 登记，使用通用 RTS 楼层选择、切顶和高度目标。B1、一层和二层采用向下的 `light_ceiling` 吸顶聚光灯，楼梯平台、折返平台、梯段和入口采用朝前下方的 `light_wall` 壁灯；前哨站不再放置 lamp_post。模型局部光源绑定与建筑遮挡见[GPU 光照](../architecture/gpu-lighting.md#建筑遮挡与灯具绑定)。结构与照明维护工具为 `python tools/outpost_storeys.py --write`；它使用[建筑生成语法](architectural-environment-v1.md#标准房屋生成语法)重建地图中标记的结构段，拥有各层墙体、门洞、楼板、完整折返楼梯及灯具布局；其余家具和园区仍直接由地图维护。
+楼层由 `outpost_base` 的四条 `building_floor` region 登记，使用通用 RTS 楼层选择、切顶和高度目标。B1、一层和二层采用稀疏向下的 `light_ceiling` 吸顶聚光灯，楼梯间每段梯段保留一盏朝前下方的 `light_wall` 壁灯，平台不另加灯，建筑入口另有壁灯；前哨站不再放置 lamp_post。模型局部光源绑定与建筑遮挡见[GPU 光照](../architecture/gpu-lighting.md#建筑遮挡与灯具绑定)。结构与照明维护工具为 `python tools/outpost_storeys.py --write`；它使用[建筑生成语法](architectural-environment-v1.md#标准房屋生成语法)重建地图中标记的结构段，拥有各层墙体、门洞、楼板、完整折返楼梯及灯具布局；其余家具和园区仍直接由地图维护。
 
 Windows 原生构建和暂存后，`python tools/rts_floors_check.py --outpost --output tmp/outpost-floors` 用正常窗口输入检查四层按钮、右键目标高度、楼梯往返和 FPS 入口画面，保存截图及真实退出码。
 

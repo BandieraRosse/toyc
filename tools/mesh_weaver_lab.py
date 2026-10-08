@@ -53,20 +53,9 @@ def main():
     parser.add_argument("--install", action="store_true")
     args = parser.parse_args()
     if args.install:
-        path = ROOT / "rasterfall/assets/maps/outpost.map"
-        original = path.read_bytes()
-        bom = original.startswith(b"\xef\xbb\xbf")
-        text = original.decode("utf-8-sig" if bom else "utf-8")
-        newline = "\r\n" if "\r\n" in text else "\n"
-        part = generate().replace("\n", newline)
-        if BEGIN in text:
-            start = text.index(BEGIN)
-            finish = text.index(END, start) + len(END)
-            finish += len(newline) if text[finish:].startswith(newline) else 0
-            text = text[:start] + part + text[finish:]
-        else:
-            text = text.rstrip("\r\n") + newline + part
-        path.write_bytes(text.encode("utf-8-sig" if bom else "utf-8"))
+        from dynamic_experiment_maps import main as rebuild_campus
+        rebuild_campus()
+        return
     elif args.output:
         with args.output.open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(generate())

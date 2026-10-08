@@ -328,8 +328,10 @@ done:
     if(!result) __printf("SCENE-FREEZE cache/content/generation/airwalls/value-ownership/failure passed\n");
     return result;
 }
+#include "rf_experiment_session_test.inc"
 static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
 {
+    if (rf_experiment_session_test()<0) return -27;
     if (rf_lab_composite_contract_test()<0) return -12;
     if (rf_machine_screen_contract_test()<0) return -13;
     if (rf_display_geometry_test()<0) return -23;
@@ -361,13 +363,14 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
         rf_perf_lab.selected=scene;
         if (rf_perf_lab_start(runtime)<0) return -4;
         int expected=scene==1 || scene==3 ? 64 : 0;
-        if (runtime->session->world_id!= (scene>=2 ?
-                RASTERFALL_WORLD_PERF_COMPONENTS : RASTERFALL_WORLD_PERF_EMPTY) ||
-            runtime->session->content.actor_count || runtime->session->content.spawn_null ||
+        if (runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST ||
             runtime->session->game_state.enemies_alive!=expected) return -5;
         /* Spawn regions override floor paint; an uncoloured region looks like a hole. */
         for (int i=0;i<runtime->session->level.spawn_count;++i)
             if (!runtime->session->level.spawn_zones[i].color) return -11;
+        int64_t first=rf_perf_lab.started_us+20000000;
+        rf_perf_lab_sample(first,20000000,0,0,0,0,0,2.0,10,expected,100,1,0,3,30,0,1280,720);
+        if(rf_perf_lab.samples || rf_perf_lab.started_us!=first || !rf_perf_lab.presented)return -31;
         int64_t now=rf_perf_lab.started_us+RF_PERF_LAB_WARMUP_US+1;
         rf_perf_lab_sample(now,10000,0,0,0,0,0,2.0,10,expected,100,1,0,3,30,0,1280,720);
         rf_perf_lab_sample(now,12000,0,0,0,0,0,0.0,10,expected,100,0,0,3,30,0,1280,720);
@@ -392,32 +395,9 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             runtime->camera.x!=origin.x || runtime->camera.z!=origin.z ||
             !rf_labs.requested[RF_LAB_LIGHTING]) return -18;
     }
-    /* Full-scene tours preserve the map and restore exhibit requests even on abort.
-     * Point warmups cannot leak into measurements; every point needs samples. */
-    for(int scene=4;scene<6;++scene) {
-        rf_labs_reset();rf_labs.requested[RF_LAB_LIGHTING]=1;
-        rf_perf_lab.isolated=1;rf_perf_lab.interference=0;rf_perf_lab.selected=scene;
-        if(rf_perf_lab_start(runtime)<0 || rf_perf_lab.isolated || !rf_perf_lab.interference ||
-            runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST) return -19;
-        unsigned expected_mask=scene==5?(1u<<RF_LAB_COUNT)-1:1u<<RF_LAB_LIGHTING;
-        if(rf_perf_lab_mask()!=expected_mask) return -20;
-        for(int point=0;point<RF_PERF_LAB_POINTS;++point) {
-            int64_t now=rf_perf_lab.started_us+point*RF_PERF_LAB_POINT_US+1;
-            rf_perf_lab_camera(runtime,now);
-            rf_perf_lab_sample(now,90000,0,0,0,0,0,2,10,0,100,1,point,3,30,0,1280,720);
-            if(rf_perf_lab.samples!=point) return -21;
-            now+=RF_PERF_LAB_WARMUP_US;
-            rf_perf_lab_sample(now,10000+point*1000,0,0,0,0,0,2,10,0,100,1,point,3,30,0,1280,720);
-            rf_perf_lab_sample_detail(300,200,100,50,20,10,400,NULL);
-        }
-        if(rf_perf_lab_finish(runtime,scene==5)<0 || rf_perf_lab.result.valid!=(scene==5?2:1) ||
-            rf_perf_lab.result.point[4].p95_us!=14000 || rf_perf_lab.result.layer_us!=300 ||
-            rf_perf_lab_mask()!=(1u<<RF_LAB_LIGHTING) || !rf_perf_lab.isolated ||
-            runtime->camera.x!=origin.x || runtime->camera.z!=origin.z) return -22;
-    }
     /* Live trials borrow the normal update path and must release profiling,
      * participants, camera and presentation on every cancellation. */
-    for(int scene=6;scene<RF_PERF_LAB_SCENES;++scene) {
+    for(int scene=6;scene<8;++scene) {
         rf_perf_lab.selected=scene;rf_perf_lab.isolated=1;
         struct rasterfall_command input={0};
         if(rf_perf_lab_start(runtime)<0)return -26;
@@ -425,13 +405,6 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
             rf_perf_lab.isolated || !rf_perf_lab.interference)return -27;
         for(int step=0;step<8;++step)if(rf_game_update(runtime,&input,16)<0)return -28;
         if(rf_perf_live_result.ticks!=8)return -29;
-        if(scene==8) {
-            for(int step=8;step<7500 && !rf_perf_live_result.done;++step)
-                if(rf_game_update(runtime,&input,16)<0)return -31;
-            if(!rf_perf_live_result.done) {
-                rf_perf_live_dump_route(runtime);return -32;
-            }
-        }
         if(rf_perf_lab_finish(runtime,1)<0)return -29;
         if(runtime->session->game_state.update_profile || rf_combat_lab.member_count ||
             runtime->session->world_id!=RASTERFALL_WORLD_OUTPOST ||
@@ -443,6 +416,7 @@ static int rf_experiment_lab_logic_test(struct rf_game_runtime *runtime)
     /* Any workload growth, including a previously empty scene, invalidates it. */
     rf_perf_lab.selected=0;
     if (rf_perf_lab_start(runtime)<0) return -8;
+    rf_perf_lab_sample(rf_perf_lab.started_us,10000,0,0,0,0,0,1,10,0,100,1,0,3,30,0,1280,720);
     rf_perf_lab_sample(rf_perf_lab.started_us+RF_PERF_LAB_WARMUP_US+1,
         10000,0,0,0,0,0,1,10,1,100,1,0,3,30,0,1280,720);
     if (rf_perf_lab_finish(runtime,0)<0 || rf_perf_lab.result.valid!=2) return -9;

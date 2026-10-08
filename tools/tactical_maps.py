@@ -22,7 +22,8 @@ def build(source):
         x0,x1=round((x0-32)*512),round((x1-32)*512)
         z0,z1=round((z0-24)*512),round((z1-24)*512)
         h=round((1.10 if height==1 else 2.20)*512)
-        arena.append(f'collision id=cover_{i} shape=box min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} collision=true visible=true walkable=false color=647881')
+        arena.append(f'collision id=cover_{i} shape=box min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} collision=true visible=true walkable=true color=647881')
+        arena.append(f'surface id=cover_{i}_surface kind=platform min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} material=8A9A9F attr.collision_id=cover_{i}')
         arena.append(f'render id=cover_draw_{i} kind=box min_x={x0} max_x={x1} min_z={z0} max_z={z1} height={h} attr.base_y=0 color=8A9A9F')
     # Replace the wall volume at each window; glass never overlays a solid wall.
     kit=BuildingKit(arena,250)
@@ -42,14 +43,13 @@ def build(source):
     for lines,x0,x1,z0,z1 in [(arena,-17408,17408,-16384,13312),(ranges,-8192,8192,-4096,53248)]:
         for name,a,b,c,d in [('west',x0,x0+64,z0,z1),('east',x1-64,x1,z0,z1),
                               ('south',x0,x1,z0,z0+64),('north',x0,x1,z1-64,z1)]:
-            lines.append(f'collision id=perimeter_{name}_col shape=box min_x={a} max_x={b} min_z={c} max_z={d} height=8192 collision=true visible=false walkable=false')
-            # The gameplay boundary remains tall; the visible enclosure has
-            # architectural proportions and shares the observer wall's top.
+            # The glass and its collision share the same vaultable height.
             axis,at,start,end = ('z',(a+b)//2,c,d) if name in ('west','east') else ('x',(c+d)//2,a,b)
+            at += 32 if name in ('west','south') else -32
             # Butt the north/south rails against the side frames at corners.
             if axis == 'x': start,end = start+64,end-64
             BuildingKit(lines).window(f'perimeter_{name}_glass', axis, at,
-                                      start, end, 0, 2304, collision=False)
+                                      start, end, 0, 512, depth=128, walk=True)
     root=Path('rasterfall/assets/maps')
     for name,lines in [('tactical_arena',arena),('tactical_range',ranges)]:
         (root/(name+'.map')).write_text('\n'.join(lines)+'\n',encoding='utf-8',newline='\n')

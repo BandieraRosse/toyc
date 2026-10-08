@@ -605,6 +605,8 @@ struct toy_game_enemy_ability_state {
 
 struct toy_game_enemy {
     int active;         /* 0=空槽 1=存活 2=倒地中 */
+    int animation_control, animation_id;
+    unsigned animation_clock_ms;
     unsigned int combat_generation; /* Slot lifetime; host-owned spawn identity. */
     int type;           /* enum toy_game_enemy_type */
     int x, z;           /* 世界坐标（xz 平面） */
@@ -749,6 +751,10 @@ struct toy_game_actor {
     int hit_test_dummy;
     int animation_demo;
     int animation_demo_elapsed_ms;
+    /* Explicit actor playback: 0 normal, 1 selected clip, 2 frozen sample.
+     * Controlled actors retain their ordinary body and collision. */
+    int animation_control;
+    unsigned animation_clock_ms;
     struct toy_game_animation_state animation;
     int locomotion_blend_ms;     /* idle/walk 过渡时钟 */
 };
@@ -1261,6 +1267,8 @@ void toy_game_animation_update(struct toy_game_animation_state *state,
                                int dt_ms);
 void toy_game_actor_set_animation(struct toy_game_actor *actor, int animation_id);
 void toy_game_actor_update_animation(struct toy_game_actor *actor, int dt_ms);
+int toy_game_actor_playback(struct toy_game_actor *actor, int mode,
+                            int animation_id, int time_ms);
 int  toy_game_drain_events(struct toy_game *g, unsigned char *out, int max);
 int  toy_game_drain_actor_impulses(
     struct toy_game *g, struct toy_game_actor_impulse_event *out, int max);

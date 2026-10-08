@@ -752,6 +752,79 @@ invalid_surface_reference:
     return 0;
 }
 
+static int runtime_has_id(const struct rf_map_runtime_impl *map,const char *id)
+{
+#define HAS_ID(field, count) for(int i=0;i<map->count;++i) \
+    if(!strcmp(map->field[i].id,id))return 1
+    HAS_ID(collisions,collision_count);
+    HAS_ID(surfaces,surface_count);
+    HAS_ID(regions,region_count);
+    HAS_ID(interactions,interaction_count);
+    HAS_ID(actor_spawns,actor_spawn_count);
+    HAS_ID(pickups,pickup_count);
+    HAS_ID(objects,object_count);
+    HAS_ID(renders,render_count);
+#undef HAS_ID
+    return 0;
+}
+
+int rf_map_runtime_compose(struct rf_map_runtime *destination,
+                          const struct rf_map_runtime *base,
+                          const struct rf_map_runtime *const *parts, int count)
+{
+    struct rf_map_runtime_impl *next;
+    if (!destination || !base || !base->impl || count < 0 ||
+        (count && !parts)) return -1;
+    next = tlibc_malloc(sizeof(*next));
+    if (!next) return -1;
+    memcpy(next, base->impl, sizeof(*next));
+    for (int p = 0; p < count; ++p) {
+        const struct rf_map_runtime_impl *part = parts[p] ? parts[p]->impl : NULL;
+        if (!part) goto invalid;
+#define APPEND_RECORDS(field, size) do { \
+    int n = next->size, m = part->size; \
+    if (m > (int)(sizeof(next->field)/sizeof(next->field[0])) - n) goto invalid; \
+    for (int i = 0; i < m; ++i) { \
+        if (runtime_has_id(next, part->field[i].id)) goto invalid; \
+    } \
+    memcpy(next->field+n, part->field, (unsigned long)m*sizeof(next->field[0])); \
+    next->size += m; \
+} while (0)
+#define REJECT_LEGACY(field, size) do { \
+    for (int i = 0; i < part->size; ++i) \
+        if (part->field[i].has_legacy_index) goto invalid; \
+} while (0)
+        REJECT_LEGACY(collisions, collision_count);
+        REJECT_LEGACY(regions, region_count);
+        REJECT_LEGACY(interactions, interaction_count);
+        REJECT_LEGACY(actor_spawns, actor_spawn_count);
+        REJECT_LEGACY(pickups, pickup_count);
+        REJECT_LEGACY(objects, object_count);
+        REJECT_LEGACY(renders, render_count);
+        APPEND_RECORDS(collisions, collision_count);
+        APPEND_RECORDS(surfaces, surface_count);
+        APPEND_RECORDS(regions, region_count);
+        APPEND_RECORDS(interactions, interaction_count);
+        APPEND_RECORDS(actor_spawns, actor_spawn_count);
+        APPEND_RECORDS(pickups, pickup_count);
+        APPEND_RECORDS(objects, object_count);
+        APPEND_RECORDS(renders, render_count);
+#undef REJECT_LEGACY
+#undef APPEND_RECORDS
+    }
+    sort_runtime_records(next);
+    rf_map_runtime_unload(destination);
+    destination->impl = next;
+    destination->error_line = 0;
+    destination->error[0] = 0;
+    return 0;
+invalid:
+    tlibc_free(next);
+    copy_string(destination->error, sizeof(destination->error),
+                "map group composition: capacity, duplicate ID or legacy index");
+    return -1;
+}
+
 void rf_map_runtime_unload(struct rf_map_runtime *runtime)
 {
     if (!runtime) return;

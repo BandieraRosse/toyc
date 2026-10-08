@@ -11,6 +11,10 @@
  * catalog is the migration seam for per-character RFM2 assets and authored
  * clips; gameplay and networking only retain the stable profile ID. */
 static const struct rasterfall_character_profile characters[] = {
+    { RASTERFALL_CHARACTER_RF_C01, RASTERFALL_PROFESSION_NONE,
+      RASTERFALL_MODULAR_PROFESSION_NONE, "RF C01", "rf_c01_v028",
+      RASTERFALL_CHARACTER_ACTION_LOCOMOTION | RASTERFALL_CHARACTER_ACTION_WEAPON,
+      0x6F8461, 0x84906F, 0xB07F65, 0x282F36 },
     { RASTERFALL_CHARACTER_HURD_GUNSMITH, RASTERFALL_PROFESSION_GUNSMITH,
       RASTERFALL_MODULAR_PROFESSION_NONE, "Akari", NULL, ALL_ACTIONS,
       0xD94F70, 0x542F55, 0xF0C3A5, 0x512B3A },
@@ -102,7 +106,7 @@ int rasterfall_character_logic_test(void)
             (i >= RASTERFALL_CHARACTER_RF_RIFLEMAN &&
              profile->profession_id != RASTERFALL_PROFESSION_NONE) ||
             !profile->name ||
-            (profile->actions & ALL_ACTIONS) != ALL_ACTIONS)
+            (i!=RASTERFALL_CHARACTER_RF_C01 && (profile->actions & ALL_ACTIONS) != ALL_ACTIONS))
             return 1;
     }
     if (rasterfall_character_profile(RASTERFALL_CHARACTER_NONE)->id !=
@@ -117,7 +121,7 @@ int rasterfall_character_logic_test(void)
     if (rasterfall_profession_visual_profile(RASTERFALL_PROFESSION_MAID) != NULL)
         return 1;
     for (i = RASTERFALL_CHARACTER_RF_RIFLEMAN;
-         i < RASTERFALL_CHARACTER_COUNT; i++)
+         i <= RASTERFALL_CHARACTER_GUNNER_ELITE; i++)
         if (rasterfall_character_profile(i)->visual_recipe_id < 0 ||
             !rasterfall_character_visual_recipe_for_character(i)) return 1;
     for (i = 0; i < RASTERFALL_MODULAR_RECIPE_COUNT; i++) {

@@ -49,6 +49,7 @@ static int rf_weaver_configure(struct rasterfall_session *s, int offline)
         rf_map_runtime_find_object(&s->map_ops.runtime, "mesh_weaver");
     int enabled = machine && offline && (s->world_id == RASTERFALL_WORLD_OUTPOST ||
         (s->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01 && s->frontier.captured[0]));
+    if(s->experiments && s->experiments->groups[2].paused)enabled=0;
     rasterfall_session_weaver_configure(s, enabled,
         machine ? machine->x : 0, machine ? machine->z + 105 : 0,
         machine ? -900 + machine->y + 364 : 0);

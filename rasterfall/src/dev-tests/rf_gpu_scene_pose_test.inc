@@ -931,7 +931,7 @@ int rf_gpu_scene_pose_logic_test(void)
         character<RASTERFALL_CHARACTER_COUNT;++character) {
         const struct rasterfall_character_visual_recipe *recipe=
             rasterfall_character_visual_recipe_for_character(character);
-        POSE_CHECK(recipe);
+        if(!recipe)continue; /* Catalog also contains non-modular bodies. */
         actor->character_id=character;
         POSE_CHECK(!rf_gpu_scene_local_freeze(&source,&source_game,&camera,640,480,1,&frame));
         POSE_CHECK(!rf_gpu_scene_pose_extract(&frame,&repeat) &&

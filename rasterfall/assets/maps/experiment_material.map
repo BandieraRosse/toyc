@@ -1,0 +1,81 @@
+# Dynamic experiment group; ordinary components in world coordinates.
+map version=1 units=rfu
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640
+render id=rf_light_base_0_0 kind=box min_x=26236 max_x=27736 min_z=-19392 max_z=-17892 height=250 color=303B48
+collision id=rf_light_base_0_0_col shape=box min_x=26236 max_x=27736 min_z=-19392 max_z=-17892 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_0_0_surface kind=platform min_x=26236 max_x=27736 min_z=-19392 max_z=-17892 height=250 attr.collision_id=rf_light_base_0_0_col
+render id=rf_light_label_0_0 kind=sign min_x=26036 max_x=27936 min_z=-17862 max_z=-17842 height=-700 color=FFD283 attr.height2=-450 attr.text=PBR_90 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_0_1 kind=box min_x=28536 max_x=30036 min_z=-19392 max_z=-17892 height=250 color=303B48
+collision id=rf_light_base_0_1_col shape=box min_x=28536 max_x=30036 min_z=-19392 max_z=-17892 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_0_1_surface kind=platform min_x=28536 max_x=30036 min_z=-19392 max_z=-17892 height=250 attr.collision_id=rf_light_base_0_1_col
+render id=rf_light_label_0_1 kind=sign min_x=28336 max_x=30236 min_z=-17862 max_z=-17842 height=-700 color=FFD283 attr.height2=-450 attr.text=PBR_64 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_0_2 kind=box min_x=30836 max_x=32336 min_z=-19392 max_z=-17892 height=250 color=303B48
+collision id=rf_light_base_0_2_col shape=box min_x=30836 max_x=32336 min_z=-19392 max_z=-17892 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_0_2_surface kind=platform min_x=30836 max_x=32336 min_z=-19392 max_z=-17892 height=250 attr.collision_id=rf_light_base_0_2_col
+render id=rf_light_label_0_2 kind=sign min_x=30636 max_x=32536 min_z=-17862 max_z=-17842 height=-700 color=FFD283 attr.height2=-450 attr.text=PBR_38 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_0_3 kind=box min_x=33136 max_x=34636 min_z=-19392 max_z=-17892 height=250 color=303B48
+collision id=rf_light_base_0_3_col shape=box min_x=33136 max_x=34636 min_z=-19392 max_z=-17892 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_0_3_surface kind=platform min_x=33136 max_x=34636 min_z=-19392 max_z=-17892 height=250 attr.collision_id=rf_light_base_0_3_col
+render id=rf_light_label_0_3 kind=sign min_x=32936 max_x=34836 min_z=-17862 max_z=-17842 height=-700 color=FFD283 attr.height2=-450 attr.text=PBR_12 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_1_0 kind=box min_x=26236 max_x=27736 min_z=-21692 max_z=-20192 height=250 color=303B48
+collision id=rf_light_base_1_0_col shape=box min_x=26236 max_x=27736 min_z=-21692 max_z=-20192 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_1_0_surface kind=platform min_x=26236 max_x=27736 min_z=-21692 max_z=-20192 height=250 attr.collision_id=rf_light_base_1_0_col
+render id=rf_light_label_1_0 kind=sign min_x=26036 max_x=27936 min_z=-20162 max_z=-20142 height=-700 color=FFD283 attr.height2=-450 attr.text=METAL_90 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_1_1 kind=box min_x=28536 max_x=30036 min_z=-21692 max_z=-20192 height=250 color=303B48
+collision id=rf_light_base_1_1_col shape=box min_x=28536 max_x=30036 min_z=-21692 max_z=-20192 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_1_1_surface kind=platform min_x=28536 max_x=30036 min_z=-21692 max_z=-20192 height=250 attr.collision_id=rf_light_base_1_1_col
+render id=rf_light_label_1_1 kind=sign min_x=28336 max_x=30236 min_z=-20162 max_z=-20142 height=-700 color=FFD283 attr.height2=-450 attr.text=METAL_64 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_1_2 kind=box min_x=30836 max_x=32336 min_z=-21692 max_z=-20192 height=250 color=303B48
+collision id=rf_light_base_1_2_col shape=box min_x=30836 max_x=32336 min_z=-21692 max_z=-20192 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_1_2_surface kind=platform min_x=30836 max_x=32336 min_z=-21692 max_z=-20192 height=250 attr.collision_id=rf_light_base_1_2_col
+render id=rf_light_label_1_2 kind=sign min_x=30636 max_x=32536 min_z=-20162 max_z=-20142 height=-700 color=FFD283 attr.height2=-450 attr.text=METAL_38 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_1_3 kind=box min_x=33136 max_x=34636 min_z=-21692 max_z=-20192 height=250 color=303B48
+collision id=rf_light_base_1_3_col shape=box min_x=33136 max_x=34636 min_z=-21692 max_z=-20192 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_1_3_surface kind=platform min_x=33136 max_x=34636 min_z=-21692 max_z=-20192 height=250 attr.collision_id=rf_light_base_1_3_col
+render id=rf_light_label_1_3 kind=sign min_x=32936 max_x=34836 min_z=-20162 max_z=-20142 height=-700 color=FFD283 attr.height2=-450 attr.text=METAL_12 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_2_0 kind=box min_x=26236 max_x=27736 min_z=-23992 max_z=-22492 height=250 color=303B48
+collision id=rf_light_base_2_0_col shape=box min_x=26236 max_x=27736 min_z=-23992 max_z=-22492 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_2_0_surface kind=platform min_x=26236 max_x=27736 min_z=-23992 max_z=-22492 height=250 attr.collision_id=rf_light_base_2_0_col
+render id=rf_light_label_2_0 kind=sign min_x=26036 max_x=27936 min_z=-22462 max_z=-22442 height=-700 color=FFD283 attr.height2=-450 attr.text=STYLIZED_90 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_2_1 kind=box min_x=28536 max_x=30036 min_z=-23992 max_z=-22492 height=250 color=303B48
+collision id=rf_light_base_2_1_col shape=box min_x=28536 max_x=30036 min_z=-23992 max_z=-22492 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_2_1_surface kind=platform min_x=28536 max_x=30036 min_z=-23992 max_z=-22492 height=250 attr.collision_id=rf_light_base_2_1_col
+render id=rf_light_label_2_1 kind=sign min_x=28336 max_x=30236 min_z=-22462 max_z=-22442 height=-700 color=FFD283 attr.height2=-450 attr.text=STYLIZED_64 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_2_2 kind=box min_x=30836 max_x=32336 min_z=-23992 max_z=-22492 height=250 color=303B48
+collision id=rf_light_base_2_2_col shape=box min_x=30836 max_x=32336 min_z=-23992 max_z=-22492 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_2_2_surface kind=platform min_x=30836 max_x=32336 min_z=-23992 max_z=-22492 height=250 attr.collision_id=rf_light_base_2_2_col
+render id=rf_light_label_2_2 kind=sign min_x=30636 max_x=32536 min_z=-22462 max_z=-22442 height=-700 color=FFD283 attr.height2=-450 attr.text=STYLIZED_38 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_base_2_3 kind=box min_x=33136 max_x=34636 min_z=-23992 max_z=-22492 height=250 color=303B48
+collision id=rf_light_base_2_3_col shape=box min_x=33136 max_x=34636 min_z=-23992 max_z=-22492 height=250 collision=true visible=false walkable=true
+surface id=rf_light_base_2_3_surface kind=platform min_x=33136 max_x=34636 min_z=-23992 max_z=-22492 height=250 attr.collision_id=rf_light_base_2_3_col
+render id=rf_light_label_2_3 kind=sign min_x=32936 max_x=34836 min_z=-22462 max_z=-22442 height=-700 color=FFD283 attr.height2=-450 attr.text=STYLIZED_12 attr.facing=+z attr.style=3 attr.texture_u=3
+render id=rf_light_occluder_0 kind=box min_x=25316 max_x=25756 min_z=-21842 max_z=-21402 height=2600 color=D4C4A1
+collision id=rf_light_occluder_0_col shape=box min_x=25316 max_x=25756 min_z=-21842 max_z=-21402 height=2600 collision=true visible=false walkable=true
+surface id=rf_light_occluder_0_surface kind=platform min_x=25316 max_x=25756 min_z=-21842 max_z=-21402 height=2600 attr.collision_id=rf_light_occluder_0_col
+render id=rf_light_occluder_1 kind=box min_x=34516 max_x=34956 min_z=-21842 max_z=-21402 height=2600 color=D4C4A1
+collision id=rf_light_occluder_1_col shape=box min_x=34516 max_x=34956 min_z=-21842 max_z=-21402 height=2600 collision=true visible=false walkable=true
+surface id=rf_light_occluder_1_surface kind=platform min_x=34516 max_x=34956 min_z=-21842 max_z=-21402 height=2600 attr.collision_id=rf_light_occluder_1_col
+collision id=material_sample_0_col shape=box min_x=26336 max_x=27636 min_z=-19292 max_z=-17992 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_0_top kind=platform min_x=26336 max_x=27636 min_z=-19292 max_z=-17992 height=1550 attr.collision_id=material_sample_0_col
+collision id=material_sample_1_col shape=box min_x=28636 max_x=29936 min_z=-19292 max_z=-17992 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_1_top kind=platform min_x=28636 max_x=29936 min_z=-19292 max_z=-17992 height=1550 attr.collision_id=material_sample_1_col
+collision id=material_sample_2_col shape=box min_x=30936 max_x=32236 min_z=-19292 max_z=-17992 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_2_top kind=platform min_x=30936 max_x=32236 min_z=-19292 max_z=-17992 height=1550 attr.collision_id=material_sample_2_col
+collision id=material_sample_3_col shape=box min_x=33236 max_x=34536 min_z=-19292 max_z=-17992 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_3_top kind=platform min_x=33236 max_x=34536 min_z=-19292 max_z=-17992 height=1550 attr.collision_id=material_sample_3_col
+collision id=material_sample_4_col shape=box min_x=26336 max_x=27636 min_z=-21592 max_z=-20292 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_4_top kind=platform min_x=26336 max_x=27636 min_z=-21592 max_z=-20292 height=1550 attr.collision_id=material_sample_4_col
+collision id=material_sample_5_col shape=box min_x=28636 max_x=29936 min_z=-21592 max_z=-20292 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_5_top kind=platform min_x=28636 max_x=29936 min_z=-21592 max_z=-20292 height=1550 attr.collision_id=material_sample_5_col
+collision id=material_sample_6_col shape=box min_x=30936 max_x=32236 min_z=-21592 max_z=-20292 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_6_top kind=platform min_x=30936 max_x=32236 min_z=-21592 max_z=-20292 height=1550 attr.collision_id=material_sample_6_col
+collision id=material_sample_7_col shape=box min_x=33236 max_x=34536 min_z=-21592 max_z=-20292 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_7_top kind=platform min_x=33236 max_x=34536 min_z=-21592 max_z=-20292 height=1550 attr.collision_id=material_sample_7_col
+collision id=material_sample_8_col shape=box min_x=26336 max_x=27636 min_z=-23892 max_z=-22592 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_8_top kind=platform min_x=26336 max_x=27636 min_z=-23892 max_z=-22592 height=1550 attr.collision_id=material_sample_8_col
+collision id=material_sample_9_col shape=box min_x=28636 max_x=29936 min_z=-23892 max_z=-22592 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_9_top kind=platform min_x=28636 max_x=29936 min_z=-23892 max_z=-22592 height=1550 attr.collision_id=material_sample_9_col
+collision id=material_sample_10_col shape=box min_x=30936 max_x=32236 min_z=-23892 max_z=-22592 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_10_top kind=platform min_x=30936 max_x=32236 min_z=-23892 max_z=-22592 height=1550 attr.collision_id=material_sample_10_col
+collision id=material_sample_11_col shape=box min_x=33236 max_x=34536 min_z=-23892 max_z=-22592 height=1550 attr.base_y=250 collision=true visible=false walkable=true
+surface id=material_sample_11_top kind=platform min_x=33236 max_x=34536 min_z=-23892 max_z=-22592 height=1550 attr.collision_id=material_sample_11_col

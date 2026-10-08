@@ -541,7 +541,9 @@ int rf_player_commands_logic_test(void)
     toy_game_init(&s->game_state,17);s->game_state.state=TOY_GAME_PLAYING;
     toy_mesh_weaver_defaults(&s->game_state.weaver);s->game_state.weaver.enabled=1;
     s->scene_local.world_generation=7;
-    PLAYER_CHECK(rf_map_runtime_load(&s->map_ops.runtime,"rasterfall/assets/maps/outpost.map")==0);
+    int loaded=rf_map_runtime_load(&s->map_ops.runtime,"rasterfall/assets/maps/experiment_weaver.map");
+    if(loaded<0)__printf("PLAYER-COMMANDS fixture: %s\n",s->map_ops.runtime.error);
+    PLAYER_CHECK(loaded==0);
     machine=rf_map_runtime_find_object(&s->map_ops.runtime,"mesh_weaver");
     PLAYER_CHECK(machine!=NULL);
     player=toy_game_local_player_actor(&s->game_state);

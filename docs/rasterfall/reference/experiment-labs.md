@@ -1,122 +1,50 @@
-# 前哨站实验区合同
+# 动态实验场合同
 
 > 状态：当前
-> 所有者：Game Runtime 展示控制、session 基准世界生命周期
-> 事实入口：`src/rf_experiment_labs.inc`、`src/rf_performance_lab.inc`、`src/rf_performance_live.inc`、`assets/maps/outpost.map`
+> 所有者：session 实验组生命周期、Game 实体、Runtime UI 配置
+> 事实入口：`src/rf_experiment_session.inc`、`src/rf_experiment_terminal.inc`、`tools/dynamic_experiment_maps.py`
 
 ## 登记与展示
 
-实验区北侧入口道路的 `rts_rifle`、`rts_sniper`、`rts_shotgun` 三个 formation 由
-`assets/worlds/outpost.content` 配置，各含三名普通 AI 队员。session reset 沿正式 actor 创建路径加载，
-不使用 `animation_demo`、`developer_only` 或展示开关；它们可选择、移动、战斗和受伤，供 RTS 编组实测。
-从西向东依次为步枪、狙击、霰弹枪。操作见 [RTS 核心指挥](../guides/player-ui-v2.md#rts-核心指挥)。
+每类场地保留一个。前哨站保留角色动画、光照材质、电子制造、性能四块场地；武器靶场和
+AI 策略对抗使用 `tactical_range`、`tactical_arena`。进入时只加载场地和控制终端，实验内容按需创建。
+前哨站既有 RTS 编组属于正常世界内容，不属于展示实例；实验组销毁不能删除它们。
 
-固定战斗实验复用南排最西侧空性能场，新增 `combat_control_terminal` 和 `combat_result_terminal` 作为同一终端交互的专用入口。
-它由 `rf_combat_lab.inc` 管理真实 actor/enemy 实验生命周期，与下表纯视觉展示分开；战斗和性能测试不能同时使用场地。
-场地 region 仍是 `perf_low_area`，坐标由 Runtime Map 读取；具体操作、五类预设与结构化结果见[战斗实验场](../guides/combat-lab.md)。
+靠近终端按 E 打开配置面板。下拉选项、悬停、输入框和声音沿用战术终端交互；配置仅在创建或重建时应用。
+暂停保留模型和碰撞，销毁移除拥有的实体、地图记录与碰撞。切换预设先准备新组，失败保留原组。
 
-每个展示区登记一种用途、一份地图 surface、一个控制终端、一个诊断镜头和后端能力。
-`rf_experiment_labs.inc` 是控制登记表；Runtime Map 是地面边界和终端位置的事实来源，登记表不复制坐标。
+| 场地 | Runtime Map 区域 | 动态实验组 |
+| --- | --- | --- |
+| 角色与动画 | `actor_actions_lab_area` | Block、职业装备、三身体、三身体五枪、RF-C01、感染体、真实 AI 待机/往返/实弹 |
+| 光照与材质 | `rf_light_lab_area` | 材质与动态灯、建筑与天空光照 |
+| 电子与制造 | `rf_electronics_lab_area` | RF 电子组件与整机、网格编织机与供电 |
+| 性能与战斗负载 | `perf_low_area` | 空场、64 感染体、24 组件、复合负载、真实战斗、枪手混战 |
 
-| 用途 | 地图 surface | 控制对象 | 诊断镜头 | 后端 |
-| --- | --- | --- | --- | --- |
-| 感染体姿态 | `character_lab` | `lab_showcase_button` | `character-lab` | CPU / Scene |
-| 感染体往返 | `walk_lab` | `walk_lab_showcase_button` | `walk-lab` | CPU / Scene |
-| AI 动作与装备组合 | `actor_actions_lab` | `actor_actions_button` | `actor-actions-lab` / `equipment-lab` | CPU / Scene |
-| AI 往返 | `actor_walk_lab` | `actor_walk_button` | `actor-walk-lab` | CPU / Scene |
-| RF 模型 | `rf_model_lab` | `rf_model_lab_button` | `model-lab` | Scene |
-| GPU 光照 | `rf_light_lab` | `rf_light_lab_button` | `lighting-lab` | Scene |
-| RF 电子产品 | `rf_electronics_lab` | `rf_electronics_lab_button` | `electronics-lab` / `electronics-case` | CPU / Scene |
-| 三模型持枪循环 | `rifle_cycle_lab` | `rifle_cycle_lab_button` | `rifle-cycle-lab` | Scene |
-| 真实 AI 持枪待机与中断测试 | `idle_rifle_lab` | `idle_rifle_lab_button` | `idle-rifle-lab` | CPU / Scene |
-| 三角色五枪动画循环 | `weapon_cycle_lab` | `weapon_cycle_lab_button` | `weapon-cycle-lab` | Scene |
+角色沿 `toy_game_add_ai` / `toy_game_add_gunner` / `toy_game_spawn_enemy` 创建，在正常 actor/enemy 池中存在，
+经过正式碰撞、模型和渲染入口。指定动画模式只推进选定动作，冻结模式固定采样时间；两者跳过 AI 控制与受击，
+身体仍可阻挡。正常 AI 预设使用实际部署、索敌、弹药、伤害与死亡逻辑，往返实验只改变部署目的地。
+RF-C01 当前在 Scene 后端支持待机、行走和射击；CPU 终端拒绝包含 RF-C01 的预设，不用其他身体替代。
+感染体指定动作支持待机和原地行走，实战能力由正常 AI 模式执行。
 
-普通启动全部关闭；靠近终端按 E 切换，普通展示提示使用 ENABLE / DISABLE EXHIBIT。
-电子产品控制台按 E 循环关闭、600、1200、1800 RPM；屏幕和入口牌显示当前档位。
-CPU 对 Scene 专属区显示 GPU SCENE REQUIRED，不修改其请求。
-显式诊断镜头仅开启对应展区。离开前哨站或重载普通世界清空展示请求。
+`rasterfall_experiments` 由 session 拥有，组内保存 ID 与 generation，防止误删槽位复用后的其他实体。
+地图组使用普通组件目录和普通地图解析/投影，`rf_map_runtime_compose` 在临时对象中合成基础地图与活动片段，
+检查容量与 ID 冲突后提交。展示状态不存入渲染器作为玩法真值。地图提交更换 Scene world generation，
+旧阴影、绘制资源和姿态缓存通过既有退休路径释放。仅角色组变更使用实例 created/removed 事件，
+保持地图代际与静态光照缓存；reset/unload 清理整个 owner。
+制造组重建会重置实验机器状态；组暂停同时停止制造进度和机器表现时钟。
 
-AI 动作区的 Humanoid 台位保留步枪手站立、行走和射击，随后为突击、侦察、医疗、工程、重装、
-普通枪手与精英枪手的实际装备组合，台牌标注身份。它们使用已有 idle/walk/fire 动作，不提供未创作动作。
-`equipment-lab` 是同一区域的近景镜头；`RF_GPU_EQUIPMENT_STATION=0..9` 选择上述台位，
-`RF_GPU_EQUIPMENT_VIEW=front|quarter|side|back` 选择视角。固定截图或 fixed-tick 运行固定镜头，
-普通启动仍可移动观察。`tools/gpu_equipment_review.ps1` 记录原生退出码、逐帧来源、截图和资源哈希。
-
-RF 模型区东侧的 `AI RIFLE CYCLE` 以三条同步路线展示 Block、Humanoid 和 RF-C01，全部持 AK。
-每一端先静止，轮流展示平视、左右偏转与上下仰俯的瞄准和射击；随后低位持枪边走边向多个角度射击，
-到端点平滑转身、停步瞄准，再沿原路返回，持续循环。试样屏显示模型、当前阶段及 pitch/yaw。
-普通入口通过东北终端按 E 启停；暂停与性能隔离冻结循环，不产生实际弹丸、伤害或 AI 目标。
-区域片段由 `tools/rifle_cycle_lab.py` 生成；固定镜头与时间采样见[Scene 工作流](../guides/gpu-scene-fixture.md#三模型持枪循环区)。
-
-该区东侧的 `WEAPON CYCLE 3 X 5` 将三种角色按行、五种枪械按列排列，独立控制和计时。
-它复用上述路线与角度采样，缩短每个台位的移动范围并加入低位待机，避免相邻组合交叉。
-每把枪使用自身接触帧与射击间隔，展示只冻结姿态和火光。生成入口为 `tools/weapon_cycle_lab.py`，
-近景和整圈验证见[五枪循环区](../guides/gpu-scene-fixture.md#三角色五枪循环区)。
-
-持枪循环区南侧的 `LIVE AI HOLDS` 由 `rf_idle_rifle_lab.inc` 管理真实游戏 actor。
-控制台 E 依次选择静止、往返移动、真实目标、关闭。Block、步枪手、重装和侦察四名 AI
-使用正式部署、索敌、射击、换弹及持枪采样；没有展示专用姿态或同步动画时钟。静止时各自随机持枪，
-移动模式只改变部署目的地。目标模式生成一名不移动、不还击的敌方枪手，友军正常索敌与开火；
-目标倒地后自动回到静止模式，命中与伤害仍由 Game 结算。操作与原生复现见
-[实机持枪实验](../guides/gpu-scene-fixture.md#真实-ai-持枪实验区)。
-
-该区仅离线开放，默认关闭；暂停不推进，性能或战斗实验期间移除本区参与者，恢复后重建。
-关闭按 actor ID 与 combat generation 清理自有对象，槽位被其他角色复用后不会删除新角色；
-更换或重载 world 清空旧身份和请求。不会清空全世界或改变玩家装备。角色直接进入正常 CPU / Scene
-角色来源，不经过视觉展示副本。生成器为 `tools/idle_rifle_lab.py`。
-
-Runtime 持有用户请求和各区展示时钟，按世界、后端与性能测试独占状态生成有效开关。
-暂停、关闭或性能隔离期间时钟不推进；渲染只消费有效开关与时钟。
-关闭的展示不运行展示动画或生成动态来源。恢复时保留请求，步行展示可从参考位置重新开始。
-CPU 与 Scene 共用角色展示值；纯视觉展区不创建玩法 actor，真实 AI 持枪区遵守上述独立生命周期。
-GPU 球体保持 GPU owner 缓存，光照区关闭后不提交球体和实验灯；最终按 graphics 生命周期释放。
+`tools/dynamic_experiment_maps.py` 生成空场地和电子、制造、组件片段；材质与建筑片段是独立的 authored map。
+旧诊断镜头名称作为实验组预设适配入口保留，不再对应重复实体场地，也不启用旧的 renderer-only 展示队列。
+场地布局变化后，旧镜头台位编号不构成新的布局合同。
 
 ## 空间与导视
 
-前哨站采用[园区 V3 总平面](outpost-lab-layout-v3.md)：全部实验地块位于测试庭院以南，
-原四列三排以 6 m 道路连接，第一排东侧依次接三模型持枪循环与三角色五枪循环地块，前者南侧为真实 AI 持枪区；性能控制与结果终端位于第二排南侧路边。
-展示诊断镜头与区域内容一样按 Runtime Map 原点平移，不依赖旧世界坐标。
+实验围栏使用可见玻璃与匹配碰撞，围栏高 512 RFU，可跳越，顶面可以站立，不叠加高空气墙。
+实体展台、建筑、设备和掩体声明对应碰撞和可站立支撑；标牌、光束、字形等纯显示效果没有额外阻挡体。
+角色使用正式身体碰撞，不用包围整片展区的隐形阻挡代替。
 
-实验区用 `lab` 复合定义声明中心原点、宽深、用途和围合类型；区内记录以 `attr.lab=<区域ID>`
-绑定，X/Z 为局部坐标。地面、边线、物件、试样标签和展示源随原点平移。展示区与四个性能场
-均已迁移，稳定 surface/object/render ID 保留。普通展示源以区域中心为局部原点；性能场出生空间
-由区域边界向内收缩，观察位在西界外侧，整体移动区域时一同平移并保持当前 workload 观察距离。
-
-| 用途 `category` | 颜色 | 图形 |
-| --- | --- | --- |
-| `model` 模型 | 蓝紫 | 菱形 |
-| `animation` 姿态、动作、往返 | 青绿 | 阶梯箭头 |
-| `lighting` 光照、材质 | 琥珀 | 光线十字 |
-| `performance` 性能 | 橙色 | 柱状图 |
-
-`enclosure=open` 表示开放地面，`backdrop` 表示光照观察背景墙，`walled` 表示实体围墙场地。
-分类只保存空间意图，实际可见墙和 collision 分别声明；类别不隐式改变碰撞。
-新标准场地由 [区域生成工具](../../../tools/experiment_lab.py)生成地面、64 RFU 边线、北侧入口、
-东北控制位、南侧标题、入口大屏和试样小屏。默认展示位置为局部 `(0,0)`；往返路径、台位偏移
-由各展示源拥有。既有光照场和性能场保留专用尺寸，避免改变观察、遮挡和测试 workload。
-
-导视和试样标签使用共享程序几何投影终端：完整落地机壳、保护脚、内凹光学槽、开放角标、分类图形和独立字形。
-CPU 与 Scene 共用几何发射器；字形后方增加深色半透明背景，保留后方试样的透视。
-底座光学槽到投影间有淡色光锥/扇形光束与细射线，亮度缓慢向上流动并轻微变化。
-信标光束跟随投影浮动，大标题、试样小标题与可更新内容屏均自动带光束和背景；
-物理像素屏与检修玻璃不套用此效果。光束和背景只参与展示遮挡，无碰撞或实际照明。
-需要观察设备自身光束时，可对 sign 显式设置 `attr.projection_beams=0`，只关闭散射光锥和细射线，
-保留文字背景、字形、分类图案、角标与落地外壳；省略或设为 `1` 沿用原效果。
-标准生成工具的 `--projection-beams off` 将该选择应用于本地块的标题、内容屏、试样标签和四角信标，
-不影响其他地块。网格编织机地块使用此选项，避免装饰投影被误认为制造光束。
-标题大屏用于中距离辨认，
-低位小屏标注模型、动作或材质。控制计算机与入口大屏消费同一展示状态，分别使用富文本与简短单行 channel。
-按 E 保持统一启停；普通入口默认关闭，暂停和性能隔离显示 `SUSPENDED`，不支持的后端显示
-`GPU REQUIRED`。性能屏显示运行状态和最近结果均值，详细结果仍在原交互页面中。
-
-`render kind=sign` 的 `attr.style=2` 为大投影、`3` 为试样小投影、`4` 为可更新内容屏；
-可更新屏按宽度选择基座尺寸。`attr.texture_u=1..4` 选择上述分类图形，`color` 为图形与字形色。
-`attr.channel` 是显示身份，与 object 交互身份分离。Runtime 调用
-`rasterfall_render_terminal_set(channel,text)` 更新展示内容；每帧复制到只读绘制值。
-Scene 的可更新屏走 WORLD 动态几何，文字更新不重建整个静态世界；标题与标签的机壳、图案保留网格缓存。
-全部投影字体使用同一提亮规则：原色向白色混合 45%，Scene 字形自发光，保留类别色调；
-背景生成规则、透明度和光束颜色不受字体强化影响。
-这套组件当前显示 ASCII 文字和四种几何图案，不是任意纹理/视频终端。
+区域类别、中心和边界由 Runtime Map 记录；终端通过稳定对象 ID 查找。类别不隐式生成碰撞。
+标准底座、道路、分类标识、控制计算机由共享生成工具产生。
 
 ## 标准地块铺装与角标
 
@@ -171,19 +99,11 @@ CPU 源 GLB 使用四倍创作尺寸，assembly 的 `scale=250` 恢复上述尺�
 
 ### 产品展区、风扇与状态灯
 
-`tools/rf_electronics_lab.py` 生产独立产品展区：位于园区第一排第三列，北侧入口连接公共横路。
-四个实体展台陈列 C1（6 倍）、M1（3 倍）、B1（2.5 倍）与 X1（3 倍）；标签明确比例，
-另有原尺寸完整工作站和东北控制台。它们均复用同一组资产；实验开关控制运行状态，关闭时静态产品仍可查看。
-
-`lab_computer` 组件的 `attr.length=1..10` 是展示组，按感染体姿态、感染体往返、AI 动作、AI 往返、
-RF 模型、GPU 光照、RF 电子产品、三模型持枪循环、真实 AI 持枪、三角色五枪循环排序；0 是未绑定的静止预览。它不再表示物理尺寸；其他资产的 length 语义不变。
-组内机箱、计算卡与散热器共享供电、时钟和连续相位。普通实验计算机随所属实验开关运行，
-转速采用电子展区选定的全局档位，默认 600 RPM。电子展区关闭会停止该区设备，其余已开启实验仍保持运行。
-
-Runtime 积分相位，切换档位不跳回初始角度；暂停或隔离时不累计停顿时间，恢复时继续。
-每个 CPU 散热器一个七叶转子，每张 X1 两个七叶转子；静态模型不再包含重复叶片。
-机箱前面板和外侧下沿提供绿色电源灯、蓝色与琥珀色活动灯，活动灯使用不同周期和实例相位闪烁。
-这些灯参考 Host 的外观与共享几何方式，表示合成展示活动，不读取或冒充真实 CPU/内存负载。
+电子产品由 `tools/rf_electronics_lab.py` 的共享资产配方生成，再由动态园区生成器输出地图片段。
+C1、M1、B1、X1 展台和整机只在选择该组后创建；销毁后连同碰撞一起移除。
+计算机内部件保持原来的材质、装配坐标和资源。`attr.length` 继续承载既有供电/动画组编号；
+它是表现分组，不是实体生命周期。终端计算机常驻，内容实例由 session owner 管理。
+当前默认风扇 600 RPM，暂停冻结相位，恢复连续推进；状态灯是合成活动指示，不冒充主机负载。
 
 `sign style=5` 是不透明机器屏幕；`texture_u/texture_v` 指定逻辑宽高（各 1–1024），
 物理宽高必须是逻辑宽高的正整数倍。当前计算机为 512×320 RFU / 256×160 像素，即每像素 2×2 RFU。
@@ -211,68 +131,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run 
 ```
 
 `lab-computer` 取整机关闭视角，`lab-computer-close` 取开启状态的近屏视角，均从 Runtime Map 的控制 object
-求位置。搭配 `--gpu-frame-capture <绝对路径>` 固定镜头并输出原生 GPU 的 `<路径>.scene.ppm`。普通自由游玩仍通过 E 切换。
+求位置。搭配 `--gpu-frame-capture <绝对路径>` 固定镜头并输出原生 GPU 的 `<路径>.scene.ppm`。普通自由游玩通过 E 打开配置终端。
 `lab-computer-side` 检查透明侧板及 RF 第一代内部件，`lab-computer-rear` 检查后部通风和接口；两者保持展示关闭。
 `electronics-lab` 为开启状态的展区总览，`electronics-case` 为运行整机侧面；固定 capture 使用 16 ms 帧时钟。
 相同帧输出可复现，不同帧用于检查叶片和灯状态；旋转速度与暂停契约另由逻辑回归覆盖。
 生成器位于 `tools/blender/generate_lab_computer.py`，组合生产者为 `tools/lab_computer.py`；
 GLB/Blend 留在私有 source，公开 RMESH 与 manifest 随仓库维护，无外部模型或纹理依赖。
 
-普通角色区使用 20×18 m 开放地面、64 RFU 地面边线、6 m 连接通路和东北侧独立终端。
-surface、collision 和可见绘制分别声明；边线与内部地面不重叠。
-光照区因材质球、遮挡柱和移动灯轨道采用约 24×18.85 m 专用地面，沿用边线和终端合同。
-性能场保留约 26.37×17.58 m 的实体矮墙场地，避免改变已用 workload 的观察距离和出生空间。
-区域标题说明用途；试样标签说明类型与参数，地图对象 ID 保持稳定。
-
 ## 性能独占与基准世界
 
-LIVE 预设由 `rf_performance_live.inc` 配置正式世界与普通 RTS 命令，沿用性能实验 owner 的菜单、
-GPU probe 采样、结果和返回路径。枪手对照只借用战斗实验 19/20 的初始化，不运行其死亡姿态保留或
-CSV 收集；后续全部由正常 `rf_game_update()` / session 固定步结算。真实跨层预设使用正式前哨站
-surface 和五名真实 actor，逐段确认五人到达；首图巡检加载正式地图和 mission content，按普通 RTS
-楼层焦点和剖切控制观察。相机控制不写参与者坐标，不跳过 AI、碰撞、阴影或世界背景。
+性能实验统一在前哨站 `perf_low_area` 创建和释放负载，保留周围世界，不换入独立基准地图。
+旧 `performance_empty` 等文件仍可供底层逻辑夹具使用，不是玩家实验场入口。
+固定负载四组和真实战斗两组使用正式敌人、actor 与组件；真实战斗复用战斗实验初始化，随后由正常固定步更新。
+固定组组件通过实验组 owner 创建，完成或取消时释放；战斗 owner 按 ID/generation 清理自己的参与者。
+返回恢复玩家、相机、随机状态及 profile 借用，不重新加载整个前哨站。
 
-这些实验固定 FULL SCENE、使用新世界，完成/取消返回重新初始化的前哨站，恢复玩家、相机、种子与
-展示请求。进程退出只解除 profile 借用、清理对象并正常退休资源，不加载返回地图。
-计时诊断仍是 runtime 展示数据；actor 与任务真值属于 Game/session。除全程统计外，结果记录实际
-存活范围和交战帧分布；跨层未完成、外部地图代际变化、画面配置变化或用户取消均不能作为有效结果。
-操作与参数见[真实负载预设](../guides/rendering-performance.md#live-真实负载预设)。
+不提供园区巡检、跨层巡检或正式边缘站点巡检预设。自动采样入口为 `tools/gpu_performance_lab.ps1`，
+阶段为 `Fixed`、`Live`、`All`；预设编号保留 1–4 和 7–8，便于识别已有数据。旧 5、6、9、10 不再接受。
+具体命令和结果口径见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。
 
-性能控制和结果终端仍位于前哨站。默认 ISOLATED 经 `rf_game_request_world()` 加载专用地图，
-完成或 Esc 取消后经同一 session 生命周期重载前哨站，恢复本地玩家状态、位置、视角、种子和展示请求。
-前哨站其他 session 内容重新初始化；这不是整局存档恢复。测试不在联机中开放。
-地图加载或提交失败传播错误；加载失败先尝试恢复前哨站，无法恢复则退出错误路径。
-进程关闭只退休资源，不为退出额外加载地图。
-
-| 配置 | 基准地图 identity | 敌人 | crate |
-| --- | --- | --- | --- |
-| 基础 | `performance_empty` | 0 | 0 |
-| 敌人 | `performance_empty` | 64 | 0 |
-| 组件 | `performance_components` | 0 | 24 |
-| 复合 | `performance_components` | 64 | 24 |
-
-两份地图的基础地面、观察点、边界与出生区域一致，组件版只增加 crate 对象及其组件碰撞。
-出生区域另有同边界的 floor 颜色记录，供兼容投影使用；分区地板合成为一个平面，不产生重叠面。
-空内容文件不启用 Null、队友、旗帜或其他展示。敌人使用正式 AI、导航、动画和 Scene 来源。
-观察点在安全区，测试不锁血、不关闭敌人 AI；固定站位与零玩家命令延续原测试规则。
-
-OUTPOST 使用原四个场地作环境实测，背景静态几何和全局碰撞扫描仍计入成本。
-两种正式口径都停用非测试展示、手电筒和动态灯，使用默认太阳、环境填充与三张太阳阴影图；
-测试隐藏 viewmodel，保留测试 UI。材质与过滤使用当前请求，报告中记录。
-
-FULL SCENE 是保留背景的第三种正式口径，原四种负载仍在其场地生成，其他展示、动态灯、天空与 viewmodel
-继续正常渲染。它不启用性能独占，不额外隐藏物体或改变背景的可见距离。
-全景巡检使用该口径，分“当前展示”和“全部展示”两种预设，五个观察点各预热 2 秒、采样 4 秒。
-全开预设临时设置全部展示和 600 RPM，结束/取消恢复原展示请求和转速；背景时钟按正常时间推进。
-测试保留原世界，完成后恢复本地玩家与视角。逐点结果必须完整，不能用容易的视角掩盖重负载视角。
-
-正常体验保留 120 FPS 提交上限；UNCAPPED 仅移除测试期间的主动节流，实际 swapchain present 模式仍记录。
-结果比较必须固定 scope、节流、图形设置、build、资产、分辨率、设备和驱动。
-主绘制项与实际阴影绘制数分开报告；GPU 均值只除以有效 GPU 时间样本数。
-敌人数量增加或下降、窗口大小/present 模式/灯数/阴影图数量变化、采样容量耗尽、取消测试均使结果无效。
-FULL SCENE 允许正常动态灯和视角带来的灯/阴影图数量变化，但展示请求变化仍使结果无效。
-GPU 缺少有效时间样本时该均值无可用证据，自动采样脚本拒绝签收。
-
-诊断 `RF_PERF_LAB_INTERFERENCE=1` 仅在 OUTPOST 生效：保留用户展示请求并开启光照区，
-恢复地图灯与瞬时灯，供同包背景干扰 A/B 使用。该结果不能混入正式隔离基线。
-运行入口、计时与采样见[性能诊断](../guides/rendering-performance.md#前哨站游戏内性能实验场)。
+帧时间必须同时记录完整场景、当前实验组、图形配置、分辨率、设备与有效 GPU 时间样本。
+销毁未使用的组减少资源、动画与提交准备成本；视锥剔除仅能跳过其适用阶段，不能等价于销毁。

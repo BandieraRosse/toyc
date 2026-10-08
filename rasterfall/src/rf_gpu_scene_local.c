@@ -2,6 +2,19 @@
 #include <string.h>
 #include "tlibc_everything.h"
 
+void rf_gpu_scene_local_removed(struct rf_gpu_scene_local_source *s,int actor_id)
+{
+    if(!s)return;
+    for(uint32_t i=0;i<s->actor_count;++i)if(s->actors[i].actor_id==actor_id) {
+        memmove(&s->actors[i],&s->actors[i+1],(s->actor_count-i-1)*sizeof(s->actors[0]));
+        memset(&s->actors[--s->actor_count],0,sizeof(s->actors[0]));
+        s->active=s->actor_count!=0;
+        s->epoch=s->active?s->actors[0].epoch:0;
+        s->actor_id=s->active?s->actors[0].actor_id:0;
+        return;
+    }
+}
+
 void rf_gpu_scene_local_destroyed(struct rf_gpu_scene_local_source *s)
 {
     if (s) {
@@ -105,6 +118,7 @@ int rf_gpu_scene_local_freeze_presentation(struct rf_gpu_scene_local_source *s,
             state->lower_time_ms=0; state->lower_walk=0;
         }
         p->lower_time_ms=state->lower_time_ms;
+        if(a->animation_control)p->lower_time_ms=a->animation_clock_ms;
         p->lower_walk=state->lower_walk;
         state->last_animation=a->animation.id;
         state->last_time_ms=a->animation.time_ms;

@@ -8926,8 +8926,8 @@ static int render_ai_teammate(struct toy_renderer *renderer,
                 !actor->melee_timer_ms && !actor->throw_timer_ms && !actor->airborne_ms && !actor->airborne_y;
             if(state.rifle_valid)state.muzzle_flash=actor->muzzle_flash_ms;
             state.moving=actor->moving;
-            state.locomotion_time_ms=(int)((unsigned long long)(active_presentation_game ?
-                active_presentation_game->combat_time_ms : 0)%60000);
+            state.locomotion_time_ms=(int)((actor->animation_control ? actor->animation_clock_ms :
+                (unsigned long long)(active_presentation_game ? active_presentation_game->combat_time_ms : 0))%60000);
             unsigned long command_start = renderer->cmd_count;
             long phase_start = render_monotonic_us();
             if (actor->character_id < 0) {

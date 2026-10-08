@@ -75,7 +75,7 @@ CPU 分位数除以帧分位数，或各项包含等待的墙钟当作独占 CPU
 
 ## 多层建筑和枪手压力采样
 
-先分别测前哨站复合场景、全展示巡检、战斗实验 19/20 的枪手对照，以及首图 RTS 全景、二层剖切和屋顶。
+前哨站使用复合负载和真实战斗组作对照。正式地图的专用诊断工具独立使用，不加入实验场巡检菜单。
 `gpu_performance_lab.ps1` 与 `combat_lab.ps1` 默认使用 1920×1080 窗口，接受成对的 `-Width/-Height`；
 显式传入 `-Width 0 -Height 0` 才跟随程序原生显示默认值。比较时核对实际 `extent`、DISPLAY 日志和呈现模式。
 `frontier_station_perf.py --views` 支持 `workshop`、`floor-1`、`floor-2` 和 `roof`，默认仍测入口、全景和能源区。
@@ -194,138 +194,34 @@ R13 普通输入的完整路线（`tmp/frontier-normal-r13/stdout.log`，2026-10
 
 ## 前哨站游戏内性能实验场
 
-Windows 原生 GPU Scene 单人前哨站的控制和结果终端并排放在性能横路北侧，靠近第三、四列之间的路口，
-投影朝向南侧道路来向。靠近控制终端按 E。
-实验列表采用中文名称，每项附一行负载与用途说明；基础与园区、实战与地图分为两页，上下键连续翻选。
-1 至 4 选择基础、64 敌人、24 组件或复合场景；F2 选择隔离场地 / 前哨站背景 / 完整场景，T 选择
-上限 120 帧 / 不限帧，Enter 开始，Esc 可取消测试。默认 ISOLATED、正常限帧。
-前四项固定十秒、前两秒预热，结束或取消后返回原站位和视角。上一份结果在启动时清空，结果终端按 E 查看。
+性能场使用一个固定场地。终端选择负载后“开始采样”，结束或 Esc 取消会清理本轮参与者和组件，
+恢复玩家与相机。场地周围世界继续参与渲染；比较前应保持其他动态实验组、灯光、图形选项一致。
+操作入口和生命周期见[动态实验场合同](../reference/experiment-labs.md)。
 
-ISOLATED 经 session 加载两份同基础场地的专用地图，只按所选配置增加敌人或 crate；
-前哨站展示、灯、建筑和碰撞不进入该世界。返回会重建前哨站 session，恢复本地玩家与展示请求，
-其他 session 内容重新初始化。OUTPOST 保留原四个场地，暂停所有非测试展示与动态灯，
-静态世界和碰撞背景仍属于其环境实测成本。两者不得混作一个基准。
-登记、所有权、空间例外和生命周期见[实验区合同](../reference/experiment-labs.md)。
+固定组为 1 空场、2 感染体、3 组件、4 复合负载。它们在同一场地中创建正式敌人和组件。
 
 ### LIVE 真实负载预设
 
-菜单按上下方向键翻选；数字 7、8、9、0 直接选择下列四项。Enter 开始，Esc 取消，T 仍切换限帧。
-四项固定 FULL SCENE，新世界首个成功呈现帧完成资源预热后开始测试墙钟，再跳过前两秒采样。
-正常推进 16ms session 固定步、AI、射击、伤害、死亡和动画；不锁血、补弹、
-持续复活敌人或保留死亡姿态。它们开始时加载新世界，结束或取消重建前哨站，恢复原玩家、视角、
-种子和展示请求；其他 session 内容重新初始化。菜单显示此返回合同。
-
-| 选择 | 负载与完成条件 |
-| --- | --- |
-| 7 | 四名友军与十六名感染体，沿战斗实验预设 19 的出生、装备、能力，30 秒墙钟 |
-| 8 | 同一基线加入四名枪手，沿战斗实验预设 20；与 7 使用同一 1337 种子，30 秒墙钟 |
-| 9 | 玩家和四名新建普通 AI 同时沿真实前哨站楼梯走 B1→二层→屋顶→一层；目标高度取正式 surface，五人全部到达才推进下一段；120 秒内完成四段才有效 |
-| 0（脚本 10） | 加载正式边缘站点 map/content，保留进攻阶段真实任务；入口、全景、一层、二层、屋顶各 6 秒，正常 RTS 楼层剖切；不代表反击阶段的满规模负载 |
-
-7/8 只复用战斗实验的初始布置，后续死亡、槽位释放和计时沿实机规则，故不与战斗 CSV 的保留死亡姿态
-口径混算。结果同时提供存活友军/枪手范围、感染体范围、全程 P50/P95/P99、每固定步逻辑均值/最大值，
-以及双方仍有存活单位的交战帧分位数和数量。交战筛选用采样帧当前真值，不承诺维持初始人数；
-9 的四段完成证据、导航查询/节点、地面/身体扫描及共享导航等待计数写入结构化日志。
-逻辑分段累计覆盖预热和采样的所有固定步；GPU 与渲染阶段只统计预热后的呈现帧。
-正常渲染器处理全部世界、灯光和角色，实验不设置额外距离或可见性裁剪。
-
-现场与自动脚本使用同一启动、更新、相机、采样、完成和清理函数：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Live -Rounds 3 -Capped -Width 1920 -Height 1080 -OutputDirectory tmp/performance-live
-```
-
-脚本额外检查 LIVE 证据、实际交战帧、全部路线完成、五个巡检段和清理结果，并保存 exe、两份正式地图及
-content 哈希。原始结果仍是 `report.json`；CPU 阶段、嵌套准备与 GPU 时间不可直接相加。
+7 为真实战斗，8 为加入枪手的混战。AI、移动、开火、受伤和死亡使用正常 Game 更新；不为保持数量而自动补员。
+记录全程帧时间、实际存活范围和活跃交战帧分布，避免战斗结束后的安静阶段掩盖交战成本。
 
 ### 全景巡检与自动化
 
-FULL SCENE 在原场地保留全部背景、当前展示请求、动态灯、天空和 viewmodel，正常渲染器决定可见性。
-5、6 是全景巡检：5 保留当前展示状态；6 临时开启全部已登记展示，电子设备为 600 RPM，结束或取消恢复原请求。
-两者固定使用 FULL SCENE，不生成额外敌人。按园区入口、控制计算机侧面、电子区、光照区、大厅天空五个观察点
-依次运行，每点 6 秒，前 2 秒预热、后 4 秒采样，总计 30 秒。观察点切换不暂停背景更新。
-全局结果之外，每点单独报告帧耗时分位数与准备成本；结果终端按 F2 切换概览/逐视角页。
-这些巡检不替代连续移动、战斗或首次进入地图的冷启动测试。
-自动新进程的“当前展示”使用正常默认全关状态，报告记录 `lab_mask`；游戏内启动则保留用户已经开启的展示。
-
-结果报告帧间隔平均/中位/P95/P99、敌人存活范围、敌人准备/提取/上传、世界准备、提交等待、
-逻辑循环墙钟、GPU 绘制均值与有效样本数、主绘制项、实际阴影绘制数、灯数和阴影图数。
-概览另列展示层、角色、快照、动态来源、命令录制和天空 compute；主绘制数使用实际提交值。
-GPU 时间与 CPU 重叠；敌人准备包含提取和上传，不能累加这些阶段。
-GPU 时间包括阴影及 HDR 绘制/后处理，不包含全部 CPU 和 native present 成本。
-正常帧率包含 120 FPS 主动节流，UNCAPPED 移除测试期间的该节流，仍可能受实际 present 模式约束。
-敌人数或配置变化、取消、采样容量耗尽会使结果无效。没有有效 GPU 样本时不接受 GPU 均值。
-
-自动入口 `RF_PERF_LAB_AUTORUN=1..10` 在约三十帧后启动同一流程，完成后输出 result/config/stages、LIVE 和逐视角数据并退出。
-`RF_PERF_LAB_SCOPE=outpost` 选择环境实测；`RF_PERF_LAB_UNCAPPED=1` 选择无主动节流。
-`RF_PERF_LAB_SCOPE=full` 保留背景；全景巡检自动使用该口径。
-专项采样脚本先要求已暂存当前 Windows build，逐轮反转顺序，保存 exe/map/content hash、
-原始 stdout/stderr/runtime 日志与 `report.json`：
+巡检预设已移除，自动化只运行固定负载和真实战斗，不加载正式任务地图进行巡检。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 test
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Isolated -Rounds 3 -OutputDirectory tmp/performance-baseline
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Interference -Rounds 3 -OutputDirectory tmp/performance-interference
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Full -Capped -OutputDirectory tmp/performance-full
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Panorama -Capped -CompareGeometry -OutputDirectory tmp/performance-panorama
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Fixed -Rounds 3 -OutputDirectory tmp/perf-fixed
+powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Live -Rounds 3 -OutputDirectory tmp/perf-live
 ```
 
-Interference 在同一 OUTPOST 场景交替运行背景开启与正式隔离：诊断 `RF_PERF_LAB_INTERFERENCE=1`
-开启光照展示并保留非测试展示和地图灯。这是组合背景消融，不能将差值全部归于单独一盏灯或球体。
-脚本默认 UNCAPPED，`-Capped` 保留正常体验上限；`-Scenes` 可限定场景。
-比较固定窗口、分辨率、设备、驱动、材质/过滤选项与 workload；汇总每轮值和分位数，
-不能用单次结果承诺普遍收益。自动脚本检查真实进程退出、完整结果、GPU 有效样本和隔离灯合同。
-交互式重跑也可从配置结果查看灯数、阴影数、节流和 present 模式。
-
-`-Stage All` 包含原隔离/干扰组、完整背景组、两种全景巡检和下述 LIVE 实验。
-`-CompareGeometry` 在同一构建上交替比较显示几何缓存与 `RF_GPU_SCENE_LEGACY_DISPLAY_GEOMETRY=1` 的直接生成路径，
-两侧均关闭 GPU 显示常驻，以保留 CPU 缓存对照的含义。报告按场景及每观察点比较，不能将不同镜头的均值差解释为缓存收益。
-`-CompareBackend` 与它互斥，成对比较 GPU 显示常驻、相同姿态/敌人几何复用和静态快照缓存；
-参考侧通过 `RF_GPU_SCENE_LEGACY_RETAINED_LAYERS`、`RF_GPU_SCENE_LEGACY_POSE_REUSE`、
-`RF_GPU_SCENE_LEGACY_ENEMY_CACHE`、`RF_GPU_SCENE_LEGACY_SNAPSHOT_CACHE` 关闭这些路径。
-ID 哈希校验两侧共用，因此参考侧不等于旧版本二进制。`PERF-LAB preparation` 增加展示提取、打包、
-上传、组装、帧退休、蒙皮批次、上传字节和复用次数的每帧平均值，脚本写入 `report.json`。
-
-`-ProfileSlow`（运行时 `RF_GPU_SCENE_PROFILE_SLOW=1`）保留启动 120 帧后最慢的 16 帧，退出时集中
-打印 `SCENE-SLOW`，避免逐帧控制台输出。begin-to-begin 间隔对应前一帧的实际阶段，包括线程 CPU
-时间、提交、acquire、present 和 retire；蒙皮批次计时包含记录及等待，不是纯 GPU 执行时间。
-`lighting_us` 包含同帧建筑/探针安装及光照准备，并计入 `prepare_us`；它原先位于准备结束和
-提交开始之间，不能继续归入未归因差值。嵌套上传/蒙皮与 GPU 时间仍不能直接相加。
-线程 CPU 时间粒度受 Windows 计时影响，墙钟差只能提示等待或调度，不足以证明系统抢占。
-
-默认 slow profile 仍按全进程 `frame>120` 的 begin-to-begin 间隔保留最大 16 条，满槽相同间隔
-保留先到行。`SCENE-SLOW-META` 报告实际 scope、eligible_ended/ranked、excluded、selected 及
-最后 pending 行未被下一次 begin 排名的边界。行内 `frame` 是进程成功帧，`scene_frame/world`
-来自实际成功 Scene 冻结值，mission/phase/phase_ms 在同一 end 保存；下一 begin 不回读新阶段。
-`main_query_frame` 来自已有主 query 读取，COUNTER scope 要求与 scene_frame 相同。
-
-显式 `RF_GPU_SCENE_PROFILE_SLOW_SCOPE=frontier-counter` 仅筛选 Frontier COUNTER、phase_ms>=16000、
-每个实际 world/mission 的首 120 个成功 Scene 帧之后、PLAYING、非暂停、零 bridge、正有限且有效的
-同帧 GPU 行。仍用原间隔排名和固定 16 槽；unknown scope 明示回退 global。该诊断不改变普通
-`RF_FRONTIER_PHASE_PERF` 的 first4096 窗口、输出格式或计数。后续感染者几何/容量增长、镜头首次打开
-与来源切换仍可能是冷峰；16 秒筛选不保证所有资源预热，也不保证视角或 workload 相同。
-
-`aux_us` 是主帧内整个原有 `scene_aux_prepare` 的 CPU 墙钟，包含缓存绑定、子帧准备和同步等待；
-它与 `weaver_us` 嵌套于 `misc_us`，不能相加。`aux_refresh_mask` bit0 是剧情/设备，bit1 是单位镜头，
-只在对应 `auxN_after>auxN_before` 时记录成功刷新，正常 delta 为 1。未刷新时 child CPU/GPU 均为
-0/invalid；失败尝试可体现在 aux_us，刷新位不表示尝试位。child GPU 有效位还要求退休 query
-frame ID 等于本次冻结帧，且微秒值为正有限；GPU0 不充当有效时间。child CPU 含退休等待，
-主 gpu_us 不含已先行退休的 child GPU，二者不能相加或用分位数相减。
-`enemy_created/extract/upload/draw` 描述既有主视图敌人/程序角色阶段；created 也可能是容量重建。
-
-同一构建和场面下通过正常界面分别显示/收起单位镜头，保存动作、OS 截图、硬件/分辨率/present、
-exe/map/content hash、原日志和真实退出码，再按刷新位与帧计数差归因。worst16 是有偏诊断，
-不能估计刷新频率、总体分位数或稳定 FPS；正式阶段性能须另跑 slow profile 关闭的普通采样。
-关闭 slow profile 时仅保留缓存开关分支和现有 stats 中增加的 88 字节清零/复制，无新增取钟或 query。
-`RF_GPU_SCENE_PROFILE_LAYERS=1` 另外逐三角形计裁剪耗时，扰动明显，仅作诊断，不用于性能签收；
-正常提取计时包含裁剪。脚本会关闭此开关及逐上传细分计时。
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File tools/gpu_performance_lab.ps1 -Stage Panorama -Capped -CompareBackend -ProfileSlow -OutputDirectory tmp/preparation-ab
-```
-`--gpu-normal-scene performance-terminal 0` 和 `performance-menu 0` 可定向检查路侧位置与测试菜单。
+默认 1920×1080，辅助检查可指定 `-Width 1280 -Height 720`。脚本检查进程退出、有效采样、参与者清理和资源哈希。
+正式性能对照应关闭其他游戏实例，使用同包、同设备、同驱动与相同背景实验组。截图和固定 tick 只用于画面检查。
+`RF_PERF_LAB_AUTORUN` 接受 1–4、7–8；旧隔离和巡检口径不再作为可选择的实验。
 
 ## 实验园区正常场景采样
+
+稀疏灯调整后两外场镜头的计算机、建筑遮挡与全展示对照见
+[前哨站外场成本调查](../archive/outpost-sparse-light-performance-20261007.md)，包含温度限频边界。
 
 `tools/gpu_outpost_perf.ps1` 测量正常 Windows native 场景，默认覆盖天空/大厅、关闭的控制计算机近景、
 电子展区和开启的光照展区；`-AllLabs` 显式开启所有展示作压力对照，并排除会强制覆盖开关的计算机检修镜头。

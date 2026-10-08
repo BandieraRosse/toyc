@@ -1,0 +1,33 @@
+# Dynamic experiment group; ordinary components in world coordinates.
+map version=1 units=rfu
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640
+collision id=rf_product_cpu_base_col shape=box min_x=6178 max_x=7278 min_z=-21868 max_z=-21068 height=620 collision=true visible=false walkable=true
+render id=rf_product_cpu_base kind=box min_x=6178 max_x=7278 min_z=-21868 max_z=-21068 height=620 color=263743
+object id=rf_product_cpu kind=lab_computer_cpu x=6728 y=620 z=-21468 yaw=90 scale=1500 attr.length=7
+render id=rf_product_cpu_label kind=sign min_x=6128 max_x=7328 min_z=-20768 max_z=-20768 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=C1_CPU_6X attr.facing=+z attr.texture_u=1
+collision id=rf_product_memory_base_col shape=box min_x=8178 max_x=9278 min_z=-21868 max_z=-21068 height=620 collision=true visible=false walkable=true
+render id=rf_product_memory_base kind=box min_x=8178 max_x=9278 min_z=-21868 max_z=-21068 height=620 color=263743
+object id=rf_product_memory kind=lab_computer_memory x=8728 y=620 z=-21468 yaw=90 scale=3000 attr.length=7
+render id=rf_product_memory_label kind=sign min_x=8128 max_x=9328 min_z=-20768 max_z=-20768 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=M1_MEMORY_3X attr.facing=+z attr.texture_u=1
+collision id=rf_product_board_base_col shape=box min_x=10178 max_x=11278 min_z=-21868 max_z=-21068 height=620 collision=true visible=false walkable=true
+render id=rf_product_board_base kind=box min_x=10178 max_x=11278 min_z=-21868 max_z=-21068 height=620 color=263743
+object id=rf_product_board kind=lab_computer_board x=10728 y=620 z=-21468 yaw=90 scale=2500 attr.length=7
+render id=rf_product_board_label kind=sign min_x=10128 max_x=11328 min_z=-20768 max_z=-20768 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=B1_MAINBOARD_2.5X attr.facing=+z attr.texture_u=1
+collision id=rf_product_compute_base_col shape=box min_x=12178 max_x=13278 min_z=-21868 max_z=-21068 height=620 collision=true visible=false walkable=true
+render id=rf_product_compute_base kind=box min_x=12178 max_x=13278 min_z=-21868 max_z=-21068 height=620 color=263743
+object id=rf_product_compute kind=lab_computer_compute x=12728 y=620 z=-21468 yaw=90 scale=3000 attr.length=7
+render id=rf_product_compute_label kind=sign min_x=12128 max_x=13328 min_z=-20768 max_z=-20768 height=-420 color=C4D9F4 attr.height2=-240 attr.style=3 attr.text=X1_COMPUTE_3X attr.facing=+z attr.texture_u=1
+assembly id=rf_electronics_demo_assembly x=9728 y=0 z=-18868
+object id=rf_electronics_demo kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7 attr.collision=component
+object id=rf_electronics_demo_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+object id=rf_electronics_demo_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=rf_electronics_demo_assembly attr.length=7
+render id=rf_electronics_demo_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=9FB4FF attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=rf_electronics_lab_computer attr.assembly=rf_electronics_demo_assembly
+render id=rf_electronics_demo_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=rf_electronics_demo_assembly
+render id=rf_product_system_label kind=sign min_x=8828 max_x=10628 min_z=-18168 max_z=-18168 height=-650 color=C4D9F4 attr.height2=-450 attr.style=3 attr.text=RF_GEN1_WORKSTATION_1X attr.facing=+z attr.texture_u=1

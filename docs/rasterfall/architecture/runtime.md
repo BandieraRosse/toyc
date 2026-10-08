@@ -14,6 +14,14 @@ GPU 的当前验收与生命周期门槛见 [GPU 验收与诊断](../guides/gpu-
 
 ## 状态所有者
 
+动态实验内容由 session 的 `rasterfall_experiments` 拥有。基础 Runtime Map 保持独立，
+活动片段经 `rf_map_runtime_compose` 合成、投影并通过一次成功提交替换；失败保留原来的地图与实体。
+组内 actor/enemy 只持稳定 ID 和 generation，创建、指定动画、正常 AI、碰撞、伤害沿正式 Game 接口运行。
+冻结和指定动画是 Game 上的显式播放控制，渲染只读其时钟与姿态；组销毁不能依赖 visibility 开关。
+仅角色变化通过显式 created/removed 事件更新实例 epoch，不改地图代际、不重建静态光照。
+地图片段提交使用新 Scene world generation，使旧绘制与阴影资源进入既有退休路径。session reset/unload 负责清空组，
+UI 只拥有待应用配置、下拉和输入状态。合同与场地映射见[动态实验场](../reference/experiment-labs.md)。
+
 `src/rasterfall.c` 是可执行程序入口，负责命令行解析并组装 `rf_game_config`；
 `src/rf_game_runtime.c` 负责 Game facade 的运行调度，Core Host 由 `rf_core_config` 接收启动参数。
 `struct rf_game_runtime` 集中拥有

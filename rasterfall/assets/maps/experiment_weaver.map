@@ -1,0 +1,27 @@
+# Dynamic experiment group; ordinary components in world coordinates.
+map version=1 units=rfu
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640
+assembly id=mesh_weaver_rf1_assembly x=8448 y=0 z=-19968
+object id=mesh_weaver_rf1 kind=lab_computer_stand x=0 y=0 z=0 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0 attr.collision=component
+object id=mesh_weaver_rf1_case kind=lab_computer_case x=-320 y=578 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_board kind=lab_computer_board x=-240 y=680 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_cpu kind=lab_computer_cpu x=-258 y=858 z=-52 yaw=0 scale=250 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_memory_a kind=lab_computer_memory x=-281 y=815 z=46 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_memory_b kind=lab_computer_memory x=-281 y=815 z=74 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_compute kind=lab_computer_compute x=-257 y=757 z=-30 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_cooling kind=lab_computer_cooling x=-273 y=818 z=-52 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_monitor kind=lab_computer_display x=130 y=628 z=-64 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+object id=mesh_weaver_rf1_keyboard kind=lab_computer_keyboard x=130 y=578 z=140 yaw=0 scale=1000 attr.assembly=mesh_weaver_rf1_assembly attr.length=0
+render id=mesh_weaver_rf1_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 height=676 color=79DDE8 attr.height2=996 attr.style=5 attr.text=READY attr.facing=+z attr.texture_u=256 attr.texture_v=160 attr.channel=mesh_weaver_lab_computer attr.assembly=mesh_weaver_rf1_assembly
+render id=mesh_weaver_rf1_glass kind=sign min_x=-458 max_x=-458 min_z=-170 max_z=110 height=620 color=87BFC8 attr.height2=976 attr.style=6 attr.assembly=mesh_weaver_rf1_assembly
+object id=mesh_weaver kind=mesh_weaver_frame x=9728 y=0 z=-19968 yaw=0 scale=1000
+object id=mesh_weaver_service_links kind=mesh_weaver_service_links x=9728 y=0 z=-19968 yaw=0 scale=1000
+collision id=mesh_weaver_base_col shape=box min_x=9288 max_x=10168 min_z=-20408 max_z=-19528 height=166 collision=true visible=false walkable=true color=526874
+collision id=mesh_weaver_post_0 shape=box min_x=9343 max_x=9433 min_z=-20353 max_z=-20263 height=922 collision=true visible=false walkable=true color=526874
+collision id=mesh_weaver_post_1 shape=box min_x=10023 max_x=10113 min_z=-20353 max_z=-20263 height=922 collision=true visible=false walkable=true color=526874
+collision id=mesh_weaver_post_2 shape=box min_x=10023 max_x=10113 min_z=-19673 max_z=-19583 height=922 collision=true visible=false walkable=true color=526874
+collision id=mesh_weaver_post_3 shape=box min_x=9343 max_x=9433 min_z=-19673 max_z=-19583 height=922 collision=true visible=false walkable=true color=526874
+object id=mesh_weaver_power kind=power_unit x=11328 y=0 z=-20568 yaw=0 scale=350 attr.collision=component
+render id=mesh_weaver_screen kind=sign min_x=9356 max_x=9516 min_z=-19458 max_z=-19458 height=-630 color=79DDE8 attr.height2=-526 attr.style=5 attr.text=RF_MESH_WEAVER attr.facing=+z attr.texture_u=160 attr.texture_v=104 attr.channel=mesh_weaver_screen
+render id=mesh_weaver_power_label kind=sign min_x=10858 max_x=11798 min_z=-20083 max_z=-20063 height=-500 color=FFB875 attr.height2=-220 attr.style=4 attr.text=RF_POWER attr.facing=+z attr.texture_u=3 attr.projection_beams=0 attr.channel=mesh_weaver_power
+render id=mesh_weaver_rf1_label kind=sign min_x=7868 max_x=8978 min_z=-19458 max_z=-19438 height=-670 color=79DDE8 attr.height2=-460 attr.style=4 attr.text=RF1 attr.facing=+z attr.texture_u=1 attr.projection_beams=0 attr.channel=mesh_weaver_rf1

@@ -1,0 +1,44 @@
+# Dynamic experiment group; ordinary components in world coordinates.
+map version=1 units=rfu
+world min_x=-41472 max_x=80384 min_z=-55808 max_z=19968 room_limit=80640
+render id=atmosphere_workshop kind=box min_x=23584 max_x=28184 min_z=-18968 max_z=-16468 height=2500 color=8B9598
+render id=atmosphere_workshop_roof kind=platform min_x=23404 max_x=28364 min_z=-19148 max_z=-16288 height=2560 color=4F5C65 attr.style=2
+render id=atmosphere_workshop_plinth kind=box min_x=23504 max_x=28264 min_z=-19048 max_z=-16388 height=170 color=59686F
+render id=atmosphere_workshop_door kind=sign min_x=24834 max_x=26484 min_z=-18972 max_z=-18972 height=-890 color=465659 attr.height2=850 attr.style=1 attr.facing=-z
+render id=atmosphere_workshop_window kind=sign min_x=26934 max_x=27934 min_z=-18972 max_z=-18972 height=200 color=476374 attr.height2=1050 attr.style=1 attr.facing=-z
+render id=atmosphere_workshop_number kind=sign min_x=23834 max_x=24534 min_z=-18974 max_z=-18974 height=550 color=AAB6BB attr.height2=1240 attr.style=1 attr.text=03 attr.facing=-z
+render id=atmosphere_workshop_rib0 kind=box min_x=23604 max_x=23724 min_z=-19068 max_z=-18968 height=2460 color=6B7A82
+render id=atmosphere_workshop_rib1 kind=box min_x=28064 max_x=28184 min_z=-19068 max_z=-18968 height=2460 color=6B7A82
+render id=atmosphere_station kind=box min_x=28684 max_x=31384 min_z=-17868 max_z=-15668 height=1850 color=7A888D
+render id=atmosphere_station_roof kind=platform min_x=28534 max_x=31534 min_z=-18018 max_z=-15518 height=1900 color=52636C attr.style=2
+render id=atmosphere_station_glazing kind=sign min_x=29184 max_x=30834 min_z=-17872 max_z=-17872 height=50 color=415B6C attr.height2=650 attr.style=1 attr.facing=-z
+render id=atmosphere_station_label kind=sign min_x=29284 max_x=30834 min_z=-17874 max_z=-17874 height=710 color=A5B3B8 attr.height2=895 attr.style=1 attr.text=WEATHER attr.facing=-z
+render id=atmosphere_tower kind=box min_x=32734 max_x=33634 min_z=-17918 max_z=-17018 height=5150 color=87959B
+render id=atmosphere_tower_sill kind=platform min_x=32234 max_x=34134 min_z=-18418 max_z=-16518 height=4240 color=536570 attr.style=2
+render id=atmosphere_tower_glazing kind=sign min_x=32234 max_x=34134 min_z=-18388 max_z=-18388 height=3360 color=3E5A6E attr.height2=4150 attr.style=1 attr.facing=-z
+render id=atmosphere_tower_glass_w kind=sign min_x=32234 max_x=32234 min_z=-18388 max_z=-16548 height=3360 color=5C8399 attr.height2=4150 attr.style=6
+render id=atmosphere_tower_glass_e kind=sign min_x=34134 max_x=34134 min_z=-18388 max_z=-16548 height=3360 color=5C8399 attr.height2=4150 attr.style=6
+render id=atmosphere_tower_glass_n kind=sign min_x=32234 max_x=34134 min_z=-16548 max_z=-16548 height=3360 color=5C8399 attr.height2=4150 attr.style=6
+render id=atmosphere_tower_cap kind=platform min_x=32084 max_x=34284 min_z=-18568 max_z=-16368 height=5150 color=546671 attr.style=2
+render id=atmosphere_tower_mullion0 kind=sign min_x=32284 max_x=32384 min_z=-18392 max_z=-18392 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z
+render id=atmosphere_tower_mullion1 kind=sign min_x=33134 max_x=33234 min_z=-18392 max_z=-18392 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z
+render id=atmosphere_tower_mullion2 kind=sign min_x=33984 max_x=34084 min_z=-18392 max_z=-18392 height=3360 color=9AA7AA attr.height2=4250 attr.style=1 attr.facing=-z
+render id=atmosphere_mast kind=box min_x=33164 max_x=33204 min_z=-17488 max_z=-17448 height=7600 color=566873
+render id=atmosphere_roof_vent kind=box min_x=27234 max_x=27634 min_z=-17568 max_z=-17068 height=3000 color=596B74
+render id=atmosphere_aerial kind=box min_x=24204 max_x=24244 min_z=-16988 max_z=-16948 height=4800 color=5E717B
+object id=atmosphere_equipment kind=crate x=24184 y=0 z=-19668 yaw=0 scale=900 attr.collision=component
+object id=atmosphere_equipment_small kind=crate x=25284 y=0 z=-19668 yaw=0 scale=700 attr.collision=component
+render id=atmosphere_entry_label kind=sign min_x=24834 max_x=26484 min_z=-18974 max_z=-18974 height=1100 color=8CA6B4 attr.height2=1400 attr.style=1 attr.text=ATMOSPHERE_03 attr.facing=-z
+collision id=atmosphere_workshop_solid shape=box min_x=23584 max_x=28184 min_z=-18968 max_z=-16468 attr.base_y=0 height=2500 collision=true visible=false walkable=true
+collision id=atmosphere_workshop_roof_solid shape=box min_x=23404 max_x=28364 min_z=-19148 max_z=-16288 attr.base_y=2500 height=2560 collision=true visible=false walkable=true
+collision id=atmosphere_workshop_plinth_solid shape=box min_x=23504 max_x=28264 min_z=-19048 max_z=-16388 attr.base_y=0 height=170 collision=true visible=false walkable=true
+collision id=atmosphere_workshop_rib0_solid shape=box min_x=23604 max_x=23724 min_z=-19068 max_z=-18968 attr.base_y=0 height=2460 collision=true visible=false walkable=true
+collision id=atmosphere_workshop_rib1_solid shape=box min_x=28064 max_x=28184 min_z=-19068 max_z=-18968 attr.base_y=0 height=2460 collision=true visible=false walkable=true
+collision id=atmosphere_station_solid shape=box min_x=28684 max_x=31384 min_z=-17868 max_z=-15668 attr.base_y=0 height=1850 collision=true visible=false walkable=true
+collision id=atmosphere_station_roof_solid shape=box min_x=28534 max_x=31534 min_z=-18018 max_z=-15518 attr.base_y=1840 height=1900 collision=true visible=false walkable=true
+collision id=atmosphere_tower_solid shape=box min_x=32734 max_x=33634 min_z=-17918 max_z=-17018 attr.base_y=0 height=5150 collision=true visible=false walkable=true
+collision id=atmosphere_tower_sill_solid shape=box min_x=32234 max_x=34134 min_z=-18418 max_z=-16518 attr.base_y=4180 height=4240 collision=true visible=false walkable=true
+collision id=atmosphere_tower_cap_solid shape=box min_x=32084 max_x=34284 min_z=-18568 max_z=-16368 attr.base_y=5090 height=5150 collision=true visible=false walkable=true
+collision id=atmosphere_mast_solid shape=box min_x=33164 max_x=33204 min_z=-17488 max_z=-17448 attr.base_y=0 height=7600 collision=true visible=false walkable=true
+collision id=atmosphere_roof_vent_solid shape=box min_x=27234 max_x=27634 min_z=-17568 max_z=-17068 attr.base_y=0 height=3000 collision=true visible=false walkable=true
+collision id=atmosphere_aerial_solid shape=box min_x=24204 max_x=24244 min_z=-16988 max_z=-16948 attr.base_y=0 height=4800 collision=true visible=false walkable=true

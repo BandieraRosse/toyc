@@ -1,4 +1,5 @@
 /* Input/presentation owner. No simulation work is performed by draw callbacks. */
+#undef game
 #include "rf_tactical_lab.h"
 static struct {
     int open, dropdown, hover, px, py, values[8], world;
@@ -76,8 +77,8 @@ static int rf_tac_hit(int w,int h,int kind,int px,int py)
     }
     for(int i=0;i<rf_tac_field_count(kind);++i)
         if(px>=x+24 && px<x+24+fw && py>=y+86+i*row && py<y+126+i*row)return i;
-    for(int i=0;i<6;++i) {
-        int bw=(pw-58)/6,bx=x+24+i*(bw+2);
+    for(int i=0;i<7;++i) {
+        int bw=(pw-58)/7,bx=x+24+i*(bw+2);
         if(px>=bx && px<bx+bw && py>=y+ph-94 && py<y+ph-54)return 20+i;
     }
     return -1;
@@ -99,6 +100,7 @@ static int rf_tac_apply_settings(struct rasterfall_session *s)
     } else {
         lab->seed=seed;
         rf_range_reset(&lab->range,v[0],v[1],v[2],v[3],lab->seed);
+        if(lab->range.game!=&s->game_state && !rf_range_bind(&lab->range,&s->game_state))return 0;
     }
     lab->accumulator_us=0;lab->pending_fire=lab->pending_reload=0;
     memset(lab->presented_shots,0,sizeof(lab->presented_shots));lab->presented_marks=0;return 1;
@@ -190,7 +192,7 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int width,int height,
         int action=hit-20,ok=1;
         if(action==0 || action==2) {
             if(!rf_tac_seed_check())return 1;
-            if(!rf_tactical_lab_export(lab)) {
+            if((lab->match.ready || lab->range.game) && !rf_tactical_lab_export(lab)) {
                 snprintf(rf_tac_ui.message,sizeof(rf_tac_ui.message),"统计导出失败，已保留当前对局");
                 rasterfall_audio_ui(&r->audio,RF_UI_SOUND_CLICK);
                 return 1;
@@ -199,6 +201,7 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int width,int height,
             if(ok) {if(lab->kind==1)lab->match.running=action==0;else lab->range.running=action==0;}
             snprintf(rf_tac_ui.message,sizeof(rf_tac_ui.message),"%s",ok?(action==0?"新局已开始":"已重置，等待开始"):"配置加载失败");
         } else if(action==1) {
+            if(!lab->match.ready && !lab->range.game)return 1;
             if(lab->kind==1)lab->match.running=!lab->match.running && !lab->match.world.finished;
             else lab->range.running=!lab->range.running;
         } else if(action==3) {
@@ -219,8 +222,14 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int width,int height,
         } else if(action==4) {
             ok=rf_tactical_lab_export(lab);
             snprintf(rf_tac_ui.message,sizeof(rf_tac_ui.message),"%s %.150s",ok?"已导出":"导出失败",lab->output);
+        } else if(action==5) {
+            rf_tac_match_destroy(&lab->match);rf_range_destroy(&lab->range);
+            lab->player_firing=0;lab->range.running=0;
+            toy_game_set_primitives(&r->session->game_state,r->session->level.primitives,
+                r->session->level.primitive_count,r->session->level.room_limit);
+            snprintf(rf_tac_ui.message,sizeof(rf_tac_ui.message),"实验组已销毁，可以重新创建");
         } else rf_tac_ui.open=0;
-        rasterfall_audio_ui(&r->audio,action==5?RF_UI_SOUND_EXIT:RF_UI_SOUND_CONFIRM);
+        rasterfall_audio_ui(&r->audio,action==6?RF_UI_SOUND_EXIT:RF_UI_SOUND_CONFIRM);
     }
     return 1;
 }
@@ -305,8 +314,8 @@ static void rf_tac_ui_draw(struct rasterfall_canvas *c,const struct rf_game_runt
             int mx=sx+fw/2+(int)(m->x*80),my=y+428-(int)(m->y*48);
             if(mx>sx && mx<sx+fw-3 && my>y+379 && my<y+475)rasterfall_canvas_rect(c,mx,my,3,3,m->shooter?0x81DDDC:0xF1B48D,255);}
     }
-    const char *buttons[]={"开始新局","暂停 / 继续","重置","观战","导出结果","退出"};
-    for(int i=0;i<6;++i){int bw=(pw-58)/6,bx=x+24+i*(bw+2);rasterfall_canvas_rect(c,bx,y+ph-94,bw,40,rf_tac_ui.hover==20+i?0x376572:0x254553,255);
+    const char *buttons[]={"创建并开始","暂停 / 继续","重建","观战","导出结果","销毁","退出"};
+    for(int i=0;i<7;++i){int bw=(pw-58)/7,bx=x+24+i*(bw+2);rasterfall_canvas_rect(c,bx,y+ph-94,bw,40,rf_tac_ui.hover==20+i?0x376572:0x254553,255);
         rasterfall_canvas_text(c,bx+12,y+ph-81,(i==3 && lab->kind==2)?"玩家试射":buttons[i],0xE3F8F4);}
     rasterfall_canvas_text(c,x+24,y+ph-34,rf_tac_ui.message,0x9FE8C8);
     if(rf_tac_ui.dropdown>=0) {
@@ -327,3 +336,4 @@ static int rf_tac_ui_input(struct rf_game_runtime *r,int w,int h,int x,int y,int
 {(void)r;(void)w;(void)h;(void)x;(void)y;(void)click;(void)cancel;(void)interact;(void)events;return 0;}
 static void rf_tac_ui_draw(struct rasterfall_canvas *c,const struct rf_game_runtime *r){(void)c;(void)r;}
 #endif
+#define game (session.game_state)
