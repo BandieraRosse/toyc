@@ -7,7 +7,7 @@ import argparse
 import json
 from pathlib import Path
 
-from map_grid import CELL, Footprint
+from map_grid import CELL, Footprint, ceil_cells
 from map_layout_export import parse
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +35,47 @@ def save(path, lines):
     result = bom + (nl.join(lines) + nl).encode("utf-8")
     if raw != result:
         path.write_bytes(result)
+
+
+def plan_content(lines, null_delta=(0, 0), corridor=None, radius=180):
+    """Keep row formations regular and clear of the main access corridor."""
+    result=list(lines)
+    actors={}
+    for i,line in enumerate(result):
+        kind,f=fields(line)
+        if kind != "actor":
+            continue
+        if f.get("id") == "null":
+            f["x"]=str(int(f["x"])+null_delta[0])
+            f["z"]=str(int(f["z"])+null_delta[1])
+        changes={axis:(int(f[axis])//CELL)*CELL+CELL//2 for axis in ("x","z")}
+        result[i]=replace_fields(line,changes)
+        _,f=fields(result[i]);actors[f["id"]]=(i,f)
+    pitch=ceil_cells(4*radius)*CELL
+    for line in lines:
+        kind,f=fields(line)
+        if kind != "formation":
+            continue
+        members=[actors[name] for name in f["members"].split(",")]
+        if len(members)<2 or len({m[1]["z"] for m in members})!=1:
+            continue
+        center=int(members[len(members)//2][1]["x"])
+        first=center-(len(members)//2)*pitch
+        last=first+(len(members)-1)*pitch
+        if corridor and first-2*radius<corridor[1] and last+2*radius>corridor[0]:
+            limit=corridor[1]+2*radius
+            first=((limit-CELL//2+CELL-1)//CELL)*CELL+CELL//2
+        for ordinal,(i,_) in enumerate(members):
+            result[i]=replace_fields(result[i],{"x":first+ordinal*pitch})
+    return result
+
+
+def content_corridor(path):
+    for line in path.read_text(encoding="utf-8-sig").splitlines():
+        kind,f=fields(line)
+        if kind == "surface" and f.get("id") == "experiment_road_3":
+            return int(f["min_x"]),int(f["max_x"])
+    return None
 
 
 def overlap(a, b):
@@ -182,15 +223,14 @@ def main():
         content = args.map.parent.parent/"worlds"/(args.map.stem+".content")
         if content.exists():
             entries = content.read_text(encoding="utf-8-sig").splitlines()
-            for i, line in enumerate(entries):
-                kind, f = fields(line)
-                if kind == "actor" and f.get("id") == "null":
-                    entries[i] = replace_fields(line, {"x": int(f["x"])+delta[0], "z": int(f["z"])+delta[1]})
-                    _,f=fields(entries[i])
-                if kind == "actor":
-                    entries[i]=replace_fields(entries[i], {axis:(int(f[axis])//CELL)*CELL+CELL//2 for axis in ("x","z")})
+            entries=plan_content(entries,delta,content_corridor(args.map))
             save(content, entries)
     if args.check:
+        content=args.map.parent.parent/"worlds"/(args.map.stem+".content")
+        if content.exists():
+            entries=content.read_text(encoding="utf-8-sig").splitlines()
+            if entries != plan_content(entries,corridor=content_corridor(args.map)):
+                raise ValueError("World Content spawns/formations need grid normalization")
         print(f"validated {len(report)} equipment groups")
     else:
         print(f"planned {len(report)} equipment groups; {sum(r['delta'] != [0,0] for r in report)} moved; {args.output}")

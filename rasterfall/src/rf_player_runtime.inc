@@ -364,17 +364,23 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
             struct rf_ui_rect rect=rf_player_ui_floor_rect(&ui,&r->rts,n);
             __printf("%s[%d,%d,%d,%d]",n?",":"",rect.x,rect.y,rect.w,rect.h);
         }
-        __printf("],\"actors\":[");int count=0;
+        const struct toy_game_actor_layer_search *search=&g->actor_layer_search;
+        __printf("],\"nav_cell_size\":%d,\"flow_nodes\":%d,\"nav_search\":{\"active\":%d,\"owner\":%d,\"stage\":%d,\"expanded\":%d,\"queued\":%d,\"slot\":%d,\"best\":%d,\"start\":%d,\"goal\":%d},\"actors\":[",
+            g->nav_cell_size,g->flow_count,search->active,search->owner_slot,search->stage,
+            search->expanded,search->queued,search->slot,search->best,search->start,search->goal);
+        int count=0;
         for(int i=0;i<TOY_GAME_MAX_ACTORS;++i)if(rf_rts_selectable(g,i)) {
             const struct toy_game_actor *a=&g->actors[i];int x=-1,y=-1;
             rf_rts_project(&r->render_camera,width,height,a->x,RASTERFALL_WORLD_GROUND_Y+a->ground_y+
                 a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU/2,a->z,&x,&y);
-            __printf("%s{\"i\":%d,\"id\":%d,\"selected\":%d,\"weapon\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"moving\":%d,\"goal_x\":%d,\"goal_z\":%d,\"y\":%d,\"goal_y\":%d}",
+            __printf("%s{\"i\":%d,\"id\":%d,\"selected\":%d,\"weapon\":%d,\"x\":%d,\"z\":%d,\"sx\":%d,\"sy\":%d,\"moving\":%d,\"goal_x\":%d,\"goal_z\":%d,\"y\":%d,\"goal_y\":%d,\"airborne_y\":%d,\"airborne_ms\":%d,\"nav_x\":%d,\"nav_z\":%d,\"nav_active\":%d,\"nav_layer_count\":%d,\"nav_layer_cursor\":%d,\"velocity_x\":%d,\"velocity_z\":%d}",
                 count++?",":"",i,a->actor_id,rf_rts_member_valid(&r->rts.selected[i],g,i),
                 toy_game_actor_current_weapon(a),a->x,a->z,x,y,a->moving,
                 a==toy_game_local_player_actor_const(g)?r->session->rts_move_x:a->command_x,
                 a==toy_game_local_player_actor_const(g)?r->session->rts_move_z:a->command_z,
-                a->ground_y,a==toy_game_local_player_actor_const(g)?r->session->rts_move_y:a->command_y);
+                a->ground_y,a==toy_game_local_player_actor_const(g)?r->session->rts_move_y:a->command_y,
+                a->airborne_y,a->airborne_ms,a->nav_x,a->nav_z,a->nav_active,
+                a->nav_layer_count,a->nav_layer_cursor,a->move_velocity_x,a->move_velocity_z);
         }
         __printf("]}\n");
     }

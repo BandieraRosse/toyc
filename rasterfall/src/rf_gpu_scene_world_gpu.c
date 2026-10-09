@@ -1734,8 +1734,10 @@ int rf_gpu_scene_world_gpu_probe_frame(struct rf_gpu_scene_world_gpu_probe *prob
     stats->enemy_prepare_us=rf_core_clock_now_us()-section_start;
     stats->character_cost=probe->character_cost;
     int64_t batch_start=rf_core_clock_now_us();
+    stage="skin-batch-end";
     if (skin_batch && rf_gpu_graphics_skin_batch_end(probe->graphics)<0) goto done;
     stats->actor_batch_us=skin_batch ? rf_core_clock_now_us()-batch_start : 0;
+    stage="lighting-lab";
     if(scene_lighting_lab_prepare(probe,camera,width,height,&items,&draws)<0) goto done;
     stage="mesh-weaver";
     section_start=rf_core_clock_now_us();

@@ -6,7 +6,7 @@ from pathlib import Path
 from building_kit import BuildingKit
 from map_grid import CELL, Footprint, ceil_cells, opening
 from map_grid_diagnostic import Geometry
-from outpost_grid import save
+from outpost_grid import save, plan_content, fields
 from map_layout_export import parse
 
 
@@ -17,6 +17,19 @@ def collider(identity, bounds, top=0, bottom=0, solid=False, walk=True, shape="b
 
 
 class GridTests(unittest.TestCase):
+    def test_row_formations_keep_spacing_and_access_clear(self):
+        lines=[f"actor id=p{i} x={x} y=0 z=-1000 yaw=0" for i,x in enumerate((-900,0,900))]
+        lines.append("formation id=team members=p0,p1,p2")
+        result=plan_content(lines,corridor=(-3*CELL,3*CELL))
+        actors=[fields(line)[1] for line in result if fields(line)[0]=="actor"]
+        xs=[int(a["x"]) for a in actors]
+        self.assertTrue(all(x%CELL==CELL//2 for x in xs))
+        self.assertTrue(all(b-a==2*CELL and b-a>=4*180 for a,b in zip(xs,xs[1:])))
+        self.assertGreaterEqual(min(xs)-2*180,3*CELL)
+        self.assertEqual(len({a["z"] for a in actors}),1)
+        self.assertEqual(result[-1],lines[-1])
+        self.assertEqual(plan_content(result,corridor=(-3*CELL,3*CELL)),result)
+
     def test_unicode_bom_and_newlines_survive_map_edit(self):
         with tempfile.TemporaryDirectory() as directory:
             path=Path(directory)/"sample.map"

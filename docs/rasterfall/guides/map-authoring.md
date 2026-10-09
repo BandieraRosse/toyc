@@ -35,7 +35,8 @@ python tools/test_map_grid.py
 重建维护现有地图的 UTF-8 BOM 和换行，按园区、机柜、建筑、设备组合顺序生成，
 并规整组件负载模板和 World Content 出生点。设备规划读取原生 Runtime 组件展开，
 默认在 `tmp/outpost-grid-plan.json` 输出格数、旧包络、规划占地和位移。
-`--check` 核对设备位置/占地是否过期；修改地图后重新导出 PNG/JSON。
+`--check` 核对设备位置/占地和 World Content 出生编队是否过期；修改地图后重新导出 PNG/JSON。
+驻守横排保留两格间距，中央编队避开主要南北接入道路；用编队整体规整代替逐人吸附。
 静态模型、楼板厚和动画资产不按格子拉伸。规划元数据不启用施工或新导航。
 
 布局 PNG 青色轮廓表示设备组合规划占地，JSON 的 `planning_bounds` 与实际

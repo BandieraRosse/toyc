@@ -3471,6 +3471,9 @@ static int nav_segment_allowed_height(const struct toy_game *g,
                                               &ground)) return 0;
         if (g->update_profile && g->update_profile->legacy_nav_ground)
             ground = toy_game_query_ground(g, x, z, radius, ground_y);
+        /* Missing finite support has a default height of zero. It is not a
+         * walkable continuation of a zero-height road or platform. */
+        if (g->primitives && !ground.has_support) return 0;
         if ((ground.support_y - ground_y > TOY_CONFIG_GROUND_STEP_HEIGHT ||
              ground_y - ground.support_y > TOY_CONFIG_GROUND_STEP_HEIGHT) &&
             !previous_ramp && !ground.support_is_ramp)
@@ -4754,8 +4757,8 @@ static int player_jump_velocity(struct toy_game *g, int actor_index,
     return 1;
 }
 
-int toy_game_move_player_input(struct toy_game *g, int actor_index,
-                                int direction_x, int direction_z, int jump)
+static int move_player_input(struct toy_game *g, int actor_index,
+                                int direction_x, int direction_z, int jump,int supported)
 {
     const int scale = 1024;
     struct toy_game_actor *actor;
@@ -4844,7 +4847,18 @@ int toy_game_move_player_input(struct toy_game *g, int actor_index,
     actor->move_remainder_x -= dx * scale;
     actor->move_remainder_z -= dz * scale;
     before_x = actor->x; before_z = actor->z; before_y = actor->ground_y;
+    struct toy_game_actor grounded;
+    if(supported)memcpy(&grounded,actor,sizeof(grounded));
     toy_game_move_actor_sliding(g, actor, dx, dz);
+    if(supported && actor->airborne_ms) {
+        /* Terrain and unit slides change the actual displacement. Reject the
+         * whole grounded input step if its final body left support, restoring
+         * all motion fields while retaining the ordinary collision rules. */
+        memcpy(actor,&grounded,sizeof(grounded));
+        actor->move_velocity_x=actor->move_velocity_z=0;
+        actor->move_remainder_x=actor->move_remainder_z=0;
+        return 0;
+    }
     if (actor->x != before_x + dx || actor->z != before_z + dz) {
         struct unit_contact contact = unit_sweep(g,actor,NULL,before_x,before_z,
             before_y,dx,dz,actor->ground_y+actor->airborne_y,TOY_GAME_PLAYER_RADIUS);
@@ -4874,6 +4888,14 @@ int toy_game_move_player_input(struct toy_game *g, int actor_index,
     }
     return actor->x == before_x + dx && actor->z == before_z + dz;
 }
+
+int toy_game_move_player_input(struct toy_game *g,int actor_index,
+    int direction_x,int direction_z,int jump)
+{ return move_player_input(g,actor_index,direction_x,direction_z,jump,0); }
+
+int toy_game_move_player_input_supported(struct toy_game *g,int actor_index,
+    int direction_x,int direction_z)
+{ return move_player_input(g,actor_index,direction_x,direction_z,0,1); }
 
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms)
 {

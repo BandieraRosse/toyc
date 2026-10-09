@@ -282,6 +282,7 @@ def main():
                     def arrived():
                         s=audit()
                         return s if s and any(a['selected'] and abs(a['y']-wy)<=2 and
+                            a['airborne_ms']==0 and a['airborne_y']==0 and
                             (not name.startswith('layout-') or not a['moving']) and
                             (a['x']-wx)**2+(a['z']-wz)**2<400**2 for a in s['actors']) else None
                     state=wait_for(arrived,'player reaches '+name,60)

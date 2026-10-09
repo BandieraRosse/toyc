@@ -347,6 +347,9 @@ static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,in
     if(flow_flat_corridor_radius(g,x,z,y,tx,tz,ty,TOY_GAME_PLAYER_RADIUS))return 1;
     struct toy_game_actor probe={0};
     probe.active=1;probe.x=x;probe.z=z;probe.ground_y=y;
+    struct toy_game_ground_query start_center=toy_game_query_ground(g,x,z,0,y);
+    int recovering=!start_center.has_support ||
+        abs(start_center.support_y-y)>TOY_CONFIG_GROUND_STEP_HEIGHT;
     int radius=TOY_GAME_PLAYER_RADIUS,steps=length/32+1,result=0;
     int minx=(x<tx?x:tx)-radius,maxx=(x>tx?x:tx)+radius;
     int minz=(z<tz?z:tz)-radius,maxz=(z>tz?z:tz)+radius;
@@ -386,7 +389,13 @@ static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,in
         int nx=x+(int)((long long)dx*i/steps),nz=z+(int)((long long)dz*i/steps);
         if(!toy_game_try_move_actor(g,&probe,nx,nz) || probe.airborne_ms)goto done;
         struct toy_game_ground_query center=toy_game_query_ground(g,nx,nz,0,probe.ground_y);
-        if(!center.has_support || abs(center.support_y-probe.ground_y)>TOY_CONFIG_GROUND_STEP_HEIGHT)goto done;
+        /* A grounded body can still touch an edge while its center is outside.
+         * Let that initial partial footprint return to support through real
+         * movement. Once its center has support, never bridge a new void. */
+        int on_layer=center.has_support &&
+            abs(center.support_y-probe.ground_y)<=TOY_CONFIG_GROUND_STEP_HEIGHT;
+        if(on_layer)recovering=0;
+        if(!on_layer && !recovering)goto done;
     }
     result=abs(probe.ground_y-ty)<=2;
 done:

@@ -148,6 +148,7 @@ struct rasterfall_session {
     int rts_active;
     int rts_move_active;
     int rts_move_x, rts_move_z, rts_move_y;
+    int rts_move_input_x, rts_move_input_z;
     int managed_ai_route_phase;
     int managed_ai_target_index;
     int managed_ai_retarget_ms;

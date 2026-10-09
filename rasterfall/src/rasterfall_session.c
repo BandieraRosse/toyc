@@ -863,13 +863,20 @@ static void session_move_player(struct rasterfall_session *session,
     int dx = camera->sy * command->move_forward + camera->cy * command->move_strafe;
     int dz = camera->cy * command->move_forward - camera->sy * command->move_strafe;
     if (!actor) return;
+    /* The route proves a world-space segment, independently of combat aim.
+     * Quantizing it to camera-relative keys can steer off a narrow platform. */
+    if (session->rts_active) {
+        dx=session->rts_move_input_x;dz=session->rts_move_input_z;
+    }
     if (jump) {
         /* Capture the input direction for replay; launch speed comes from
          * actual ground acceleration, never a second airborne input step. */
         dx = command->jump_dx; dz = command->jump_dz;
     }
-    if (!toy_game_move_player_input(&session->game_state,
-            TOY_GAME_PLAYER_ACTOR_INDEX, dx, dz, jump) &&
+    int moved=session->rts_active ? toy_game_move_player_input_supported(&session->game_state,
+        TOY_GAME_PLAYER_ACTOR_INDEX,dx,dz) : toy_game_move_player_input(&session->game_state,
+        TOY_GAME_PLAYER_ACTOR_INDEX,dx,dz,jump);
+    if (!moved &&
         session->rts_active && session->rts_move_active) {
         toy_game_actor_cancel_navigation(actor);
         if (session->game_state.update_profile)
@@ -1745,6 +1752,7 @@ static void session_build_rts_command(struct rasterfall_session *session,
     int steer_x = session->rts_move_x, steer_z = session->rts_move_z;
     int step, planned = 0;
     memset(command, 0, sizeof(*command));
+    session->rts_move_input_x=session->rts_move_input_z=0;
     if (!player || player->state != TOY_GAME_ACTOR_ALIVE) return;
     step = toy_game_player_move_step(&session->game_state,player);
     if (session->rts_move_active) {
@@ -1783,6 +1791,7 @@ static void session_build_rts_command(struct rasterfall_session *session,
     if (session->rts_move_active && planned) {
         long long dx = (long long)steer_x - player->x;
         long long dz = (long long)steer_z - player->z;
+        rf_direction_q10(dx,dz,&session->rts_move_input_x,&session->rts_move_input_z);
         /* A temporary waypoint must not get stuck outside Game's
          * step+24 arrival radius in the larger final-goal input deadzone. */
         long long threshold = player->nav_active ? (long long)step * 1024 / 2 : 160000;
@@ -2008,7 +2017,49 @@ int rasterfall_session_rts_logic_test(void)
     for(int tick=0;tick<400;++tick)rasterfall_session_step(&test,&camera,&manual,16);
     if(player->reloading || player->slots[player->current_slot].mag!=8 ||
         player->slots[player->current_slot].reserve!=0)return 31;
+    /* An oblique camera must not turn a proved straight route into keyboard
+     * diagonals that carry the player off a finite, one-metre platform. */
+    memset(&test,0,sizeof(test));memset(&camera,0,sizeof(camera));
+    memset(&manual,0,sizeof(manual));toy_game_init(&test.game_state,42);
+    test.game_state.external_director=1;
+    struct toy_map_primitive narrow={0};
+    narrow.shape=TOY_MAP_PRIMITIVE_FLAT;
+    narrow.flags=TOY_MAP_PRIMITIVE_WALKABLE;
+    narrow.minx=-512;narrow.maxx=6512;narrow.minz=-256;narrow.maxz=256;
+    toy_game_set_primitives(&test.game_state,&narrow,1,8000);
+    rasterfall_session_set_rts(&test,1);
+    if(!rasterfall_session_rts_teleport_player(&test,&camera,0,-900,60))return 33;
+    camera.sy=307;camera.cy=977;camera.pitch_cy=1024;
+    player=toy_game_local_player_actor(&test.game_state);
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,6000,60,0))return 34;
+    for(int tick=0;tick<320 && test.rts_move_active;++tick) {
+        rasterfall_session_step(&test,&camera,&manual,16);
+        if(player->airborne_ms || abs(player->z)>76)return 35;
+    }
+    if(test.rts_move_active || abs(player->x-6000)>250)return 36;
+    player->z=narrow.maxz+TOY_GAME_PLAYER_RADIUS-4;
+    struct toy_game_actor grounded=*player;
+    player->move_velocity_z=toy_game_player_move_step(&test.game_state,player)*1024;
+    if(toy_game_move_player_input_supported(&test.game_state,0,0,1024) ||
+        player->x!=grounded.x || player->z!=grounded.z || player->airborne_ms)return 38;
+    player->move_velocity_z=toy_game_player_move_step(&test.game_state,player)*1024;
+    toy_game_move_player_input(&test.game_state,0,0,1024,0);
+    if(!player->airborne_ms)return 39;
+    *player=grounded;
+    int recovery_x=0,recovery_z=0;
+    if(!toy_game_actor_navigation_target_height(&test.game_state,player,
+        player->x-512,0,60,toy_game_player_move_step(&test.game_state,player),16,
+        &recovery_x,&recovery_z) || player->airborne_ms || player->z!=grounded.z)return 40;
+    struct toy_map_primitive separated[2]={narrow,narrow};
+    separated[0].maxx=1512;separated[1].minx=2512;
+    toy_game_set_primitives(&test.game_state,separated,2,8000);
+    player->x=0;player->z=60;
+    int route_x=0,route_z=60;
+    if(toy_game_actor_navigation_target(&test.game_state,player,6000,60,
+        toy_game_player_move_step(&test.game_state,player),16,&route_x,&route_z) ||
+        player->nav_direct_valid)return 37;
     test.game_state.primitives=NULL;
+    __printf("RTS finite narrow platform / support gap / aim-independent route input passed\n");
     __printf("RTS local shared-planning/waypoint/final-goal/single-step/STOP/FPS-fire passed\n");
     __printf("RTS existing finite/infinite/dry/already-reloading/manual-FPS reload passed\n");
     return 0;

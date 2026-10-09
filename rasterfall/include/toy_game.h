@@ -1196,6 +1196,8 @@ int  toy_game_jump_actor(struct toy_game *g, int actor_index, int dx, int dz);
 /* Normalize the input direction, accelerate/brake, then move or launch.
  * Airborne input only steers velocity; motion owns the single body sweep.
  * Returns whether the complete requested ground displacement succeeded. */
+int toy_game_move_player_input_supported(struct toy_game *g,int actor_index,
+    int direction_x,int direction_z);
 int  toy_game_move_player_input(struct toy_game *g, int actor_index,
                                 int direction_x, int direction_z, int jump);
 void toy_game_update_actor_motion(struct toy_game *g, int actor_index, int dt_ms);
