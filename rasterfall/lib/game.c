@@ -16,6 +16,7 @@
 #include "toy_game.h"
 #include "rasterfall_units.h"
 #include "rasterfall_character.h"
+#include "rf_numeric.h"
 #include "string.h"
 #include "math.h"
 #include "stdlib.h"
@@ -26,6 +27,7 @@ int isqrt(long long value);
 void fast_sincos_deg(int degrees, int *sine, int *cosine);
 #endif
 
+#include "game_numeric.inc"
 #include "game_player_movement.inc"
 #include "game_gameplay_config.inc"
 #include "game_combat.inc"
@@ -636,6 +638,7 @@ void toy_game_init(struct toy_game *g, uint64_t seed)
     player->max_hp = TOY_GAME_PLAYER_HP;
     toy_game_actor_set_combat_template(player, TOY_GAME_COMBAT_PLAYER);
     player->pitch_cy = 1024;
+    player->cy = 1024;
     player->special_source = -1;
     toy_game_set_actor_name(player, "PLAYER");
     /* 槽 0 主武器为空；槽 1 默认为满弹匣手枪，开局出枪。 */
@@ -2681,15 +2684,25 @@ static void update_base_core(struct toy_game *g, int dt_ms)
 
 /* AI 朝向使用整数单位向量。用叉积/点积估算夹角，避免 freestanding
  * 运行时依赖三角函数；实际转动只需处理每帧几度的小角度。 */
+static void numeric_actor_context(const struct toy_game *g,const struct toy_game_actor *a,
+    struct rf_numeric_context *context)
+{
+    uint64_t address=(uint64_t)a,base=(uint64_t)g->actors;
+    memset(context,0,sizeof(*context));
+    context->slot=-1;
+    if(address>=base && address-base<sizeof(g->actors) &&
+        (address-base)%sizeof(*a)==0)
+        context->slot=(int)((address-base)/sizeof(*a));
+    context->tick=g->nav_tick;context->kind=a->kind;context->id=a->actor_id;
+    context->generation=a->combat_generation;context->x=a->x;context->z=a->z;
+}
+
 static int ai_angle_error(const struct toy_game_actor *a, int dx, int dz)
 {
-    long long dist2 = (long long)dx * dx + (long long)dz * dz;
-    long long dist = isqrt(dist2);
     long long dot, cross, abs_cross;
     int ratio, angle;
-    if (!a || dist <= 0) return 0;
-    dx = (int)((long long)dx * 1024 / dist);
-    dz = (int)((long long)dz * 1024 / dist);
+    if (!a || (!dx && !dz)) return 0;
+    if(rf_direction_q10(dx,dz,&dx,&dz)!=1)return 0;
     dot = (long long)a->sy * dx + (long long)a->cy * dz;
     cross = (long long)a->sy * dz - (long long)a->cy * dx;
     abs_cross = cross < 0 ? -cross : cross;
@@ -2705,31 +2718,29 @@ static int ai_angle_error(const struct toy_game_actor *a, int dx, int dz)
     return angle;
 }
 
-static int ai_turn_toward(struct toy_game_actor *a, int dx, int dz,
+static int ai_turn_toward(struct toy_game *g, struct toy_game_actor *a, long long dx, long long dz,
                           int speed_degree, int dt_ms)
 {
-    long long dist2 = (long long)dx * dx + (long long)dz * dz;
-    long long dist = isqrt(dist2);
-    long long cross, facing_len;
-    int target_x, target_z, angle, step, radians, radians2;
+    long long cross;
+    int target_x=0, target_z=1024, angle, step, radians, radians2;
     int sin_step, cos_step, next_x, next_z;
-    if (!a || dist <= 0) return 0;
-    /* Preserve sub-RFU length precision for short movement deltas. Dividing
-     * (30,-19) by floor(sqrt(1261)) otherwise yields (877,-555), whose
-     * length exceeds 1024 and stretches every attached rigid transform.
-     * The bound keeps both the scaled coordinates and squared length safe. */
-    if (dist < 1024) {
-        dx *= 1024; dz *= 1024;
-        dist = isqrt(dist2 * 1048576LL);
+    struct rf_numeric_context numeric={0};
+    if(!a)return 0;
+    numeric_actor_context(g,a,&numeric);
+    rf_direction_check("ai-turn-input",a->sy,a->cy,&numeric);
+    if(!rf_direction_valid(a->sy,a->cy) && rf_numeric_strict())return 180;
+    if(!rf_direction_valid(a->sy,a->cy) && (a->sy || a->cy)) {
+        if(rf_direction_q10(a->sy,a->cy,&a->sy,&a->cy)!=1) { a->sy=0;a->cy=1024; }
     }
-    target_x = (int)((long long)dx * 1024 / dist);
-    target_z = (int)((long long)dz * 1024 / dist);
+    int direction_status=rf_direction_set("ai-turn", dx, dz,
+            &target_x, &target_z, &numeric);
+    if(direction_status!=1)return direction_status<0?180:0;
     if (a->sy == 0 && a->cy == 0) {
         a->sy = target_x;
         a->cy = target_z;
         return 0;
     }
-    angle = ai_angle_error(a, dx, dz);
+    angle = ai_angle_error(a, target_x, target_z);
     cross = (long long)a->sy * target_z - (long long)a->cy * target_x;
     step = (speed_degree * dt_ms + a->ai_turn_remainder) / 1000;
     a->ai_turn_remainder = (speed_degree * dt_ms +
@@ -2752,14 +2763,9 @@ static int ai_turn_toward(struct toy_game_actor *a, int dx, int dz,
         next_z = (a->sy * sin_step + a->cy * cos_step) / 1024;
         /* 定点乘法每帧都会截断；不重新归一化时，sy/cy 的长度会
          * 逐渐小于 1024，渲染器把它们当旋转基向量后模型就会变扁。 */
-        facing_len = isqrt((long long)next_x * next_x +
-                           (long long)next_z * next_z);
-        if (facing_len > 0) {
-            a->sy = (int)((long long)next_x * 1024 / facing_len);
-            a->cy = (int)((long long)next_z * 1024 / facing_len);
-        }
+        rf_direction_set("ai-turn-step", next_x, next_z, &a->sy, &a->cy, &numeric);
     }
-    return ai_angle_error(a, dx, dz);
+    return ai_angle_error(a, target_x, target_z);
 }
 
 static void turn_enemy_toward(struct toy_game_enemy *e, int dx, int dz)
@@ -2784,15 +2790,19 @@ static void turn_enemy_toward(struct toy_game_enemy *e, int dx, int dz)
 /* Keep the visual heading tied to the direction in which an enemy actually
  * moved.  Chase paths can be clipped by walls and navigation waypoints, so
  * the requested target vector is not always the final displacement. */
-static void set_enemy_direction_from_delta(struct toy_game_enemy *e,
-                                           int dx, int dz)
+static void set_enemy_direction_from_delta(struct toy_game *g,struct toy_game_enemy *e,
+                                           long long dx, long long dz)
 {
-    long long dist;
+    struct rf_numeric_context numeric={0};
     if (!e) return;
-    dist = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (dist <= 0) return;
-    e->dir_x = (int)((long long)dx * 1024 / dist);
-    e->dir_z = (int)((long long)dz * 1024 / dist);
+    numeric.tick=g->nav_tick;numeric.kind=-2;numeric.slot=(int)(e-g->enemies);
+    numeric.id=numeric.slot;numeric.generation=e->combat_generation;numeric.x=e->x;numeric.z=e->z;
+    rf_direction_check("enemy-move-input",e->dir_x,e->dir_z,&numeric);
+    if(!rf_direction_valid(e->dir_x,e->dir_z)) {
+        if(rf_numeric_strict())return;
+        if(rf_direction_q10(e->dir_x,e->dir_z,&e->dir_x,&e->dir_z)!=1) { e->dir_x=0;e->dir_z=1024; }
+    }
+    rf_direction_set("enemy-move", dx, dz, &e->dir_x, &e->dir_z, &numeric);
 }
 
 static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms)
@@ -2815,7 +2825,7 @@ static void wander_enemy(struct toy_game *g, struct toy_game_enemy *e, int dt_ms
         e->wander_timer_ms = 0;
     if (!enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e)))
         e->wander_timer_ms = 0;
-    set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
+    set_enemy_direction_from_delta(g,e, (long long)e->x - old_x, (long long)e->z - old_z);
 }
 
 static int nav_next_waypoint(const struct toy_game *g,
@@ -2974,7 +2984,7 @@ static void chase_enemy(struct toy_game *g, struct toy_game_enemy *e,
         } else
             e->nav_direct_blocked_ms = 0;
     }
-    set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
+    set_enemy_direction_from_delta(g,e, (long long)e->x - old_x, (long long)e->z - old_z);
 }
 
 /* Keep one ordinary pursuit identity through small distance changes. Special
@@ -5341,7 +5351,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
              * height made the model float or miss its landing. */
             enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
             enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
-            set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
+            set_enemy_direction_from_delta(g,e, (long long)e->x - old_x, (long long)e->z - old_z);
         }
         return;
     }
@@ -5353,7 +5363,7 @@ static void update_charger(struct toy_game *g, struct toy_game_enemy *e,
             nz = -dz * (e->speed / 4) / (int)dist;
             enemy_try_step(g, e, e->x + nx, e->z, enemy_radius(e));
             enemy_try_step(g, e, e->x, e->z + nz, enemy_radius(e));
-            set_enemy_direction_from_delta(e, e->x - old_x, e->z - old_z);
+            set_enemy_direction_from_delta(g,e, (long long)e->x - old_x, (long long)e->z - old_z);
         } else {
             wander_enemy(g, e, dt_ms);
         }
@@ -6636,8 +6646,12 @@ int toy_game_execute_actor_command(
                          actor->z != command->move_z);
     } /* Without a movement intent, keep the caller's already-resolved motion. */
     if (command->aim_active) {
-        actor->sy = command->aim_sy;
-        actor->cy = command->aim_cy;
+        struct rf_numeric_context context={0};
+        numeric_actor_context(g,actor,&context);
+        rf_direction_check("actor-command",command->aim_sy,command->aim_cy,&context);
+        if (rf_direction_valid(command->aim_sy,command->aim_cy))
+            rf_direction_set("actor-command",command->aim_sy,command->aim_cy,
+                &actor->sy,&actor->cy,&context);
     }
     if (command->switch_slot >= 0 && command->switch_slot < 4)
         keys[TOY_GAME_KEY_SLOT_1 + command->switch_slot] = 1;

@@ -364,6 +364,9 @@ WORLD 深度、GPU skinning 和退休链。三角形展开数据以 65,535 个�
 独立蒙皮衣物复用身体冻结后的完整 palette 和 body-to-world，先验证骨架 rest/顺序/角色映射一致，
 再与身体一同提交。被衣物覆盖的 body material 只在该实例绘制中隐藏，不改共享资源。
 
+角色方向在共享适配器构造旋转基前独立归一化，合法模型缩放保持独立；
+合同见[展示方向与旋转保护](character-presentation.md#展示方向与旋转保护)。
+
 Scene 默认将整数存储转换为浮点后执行模型/相机变换，WORLD（包括静态建筑模型）统一使用 D32 原生 reversed Z（64/z），
 不再对倒数深度取整；旧整数兼容 draw 已拒绝。角色 body 消费 RFM2 `position_scale`，局部高精度坐标和骨骼保持同一单位，
 在 graphics 顶点阶段换为 RFU；compute skinning 仍在局部存储格上舍入。屏幕空间层保留独立深度语义。graphics draw 增加第八个 16 字节 push-constant lane，保持 Vulkan 的 128 字节最低保证。

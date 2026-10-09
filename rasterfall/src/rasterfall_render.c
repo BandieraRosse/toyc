@@ -3,6 +3,7 @@
 #include "core.h"
 #include "string.h"
 #include "tlibc_everything.h"
+#include "rf_numeric_display.h"
 #include "toy_renderer.h"
 #include "toy_assets.h"
 #include "toy_platform.h"
@@ -7726,13 +7727,17 @@ static int modular_locomotion_time(int actor_index,
     return layers->lower_time_ms;
 }
 
-static void modular_actor_facing(const struct toy_game_actor *actor,
-                                 int *sy, int *cy)
+static int modular_actor_facing(const struct toy_game_actor *actor,
+                                 int *sy, int *cy,const struct rf_numeric_context *context)
 {
-    *sy = (actor->sy * modular_rf_profile.forward_cy +
-           actor->cy * modular_rf_profile.forward_sy) / 1024;
-    *cy = (actor->cy * modular_rf_profile.forward_cy -
-           actor->sy * modular_rf_profile.forward_sy) / 1024;
+    double unit_sy,unit_cy;
+    if(rf_direction_display("character-raw-facing",actor->sy,actor->cy,
+            &unit_sy,&unit_cy,context)<0)return -1;
+    *sy = (int)(unit_sy * modular_rf_profile.forward_cy +
+           unit_cy * modular_rf_profile.forward_sy);
+    *cy = (int)(unit_cy * modular_rf_profile.forward_cy -
+           unit_sy * modular_rf_profile.forward_sy);
+    return 0;
 }
 
 static void modular_rigid_identity(struct rasterfall_rigid_transform *transform)
@@ -7741,6 +7746,19 @@ static void modular_rigid_identity(struct rasterfall_rigid_transform *transform)
     transform->rotation[0] = transform->rotation[4] =
         transform->rotation[8] = 1.0;
     transform->scale_milli = 1000;
+}
+
+/* Shared horizontal basis for CPU, frozen Scene body and all attachments.
+ * Never normalize a composed matrix: scale remains a separate model field. */
+static int modular_rigid_facing(struct rasterfall_rigid_transform *transform,
+    double sy,double cy,const struct rf_numeric_context *context)
+{
+    double unit_sy,unit_cy;
+    if(rf_direction_display("character-facing",sy,cy,&unit_sy,&unit_cy,context)<0)return -1;
+    transform->rotation[0]=transform->rotation[8]=unit_cy;
+    transform->rotation[2]=unit_sy;transform->rotation[6]=-unit_sy;
+    transform->rotation[4]=1;
+    return 0;
 }
 
 static void modular_rigid_compose(
@@ -8299,11 +8317,11 @@ static int render_modular_ai_teammate(struct toy_renderer *renderer,
     actor_to_world.translation[2] = actor->z;
     {
         int actor_sy, actor_cy;
-        modular_actor_facing(actor, &actor_sy, &actor_cy);
-        actor_to_world.rotation[0] = actor_cy / 1024.0;
-        actor_to_world.rotation[2] = actor_sy / 1024.0;
-        actor_to_world.rotation[6] = -actor_sy / 1024.0;
-        actor_to_world.rotation[8] = actor_cy / 1024.0;
+        struct rf_numeric_context context={0};
+        context.kind=actor->kind;context.slot=actor_index;context.id=actor->actor_id;
+        context.generation=actor->combat_generation;context.x=actor->x;context.z=actor->z;
+        if(modular_actor_facing(actor, &actor_sy, &actor_cy,&context)<0)return -1;
+        if(modular_rigid_facing(&actor_to_world,actor_sy,actor_cy,&context)<0)return -1;
         runtime->frontends[actor_index].gallery_facing = 1;
         runtime->frontends[actor_index].gallery_sy = actor_sy;
         runtime->frontends[actor_index].gallery_cy = actor_cy;

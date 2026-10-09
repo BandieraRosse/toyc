@@ -4,6 +4,7 @@
 #include "rasterfall_session.h"
 #include "rasterfall_feature_freeze.h"
 #include "rasterfall_units.h"
+#include "rf_numeric.h"
 #include "rasterfall_model.h"
 #include "rasterfall_character.h"
 #include "rf_experiment_session.inc"
@@ -1796,6 +1797,16 @@ static void session_build_rts_command(struct rasterfall_session *session,
 
 int rasterfall_session_rts_logic_test(void)
 {
+    {
+        struct camera numeric_camera={0};
+        int i;
+        numeric_camera.cy=1024;
+        for(i=0;i<100;i++)session_managed_ai_face(&numeric_camera,30,-19,16);
+        if(!rf_direction_valid(numeric_camera.sy,numeric_camera.cy))return 90;
+        int sy=numeric_camera.sy,cy=numeric_camera.cy;
+        session_managed_ai_face(&numeric_camera,0,0,16);
+        if(sy!=numeric_camera.sy || cy!=numeric_camera.cy)return 91;
+    }
     static struct rasterfall_session test;
     struct camera camera;
     struct rasterfall_command command;
@@ -2053,13 +2064,25 @@ int rasterfall_session_recover_managed_actor(
 static int session_managed_ai_face(struct camera *camera, int x, int z,
                                    int dt_ms)
 {
-    int dx, dz, distance, turn, aligned;
+    long long dx, dz;
+    int turn, aligned;
     long long cross, dot, cross_abs;
     if (!camera) return 0;
-    dx = x - camera->x;
-    dz = z - camera->z;
-    distance = isqrt((long long)dx * dx + (long long)dz * dz);
-    if (distance <= 0) return 1;
+    dx = (long long)x - camera->x;
+    dz = (long long)z - camera->z;
+    if (!dx && !dz) return 1;
+    int target_sy=camera->sy, target_cy=camera->cy;
+    struct rf_numeric_context numeric={0};
+    numeric.kind=3;numeric.slot=numeric.id=numeric.generation=-1;
+    numeric.x=camera->x;numeric.z=camera->z;
+    rf_direction_check("session-face-input",camera->sy,camera->cy,&numeric);
+    if(!rf_direction_valid(camera->sy,camera->cy)) {
+        if(rf_numeric_strict())return 0;
+        if(rf_direction_q10(camera->sy,camera->cy,&camera->sy,&camera->cy)!=1) {
+            camera->sy=0;camera->cy=1024;
+        }
+    }
+    if (rf_direction_set("session-face",dx,dz,&target_sy,&target_cy,&numeric)!=1) return 0;
     /* camera_rotate's turn argument is tan(angle) * 1024 for small angles.
      * Use a bounded per-tick delta so managed AI turns at 480 degrees/sec. */
     turn = MANAGED_AI_TURN_DEG_PER_SEC * dt_ms * 1024 / (1000 * 57);
@@ -2069,8 +2092,8 @@ static int session_managed_ai_face(struct camera *camera, int x, int z,
     cross_abs = cross < 0 ? -cross : cross;
     aligned = dot > 0 && cross_abs <= dot * turn / 1024;
     if (aligned) {
-        camera->sy = (int)((long long)dx * 1024 / distance);
-        camera->cy = (int)((long long)dz * 1024 / distance);
+        camera->sy = target_sy;
+        camera->cy = target_cy;
         return 1;
     }
     /* Positive camera turn rotates toward +X.  The cross-product sign is

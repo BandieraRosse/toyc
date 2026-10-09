@@ -80,10 +80,12 @@ static int block_character_sample(const struct rasterfall_procedural_humanoid_st
     if (rasterfall_model_instance_update_bones(instance)<0) return -1;
     modular_rigid_identity(world);
     double yaw=state->aim_yaw_mdeg*M_PI/180000.0;
-    double sy=(state->sy*cos(yaw)+state->cy*sin(yaw))/1024.0;
-    double cy=(state->cy*cos(yaw)-state->sy*sin(yaw))/1024.0;
-    world->rotation[0]=world->rotation[8]=cy;
-    world->rotation[2]=sy;world->rotation[6]=-sy;
+    double sy,cy;
+    if(rf_direction_display("block-facing",state->sy,state->cy,&sy,&cy,NULL)<0)return -1;
+    double turned_sy=sy*cos(yaw)+cy*sin(yaw);
+    double turned_cy=cy*cos(yaw)-sy*sin(yaw);
+    sy=turned_sy;cy=turned_cy;
+    if(modular_rigid_facing(world,sy*1024,cy*1024,NULL)<0)return -1;
     world->scale_milli=835;
     world->translation[0]=state->x+sy*legacy.forward_shift;
     world->translation[1]=RASTERFALL_WORLD_GROUND_Y+state->lift;

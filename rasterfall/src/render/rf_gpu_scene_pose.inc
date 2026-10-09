@@ -115,10 +115,10 @@ static int scene_pose_body_sample(int body_id,uint64_t frame,uint64_t world,
     out->frame_id=frame;out->world_generation=world;out->actor_count=1;
     out->character_id=RASTERFALL_CHARACTER_NONE;out->body_resource_id=body_id;
     out->bone_count=resource->definition.bone_count;out->scene_light_q8=256;
-    out->body_to_world.rotation[0]=out->body_to_world.rotation[8]=cy/1024.0;
-    out->body_to_world.rotation[2]=sy/1024.0;
-    out->body_to_world.rotation[6]=-sy/1024.0;
-    out->body_to_world.rotation[4]=1;
+    struct rf_numeric_context numeric={0};
+    numeric.frame=frame;numeric.world=world;numeric.kind=numeric.slot=numeric.id=numeric.generation=-1;
+    numeric.x=x;numeric.z=z;
+    if(modular_rigid_facing(&out->body_to_world,sy,cy,&numeric)<0)goto done;
     out->body_to_world.translation[0]=x;out->body_to_world.translation[1]=y;
     out->body_to_world.translation[2]=z;
     out->body_to_world.scale_milli=scale;
@@ -219,9 +219,12 @@ static int scene_pose_from_instance(struct rf_gpu_scene_pose_v1 *next,
     next->body_to_world.translation[0]=actor->x;
     next->body_to_world.translation[1]=actor->y;
     next->body_to_world.translation[2]=actor->z;
-    next->body_to_world.rotation[0]=next->body_to_world.rotation[8]=actor->cy/1024.0;
-    next->body_to_world.rotation[2]=actor->sy/1024.0;
-    next->body_to_world.rotation[6]=-actor->sy/1024.0;
+    struct rf_numeric_context numeric={0};
+    numeric.frame=next->frame_id;numeric.world=next->world_generation;
+    numeric.kind=actor->identity.source;numeric.slot=actor->source_slot;
+    numeric.id=actor->identity.source_id;numeric.generation=actor->identity.generation;
+    numeric.x=actor->x;numeric.z=actor->z;
+    if(modular_rigid_facing(&next->body_to_world,actor->sy,actor->cy,&numeric)<0)return -1;
     next->body_to_world.scale_milli=835;
     if (actor->weapon>=0 && rasterfall_weapon_asset_profile(actor->weapon)->skeletal) {
         if (scene_pose_weapon_from_instance(next,instance,actor->weapon,835)<0) return -1;

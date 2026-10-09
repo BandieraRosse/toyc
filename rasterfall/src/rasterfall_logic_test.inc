@@ -4,6 +4,7 @@
 #include "dev-tests/combat_evasion_test.inc"
 #include "dev-tests/game_hitscan_test.inc"
 #include "dev-tests/combat_ai_test.inc"
+#include "dev-tests/rf_numeric_test.inc"
 #include "dev-tests/rf_mesh_weaver_test.inc"
 #include "dev-tests/rf_frontier_mission_test.inc"
 #include "dev-tests/rf_frontier_session_test.inc"
@@ -2367,7 +2368,9 @@ static int run_logic_test(void)
         }
     }
     {
-        int combat_result = combat_ai_logic_test();
+        int combat_result = rf_numeric_logic_test();
+        if(combat_result) { __printf("NUMERIC failed code=%d\n",combat_result);return 1; }
+        combat_result = combat_ai_logic_test();
         if (combat_result) {
             __printf("COMBAT AI failure %d\n", combat_result);
             return 693;

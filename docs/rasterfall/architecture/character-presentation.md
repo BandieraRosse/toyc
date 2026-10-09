@@ -28,6 +28,22 @@ Scene 从只读冻结值重新求值时，允许串行复用重置后的临时 i
 单次 shirt/pants 或 scene-light override 只影响本次 submission，不修改 resource material table。
 资产坐标、profile basis、bind pose、动画求值和末端渲染补偿保持分层。
 
+## 展示方向与旋转保护
+
+`rf_numeric_display.h` 只消费展示副本：先检查有限性与原始方向长度，再使用浮点归一化。
+有限非零方向先按最大分量缩放，再求长度，避免极大或极小输入平方溢出/下溢。
+零方向默认使用 +Z；NaN/Inf 明确失败，严格数值诊断也拒绝原始长度异常和意外零值。
+异常记录保留原值、处理结果与可用实体身份，不因展示纠正而隐藏权威入口错误。
+
+共享 `modular_rigid_facing` 从单位水平朝向构造旋转基。CPU modular、Scene frozen body、
+Block、主/AUX 消费及从身体合成的武器/装备复用该规则。CPU 的 profile 轴向组合也先归一化，
+避免在修正前进行可能溢出的整数乘法。`scale_milli` 保留模型合法缩放；
+不对完整装备/骨骼矩阵任意归一化，不将 pitch 斜率当成二维单位方向。
+
+展示纠正不回写 Game/session、网络输入或动画权威值，不增加玩法随机数。
+Scene 继续保留原有 `±1.01` 矩阵元素校验与 palette/translation/scale 范围检查。
+该阈值是最后的输入保护，不是浮点运算精度标准，也不能代替单位长度和正交性检查。
+
 ## Modular teammate 与敌方枪手
 
 正式 RF 小队按 character ID → profile → modular recipe 选择共享 V2 body 与 rigid gear。正常 world 中每个

@@ -182,20 +182,24 @@ static void actor_external_step(struct toy_game *g, struct toy_game_actor *a, in
     }
     if (target && target->combat_generation == a->intent_target_generation &&
         target->state == TOY_GAME_ACTOR_ALIVE && toy_game_actors_hostile(a, target)) {
-        int dx = target->x - a->x, dz = target->z - a->z;
-        int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        long long dx = (long long)target->x - a->x, dz = (long long)target->z - a->z;
+        int target_sy=0,target_cy=1024;
+        struct rf_numeric_context numeric;
+        numeric_actor_context(g,a,&numeric);
+        int valid=rf_direction_set("external-target",dx,dz,&target_sy,&target_cy,&numeric);
+        long long distance=valid==1?numeric_sqrt(dx*dx+dz*dz):0;
         int aim_height=a->intent_aim_height_percent;
         if(aim_height<1 || aim_height>100) aim_height=64;
         int y = target->ground_y + target->airborne_y + RASTERFALL_HUMAN_HEIGHT_RFU * aim_height / 100;
         if (distance) {
-            error = ai_turn_toward(a, dx, dz, caps.turn_degrees, dt_ms);
+            error = ai_turn_toward(g,a, dx, dz, caps.turn_degrees, dt_ms);
             a->pitch_sy = (int)((long long)(y - a->ground_y - a->airborne_y -
                 RASTERFALL_HUMAN_EYE_HEIGHT_RFU) * 1024 / distance);
             a->pitch_cy = 1024;
             visible = combat_visible(g, a, target->x, y, target->z);
         }
     } else if (cmd.move_target_active) {
-        ai_turn_toward(a, cmd.move_x-a->x, cmd.move_z-a->z, caps.turn_degrees, dt_ms);
+        ai_turn_toward(g,a, (long long)cmd.move_x-a->x, (long long)cmd.move_z-a->z, caps.turn_degrees, dt_ms);
     }
     if (visible && error <= 2 && !cmd.move_target_active) {
         a->combat_aim_ms += dt_ms;a->combat_aim_lost_ms=0;
@@ -282,12 +286,10 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
         /* Existing hit-pose fixtures stay rooted and keep facing their target;
          * experiments may drive their weapon explicitly after this tick. */
         if (a->combat_target.kind >= 0) {
-            int dx = a->combat_target.x - a->x, dz = a->combat_target.z - a->z;
-            int distance = isqrt((long long)dx * dx + (long long)dz * dz);
-            if (distance) {
-                a->sy = (int)((long long)dx * 1024 / distance);
-                a->cy = (int)((long long)dz * 1024 / distance);
-            }
+            long long dx = (long long)a->combat_target.x - a->x, dz = (long long)a->combat_target.z - a->z;
+            struct rf_numeric_context numeric;
+            numeric_actor_context(g,a,&numeric);
+            rf_direction_set("target-facing", dx, dz, &a->sy, &a->cy, &numeric);
         }
         toy_game_actor_update_animation(a, dt_ms);
         return;
@@ -367,20 +369,21 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     }
     sy = a->sy; cy = a->cy;
     if (target_present) {
-        int dx = a->combat_target.x - a->x, dz = a->combat_target.z - a->z;
-        int distance = isqrt((long long)dx * dx + (long long)dz * dz);
+        long long dx = (long long)a->combat_target.x - a->x, dz = (long long)a->combat_target.z - a->z;
+        struct rf_numeric_context numeric;
+        numeric_actor_context(g,a,&numeric);
+        int valid=rf_direction_set("target-aim",dx,dz,&sy,&cy,&numeric);
+        long long distance=valid==1?numeric_sqrt(dx*dx+dz*dz):0;
         if (distance > 0) {
-            sy = (int)((long long)dx * 1024 / distance);
-            cy = (int)((long long)dz * 1024 / distance);
             visible = combat_visible(g, a, a->combat_target.x,
                                       a->combat_target.y, a->combat_target.z);
-            error = ai_turn_toward(a, sy, cy, caps.turn_degrees, dt_ms);
+            error = ai_turn_toward(g,a, sy, cy, caps.turn_degrees, dt_ms);
             a->pitch_sy = (int)((long long)(a->combat_target.y - a->ground_y -
                 a->airborne_y - RASTERFALL_HUMAN_EYE_HEIGHT_RFU) * 1024 / distance);
             a->pitch_cy = 1024;
         }
     } else if (moved) {
-        ai_turn_toward(a, a->x - sx, a->z - sz, caps.turn_degrees, dt_ms);
+        ai_turn_toward(g,a, (long long)a->x - sx, (long long)a->z - sz, caps.turn_degrees, dt_ms);
     }
     if (visible && error <= 2 && !moved) {
         a->combat_aim_ms += dt_ms;a->combat_aim_lost_ms=0;

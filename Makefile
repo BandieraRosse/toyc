@@ -2173,3 +2173,9 @@ $(BUILD)/rf_player_ui.o $(BUILD)/rf_player_ui_self.o: $(RASTERFALL_SRC)/rf_rts_u
 
 $(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_native_self.o $(BUILD)/rf_gpu_scene_world_gpu.o $(BUILD)/rf_gpu_scene_world_gpu_self.o: $(RASTERFALL_INC)/rf_gpu_character_upload.h $(RASTERFALL_INC)/rf_gpu_character.h
 $(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o: $(RASTERFALL_SRC)/render/rf_gpu_scene_infected_source.inc $(RASTERFALL_INC)/rf_gpu_character.h
+
+# Numeric code is included by Game, with no additional compilation unit.
+$(BUILD)/rasterfall_game.o $(BUILD)/rasterfall_game_self.o: $(RASTERFALL_LIB)/game_numeric.inc $(RASTERFALL_INC)/rf_numeric.h
+$(BUILD)/rasterfall_render.o $(BUILD)/rasterfall_render_self.o $(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_INC)/rf_numeric_display.h $(RASTERFALL_INC)/rf_numeric.h
+$(BUILD)/rf_game_runtime.o $(BUILD)/rf_game_runtime_self.o: $(RASTERFALL_SRC)/dev-tests/rf_numeric_test.inc
+$(BUILD)/rasterfall_session.o $(BUILD)/rasterfall_session_self.o $(BUILD)/rf_gpu_scene_native.o $(BUILD)/rf_gpu_scene_native_self.o: $(RASTERFALL_INC)/rf_numeric.h

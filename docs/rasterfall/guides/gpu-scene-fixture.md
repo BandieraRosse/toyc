@@ -1,5 +1,34 @@
 # GPU Scene 固定渲染地图
 
+## 数值异常定位
+
+默认保留方向、算术范围和非有限值检查。`RF-NUMERIC` 经已有 stderr/`rasterfall.log` 路由记录，
+无需新增日志文件。逻辑生产者记录 navigation tick、种类、槽位、actor ID/combat generation、位置、
+原始位移与朝向；Scene 记录 frame/world generation 和自己的 source identity，
+用 ID、来源与现场帧关联，两种 generation 不应假定相等。时间或 world 字段为 0、身份字段为 -1
+表示该边界没有对应上下文；不要把缺省字段当成完整复现信息。
+
+缓冲由模拟/渲染主线程拥有，固定保留 32 个异常键，按来源、类别、实体身份与 world 合并重复，
+更新最后输入并累计次数；新键满时按插入顺序覆盖。一次运行最多自动打印 32 条首次记录，
+之后只累计，退出输出总数与重复摘要。`RF_NUMERIC_DIAGNOSTICS=1` 让退出报告输出全部保留记录，
+`RF_NUMERIC_STRICT=1` 拒绝展示的可恢复坏方向，用于定向诊断；值 0 或未设置为默认模式。
+正常零位移不记异常，只有需要有效方向的消费边界报告意外零值。
+
+Scene 的旋转、平移、缩放和 palette 数值拒绝会强制输出已有缓冲，并补模型、object、
+bone/palette 索引、异常元素及身份。极端异常风暴仍保持固定缓冲与自动输出上限。
+这些记录没有 RNG 或权威状态副作用；可恢复修正与非法命令拒绝由入口合同决定。
+缓冲不是完整回放，复现还需种子、配置、固定步长、初始场景及必要操作。
+
+```powershell
+$env:RF_NUMERIC_DIAGNOSTICS='1'
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 run --renderer gpu-scene --gpu-normal-scene grid-combat 0 --gpu-normal-fixed-tick --frames 5400
+Remove-Item Env:RF_NUMERIC_DIAGNOSTICS
+```
+
+数学性质、异常注入、限频/覆盖及诊断开关确定性检查包含在 `NativeCodex.ps1 test`；
+角色旋转正交性、合法缩放与资源链检查包含在 `--gpu-scene-pose-test`。
+实机角色和主/AUX 检查仍遵守[Windows Native](windows-native.md)，不能只凭无错误摘要宣称完整签收。
+
 ## 动态角色与设备实验
 
 网格交战诊断使用 `--gpu-normal-scene grid-combat 0`：第 120 帧通过 session 生成四名

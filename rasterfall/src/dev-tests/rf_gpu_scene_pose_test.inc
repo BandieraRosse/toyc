@@ -407,7 +407,11 @@ static int scene_rifle_cycle_test(void)
         CYCLE_CHECK(!rf_gpu_scene_pose_body_sample(RASTERFALL_BODY_RF_C01_V22H,91,7,
             &sample.body,3000,-900,sample.z,sample.sy,sample.cy,&replay));
         CYCLE_CHECK(!memcmp(&pose,&replay,sizeof(pose)) && !memcmp(&sample,&repeat,sizeof(sample)) &&
-            pose.weapon_valid && pose.body_to_world.rotation[2]==sample.sy/1024.0);
+            pose.weapon_valid);
+        double sine=pose.body_to_world.rotation[2],cosine=pose.body_to_world.rotation[0];
+        CYCLE_CHECK(fabs(sine*sine+cosine*cosine-1)<1e-12 &&
+            fabs(sine*sample.cy-cosine*sample.sy)<1e-9 &&
+            sine*sample.sy+cosine*sample.cy>0);
         /* Flash frames must also survive procedural color packing, including
          * the new plot's world coordinates outside signed int16 range. */
         struct rf_gpu_scene_procedural_item_v1 block={0};
@@ -561,6 +565,17 @@ int rf_gpu_scene_pose_logic_test(void)
     struct toy_game_actor *actor;
     int id,slot;
 #define POSE_CHECK(x) do { if (!(x)) { __printf("scene pose FAIL line=%d\n",__LINE__); return 1; } } while (0)
+    {
+        struct rasterfall_rigid_transform transform;
+        modular_rigid_identity(&transform);transform.scale_milli=835;
+        POSE_CHECK(!modular_rigid_facing(&transform,877,-555,NULL));
+        double norm=transform.rotation[0]*transform.rotation[0]+transform.rotation[2]*transform.rotation[2];
+        POSE_CHECK(fabs(norm-1)<1e-12 && transform.scale_milli==835);
+        POSE_CHECK(fabs(transform.rotation[0]*transform.rotation[6]+transform.rotation[2]*transform.rotation[8])<1e-12);
+        POSE_CHECK(!modular_rigid_facing(&transform,0,0,NULL));
+        POSE_CHECK(transform.rotation[0]==1 && transform.rotation[2]==0);
+        rf_numeric_reset(0);
+    }
     POSE_CHECK(!scene_pose_reuse_test());
     POSE_CHECK(!scene_block_retained_test());
     POSE_CHECK(!scene_infected_retained_test());

@@ -4,7 +4,7 @@
  * 职责边界：本库只包含游戏规则 —— PRNG、世界碰撞查询、僵尸 AI/攻击、
  * 波次或闯关刷怪、安全室/终点、hitscan 射击与障碍遮挡、弹匣/换弹、玩家生命/死亡、事件队列
  * （供音效与 HUD 消费）。战斗使用整数/定点，制造使用 double 资源累计；
- * 零系统调用、零内存分配（固定数组），
+ * 正常规则推进零系统调用、零内存分配（固定数组）；数值异常经有界诊断记录，
  * 不依赖窗口/输入/渲染设施，可无窗口测试。
  *
  * 约定：所有计时字段单位 ms；朝向 sy/cy 为 1024 基准定点（同 Rasterfall
@@ -778,7 +778,7 @@ struct toy_game_actor_command {
     int move_x, move_z;
     int move_speed;
     int aim_active;
-    int aim_sy, aim_cy;
+    int aim_sy, aim_cy;        /* Q10 direction, not displacement; invalid aim preserves facing. */
     int fire_pressed;
     int fire_held;
     int reload;

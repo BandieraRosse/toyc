@@ -447,6 +447,24 @@ static int combat_ai_logic_test(void)
     struct toy_map_primitive obstruction[2] = {{0}};
     unsigned int sequence, generation;
     int i, elapsed, id, old_index;
+    /* Exercise actual infected displacement, not just the math helper. */
+    for(int speed_case=0;speed_case<3;++speed_case) {
+        const int speeds[3]={83,137,450};
+        shooter=combat_ai_fixture(&g);
+        if(!shooter)return 63;
+        shooter->active=0;
+        id=toy_game_spawn_enemy(&g,TOY_GAME_ENEMY_PURSUIT_COMMON,300,-190);
+        if(id<0)return 64;
+        struct toy_game_enemy *enemy=&g.enemies[id];
+        enemy->speed=speeds[speed_case];
+        int old_x=enemy->x,old_z=enemy->z;
+        for(i=0;i<100;++i) {
+            toy_game_update_world(&g,16);
+            long long norm=(long long)enemy->dir_x*enemy->dir_x+(long long)enemy->dir_z*enemy->dir_z;
+            if(norm<1022LL*1022 || norm>1026LL*1026)return 65;
+        }
+        if(enemy->x==old_x && enemy->z==old_z)return 66;
+    }
     /* Short per-tick movement deltas must still produce a unit facing vector.
      * A floored world-space distance used to stretch the actor and its gear. */
     shooter = combat_ai_fixture(&g);
