@@ -184,6 +184,22 @@ static int scene_layer_rect_depth(struct scene_layer_mesh *m,int x,int y,int w,i
 }
 static int scene_layer_rect(void *context,int x,int y,int w,int h,uint32_t color,int alpha)
 { return scene_layer_rect_depth(context,x,y,w,h,color,alpha,4096,2); }
+static int scene_layer_line(void *context,int x0,int y0,int x1,int y1,uint32_t color,int alpha)
+{
+    struct rf_gpu_graphics_vertex v[4]={0};
+    int vertical=abs(y1-y0)>abs(x1-x0);
+    if(vertical ? y1<y0 : x1<x0) {
+        int t=x0;x0=x1;x1=t;t=y0;y0=y1;y1=t;
+    }
+    /* One pixel wide strip, including the last pixel; two triangles per edge. */
+    x1+=!vertical;y1+=vertical;
+    for(int i=0;i<4;++i) {
+        v[i].position[0]=(i==1 || i==2?x1:x0)+(i>=2?vertical:0);
+        v[i].position[1]=(i==1 || i==2?y1:y0)+(i>=2?!vertical:0);
+        v[i].position[2]=4096;
+    }
+    return scene_layer_quad(context,v,color,alpha,2);
+}
 static int scene_layer_viewmodel(void *context,const struct toy_screen_vertex *a,
     const struct toy_screen_vertex *b,const struct toy_screen_vertex *c,
     uint32_t color,int light,int alpha,const struct toy_texture_view *texture)
@@ -492,7 +508,9 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         f[3]=-f[0]*camera->x-f[1]*camera->y-f[2]*camera->z+
             2*(fabs(f[0])+fabs(f[1])+fabs(f[2]))-(p==0?64:0);
     }
-    struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect};
+    struct rasterfall_canvas canvas={width,height,0,mesh,scene_layer_rect,scene_layer_line};
+    /* Same-package diagnostic control for grid/UI line submission cost. */
+    if(getenv("RF_GPU_CANVAS_LINE_REFERENCE"))canvas.line=NULL;
     const struct toy_game_actor *player=toy_game_local_player_actor_const(input->source_game);
     /* GPU SKY is a ray-evaluated HDR background, independent of CPU canvas. */
     mesh->layer=RF_GPU_SCENE_SKY;

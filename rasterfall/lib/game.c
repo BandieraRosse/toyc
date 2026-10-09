@@ -4554,6 +4554,7 @@ static void actor_path_toward(struct toy_game *g, struct toy_game_actor *a,
     dz = steer_z - a->z;
     distance = isqrt((long long)dx * dx + (long long)dz * dz);
     if (distance > 0) {
+        if(speed>=distance) speed=distance;
         int step_x = (int)((long long)dx * speed / distance);
         int step_z = (int)((long long)dz * speed / distance);
         struct unit_contact contact = {UNIT_SWEEP_SCALE,0,0};

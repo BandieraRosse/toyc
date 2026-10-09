@@ -429,7 +429,7 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
             const struct rf_ui_subtitle *entry=&ui->subtitles[i];
             struct rf_story_history_entry source={0,entry->node_id,entry->choice,entry->revision};
             struct p_chat_clip clip={c,o.text,alpha[i]};
-            struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle};
+            struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle,NULL};
             p_chat_message(&source,line,sizeof(line));
             if(y+rows[i]*leading>o.text.y)
                 p_subtitle_text(&chat,o.text.x,y,o.text.w,4,line,scale);
@@ -440,7 +440,7 @@ void rf_player_comms_draw(struct rasterfall_canvas *c,const struct rf_game_runti
         int scroll=p_min(runtime->chat_scroll,p_max(0,lines-o.text.h/leading));
         int y=o.text.y+o.text.h-lines*leading+scroll*leading;
         struct p_chat_clip clip={c,o.text,255};
-        struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle};
+        struct rasterfall_canvas chat={c->width,c->height,0,&clip,p_chat_rectangle,NULL};
         rasterfall_canvas_rect(c,o.text.x-o.padding,o.text.y-o.padding,
             o.text.w+2*o.padding,o.text.h+2*o.padding,0x142536,72);
         for(int i=0;i<story->history_count;++i) {

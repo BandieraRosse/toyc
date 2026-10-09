@@ -4,11 +4,13 @@
 #include "toy_window.h"
 #include "fb_font.h"
 #include "fb_draw.h"
-/* Presentation layout emits rectangles, never owns a framebuffer. */
+/* Presentation layout emits screen primitives, never owns a framebuffer. */
 struct rasterfall_canvas {
     int width,height,failed;
     void *context;
     int (*rectangle)(void *,int,int,int,int,uint32_t,int);
+    /* Optional accelerated, already clipped screen-space line. */
+    int (*line)(void *,int,int,int,int,uint32_t,int);
 };
 static inline void rasterfall_canvas_rect(struct rasterfall_canvas *c,int x,int y,
     int w,int h,uint32_t color,int alpha)
@@ -167,7 +169,7 @@ static inline int rasterfall_canvas_surface_rect(void *context,int x,int y,int w
 }
 static inline struct rasterfall_canvas rasterfall_canvas_surface(struct toy_surface *s)
 {
-    struct rasterfall_canvas c={s->width,s->height,0,s,rasterfall_canvas_surface_rect};
+    struct rasterfall_canvas c={s->width,s->height,0,s,rasterfall_canvas_surface_rect,NULL};
     return c;
 }
 #endif

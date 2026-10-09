@@ -886,7 +886,22 @@ static void session_move_player(struct rasterfall_session *session,
          * actual ground acceleration, never a second airborne input step. */
         dx = command->jump_dx; dz = command->jump_dz;
     }
-    int moved=session->rts_active ? toy_game_move_player_input_supported(&session->game_state,
+    int moved,final_leg=0;
+    if(session->rts_active && session->rts_move_active && session->game_state.grid_enabled &&
+       !actor->control_disabled && !actor->movement_hold_token &&
+       actor->airborne_ms<=0 && !actor->airborne_y && abs(actor->ground_y-session->rts_move_y)<=2) {
+        long long goal_dx=(long long)session->rts_move_x-actor->x;
+        long long goal_dz=(long long)session->rts_move_z-actor->z;
+        int step=toy_game_player_move_step(&session->game_state,actor);
+        if(goal_dx*goal_dx+goal_dz*goal_dz<=(long long)step*step) {
+            /* One collision sweep replaces the inertial step at the endpoint. */
+            moved=toy_game_move_actor_sliding(&session->game_state,actor,(int)goal_dx,(int)goal_dz);
+            actor->move_velocity_x=actor->move_velocity_z=0;
+            actor->move_remainder_x=actor->move_remainder_z=0;
+            final_leg=1;
+        }
+    }
+    if(!final_leg)moved=session->rts_active ? toy_game_move_player_input_supported(&session->game_state,
         TOY_GAME_PLAYER_ACTOR_INDEX,dx,dz) : toy_game_move_player_input(&session->game_state,
         TOY_GAME_PLAYER_ACTOR_INDEX,dx,dz,jump);
     if (!moved &&
@@ -1783,7 +1798,8 @@ static void session_build_rts_command(struct rasterfall_session *session,
     if (session->rts_move_active) {
         long long dx = (long long)session->rts_move_x - player->x;
         long long dz = (long long)session->rts_move_z - player->z;
-        if (dx * dx + dz * dz <= 250LL * 250LL &&
+        int arrival=session->game_state.grid_enabled?2:250;
+        if (dx * dx + dz * dz <= (long long)arrival * arrival &&
             player->airborne_ms<=0 && !player->airborne_y &&
             abs(player->ground_y-session->rts_move_y)<=2) {
             session->rts_move_active = 0;
@@ -2153,6 +2169,62 @@ int rasterfall_session_rts_logic_test(void)
     if(toy_game_grid_reserve(&test.game_state,0,&rx,&ry,&rz)!=1 || other->grid_reserved)return 60;
     toy_game_rebuild_navigation(&test.game_state);
     if(player->grid_reserved || other->grid_reserved)return 61;
+    /* A finished metre-grid order keeps the whole body in one cell,
+     * including diagonal approaches and the player's residual velocity. */
+    other->active=0;
+    for(int direction=0;direction<4;++direction) {
+        player->x=-256+(direction&1?160:-160);
+        player->z=-256+(direction&2?100:-100);
+        player->ground_y=0;player->airborne_ms=player->airborne_y=0;
+        player->move_velocity_x=90000;player->move_velocity_z=-90000;
+        if(!rasterfall_session_rts_order_actor_height(&test,0,player->actor_id,
+            player->combat_generation,-10,0,-10,0,1))return 62;
+        for(int tick=0;tick<120 && test.rts_move_active;++tick) {
+            int before_x=player->x,before_z=player->z;
+            session_build_rts_command(&test,&camera,&command,16);
+            if(player->x!=before_x || player->z!=before_z)return 69;
+            if(test.rts_move_active)session_move_player(&test,&camera,&command);
+        }
+        if(test.rts_move_active || abs(player->x+256)>2 || abs(player->z+256)>2 ||
+           player->move_velocity_x || player->move_velocity_z)return 63;
+        toy_game_grid_unit_occupants(&test.game_state,toy_game_grid_cell(&test.game_state,-512,-512),
+            &grid_actors,&grid_enemies);
+        if(!(grid_actors&1))return 64;
+        int neighbours[4][2]={{-513,-256},{0,-256},{-256,-513},{-256,0}};
+        for(int n=0;n<4;++n) {
+            toy_game_grid_unit_occupants(&test.game_state,toy_game_grid_cell(&test.game_state,
+                neighbours[n][0],neighbours[n][1]),&grid_actors,&grid_enemies);
+            if(grid_actors&1)return 65;
+        }
+    }
+    player->x=-316;player->z=-256;
+    if(!rasterfall_session_rts_order_actor_height(&test,0,player->actor_id,
+        player->combat_generation,-10,0,-10,0,1))return 70;
+    other->active=1;other->ground_y=0;other->x=54;other->z=-256;
+    session_build_rts_command(&test,&camera,&command,16);
+    session_move_player(&test,&camera,&command);
+    session_build_rts_command(&test,&camera,&command,16);
+    if(!test.rts_move_active || !player->grid_reserved || player->x>=-256)return 71;
+    other->active=0;
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,
+        player->combat_generation,0,0,1))return 72;
+    player->x=-1792;player->z=-3840;
+    other->active=1;other->ground_y=0;other->command_height_active=1;
+    other->control_disabled=other->movement_hold_token=other->ai_stationary=0;
+    other->controller_external=0;
+    for(int direction=0;direction<4;++direction) {
+        other->x=-256+(direction&1?120:-120);other->z=-256+(direction&2?120:-120);
+        if(!rasterfall_session_rts_order_actor_height(&test,1,other->actor_id,
+            other->combat_generation,-10,0,-10,0,1))return 66;
+        for(int tick=0;tick<120;++tick)toy_game_update_ai_teammates(&test.game_state,16);
+        if(abs(other->x+256)>2 || abs(other->z+256)>2 || other->moving) {
+            __printf("RTS-CENTER direction=%d x=%d z=%d moving=%d reserved=%d\n",
+                direction,other->x,other->z,other->moving,other->grid_reserved);
+            return 67;
+        }
+        rx=-256;ry=0;rz=-256;
+        if(toy_game_grid_reserve(&test.game_state,1,&rx,&ry,&rz)!=1)return 68;
+    }
     __printf("RTS target cell snapping / exclusive reservations / storeys / STOP / arrival occupancy / death / identity / rebuild passed\n");
     grid_floor[0].maxx=512;
     grid_floor[1]=grid_floor[0];grid_floor[1].minx=1536;grid_floor[1].maxx=4096;

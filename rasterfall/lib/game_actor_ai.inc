@@ -342,7 +342,8 @@ void toy_game_update_ai_teammate(struct toy_game *g, int dt_ms)
     sx = a->x; sz = a->z;
     if (!a->control_disabled && !a->base_core && !a->movement_hold_token && !a->ai_stationary) {
         long long dx = (long long)desired_x - a->x, dz = (long long)desired_z - a->z;
-        if (dx * dx + dz * dz > TOY_GAME_AI_DEPLOY_RADIUS * TOY_GAME_AI_DEPLOY_RADIUS ||
+        int arrival=g->grid_enabled && a->command_destination_active ? 2 : TOY_GAME_AI_DEPLOY_RADIUS;
+        if (dx * dx + dz * dz > (long long)arrival * arrival ||
             (a->command_destination_active && a->command_height_active &&
              abs(a->ground_y-a->command_y)>2))
             actor_path_toward(g, a, desired_x, desired_z,

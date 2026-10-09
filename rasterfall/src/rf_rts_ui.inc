@@ -15,6 +15,10 @@ static void rts_ui_line(struct rasterfall_canvas *c,int x0,int y0,int x1,int y1,
     }
     x1=x0+(int)(t1*dx);y1=y0+(int)(t1*dy);
     x0+=(int)(t0*dx);y0+=(int)(t0*dy);
+    if(c->line) {
+        if(c->line(c->context,x0,y0,x1,y1,color,alpha)<0)c->failed=1;
+        return;
+    }
     /* Coalesce along the dominant axis: a projected vertical metre edge
      * should emit a column, rather than one HUD quad per screen pixel. */
     int transpose=abs(y1-y0)>abs(x1-x0);
@@ -45,6 +49,25 @@ static void rts_ui_outline(struct rasterfall_canvas *c,struct rf_ui_rect r,unsig
 }
 
 static const unsigned ui_grid_colors[7]={0x637482,0x58DDA0,0x58AEF0,0xEF6464,0xF5D16C,0xC58AFF,0xFF963F};
+struct ui_grid_run { int active,x0,y0,x1,y1,height,status; };
+static void ui_grid_flush(struct rasterfall_canvas *c,struct ui_grid_run *run)
+{
+    if(!run->active)return;
+    int status=run->status;
+    rts_ui_line(c,run->x0,run->y0,run->x1,run->y1,ui_grid_colors[status],
+        status>=3?185:status?100:38);
+    run->active=0;
+}
+static void ui_grid_extend(struct rasterfall_canvas *c,struct ui_grid_run *run,
+    int x0,int y0,int x1,int y1,int height,int status)
+{
+    if(run->active && (run->height!=height || run->status!=status ||
+        run->x1!=x0 || run->y1!=y0))ui_grid_flush(c,run);
+    if(!run->active) {
+        run->active=1;run->x0=x0;run->y0=y0;run->height=height;run->status=status;
+    }
+    run->x1=x1;run->y1=y1;
+}
 static void ui_grid_overlay(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *h,
     const struct rf_ui_layout *l)
 {
@@ -53,8 +76,11 @@ static void ui_grid_overlay(struct rasterfall_canvas *canvas,const struct raster
     const struct camera *camera=h->player_ui_view.rts_camera;
     if(!s->grid_view || !s->grid_cache_valid || !g->grid_enabled || !g->grid_valid || !camera)return;
     struct rasterfall_canvas c=*canvas;
+    struct ui_grid_run horizontal={0},vertical[TOY_GAME_GRID_MAX_SIDE]={0};
     if(h->player_ui_view.rts_active && l->groups.w>0)c.height=ui_min(c.height,l->groups.y);
     for(int cell=0;cell<g->nav_width*g->nav_height;++cell) {
+        int column=cell%g->nav_width;
+        if(!column)ui_grid_flush(&c,&horizontal);
         int x=g->nav_origin+(cell%g->nav_width)*512,z=g->nav_origin_z+(cell/g->nav_width)*512;
         int y=RASTERFALL_WORLD_GROUND_Y+s->grid_y[cell]+12;
         int px[4],py[4],valid=1;
@@ -67,8 +93,13 @@ static void ui_grid_overlay(struct rasterfall_canvas *canvas,const struct raster
         if(maxx<0 || minx>=c.width || maxy<100 || miny>=c.height || maxx-minx<3 || maxy-miny<3)continue;
         int status=s->grid_cells[cell],alpha=status>=3?185:status?100:38;
         unsigned color=ui_grid_colors[status];
-        rts_ui_line(&c,px[0],py[0],px[1],py[1],color,alpha);
-        rts_ui_line(&c,px[0],py[0],px[3],py[3],color,alpha);
+        if(c.line) {
+            ui_grid_extend(&c,&horizontal,px[0],py[0],px[1],py[1],y,status);
+            ui_grid_extend(&c,&vertical[column],px[0],py[0],px[3],py[3],y,status);
+        } else {
+            rts_ui_line(&c,px[0],py[0],px[1],py[1],color,alpha);
+            rts_ui_line(&c,px[0],py[0],px[3],py[3],color,alpha);
+        }
         if(status>=3) {
             rts_ui_line(&c,px[1],py[1],px[2],py[2],color,alpha);
             rts_ui_line(&c,px[3],py[3],px[2],py[2],color,alpha);
@@ -76,6 +107,8 @@ static void ui_grid_overlay(struct rasterfall_canvas *canvas,const struct raster
             rasterfall_canvas_rect(&c,cx-2,cy-2,4,4,color,180);
         }
     }
+    ui_grid_flush(&c,&horizontal);
+    for(int column=0;column<g->nav_width;++column)ui_grid_flush(&c,&vertical[column]);
     if(c.failed)canvas->failed=1;
     struct rf_ui_rect legend=rf_player_ui_grid_legend_rect(l);
     rf_ui_panel(canvas,legend,&s->theme,0);

@@ -12,7 +12,7 @@ static int scene_ui_test_rect(void *context,int x,int y,int w,int h,uint32_t col
 static int scene_ui_test(void)
 {
     struct scene_ui_test_sink sink={0};
-    struct rasterfall_canvas canvas={1280,720,0,&sink,scene_ui_test_rect};
+    struct rasterfall_canvas canvas={1280,720,0,&sink,scene_ui_test_rect,NULL};
     struct control_settings settings={0};
     struct pause_menu menu={0};
     struct rf_player_ui_state ui;

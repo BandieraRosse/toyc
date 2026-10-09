@@ -165,6 +165,7 @@ static void ui_grid_body(struct rf_player_ui_state *s,const struct toy_game *g,
 {
     int radius=enemy?TOY_GAME_CHARGER_RADIUS:TOY_GAME_PLAYER_RADIUS;
     int maxx=g->nav_origin+g->nav_width*512-1,maxz=g->nav_origin_z+g->nav_height*512-1;
+    if(x-radius>maxx || x+radius<g->nav_origin || z-radius>maxz || z+radius<g->nav_origin_z)return;
     int first=toy_game_grid_cell(g,ui_clamp(x-radius,g->nav_origin,maxx),ui_clamp(z-radius,g->nav_origin_z,maxz));
     int last=toy_game_grid_cell(g,ui_clamp(x+radius,g->nav_origin,maxx),ui_clamp(z+radius,g->nav_origin_z,maxz));
     if(first<0 || last<0)return;
@@ -173,8 +174,11 @@ static void ui_grid_body(struct rf_player_ui_state *s,const struct toy_game *g,
             int cell=cz*g->nav_width+cx;
             uint64_t actors,enemies;
             if(abs(s->grid_y[cell]-y)>=RASTERFALL_HUMAN_HEIGHT_RFU)continue;
-            toy_game_grid_unit_occupants(g,cell,&actors,&enemies);
-            if(((enemy?enemies:actors)>>index)&1)s->grid_cells[cell]=enemy?6:4;
+            if(!enemy)s->grid_cells[cell]=4;
+            else {
+                toy_game_grid_unit_occupants(g,cell,&actors,&enemies);
+                if((enemies>>index)&1)s->grid_cells[cell]=6;
+            }
         }
 }
 
@@ -734,7 +738,7 @@ int rf_player_ui_logic_test(void)
     const char mixed[]="A中B";
     const char *invalid="\xf0\x80\x80\x80";
     struct ui_text_test_result bounds={0};
-    struct rasterfall_canvas canvas={160,120,0,&bounds,ui_text_test_rectangle};
+    struct rasterfall_canvas canvas={160,120,0,&bounds,ui_text_test_rectangle,NULL};
     if (rasterfall_canvas_text_width(mixed,1000)!=32 ||
         rasterfall_canvas_text_width(mixed,1500)!=48 ||
         rasterfall_canvas_text_width("AB\nA",1000)!=16) return -1;

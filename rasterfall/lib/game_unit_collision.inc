@@ -27,7 +27,7 @@ static void grid_refresh_reservations(struct toy_game *g)
         }
         long long dx=(long long)a->x-(g->nav_origin+(a->grid_reserved_cell%g->nav_width)*512+256);
         long long dz=(long long)a->z-(g->nav_origin_z+(a->grid_reserved_cell/g->nav_width)*512+256);
-        if(a->airborne_ms<=0 && !a->airborne_y && dx*dx+dz*dz<=250LL*250LL &&
+        if(a->airborne_ms<=0 && !a->airborne_y && dx*dx+dz*dz<=2LL*2LL &&
            abs(a->ground_y-a->grid_reserved_y)<=2)
             a->grid_reserved=0;
     }
