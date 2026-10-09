@@ -43,6 +43,8 @@ struct rf_frontier_facility_config {
 };
 struct rf_frontier_config {
     int offline_authority;
+    int core_objective;
+    struct rf_frontier_point player_core, enemy_core;
     struct rf_frontier_guard_config guards[RF_FRONTIER_GUARDS];
     struct rf_frontier_point north, east, west;
     int assault_x, assault_z;
@@ -64,6 +66,7 @@ struct rf_frontier_mission {
     int first_final_infected_ms, retry_ms, gunner_retry_ms;
     int spawn_failures, spawn_attempts;
     int victory_count;
+    struct rf_frontier_entity cores[2]; /* allied, hostile; identity checked like guards */
     struct rf_frontier_entity entities[RF_FRONTIER_TRACKED];
 };
 

@@ -4,6 +4,10 @@
 > 所有者：Rasterfall 首图开发
 > 决策日期：2026-10-05
 
+2026-10-09 当前实现已改为一米格地图和双方基地核心攻坚；西侧基地出生、3×3 格等比信标、
+500 生命与站点中央摧毁目标的现行合同见[首图操作](../guides/frontier-station-01.md#基地与行动目标)。
+本页首轮流程中的清空守军、增援和接管全部设施不再是胜利门槛，后续仍归唯一活动计划。
+
 本轮按用户提供的[开发任务书](../reference/frontier-station-01-task.md)与两张概念图完成首个可玩的工业站点。
 原始概念输入：[布局图](../reference/frontier-station-01/frontier-station-01-layout-concept.png)、
 [视角图](../reference/frontier-station-01/frontier-station-01-view-concept.png)；规则以任务书文字为准。

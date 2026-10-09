@@ -4857,6 +4857,7 @@ static int render_world_sign(struct toy_renderer *renderer,
     if (sign->style>=2) {
         struct cpu_terminal_context c={renderer,camera,0,sign->style==6 ? 42 : 255};
         if (rf_lab_terminal_emit(sign,cpu_terminal_quad,&c)<0) return -1;
+        if(!rf_lab_beacon_powered(sign,&game))return c.pixels;
         if (rf_lab_projection_text_emit(sign,cpu_terminal_quad,&c)<0) return -1;
         if (sign->style==7 && rf_lab_beacon_projection_emit(sign,
                 (unsigned)(render_monotonic_us()/1000),cpu_terminal_quad,&c)<0) return -1;
@@ -8736,7 +8737,7 @@ static int render_ai_teammate(struct toy_renderer *renderer,
         const struct toy_game_actor *actor = &game.actors[i];
         struct vec3 center, view;
         uint32_t color;
-        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI) continue;
+        if (!actor->active || actor->kind != TOY_GAME_ACTOR_AI || actor->core_hit_radius) continue;
         if(cpu_cutaway_point(actor->x,actor->ground_y+actor->airborne_y,actor->z))continue;
         ai_submission_stats.active_actors++;
         center.x = actor->x; center.y = 0; center.z = actor->z;

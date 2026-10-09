@@ -514,7 +514,8 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_primitives(&session->game_state, session->level.primitives,
                             session->level.primitive_count,
                             session->level.room_limit);
-    if(session->world_id==RASTERFALL_WORLD_OUTPOST &&
+    if((session->world_id==RASTERFALL_WORLD_OUTPOST ||
+        session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) &&
        !toy_game_set_grid_enabled(&session->game_state,1))
         __printf("OUTPOST-GRID invalid map capacity\n");
     if(session->game_state.grid_enabled) {

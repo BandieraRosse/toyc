@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+边缘站点一米格标准化、西侧基地与中央核心攻坚先读
+[首图操作](guides/frontier-station-01.md#基地与行动目标)，生成入口为 `tools/frontier_station_map.py`；
+核心伤害归 Game actor，任务身份与胜负归 `rf_frontier_mission.c`，CPU/Scene 共用信标几何。
+
 前哨站建筑与地图一米格标准化先读[网格合同](reference/map-grid-v1.md)，
 再读[生成与诊断](guides/map-authoring.md#前哨站网格标准化)；
 统一重建入口为 `tools/outpost_grid.py`，全单位导航迁移仍由[唯一活动计划](plans/README.md)控制。

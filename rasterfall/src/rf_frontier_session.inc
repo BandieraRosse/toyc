@@ -38,6 +38,9 @@ static int session_frontier_bind(struct rasterfall_session *s)
     struct rf_frontier_point rally;
     if(s->world_id!=RASTERFALL_WORLD_FRONTIER_STATION_01)return 1;
     memset(c,0,sizeof(*c));c->offline_authority=1;
+    c->core_objective=1;
+    if(!frontier_bind_region(s,"frontier_player_core","mission_core",&c->player_core) ||
+       !frontier_bind_region(s,"frontier_enemy_core","mission_core",&c->enemy_core))return 0;
     for(int i=0;i<12;++i) {
         char id[64];snprintf(id,sizeof(id),"frontier_guard_%s_%d",zones[i/3],i%3);
         if(!frontier_bind_region(s,id,"mission_guard",&c->guards[i].point))return 0;

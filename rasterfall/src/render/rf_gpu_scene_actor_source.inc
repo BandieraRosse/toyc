@@ -126,7 +126,7 @@ int rf_gpu_scene_actor_collect_independent(const struct camera *camera,
     }
     for (int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct toy_game_actor *actor=&game.actors[i];
-        if (!actor->active || actor->kind!=TOY_GAME_ACTOR_AI) continue;
+        if (!actor->active || actor->kind!=TOY_GAME_ACTOR_AI || actor->core_hit_radius) continue;
         if(actor->character_id==RASTERFALL_CHARACTER_RF_C01) {
             struct rf_gpu_scene_body_sample sample={0};
             if(scene_enemy_capture.modular_count>=TOY_GAME_MAX_ACTORS)goto fail;

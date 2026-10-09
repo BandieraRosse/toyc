@@ -79,11 +79,11 @@ int toy_game_actor_launch_bullet(struct toy_game *g, struct toy_game_actor *a)
  * Long steps cannot tunnel through walls or bodies. Targets use current fixed
  * step positions; no future movement or aim-leading enters this query. */
 static int combat_bullet_body(const struct toy_game_bullet *b,int x,int y,int z,
-    int height,int limit)
+    int height,int radius,int limit)
 {
     long long lo=0,hi=(long long)limit*(1<<20);
-    if(!combat_ray_slab(b->x,b->dx,x-TOY_GAME_HIT_RADIUS,x+TOY_GAME_HIT_RADIUS,&lo,&hi) ||
-       !combat_ray_slab(b->z,b->dz,z-TOY_GAME_HIT_RADIUS,z+TOY_GAME_HIT_RADIUS,&lo,&hi) ||
+    if(!combat_ray_slab(b->x,b->dx,x-radius,x+radius,&lo,&hi) ||
+       !combat_ray_slab(b->z,b->dz,z-radius,z+radius,&lo,&hi) ||
        !combat_ray_slab(b->y,b->dy,y,y+height,&lo,&hi))return -1;
     return (int)(lo/(1<<20));
 }
@@ -112,20 +112,21 @@ void toy_game_update_bullets(struct toy_game *g,int dt_ms)
         best=combat_world_distance(g,b->x,b->y,b->z,b->dx,b->dy,b->dz,travel+1);
         world_hit=best<=travel;if(!world_hit)best=travel;
         for(j=0;j<TOY_GAME_MAX_ACTORS+TOY_GAME_MAX_ENEMIES;j++) {
-            int x,y,z,height,t;
+            int x,y,z,height,t,radius=TOY_GAME_HIT_RADIUS,core=0;
             if(j<TOY_GAME_MAX_ACTORS) {
                 const struct toy_game_actor *a=&g->actors[j];
                 if(!a->active || a->hp<=0 || a->state!=TOY_GAME_ACTOR_ALIVE ||
                     a->simulation_paused || a->developer_only || a->faction==b->faction)continue;
                 x=a->x;y=a->ground_y+a->airborne_y;z=a->z;height=RASTERFALL_HUMAN_HEIGHT_RFU;
+                if(a->core_hit_radius>0){radius=a->core_hit_radius;height=a->core_hit_height;core=1;}
             } else {
                 const struct toy_game_enemy *e=&g->enemies[j-TOY_GAME_MAX_ACTORS];
                 if(e->active!=1 || e->hp<=0)continue;
                 x=e->x;y=e->ground_y+e->airborne_y;z=e->z;
                 height=e->type==TOY_GAME_ENEMY_TANK?1600:e->type==TOY_GAME_ENEMY_SMOKER?1250:1000;
             }
-            t=combat_bullet_body(b,x,y,z,height,best);
-            if(t<0 || (t==best && (world_hit || actor_hit>=0 || enemy_hit>=0)))continue;
+            t=combat_bullet_body(b,x,y,z,height,radius,best);
+            if(t<0 || (t==best && !core && (world_hit || actor_hit>=0 || enemy_hit>=0)))continue;
             best=t;actor_hit=j<TOY_GAME_MAX_ACTORS?j:-1;
             enemy_hit=j>=TOY_GAME_MAX_ACTORS?j-TOY_GAME_MAX_ACTORS:-1;world_hit=0;
         }
@@ -144,7 +145,7 @@ void toy_game_update_bullets(struct toy_game *g,int dt_ms)
             struct toy_game_actor *a=&g->actors[actor_hit];
             struct toy_game_attack attack={0};struct toy_game_damage_result result={0};
             ray.actor_generation=a->combat_generation;
-            ray.weakpoint=b->y>=a->ground_y+a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU*84/100;
+            ray.weakpoint=!a->base_core && b->y>=a->ground_y+a->airborne_y+RASTERFALL_HUMAN_HEIGHT_RFU*84/100;
             attack.kind=TOY_GAME_ATTACK_BULLET;attack.source_x=b->sx;attack.source_z=b->sz;
             attack.base_damage_milli=damage_milli;
             attack.health_damage_milli=damage_milli*(ray.weakpoint?b->weakpoint_percent:100)/100;

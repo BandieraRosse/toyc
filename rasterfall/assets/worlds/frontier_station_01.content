@@ -1,8 +1,8 @@
 # Frontier action squad: finite ordinary loadouts; player remains manual.
-actor id=frontier_assault_1 name=突击一号 character=RF_RIFLEMAN weapon=ak x=-1536 y=0 z=-8192 yaw=0
-actor id=frontier_assault_2 name=突击二号 character=RF_RIFLEMAN weapon=ak x=1536 y=0 z=-8192 yaw=0
-actor id=frontier_support name=支援 character=SQUAD_A_ENGINEER weapon=ak x=-1536 y=0 z=-9728 yaw=0
-actor id=frontier_recon name=侦察 character=SQUAD_A_RECON weapon=awp x=0 y=0 z=-10496 yaw=0
-actor id=frontier_breacher name=近战 character=SQUAD_B_BREACHER weapon=shotgun x=1536 y=0 z=-9728 yaw=0
+actor id=frontier_assault_1 name=突击一号 character=RF_RIFLEMAN weapon=ak x=-46848 y=0 z=21760 yaw=90
+actor id=frontier_assault_2 name=突击二号 character=RF_RIFLEMAN weapon=ak x=-46848 y=0 z=23808 yaw=90
+actor id=frontier_support name=支援 character=SQUAD_A_ENGINEER weapon=ak x=-50944 y=0 z=20736 yaw=90
+actor id=frontier_recon name=侦察 character=SQUAD_A_RECON weapon=awp x=-50944 y=0 z=22784 yaw=90
+actor id=frontier_breacher name=近战 character=SQUAD_B_BREACHER weapon=shotgun x=-50944 y=0 z=24832 yaw=90
 formation id=frontier_assault members=frontier_assault_1,frontier_assault_2
 formation id=frontier_support_group members=frontier_support,frontier_recon,frontier_breacher

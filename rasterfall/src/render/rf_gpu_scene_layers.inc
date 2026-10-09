@@ -530,6 +530,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN &&
             scene_display_emit(mesh,&item->draw,i)<0) return -1;
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN && item->draw.style==7 &&
+            rf_lab_beacon_powered(&item->draw,input->source_game) &&
             rf_lab_beacon_projection_emit(&item->draw,input->host_time_ms,scene_host_quad,mesh)<0) return -1;
     }
     mesh->emissive=0;
@@ -549,6 +550,7 @@ static int scene_layers_extract(struct scene_layer_mesh *mesh,
     for (unsigned i=0;input->map && i<input->map->count;++i) {
         const struct rf_gpu_scene_world_render_item_v1 *item=&input->map->items[i];
         if (item->visible && item->draw.type==TOY_MAP_DRAW_SIGN &&
+            rf_lab_beacon_powered(&item->draw,input->source_game) &&
             rf_lab_projection_light_emit(&item->draw,input->host_time_ms,camera->z,
                 scene_projection_quad,mesh)<0) return -1;
     }

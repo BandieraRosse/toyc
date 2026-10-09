@@ -692,6 +692,7 @@ struct toy_game_actor {
     unsigned int ai_rescue_generation;
     int character_id;           /* -1 ordinary; nonnegative IDs are explicit story identities */
     int base_core;              /* BASE: fixed defense objective */
+    int core_hit_radius, core_hit_height; /* zero keeps the ordinary body contract */
     int hired;                  /* 运行时部署的普通 AI，计入波次战斗力 */
     int developer_only;         /* 开发者展示/测试角色，不可分配旗帜 */
     int companion;              /* 常驻副官：跟随玩家，永不驻守旗帜 */

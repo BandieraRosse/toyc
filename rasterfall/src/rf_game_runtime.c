@@ -4527,10 +4527,13 @@ int rf_game_runtime_run(const struct rf_game_config *config)
         }
         if(!strncmp(options.gpu_normal_view,"frontier-",9)) {
             camera.x=0;camera.z=-8192;camera.y=RASTERFALL_STANDING_CAMERA_Y;camera.sy=0;camera.cy=1024;
-            if(!strcmp(options.gpu_normal_view,"frontier-overview")) {
+            if(!strcmp(options.gpu_normal_view,"frontier-entry")) {
+                camera.x=-46592;camera.z=19456;camera.sy=-614;camera.cy=819;
+                camera.pitch_sy=170;camera.pitch_cy=1010;
+            } else if(!strcmp(options.gpu_normal_view,"frontier-overview")) {
                 game_runtime.rts_active=1;
-                game_runtime.rts_camera_x=0;game_runtime.rts_camera_z=17408;
-                game_runtime.rts_camera_distance=33000;
+                game_runtime.rts_camera_x=-15360;game_runtime.rts_camera_z=20480;
+                game_runtime.rts_camera_distance=55000;
                 camera.x=0;camera.z=-8192;
             } else if(!strncmp(options.gpu_normal_view,"frontier-floor-",15) ||
                 !strcmp(options.gpu_normal_view,"frontier-roof")) {

@@ -166,6 +166,18 @@ static void fire_ray(struct toy_game *g, struct toy_game_actor *actor,
                 a->developer_only || !toy_game_actors_hostile(actor, a)) continue;
             x = a->x; z = a->z; ground = a->ground_y + a->airborne_y;
             height = RASTERFALL_HUMAN_HEIGHT_RFU;
+            if(a->core_hit_radius>0) {
+                long long lo=0,hi=(long long)best*(1<<20);
+                radius=a->core_hit_radius;height=a->core_hit_height;
+                if(!combat_ray_slab(actor->x,ray->sy,x-radius,x+radius,&lo,&hi) ||
+                   !combat_ray_slab(actor->z,ray->cy,z-radius,z+radius,&lo,&hi) ||
+                   !combat_ray_slab(ray_y,slope,ground,ground+height,&lo,&hi))continue;
+                t=(int)(lo/(1<<20));
+                best=t;ray->hit_world=0;ray->enemy_index=-1;
+                ray->actor_index=i-TOY_GAME_MAX_ENEMIES;
+                ray->actor_generation=a->combat_generation;
+                ray->weakpoint=0;ray->damage=damage;ray->hit_enemy=1;continue;
+            }
         }
         lx = x - actor->x; lz = z - actor->z;
         proj = (long long)lx * ray->sy + (long long)lz * ray->cy;

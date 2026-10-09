@@ -51,7 +51,7 @@ static int rf_terminal_box(struct rf_terminal_emit_context *c,
     }
     return 0;
 }
-static int rf_lab_terminal_emit(const struct toy_map_draw *d,
+static int rf_lab_terminal_emit_native(const struct toy_map_draw *d,
     rf_terminal_quad quad,void *context)
 {
     int x=(d->a+d->b)/2,z=(d->c+d->d)/2;
@@ -146,7 +146,7 @@ static inline int rf_lab_projection_text_emit(const struct toy_map_draw *d,
     return rasterfall_text_panel_emit(d->a+icon+rail*5,d->b-rail*2,
         d->e+rail*2,d->f-rail*2,0,0,d->text,d->facing,rf_terminal_glyph,&c);
 }
-static inline int rf_lab_beacon_projection_emit(const struct toy_map_draw *d,
+static inline int rf_lab_beacon_projection_emit_native(const struct toy_map_draw *d,
     unsigned time_ms,rf_terminal_quad quad,void *context)
 {
     int x=(d->a+d->b)/2,z=(d->c+d->d)/2;
@@ -179,7 +179,7 @@ typedef int (*rf_projection_quad)(void *,const int [4][3],unsigned,int);
 /* Presentation-only scattering shell and backdrop. No collision or light source.
  * Backdrop sits behind the glyphs from either viewing side, avoiding coplanar
  * blending over their opaque depth. The beam follows the beacon's frozen clock. */
-static inline int rf_lab_projection_light_emit(const struct toy_map_draw *d,
+static inline int rf_lab_projection_light_emit_native(const struct toy_map_draw *d,
     unsigned time_ms,int camera_z,rf_projection_quad quad,void *context)
 {
     if (d->style!=2 && d->style!=3 && d->style!=4 && d->style!=7) return 0;
@@ -234,5 +234,62 @@ static inline int rf_lab_projection_light_emit(const struct toy_map_draw *d,
         }
     }
     return 0;
+}
+/* Style 7 is a uniformly scaled beacon. Authored width owns scale; authored
+ * lower Y owns its floor. Original laboratory beacons remain exactly 360 RFU. */
+struct rf_beacon_transform {
+    const struct toy_map_draw *draw;
+    rf_terminal_quad quad;
+    rf_projection_quad light;
+    void *context;
+};
+static inline int rf_lab_beacon_powered(const struct toy_map_draw *d,const struct toy_game *g)
+{
+    if(d->style!=7 || !g)return 1;
+    int x=(d->a+d->b)/2,z=(d->c+d->d)/2;
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;i++) {
+        const struct toy_game_actor *a=&g->actors[i];
+        if(a->active && a->core_hit_radius && a->x==x && a->z==z)
+            return a->hp>0 && a->state==TOY_GAME_ACTOR_ALIVE;
+    }
+    return 1;
+}
+static void rf_beacon_points(const struct toy_map_draw *d,const int p[4][3],int q[4][3])
+{
+    int x=(d->a+d->b)/2,z=(d->c+d->d)/2,width=d->b-d->a;
+    for(int i=0;i<4;i++) {
+        q[i][0]=x+(p[i][0]-x)*width/360;
+        q[i][1]=d->e+(p[i][1]+896)*width/360;
+        q[i][2]=z+(p[i][2]-z)*width/360;
+    }
+}
+static int rf_beacon_quad(void *context,const int p[4][3],unsigned color)
+{
+    struct rf_beacon_transform *c=context;int q[4][3];
+    rf_beacon_points(c->draw,p,q);return c->quad(c->context,q,color);
+}
+static int rf_beacon_light(void *context,const int p[4][3],unsigned color,int alpha)
+{
+    struct rf_beacon_transform *c=context;int q[4][3];
+    rf_beacon_points(c->draw,p,q);return c->light(c->context,q,color,alpha);
+}
+static int rf_lab_terminal_emit(const struct toy_map_draw *d,rf_terminal_quad quad,void *context)
+{
+    if(d->style!=7)return rf_lab_terminal_emit_native(d,quad,context);
+    struct rf_beacon_transform c={d,quad,0,context};
+    return rf_lab_terminal_emit_native(d,rf_beacon_quad,&c);
+}
+static inline int rf_lab_beacon_projection_emit(const struct toy_map_draw *d,
+    unsigned time_ms,rf_terminal_quad quad,void *context)
+{
+    struct rf_beacon_transform c={d,quad,0,context};
+    return rf_lab_beacon_projection_emit_native(d,time_ms,rf_beacon_quad,&c);
+}
+static inline int rf_lab_projection_light_emit(const struct toy_map_draw *d,
+    unsigned time_ms,int camera_z,rf_projection_quad quad,void *context)
+{
+    if(d->style!=7)return rf_lab_projection_light_emit_native(d,time_ms,camera_z,quad,context);
+    struct rf_beacon_transform c={d,0,quad,context};
+    return rf_lab_projection_light_emit_native(d,time_ms,camera_z,rf_beacon_light,&c);
 }
 #endif

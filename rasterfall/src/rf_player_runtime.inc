@@ -95,15 +95,25 @@ static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_s
     if(r->session->world_id==RASTERFALL_WORLD_FRONTIER_STATION_01) {
         const struct rf_frontier_mission *m=&r->session->frontier;
         v->region_name="边缘站点 01";v->objective_active=0;
-        if(m->phase==RF_FRONTIER_ASSAULT)
+        if(m->config.core_objective && m->phase!=RF_FRONTIER_SECURED && m->phase!=RF_FRONTIER_FAILED) {
+            const struct rf_frontier_entity *enemy=&m->cores[1],*base=&m->cores[0];
+            const struct toy_game *g=&r->session->game_state;
+            snprintf(v->mission_title,sizeof(v->mission_title),"摧毁敌方基地核心：%d / 500",
+                enemy->active?g->actors[enemy->index].hp:0);
+            snprintf(v->mission_detail,sizeof(v->mission_detail),"敌方基地中央红色核心 · 我方基地 %d / 500",
+                base->active?g->actors[base->index].hp:0);
+            v->objective_active=1;v->objective_x=m->config.enemy_core.x;
+            v->objective_z=m->config.enemy_core.z;v->objective_y=m->config.enemy_core.y;
+        } else if(m->phase==RF_FRONTIER_ASSAULT)
             snprintf(v->mission_title,sizeof(v->mission_title),"攻占：初始守军 %d",m->guards_alive);
         else if(m->phase==RF_FRONTIER_PREPARE)
             snprintf(v->mission_title,sizeof(v->mission_title),"整备：%d 秒后增援",(45000-m->phase_ms+999)/1000);
         else if(m->phase==RF_FRONTIER_COUNTERATTACK)
             snprintf(v->mission_title,sizeof(v->mission_title),"反击：敌军 %d / 待入 %d",m->enemies_alive,m->pending_spawns);
         else snprintf(v->mission_title,sizeof(v->mission_title),"%s",m->phase==RF_FRONTIER_SECURED?
-            "行动完成：站点已回收":m->phase==RF_FRONTIER_FAILED?"行动失败：可重试或返回":"准备行动");
-        snprintf(v->mission_detail,sizeof(v->mission_detail),"车间%s 仓库%s 能源%s",
+            "行动完成：敌方核心已摧毁":m->phase==RF_FRONTIER_FAILED?"行动失败：可重试或返回":"准备行动");
+        if(!m->config.core_objective || m->phase==RF_FRONTIER_SECURED || m->phase==RF_FRONTIER_FAILED)
+            snprintf(v->mission_detail,sizeof(v->mission_detail),"车间%s 仓库%s 能源%s",
             m->captured[0]?"●":"○",m->captured[1]?"●":"○",m->captured[2]?"●":"○");
         v->objective_title=v->mission_title;v->objective_detail=v->mission_detail;
         for(int i=0;i<3;++i) {

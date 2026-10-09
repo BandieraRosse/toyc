@@ -89,6 +89,13 @@ void rf_frontier_mission_reset(struct rf_frontier_mission *m, struct toy_game *g
 {
     int i;
     if (!m) return;
+    if(g && m->mission_id) for(i=0;i<2;i++) {
+        struct rf_frontier_entity *e=&m->cores[i];
+        if(e->active && e->actor && e->mission_id==m->mission_id && frontier_entity_matches(e,g)) {
+            if(g->base_actor_index==e->index)g->base_actor_index=-1;
+            memset(&g->actors[e->index],0,sizeof(g->actors[0]));
+        }
+    }
     if (g && m->mission_id) for (i = 0; i < RF_FRONTIER_TRACKED; i++) {
         struct rf_frontier_entity *e = &m->entities[i];
         if (!e->active || e->mission_id != m->mission_id ||
@@ -113,9 +120,12 @@ static int frontier_valid_id(const char *id)
 
 static int frontier_config_valid(const struct rf_frontier_config *c)
 {
-    const char *ids[RF_FRONTIER_GUARDS + RF_FRONTIER_FACILITIES + 3];
+    const char *ids[RF_FRONTIER_GUARDS + RF_FRONTIER_FACILITIES + 5];
     int i, j, count = 0, elite = 0;
     if (!c || !c->offline_authority) return 0;
+    if(c->core_objective) {
+        ids[count++]=c->player_core.id;ids[count++]=c->enemy_core.id;
+    }
     for (i = 0; i < RF_FRONTIER_GUARDS; i++) {
         if (!toy_game_weapon_info_or_null(c->guards[i].weapon) ||
             c->guards[i].guard_radius <= 0 ||
@@ -164,6 +174,21 @@ int rf_frontier_mission_begin(struct rf_frontier_mission *m, struct toy_game *g,
     memcpy(&m->config, &config, sizeof(config));
     m->mission_id = mission_id;
     m->first_final_infected_ms = -1;
+    if(config.core_objective) for(i=0;i<2;i++) {
+        const struct rf_frontier_point *point=i?&config.enemy_core:&config.player_core;
+        int id=toy_game_add_ai(g,TOY_GAME_AI_LEVEL_2,point->x,point->z,
+            i?"敌方基地核心":"基地核心");
+        if(id<=0){rf_frontier_mission_reset(m,g);return 0;}
+        struct toy_game_actor *a=&g->actors[id-1];
+        a->base_core=1;a->core_hit_radius=768;a->core_hit_height=3601;
+        a->ground_y=point->y;a->max_hp=a->hp=500;
+        a->faction=i?TOY_GAME_FACTION_HOSTILE:TOY_GAME_FACTION_ALLIED;
+        a->fire_enabled=0;a->control_disabled=1;a->ai_stationary=1;
+        struct rf_frontier_entity *e=&m->cores[i];
+        e->active=e->actor=1;e->index=id-1;e->stable_id=a->actor_id;
+        e->generation=a->combat_generation;e->mission_id=mission_id;
+        if(!i)g->base_actor_index=id-1;
+    }
     for (i = 0; i < RF_FRONTIER_GUARDS; i++) {
         const struct rf_frontier_guard_config *guard = &config.guards[i];
         int id = toy_game_add_gunner(g, guard->elite, guard->point.x,
@@ -270,6 +295,19 @@ void rf_frontier_mission_step(struct rf_frontier_mission *m, struct toy_game *g,
         m->phase == RF_FRONTIER_INACTIVE || m->phase == RF_FRONTIER_FAILED ||
         m->phase == RF_FRONTIER_SECURED) return;
     frontier_refresh(m, g);
+    if(m->config.core_objective) {
+        if(!frontier_entity_matches(&m->cores[0],g) ||
+           !frontier_entity_matches(&m->cores[1],g)) {
+            rf_frontier_mission_fail(m);g->state=TOY_GAME_OVER;return;
+        }
+        if(!frontier_entity_alive(&m->cores[0],g)) {
+            rf_frontier_mission_fail(m);g->state=TOY_GAME_OVER;return;
+        }
+        if(!frontier_entity_alive(&m->cores[1],g)) {
+            m->phase=RF_FRONTIER_SECURED;m->victory_count++;
+            m->pending_events|=RF_FRONTIER_EVENT_SECURED;return;
+        }
+    }
     if (m->phase == RF_FRONTIER_ASSAULT && m->guards_alive == 0) {
         /* Phase transition wins over a periodic opportunity in the same step. */
         m->phase = RF_FRONTIER_PREPARE; m->phase_ms = m->periodic_ms = 0;
@@ -315,7 +353,7 @@ void rf_frontier_mission_step(struct rf_frontier_mission *m, struct toy_game *g,
         frontier_counterattack(m, g);
     }
     frontier_refresh(m, g);
-    if (m->phase == RF_FRONTIER_COUNTERATTACK && !m->pending_spawns &&
+    if (!m->config.core_objective && m->phase == RF_FRONTIER_COUNTERATTACK && !m->pending_spawns &&
         !m->enemies_alive && m->captured[0] && m->captured[1] && m->captured[2]) {
         m->phase = RF_FRONTIER_SECURED; m->victory_count++;
         m->pending_events |= RF_FRONTIER_EVENT_SECURED;

@@ -101,6 +101,13 @@ static int rf_frontier_session_logic_test(void)
     FRONTIER_SESSION_CHECK(g->state == TOY_GAME_PLAYING &&
         fixture.frontier.phase == RF_FRONTIER_ASSAULT && fixture.frontier.guards_alive == RF_FRONTIER_GUARDS);
     FRONTIER_SESSION_CHECK(!frontier_session_test_storeys(&fixture));
+    FRONTIER_SESSION_CHECK(g->grid_enabled && g->grid_valid && fixture.frontier.config.core_objective);
+    for(int core=0;core<2;core++) {
+        const struct rf_frontier_entity *e=&fixture.frontier.cores[core];
+        const struct toy_game_actor *a=&g->actors[e->index];
+        FRONTIER_SESSION_CHECK(e->active && a->base_core && a->hp==500 &&
+            a->max_hp==500 && !a->fire_enabled && a->core_hit_radius>0);
+    }
     FRONTIER_SESSION_CHECK(fixture.frontier_autonomous_squad.index>=0 &&
         g->squads[fixture.frontier_autonomous_squad.index].count==5 &&
         g->squads[fixture.frontier_autonomous_squad.index].mode==TOY_GAME_SQUAD_FOLLOW);
@@ -117,6 +124,40 @@ static int rf_frontier_session_logic_test(void)
         !g->weaver.supply.power_on && !g->weaver.supply.x1_on &&
         !g->weaver.supply.cpu_on && !g->weaver.supply.storage_bytes &&
         !g->weaver.produced_count && !g->weaver.collected_count);
+    /* The core objective wins with defenders alive and no facilities captured.
+     * Confirm real weapon flight, then destroy it through authoritative damage. */
+    {
+        struct toy_game_actor *core=&g->actors[fixture.frontier.cores[1].index];
+        player->x=core->x;player->z=core->z-3000;player->ground_y=core->ground_y;
+        player->pitch_sy=0;player->pitch_cy=1024;
+        player->rays[0].sy=0;player->rays[0].cy=1024;player->rays[0].vy=0;
+        FRONTIER_SESSION_CHECK(toy_game_actor_launch_bullet(g,player));
+        toy_game_update_bullets(g,16);
+        FRONTIER_SESSION_CHECK(core->hp<500 && core->hp>0);
+        struct toy_game_attack attack={0};
+        attack.kind=TOY_GAME_ATTACK_BULLET;
+        attack.base_damage_milli=attack.health_damage_milli=500000;
+        toy_game_damage_actor(g,player,core,&attack);
+        rf_frontier_mission_step(&fixture.frontier,g,16);
+        FRONTIER_SESSION_CHECK(fixture.frontier.phase==RF_FRONTIER_SECURED &&
+            fixture.frontier.victory_count==1 && fixture.frontier.guards_alive>0 &&
+            !fixture.frontier.captured[0]);
+        rf_frontier_mission_step(&fixture.frontier,g,16);
+        FRONTIER_SESSION_CHECK(fixture.frontier.victory_count==1);
+        rasterfall_session_reset(&fixture,&view,7913);
+        core=&g->actors[fixture.frontier.cores[0].index];
+        toy_game_damage_actor(g,NULL,core,&attack);
+        rf_frontier_mission_step(&fixture.frontier,g,16);
+        FRONTIER_SESSION_CHECK(fixture.frontier.phase==RF_FRONTIER_FAILED && g->state==TOY_GAME_OVER);
+        rasterfall_session_reset(&fixture,&view,7913);
+        /* Slot reuse is a lost binding, never a destroyed-core victory. */
+        ++g->actors[fixture.frontier.cores[1].index].combat_generation;
+        rf_frontier_mission_step(&fixture.frontier,g,16);
+        FRONTIER_SESSION_CHECK(fixture.frontier.phase==RF_FRONTIER_FAILED &&
+            fixture.frontier.victory_count==0);
+        rasterfall_session_reset(&fixture,&view,7913);
+        player=toy_game_local_player_actor(g);
+    }
     initial_energy = g->weaver.supply.energy_kj;
     for (int i = 0; i < 3; ++i) {
         supply = g->weaver.supply;
