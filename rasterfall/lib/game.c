@@ -1102,6 +1102,8 @@ static int primitive_surface_height(const struct toy_map_primitive *p,
 
 /* A navigation sweep can freeze a conservative footprint candidate list.
  * Keep authored order and leave ordinary movement/public queries unchanged. */
+#include "game_grid.inc"
+
 static int ground_candidate_count(const struct toy_game *g)
 {
     return g->flow_probe_active ? g->flow_probe_count : g->primitive_count;
@@ -1129,6 +1131,8 @@ struct toy_game_ground_query toy_game_query_ground(
 {
     struct toy_game_ground_query result;
     int i, found_support = 0, found_landing = 0;
+    unsigned short candidates[TOY_GAME_MAX_PRIMITIVES];
+    int candidate_count;
     result.has_support = 0;
     result.has_landing = 0;
     result.support_y = 0;
@@ -1136,12 +1140,15 @@ struct toy_game_ground_query toy_game_query_ground(
     result.touches_current_support = 0;
     result.support_is_ramp = 0;
     if (!g || !g->primitives) return result;
+    if(g->grid_enabled && !g->grid_valid)return result;
+    candidate_count=g->grid_enabled ? grid_candidates(g,x,z,radius,candidates) :
+                                     ground_candidate_count(g);
     if (g->update_profile) {
         g->update_profile->ground_queries++;
-        g->update_profile->ground_scans += ground_candidate_count(g);
+        g->update_profile->ground_scans += candidate_count;
     }
-    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
-        i = ground_candidate_index(g, candidate);
+    for (int candidate = 0; candidate < candidate_count; candidate++) {
+        i = g->grid_enabled ? candidates[candidate] : ground_candidate_index(g, candidate);
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_WALKABLE)) continue;
         int overlaps = footprint_overlaps_primitive(p, x, z, radius);
@@ -1279,8 +1286,13 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
                                       struct toy_game_ground_query *out_ground)
 {
     int i, collision_height = ground_height;
+    unsigned short candidates[TOY_GAME_MAX_PRIMITIVES];
+    int candidate_count;
     struct toy_game_ground_query ground;
     if (!g) return 1;
+    if(g->grid_enabled && !g->grid_valid)return 1;
+    candidate_count=g->grid_enabled ? grid_candidates(g,x,z,radius,candidates) :
+                                     ground_candidate_count(g);
     if (g->update_profile) g->update_profile->body_queries++;
     if (x - radius < -g->room_limit || x + radius > g->room_limit ||
         z - radius < -g->room_limit || z + radius > g->room_limit) return 1;
@@ -1297,8 +1309,8 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
     if (ground.has_support && ground.support_y > collision_height &&
         ground.support_y - ground_height <= TOY_CONFIG_GROUND_STEP_HEIGHT)
         collision_height = ground.support_y;
-    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
-        i = ground_candidate_index(g, candidate);
+    for (int candidate = 0; candidate < candidate_count; candidate++) {
+        i = g->grid_enabled ? candidates[candidate] : ground_candidate_index(g, candidate);
         if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *b = &g->primitives[i];
         if (!(b->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -1320,8 +1332,8 @@ static int position_blocked_at_height_ground(const struct toy_game *g,
      * fixture behavior.  A loaded map always supplies its ground primitive
      * array (possibly with zero entries), where absence of support is solid. */
     if (require_ground_support && g->primitives && !ground.has_support) return 1;
-    for (int candidate = 0; candidate < ground_candidate_count(g); candidate++) {
-        i = ground_candidate_index(g, candidate);
+    for (int candidate = 0; candidate < candidate_count; candidate++) {
+        i = g->grid_enabled ? candidates[candidate] : ground_candidate_index(g, candidate);
         if (g->update_profile) g->update_profile->body_scans++;
         const struct toy_map_primitive *p = &g->primitives[i];
         if (!(p->flags & TOY_MAP_PRIMITIVE_COLLISION) ||
@@ -1379,6 +1391,7 @@ static int actor_try_move_terrain(struct toy_game *g, struct toy_game_actor *act
     int candidate_ground_y, current_ground_y, ramp_transition = 0;
     if (!g) return 0;
     if (!actor || !actor->active || actor->airborne_ms > 0) return 0;
+    if(!grid_segment_allowed(g,actor->x,actor->z,actor->ground_y,x,z))return 0;
     current_ground_y = actor->ground_y;
     ground = toy_game_query_ground(g, x, z, TOY_GAME_PLAYER_RADIUS,
                                    current_ground_y);
@@ -1578,8 +1591,9 @@ static int nav_position_blocked(const struct toy_game *g, int x, int z)
 
 static int nav_cell_index(const struct toy_game *g, int x, int z)
 {
+    if(g->nav_cell_size<=0 || x<g->nav_origin || z<g->nav_origin_z)return -1;
     int cx = (x - g->nav_origin) / g->nav_cell_size;
-    int cz = (z - g->nav_origin) / g->nav_cell_size;
+    int cz = (z - g->nav_origin_z) / g->nav_cell_size;
     if (cx < 0 || cz < 0 || cx >= g->nav_width || cz >= g->nav_height)
         return -1;
     return cz * g->nav_width + cx;
@@ -1640,10 +1654,10 @@ static int nav_ramp_supports_axis_link(const struct toy_game *g,
     if (!g || (dx && dz) || (!dx && !dz)) return 0;
     if (dx) {
         boundary = g->nav_origin + (cx > nx ? cx : nx) * g->nav_cell_size;
-        lo = g->nav_origin + cz * g->nav_cell_size;
+        lo = g->nav_origin_z + cz * g->nav_cell_size;
         hi = lo + g->nav_cell_size;
     } else {
-        boundary = g->nav_origin + (cz > nz ? cz : nz) * g->nav_cell_size;
+        boundary = g->nav_origin_z + (cz > nz ? cz : nz) * g->nav_cell_size;
         lo = g->nav_origin + cx * g->nav_cell_size;
         hi = lo + g->nav_cell_size;
     }
@@ -1750,6 +1764,7 @@ static void rebuild_component_navigation(struct toy_game *g)
         toy_game_actor_cancel_navigation(&g->actors[i]);
     if (!g || g->room_limit <= 0) return;
     g->nav_origin = -g->room_limit;
+    g->nav_origin_z = g->nav_origin;
     span = g->room_limit * 2;
     g->nav_cell_size = TOY_GAME_NAV_CELL_SIZE;
     g->nav_width = (span + g->nav_cell_size - 1) / g->nav_cell_size;
@@ -1762,11 +1777,12 @@ static void rebuild_component_navigation(struct toy_game *g)
         g->nav_width = TOY_GAME_NAV_MAX_SIDE;
         g->nav_height = TOY_GAME_NAV_MAX_SIDE;
     }
+    if(g->grid_enabled && !grid_build(g))return;
     for (z = 0; z < g->nav_height; z++) {
         for (x = 0; x < g->nav_width; x++) {
             int px = g->nav_origin + x * g->nav_cell_size +
                      g->nav_cell_size / 2;
-            int pz = g->nav_origin + z * g->nav_cell_size +
+            int pz = g->nav_origin_z + z * g->nav_cell_size +
                      g->nav_cell_size / 2;
             index = z * g->nav_width + x;
             {
@@ -1821,8 +1837,18 @@ static void rebuild_component_navigation(struct toy_game *g)
 void toy_game_rebuild_navigation(struct toy_game *g)
 {
     if (!g) return;
+    g->grid_building=1;
     rebuild_component_navigation(g);
     enemy_flow_rebuild(g);
+    g->grid_building=0;
+}
+
+int toy_game_set_grid_enabled(struct toy_game *g,int enabled)
+{
+    if(!g)return 0;
+    g->grid_enabled=enabled!=0;
+    toy_game_rebuild_navigation(g);
+    return !g->grid_enabled || g->grid_valid;
 }
 
 static int enemy_position_blocked(const struct toy_game *g,
@@ -1880,6 +1906,7 @@ static int enemy_try_step_terrain(struct toy_game *g, struct toy_game_enemy *e,
     int delta, support_height;
     int ramp_transition;
     if (!g || !e) return 0;
+    if(!grid_segment_allowed(g,e->x,e->z,e->ground_y,x,z))return 0;
     ground = toy_game_query_ground(g, x, z, 0, e->ground_y);
     if (g->primitives && !ground.has_support) return 0;
     support_height = ground.has_support ? ground.support_y : e->ground_y;
@@ -3573,7 +3600,7 @@ static int actor_nav_attach_cell(const struct toy_game *g, int x, int z,
     int radius, int ground_y, int component)
 {
     int cx = (x - g->nav_origin) / g->nav_cell_size;
-    int cz = (z - g->nav_origin) / g->nav_cell_size;
+    int cz = (z - g->nav_origin_z) / g->nav_cell_size;
     int range = (TOY_GAME_SHORT_CONNECTION_RANGE + g->nav_cell_size - 1) /
                 g->nav_cell_size;
     int best = -1, dx, dz;
@@ -3587,7 +3614,7 @@ static int actor_nav_attach_cell(const struct toy_game *g, int x, int z,
         if (!g->nav_walkable[cell] || !g->nav_component[cell] ||
             (component && g->nav_component[cell] != component)) continue;
         px = g->nav_origin + nx * g->nav_cell_size + g->nav_cell_size / 2;
-        pz = g->nav_origin + nz * g->nav_cell_size + g->nav_cell_size / 2;
+        pz = g->nav_origin_z + nz * g->nav_cell_size + g->nav_cell_size / 2;
         offset_x = (long long)px - x; offset_z = (long long)pz - z;
         distance = offset_x * offset_x + offset_z * offset_z;
         if (distance >= best_distance || !short_connection_height(g, x, z,
@@ -3608,7 +3635,7 @@ static int actor_nav_attach_corner(const struct toy_game *g, int x, int z,
     int cells[4],count=0,i,dx,dz;
     long long distances[4];
     int cx=(x-g->nav_origin)/g->nav_cell_size;
-    int cz=(z-g->nav_origin)/g->nav_cell_size;
+    int cz=(z-g->nav_origin_z)/g->nav_cell_size;
     int range=(TOY_GAME_SHORT_CONNECTION_RANGE+g->nav_cell_size-1)/g->nav_cell_size;
     if(!component)return 0;
     for(dz=-range;dz<=range;dz++)for(dx=-range;dx<=range;dx++) {
@@ -3631,7 +3658,7 @@ static int actor_nav_attach_corner(const struct toy_game *g, int x, int z,
     }
     for(i=0;i<count;i++)for(int axis=0;axis<2;axis++) {
         int px=g->nav_origin+(cells[i]%g->nav_width)*g->nav_cell_size+g->nav_cell_size/2;
-        int pz=g->nav_origin+(cells[i]/g->nav_width)*g->nav_cell_size+g->nav_cell_size/2;
+        int pz=g->nav_origin_z+(cells[i]/g->nav_width)*g->nav_cell_size+g->nav_cell_size/2;
         int bx=axis?x:px,bz=axis?pz:z,end_y;
         long long bend_x=(long long)bx-x,bend_z=(long long)bz-z;
         struct toy_game_ground_query ground;
@@ -3720,7 +3747,7 @@ static int nav_next_waypoint_impl(const struct toy_game *g,
         if (profile) profile->nav_candidates++;
         int waypoint_x = g->nav_origin + (current % g->nav_width) *
                          g->nav_cell_size + g->nav_cell_size / 2;
-        int waypoint_z = g->nav_origin + (current / g->nav_width) *
+        int waypoint_z = g->nav_origin_z + (current / g->nav_width) *
                          g->nav_cell_size + g->nav_cell_size / 2;
         if (!actor_segment_blocked(g, x, z, waypoint_x, waypoint_z, radius, ground_y) &&
             nav_segment_allowed(g, x, z, waypoint_x, waypoint_z,
@@ -3786,11 +3813,11 @@ static int enemy_nav_edge(struct toy_game *g, int from, int to,
         entry->radius != radius || entry->ground_y != ground_y) {
         int fx = g->nav_origin + (from % g->nav_width) *
                  g->nav_cell_size + g->nav_cell_size / 2;
-        int fz = g->nav_origin + (from / g->nav_width) *
+        int fz = g->nav_origin_z + (from / g->nav_width) *
                  g->nav_cell_size + g->nav_cell_size / 2;
         int tx = g->nav_origin + (to % g->nav_width) *
                  g->nav_cell_size + g->nav_cell_size / 2;
-        int tz = g->nav_origin + (to / g->nav_width) *
+        int tz = g->nav_origin_z + (to / g->nav_width) *
                  g->nav_cell_size + g->nav_cell_size / 2;
         int dx = to % g->nav_width - from % g->nav_width;
         int dz = to / g->nav_width - from / g->nav_width;
@@ -4345,7 +4372,7 @@ static int enemy_nav_group_waypoint_impl(struct toy_game *g,
     if (cell < 0) return 2;
     x = g->nav_origin + (cell % g->nav_width) * g->nav_cell_size +
         g->nav_cell_size / 2;
-    z = g->nav_origin + (cell / g->nav_width) * g->nav_cell_size +
+    z = g->nav_origin_z + (cell / g->nav_width) * g->nav_cell_size +
         g->nav_cell_size / 2;
     dx = (long long)x - e->x; dz = (long long)z - e->z;
     /* Reach the corner before advancing: a speed-sized tolerance can put
@@ -4358,7 +4385,7 @@ static int enemy_nav_group_waypoint_impl(struct toy_game *g,
         if (cell < 0) return 2;
         x = g->nav_origin + (cell % g->nav_width) * g->nav_cell_size +
             g->nav_cell_size / 2;
-        z = g->nav_origin + (cell / g->nav_width) * g->nav_cell_size +
+        z = g->nav_origin_z + (cell / g->nav_width) * g->nav_cell_size +
             g->nav_cell_size / 2;
         e->nav_active = 0;
     }
@@ -4373,7 +4400,7 @@ static int enemy_nav_group_waypoint_impl(struct toy_game *g,
             if (probe < 0) continue;
             int px = g->nav_origin + (probe % g->nav_width) *
                      g->nav_cell_size + g->nav_cell_size / 2;
-            int pz = g->nav_origin + (probe / g->nav_width) *
+            int pz = g->nav_origin_z + (probe / g->nav_width) *
                      g->nav_cell_size + g->nav_cell_size / 2;
             int ramp_link = 0;
             if (candidate > 0 && candidate <= cursor + 1) {
@@ -4382,7 +4409,7 @@ static int enemy_nav_group_waypoint_impl(struct toy_game *g,
                 if (from < 0) continue;
                 int from_x = g->nav_origin + (from % g->nav_width) *
                              g->nav_cell_size + g->nav_cell_size / 2;
-                int from_z = g->nav_origin + (from / g->nav_width) *
+                int from_z = g->nav_origin_z + (from / g->nav_width) *
                              g->nav_cell_size + g->nav_cell_size / 2;
                 int link = nav_link_slot(probe % g->nav_width -
                                          from % g->nav_width,
@@ -4467,6 +4494,12 @@ int toy_game_actor_navigation_target(struct toy_game *g, struct toy_game_actor *
         a->state != TOY_GAME_ACTOR_ALIVE || dt_ms < 0 || speed <= 0 ||
         speed > 2000000 || target_x < -2000000 || target_x > 2000000 ||
         target_z < -2000000 || target_z > 2000000) return 0;
+    if(g->grid_enabled) {
+        struct toy_game_ground_query goal=toy_game_query_ground(g,target_x,target_z,0,a->ground_y);
+        if(!goal.has_support)return 0;
+        return toy_game_actor_navigation_target_height(g,a,target_x,goal.support_y,target_z,
+            speed,dt_ms,out_x,out_z);
+    }
     if (a->nav_generation != g->navigation_generation) {
         toy_game_actor_cancel_navigation(a);
         a->nav_generation = g->navigation_generation;

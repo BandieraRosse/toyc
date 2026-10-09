@@ -229,7 +229,7 @@ $(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_actor_squad.inc rasterfa
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_squad_test.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_grid_terminal.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_actor_corner_test.inc
-$(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_unit_collision.inc
+$(BUILD)/win/rasterfall/lib/game.o: rasterfall/lib/game_unit_collision.inc rasterfall/lib/game_grid.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/dev-tests/game_unit_collision_test.inc
 $(BUILD)/win/rasterfall/src/rf_game_runtime.o: rasterfall/src/rf_performance_live.inc rasterfall/src/rf_performance_lab.inc
 $(BUILD)/win/rasterfall/src/rf_core_host.o: rasterfall/src/dev-tests/rf_core_frame_lifecycle_test.inc

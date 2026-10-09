@@ -514,6 +514,19 @@ void rasterfall_session_reset(struct rasterfall_session *session,
     toy_game_set_primitives(&session->game_state, session->level.primitives,
                             session->level.primitive_count,
                             session->level.room_limit);
+    if(session->world_id==RASTERFALL_WORLD_OUTPOST &&
+       !toy_game_set_grid_enabled(&session->game_state,1))
+        __printf("OUTPOST-GRID invalid map capacity\n");
+    if(session->game_state.grid_enabled) {
+        int building=0;
+        for(int region=0;region<rf_map_runtime_region_count(&session->map_ops.runtime);++region) {
+            const struct rf_map_runtime_region *r=rf_map_runtime_region_at(&session->map_ops.runtime,region);
+            if(strcmp(r->kind,"building_module"))continue;
+            if(!toy_game_grid_mark_building(&session->game_state,building++,
+                r->bounds.min_x,r->bounds.min_z,r->bounds.max_x,r->bounds.max_z))
+                __printf("OUTPOST-GRID invalid building footprint %s\n",r->id);
+        }
+    }
     /* The safe room is open to the player through its doorway, but its whole
      * footprint is an enemy-forbidden area.  Register it even in the endless
      * director mode; toy_game_set_campaign also rebuilds navigation. */
@@ -2058,6 +2071,62 @@ int rasterfall_session_rts_logic_test(void)
     if(toy_game_actor_navigation_target(&test.game_state,player,6000,60,
         toy_game_player_move_step(&test.game_state,player),16,&route_x,&route_z) ||
         player->nav_direct_valid)return 37;
+    /* Authored-grid mode: negative origin, closed cell boundaries, overlapping
+     * storeys, solid occupancy, and footprint retention after rebuilding. */
+    struct toy_map_primitive grid_floor[3]={0};
+    grid_floor[0].shape=TOY_MAP_PRIMITIVE_FLAT;
+    grid_floor[0].flags=TOY_MAP_PRIMITIVE_WALKABLE;
+    grid_floor[0].minx=-2048;grid_floor[0].maxx=4096;
+    grid_floor[0].minz=-4096;grid_floor[0].maxz=1024;
+    grid_floor[1]=grid_floor[0];grid_floor[1].surface_y0=4096;
+    grid_floor[2].shape=TOY_MAP_PRIMITIVE_BOX;grid_floor[2].flags=TOY_MAP_PRIMITIVE_COLLISION;
+    grid_floor[2].minx=512;grid_floor[2].maxx=1024;
+    grid_floor[2].minz=-1024;grid_floor[2].maxz=-512;
+    grid_floor[2].surface_y0=2048;
+    toy_game_set_primitives(&test.game_state,grid_floor,3,100000);
+    if(!toy_game_set_grid_enabled(&test.game_state,1) ||
+       test.game_state.nav_cell_size!=512 || test.game_state.nav_origin!=-2048 ||
+       test.game_state.nav_origin_z!=-4096)return 41;
+    if(toy_game_grid_cell(&test.game_state,-2049,-4000)>=0 ||
+       toy_game_grid_cell(&test.game_state,-2048,-4096)!=0)return 42;
+    if(!toy_game_grid_walkable(&test.game_state,-256,0,-256) ||
+       !toy_game_grid_walkable(&test.game_state,-256,4096,-256) ||
+       toy_game_grid_walkable(&test.game_state,768,0,-768) ||
+       toy_game_grid_walkable(&test.game_state,-256,2048,-256))return 43;
+    if(!toy_game_grid_mark_building(&test.game_state,0,-1024,-2048,2048,0))return 44;
+    toy_game_rebuild_navigation(&test.game_state);
+    int occupied=toy_game_grid_cell(&test.game_state,-256,-256);
+    if(test.game_state.grid_buildings[occupied]!=1 ||
+       !toy_game_grid_walkable(&test.game_state,-256,0,-256))return 45;
+    player->x=256;player->z=-768;player->ground_y=0;player->airborne_ms=0;
+    if(toy_game_try_move_actor(&test.game_state,player,768,-768) || player->x!=256)return 46;
+    uint64_t grid_actors,grid_enemies;
+    int unit_cell=toy_game_grid_cell(&test.game_state,player->x,player->z);
+    toy_game_grid_unit_occupants(&test.game_state,unit_cell,&grid_actors,&grid_enemies);
+    if(!(grid_actors&1))return 48;
+    player->x=-1792;player->z=-3840;
+    toy_game_grid_unit_occupants(&test.game_state,unit_cell,&grid_actors,&grid_enemies);
+    if(grid_actors&1)return 49;
+    for(int node=1;node<=test.game_state.flow_count;++node)
+        if((test.game_state.flow_nodes[node].x-256)%512 ||
+           (test.game_state.flow_nodes[node].z-256)%512)return 47;
+    player->x=256;player->z=-768;
+    if(!toy_game_grid_walkable(&test.game_state,256,0,-768) ||
+       !toy_game_grid_walkable(&test.game_state,768,0,-1280) ||
+       toy_game_try_move_actor(&test.game_state,player,768,-1280))return 50;
+    grid_floor[0].maxx=512;
+    grid_floor[1]=grid_floor[0];grid_floor[1].minx=1536;grid_floor[1].maxx=4096;
+    grid_floor[2].flags=0;
+    toy_game_set_primitives(&test.game_state,grid_floor,3,100000);
+    player->x=256;player->z=-768;
+    if(toy_game_grid_walkable(&test.game_state,768,0,-768) ||
+       toy_game_try_move_actor(&test.game_state,player,1792,-768))return 51;
+    grid_floor[0].minx=-200000;grid_floor[0].maxx=200000;
+    toy_game_set_primitives(&test.game_state,grid_floor,3,300000);
+    if(test.game_state.grid_valid || test.game_state.nav_cell_size!=512 ||
+       toy_game_try_move_actor(&test.game_state,player,300,-768))return 52;
+    __printf("Game metre-grid bounds / storeys / building and live unit occupancy / corners / void / capacity passed\n");
+    toy_game_set_grid_enabled(&test.game_state,0);
     test.game_state.primitives=NULL;
     __printf("RTS finite narrow platform / support gap / aim-independent route input passed\n");
     __printf("RTS local shared-planning/waypoint/final-goal/single-step/STOP/FPS-fire passed\n");

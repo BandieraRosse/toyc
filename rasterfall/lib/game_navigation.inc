@@ -8,9 +8,9 @@ static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,in
 
 static int flow_cell(const struct toy_game *g, int x, int z)
 {
-    if (g->nav_cell_size <= 0 || x < g->nav_origin || z < g->nav_origin ||
+    if (g->nav_cell_size <= 0 || x < g->nav_origin || z < g->nav_origin_z ||
         x >= g->nav_origin + g->nav_width * g->nav_cell_size ||
-        z >= g->nav_origin + g->nav_height * g->nav_cell_size) return -1;
+        z >= g->nav_origin_z + g->nav_height * g->nav_cell_size) return -1;
     return nav_cell_index(g, x, z);
 }
 
@@ -31,6 +31,7 @@ static int flow_add_node(struct toy_game *g, int x, int z, int y)
                                                    TOY_GAME_ENEMY_RADIUS)))
         return 0;
     if (g->flow_count >= TOY_GAME_FLOW_MAX_NODES) {
+        if(g->grid_enabled)g->grid_valid=0;
         if (g->update_profile) g->update_profile->flow_overflow++;
         return 0;
     }
@@ -86,8 +87,9 @@ static void enemy_flow_rebuild(struct toy_game *g)
         for (x = 0; x < g->nav_width; ++x)
             flow_add_supports(g, g->nav_origin + x * g->nav_cell_size +
                                g->nav_cell_size / 2,
-                               g->nav_origin + z * g->nav_cell_size +
+                               g->nav_origin_z + z * g->nav_cell_size +
                                g->nav_cell_size / 2);
+    if(g->grid_enabled)return;
     /* Off-grid doorway corners and ramp/landing centers connect narrow
      * features whose free space does not contain any coarse cell center. */
     for (i = 0; i < g->primitive_count; ++i) {
@@ -173,12 +175,13 @@ static int flow_connection(struct toy_game *g, int x, int z, int y,
     int dx = tx - x, dz = tz - z;
     int length = isqrt((long long)dx * dx + (long long)dz * dz);
     int steps = length / (TOY_GAME_ENEMY_RADIUS / 2) + 1;
-    int cost = steps * 2 + 1, i, result = 0;
+    int cost = steps * 2 + 1 + (g->grid_enabled ? length/32+1 : 0), i, result = 0;
     int *budget = local ? &g->flow_local_budget : &g->flow_sample_budget;
     struct toy_game_enemy probe = {0};
     if (length > TOY_GAME_SHORT_CONNECTION_RANGE) return 0;
     if (*budget < cost) return -1;
     *budget -= cost;
+    if(!grid_segment_allowed(g,x,z,y,tx,tz))return 0;
     if (g->update_profile) g->update_profile->flow_samples += cost;
     if (!enemy_positions_share_target_region(g, x, z, tx, tz)) return 0;
     if ((!g->update_profile || !g->update_profile->flow_reference_probe) &&
@@ -344,6 +347,7 @@ static int actor_layer_connection(struct toy_game *g,int x,int z,int y,int tx,in
     if(g->update_profile)g->update_profile->actor_layer_queries++;
     int dx=tx-x,dz=tz-z,length=isqrt((long long)dx*dx+(long long)dz*dz);
     if(length>TOY_GAME_SHORT_CONNECTION_RANGE)return 0;
+    if(!grid_segment_allowed(g,x,z,y,tx,tz))return 0;
     if(flow_flat_corridor_radius(g,x,z,y,tx,tz,ty,TOY_GAME_PLAYER_RADIUS))return 1;
     struct toy_game_actor probe={0};
     probe.active=1;probe.x=x;probe.z=z;probe.ground_y=y;
@@ -508,7 +512,7 @@ static void actor_layer_search_work(struct toy_game *g,struct toy_game_actor *a)
         }
         if(parent[s->goal])break;
         if(!s->current) {
-            if(!s->queued || s->expanded>=4096)break;
+            if(!s->queued || s->expanded>=(g->grid_enabled?g->flow_count:4096))break;
             s->current=actor_layer_pop(queue,&s->queued,priority);
             s->expanded++;s->slot=0;s->next=-1;
             if(g->update_profile)g->update_profile->actor_layer_nodes++;
@@ -532,7 +536,7 @@ static void actor_layer_search_work(struct toy_game *g,struct toy_game_actor *a)
     }
     if(s->stage<2 && s->slot<9 && flow_cell(g,s->stage?s->tx:s->x,s->stage?s->tz:s->z)>=0)return;
     if(s->stage==2 && !parent[s->goal] && (s->current || s->queued) &&
-        (s->current || s->expanded<4096))return;
+        (s->current || s->expanded<(g->grid_enabled?g->flow_count:4096)))return;
     a->nav_layer_count=a->nav_layer_cursor=0;
     if(s->stage==2 && parent[s->goal]) {
         int node=s->goal,total=1;
@@ -582,7 +586,7 @@ int toy_game_actor_navigation_target_height(struct toy_game *g,struct toy_game_a
         speed<=0 || dt_ms<0 || tx<-2000000 || tx>2000000 || tz<-2000000 || tz>2000000 ||
         ty<-1000000 || ty>1000000)return 0;
     int start_cell=flow_cell(g,a->x,a->z),goal_cell=flow_cell(g,tx,tz);
-    if(ty==a->ground_y && (!g->primitive_count || (start_cell>=0 && goal_cell>=0 &&
+    if(!g->grid_enabled && ty==a->ground_y && (!g->primitive_count || (start_cell>=0 && goal_cell>=0 &&
         g->nav_ground_y[start_cell]==ty && g->nav_ground_y[goal_cell]==ty)) &&
         !a->nav_layer_count &&
         toy_game_actor_navigation_target(g,a,tx,tz,speed,dt_ms,out_x,out_z))return 1;
@@ -688,6 +692,7 @@ static void flow_work(struct toy_game *g, struct toy_game_flow_field *f,
 
 static void flow_repair_request(struct toy_game *g, int cell, int y)
 {
+    if(g->grid_enabled)return;
     if (cell < 0 || g->flow_refined[cell] || g->flow_repair_cell >= 0) return;
     g->flow_repair_cell = cell; g->flow_repair_cursor = 0;
     g->flow_repair_y = y;
@@ -716,7 +721,7 @@ static void enemy_flow_update(struct toy_game *g)
     if (g->flow_repair_cell >= 0) {
         int cell = g->flow_repair_cell, k = g->flow_repair_cursor++;
         int x = g->nav_origin + (cell % g->nav_width) * g->nav_cell_size;
-        int z = g->nav_origin + (cell / g->nav_width) * g->nav_cell_size;
+        int z = g->nav_origin_z + (cell / g->nav_width) * g->nav_cell_size;
         struct toy_game_ground_query q;
         x += (2 * (k % 4) + 1) * g->nav_cell_size / 8;
         z += (2 * (k / 4) + 1) * g->nav_cell_size / 8;

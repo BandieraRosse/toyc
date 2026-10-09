@@ -364,7 +364,10 @@ struct toy_game_ground_query {
  * deliberately a component map, not a path-finding data structure. */
 #define TOY_GAME_NAV_CELL_SIZE 300
 #define TOY_GAME_NAV_MAX_SIDE 128
-#define TOY_GAME_NAV_MAX_CELLS (TOY_GAME_NAV_MAX_SIDE * TOY_GAME_NAV_MAX_SIDE)
+#define TOY_GAME_GRID_MAX_SIDE 256
+#define TOY_GAME_NAV_MAX_CELLS 32768
+#define TOY_GAME_GRID_CELL_SIZE 512
+#define TOY_GAME_GRID_MAX_REFERENCES 262144
 #define TOY_GAME_NAV_LINK_DIRECTIONS 8
 #define TOY_GAME_NAV_MAX_GROUPS TOY_GAME_MAX_ENEMIES
 #define TOY_GAME_NAV_GROUP_MEMBERS 16
@@ -966,7 +969,15 @@ struct toy_game {
     int primitive_count;
     int room_limit;
 
-    int nav_origin;
+    int nav_origin, nav_origin_z;
+    /* Opt-in authored metre grid. CSR cells retain all overlapping heights;
+     * exact support/body rules resolve their primitive references. */
+    int grid_enabled, grid_valid, grid_building, grid_reference_count;
+    unsigned int grid_buildings[TOY_GAME_NAV_MAX_CELLS];
+    struct toy_game_box grid_building_bounds[32];
+    int grid_building_count;
+    unsigned int grid_offsets[TOY_GAME_NAV_MAX_CELLS + 1];
+    unsigned short grid_references[TOY_GAME_GRID_MAX_REFERENCES];
     unsigned int navigation_generation;
     int nav_cell_size;
     int nav_width;
@@ -1162,6 +1173,13 @@ void toy_game_set_primitives(struct toy_game *g,
                              const struct toy_map_primitive *primitives,
                              int primitive_count, int room_limit);
 void toy_game_rebuild_navigation(struct toy_game *g);
+int toy_game_set_grid_enabled(struct toy_game *g, int enabled);
+int toy_game_grid_cell(const struct toy_game *g, int x, int z);
+int toy_game_grid_walkable(const struct toy_game *g, int x, int y, int z);
+int toy_game_grid_mark_building(struct toy_game *g, int owner,
+    int minx, int minz, int maxx, int maxz);
+void toy_game_grid_unit_occupants(const struct toy_game *g, int cell,
+    uint64_t *actors, uint64_t *enemies);
 /* Static terrain connection; transient units do not invalidate navigation. */
 int toy_game_short_connection(const struct toy_game *g,
                               int x0, int z0, int x1, int z1,

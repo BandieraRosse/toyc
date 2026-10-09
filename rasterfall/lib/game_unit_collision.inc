@@ -117,21 +117,64 @@ static void unit_sweep_body(int x, int z, int y, int dx, int dz, int end_y,
     }
 }
 
+void toy_game_grid_unit_occupants(const struct toy_game *g,int cell,
+    uint64_t *actors,uint64_t *enemies)
+{
+    if(!actors || !enemies)return;
+    *actors=*enemies=0;
+    if(!g || !g->grid_enabled || !g->grid_valid || cell<0 || cell>=g->nav_width*g->nav_height)return;
+    int minx=g->nav_origin+(cell%g->nav_width)*TOY_GAME_GRID_CELL_SIZE;
+    int minz=g->nav_origin_z+(cell/g->nav_width)*TOY_GAME_GRID_CELL_SIZE;
+    int maxx=minx+TOY_GAME_GRID_CELL_SIZE,maxz=minz+TOY_GAME_GRID_CELL_SIZE;
+    /* Derive occupancy from the current authoritative bodies, including
+     * bodies straddling a tile. No spawn/move/death cache can go stale. */
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct toy_game_actor *a=&g->actors[i];
+        if(unit_actor_solid(a) && a->x+TOY_GAME_PLAYER_RADIUS>=minx &&
+           a->x-TOY_GAME_PLAYER_RADIUS<=maxx && a->z+TOY_GAME_PLAYER_RADIUS>=minz &&
+           a->z-TOY_GAME_PLAYER_RADIUS<=maxz)*actors|=(uint64_t)1<<i;
+    }
+    for(int i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+        const struct toy_game_enemy *e=&g->enemies[i];
+        int radius=enemy_radius(e);
+        if(e->active==1 && e->hp>0 && e->x+radius>=minx && e->x-radius<=maxx &&
+           e->z+radius>=minz && e->z-radius<=maxz)*enemies|=(uint64_t)1<<i;
+    }
+}
+
 static struct unit_contact unit_sweep(const struct toy_game *g,
     const struct toy_game_actor *self_actor, const struct toy_game_enemy *self_enemy,
     int x, int z, int y, int dx, int dz, int end_y, int radius)
 {
     struct unit_contact contact = {UNIT_SWEEP_SCALE, 0, 0};
     int i;
+    uint64_t actor_candidates=~(uint64_t)0,enemy_candidates=~(uint64_t)0;
+    if(g->grid_enabled) {
+        int pad=radius+UNIT_CONTACT_SKIN+(abs(dx)+abs(dz))/UNIT_SWEEP_SCALE;
+        int x0=grid_floor((x<x+dx?x:x+dx)-pad)-grid_floor(g->nav_origin);
+        int x1=grid_floor((x>x+dx?x:x+dx)+pad)-grid_floor(g->nav_origin);
+        int z0=grid_floor((z<z+dz?z:z+dz)-pad)-grid_floor(g->nav_origin_z);
+        int z1=grid_floor((z>z+dz?z:z+dz)+pad)-grid_floor(g->nav_origin_z);
+        actor_candidates=enemy_candidates=0;
+        if(x0<0)x0=0;
+        if(z0<0)z0=0;
+        if(x1>=g->nav_width)x1=g->nav_width-1;
+        if(z1>=g->nav_height)z1=g->nav_height-1;
+        for(int cz=z0;cz<=z1;++cz)for(int cx=x0;cx<=x1;++cx) {
+            uint64_t a,e;
+            toy_game_grid_unit_occupants(g,cz*g->nav_width+cx,&a,&e);
+            actor_candidates|=a;enemy_candidates|=e;
+        }
+    }
     for (i = 0; i < TOY_GAME_MAX_ACTORS; ++i) {
         const struct toy_game_actor *a = &g->actors[i];
-        if (a == self_actor || !unit_actor_solid(a)) continue;
+        if (!(actor_candidates & ((uint64_t)1<<i)) || a == self_actor || !unit_actor_solid(a)) continue;
         unit_sweep_body(x,z,y,dx,dz,end_y,radius,a->x,a->z,
             a->ground_y+a->airborne_y,TOY_GAME_PLAYER_RADIUS,&contact);
     }
     for (i = 0; i < TOY_GAME_MAX_ENEMIES; ++i) {
         const struct toy_game_enemy *e = &g->enemies[i];
-        if (e == self_enemy || e->active != 1 || e->hp <= 0) continue;
+        if (!(enemy_candidates & ((uint64_t)1<<i)) || e == self_enemy || e->active != 1 || e->hp <= 0) continue;
         unit_sweep_body(x,z,y,dx,dz,end_y,radius,e->x,e->z,
             e->ground_y+e->airborne_y,enemy_radius(e),&contact);
     }
