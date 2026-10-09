@@ -11,6 +11,10 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 
 ## 开始任务
 
+前哨站建筑与地图一米格标准化先读[网格合同](reference/map-grid-v1.md)，
+再读[生成与诊断](guides/map-authoring.md#前哨站网格标准化)；
+统一重建入口为 `tools/outpost_grid.py`，全单位导航迁移仍由[唯一活动计划](plans/README.md)控制。
+
 整数方向接口与误差界见[整数方向数值合同](architecture/gameplay.md#整数方向数值合同)，
 展示旋转保护见[角色表现](architecture/character-presentation.md#展示方向与旋转保护)，
 异常缓冲、严格模式与日志关联见[数值异常定位](guides/gpu-scene-fixture.md#数值异常定位)。

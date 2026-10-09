@@ -129,6 +129,14 @@ render id=console_screen kind=sign min_x=-126 max_x=386 min_z=-29 max_z=-29 heig
 
 ## 几何与碰撞
 
+### 离线一米格规划属性
+
+建筑模块可用 `region kind=building_module` 表达墙线 bounds；设备组合根 object 可声明
+`attr.grid_min_x`、`attr.grid_min_z`、`attr.grid_width`、`attr.grid_depth`，
+前两项跟随 object 的局部平移坐标系，后两项为正整数格数。世界角点须在 512 RFU 格线上。
+Parser/Runtime 保存扩展字段，不生成碰撞或导航；完整性和对齐由离线工具校验。
+组合、奇数格中心和通行边界见[一米格合同](map-grid-v1.md)。
+
 地图几何的可见性和碰撞是独立属性：
 
 ```text

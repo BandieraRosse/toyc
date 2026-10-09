@@ -24,6 +24,10 @@ V1 记录；前哨站与边缘站点车间使用同一生成器同时生产可�
 
 ## 所有权和依赖方向
 
+前哨站的一米格规划由离线生产者拥有，建筑模块边界和设备规划占地归
+[网格合同](../reference/map-grid-v1.md)。规划属性不生成隐式碰撞，不修改 Runtime Map/Gameplay
+所有权；离线分层格诊断读取 Runtime Map 的真实组件展开，不能替代 Game 的支撑、净空和有向运动证明。
+
 ```text
 .map text → Map Parser / Map IR → Runtime Map → Gameplay Projection Adapter
                                               ├→ collision / navigation

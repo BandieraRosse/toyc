@@ -5603,8 +5603,7 @@ startup_again:
             net.mode == RASTERFALL_NET_OFF &&
             session.world_id == RASTERFALL_WORLD_OUTPOST &&
             game.state == TOY_GAME_PLAYING &&
-            camera.x >= -1250 && camera.x <= 1250 &&
-            camera.z >= -1900 && camera.z <= -850 &&
+            rf_table_operation_near(&session,camera.x,camera.z) &&
             rf_player_object_facing(&game_runtime,"command_table");
         if (session.world_id!=RASTERFALL_WORLD_OUTPOST && !rf_perf_lab.running)
             rf_labs_reset();

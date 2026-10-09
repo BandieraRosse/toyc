@@ -4,6 +4,7 @@ from experiment_lab import generate as lab
 from building_kit import BuildingKit
 from rf_electronics_lab import generate as electronics
 from mesh_weaver_lab import generate as weaver
+from map_grid import CELL, Footprint
 
 ROOT=Path(__file__).resolve().parents[1]
 MAPS=ROOT/'rasterfall/assets/maps'
@@ -17,7 +18,9 @@ def fields(line):
 def write(path,lines):
     old=path.read_bytes() if path.exists() else b''
     nl=b'\r\n' if b'\r\n' in old else b'\n'
-    path.write_bytes(nl.join(s.encode('utf-8') for s in lines)+nl)
+    bom=b'\xef\xbb\xbf' if old.startswith(b'\xef\xbb\xbf') else b''
+    result=bom+nl.join(s.encode('utf-8') for s in lines)+nl
+    if result != old: path.write_bytes(result)
 
 def fragment(name,records,area,x,z):
     result=['# Dynamic experiment group; ordinary components in world coordinates.',
@@ -39,7 +42,7 @@ def fragment(name,records,area,x,z):
 
 def main():
     path=MAPS/'outpost.map'
-    lines=path.read_text(encoding='utf-8').splitlines()
+    lines=path.read_text(encoding='utf-8-sig').splitlines()
     if BEGIN in lines:
         base=lines[:lines.index(BEGIN)]
         tail=lines[lines.index(END)+1:]
@@ -81,8 +84,10 @@ def main():
             if kind=='collision':line=line.replace('walkable=false','walkable=true')
             wanted.append(line)
     fragment('experiment_weaver',wanted,'mesh_weaver_lab_area',9728,-19968)
-    crates=[f'object id=experiment_load_{i} kind=crate x={-5250+i%6*2000} y=0 z={-3100+i//6*2000} yaw=0 scale=1000 attr.collision=component attr.lab=perf_low_area' for i in range(24)]
-    fragment('experiment_components',crates,'perf_low_area',0,-35000)
+    perf = Footprint.near_bounds((-6750,6750,-39500,-30500))
+    px,pz = perf.center
+    crates=[f'object id=experiment_load_{i} kind=crate x={(-10+i%6*4)*CELL+CELL//2} y=0 z={(-6+i//6*4)*CELL+CELL//2} yaw=0 scale=1000 attr.collision=component attr.lab=perf_low_area' for i in range(24)]
+    fragment('experiment_components',crates,'perf_low_area',px,pz)
     campus=[BEGIN]
     for name,x,z,category in [('actor_actions_lab',-9728,-19968,'animation'),
         ('rf_electronics_lab',9728,-19968,'model'),('rf_light_lab',29184,-19968,'lighting')]:
@@ -90,24 +95,25 @@ def main():
         campus.extend(line for line in lab(name,x,z,category,'open',width=width,depth=9216,
                           projection_beams=False).splitlines() if '_sample_info' not in line)
     # A single performance footprint. Workloads own everything inside it.
-    campus.extend(line for line in lab('perf_low',0,-35000,'performance','walled',width=13500,depth=9000,
-                      plot_width=16384,plot_depth=10240,projection_beams=False,entry_gap=0).splitlines()
+    campus.extend(line for line in lab('perf_low',px,pz,'performance','walled',width=perf.width*CELL,depth=perf.depth*CELL,
+                      plot_width=16384,plot_depth=10240,projection_beams=False,entry_gap=0,plot_offset_x=-px).splitlines()
                       if 'perf_low_button' not in line and '_sample_info' not in line)
     campus += ['object id=perf_control_terminal kind=facility_terminal x=7800 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=perf_result_terminal kind=facility_terminal x=9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=combat_control_terminal kind=facility_terminal x=-7800 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component',
         'object id=combat_result_terminal kind=facility_terminal x=-9200 y=0 z=-31000 yaw=0 scale=1000 attr.collision=component']
     # Tile the roads against plot edges without overlapping visible floor paint.
+    south,north = pz-5120,pz+5120
     roads = [(-20992,40448,-14848,-11776),
              (-20992,40448,-28160,-25088),
              (-20992,-17920,-25088,-14848),
              (-1536,1536,-25088,-14848),
              (17920,20992,-25088,-14848),
              (37376,40448,-25088,-14848),
-             (-11264,11264,-29880,-28160),
-             (-11264,-8192,-40120,-29880),
-             (8192,11264,-40120,-29880),
-             (-11264,11264,-43192,-40120)]
+             (-11264,11264,north,-28160),
+             (-11264,-8192,south,north),
+             (8192,11264,south,north),
+             (-11264,11264,south-3072,south)]
     for i,(x0,x1,z0,z1) in enumerate(roads):
         b=f'min_x={x0} max_x={x1} min_z={z0} max_z={z1}'
         campus += [f'collision id=experiment_road_{i}_col shape=flat {b} height=0 collision=false visible=true walkable=true',
@@ -116,7 +122,7 @@ def main():
     # Continuous invisible support carries actor footprints across road/plot seams.
     # Overlap only inside already paved ground, including the existing hall yard.
     for name,(x0,x1,z0,z1) in [('main',(-20992,40448,-28160,-11776)),
-                              ('performance',(-11264,11264,-43192,-25088)),
+                              ('performance',(-11264,11264,south-3072,-25088)),
                               ('entry',(-5120,5120,-14848,-5632))]:
         b=f'min_x={x0} max_x={x1} min_z={z0} max_z={z1}'
         campus += [f'collision id=experiment_support_{name}_col shape=flat {b} height=0 collision=false visible=false walkable=true',

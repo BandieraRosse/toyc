@@ -6,11 +6,12 @@ This producer owns no runtime, navigation, or renderer policy.
 
 
 class BuildingKit:
-    def __init__(self, lines, thickness=154):
-        if thickness <= 0:
+    def __init__(self, lines, thickness=154, *, wall_thickness=None):
+        if thickness <= 0 or (wall_thickness is not None and wall_thickness <= 0):
             raise ValueError("building thickness must be positive")
         self.lines = lines
         self.thickness = thickness
+        self.wall_thickness = thickness if wall_thickness is None else wall_thickness
 
     @staticmethod
     def bounds(x0, x1, z0, z1):
@@ -30,6 +31,17 @@ class BuildingKit:
 
     def slab(self, name, footprint, y, color, *, ceiling_color=None):
         self.solid(name, *footprint, y-self.thickness, y, color, True, ceiling_color=ceiling_color)
+
+    def support_slab(self, name, footprint, y):
+        """Continuous finite support inside an already authored slab union.
+
+        Use for full-body target queries across paint/module partitions. The
+        caller must keep this rectangle inside real floor, never across a void.
+        Existing render slabs own appearance; no coincident draw is added.
+        """
+        b=self.bounds(*footprint)
+        self.lines.append(f"collision id={name}_col shape=box {b} height={y} attr.base_y={y-self.thickness} collision=true visible=false walkable=true")
+        self.lines.append(f"surface id={name}_surface kind=platform {b} height={y} attr.collision_id={name}_col")
 
     def window(self, name, axis, at, start, end, bottom, top, *,
                frame=32, depth=64, max_pane=2048, color="B7C9CC",
@@ -183,8 +195,8 @@ class BuildingKit:
         """
         if axis not in ("x", "z") or start >= end or bottom >= top:
             raise ValueError("invalid wall span")
-        lo = at-self.thickness//2
-        hi = lo+self.thickness
+        lo = at-self.wall_thickness//2
+        hi = lo+self.wall_thickness
 
         def segment(part, a, b, y0, y1):
             footprint = (a, b, lo, hi) if axis == "x" else (lo, hi, a, b)
@@ -211,7 +223,7 @@ class BuildingKit:
 
     def switchback(self, name, footprint, storeys, ceiling, landing_depth=2048,
                    spine_width=512, color="8296A0", wall_color="526875",
-                   door_width=2458, door_height=1843, *, ceiling_color=None):
+                   door_width=2458, door_height=1843, *, ceiling_color=None, grid=None):
         """Enclosed two-flight stair; its south landing is the floor portal.
 
         X/Z footprint denotes outer wall centerlines. Flights fill the span
@@ -221,12 +233,21 @@ class BuildingKit:
         """
         x0,x1,z0,z1 = footprint
         self.bounds(*footprint)
-        half = self.thickness//2
-        inside_left=x0-half+self.thickness
+        half = self.wall_thickness//2
+        inside_left=x0-half+self.wall_thickness
         inside_right=x1-half
         center = (x0+x1)//2
         left = center-spine_width//2
         right = left+spine_width
+        door = (center-door_width//2, center+(door_width+1)//2, door_height)
+        if grid is not None:
+            from map_grid import CELL, opening, nearest_line
+            if grid != CELL or any(v % grid for v in footprint) or spine_width % grid or landing_depth % grid:
+                raise ValueError("switchback planning boundaries must use the one-metre grid")
+            left = nearest_line(left)
+            right = left + spine_width
+            door = opening(center, door_width, door_height)
+            door_width = door[1] - door[0]
         near,far = z0+landing_depth,z1-landing_depth
         if (landing_depth <= 0 or near >= far or spine_width <= 0 or
                 door_width <= 0 or door_width >= x1-x0 or
@@ -238,7 +259,7 @@ class BuildingKit:
         for i,(label,y) in enumerate(storeys):
             wall_top=storeys[i+1][1]-self.thickness if i+1<len(storeys) else ceiling
             self.wall(f"{name}_{label}_door","x",z0,x0,x1,y,wall_top,
-                      wall_color,((center-door_width//2,center+(door_width+1)//2,door_height),))
+                      wall_color,(door,))
             self.slab(f"{name}_{label}_landing",(x0,x1,z0,near),y,color,ceiling_color=ceiling_color)
             if i==len(storeys)-1:
                 continue
@@ -255,4 +276,4 @@ class BuildingKit:
         self.wall(f"{name}_wall_e","z",x1,z0,z1,bottom,ceiling,wall_color)
         self.wall(f"{name}_wall_n","x",z1,x0,x1,bottom,ceiling,wall_color)
         self.solid(f"{name}_wall_spine",left,right,near,far,bottom,ceiling,wall_color)
-        self.slab(f"{name}_cap",(x0-half,x1-half+self.thickness,z0-half,z1-half+self.thickness),ceiling+self.thickness,wall_color,ceiling_color=ceiling_color)
+        self.slab(f"{name}_cap",(x0-half,x1-half+self.wall_thickness,z0-half,z1-half+self.wall_thickness),ceiling+self.thickness,wall_color,ceiling_color=ceiling_color)

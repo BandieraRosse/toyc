@@ -18,6 +18,44 @@ V1 语法可用 `build/map-inspect <map-v1-file>` 检查，`make test-map-parser
 
 ## 修改地图排布的必经流程
 
+### 前哨站网格标准化
+
+平面尺度、建筑模块、设备占地和导航边界见[一米格合同](../reference/map-grid-v1.md)。
+先构建原生地图检查器，再使用统一重建入口，避免单独重跑园区/机柜生产者覆盖设备规划：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File windows/NativeCodex.ps1 asset-tools
+python tools/outpost_grid.py --rebuild --write
+python tools/outpost_grid.py --check
+python tools/map_layout_export.py rasterfall/assets/maps/outpost.map --output-dir tmp/outpost-grid-layout
+python tools/map_grid_diagnostic.py rasterfall/assets/maps/outpost.map --output-dir tmp/outpost-grid-diagnostic
+python tools/test_map_grid.py
+```
+
+重建维护现有地图的 UTF-8 BOM 和换行，按园区、机柜、建筑、设备组合顺序生成，
+并规整组件负载模板和 World Content 出生点。设备规划读取原生 Runtime 组件展开，
+默认在 `tmp/outpost-grid-plan.json` 输出格数、旧包络、规划占地和位移。
+`--check` 核对设备位置/占地是否过期；修改地图后重新导出 PNG/JSON。
+静态模型、楼板厚和动画资产不按格子拉伸。规划元数据不启用施工或新导航。
+
+布局 PNG 青色轮廓表示设备组合规划占地，JSON 的 `planning_bounds` 与实际
+`collision_bounds` 独立。分层诊断输出室外及各楼层 PNG 和 `grid.json`，
+保留源 SHA256、支撑/阻挡 ID、八邻接候选、跨层候选和采样图组件。
+默认半径/身体高度对应普通 actor；其他体型用工具参数独立检查。
+诊断只读 Runtime Map，部分足迹支撑、动态实验和 Game 有向运动仍需实际验证。
+
+改变通行空间后运行 Windows native `test`；暂存当前资源后使用
+`python tools/rts_floors_check.py --outpost --output tmp/outpost-grid-native-floors`
+检查四层视图和实际上下楼，保留真实退出码、日志和截图。大厅门洞、家具通路、
+园区道路和终端仍需定向实机观察，不用离线组件数量或单张图代替。
+
+追加 `--grid-layout-check` 会按现有地图的房间、设备和道路锚点提交实际移动命令，
+以普通 WASD 镜头输入将目标移入视区，核对请求 X/Z/高度并等待真实到达。
+它覆盖大厅四向通路、指挥桌/主终端接近点、三处实验区、性能道路和网格场接入；
+终端菜单交互、跳过玻璃墙和密集动态单位仍需按具体风险单独检查。
+中断后可用 `--grid-layout-from layout-experiment_road_6` 从相应命名锚点开始一轮新会话；
+报告保留起点参数，已有通过项与补验项分别保留证据，不合并为一次连续运行。
+
 ### 添加标准实验区域
 
 ```powershell

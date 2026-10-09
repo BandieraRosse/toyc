@@ -26,8 +26,12 @@ def main():
     ap.add_argument('--boot',action='store_true')
     ap.add_argument('--outpost',action='store_true',help='check B1/1F/2F/roof and player stair orders in Outpost')
     ap.add_argument('--stairs-only',action='store_true',help='with --outpost, capture floor views and the FPS stair entry')
+    ap.add_argument('--grid-layout-check',action='store_true',help='with --outpost, also traverse authored hall wings, device approaches and campus roads')
+    ap.add_argument('--grid-layout-from',help='with --grid-layout-check, resume at an authored layout goal name')
     ap.add_argument('--gesture-ms',type=int,default=160)
     args=ap.parse_args()
+    if args.grid_layout_check and not args.outpost:ap.error('--grid-layout-check requires --outpost')
+    if args.grid_layout_from and not args.grid_layout_check:ap.error('--grid-layout-from requires --grid-layout-check')
     if args.fullscreen and args.toggle_fullscreen:ap.error('Choose fullscreen launch or F11 transition')
     if args.gesture_ms<100 and not args.physical_mouse:ap.error('Short gestures require --physical-mouse')
     root=Path(__file__).resolve().parents[1]
@@ -59,6 +63,13 @@ def main():
     (out/'ui.cfg').write_text(f'RFUI 1 0 {args.scale} 216 1 1\n',encoding='utf-8')
     si=subprocess.STARTUPINFO();si.dwFlags|=subprocess.STARTF_USESHOWWINDOW;si.wShowWindow=0
     records=[];sequence=0;window=None;completed=False
+    # Reusing an evidence directory must never send a capture sequence lower
+    # than a request/ack left by an earlier process.
+    for marker in ('capture.request','capture.complete'):
+        path=frames/marker
+        if path.exists():
+            first=path.read_text(encoding='utf-8').split()
+            if first and first[0].isdigit():sequence=max(sequence,int(first[0]))
     with log.open('wb') as stdout,err.open('wb') as stderr:
         # An explicit renderer disables interactive_boot even alongside --boot.
         # Let normal Boot Manager select the renderer and default outpost map.
@@ -222,20 +233,56 @@ def main():
                 goals.append((1,int(ramp['height']),
                     (int(ramp['min_x'])+int(ramp['max_x']))//2,
                     int(ramp['min_z'])-350,'stair-foot'))
-                for index,wy,wx,wz,name in (goals[-2:] if args.stairs_only else goals):
+                layout=[]
+                if args.grid_layout_check:
+                    for identifier in ('hall_entry','research_floor','operations_floor','infrastructure_floor','hall_entry'):
+                        f=authored('surface',identifier)
+                        layout.append((1,int(f['height']),(int(f['min_x'])+int(f['max_x']))//2,
+                                       (int(f['min_z'])+int(f['max_z']))//2,'layout-'+identifier+'-'+str(len(layout))))
+                    for identifier,offset in (('command_table',-1400),('main_terminal',1024)):
+                        f=authored('object',identifier)
+                        layout.append((1,int(f['y']),int(f['x']),int(f['z'])+offset,'layout-'+identifier))
+                    for identifier in ('actor_actions_lab','rf_electronics_lab','rf_light_lab'):
+                        f=authored('lab',identifier+'_area')
+                        layout.append((-1,0,int(f['x']),int(f['z']),'layout-'+identifier))
+                    for identifier in ('experiment_road_6','experiment_road_7','grid_lab_join'):
+                        f=authored('surface',identifier)
+                        layout.append((-1,int(f['height']),(int(f['min_x'])+int(f['max_x']))//2,
+                                       (int(f['min_z'])+int(f['max_z']))//2,'layout-'+identifier))
+                    f=authored('object','grid_lab_terminal')
+                    layout.append((-1,int(f['y']),int(f['x']),int(f['z'])-1024,'layout-grid-terminal'))
+                    f=authored('surface','hall_entry')
+                    layout.append((1,int(f['height']),(int(f['min_x'])+int(f['max_x']))//2,
+                                   (int(f['min_z'])+int(f['max_z']))//2,'layout-return-hall'))
+                if args.grid_layout_from:
+                    names=[item[-1] for item in layout]
+                    if args.grid_layout_from not in names:raise RuntimeError('Unknown layout goal: '+args.grid_layout_from)
+                    layout=layout[names.index(args.grid_layout_from):]
+                for index,wy,wx,wz,name in layout+(goals[-2:] if args.stairs_only else goals):
                     floor_button(index+1)
                     state=ready(lambda s:s['floor']==index,'command view '+name)
                     # Native height picking, then ordinary session movement.
-                    cx,cy,cz=state['camera'];dy=wy-900-cy;dz=wz-cz
-                    vy=(dy*90+dz*1020)/1024;vz=(-dy*1020+dz*90)/1024
-                    sx=width/2+(wx-cx)*(width*3/4)/vz
-                    sy=height/2-vy*(width*3/4)/vz
+                    for framing in range(31):
+                        cx,cy,cz=state['camera'];dy=wy-900-cy;dz=wz-cz
+                        vy=(dy*90+dz*1020)/1024;vz=(-dy*1020+dz*90)/1024
+                        sx=width/2+(wx-cx)*(width*3/4)/vz
+                        sy=height/2-vy*(width*3/4)/vz
+                        if not name.startswith('layout-') or (width*.25<sx<width*.75 and 110<sy<height*.55):break
+                        if framing==30:raise RuntimeError('Target cannot be framed: '+name)
+                        # Normal WASD camera input only; keep the chosen floor and
+                        # bring the destination above the HUD before right clicking.
+                        error_x=wx-cx;error_z=wz+dy*90/1020-cz
+                        error,code=(error_x,0x44 if error_x>0 else 0x41) if abs(error_x)>abs(error_z) else (error_z,0x57 if error_z>0 else 0x53)
+                        focus();key(code,True);time.sleep(max(.05,min(1,abs(error)/12000*.75)))
+                        key(code,False);time.sleep(.25);state=audit()
                     click(sx,sy,right=True)
-                    ready(lambda s:any(a['selected'] and a['goal_y']==wy for a in s['actors']),
+                    ready(lambda s:any(a['selected'] and a['goal_y']==wy and
+                        (not name.startswith('layout-') or (a['goal_x']-wx)**2+(a['goal_z']-wz)**2<300**2) for a in s['actors']),
                         name+' order preserves height')
                     def arrived():
                         s=audit()
                         return s if s and any(a['selected'] and abs(a['y']-wy)<=2 and
+                            (not name.startswith('layout-') or not a['moving']) and
                             (a['x']-wx)**2+(a['z']-wz)**2<400**2 for a in s['actors']) else None
                     state=wait_for(arrived,'player reaches '+name,60)
                     records.append({'check':'player reaches '+name,'state':state})
@@ -295,6 +342,8 @@ def main():
                 'fullscreen':args.fullscreen,'f11_transition':args.toggle_fullscreen,'gesture_ms':args.gesture_ms,
                 'boot_manager':args.boot,
                 'outpost':args.outpost,
+                'grid_layout_check':args.grid_layout_check,
+                'grid_layout_from':args.grid_layout_from,
                 'stairs_only':args.stairs_only,
                 'passed':completed and process.returncode==0,
                 'exit_code':process.returncode,'checks':records},indent=2),encoding='utf-8')

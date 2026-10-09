@@ -30,6 +30,8 @@ V1 冻结可复用建筑资产、连接尺度和表面语言；关卡与碰撞�
 - `wall(name, axis, at, start, end, bottom, top, color, openings=(), walk=False)`：轴向为 X 或 Z，`at` 是墙中心线；每个开口为 `(start,end,clear_height)`，自动生成两侧墙段及过梁。开口不得重叠或超出墙段。
 - `window(name, axis, at, start, end, bottom, top, ...)`：填充已留出的矩形窗洞，输入高度与墙体一致，以地面为 0；生成细框、等分竖梃和淡灰蓝透明面。`frame`、`depth`、`max_pane` 控制框宽、框深和最大玻璃跨度；默认输出覆盖整个窗洞的独立碰撞，已有外围边界时可设 `collision=False`。该接口不负责开洞，先用 `wall` 留洞；仅在输出 SIGN 时转换到地面为 -900 的世界 Y，禁止调用方再次偏移。透明面与窗框分区，不叠在实体墙上。
 - `flight(name, footprint, h0, h1, color, steps=12)`：沿 Z 的有限厚度连续碰撞坡面，附踏步表现。
+- `support_slab(name, footprint, y)`：在已有楼板实体并集内提供有限厚度的连续支撑，
+  不生成可见面；用于完整足迹跨装饰分区/模块接缝的目标查询，不得填补空洞。
 - `switchback(name, footprint, storeys, ceiling, landing_depth=2048, spine_width=512, door_width=2458, door_height=1843)`：楼层为 `(名称,板顶Y)` 有序序列，生成各层南平台与入口门洞、北侧半层平台、双跑踏步、中间隔墙、外墙和顶盖。最底层南平台与底板共同铺满楼梯间，覆盖双跑踏步和半层平台下方；底板同步生成可见实体、有限厚度碰撞和可站立面，上层保留楼梯井开口。南入口墙由楼梯模块拥有，相邻房间的墙段接到模块边界。
 
 标准层高由作者给定，墙顶必须等于下一层楼板底；不要独立指定一套不相符的视觉墙高。

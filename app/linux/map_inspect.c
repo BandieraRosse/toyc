@@ -33,11 +33,11 @@ static void dump_collisions_json(const struct rf_map_runtime *map)
         /* IDs/shapes are validated ASCII names; no arbitrary strings here. */
         __printf("%s{\"id\":\"%s\",\"owner_id\":\"%s\",\"shape\":\"%s\","
                  "\"min_x\":%d,\"max_x\":%d,\"min_z\":%d,\"max_z\":%d,"
-                 "\"base_y\":%d,\"height\":%d,\"collision\":%s,\"walkable\":%s,"
+                 "\"base_y\":%d,\"height\":%d,\"height2\":%d,\"ramp_thickness\":%d,\"collision\":%s,\"walkable\":%s,"
                  "\"blocks_airborne\":%s,\"line\":%d}",
                  i ? ",\n" : "", c->id, c->owner_id, c->shape,
                  c->bounds.min_x, c->bounds.max_x, c->bounds.min_z, c->bounds.max_z,
-                 c->base_y, c->height, c->collision ? "true" : "false",
+                 c->base_y, c->height, c->has_height2 ? c->height2 : c->height, c->ramp_thickness, c->collision ? "true" : "false",
                  c->walkable ? "true" : "false", c->blocks_airborne ? "true" : "false", c->line);
     }
     __printf("\n]\n");

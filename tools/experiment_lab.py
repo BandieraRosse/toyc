@@ -43,7 +43,8 @@ def site_finish(name, width, depth, category, plot_width=16384, plot_depth=10240
     return records
 
 def generate(name, x, z, category, enclosure, width=10240, depth=9216,
-             plot_width=16384, plot_depth=10240, projection_beams=True, entry_gap=1536):
+             plot_width=16384, plot_depth=10240, projection_beams=True, entry_gap=1536,
+             *, plot_offset_x=0):
     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9.-]{0,35}", name):
         raise ValueError("id must be a stable map name of at most 36 characters")
     if width < 2048 or depth < 2048 or width % 2 or depth % 2:
@@ -96,7 +97,7 @@ def generate(name, x, z, category, enclosure, width=10240, depth=9216,
     panel("_display",-half,half,hz-330,900,1500,4,"EXHIBIT_OFF",True)
     panel("_sample_info",-min(900,hx-128),min(900,hx-128),-800,-700,-450,3,"SAMPLE_IDLE")
     records.extend(site_finish(lab,width,depth,category,plot_width,plot_depth,
-                               projection_beams=projection_beams))
+                               plot_offset_x=plot_offset_x, projection_beams=projection_beams))
     records.append("# Sample origin is local (0, 0); add local records with attr.lab="+lab)
     return "\n".join(records)+"\n"
 

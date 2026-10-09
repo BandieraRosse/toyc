@@ -7,6 +7,7 @@ Maintains the marked building shell, ground-floor connections and safe regions.
 from pathlib import Path
 import argparse
 from building_kit import BuildingKit
+from map_grid import CELL, Footprint, opening
 
 BEGIN = "# BEGIN OUTPOST STOREYS"
 END = "# END OUTPOST STOREYS"
@@ -21,8 +22,11 @@ def geometry(prefix=()):
     def bounds(x0, x1, z0, z1):
         return f"min_x={x0} max_x={x1} min_z={z0} max_z={z1}"
 
-    kit = BuildingKit(lines)
+    # 256 RFU half-cell > 180 RFU actor radius + 75 RFU half-wall.
+    # Keep finite floor slabs at 154 RFU; wall faces need one RFU clearance.
+    kit = BuildingKit(lines, wall_thickness=150)
     solid = kit.solid
+    door = (opening(0, 2458, 1843),)
 
     def sign(name, x, z, y, text):
         add(f"render id={name} kind=sign min_x={x-600} max_x={x+600} min_z={z} max_z={z} height={y+300} attr.height2={y+600} color=9AC5CF attr.style=1 attr.facing=-z attr.text={text}")
@@ -61,6 +65,11 @@ def geometry(prefix=()):
         ("research",(-10240,-4608,-3072,3072)),
         ("operations",(4608,10240,-3072,3072)),
     )
+    for name, b in (*footprint, ("stair", (-3072,3072,10240,19456))):
+        grid = Footprint.near_bounds(b)
+        if grid.bounds != b:
+            raise ValueError("outpost module must be authored from grid bounds")
+        add(f"region id=outpost_module_{name} kind=building_module {bounds(*grid.bounds)} attr.building=outpost_base attr.cell_size={CELL}")
     outline = (
         ("s","x",-4096,-4608,4608),
         ("nw","x",10240,-4608,-3072),
@@ -83,16 +92,23 @@ def geometry(prefix=()):
         for name, axis, at, start, end in outline:
             doors = ()
             if name=="s" and floor=="1f":
-                doors=((-1229,1229,1843),)
+                doors=door
             kit.wall(f"outpost_{floor}_wall_{name}",axis,at,start,end,y,y+(512 if floor=="roof" else 2304),"526875" if floor=="roof" else WALL_COLOR,doors,walk=floor=="roof")
         if floor=="1f":
             for side, x in (("w",-4608),("e",4608)):
-                kit.wall(f"outpost_1f_wing_{side}","z",x,-3072,3072,0,2304,WALL_COLOR,((-1229,1229,1843),))
-            kit.wall("outpost_1f_hall_n","x",4096,-4608,4608,0,2304,WALL_COLOR,((-1229,1229,1843),))
+                kit.wall(f"outpost_1f_wing_{side}","z",x,-3072,3072,0,2304,WALL_COLOR,door)
+            kit.wall("outpost_1f_hall_n","x",4096,-4608,4608,0,2304,WALL_COLOR,door)
             for side,x in (("power",-1536),("control",1536)):
-                kit.wall(f"outpost_1f_{side}_partition","z",x,4096,10240,0,2304,WALL_COLOR,((5939,8397,1843),))
+                kit.wall(f"outpost_1f_{side}_partition","z",x,4096,10240,0,2304,WALL_COLOR,(opening(7168,2458,1843),))
             continue
         sign(f"outpost_{floor}_sign",0,10140,y,"2F_/_STAIRS" if floor=="2f" else "ROOF_/_STAIRS")
+
+    # Full-body order validation cannot combine adjacent paint partitions.
+    # Both rectangles are strictly inside the existing cross-shaped floor;
+    # there is no support in its outside corners or the stair-flight voids.
+    for floor,y in (("1f",0),("2f",2458),("roof",4916)):
+        kit.support_slab(f"outpost_{floor}_axis_ns_support",(-4608,4608,-4096,10240),y)
+        kit.support_slab(f"outpost_{floor}_axis_ew_support",(-10240,10240,-3072,3072),y)
 
     # Flush lenses replace the underside volume; finish() keeps a sealed cap.
     for floor,y in (("b1",-2458),("1f",0),("2f",2458)):
@@ -109,7 +125,9 @@ def geometry(prefix=()):
 
     storeys=(("b1",-2458),("1f",0),("2f",2458),("roof",4916))
     kit.switchback("outpost_stair",(-3072,3072,10240,19456),storeys,7220,
-                   wall_color=WALL_COLOR,ceiling_color=CEILING_COLOR)
+                   wall_color=WALL_COLOR,ceiling_color=CEILING_COLOR,grid=CELL)
+    for floor,y in storeys:
+        kit.support_slab(f"outpost_{floor}_stair_join_support",(door[0][0],door[0][1],9728,10752),y)
     for name, y in storeys:
         # One light per flight avoids the divider and reaches both end landings.
         if name=="roof":continue

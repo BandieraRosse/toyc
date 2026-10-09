@@ -12,6 +12,10 @@
 
 ## 地图布局导出
 
+前哨站建筑、园区与设备组合的一米格统一重建入口为 `tools/outpost_grid.py`；
+分层几何候选由 `tools/map_grid_diagnostic.py` 导出，稳定规则回归为 `tools/test_map_grid.py`。
+操作和 Runtime/Game 边界见[地图指南](../docs/rasterfall/guides/map-authoring.md#前哨站网格标准化)。
+
 地图布局 PNG/JSON 导出使用 Pillow，并直接读取仓库内与游戏共用的 GB2312 16×16 点阵字库。
 首次使用运行：
 

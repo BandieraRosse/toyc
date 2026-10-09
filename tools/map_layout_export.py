@@ -20,6 +20,13 @@ def centre(b): return {"x":(b["min_x"]+b["max_x"])/2,"z":(b["min_z"]+b["max_z"])
 def v1_fields(fields):
     return {item.split("=",1)[0]:item.split("=",1)[1] for item in fields if "=" in item}
 
+def runtime_collisions(path):
+    inspector=Path(__file__).resolve().parents[1]/("build-windows/map-inspect.exe" if os.name == "nt" else "build/map-inspect")
+    if not inspector.exists(): raise ValueError("runtime collision export requires a native map-inspect build")
+    result=subprocess.run([str(inspector),"--collision-json",str(path.resolve())],capture_output=True,text=True,encoding="utf-8")
+    if result.returncode: raise ValueError(result.stderr.strip())
+    return json.loads(result.stdout)
+
 def parse_v1(path):
     stat=path.stat(); doc={"schema":"rasterfall-map-layout-v1","source_map":str(path),"source_file":{"path":str(path),"size":stat.st_size,"mtime_ns":stat.st_mtime_ns,"sha256":hashlib.sha256(path.read_bytes()).hexdigest()},"coordinate_system":{"plane":"x/z","up":"y","unit":"RFU","rfu_per_meter":512,"note":"512 RFU = 1 m"},"world":None,"objects":[]}; counts={}; candidates=[]; warnings=[]
     labs={}; assemblies={}
@@ -75,6 +82,16 @@ def parse_v1(path):
         elif kind=="collision":
             b={"min_x":num(f.get("min_x","0")),"max_x":num(f.get("max_x","0")),"min_z":num(f.get("min_z","0")),"max_z":num(f.get("max_z","0"))}; visible=f.get("visible","true")=="true"; collision=f.get("collision","true")=="true"; typ="air_wall" if collision and not visible else "box"; o={"type":typ,"height":num(f.get("height","0")),"color":f.get("color","000000"),"visible":visible,"collision":collision,"walkable":f.get("walkable","false")=="true","role":f.get("role"),"bounds":b,"center":centre(b)}
         if o:
+            grid_keys=('attr.grid_min_x','attr.grid_min_z','attr.grid_width','attr.grid_depth')
+            if kind == 'object' and any(k in f for k in grid_keys):
+                if not all(k in f for k in grid_keys): raise ValueError(f"line {line_no}: incomplete planning footprint")
+                # Planning metadata follows the object's local frame, independently of collision bounds.
+                ox = num(f.get('x','0'))-num(v1_fields(words[1:]).get('x','0'))
+                oz = num(f.get('z','0'))-num(v1_fields(words[1:]).get('z','0'))
+                gx,gz = int(f['attr.grid_min_x'])+ox,int(f['attr.grid_min_z'])+oz
+                gw,gd=int(f['attr.grid_width']),int(f['attr.grid_depth'])
+                if gx%512 or gz%512 or gw<=0 or gd<=0: raise ValueError(f"line {line_no}: invalid world planning footprint")
+                o['planning_bounds'] = box([gx,gx+gw*512,gz,gz+gd*512])
             family=PREFIX[typ]; counts[family]=counts.get(family,0)+1; o["export_id"]=family+str(counts[family]); o["source_id"]=f.get("id",""); o["source"]=raw; doc["objects"].append(o)
             if typ=="box" and o.get("collision"): candidates.append((len(doc["objects"])-1,(o["bounds"]["max_x"]-o["bounds"]["min_x"])*(o["bounds"]["max_z"]-o["bounds"]["min_z"]),bool(o.get("role"))))
         elif kind not in {"map","world","region","interaction","actor_spawn","pickup","object","render","surface","collision"}:
@@ -83,13 +100,10 @@ def parse_v1(path):
     # its profile table/transform algorithm into an independent Python parser.
     components=[o for o in doc["objects"] if o["type"]=="prop" and o.get("collision_mode") in {"component","boundary"}]
     if components:
-        inspector=Path(__file__).resolve().parents[1]/("build-windows/map-inspect.exe" if os.name == "nt" else "build/map-inspect")
-        if not inspector.exists(): raise ValueError("component collision export requires: make app-map-inspect")
-        result=subprocess.run([str(inspector),"--collision-json",str(path.resolve())],capture_output=True,text=True)
-        if result.returncode: raise ValueError(result.stderr.strip())
-        runtime_collisions=json.loads(result.stdout)
+        collisions=runtime_collisions(path)
+        doc['runtime_collisions'] = collisions
         owners={o["source_id"]:o for o in components}
-        for collider in runtime_collisions:
+        for collider in collisions:
             owner=owners.get(collider["owner_id"])
             if not owner: continue
             b={k:collider[k] for k in ("min_x","max_x","min_z","max_z")}
@@ -255,6 +269,11 @@ def render(doc,path,w,h):
     # Collision and semantic overlays are deliberately drawn after filled
     # geometry so platforms/props cannot hide important map boundaries.
     for o,x,y,u,v in placed:
+        if 'planning_bounds' in o:
+            b=o['planning_bounds'];a,py=pt(b['min_x'],b['max_z']);d,e=pt(b['max_x'],b['min_z'])
+            c_color=(100,225,210)
+            # Do not confuse planning reservations with red physical collisions.
+            c.rect(a,py,d,e,None,c_color)
         if o["type"] in ("safe","spawn","base"):
             c.rect(x,y,u,v,None,pal[o["type"]][1])
         elif o["type"]=="air_wall":
@@ -272,8 +291,8 @@ def render(doc,path,w,h):
     # Experiment outlines remain visible over broad safe-room shading.
     lab_colors={"model":(159,180,255),"animation":(121,232,197),"lighting":(255,210,131),"performance":(255,171,120)}
     for lab in doc.get("labs",[]):
-        ox,oz=int(lab["x"]),int(lab["z"]);hx,hz=int(lab["width"])//2,int(lab["depth"])//2
-        x,y=pt(ox-hx,oz+hz);u,v=pt(ox+hx,oz-hz);color=lab_colors[lab["category"]]
+        lab_x,lab_z=int(lab["x"]),int(lab["z"]);hx,hz=int(lab["width"])//2,int(lab["depth"])//2
+        x,y=pt(lab_x-hx,lab_z+hz);u,v=pt(lab_x+hx,lab_z-hz);color=lab_colors[lab["category"]]
         c.rect(x,y,u,v,None,color)
         c.text(x+5,y+5,lab["id"].removesuffix("_area"),color)
     # Semantic areas win label space. Dense point clusters retain every ID in

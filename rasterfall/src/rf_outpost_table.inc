@@ -16,6 +16,16 @@ static struct rf_table_ui rf_table;
 static int rf_showcase_near;
 static int rf_device_table_request(int index,int deploy);
 
+static int rf_table_operation_near(const struct rasterfall_session *session,int x,int z)
+{
+    const struct rf_map_runtime_object *table=rf_map_runtime_find_object(&session->map_ops.runtime,"command_table");
+    const struct toy_game_actor *player=toy_game_local_player_actor_const(&session->game_state);
+    return table && player && (int64_t)x>=table->x-1250LL && (int64_t)x<=table->x+1250LL &&
+        (int64_t)z>=table->z-1900LL && (int64_t)z<=table->z-850LL &&
+        (int64_t)player->ground_y+player->airborne_y>=table->y-750LL &&
+        (int64_t)player->ground_y+player->airborne_y<=table->y+750LL;
+}
+
 static int rf_showcase_button_near(const struct rasterfall_session *session,int x,int z)
 {
     return rf_lab_near(session,x,z);
