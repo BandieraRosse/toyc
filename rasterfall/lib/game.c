@@ -1762,6 +1762,7 @@ static void rebuild_component_navigation(struct toy_game *g)
     toy_game_squad_reset(g);
     for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)
         toy_game_actor_cancel_navigation(&g->actors[i]);
+    for (i = 0; i < TOY_GAME_MAX_ACTORS; i++)g->actors[i].grid_reserved=0;
     if (!g || g->room_limit <= 0) return;
     g->nav_origin = -g->room_limit;
     g->nav_origin_z = g->nav_origin;
@@ -6795,6 +6796,7 @@ void toy_game_update_held(struct toy_game *g,
     int old_reloading;
     if (g->state != TOY_GAME_PLAYING) return;
     g->nav_tick++;
+    grid_refresh_reservations(g);
     toy_game_update_combat(g, dt_ms);
     /* The actor is already normalized by the caller and remains the sole
      * local-player gameplay state. */
@@ -6891,6 +6893,7 @@ void toy_game_update_world(struct toy_game *g, int dt_ms)
     int64_t start = 0, mark = 0, now;
     if (!g || g->state != TOY_GAME_PLAYING) return;
     toy_game_weaver_update(g, dt_ms);
+    grid_refresh_reservations(g);
     g->nav_tick++;
     profile = g->update_profile;
     if (profile && profile->clock_us) start = mark = profile->clock_us();

@@ -46,6 +46,9 @@ static int rf_player_object_facing(const struct rf_game_runtime *r,const char *i
 static void rf_player_hud_fill(struct rf_game_runtime *r,struct rasterfall_hud_state *h,int width,int height)
 {
     struct rf_player_ui_view *v=&h->player_ui_view;
+    const struct toy_game_actor *grid_player=toy_game_local_player_actor_const(&r->session->game_state);
+    r->player_ui.grid_focus_y=r->rts_active && r->rts.focus_floor>=0?
+        r->rts.floors[r->rts.focus_floor].floor_y:(grid_player?grid_player->ground_y:0);
     rf_player_ui_prepare(&r->player_ui,&r->session->level,&r->session->game_state,
         (unsigned)r->session->scene_local.world_generation);
     h->player_ui=&r->player_ui;v->bindings=&game_bindings;
@@ -365,7 +368,18 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
             __printf("%s[%d,%d,%d,%d]",n?",":"",rect.x,rect.y,rect.w,rect.h);
         }
         const struct toy_game_actor_layer_search *search=&g->actor_layer_search;
-        __printf("],\"grid\":{\"enabled\":%d,\"valid\":%d,\"origin_x\":%d,\"origin_z\":%d,\"width\":%d,\"height\":%d,\"references\":%d,\"buildings\":%d},",
+        __printf("],\"command_buttons\":[");
+        for(int n=0;n<4;++n) {
+            struct rf_ui_rect rect=rf_player_ui_command_rect(&ui,n);
+            __printf("%s[%d,%d,%d,%d]",n?",":"",rect.x,rect.y,rect.w,rect.h);
+        }
+        int grid_counts[7]={0};
+        if(r->player_ui.grid_view && g->grid_enabled && g->grid_valid)
+            for(int cell=0;cell<g->nav_width*g->nav_height;++cell)grid_counts[r->player_ui.grid_cells[cell]]++;
+        __printf("],\"grid_counts\":[%d,%d,%d,%d,%d,%d,%d",grid_counts[0],grid_counts[1],grid_counts[2],
+            grid_counts[3],grid_counts[4],grid_counts[5],grid_counts[6]);
+        __printf("],\"grid_view\":%d,\"follow\":%d,\"command_hover\":%d,\"grid\":{\"enabled\":%d,\"valid\":%d,\"origin_x\":%d,\"origin_z\":%d,\"width\":%d,\"height\":%d,\"references\":%d,\"buildings\":%d},",
+            r->player_ui.grid_view,r->rts_follow_player,rf_player_ui_hit_test(&r->player_ui,width,height,1,r->rts.pointer_x,r->rts.pointer_y),
             g->grid_enabled,g->grid_valid,g->nav_origin,g->nav_origin_z,
             g->nav_width,g->nav_height,g->grid_reference_count,g->grid_building_count);
         __printf("\"nav_cell_size\":%d,\"flow_nodes\":%d,\"nav_search\":{\"active\":%d,\"owner\":%d,\"stage\":%d,\"expanded\":%d,\"queued\":%d,\"slot\":%d,\"best\":%d,\"start\":%d,\"goal\":%d},\"actors\":[",
@@ -385,7 +399,9 @@ static void rf_player_audit(const struct rf_game_runtime *r,int frame,const stru
                 a->airborne_y,a->airborne_ms,a->nav_x,a->nav_z,a->nav_active,
                 a->nav_layer_count,a->nav_layer_cursor,a->move_velocity_x,a->move_velocity_z);
         }
-        __printf("]}\n");
+        __printf("],\"move_notice_ms\":%d,\"move_cell_failed\":%d}\n",
+            r->session->banner_ms,r->session->banner_text &&
+            !strncmp(r->session->banner_text,"MOVE FAILED: CELL",17));
     }
     __printf("PLAYER-UI-CHAT {\"frame\":%d,\"open\":%d,\"idle_ms\":%d,\"scroll\":%d,\"history\":%d,\"revision\":%u,\"visible\":%d}\n",
         frame,r->comms_focus,r->chat_idle_ms,r->chat_scroll,r->story.history_count,

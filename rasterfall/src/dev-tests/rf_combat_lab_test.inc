@@ -56,6 +56,12 @@ static int rf_combat_lab_logic_test(struct rf_game_runtime *runtime)
                 allied_count++;
                 if(a->flag_index!=-1 || a->deployment_x!=before[i][0] || a->deployment_z!=before[i][1])return -19;
                 int tx=field->origin_x+allied_count*600,tz=field->origin_z-2400;
+                if(g->grid_enabled) {
+                    int cell=toy_game_grid_cell(g,tx,tz);
+                    if(cell<0)return -20;
+                    tx=g->nav_origin+(cell%g->nav_width)*512+256;
+                    tz=g->nav_origin_z+(cell/g->nav_width)*512+256;
+                }
                 if(!rasterfall_session_rts_order_actor(runtime->session,(int)(a-g->actors),a->actor_id,
                     a->combat_generation,tx,tz,0) || !a->command_destination_active ||
                     a->command_x!=tx || a->command_z!=tz)return -20;

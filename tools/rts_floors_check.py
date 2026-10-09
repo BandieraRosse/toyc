@@ -25,11 +25,17 @@ def main():
     ap.add_argument('--story',action='store_true')
     ap.add_argument('--boot',action='store_true')
     ap.add_argument('--outpost',action='store_true',help='check B1/1F/2F/roof and player stair orders in Outpost')
+    ap.add_argument('--reservation-check',action='store_true',help='check occupied target rejection and temporary RTS feedback')
+    ap.add_argument('--grid-view-check',action='store_true',help='check grid overlay and RTS command-card tooltips')
+    ap.add_argument('--ui-only',action='store_true',help='finish after grid view checks')
     ap.add_argument('--stairs-only',action='store_true',help='with --outpost, capture floor views and the FPS stair entry')
     ap.add_argument('--grid-layout-check',action='store_true',help='with --outpost, also traverse authored hall wings, device approaches and campus roads')
     ap.add_argument('--grid-layout-from',help='with --grid-layout-check, resume at an authored layout goal name')
     ap.add_argument('--gesture-ms',type=int,default=160)
     args=ap.parse_args()
+    if args.reservation_check and not args.outpost:ap.error('--reservation-check requires --outpost')
+    if args.grid_view_check and not args.outpost:ap.error('--grid-view-check requires --outpost')
+    if args.ui_only and not args.grid_view_check:ap.error('--ui-only requires --grid-view-check')
     if args.grid_layout_check and not args.outpost:ap.error('--grid-layout-check requires --outpost')
     if args.grid_layout_from and not args.grid_layout_check:ap.error('--grid-layout-from requires --grid-layout-check')
     if args.fullscreen and args.toggle_fullscreen:ap.error('Choose fullscreen launch or F11 transition')
@@ -204,6 +210,57 @@ def main():
             def floor_button(n):
                 state=audit();x,y,w,h=state['floor_buttons'][n]
                 click(x+w/2,y+h/2)
+            if args.grid_view_check:
+                group(9,True)
+                def command_button(n,activate=False):
+                    state=audit();x,y,w,h=state['command_buttons'][n]
+                    if activate:click(x+w/2,y+h/2)
+                    else:point(x+w/2,y+h/2)
+                ready(lambda s:s.get('grid_view')==0,'grid overlay defaults off')
+                command_button(3)
+                ready(lambda s:s.get('command_hover',0)>0 and s.get('grid_view')==0,'grid tooltip appears without activating')
+                capture('grid-tooltip-off')
+                command_button(3,True)
+                ready(lambda s:s.get('grid_view')==1 and sum(s.get('grid_counts',[]))>0,'grid command enables live state colors')
+                capture('grid-tooltip-on')
+                for n,index,name in ((2,1,'grid-first-floor'),(1,0,'grid-basement'),(4,3,'grid-roof')):
+                    floor_button(n)
+                    ready(lambda s:s['floor']==index and s.get('grid_view')==1,name+' retains overlay')
+                    capture(name)
+                    if index==1:
+                        click(width/2,height/2,right=True)
+                        ready(lambda s:s.get('grid_counts',[0]*7)[5]>0,'accepted move displays reserved target cell')
+                        capture('grid-reserved-target')
+                        command_button(0,True)
+                        ready(lambda s:s.get('grid_counts',[0]*7)[5]==0,'stop releases visible target reservation')
+                for n,name in ((0,'stop'),(1,'follow'),(2,'fps')):
+                    command_button(n)
+                    ready(lambda s:s.get('command_hover',0)>0,name+' command tooltip')
+                    capture('command-'+name+'-tooltip')
+                command_button(1,True)
+                ready(lambda s:s.get('follow')==1,'follow button enables camera follow')
+                capture('command-follow-on')
+                command_button(1,True)
+                ready(lambda s:s.get('follow')==0,'follow button disables camera follow')
+                command_button(2,True)
+                wait_for(lambda:(audit('PLAYER-UI-AUDIT ') or {}).get('rts')==0,'FPS command switches view')
+                capture('grid-fps-view')
+                press(0x4d)
+                ready(lambda s:s.get('grid_view')==1,'grid view persists across FPS and RTS')
+                command_button(3,True)
+                ready(lambda s:s.get('grid_view')==0,'grid command disables overlay')
+                capture('grid-disabled')
+                floor_button(0)
+                ready(lambda s:s['floor']==-1,'grid check restores overview')
+                click(width-80,height*.42)
+                ready(lambda s:s['selected']==0,'empty world click clears selection')
+                command_button(0)
+                ready(lambda s:s.get('command_hover',0)>0 and s['selected']==0,'disabled stop tooltip explains missing selection')
+                capture('command-stop-disabled')
+                group(9)
+                ready(lambda s:s['selected']==1 and s['primary']==0,'grid check restores player selection')
+                if args.ui_only:
+                    completed=True;return
             floors=((1,0,'02-basement'),(2,1,'03-first'),(3,2,'04-second'),(4,3,'05-roof')) if args.outpost else ((1,0,'02-first'),(2,1,'03-second'),(3,2,'04-roof'))
             for button_index,index,name in floors:
                 floor_button(button_index)
@@ -212,6 +269,40 @@ def main():
                 capture(name)
             floor_button(0)
             ready(lambda s:s['floor']==-1 and s['distance']==overview_distance,'overview camera restored')
+            if args.reservation_check:
+                floor_button(2)
+                state=ready(lambda s:s['floor']==1 and s['cutaway']>.99,'first floor occupied-cell view')
+                target=next(a for a in state['actors'] if not a['selected'] and a['y']==0)
+                for framing in range(20):
+                    cx,cy,cz=state['camera'];dy=target['y']-900-cy
+                    error_x=target['x']-cx;error_z=target['z']+dy*90/1020-cz
+                    if abs(error_x)<1500 and abs(error_z)<1500:break
+                    error,code=(error_x,0x44 if error_x>0 else 0x41) if abs(error_x)>abs(error_z) else (error_z,0x57 if error_z>0 else 0x53)
+                    focus();key(code,True);time.sleep(max(.05,min(.7,abs(error)/12000*.75)))
+                    key(code,False);time.sleep(.25);state=audit()
+                cx,cy,cz=state['camera']
+                player=next(a for a in state['actors'] if a['selected'])
+                candidate=None
+                for a in state['actors']:
+                    if a['selected'] or a['y']!=player['y']:continue
+                    wx=(a['x']//512)*512+256;wz=(a['z']//512)*512+256
+                    dy=a['y']-900-cy;dz=wz-cz
+                    vy=(dy*90+dz*1020)/1024;vz=(-dy*1020+dz*90)/1024
+                    if vz<=0:continue
+                    sx=width/2+(wx-cx)*(width*3/4)/vz;sy=height/2-vy*(width*3/4)/vz
+                    if 80<sx<width-80 and 110<sy<height*.7:
+                        candidate=(sx,sy);break
+                if candidate is None:raise RuntimeError('No visible allied occupied cell')
+                click(*candidate,right=True)
+                state=ready(lambda s:s.get('move_cell_failed')==1 and s.get('move_notice_ms',0)>0,
+                    'occupied target rejects RTS move with temporary feedback')
+                current=next(a for a in state['actors'] if a['selected'])
+                if (current['goal_x'],current['goal_y'],current['goal_z'])!=(player['goal_x'],player['goal_y'],player['goal_z']):
+                    raise RuntimeError('Rejected command replaced previous goal')
+                capture('occupied-cell-feedback')
+                ready(lambda s:s.get('move_notice_ms')==0,'occupied cell feedback expires')
+                floor_button(0)
+                ready(lambda s:s['floor']==-1,'reservation check restores overview')
             if args.outpost:
                 def authored(record,identifier):
                     for line in (root/'rasterfall/assets/maps/outpost.map').read_text(encoding='utf-8-sig').splitlines():
@@ -259,6 +350,7 @@ def main():
                     if args.grid_layout_from not in names:raise RuntimeError('Unknown layout goal: '+args.grid_layout_from)
                     layout=layout[names.index(args.grid_layout_from):]
                 for index,wy,wx,wz,name in layout+(goals[-2:] if args.stairs_only else goals):
+                    wx=(wx//512)*512+256;wz=(wz//512)*512+256
                     floor_button(index+1)
                     state=ready(lambda s:s['floor']==index,'command view '+name)
                     # Native height picking, then ordinary session movement.
@@ -343,6 +435,8 @@ def main():
                 'fullscreen':args.fullscreen,'f11_transition':args.toggle_fullscreen,'gesture_ms':args.gesture_ms,
                 'boot_manager':args.boot,
                 'outpost':args.outpost,
+                'grid_view_check':args.grid_view_check,'ui_only':args.ui_only,
+                'reservation_check':args.reservation_check,
                 'grid_layout_check':args.grid_layout_check,
                 'grid_layout_from':args.grid_layout_from,
                 'stairs_only':args.stairs_only,

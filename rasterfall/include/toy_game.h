@@ -752,6 +752,8 @@ struct toy_game_actor {
     /* Explicit allied command overrides deployment/companion following until
      * replaced. Arrival retains the post; it never changes flag membership. */
     int command_destination_active, command_x, command_z, command_y, command_height_active;
+    int grid_reserved, grid_reserved_cell, grid_reserved_y;
+    unsigned grid_reserved_navigation, grid_reserved_combat;
     int flag_index;
     int nav_x, nav_z;
     int nav_active;
@@ -1174,6 +1176,9 @@ void toy_game_set_primitives(struct toy_game *g,
                              int primitive_count, int room_limit);
 void toy_game_rebuild_navigation(struct toy_game *g);
 int toy_game_set_grid_enabled(struct toy_game *g, int enabled);
+/* Atomic target reservation: 1 accepted, 0 invalid terrain, -1 occupied. */
+int toy_game_grid_reserve(struct toy_game *g, int actor, int *x, int *y, int *z);
+int toy_game_grid_target_available(struct toy_game *g, int actor, int x, int y, int z);
 int toy_game_grid_cell(const struct toy_game *g, int x, int z);
 int toy_game_grid_walkable(const struct toy_game *g, int x, int y, int z);
 int toy_game_grid_mark_building(struct toy_game *g, int owner,

@@ -15,6 +15,66 @@ static int unit_actor_solid(const struct toy_game_actor *a)
         !a->base_core;
 }
 
+static void grid_refresh_reservations(struct toy_game *g)
+{
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        struct toy_game_actor *a=&g->actors[i];
+        if(!a->grid_reserved)continue;
+        if(!g->grid_enabled || !g->grid_valid || !unit_actor_solid(a) ||
+           a->grid_reserved_combat!=a->combat_generation ||
+           a->grid_reserved_navigation!=g->navigation_generation) {
+            a->grid_reserved=0;continue;
+        }
+        long long dx=(long long)a->x-(g->nav_origin+(a->grid_reserved_cell%g->nav_width)*512+256);
+        long long dz=(long long)a->z-(g->nav_origin_z+(a->grid_reserved_cell/g->nav_width)*512+256);
+        if(a->airborne_ms<=0 && !a->airborne_y && dx*dx+dz*dz<=250LL*250LL &&
+           abs(a->ground_y-a->grid_reserved_y)<=2)
+            a->grid_reserved=0;
+    }
+}
+
+static int grid_target(struct toy_game *g,int actor,int *x,int *y,int *z,int reserve)
+{
+    int cell,cx,cz;
+    uint64_t actors,enemies;
+    struct toy_game_ground_query q;
+    if(!g || !x || !y || !z || actor<0 || actor>=TOY_GAME_MAX_ACTORS ||
+       !unit_actor_solid(&g->actors[actor]))return 0;
+    cell=toy_game_grid_cell(g,*x,*z);
+    if(cell<0)return 0;
+    cx=g->nav_origin+(cell%g->nav_width)*512+256;
+    cz=g->nav_origin_z+(cell/g->nav_width)*512+256;
+    q=toy_game_query_ground(g,cx,cz,TOY_GAME_PLAYER_RADIUS,*y);
+    if(!q.has_support || abs(q.support_y-*y)>TOY_CONFIG_GROUND_STEP_HEIGHT ||
+       !toy_game_grid_walkable(g,cx,q.support_y,cz) ||
+       toy_game_position_blocked_at_height(g,cx,cz,TOY_GAME_PLAYER_RADIUS,q.support_y))return 0;
+    toy_game_grid_unit_occupants(g,cell,&actors,&enemies);
+    grid_refresh_reservations(g);
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        struct toy_game_actor *a=&g->actors[i];
+        if(i==actor)continue;
+        if(((actors>>i)&1) && abs(a->ground_y+a->airborne_y-q.support_y)<RASTERFALL_HUMAN_HEIGHT_RFU)return -1;
+        if(a->grid_reserved && a->grid_reserved_cell==cell &&
+           abs(a->grid_reserved_y-q.support_y)<RASTERFALL_HUMAN_HEIGHT_RFU)return -1;
+    }
+    for(int i=0;i<TOY_GAME_MAX_ENEMIES;++i)
+        if(((enemies>>i)&1) && abs(g->enemies[i].ground_y+g->enemies[i].airborne_y-q.support_y)<RASTERFALL_HUMAN_HEIGHT_RFU)return -1;
+    struct toy_game_actor *a=&g->actors[actor];
+    if(reserve) {
+        a->grid_reserved=1;a->grid_reserved_cell=cell;a->grid_reserved_y=q.support_y;
+        a->grid_reserved_navigation=g->navigation_generation;
+        a->grid_reserved_combat=a->combat_generation;
+    }
+    *x=cx;*y=q.support_y;*z=cz;
+    return 1;
+}
+
+int toy_game_grid_reserve(struct toy_game *g,int actor,int *x,int *y,int *z)
+{ return grid_target(g,actor,x,y,z,1); }
+
+int toy_game_grid_target_available(struct toy_game *g,int actor,int x,int y,int z)
+{ return grid_target(g,actor,&x,&y,&z,0); }
+
 static int unit_actor_moving(const struct toy_game *g,
                              const struct toy_game_actor *a)
 {

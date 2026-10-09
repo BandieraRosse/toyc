@@ -21,7 +21,7 @@ enum rf_player_ui_mode {
 struct rf_ui_rect { int x, y, w, h; };
 enum rf_player_ui_hit { RF_PLAYER_UI_HIT_NONE, RF_PLAYER_UI_HIT_STOP,
     RF_PLAYER_UI_HIT_FOLLOW, RF_PLAYER_UI_HIT_FPS, RF_PLAYER_UI_HIT_DOCK,
-    RF_PLAYER_UI_HIT_PAGE_PREV, RF_PLAYER_UI_HIT_PAGE_NEXT,
+    RF_PLAYER_UI_HIT_PAGE_PREV, RF_PLAYER_UI_HIT_PAGE_NEXT, RF_PLAYER_UI_HIT_GRID,
     RF_PLAYER_UI_HIT_GROUP_BASE=20, RF_PLAYER_UI_HIT_UNIT_BASE=40 };
 struct rf_ui_theme {
     unsigned int panel, panel_raised, border, text, muted, accent;
@@ -49,6 +49,10 @@ struct rf_player_ui_state {
     struct rf_ui_subtitle subtitles[RF_UI_SUBTITLE_CAP];
     int subtitle_count;
     unsigned subtitle_history_revision;
+    int grid_view, grid_focus_y, grid_cache_y, grid_cache_valid;
+    unsigned grid_cache_generation, grid_cache_world;
+    int grid_y[TOY_GAME_NAV_MAX_CELLS];
+    unsigned char grid_static[TOY_GAME_NAV_MAX_CELLS], grid_cells[TOY_GAME_NAV_MAX_CELLS];
 };
 /* Synchronous borrowed projection; never retained by an asynchronous GPU slot. */
 struct rf_player_ui_view {
@@ -89,6 +93,8 @@ int rf_player_ui_rts_hit(const struct rf_ui_layout *layout,const struct rf_rts_s
 int rf_player_ui_rts_page_size(const struct rf_ui_layout *layout);
 int rf_player_ui_floor_hit(const struct rf_ui_layout *layout,const struct rf_rts_state *state,int x,int y);
 struct rf_ui_rect rf_player_ui_floor_rect(const struct rf_ui_layout *layout,const struct rf_rts_state *state,int n);
+struct rf_ui_rect rf_player_ui_command_rect(const struct rf_ui_layout *layout,int n);
+struct rf_ui_rect rf_player_ui_grid_legend_rect(const struct rf_ui_layout *layout);
 void rf_ui_panel(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,
                  const struct rf_ui_theme *theme, int selected);
 void rf_ui_button(struct rasterfall_canvas *canvas, struct rf_ui_rect rect,

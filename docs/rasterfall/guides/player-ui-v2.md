@@ -93,6 +93,16 @@ M 进入 RTS。左键点选或拖动框选友军，Shift 点选/框选追加；�
 收起底栏停止该视频，保留选择与指令。镜头与多人编组均不改变 AI 的战斗、受伤或动画规则。
 单位镜头与剧情镜头同时显示，切换或取消单位选择不影响剧情视频。
 
+右下角为三列方形命令面板，包含停止、镜头跟随、返回 FPS 和网格视图；鼠标停在按钮上，
+面板上方显示功能解释、快捷键与可用状态。没有选中单位时停止与跟随禁用，空槽位不执行命令。
+跟随按钮可再次点击关闭镜头跟随。
+
+前哨站点击“网格”开启/关闭辅助视图，默认关闭；终端也可输入 `rts grid 1` 或 `rts grid 0`。
+画面叠加一米格线并显示图例：绿为可走、蓝为建筑内可走、红为静态阻挡、灰为该层缺少支撑，
+黄为单位占用、紫为目标预约、橙为敌人占用。切层切换对应格状态，停止命令释放紫色预约格。
+该视图可透过建筑辅助查看当前层，开关不改变玩法；FPS/RTS 切换保留开关。
+未启用正式 Game 网格的地图按钮不可用。网格图例消费指针点击，格线仍允许正常右键移动。
+
 边缘站点车间支持“全貌、一层、二层、屋顶、聚焦单位”。选层只改变主视图并保留编组；
 在二层或屋顶右键下令会保留目标高度，队员通过楼梯跨层。Y 跟随主选单位，
 “聚焦单位”同时拉近并跟随所在楼层。详见 [车间楼层操作](frontier-station-01.md#车间楼层-v1)。
@@ -129,6 +139,7 @@ python tools/rts_command_check.py --boot --fullscreen --physical-mouse --story -
 | 电力/CPU/X1 | `RF_PLAYER_WEAVER_POWER/CPU/X1`；`weaver power|cpu|x1 0|1` | `weaver` | USER；提交时校验距离，不补充能源 | 断供/恢复保持进度 |
 | 领取 | `RF_PLAYER_WEAVER_COLLECT`；`weaver collect [confirm]` | `weaver` | USER；成品身份、旧武器确认、距离 | 无重复领取收益 |
 | RTS 选择/移动/停止 | `RF_PLAYER_RTS_*`；`rts select N`、`rts move X Z`、`rts stop` | `rts` | USER；离线、目标地面、有效选择 | 视角切换保持目标 |
+| 网格辅助视图 | `RF_PLAYER_GRID_VIEW`；`rts grid 0|1` | 按钮悬停状态 | USER；地图有有效 Game 网格，只修改 UI | 默认关闭；随楼层更新 |
 | 跟随/视角 | `RF_PLAYER_RTS_FOLLOW/VIEW`；`rts follow 1`、`rts view fps|rts` | `rts` | 只变展示；RTS 离线 | 不清空会话/制造 |
 | 通讯回答 | `RF_PLAYER_DIALOG_ANSWER`；`comms answer N SESSION NODE_REV` | `comms` | USER；双版本校验，N=0确认结语 | 旧回答拒绝 |
 | 收起/恢复/结束 | `RF_PLAYER_DIALOG_COLLAPSE/CLOSE`；`comms hide|resume|close` | `comms`、`comms history` | USER；保留/释放按会话规则 | 停止视频、释放控制 |

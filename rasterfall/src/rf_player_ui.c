@@ -160,10 +160,70 @@ static void ui_weapon_mesh_prepare(int weapon)
     rasterfall_model_unload(&asset);
 }
 
+static void ui_grid_body(struct rf_player_ui_state *s,const struct toy_game *g,
+    int index,int enemy,int x,int y,int z)
+{
+    int radius=enemy?TOY_GAME_CHARGER_RADIUS:TOY_GAME_PLAYER_RADIUS;
+    int maxx=g->nav_origin+g->nav_width*512-1,maxz=g->nav_origin_z+g->nav_height*512-1;
+    int first=toy_game_grid_cell(g,ui_clamp(x-radius,g->nav_origin,maxx),ui_clamp(z-radius,g->nav_origin_z,maxz));
+    int last=toy_game_grid_cell(g,ui_clamp(x+radius,g->nav_origin,maxx),ui_clamp(z+radius,g->nav_origin_z,maxz));
+    if(first<0 || last<0)return;
+    for(int cz=first/g->nav_width;cz<=last/g->nav_width;++cz)
+        for(int cx=first%g->nav_width;cx<=last%g->nav_width;++cx) {
+            int cell=cz*g->nav_width+cx;
+            uint64_t actors,enemies;
+            if(abs(s->grid_y[cell]-y)>=RASTERFALL_HUMAN_HEIGHT_RFU)continue;
+            toy_game_grid_unit_occupants(g,cell,&actors,&enemies);
+            if(((enemy?enemies:actors)>>index)&1)s->grid_cells[cell]=enemy?6:4;
+        }
+}
+
+static void ui_grid_prepare(struct rf_player_ui_state *s,const struct toy_game *g,unsigned world)
+{
+    if(!g || !s->grid_view || !g->grid_enabled || !g->grid_valid)return;
+    int count=g->nav_width*g->nav_height;
+    if(!s->grid_cache_valid || s->grid_cache_generation!=g->navigation_generation ||
+       s->grid_cache_world!=world || s->grid_cache_y!=s->grid_focus_y) {
+        for(int cell=0;cell<count;++cell) {
+            int x=g->nav_origin+(cell%g->nav_width)*512+256;
+            int z=g->nav_origin_z+(cell/g->nav_width)*512+256;
+            struct toy_game_ground_query q=toy_game_query_ground(g,x,z,TOY_GAME_PLAYER_RADIUS,s->grid_focus_y);
+            s->grid_y[cell]=s->grid_focus_y;s->grid_static[cell]=0;
+            if(q.has_support && abs(q.support_y-s->grid_focus_y)<=TOY_GAME_GRID_CELL_SIZE) {
+                s->grid_y[cell]=q.support_y;
+                s->grid_static[cell]=toy_game_grid_walkable(g,x,q.support_y,z) &&
+                    !toy_game_position_blocked_at_height(g,x,z,TOY_GAME_PLAYER_RADIUS,q.support_y)?
+                    (g->grid_buildings[cell]?2:1):3;
+            }
+        }
+        s->grid_cache_generation=g->navigation_generation;s->grid_cache_world=world;
+        s->grid_cache_y=s->grid_focus_y;s->grid_cache_valid=1;
+    }
+    memcpy(s->grid_cells,s->grid_static,(unsigned)count);
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct toy_game_actor *a=&g->actors[i];
+        int cell=a->grid_reserved_cell;
+        if(a->grid_reserved && a->active && a->hp>0 && a->state==TOY_GAME_ACTOR_ALIVE &&
+           a->grid_reserved_navigation==g->navigation_generation &&
+           a->grid_reserved_combat==a->combat_generation && cell>=0 && cell<count &&
+           abs(s->grid_y[cell]-a->grid_reserved_y)<RASTERFALL_HUMAN_HEIGHT_RFU)s->grid_cells[cell]=5;
+    }
+    for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+        const struct toy_game_actor *a=&g->actors[i];
+        if(a->active && a->hp>0 && a->state==TOY_GAME_ACTOR_ALIVE && !a->base_core)
+            ui_grid_body(s,g,i,0,a->x,a->ground_y+a->airborne_y,a->z);
+    }
+    for(int i=0;i<TOY_GAME_MAX_ENEMIES;++i) {
+        const struct toy_game_enemy *e=&g->enemies[i];
+        if(e->active==1 && e->hp>0)ui_grid_body(s,g,i,1,e->x,e->ground_y+e->airborne_y,e->z);
+    }
+}
+
 void rf_player_ui_prepare(struct rf_player_ui_state *state,const struct toy_map *map,
                           const struct toy_game *game,unsigned int map_generation)
 {
     if (!state) return;
+    ui_grid_prepare(state,game,map_generation);
     rf_minimap_prepare(&state->minimap,map,map_generation);
     rf_minimap_collect_allies(&state->minimap,game);
     const struct toy_game_actor *player=toy_game_local_player_actor_const(game);
@@ -310,14 +370,19 @@ static void ui_label(const struct rf_player_ui_view *view,int action,char *out,u
     rf_input_action_label(bindings,(enum rf_input_action)action,out,capacity);
 }
 
-static struct rf_ui_rect ui_rts_button(const struct rf_ui_layout *layout,int index)
+struct rf_ui_rect rf_player_ui_command_rect(const struct rf_ui_layout *layout,int index)
 {
     struct rf_ui_rect rect=layout->commands;
-    int pad=layout->padding,row=ui_px(28,layout->scale_milli),gap=ui_px(5,layout->scale_milli);
-    rect.x+=pad;rect.y+=ui_px(37,layout->scale_milli)+(row+gap)*index;
-    rect.w-=pad*2;rect.h=row;
+    if(rect.w<=0 || rect.h<=0)return ui_rect(0,0,0,0);
+    int pad=layout->padding,gap=ui_max(2,ui_px(4,layout->scale_milli));
+    int side=ui_min((rect.w-2*pad-2*gap)/3,(rect.h-2*pad-2*gap)/3);
+    rect.x+=pad+(rect.w-2*pad-3*side-2*gap)/2+(side+gap)*(index%3);
+    rect.y+=pad+(side+gap)*(index/3);rect.w=rect.h=side;
     return rect;
 }
+
+struct rf_ui_rect rf_player_ui_grid_legend_rect(const struct rf_ui_layout *layout)
+{ return ui_rect(layout->margin,ui_px(110,layout->scale_milli),ui_px(170,layout->scale_milli),ui_px(164,layout->scale_milli)); }
 
 int rf_player_ui_hit_test(const struct rf_player_ui_state *state,
                           int width,int height,int rts_active,int x,int y)
@@ -327,8 +392,8 @@ int rf_player_ui_hit_test(const struct rf_player_ui_state *state,
     rf_ui_layout_resolve(&layout,state,width,height,rts_active);
     if (rf_ui_rect_contains(layout.dock_toggle,x,y)) return RF_PLAYER_UI_HIT_DOCK;
     if (state->rts_collapsed) return RF_PLAYER_UI_HIT_NONE;
-    for (int i=0;i<3;++i) if (rf_ui_rect_contains(ui_rts_button(&layout,i),x,y))
-        return RF_PLAYER_UI_HIT_STOP+i;
+    for (int i=0;i<4;++i) if (rf_ui_rect_contains(rf_player_ui_command_rect(&layout,i),x,y))
+        return i==3?RF_PLAYER_UI_HIT_GRID:RF_PLAYER_UI_HIT_STOP+i;
     return RF_PLAYER_UI_HIT_NONE;
 }
 
@@ -548,6 +613,7 @@ void rf_player_ui_layout(struct rasterfall_canvas *canvas,const struct rasterfal
     char line[192],mode[24],terminal[24],map[24],menu[24];
     if (!canvas || !hud->game) return;
     rf_ui_layout_resolve(&layout,hud->player_ui,canvas->width,canvas->height,view->rts_active);
+    ui_grid_overlay(canvas,hud,&layout);
     if(view->rts_active)rts_world_feedback(canvas,hud,&layout);
     ui_fps(canvas,theme,&layout,fps);
     if (view->rts_active) {
@@ -691,6 +757,13 @@ int rf_player_ui_logic_test(void)
                 r.x+r.w>sizes[i][0] || r.y+r.h>sizes[i][1] ||
                 rf_player_ui_hit_test(&state,sizes[i][0],sizes[i][1],1,
                     r.x+r.w/2,r.y+r.h/2)!=RF_PLAYER_UI_HIT_DOCK) return -4;
+            if(!folded)for(int n=0;n<4;++n) {
+                r=rf_player_ui_command_rect(&layout,n);
+                if(r.w<=0 || r.w!=r.h || r.x<layout.commands.x || r.y<layout.commands.y ||
+                   r.x+r.w>layout.commands.x+layout.commands.w || r.y+r.h>layout.commands.y+layout.commands.h ||
+                   rf_player_ui_hit_test(&state,sizes[i][0],sizes[i][1],1,r.x+r.w/2,r.y+r.h/2)!=
+                   (n==3?RF_PLAYER_UI_HIT_GRID:RF_PLAYER_UI_HIT_STOP+n))return -5;
+            }
         }
     }
     return 0;

@@ -163,6 +163,8 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
     int hit=rf_player_ui_rts_hit(&ui,s,g,pointer_x,pointer_y);
     int normal=r->player_ui.mode<RF_PLAYER_UI_EXPERIMENT;
     int hover=rf_player_ui_rts_hit(&ui,s,g,in->pointer_x,in->pointer_y);
+    int grid_legend=r->player_ui.grid_view && g->grid_enabled && g->grid_valid &&
+        rf_ui_rect_contains(rf_player_ui_grid_legend_rect(&ui),pointer_x,pointer_y);
     s->hovered=normal && hover>=RF_PLAYER_UI_HIT_UNIT_BASE?hover-RF_PLAYER_UI_HIT_UNIT_BASE:-1;
     int blocked=normal && (floor_hit>=0 || rf_ui_rect_contains(ui.map,pointer_x,pointer_y) ||
         rf_ui_rect_contains(ui.objective,pointer_x,pointer_y) ||
@@ -184,6 +186,7 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
         s->page-=in->wheel_y;if(s->page<0)s->page=0;if(s->page>maxpage)s->page=maxpage;
         in->wheel_y=0;
     }
+    blocked|=grid_legend;
     if(events->button_pressed && blocked) {
         s->drag_active=0;
         if(events->button==BTN_LEFT) {
@@ -194,8 +197,10 @@ static void rf_rts_runtime_input(struct rf_game_runtime *r,struct rf_input_frame
                 rf_rts_group(s,g,hit-RF_PLAYER_UI_HIT_GROUP_BASE,ctrl);
             else if(hit==RF_PLAYER_UI_HIT_PAGE_PREV && s->page>0)--s->page;
             else if(hit==RF_PLAYER_UI_HIT_PAGE_NEXT && (s->page+1)*rf_player_ui_rts_page_size(&ui)<rf_rts_count(s,g))++s->page;
-            if(button==RF_PLAYER_UI_HIT_STOP)rf_player_request(r,RF_PLAYER_RTS_STOP,0,0,0);
-            if(button==RF_PLAYER_UI_HIT_FOLLOW)rf_player_request(r,RF_PLAYER_RTS_FOLLOW,1,0,0);
+            if(button==RF_PLAYER_UI_HIT_STOP && rf_rts_count(s,g)>0)rf_player_request(r,RF_PLAYER_RTS_STOP,0,0,0);
+            if(button==RF_PLAYER_UI_HIT_FOLLOW && rf_rts_count(s,g)>0)rf_player_request(r,RF_PLAYER_RTS_FOLLOW,!r->rts_follow_player,0,0);
+            if(button==RF_PLAYER_UI_HIT_GRID && g->grid_enabled && g->grid_valid)
+                rf_player_request(r,RF_PLAYER_GRID_VIEW,!r->player_ui.grid_view,0,0);
             if(button==RF_PLAYER_UI_HIT_FPS)rf_player_request(r,RF_PLAYER_VIEW,0,0,0);
             if(button==RF_PLAYER_UI_HIT_DOCK)r->player_ui.rts_collapsed=!r->player_ui.rts_collapsed;
         }

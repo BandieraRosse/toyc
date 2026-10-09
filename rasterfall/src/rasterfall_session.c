@@ -1718,10 +1718,22 @@ int rasterfall_session_rts_order_actor_height(struct rasterfall_session *s,
         a->developer_only || a->base_core || a->animation_demo || a->control_disabled ||
         a->movement_hold_token)return 0;
     if(a!=toy_game_local_player_actor(&s->game_state) && a->kind!=TOY_GAME_ACTOR_AI)return 0;
-    if(stop){x=a->x;z=a->z;y=a->ground_y;}
+    if(stop){x=a->x;z=a->z;y=a->ground_y;a->grid_reserved=0;}
     else {
         if(x<-2000000 || x>2000000 || z<-2000000 || z>2000000)return 0;
         if(height_active && (y<-1000000 || y>1000000))return 0;
+        if(s->game_state.grid_enabled) {
+            int reserved;
+            if(!height_active)y=a->ground_y;
+            reserved=toy_game_grid_reserve(&s->game_state,index,&x,&y,&z);
+            if(reserved!=1) {
+                s->banner_text=reserved<0?"MOVE FAILED: CELL OCCUPIED OR RESERVED":"MOVE FAILED: CELL NOT WALKABLE";
+                s->banner_ms=1800;
+                s->banner_success=0;
+                return 0;
+            }
+            height_active=1;
+        }
         ground=toy_game_query_ground(&s->game_state,x,z,RASTERFALL_PLAYER_RADIUS,height_active?y:a->ground_y);
         if(!ground.has_support || (height_active && abs(ground.support_y-y)>2) ||
             toy_game_position_blocked_at_height(&s->game_state,
@@ -1772,8 +1784,10 @@ static void session_build_rts_command(struct rasterfall_session *session,
         long long dx = (long long)session->rts_move_x - player->x;
         long long dz = (long long)session->rts_move_z - player->z;
         if (dx * dx + dz * dz <= 250LL * 250LL &&
+            player->airborne_ms<=0 && !player->airborne_y &&
             abs(player->ground_y-session->rts_move_y)<=2) {
             session->rts_move_active = 0;
+            player->grid_reserved = 0;
             toy_game_actor_cancel_navigation(player);
             player->move_velocity_x = player->move_velocity_z = 0;
             player->move_remainder_x = player->move_remainder_z = 0;
@@ -2114,6 +2128,32 @@ int rasterfall_session_rts_logic_test(void)
     if(!toy_game_grid_walkable(&test.game_state,256,0,-768) ||
        !toy_game_grid_walkable(&test.game_state,768,0,-1280) ||
        toy_game_try_move_actor(&test.game_state,player,768,-1280))return 50;
+    /* Exclusive destinations are snapped, layer-aware and atomic on failure. */
+    memset(test.game_state.enemies,0,sizeof(test.game_state.enemies));
+    for(int i=1;i<TOY_GAME_MAX_ACTORS;++i)memset(&test.game_state.actors[i],0,sizeof(test.game_state.actors[i]));
+    struct toy_game_actor *other=&test.game_state.actors[1];
+    *other=*player;other->actor_id=901;other->kind=TOY_GAME_ACTOR_AI;
+    other->x=-1792;other->z=-3840;other->grid_reserved=0;
+    test.rts_active=1;
+    if(!rasterfall_session_rts_order_actor_height(&test,0,player->actor_id,player->combat_generation,-10,0,-10,0,1) ||
+       test.rts_move_x!=-256 || test.rts_move_z!=-256 || !player->grid_reserved)return 53;
+    if(rasterfall_session_rts_order_actor_height(&test,1,other->actor_id,other->combat_generation,-10,0,-10,0,1) ||
+       test.banner_ms!=1800 || other->grid_reserved)return 54;
+    if(!rasterfall_session_rts_order_actor_height(&test,1,other->actor_id,other->combat_generation,-10,4096,-10,0,1))return 55;
+    if(!rasterfall_session_rts_order_actor(&test,0,player->actor_id,player->combat_generation,0,0,1) || player->grid_reserved)return 56;
+    if(!rasterfall_session_rts_order_actor_height(&test,0,player->actor_id,player->combat_generation,-10,0,-10,0,1))return 57;
+    player->x=-256;player->z=-256;
+    if(rasterfall_session_rts_order_actor_height(&test,1,other->actor_id,other->combat_generation,-10,0,-10,0,1) ||
+       other->command_y!=4096 || other->grid_reserved_y!=4096 || player->grid_reserved)return 58;
+    player->state=TOY_GAME_ACTOR_DOWNED;player->hp=0;
+    if(!rasterfall_session_rts_order_actor_height(&test,1,other->actor_id,other->combat_generation,-10,0,-10,0,1))return 59;
+    other->combat_generation++;
+    int rx=1280,ry=0,rz=-256;
+    player->state=TOY_GAME_ACTOR_ALIVE;player->hp=100;player->x=-1792;player->z=-2816;
+    if(toy_game_grid_reserve(&test.game_state,0,&rx,&ry,&rz)!=1 || other->grid_reserved)return 60;
+    toy_game_rebuild_navigation(&test.game_state);
+    if(player->grid_reserved || other->grid_reserved)return 61;
+    __printf("RTS target cell snapping / exclusive reservations / storeys / STOP / arrival occupancy / death / identity / rebuild passed\n");
     grid_floor[0].maxx=512;
     grid_floor[1]=grid_floor[0];grid_floor[1].minx=1536;grid_floor[1].maxx=4096;
     grid_floor[2].flags=0;

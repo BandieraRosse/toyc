@@ -116,17 +116,33 @@ static int rts_order_selection(struct rf_game_runtime *r,int x,int y,int z,int s
     struct rasterfall_session *s=r->session;
     int count=rf_rts_count(&r->rts,&s->game_state),columns=1,ordinal=0,accepted=0;
     if(!stop && (x<-1990000 || x>1990000 || z<-1990000 || z>1990000))return 0;
+    if(!stop && s->game_state.grid_enabled) {
+        for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
+            if(!rf_rts_member_valid(&r->rts.selected[i],&s->game_state,i))continue;
+            if(s->game_state.actors[i].state!=TOY_GAME_ACTOR_ALIVE)continue;
+            int available=toy_game_grid_target_available(&s->game_state,i,x,
+                height_active?y:s->game_state.actors[i].ground_y,z);
+            if(available!=1) {
+                s->banner_text=available<0?"MOVE FAILED: CELL OCCUPIED OR RESERVED":"MOVE FAILED: CELL NOT WALKABLE";
+                s->banner_ms=1800;s->banner_success=0;return 0;
+            }
+            break;
+        }
+    }
     while(columns*columns<count)++columns;
     int rows=(count+columns-1)/columns;
     for(int i=0;i<TOY_GAME_MAX_ACTORS;++i) {
         const struct rf_rts_member *m=&r->rts.selected[i];
         int tx=x,tz=z;
         if(!rf_rts_member_valid(m,&s->game_state,i))continue;
-        if(count>1){tx+=(2*(ordinal%columns)-columns+1)*300;tz+=(2*(ordinal/columns)-rows+1)*300;}
+        if(count>1){
+            if(s->game_state.grid_enabled){tx+=(ordinal%columns)*512;tz+=(ordinal/columns)*512;}
+            else {tx+=(2*(ordinal%columns)-columns+1)*300;tz+=(2*(ordinal/columns)-rows+1)*300;}
+        }
         int moved=rasterfall_session_rts_order_actor_height(s,i,m->actor_id,m->generation,tx,y,tz,stop,height_active);
         /* At a wall/ledge retain the valid clicked ground rather than drop a
          * member merely because its formation offset cannot fit. */
-        if(!moved && !stop && (tx!=x || tz!=z))
+        if(!moved && !stop && !s->game_state.grid_enabled && (tx!=x || tz!=z))
             moved=rasterfall_session_rts_order_actor_height(s,i,m->actor_id,m->generation,x,y,z,0,height_active);
         accepted+=moved;ordinal++;
     }
@@ -190,6 +206,12 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
         out=result(RF_PLAYER_STALE,"会话已变化，请刷新后重试");goto done;
     }
     switch(op) {
+    case RF_PLAYER_GRID_VIEW:
+        if(a->value<0 || a->value>1)out=result(RF_PLAYER_INVALID,"请输入 0 或 1");
+        else if(!s->game_state.grid_enabled || !s->game_state.grid_valid)
+            out=result(RF_PLAYER_UNAVAILABLE,"当前地图没有可用网格");
+        else {r->player_ui.grid_view=a->value;out=result(RF_PLAYER_OK,a->value?"网格视图已开启":"网格视图已关闭");}
+        break;
     case RF_PLAYER_SET_MODE:
         if(a->value<0||a->value>RF_PLAYER_UI_EXPERIMENT)out=result(RF_PLAYER_INVALID,"模式应为 player / terminal / experiment");
         else {r->player_ui.mode=a->value;c->settings_dirty=1;}break;
@@ -252,6 +274,10 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
             out.affected=rts_order_selection(r,a->x,a->y,a->z,0,a->height_active);
             out.code=out.affected?RF_PLAYER_OK:RF_PLAYER_INVALID;
             snprintf(out.message,sizeof(out.message),"%d / %d 单位接受移动指令",out.affected,rf_rts_count(&r->rts,&s->game_state));
+            if(!out.affected && s->game_state.grid_enabled && s->banner_ms>0)
+                snprintf(out.message,sizeof(out.message),"%s",
+                    s->banner_text && !strcmp(s->banner_text,"MOVE FAILED: CELL OCCUPIED OR RESERVED")?
+                    "移动失败：目标格已占用或预约":"移动失败：目标格不可走");
         }
         break;
     case RF_PLAYER_RTS_STOP:
@@ -288,7 +314,7 @@ struct rf_player_result rf_player_execute(struct rf_game_runtime *r,
     default:out=result(RF_PLAYER_INVALID,"未知操作");break;
     }
 done:
-    if(!out.code)out.affected=1;
+    if(!out.code && !out.affected)out.affected=1;
     c->last=out;return out;
 }
 
@@ -464,7 +490,7 @@ int rf_player_terminal_command(const struct rf_command_context *ctx,
             snprintf(text,sizeof(text),"view=%s selected=%d primary=%d follow=%d moving=%d target=%d,%d",r->rts_active?"RTS":"FPS",
                 rf_rts_count(&r->rts,&r->session->game_state),r->rts.primary,r->rts_follow_player,
                 r->session->rts_move_active,r->session->rts_move_x,r->session->rts_move_z);line(o,text);
-            line(o,"rts view fps|rts; rts select ACTOR_INDEX|-1; rts move X Z; rts stop; rts follow 0|1");return 0;
+            line(o,"rts view fps|rts; rts select ACTOR_INDEX|-1; rts move X Z; rts stop; rts follow 0|1; rts grid 0|1");return 0;
         }
         if(argc==3 && !strcmp(sub,"view") && (!strcmp(argv[2],"fps")||!strcmp(argv[2],"rts"))) {
             a.operation=RF_PLAYER_VIEW;a.value=!strcmp(argv[2],"rts");valid=1;
@@ -472,6 +498,7 @@ int rf_player_terminal_command(const struct rf_command_context *ctx,
         else if(argc==4 && !strcmp(sub,"move") && integer(argv[2],&a.x)&&integer(argv[3],&a.z)){a.operation=RF_PLAYER_RTS_MOVE;valid=1;}
         else if(argc==2 && !strcmp(sub,"stop")){a.operation=RF_PLAYER_RTS_STOP;valid=1;}
         else if(argc==3 && !strcmp(sub,"follow") && integer(argv[2],&a.value)){a.operation=RF_PLAYER_RTS_FOLLOW;valid=1;}
+        else if(argc==3 && !strcmp(sub,"grid") && integer(argv[2],&a.value)){a.operation=RF_PLAYER_GRID_VIEW;valid=1;}
     } else if(!strcmp(group,"comms")) {
         const struct rf_story_node *n=rf_story_current_node(&r->story);
         if(!strcmp(sub,"status")) {
@@ -692,6 +719,40 @@ int rf_player_commands_logic_test(void)
     PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
     player->state=TOY_GAME_ACTOR_DOWNED;player->active=0;
     PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_UNAVAILABLE);
+    player->active=1;player->state=TOY_GAME_ACTOR_ALIVE;player->hp=100;
+    ally->state=TOY_GAME_ACTOR_ALIVE;ally->hp=100;
+    s->world_id=RASTERFALL_WORLD_OUTPOST;
+    PLAYER_CHECK(toy_game_set_grid_enabled(&s->game_state,1));
+    memcpy(saved,&s->game_state,sizeof(*saved));
+    request.operation=RF_PLAYER_GRID_VIEW;request.value=1;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK &&
+        r->player_ui.grid_view && !memcmp(saved,&s->game_state,sizeof(*saved)));
+    r->player_ui.grid_focus_y=0;
+    rf_player_ui_prepare(&r->player_ui,&s->level,&s->game_state,7);
+    int visual_cell=toy_game_grid_cell(&s->game_state,4000,0);
+    PLAYER_CHECK(r->player_ui.grid_static[visual_cell]==1 &&
+        r->player_ui.grid_cells[toy_game_grid_cell(&s->game_state,player->x,player->z)]==4);
+    rf_rts_clear(&r->rts);rf_rts_select(&r->rts,&s->game_state,0,0);
+    rf_rts_select(&r->rts,&s->game_state,ally_index,1);
+    request.operation=RF_PLAYER_RTS_MOVE;request.x=4000;request.z=0;
+    struct rf_player_result formation=rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER);
+    PLAYER_CHECK(formation.code==RF_PLAYER_OK && formation.affected==2 &&
+        s->rts_move_x==3840 && s->rts_move_z==256 &&
+        ally->command_x==4352 && ally->command_z==256 &&
+        player->grid_reserved && ally->grid_reserved);
+    rf_player_ui_prepare(&r->player_ui,&s->level,&s->game_state,7);
+    PLAYER_CHECK(r->player_ui.grid_cells[visual_cell]==5);
+    PLAYER_CHECK(toy_game_add_ai(&s->game_state,TOY_GAME_AI_LEVEL_1,6000,0,"OCCUPIED CELL")>=0);
+    request.x=6000;
+    formation=rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER);
+    PLAYER_CHECK(formation.code==RF_PLAYER_INVALID && !formation.affected &&
+        s->rts_move_x==3840 && ally->command_x==4352 && s->banner_ms==1800 &&
+        strstr(formation.message,"占用")!=NULL);
+    request.operation=RF_PLAYER_RTS_STOP;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK &&
+        !player->grid_reserved && !ally->grid_reserved);
+    request.operation=RF_PLAYER_GRID_VIEW;request.value=0;
+    PLAYER_CHECK(rf_player_execute(r,&request,RF_COMMAND_PERMISSION_USER).code==RF_PLAYER_OK && !r->player_ui.grid_view);
     status=0;
 done:
     if(s)rf_map_runtime_unload(&s->map_ops.runtime);

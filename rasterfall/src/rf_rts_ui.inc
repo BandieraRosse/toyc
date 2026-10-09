@@ -15,18 +15,26 @@ static void rts_ui_line(struct rasterfall_canvas *c,int x0,int y0,int x1,int y1,
     }
     x1=x0+(int)(t1*dx);y1=y0+(int)(t1*dy);
     x0+=(int)(t0*dx);y0+=(int)(t0*dy);
+    /* Coalesce along the dominant axis: a projected vertical metre edge
+     * should emit a column, rather than one HUD quad per screen pixel. */
+    int transpose=abs(y1-y0)>abs(x1-x0);
+    if(transpose){int temp=x0;x0=y0;y0=temp;temp=x1;x1=y1;y1=temp;}
     int ax=abs(x1-x0),ay=-abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,e=ax+ay;
     int start=x0,row=y0,last=x0;
     for(;;) {
         if(y0!=row) {
-            rasterfall_canvas_rect(c,ui_min(start,last),row,abs(last-start)+1,1,color,alpha);
+            int first=ui_min(start,last),length=abs(last-start)+1;
+            rasterfall_canvas_rect(c,transpose?row:first,transpose?first:row,
+                transpose?1:length,transpose?length:1,color,alpha);
             start=x0;row=y0;
         }
         if(x0==x1 && y0==y1)break;
         last=x0;
         int e2=2*e;if(e2>=ay){e+=ay;x0+=sx;}if(e2<=ax){e+=ax;y0+=sy;}
     }
-    rasterfall_canvas_rect(c,ui_min(start,x0),row,abs(x0-start)+1,1,color,alpha);
+    int first=ui_min(start,x0),length=abs(x0-start)+1;
+    rasterfall_canvas_rect(c,transpose?row:first,transpose?first:row,
+        transpose?1:length,transpose?length:1,color,alpha);
 }
 static void rts_ui_outline(struct rasterfall_canvas *c,struct rf_ui_rect r,unsigned color,int alpha)
 {
@@ -34,6 +42,109 @@ static void rts_ui_outline(struct rasterfall_canvas *c,struct rf_ui_rect r,unsig
     rasterfall_canvas_rect(c,r.x,r.y+r.h-1,r.w,1,color,alpha);
     rasterfall_canvas_rect(c,r.x,r.y,1,r.h,color,alpha);
     rasterfall_canvas_rect(c,r.x+r.w-1,r.y,1,r.h,color,alpha);
+}
+
+static const unsigned ui_grid_colors[7]={0x637482,0x58DDA0,0x58AEF0,0xEF6464,0xF5D16C,0xC58AFF,0xFF963F};
+static void ui_grid_overlay(struct rasterfall_canvas *canvas,const struct rasterfall_hud_state *h,
+    const struct rf_ui_layout *l)
+{
+    const struct rf_player_ui_state *s=h->player_ui;
+    const struct toy_game *g=h->game;
+    const struct camera *camera=h->player_ui_view.rts_camera;
+    if(!s->grid_view || !s->grid_cache_valid || !g->grid_enabled || !g->grid_valid || !camera)return;
+    struct rasterfall_canvas c=*canvas;
+    if(h->player_ui_view.rts_active && l->groups.w>0)c.height=ui_min(c.height,l->groups.y);
+    for(int cell=0;cell<g->nav_width*g->nav_height;++cell) {
+        int x=g->nav_origin+(cell%g->nav_width)*512,z=g->nav_origin_z+(cell/g->nav_width)*512;
+        int y=RASTERFALL_WORLD_GROUND_Y+s->grid_y[cell]+12;
+        int px[4],py[4],valid=1;
+        for(int n=0;n<4;++n)
+            if(!rf_rts_project(camera,canvas->width,canvas->height,x+(n==1 || n==2?512:0),y,
+                z+(n>=2?512:0),&px[n],&py[n])){valid=0;break;}
+        if(!valid)continue;
+        int minx=px[0],maxx=px[0],miny=py[0],maxy=py[0];
+        for(int n=1;n<4;++n){minx=ui_min(minx,px[n]);maxx=ui_max(maxx,px[n]);miny=ui_min(miny,py[n]);maxy=ui_max(maxy,py[n]);}
+        if(maxx<0 || minx>=c.width || maxy<100 || miny>=c.height || maxx-minx<3 || maxy-miny<3)continue;
+        int status=s->grid_cells[cell],alpha=status>=3?185:status?100:38;
+        unsigned color=ui_grid_colors[status];
+        rts_ui_line(&c,px[0],py[0],px[1],py[1],color,alpha);
+        rts_ui_line(&c,px[0],py[0],px[3],py[3],color,alpha);
+        if(status>=3) {
+            rts_ui_line(&c,px[1],py[1],px[2],py[2],color,alpha);
+            rts_ui_line(&c,px[3],py[3],px[2],py[2],color,alpha);
+            int cx=(px[0]+px[2])/2,cy=(py[0]+py[2])/2;
+            rasterfall_canvas_rect(&c,cx-2,cy-2,4,4,color,180);
+        }
+    }
+    if(c.failed)canvas->failed=1;
+    struct rf_ui_rect legend=rf_player_ui_grid_legend_rect(l);
+    rf_ui_panel(canvas,legend,&s->theme,0);
+    const char *labels[7]={"缺少支撑","可走","建筑内可走","静态阻挡","单位占用","目标预约","敌人占用"};
+    for(int n=0;n<7;++n) {
+        int y=legend.y+8+n*ui_px(21,l->scale_milli);
+        rasterfall_canvas_rect(canvas,legend.x+8,y+5,8,8,ui_grid_colors[n],255);
+        rf_ui_text(canvas,ui_rect(legend.x+24,y,legend.w-30,ui_px(20,l->scale_milli)),labels[n],s->theme.text,l->text_scale_milli,1);
+    }
+}
+
+static void rts_command_icon(struct rasterfall_canvas *c,struct rf_ui_rect r,int n,unsigned color)
+{
+    int size=ui_max(8,ui_min(18,r.h/3)),x=r.x+r.w/2-size/2,y=r.y+5;
+    if(n==0)rasterfall_canvas_rect(c,x+2,y+2,size-4,size-4,color,230);
+    else if(n==1) {
+        rts_ui_outline(c,ui_rect(x,y,size,size),color,230);
+        rasterfall_canvas_rect(c,x+size/2-1,y-2,2,size+4,color,230);
+        rasterfall_canvas_rect(c,x-2,y+size/2-1,size+4,2,color,230);
+    } else if(n==2) {
+        rasterfall_canvas_rect(c,x+size/3,y,size/3,size/3,color,230);
+        rts_ui_outline(c,ui_rect(x+2,y+size/2,size-4,size/2),color,230);
+    } else for(int i=0;i<4;++i) {
+        int d=i*(size-1)/3;
+        rasterfall_canvas_rect(c,x+d,y,1,size,color,230);
+        rasterfall_canvas_rect(c,x,y+d,size,1,color,230);
+    }
+}
+
+static void rts_command_panel(struct rasterfall_canvas *c,const struct rasterfall_hud_state *h,const struct rf_ui_layout *l,int count)
+{
+    const struct rf_player_ui_view *v=&h->player_ui_view;
+    const struct rf_ui_theme *t=&h->player_ui->theme;
+    const char *labels[4]={"停止","跟随","FPS","网格"};
+    const char *titles[4]={"停止移动","镜头跟随","返回 FPS","网格辅助视图"};
+    const char *details[4]={"停止选中单位的移动，并释放目标格预约。",
+        "让指挥镜头跟随主选单位。再次点击恢复自由镜头。",
+        "切换到第一人称操作。已接受的队员命令继续执行。",
+        "用一米格线与颜色显示当前楼层的通行、占位和预约状态。辅助叠加不改变玩法。"};
+    int enabled[4]={count>0,count>0,1,h->game->grid_enabled && h->game->grid_valid};
+    int active[4]={0,v->rts_follow_player,0,h->player_ui->grid_view};
+    int hovered=-1,scale=ui_min(l->text_scale_milli,900);
+    rf_ui_panel(c,l->commands,t,0);
+    for(int n=0;n<9;++n) {
+        struct rf_ui_rect r=rf_player_ui_command_rect(l,n);
+        int hover=v->rts && rf_ui_rect_contains(r,v->rts->pointer_x,v->rts->pointer_y);
+        rf_ui_panel(c,r,t,n<4 && active[n] && enabled[n]);
+        if(n>=4)continue;
+        if(hover){hovered=n;rts_ui_outline(c,r,t->accent,255);}
+        unsigned color=enabled[n]?(active[n]?t->selected:t->text):t->muted;
+        rts_command_icon(c,r,n,color);
+        rf_ui_text(c,ui_rect(r.x+2,r.y+r.h-ui_px(17,scale),r.w-4,ui_px(17,scale)),labels[n],color,scale,1);
+    }
+    if(hovered<0)return;
+    int n=hovered,w=ui_min(ui_px(290,l->scale_milli),c->width-2*l->margin),height=ui_px(164,l->scale_milli);
+    struct rf_ui_rect tip=ui_rect(c->width-l->margin-w,ui_max(l->margin,l->commands.y-height-l->gap),w,height);
+    struct rf_ui_theme tip_theme=*t;tip_theme.panel_alpha=250;
+    rf_ui_panel(c,tip,&tip_theme,1);
+    char title[96],key[24],state[128];
+    if(n<3) {
+        ui_label(v,n==0?RF_ACTION_RTS_STOP:n==1?RF_ACTION_RTS_FOLLOW:RF_ACTION_COMMAND_MODE,key,sizeof(key));
+        snprintf(title,sizeof(title),"%s [%s]",titles[n],key);
+    } else snprintf(title,sizeof(title),"%s",titles[n]);
+    snprintf(state,sizeof(state),"%s",!enabled[n]?(n==3?"不可用：当前地图没有可用网格":"不可用：请先选择单位"):
+        n==3?(active[n]?"当前状态：已开启":"当前状态：已关闭"):
+        n==1?(active[n]?"当前状态：跟随主选单位":"当前状态：自由镜头"):"可执行");
+    rf_ui_text(c,ui_rect(tip.x+l->padding,tip.y+l->padding,tip.w-2*l->padding,ui_px(22,l->scale_milli)),title,t->text,l->text_scale_milli,1);
+    rf_ui_text(c,ui_rect(tip.x+l->padding,tip.y+ui_px(36,l->scale_milli),tip.w-2*l->padding,ui_px(80,l->scale_milli)),details[n],t->muted,l->text_scale_milli,3);
+    rf_ui_text(c,ui_rect(tip.x+l->padding,tip.y+tip.h-ui_px(30,l->scale_milli),tip.w-2*l->padding,ui_px(22,l->scale_milli)),state,enabled[n]?t->success:t->warning,l->text_scale_milli,1);
 }
 static struct rf_ui_rect rts_group_rect(const struct rf_ui_layout *l,int n)
 {
@@ -226,7 +337,7 @@ static void ui_rts(struct rasterfall_canvas *c,const struct rasterfall_hud_state
     const struct rf_rts_state *s=v->rts;
     const struct rf_ui_theme *t=&h->player_ui->theme;
     int scale=l->text_scale_milli,pad=l->padding,count=s?rf_rts_count(s,h->game):0;
-    struct rf_ui_rect r=l->selection;char line[192],key[24];
+    struct rf_ui_rect r=l->selection;char line[192];
     rf_ui_panel(c,r,t,0);
     for(int i=0;i<RF_RTS_GROUPS;++i) {
         int members=s?rf_rts_group_count(s,h->game,i):0;
@@ -286,16 +397,7 @@ static void ui_rts(struct rasterfall_canvas *c,const struct rasterfall_hud_state
             !count?"未选择":s && s->video_requested?(s->video_state==3?"镜头不可用":"连接中"):"镜头不可用",
             t->muted,camera_scale,3);
     }
-    r=l->commands;rf_ui_panel(c,r,t,0);
-    int command_scale=ui_min(scale,ui_max(1000,r.w*1000/230));
-    rf_ui_text(c,ui_rect(r.x+pad,r.y+pad,r.w-pad*2,ui_px(18,scale)),
-        r.w<ui_px(200,scale)?"右键移动":"右键移动 · 数字选组",t->muted,command_scale,1);
-    ui_label(v,RF_ACTION_RTS_STOP,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 停止移动",key);
-    rf_ui_button(c,ui_rts_button(l,0),t,line,command_scale,0,count>0);
-    ui_label(v,RF_ACTION_RTS_FOLLOW,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 跟随单位",key);
-    rf_ui_button(c,ui_rts_button(l,1),t,line,command_scale,v->rts_follow_player,1);
-    ui_label(v,RF_ACTION_COMMAND_MODE,key,sizeof(key));snprintf(line,sizeof(line),"[%s] 返回 FPS",key);
-    rf_ui_button(c,ui_rts_button(l,2),t,line,command_scale,0,1);
+    rts_command_panel(c,h,l,count);
     if(s && s->hovered>=0 && rf_rts_member_valid(&s->selected[s->hovered],h->game,s->hovered) && count>1) {
         int w=ui_min(ui_px(270,scale),c->width-2*l->margin),height=ui_px(108,scale);
         struct rf_ui_rect tip=ui_rect(ui_clamp(s->pointer_x+14,l->margin,c->width-l->margin-w),

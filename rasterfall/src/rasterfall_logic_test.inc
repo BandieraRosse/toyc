@@ -1563,6 +1563,7 @@ static int outpost_storey_route_logic_test(struct rasterfall_session *s)
         }
         if(!rasterfall_session_rts_order_actor_height(s,TOY_GAME_PLAYER_ACTOR_INDEX,
             probe->actor_id,probe->combat_generation,tx,ty,tz,0,1))return 6;
+        tx=s->rts_move_x;ty=s->rts_move_y;tz=s->rts_move_z;
         for(int tick=0;tick<5000;++tick) {
             int64_t started=benchmark?rf_core_clock_now_us():0;
             rasterfall_session_step(s,&camera,&input,16);

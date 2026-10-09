@@ -18,6 +18,9 @@ UTF-8 点阵字形 run；`rasterfall_sky_layout`、`rasterfall_hud_layout` 和 p
 暂停设置、结算、武器散布准星和 Tab 计分板也使用同一 canvas 布局。runtime 通过
 同步 `ui_layout` 回调提供只读菜单状态，Scene 在资源准备前将其冻结为 OVERLAY 几何；
 回调不保存到异步 GPU slot。AI 名字、血量和倒地/救援进度由 Scene 从当前 actor 展示值生成。
+前哨站网格辅助视图的开关、静态颜色缓存和动态占格投影归 `rf_player_ui_state`，HUD 准备阶段
+只读 Game，绘制时通过 Canvas 投影格线；主画面辅助叠加不执行世界遮挡，单位 AUX 不消费它。
+命令面板共用方形按钮矩形和上方悬停卡片，详见[RTS 展示合同](rts-command.md#命令面板与网格辅助视图)。
 正常运行的 Desktop/Console 仍遵守 [Application Runtime](application-runtime.md) 的关闭 gate。
 
 `rasterfall_actor_labels.h` 是 CPU/Scene 共用的友军世界标签布局 leaf。调用者保持原有阵营、距离、

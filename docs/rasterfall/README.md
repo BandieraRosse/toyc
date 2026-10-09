@@ -15,6 +15,8 @@ Rasterfall 是本仓库的长期开发主线。本页只负责把任务导向事
 再读[生成与诊断](guides/map-authoring.md#前哨站网格标准化)；
 统一重建入口为 `tools/outpost_grid.py`，全单位导航迁移仍由[唯一活动计划](plans/README.md)控制。
 RTS 路点到身体输入的世界方向合同见[权威移动](architecture/rts-command.md#权威移动)。
+前哨站 RTS 格中心落点、占格拒绝与目标格预约见[预约合同](architecture/rts-command.md#前哨站目标格预约)。
+网格辅助叠加、状态颜色与 RTS 命令卡见[命令面板与网格视图](architecture/rts-command.md#命令面板与网格辅助视图)。
 前哨站运行时格状态、建筑占位、分层通行与全单位导航入口见
 [Game 网格所有权](architecture/gameplay.md#敌人共享目标导航场)，实现位于 `lib/game_grid.inc`。
 
